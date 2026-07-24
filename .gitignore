@@ -39,3 +39,10 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# local tooling (image processing venv used for one-off brand asset scripts)
+.tools-venv
+
+# local test log for staging enquiry submissions (Plan Part G) — contains
+# test PII, never committed, never mixed with production records
+.data

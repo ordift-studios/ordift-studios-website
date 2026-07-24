@@ -2,25 +2,104 @@
 
 :root {
   --background: #ffffff;
-  --foreground: #171717;
+  --foreground: #1a1d24;
+
+  /* Ordift Studios brand tokens — initial direction, pending WCAG AA contrast
+     testing once real layouts exist (Plan Part B). Gold stays a controlled
+     accent only, never a dominant surface color. */
+  --color-navy-950: #0b1220; /* primary dark surface */
+  --color-navy-900: #111a2e; /* card / section surface on dark */
+  --color-offwhite: #f7f5f1;
+  --color-gold: #bfa14a;
+  --color-gold-hover: #d8c583;
+  --color-gold-pressed: #8e7736;
+  --color-ink: #1a1d24; /* text on light, primary */
+  --color-ink-muted: #5b5f6b; /* text on light, secondary */
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  --color-ordift-navy-950: var(--color-navy-950);
+  --color-ordift-navy-900: var(--color-navy-900);
+  --color-ordift-offwhite: var(--color-offwhite);
+  --color-ordift-gold: var(--color-gold);
+  --color-ordift-gold-hover: var(--color-gold-hover);
+  --color-ordift-gold-pressed: var(--color-gold-pressed);
+  --color-ordift-ink: var(--color-ink);
+  --color-ordift-ink-muted: var(--color-ink-muted);
+
+  /* Approved 2026-07-23 (Brand Bible section 28 / TYPOGRAPHY.md): Fraunces
+     for display/headings, Inter for everything else. Fallback stacks are
+     serif/sans-serif system fonts; next/font also auto-generates a
+     size-adjusted fallback per font to prevent layout shift. */
+  --font-sans: var(--font-inter), ui-sans-serif, -apple-system,
+    "Segoe UI", Roboto, sans-serif;
+  --font-serif: var(--font-fraunces), ui-serif, Georgia, "Times New Roman",
+    serif;
+
+  /* Type scale — see TYPOGRAPHY.md for the full spec (weights,
+     line-heights, letter-spacing, usage) behind each token. Base value is
+     mobile; use with `sm:` for tablet and `lg:` for desktop, e.g.
+     `text-hero sm:text-hero-tablet lg:text-hero-desktop`. */
+  --text-hero: 2.25rem;
+  --text-hero--line-height: 1.1;
+  --text-hero-tablet: 3.75rem;
+  --text-hero-tablet--line-height: 1.08;
+  --text-hero-desktop: 4.5rem;
+  --text-hero-desktop--line-height: 1.05;
+
+  --text-page-title: 1.875rem;
+  --text-page-title--line-height: 1.15;
+  --text-page-title-tablet: 3rem;
+  --text-page-title-tablet--line-height: 1.1;
+  --text-page-title-desktop: 3.75rem;
+  --text-page-title-desktop--line-height: 1.08;
+
+  --text-section-heading: 1.25rem;
+  --text-section-heading--line-height: 1.3;
+  --text-section-heading-tablet: 1.5rem;
+  --text-section-heading-tablet--line-height: 1.25;
+  --text-section-heading-desktop: 1.875rem;
+  --text-section-heading-desktop--line-height: 1.2;
+
+  --text-card-title: 1.125rem;
+  --text-card-title--line-height: 1.3;
+  --text-card-title-desktop: 1.25rem;
+  --text-card-title-desktop--line-height: 1.3;
+
+  --text-body: 1rem;
+  --text-body--line-height: 1.6;
+  --text-body-desktop: 1.125rem;
+  --text-body-desktop--line-height: 1.6;
+
+  --text-body-small: 0.875rem;
+  --text-body-small--line-height: 1.55;
+
+  --text-eyebrow: 0.75rem;
+  --text-eyebrow--line-height: 1.4;
+  --text-eyebrow-desktop: 0.875rem;
+  --text-eyebrow-desktop--line-height: 1.4;
+
+  --text-nav: 0.875rem;
+  --text-nav--line-height: 1.4;
+
+  --text-button: 0.875rem;
+  --text-button--line-height: 1;
+
+  --text-caption: 0.75rem;
+  --text-caption--line-height: 1.5;
+
+  --text-quote: 1.25rem;
+  --text-quote--line-height: 1.4;
+  --text-quote-tablet: 1.5rem;
+  --text-quote-tablet--line-height: 1.35;
+  --text-quote-desktop: 1.875rem;
+  --text-quote-desktop--line-height: 1.3;
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
 }

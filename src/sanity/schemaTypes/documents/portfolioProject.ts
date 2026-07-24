@@ -1,0 +1,172 @@
+import { defineField, defineType } from "sanity";
+
+// Mirrors PortfolioProject in types.ts field-for-field — see CMS_MIGRATION.md.
+export default defineType({
+  name: "portfolioProject",
+  title: "Portfolio Project",
+  type: "document",
+  fields: [
+    defineField({ name: "title", title: "Title", type: "string", validation: (r) => r.required() }),
+    defineField({
+      name: "slug",
+      title: "Slug",
+      type: "slug",
+      options: { source: "title" },
+      validation: (r) => r.required(),
+    }),
+    defineField({
+      name: "status",
+      title: "Status",
+      type: "string",
+      options: { list: ["draft", "published"] },
+      initialValue: "draft",
+      validation: (r) => r.required(),
+    }),
+    defineField({ name: "featured", title: "Featured", type: "boolean", initialValue: false }),
+    defineField({ name: "heroMedia", title: "Hero Media", type: "mediaAsset", validation: (r) => r.required() }),
+    defineField({
+      name: "disciplines",
+      title: "Disciplines",
+      type: "array",
+      of: [{ type: "string" }],
+      options: {
+        list: ["photography", "videography", "graphic-design", "branding", "content-creation", "talent-management", "production"],
+      },
+    }),
+    defineField({
+      name: "categories",
+      title: "Categories",
+      type: "array",
+      of: [{ type: "reference", to: [{ type: "portfolioCategory" }] }],
+    }),
+    defineField({
+      name: "collections",
+      title: "Collections / Series",
+      type: "array",
+      of: [{ type: "reference", to: [{ type: "portfolioCollection" }] }],
+    }),
+    defineField({ name: "seriesOrder", title: "Series Order", type: "number", description: "Position within an ordered Collection/Series; leave blank otherwise." }),
+    defineField({ name: "client", title: "Client", type: "string", description: "Optional — only fill in when the client has given permission to be named." }),
+    defineField({ name: "year", title: "Year", type: "number" }),
+    defineField({ name: "location", title: "Location", type: "string" }),
+    defineField({ name: "servicesProvided", title: "Services Provided", type: "array", of: [{ type: "string" }] }),
+    defineField({ name: "equipmentUsed", title: "Equipment Used", type: "array", of: [{ type: "string" }] }),
+    defineField({
+      name: "collaborators",
+      title: "Collaborators",
+      type: "array",
+      of: [
+        {
+          type: "object",
+          name: "collaborator",
+          fields: [
+            defineField({ name: "name", title: "Name", type: "string" }),
+            defineField({ name: "role", title: "Role", type: "string", description: "e.g. Photographer, Stylist, Makeup Artist" }),
+          ],
+        },
+      ],
+    }),
+    defineField({ name: "story", title: "Project Story", type: "text", rows: 6, validation: (r) => r.required() }),
+    defineField({ name: "objective", title: "Project Objective", type: "text", rows: 3 }),
+    defineField({ name: "strategy", title: "Creative Strategy", type: "text", rows: 3 }),
+    defineField({ name: "challenges", title: "Challenges", type: "text", rows: 3 }),
+    defineField({ name: "solution", title: "Solution", type: "text", rows: 3 }),
+    defineField({ name: "process", title: "Creative Process", type: "text", rows: 3 }),
+    defineField({ name: "deliverables", title: "Deliverables", type: "array", of: [{ type: "string" }] }),
+    defineField({ name: "results", title: "Results & Impact", type: "text", rows: 3, description: "Optional." }),
+    defineField({
+      name: "awards",
+      title: "Awards",
+      type: "array",
+      of: [
+        {
+          type: "object",
+          name: "award",
+          fields: [
+            defineField({ name: "title", title: "Title", type: "string" }),
+            defineField({ name: "issuer", title: "Issuer", type: "string" }),
+            defineField({ name: "year", title: "Year", type: "number" }),
+          ],
+        },
+      ],
+    }),
+    defineField({
+      name: "publications",
+      title: "Publications",
+      type: "array",
+      of: [
+        {
+          type: "object",
+          name: "publication",
+          fields: [
+            defineField({ name: "name", title: "Name", type: "string" }),
+            defineField({ name: "url", title: "URL", type: "url" }),
+            defineField({ name: "year", title: "Year", type: "number" }),
+          ],
+        },
+      ],
+    }),
+    defineField({ name: "gallery", title: "Final Gallery", type: "array", of: [{ type: "galleryImage" }] }),
+    defineField({ name: "behindTheScenesGallery", title: "Behind the Scenes Gallery", type: "array", of: [{ type: "galleryImage" }] }),
+    defineField({
+      name: "beforeAfterGallery",
+      title: "Before & After Gallery",
+      type: "array",
+      of: [
+        {
+          type: "object",
+          name: "beforeAfterPair",
+          fields: [
+            defineField({ name: "before", title: "Before", type: "mediaAsset" }),
+            defineField({ name: "after", title: "After", type: "mediaAsset" }),
+            defineField({ name: "caption", title: "Caption", type: "string" }),
+          ],
+        },
+      ],
+    }),
+    defineField({ name: "videos", title: "Videos", type: "array", of: [{ type: "mediaAsset" }] }),
+    defineField({
+      name: "downloadableAssets",
+      title: "Downloadable Assets",
+      type: "array",
+      of: [
+        {
+          type: "object",
+          name: "downloadableAsset",
+          fields: [
+            defineField({ name: "label", title: "Label", type: "string" }),
+            defineField({ name: "file", title: "File", type: "file" }),
+            defineField({ name: "fileType", title: "File Type", type: "string", description: "e.g. PDF, ZIP, Press Kit" }),
+          ],
+        },
+      ],
+    }),
+    defineField({
+      name: "testimonials",
+      title: "Testimonials",
+      type: "array",
+      of: [{ type: "reference", to: [{ type: "testimonial" }] }],
+    }),
+    defineField({
+      name: "relatedProjects",
+      title: "Related Projects",
+      type: "array",
+      of: [{ type: "reference", to: [{ type: "portfolioProject" }] }],
+    }),
+    defineField({
+      name: "relatedWorkshops",
+      title: "Related Workshops",
+      type: "array",
+      of: [{ type: "reference", to: [{ type: "workshop" }] }],
+    }),
+    defineField({
+      name: "isPasswordProtected",
+      title: "Client Access Only",
+      type: "boolean",
+      initialValue: false,
+      description: "Metadata only — no enforcement exists until authentication is built (ARCHITECTURE.md §4.3).",
+    }),
+    defineField({ name: "seo", title: "SEO", type: "seo" }),
+  ],
+  preview: { select: { title: "title", subtitle: "status" } },
+});
