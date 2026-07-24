@@ -706,11 +706,13 @@ any Launch Readiness sign-off is requested.
   (`git fsck --full --strict`, clean); reviewed the full `git add -A`
   diff for secrets before staging (confirmed `.env.local` and
   `.data/*.jsonl` correctly gitignored, zero secret-pattern matches
-  across all changes); committed the release snapshot (187 files/changes
-  — this was the repository's first real commit since the original
-  `create-next-app` scaffold; everything built across this entire
-  project had never been committed before) as `<PENDING — filled in
-  after commit>`; tagged `v1.3.0-complete`.
+  across all changes); committed the release snapshot (188
+  files/changes, commit `9780eb1` — this was the repository's first
+  real commit since the original `create-next-app` scaffold;
+  everything built across this entire project had never been committed
+  before) as **"Release snapshot: Version 1.3 complete — Authentication
+  & Client Portal"**; tagged `v1.3.0-complete` (annotated) on that
+  commit as the rollback checkpoint.
 
 ## Version 2.0 — Business Platform
 
