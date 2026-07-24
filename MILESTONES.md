@@ -675,17 +675,22 @@ specifically (not assumed from the first project's results).
 3. [ ] Verify the application functions correctly after rotation (a
        scoped re-check, not the full Phase F matrix).
 
-### Phase D — External Services ⏸ blocked on your decisions
-Per your own rule ("if a decision requires my approval... stop and
-ask instead of making assumptions"), I need before touching anything:
-- **SMTP provider** — my default suggestion is Resend, since it's
-  already integrated for this project's transactional email
-  (acknowledgement/admin-notification emails) and reusing it avoids a
-  second vendor relationship; your call to confirm or choose otherwise.
-- **CAPTCHA provider** — hCaptcha vs. Cloudflare Turnstile vs.
-  reCAPTCHA; no default assumed.
+### Phase D — External Services ⏸ partially decided, still blocked
+Decisions confirmed 2026-07-25:
+- **SMTP provider: Resend** — already integrated for this project's
+  transactional email; production auth emails (signup confirmation,
+  password reset) will use the same provider.
+- **CAPTCHA provider: Cloudflare Turnstile** — will protect
+  `/portal/signup` and `/portal/login`.
+
+Still needed before any configuration work starts:
 - **Production domain and DNS** — the actual domain, and who manages
-  DNS (needed for Site URL/Redirect URLs and Sanity CORS origins).
+  DNS (needed for Site URL/Redirect URLs, Sanity CORS origins, and
+  Resend's sending-domain verification).
+- Both integrations also depend on **Phase B** (the production Supabase
+  project) existing first — Resend plugs into Supabase Auth's SMTP
+  settings, Turnstile into Supabase Auth's CAPTCHA settings, both
+  per-project.
 
 ### Phase E — Recovery ⏸ blocked on Phase B
 Needs the production Supabase project to exist first (Dashboard →
