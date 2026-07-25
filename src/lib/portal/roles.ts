@@ -15,7 +15,7 @@ export const ROLE_SLUGS = [
 export type RoleSlug = (typeof ROLE_SLUGS)[number];
 
 // Not self-service — granting these requires an existing admin, done
-// from the Admin portal (src/app/portal/admin). Self-signup always
+// from the Admin Platform (src/app/admin/users). Self-signup always
 // starts as `client` only; `workshop_participant` is granted
 // automatically the first time a registration email matches the
 // account (see the dual-write in the workshop-registration API route).
@@ -64,10 +64,13 @@ export function isStaffOrAdmin(user: CurrentUser | null): boolean {
 
 // Where a user with a given role set should land after login — the
 // first matching entry wins, most-privileged first, so a Staff member
-// who is also a Client lands on the Staff view, not the Client one.
+// who is also a Client lands on the internal Admin Platform, not the
+// Client view. Staff/admin land on /admin (Task #85 — the operational
+// console at src/app/admin/** now supersedes the old /portal/staff and
+// /portal/admin pages) rather than the customer/partner-facing /portal.
 export function primaryPortalPath(roles: RoleSlug[]): string {
-  if (roles.includes("admin")) return "/portal/admin";
-  if (roles.includes("staff")) return "/portal/staff";
+  if (roles.includes("admin")) return "/admin";
+  if (roles.includes("staff")) return "/admin";
   if (roles.includes("vendor")) return "/portal/vendor";
   if (roles.includes("model")) return "/portal/model";
   if (roles.includes("workshop_participant")) return "/portal/workshops";

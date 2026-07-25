@@ -9,13 +9,18 @@ import { signOutAction } from "../login/actions";
 // fast, no DB query — see src/lib/supabase/middleware.ts). This layout
 // does the real check, including role lookup, since every dashboard page
 // needs the role list anyway to decide what to show.
+// Staff/admin both point at the same /admin destination (the internal
+// Admin Platform, src/app/admin/**, which superseded the old
+// /portal/staff and /portal/admin pages — see primaryPortalPath() in
+// src/lib/portal/roles.ts) — a dual staff+admin user only ever needs
+// the one link, deduplicated by href below.
 const NAV_ITEMS: { role: RoleSlug; label: string; href: string }[] = [
   { role: "client", label: "My Bookings", href: "/portal/client" },
   { role: "workshop_participant", label: "My Workshops", href: "/portal/workshops" },
   { role: "model", label: "My Profile", href: "/portal/model" },
   { role: "vendor", label: "Vendor", href: "/portal/vendor" },
-  { role: "staff", label: "Staff", href: "/portal/staff" },
-  { role: "admin", label: "Admin", href: "/portal/admin" },
+  { role: "staff", label: "Admin Platform", href: "/admin" },
+  { role: "admin", label: "Admin Platform", href: "/admin" },
 ];
 
 export default async function PortalDashboardLayout({
@@ -26,7 +31,10 @@ export default async function PortalDashboardLayout({
   const user = await getCurrentUser();
   if (!user) redirect("/portal/login");
 
-  const visibleNavItems = NAV_ITEMS.filter((item) => hasRole(user, item.role));
+  const matchingNavItems = NAV_ITEMS.filter((item) => hasRole(user, item.role));
+  const visibleNavItems = matchingNavItems.filter(
+    (item, index) => matchingNavItems.findIndex((other) => other.href === item.href) === index
+  );
 
   return (
     <div className="min-h-screen flex flex-col">
