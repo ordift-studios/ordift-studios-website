@@ -10,6 +10,14 @@ Architectural reasoning behind each version's sequencing lives in
 ordering seems surprising (e.g. why CRM/Client Accounts wait for a real
 database).
 
+**Versioning policy (effective 2026-07-26, v1.0.0 forward):** every feature
+belongs to a semantic version; no untagged production releases. Everything
+in this document before "v1.0.0 — Ordift Studios Platform Foundation" below
+is preserved as **Internal Development History** — informal milestone labels
+used to track scope during development, never git tags, superseded by the
+official sequence starting at v1.0.0. Full policy statement in `VERSIONS.md`;
+release detail in `RELEASE_NOTES.md`; dated log in `CHANGELOG.md`.
+
 ## Recommended Build Order (confirmed 2026-07-23)
 
 1. [x] Portfolio
@@ -25,6 +33,100 @@ database).
 **Permanent engineering principle (adopted 2026-07-24, applies from here forward):** no feature ships unless it has a clear place in the long-term Ordift ecosystem — CMS, Client Portal, CRM, Academy, Talent Platform, Marketplace, or the future mobile app. If it can't eventually connect to one of those, that's a reason to challenge it before building, not after.
 
 ---
+
+## v1.0.0 — Ordift Studios Platform Foundation ✅ RELEASED
+
+**Released:** 2026-07-26. Git tag `v1.0.0`, the platform's permanent
+rollback point. Full detail in `RELEASE_NOTES.md`; dated summary in
+`CHANGELOG.md`.
+
+The first official, git-tagged release — consolidates the entire
+Internal Development History below (brand/content site, Sanity CMS,
+Supabase authentication, Client Portal) plus this session's Admin
+Platform Tier 1 build into one verified, frozen baseline.
+
+**Frozen as of this release — the project's stable baseline going
+forward, per explicit instruction. Do not refactor or redesign these
+without a genuine architectural need from a future feature:**
+- Infrastructure (Next.js/Vercel deployment workflow)
+- Authentication (Supabase Auth, six-role system)
+- Supabase schema (migrations `0001`–`0005`)
+- Database migration workflow (staging-first, immutable, never edited
+  after applying)
+- RLS policies
+- Business-scoped architecture (`business_id` on every relevant table)
+- Feature Flag system (both the Vercel-env-var and DB-backed layers)
+- Activity Log
+- Deployment workflow
+- Admin Platform Tier 1 (`/admin/**`)
+
+**Every feature from here forward reuses this foundation rather than
+replacing it.** New modules are new versions (see roadmap below), not
+architectural changes to the above.
+
+### Roadmap from v1.0.0 (illustrative, not a fixed contract)
+
+- **v1.1.x — Client Experience**
+- **v1.2.x — Scheduling & Calendar**
+- **v1.3.x — CRM & Client Timeline**
+- **v1.4.x — Finance & Invoicing**
+- **v1.5.x — AI Assistant**
+- **v2.0.x — Multi-business Ecosystem**
+
+The pre-v1.0.0 "Version 2.0 — Business Platform" / "2.5 — Talent" /
+"3.0 — Commerce" / "4.0 — Ecosystem" headings further down this document
+are retained for historical continuity (see the note above each) but no
+longer reflect the active roadmap — their still-relevant scope items
+carry forward into the numbered versions above as real work begins on
+each.
+
+---
+
+## Internal Development History (pre-release, informal milestones — not git tags)
+
+Everything below predates this project's formal semantic-versioning
+policy. The version numbers used here ("1.0" through "4.0") were informal
+labels for tracking scope during development — never git tags, and fully
+superseded by the v1.0.0+ sequence above. Preserved for historical
+continuity, per explicit instruction not to lose this record.
+
+### Admin Platform Tier 1 — 2026-07-25 ✅ complete (folded into v1.0.0)
+
+Internal operational console at `/admin/**`, built module by module (10
+atomic commits, each independently verified against staging before
+merging), superseding the old `/portal/staff` and `/portal/admin` pages.
+Full module-by-module breakdown in `CHANGELOG.md`'s "Admin Platform Tier
+1" entry. Summary:
+
+- [x] Route shell, auth + role gate, role-filtered nav
+- [x] Overview (live stats + recent-activity feed)
+- [x] Enquiries CRM (stage/search filtering, detail page, staff notes)
+- [x] Bookings (registration/payment status management)
+- [x] Content hub (curated Sanity Studio deep links)
+- [x] Users & Roles (evolved from `/portal/admin`, now activity-logged)
+- [x] Feature Flags (admin-only CRUD, business-scoped, instant-toggle —
+      deliberately separate from the Vercel-env-var infra flags)
+- [x] Activity Log (append-only audit trail, no update/delete policy)
+- [x] Settings (read-only status: legal/forms flags, environment, site
+      settings)
+- [x] Migrations `0004_admin_platform.sql` (new tables + a real grant-gap
+      fix for `enquiries`/`workshop_registrations` UPDATE) and
+      `0005_admin_platform_grant_fix.sql` (execute-grant fix for
+      `ordift_studios_business_id()`), both staged-then-production
+- [x] `primaryPortalPath()` updated so staff/admin land on `/admin`;
+      old `/portal/staff` and `/portal/admin` pages retired
+
+### Infrastructure Phase 1 — 2026-07-25 ✅ complete and frozen (folded into v1.0.0)
+
+Post-Auth infrastructure cleanup, run before Admin Platform Tier 1
+began: verified and deleted an accidental duplicate Vercel project;
+decoupled real email sending from legal-page approval via a new
+`FORMS_SENDING_ENABLED` flag (kept deliberately separate from
+`LEGAL_PAGES_APPROVED`, which gates only legal-page publishing);
+reviewed and corrected Sanity production dataset visibility (set to
+private); fixed Sanity Studio CORS for the production origin. Declared
+frozen alongside Admin Platform Tier 1 — see the freeze list under
+v1.0.0 above.
 
 ## Version 1.0 — Foundation ✅ complete
 
@@ -795,37 +897,58 @@ any Launch Readiness sign-off is requested.
   independently verified via a direct request returning `401
   Unregistered API key`.
 
-## Version 2.0 — Business Platform
+## Version 2.0 — Business Platform *(superseded — see below)*
 
-- [ ] CRM (lead lifecycle: New Lead → Contacted → Discovery Meeting → Quotation Sent → Negotiation → Booked → In Progress → Delivered → Completed → Repeat Client → Referral)
-- [ ] Admin dashboard
-- [ ] Team management (multiple administrators — §4.3)
-- [ ] Analytics dashboard
-- [ ] Project management
-- [ ] Internal operations tooling
-- [ ] Blocked on: real database (§4.4) + auth (§4.3) — this is the version where those two decisions get made and built
+**Historical label, retired.** Admin dashboard, team management, and
+CRM foundations (lead-lifecycle `crm_stage` enum, Enquiries CRM,
+Users & Roles, Activity Log) shipped as part of **v1.0.0**'s Admin
+Platform Tier 1. Remaining scope — deeper CRM/client-timeline features,
+analytics dashboard, project management, internal ops tooling — carries
+forward into **v1.3.x — CRM & Client Timeline** under the active v1.0.0+
+roadmap.
 
-## Version 2.5 — Talent
+- [x] Admin dashboard — shipped in v1.0.0 (Admin Platform Tier 1)
+- [x] CRM foundation (lead lifecycle, Enquiries CRM) — shipped in v1.0.0
+- [x] Team management (multiple administrators) — shipped in v1.0.0 (Users & Roles)
+- [ ] Analytics dashboard → v1.3.x
+- [ ] Deeper CRM / client timeline → v1.3.x
+- [ ] Internal operations tooling → v1.3.x or later, as real requirements emerge
+
+## Version 2.5 — Talent *(superseded — see below)*
+
+**Historical label, retired.** Not yet mapped to a version under the
+active v1.0.0+ roadmap — will be scheduled once real requirements exist.
+Plan Part G already flags talent applications as Tier 2 (sensitive
+documents — CVs, ID, consent info) requiring a secure-storage evaluation
+before build, independent of sequencing.
 
 - [ ] Talent profiles, applications, bookings, casting
 - [ ] Talent portfolio management
 - [ ] Talent dashboard
-- [ ] Note: Plan Part G already flags talent applications as Tier 2 (sensitive documents — CVs, ID, consent info) requiring a secure-storage evaluation before build, independent of this roadmap's sequencing
 
-## Version 3.0 — Commerce
+## Version 3.0 — Commerce *(superseded — see below)*
+
+**Historical label, retired.** Payment provider integration is closest
+in spirit to **v1.4.x — Finance & Invoicing** under the active roadmap;
+the online-store/commerce scope itself isn't yet mapped to a version.
 
 - [ ] Online store, digital products (LUTs, presets, courses)
 - [ ] Merchandise, prints, licensing
-- [ ] Payment provider integration (first real online payment anywhere in the system — workshops stay manual-confirmation until/unless this changes that)
+- [ ] Payment provider integration (first real online payment anywhere in the system — workshops stay manual-confirmation until/unless this changes that) → v1.4.x
 
-## Version 4.0 — Ecosystem
+## Version 4.0 — Ecosystem *(superseded — see below)*
+
+**Historical label, retired.** Multi-business/multi-language items map
+to **v2.0.x — Multi-business Ecosystem** under the active roadmap; the
+remaining items (mobile app, AI features, community/memberships) aren't
+yet mapped to a version.
 
 - [ ] Ordift Academy (full platform)
 - [ ] Mobile app
-- [ ] AI features
+- [ ] AI features → close in spirit to v1.5.x — AI Assistant
 - [ ] Client mobile portal
 - [ ] Community, memberships
-- [ ] Multi-language support, international expansion (§4.1)
+- [ ] Multi-language support, international expansion (§4.1) → v2.0.x
 
 ---
 

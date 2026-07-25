@@ -1,13 +1,116 @@
 # Ordift Studios — Changelog
 
-Internal release log. Each entry is a "tag" in the sense this project
-uses versioning (see `MILESTONES.md` for full detail on every item
-below) — not a `git tag`, since this repository hasn't been committing
-work as it lands (only the original `create-next-app` scaffold commit
-exists). If you want an actual git tag/commit marking this point, say so
-explicitly — it means deciding what in the current, largely uncommitted
-working tree to include, which is a decision for you, not something to
-do silently as part of a docs update.
+Official releases, each git-tagged and semantically versioned, starting
+from **v1.0.0** (2026-07-26). Each entry summarizes the corresponding
+`RELEASE_NOTES.md` section — read that for full detail. Versioning
+policy from v1.0.0 forward: every feature belongs to a semantic version;
+no untagged production releases (see `MILESTONES.md` for the roadmap and
+`VERSIONS.md` for the policy statement).
+
+Everything before v1.0.0 was built and iterated without formal git tags
+or semver. That work is preserved below under "Internal Development
+History" for continuity — the version numbers used there ("1.0" through
+"1.3.0") were informal internal milestone labels only, never git tags,
+and are superseded by the official sequence starting at v1.0.0.
+
+## v1.0.0 — Ordift Studios Platform Foundation — 2026-07-26 ✅ RELEASED
+
+The first official, git-tagged production release. Consolidates every
+system built to date — the brand/content site, Supabase authentication
+and Client Portal, Sanity CMS, and the internal Admin Platform (Tier 1)
+— into one verified, frozen baseline. Full detail in `RELEASE_NOTES.md`.
+
+**Delivered:**
+- Production deployment on Vercel, smoke-tested end to end: public
+  site, `/admin`, authentication, role-based access control, Client
+  Portal, and Sanity Studio all verified live with zero console or
+  server errors and no regressions.
+- Supabase schema through migration `0005`, RLS-enforced on every
+  table, business-scoped (`business_id`) for future multi-business
+  support — both staging and production independently verified.
+- Admin Platform Tier 1 (`/admin/**`): Overview, Enquiries CRM,
+  Bookings, Content hub, Users & Roles, Feature Flags, Activity log,
+  Settings — supersedes the old `/portal/staff` and `/portal/admin`
+  pages, which have been retired.
+- Two deliberately separate feature-flag systems: Vercel env vars
+  (`LEGAL_PAGES_APPROVED`, `FORMS_SENDING_ENABLED`) for infra-critical,
+  deploy-gated toggles; a DB-backed `feature_flags` table for instant,
+  business-scoped toggles.
+- Infrastructure Phase 1 declared frozen: authentication, Supabase
+  schema, migration history, RLS policies, feature flag system,
+  business-scoped architecture, and deployment workflow are now the
+  project's stable baseline (see `MILESTONES.md`).
+
+**Known limitations (non-blocking, tracked):**
+- Real email sending (`FORMS_SENDING_ENABLED`) and legal-page
+  publishing (`LEGAL_PAGES_APPROVED`) remain off pending Resend setup
+  and approved legal copy — bookings show "Bookings will open soon" by
+  design, not a bug.
+- `ordiftstudios.com` DNS/domain connection to Vercel not yet done.
+- Google Sheets/Cloud data-durability integration (Phase 3 of the
+  original production plan) not started.
+- Two unused Sanity API tokens from earlier setup not yet cleaned up.
+
+**Versioning policy from this release forward:** every feature belongs
+to a semantic version; no untagged production releases. Planned roadmap
+(illustrative, not a fixed contract): v1.1.x Client Experience, v1.2.x
+Scheduling & Calendar, v1.3.x CRM & Client Timeline, v1.4.x Finance &
+Invoicing, v1.5.x AI Assistant, v2.0.x Multi-business Ecosystem.
+
+---
+
+## Internal Development History (pre-release, informal milestones — not git tags)
+
+Everything below was built and verified before this project adopted
+formal git-tagged semantic versioning. The version numbers used here
+("1.0" through "1.3.0", plus the unnumbered phases) were internal labels
+for tracking scope during development — never git tags, and not part of
+the official v1.0.0+ sequence above. Preserved here for historical
+continuity, per explicit instruction not to lose this record.
+
+### Admin Platform Tier 1 — 2026-07-25 ✅ complete (folded into v1.0.0)
+
+Internal operational console at `/admin/**`, built module by module (10
+atomic commits, each independently verified against staging before
+merging), superseding the old `/portal/staff` and `/portal/admin` pages.
+
+**Delivered:**
+- Route shell with auth + role gate (`layout.tsx`), nav filtered by
+  role (staff/admin see the same 8 modules; Users & Roles, Feature
+  Flags, and Settings are admin-only).
+- **Overview** — live counts (enquiries, model/vendor profiles, open
+  workshops) plus a recent-activity feed.
+- **Enquiries CRM** — stage + search filtering, per-enquiry detail page
+  with stage-change and staff notes (append-only `enquiry_notes` table).
+- **Bookings** — workshop registration list/detail with registration-
+  and payment-status management, reusing the existing status vocabulary
+  verbatim (no new terms invented).
+- **Content hub** — curated deep links into Sanity Studio's existing
+  `/studio/structure/<typeName>` URL scheme, grouped by content area.
+- **Users & Roles** — evolved from the old `/portal/admin` page: grant/
+  revoke roles, with self-revoke-of-own-admin protection preserved and
+  every change logged to the activity log.
+- **Feature Flags** — admin-only CRUD UI for the new `feature_flags`
+  table (business-scoped, instant-toggle), explicitly kept separate
+  from the Vercel-env-var infra flags (see Settings).
+- **Activity log** — `activity_log` table (staff/admin insert+read
+  only, no update/delete — audit-trail immutability by design), written
+  via a single `logActivity()` helper from every mutating action above.
+- **Settings** — read-only status page for `LEGAL_PAGES_APPROVED`,
+  `FORMS_SENDING_ENABLED`, environment, and Sanity site settings.
+- **Database**: migration `0004_admin_platform.sql` (adds `business_id`
+  to `user_roles`; creates `enquiry_notes`, `feature_flags`,
+  `activity_log`; fixes a pre-existing grant gap — `enquiries` and
+  `workshop_registrations` had "staff update" RLS policies since `0001`
+  but no table-level `UPDATE` grant, so staff literally could not update
+  either table until this migration) and `0005_admin_platform_grant_fix.sql`
+  (grants `EXECUTE` on `ordift_studios_business_id()` to `authenticated`,
+  fixing "permission denied for function" on staff/admin inserts).
+
+**Verification:** both migrations applied to staging first, fully
+verified, then promoted identically to production; every module
+exercised live against staging with real test data, cleaned up before
+each commit; full local build/lint/typecheck pass before deploy.
 
 ## Version 1.3.0 — Authentication & Client Portal — 2026-07-24 ✅ COMPLETE
 
