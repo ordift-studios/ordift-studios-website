@@ -16,6 +16,7 @@ import {
   formatDateRange,
   isMultiDay,
 } from "@/lib/content/workshopHelpers";
+import { visitorFormsOpen } from "@/lib/shared/env";
 import RegistrationForm from "./RegistrationForm";
 
 export async function generateStaticParams() {
@@ -301,7 +302,7 @@ export default async function WorkshopDetailPage({
               <p className="font-serif font-medium text-card-title text-ordift-ink mb-1">
                 Register
               </p>
-              {workshop.status === "open" ? (
+              {workshop.status === "open" && visitorFormsOpen() ? (
                 <>
                   <p className="font-sans text-body-small text-ordift-ink-muted mb-5">
                     Spaces are limited. If the workshop is full, you&apos;ll be added to a
@@ -311,6 +312,7 @@ export default async function WorkshopDetailPage({
                 </>
               ) : (
                 <p className="font-sans text-body-small text-ordift-ink-muted">
+                  {workshop.status === "open" && !visitorFormsOpen() && "Bookings will open soon."}
                   {workshop.status === "coming-soon" &&
                     "Registration isn't open yet for this workshop. Check back soon."}
                   {workshop.status === "full" &&

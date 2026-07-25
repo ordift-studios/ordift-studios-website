@@ -4,6 +4,7 @@ import Footer from "@/components/Footer";
 import BookingForm from "./BookingForm";
 import { contentRepository } from "@/lib/content";
 import { whatsAppLink, formattedWhatsAppNumber } from "@/lib/whatsapp";
+import { visitorFormsOpen } from "@/lib/shared/env";
 
 export const metadata: Metadata = {
   title: "Book a Service — Ordift Studios",
@@ -37,7 +38,19 @@ export default async function BookPage({
       </section>
 
       <section className="bg-white px-4 sm:px-8 py-14 sm:py-20">
-        <BookingForm initialService={service} />
+        {visitorFormsOpen() ? (
+          <BookingForm initialService={service} />
+        ) : (
+          <div className="max-w-2xl mx-auto text-center">
+            <p className="font-serif font-medium text-card-title text-ordift-ink mb-3">
+              Bookings will open soon.
+            </p>
+            <p className="font-sans text-body text-ordift-ink-muted">
+              We&apos;re not yet accepting enquiries through this form. In the meantime, reach
+              us directly using the details below.
+            </p>
+          </div>
+        )}
       </section>
 
       <section className="bg-ordift-offwhite px-4 sm:px-8 py-10 text-center">
