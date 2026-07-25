@@ -8,6 +8,8 @@ import { createClient } from "@/lib/supabase/server";
 export type PortalEnquiry = {
   id: string;
   referenceNumber: string;
+  email: string;
+  fullName: string;
   service: string;
   crmStage: string;
   paymentStatus: string | null;
@@ -20,7 +22,9 @@ export async function getEnquiriesForUser(userId: string): Promise<PortalEnquiry
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("enquiries")
-    .select("id, reference_number, service, crm_stage, payment_status, amount_due, amount_paid, submitted_at")
+    .select(
+      "id, reference_number, email, full_name, service, crm_stage, payment_status, amount_due, amount_paid, submitted_at"
+    )
     .eq("user_id", userId)
     .order("submitted_at", { ascending: false });
 
@@ -32,6 +36,8 @@ export async function getEnquiriesForUser(userId: string): Promise<PortalEnquiry
   return (data ?? []).map((row) => ({
     id: row.id,
     referenceNumber: row.reference_number,
+    email: row.email,
+    fullName: row.full_name,
     service: row.service,
     crmStage: row.crm_stage,
     paymentStatus: row.payment_status,
@@ -97,7 +103,9 @@ export async function getAllEnquiries(): Promise<PortalEnquiry[]> {
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("enquiries")
-    .select("id, reference_number, service, crm_stage, payment_status, amount_due, amount_paid, submitted_at")
+    .select(
+      "id, reference_number, email, full_name, service, crm_stage, payment_status, amount_due, amount_paid, submitted_at"
+    )
     .order("submitted_at", { ascending: false })
     .limit(STAFF_VIEW_LIMIT);
 
@@ -109,6 +117,8 @@ export async function getAllEnquiries(): Promise<PortalEnquiry[]> {
   return (data ?? []).map((row) => ({
     id: row.id,
     referenceNumber: row.reference_number,
+    email: row.email,
+    fullName: row.full_name,
     service: row.service,
     crmStage: row.crm_stage,
     paymentStatus: row.payment_status,
