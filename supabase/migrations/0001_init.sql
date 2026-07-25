@@ -71,6 +71,33 @@
 --      via the Auth trigger (as postgres, via SECURITY DEFINER) or a
 --      trusted admin/service_role operation.
 --
+-- Hardening pass 4 (2026-07-25, before this file's first run against
+-- the production project — that project was created with "Automatically
+-- expose new tables" disabled, unlike the staging project this file was
+-- originally verified against):
+--   9. This file previously relied, without stating it, on Supabase's
+--      default-privilege behavior (`alter default privileges ... grant
+--      select/insert/update/delete on tables to anon, authenticated,
+--      service_role`) that fires automatically when "Automatically
+--      expose new tables" is enabled — the same mechanism already
+--      identified as the root cause of the function-grant gap fixed in
+--      0002_security_advisor_remediation.sql, but that finding was
+--      scoped to functions at the time; it applies equally to tables.
+--      With that setting disabled on production, NO role gets any
+--      table-level privilege on a newly created table except the owner
+--      — RLS policies alone are not enough, Postgres requires the base
+--      GRANT too. Added an explicit, audited grants section below,
+--      built from grep’ing every `.from("...")` call site in `src/`
+--      (not assumed) — see the grant matrix in the chat response that
+--      shipped this pass for the full table. Schema-level `USAGE ON
+--      SCHEMA public` is also granted explicitly now, for the same
+--      "don't assume defaults" reason, even though that one is
+--      typically project-wide rather than gated by this toggle.
+--      `anon` gets zero table grants anywhere — confirmed via the same
+--      audit that every enquiry/workshop-registration write goes
+--      through the service-role admin client
+--      (`src/lib/supabase/dualWrite.ts`), never a public/anon-key path.
+--
 -- Design principles (per explicit instruction — "schema so future
 -- features can be added without requiring a database redesign"):
 --   1. UUID primary keys everywhere — portable across environments and a
@@ -104,6 +131,14 @@ begin;
 -- Extensions
 -- ============================================================
 create extension if not exists "pgcrypto";
+
+-- ============================================================
+-- Schema usage — explicit, not assumed (see Hardening pass 4 note
+-- above). USAGE on a schema is required before any table/function
+-- grant within it means anything; this is normally a Supabase
+-- project-wide default, but this migration no longer assumes that.
+-- ============================================================
+grant usage on schema public to authenticated, service_role;
 
 -- ============================================================
 -- Businesses (multi-business readiness)
@@ -457,6 +492,67 @@ create policy "staff_details: read own or admin" on public.staff_details
   for select
   to authenticated
   using ((select auth.uid()) = id or (select public.has_role('admin')));
+
+-- ============================================================
+-- Table-level grants — explicit, audited against every actual
+-- `.from("...")` call site in src/ (see Hardening pass 4 note at the
+-- top of this file), not assumed from Supabase's default-privilege
+-- behavior. RLS policies above answer "which row"; these answer
+-- "whether this role can touch the table at all" — Postgres requires
+-- both. `anon` receives no grant on any table in this file: every
+-- enquiry/workshop-registration write goes through the service-role
+-- admin client (src/lib/supabase/dualWrite.ts), confirmed by the same
+-- audit, never a public/anon-key path.
+--
+-- businesses / staff_details: intentionally NO grants to any role.
+-- Nothing in the codebase queries either table directly today (the
+-- SECURITY DEFINER ordift_studios_business_id() function reads
+-- businesses as its owner, which needs no grant). Their RLS policies
+-- stay defined and ready; add the matching grant when a real feature
+-- needs one, not preemptively.
+-- ============================================================
+
+-- profiles: SELECT for authenticated (own row, via "profiles: read
+-- own"); UPDATE is already column-scoped further up this file
+-- (full_name, phone, avatar_url only) — not repeated here.
+grant select on public.profiles to authenticated;
+grant select on public.profiles to service_role;
+
+-- roles: reference data. authenticated needs it because
+-- user_roles.select("roles(slug)") is an embedded/joined select —
+-- PostgREST resolves that under the querying role's own grants, not
+-- just user_roles'. service_role reads it directly (signup, admin
+-- actions, dual-write role lookups).
+grant select on public.roles to authenticated;
+grant select on public.roles to service_role;
+
+-- user_roles: authenticated only ever reads its own rows (roles.ts,
+-- login/actions.ts). All writes (grant/revoke role, signup's initial
+-- client-role insert, dual-write's workshop_participant auto-grant)
+-- go through service_role — UPDATE is included because the app's
+-- upsert() calls compile to INSERT ... ON CONFLICT DO UPDATE, which
+-- needs both privileges regardless of which branch fires.
+grant select on public.user_roles to authenticated;
+grant select, insert, update, delete on public.user_roles to service_role;
+
+-- enquiries / workshop_registrations: authenticated SELECT covers both
+-- "read own" (client/participant) and "read all" (staff/admin) — the
+-- same grant, RLS decides row scope. service_role gets INSERT only,
+-- matching the dual-write's actual write pattern; nothing currently
+-- reads these back via service_role.
+grant select on public.enquiries to authenticated;
+grant insert on public.enquiries to service_role;
+grant select on public.workshop_registrations to authenticated;
+grant insert on public.workshop_registrations to service_role;
+
+-- model_profiles / vendor_profiles: authenticated SELECT for the
+-- account holder's own status page. No insert/update grant for any
+-- role — nothing in the codebase creates or edits these rows yet
+-- (matches their existing "scaffolded only" status elsewhere in this
+-- file and in MILESTONES.md); add write grants when a real workflow
+-- is built, not before.
+grant select on public.model_profiles to authenticated;
+grant select on public.vendor_profiles to authenticated;
 
 -- ============================================================
 -- Keep profiles.updated_at current

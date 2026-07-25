@@ -657,23 +657,80 @@ make that call silently.
        `DEPLOYMENT.md`, `MILESTONES.md`, `RELEASE_NOTES.md` all updated
        and consistent as of the checkpoint commit.
 
-### Phase B — Production Infrastructure ⏸ blocked on you
-Cannot proceed until you create the production Supabase project (same
-ownership rule as every other account in this project — I can't create
-it). Once it exists, my steps: configure env vars, run all 3 migrations
-in order, verify Security Advisor clean, re-run the full live
-verification matrix from V1.3 Phase 4 against the new project
-specifically (not assumed from the first project's results).
+### Phase B — Production Infrastructure ✅ complete
+Production Supabase project created by you (`goxuyooxrekzstssjgly`), with
+"Automatically expose new tables" disabled — this required auditing every
+`.from()` call site in `src/` and rewriting `0001_init.sql`'s grants to be
+fully explicit least-privilege (see the migration's Hardening pass 4
+header). All three migrations run successfully in order, confirmed by
+independent re-check (Dashboard → Database → Functions/Advisors), not
+just your report — one discrepancy was caught this way (Migration 0003
+initially hadn't actually run despite an early "success" report; you
+re-ran it and it then verified correctly).
 
-### Phase C — Credential Security ⏸ blocked on you (timing decision)
-1. [ ] Rotate the Supabase Secret Key (flagged compromised since it was
-       visible during initial setup) — you perform the rotation in the
-       Supabase Dashboard (Project Settings → API), then share the new
-       key the same one-credential-at-a-time way as the original setup.
-2. [ ] Update `.env.local` and every deployment-platform environment
-       variable that depends on it.
-3. [ ] Verify the application functions correctly after rotation (a
-       scoped re-check, not the full Phase F matrix).
+**Live E2E verification matrix — all passed (2026-07-25):**
+- Security Advisor: 0 errors / 0 warnings / 0 info, confirmed via a
+  forced re-lint (not cached).
+- Signup → `handle_new_user()` trigger → `profiles` row created
+  transactionally, `business_id` correctly defaulted via
+  `ordift_studios_business_id()`, `client` role auto-granted.
+- Login → RLS-scoped portal read (own data only).
+- Enquiry submissions: exact-match email, case-variant email (both
+  correctly linked to the account via `find_user_id_by_email`), and
+  guest (correctly unlinked, `user_id` null).
+- Workshop registration: matching-account (auto-granted
+  `workshop_participant` role) and guest (no role granted) — both
+  correctly waitlisted against the pre-existing `[SAMPLE]` workshop.
+- Duplicate-submission idempotency: two identical requests with the same
+  client-generated key returned the identical reference number, no
+  second row created.
+- Client RLS boundary: test account saw only its own 2 linked enquiries,
+  not the guest submission.
+- Staff RLS boundary: temporary `staff` role grant (via a disposable
+  script, immediately revoked after) showed all 4 enquiries and both
+  workshop registrations — confirming role checks read `user_roles`
+  live, not a stale session claim.
+- Anonymous protection: raw REST calls with the publishable key and no
+  Authorization header returned `401 permission denied` on all 9 tables
+  (`profiles`, `enquiries`, `workshop_registrations`, `user_roles`,
+  `roles`, `businesses`, `model_profiles`, `vendor_profiles`,
+  `staff_details`) — anon has zero table-level grants, not just an
+  RLS-empty-result, with real test data present at the time.
+- `.env.local` restored to staging credentials afterward; the temporary
+  staging-backup file and every disposable diagnostic/temp-grant script
+  used during this pass have been deleted.
+
+All test data cleanup confirmed complete (2026-07-25): the test auth
+account, profile, and role grants were deleted via the Admin API; the 4
+test enquiries and 2 test workshop registrations were removed by you via
+the SQL Editor (`service_role` has no `DELETE` grant on those tables by
+design). Independently re-verified afterward with a read-only `count(*)`
+query run as `postgres` in the SQL Editor — zero rows remaining across
+both tables and zero remaining trace of the test auth user.
+
+### Phase C — Credential Security ✅ complete
+1. [x] Rotated the Supabase Secret Key (the original one had been
+       visible during initial setup) — you created a new key
+       (`os_production_2026_07`) in the Supabase Dashboard using the new
+       API-key system's multi-key support, so the old key kept working
+       during the transition (zero downtime).
+2. [x] Inventoried every location depending on the key before touching
+       anything: no Vercel/hosting deployment exists yet (`DEPLOYMENT.md`
+       confirms "not yet deployed anywhere"), no GitHub Actions/CI, no
+       git remote configured. Staging is a fully separate Supabase
+       project with its own independent key, unaffected by this
+       rotation. The only real location was `.env.production.local` on
+       this machine — updated, and confirmed never committed to git.
+   [x] `.env.local` was not applicable — it holds staging credentials,
+       not production's.
+3. [x] Verified the new key against production (Admin API call +
+       `SECURITY DEFINER` RPC call) before revoking the old one.
+4. [x] Old key (`default`, `sb_secret_rdiBG...`) revoked in the
+       Dashboard after the new key was confirmed working.
+5. [x] Post-revocation verification: a direct request using the old key
+       against the GoTrue admin endpoint returned `401 Unregistered API
+       key`; a request using the new key succeeded — confirming the old
+       key is fully retired and the app is unaffected.
 
 ### Phase D — External Services ⏸ partially decided, still blocked
 Decisions confirmed 2026-07-25:
@@ -718,6 +775,25 @@ any Launch Readiness sign-off is requested.
   before) as **"Release snapshot: Version 1.3 complete — Authentication
   & Client Portal"**; tagged `v1.3.0-complete` (annotated) on that
   commit as the rollback checkpoint.
+- **2026-07-25** — Phase B executed against the production Supabase
+  project (`goxuyooxrekzstssjgly`): all 3 migrations run and
+  independently re-verified, Security Advisor confirmed clean, and the
+  full live E2E matrix (signup/trigger, login/RLS, enquiries, workshop
+  registration + auto role grant, duplicate idempotency, client RLS,
+  staff RLS, anonymous-access protection) passed — see Phase B section
+  above for full detail. Test auth account/profile/roles cleaned up via
+  the Admin API; the 2 test enquiry rows and 2 test workshop-registration
+  rows were removed by you via the SQL Editor (service_role has no
+  DELETE grant on those tables by design) and independently
+  re-confirmed at zero. `.env.local` restored to staging.
+- **2026-07-25** — Phase C executed: production Secret Key rotated
+  zero-downtime using Supabase's multi-key support (new key created and
+  verified working before the old one was revoked). Full dependency
+  inventory confirmed the key's only real-world footprint was
+  `.env.production.local` — no Vercel/hosting deployment, CI pipeline,
+  or git remote exist yet for this project. Old key's revocation
+  independently verified via a direct request returning `401
+  Unregistered API key`.
 
 ## Version 2.0 — Business Platform
 
