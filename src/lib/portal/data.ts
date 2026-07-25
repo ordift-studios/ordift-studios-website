@@ -50,6 +50,8 @@ export async function getEnquiriesForUser(userId: string): Promise<PortalEnquiry
 export type PortalWorkshopRegistration = {
   id: string;
   registrationReference: string;
+  email: string;
+  fullName: string;
   workshopSlug: string;
   workshopTitle: string;
   registrationStatus: string;
@@ -67,7 +69,7 @@ export async function getWorkshopRegistrationsForUser(
   const { data, error } = await supabase
     .from("workshop_registrations")
     .select(
-      "id, registration_reference, workshop_slug, workshop_title, registration_status, waiting_list_position, payment_status, certificate_issued, certificate_url, registration_date"
+      "id, registration_reference, email, full_name, workshop_slug, workshop_title, registration_status, waiting_list_position, payment_status, certificate_issued, certificate_url, registration_date"
     )
     .eq("user_id", userId)
     .order("registration_date", { ascending: false });
@@ -80,6 +82,8 @@ export async function getWorkshopRegistrationsForUser(
   return (data ?? []).map((row) => ({
     id: row.id,
     registrationReference: row.registration_reference,
+    email: row.email,
+    fullName: row.full_name,
     workshopSlug: row.workshop_slug,
     workshopTitle: row.workshop_title,
     registrationStatus: row.registration_status,
@@ -133,7 +137,7 @@ export async function getAllWorkshopRegistrations(): Promise<PortalWorkshopRegis
   const { data, error } = await supabase
     .from("workshop_registrations")
     .select(
-      "id, registration_reference, workshop_slug, workshop_title, registration_status, waiting_list_position, payment_status, certificate_issued, certificate_url, registration_date"
+      "id, registration_reference, email, full_name, workshop_slug, workshop_title, registration_status, waiting_list_position, payment_status, certificate_issued, certificate_url, registration_date"
     )
     .order("registration_date", { ascending: false })
     .limit(STAFF_VIEW_LIMIT);
@@ -146,6 +150,8 @@ export async function getAllWorkshopRegistrations(): Promise<PortalWorkshopRegis
   return (data ?? []).map((row) => ({
     id: row.id,
     registrationReference: row.registration_reference,
+    email: row.email,
+    fullName: row.full_name,
     workshopSlug: row.workshop_slug,
     workshopTitle: row.workshop_title,
     registrationStatus: row.registration_status,
