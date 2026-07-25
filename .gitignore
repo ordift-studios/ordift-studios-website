@@ -36,6 +36,10 @@ yarn-error.log*
 # vercel
 .vercel
 
+# supabase CLI local link state (project ref + pooler connection string,
+# currently linked to production — never something to share/commit)
+supabase/.temp
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts
