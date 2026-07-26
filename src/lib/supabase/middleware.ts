@@ -56,14 +56,26 @@ export async function updateSession(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser();
 
-  // Both auth entry points must stay reachable without a session —
-  // signup was missing here (found during live functional verification,
-  // 2026-07-24): only /portal/login was exempt, so /portal/signup
-  // redirected an unauthenticated visitor straight to /portal/login,
-  // making self-service signup completely unreachable.
+  // Every unauthenticated auth entry point must stay reachable without a
+  // session — signup was missing here (found during live functional
+  // verification, 2026-07-24): only /portal/login was exempt, so
+  // /portal/signup redirected an unauthenticated visitor straight to
+  // /portal/login, making self-service signup completely unreachable.
+  // forgot-password/reset-password have the same requirement by
+  // definition: a visitor arriving at reset-password from an emailed
+  // recovery link has no server-visible session yet (this project's
+  // Supabase Auth email templates use the implicit flow, so the
+  // recovery tokens land in the URL fragment, which middleware —
+  // running server-side — can never see; the reset-password page
+  // establishes the session client-side after this check has already
+  // run). Redirecting either page to login here would make password
+  // recovery completely unreachable, the same class of bug as the
+  // signup one above.
   const isPublicAuthRoute =
     request.nextUrl.pathname.startsWith("/portal/login") ||
-    request.nextUrl.pathname.startsWith("/portal/signup");
+    request.nextUrl.pathname.startsWith("/portal/signup") ||
+    request.nextUrl.pathname.startsWith("/portal/forgot-password") ||
+    request.nextUrl.pathname.startsWith("/portal/reset-password");
 
   if (isPortalRoute && !isPublicAuthRoute && !user) {
     const loginUrl = new URL("/portal/login", request.url);

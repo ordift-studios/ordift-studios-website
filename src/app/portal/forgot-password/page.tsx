@@ -1,20 +1,14 @@
 import type { Metadata } from "next";
 import NavBar from "@/components/NavBar";
 import Footer from "@/components/Footer";
-import LoginForm from "./LoginForm";
+import ForgotPasswordForm from "./ForgotPasswordForm";
 
 export const metadata: Metadata = {
-  title: "Sign In — Ordift Studios Portal",
+  title: "Reset Your Password — Ordift Studios Portal",
   robots: { index: false, follow: false },
 };
 
-export default async function PortalLoginPage({
-  searchParams,
-}: {
-  searchParams: Promise<{ next?: string; passwordReset?: string }>;
-}) {
-  const { next, passwordReset } = await searchParams;
-
+export default function ForgotPasswordPage() {
   return (
     <main>
       <NavBar />
@@ -24,12 +18,12 @@ export default async function PortalLoginPage({
             Client Portal
           </p>
           <h1 className="font-serif font-medium text-page-title sm:text-page-title-tablet lg:text-page-title-desktop max-w-2xl">
-            Sign in to your account.
+            Forgot your password?
           </h1>
         </div>
       </section>
       <section className="bg-white px-4 sm:px-8 py-14 sm:py-20">
-        <LoginForm next={next ?? ""} passwordReset={passwordReset === "1"} />
+        <ForgotPasswordForm />
       </section>
       <Footer />
     </main>

@@ -7,12 +7,26 @@ import { signInAction, type LoginState } from "./actions";
 
 const initialState: LoginState = { error: null };
 
-export default function LoginForm({ next }: { next: string }) {
+export default function LoginForm({
+  next,
+  passwordReset,
+}: {
+  next: string;
+  passwordReset?: boolean;
+}) {
   const [state, formAction, pending] = useActionState(signInAction, initialState);
 
   return (
     <form action={formAction} className="space-y-5 max-w-sm">
       <input type="hidden" name="next" value={next} />
+
+      {passwordReset && !state.error && (
+        <div className="rounded-lg border border-black/10 bg-ordift-offwhite px-4 py-3">
+          <p className="font-sans text-body-small text-ordift-ink">
+            Your password has been updated. Sign in with your new password.
+          </p>
+        </div>
+      )}
 
       {state.error && (
         <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3">
@@ -34,9 +48,17 @@ export default function LoginForm({ next }: { next: string }) {
       </div>
 
       <div>
-        <label htmlFor="password" className="block font-sans text-body-small font-medium text-ordift-ink mb-2">
-          Password
-        </label>
+        <div className="flex items-center justify-between mb-2">
+          <label htmlFor="password" className="block font-sans text-body-small font-medium text-ordift-ink">
+            Password
+          </label>
+          <Link
+            href="/portal/forgot-password"
+            className="font-sans text-caption text-ordift-gold-pressed underline underline-offset-4"
+          >
+            Forgot password?
+          </Link>
+        </div>
         <input
           id="password"
           name="password"
