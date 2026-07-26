@@ -13,6 +13,8 @@ import type {
   LegalPage,
   Navigation,
   PortfolioProject,
+  PulseArticle,
+  PulseSource,
   Service,
   SiteSettings,
   Sponsor,
@@ -38,6 +40,12 @@ import {
   portfolioCollectionsQuery,
   portfolioProjectBySlugQuery,
   portfolioProjectsQuery,
+  pulseArticleBySlugQuery,
+  pulseArticlesQuery,
+  pulseCategoriesQuery,
+  pulseOpportunityTypesQuery,
+  pulseRegionsQuery,
+  pulseSourcesQuery,
   serviceBySlugQuery,
   servicesQuery,
   siteSettingsQuery,
@@ -150,5 +158,23 @@ export const sanityContentRepository: ContentRepository = {
   },
   async getLegalPage(slug) {
     return client.fetch<LegalPage | null>(legalPageQuery, { slug });
+  },
+  async getPulseArticles() {
+    return client.fetch<PulseArticle[]>(pulseArticlesQuery);
+  },
+  async getPulseArticleBySlug(slug) {
+    return client.fetch<PulseArticle | null>(pulseArticleBySlugQuery, { slug });
+  },
+  async getPulseCategories() {
+    return client.fetch<Category[]>(pulseCategoriesQuery);
+  },
+  async getPulseRegions() {
+    return client.fetch<Category[]>(pulseRegionsQuery);
+  },
+  async getPulseOpportunityTypes() {
+    return client.fetch<Category[]>(pulseOpportunityTypesQuery);
+  },
+  async getPulseSources() {
+    return client.fetch<PulseSource[]>(pulseSourcesQuery);
   },
 };

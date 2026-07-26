@@ -12,6 +12,8 @@ import type {
   LegalPageSlug,
   Navigation,
   PortfolioProject,
+  PulseArticle,
+  PulseSource,
   Service,
   SiteSettings,
   Sponsor,
@@ -69,4 +71,16 @@ export interface ContentRepository {
   getServices(): Promise<Service[]>;
   getServiceBySlug(slug: string): Promise<Service | null>;
   getLegalPage(slug: LegalPageSlug): Promise<LegalPage | null>;
+
+  // Ordift Pulse (architecture only, 2026-07-27 — see PULSE_ARCHITECTURE.md).
+  // Public methods return only articles that are both published and past
+  // their scheduled publish date, same "no admin preview yet" caveat as
+  // Journal/Portfolio. getPulseSources is the trusted-source registry —
+  // read-only here; no ingestion logic exists yet.
+  getPulseArticles(): Promise<PulseArticle[]>;
+  getPulseArticleBySlug(slug: string): Promise<PulseArticle | null>;
+  getPulseCategories(): Promise<Category[]>;
+  getPulseRegions(): Promise<Category[]>;
+  getPulseOpportunityTypes(): Promise<Category[]>;
+  getPulseSources(): Promise<PulseSource[]>;
 }

@@ -428,3 +428,107 @@ export type LegalPage = {
   isApproved: boolean;
   lastUpdated: string | null;
 };
+
+// --- Ordift Pulse — Creative Industry Hub (Version 4.0, architecture
+// built ahead of schedule 2026-07-27; see PULSE_ARCHITECTURE.md) ---
+//
+// Three independent taxonomy axes, not one flat category list — same
+// discipline already established for Role/Position/Grade/Engagement Type
+// in the IAM system (see PRODUCT_ROADMAP.md Version 1.1): a category
+// ("Photography News"), a region ("Ghana"), and — only for
+// contentKind === "opportunity" — an opportunity type ("Grant") describe
+// genuinely independent facts about a piece of content, and conflating
+// them into one list would make filtering by any single axis impossible.
+// All three reuse the existing `Category` shape (id/slug/name/description)
+// rather than inventing a new one, backed by three separate Sanity
+// document types (pulseCategory/pulseRegion/pulseOpportunityType) for
+// independent admin management — exactly the journalCategory/
+// portfolioCategory/workshopCategory precedent.
+
+export type PulseContentKind = "article" | "opportunity";
+
+// "editorial" = Ordift-authored (has an Author, no source); "curated" =
+// sourced from a trusted PulseSource (has provenance fields, no Author).
+// See PulseArticle.body's own note on why curated content is always a
+// written summary, never a raw reproduction of the source.
+export type PulseOrigin = "editorial" | "curated";
+
+// No "scheduled" status value — scheduling is a separate `scheduledFor`
+// field, exactly like JournalPost, so the same proven visibility-gate
+// logic (see pulseHelpers.ts) applies unchanged. "inReview" is the
+// editorial-approval gate: curated content should always pass through it
+// before "published"; editorial content may skip it if the author is
+// already an approver. Enforced by Studio field guidance today, not a
+// hard state machine — see PULSE_ARCHITECTURE.md §4.
+export type PulseStatus = "draft" | "inReview" | "published" | "archived";
+
+export type PulseSourceType = "rss" | "api" | "press-release" | "partner" | "manual";
+
+// The trusted-source registry — the data layer's connection point for
+// future ingestion (RSS/API/partner feeds). No fetching or scraping logic
+// exists yet; this is purely the admin-managed allowlist a future
+// ingestion step would read from and attribute against. See
+// PULSE_ARCHITECTURE.md §3.
+export type PulseSource = {
+  id: ID;
+  name: string;
+  sourceType: PulseSourceType;
+  url: string | null;
+  licenseNotes: string | null; // usage-rights/attribution terms agreed with this source, if any
+  isActive: boolean;
+};
+
+export type PulseArticle = {
+  id: ID;
+  slug: string;
+  contentKind: PulseContentKind;
+  origin: PulseOrigin;
+  status: PulseStatus;
+  featured: boolean;
+  title: string;
+  excerpt: string;
+  heroMedia: MediaAsset;
+  authorId: ID | null; // set only when origin === "editorial"
+  categoryIds: ID[];
+  regionIds: ID[];
+  opportunityTypeIds: ID[]; // only meaningful when contentKind === "opportunity"
+  tags: string[];
+  // The displayed article body. For curated content this is always a
+  // human-written (or AI-drafted, human-approved) summary in Ordift's own
+  // words — never a raw reproduction of the external source — per this
+  // project's standing copyright discipline (at most one short quote,
+  // attributed; see the content-accuracy convention already applied to
+  // Journal/Portfolio copy). The full original is one click away via
+  // sourceUrl.
+  body: string;
+  // Curated-content provenance — set only when origin === "curated".
+  sourceId: ID | null;
+  sourceUrl: string | null; // the original article's canonical link — always shown as "read more at the source"
+  sourceAttribution: string | null; // e.g. "via Vogue Business"
+  // AI-assist future-proofing for the roadmap's "Source → AI
+  // summarization → Draft → Admin Review → Publish" workflow. No
+  // summarization actually runs yet — this is scratch space a future
+  // automated step writes into; an editor turns it into (or approves it
+  // as) `body` above before anything publishes. Never rendered publicly.
+  aiSummary: string | null;
+  aiSummaryApprovedAt: string | null;
+  // Opportunity-only structured fields — null when contentKind === "article".
+  applicationDeadline: string | null; // ISO date
+  eventStartDate: string | null;
+  eventEndDate: string | null;
+  location: string | null;
+  applyUrl: string | null;
+  eligibility: string | null;
+  publishedAt: string | null;
+  // Scheduled publishing: identical mechanism to JournalPost.scheduledFor
+  // — a future date keeps the article hidden even once status is
+  // "published", no cron job needed. See pulseHelpers.isPubliclyVisible.
+  scheduledFor: string | null;
+  relatedArticleIds: ID[];
+  relatedProjectIds: ID[]; // cross-links into Portfolio, same convention as Journal
+  relatedWorkshopIds: ID[];
+  // Data-readiness only for a future newsletter send — no email-sending
+  // integration exists yet, same convention as JournalPost.
+  newsletterExcerpt: string | null;
+  seo: SeoFields;
+};

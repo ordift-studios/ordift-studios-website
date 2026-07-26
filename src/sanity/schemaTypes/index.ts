@@ -16,6 +16,11 @@ import journalPost from "./documents/journalPost";
 import portfolioCategory from "./documents/portfolioCategory";
 import portfolioCollection from "./documents/portfolioCollection";
 import portfolioProject from "./documents/portfolioProject";
+import pulseArticle from "./documents/pulseArticle";
+import pulseCategory from "./documents/pulseCategory";
+import pulseOpportunityType from "./documents/pulseOpportunityType";
+import pulseRegion from "./documents/pulseRegion";
+import pulseSource from "./documents/pulseSource";
 import sponsor from "./documents/sponsor";
 import tag from "./documents/tag";
 import testimonial from "./documents/testimonial";
@@ -59,6 +64,11 @@ export const schemaTypes: SchemaTypeDefinition[] = [
   portfolioCategory,
   portfolioCollection,
   portfolioProject,
+  pulseArticle,
+  pulseCategory,
+  pulseOpportunityType,
+  pulseRegion,
+  pulseSource,
   sponsor,
   tag,
   testimonial,

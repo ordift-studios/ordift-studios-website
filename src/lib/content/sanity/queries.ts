@@ -257,3 +257,68 @@ export const legalPageQuery = `*[_type == "legalPage" && slug.current == $slug][
   isApproved,
   lastUpdated
 }`;
+
+// --- Ordift Pulse — Creative Industry Hub (architecture, 2026-07-27) ---
+// See PULSE_ARCHITECTURE.md. Three independent taxonomy lookups reuse
+// categoryFragment (same {id, slug, name, description} shape as
+// journalCategory/portfolioCategory/workshopCategory).
+
+export const pulseCategoriesQuery = `*[_type == "pulseCategory"] ${categoryFragment}`;
+export const pulseRegionsQuery = `*[_type == "pulseRegion"] ${categoryFragment}`;
+export const pulseOpportunityTypesQuery = `*[_type == "pulseOpportunityType"] ${categoryFragment}`;
+
+export const pulseSourceFragment = `{
+  "id": _id,
+  name,
+  sourceType,
+  url,
+  licenseNotes,
+  isActive
+}`;
+export const pulseSourcesQuery = `*[_type == "pulseSource"] | order(name asc) ${pulseSourceFragment}`;
+
+// Same scheduled-publishing gate as Journal (journalVisibilityFilter
+// above), duplicated rather than shared since Pulse's status enum
+// differs (draft/inReview/published/archived vs. Journal's
+// draft/published) — see PULSE_ARCHITECTURE.md §4 and
+// pulseHelpers.isPubliclyVisible for the equivalent JS-side check.
+const pulseVisibilityFilter = `status == "published" && (!defined(scheduledFor) || scheduledFor <= now())`;
+
+export const pulseArticleFragment = `{
+  "id": _id,
+  "slug": slug.current,
+  contentKind,
+  origin,
+  status,
+  featured,
+  title,
+  excerpt,
+  ${requiredMediaAssetFragment("heroMedia", "heroMedia")},
+  "authorId": author._ref,
+  "categoryIds": categories[]._ref,
+  "regionIds": regions[]._ref,
+  "opportunityTypeIds": opportunityTypes[]._ref,
+  tags,
+  body,
+  "sourceId": source._ref,
+  sourceUrl,
+  sourceAttribution,
+  aiSummary,
+  aiSummaryApprovedAt,
+  applicationDeadline,
+  eventStartDate,
+  eventEndDate,
+  location,
+  applyUrl,
+  eligibility,
+  publishedAt,
+  scheduledFor,
+  "relatedArticleIds": relatedArticles[]._ref,
+  "relatedProjectIds": relatedProjects[]._ref,
+  "relatedWorkshopIds": relatedWorkshops[]._ref,
+  newsletterExcerpt,
+  ${seoFragment("seo")}
+}`;
+
+export const pulseArticlesQuery = `*[_type == "pulseArticle" && ${pulseVisibilityFilter}] | order(coalesce(publishedAt, _createdAt) desc) ${pulseArticleFragment}`;
+export const pulseArticleBySlugQuery = `*[_type == "pulseArticle" && slug.current == $slug && ${pulseVisibilityFilter}][0] ${pulseArticleFragment}`;

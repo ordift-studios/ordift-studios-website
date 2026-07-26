@@ -1,4 +1,5 @@
 import { isPubliclyVisible } from "../journalHelpers";
+import { isPubliclyVisible as isPulseArticlePubliclyVisible } from "../pulseHelpers";
 import type { ContentRepository } from "../repository";
 import {
   CATEGORIES,
@@ -15,6 +16,13 @@ import {
   PORTFOLIO_PROJECTS,
   PORTFOLIO_TESTIMONIALS,
 } from "./portfolioData";
+import {
+  PULSE_ARTICLES,
+  PULSE_CATEGORIES,
+  PULSE_OPPORTUNITY_TYPES,
+  PULSE_REGIONS,
+  PULSE_SOURCES,
+} from "./pulseData";
 import {
   ABOUT_PAGE,
   FOOTER_SETTINGS,
@@ -119,5 +127,24 @@ export const localContentRepository: ContentRepository = {
   },
   async getLegalPage(slug) {
     return LEGAL_PAGES.find((p) => p.slug === slug) ?? null;
+  },
+  async getPulseArticles() {
+    return PULSE_ARTICLES.filter(isPulseArticlePubliclyVisible);
+  },
+  async getPulseArticleBySlug(slug) {
+    const article = PULSE_ARTICLES.find((a) => a.slug === slug);
+    return article && isPulseArticlePubliclyVisible(article) ? article : null;
+  },
+  async getPulseCategories() {
+    return PULSE_CATEGORIES;
+  },
+  async getPulseRegions() {
+    return PULSE_REGIONS;
+  },
+  async getPulseOpportunityTypes() {
+    return PULSE_OPPORTUNITY_TYPES;
+  },
+  async getPulseSources() {
+    return PULSE_SOURCES;
   },
 };
