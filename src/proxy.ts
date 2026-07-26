@@ -52,6 +52,18 @@ export async function proxy(request: NextRequest) {
     }
   }
 
+  // Canonical domain redirect (Milestone 0, Phase 2) — www.ordiftstudios.com
+  // 308-redirects to the apex, preserving path and query. Handled in
+  // application code rather than a Vercel dashboard toggle so it's
+  // portable, testable, and verifiable the same way as everything else
+  // here. Scoped narrowly to an actual "www." host, so this can never
+  // fire for staging, localhost, or the *.vercel.app fallback domain.
+  if (request.nextUrl.hostname === "www.ordiftstudios.com") {
+    const url = request.nextUrl.clone();
+    url.hostname = "ordiftstudios.com";
+    return NextResponse.redirect(url, 308);
+  }
+
   // Temporary launch holding page (Milestone 0, Phase 3). When
   // LAUNCH_HOLDING_PAGE=true, every public route rewrites to
   // /coming-soon instead of the real site — used only for the window
