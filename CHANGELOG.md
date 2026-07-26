@@ -13,6 +13,57 @@ History" for continuity — the version numbers used there ("1.0" through
 "1.3.0") were informal internal milestone labels only, never git tags,
 and are superseded by the official sequence starting at v1.0.0.
 
+## v1.0.0 (Production Hardening) — Reusable Media Architecture — 2026-07-27
+
+Portfolio, Journal, Workshops, and the Founder page moved from static
+placeholder boxes to a reusable, CMS-driven media rendering system —
+see `MEDIA_ARCHITECTURE.md` for the full design.
+
+**Added:**
+- `src/components/media/` — `ResponsiveImage`, `MediaAsset`, `Gallery`,
+  `BeforeAfterGallery`, `Avatar`: a shared component library giving
+  every image on the site responsive sizing, lazy loading, automatic
+  aspect-ratio handling, LQIP blur-up loading states, and a graceful
+  neutral-placeholder empty state (distinct from the loading state) for
+  CMS fields with no asset uploaded yet.
+- `src/lib/media/sanityLoader.ts` — a CDN-swappable `next/image` loader
+  configured globally via `next.config.ts`'s `images.loaderFile`, so a
+  future image-host swap means replacing one file, not every component.
+- `tags` field added to the `portfolioProject` Sanity schema (additive);
+  `width`/`height`/`lqip` image metadata added to the `mediaAssetFragment`
+  and `galleryImageFragment` GROQ fragments.
+- `MEDIA_ARCHITECTURE.md` — new companion doc covering the component
+  library, the CDN-swap design, and which Version 1.1+ features
+  (Staff Portal, Talent Management, Vendor Directory, Client Galleries,
+  Ordift Pulse) already have a foundation in it without refactoring.
+
+**Fixes (found while building this):**
+- Portfolio/Journal detail pages' Open Graph image fell back to
+  `undefined` (no social-share image at all) whenever an editor hadn't
+  separately filled in a dedicated `seo.ogImage` — now falls back to
+  the project/post's own hero image.
+- A per-instance `loader` prop on `next/image`, passed from a Server
+  Component, fails to build on this project's Next.js version (custom
+  loaders must cross a Client Component boundary — see
+  `node_modules/next/dist/docs/.../images.md#loaderfile`). Fixed by
+  moving the loader to `images.loaderFile` instead.
+- `MediaAsset.url`/`GalleryImage.url` were typed as non-nullable, but
+  the GROQ fragments genuinely return `null` when a field exists with
+  no uploaded asset — every seeded sample project hit this. Widened
+  both types and added the empty-state rendering described above.
+
+**Documentation deferred as Pending Owner Decision (2026-07-27):**
+Cloudflare Turnstile keys, Google Service Account, Google Sheets
+credentials, Google Analytics, and the Supabase Pro billing decision —
+each now explicitly tagged in `MILESTONES.md`,
+`PRODUCTION_READINESS_REPORT.md`, and `PRODUCT_ROADMAP.md` so they stay
+visible without blocking feature work.
+
+**Upgrade notes:** none — purely additive; no schema field was removed
+or renamed.
+
+---
+
 ## v1.0.0 (Production Hardening) — CAPTCHA & Milestone 0 Reconciliation — 2026-07-27
 
 Added to the v1.0.0 baseline, same date as the entry below — a

@@ -30,6 +30,8 @@ None of these block Version 1.1+ work — they're infrastructure/billing decisio
 
 No further planning fields apply — this version is done, not proposed.
 
+**Media architecture, built forward-looking (2026-07-27):** the reusable media component library (`ResponsiveImage`/`MediaAsset`/`Gallery`/`Avatar`/`BeforeAfterGallery`, see `MEDIA_ARCHITECTURE.md`) that replaced Portfolio/Journal/Workshops' placeholder boxes was deliberately built CMS-agnostic rather than content-type-specific, so it's already the direct foundation for: Staff Portal / Employee Profiles (`Avatar`, Version 1.1/1.2 below), Talent Management's public portfolios (`Gallery` + `MediaAsset`, Version 2.0), a future Vendor Directory (same pattern as Talent), Client Portal Deliverables migrating onto `Gallery` for the same responsive/empty-state benefits, and Ordift Pulse's content cards (Version 4.0). No new media component is expected to be needed for any of these — see `MEDIA_ARCHITECTURE.md` §8 for the full breakdown.
+
 ---
 
 ## Version 1.1 — Internal Organization Module
@@ -109,7 +111,7 @@ No further planning fields apply — this version is done, not proposed.
 
 **Features:**
 - Support for **Models, Influencers, Brand Ambassadors, Actors, Artists, Hosts, Presenters, Performers** as talent categories (not new roles in the permission sense — a talent-category lookup, same independent-axis discipline as §Version 1.1).
-- **Portfolios** — public-facing talent portfolios (distinct from internal Skills/Portfolio-links in Version 1.2).
+- **Portfolios** — public-facing talent portfolios (distinct from internal Skills/Portfolio-links in Version 1.2), built on the existing `Gallery`/`MediaAsset` components (see `MEDIA_ARCHITECTURE.md` §8) rather than a new gallery implementation.
 - **Availability** — talent-specific availability calendar (separate concept from internal-staff availability, though sharing the same underlying pattern).
 - **Contracts** — talent engagement contracts, likely needing the secure-document-storage evaluation already flagged in this project's original Phase 1B plan (CVs/ID documents/consent forms are sensitive — a storage decision, not just a schema decision, is needed before this goes live).
 - **Auditions** — a pipeline for talent applications and casting calls.

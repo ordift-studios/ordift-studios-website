@@ -570,13 +570,29 @@ neither a static gallery/blog.
 - Full-site smoke test (11 routes incl. both new sections) all 200
 
 ### Pending work
-- [ ] Sanity CMS connected (`ARCHITECTURE.md` §4.2, deferred to Milestone 4)
-- [ ] Object storage for real media (`ARCHITECTURE.md` §4.5 — all sample media are empty placeholders)
+- [x] Sanity CMS connected (`ARCHITECTURE.md` §4.2) — completed Version 1.2.5
+- [x] Object storage for real media (`ARCHITECTURE.md` §4.5) — Sanity's asset pipeline serves this; the reusable media rendering architecture (`ResponsiveImage`/`MediaAsset`/`Gallery`/`Avatar`) landed 2026-07-27, see below. Real photography still pending owner upload — see `MEDIA_UPLOAD_LIST.md`.
 - [ ] Admin draft-preview mode, password-protection enforcement, multi-administrator access (all need auth — `ARCHITECTURE.md` §4.3)
 - [ ] Newsletter send integration (fields exist, no sending infra)
 
 ### Known issues
 - None outstanding.
+
+### Media Architecture — 2026-07-27 ✅ complete
+
+Portfolio, Journal, and Workshops' placeholder boxes replaced with a reusable, CMS-driven media rendering system — see `MEDIA_ARCHITECTURE.md` for full design detail.
+
+- [x] `src/components/media/` component library: `ResponsiveImage`, `MediaAsset`, `Gallery`, `BeforeAfterGallery`, `Avatar` — responsive sizing, lazy loading, automatic aspect-ratio handling, LQIP blur-up loading state, and a graceful neutral-placeholder empty state for CMS fields with no asset uploaded yet
+- [x] CDN-swappable image loader (`src/lib/media/sanityLoader.ts`), configured globally via `next.config.ts`'s `images.loaderFile`
+- [x] `tags` field added to `portfolioProject` schema; `width`/`height`/`lqip` metadata added to the shared GROQ media fragments
+- [x] Wired into Portfolio (hero, Final Gallery, Videos, Behind the Scenes, Before & After), Journal (hero, video articles, author avatars), Workshops (instructor avatars, gallery), and the Founder page
+- [x] Portfolio/Journal OG-image fallback fixed (was `undefined` whenever no dedicated `seo.ogImage` was set — now falls back to the hero image)
+- [x] `tsc --noEmit` and `eslint .` clean throughout; clean `next build` across all 67 routes; zero console errors verified live on all four touched page types in a fresh browser tab
+
+### Tests passed (Media Architecture)
+- Empty-state rendering confirmed for: instructor with no photo (initials avatar), Founder with no photo (neutral placeholder), and every seeded sample Portfolio/Journal/Workshop project (all currently placeholder content with no real photography — see `MEDIA_ARCHITECTURE.md` §4 for why this is a graceful *content* state, not a bug)
+- Gallery correctly renders nothing (not an empty grid) when a project has zero gallery images
+- Local static assets (`Logo.tsx`'s `/brand/*.png`) confirmed unaffected by the now-global image loader
 
 ## Version 1.2 — Academy (Workshop Platform expansion) ✅ core build complete
 

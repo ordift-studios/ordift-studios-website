@@ -2,13 +2,15 @@
 
 **Prepared:** 2026-07-27, from a full inventory of every image/video area in the live codebase (not a guess — every row below was confirmed against the actual page template and, where one exists, the Sanity CMS schema field it binds to).
 
+**Updated:** 2026-07-27 — the reusable media architecture (`ResponsiveImage`/`MediaAsset`/`Gallery`/`Avatar`/`BeforeAfterGallery`, see [MEDIA_ARCHITECTURE.md](MEDIA_ARCHITECTURE.md)) shipped and every row previously flagged "needs render fix" now actually renders. Uploading into the listed Sanity field is enough on its own — no further code changes required for those rows.
+
 **No stock imagery has been or will be inserted anywhere.** Every area below is currently either empty or a solid-color placeholder, waiting for real Ordift Studios photographs, films, and logo assets.
 
 ## How to read this list
 
 Two genuinely different situations show up below, and the **Status** column tells you which:
 
-- **✅ Ready — CMS field exists.** Upload directly into Sanity Studio and it's schema-ready today. *(Note: a few of these need one small follow-up code change — swapping a placeholder box for the real image render — before they'll actually **appear** on the live site. Flagged individually.)*
+- **✅ Ready — CMS field exists.** Upload directly into Sanity Studio and it renders on the live site immediately — no further code changes needed.
 - **🔧 Needs code first.** No CMS field exists yet for this area at all (Home, About, and every Services/department page). Sending a photo for these won't make it appear until a schema change is built. Listed anyway so you know what to start planning/shooting for.
 
 ---
@@ -30,7 +32,7 @@ Two genuinely different situations show up below, and the **Status** column tell
 
 | Section | Type | Orientation | Aspect / Dimensions | Format | Suggested subject | Mandatory? |
 |---|---|---|---|---|---|---|
-| Founder portrait | Single image | Portrait | 4:5, min. 1200×1500px | JPG/PNG | Professional portrait of Myredlive Anim-Tetey | ✅ Ready — CMS field exists (`founder.photo`), needs one small render fix to appear |
+| Founder portrait | Single image | Portrait | 4:5, min. 1200×1500px | JPG/PNG | Professional portrait of Myredlive Anim-Tetey | ✅ Ready — CMS field exists (`founder.photo`) and renders |
 
 ## Services hub (`/services`) & 7 department pages
 
@@ -43,12 +45,12 @@ Two genuinely different situations show up below, and the **Status** column tell
 
 | Section | Type | Orientation | Aspect / Dimensions | Format | Suggested subject | Mandatory? |
 |---|---|---|---|---|---|---|
-| Project card thumbnail (listing grid) | 1 per project | Landscape | 4:3, min. 1200×900px | JPG/PNG (or first-frame still if video) | Best single shot representing the project | ✅ Ready — CMS field exists (`heroMedia`), needs render fix to appear |
-| Project detail — Hero banner | 1 per project, image or video | Landscape | Ultra-wide 21:9, min. 2400×1030px | JPG/PNG or MP4 | Lead image/video for the project | ✅ Ready — CMS field exists (`heroMedia`), needs render fix |
-| Project detail — Final Gallery | Multiple per project | Square | 1:1, min. 1500×1500px each | JPG/PNG | Final delivered images | ✅ Ready — CMS field exists (`gallery`), needs render fix |
-| Project detail — Videos | Multiple per project | Landscape | 16:9, min. 1920×1080px | MP4 (H.264) | Final films/edits | ✅ Ready — CMS field exists (`videos`), needs render fix |
-| Project detail — Behind the Scenes gallery | Multiple per project | Square | 1:1, min. 1500×1500px each | JPG/PNG | On-set/process shots | ✅ Ready — CMS field exists (`behindTheScenesGallery`), needs render fix |
-| Project detail — Before & After pairs | Paired images per project | Square | 1:1 each, matched crop between the pair | JPG/PNG | Retouching/edit comparisons | ✅ Ready — CMS field exists (`beforeAfterGallery`), needs render fix |
+| Project card thumbnail (listing grid) | 1 per project | Landscape | 4:3, min. 1200×900px | JPG/PNG (or first-frame still if video) | Best single shot representing the project | ✅ Ready — CMS field exists (`heroMedia`) and renders |
+| Project detail — Hero banner | 1 per project, image or video | Landscape | Ultra-wide 21:9, min. 2400×1030px | JPG/PNG or MP4 | Lead image/video for the project | ✅ Ready — CMS field exists (`heroMedia`) and renders |
+| Project detail — Final Gallery | Multiple per project | Square | 1:1, min. 1500×1500px each | JPG/PNG | Final delivered images | ✅ Ready — CMS field exists (`gallery`) and renders |
+| Project detail — Videos | Multiple per project | Landscape | 16:9, min. 1920×1080px | MP4 (H.264) | Final films/edits | ✅ Ready — CMS field exists (`videos`) and renders |
+| Project detail — Behind the Scenes gallery | Multiple per project | Square | 1:1, min. 1500×1500px each | JPG/PNG | On-set/process shots | ✅ Ready — CMS field exists (`behindTheScenesGallery`) and renders |
+| Project detail — Before & After pairs | Paired images per project | Square | 1:1 each, matched crop between the pair | JPG/PNG | Retouching/edit comparisons | ✅ Ready — CMS field exists (`beforeAfterGallery`) and renders |
 
 *Optional, per project as available.*
 
@@ -56,10 +58,10 @@ Two genuinely different situations show up below, and the **Status** column tell
 
 | Section | Type | Orientation | Aspect / Dimensions | Format | Suggested subject | Mandatory? |
 |---|---|---|---|---|---|---|
-| Post card thumbnail (listing grid) | 1 per post | Landscape | 16:10, min. 1600×1000px | JPG/PNG | Representative image for the story | ✅ Ready — CMS field exists (`heroImage`, required), needs render fix |
-| Post detail — Hero banner | 1 per post | Landscape | Ultra-wide 21:9, min. 2400×1030px | JPG/PNG | Same lead image, larger | ✅ Ready — CMS field exists (`heroImage`), needs render fix |
-| Post detail — Video article embed | 1 per video-format post | Landscape | 16:9 | **A hosted URL (YouTube/Vimeo), not a file upload** | — | ✅ Field exists (`videoUrl`) but the embed itself isn't wired up yet — needs code, not just a URL |
-| Author byline avatar | 1 per author | Square | 1:1, min. 400×400px | JPG/PNG | Author headshot | ✅ Ready — CMS field exists (`author.photo`), needs render fix |
+| Post card thumbnail (listing grid) | 1 per post | Landscape | 16:10, min. 1600×1000px | JPG/PNG | Representative image for the story | ✅ Ready — CMS field exists (`heroImage`, required) and renders |
+| Post detail — Hero banner | 1 per post | Landscape | Ultra-wide 21:9, min. 2400×1030px | JPG/PNG | Same lead image, larger | ✅ Ready — CMS field exists (`heroImage`) and renders |
+| Post detail — Video article embed | 1 per video-format post | Landscape | 16:9 | **A hosted URL (YouTube/Vimeo), not a file upload** | — | ✅ Ready — CMS field exists (`videoUrl`) and the embed renders |
+| Author byline avatar | 1 per author | Square | 1:1, min. 400×400px | JPG/PNG | Author headshot | ✅ Ready — CMS field exists (`author.photo`) and renders |
 
 ## Workshops / Academy (`/workshops`)
 
@@ -67,8 +69,8 @@ Two genuinely different situations show up below, and the **Status** column tell
 |---|---|---|---|---|---|---|
 | Workshop card thumbnail (listing grid) | 1 per workshop | Landscape | — | — | — | 🔧 Needs code first — no schema field exists at all, not even a placeholder |
 | Workshop detail — hero banner | 1 per workshop | — | — | — | — | 🔧 Needs code first — unlike Work/Journal, this template has no hero placeholder at all |
-| Instructor avatar | 1 per instructor | Square | 1:1, min. 400×400px | JPG/PNG | Instructor headshot | ✅ Ready — CMS field exists (`instructor.photo`), needs render fix |
-| Workshop detail — Gallery | Multiple per workshop | Square | 1:1, min. 1500×1500px each | JPG/PNG | Past workshop moments | ✅ Ready — CMS field exists (`workshop.gallery`), needs render fix |
+| Instructor avatar | 1 per instructor | Square | 1:1, min. 400×400px | JPG/PNG | Instructor headshot | ✅ Ready — CMS field exists (`instructor.photo`) and renders |
+| Workshop detail — Gallery | Multiple per workshop | Square | 1:1, min. 1500×1500px each | JPG/PNG | Past workshop moments | ✅ Ready — CMS field exists (`workshop.gallery`) and renders |
 
 ## Logo / Brand Assets
 
@@ -92,3 +94,4 @@ If you want to send assets in stages rather than all at once, this order gets th
 ---
 
 *This list is derived from the codebase as of 2026-07-27. If department/Home/Workshop hero fields get built later, this document should be updated to move those rows from 🔧 to ✅.*
+*Every 🔧 → ✅ transition since the initial 2026-07-27 inventory reflects the media architecture landing (see [MEDIA_ARCHITECTURE.md](MEDIA_ARCHITECTURE.md)), not new CMS fields — the remaining 🔧 rows above are still genuine schema gaps.*
