@@ -167,28 +167,87 @@ make the portal feel like a premium client workspace from the first
 login, not a settings page.
 
 ### Milestone 1 — Client Dashboard (Home Overview)
-The central landing page after login — a premium overview, not a forced
-drop into a single project's timeline. Cards/widgets:
-- [ ] **Welcome section** — greets the client by name
-- [ ] **Active Projects** — one card per open enquiry, each linking to
-      its own Booking & Project Timeline (Milestone 2)
-- [ ] **Upcoming Bookings** — next scheduled workshop(s)/sessions
+Treated as the client's **workspace**, not a traditional booking-status
+page — design reference: Notion / Linear / Stripe Dashboard / Vercel
+Dashboard. Built as an extensible widget grid (see "Component
+architecture" below) so future widgets slot in without a layout
+redesign. No new schema for this milestone — confirmed against the live
+`enquiries`/`workshop_registrations` tables and `activity_log` before
+writing this spec, including the honest gaps noted inline below.
+
+**Sections:**
+- [ ] **Welcome Banner** — greets the client by name
+- [ ] **Active Projects** — one card per open enquiry (see card spec
+      below), each linking to its own Booking & Project Timeline
+      (Milestone 2)
+- [ ] **Upcoming Sessions / Workshops** — registered workshops with a
+      future `startDate` (read from the Sanity workshop document via
+      the existing `contentRepository.getWorkshopBySlug()`, keyed off
+      `workshop_registrations.workshop_slug` — no new schema)
 - [ ] **Latest Project Updates** — most recent status change per active
       project
-- [ ] **Recent Activity** — combined feed across enquiries + workshop
-      registrations
-- [ ] **Deliverables Ready** — count/preview of newly published
-      deliverables (Milestone 3) awaiting the client's attention
-- [ ] **Pending Payments** — **future-ready placeholder only**: an
-      honest "not yet available" card, no invented payment data — real
-      payment status is a later version (`v1.4.x — Finance &
-      Invoicing`), not built here
-- [ ] **Recent Notifications** — short preview feed, links to the full
-      Notification Center (Milestone 5)
+- [ ] **Deliverables Ready** — **placeholder for this milestone**: the
+      `deliverables` table doesn't exist until Milestone 3, so this
+      widget renders an honest "nothing yet" state now and starts
+      showing real counts once that table ships — the widget slot and
+      its UI exist today, the data source is wired in later
+- [ ] **Recent Notifications** — **placeholder for this milestone**:
+      same reasoning — `client_notifications` doesn't exist until
+      Milestone 5; widget slot exists now, wired in later
+- [ ] **Recent Activity Timeline** — combined feed across enquiries +
+      workshop registrations (submission/registration events only in
+      this milestone — full stage-by-stage history is Milestone 2)
+- [ ] **Quick Actions** — View Projects (scrolls to Active Projects on
+      this page), View Deliverables (**disabled/"coming soon"** until
+      Milestone 3), View Bookings (links to the existing
+      `/portal/workshops`, live today), Request Reschedule
+      (**disabled/"coming soon"** until Milestone 4), Edit Profile
+      (**disabled/"coming soon"** until Milestone 6) — every action's
+      slot exists now; three of five activate as later milestones ship,
+      shown honestly as not-yet-available rather than a broken link
 - [ ] Clean first-time empty state (no active projects yet) with a
       "Start an Enquiry" call to action
-- [ ] Built entirely from data that already exists (`enquiries`,
-      `workshop_registrations`) — no new schema
+
+**Active Project Card fields — data source for each, confirmed against
+the real schema (no inventing a field that doesn't exist):**
+- **Project Title** — pathway label + reference number (e.g.
+  "Photography — REF-1234"); there's no dedicated title column, so this
+  is the clearest honest identifier available
+- **Project Type** — `pathwayLabel(service)` (existing helper,
+  `src/lib/enquiry/pathways.ts`)
+- **Current Status** — `crmStageLabel(crmStage)` (existing helper)
+- **Next Milestone** — the next stage in `CRM_STAGES`' happy-path order
+  after the current one; terminal/branch stages (`declined`, `closed`,
+  `repeat_client`, `referral`, `completed`) show no "next" rather than a
+  fabricated one
+- **Progress Indicator** — position of the current stage within the
+  happy-path sequence (`new_lead` → `completed`) as a fraction; branch
+  stages get a distinct neutral state, not a misleading percentage
+- **Next Appointment (if any)** — for workshop-linked activity, the
+  workshop's real Sanity `startDate`; **for enquiries, this data
+  genuinely doesn't exist yet** (no session/shoot-date field anywhere in
+  the frozen schema) — shown honestly as "Not yet scheduled" rather than
+  invented. Real scheduling is `v1.2.x — Scheduling & Calendar`, a later
+  version, not built here.
+- **Deliverables Available indicator** — placeholder (see Deliverables
+  Ready widget above), wired to real data in Milestone 3
+- **Last Updated** — `submitted_at` for this milestone. The more
+  accurate version (actual last-stage-change timestamp) needs the same
+  client-read `activity_log` RLS policy already planned for Milestone 2
+  — deliberately not pulled forward, to keep this milestone's "no new
+  schema" boundary intact. Flagged here rather than silently
+  approximated.
+
+**Component architecture (future-proofing, no functionality beyond
+v1.1.0 built now):** each section above is an independent, self-
+contained widget component in a shared extensible grid — not a
+hard-coded layout assuming a fixed widget count or order. This is the
+same grid a later version drops Payments, Messages, a Vendor Portal
+widget, a Model Portal widget, Analytics, or a widget for a future
+business module into, without redesigning the dashboard shell. Applies
+equally across Photography, Videography, Workshops, and (once real
+bookable records exist for them) Vendor/Model/Academy — the widget
+contract doesn't assume a specific business line.
 
 ### Milestone 2 — Booking & Project Timeline
 Opened from a project card on the Dashboard (Milestone 1). This is
