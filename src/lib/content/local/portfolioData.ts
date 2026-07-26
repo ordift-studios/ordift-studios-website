@@ -68,6 +68,7 @@ export const PORTFOLIO_PROJECTS: PortfolioProject[] = [
     location: "Accra, Ghana",
     servicesProvided: ["[SAMPLE] Art Direction", "[SAMPLE] Photography", "[SAMPLE] Retouching"],
     equipmentUsed: ["[SAMPLE] Camera body", "[SAMPLE] Studio strobes"],
+    tags: [],
     collaborators: [
       { id: "collab-1", name: "[SAMPLE] Name", role: "Photographer" },
       { id: "collab-2", name: "[SAMPLE] Name", role: "Stylist" },
@@ -118,6 +119,7 @@ export const PORTFOLIO_PROJECTS: PortfolioProject[] = [
     location: "Kumasi, Ghana",
     servicesProvided: ["[SAMPLE] Creative Direction", "[SAMPLE] Videography", "[SAMPLE] Editing"],
     equipmentUsed: [],
+    tags: [],
     collaborators: [
       { id: "collab-4", name: "[SAMPLE] Name", role: "Director" },
       { id: "collab-5", name: "[SAMPLE] Name", role: "Videographer" },
@@ -165,6 +167,7 @@ export const PORTFOLIO_PROJECTS: PortfolioProject[] = [
     location: "Online",
     servicesProvided: ["[SAMPLE] Brand Strategy", "[SAMPLE] Visual Identity", "[SAMPLE] Packaging Design"],
     equipmentUsed: [],
+    tags: [],
     collaborators: [{ id: "collab-6", name: "[SAMPLE] Name", role: "Designer" }],
     story: "This is placeholder case-study copy for architecture review only, demonstrating a project with no client name shown at all.",
     objective: null,
@@ -203,6 +206,7 @@ export const PORTFOLIO_PROJECTS: PortfolioProject[] = [
     location: "Accra, Ghana",
     servicesProvided: ["[SAMPLE] Food Styling Direction", "[SAMPLE] Photography"],
     equipmentUsed: ["[SAMPLE] Macro lens"],
+    tags: [],
     collaborators: [],
     story: "This is placeholder case-study copy for architecture review only.",
     objective: null,
@@ -241,6 +245,7 @@ export const PORTFOLIO_PROJECTS: PortfolioProject[] = [
     location: "Accra, Ghana",
     servicesProvided: [],
     equipmentUsed: [],
+    tags: [],
     collaborators: [],
     story:
       "This is placeholder case-study copy for architecture review only, demonstrating a personal (non-client) project that is also part of an ordered series.",
@@ -280,6 +285,7 @@ export const PORTFOLIO_PROJECTS: PortfolioProject[] = [
     location: null,
     servicesProvided: [],
     equipmentUsed: [],
+    tags: [],
     collaborators: [],
     story:
       "This project exists only to verify that draft projects are excluded from the public Portfolio hub and detail routes.",

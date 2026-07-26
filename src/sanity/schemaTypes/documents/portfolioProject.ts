@@ -52,6 +52,14 @@ export default defineType({
     defineField({ name: "servicesProvided", title: "Services Provided", type: "array", of: [{ type: "string" }] }),
     defineField({ name: "equipmentUsed", title: "Equipment Used", type: "array", of: [{ type: "string" }] }),
     defineField({
+      name: "tags",
+      title: "Tags",
+      type: "array",
+      of: [{ type: "string" }],
+      options: { layout: "tags" },
+      description: "Freeform tags — e.g. \"outdoor\", \"black-and-white\", \"studio-lit\" — distinct from Disciplines/Categories (structured taxonomy) and Collections/Series (curated grouping).",
+    }),
+    defineField({
       name: "collaborators",
       title: "Collaborators",
       type: "array",

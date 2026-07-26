@@ -102,6 +102,7 @@ export const portfolioProjectFragment = `{
   location,
   servicesProvided,
   equipmentUsed,
+  tags,
   "collaborators": collaborators[]{"id": _key, name, role},
   story,
   objective,

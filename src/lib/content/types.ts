@@ -48,6 +48,13 @@ export type GalleryImage = {
   url: string;
   alt: string;
   caption: string | null;
+  // Sanity-generated image metadata, used by ResponsiveImage
+  // (src/components/media/ResponsiveImage.tsx) for automatic aspect-ratio
+  // sizing and blur-up loading placeholders. Optional so local dev
+  // fixture data (src/lib/content/local/*) doesn't need real values.
+  width?: number | null;
+  height?: number | null;
+  lqip?: string | null;
 };
 
 export type FAQ = {
@@ -145,6 +152,12 @@ export type MediaAsset = {
   url: string;
   type: "image" | "video" | "embed";
   alt: string;
+  // Only populated for type === "image" — a video file or embed URL has
+  // no Sanity-generated image metadata. See GalleryImage above for the
+  // same fields' purpose.
+  width?: number | null;
+  height?: number | null;
+  lqip?: string | null;
 };
 
 export type SeoFields = {
@@ -217,6 +230,7 @@ export type PortfolioProject = {
   location: string | null;
   servicesProvided: string[];
   equipmentUsed: string[]; // optional
+  tags: string[]; // freeform — distinct from disciplines/categories (structured) and collections (curated grouping)
   collaborators: Collaborator[];
   story: string; // project story / case-study narrative
   objective: string | null; // project objective
