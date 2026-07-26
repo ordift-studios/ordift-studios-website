@@ -128,13 +128,13 @@ private); fixed Sanity Studio CORS for the production origin. Declared
 frozen alongside Admin Platform Tier 1 — see the freeze list under
 v1.0.0 above.
 
-## v1.1.0 — Client Experience 📋 PLANNED, not started (awaiting approval)
+## v1.1.0 — Client Experience 📋 SCOPE APPROVED, not started
 
-**Status:** Draft roadmap only — milestones and tasks, no code written.
-Per explicit instruction, implementation waits for your sign-off on scope
-before any work begins. Builds entirely on the frozen v1.0.0 foundation
-(`src/lib/portal/roles.ts`, existing RLS policies, `enquiries`/
-`workshop_registrations` tables) — no architectural changes.
+**Status:** Scope finalized 2026-07-26 — milestones and tasks below,
+still no code written. Implementation of Milestone 1 waits for a
+separate explicit go-ahead. Builds entirely on the frozen v1.0.0
+foundation (`src/lib/portal/roles.ts`, existing RLS policies,
+`enquiries`/`workshop_registrations` tables) — no architectural changes.
 
 **Current baseline this version builds on** (confirmed by reading the
 live code, not assumed): `/portal/client` shows a flat list of the
@@ -142,21 +142,22 @@ client's own enquiries (reference, service, CRM stage, payment status)
 with an honest empty state; `/portal/workshops` shows registrations
 similarly. There is no detail page, no client-editable profile, no
 notifications, and no client/staff messaging today — this version's
-scope is proposed to fill exactly those gaps, not to invent new business
-capabilities beyond them.
+scope fills exactly those gaps, not new business capabilities beyond
+them.
 
-**Open questions for you before implementation starts** (flagged rather
-than assumed, per the zero-invention rule):
-- Should clients be able to *request* a reschedule/cancellation (creates
-  a staff-visible note, staff still makes the change), or is that out of
-  scope for v1.1.0?
-- Is two-way client↔staff messaging in scope, or should client-visible
-  updates stay one-directional (status changes only, replies still by
-  phone/email/WhatsApp as today)?
-- Are email notifications in scope for this version, given
-  `FORMS_SENDING_ENABLED` is still off in production (no Resend account
-  yet)? If email isn't ready, this version could ship with in-app
-  notifications only, with email added once that dependency clears.
+**Scope decisions (approved 2026-07-26):**
+1. **Reschedule/cancellation requests** — clients may *submit* a
+   reschedule or cancellation request; only staff/admin can approve or
+   reject it. The request never changes CRM stage or booking status
+   directly from the client side.
+2. **No two-way messaging in v1.1.0** — client-visible communication
+   stays to status updates and staff-visible notes only (existing
+   `enquiry_notes` pattern), same as today. The dedicated messaging
+   milestone originally drafted for this version is dropped entirely.
+3. **In-app notifications only** — Milestone 4 ships an in-app
+   notification center. Email notifications are explicitly deferred to
+   a later version, pending the Resend integration and
+   `FORMS_SENDING_ENABLED` going live.
 
 ### Milestone 1 — Client Profile & Account Management
 - [ ] Client-editable profile page (`/portal/client/profile`): full name,
@@ -177,10 +178,12 @@ than assumed, per the zero-invention rule):
       `/admin`), submitted details, payment status
 - [ ] Workshop registration detail page: waitlist position, payment
       status, certificate download link (when issued)
-- [ ] Client-initiated reschedule/cancellation *request* (pending your
-      answer to the open question above) — creates a staff-visible note
-      via the existing `enquiry_notes` pattern, never changes CRM stage
-      directly from the client side
+- [ ] Client-initiated reschedule/cancellation *request* — per approved
+      scope decision 1: the client submits the request, which creates a
+      staff-visible note via the existing `enquiry_notes` pattern and a
+      pending-review state visible in `/admin`; only staff/admin can
+      approve or reject it (via the existing Enquiries CRM stage-change
+      action), never auto-applied from the client side
 
 ### Milestone 3 — Client Dashboard Overview
 - [ ] Replace the flat enquiry list with a proper dashboard home
@@ -190,23 +193,18 @@ than assumed, per the zero-invention rule):
 - [ ] Consistent client-facing status vocabulary applied across
       dashboard + detail views (from Milestone 2)
 
-### Milestone 4 — Notifications
-- [ ] In-app notification indicator for status changes (new
-      business-scoped table, e.g. `client_notifications` — staging-first
-      migration per the Migration Policy in `DEVELOPMENT_GUIDE.md`)
-- [ ] Email notifications on stage/status change — **blocked on**
-      `FORMS_SENDING_ENABLED` and a live Resend account; scope this out
-      of v1.1.0 if that dependency isn't ready by the time this milestone
-      starts, per your answer above
+### Milestone 4 — Notifications (in-app only — approved scope decision 3)
+- [ ] In-app notification center: bell/indicator + list, covering status
+      changes, reschedule/cancellation request outcomes, and workshop
+      registration updates (new business-scoped table, e.g.
+      `client_notifications` — staging-first migration per the Migration
+      Policy in `DEVELOPMENT_GUIDE.md`)
+- [ ] Mark-as-read behavior, scoped per client via RLS (own notifications
+      only, same pattern as every other client-facing table)
+- [ ] Email notifications explicitly **out of scope for v1.1.0** — revisit
+      once `FORMS_SENDING_ENABLED` and a live Resend account are ready
 
-### Milestone 5 — Client↔Staff Communication *(scope pending your answer above)*
-- [ ] If in scope: message thread per enquiry/booking, client-visible,
-      distinct from the internal (staff-only) `enquiry_notes` — new
-      table + RLS policies, staging-first migration
-- [ ] Admin Platform: staff-side view of the same thread from the
-      existing Enquiries CRM detail page
-
-### Milestone 6 — Verification & Release v1.1.0
+### Milestone 5 — Verification & Release v1.1.0
 - [ ] Full staging E2E verification of every new/changed workflow
       (Testing Requirements, `DEVELOPMENT_GUIDE.md` §5)
 - [ ] Role-boundary check: confirm a client can only ever see/edit their
