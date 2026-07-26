@@ -262,26 +262,52 @@ equally across Photography, Videography, Workshops, and (once real
 bookable records exist for them) Vendor/Model/Academy — the widget
 contract doesn't assume a specific business line.
 
-### Milestone 2 — Booking & Project Timeline
-Opened from a project card on the Dashboard (Milestone 1). This is
-where a client goes deeper on one specific project:
-- [ ] Timeline sub-view: visual status/stage history rendered in
-      client-friendly language (a client-facing label set, distinct
-      from the internal `CRM_STAGES` vocabulary used in `/admin`) —
-      built from the `activity_log` entries the Admin Platform already
-      writes on every `enquiry.stage_change`
-- [ ] **Requires one new RLS policy**: clients may read their own
-      `activity_log` rows (currently staff/admin-read only) — extends
-      an existing frozen-baseline table to a new consumer, staging-first
-      migration per the Migration Policy (`DEVELOPMENT_GUIDE.md` §6),
-      not a redesign of it
-- [ ] Project Status sub-view: submitted details, current stage,
+### Milestone 2 — Booking & Project Timeline → reusable Project Workspace ✅ complete
+**Shipped:** 2026-07-26, commit `abc7c29`. **Architectural refinement
+mid-milestone** (your explicit request, before implementation began):
+generalized from a photography-specific "Timeline" page into a reusable
+**Project Workspace** — one six-tab shell (Overview, Timeline,
+Deliverables, Booking Details, Requests, Updates) every project kind
+opens into (enquiry today; workshop too; extensible to vendor/model/
+future business lines once those have real bookable records), driven by
+a kind-agnostic data layer (`src/lib/portal/workspace.ts`) rather than
+kind-specific screens. Future tabs (Payments, Contracts, Messages,
+Document Vault, Feedback, Invoices, AI Assistant) are one entry in
+`src/lib/portal/workspaceTabs.ts` away, no shell redesign.
+
+- [x] Timeline tab: visual status/stage history in client-friendly
+      language, built from `activity_log` (curated to client-meaningful
+      actions only)
+- [x] **New RLS policy shipped** (migration `0006_client_workspace.sql`,
+      staging-first, verified on both staging and production): clients
+      may read their own `activity_log` rows — extends the existing
+      frozen-baseline table to a new consumer, not a redesign
+- [x] Overview tab: current status, next milestone, progress, key dates,
       payment status
-- [ ] Workshop registration detail: waitlist position, payment status,
-      certificate download link (when issued)
-- [ ] Acts as the hub linking to Deliverables (Milestone 3) and
-      Reschedule/Cancellation Requests (Milestone 4) for this specific
-      project
+- [x] Booking Details tab: for enquiries, service only (location/
+      schedule genuinely don't exist yet — shown honestly, not invented);
+      for workshops, real Sanity-backed venue, schedule, and instructor
+      data
+- [x] Deliverables and Requests tabs: honest placeholders — real data
+      lands in Milestones 3 and 4 respectively
+- [x] **Updates tab** (added during the architectural refinement, your
+      explicit design): `enquiry_notes` gained an `audience` column
+      (`'internal' | 'client'`, default `'internal'` — no existing note
+      became visible to anyone), with a new client-read RLS policy
+      scoped to `audience = 'client'` on the client's own enquiry only.
+      Admin Platform's note form now lets staff explicitly publish a
+      "Client Update" alongside ordinary internal notes — existing
+      internal-only behavior unchanged. No client replies/messaging/
+      commenting, per the standing v1.1.0 scope decision.
+- [x] Milestone 1's dashboard (project cards, upcoming sessions, recent
+      activity) now links into the real workspace instead of the interim
+      "coming soon" state
+
+**Verified:** RLS boundaries (client A cannot read client B's
+`activity_log` or notes, cannot write/edit/delete notes at all),
+audience filtering, both project kinds including real Sanity data, and
+the full admin note round-trip — on staging first, then independently
+re-verified live on production. All test data removed after each pass.
 
 ### Milestone 3 — Client Deliverables
 A **read-only client delivery center** — not a document vault. Staff
@@ -317,7 +343,8 @@ capability gets its own milestone and its own release when scoped,
 never implied by the read-only Deliverables feature above.
 
 ### Milestone 4 — Reschedule & Cancellation Requests
-Per approved scope decision 1. Lives on the Milestone 2 detail page:
+Per approved scope decision 1. Lives on the Project Workspace's Requests
+tab (its route already exists as a placeholder, shipped with Milestone 2):
 - [ ] Client-initiated reschedule/cancellation *request* form — creates
       a staff-visible note via the existing `enquiry_notes` pattern and
       a pending-review state visible in `/admin`
