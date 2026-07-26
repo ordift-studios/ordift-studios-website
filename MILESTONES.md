@@ -128,12 +128,13 @@ private); fixed Sanity Studio CORS for the production origin. Declared
 frozen alongside Admin Platform Tier 1 — see the freeze list under
 v1.0.0 above.
 
-## v1.1.0 — Client Experience 📋 SCOPE APPROVED, not started
+## v1.1.0 — Client Experience 📋 ROADMAP APPROVED, not started
 
-**Status:** Scope finalized 2026-07-26 — milestones and tasks below,
-still no code written. Implementation of Milestone 1 waits for a
-separate explicit go-ahead. Builds entirely on the frozen v1.0.0
-foundation (`src/lib/portal/roles.ts`, existing RLS policies,
+**Status:** Roadmap finalized 2026-07-26 (product-first reorder +
+Deliverables refinement) — milestones and tasks below, still no code
+written. Implementation of Milestone 1 waits for a separate explicit
+go-ahead. Builds entirely on the frozen v1.0.0 foundation
+(`src/lib/portal/roles.ts`, existing RLS policies, `activity_log`,
 `enquiries`/`workshop_registrations` tables) — no architectural changes.
 
 **Current baseline this version builds on** (confirmed by reading the
@@ -141,25 +142,133 @@ live code, not assumed): `/portal/client` shows a flat list of the
 client's own enquiries (reference, service, CRM stage, payment status)
 with an honest empty state; `/portal/workshops` shows registrations
 similarly. There is no detail page, no client-editable profile, no
-notifications, and no client/staff messaging today — this version's
-scope fills exactly those gaps, not new business capabilities beyond
-them.
+notifications, no deliverables area, and no client/staff messaging
+today — this version's scope fills exactly those gaps, not new business
+capabilities beyond them.
 
 **Scope decisions (approved 2026-07-26):**
 1. **Reschedule/cancellation requests** — clients may *submit* a
    reschedule or cancellation request; only staff/admin can approve or
    reject it. The request never changes CRM stage or booking status
-   directly from the client side.
+   directly from the client side. (Milestone 4.)
 2. **No two-way messaging in v1.1.0** — client-visible communication
    stays to status updates and staff-visible notes only (existing
-   `enquiry_notes` pattern), same as today. The dedicated messaging
-   milestone originally drafted for this version is dropped entirely.
-3. **In-app notifications only** — Milestone 4 ships an in-app
+   `enquiry_notes` pattern), same as today. No messaging milestone exists
+   in this version.
+3. **In-app notifications only** — Milestone 5 ships an in-app
    notification center. Email notifications are explicitly deferred to
    a later version, pending the Resend integration and
    `FORMS_SENDING_ENABLED` going live.
 
-### Milestone 1 — Client Profile & Account Management
+**Implementation order (approved 2026-07-26, product-first):** ordered
+to maximize customer-facing value first — the dashboard and project
+timeline land before profile/account management, since they're what
+make the portal feel like a premium client workspace from the first
+login, not a settings page.
+
+### Milestone 1 — Client Dashboard (Home Overview)
+The central landing page after login — a premium overview, not a forced
+drop into a single project's timeline. Cards/widgets:
+- [ ] **Welcome section** — greets the client by name
+- [ ] **Active Projects** — one card per open enquiry, each linking to
+      its own Booking & Project Timeline (Milestone 2)
+- [ ] **Upcoming Bookings** — next scheduled workshop(s)/sessions
+- [ ] **Latest Project Updates** — most recent status change per active
+      project
+- [ ] **Recent Activity** — combined feed across enquiries + workshop
+      registrations
+- [ ] **Deliverables Ready** — count/preview of newly published
+      deliverables (Milestone 3) awaiting the client's attention
+- [ ] **Pending Payments** — **future-ready placeholder only**: an
+      honest "not yet available" card, no invented payment data — real
+      payment status is a later version (`v1.4.x — Finance &
+      Invoicing`), not built here
+- [ ] **Recent Notifications** — short preview feed, links to the full
+      Notification Center (Milestone 5)
+- [ ] Clean first-time empty state (no active projects yet) with a
+      "Start an Enquiry" call to action
+- [ ] Built entirely from data that already exists (`enquiries`,
+      `workshop_registrations`) — no new schema
+
+### Milestone 2 — Booking & Project Timeline
+Opened from a project card on the Dashboard (Milestone 1). This is
+where a client goes deeper on one specific project:
+- [ ] Timeline sub-view: visual status/stage history rendered in
+      client-friendly language (a client-facing label set, distinct
+      from the internal `CRM_STAGES` vocabulary used in `/admin`) —
+      built from the `activity_log` entries the Admin Platform already
+      writes on every `enquiry.stage_change`
+- [ ] **Requires one new RLS policy**: clients may read their own
+      `activity_log` rows (currently staff/admin-read only) — extends
+      an existing frozen-baseline table to a new consumer, staging-first
+      migration per the Migration Policy (`DEVELOPMENT_GUIDE.md` §6),
+      not a redesign of it
+- [ ] Project Status sub-view: submitted details, current stage,
+      payment status
+- [ ] Workshop registration detail: waitlist position, payment status,
+      certificate download link (when issued)
+- [ ] Acts as the hub linking to Deliverables (Milestone 3) and
+      Reschedule/Cancellation Requests (Milestone 4) for this specific
+      project
+
+### Milestone 3 — Client Deliverables
+A **read-only client delivery center** — not a document vault. Staff
+publish approved deliverables through the Admin Platform as reference
+links; clients can **view, preview (where supported), and download**
+only. Explicitly **no client uploads, no secure storage, no document
+exchange, no new storage architecture, and no object storage
+implementation** in v1.1.0.
+- [ ] New table (e.g. `deliverables`), scoped to an enquiry or workshop
+      registration, `business_id`-scoped — staff CRUD via a new Admin
+      Platform section, client SELECT own only via RLS (same
+      staff-manages/client-reads-own pattern as `enquiry_notes`),
+      staging-first migration
+- [ ] Category field covering the approved examples: final edited
+      photographs, final videos, invoices, receipts, contracts, call
+      sheets, mood boards, workshop materials, certificates, gallery
+      links, download links, and any future approved project
+      deliverable — all stored as staff-entered reference links (same
+      "link, not raw upload" convention the enquiry form has always
+      used), never a file upload from either side
+- [ ] Client Portal UI: "Deliverables" section on the Milestone 2
+      detail page, plus the "Deliverables Ready" card on the Dashboard
+      (Milestone 1)
+- [ ] Admin Platform UI: deliverables management on the existing
+      Enquiries CRM / Bookings detail pages
+
+**Reserved for a future major feature, explicitly not part of v1.1.0:**
+a genuine **Document Vault** — secure client uploads, secure staff
+uploads, object storage/provider selection, signed URLs, access
+control, retention policies, version history, secure document exchange,
+and the compliance/storage architecture decision that requires. That
+capability gets its own milestone and its own release when scoped,
+never implied by the read-only Deliverables feature above.
+
+### Milestone 4 — Reschedule & Cancellation Requests
+Per approved scope decision 1. Lives on the Milestone 2 detail page:
+- [ ] Client-initiated reschedule/cancellation *request* form — creates
+      a staff-visible note via the existing `enquiry_notes` pattern and
+      a pending-review state visible in `/admin`
+- [ ] Staff/admin approve or reject via the existing Enquiries CRM
+      stage-change action — the request never auto-applies from the
+      client side
+- [ ] Approval/rejection outcome feeds the Notification Center
+      (Milestone 5)
+
+### Milestone 5 — Notification Center (in-app only — approved scope decision 3)
+- [ ] In-app notification center: bell/indicator + full list, covering
+      stage changes, new deliverables published, reschedule/cancellation
+      request outcomes, and workshop registration updates (new
+      business-scoped table, e.g. `client_notifications` — staging-first
+      migration per the Migration Policy)
+- [ ] Mark-as-read behavior, scoped per client via RLS (own
+      notifications only, same pattern as every other client-facing
+      table)
+- [ ] Email notifications explicitly **out of scope for v1.1.0** —
+      revisit once `FORMS_SENDING_ENABLED` and a live Resend account are
+      ready
+
+### Milestone 6 — Client Profile & Account Management
 - [ ] Client-editable profile page (`/portal/client/profile`): full name,
       phone, avatar — reusing the existing column-level grant
       (`full_name`, `phone`, `avatar_url`) already verified on `profiles`
@@ -171,40 +280,7 @@ them.
       Prohibited/Explicit-permission-tier action in general — needs your
       confirmation on the exact flow)
 
-### Milestone 2 — Enquiry & Booking Detail Views
-- [ ] Enquiry detail page (`/portal/client/enquiries/[id]`): full status
-      history in client-friendly language (a client-facing label set,
-      distinct from the internal `CRM_STAGES` vocabulary used in
-      `/admin`), submitted details, payment status
-- [ ] Workshop registration detail page: waitlist position, payment
-      status, certificate download link (when issued)
-- [ ] Client-initiated reschedule/cancellation *request* — per approved
-      scope decision 1: the client submits the request, which creates a
-      staff-visible note via the existing `enquiry_notes` pattern and a
-      pending-review state visible in `/admin`; only staff/admin can
-      approve or reject it (via the existing Enquiries CRM stage-change
-      action), never auto-applied from the client side
-
-### Milestone 3 — Client Dashboard Overview
-- [ ] Replace the flat enquiry list with a proper dashboard home
-      (`/portal/client`): summary cards (active enquiries, upcoming
-      workshops), a combined recent-activity feed across both, clearer
-      first-time empty state
-- [ ] Consistent client-facing status vocabulary applied across
-      dashboard + detail views (from Milestone 2)
-
-### Milestone 4 — Notifications (in-app only — approved scope decision 3)
-- [ ] In-app notification center: bell/indicator + list, covering status
-      changes, reschedule/cancellation request outcomes, and workshop
-      registration updates (new business-scoped table, e.g.
-      `client_notifications` — staging-first migration per the Migration
-      Policy in `DEVELOPMENT_GUIDE.md`)
-- [ ] Mark-as-read behavior, scoped per client via RLS (own notifications
-      only, same pattern as every other client-facing table)
-- [ ] Email notifications explicitly **out of scope for v1.1.0** — revisit
-      once `FORMS_SENDING_ENABLED` and a live Resend account are ready
-
-### Milestone 5 — Verification & Release v1.1.0
+### Milestone 7 — Verification & Release v1.1.0
 - [ ] Full staging E2E verification of every new/changed workflow
       (Testing Requirements, `DEVELOPMENT_GUIDE.md` §5)
 - [ ] Role-boundary check: confirm a client can only ever see/edit their
