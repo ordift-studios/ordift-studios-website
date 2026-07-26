@@ -1,12 +1,12 @@
 import Image from "next/image";
-import sanityImageLoader from "@/lib/media/sanityLoader";
 
 // The one component every real image on the site should render through
 // (see MEDIA_ARCHITECTURE.md). Wraps next/image with:
 // - automatic aspect-ratio handling: a wrapper div sized from the
 //   image's own Sanity-reported dimensions unless `aspectRatio` is
 //   given explicitly, so layout never shifts once the image loads
-// - a CDN-swappable loader (src/lib/media/sanityLoader.ts) instead of
+// - a CDN-swappable loader (configured globally as images.loaderFile in
+//   next.config.ts — see src/lib/media/sanityLoader.ts) instead of
 //   Next's default optimizer, so responsive `sizes`/lazy-loading/blur-up
 //   all still work but the actual resizing happens at the image host
 // - a blur-up placeholder from Sanity's generated LQIP when available —
@@ -57,7 +57,6 @@ export default function ResponsiveImage({
         alt={alt}
         fill
         sizes={sizes}
-        loader={sanityImageLoader}
         priority={priority}
         placeholder={lqip ? "blur" : "empty"}
         blurDataURL={lqip ?? undefined}
