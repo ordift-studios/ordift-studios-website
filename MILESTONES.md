@@ -166,7 +166,12 @@ timeline land before profile/account management, since they're what
 make the portal feel like a premium client workspace from the first
 login, not a settings page.
 
-### Milestone 1 — Client Dashboard (Home Overview)
+### Milestone 1 — Client Dashboard (Home Overview) ✅ complete
+**Shipped:** 2026-07-26, commit `2d06035`. Verified live against staging
+(mixed-stage test client + a zero-data client for the empty state, both
+mobile and desktop widths, zero console errors) before merging; all test
+data removed afterward.
+
 Treated as the client's **workspace**, not a traditional booking-status
 page — design reference: Notion / Linear / Stripe Dashboard / Vercel
 Dashboard. Built as an extensible widget grid (see "Component
@@ -176,28 +181,31 @@ redesign. No new schema for this milestone — confirmed against the live
 writing this spec, including the honest gaps noted inline below.
 
 **Sections:**
-- [ ] **Welcome Banner** — greets the client by name
-- [ ] **Active Projects** — one card per open enquiry (see card spec
-      below), each linking to its own Booking & Project Timeline
-      (Milestone 2)
-- [ ] **Upcoming Sessions / Workshops** — registered workshops with a
+- [x] **Welcome Banner** — greets the client by name
+- [x] **Active Projects** — one card per open enquiry (see card spec
+      below). **Note:** cards do not yet link to the Booking & Project
+      Timeline — that page doesn't exist until Milestone 2, so linking
+      to it now would be a dead link. Cards show a "Full project
+      timeline coming soon" note instead; Milestone 2 wires the real
+      link in (`ProjectCardData.timelineAvailable`, currently `false`)
+- [x] **Upcoming Sessions / Workshops** — registered workshops with a
       future `startDate` (read from the Sanity workshop document via
       the existing `contentRepository.getWorkshopBySlug()`, keyed off
       `workshop_registrations.workshop_slug` — no new schema)
-- [ ] **Latest Project Updates** — most recent status change per active
+- [x] **Latest Project Updates** — most recent status change per active
       project
-- [ ] **Deliverables Ready** — **placeholder for this milestone**: the
+- [x] **Deliverables Ready** — **placeholder for this milestone**: the
       `deliverables` table doesn't exist until Milestone 3, so this
       widget renders an honest "nothing yet" state now and starts
       showing real counts once that table ships — the widget slot and
       its UI exist today, the data source is wired in later
-- [ ] **Recent Notifications** — **placeholder for this milestone**:
+- [x] **Recent Notifications** — **placeholder for this milestone**:
       same reasoning — `client_notifications` doesn't exist until
       Milestone 5; widget slot exists now, wired in later
-- [ ] **Recent Activity Timeline** — combined feed across enquiries +
+- [x] **Recent Activity Timeline** — combined feed across enquiries +
       workshop registrations (submission/registration events only in
       this milestone — full stage-by-stage history is Milestone 2)
-- [ ] **Quick Actions** — View Projects (scrolls to Active Projects on
+- [x] **Quick Actions** — View Projects (scrolls to Active Projects on
       this page), View Deliverables (**disabled/"coming soon"** until
       Milestone 3), View Bookings (links to the existing
       `/portal/workshops`, live today), Request Reschedule
@@ -205,8 +213,13 @@ writing this spec, including the honest gaps noted inline below.
       (**disabled/"coming soon"** until Milestone 6) — every action's
       slot exists now; three of five activate as later milestones ship,
       shown honestly as not-yet-available rather than a broken link
-- [ ] Clean first-time empty state (no active projects yet) with a
-      "Start an Enquiry" call to action
+- [x] Clean first-time empty state (no active projects yet) with a
+      "Start an Enquiry" call to action — verified live with a
+      zero-data test client, all widgets included
+- [x] **Also shipped, not originally itemized:** a "Pending Payments"
+      widget (honest future-ready placeholder, per the approved scope —
+      real payment tracking is `v1.4.x`), matching the widget list from
+      the approved dashboard refinement
 
 **Active Project Card fields — data source for each, confirmed against
 the real schema (no inventing a field that doesn't exist):**
