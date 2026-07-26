@@ -5,6 +5,8 @@ import { getRegistrationById, REGISTRATION_STATUSES, PAYMENT_STATUSES } from "@/
 import { getCurrentUser, hasRole } from "@/lib/portal/roles";
 import { getDeliverableCategories, getDeliverablesForEntity } from "@/lib/admin/deliverables";
 import DeliverablesManager from "@/components/admin/DeliverablesManager";
+import { getProjectRequestsForEntity } from "@/lib/admin/projectRequests";
+import ProjectRequestsManager from "@/components/admin/ProjectRequestsManager";
 import { updateBookingStatusAction } from "../actions";
 
 export const metadata: Metadata = {
@@ -24,10 +26,11 @@ function formatDateTime(iso: string): string {
 
 export default async function AdminBookingDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const [registration, categories, deliverables, user] = await Promise.all([
+  const [registration, categories, deliverables, requests, user] = await Promise.all([
     getRegistrationById(id),
     getDeliverableCategories(),
     getDeliverablesForEntity("workshop_registration", id),
+    getProjectRequestsForEntity("workshop_registration", id),
     getCurrentUser(),
   ]);
   if (!registration) notFound();
@@ -88,6 +91,12 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
             deliverables={deliverables}
             categories={categories}
             isAdmin={hasRole(user, "admin")}
+          />
+
+          <ProjectRequestsManager
+            entityType="workshop_registration"
+            entityId={registration.id}
+            requests={requests}
           />
         </div>
 

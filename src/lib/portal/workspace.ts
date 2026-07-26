@@ -7,6 +7,7 @@ import {
   getWorkshopRegistrationByIdForUser,
 } from "@/lib/portal/data";
 import { crmStageProgress, nextCrmStage } from "@/lib/portal/dashboard";
+import type { ProjectRequestStatus } from "@/lib/admin/projectRequests";
 
 // The reusable Project Workspace's data layer — every tab reads through
 // here, never queries a table directly, so a future project kind
@@ -160,6 +161,8 @@ const TIMELINE_ACTION_LABELS: Record<string, (metadata: Record<string, unknown>)
   "booking.status_change": (m) =>
     m.registrationStatus ? `Booking updated — ${String(m.registrationStatus)}` : "Booking updated",
   "deliverable.published": (m) => (m.title ? `New deliverable published — ${String(m.title)}` : "New deliverable published"),
+  "project_request.decided": (m) =>
+    m.status ? `Request ${String(m.status)}` : "A request was decided",
 };
 
 export async function getWorkspaceTimeline(
@@ -296,5 +299,53 @@ export async function getClientDeliverables(
     categoryLabel: (row.deliverable_categories as unknown as { label: string } | null)?.label ?? "Other",
     publishedByName: (row.profiles as unknown as { full_name: string | null } | null)?.full_name ?? null,
     publishedAt: row.published_at,
+  }));
+}
+
+// ============================================================
+// Requests (client-submitted, staff-decided, since migration 0008)
+// ============================================================
+
+export type ClientProjectRequest = {
+  id: string;
+  requestTypeLabel: string;
+  status: ProjectRequestStatus;
+  clientNotes: string | null;
+  staffResponse: string | null;
+  decidedAt: string | null;
+  createdAt: string;
+};
+
+export async function getClientProjectRequests(
+  kind: ProjectKind,
+  id: string,
+  userId: string
+): Promise<ClientProjectRequest[]> {
+  const owner =
+    kind === "enquiry" ? await getEnquiryByIdForUser(id, userId) : await getWorkshopRegistrationByIdForUser(id, userId);
+  if (!owner) return [];
+
+  const entityType = kind === "enquiry" ? "enquiry" : "workshop_registration";
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("project_requests")
+    .select("id, status, client_notes, staff_response, decided_at, created_at, request_types(label)")
+    .eq("entity_type", entityType)
+    .eq("entity_id", id)
+    .order("created_at", { ascending: false });
+
+  if (error) {
+    console.error("[portal] failed to load project requests", error.message);
+    return [];
+  }
+
+  return (data ?? []).map((row) => ({
+    id: row.id,
+    requestTypeLabel: (row.request_types as unknown as { label: string } | null)?.label ?? "Request",
+    status: row.status as ProjectRequestStatus,
+    clientNotes: row.client_notes,
+    staffResponse: row.staff_response,
+    decidedAt: row.decided_at,
+    createdAt: row.created_at,
   }));
 }

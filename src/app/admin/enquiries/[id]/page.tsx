@@ -6,6 +6,8 @@ import { getEnquiryById, getEnquiryNotes, CRM_STAGES } from "@/lib/admin/enquiri
 import { getCurrentUser, hasRole } from "@/lib/portal/roles";
 import { getDeliverableCategories, getDeliverablesForEntity } from "@/lib/admin/deliverables";
 import DeliverablesManager from "@/components/admin/DeliverablesManager";
+import { getProjectRequestsForEntity } from "@/lib/admin/projectRequests";
+import ProjectRequestsManager from "@/components/admin/ProjectRequestsManager";
 import { updateStageAction, addNoteAction } from "../actions";
 
 export const metadata: Metadata = {
@@ -26,11 +28,12 @@ function formatDateTime(iso: string): string {
 export default async function AdminEnquiryDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
 
-  const [enquiry, notes, categories, deliverables, user] = await Promise.all([
+  const [enquiry, notes, categories, deliverables, requests, user] = await Promise.all([
     getEnquiryById(id),
     getEnquiryNotes(id),
     getDeliverableCategories(),
     getDeliverablesForEntity("enquiry", id),
+    getProjectRequestsForEntity("enquiry", id),
     getCurrentUser(),
   ]);
 
@@ -134,6 +137,8 @@ export default async function AdminEnquiryDetailPage({ params }: { params: Promi
             categories={categories}
             isAdmin={hasRole(user, "admin")}
           />
+
+          <ProjectRequestsManager entityType="enquiry" entityId={enquiry.id} requests={requests} />
         </div>
 
         <div>

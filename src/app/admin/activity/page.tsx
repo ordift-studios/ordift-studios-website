@@ -15,6 +15,7 @@ const ACTION_LABELS: Record<string, string> = {
   "booking.status_change": "Changed booking status",
   "deliverable.published": "Published a deliverable",
   "deliverable.removed": "Removed a deliverable",
+  "project_request.decided": "Decided a project request",
 };
 
 function formatDateTime(iso: string): string {
