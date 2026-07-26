@@ -282,7 +282,11 @@ export const pulseSourcesQuery = `*[_type == "pulseSource"] | order(name asc) ${
 // differs (draft/inReview/published/archived vs. Journal's
 // draft/published) — see PULSE_ARCHITECTURE.md §4 and
 // pulseHelpers.isPubliclyVisible for the equivalent JS-side check.
-const pulseVisibilityFilter = `status == "published" && (!defined(scheduledFor) || scheduledFor <= now())`;
+// "archived" is included deliberately (unlike "draft"/"inReview") — an
+// archived item stays visible on the public Stories/Journal hub, shown
+// with an "Archived" trust badge (see storiesFeed.ts) rather than
+// disappearing, per STORIES_PULSE_INTEGRATION.md.
+const pulseVisibilityFilter = `(status == "published" || status == "archived") && (!defined(scheduledFor) || scheduledFor <= now())`;
 
 export const pulseArticleFragment = `{
   "id": _id,

@@ -448,10 +448,15 @@ export type LegalPage = {
 export type PulseContentKind = "article" | "opportunity";
 
 // "editorial" = Ordift-authored (has an Author, no source); "curated" =
-// sourced from a trusted PulseSource (has provenance fields, no Author).
-// See PulseArticle.body's own note on why curated content is always a
-// written summary, never a raw reproduction of the source.
-export type PulseOrigin = "editorial" | "curated";
+// sourced from a trusted PulseSource (has provenance fields, no Author);
+// "community" = submitted by someone outside Ordift Studios, not yet
+// backed by its own submitter-identity field — added only to drive the
+// "Community Submitted" trust badge (see storiesFeed.ts) when the Stories
+// hub embedding shipped (STORIES_PULSE_INTEGRATION.md). A dedicated
+// submission flow, if built later, would add fields, not change this.
+// See PulseArticle.body's own note on why curated/community content is
+// always a written summary, never a raw reproduction of the source.
+export type PulseOrigin = "editorial" | "curated" | "community";
 
 // No "scheduled" status value — scheduling is a separate `scheduledFor`
 // field, exactly like JournalPost, so the same proven visibility-gate

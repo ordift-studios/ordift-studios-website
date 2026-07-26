@@ -1,11 +1,13 @@
 import type { PulseArticle } from "./types";
 
-// Mirrors journalHelpers.isPubliclyVisible exactly, adapted to Pulse's
-// richer status enum (draft/inReview/published/archived vs. Journal's
-// draft/published) — an article is visible once "published" AND either
-// no scheduledFor is set, or it's already in the past.
+// Mirrors journalHelpers.isPubliclyVisible, adapted to Pulse's richer
+// status enum (draft/inReview/published/archived vs. Journal's
+// draft/published) — an article is visible once "published" OR
+// "archived" (archived items stay visible with a dimmed "Archived" badge
+// rather than disappearing — see storiesFeed.ts), AND either no
+// scheduledFor is set, or it's already in the past.
 export function isPubliclyVisible(article: PulseArticle): boolean {
-  if (article.status !== "published") return false;
+  if (article.status !== "published" && article.status !== "archived") return false;
   if (!article.scheduledFor) return true;
   return new Date(article.scheduledFor).getTime() <= Date.now();
 }
