@@ -16,6 +16,23 @@ export type MediaAssetProps = {
 const FALLBACK_ASPECT_RATIO = "16/9";
 
 export default function MediaAsset({ media, aspectRatio, sizes, priority, className = "" }: MediaAssetProps) {
+  const ratio = aspectRatio ?? FALLBACK_ASPECT_RATIO;
+
+  // Content gap (field exists, no asset uploaded yet) rather than a
+  // loading/network state — same distinction Avatar makes for a missing
+  // photo. Applies to all three media types since the schema allows any
+  // of them to reference an unset asset.
+  if (!media.url) {
+    return (
+      <div
+        role="img"
+        aria-label={media.alt}
+        className={`relative overflow-hidden bg-ordift-navy-900/10 ${className}`}
+        style={{ aspectRatio: ratio }}
+      />
+    );
+  }
+
   if (media.type === "image") {
     return (
       <ResponsiveImage
@@ -31,8 +48,6 @@ export default function MediaAsset({ media, aspectRatio, sizes, priority, classN
       />
     );
   }
-
-  const ratio = aspectRatio ?? FALLBACK_ASPECT_RATIO;
 
   if (media.type === "video") {
     return (

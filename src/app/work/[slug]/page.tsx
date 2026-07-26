@@ -34,7 +34,7 @@ export async function generateMetadata({
     // image is set — most editors won't remember to fill in a separate
     // social-share image, and the hero is already the right shot.
     openGraph: {
-      images: [project.seo.ogImageUrl ?? project.heroMedia.url].filter(Boolean),
+      images: [project.seo.ogImageUrl ?? project.heroMedia.url].filter((url): url is string => Boolean(url)),
     },
   };
 }

@@ -45,7 +45,8 @@ export type Venue = {
 
 export type GalleryImage = {
   id: ID;
-  url: string;
+  // Null when the array item exists but no asset has been uploaded yet.
+  url: string | null;
   alt: string;
   caption: string | null;
   // Sanity-generated image metadata, used by ResponsiveImage
@@ -149,7 +150,9 @@ export type PortfolioDiscipline =
 // an iframe. "video" = a native file, rendered as <video>. Distinguished
 // so the frontend knows which element to render without sniffing the URL.
 export type MediaAsset = {
-  url: string;
+  // Null when the CMS field exists but no asset has been uploaded yet —
+  // a content gap, not an error (see MediaAsset component's empty state).
+  url: string | null;
   type: "image" | "video" | "embed";
   alt: string;
   // Only populated for type === "image" — a video file or embed URL has

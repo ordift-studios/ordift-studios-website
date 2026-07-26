@@ -15,7 +15,9 @@ import Image from "next/image";
 // - lazy loading by default (native, via next/image); pass `priority`
 //   for the one or two images that are above the fold on first paint
 export type ResponsiveImageProps = {
-  src: string;
+  // Null when the CMS field exists but no asset has been uploaded yet —
+  // renders a neutral placeholder instead of an invalid empty `src`.
+  src: string | null;
   alt: string;
   width?: number | null;
   height?: number | null;
@@ -49,6 +51,17 @@ export default function ResponsiveImage({
   style,
 }: ResponsiveImageProps) {
   const ratio = aspectRatio ?? (width && height ? `${width}/${height}` : FALLBACK_ASPECT_RATIO);
+
+  if (!src) {
+    return (
+      <div
+        role="img"
+        aria-label={alt}
+        className={`relative overflow-hidden bg-ordift-navy-900/10 ${className}`}
+        style={{ aspectRatio: ratio, ...style }}
+      />
+    );
+  }
 
   return (
     <div className={`relative overflow-hidden ${className}`} style={{ aspectRatio: ratio, ...style }}>

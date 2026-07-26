@@ -31,7 +31,7 @@ export async function generateMetadata({
     // Falls back to the post's own hero image when no dedicated OG image
     // is set — same reasoning as the Portfolio detail page.
     openGraph: {
-      images: [post.seo.ogImageUrl ?? post.heroImage.url].filter(Boolean),
+      images: [post.seo.ogImageUrl ?? post.heroImage.url].filter((url): url is string => Boolean(url)),
     },
   };
 }

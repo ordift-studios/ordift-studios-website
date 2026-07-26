@@ -46,6 +46,7 @@ export default function Logo({
       height={height}
       className={className}
       priority={priority}
+      unoptimized
     />
   );
 }
