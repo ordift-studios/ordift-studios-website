@@ -19,6 +19,15 @@
 
 **Remaining before full public launch** (tracked in `MILESTONES.md`, not this roadmap — these are production-hardening tasks, not new product versions): Google Sheets data-durability integration, CAPTCHA on public forms, backup/restore verification, and the final Launch Readiness Go/No-Go review. See `PRODUCTION_READINESS_REPORT.md` §2 and §7 for the current state of each.
 
+**🟡 Pending Owner Decision** (explicitly deferred 2026-07-27 so infrastructure decisions don't block feature work — kept visible here rather than silently dropped):
+1. **Cloudflare Turnstile keys** — CAPTCHA is code-complete on `/portal/signup`/`/portal/login`; needs a Turnstile site + 2 keys from you.
+2. **Google Cloud service account** — needed for Google Sheets data-durability (code already complete).
+3. **Google Sheets credentials** — the spreadsheet ID + sharing setup, alongside item 2.
+4. **Google Analytics** — no code built yet; needs a decision + measurement ID before it's worth building.
+5. **Supabase Pro-plan billing decision** — the highest-priority of the five: production currently has **zero backup coverage** on the Free plan. See `PRODUCTION_READINESS_REPORT.md` §7.
+
+None of these block Version 1.1+ work — they're infrastructure/billing decisions independent of feature development, revisit whenever ready.
+
 No further planning fields apply — this version is done, not proposed.
 
 ---

@@ -54,12 +54,12 @@ All tests below were run against the live production Supabase project (`goxuyoox
 
 ## 2. Remaining Work (pre-existing, not addressed this session)
 
-Updated 2026-07-27 (second pass, after the Milestone 0 tracker was reconciled and Turnstile was built):
+Updated 2026-07-27 (third pass — the five items below were explicitly deferred by you this date so infrastructure/billing decisions don't block continued feature work; each is tagged **🟡 PENDING OWNER DECISION** and stays visible here and in `PRODUCT_ROADMAP.md` until resolved):
 
-- **Turnstile / CAPTCHA** — ✅ **code complete** as of this update: client widget and server verification built and locally tested on `/portal/signup` and `/portal/login` (see `CHANGELOG.md`). **Not yet enabled in production** — needs you to create a Cloudflare Turnstile site and provide `NEXT_PUBLIC_TURNSTILE_SITE_KEY`/`TURNSTILE_SECRET_KEY`.
-- **Google Sheets integration** — code was already complete; still not enabled in production, needs a Google Cloud service account from you (`GOOGLE_SERVICE_ACCOUNT_EMAIL`, `GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY`, `GOOGLE_SHEETS_SPREADSHEET_ID`).
-- **Backup and restore — escalated.** Not just "unverified": production Supabase is confirmed on the **Free plan, which includes zero project backups** (Supabase's own dashboard: "Free Plan does not include project backups"). This is now the most serious open item in this report — a database incident today would be unrecoverable. Requires a **Supabase Pro-plan upgrade**, a billing decision that needs your explicit approval before I act on it.
-- **Analytics** (`NEXT_PUBLIC_GA_MEASUREMENT_ID`) — no code exists yet, not just a missing key; genuinely unbuilt.
+- **Turnstile / CAPTCHA** — 🟡 **PENDING OWNER DECISION.** ✅ code complete: client widget and server verification built and locally tested on `/portal/signup` and `/portal/login` (see `CHANGELOG.md`). Needs you to create a Cloudflare Turnstile site and provide `NEXT_PUBLIC_TURNSTILE_SITE_KEY`/`TURNSTILE_SECRET_KEY`.
+- **Google Sheets integration** — 🟡 **PENDING OWNER DECISION.** Code was already complete; needs a Google Cloud service account from you (`GOOGLE_SERVICE_ACCOUNT_EMAIL`, `GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY`, `GOOGLE_SHEETS_SPREADSHEET_ID`).
+- **Backup and restore** — 🟡 **PENDING OWNER DECISION** (billing), and still the most serious open item in this report. Production Supabase is confirmed on the **Free plan, which includes zero project backups** (Supabase's own dashboard: "Free Plan does not include project backups"). A database incident today would be unrecoverable. Requires a **Supabase Pro-plan upgrade**.
+- **Analytics** — 🟡 **PENDING OWNER DECISION.** No code exists yet, not just a missing key; needs `NEXT_PUBLIC_GA_MEASUREMENT_ID` from you before it's worth building.
 - **Contact/WhatsApp display vars** — downgraded from "remaining work": `src/lib/content/local/siteWideData.ts` already has safe real-value fallbacks baked in, so production isn't broken by their absence from Vercel. Cosmetic only.
 - **Full production launch audit** (Milestone 0.7) and **Launch Readiness Checklist / Go-No-Go** (Milestone 0.8) — still pending, blocked on the three items above.
 - **Reply-To header** for auth emails (`info@ordiftstudios.com`) — see §1.1; needs a Supabase Auth Hook if this is a hard requirement.

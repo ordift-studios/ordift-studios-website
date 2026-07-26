@@ -1187,27 +1187,36 @@ Decisions confirmed 2026-07-25:
   `/portal/signup` and `/portal/login`, following the same
   "inert-until-configured" pattern as Google Sheets — renders/verifies
   nothing until `NEXT_PUBLIC_TURNSTILE_SITE_KEY`/`TURNSTILE_SECRET_KEY`
-  are set. **Not yet enabled** — needs you to create a Cloudflare
-  Turnstile site and provide the two keys.
+  are set. **🟡 PENDING OWNER DECISION** — needs you to create a
+  Cloudflare Turnstile site and provide the two keys; deliberately
+  deferred (2026-07-27) so infrastructure decisions don't block feature
+  work — see `PRODUCT_ROADMAP.md` for how this stays visible going
+  forward.
 - **Google Sheets backup** — code was already complete
   (`saveToGoogleSheets` in `src/lib/enquiry/storage.ts` and
-  `src/lib/workshops/registrationStorage.ts`); **not yet enabled** —
-  needs a Google Cloud service account from you
+  `src/lib/workshops/registrationStorage.ts`). **🟡 PENDING OWNER
+  DECISION** — needs a Google Cloud service account from you
   (`GOOGLE_SERVICE_ACCOUNT_EMAIL`, `GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY`,
-  `GOOGLE_SHEETS_SPREADSHEET_ID`).
+  `GOOGLE_SHEETS_SPREADSHEET_ID`); deliberately deferred (2026-07-27).
+- **Analytics (Google Analytics)** — no code exists yet, not just a
+  missing key. **🟡 PENDING OWNER DECISION** — needs
+  `NEXT_PUBLIC_GA_MEASUREMENT_ID` from you before this is even worth
+  building; deliberately deferred (2026-07-27).
 
 Production domain/DNS and the production Supabase project (both
 originally listed as blockers here) are done — see Phase B above and
 `DNS_SNAPSHOT_PRE_LAUNCH.md`.
 
-### Phase E — Recovery 🔴 blocked on a billing decision
+### Phase E — Recovery 🟡 PENDING OWNER DECISION (billing)
 Production Supabase project exists, but **the Free plan includes zero
 project backups at all** (confirmed directly in the Dashboard: "Free
 Plan does not include project backups") — not "unverified," genuinely
-non-existent. A Supabase Pro-plan upgrade is required before any
+non-existent. A **Supabase Pro-plan upgrade** is required before any
 backup schedule, backup, or restore test can happen. This is a paid/
-billing decision — flagged for your approval, not actioned. See
-`PRODUCTION_READINESS_REPORT.md` §7 for the current risk assessment.
+billing decision — flagged for your approval, not actioned; deliberately
+deferred (2026-07-27) so it doesn't block feature work, but it remains
+the single highest-priority item in `PRODUCTION_READINESS_REPORT.md` §7
+whenever you're ready to resolve it.
 
 ### Phase F — Final Production Verification 🔶 partially done
 The email/IAM portion of this was completed 2026-07-27 — see
