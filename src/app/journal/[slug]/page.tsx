@@ -7,6 +7,8 @@ import SocialShare from "@/components/SocialShare";
 import JournalPostCard from "@/components/journal/JournalPostCard";
 import { contentRepository } from "@/lib/content";
 import { estimateReadingTime, formatDate } from "@/lib/content/journalHelpers";
+import MediaAsset from "@/components/media/MediaAsset";
+import Avatar from "@/components/media/Avatar";
 
 export async function generateStaticParams() {
   const posts = await contentRepository.getJournalPosts();
@@ -26,7 +28,11 @@ export async function generateMetadata({
     title: post.seo.metaTitle ?? `${post.title} — Ordift Studios Stories`,
     description: post.seo.metaDescription ?? post.excerpt,
     alternates: { canonical: post.seo.canonicalUrl ?? `${siteUrl}/journal/${post.slug}` },
-    openGraph: post.seo.ogImageUrl ? { images: [post.seo.ogImageUrl] } : undefined,
+    // Falls back to the post's own hero image when no dedicated OG image
+    // is set — same reasoning as the Portfolio detail page.
+    openGraph: {
+      images: [post.seo.ogImageUrl ?? post.heroImage.url].filter(Boolean),
+    },
   };
 }
 
@@ -106,12 +112,16 @@ export default async function JournalPostPage({
         </div>
       </section>
 
-      <div className="aspect-[21/9] bg-ordift-navy-900/10" role="img" aria-label={post.heroImage.alt} />
+      <MediaAsset media={post.heroImage} aspectRatio="21/9" sizes="100vw" priority />
 
       <section className="bg-white px-4 sm:px-8 py-14 sm:py-20">
         <div className="max-w-3xl mx-auto">
           {post.format === "video" && post.videoUrl && (
-            <div className="aspect-video rounded-lg bg-ordift-navy-900/10 mb-8" role="img" aria-label="Video article" />
+            <MediaAsset
+              media={{ url: post.videoUrl, type: "embed", alt: "Video article" }}
+              aspectRatio="16/9"
+              className="rounded-lg mb-8"
+            />
           )}
 
           <p className="font-sans text-body text-ordift-ink whitespace-pre-line mb-10">{post.body}</p>
@@ -135,7 +145,7 @@ export default async function JournalPostPage({
               href={`/journal/authors/${author.slug}`}
               className="flex items-center gap-4 rounded-lg border border-black/10 p-4 mb-10 hover:border-black/20 transition-colors"
             >
-              <div className="w-14 h-14 rounded-full bg-ordift-navy-900/10 shrink-0" />
+              <Avatar src={author.photoUrl} alt={author.name} size={56} />
               <div>
                 <p className="font-sans font-medium text-body-small text-ordift-ink">
                   {author.name}

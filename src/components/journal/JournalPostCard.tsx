@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { Author, Category, JournalPost } from "@/lib/content/types";
 import { estimateReadingTime, formatDate } from "@/lib/content/journalHelpers";
+import MediaAsset from "@/components/media/MediaAsset";
 
 export default function JournalPostCard({
   post,
@@ -16,7 +17,12 @@ export default function JournalPostCard({
       href={`/journal/${post.slug}`}
       className="block rounded-xl bg-white border border-black/10 overflow-hidden transition-colors hover:border-black/20"
     >
-      <div className="aspect-[16/10] bg-ordift-navy-900/10 relative">
+      <div className="relative">
+        <MediaAsset
+          media={post.heroImage}
+          aspectRatio="16/10"
+          sizes="(min-width: 1024px) 33vw, (min-width: 640px) 50vw, 100vw"
+        />
         {post.featured && (
           <span className="absolute top-3 left-3 inline-block rounded-full px-3 py-1 font-sans text-caption font-semibold uppercase tracking-[0.1em] bg-ordift-gold text-ordift-navy-950">
             Featured

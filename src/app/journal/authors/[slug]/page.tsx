@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import NavBar from "@/components/NavBar";
 import Footer from "@/components/Footer";
 import JournalPostCard from "@/components/journal/JournalPostCard";
+import Avatar from "@/components/media/Avatar";
 import { contentRepository } from "@/lib/content";
 
 export async function generateStaticParams() {
@@ -43,7 +44,7 @@ export default async function AuthorProfilePage({
 
       <section className="bg-ordift-navy-950 text-white px-4 sm:px-8 py-16 sm:py-20">
         <div className="max-w-4xl mx-auto flex items-center gap-6">
-          <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-full bg-white/10 shrink-0" />
+          <Avatar src={author.photoUrl} alt={author.name} size={96} />
           <div>
             <p className="font-sans font-semibold uppercase tracking-[0.2em] text-eyebrow lg:text-eyebrow-desktop text-ordift-gold mb-3">
               Author
