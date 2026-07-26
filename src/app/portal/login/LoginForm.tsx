@@ -3,6 +3,7 @@
 import { useActionState } from "react";
 import Link from "next/link";
 import Button from "@/components/Button";
+import TurnstileWidget from "@/components/TurnstileWidget";
 import { signInAction, type LoginState } from "./actions";
 
 const initialState: LoginState = { error: null };
@@ -67,6 +68,8 @@ export default function LoginForm({
           className="w-full min-h-11 rounded-lg border border-black/15 bg-white px-4 py-2.5 font-sans text-body text-ordift-ink focus:outline-none focus:ring-2 focus:ring-ordift-gold focus:border-transparent"
         />
       </div>
+
+      <TurnstileWidget />
 
       <Button type="submit" variant="primary" disabled={pending} className="w-full">
         {pending ? "Signing in…" : "Sign In"}

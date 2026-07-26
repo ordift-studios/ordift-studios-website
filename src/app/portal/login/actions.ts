@@ -3,6 +3,7 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { primaryPortalPath, type RoleSlug } from "@/lib/portal/roles";
+import { verifyTurnstileToken } from "@/lib/turnstile";
 
 export type LoginState = { error: string | null };
 
@@ -13,6 +14,13 @@ export async function signInAction(_prev: LoginState, formData: FormData): Promi
 
   if (!email || !password) {
     return { error: "Enter your email and password." };
+  }
+
+  const turnstileOk = await verifyTurnstileToken(
+    String(formData.get("cf-turnstile-response") ?? "") || null
+  );
+  if (!turnstileOk) {
+    return { error: "Verification failed. Please try again." };
   }
 
   const supabase = await createClient();

@@ -3,6 +3,7 @@
 import { useActionState } from "react";
 import Link from "next/link";
 import Button from "@/components/Button";
+import TurnstileWidget from "@/components/TurnstileWidget";
 import { signUpAction, type SignupState } from "./actions";
 
 const initialState: SignupState = { error: null };
@@ -58,6 +59,8 @@ export default function SignupForm() {
         />
         <p className="mt-1.5 font-sans text-caption text-ordift-ink-muted">At least 8 characters.</p>
       </div>
+
+      <TurnstileWidget />
 
       <Button type="submit" variant="primary" disabled={pending} className="w-full">
         {pending ? "Creating account…" : "Create Account"}

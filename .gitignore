@@ -32,6 +32,10 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+# ...except the example template — it's referenced throughout the docs
+# (ADMIN_GUIDE.md, DEVELOPMENT_GUIDE.md, etc.) as a tracked file listing
+# every required env var name, and holds zero secret values.
+!.env.example
 
 # vercel
 .vercel

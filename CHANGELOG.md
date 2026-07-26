@@ -13,6 +13,45 @@ History" for continuity — the version numbers used there ("1.0" through
 "1.3.0") were informal internal milestone labels only, never git tags,
 and are superseded by the official sequence starting at v1.0.0.
 
+## v1.0.0 (Production Hardening) — CAPTCHA & Milestone 0 Reconciliation — 2026-07-27
+
+Added to the v1.0.0 baseline, same date as the entry below — a
+follow-up stage after the repository was pushed to GitHub and tagged
+`v1.0.0-production`.
+
+**Added:**
+- Cloudflare Turnstile CAPTCHA on `/portal/signup` and `/portal/login`:
+  client widget (`src/components/TurnstileWidget.tsx`) and server-side
+  verification (`src/lib/turnstile.ts`), wired into both
+  `SignupForm`/`LoginForm` and their server actions. Follows the same
+  "inert until configured" pattern already used for Google Sheets — both
+  the widget and the verification check no-op until
+  `NEXT_PUBLIC_TURNSTILE_SITE_KEY`/`TURNSTILE_SECRET_KEY` are set, so
+  this ships with zero behavior change until credentials are supplied.
+
+**Improvements:**
+- Reconciled the stale "Production Readiness & Launch Preparation"
+  Phase A–F tracker in `MILESTONES.md` against actual current state —
+  it hadn't been updated since 2026-07-25 and no longer matched reality
+  (claimed Phase D was blocked on domain/DNS, which had since been
+  resolved).
+
+**Security updates:**
+- **New finding:** production Supabase is on the Free plan, which
+  includes **zero backup coverage** (not "unconfigured" — the plan
+  doesn't support it at all). Escalated in `MILESTONES.md` Phase E and
+  `PRODUCTION_READINESS_REPORT.md` as a billing decision requiring your
+  approval, not actioned.
+
+**Known issues:** Turnstile and Google Sheets are both code-complete but
+not yet enabled in production — both need credentials only you can
+generate (see `PRODUCTION_READINESS_REPORT.md` for exactly what's
+needed from each).
+
+**Upgrade notes:** none — purely additive, inert without new env vars.
+
+---
+
 ## v1.0.0 (Production Hardening) — Access Management, Email Infrastructure & Roadmap — 2026-07-27
 
 Added to the v1.0.0 baseline (not a new tagged version — per explicit

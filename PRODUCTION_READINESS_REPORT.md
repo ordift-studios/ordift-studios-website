@@ -54,13 +54,14 @@ All tests below were run against the live production Supabase project (`goxuyoox
 
 ## 2. Remaining Work (pre-existing, not addressed this session)
 
-These are carried over from the still-open Milestone 0 checklist in `MILESTONES.md` — listed here for a single consolidated view, not because this session was scoped to close them:
+Updated 2026-07-27 (second pass, after the Milestone 0 tracker was reconciled and Turnstile was built):
 
-- **Google Sheets integration** (`GOOGLE_SERVICE_ACCOUNT_EMAIL`, `GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY`, `GOOGLE_SHEETS_SPREADSHEET_ID`) — not present in production Vercel env vars. Tier-1 form submissions (enquiries, workshop registrations) currently write to Supabase but not the Sheets backup. Needs a Google Cloud service account you create and provide.
-- **Turnstile / CAPTCHA** — not yet enabled on `/portal/signup` or `/portal/login`, nor on the public Tier-1 forms (per the pre-existing note in `DEPLOYMENT.md`).
-- **Analytics** (`NEXT_PUBLIC_GA_MEASUREMENT_ID`) and **contact/WhatsApp display vars** (`NEXT_PUBLIC_CONTACT_EMAIL`, `NEXT_PUBLIC_WHATSAPP_NUMBER`) — also absent from production env.
-- **Backup and restore verification** (Milestone 0.6) — Supabase's automatic backup schedule/retention has not been confirmed, and no restore has been test-run.
-- **Full production launch audit** (Milestone 0.7) and **Launch Readiness Checklist / Go-No-Go** (Milestone 0.8) — still pending, distinct from and larger in scope than this email/IAM-focused report.
+- **Turnstile / CAPTCHA** — ✅ **code complete** as of this update: client widget and server verification built and locally tested on `/portal/signup` and `/portal/login` (see `CHANGELOG.md`). **Not yet enabled in production** — needs you to create a Cloudflare Turnstile site and provide `NEXT_PUBLIC_TURNSTILE_SITE_KEY`/`TURNSTILE_SECRET_KEY`.
+- **Google Sheets integration** — code was already complete; still not enabled in production, needs a Google Cloud service account from you (`GOOGLE_SERVICE_ACCOUNT_EMAIL`, `GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY`, `GOOGLE_SHEETS_SPREADSHEET_ID`).
+- **Backup and restore — escalated.** Not just "unverified": production Supabase is confirmed on the **Free plan, which includes zero project backups** (Supabase's own dashboard: "Free Plan does not include project backups"). This is now the most serious open item in this report — a database incident today would be unrecoverable. Requires a **Supabase Pro-plan upgrade**, a billing decision that needs your explicit approval before I act on it.
+- **Analytics** (`NEXT_PUBLIC_GA_MEASUREMENT_ID`) — no code exists yet, not just a missing key; genuinely unbuilt.
+- **Contact/WhatsApp display vars** — downgraded from "remaining work": `src/lib/content/local/siteWideData.ts` already has safe real-value fallbacks baked in, so production isn't broken by their absence from Vercel. Cosmetic only.
+- **Full production launch audit** (Milestone 0.7) and **Launch Readiness Checklist / Go-No-Go** (Milestone 0.8) — still pending, blocked on the three items above.
 - **Reply-To header** for auth emails (`info@ordiftstudios.com`) — see §1.1; needs a Supabase Auth Hook if this is a hard requirement.
 
 ## 3. Known Limitations
@@ -90,13 +91,13 @@ These are carried over from the still-open Milestone 0 checklist in `MILESTONES.
 
 **Email infrastructure and Identity & Access Management: production-ready.** Both are fully configured, tested end-to-end against live production, and clean of test data.
 
-**Overall platform readiness for public launch: ~75%.** The core product (site, CMS, portals, admin platform, auth, and now email) is solid and verified. What remains is infrastructure hardening that's independent of this session's scope — Google Sheets backup, CAPTCHA, backup/restore verification, and the broader launch audit — none of which are code defects, all of which are known and already tracked in `MILESTONES.md`.
+**Overall platform readiness for public launch: ~78%** (updated 2026-07-27). The core product (site, CMS, portals, admin platform, auth, and now email) is solid and verified; CAPTCHA is now code-complete pending credentials. What remains is infrastructure hardening independent of code quality — none of it is a code defect, all of it is known and tracked in `MILESTONES.md`. The one item that moved from "nice to have" to "genuine risk" this pass is backup coverage — see below.
 
 ## 8. Go / No-Go Recommendation
 
-**No-Go for full public launch, Go for continued controlled use** (admin/staff/collaborator operations, direct client onboarding via invite) **as of today.**
+**No-Go for full public launch, Go for continued controlled use** (admin/staff/collaborator operations, direct client onboarding via invite) **as of today — unchanged from the prior pass, but for a sharper reason now.**
 
-Rationale: authentication, email, and access control — the trust-critical path for anyone touching the system — are now solid. The remaining gaps (Sheets backup, CAPTCHA, backup/restore verification) are about resilience and abuse-resistance for a fully public, unmoderated audience, not about whether the system works correctly for the people already using it. Recommend closing Milestone 0's remaining items before opening the public Tier-1 forms and signup flow to the general public.
+Rationale: authentication, email, and access control — the trust-critical path for anyone touching the system — are solid. The remaining gaps (Sheets backup, CAPTCHA enablement, and especially **the complete absence of database backups on the Free plan**) are about resilience for a fully public, unmoderated audience holding real client data at volume — not about whether the system works correctly for the people already using it today. The backup gap specifically should be treated as **higher priority than a CAPTCHA/Sheets credential gap**: a lost signup or workshop form is recoverable by asking the person to resubmit; a database incident with zero backups is not recoverable at all. Recommend resolving the Supabase Pro-plan decision before any expansion of public traffic, independent of when CAPTCHA/Sheets credentials arrive.
 
 ---
 

@@ -3,6 +3,7 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { verifyTurnstileToken } from "@/lib/turnstile";
 
 export type SignupState = { error: string | null };
 
@@ -23,6 +24,13 @@ export async function signUpAction(_prev: SignupState, formData: FormData): Prom
   }
   if (password.length < 8) {
     return { error: "Password must be at least 8 characters." };
+  }
+
+  const turnstileOk = await verifyTurnstileToken(
+    String(formData.get("cf-turnstile-response") ?? "") || null
+  );
+  if (!turnstileOk) {
+    return { error: "Verification failed. Please try again." };
   }
 
   const supabase = await createClient();

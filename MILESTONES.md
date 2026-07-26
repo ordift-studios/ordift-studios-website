@@ -1175,36 +1175,46 @@ both tables and zero remaining trace of the test auth user.
        key`; a request using the new key succeeded — confirming the old
        key is fully retired and the app is unaffected.
 
-### Phase D — External Services ⏸ partially decided, still blocked
+### Phase D — External Services 🔶 in progress (updated 2026-07-27)
 Decisions confirmed 2026-07-25:
-- **SMTP provider: Resend** — already integrated for this project's
-  transactional email; production auth emails (signup confirmation,
-  password reset) will use the same provider.
-- **CAPTCHA provider: Cloudflare Turnstile** — will protect
-  `/portal/signup` and `/portal/login`.
+- **SMTP provider: Resend** — ✅ **done** (2026-07-27). Production custom
+  SMTP live on `auth.ordiftstudios.com`, SPF/DKIM/DMARC verified, all 6
+  auth email templates branded. Full detail in
+  `PRODUCTION_READINESS_REPORT.md`.
+- **CAPTCHA provider: Cloudflare Turnstile** — ✅ **code complete**
+  (2026-07-27): client widget (`src/components/TurnstileWidget.tsx`) and
+  server verification (`src/lib/turnstile.ts`) built and wired into
+  `/portal/signup` and `/portal/login`, following the same
+  "inert-until-configured" pattern as Google Sheets — renders/verifies
+  nothing until `NEXT_PUBLIC_TURNSTILE_SITE_KEY`/`TURNSTILE_SECRET_KEY`
+  are set. **Not yet enabled** — needs you to create a Cloudflare
+  Turnstile site and provide the two keys.
+- **Google Sheets backup** — code was already complete
+  (`saveToGoogleSheets` in `src/lib/enquiry/storage.ts` and
+  `src/lib/workshops/registrationStorage.ts`); **not yet enabled** —
+  needs a Google Cloud service account from you
+  (`GOOGLE_SERVICE_ACCOUNT_EMAIL`, `GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY`,
+  `GOOGLE_SHEETS_SPREADSHEET_ID`).
 
-Still needed before any configuration work starts:
-- **Production domain and DNS** — the actual domain, and who manages
-  DNS (needed for Site URL/Redirect URLs, Sanity CORS origins, and
-  Resend's sending-domain verification).
-- Both integrations also depend on **Phase B** (the production Supabase
-  project) existing first — Resend plugs into Supabase Auth's SMTP
-  settings, Turnstile into Supabase Auth's CAPTCHA settings, both
-  per-project.
+Production domain/DNS and the production Supabase project (both
+originally listed as blockers here) are done — see Phase B above and
+`DNS_SNAPSHOT_PRE_LAUNCH.md`.
 
-### Phase E — Recovery ⏸ blocked on Phase B
-Needs the production Supabase project to exist first (Dashboard →
-Database → Backups is per-project). Configure backup schedule, perform
-one backup, perform one restore test, confirm the procedure actually
-works — not just that it's configured.
+### Phase E — Recovery 🔴 blocked on a billing decision
+Production Supabase project exists, but **the Free plan includes zero
+project backups at all** (confirmed directly in the Dashboard: "Free
+Plan does not include project backups") — not "unverified," genuinely
+non-existent. A Supabase Pro-plan upgrade is required before any
+backup schedule, backup, or restore test can happen. This is a paid/
+billing decision — flagged for your approval, not actioned. See
+`PRODUCTION_READINESS_REPORT.md` §7 for the current risk assessment.
 
-### Phase F — Final Production Verification ⏸ blocked on Phases B–E
-Re-run every critical workflow (authentication, enquiries, workshop
-registrations, dual-write, duplicate protection, RLS, anonymous
-protection, admin access, client access, email delivery, CAPTCHA,
-build/lint/typecheck) against the fully-configured production
-environment, then produce a pass/fail Production Readiness Report before
-any Launch Readiness sign-off is requested.
+### Phase F — Final Production Verification 🔶 partially done
+The email/IAM portion of this was completed 2026-07-27 — see
+`PRODUCTION_READINESS_REPORT.md` for that pass. Still outstanding before
+a full Launch Readiness sign-off: CAPTCHA and Google Sheets need their
+credentials supplied and a live test; backup/restore needs the Phase E
+billing decision resolved first.
 
 ### Action log
 - **2026-07-25** — Phase A executed: verified repository integrity
@@ -1237,6 +1247,17 @@ any Launch Readiness sign-off is requested.
   or git remote exist yet for this project. Old key's revocation
   independently verified via a direct request returning `401
   Unregistered API key`.
+- **2026-07-27** — Domain/DNS connected, production env vars
+  configured, Phase D's Resend half completed (production SMTP live,
+  branded email templates, verified SPF/DKIM/DMARC), full IAM system
+  built and verified in production (migration `0009` + grant fixes
+  `0010`–`0012`) — see `PRODUCTION_READINESS_REPORT.md` for full detail
+  on this pass. Same date: repository pushed to GitHub for the first
+  time (`origin` connected, `main` pushed, tagged `v1.0.0-production`),
+  and Phase D's Turnstile CAPTCHA code built and locally verified
+  (inert until credentials supplied — see Phase D above). New finding
+  this date: production Supabase is on the Free plan, which has zero
+  backup coverage — escalated as Phase E's blocker.
 
 ## Version 2.0 — Business Platform *(superseded — see below)*
 
