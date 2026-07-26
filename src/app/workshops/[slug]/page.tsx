@@ -7,6 +7,8 @@ import CountdownTimer from "@/components/workshops/CountdownTimer";
 import FAQAccordion from "@/components/workshops/FAQAccordion";
 import TestimonialCard from "@/components/TestimonialCard";
 import WorkshopCard from "@/components/workshops/WorkshopCard";
+import Avatar from "@/components/media/Avatar";
+import Gallery from "@/components/media/Gallery";
 import { contentRepository } from "@/lib/content";
 import {
   EXPERIENCE_LABEL,
@@ -219,7 +221,7 @@ export default async function WorkshopDetailPage({
                       href={`/workshops/instructors/${instructor.slug}`}
                       className="flex items-center gap-4 rounded-lg border border-black/10 p-4 hover:border-black/20 transition-colors"
                     >
-                      <div className="w-14 h-14 rounded-full bg-ordift-navy-900/10 shrink-0" />
+                      <Avatar src={instructor.photoUrl} alt={instructor.name} size={56} />
                       <div>
                         <p className="font-sans font-medium text-body-small text-ordift-ink">
                           {instructor.name}
@@ -242,16 +244,7 @@ export default async function WorkshopDetailPage({
             {workshop.gallery.length > 0 && (
               <div className="mb-8">
                 <p className="font-serif font-medium text-card-title text-ordift-ink mb-3">Gallery</p>
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                  {workshop.gallery.map((image) => (
-                    <div
-                      key={image.id}
-                      className="aspect-square rounded-lg bg-ordift-navy-900/10"
-                      role="img"
-                      aria-label={image.alt}
-                    />
-                  ))}
-                </div>
+                <Gallery images={workshop.gallery} columns={3} />
               </div>
             )}
 
