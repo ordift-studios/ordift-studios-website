@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { Category, PortfolioProject } from "@/lib/content/types";
 import { DISCIPLINE_LABEL } from "@/lib/content/portfolioHelpers";
+import MediaAsset from "@/components/media/MediaAsset";
 
 export default function PortfolioCard({
   project,
@@ -14,7 +15,12 @@ export default function PortfolioCard({
       href={`/work/${project.slug}`}
       className="block rounded-xl border border-black/10 bg-ordift-offwhite overflow-hidden transition-colors hover:border-black/20"
     >
-      <div className="aspect-[4/3] bg-ordift-navy-900/10 relative">
+      <div className="relative">
+        <MediaAsset
+          media={project.heroMedia}
+          aspectRatio="4/3"
+          sizes="(min-width: 1024px) 33vw, (min-width: 640px) 50vw, 100vw"
+        />
         {project.featured && (
           <span className="absolute top-3 left-3 inline-block rounded-full px-3 py-1 font-sans text-caption font-semibold uppercase tracking-[0.1em] bg-ordift-gold text-ordift-navy-950">
             Featured

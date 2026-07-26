@@ -8,6 +8,9 @@ import SocialShare from "@/components/SocialShare";
 import TestimonialCard from "@/components/TestimonialCard";
 import { contentRepository } from "@/lib/content";
 import { DISCIPLINE_HREF, DISCIPLINE_LABEL } from "@/lib/content/portfolioHelpers";
+import MediaAsset from "@/components/media/MediaAsset";
+import Gallery from "@/components/media/Gallery";
+import BeforeAfterGallery from "@/components/media/BeforeAfterGallery";
 
 export async function generateStaticParams() {
   const projects = await contentRepository.getPortfolioProjects();
@@ -27,7 +30,12 @@ export async function generateMetadata({
     title: project.seo.metaTitle ?? `${project.title} — Ordift Studios Portfolio`,
     description: project.seo.metaDescription ?? project.story.slice(0, 160),
     alternates: { canonical: project.seo.canonicalUrl ?? `${siteUrl}/work/${project.slug}` },
-    openGraph: project.seo.ogImageUrl ? { images: [project.seo.ogImageUrl] } : undefined,
+    // Falls back to the project's own hero image when no dedicated OG
+    // image is set — most editors won't remember to fill in a separate
+    // social-share image, and the hero is already the right shot.
+    openGraph: {
+      images: [project.seo.ogImageUrl ?? project.heroMedia.url].filter(Boolean),
+    },
   };
 }
 
@@ -121,7 +129,7 @@ export default async function PortfolioProjectPage({
         </div>
       </section>
 
-      <div className="aspect-[21/9] bg-ordift-navy-900/10" role="img" aria-label={project.heroMedia.alt} />
+      <MediaAsset media={project.heroMedia} aspectRatio="21/9" sizes="100vw" priority />
 
       <section className="bg-white px-4 sm:px-8 py-14 sm:py-20">
         <div className="max-w-4xl mx-auto grid grid-cols-1 lg:grid-cols-[1.1fr_0.9fr] gap-10 lg:gap-16">
@@ -231,16 +239,7 @@ export default async function PortfolioProjectPage({
                 <p className="font-serif font-medium text-card-title text-ordift-ink mb-3">
                   Final Gallery
                 </p>
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                  {project.gallery.map((image) => (
-                    <div
-                      key={image.id}
-                      className="aspect-square rounded-lg bg-ordift-navy-900/10"
-                      role="img"
-                      aria-label={image.alt}
-                    />
-                  ))}
-                </div>
+                <Gallery images={project.gallery} columns={3} />
               </div>
             )}
 
@@ -249,12 +248,7 @@ export default async function PortfolioProjectPage({
                 <p className="font-serif font-medium text-card-title text-ordift-ink mb-3">Videos</p>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   {project.videos.map((video, i) => (
-                    <div
-                      key={i}
-                      className="aspect-video rounded-lg bg-ordift-navy-900/10"
-                      role="img"
-                      aria-label={video.alt}
-                    />
+                    <MediaAsset key={i} media={video} aspectRatio="16/9" className="rounded-lg" />
                   ))}
                 </div>
               </div>
@@ -265,16 +259,7 @@ export default async function PortfolioProjectPage({
                 <p className="font-serif font-medium text-card-title text-ordift-ink mb-3">
                   Behind the Scenes
                 </p>
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                  {project.behindTheScenesGallery.map((image) => (
-                    <div
-                      key={image.id}
-                      className="aspect-square rounded-lg bg-ordift-navy-900/10"
-                      role="img"
-                      aria-label={image.alt}
-                    />
-                  ))}
-                </div>
+                <Gallery images={project.behindTheScenesGallery} columns={3} />
               </div>
             )}
 
@@ -283,27 +268,7 @@ export default async function PortfolioProjectPage({
                 <p className="font-serif font-medium text-card-title text-ordift-ink mb-3">
                   Before &amp; After
                 </p>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  {project.beforeAfterGallery.map((pair) => (
-                    <div key={pair.id}>
-                      <div className="grid grid-cols-2 gap-2">
-                        <div
-                          className="aspect-square rounded-lg bg-ordift-navy-900/10"
-                          role="img"
-                          aria-label={pair.before.alt}
-                        />
-                        <div
-                          className="aspect-square rounded-lg bg-ordift-navy-900/10"
-                          role="img"
-                          aria-label={pair.after.alt}
-                        />
-                      </div>
-                      {pair.caption && (
-                        <p className="font-sans text-caption text-ordift-ink-muted mt-2">{pair.caption}</p>
-                      )}
-                    </div>
-                  ))}
-                </div>
+                <BeforeAfterGallery pairs={project.beforeAfterGallery} />
               </div>
             )}
 
