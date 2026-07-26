@@ -3,6 +3,9 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import { crmStageLabel } from "@/lib/portal/data";
 import { getEnquiryById, getEnquiryNotes, CRM_STAGES } from "@/lib/admin/enquiries";
+import { getCurrentUser, hasRole } from "@/lib/portal/roles";
+import { getDeliverableCategories, getDeliverablesForEntity } from "@/lib/admin/deliverables";
+import DeliverablesManager from "@/components/admin/DeliverablesManager";
 import { updateStageAction, addNoteAction } from "../actions";
 
 export const metadata: Metadata = {
@@ -23,7 +26,13 @@ function formatDateTime(iso: string): string {
 export default async function AdminEnquiryDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
 
-  const [enquiry, notes] = await Promise.all([getEnquiryById(id), getEnquiryNotes(id)]);
+  const [enquiry, notes, categories, deliverables, user] = await Promise.all([
+    getEnquiryById(id),
+    getEnquiryNotes(id),
+    getDeliverableCategories(),
+    getDeliverablesForEntity("enquiry", id),
+    getCurrentUser(),
+  ]);
 
   if (!enquiry) notFound();
 
@@ -117,6 +126,14 @@ export default async function AdminEnquiryDetailPage({ params }: { params: Promi
               </div>
             )}
           </div>
+
+          <DeliverablesManager
+            entityType="enquiry"
+            entityId={enquiry.id}
+            deliverables={deliverables}
+            categories={categories}
+            isAdmin={hasRole(user, "admin")}
+          />
         </div>
 
         <div>

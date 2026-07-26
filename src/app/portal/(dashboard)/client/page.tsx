@@ -3,8 +3,10 @@ import { getCurrentUser } from "@/lib/portal/roles";
 import { getEnquiriesForUser, getWorkshopRegistrationsForUser } from "@/lib/portal/data";
 import {
   getActiveProjects,
+  getDeliverablesSummary,
   getLatestProjectUpdates,
   getRecentActivity,
+  getTopDeliverablesHref,
   getUpcomingSessions,
 } from "@/lib/portal/dashboard";
 import WelcomeBanner from "@/components/portal/dashboard/WelcomeBanner";
@@ -29,10 +31,12 @@ export default async function ClientPortalPage() {
     ? await Promise.all([getEnquiriesForUser(user.id), getWorkshopRegistrationsForUser(user.id)])
     : [[], []];
 
-  const activeProjects = getActiveProjects(enquiries);
-  const latestUpdates = getLatestProjectUpdates(enquiries);
+  const deliverablesSummary = await getDeliverablesSummary(enquiries, registrations);
+  const activeProjects = getActiveProjects(enquiries, deliverablesSummary.countByEntityId);
+  const latestUpdates = getLatestProjectUpdates(enquiries, deliverablesSummary.countByEntityId);
   const recentActivity = getRecentActivity(enquiries, registrations);
   const upcomingSessions = await getUpcomingSessions(registrations);
+  const deliverablesHref = getTopDeliverablesHref(deliverablesSummary, enquiries, registrations);
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -44,13 +48,13 @@ export default async function ClientPortalPage() {
       <UpcomingSessionsWidget sessions={upcomingSessions} />
 
       <LatestUpdatesWidget projects={latestUpdates} />
-      <DeliverablesReadyWidget />
+      <DeliverablesReadyWidget count={deliverablesSummary.totalCount} />
       <PendingPaymentsWidget />
 
       <RecentActivityWidget items={recentActivity} />
       <RecentNotificationsWidget />
 
-      <QuickActionsWidget />
+      <QuickActionsWidget deliverablesHref={deliverablesHref} />
     </div>
   );
 }

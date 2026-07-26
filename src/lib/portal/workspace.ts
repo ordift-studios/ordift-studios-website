@@ -159,6 +159,7 @@ const TIMELINE_ACTION_LABELS: Record<string, (metadata: Record<string, unknown>)
   "enquiry.stage_change": (m) => `Status updated to ${crmStageLabel(String(m.stage ?? ""))}`,
   "booking.status_change": (m) =>
     m.registrationStatus ? `Booking updated — ${String(m.registrationStatus)}` : "Booking updated",
+  "deliverable.published": (m) => (m.title ? `New deliverable published — ${String(m.title)}` : "New deliverable published"),
 };
 
 export async function getWorkspaceTimeline(
@@ -245,5 +246,55 @@ export async function getClientUpdates(
     authorName: (row.profiles as unknown as { full_name: string | null } | null)?.full_name ?? null,
     note: row.note,
     createdAt: row.created_at,
+  }));
+}
+
+// ============================================================
+// Deliverables (staff-published reference links, since migration 0007)
+// ============================================================
+
+export type ClientDeliverable = {
+  id: string;
+  title: string;
+  description: string | null;
+  url: string;
+  thumbnailUrl: string | null;
+  categoryLabel: string;
+  publishedByName: string | null;
+  publishedAt: string;
+};
+
+export async function getClientDeliverables(
+  kind: ProjectKind,
+  id: string,
+  userId: string
+): Promise<ClientDeliverable[]> {
+  const owner =
+    kind === "enquiry" ? await getEnquiryByIdForUser(id, userId) : await getWorkshopRegistrationByIdForUser(id, userId);
+  if (!owner) return [];
+
+  const entityType = kind === "enquiry" ? "enquiry" : "workshop_registration";
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("deliverables")
+    .select("id, title, description, url, thumbnail_url, published_at, deliverable_categories(label), profiles(full_name)")
+    .eq("entity_type", entityType)
+    .eq("entity_id", id)
+    .order("published_at", { ascending: false });
+
+  if (error) {
+    console.error("[portal] failed to load deliverables", error.message);
+    return [];
+  }
+
+  return (data ?? []).map((row) => ({
+    id: row.id,
+    title: row.title,
+    description: row.description,
+    url: row.url,
+    thumbnailUrl: row.thumbnail_url,
+    categoryLabel: (row.deliverable_categories as unknown as { label: string } | null)?.label ?? "Other",
+    publishedByName: (row.profiles as unknown as { full_name: string | null } | null)?.full_name ?? null,
+    publishedAt: row.published_at,
   }));
 }

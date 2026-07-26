@@ -1,5 +1,6 @@
 import { contentRepository } from "@/lib/content";
 import { pathwayLabel } from "@/lib/enquiry/pathways";
+import { createClient } from "@/lib/supabase/server";
 import { CRM_STAGES } from "@/lib/admin/enquiries";
 import { crmStageLabel, type PortalEnquiry, type PortalWorkshopRegistration } from "@/lib/portal/data";
 
@@ -53,8 +54,8 @@ export type ProjectCardData = {
   // schema (no session/shoot-date field) — always null here, rendered
   // as an honest "not yet scheduled" state, never invented.
   nextAppointment: null;
-  // Deliverables land in Milestone 3 — always 0 until that table exists.
-  deliverablesAvailable: 0;
+  // Real count from the `deliverables` table (migration 0007).
+  deliverablesAvailable: number;
   // No `updated_at` column exists on `enquiries`; the accurate version
   // of this (last stage-change timestamp) needs the client-read
   // `activity_log` RLS policy planned for Milestone 2. Using
@@ -67,7 +68,7 @@ export type ProjectCardData = {
   href: string;
 };
 
-function toProjectCard(enquiry: PortalEnquiry): ProjectCardData {
+function toProjectCard(enquiry: PortalEnquiry, deliverablesAvailable: number): ProjectCardData {
   const next = nextCrmStage(enquiry.crmStage);
   return {
     id: enquiry.id,
@@ -79,23 +80,104 @@ function toProjectCard(enquiry: PortalEnquiry): ProjectCardData {
     progress: crmStageProgress(enquiry.crmStage),
     paymentStatus: enquiry.paymentStatus,
     nextAppointment: null,
-    deliverablesAvailable: 0,
+    deliverablesAvailable,
     lastUpdated: enquiry.submittedAt,
     submittedAt: enquiry.submittedAt,
     href: `/portal/client/projects/enquiry/${enquiry.id}`,
   };
 }
 
-export function getActiveProjects(enquiries: PortalEnquiry[]): ProjectCardData[] {
-  return enquiries.filter((e) => isActiveCrmStage(e.crmStage)).map(toProjectCard);
+export function getActiveProjects(
+  enquiries: PortalEnquiry[],
+  deliverablesCountByEntityId: Record<string, number> = {}
+): ProjectCardData[] {
+  return enquiries
+    .filter((e) => isActiveCrmStage(e.crmStage))
+    .map((e) => toProjectCard(e, deliverablesCountByEntityId[e.id] ?? 0));
 }
 
 const LATEST_UPDATES_LIMIT = 5;
 
-export function getLatestProjectUpdates(enquiries: PortalEnquiry[]): ProjectCardData[] {
-  return getActiveProjects(enquiries)
+export function getLatestProjectUpdates(
+  enquiries: PortalEnquiry[],
+  deliverablesCountByEntityId: Record<string, number> = {}
+): ProjectCardData[] {
+  return getActiveProjects(enquiries, deliverablesCountByEntityId)
     .sort((a, b) => new Date(b.lastUpdated).getTime() - new Date(a.lastUpdated).getTime())
     .slice(0, LATEST_UPDATES_LIMIT);
+}
+
+// ============================================================
+// Deliverables summary (real counts, migration 0007)
+// ============================================================
+
+export type DeliverablesSummary = {
+  totalCount: number;
+  countByEntityId: Record<string, number>;
+};
+
+export async function getDeliverablesSummary(
+  enquiries: PortalEnquiry[],
+  registrations: PortalWorkshopRegistration[]
+): Promise<DeliverablesSummary> {
+  const enquiryIds = enquiries.map((e) => e.id);
+  const registrationIds = registrations.map((r) => r.id);
+  const countByEntityId: Record<string, number> = {};
+  if (enquiryIds.length === 0 && registrationIds.length === 0) {
+    return { totalCount: 0, countByEntityId };
+  }
+
+  const supabase = await createClient();
+
+  if (enquiryIds.length > 0) {
+    const { data, error } = await supabase
+      .from("deliverables")
+      .select("entity_id")
+      .eq("entity_type", "enquiry")
+      .in("entity_id", enquiryIds);
+    if (error) console.error("[portal] failed to load deliverables summary (enquiry)", error.message);
+    for (const row of data ?? []) {
+      countByEntityId[row.entity_id] = (countByEntityId[row.entity_id] ?? 0) + 1;
+    }
+  }
+
+  if (registrationIds.length > 0) {
+    const { data, error } = await supabase
+      .from("deliverables")
+      .select("entity_id")
+      .eq("entity_type", "workshop_registration")
+      .in("entity_id", registrationIds);
+    if (error) console.error("[portal] failed to load deliverables summary (workshop)", error.message);
+    for (const row of data ?? []) {
+      countByEntityId[row.entity_id] = (countByEntityId[row.entity_id] ?? 0) + 1;
+    }
+  }
+
+  const totalCount = Object.values(countByEntityId).reduce((sum, n) => sum + n, 0);
+  return { totalCount, countByEntityId };
+}
+
+// The Quick Actions "View Deliverables" link needs one concrete
+// destination — deliverables live per-project, there's no aggregate
+// view. Picks whichever project has the most, so the link always goes
+// somewhere real; null (never fabricated) if nothing has been
+// published yet.
+export function getTopDeliverablesHref(
+  summary: DeliverablesSummary,
+  enquiries: PortalEnquiry[],
+  registrations: PortalWorkshopRegistration[]
+): string | null {
+  const entries = Object.entries(summary.countByEntityId).sort((a, b) => b[1] - a[1]);
+  if (entries.length === 0) return null;
+  const [topEntityId] = entries[0];
+
+  if (enquiries.some((e) => e.id === topEntityId)) {
+    return `/portal/client/projects/enquiry/${topEntityId}/deliverables`;
+  }
+  if (registrations.some((r) => r.id === topEntityId)) {
+    return `/portal/client/projects/workshop/${topEntityId}/deliverables`;
+  }
+  return null;
 }
 
 export type UpcomingSession = {

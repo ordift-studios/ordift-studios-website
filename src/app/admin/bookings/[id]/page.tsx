@@ -2,6 +2,9 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { getRegistrationById, REGISTRATION_STATUSES, PAYMENT_STATUSES } from "@/lib/admin/bookings";
+import { getCurrentUser, hasRole } from "@/lib/portal/roles";
+import { getDeliverableCategories, getDeliverablesForEntity } from "@/lib/admin/deliverables";
+import DeliverablesManager from "@/components/admin/DeliverablesManager";
 import { updateBookingStatusAction } from "../actions";
 
 export const metadata: Metadata = {
@@ -21,7 +24,12 @@ function formatDateTime(iso: string): string {
 
 export default async function AdminBookingDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const registration = await getRegistrationById(id);
+  const [registration, categories, deliverables, user] = await Promise.all([
+    getRegistrationById(id),
+    getDeliverableCategories(),
+    getDeliverablesForEntity("workshop_registration", id),
+    getCurrentUser(),
+  ]);
   if (!registration) notFound();
 
   return (
@@ -73,6 +81,14 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
               </>
             )}
           </div>
+
+          <DeliverablesManager
+            entityType="workshop_registration"
+            entityId={registration.id}
+            deliverables={deliverables}
+            categories={categories}
+            isAdmin={hasRole(user, "admin")}
+          />
         </div>
 
         <div>

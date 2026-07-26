@@ -1,14 +1,18 @@
 import DashboardWidget from "./DashboardWidget";
 import EmptyWidgetState from "./EmptyWidgetState";
 
-// Placeholder for Milestone 1 — the `deliverables` table doesn't exist
-// until Milestone 3. This widget occupies its designed slot in the grid
-// now; Milestone 3 replaces this body with a real count/preview, no
-// layout change required.
-export default function DeliverablesReadyWidget() {
+// Real count from the `deliverables` table (migration 0007) — no
+// layout change from the Milestone 1 placeholder, exactly as planned.
+export default function DeliverablesReadyWidget({ count }: { count: number }) {
   return (
     <DashboardWidget title="Deliverables Ready">
-      <EmptyWidgetState message="Nothing here yet — your final files will appear as soon as they're published." />
+      {count === 0 ? (
+        <EmptyWidgetState message="Nothing here yet — your final files will appear as soon as they're published." />
+      ) : (
+        <p className="font-sans text-body text-ordift-ink">
+          {count} deliverable{count === 1 ? "" : "s"} ready to view across your projects.
+        </p>
+      )}
     </DashboardWidget>
   );
 }

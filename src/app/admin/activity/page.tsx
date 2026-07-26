@@ -13,6 +13,8 @@ const ACTION_LABELS: Record<string, string> = {
   "enquiry.note_added": "Added an enquiry note",
   "flag.toggle": "Toggled a feature flag",
   "booking.status_change": "Changed booking status",
+  "deliverable.published": "Published a deliverable",
+  "deliverable.removed": "Removed a deliverable",
 };
 
 function formatDateTime(iso: string): string {
