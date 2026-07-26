@@ -365,17 +365,69 @@ published deliverables across both project kinds — on staging first,
 then independently re-verified on production. All test data removed
 after each pass.
 
-### Milestone 4 — Reschedule & Cancellation Requests
-Per approved scope decision 1. Lives on the Project Workspace's Requests
-tab (its route already exists as a placeholder, shipped with Milestone 2):
-- [ ] Client-initiated reschedule/cancellation *request* form — creates
-      a staff-visible note via the existing `enquiry_notes` pattern and
-      a pending-review state visible in `/admin`
-- [ ] Staff/admin approve or reject via the existing Enquiries CRM
-      stage-change action — the request never auto-applies from the
-      client side
-- [ ] Approval/rejection outcome feeds the Notification Center
-      (Milestone 5)
+### Milestone 4 — Project Requests ✅ complete
+**Shipped:** 2026-07-26, commit `994ca2f`. Redesigned per your explicit
+architectural refinement from a dedicated "Reschedule & Cancellation
+Requests" feature into a generic, extensible **Project Requests**
+module — v1.1.0 implements only the two approved types (Reschedule,
+Cancellation), but the schema supports future types (Booking Update,
+General Client Request, Invoice Request, Additional Deliverables
+Request, Change of Location, Additional Services, Equipment Request,
+Support Request) being added later with **zero code changes**. Lives on
+the Project Workspace's Requests tab (its route already existed as a
+placeholder, shipped with Milestone 2).
+
+- [x] `request_types` — a small business-scoped lookup table (staff/
+      client read, admin manages), same shape and RLS posture as
+      `deliverable_categories` (Milestone 3) — genuinely configurable
+      with zero code changes. Seeded with exactly the two approved
+      types; future types are data rows an admin adds later, not a
+      migration.
+- [x] `project_requests` — client-submitted, staff-decided records.
+      Same polymorphic `entity_type`/`entity_id` pattern as
+      `activity_log` and `deliverables`, not a new convention. Every
+      request carries Request Type, Status (Pending/Approved/Rejected/
+      Completed), Created Date, Staff Decision, Staff Response, Client
+      Notes, Decision Timestamp, per your exact field list. Clients can
+      INSERT (their own project only) and SELECT (their own only) —
+      never UPDATE or DELETE, so nothing a client submits can ever
+      change itself, let alone auto-apply. Staff/admin can SELECT all
+      and UPDATE (to decide), never DELETE — append-only, same posture
+      as `enquiry_notes`/`activity_log`. Migration
+      `0008_project_requests.sql`, staging-first, verified on both
+      staging and production.
+- [x] Application-layer defense: the RLS insert policy does not
+      restrict which columns a client sets, so status is always
+      hardcoded to `'pending'` server-side and client-submitted status/
+      decision fields are never trusted — a finding caught during RLS
+      verification and defended at the Server Action layer.
+      `staff_decision`/`staff_response`/`decided_by`/`decided_at` form a
+      locked decision record, set once on the first real approve/reject
+      transition and preserved even if status later moves to
+      `completed`.
+- [x] Client Portal UI: Requests tab now has a real submission form
+      (request type + optional notes) and a list of the client's own
+      past requests with status, staff response, and decision date —
+      replaces the Milestone 2 "coming soon" placeholder.
+- [x] Admin Platform UI: `ProjectRequestsManager`, one reusable
+      component wired into both the Enquiries CRM and Bookings detail
+      pages — staff decide (status + optional response) per request, no
+      duplicated logic between the two entity kinds.
+- [x] Decisions surface in both the admin activity feed
+      (`"project_request.decided"`) and the client-facing Project
+      Timeline ("Request approved"/"Request rejected"), reusing the
+      existing curated-label patterns rather than inventing a new
+      notification path — nothing auto-applies to the underlying
+      enquiry/booking.
+
+**Verified:** end-to-end on staging — client submits a Reschedule and a
+Cancellation request, staff approves one and rejects the other with a
+response, the client sees both decisions reflected (status badge, staff
+response, decision date) in the Requests tab and the Timeline tab;
+cross-client RLS boundary confirmed (a second client gets a 404 on the
+first client's project, both via RLS and the app-layer ownership check);
+zero console errors throughout. Production deployment verified `Ready`
+from the same commit. All test data removed after the pass.
 
 ### Milestone 5 — Notification Center (in-app only — approved scope decision 3)
 - [ ] In-app notification center: bell/indicator + full list, covering
