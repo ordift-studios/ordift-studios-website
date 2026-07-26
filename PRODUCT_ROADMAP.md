@@ -168,6 +168,8 @@ No further planning fields apply — this version is done, not proposed.
 
 ## Version 4.0 — Business Intelligence & Creative Intelligence
 
+**🟢 Ordift Pulse architecture built ahead of schedule (2026-07-27):** per explicit direction, the Creative Intelligence half's schema, taxonomy, editorial workflow, and repository layer were built now rather than waiting for Versions 1.1–3.0 to close — see `PULSE_ARCHITECTURE.md` for the full design. Not started: public pages, any data-provider/ingestion integration, AI summarization, and the Business Intelligence half below (which still genuinely depends on Versions 1.1–3.0's data).
+
 **Vision:** turn everything the platform has been recording since v1.0 (enquiries, bookings, deliverables, staff activity, project outcomes) into decision-useful insight, and simultaneously keep the public site editorially alive with curated, high-quality industry content — two distinct systems sharing one version because they're both about *intelligence*, one internal (BI) and one external-facing (Creative Intelligence / Ordift Pulse).
 
 **Objectives:**
@@ -185,7 +187,7 @@ No further planning fields apply — this version is done, not proposed.
 - A curated content module keeping the site "alive" with relevant industry updates, **never** raw-scraped or auto-published.
 - **Workflow (hard requirement, not a suggestion):** Source → AI summarization → Draft → Admin Review → Publish. No automatically-fetched content reaches the live site without a human approval step — this mirrors the exact content-accuracy discipline already used for every other piece of copy on this site (see `feedback_ordift_content_accuracy` in project memory).
 - **Sources:** trusted news providers, official event organizers, public APIs, RSS feeds, and other legally-usable sources. Explicitly **not** scraping or republishing copyrighted content directly — summarization and attribution, not reproduction.
-- **Categories:** Photography, Videography, Fashion, Film, Entertainment, Music, AI, Creative Business, Creative Opportunities, Workshops, Conferences, Grants, Competitions, Camera & Gear Releases, Software Updates, International, Ghana, Qatar.
+- **Taxonomy (built 2026-07-27, see `PULSE_ARCHITECTURE.md` §2):** three independent axes rather than one flat list — Category (Creative Industry News, Fashion News, Photography News, Videography & Filmmaking News, Music & Entertainment News, Creative Technology, Camera & Equipment Releases, Adobe & Editing Software Updates), Region (Ghana, Qatar, Africa, International), and — for opportunity-kind listings only — Opportunity Type (Exhibition, Fashion Week, Festival, Award, Workshop, Masterclass, Grant, Competition, Casting Call, Collaboration Opportunity).
 - **Designed modularly**, with room to grow into a full Creative Intelligence Hub via later additions: Creative Quote of the Day, Tip of the Day, Featured Creator, Creative Opportunity of the Week, Upcoming Industry Events, Photography/Videography/Editing Tip, Business Insight, AI Tool Spotlight. None of these are scoped for the initial build — they're the extension points the initial architecture should leave room for.
 
 **Dependencies:** meaningful BI needs Versions 1.1–3.0's data already flowing (staff/project/asset data) to have anything worth analyzing; Ordift Pulse has no dependency on any other version and could, in principle, be built earlier if there's appetite — it's grouped here because it's the other "intelligence" half of this version, not because it's blocked on anything.

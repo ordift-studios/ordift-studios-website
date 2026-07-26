@@ -1284,6 +1284,29 @@ billing decision resolved first.
   this date: production Supabase is on the Free plan, which has zero
   backup coverage — escalated as Phase E's blocker.
 
+## Version 4.0 (partial) — Ordift Pulse Architecture — 2026-07-27 ✅ architecture complete
+
+Pulled forward from `PRODUCT_ROADMAP.md`'s Version 4.0 per explicit direction, while the media architecture (immediately above) was still fresh. Architecture and CMS schema only — see `PULSE_ARCHITECTURE.md` for full design detail.
+
+- [x] Three independent taxonomy axes (`pulseCategory`, `pulseRegion`, `pulseOpportunityType`) — same discipline as Role/Position/Grade/Engagement Type, reusing the existing `Category` shape rather than inventing a new one
+- [x] One `pulseArticle` document type covering both news/editorial content and deadline-driven opportunity listings, and both Ordift-authored and curated third-party content, via `contentKind`/`origin` fields with Studio-side conditional field visibility (same pattern as `MediaAsset`/`PortfolioProject`)
+- [x] Editorial-approval workflow: `status` gains an `inReview` stage beyond Journal's draft/published; curated content should always pass through it before publishing (Studio field guidance, not a hard state machine)
+- [x] `pulseSource` trusted-source registry — the data layer's entire connection point for future ingestion; no fetching/scraping logic exists anywhere in the codebase
+- [x] AI-assist future-proofing (`aiSummary`/`aiSummaryApprovedAt` scratch fields) for the roadmap's Source → AI summarization → Draft → Admin Review → Publish workflow — no summarization actually runs yet
+- [x] `ContentRepository` extended with 6 Pulse methods, implemented in both the Sanity and local adapters, following the exact pattern of every other content type
+- [x] `tsc --noEmit` and `eslint .` clean; `next build` clean across all 67 existing routes (no route touches Pulse yet); `sanity schema validate` — 0 errors, 0 warnings, confirming all 5 new document types are well-formed
+
+### Pending work (explicitly out of scope for this stage)
+- [ ] Public `/pulse` routes (hub page, article detail, category/region/opportunity filtering)
+- [ ] Admin Platform module for Pulse (Sanity Studio is the interface today)
+- [ ] Any data-provider ingestion (RSS/API/partner ingestion, per source)
+- [ ] AI summarization integration
+- [ ] Newsletter-sending integration
+- [ ] Saved articles / notifications (Supabase tables, not yet needed — see `PULSE_ARCHITECTURE.md` §8)
+
+### Known issues
+- None outstanding.
+
 ## Version 2.0 — Business Platform *(superseded — see below)*
 
 **Historical label, retired.** Admin dashboard, team management, and

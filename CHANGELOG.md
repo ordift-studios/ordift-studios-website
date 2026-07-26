@@ -13,6 +13,50 @@ History" for continuity — the version numbers used there ("1.0" through
 "1.3.0") were informal internal milestone labels only, never git tags,
 and are superseded by the official sequence starting at v1.0.0.
 
+## v1.0.0 (Production Hardening) — Ordift Pulse Architecture — 2026-07-27
+
+Ordift Pulse (the Creative Industry Hub) pulled forward from
+`PRODUCT_ROADMAP.md`'s Version 4.0 per explicit direction — schema,
+domain types, and repository layer only. See `PULSE_ARCHITECTURE.md`
+for the full design.
+
+**Added:**
+- Five new Sanity document types: `pulseArticle`, `pulseCategory`,
+  `pulseRegion`, `pulseOpportunityType`, `pulseSource`.
+- `PulseArticle`, `PulseSource`, and related union types in
+  `src/lib/content/types.ts`; six new `ContentRepository` methods
+  (`getPulseArticles`, `getPulseArticleBySlug`, `getPulseCategories`,
+  `getPulseRegions`, `getPulseOpportunityTypes`, `getPulseSources`),
+  implemented in both the Sanity and local adapters.
+- `src/lib/content/pulseHelpers.ts` — scheduled-publishing visibility
+  gate (mirrors `journalHelpers.isPubliclyVisible`), opportunity-expiry
+  check, and search matching.
+- Three independent taxonomy axes (category/region/opportunity type)
+  rather than one flat category list — same discipline already applied
+  to Role/Position/Grade/Engagement Type in the IAM system.
+- Editorial-approval workflow (`status: draft | inReview | published |
+  archived`) and a trusted-source registry (`pulseSource`) as the data
+  layer's entire connection point for future ingestion — no
+  fetching/scraping logic exists anywhere in this codebase.
+- `PULSE_ARCHITECTURE.md` — new companion doc covering the taxonomy
+  design, the no-scraping data layer, the editorial workflow, and why
+  no further schema changes are needed to later support newsletters,
+  personalized recommendations, saved articles, notifications, or
+  AI-assisted summaries.
+
+**Verified:** `tsc --noEmit` and `eslint .` clean; `next build` clean
+across all 67 existing routes; `sanity schema validate` — 0 errors, 0
+warnings.
+
+**Explicitly not built this stage:** public `/pulse` pages, any
+data-provider integration, AI summarization, newsletter sending,
+saved-articles/notifications tables. See `PULSE_ARCHITECTURE.md` §9.
+
+**Upgrade notes:** none — purely additive; no existing schema field
+was removed or renamed.
+
+---
+
 ## v1.0.0 (Production Hardening) — Reusable Media Architecture — 2026-07-27
 
 Portfolio, Journal, Workshops, and the Founder page moved from static
