@@ -1,3 +1,4 @@
+import Link from "next/link";
 import type { ProjectCardData } from "@/lib/portal/dashboard";
 
 function formatDate(iso: string): string {
@@ -32,7 +33,10 @@ function ProgressBar({ progress }: { progress: { step: number; total: number } }
 
 export default function ProjectCard({ project }: { project: ProjectCardData }) {
   return (
-    <div className="border border-black/10 rounded-xl p-5">
+    <Link
+      href={project.href}
+      className="block border border-black/10 rounded-xl p-5 hover:border-ordift-gold-pressed/50 hover:shadow-sm transition-all"
+    >
       <div className="flex flex-wrap items-start justify-between gap-3 mb-1">
         <div>
           <p className="font-sans text-caption text-ordift-ink-muted uppercase tracking-wide mb-1">
@@ -70,9 +74,7 @@ export default function ProjectCard({ project }: { project: ProjectCardData }) {
         </div>
       </dl>
 
-      <p className="font-sans text-caption text-ordift-ink-muted mt-4">
-        Full project timeline coming soon.
-      </p>
-    </div>
+      <p className="font-sans text-caption text-ordift-gold-pressed mt-4">View project →</p>
+    </Link>
   );
 }

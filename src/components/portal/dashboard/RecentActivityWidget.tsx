@@ -20,16 +20,12 @@ export default function RecentActivityWidget({ items }: { items: ActivityFeedIte
         <ul className="divide-y divide-black/5">
           {items.map((item) => (
             <li key={item.id} className="py-2.5 first:pt-0 last:pb-0 flex items-center justify-between gap-4">
-              {item.href ? (
-                <Link
-                  href={item.href}
-                  className="font-sans text-body-small text-ordift-ink hover:text-ordift-gold-pressed underline-offset-4 hover:underline"
-                >
-                  {item.label}
-                </Link>
-              ) : (
-                <p className="font-sans text-body-small text-ordift-ink">{item.label}</p>
-              )}
+              <Link
+                href={item.href}
+                className="font-sans text-body-small text-ordift-ink hover:text-ordift-gold-pressed underline-offset-4 hover:underline"
+              >
+                {item.label}
+              </Link>
               <p className="font-sans text-caption text-ordift-ink-muted whitespace-nowrap">
                 {formatDateTime(item.timestamp)}
               </p>

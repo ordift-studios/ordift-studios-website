@@ -62,11 +62,9 @@ export type ProjectCardData = {
   // fabricated timestamp.
   lastUpdated: string;
   submittedAt: string;
-  // The Booking & Project Timeline (Milestone 2) doesn't exist yet, so
-  // there's nowhere real to click through to — always false in
-  // Milestone 1. The card renders as informational-only, with a small
-  // "Timeline coming soon" indicator instead of a dead link.
-  timelineAvailable: false;
+  // The reusable Project Workspace (Milestone 2) — every project card
+  // opens here now.
+  href: string;
 };
 
 function toProjectCard(enquiry: PortalEnquiry): ProjectCardData {
@@ -84,7 +82,7 @@ function toProjectCard(enquiry: PortalEnquiry): ProjectCardData {
     deliverablesAvailable: 0,
     lastUpdated: enquiry.submittedAt,
     submittedAt: enquiry.submittedAt,
-    timelineAvailable: false,
+    href: `/portal/client/projects/enquiry/${enquiry.id}`,
   };
 }
 
@@ -107,6 +105,7 @@ export type UpcomingSession = {
   startDate: string;
   registrationStatus: string;
   waitingListPosition: number | null;
+  href: string;
 };
 
 export async function getUpcomingSessions(
@@ -126,6 +125,7 @@ export async function getUpcomingSessions(
         startDate: workshop.startDate,
         registrationStatus: reg.registrationStatus,
         waitingListPosition: reg.waitingListPosition,
+        href: `/portal/client/projects/workshop/${reg.id}`,
       };
     })
   );
@@ -139,9 +139,7 @@ export type ActivityFeedItem = {
   id: string;
   label: string;
   timestamp: string;
-  // Enquiry activity has nowhere to link to until Milestone 2 ships the
-  // project detail page — null renders as plain text, never a dead link.
-  href: string | null;
+  href: string;
 };
 
 const ACTIVITY_FEED_LIMIT = 8;
@@ -155,13 +153,13 @@ export function getRecentActivity(
       id: `enquiry-${e.id}`,
       label: `New ${pathwayLabel(e.service)} enquiry submitted — ${e.referenceNumber}`,
       timestamp: e.submittedAt,
-      href: null,
+      href: `/portal/client/projects/enquiry/${e.id}`,
     })),
     ...registrations.map((r) => ({
       id: `workshop-${r.id}`,
       label: `Registered for ${r.workshopTitle}`,
       timestamp: r.registrationDate,
-      href: `/workshops/${r.workshopSlug}`,
+      href: `/portal/client/projects/workshop/${r.id}`,
     })),
   ];
 

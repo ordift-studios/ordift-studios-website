@@ -47,6 +47,33 @@ export async function getEnquiriesForUser(userId: string): Promise<PortalEnquiry
   }));
 }
 
+export async function getEnquiryByIdForUser(id: string, userId: string): Promise<PortalEnquiry | null> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("enquiries")
+    .select(
+      "id, reference_number, email, full_name, service, crm_stage, payment_status, amount_due, amount_paid, submitted_at"
+    )
+    .eq("id", id)
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  if (error || !data) return null;
+
+  return {
+    id: data.id,
+    referenceNumber: data.reference_number,
+    email: data.email,
+    fullName: data.full_name,
+    service: data.service,
+    crmStage: data.crm_stage,
+    paymentStatus: data.payment_status,
+    amountDue: data.amount_due,
+    amountPaid: data.amount_paid,
+    submittedAt: data.submitted_at,
+  };
+}
+
 export type PortalWorkshopRegistration = {
   id: string;
   registrationReference: string;
@@ -93,6 +120,38 @@ export async function getWorkshopRegistrationsForUser(
     certificateUrl: row.certificate_url,
     registrationDate: row.registration_date,
   }));
+}
+
+export async function getWorkshopRegistrationByIdForUser(
+  id: string,
+  userId: string
+): Promise<PortalWorkshopRegistration | null> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("workshop_registrations")
+    .select(
+      "id, registration_reference, email, full_name, workshop_slug, workshop_title, registration_status, waiting_list_position, payment_status, certificate_issued, certificate_url, registration_date"
+    )
+    .eq("id", id)
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  if (error || !data) return null;
+
+  return {
+    id: data.id,
+    registrationReference: data.registration_reference,
+    email: data.email,
+    fullName: data.full_name,
+    workshopSlug: data.workshop_slug,
+    workshopTitle: data.workshop_title,
+    registrationStatus: data.registration_status,
+    waitingListPosition: data.waiting_list_position,
+    paymentStatus: data.payment_status,
+    certificateIssued: data.certificate_issued,
+    certificateUrl: data.certificate_url,
+    registrationDate: data.registration_date,
+  };
 }
 
 // Staff/admin operational views — no .eq("user_id", ...) filter, so the

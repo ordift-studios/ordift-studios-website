@@ -31,10 +31,13 @@ export async function getEnquiryById(id: string): Promise<PortalEnquiry | null> 
   };
 }
 
+export type NoteAudience = "internal" | "client";
+
 export type EnquiryNote = {
   id: string;
   authorName: string | null;
   note: string;
+  audience: NoteAudience;
   createdAt: string;
 };
 
@@ -42,7 +45,7 @@ export async function getEnquiryNotes(enquiryId: string): Promise<EnquiryNote[]>
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("enquiry_notes")
-    .select("id, note, created_at, profiles(full_name)")
+    .select("id, note, audience, created_at, profiles(full_name)")
     .eq("enquiry_id", enquiryId)
     .order("created_at", { ascending: false });
 
@@ -55,6 +58,7 @@ export async function getEnquiryNotes(enquiryId: string): Promise<EnquiryNote[]>
     id: row.id,
     authorName: (row.profiles as unknown as { full_name: string | null } | null)?.full_name ?? null,
     note: row.note,
+    audience: row.audience as NoteAudience,
     createdAt: row.created_at,
   }));
 }

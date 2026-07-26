@@ -61,21 +61,33 @@ export default async function AdminEnquiryDetailPage({ params }: { params: Promi
           </div>
 
           <div>
-            <h2 className="font-serif font-medium text-body text-ordift-ink mb-4">Internal Notes</h2>
+            <h2 className="font-serif font-medium text-body text-ordift-ink mb-4">Notes &amp; Updates</h2>
             <form action={addNoteAction} className="mb-6 space-y-3">
               <input type="hidden" name="enquiryId" value={enquiry.id} />
               <textarea
                 name="note"
                 required
                 rows={3}
-                placeholder="Add an internal note…"
+                placeholder="Add a note…"
                 className="w-full rounded-lg border border-black/15 bg-white px-3 py-2 font-sans text-body-small text-ordift-ink"
               />
+              <fieldset className="flex gap-4 font-sans text-body-small text-ordift-ink">
+                <label className="flex items-center gap-2">
+                  <input type="radio" name="audience" value="internal" defaultChecked />
+                  Internal Note
+                  <span className="text-caption text-ordift-ink-muted">— staff/admin only</span>
+                </label>
+                <label className="flex items-center gap-2">
+                  <input type="radio" name="audience" value="client" />
+                  Client Update
+                  <span className="text-caption text-ordift-ink-muted">— visible to this client</span>
+                </label>
+              </fieldset>
               <button
                 type="submit"
                 className="min-h-11 px-5 rounded-full bg-ordift-navy-950 text-white font-sans text-body-small"
               >
-                Add Note
+                Add
               </button>
             </form>
 
@@ -85,6 +97,17 @@ export default async function AdminEnquiryDetailPage({ params }: { params: Promi
               <div className="space-y-4">
                 {notes.map((n) => (
                   <div key={n.id} className="rounded-lg border border-black/10 bg-white p-4">
+                    <div className="flex items-center justify-between gap-3 mb-2">
+                      <span
+                        className={`inline-flex items-center px-2.5 py-1 rounded-full font-sans text-caption font-semibold ${
+                          n.audience === "client"
+                            ? "bg-ordift-gold/20 text-ordift-gold-pressed"
+                            : "bg-black/10 text-ordift-ink-muted"
+                        }`}
+                      >
+                        {n.audience === "client" ? "Client Update" : "Internal"}
+                      </span>
+                    </div>
                     <p className="font-sans text-body-small text-ordift-ink whitespace-pre-wrap">{n.note}</p>
                     <p className="font-sans text-caption text-ordift-ink-muted mt-2">
                       {n.authorName ?? "Unknown"} · {formatDateTime(n.createdAt)}

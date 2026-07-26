@@ -44,17 +44,28 @@ export async function updateStageAction(formData: FormData): Promise<void> {
   revalidatePath("/admin/enquiries");
 }
 
+const NOTE_AUDIENCES = ["internal", "client"] as const;
+type NoteAudience = (typeof NOTE_AUDIENCES)[number];
+
+function isNoteAudience(value: string): value is NoteAudience {
+  return (NOTE_AUDIENCES as readonly string[]).includes(value);
+}
+
 export async function addNoteAction(formData: FormData): Promise<void> {
   const user = await requireStaffOrAdmin();
 
   const enquiryId = String(formData.get("enquiryId") ?? "");
   const note = String(formData.get("note") ?? "").trim();
+  const audienceInput = String(formData.get("audience") ?? "internal");
+  // Defaults to "internal" on anything unrecognized — a note only ever
+  // becomes client-visible when explicitly marked, never by omission.
+  const audience: NoteAudience = isNoteAudience(audienceInput) ? audienceInput : "internal";
   if (!enquiryId || !note) return;
 
   const supabase = await createClient();
   const { error } = await supabase
     .from("enquiry_notes")
-    .insert({ enquiry_id: enquiryId, author_user_id: user.id, note });
+    .insert({ enquiry_id: enquiryId, author_user_id: user.id, note, audience });
   if (error) {
     console.error("[admin] enquiry note insert failed", error.message);
     return;
@@ -65,6 +76,7 @@ export async function addNoteAction(formData: FormData): Promise<void> {
     action: "enquiry.note_added",
     entityType: "enquiry",
     entityId: enquiryId,
+    metadata: { audience },
   });
 
   revalidatePath(`/admin/enquiries/${enquiryId}`);

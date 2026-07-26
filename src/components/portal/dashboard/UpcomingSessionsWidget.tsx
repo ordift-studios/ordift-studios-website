@@ -21,7 +21,7 @@ export default function UpcomingSessionsWidget({ sessions }: { sessions: Upcomin
           {sessions.map((session) => (
             <li key={session.registrationId}>
               <Link
-                href={`/workshops/${session.workshopSlug}`}
+                href={session.href}
                 className="font-serif text-body-small text-ordift-ink hover:text-ordift-gold-pressed underline-offset-4 hover:underline block"
               >
                 {session.workshopTitle}
