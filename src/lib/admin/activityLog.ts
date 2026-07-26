@@ -66,3 +66,39 @@ export async function getRecentActivity(limit = RECENT_ACTIVITY_LIMIT): Promise<
     createdAt: row.created_at,
   }));
 }
+
+const ENTITY_ACTIVITY_LIMIT = 50;
+
+// Access-change history for a single user (Users & Roles detail panel) —
+// same table, just filtered to entity_type='user', entity_id=userId
+// instead of the global feed.
+export async function getActivityForEntity(
+  entityType: string,
+  entityId: string,
+  limit = ENTITY_ACTIVITY_LIMIT
+): Promise<ActivityLogEntry[]> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("activity_log")
+    .select("id, actor_user_id, action, entity_type, entity_id, metadata, created_at, profiles(full_name)")
+    .eq("entity_type", entityType)
+    .eq("entity_id", entityId)
+    .order("created_at", { ascending: false })
+    .limit(limit);
+
+  if (error) {
+    console.error("[admin] failed to load entity activity_log", error.message);
+    return [];
+  }
+
+  return (data ?? []).map((row) => ({
+    id: row.id,
+    actorUserId: row.actor_user_id,
+    actorName: (row.profiles as unknown as { full_name: string | null } | null)?.full_name ?? null,
+    action: row.action,
+    entityType: row.entity_type,
+    entityId: row.entity_id,
+    metadata: (row.metadata as Record<string, unknown>) ?? {},
+    createdAt: row.created_at,
+  }));
+}

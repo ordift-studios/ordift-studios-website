@@ -1,5 +1,5 @@
 import { createAdminClient } from "@/lib/supabase/admin";
-import type { RoleSlug } from "@/lib/portal/roles";
+import type { AccessStatus, RoleSlug } from "@/lib/portal/roles";
 
 export type AdminUserRow = {
   id: string;
@@ -7,6 +7,15 @@ export type AdminUserRow = {
   fullName: string | null;
   roles: RoleSlug[];
   createdAt: string;
+  emailConfirmedAt: string | null;
+  accessStatus: AccessStatus;
+  accessStatusReason: string | null;
+  accessStatusChangedAt: string | null;
+  accessExpiresAt: string | null;
+  operationalTitleId: string | null;
+  operationalTitleName: string | null;
+  engagementTypeId: string | null;
+  engagementTypeName: string | null;
 };
 
 export type AdminUserListResult =
@@ -53,7 +62,8 @@ async function listUsersPage(admin: ReturnType<typeof createAdminClient>, page: 
 export async function listUsersWithRoles(): Promise<AdminUserListResult> {
   const admin = createAdminClient();
 
-  const allAuthUsers: { id: string; email: string | null; created_at: string }[] = [];
+  const allAuthUsers: { id: string; email: string | null; created_at: string; email_confirmed_at: string | null }[] =
+    [];
   let page = 1;
   for (;;) {
     const { data, error } = await listUsersPage(admin, page);
@@ -61,7 +71,14 @@ export async function listUsersWithRoles(): Promise<AdminUserListResult> {
       console.error("[portal admin] listUsers failed after retries", error);
       return { ok: false, error: error ?? "Failed to load accounts." };
     }
-    allAuthUsers.push(...data.users.map((u) => ({ id: u.id, email: u.email ?? null, created_at: u.created_at })));
+    allAuthUsers.push(
+      ...data.users.map((u) => ({
+        id: u.id,
+        email: u.email ?? null,
+        created_at: u.created_at,
+        email_confirmed_at: u.email_confirmed_at ?? null,
+      }))
+    );
     if (!data.nextPage) break;
     page = data.nextPage;
   }
@@ -70,22 +87,32 @@ export async function listUsersWithRoles(): Promise<AdminUserListResult> {
     { data: profiles, error: profilesError },
     { data: userRoles, error: userRolesError },
     { data: roles, error: rolesError },
+    { data: staffDetails, error: staffDetailsError },
+    { data: operationalTitles },
+    { data: engagementTypes },
   ] = await Promise.all([
-    admin.from("profiles").select("id, full_name"),
+    admin
+      .from("profiles")
+      .select("id, full_name, access_status, access_status_reason, access_status_changed_at, access_expires_at"),
     admin.from("user_roles").select("user_id, role_id"),
     admin.from("roles").select("id, slug"),
+    admin.from("staff_details").select("id, operational_title_id, engagement_type_id"),
+    admin.from("operational_titles").select("id, name"),
+    admin.from("engagement_types").select("id, name"),
   ]);
 
-  if (profilesError || userRolesError || rolesError) {
-    const message = profilesError?.message ?? userRolesError?.message ?? rolesError?.message ?? "unknown error";
+  if (profilesError || userRolesError || rolesError || staffDetailsError) {
+    const message =
+      profilesError?.message ?? userRolesError?.message ?? rolesError?.message ?? staffDetailsError?.message ?? "unknown error";
     console.error("[portal admin] failed to load profiles/roles", message);
     return { ok: false, error: message };
   }
 
   const roleSlugById = new Map<string, RoleSlug>((roles ?? []).map((r) => [r.id, r.slug as RoleSlug]));
-  const fullNameById = new Map<string, string | null>(
-    (profiles ?? []).map((p) => [p.id, p.full_name as string | null])
-  );
+  const profileById = new Map((profiles ?? []).map((p) => [p.id, p]));
+  const staffDetailsById = new Map((staffDetails ?? []).map((s) => [s.id, s]));
+  const titleNameById = new Map((operationalTitles ?? []).map((t) => [t.id, t.name as string]));
+  const engagementNameById = new Map((engagementTypes ?? []).map((e) => [e.id, e.name as string]));
 
   const rolesByUserId = new Map<string, RoleSlug[]>();
   for (const ur of userRoles ?? []) {
@@ -97,14 +124,85 @@ export async function listUsersWithRoles(): Promise<AdminUserListResult> {
   }
 
   const users = allAuthUsers
-    .map((u) => ({
-      id: u.id,
-      email: u.email,
-      fullName: fullNameById.get(u.id) ?? null,
-      roles: rolesByUserId.get(u.id) ?? [],
-      createdAt: u.created_at,
-    }))
+    .map((u) => {
+      const profile = profileById.get(u.id);
+      const details = staffDetailsById.get(u.id);
+      return {
+        id: u.id,
+        email: u.email,
+        fullName: profile?.full_name ?? null,
+        roles: rolesByUserId.get(u.id) ?? [],
+        createdAt: u.created_at,
+        emailConfirmedAt: u.email_confirmed_at,
+        accessStatus: (profile?.access_status as AccessStatus | undefined) ?? "active",
+        accessStatusReason: profile?.access_status_reason ?? null,
+        accessStatusChangedAt: profile?.access_status_changed_at ?? null,
+        accessExpiresAt: profile?.access_expires_at ?? null,
+        operationalTitleId: details?.operational_title_id ?? null,
+        operationalTitleName: details?.operational_title_id
+          ? (titleNameById.get(details.operational_title_id) ?? null)
+          : null,
+        engagementTypeId: details?.engagement_type_id ?? null,
+        engagementTypeName: details?.engagement_type_id
+          ? (engagementNameById.get(details.engagement_type_id) ?? null)
+          : null,
+      };
+    })
     .sort((a, b) => (a.email ?? "").localeCompare(b.email ?? ""));
 
   return { ok: true, users };
+}
+
+// Mirrors private.active_super_admin_count() (migration 0009) in
+// application code — that SQL function lives in the `private` schema
+// specifically so it's NOT reachable via PostgREST/.rpc(), only from
+// inside RLS policies. The admin client already bypasses RLS, so the
+// same count is just as correctly computed here via a normal query.
+export async function getActiveSuperAdminCount(): Promise<number> {
+  const admin = createAdminClient();
+  const { data: superAdminRole } = await admin.from("roles").select("id").eq("slug", "super_admin").single();
+  if (!superAdminRole) return 0;
+
+  const { data: holders, error } = await admin
+    .from("user_roles")
+    .select("user_id")
+    .eq("role_id", superAdminRole.id);
+  if (error || !holders?.length) return 0;
+
+  const { data: activeProfiles, error: profilesError } = await admin
+    .from("profiles")
+    .select("id")
+    .in(
+      "id",
+      holders.map((h) => h.user_id)
+    )
+    .eq("access_status", "active");
+  if (profilesError) return 0;
+
+  return activeProfiles?.length ?? 0;
+}
+
+export type LookupOption = { id: string; name: string; active: boolean };
+
+export async function listOperationalTitles(): Promise<LookupOption[]> {
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from("operational_titles")
+    .select("id, name, active")
+    .order("sort_order");
+  if (error) {
+    console.error("[portal admin] failed to load operational_titles", error.message);
+    return [];
+  }
+  return data ?? [];
+}
+
+export async function listEngagementTypes(): Promise<LookupOption[]> {
+  const admin = createAdminClient();
+  const { data, error } = await admin.from("engagement_types").select("id, name, active").order("sort_order");
+  if (error) {
+    console.error("[portal admin] failed to load engagement_types", error.message);
+    return [];
+  }
+  return data ?? [];
 }

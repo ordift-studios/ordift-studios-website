@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import Logo from "@/components/Logo";
-import { getCurrentUser, hasRole, isStaffOrAdmin } from "@/lib/portal/roles";
+import { getCurrentUser, hasRole, isStaffOrAdmin, isSuperAdmin } from "@/lib/portal/roles";
 import { signOutAction } from "@/app/portal/login/actions";
 
 // Internal operations console — separate from the customer/partner-facing
@@ -11,13 +11,14 @@ import { signOutAction } from "@/app/portal/login/actions";
 // reasoning as src/app/portal/(dashboard)/layout.tsx: proxy.ts only does a
 // fast JWT-presence check for /portal/**, not /admin/**, so this layout's
 // getCurrentUser() call is the actual gate here, not just a backstop.
-const NAV_ITEMS: { label: string; href: string; adminOnly?: boolean }[] = [
+const NAV_ITEMS: { label: string; href: string; adminOnly?: boolean; superAdminOnly?: boolean }[] = [
   { label: "Overview", href: "/admin/overview" },
   { label: "Enquiries", href: "/admin/enquiries" },
   { label: "Bookings", href: "/admin/bookings" },
   { label: "Content", href: "/admin/content" },
   { label: "Activity", href: "/admin/activity" },
   { label: "Users & Roles", href: "/admin/users", adminOnly: true },
+  { label: "Titles & Engagement Types", href: "/admin/lookups", superAdminOnly: true },
   { label: "Feature Flags", href: "/admin/flags", adminOnly: true },
   { label: "Settings", href: "/admin/settings", adminOnly: true },
 ];
@@ -28,7 +29,10 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   if (!isStaffOrAdmin(user)) redirect("/portal");
 
   const isAdmin = hasRole(user, "admin");
-  const visibleNavItems = NAV_ITEMS.filter((item) => !item.adminOnly || isAdmin);
+  const isSuper = isSuperAdmin(user);
+  const visibleNavItems = NAV_ITEMS.filter(
+    (item) => (!item.adminOnly || isAdmin) && (!item.superAdminOnly || isSuper)
+  );
 
   return (
     <div className="min-h-screen flex flex-col">

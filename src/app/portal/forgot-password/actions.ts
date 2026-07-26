@@ -1,12 +1,9 @@
 "use server";
 
 import { createClient } from "@/lib/supabase/server";
+import { siteUrl } from "@/lib/shared/env";
 
 export type ForgotPasswordState = { submitted: boolean; error: string | null };
-
-function siteUrl(): string {
-  return process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000";
-}
 
 // Always returns the same generic "submitted" result regardless of
 // whether the email is registered — same no-information-leak principle

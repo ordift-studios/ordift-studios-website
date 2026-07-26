@@ -19,8 +19,10 @@ const NAV_ITEMS: { role: RoleSlug; label: string; href: string }[] = [
   { role: "workshop_participant", label: "My Workshops", href: "/portal/workshops" },
   { role: "model", label: "My Profile", href: "/portal/model" },
   { role: "vendor", label: "Vendor", href: "/portal/vendor" },
+  { role: "contractor", label: "My Projects", href: "/portal/collaborator" },
   { role: "staff", label: "Admin Platform", href: "/admin" },
   { role: "admin", label: "Admin Platform", href: "/admin" },
+  { role: "super_admin", label: "Admin Platform", href: "/admin" },
 ];
 
 export default async function PortalDashboardLayout({

@@ -9,6 +9,14 @@ export function isStaging(): boolean {
   return process.env.SITE_ENV !== "production";
 }
 
+// Shared by every server action that needs to build an absolute
+// redirectTo URL for a Supabase Auth email link (password reset,
+// collaborator invites, etc.) — one definition instead of duplicating
+// the localhost fallback per call site.
+export function siteUrl(): string {
+  return process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000";
+}
+
 // Governs only whether the legal pages (Privacy Notice, Website Terms,
 // Booking Terms, Cookie Notice) are published as approved — not whether
 // forms send real email. Kept separate so publishing real legal-page
