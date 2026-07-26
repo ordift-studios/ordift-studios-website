@@ -309,30 +309,46 @@ audience filtering, both project kinds including real Sanity data, and
 the full admin note round-trip — on staging first, then independently
 re-verified live on production. All test data removed after each pass.
 
-### Milestone 3 — Client Deliverables
-A **read-only client delivery center** — not a document vault. Staff
+### Milestone 3 — Client Deliverables ✅ complete
+**Shipped:** 2026-07-26, commit `c0dba29`. A **premium, curated
+delivery gallery** — not a document vault, and not a download folder
+either, per your explicit design principles for this milestone. Staff
 publish approved deliverables through the Admin Platform as reference
 links; clients can **view, preview (where supported), and download**
 only. Explicitly **no client uploads, no secure storage, no document
 exchange, no new storage architecture, and no object storage
 implementation** in v1.1.0.
-- [ ] New table (e.g. `deliverables`), scoped to an enquiry or workshop
-      registration, `business_id`-scoped — staff CRUD via a new Admin
-      Platform section, client SELECT own only via RLS (same
-      staff-manages/client-reads-own pattern as `enquiry_notes`),
-      staging-first migration
-- [ ] Category field covering the approved examples: final edited
-      photographs, final videos, invoices, receipts, contracts, call
-      sheets, mood boards, workshop materials, certificates, gallery
-      links, download links, and any future approved project
-      deliverable — all stored as staff-entered reference links (same
-      "link, not raw upload" convention the enquiry form has always
-      used), never a file upload from either side
-- [ ] Client Portal UI: "Deliverables" section on the Milestone 2
-      detail page, plus the "Deliverables Ready" card on the Dashboard
-      (Milestone 1)
-- [ ] Admin Platform UI: deliverables management on the existing
-      Enquiries CRM / Bookings detail pages
+
+- [x] `deliverables` table, polymorphic `entity_type`/`entity_id`
+      (`'enquiry'` or `'workshop_registration'`) — the same pattern
+      `activity_log` already uses, not a new convention —
+      `business_id`-scoped, staff full CRUD via the Admin Platform,
+      client SELECT own only via RLS (same staff-manages/client-reads-
+      own pattern as `enquiry_notes`). Migration `0007_deliverables.sql`,
+      staging-first, verified on both staging and production.
+- [x] `deliverable_categories` — a small business-scoped lookup table
+      (staff read, admin manages), **genuinely configurable with zero
+      code changes**: seeded with the 11 requested starter categories
+      (Edited Photos, Final Videos, Gallery Links, Contracts, Invoices,
+      Receipts, Call Sheets, Mood Boards, Workshop Materials,
+      Certificates, Other Deliverables); a 12th category, added live
+      from the Admin Platform during staging verification, appeared in
+      the creation form immediately with no deploy
+- [x] Client Portal UI: `DeliverablesGallery` (client component) on the
+      Project Workspace's Deliverables tab — grid/list view toggle,
+      search, category filter, sort (newest/oldest/title), real
+      thumbnails when staff provide one, a clean category-labeled
+      placeholder when they don't. Replaces the Milestone 1/2 "coming
+      soon" placeholder.
+- [x] Admin Platform UI: `DeliverablesManager`, one reusable component
+      wired into both the existing Enquiries CRM and Bookings detail
+      pages — publish/remove deliverables, admin-only "Add Category"
+      inline form, no duplicated logic between the two entity kinds
+- [x] Milestone 1's Dashboard now shows real counts: each Active
+      Project card's "Deliverables" field, the "Deliverables Ready"
+      widget total, and the Quick Actions "View Deliverables" link
+      (activates once any project has a deliverable, pointing at
+      whichever project has the most — never a fabricated destination)
 
 **Reserved for a future major feature, explicitly not part of v1.1.0:**
 a genuine **Document Vault** — secure client uploads, secure staff
@@ -341,6 +357,13 @@ control, retention policies, version history, secure document exchange,
 and the compliance/storage architecture decision that requires. That
 capability gets its own milestone and its own release when scoped,
 never implied by the read-only Deliverables feature above.
+
+**Verified:** category seeding and live admin-only category creation,
+staff full CRUD, client read-only + cross-client RLS isolation, and
+every gallery control (grid/list, search, filter, sort) against real
+published deliverables across both project kinds — on staging first,
+then independently re-verified on production. All test data removed
+after each pass.
 
 ### Milestone 4 — Reschedule & Cancellation Requests
 Per approved scope decision 1. Lives on the Project Workspace's Requests
