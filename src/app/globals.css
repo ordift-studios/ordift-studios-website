@@ -99,21 +99,25 @@
   --text-quote-desktop--line-height: 1.3;
 }
 
-/* Coming-soon holding page (Milestone 0, Phase 3) — an extremely
-   subtle breathing scale, never applied when the visitor prefers
-   reduced motion (see the motion-reduce: variant at the call site). */
-@keyframes ordift-breathe {
+/* Coming-soon holding page (Milestone 0, Phase 3, refined) — the
+   ambient glow behind the logo shimmers extremely subtly on its own;
+   the logo itself carries no animation at all. Never applied when the
+   visitor prefers reduced motion (see the motion-reduce: variant at
+   the call site). */
+@keyframes ordift-shimmer {
   0%,
   100% {
+    opacity: 0.16;
     transform: scale(1);
   }
   50% {
-    transform: scale(1.04);
+    opacity: 0.24;
+    transform: scale(1.06);
   }
 }
 
-.animate-ordift-breathe {
-  animation: ordift-breathe 6s ease-in-out infinite;
+.animate-ordift-shimmer {
+  animation: ordift-shimmer 8s ease-in-out infinite;
 }
 
 body {
