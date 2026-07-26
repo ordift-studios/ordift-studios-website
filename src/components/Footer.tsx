@@ -17,6 +17,7 @@ const LEGAL_LINKS = [
 // every existing `<Footer />` call site is unchanged.
 export default async function Footer() {
   const footer = await contentRepository.getFooterSettings();
+  const currentYear = new Date().getFullYear();
 
   return (
     <footer className="bg-ordift-navy-950 text-white">
@@ -52,7 +53,7 @@ export default async function Footer() {
 
         <div className="flex flex-wrap items-center justify-between gap-4 pt-8 border-t border-white/10">
           <p className="font-sans text-caption text-white/50">
-            © Ordift Studios. All rights reserved.
+            &copy; {currentYear} Ordift Studios. All rights reserved.
           </p>
           <div className="flex flex-wrap gap-x-6 gap-y-2">
             {LEGAL_LINKS.map((link) => (

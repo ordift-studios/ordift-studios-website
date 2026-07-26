@@ -189,10 +189,12 @@ V1.3:
   still point at `http://localhost:3000`; must be updated to the real
   production domain before deploy, or auth redirects (signup
   confirmation, password reset) will send users to localhost.
-- **Production email/SMTP** — Supabase's default email sending (used
-  for signup confirmation) is rate-limited and meant for
-  development/testing only; a real SMTP provider must be configured in
-  Supabase Auth settings before real users sign up in production.
+- **Production email/SMTP** — ✅ done (2026-07-27). Custom SMTP via
+  Resend configured on the production Supabase project (sending domain
+  `auth.ordiftstudios.com`, verified SPF/DKIM/DMARC), all 6 auth email
+  templates rebranded with Ordift Studios styling and logo, end-to-end
+  tested (signup, password reset, invite). Full detail in
+  `PRODUCTION_READINESS_REPORT.md`.
 - **CAPTCHA** — not yet enabled on `/portal/signup` or `/portal/login`;
   should be added before public launch to reduce automated abuse (same
   spirit as the honeypot + rate limiting already on the enquiry/

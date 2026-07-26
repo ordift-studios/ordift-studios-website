@@ -64,21 +64,23 @@ without a genuine architectural need from a future feature:**
 replacing it.** New modules are new versions (see roadmap below), not
 architectural changes to the above.
 
-### Roadmap from v1.0.0 (illustrative, not a fixed contract)
+### Roadmap from v1.0.0 forward
 
-- **v1.1.x — Client Experience**
-- **v1.2.x — Scheduling & Calendar**
-- **v1.3.x — CRM & Client Timeline**
-- **v1.4.x — Finance & Invoicing**
-- **v1.5.x — AI Assistant**
-- **v2.0.x — Multi-business Ecosystem**
+**Superseded 2026-07-27 by `PRODUCT_ROADMAP.md`** — the illustrative
+list that used to live here (Client Experience, Scheduling & Calendar,
+CRM & Client Timeline, Finance & Invoicing, AI Assistant, Multi-business
+Ecosystem) is retired; none of it was ever built under those names. See
+`PRODUCT_ROADMAP.md` for the current authoritative plan: Version 1.1
+(Internal Organization/Grade system), 1.2 (People & Skills), 2.0 (Talent
+Management), 3.0 (Studio Operations), 4.0 (Business Intelligence &
+Ordift Pulse), each with full vision/objectives/features/dependencies/
+risks/release criteria.
 
 The pre-v1.0.0 "Version 2.0 — Business Platform" / "2.5 — Talent" /
 "3.0 — Commerce" / "4.0 — Ecosystem" headings further down this document
-are retained for historical continuity (see the note above each) but no
-longer reflect the active roadmap — their still-relevant scope items
-carry forward into the numbered versions above as real work begins on
-each.
+are retained for historical continuity only (see the note above each) —
+their still-relevant scope items now carry forward into
+`PRODUCT_ROADMAP.md`'s versions instead of the retired table above.
 
 ---
 
@@ -218,7 +220,8 @@ writing this spec, including the honest gaps noted inline below.
       zero-data test client, all widgets included
 - [x] **Also shipped, not originally itemized:** a "Pending Payments"
       widget (honest future-ready placeholder, per the approved scope —
-      real payment tracking is `v1.4.x`), matching the widget list from
+      real payment tracking is unscheduled — see `PRODUCT_ROADMAP.md`
+      Version 3.0/Commerce note), matching the widget list from
       the approved dashboard refinement
 
 **Active Project Card fields — data source for each, confirmed against
@@ -1242,51 +1245,57 @@ CRM foundations (lead-lifecycle `crm_stage` enum, Enquiries CRM,
 Users & Roles, Activity Log) shipped as part of **v1.0.0**'s Admin
 Platform Tier 1. Remaining scope — deeper CRM/client-timeline features,
 analytics dashboard, project management, internal ops tooling — carries
-forward into **v1.3.x — CRM & Client Timeline** under the active v1.0.0+
-roadmap.
+forward into **`PRODUCT_ROADMAP.md` Version 4.0 (Business Intelligence)**
+for the analytics piece, and **Version 1.1 (Internal Organization)** for
+the internal-ops-tooling piece.
 
 - [x] Admin dashboard — shipped in v1.0.0 (Admin Platform Tier 1)
 - [x] CRM foundation (lead lifecycle, Enquiries CRM) — shipped in v1.0.0
 - [x] Team management (multiple administrators) — shipped in v1.0.0 (Users & Roles)
-- [ ] Analytics dashboard → v1.3.x
-- [ ] Deeper CRM / client timeline → v1.3.x
-- [ ] Internal operations tooling → v1.3.x or later, as real requirements emerge
+- [ ] Analytics dashboard → `PRODUCT_ROADMAP.md` Version 4.0
+- [ ] Deeper CRM / client timeline → not yet mapped to a `PRODUCT_ROADMAP.md` version; revisit once real requirements exist
+- [ ] Internal operations tooling → `PRODUCT_ROADMAP.md` Version 1.1 / 3.0
 
 ## Version 2.5 — Talent *(superseded — see below)*
 
-**Historical label, retired.** Not yet mapped to a version under the
-active v1.0.0+ roadmap — will be scheduled once real requirements exist.
-Plan Part G already flags talent applications as Tier 2 (sensitive
-documents — CVs, ID, consent info) requiring a secure-storage evaluation
-before build, independent of sequencing.
+**Historical label, retired.** Fully superseded by
+**`PRODUCT_ROADMAP.md` Version 2.0 (Talent Management)**, which expands
+this well beyond the original "Model" scope to Models, Influencers,
+Brand Ambassadors, Actors, Artists, Hosts, Presenters, and Performers.
+Plan Part G's Tier 2 secure-storage requirement (CVs, ID, consent info)
+is carried forward explicitly as a release-blocking dependency there.
 
-- [ ] Talent profiles, applications, bookings, casting
-- [ ] Talent portfolio management
-- [ ] Talent dashboard
+- [ ] Talent profiles, applications, bookings, casting → `PRODUCT_ROADMAP.md` Version 2.0
+- [ ] Talent portfolio management → `PRODUCT_ROADMAP.md` Version 2.0
+- [ ] Talent dashboard → `PRODUCT_ROADMAP.md` Version 2.0
 
 ## Version 3.0 — Commerce *(superseded — see below)*
 
-**Historical label, retired.** Payment provider integration is closest
-in spirit to **v1.4.x — Finance & Invoicing** under the active roadmap;
-the online-store/commerce scope itself isn't yet mapped to a version.
+**Historical label, retired.** Payment provider integration and the
+online-store/commerce scope are not yet mapped to a `PRODUCT_ROADMAP.md`
+version — neither fits cleanly into the currently-planned Versions
+1.1–4.0, so this stays an open item to be scheduled once there's a
+concrete commercial requirement driving it.
 
-- [ ] Online store, digital products (LUTs, presets, courses)
-- [ ] Merchandise, prints, licensing
-- [ ] Payment provider integration (first real online payment anywhere in the system — workshops stay manual-confirmation until/unless this changes that) → v1.4.x
+- [ ] Online store, digital products (LUTs, presets, courses) — unscheduled
+- [ ] Merchandise, prints, licensing — unscheduled
+- [ ] Payment provider integration (first real online payment anywhere in the system — workshops stay manual-confirmation until/unless this changes that) — unscheduled; likely feeds `PRODUCT_ROADMAP.md` Version 4.0's revenue reporting once it exists
 
 ## Version 4.0 — Ecosystem *(superseded — see below)*
 
-**Historical label, retired.** Multi-business/multi-language items map
-to **v2.0.x — Multi-business Ecosystem** under the active roadmap; the
-remaining items (mobile app, AI features, community/memberships) aren't
-yet mapped to a version.
+**Historical label, retired.** Multi-business items map to the
+`business_id`-scoped architecture already built (see `PRODUCT_ROADMAP.md`'s
+Vision 2030 section); AI features map to `PRODUCT_ROADMAP.md` Version
+4.0 (Ordift Pulse's summarization step, and the "AI insights" item under
+Business Intelligence). Mobile app, client mobile portal, and community/
+memberships remain unscheduled.
 
-- [ ] Ordift Academy (full platform)
-- [ ] Mobile app
-- [ ] AI features → close in spirit to v1.5.x — AI Assistant
-- [ ] Client mobile portal
-- [ ] Community, memberships
-- [ ] Multi-language support, international expansion (§4.1) → v2.0.x
+- [ ] Ordift Academy (full platform) — unscheduled
+- [ ] Mobile app — unscheduled
+- [ ] AI features → `PRODUCT_ROADMAP.md` Version 4.0 (Ordift Pulse, Business Intelligence)
+- [ ] Client mobile portal — unscheduled
+- [ ] Community, memberships — unscheduled
+- [ ] Multi-language support, international expansion (§4.1) → informed by `PRODUCT_ROADMAP.md`'s Vision 2030 (multi-country operations)
 
 ---
 

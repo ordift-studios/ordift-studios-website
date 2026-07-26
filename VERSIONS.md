@@ -23,18 +23,19 @@ Client Portal) predates formal versioning and is preserved as "Internal
 Development History" in `CHANGELOG.md`/`MILESTONES.md` — those earlier
 version labels ("1.0" through "4.0") were informal and were never git tags.
 
-**Roadmap from v1.0.0 forward** (illustrative — a planning guide, not a
-fixed contract; groupings may shift as real requirements emerge, but every
-shipped feature still lands in a tagged, documented version):
-
-| Version | Focus |
-|---|---|
-| v1.1.x | Client Experience |
-| v1.2.x | Scheduling & Calendar |
-| v1.3.x | CRM & Client Timeline |
-| v1.4.x | Finance & Invoicing |
-| v1.5.x | AI Assistant |
-| v2.0.x | Multi-business Ecosystem |
+**Roadmap from v1.0.0 forward:** superseded 2026-07-27 by
+**`PRODUCT_ROADMAP.md`**, now the single authoritative long-term plan —
+see that document for the current version list (Version 1.1 Internal
+Organization, 1.2 People & Skills, 2.0 Talent Management, 3.0 Studio
+Operations, 4.0 Business Intelligence & Ordift Pulse) with full
+vision/objectives/features/dependencies/risks/release-criteria per
+version. The illustrative table that used to live here (Client
+Experience, Scheduling & Calendar, CRM & Client Timeline, Finance &
+Invoicing, AI Assistant, Multi-business Ecosystem) is retired — none of
+those groupings were ever built under those names, and `PRODUCT_ROADMAP.md`
+reflects what's actually planned now. The versioning *policy* above
+(semver, git tags, `CHANGELOG.md`/`RELEASE_NOTES.md` entries) is
+unchanged and still applies to every future release.
 
 **Frozen baseline as of v1.0.0** (do not refactor without a genuine
 architectural need from a future feature — full detail in `MILESTONES.md`):

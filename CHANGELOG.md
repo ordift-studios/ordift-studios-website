@@ -13,6 +13,64 @@ History" for continuity — the version numbers used there ("1.0" through
 "1.3.0") were informal internal milestone labels only, never git tags,
 and are superseded by the official sequence starting at v1.0.0.
 
+## v1.0.0 (Production Hardening) — Access Management, Email Infrastructure & Roadmap — 2026-07-27
+
+Added to the v1.0.0 baseline (not a new tagged version — per explicit
+instruction, everything through this date is still considered the
+stable "Version 1.0" baseline; see `PRODUCT_ROADMAP.md` for what comes
+next as genuinely new versions).
+
+**Added:**
+- Full Identity & Access Management system (migration `0009`): `super_admin`
+  and `contractor` roles, account suspend/deactivate/expiry/restore
+  lifecycle, project-scoped collaborator access, Users & Roles admin UI,
+  invite-collaborator flow, collaborator-facing portal
+  (`/portal/collaborator`), Titles/Engagement-Types lookup management.
+- Production email infrastructure: Resend custom SMTP on
+  `auth.ordiftstudios.com` (SPF/DKIM/DMARC verified), all 6 Supabase Auth
+  email templates rebranded with Ordift Studios navy/gold styling and the
+  official logo.
+- `PRODUCT_ROADMAP.md` — the new authoritative long-term roadmap
+  (supersedes the illustrative version tables in `VERSIONS.md` and
+  `MILESTONES.md`), covering Versions 1.1 (Internal Organization/Grade
+  system), 1.2 (People & Skills), 2.0 (Talent Management), 3.0 (Studio
+  Operations), and 4.0 (Business Intelligence & Ordift Pulse), plus a
+  Vision 2030 statement and Engineering Standards for future work.
+- `ADMIN_GUIDE.md` — full operational manual for roles, permissions,
+  invitations, account lifecycle, email infrastructure, and (added this
+  date) an Internal Governance section covering naming/security/QA/
+  documentation/release/change-management standards.
+- `DOCUMENTATION_INDEX.md` — cross-reference map of every project
+  document.
+- Dynamic copyright year in the site footer (`© {year} Ordift Studios`)
+  — replaces a hardcoded year, updates automatically.
+
+**Security updates:**
+- 3 production-only `service_role` grant gaps found and fixed
+  (migrations `0010`–`0012`) — see `PRODUCTION_READINESS_REPORT.md` for
+  root cause (production's stricter "automatically expose new tables"
+  setting, working as intended).
+- Supabase Security Advisor reviewed: 0 errors; 2 known/accepted
+  warnings documented (a single-tenant `SECURITY DEFINER` helper
+  function, and leaked-password protection pending a Pro-plan upgrade
+  decision).
+
+**Database migrations:** `0009_access_management.sql`,
+`0010_service_role_grants_fix.sql`,
+`0011_service_role_select_projects.sql`,
+`0012_service_role_update_profiles.sql` — all additive, applied to
+staging then production, independently verified.
+
+**Known issues:** Reply-To header for auth emails not configurable
+through Supabase's dashboard (would need a custom Auth Hook); Magic
+Link/Reauthentication templates are branded but have no live trigger
+path in the current app yet.
+
+**Upgrade notes:** none — this is documentation and additive schema
+only; no breaking changes to any existing role, page, or API.
+
+---
+
 ## v1.0.0 — Ordift Studios Platform Foundation — 2026-07-26 ✅ RELEASED
 
 The first official, git-tagged production release. Consolidates every

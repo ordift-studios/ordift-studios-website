@@ -1,0 +1,103 @@
+# Ordift Studios — Production Readiness Report
+
+**Date:** 2026-07-27
+**Scope:** Production email infrastructure, Identity & Access Management (IAM) verification, and a full production health check, following the migration 0009 IAM build and Resend SMTP rollout.
+**Prepared for:** matetey@ordiftghana.com (Primary Super Admin), ordift.ghana@gmail.com (Recovery Super Admin)
+
+This report is the requested deliverable closing out the email-infrastructure and access-management verification pass. It complements — not replaces — the still-open **Milestone 0 (Production Readiness & Launch Preparation)** checklist tracked in `MILESTONES.md`; see **Remaining Work** below for what that checklist still needs.
+
+---
+
+## 1. Completed This Session
+
+### 1.1 Email Infrastructure
+- **Sending domain:** `auth.ordiftstudios.com` created and verified in Resend. DNS records (SPF, DKIM, DMARC, MX for the subdomain) added to Squarespace by you and confirmed propagated.
+- **DMARC placement:** scoped to `_dmarc.auth.ordiftstudios.com` (not the root domain), per your own catch — this avoids any future conflict with a root-domain Google Workspace DMARC policy, since a subdomain DMARC record always takes precedence over the root for mail from that subdomain (RFC 7489).
+- **Supabase Custom SMTP:** configured on the production project using Resend's SMTP relay (`smtp.resend.com:465`, username `resend`, password = your production Resend API key, entered directly by you into the Supabase dashboard — never seen or handled by me in plaintext).
+- **Sender identity:** `Ordift Studios <no-reply@auth.ordiftstudios.com>` for all Supabase Auth emails.
+- **Reply-To — known limitation:** Supabase's dashboard SMTP settings and email-template editor expose no Reply-To field for GoTrue-sent auth emails. `info@ordiftstudios.com` as Reply-To could not be configured through the standard product surface. Workaround, if needed later: a custom auth email-sending hook (Supabase Auth Hooks, currently unused in this project) could intercept and rewrite headers before send — flagged as a future item, not attempted here since it's a new code path outside this session's scope.
+- **All 6 auth email templates rebranded** (Confirm sign up, Invite user, Magic Link/OTP, Change email address, Reset password, Reauthentication): navy/gold Ordift Studios styling, correct copy per template, all original Supabase template variables preserved exactly (`{{ .ConfirmationURL }}`, `{{ .Token }}`, `{{ .NewEmail }}`, etc.).
+- **Logo added to every template header** (added mid-session per your follow-up request): the official gold Ordift Studios logo (`/brand/logo-nav-gold.png`, sourced from the site's own asset library — no new asset created), centered, rendered at 140×95px from a 461×314px source (≈3.3× downscale, retina-sharp on high-DPI displays), `alt="Ordift Studios"` for accessibility, `max-width:100%` for responsive scaling. Verified rendering correctly in real Gmail (both desktop-width and mobile-width viewports) — the dashboard's own template preview shows a broken-image placeholder because it sandboxes external images; that is a preview-only limitation, not a real defect.
+- **SPF/DKIM/DMARC verified via live headers**, not just Resend's dashboard status: Gmail's own message details show `mailed-by: send.auth.ordiftstudios.com` and `signed-by: auth.ordiftstudios.com` with no security warnings, on two independently-sent test emails (signup confirmation, password reset). Both authenticate and align correctly under the subdomain policy.
+
+### 1.2 End-to-End Testing (Production)
+All tests below were run against the live production Supabase project (`goxuyooxrekzstssjgly`) and the live production site (`ordiftstudios.com`), using real, disposable test accounts, all since deleted (see §4).
+
+| Flow | Result |
+|---|---|
+| Sign-up → branded confirmation email → click-through → login | ✅ Pass, full round-trip verified |
+| Forgot-password → branded reset email → correct subject/body/link | ✅ Pass |
+| Collaborator invite (fired by you as Super Admin from the Admin Portal) → branded invite email received | ✅ Pass — confirmed by you directly |
+| Invite → account creation → role assignment | ✅ Pass — verified at the database level: the invited account was created with **`contractor` role only**, no `admin`/`super_admin`/`staff` leakage |
+| Audit logging of the invite action | ✅ Pass — `activity_log` shows `action: collaborator.invited`, correct `entity_id`, and metadata `{"role":"contractor","email":"..."}` |
+| Magic Link / Reauthentication (OTP) templates | Content and branding verified directly; not fired through a live send this session (no code path in the current app triggers them yet — see §3) |
+
+### 1.3 Identity & Access Management — Production State
+- Migration `0009` (access-management schema + RLS) and follow-up grants `0010`–`0012` (service-role grant fixes) are applied and verified on production, matching staging exactly.
+- Production Users table confirmed clean: **3 real users only** — `matetey@ordiftghana.com` (Primary Super Admin), `ordift.ghana@gmail.com` (Recovery Super Admin), and one existing real staff/collaborator account (`Sylvia Annang-Mensah`, roles `staff`+`client`). No test accounts remain (see §4).
+- Role/permission separation confirmed structurally at the DB level: Grade, Title, Engagement Type, and Role are (and, per this session's decision, will remain) fully independent axes — see the Grade system note in §5.
+- Collaborator/contractor permission boundaries (project-scoping, no admin-route access) rely on the same `private.has_role()` / RLS architecture already built and regression-tested in the prior migration-0009 work (staging regression pass + production smoke test, both already completed before this session). This session's live invite test is consistent with that architecture; a full manual walk of suspend/expire/restore lifecycle actions was not re-run live in this pass (already covered in the prior staging regression matrix).
+
+### 1.4 Production Cleanup
+- **3 QA accounts deleted** via Supabase's Auth dashboard delete action (irreversible, confirmed by exact email address before each deletion): `Email Infra Test` (unconfirmed), `Email Infra Test 2`, and `Lady Isla Anim-Tetey` (the test collaborator account created by the invite-flow test — confirmed with you first, since the name didn't read as an obvious throwaway).
+- **Zero orphaned records** confirmed by direct query afterward across `profiles`, `user_roles`, and `project_assignments` — cascading deletes worked cleanly, nothing left behind.
+- Audit-log entries referencing the deleted test accounts (e.g. the `collaborator.invited` event) were **intentionally left in place** — audit trails document real administrative actions taken by a real Super Admin and should not be deleted after the fact, even when the invited account itself was a test. Flagging this explicitly rather than silently choosing either way.
+
+### 1.5 Security Posture Check
+- Supabase Security Advisor: **0 errors**, 2 warnings, both pre-existing and already known (not introduced this session):
+  1. `public.ordift_studios_business_id()` is a `SECURITY DEFINER` function callable by signed-in users. This is intentional — it's the single-tenant business-ID default used across every business-scoped table. Revoking `EXECUTE` would need careful testing against every insert path that relies on the column default; left as-is, documented as an accepted risk (this is a single-tenant app; there's no cross-tenant data to leak).
+  2. Leaked-password protection disabled — **requires a Supabase Pro-plan upgrade** (Free plan doesn't support it). This is a paid/billing decision, so I did not act on it; recommending it below.
+- Auth providers: only Email is enabled; all OAuth providers (Google, Apple, GitHub, etc.) are off — minimal attack surface, as already configured.
+- Anonymous sign-ins and manual account linking are both disabled — correct, unchanged defaults.
+
+---
+
+## 2. Remaining Work (pre-existing, not addressed this session)
+
+These are carried over from the still-open Milestone 0 checklist in `MILESTONES.md` — listed here for a single consolidated view, not because this session was scoped to close them:
+
+- **Google Sheets integration** (`GOOGLE_SERVICE_ACCOUNT_EMAIL`, `GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY`, `GOOGLE_SHEETS_SPREADSHEET_ID`) — not present in production Vercel env vars. Tier-1 form submissions (enquiries, workshop registrations) currently write to Supabase but not the Sheets backup. Needs a Google Cloud service account you create and provide.
+- **Turnstile / CAPTCHA** — not yet enabled on `/portal/signup` or `/portal/login`, nor on the public Tier-1 forms (per the pre-existing note in `DEPLOYMENT.md`).
+- **Analytics** (`NEXT_PUBLIC_GA_MEASUREMENT_ID`) and **contact/WhatsApp display vars** (`NEXT_PUBLIC_CONTACT_EMAIL`, `NEXT_PUBLIC_WHATSAPP_NUMBER`) — also absent from production env.
+- **Backup and restore verification** (Milestone 0.6) — Supabase's automatic backup schedule/retention has not been confirmed, and no restore has been test-run.
+- **Full production launch audit** (Milestone 0.7) and **Launch Readiness Checklist / Go-No-Go** (Milestone 0.8) — still pending, distinct from and larger in scope than this email/IAM-focused report.
+- **Reply-To header** for auth emails (`info@ordiftstudios.com`) — see §1.1; needs a Supabase Auth Hook if this is a hard requirement.
+
+## 3. Known Limitations
+
+- Magic Link and Reauthentication email templates are branded and content-correct but have no live trigger path in the current app (no UI flow calls `signInWithOtp` or reauthentication yet) — verified by direct inspection, not by a live send.
+- The dashboard's own email-template preview pane shows a broken-image icon for the logo (external images are sandboxed there) — cosmetic to that internal tool only; real inbox rendering is confirmed correct.
+- No formal performance benchmarking (Lighthouse or equivalent) was run this session — deployment health was confirmed (latest Vercel production deployment is `Ready`), but page-load/Core Web Vitals numbers were not captured.
+
+## 4. Security Observations
+
+- The `SECURITY DEFINER` function warning and the leaked-password-protection gap (§1.5) are the only two open items from the linter; both are low-risk and documented above.
+- Least-privilege was maintained throughout: the production Resend API key was scoped to "Sending access" only (not full account access); the earlier attempt to self-grant a temporary `admin` role to a QA account for testing purposes was correctly blocked by the safety system, and the invite-flow test was instead completed by you directly — a cleaner outcome than working around that block.
+- Every account deletion this session was preceded by an explicit on-screen confirmation of the exact email address, and the ambiguous one (`Lady Isla Anim-Tetey`) was confirmed with you by name before deletion rather than assumed to be disposable.
+
+## 5. Future Improvements
+
+- **Organizational Grade system** — a full spec was captured this session (separate from Role/Title/Engagement Type, 10-tier seniority hierarchy, admin-only visibility policy, reorderable Admin UI) but deliberately **deferred to its own post-launch milestone** rather than built now, to avoid destabilizing a freshly-verified production state right before a Go/No-Go call. Full spec preserved in Claude's project memory (`project_grade_system_spec.md`) and summarized in the System Administrator Guide, §9.
+- **QA account naming convention** — also specified this session (`QA Photographer`, `QA Client`, etc. with reserved email aliases) to make future test-account cleanup mechanical rather than judgment-based, as it was this time.
+- A Supabase Auth Hook to support a custom Reply-To header, if that turns out to matter in practice (most reply traffic to a `no-reply@` sender is rare, so this may not be worth building).
+
+## 6. Performance Observations
+
+- Not deeply benchmarked this session (see §3). Latest production Vercel deployment shows a healthy build (`Ready` status, ~2 min build time, consistent across the last 14 deployments).
+- Email delivery latency observed during testing: consistently near-instant (seconds) from form submission to inbox arrival across all tested templates — no rate-limiting or delay observed on Resend's side.
+
+## 7. Overall Production Readiness
+
+**Email infrastructure and Identity & Access Management: production-ready.** Both are fully configured, tested end-to-end against live production, and clean of test data.
+
+**Overall platform readiness for public launch: ~75%.** The core product (site, CMS, portals, admin platform, auth, and now email) is solid and verified. What remains is infrastructure hardening that's independent of this session's scope — Google Sheets backup, CAPTCHA, backup/restore verification, and the broader launch audit — none of which are code defects, all of which are known and already tracked in `MILESTONES.md`.
+
+## 8. Go / No-Go Recommendation
+
+**No-Go for full public launch, Go for continued controlled use** (admin/staff/collaborator operations, direct client onboarding via invite) **as of today.**
+
+Rationale: authentication, email, and access control — the trust-critical path for anyone touching the system — are now solid. The remaining gaps (Sheets backup, CAPTCHA, backup/restore verification) are about resilience and abuse-resistance for a fully public, unmoderated audience, not about whether the system works correctly for the people already using it. Recommend closing Milestone 0's remaining items before opening the public Tier-1 forms and signup flow to the general public.
+
+---
+
+*Companion document: [ADMIN_GUIDE.md](ADMIN_GUIDE.md) — the operational manual for managing roles, invitations, and the email system day-to-day.*
