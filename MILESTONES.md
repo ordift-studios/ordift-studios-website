@@ -128,6 +128,96 @@ private); fixed Sanity Studio CORS for the production origin. Declared
 frozen alongside Admin Platform Tier 1 — see the freeze list under
 v1.0.0 above.
 
+## v1.1.0 — Client Experience 📋 PLANNED, not started (awaiting approval)
+
+**Status:** Draft roadmap only — milestones and tasks, no code written.
+Per explicit instruction, implementation waits for your sign-off on scope
+before any work begins. Builds entirely on the frozen v1.0.0 foundation
+(`src/lib/portal/roles.ts`, existing RLS policies, `enquiries`/
+`workshop_registrations` tables) — no architectural changes.
+
+**Current baseline this version builds on** (confirmed by reading the
+live code, not assumed): `/portal/client` shows a flat list of the
+client's own enquiries (reference, service, CRM stage, payment status)
+with an honest empty state; `/portal/workshops` shows registrations
+similarly. There is no detail page, no client-editable profile, no
+notifications, and no client/staff messaging today — this version's
+scope is proposed to fill exactly those gaps, not to invent new business
+capabilities beyond them.
+
+**Open questions for you before implementation starts** (flagged rather
+than assumed, per the zero-invention rule):
+- Should clients be able to *request* a reschedule/cancellation (creates
+  a staff-visible note, staff still makes the change), or is that out of
+  scope for v1.1.0?
+- Is two-way client↔staff messaging in scope, or should client-visible
+  updates stay one-directional (status changes only, replies still by
+  phone/email/WhatsApp as today)?
+- Are email notifications in scope for this version, given
+  `FORMS_SENDING_ENABLED` is still off in production (no Resend account
+  yet)? If email isn't ready, this version could ship with in-app
+  notifications only, with email added once that dependency clears.
+
+### Milestone 1 — Client Profile & Account Management
+- [ ] Client-editable profile page (`/portal/client/profile`): full name,
+      phone, avatar — reusing the existing column-level grant
+      (`full_name`, `phone`, `avatar_url`) already verified on `profiles`
+      in v1.0.0; no new grant needed
+- [ ] Change-password flow via Supabase Auth
+- [ ] Change-email flow via Supabase Auth (with re-verification)
+- [ ] Account-deletion request (routes to a contact/support flow rather
+      than self-service hard-delete, given account deletion is a
+      Prohibited/Explicit-permission-tier action in general — needs your
+      confirmation on the exact flow)
+
+### Milestone 2 — Enquiry & Booking Detail Views
+- [ ] Enquiry detail page (`/portal/client/enquiries/[id]`): full status
+      history in client-friendly language (a client-facing label set,
+      distinct from the internal `CRM_STAGES` vocabulary used in
+      `/admin`), submitted details, payment status
+- [ ] Workshop registration detail page: waitlist position, payment
+      status, certificate download link (when issued)
+- [ ] Client-initiated reschedule/cancellation *request* (pending your
+      answer to the open question above) — creates a staff-visible note
+      via the existing `enquiry_notes` pattern, never changes CRM stage
+      directly from the client side
+
+### Milestone 3 — Client Dashboard Overview
+- [ ] Replace the flat enquiry list with a proper dashboard home
+      (`/portal/client`): summary cards (active enquiries, upcoming
+      workshops), a combined recent-activity feed across both, clearer
+      first-time empty state
+- [ ] Consistent client-facing status vocabulary applied across
+      dashboard + detail views (from Milestone 2)
+
+### Milestone 4 — Notifications
+- [ ] In-app notification indicator for status changes (new
+      business-scoped table, e.g. `client_notifications` — staging-first
+      migration per the Migration Policy in `DEVELOPMENT_GUIDE.md`)
+- [ ] Email notifications on stage/status change — **blocked on**
+      `FORMS_SENDING_ENABLED` and a live Resend account; scope this out
+      of v1.1.0 if that dependency isn't ready by the time this milestone
+      starts, per your answer above
+
+### Milestone 5 — Client↔Staff Communication *(scope pending your answer above)*
+- [ ] If in scope: message thread per enquiry/booking, client-visible,
+      distinct from the internal (staff-only) `enquiry_notes` — new
+      table + RLS policies, staging-first migration
+- [ ] Admin Platform: staff-side view of the same thread from the
+      existing Enquiries CRM detail page
+
+### Milestone 6 — Verification & Release v1.1.0
+- [ ] Full staging E2E verification of every new/changed workflow
+      (Testing Requirements, `DEVELOPMENT_GUIDE.md` §5)
+- [ ] Role-boundary check: confirm a client can only ever see/edit their
+      own data, never another client's
+- [ ] Production smoke test (same shape as the v1.0.0 release smoke test)
+- [ ] Full Release Checklist (`DEVELOPMENT_GUIDE.md` §3): version bump,
+      `CHANGELOG.md`/`RELEASE_NOTES.md`/`MILESTONES.md` updated, tag
+      `v1.1.0`, GitHub Release published
+
+---
+
 ## Version 1.0 — Foundation ✅ complete
 
 - [x] Brand identity (logo variants, color system, typography)
