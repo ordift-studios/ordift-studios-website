@@ -52,6 +52,25 @@ export async function proxy(request: NextRequest) {
     }
   }
 
+  // Temporary launch holding page (Milestone 0, Phase 3). When
+  // LAUNCH_HOLDING_PAGE=true, every public route rewrites to
+  // /coming-soon instead of the real site — used only for the window
+  // between the domain first pointing at this deployment and launch
+  // readiness (Phase 5) actually being verified. /studio, /admin,
+  // /portal, and /api stay reachable throughout so staff/content work
+  // and verification can continue behind the holding page. Off by
+  // default (unset env var) — nothing changes until this is explicitly
+  // turned on in production.
+  const HOLDING_PAGE_ALLOWLIST = ["/coming-soon", "/studio", "/admin", "/portal", "/api", "/robots.txt", "/sitemap.xml"];
+  if (
+    process.env.LAUNCH_HOLDING_PAGE === "true" &&
+    !HOLDING_PAGE_ALLOWLIST.some((path) => request.nextUrl.pathname.startsWith(path))
+  ) {
+    const url = request.nextUrl.clone();
+    url.pathname = "/coming-soon";
+    return NextResponse.rewrite(url);
+  }
+
   // Session refresh (Version 1.3) — also redirects unauthenticated
   // /portal/** requests to /portal/login. Runs after the staging gate
   // above so a blocked staging visitor never even reaches this check.

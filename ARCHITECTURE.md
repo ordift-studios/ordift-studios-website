@@ -108,3 +108,58 @@ The Workshop Platform expansion (instructor profiles, categories, galleries, FAQ
 - No object storage until Portfolio needs it.
 - No API versioning until an external integration needs it.
 - No microservices / separate backend service — Next.js API routes remain sufficient for the foreseeable feature set; splitting out a separate backend would add operational complexity with no current benefit.
+
+---
+
+## 7. Future subdomain architecture — reserved, documented, not implemented (2026-07-26)
+
+Ahead of the production domain connection (`ordiftstudios.com`), the
+following subdomains are reserved in naming/intent only. **None are
+built, activated, or DNS-configured by this decision** — this section
+exists so a future subdomain is a DNS record plus (at most) a Vercel
+rewrite/second-project decision, never a restructuring of routes,
+auth, or data that already shipped.
+
+**How a subdomain gets activated later, technically:** every route
+below already exists as a path on the single Next.js app (`/portal`,
+`/admin`, `/studio`, `/book`) or doesn't exist yet as a route at all
+(future modules). Activating a subdomain is one of two cheap moves,
+decided per-subdomain when it's actually needed — never both, and
+never speculatively:
+1. **Same-project rewrite** — point the subdomain at the existing
+   Vercel project with a `rewrites()`/middleware host-based rule that
+   maps `portal.ordiftstudios.com/*` → `/portal/*` internally. Zero new
+   infrastructure, shares the same deploy, same env vars, same
+   Supabase project. Right choice when the subdomain is purely
+   cosmetic/organizational.
+2. **Separate Vercel project** — its own deployment, own env vars, own
+   scaling. Right choice only once a subdomain's workload genuinely
+   diverges (different release cadence, different team, a real need to
+   deploy independently of the marketing site) — per this document's
+   ground rule, not before that's true.
+
+Nothing about the current single-app, path-based structure blocks
+either option later, so no code changes are required today to keep
+this door open.
+
+| Subdomain | Reserved for | Status/trigger |
+|---|---|---|
+| `ordiftstudios.com` | Canonical production marketing site (current app) | **Active — Phase 2 of the launch** |
+| `www.ordiftstudios.com` | Redirects to the canonical apex | **Active — Phase 2 of the launch** |
+| `portal.ordiftstudios.com` | Client/Staff/Vendor/Model Portal (today: `/portal/**`) | Explicit trigger — worth moving off-path once the portal needs session/cookie isolation from the public marketing site, or once it's ready to be pointed at by a future mobile app as a distinct origin |
+| `admin.ordiftstudios.com` | Admin Platform (today: `/admin/**`) | Same trigger as `portal.` — staff-only auth benefits from the same isolation reasoning, same non-urgency |
+| `studio.ordiftstudios.com` | Sanity Studio CMS (today: `/studio/**`) | Standard Sanity practice to run Studio on its own subdomain; low-cost, low-urgency — natural to do at the same time as `portal.`/`admin.` rather than separately |
+| `app.ordiftstudios.com` | Reserved but **not yet assigned** a distinct purpose from `portal.` — decide at the time either is actually built whether "app" means a future unified authenticated shell (portal + admin + future modules under one origin) or is dropped in favor of `portal.` alone | Explicit trigger — do not build both `app.` and `portal.` without a concrete reason they need to differ |
+| `book.ordiftstudios.com` | A future dedicated booking/scheduling experience (today: `/book`), if real-time calendar/availability booking ever outgrows the current enquiry-form flow | Explicit trigger — tied to the (unscoped, future) Scheduling & Calendar work mentioned in earlier Milestone notes, not before |
+| `academy.ordiftstudios.com` | The full Academy platform (courses, enrollment, payment) once it moves beyond today's "Coming Soon" + waitlist page, per the frozen Phase 1B scope | Explicit trigger — Academy platform build, not before |
+| `api.ordiftstudios.com` | A versioned, external-facing API surface, once a real third-party consumer exists (future mobile app backend, a partner integration) | Explicit trigger — same trigger already defined in §4.6; today's two route handlers don't warrant this |
+| `status.ordiftstudios.com` | A public uptime/status page once real clients depend on the platform enough to need one (via a status-page provider or a simple custom page) | Explicit trigger — post-launch operational maturity, revisit once there's real production traffic to report on |
+| `help.ordiftstudios.com` | A future client/staff help center or knowledge base, separate from the marketing site's Journal content | Explicit trigger — build once there's enough recurring support volume to justify a dedicated knowledge base over direct contact |
+| `careers.ordiftstudios.com` | Dedicated careers/job-listings page, once the frozen Phase 1B "Careers applications" feature is built | Explicit trigger — tied to that feature's build, not before |
+| `media.ordiftstudios.com` | Either (a) a CDN-style origin for optimized static assets served independently of the app, or (b) a public press/media-kit page — which one gets decided when there's an actual need, not now | Explicit trigger — no current asset-delivery bottleneck or press-kit request exists |
+
+**Non-goal, same as §6:** none of the above get DNS records, Vercel
+rewrites, or route changes as part of this launch. This table is the
+reservation/intent record so a future "let's put the portal on its own
+subdomain" conversation starts from a documented decision, not a blank
+page.
