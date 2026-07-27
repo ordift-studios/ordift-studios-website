@@ -214,49 +214,24 @@ approved). Adding real online payment later means:
 
 ## Storage
 
-`src/lib/workshops/registrationStorage.ts`, mirroring the enquiry
-adapter's staging/production split:
+Supabase is the primary, required record (2026-07-27 — see
+`GOOGLE_SHEETS_INTEGRATION.md` §1); Google Sheets is a best-effort
+secondary copy. `src/lib/workshops/registrationStorage.ts` owns both the
+Supabase-backed capacity/waitlist counts and the Sheets sync:
 
-- **Staging** (or production before `LEGAL_PAGES_APPROVED=true`):
-  appends to `.data/staging-workshop-registrations.jsonl` — gitignored,
-  never committed, structurally separate file from
-  `.data/staging-enquiries.jsonl`.
-- **Production**: appends a row to the `Workshop Registrations` tab via
-  the same Google service account used for Enquiries (same Google Cloud
-  project, same credentials — a separate tab, not a separate project, is
-  sufficient isolation since both are equally private/internal data).
+- **Staging** (or production before `FORMS_SENDING_ENABLED=true`): the
+  Sheets sync appends to `.data/staging-workshop-registrations.jsonl` —
+  gitignored, never committed, structurally separate file from
+  `.data/staging-enquiries.jsonl`. This is a secondary audit trail only;
+  the authoritative staging record is Supabase.
+- **Production**: the Sheets sync appends a row to the `Workshop
+  Registrations` tab of the "Ordift Studios Operations" spreadsheet.
 
-### `Workshop Registrations` Sheet mapping (A–S)
-
-Requires a tab named exactly **`Workshop Registrations`** in the same
-Sheet as Enquiries (see `GOOGLE_SHEETS_MAPPING.md` step 6), shared with
-the same service account.
-
-| Col | Header | Populated by | Notes |
-|---|---|---|---|
-| A | Registration Reference | System | `WKS-YYYYMMDD-XXXX` |
-| B | Workshop Slug | System | |
-| C | Workshop ID | System | |
-| D | Workshop Title | System | |
-| E | Full Name | Visitor | Required |
-| F | Email | Visitor | Required |
-| G | Phone / WhatsApp | Visitor | Required |
-| H | Country | Visitor | Optional |
-| I | Experience Level | Visitor | Optional |
-| J | Registration Date (UTC) | System | ISO 8601 |
-| K | Registration Status | System (auto) | `Registered` or `Waitlisted` |
-| L | Payment Status | System (auto) | `Not Required` / `Pending` — `Paid` / `Refunded` are administrator-set once payment is manually confirmed |
-| M | Amount Due | Administrator | Blank on insert — filled once pricing is approved and confirmed per registrant |
-| N | Amount Paid | Administrator | Blank on insert |
-| O | Waiting-List Status | System (auto) | e.g. `Waiting (position 2)`, blank if Registered |
-| P | Attendance Status | Administrator | Blank on insert — filled in after the workshop |
-| Q | Consent Timestamp | System (auto) | Same moment as Registration Date — required consent is captured at submission |
-| R | Internal Notes | Administrator | Blank on insert |
-| S | Environment | System | `staging` or `production` |
-
-**Deliberately not a column:** raw IP address (same reasoning as
-Enquiries — the rate limiter uses it transiently in memory only), and any
-uploaded file (no upload field exists on this form).
+The full, current column mapping (A–T) and the record ID format now
+written into column B (`WSH-2026-000042`, replacing the old
+`WKS-YYYYMMDD-XXXX` format for new registrations) live in
+`GOOGLE_SHEETS_INTEGRATION.md` §3 and `RECORD_ID_STANDARD.md` — not
+duplicated here, to avoid the two documents drifting out of sync.
 
 ## Emails
 

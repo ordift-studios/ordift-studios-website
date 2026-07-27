@@ -150,7 +150,7 @@ For all future testing, use a reserved naming convention rather than ad hoc name
 Production environment variables live in Vercel (Project Settings → Environment Variables), never committed to git. As of this writing, production has:
 `RESEND_API_KEY`, `EMAIL_ADMIN_NOTIFICATION_TO`, `EMAIL_FROM_ADDRESS`, `LAUNCH_HOLDING_PAGE`, `NEXT_PUBLIC_SITE_URL`, `SANITY_API_TOKEN`, `SUPABASE_SECRET_KEY`, `LEGAL_PAGES_APPROVED`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`, `NEXT_PUBLIC_SUPABASE_URL`, `SANITY_API_VERSION`, `NEXT_PUBLIC_SANITY_DATASET`, `NEXT_PUBLIC_SANITY_PROJECT_ID`, `SITE_ENV`.
 
-**Not yet present in production** (see `.env.example` for the full expected set): Google Sheets service-account credentials, Google Analytics measurement ID, and the public contact-info display variables. See `PRODUCTION_READINESS_REPORT.md` §2 for what each gates.
+**Not yet present in production** (see `.env.example` for the full expected set): Google Sheets service-account credentials, Google Analytics measurement ID, `OPERATIONS_EMAIL` (§16.2 — optional, falls back to `EMAIL_ADMIN_NOTIFICATION_TO`), and the public contact-info display variables. See `PRODUCTION_READINESS_REPORT.md` §2 for what each gates.
 
 Deployment is via Vercel, connected to the project's git repository. See `DEPLOYMENT.md` for the full historical deployment log and known issues.
 
@@ -212,6 +212,27 @@ Every state-changing administrative action already writes to `activity_log` (§1
 ### 15.8 Change Management
 - Scope changes mid-version get a dated note in the relevant document (the same convention `MILESTONES.md` already uses) rather than a silent rewrite of prior decisions.
 - Any change that would affect the four-axis independence rule (§15.3), the central-enforcement-point pattern (§15.2), or introduce a new sensitive-data surface without a storage decision (§15.2) should be flagged for explicit approval before proceeding, regardless of how small it seems in isolation — these are the three architectural guarantees this whole system's safety currently rests on.
+
+## 16. Operational Reporting
+
+Added 2026-07-27, on top of the dual-storage form workflow (Supabase primary + Google Sheets secondary — see `GOOGLE_SHEETS_INTEGRATION.md`). Supabase is the authoritative source for every report below; Google Sheets is never read from for reporting, only written to as a secondary operational mirror.
+
+### 16.1 What's where
+- **`/admin/enquiries`** and **`/admin/bookings`** — the day-to-day CRM lists. Each has search, status/stage filters, a payment-status filter, a service/workshop filter, a date-range filter, and its own **Export CSV / Export Excel** buttons that carry whatever filters are currently applied.
+- **`/admin/reports`** — curated, named reports (not a second filter UI): one card per reportable entity with Download CSV / Download Excel / **Email to Operations**, plus a Monthly Workshop Registration Summary (counts by month, not raw rows), plus a "Not Yet Live" section for entities with no form yet (Client Bookings, Newsletter Subscribers, Vendor/Model/Employment Applications, Equipment Rentals, Studio Reservations).
+- Live reportable entities today: **Contact Enquiries**, **Workshop Registrations**, **Project Requests**.
+
+### 16.2 "Email to Operations"
+Sends the report as an `.xlsx` attachment to the address in `OPERATIONS_EMAIL` (falls back to `EMAIL_ADMIN_NOTIFICATION_TO` if unset — see `.env.example`), via the same Resend infrastructure as every other transactional email (§8). Staging always logs instead of sending, same `productionSendingEnabled()` gate as everything else. Sent reports are **not** archived anywhere by the app itself — if you need a permanent record of what was sent when, forward or file the received email.
+
+### 16.3 Extending this for a future module
+One registration, no new synchronization logic — see the comment at the top of `src/lib/admin/reports/registry.ts`:
+1. Add a `fetchRows()` implementation (a query against the module's Supabase table, filtered and mapped to flat `{ column: value }` rows) to `src/lib/admin/reports/modules/`.
+2. Register it in `REPORT_MODULES` in `registry.ts`, replacing its placeholder entry in `modules/reserved.ts` if it already has one.
+3. Search, filter, CSV/XLSX export, and "Email to Operations" all work immediately — none of `src/app/api/admin/reports/**`, `csv.ts`, `xlsx.ts`, or `sendReportEmail.ts` need to change.
+
+### 16.4 Access control
+Every `/api/admin/reports/**` route is gated by `requireAdminApiUser()` (`src/lib/admin/apiAuth.ts`) — staff, admin, or super_admin only, same role check as the `/admin/**` page layout, checked independently since `proxy.ts` doesn't gate API routes the way it gates pages. An unauthenticated or under-privileged request gets a `401`, not a redirect.
 
 ---
 

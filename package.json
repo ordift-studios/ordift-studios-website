@@ -9,7 +9,8 @@
     "lint": "eslint",
     "seed:sanity-connection-test": "tsx scripts/seedSanityConnectionTest.ts",
     "seed:sanity-sample-data": "tsx scripts/seedSanitySampleData.ts",
-    "seed:sanity-site-wide": "tsx scripts/seedSanitySiteWideContent.ts"
+    "seed:sanity-site-wide": "tsx scripts/seedSanitySiteWideContent.ts",
+    "setup:google-sheets": "tsx scripts/setupGoogleSheets.ts"
   },
   "dependencies": {
     "@sanity/image-url": "^2.1.1",
@@ -22,6 +23,7 @@
     "react-dom": "19.2.4",
     "resend": "^6.18.0",
     "sanity": "^6.6.0",
+    "write-excel-file": "^4.1.1",
     "zod": "^4.4.3"
   },
   "devDependencies": {

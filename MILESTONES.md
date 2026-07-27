@@ -1220,12 +1220,36 @@ Decisions confirmed 2026-07-25:
   deferred (2026-07-27) so infrastructure decisions don't block feature
   work — see `PRODUCT_ROADMAP.md` for how this stays visible going
   forward.
-- **Google Sheets backup** — code was already complete
-  (`saveToGoogleSheets` in `src/lib/enquiry/storage.ts` and
-  `src/lib/workshops/registrationStorage.ts`). **🟡 PENDING OWNER
-  DECISION** — needs a Google Cloud service account from you
-  (`GOOGLE_SERVICE_ACCOUNT_EMAIL`, `GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY`,
-  `GOOGLE_SHEETS_SPREADSHEET_ID`); deliberately deferred (2026-07-27).
+- **Google Sheets backup** — rebuilt 2026-07-27 into the dual-storage
+  workflow: Supabase is now the primary, required write for every public
+  form; Google Sheets is a best-effort secondary copy across 9
+  worksheets (2 live — Workshop Registrations, Contact Enquiries; 7
+  reserved) inside one "Ordift Studios Operations" spreadsheet, with a
+  `sheet_sync_failures` retry queue so a transient Sheets outage is
+  recoverable rather than silent. Record IDs across the whole platform
+  now follow a shared sequential standard (`PREFIX-YYYY-NNNNNN`, see
+  `RECORD_ID_STANDARD.md`) backed by an atomic Postgres counter
+  (`supabase/migrations/0013_record_ids_and_sheet_sync.sql`). See
+  `GOOGLE_SHEETS_INTEGRATION.md` for the full design and setup. **🟡
+  PENDING OWNER DECISION** — still needs a Google Cloud service account
+  from you (`GOOGLE_SERVICE_ACCOUNT_EMAIL`,
+  `GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY`, `GOOGLE_SHEETS_SPREADSHEET_ID`),
+  **and migration 0013 applied to staging and production** — until that
+  migration runs, both forms fail closed with a 503 (Supabase is
+  required, so no record ID can be generated without it) rather than
+  silently dropping a submission.
+- **Operational Reporting + Project Requests Sheets integration** —
+  added same day. A third live Sheets integration (Project Requests,
+  `PRJ` prefix, `supabase/migrations/0015_project_requests_record_id.sql`),
+  a new Admin Portal reporting layer (`/admin/reports`, plus search/
+  filter/CSV/XLSX export added to `/admin/enquiries` and
+  `/admin/bookings`) reading exclusively from Supabase, and a
+  config-driven module registry (`src/lib/admin/reports/registry.ts`)
+  so a future form's report support is one registration, not new code.
+  See `ADMIN_GUIDE.md` §16. Same pending-migration blocker as above —
+  `phone` columns (migration 0014) and the `project_requests`
+  `reference_number` column (0015) also need to be applied before this
+  is fully live.
 - **Analytics (Google Analytics)** — no code exists yet, not just a
   missing key. **🟡 PENDING OWNER DECISION** — needs
   `NEXT_PUBLIC_GA_MEASUREMENT_ID` from you before this is even worth

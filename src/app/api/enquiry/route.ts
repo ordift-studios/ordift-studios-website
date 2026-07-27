@@ -2,12 +2,12 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { z } from "zod";
 import { enquirySchema } from "@/lib/enquiry/schema";
-import { generateReferenceNumber } from "@/lib/enquiry/reference";
+import { generateRecordId } from "@/lib/shared/recordId";
 import { checkRateLimit } from "@/lib/shared/rateLimit";
 import { getCachedResult, storeResult } from "@/lib/shared/idempotency";
-import { saveEnquiry, type EnquiryRecord } from "@/lib/enquiry/storage";
+import { syncEnquiryToSheets, type EnquiryRecord } from "@/lib/enquiry/storage";
 import { sendAcknowledgementEmail, sendAdminNotificationEmail } from "@/lib/enquiry/email";
-import { dualWriteEnquiry } from "@/lib/supabase/dualWrite";
+import { saveEnquiryToSupabase } from "@/lib/supabase/primaryWrite";
 import { isStaging } from "@/lib/shared/env";
 
 function clientKey(request: NextRequest): string {
@@ -62,10 +62,15 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // Honeypot: a real visitor never fills this hidden field. Fail silently
-  // with a fake-success shape so bots don't learn the check exists.
+  // Honeypot: a real visitor never fills this hidden field. Fail
+  // silently with a fake-success shape so bots don't learn the check
+  // exists — "000000" is never a real assigned sequence (they start at
+  // 1), and returning it costs no database round-trip.
   if (parsed.data.website) {
-    return NextResponse.json({ ok: true, referenceNumber: generateReferenceNumber() });
+    return NextResponse.json({
+      ok: true,
+      referenceNumber: `ENQ-${new Date().getUTCFullYear()}-000000`,
+    });
   }
 
   const { website: _honeypot, idempotencyKey, ...data } = parsed.data;
@@ -77,28 +82,41 @@ export async function POST(request: NextRequest) {
   if (idempotencyKey) {
     const cached = getCachedResult(idempotencyKey);
     if (cached) {
-      return NextResponse.json({
-        ok: true,
-        referenceNumber: cached.referenceNumber,
-        mode: cached.mode,
-      });
+      return NextResponse.json({ ok: true, referenceNumber: cached.referenceNumber });
     }
+  }
+
+  const forcedError = forcedErrorFor(request);
+
+  let referenceNumber: string;
+  try {
+    referenceNumber = await generateRecordId("ENQ");
+  } catch (err) {
+    console.error("[enquiry] failed to generate record id", err);
+    return NextResponse.json(
+      {
+        ok: false,
+        error: "save-failed",
+        message: "We couldn't save your enquiry. Please try again or email us directly.",
+      },
+      { status: 503 }
+    );
   }
 
   const record: EnquiryRecord = {
     ...data,
     idempotencyKey,
-    referenceNumber: generateReferenceNumber(),
+    referenceNumber,
     submittedAt: new Date().toISOString(),
     environment: isStaging() ? "staging" : "production",
   };
 
-  const forcedError = forcedErrorFor(request);
-
+  // Supabase is the primary, required application database — a failure
+  // here fails the whole submission (see src/lib/supabase/primaryWrite.ts).
   const saveResult =
     forcedError === "storage"
       ? ({ ok: false, error: "forced-test-failure" } as const)
-      : await saveEnquiry(record);
+      : await saveEnquiryToSupabase(record);
 
   if (!saveResult.ok) {
     console.error("[enquiry] failed to save submission", record.referenceNumber, saveResult.error);
@@ -114,19 +132,24 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // Saved successfully — cache the result now, before attempting email,
-  // so that even if everything after this point fails, a retry with the
-  // same idempotency key won't create a second saved enquiry.
+  // Saved successfully — cache the result now, before attempting email
+  // or the Sheets sync, so that even if everything after this point
+  // fails, a retry with the same idempotency key won't create a second
+  // saved enquiry.
   if (idempotencyKey) {
-    storeResult(idempotencyKey, record.referenceNumber, saveResult.mode);
+    storeResult(idempotencyKey, record.referenceNumber, "supabase");
   }
 
+  // Google Sheets is a best-effort secondary copy (see
+  // src/lib/enquiry/storage.ts's syncEnquiryToSheets) — it never throws
+  // and never affects whether this request succeeds; a failed append is
+  // logged to sheet_sync_failures for later retry instead.
   const [ackResult, adminResult] = await Promise.all([
     forcedError === "email"
       ? Promise.resolve({ ok: false, error: "forced-test-failure" } as const)
       : sendAcknowledgementEmail(record),
     sendAdminNotificationEmail(record),
-    dualWriteEnquiry(record),
+    syncEnquiryToSheets(record),
   ]);
   if (!ackResult.ok) {
     console.error("[enquiry] acknowledgement email failed", record.referenceNumber, ackResult.error);
@@ -135,12 +158,11 @@ export async function POST(request: NextRequest) {
     console.error("[enquiry] admin notification failed", record.referenceNumber, adminResult.error);
   }
 
-  // The enquiry is saved regardless of email outcome — a visitor should
-  // never be told to retry (and risk a duplicate) just because the
-  // acknowledgement email failed to send.
+  // The enquiry is saved regardless of email/Sheets outcome — a visitor
+  // should never be told to retry (and risk a duplicate) just because
+  // the acknowledgement email or the Sheets copy failed.
   return NextResponse.json({
     ok: true,
     referenceNumber: record.referenceNumber,
-    mode: saveResult.mode,
   });
 }

@@ -6,7 +6,7 @@ export async function getEnquiryById(id: string): Promise<PortalEnquiry | null> 
   const { data, error } = await supabase
     .from("enquiries")
     .select(
-      "id, reference_number, email, full_name, service, crm_stage, payment_status, amount_due, amount_paid, submitted_at"
+      "id, reference_number, email, full_name, phone, service, crm_stage, payment_status, amount_due, amount_paid, submitted_at"
     )
     .eq("id", id)
     .maybeSingle();
@@ -22,6 +22,7 @@ export async function getEnquiryById(id: string): Promise<PortalEnquiry | null> 
     referenceNumber: data.reference_number,
     email: data.email,
     fullName: data.full_name,
+    phone: data.phone,
     service: data.service,
     crmStage: data.crm_stage,
     paymentStatus: data.payment_status,

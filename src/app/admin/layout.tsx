@@ -15,6 +15,7 @@ const NAV_ITEMS: { label: string; href: string; adminOnly?: boolean; superAdminO
   { label: "Overview", href: "/admin/overview" },
   { label: "Enquiries", href: "/admin/enquiries" },
   { label: "Bookings", href: "/admin/bookings" },
+  { label: "Reports", href: "/admin/reports" },
   { label: "Content", href: "/admin/content" },
   { label: "Activity", href: "/admin/activity" },
   { label: "Users & Roles", href: "/admin/users", adminOnly: true },

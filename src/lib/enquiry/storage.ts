@@ -1,7 +1,8 @@
 import { appendFile, mkdir } from "fs/promises";
 import path from "path";
-import { google } from "googleapis";
 import { productionSendingEnabled } from "@/lib/shared/env";
+import { appendToWorksheet } from "@/lib/googleSheets/writer";
+import { logSheetSyncFailure } from "@/lib/shared/sheetSyncFailures";
 import type { EnquiryInput } from "./schema";
 
 export type EnquiryRecord = EnquiryInput & {
@@ -10,40 +11,35 @@ export type EnquiryRecord = EnquiryInput & {
   environment: "staging" | "production";
 };
 
-export type SaveResult =
-  | { ok: true; mode: "test-log" | "google-sheets" }
-  | { ok: false; error: string };
-
+// Staging (and any non-legally-approved deploy) always lands here —
+// never in the real Sheet, regardless of whether Google credentials
+// happen to be configured. This is now purely a secondary audit trail:
+// Supabase (src/lib/supabase/primaryWrite.ts) is the primary,
+// production-sending-independent record in both environments.
 const TEST_LOG_DIR = path.join(process.cwd(), ".data");
 const TEST_LOG_FILE = path.join(TEST_LOG_DIR, "staging-enquiries.jsonl");
 
-// Staging (and any non-legally-approved deploy) always lands here — never
-// in the production Sheet, regardless of whether Google credentials
-// happen to be configured. This is the "separate test workflow" the
-// approved spec requires.
-async function saveToTestLog(record: EnquiryRecord): Promise<SaveResult> {
+async function appendToTestLog(record: EnquiryRecord): Promise<void> {
   try {
     await mkdir(TEST_LOG_DIR, { recursive: true });
     await appendFile(TEST_LOG_FILE, JSON.stringify(record) + "\n", "utf8");
-    return { ok: true, mode: "test-log" };
   } catch (err) {
     console.error("[enquiry] failed to write staging test log", err);
-    return { ok: false, error: "test-log-write-failed" };
   }
 }
 
-// Column order matches GOOGLE_SHEETS_MAPPING.md — keep both in sync.
-// Columns Q–X (Enquiry Status through Marketing Consent) are the internal
-// management block approved 2026-07-23: Enquiry Status, Consent
-// Timestamp, Source Page and Marketing Consent are auto-populated here;
-// Assigned To, Follow-Up Date, Last Contacted and Internal Notes are left
-// blank for an administrator to fill in directly in the Sheet — the
+// Column order matches the "Contact Enquiries" worksheet config in
+// src/lib/googleSheets/registry.ts — keep both in sync. Assigned To,
+// Assigned Staff, Follow-Up Date, Last Contacted and Internal Notes are
+// left blank for an administrator to fill in directly in the Sheet; the
 // public form never asks for them.
-function toSheetRow(record: EnquiryRecord): string[] {
+function toSheetRow(record: EnquiryRecord): (string | number)[] {
   return [
-    record.referenceNumber,
     record.submittedAt,
-    record.environment,
+    record.referenceNumber,
+    "Website Form",
+    "New",
+    "", // Assigned Staff (admin-filled)
     record.service,
     record.fullName,
     record.companyName ?? "",
@@ -57,52 +53,34 @@ function toSheetRow(record: EnquiryRecord): string[] {
     record.description,
     record.referenceLink ?? "",
     record.hearAboutUs ?? "",
-    "New", // Q: Enquiry Status (system default; admin updates from here)
-    "", // R: Assigned To (admin-filled)
-    "", // S: Follow-Up Date (admin-filled)
-    "", // T: Last Contacted (admin-filled)
-    "", // U: Internal Notes (admin-filled)
-    record.submittedAt, // V: Consent Timestamp (consent is captured at submission)
-    record.sourcePage ?? "", // W: Source Page
-    record.marketingConsent ? "Yes" : "No", // X: Marketing Consent
+    "", // Follow-Up Date (admin-filled)
+    "", // Last Contacted (admin-filled)
+    "", // Internal Notes (admin-filled)
+    record.submittedAt, // Consent Timestamp — captured at submission
+    record.sourcePage ?? "",
+    record.marketingConsent ? "Yes" : "No",
+    record.submittedAt, // Last Updated
   ];
 }
 
-async function saveToGoogleSheets(record: EnquiryRecord): Promise<SaveResult> {
-  const email = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
-  const privateKey = process.env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY?.replace(/\\n/g, "\n");
-  const spreadsheetId = process.env.GOOGLE_SHEETS_SPREADSHEET_ID;
-
-  if (!email || !privateKey || !spreadsheetId) {
-    console.error(
-      "[enquiry] production sending is enabled but Google Sheets credentials are missing — refusing to silently drop a real enquiry"
-    );
-    return { ok: false, error: "google-sheets-not-configured" };
-  }
-
-  try {
-    const auth = new google.auth.JWT({
-      email,
-      key: privateKey,
-      scopes: ["https://www.googleapis.com/auth/spreadsheets"],
-    });
-    const sheets = google.sheets({ version: "v4", auth });
-    await sheets.spreadsheets.values.append({
-      spreadsheetId,
-      range: "Enquiries!A:X",
-      valueInputOption: "RAW",
-      requestBody: { values: [toSheetRow(record)] },
-    });
-    return { ok: true, mode: "google-sheets" };
-  } catch (err) {
-    console.error("[enquiry] Google Sheets append failed", err);
-    return { ok: false, error: "google-sheets-append-failed" };
-  }
-}
-
-export async function saveEnquiry(record: EnquiryRecord): Promise<SaveResult> {
+// Best-effort secondary copy (2026-07-27: Supabase is now primary — see
+// src/lib/supabase/primaryWrite.ts). Never throws and never fails the
+// caller: a failed Sheets append is logged to sheet_sync_failures for
+// later retry instead of blocking or losing the already-saved
+// enquiry.
+export async function syncEnquiryToSheets(record: EnquiryRecord): Promise<void> {
   if (!productionSendingEnabled()) {
-    return saveToTestLog(record);
+    await appendToTestLog(record);
+    return;
   }
-  return saveToGoogleSheets(record);
+
+  const result = await appendToWorksheet("contactEnquiries", toSheetRow(record));
+  if (!result.ok) {
+    await logSheetSyncFailure({
+      worksheetKey: "contactEnquiries",
+      recordId: record.referenceNumber,
+      rowData: toSheetRow(record),
+      errorMessage: result.error,
+    });
+  }
 }

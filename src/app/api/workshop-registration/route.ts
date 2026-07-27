@@ -2,20 +2,20 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { z } from "zod";
 import { workshopRegistrationSchema } from "@/lib/workshops/registrationSchema";
-import { generateRegistrationReference } from "@/lib/workshops/reference";
+import { generateRecordId } from "@/lib/shared/recordId";
 import { contentRepository } from "@/lib/content";
 import {
   countRegisteredForWorkshop,
   countWaitlistedForWorkshop,
   decideRegistrationStatus,
-  saveRegistration,
+  syncRegistrationToSheets,
   type WorkshopRegistrationRecord,
 } from "@/lib/workshops/registrationStorage";
 import {
   sendRegistrationAcknowledgementEmail,
   sendRegistrationAdminNotificationEmail,
 } from "@/lib/workshops/registrationEmail";
-import { dualWriteWorkshopRegistration } from "@/lib/supabase/dualWrite";
+import { saveWorkshopRegistrationToSupabase } from "@/lib/supabase/primaryWrite";
 import { checkRateLimit } from "@/lib/shared/rateLimit";
 import { getCachedResult, storeResult } from "@/lib/shared/idempotency";
 import { isStaging } from "@/lib/shared/env";
@@ -53,8 +53,13 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  // Honeypot — see src/app/api/enquiry/route.ts for the identical
+  // rationale; "000000" is never a real assigned sequence.
   if (parsed.data.website) {
-    return NextResponse.json({ ok: true, registrationReference: generateRegistrationReference() });
+    return NextResponse.json({
+      ok: true,
+      registrationReference: `WSH-${new Date().getUTCFullYear()}-000000`,
+    });
   }
 
   const { website: _honeypot, idempotencyKey, ...data } = parsed.data;
@@ -95,10 +100,25 @@ export async function POST(request: NextRequest) {
     currentWaitlistedCount
   );
 
+  let registrationReference: string;
+  try {
+    registrationReference = await generateRecordId("WSH");
+  } catch (err) {
+    console.error("[workshops] failed to generate record id", err);
+    return NextResponse.json(
+      {
+        ok: false,
+        error: "save-failed",
+        message: "We couldn't save your registration. Please try again or email us directly.",
+      },
+      { status: 503 }
+    );
+  }
+
   const record: WorkshopRegistrationRecord = {
     ...data,
     idempotencyKey,
-    registrationReference: generateRegistrationReference(),
+    registrationReference,
     workshopId: workshop.id,
     workshopTitle: workshop.title,
     registrationDate: new Date().toISOString(),
@@ -108,7 +128,9 @@ export async function POST(request: NextRequest) {
     environment: isStaging() ? "staging" : "production",
   };
 
-  const saveResult = await saveRegistration(record);
+  // Supabase is the primary, required application database — a failure
+  // here fails the whole submission (see src/lib/supabase/primaryWrite.ts).
+  const saveResult = await saveWorkshopRegistrationToSupabase(record);
   if (!saveResult.ok) {
     console.error(
       "[workshops] failed to save registration",
@@ -126,13 +148,16 @@ export async function POST(request: NextRequest) {
   }
 
   if (idempotencyKey) {
-    storeResult(idempotencyKey, record.registrationReference, saveResult.mode);
+    storeResult(idempotencyKey, record.registrationReference, "supabase");
   }
 
+  // Google Sheets is a best-effort secondary copy (see
+  // src/lib/workshops/registrationStorage.ts's syncRegistrationToSheets)
+  // — never affects whether this request succeeds.
   const [ackResult, adminResult] = await Promise.all([
     sendRegistrationAcknowledgementEmail(record),
     sendRegistrationAdminNotificationEmail(record),
-    dualWriteWorkshopRegistration(record),
+    syncRegistrationToSheets(record),
   ]);
   if (!ackResult.ok) {
     console.error("[workshops] acknowledgement email failed", record.registrationReference, ackResult.error);

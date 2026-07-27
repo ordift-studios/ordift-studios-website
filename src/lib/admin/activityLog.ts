@@ -35,7 +35,8 @@ export async function logActivity(params: {
   });
   if (error) {
     // Best-effort: a failed log write should never block the action it's
-    // recording, same reasoning as src/lib/supabase/dualWrite.ts.
+    // recording, same reasoning as src/lib/supabase/primaryWrite.ts's
+    // best-effort role-grant step.
     console.error("[admin] failed to write activity_log", error.message);
   }
 }

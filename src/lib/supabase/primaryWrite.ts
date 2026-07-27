@@ -4,6 +4,8 @@ import type { WorkshopRegistrationRecord } from "@/lib/workshops/registrationSto
 
 type AdminClient = ReturnType<typeof createAdminClient>;
 
+export type PrimaryWriteResult = { ok: true; userId: string | null } | { ok: false; error: string };
+
 function supabaseConfigured(): boolean {
   return Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.SUPABASE_SECRET_KEY);
 }
@@ -11,7 +13,8 @@ function supabaseConfigured(): boolean {
 // Service-role-only RPC (see supabase/migrations/0003_find_user_by_email.sql)
 // — links a submission to an existing account by email even when the
 // submitter isn't logged in. Best-effort: any failure here just means
-// the row is written with user_id null, same as a genuine guest.
+// the row is written with user_id null, same as a genuine guest — it
+// never fails the primary write itself.
 async function findUserIdByEmail(admin: AdminClient, email: string): Promise<string | null> {
   const { data, error } = await admin.rpc("find_user_id_by_email", { p_email: email });
   if (error) {
@@ -21,14 +24,18 @@ async function findUserIdByEmail(admin: AdminClient, email: string): Promise<str
   return (data as string | null) ?? null;
 }
 
-// Mirrors the just-saved enquiry into Supabase so the Client Portal has
-// something to query (src/app/portal/(dashboard)/client). Google Sheets
-// (src/lib/enquiry/storage.ts) stays the primary, admin-facing record —
-// this is additive and must never block or corrupt that flow. No-ops
-// entirely if the Supabase project isn't configured yet (see
-// src/lib/supabase/middleware.ts for the same guard pattern).
-export async function dualWriteEnquiry(record: EnquiryRecord): Promise<void> {
-  if (!supabaseConfigured()) return;
+// Supabase is the primary, required application database for every
+// public form (inverted 2026-07-27 — Google Sheets, previously
+// primary/fail-closed, is now the secondary/best-effort copy; see
+// src/lib/enquiry/storage.ts's syncEnquiryToSheets and
+// GOOGLE_SHEETS_INTEGRATION.md). A failure here must fail the whole
+// submission: the caller (src/app/api/enquiry/route.ts) returns 503
+// rather than silently losing the record.
+export async function saveEnquiryToSupabase(record: EnquiryRecord): Promise<PrimaryWriteResult> {
+  if (!supabaseConfigured()) {
+    console.error("[supabase] cannot save enquiry — Supabase is not configured");
+    return { ok: false, error: "supabase-not-configured" };
+  }
 
   try {
     const admin = createAdminClient();
@@ -39,26 +46,31 @@ export async function dualWriteEnquiry(record: EnquiryRecord): Promise<void> {
       reference_number: record.referenceNumber,
       email: record.email,
       full_name: record.fullName,
+      phone: record.phone,
       service: record.service,
       submitted_at: record.submittedAt,
     });
 
     if (error) {
-      console.error("[supabase] dual-write enquiry failed", record.referenceNumber, error.message);
+      console.error("[supabase] primary write for enquiry failed", record.referenceNumber, error.message);
+      return { ok: false, error: error.message };
     }
+    return { ok: true, userId };
   } catch (err) {
-    console.error("[supabase] dual-write enquiry threw", record.referenceNumber, err);
+    console.error("[supabase] primary write for enquiry threw", record.referenceNumber, err);
+    return { ok: false, error: err instanceof Error ? err.message : "unknown-error" };
   }
 }
 
-// Same pattern as dualWriteEnquiry, plus: on an email match, auto-grants
-// the workshop_participant role (referenced in
-// src/app/portal/signup/actions.ts and src/lib/portal/roles.ts as "not
-// yet implemented" — this is that implementation).
-export async function dualWriteWorkshopRegistration(
+// Same inversion as saveEnquiryToSupabase, plus: on an email match,
+// auto-grants the workshop_participant role.
+export async function saveWorkshopRegistrationToSupabase(
   record: WorkshopRegistrationRecord
-): Promise<void> {
-  if (!supabaseConfigured()) return;
+): Promise<PrimaryWriteResult> {
+  if (!supabaseConfigured()) {
+    console.error("[supabase] cannot save workshop registration — Supabase is not configured");
+    return { ok: false, error: "supabase-not-configured" };
+  }
 
   try {
     const admin = createAdminClient();
@@ -69,6 +81,7 @@ export async function dualWriteWorkshopRegistration(
       registration_reference: record.registrationReference,
       email: record.email,
       full_name: record.fullName,
+      phone: record.phone,
       workshop_id: record.workshopId,
       workshop_slug: record.workshopSlug,
       workshop_title: record.workshopTitle,
@@ -80,17 +93,24 @@ export async function dualWriteWorkshopRegistration(
 
     if (error) {
       console.error(
-        "[supabase] dual-write workshop registration failed",
+        "[supabase] primary write for workshop registration failed",
         record.registrationReference,
         error.message
       );
+      return { ok: false, error: error.message };
     }
 
     if (userId) {
       await grantWorkshopParticipantRole(admin, userId);
     }
+    return { ok: true, userId };
   } catch (err) {
-    console.error("[supabase] dual-write workshop registration threw", record.registrationReference, err);
+    console.error(
+      "[supabase] primary write for workshop registration threw",
+      record.registrationReference,
+      err
+    );
+    return { ok: false, error: err instanceof Error ? err.message : "unknown-error" };
   }
 }
 
