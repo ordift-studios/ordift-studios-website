@@ -1,5 +1,6 @@
 import type { MediaAsset as MediaAssetType } from "@/lib/content/types";
 import ResponsiveImage from "./ResponsiveImage";
+import MediaPlaceholder from "./MediaPlaceholder";
 
 // Renders whichever of image / uploaded video / embedded video a
 // MediaAsset actually is, so every call site (Portfolio hero, Portfolio
@@ -23,14 +24,7 @@ export default function MediaAsset({ media, aspectRatio, sizes, priority, classN
   // photo. Applies to all three media types since the schema allows any
   // of them to reference an unset asset.
   if (!media.url) {
-    return (
-      <div
-        role="img"
-        aria-label={media.alt}
-        className={`relative overflow-hidden bg-ordift-navy-900/10 ${className}`}
-        style={{ aspectRatio: ratio }}
-      />
-    );
+    return <MediaPlaceholder alt={media.alt} aspectRatio={ratio} tone="light" className={className} />;
   }
 
   if (media.type === "image") {

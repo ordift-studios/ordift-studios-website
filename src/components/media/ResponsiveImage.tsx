@@ -1,4 +1,5 @@
 import Image from "next/image";
+import MediaPlaceholder from "./MediaPlaceholder";
 
 // The one component every real image on the site should render through
 // (see MEDIA_ARCHITECTURE.md). Wraps next/image with:
@@ -53,14 +54,7 @@ export default function ResponsiveImage({
   const ratio = aspectRatio ?? (width && height ? `${width}/${height}` : FALLBACK_ASPECT_RATIO);
 
   if (!src) {
-    return (
-      <div
-        role="img"
-        aria-label={alt}
-        className={`relative overflow-hidden bg-ordift-navy-900/10 ${className}`}
-        style={{ aspectRatio: ratio, ...style }}
-      />
-    );
+    return <MediaPlaceholder alt={alt} aspectRatio={ratio} tone="light" className={className} style={style} />;
   }
 
   return (

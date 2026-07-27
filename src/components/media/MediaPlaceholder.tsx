@@ -13,27 +13,36 @@ import Logo from "@/components/Logo";
 // these once real photography/film exists.
 export type MediaPlaceholderProps = {
   label?: string;
+  /** Accessible name — falls back to a generic "imagery coming soon" label when omitted. */
+  alt?: string;
   aspectRatio?: string;
   tone?: "dark" | "light";
   className?: string;
+  /** Extra wrapper styles — e.g. a fixed pixel width/height, matching ResponsiveImage's same escape hatch. */
+  style?: React.CSSProperties;
+  /** Scales the monogram + glow down for small tiles (gallery thumbnails, avatars) where the full-size mark would overwhelm the space. */
+  compact?: boolean;
 };
 
 export default function MediaPlaceholder({
   label,
+  alt,
   aspectRatio = "4/3",
   tone = "light",
   className = "",
+  style,
+  compact = false,
 }: MediaPlaceholderProps) {
   const isDark = tone === "dark";
 
   return (
     <div
       role="img"
-      aria-label={label ? `${label} — imagery coming soon` : "Imagery coming soon"}
+      aria-label={alt ?? (label ? `${label} — imagery coming soon` : "Imagery coming soon")}
       className={`relative overflow-hidden flex items-center justify-center ${
         isDark ? "bg-ordift-navy-900" : "bg-ordift-offwhite"
       } ${className}`}
-      style={{ aspectRatio }}
+      style={{ aspectRatio, ...style }}
     >
       <div
         className="pointer-events-none absolute inset-0"
@@ -44,15 +53,22 @@ export default function MediaPlaceholder({
         }}
       />
       <div
-        className="pointer-events-none absolute h-24 w-24 sm:h-32 sm:w-32 rounded-full blur-3xl opacity-[0.18] animate-ordift-shimmer motion-reduce:animate-none"
+        className={`pointer-events-none absolute rounded-full blur-3xl opacity-[0.18] animate-ordift-shimmer motion-reduce:animate-none ${
+          compact ? "h-10 w-10" : "h-24 w-24 sm:h-32 sm:w-32"
+        }`}
         style={{ backgroundColor: "var(--color-gold)" }}
         aria-hidden="true"
       />
-      <div className="relative flex flex-col items-center gap-3 px-4 text-center">
-        <Logo variant="icon" color={isDark ? "white" : "black"} height={28} className="opacity-30" />
+      <div className={`relative flex flex-col items-center text-center ${compact ? "gap-1.5 px-2" : "gap-3 px-4"}`}>
+        <Logo
+          variant="icon"
+          color={isDark ? "white" : "black"}
+          height={compact ? 16 : 28}
+          className="opacity-30"
+        />
         {label && (
           <p
-            className={`font-sans font-semibold uppercase tracking-[0.2em] text-caption ${
+            className={`font-sans font-semibold uppercase tracking-[0.2em] ${compact ? "text-[10px]" : "text-caption"} ${
               isDark ? "text-white/40" : "text-ordift-ink-muted/70"
             }`}
           >
