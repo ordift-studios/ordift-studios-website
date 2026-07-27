@@ -12,8 +12,11 @@ const VARIANT_CLASSES: Record<ButtonVariant, string> = {
 
 // min-h-11 (44px) satisfies the 44x44 touch-target minimum from
 // TYPOGRAPHY.md's accessibility notes regardless of the 14px label size.
+// focus-visible ring matches the gold ring already used on form inputs
+// (e.g. BookingForm) -- buttons/links had no visible keyboard-focus
+// indicator at all before this, relying entirely on browser default.
 const BASE =
-  "inline-flex items-center justify-center min-h-11 px-6 rounded-full font-sans font-semibold text-button transition-colors";
+  "inline-flex items-center justify-center min-h-11 px-6 rounded-full font-sans font-semibold text-button transition-all duration-150 hover:-translate-y-0.5 active:translate-y-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ordift-gold focus-visible:ring-offset-2";
 
 type ButtonProps = {
   children: ReactNode;
