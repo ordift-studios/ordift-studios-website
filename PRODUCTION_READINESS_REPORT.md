@@ -78,7 +78,7 @@ Updated 2026-07-27 (third pass — the five items below were explicitly deferred
 
 ## 5. Future Improvements
 
-- **Organizational Grade system** — a full spec was captured this session (separate from Role/Title/Engagement Type, 10-tier seniority hierarchy, admin-only visibility policy, reorderable Admin UI) but deliberately **deferred to its own post-launch milestone** rather than built now, to avoid destabilizing a freshly-verified production state right before a Go/No-Go call. Full spec preserved in Claude's project memory (`project_grade_system_spec.md`) and summarized in the System Administrator Guide, §9.
+- **Organizational Grade system** — ✅ **Built (2026-07-28)** as part of the Admin Profile Quick Card. 10-tier seniority hierarchy, fully independent of Role/Title/Engagement Type, admin-only visibility (double-gated via RLS + app layer — see `ADMIN_GUIDE.md` §17). Reorderable Grade Management UI not yet built — grades are seeded/managed via migration for now. Photo upload for the Quick Card remains deferred (estimated 70–90 min, owner's explicit call to defer past a 30-min threshold).
 - **QA account naming convention** — also specified this session (`QA Photographer`, `QA Client`, etc. with reserved email aliases) to make future test-account cleanup mechanical rather than judgment-based, as it was this time.
 - A Supabase Auth Hook to support a custom Reply-To header, if that turns out to matter in practice (most reply traffic to a `no-reply@` sender is rare, so this may not be worth building).
 

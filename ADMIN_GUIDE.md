@@ -117,13 +117,8 @@ Every suspend/deactivate/restore/expiry action is written to the audit log as `a
 
 ## 9. Future Expansion
 
-### 9.1 Grade System (specified, not yet built)
-A separate organizational-seniority axis, fully independent of Role and Title/Engagement Type — Permissions will **never** derive from Grade. Full spec:
-- New `grades` lookup table: code, name, rank order, description, badge color, active/inactive — same pattern as Titles/Engagement Types.
-- 10-tier default hierarchy from "Intern/Trainee" (Grade 1) to "Founder/CEO" (Grade 10).
-- New Admin-only "Grade Management" module: create/rename/reorder/archive, assign to any person, view everyone in a grade, block deleting a grade that's still assigned.
-- **Grade Visibility Policy (a governance standard, not just a default):** Grade is confidential internal metadata. It may appear only in authenticated admin surfaces (user profile pages, user management, personnel records, internal reports, raw database records, audit views) — gated to Admin/Super Admin. It must **never** appear anywhere public-facing or client-facing: no ID cards, name badges, email signatures, public team pages, client dashboards, booking pages, deliverables, printed materials, business cards, or contracts. Public/client-facing surfaces show **Title/Position only**.
-- Deferred deliberately to its own milestone (see `PRODUCTION_READINESS_REPORT.md` §5) rather than bundled into the production email/IAM verification pass. Full spec preserved for whoever picks it up next.
+### 9.1 Grade System — built (2026-07-28), see §17
+A separate organizational-seniority axis, fully independent of Role and Title/Engagement Type — Permissions **never** derive from Grade. Implemented as part of the Admin Profile Quick Card (§17): `grades` lookup table (10-tier hierarchy, Intern/Trainee → Founder/CEO), migration `0017`. Grade Management (create/rename/reorder/archive) is Super Admin-only; not yet a dedicated UI module — grades are seeded and managed via migration/SQL for now, assignment happens through a person's Edit Profile page. **Grade Visibility Policy (a governance standard, not just a default):** Grade is confidential internal metadata, gated to Admin/Super Admin only in every surface that shows it — see §17 for the exact enforcement mechanism. It must **never** appear anywhere public-facing or client-facing: no ID cards, name badges, email signatures, public team pages, client dashboards, booking pages, deliverables, printed materials, business cards, or contracts. Public/client-facing surfaces show **Title/Position only**.
 
 ### 9.2 Talent Module
 The `model` role exists today specifically so this future module doesn't require a permission-system change when it's built — talent directories, applications, and bookings are Phase 1B work per `MILESTONES.md`, gated behind a secure-storage evaluation (CVs, ID documents, and consent forms are sensitive enough to need their own storage decision before that form goes live).
@@ -235,6 +230,24 @@ One registration, no new synchronization logic — see the comment at the top of
 Every `/api/admin/reports/**` route is gated by `requireAdminApiUser()` (`src/lib/admin/apiAuth.ts`) — staff, admin, or super_admin only, same role check as the `/admin/**` page layout, checked independently since `proxy.ts` doesn't gate API routes the way it gates pages. An unauthenticated or under-privileged request gets a `401`, not a redirect.
 
 `/api/admin/google-sheets/**` uses two different gates on the same helper file: `GET`/`POST /api/admin/google-sheets/setup` uses the same `requireAdminApiUser()` as the reports routes, but `POST /api/admin/google-sheets/verify-write` uses the stricter `requireSuperAdminApiUser()` — staff and admin are rejected, only super_admin passes. This is the first route in the codebase to need a gate narrower than "any staff/admin/super_admin," since it writes directly to an external system (Google Sheets) with no visitor-facing origin to audit against. See `GOOGLE_SHEETS_INTEGRATION.md` §10 for what it does.
+
+## 17. Admin Profile Quick Card
+
+Clicking your own name in the `/admin` header (`src/app/admin/layout.tsx`) opens a Quick Card (`src/components/admin/ProfileQuickCard.tsx`) with Staff Number, Job Title, Department, Grade, Date Joined, calculated tenure, Account Status, and Last Login, plus "View Full Profile" and "Edit Profile" links to `/admin/profile/[id]` (`src/app/admin/profile/[id]/page.tsx`).
+
+**V1 scope — self-view only.** The card and Full Profile page are reachable exclusively via your own name; requesting anyone else's `id` in the URL redirects you back to your own profile (`src/app/admin/profile/[id]/page.tsx`). Viewing colleagues (a staff directory) is a future capability, not yet built.
+
+**Grade visibility — double-gated.** Grade is confidential internal metadata (§9.1). It is hidden from anyone who isn't Admin or Super Admin — including from the graded person themselves, if they hold neither role — via two independent layers:
+1. **RLS** (`grades: admin read` policy, migration `0017`): a non-admin/-super_admin viewer's own join to `public.grades` returns nothing, even on their own `staff_details` row.
+2. **App layer** (`src/lib/portal/profileCard.ts`): `getProfileCard()` only resolves and returns `grade`/`gradeId` when `canViewGrade` is true, so a UI bug alone could never leak it — the data was never fetched to begin with.
+
+**Editing — split by risk, not just by ownership.** Contact fields (Full Name, Phone) are self-service: any admin can edit their own via the existing `profiles` self-update grant (`src/app/admin/profile/[id]/actions.ts` → `updateOwnContactDetailsAction`, request-scoped client, RLS-enforced). Operational fields (Staff Number, Job Title, Department, Grade) are **Super Admin-only to edit, even on your own card** — these are admin-managed facts, not self-service — via `updateStaffOperationalDetailsAction`/`assignStaffNumberAction`, both gated by `isSuperAdmin()` and using the service-role client, the same precedent as `updateCollaboratorDetailsAction` in `src/app/admin/users/actions.ts`.
+
+**Staff Numbers** (`STAFF-YYYY-NNNNNN`) reuse the existing `public.next_record_sequence()` function (migration `0013`) with a new `STAFF` prefix — no new counter mechanism. Nullable, assigned lazily via the "Assign Staff Number" button on a Super Admin's edit view; never auto-backfilled for existing accounts.
+
+**Photo upload is not yet built.** `profiles.avatar_url` exists but has no upload path; the card falls back to initials (first + last name, or first two characters of the email if no name is set). Estimated at 70–90 minutes when it's picked up — a Supabase Storage bucket, an upload route, and wiring into the Edit Profile form.
+
+**Known follow-up:** migration `0017` granted `authenticated` access to `public.grades` but not `service_role` (same gap class as `0010`/`0016` — production has "Automatically expose new tables" disabled). Fixed as migration `0018`. Doesn't affect the live feature, which never uses `service_role` to read/write `grades`.
 
 ---
 

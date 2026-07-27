@@ -1355,6 +1355,56 @@ publicly exercised.** Full end-to-end confirmation resumes once Resend
 production email (Phase 2B) and `FORMS_SENDING_ENABLED` (Phase 2C) are
 both live.
 
+### Admin Profile Quick Card — V1 shipped (2026-07-28)
+
+New internal feature: clicking the logged-in admin's own name in the
+`/admin` header (previously plain text beside Sign Out) opens a Quick
+Card with Staff Number, Job Title, Department, Grade (Admin/Super Admin
+only), Date Joined, calculated platform tenure, Account Status, and
+Last Login, plus "View Full Profile" (`/admin/profile/[id]`) and "Edit
+Profile" links. V1 is self-view only — reached exclusively via your own
+name — with a staff directory (viewing colleagues) explicitly deferred.
+
+Implements the organizational **Grade system** speced out and
+deliberately deferred during the 2026-07-27 IAM/email verification pass
+(see the System Administrator Guide for the full confidentiality
+policy): a new `grades` lookup table (10-tier hierarchy, Intern →
+Founder/CEO), business-scoped, admin-only to read, super-admin-only to
+manage. Grade **never** affects permissions — Roles remain the sole
+permission mechanism — and is gated twice in the Quick Card: once by
+RLS (a non-admin/-super_admin viewer's own join to `grades` returns
+nothing) and again in the app layer, so a UI bug alone couldn't leak
+it. Verified directly: a Staff-only QA account with a Grade secretly
+assigned in the database still saw no Grade row anywhere, on both
+staging and production.
+
+Also introduces **Staff Numbers** (`STAFF-YYYY-NNNNNN`), reusing the
+existing `next_record_sequence()` function (migration 0013) with a new
+`STAFF` prefix — no new counter mechanism. Migration `0017` (grades +
+`staff_details.staff_number`/`grade_id`) applied and verified on both
+staging and production. Editing is split by risk: contact fields
+(name/phone) are self-service via the existing `profiles` self-update
+grant; operational fields (Staff Number, Job Title, Department, Grade)
+are Super Admin-only to edit, even on your own card, via a
+service-role-backed server action — matching the precedent already set
+by `updateCollaboratorDetailsAction`.
+
+**Deliberately not in V1:** photo upload. `profiles.avatar_url` exists
+but has no upload path — initials fallback covers this; real upload
+(Supabase Storage bucket + upload route) was estimated at 70–90
+minutes and deferred to a fast-follow rather than folded into this pass
+(owner's explicit 30-minute threshold call).
+
+**Follow-up found during rollout:** migration `0017` granted
+`authenticated` access to `public.grades` but not `service_role` — the
+same gap class as `0010`/`0016` (production has "Automatically expose
+new tables" disabled, so `service_role` gets zero table privileges
+until explicitly granted). Doesn't affect the live feature itself
+(it only ever reads/writes `grades` through the logged-in admin's own
+session), but blocks service-role tooling. Fixed as migration `0018`
+(one-line grant), pending owner's staging → production run before the
+founder's own account gets Grade 10 assigned.
+
 ### Phase E — Recovery 🟡 PENDING OWNER DECISION (billing)
 Production Supabase project exists, but **the Free plan includes zero
 project backups at all** (confirmed directly in the Dashboard: "Free
