@@ -23,6 +23,15 @@ Client Portal) predates formal versioning and is preserved as "Internal
 Development History" in `CHANGELOG.md`/`MILESTONES.md` — those earlier
 version labels ("1.0" through "4.0") were informal and were never git tags.
 
+**`v1.0.0-lc1`** (2026-07-27) — tags the commit where Version 1.0 feature
+implementation was declared complete and the architecture frozen. Marks
+entry into **Launch Candidate 1 (LC1)**: production readiness, UI/UX
+refinement, content population, performance, accessibility, SEO,
+responsiveness, and launch QA against what's already built — no new
+major systems, portals, databases, schemas, or infrastructure unless a
+critical defect requires one. See `MILESTONES.md`'s freeze banner and
+`LAUNCH_CANDIDATE_1.md` for the phase-by-phase plan.
+
 **Roadmap from v1.0.0 forward:** superseded 2026-07-27 by
 **`PRODUCT_ROADMAP.md`**, now the single authoritative long-term plan —
 see that document for the current version list (Version 1.1 Internal

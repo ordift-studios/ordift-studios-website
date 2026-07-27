@@ -18,6 +18,18 @@ used to track scope during development, never git tags, superseded by the
 official sequence starting at v1.0.0. Full policy statement in `VERSIONS.md`;
 release detail in `RELEASE_NOTES.md`; dated log in `CHANGELOG.md`.
 
+---
+
+## 🔒 Version 1.0 feature implementation complete — architecture frozen (2026-07-27)
+
+**Status, effective this date:** every feature planned for Version 1.0 — including the Portfolio/Journal/Workshops media architecture and the Ordift Pulse × Stories/Journal integration immediately below — is built, verified, committed, and deployed. Tagged `v1.0.0-lc1` (see `VERSIONS.md`). This closes software-development work on Version 1.0.
+
+**Architecture freeze, effective this date:** no new major systems, portals, databases, schemas, or infrastructure ship unless a critical defect requires one. This covers every system built so far — the public site, Sanity CMS, Supabase auth/IAM, Client/Collaborator Portals, Admin Platform, email infrastructure, media architecture, and Ordift Pulse.
+
+**What changes from here:** the project moves into **Launch Candidate 1 (LC1)** — production readiness, UI/UX polish, content population, performance, accessibility, SEO, responsiveness, and launch QA. See `LAUNCH_CANDIDATE_1.md` for the phase-by-phase plan and findings. Refinement of what exists, not addition of what doesn't, is the standing rule until LC1 concludes.
+
+---
+
 ## Recommended Build Order (confirmed 2026-07-23)
 
 1. [x] Portfolio
