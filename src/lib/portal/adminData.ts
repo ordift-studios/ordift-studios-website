@@ -206,3 +206,24 @@ export async function listEngagementTypes(): Promise<LookupOption[]> {
   }
   return data ?? [];
 }
+
+export type GradeOption = { id: string; grade_code: string; name: string };
+
+// Callers must already be Admin/Super Admin — this uses the service-role
+// client (bypasses the "grades: admin read" RLS policy from 0017), so it
+// is only safe to call from a page/action that has already gated on
+// isSuperAdmin()/hasRole(user, "admin") itself. See ADMIN_GUIDE.md's
+// Grade visibility policy.
+export async function listGrades(): Promise<GradeOption[]> {
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from("grades")
+    .select("id, grade_code, name")
+    .eq("active", true)
+    .order("rank_order");
+  if (error) {
+    console.error("[portal admin] failed to load grades", error.message);
+    return [];
+  }
+  return data ?? [];
+}

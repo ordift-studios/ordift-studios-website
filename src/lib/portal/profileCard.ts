@@ -1,0 +1,156 @@
+import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { isSuperAdmin, hasRole, type CurrentUser, type RoleSlug, type AccessStatus } from "@/lib/portal/roles";
+
+// Backs the Admin Profile Quick Card (src/app/admin/layout.tsx). V1 is
+// self-view only — the logged-in admin viewing their own card — so this
+// always queries through the request-scoped, RLS-bound client (same as
+// getCurrentUser()), never the service-role admin client, except for the
+// one field RLS can't answer at all: last_sign_in_at lives on auth.users,
+// which PostgREST never exposes. That one field uses a narrow
+// admin.auth.admin.getUserById(user.id) call scoped to the caller's own,
+// already-verified id — never another user's.
+//
+// Grade visibility is enforced twice, deliberately: the "grades: admin
+// read" RLS policy (migration 0017) means a non-admin/-super_admin
+// viewer's own join to grades comes back empty even though it's their
+// own row, and this function also only resolves/returns `grade` when
+// canViewGrade is true — so a UI bug that ignored canViewGrade still
+// couldn't leak it, since the data was never fetched to begin with. See
+// GRADE system policy in ADMIN_GUIDE.md.
+export type ProfileCard = {
+  id: string;
+  email: string | null;
+  fullName: string | null;
+  phone: string | null;
+  initials: string;
+  avatarUrl: string | null;
+  staffNumber: string | null;
+  roles: RoleSlug[];
+  roleLabel: string;
+  operationalTitleId: string | null;
+  jobTitle: string | null;
+  department: string | null;
+  canViewGrade: boolean;
+  gradeId: string | null;
+  grade: { code: string; name: string } | null;
+  dateJoined: string;
+  tenure: string;
+  accountStatus: AccessStatus;
+  lastLoginAt: string | null;
+};
+
+// Highest-privilege first — matches primaryPortalPath()'s ordering in
+// roles.ts, reused here purely for display order, not access control.
+const ROLE_DISPLAY_ORDER: RoleSlug[] = [
+  "super_admin",
+  "admin",
+  "staff",
+  "contractor",
+  "vendor",
+  "model",
+  "workshop_participant",
+  "client",
+];
+
+const ROLE_LABELS: Record<RoleSlug, string> = {
+  super_admin: "Super Admin",
+  admin: "Admin",
+  staff: "Staff",
+  contractor: "Contractor / Collaborator",
+  vendor: "Vendor / Partner",
+  model: "Model",
+  workshop_participant: "Workshop Participant",
+  client: "Client",
+};
+
+function initialsFromName(fullName: string | null, email: string | null): string {
+  const source = fullName?.trim() || email?.trim() || "?";
+  const parts = source.split(/\s+/).filter(Boolean);
+  if (fullName?.trim() && parts.length >= 2) {
+    return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+  }
+  return source.slice(0, 2).toUpperCase();
+}
+
+function calculateTenure(createdAt: string): string {
+  const start = new Date(createdAt);
+  const now = new Date();
+  let months = (now.getFullYear() - start.getFullYear()) * 12 + (now.getMonth() - start.getMonth());
+  if (now.getDate() < start.getDate()) months -= 1;
+  if (months < 1) return "Less than a month";
+  const years = Math.floor(months / 12);
+  const remMonths = months % 12;
+  const parts: string[] = [];
+  if (years > 0) parts.push(`${years} year${years === 1 ? "" : "s"}`);
+  if (remMonths > 0) parts.push(`${remMonths} month${remMonths === 1 ? "" : "s"}`);
+  return parts.join(", ");
+}
+
+export async function getProfileCard(user: CurrentUser): Promise<ProfileCard> {
+  const supabase = await createClient();
+  const canViewGrade = hasRole(user, "admin") || isSuperAdmin(user);
+
+  const [{ data: profile }, { data: userRoles }, { data: staffDetails }] = await Promise.all([
+    supabase.from("profiles").select("full_name, phone, avatar_url, access_status, created_at").eq("id", user.id).maybeSingle(),
+    supabase.from("user_roles").select("roles(slug, name)").eq("user_id", user.id),
+    supabase
+      .from("staff_details")
+      .select(
+        "staff_number, department, operational_title_id, operational_titles(name), grade_id, grades(grade_code, name)"
+      )
+      .eq("id", user.id)
+      .maybeSingle(),
+  ]);
+
+  const roles = (userRoles ?? [])
+    .map((r) => (r.roles as unknown as { slug: RoleSlug } | null)?.slug)
+    .filter((slug): slug is RoleSlug => Boolean(slug));
+
+  const roleLabel =
+    ROLE_DISPLAY_ORDER.filter((slug) => roles.includes(slug))
+      .map((slug) => ROLE_LABELS[slug])
+      .join(", ") || "No role assigned";
+
+  // canViewGrade already gates the RLS read (see file header) — this is
+  // the second, defense-in-depth layer: even if `grades` came back
+  // populated, only return it to the caller when canViewGrade is true.
+  const gradeRow = staffDetails?.grades as unknown as { grade_code: string; name: string } | null;
+  const grade = canViewGrade && gradeRow ? { code: gradeRow.grade_code, name: gradeRow.name } : null;
+  const gradeId = canViewGrade ? (staffDetails?.grade_id ?? null) : null;
+
+  const titleRow = staffDetails?.operational_titles as unknown as { name: string } | null;
+
+  let lastLoginAt: string | null = null;
+  try {
+    const admin = createAdminClient();
+    const { data } = await admin.auth.admin.getUserById(user.id);
+    lastLoginAt = data.user?.last_sign_in_at ?? null;
+  } catch {
+    lastLoginAt = null;
+  }
+
+  const createdAt = profile?.created_at ?? new Date().toISOString();
+
+  return {
+    id: user.id,
+    email: user.email,
+    fullName: profile?.full_name ?? null,
+    phone: profile?.phone ?? null,
+    initials: initialsFromName(profile?.full_name ?? null, user.email),
+    avatarUrl: profile?.avatar_url ?? null,
+    staffNumber: staffDetails?.staff_number ?? null,
+    roles,
+    roleLabel,
+    operationalTitleId: staffDetails?.operational_title_id ?? null,
+    jobTitle: titleRow?.name ?? null,
+    department: staffDetails?.department ?? null,
+    canViewGrade,
+    gradeId,
+    grade,
+    dateJoined: createdAt,
+    tenure: calculateTenure(createdAt),
+    accountStatus: (profile?.access_status as AccessStatus | undefined) ?? "active",
+    lastLoginAt,
+  };
+}

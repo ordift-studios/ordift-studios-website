@@ -3,6 +3,8 @@ import Link from "next/link";
 import Logo from "@/components/Logo";
 import { getCurrentUser, hasRole, isStaffOrAdmin, isSuperAdmin } from "@/lib/portal/roles";
 import { signOutAction } from "@/app/portal/login/actions";
+import { getProfileCard } from "@/lib/portal/profileCard";
+import ProfileQuickCard from "@/components/admin/ProfileQuickCard";
 
 // Internal operations console — separate from the customer/partner-facing
 // /portal, but built on the exact same auth/role foundation (Supabase Auth
@@ -34,6 +36,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   const visibleNavItems = NAV_ITEMS.filter(
     (item) => (!item.adminOnly || isAdmin) && (!item.superAdminOnly || isSuper)
   );
+  const profileCard = await getProfileCard(user);
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -43,9 +46,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
             <Logo variant="nav" color="white" height={24} priority />
           </Link>
           <div className="flex items-center gap-4">
-            <span className="font-sans text-body-small text-white/70 hidden sm:inline">
-              {user.fullName ?? user.email}
-            </span>
+            <ProfileQuickCard card={profileCard} />
             <form action={signOutAction}>
               <button
                 type="submit"

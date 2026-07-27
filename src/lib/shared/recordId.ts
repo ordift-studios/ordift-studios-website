@@ -26,6 +26,7 @@ export const RECORD_PREFIXES = [
   "CLT", // Client
   "INV", // Invoice
   "PRJ", // Project
+  "STAFF", // Staff Number (Admin Profile Quick Card, migration 0017)
 ] as const;
 
 export type RecordPrefix = (typeof RECORD_PREFIXES)[number];
