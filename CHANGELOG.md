@@ -13,6 +13,56 @@ History" for continuity — the version numbers used there ("1.0" through
 "1.3.0") were informal internal milestone labels only, never git tags,
 and are superseded by the official sequence starting at v1.0.0.
 
+## v1.0.0 (Production Hardening) — Ordift Pulse × Stories/Journal Integration — 2026-07-27
+
+Per explicit direction, Ordift Pulse's public-facing experience ships
+embedded inside the existing Stories/Journal section for this release
+— no new routes, no new top-level nav item, no parallel article
+system. See `STORIES_PULSE_INTEGRATION.md` for the full design.
+
+**Added:**
+- `src/lib/content/storiesFeed.ts` — a pure read-layer normalizer
+  merging `JournalPost` and `PulseArticle` into one `StoriesFeedItem`
+  shape. `pulseArticle` stays a fully separate Sanity document type
+  from `journalPost`; unification happens only here, not in the
+  schema, so Pulse can still become its own dedicated section later
+  without a migration.
+- A Content Type filter on `/journal` (Studio Stories / Editorial /
+  Creative News / Industry Updates / Opportunities / Upcoming Events),
+  reusing the existing category/tag pill-filter pattern. Category
+  chips now span both `journalCategory` and `pulseCategory`.
+- Trust-badge pills on `JournalPostCard` and the detail page: Verified
+  by Ordift Studios, Official Source, Community Submitted, Archived.
+- A new sibling branch on `/journal/[slug]` for `pulseArticle` content
+  — opportunity info block (deadline/eligibility/apply link/event
+  dates) and a source-attribution link-out for curated/community
+  content. The existing `journalPost` branch is unchanged.
+- `PulseOrigin` gained a third value, `"community"`; the Pulse
+  visibility filter now includes `status === "archived"` so the
+  Archived badge is reachable rather than dead code.
+- `STORIES_PULSE_INTEGRATION.md` — new companion doc.
+
+**Verified:** `tsc --noEmit`/`eslint .` clean; `next build` clean
+across all routes; `sanity schema validate` 0 errors/0 warnings.
+Manually regression-tested against the local content adapter
+(temporarily swapped in, reverted with zero net diff before
+committing) — grouping tabs, merged categories, all 4 trust badges,
+opportunity/archived/community detail pages, and every existing
+Journal-only flow (post detail, author profile, category filter,
+search) confirmed working with no regressions.
+
+**Explicitly not built this stage:** cross-type "Related" linking
+between a Journal post and a Pulse article, Pulse content on author
+profile pages, cross-type slug-uniqueness validation, and everything
+already listed as future work in `PULSE_ARCHITECTURE.md` §9
+(ingestion, AI summarization, newsletter sending, saved
+articles/notifications, Admin Platform module).
+
+**Upgrade notes:** none — purely additive; no existing schema field
+was removed, renamed, or had its meaning changed.
+
+---
+
 ## v1.0.0 (Production Hardening) — Ordift Pulse Architecture — 2026-07-27
 
 Ordift Pulse (the Creative Industry Hub) pulled forward from

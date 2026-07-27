@@ -1297,12 +1297,34 @@ Pulled forward from `PRODUCT_ROADMAP.md`'s Version 4.0 per explicit direction, w
 - [x] `tsc --noEmit` and `eslint .` clean; `next build` clean across all 67 existing routes (no route touches Pulse yet); `sanity schema validate` — 0 errors, 0 warnings, confirming all 5 new document types are well-formed
 
 ### Pending work (explicitly out of scope for this stage)
-- [ ] Public `/pulse` routes (hub page, article detail, category/region/opportunity filtering)
+- [x] Public presentation — **completed below** (embedded in Stories/Journal, not a separate `/pulse` section)
 - [ ] Admin Platform module for Pulse (Sanity Studio is the interface today)
 - [ ] Any data-provider ingestion (RSS/API/partner ingestion, per source)
 - [ ] AI summarization integration
 - [ ] Newsletter-sending integration
 - [ ] Saved articles / notifications (Supabase tables, not yet needed — see `PULSE_ARCHITECTURE.md` §8)
+
+### Known issues
+- None outstanding.
+
+## Version 4.0 (partial) — Ordift Pulse × Stories/Journal Integration — 2026-07-27 ✅ complete
+
+Per explicit direction, Ordift Pulse's public-facing experience shipped embedded inside the existing Stories/Journal section rather than as a separate platform — see `STORIES_PULSE_INTEGRATION.md` for full design detail. `pulseArticle` remains a fully separate Sanity document type from `journalPost`; the two are unified only at the read layer.
+
+- [x] `PulseOrigin` extended with a third value, `"community"`, and the Pulse visibility filter widened to include `status === "archived"` — the only two schema/query touches this stage required
+- [x] `src/lib/content/storiesFeed.ts` — pure-function normalizer (`fromJournalPost`/`fromPulseArticle`) merging both content types into one `StoriesFeedItem` shape; zero new repository methods or Sanity queries needed
+- [x] `JournalPostCard` updated to render the normalized shape plus a trust-badge pill (Verified by Ordift Studios / Official Source / Community Submitted / Archived); all 3 existing call sites updated, zero visual change for pure-Journal content
+- [x] `/journal` hub: merged Journal+Pulse feed, sorted by date; new Content Type filter (Studio Stories/Editorial/Creative News/Industry Updates/Opportunities/Upcoming Events) reusing the existing pill-filter pattern; category chips now span both `journalCategory` and `pulseCategory` — "Creative Technology" deliberately has no dedicated tab since it's just a `pulseCategory`, already covered by the existing filter
+- [x] `/journal/[slug]`: existing `journalPost` branch completely unchanged; new sibling branch for `pulseArticle` with an opportunity info block (deadline/eligibility/apply link/event dates) and a source-attribution link-out for curated/community content
+- [x] Seven `[SAMPLE]` local `PulseArticle` fixtures, one per grouping/badge combination, for verification
+- [x] `tsc --noEmit`/`eslint .` clean; `next build` clean across all routes; `sanity schema validate` 0/0
+- [x] Manually regression-tested against the local adapter (temporarily swapped in, then reverted with zero net diff before committing): grouping tabs, merged categories, all 4 trust badges, opportunity/archived/community detail pages, and every existing Journal-only flow (post detail, author profile, category filter, search) confirmed working with no regressions
+
+### Pending work (explicitly out of scope for this stage)
+- [ ] Cross-type "Related" linking (a Journal post can't yet manually link to a Pulse article as related, or vice versa)
+- [ ] Author profile page (`/journal/authors/[slug]`) showing Pulse editorial pieces by that author, not just Journal posts
+- [ ] Cross-type slug-uniqueness validation (each type is unique within itself; not enforced across both — see `STORIES_PULSE_INTEGRATION.md` §6)
+- [ ] Everything already listed as future work in `PULSE_ARCHITECTURE.md` §9 (ingestion, AI summarization, newsletter sending, saved articles/notifications, Admin Platform module)
 
 ### Known issues
 - None outstanding.

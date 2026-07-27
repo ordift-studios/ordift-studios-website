@@ -81,7 +81,7 @@ This is the concrete mechanism behind "do not implement uncontrolled web scrapin
 `ContentRepository` (`src/lib/content/repository.ts`) gained six methods, implemented in both adapters exactly like every other content type (`src/lib/content/sanity/repository.ts` is the active one; `src/lib/content/local/repository.ts` + `src/lib/content/local/pulseData.ts` are dev fixtures):
 
 ```ts
-getPulseArticles(): Promise<PulseArticle[]>;        // published + past scheduledFor only
+getPulseArticles(): Promise<PulseArticle[]>;        // published or archived, past scheduledFor only
 getPulseArticleBySlug(slug: string): Promise<PulseArticle | null>;
 getPulseCategories(): Promise<Category[]>;
 getPulseRegions(): Promise<Category[]>;
@@ -89,7 +89,7 @@ getPulseOpportunityTypes(): Promise<Category[]>;
 getPulseSources(): Promise<PulseSource[]>;
 ```
 
-`local/pulseData.ts` seeds the three real taxonomy lists (legitimate organizational labels, not fabricated claims) plus two `[SAMPLE]`-prefixed placeholder articles for future architecture review — the same convention already used by `journalData.ts`/`portfolioData.ts`. `PULSE_SOURCES` stays empty: inventing a placeholder "trusted source" would misrepresent a partnership that doesn't exist, unlike labeling a category.
+`local/pulseData.ts` seeds the three real taxonomy lists (legitimate organizational labels, not fabricated claims) plus (as of the Stories/Journal integration — see `STORIES_PULSE_INTEGRATION.md`) seven `[SAMPLE]`-prefixed placeholder articles, one per grouping/trust-badge combination, plus two clearly `[SAMPLE]`-labeled placeholder sources — the same convention already used by `journalData.ts`/`portfolioData.ts`. These are local dev fixtures only; production reads from Sanity, where no source relationships or content exist yet.
 
 ## 8. Future-proofing — why no further schema is needed yet
 
@@ -105,7 +105,7 @@ None of these are built in this stage — deliberately. Building them now would 
 
 ## 9. What's deliberately not built yet
 
-- No public `/pulse` routes, hub page, or article detail page.
+- **Public pages: now built, but embedded inside Stories/Journal rather than a separate `/pulse` section** — per explicit direction, superseding what this section originally said. See `STORIES_PULSE_INTEGRATION.md` for the full design of that integration.
 - No Admin Platform module for managing Pulse content (Sanity Studio is the interface today, same as every other content type before its dedicated admin UI existed).
 - No ingestion/fetching code for any source type.
 - No AI summarization integration.
@@ -116,4 +116,4 @@ Each of these is a natural next milestone, not a gap in this stage's scope.
 
 ---
 
-*Companion documents: [MEDIA_ARCHITECTURE.md](MEDIA_ARCHITECTURE.md) (the reusable media components `pulseArticle.heroMedia` renders through), [PRODUCT_ROADMAP.md](PRODUCT_ROADMAP.md) Version 4.0 (the original Ordift Pulse roadmap entry this architecture fulfills ahead of schedule), [ARCHITECTURE.md](ARCHITECTURE.md) (broader architectural decision record), [DOCUMENTATION_INDEX.md](DOCUMENTATION_INDEX.md).*
+*Companion documents: [STORIES_PULSE_INTEGRATION.md](STORIES_PULSE_INTEGRATION.md) (how Pulse content is publicly presented inside Stories/Journal), [MEDIA_ARCHITECTURE.md](MEDIA_ARCHITECTURE.md) (the reusable media components `pulseArticle.heroMedia` renders through), [PRODUCT_ROADMAP.md](PRODUCT_ROADMAP.md) Version 4.0 (the original Ordift Pulse roadmap entry this architecture fulfills ahead of schedule), [ARCHITECTURE.md](ARCHITECTURE.md) (broader architectural decision record), [DOCUMENTATION_INDEX.md](DOCUMENTATION_INDEX.md).*
