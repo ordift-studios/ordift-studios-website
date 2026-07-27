@@ -1316,6 +1316,45 @@ migrations, backend features, or infrastructure work should be started
 beyond finishing the Google Sheets/Resend/legal items already in
 motion, unless a genuine bug is found or it's explicitly requested.
 
+### Google Sheets Integration — technically verified (2026-07-28)
+
+Closes out the Google Sheets item from the milestone above. Owner
+completed the manual setup (Google Cloud project, Sheets API enabled,
+service account + JSON key, "Ordift Studios Operations" spreadsheet
+created and shared with the service account as Editor, all three
+credentials added to Vercel Production as Sensitive variables).
+
+One config issue found and fixed along the way: `GOOGLE_SHEETS_SPREADSHEET_ID`
+initially contained more than the bare ID (the connectivity check
+failed with a Sheets-API-specific "Requested entity was not found,"
+which — distinct from an auth error — indicated the private key itself
+was parsing and authenticating correctly, narrowing the problem to the
+ID value). Owner corrected it; a redeploy (env var changes need a new
+deployment to take effect) picked up the fix.
+
+All 10 worksheets created and formatted via `POST
+/api/admin/google-sheets/setup` (bold header, frozen row, basic
+filter, auto-sized columns). Full write path verified via the new
+Super Admin-only `POST /api/admin/google-sheets/verify-write` (see
+`GOOGLE_SHEETS_INTEGRATION.md` §10): authentication, spreadsheet
+lookup, worksheet existence, formatting, write permission, and
+read-back all confirmed — the row was written, read back, and deleted
+automatically, leaving no trace.
+
+**Deliberately not tested this pass:** the real public-form → Sheets
+path (a real Contact Enquiry/Workshop Registration/Project Request
+actually reaching the live spreadsheet), since that requires
+`FORMS_SENDING_ENABLED=true`, which also gates real email sending —
+owner explicitly declined to enable it before Resend is verified, to
+keep the two systems' rollout independent. A temporary QA test
+workshop was published to production Sanity to support this test, then
+removed unused once the decision was made to defer it.
+
+**Google Sheets infrastructure: technically verified, not yet
+publicly exercised.** Full end-to-end confirmation resumes once Resend
+production email (Phase 2B) and `FORMS_SENDING_ENABLED` (Phase 2C) are
+both live.
+
 ### Phase E — Recovery 🟡 PENDING OWNER DECISION (billing)
 Production Supabase project exists, but **the Free plan includes zero
 project backups at all** (confirmed directly in the Dashboard: "Free

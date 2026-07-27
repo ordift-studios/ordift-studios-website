@@ -7,11 +7,25 @@ same day** to a third live integration (Project Requests) and an
 Admin Portal operational-reporting layer that reads from Supabase, never
 from this spreadsheet — see §9 and `ADMIN_GUIDE.md` §16.
 
-**Status: code complete, not yet connected.** Every route/module below
-runs today; what's missing is the Google Cloud service account and the
-spreadsheet itself, both of which must be created and owned by Ordift
-Studios (see §2). Until then, every environment falls back to a local
-test log — nothing is silently dropped.
+**Status (2026-07-28): technically verified on production.** The
+Google Cloud service account, the "Ordift Studios Operations"
+spreadsheet, and all three credentials are live in production. A
+Super Admin-only verification write (`POST
+/api/admin/google-sheets/verify-write`, see §10) confirmed
+authentication, spreadsheet lookup, worksheet existence, formatting,
+write permission, and read-back all succeed for real, end to end. All
+10 worksheets exist and are formatted (bold header, frozen row, basic
+filter, auto-sized columns).
+
+**What's still pending:** the *public-facing* end-to-end path (a real
+visitor's Contact Enquiry/Workshop Registration/Project Request
+actually reaching the real Sheet) hasn't been exercised yet, because
+that requires `FORMS_SENDING_ENABLED=true` in production — deliberately
+not turned on yet, since it also gates real email sending and Resend
+hasn't been verified (see `ADMIN_GUIDE.md` §16 and the Phase 2B/2C
+sequence in `PRODUCT_ROADMAP.md`). Until then every environment
+continues falling back to the local test log for the public form paths
+— nothing is silently dropped either way.
 
 ---
 
@@ -304,6 +318,49 @@ Staff, Status, Internal Notes), which never flows back into Supabase.
 Treat this spreadsheet as a convenient, human-editable operational
 mirror for people who work in spreadsheets day-to-day — not as a data
 source for anything the app itself computes or reports on.
+
+## 10. Admin diagnostic/verification routes
+
+Two routes exist purely for operating and verifying this integration —
+neither is reachable by a visitor, and neither is part of the public
+form → Sheets sync path described in §1:
+
+- **`GET`/`POST /api/admin/google-sheets/setup`** — staff/admin gated
+  (`requireAdminApiUser()`). `GET` reports whether the three env vars
+  are present (never their values) and whether the app can currently
+  authenticate and find the configured spreadsheet. `POST` runs the
+  same worksheet bootstrap as `scripts/setupGoogleSheets.ts` (create
+  missing tabs, write/refresh headers, reapply formatting) — built
+  specifically because Vercel's "Sensitive" environment variables can
+  be used by a running deployment but never read back by anyone,
+  including via the CLI, so this was the only way to run the bootstrap
+  against production without the credentials passing through a human's
+  hands.
+- **`POST /api/admin/google-sheets/verify-write`** — **Super Admin
+  only** (`requireSuperAdminApiUser()`, deliberately stricter than the
+  route above). Appends one clearly-labeled row
+  (`QA-VERIFY-<timestamp>`, "QA VERIFICATION ROW — SAFE TO IGNORE") to
+  the live Contact Enquiries worksheet, reads it back to confirm the
+  content matches, then deletes that exact row via its captured range
+  — so a full write-and-read-back proof never leaves clutter behind,
+  pass or fail. Confirms, in one call: authentication, spreadsheet
+  lookup, worksheet existence, formatting (frozen header row),
+  write permission, and read-back.
+
+**Recommendation: keep both permanently.** They're low-risk (properly
+gated, self-cleaning, no data exposure), and genuinely useful
+operational tooling beyond this one verification pass — e.g. confirming
+the integration still works after a service-account key rotation, a
+spreadsheet recreation, or a credential change, without needing to wait
+for or fabricate a real form submission. Revisit only if they go
+unused for a long stretch and start to feel like unnecessary surface
+area.
+
+**Verified 2026-07-28** via `verify-write`, run by a temporary,
+since-deleted QA Super Admin account: authentication ✅, spreadsheet
+lookup ✅ ("Ordift Studios Operations") ✅, worksheet existence ✅,
+formatting ✅ (`frozenRowCount=1`), write permission ✅, read-back ✅,
+cleanup ✅. See `MILESTONES.md` for the full dated entry.
 
 ---
 

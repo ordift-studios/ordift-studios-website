@@ -234,6 +234,8 @@ One registration, no new synchronization logic — see the comment at the top of
 ### 16.4 Access control
 Every `/api/admin/reports/**` route is gated by `requireAdminApiUser()` (`src/lib/admin/apiAuth.ts`) — staff, admin, or super_admin only, same role check as the `/admin/**` page layout, checked independently since `proxy.ts` doesn't gate API routes the way it gates pages. An unauthenticated or under-privileged request gets a `401`, not a redirect.
 
+`/api/admin/google-sheets/**` uses two different gates on the same helper file: `GET`/`POST /api/admin/google-sheets/setup` uses the same `requireAdminApiUser()` as the reports routes, but `POST /api/admin/google-sheets/verify-write` uses the stricter `requireSuperAdminApiUser()` — staff and admin are rejected, only super_admin passes. This is the first route in the codebase to need a gate narrower than "any staff/admin/super_admin," since it writes directly to an external system (Google Sheets) with no visitor-facing origin to audit against. See `GOOGLE_SHEETS_INTEGRATION.md` §10 for what it does.
+
 ---
 
 *Companion documents: [PRODUCTION_READINESS_REPORT.md](PRODUCTION_READINESS_REPORT.md) — the point-in-time verification and Go/No-Go assessment behind this guide. [PRODUCT_ROADMAP.md](PRODUCT_ROADMAP.md) — the long-term version plan referenced throughout §9 and §15. [DOCUMENTATION_INDEX.md](DOCUMENTATION_INDEX.md) — how every project document relates to this one.*
