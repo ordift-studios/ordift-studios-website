@@ -49,6 +49,7 @@ function LookupTable({ table, title, rows }: { table: "operational_titles" | "en
           type="text"
           name="name"
           placeholder="Add new…"
+          aria-label={`Add new ${title}`}
           required
           className="flex-1 rounded-lg border border-black/15 px-3 py-1.5 font-sans text-body-small"
         />

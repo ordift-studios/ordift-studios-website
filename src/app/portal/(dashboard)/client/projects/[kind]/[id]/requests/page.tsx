@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { getCurrentUser } from "@/lib/portal/roles";
 import { getClientProjectRequests, isProjectKind } from "@/lib/portal/workspace";
 import { getRequestTypes, PROJECT_REQUEST_STATUS_LABELS, type ProjectRequestStatus } from "@/lib/admin/projectRequests";
@@ -48,9 +49,9 @@ export default async function RequestsTabPage({
         {requestTypes.length === 0 ? (
           <p className="font-sans text-body-small text-ordift-ink-muted">
             Requests aren&apos;t available right now — please{" "}
-            <a href="/contact" className="text-ordift-gold-pressed underline underline-offset-4">
+            <Link href="/book" className="text-ordift-gold-pressed underline underline-offset-4">
               contact us
-            </a>{" "}
+            </Link>{" "}
             directly.
           </p>
         ) : (

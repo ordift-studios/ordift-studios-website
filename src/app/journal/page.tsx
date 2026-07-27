@@ -108,6 +108,7 @@ export default async function JournalPage({
               name="q"
               defaultValue={q ?? ""}
               placeholder="Search stories…"
+              aria-label="Search stories"
               className="w-full max-w-sm min-h-11 rounded-lg border border-black/15 bg-white px-4 py-2.5 font-sans text-body-small text-ordift-ink placeholder:text-ordift-ink-muted/60 focus:outline-none focus:ring-2 focus:ring-ordift-gold focus:border-transparent"
             />
             <button

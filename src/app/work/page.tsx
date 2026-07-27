@@ -84,6 +84,7 @@ export default async function PortfolioPage({
               name="q"
               defaultValue={q ?? ""}
               placeholder="Search projects…"
+              aria-label="Search projects"
               className="w-full max-w-sm min-h-11 rounded-lg border border-black/15 bg-white px-4 py-2.5 font-sans text-body-small text-ordift-ink placeholder:text-ordift-ink-muted/60 focus:outline-none focus:ring-2 focus:ring-ordift-gold focus:border-transparent"
             />
             <button

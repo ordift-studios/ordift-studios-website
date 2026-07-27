@@ -75,8 +75,11 @@ export default function DeliverablesManager({
         <input type="hidden" name="entityId" value={entityId} />
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
-            <label className="font-sans text-caption text-ordift-ink-muted block mb-1">Title</label>
+            <label htmlFor="deliverable-title" className="font-sans text-caption text-ordift-ink-muted block mb-1">
+              Title
+            </label>
             <input
+              id="deliverable-title"
               type="text"
               name="title"
               required
@@ -85,8 +88,11 @@ export default function DeliverablesManager({
             />
           </div>
           <div>
-            <label className="font-sans text-caption text-ordift-ink-muted block mb-1">Category</label>
+            <label htmlFor="deliverable-category" className="font-sans text-caption text-ordift-ink-muted block mb-1">
+              Category
+            </label>
             <select
+              id="deliverable-category"
               name="categoryId"
               required
               className="w-full min-h-11 rounded-lg border border-black/15 bg-white px-3 font-sans text-body-small text-ordift-ink"
@@ -100,10 +106,11 @@ export default function DeliverablesManager({
           </div>
         </div>
         <div>
-          <label className="font-sans text-caption text-ordift-ink-muted block mb-1">
+          <label htmlFor="deliverable-description" className="font-sans text-caption text-ordift-ink-muted block mb-1">
             Description (optional)
           </label>
           <input
+            id="deliverable-description"
             type="text"
             name="description"
             className="w-full min-h-11 rounded-lg border border-black/15 bg-white px-3 font-sans text-body-small text-ordift-ink"
@@ -111,8 +118,11 @@ export default function DeliverablesManager({
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
-            <label className="font-sans text-caption text-ordift-ink-muted block mb-1">Link</label>
+            <label htmlFor="deliverable-url" className="font-sans text-caption text-ordift-ink-muted block mb-1">
+              Link
+            </label>
             <input
+              id="deliverable-url"
               type="url"
               name="url"
               required
@@ -121,10 +131,11 @@ export default function DeliverablesManager({
             />
           </div>
           <div>
-            <label className="font-sans text-caption text-ordift-ink-muted block mb-1">
+            <label htmlFor="deliverable-thumbnail" className="font-sans text-caption text-ordift-ink-muted block mb-1">
               Thumbnail URL (optional)
             </label>
             <input
+              id="deliverable-thumbnail"
               type="url"
               name="thumbnailUrl"
               placeholder="https://…"
@@ -148,10 +159,11 @@ export default function DeliverablesManager({
           <input type="hidden" name="entityType" value={entityType} />
           <input type="hidden" name="entityId" value={entityId} />
           <div className="flex-1 min-w-[200px]">
-            <label className="font-sans text-caption text-ordift-ink-muted block mb-1">
+            <label htmlFor="deliverable-new-category" className="font-sans text-caption text-ordift-ink-muted block mb-1">
               New Category (admin only)
             </label>
             <input
+              id="deliverable-new-category"
               type="text"
               name="label"
               placeholder="e.g. Behind the Scenes"

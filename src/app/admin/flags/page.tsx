@@ -76,8 +76,11 @@ export default async function AdminFlagsPage() {
         <h2 className="font-serif font-medium text-body text-ordift-ink mb-4">New Flag</h2>
         <form action={createFlagAction} className="flex flex-wrap gap-3 items-end">
           <div className="flex-1 min-w-[200px]">
-            <label className="font-sans text-caption text-ordift-ink-muted block mb-1">Key</label>
+            <label htmlFor="flag-key" className="font-sans text-caption text-ordift-ink-muted block mb-1">
+              Key
+            </label>
             <input
+              id="flag-key"
               type="text"
               name="key"
               required
@@ -86,10 +89,11 @@ export default async function AdminFlagsPage() {
             />
           </div>
           <div className="flex-1 min-w-[240px]">
-            <label className="font-sans text-caption text-ordift-ink-muted block mb-1">
+            <label htmlFor="flag-description" className="font-sans text-caption text-ordift-ink-muted block mb-1">
               Description (optional)
             </label>
             <input
+              id="flag-description"
               type="text"
               name="description"
               className="w-full min-h-11 rounded-lg border border-black/15 bg-white px-3 font-sans text-body-small text-ordift-ink"

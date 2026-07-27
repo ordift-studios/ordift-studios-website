@@ -3,7 +3,6 @@ import NavBar from "@/components/NavBar";
 import Footer from "@/components/Footer";
 import Button from "@/components/Button";
 import DepartmentCard from "@/components/DepartmentCard";
-import JournalCard from "@/components/JournalCard";
 import Logo from "@/components/Logo";
 
 export const metadata: Metadata = {
@@ -31,27 +30,6 @@ const departments = [
     name: "Branding & Strategy",
     description: "Positioning, creative direction, campaign development.",
     href: "/services/branding",
-  },
-];
-
-const journalPosts = [
-  {
-    title: "How to Prepare for a Professional Photoshoot",
-    category: "Photography Tips",
-    date: "Sample entry",
-    href: "/journal/sample-1",
-  },
-  {
-    title: "Why Every Business Needs Consistent Brand Content",
-    category: "Branding",
-    date: "Sample entry",
-    href: "/journal/sample-2",
-  },
-  {
-    title: "Behind the Scenes of an Ordift Studios Campaign",
-    category: "Studio News",
-    date: "Sample entry",
-    href: "/journal/sample-3",
   },
 ];
 
@@ -101,19 +79,6 @@ export default function ComponentShowcasePage() {
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
             {departments.map((d) => (
               <DepartmentCard key={d.name} {...d} />
-            ))}
-          </div>
-        </div>
-      </section>
-
-      <section className="bg-ordift-offwhite px-4 sm:px-8 py-14 sm:py-20">
-        <div className="max-w-6xl mx-auto">
-          <h2 className="font-serif font-medium text-section-heading sm:text-section-heading-tablet lg:text-section-heading-desktop text-ordift-ink mb-8 sm:mb-10">
-            From the Journal
-          </h2>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 sm:gap-6">
-            {journalPosts.map((post) => (
-              <JournalCard key={post.href} {...post} />
             ))}
           </div>
         </div>

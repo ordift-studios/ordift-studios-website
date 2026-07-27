@@ -108,10 +108,11 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
             <form action={updateBookingStatusAction} className="space-y-4">
               <input type="hidden" name="registrationId" value={registration.id} />
               <div>
-                <label className="font-sans text-caption text-ordift-ink-muted block mb-1">
+                <label htmlFor="registration-status" className="font-sans text-caption text-ordift-ink-muted block mb-1">
                   Registration
                 </label>
                 <select
+                  id="registration-status"
                   name="registrationStatus"
                   defaultValue={registration.registrationStatus}
                   className="w-full min-h-11 rounded-lg border border-black/15 bg-white px-3 font-sans text-body-small text-ordift-ink"
@@ -124,8 +125,11 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
                 </select>
               </div>
               <div>
-                <label className="font-sans text-caption text-ordift-ink-muted block mb-1">Payment</label>
+                <label htmlFor="payment-status" className="font-sans text-caption text-ordift-ink-muted block mb-1">
+                  Payment
+                </label>
                 <select
+                  id="payment-status"
                   name="paymentStatus"
                   defaultValue={registration.paymentStatus}
                   className="w-full min-h-11 rounded-lg border border-black/15 bg-white px-3 font-sans text-body-small text-ordift-ink"

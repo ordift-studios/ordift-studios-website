@@ -76,8 +76,11 @@ export default function ProjectRequestsManager({
                 <input type="hidden" name="entityType" value={entityType} />
                 <input type="hidden" name="entityId" value={entityId} />
                 <div>
-                  <label className="font-sans text-caption text-ordift-ink-muted block mb-1">Status</label>
+                  <label htmlFor={`request-status-${r.id}`} className="font-sans text-caption text-ordift-ink-muted block mb-1">
+                    Status
+                  </label>
                   <select
+                    id={`request-status-${r.id}`}
                     name="status"
                     defaultValue={r.status}
                     className="min-h-11 rounded-lg border border-black/15 bg-white px-3 font-sans text-body-small text-ordift-ink"
@@ -90,10 +93,11 @@ export default function ProjectRequestsManager({
                   </select>
                 </div>
                 <div className="flex-1 min-w-[200px]">
-                  <label className="font-sans text-caption text-ordift-ink-muted block mb-1">
+                  <label htmlFor={`request-staff-response-${r.id}`} className="font-sans text-caption text-ordift-ink-muted block mb-1">
                     Staff Response (optional)
                   </label>
                   <input
+                    id={`request-staff-response-${r.id}`}
                     type="text"
                     name="staffResponse"
                     defaultValue={r.staffResponse ?? ""}
