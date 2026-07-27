@@ -13,9 +13,9 @@
 | Phase | Status | Summary |
 |---|---|---|
 | 1. Production Audit | ✅ complete (2026-07-27) | Prioritized punch list below — 0 Critical, 7 High, 5 Medium, 3 Minor/scope notes |
-| 2. UI/UX Refinement | ⬜ not started | Typography, spacing, hierarchy, animation, hover/loading/empty states, forms, buttons, responsiveness |
-| 3. Content Readiness | ⬜ not started | Structured media upload checklist (dimensions, orientation, format, purpose) — no stock imagery |
-| 4. Portfolio & Service Readiness | ⬜ not started | Every portfolio category/service page prepped for production content; recommended upload order |
+| 2. UI/UX Refinement | 🔶 first pass complete (2026-07-27) | All High-priority links/a11y fixes from Phase 1; premium branded placeholder replacing every flat gray/empty media area site-wide; focus-visible ring + subtle hover lift on the shared Button component. See "Refinement pass — 2026-07-27" below for the full before/after. Further per-page typography/spacing polish remains open (not exhaustively covered this pass — flagged, not silently skipped) |
+| 3. Content Readiness | ✅ complete (2026-07-27) | `MEDIA_UPLOAD_LIST.md` rewritten into the comprehensive Media Requirement List — every image/video/logo/promotional-asset area, dimensions/orientation/format/subject, and upload-readiness status |
+| 4. Portfolio & Service Readiness | 🔶 partial (2026-07-27) | Every department/service page now has a premium placeholder treatment (hero + Featured Work strip) ready to receive real content the moment the deferred schema follow-up lands; upload-order recommendation added to `MEDIA_UPLOAD_LIST.md`. Portfolio category prep beyond the existing schema not further scoped this pass |
 | 5. Launch QA | ⬜ not started | End-to-end verification of bookings, enquiries, workshops, stories, auth, portals, emails, public pages; final Go/No-Go report |
 
 ---
