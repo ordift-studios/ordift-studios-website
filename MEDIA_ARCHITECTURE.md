@@ -21,6 +21,7 @@ All in `src/components/media/`:
 | `Gallery.tsx` | Reusable grid of `GalleryImage[]`, configurable column count and aspect ratio. Renders nothing (not an empty grid) when there are no images. | Portfolio Final Gallery + Behind the Scenes, Workshop Gallery |
 | `BeforeAfterGallery.tsx` | Stacked before/after image pairs. | Portfolio retouching comparisons |
 | `Avatar.tsx` | Small circular portrait with an initials fallback when no photo exists. | Journal author byline + author profile page, Workshop instructor card + instructor profile page |
+| `MediaPlaceholder.tsx` | The premium branded empty-state (LC1 Phase 2, 2026-07-27, see `LAUNCH_CANDIDATE_1.md`) — a radial navy/off-white gradient, the same subtly-shimmering gold glow as the Coming Soon holding page, and the Ordift monogram, with an optional caption. No stock imagery, ever. | `ResponsiveImage`/`MediaAsset`'s own empty state (see §4); Home hero, `DepartmentCard`, and the department/service page template, which have no CMS field to be "empty" from — they just have no media capability yet |
 
 ## 3. The CDN-swap guarantee
 
@@ -34,7 +35,7 @@ These are commonly conflated; the architecture treats them as three separate con
 
 1. **Automatic aspect ratio.** `ResponsiveImage` sizes its wrapper from the image's own Sanity-reported `width`/`height` metadata (via the `mediaAssetFragment`/`galleryImageFragment` GROQ fragments in `groqFragments.ts`) unless an explicit `aspectRatio` prop overrides it — so layout never shifts once the real image loads.
 2. **Loading state** (the image is on its way over the network). Sanity's generated LQIP (a base64 blur placeholder, also pulled via the GROQ fragments) drives `next/image`'s native `placeholder="blur"` — zero extra client JS, just a soft preview that sharpens in place.
-3. **Empty state** (the CMS field exists but no asset has been uploaded yet — a *content* gap, not a loading state). `ResponsiveImage`, `MediaAsset`, and `Avatar` all render the same neutral-tint placeholder (`bg-ordift-navy-900/10`, `role="img"`, `aria-label` from `alt`) instead of an invalid empty `src` — this is what makes the sample/placeholder content across the site (which genuinely has no uploaded photos yet) render cleanly rather than as broken-image icons.
+3. **Empty state** (the CMS field exists but no asset has been uploaded yet — a *content* gap, not a loading state). `ResponsiveImage` and `MediaAsset` render `MediaPlaceholder` (`role="img"`, `aria-label` from `alt`) instead of an invalid empty `src` — this is what makes the `[SAMPLE]` placeholder content across the site (which genuinely has no uploaded photos yet) render as an intentional brand moment rather than a broken-image icon. `Avatar` is the one exception, by design: it renders its own initials-circle instead, a more appropriate treatment for a missing *person* photo specifically than a generic brand mark. (Before 2026-07-27, all four rendered a flat `bg-ordift-navy-900/10` tint — see `LAUNCH_CANDIDATE_1.md`'s before/after report for that change.)
 
 `MediaAsset.url` and `GalleryImage.url` (`src/lib/content/types.ts`) are typed `string | null` specifically because case 3 is a real, expected runtime state, not an edge case — the GROQ fragments' `select()`/`coalesce()` genuinely return `null` when an asset is unset.
 
@@ -64,4 +65,4 @@ No new media component is anticipated to be needed for any of the above — only
 
 ---
 
-*Companion documents: [MEDIA_UPLOAD_LIST.md](MEDIA_UPLOAD_LIST.md) (what to upload and where), [ARCHITECTURE.md](ARCHITECTURE.md) (broader architectural decision record), [PRODUCT_ROADMAP.md](PRODUCT_ROADMAP.md) (where the reusability points in §8 above are tracked).*
+*Companion documents: [MEDIA_UPLOAD_LIST.md](MEDIA_UPLOAD_LIST.md) (what to upload and where), [LAUNCH_CANDIDATE_1.md](LAUNCH_CANDIDATE_1.md) (the `MediaPlaceholder` before/after and where it's deployed), [ARCHITECTURE.md](ARCHITECTURE.md) (broader architectural decision record), [PRODUCT_ROADMAP.md](PRODUCT_ROADMAP.md) (where the reusability points in §8 above are tracked).*
