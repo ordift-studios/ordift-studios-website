@@ -104,6 +104,24 @@ add preview URLs individually as needed. Recommended: only rely on
 `/studio` from the fixed staging/production custom domains, not
 ephemeral preview URLs.
 
+## Known issue: isolated deployment hang (observed 2026-07-28)
+
+A production deployment can occasionally hang in Vercel's "Deploying
+outputs" phase indefinitely after the build itself completes
+successfully — observed once, 15+ minutes with zero log progress after
+a clean 2-minute build, while Vercel's own status page
+(vercel-status.com) reported all systems operational. Not a code or
+config issue — the same commit deployed normally on the next attempt.
+
+**Fix:** `vercel remove <deployment-url> --safe --yes` (the `--safe`
+flag refuses to remove anything with an active alias, so this can
+never touch the live production deployment), then push a new commit
+(or an empty commit, `git commit --allow-empty`, if there's nothing
+else to ship) to trigger a fresh deployment. Production is never down
+during this — Vercel keeps serving the last successful deployment
+until a new one is ready to promote, so a stuck build is an
+inconvenience, not an outage.
+
 ## Pre-launch checklist
 
 1. Confirm the production Sanity dataset (`production`) has **zero**

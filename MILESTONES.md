@@ -1259,6 +1259,63 @@ Production domain/DNS and the production Supabase project (both
 originally listed as blockers here) are done — see Phase B above and
 `DNS_SNAPSHOT_PRE_LAUNCH.md`.
 
+### Milestone: Ordift Studios v1.0 — Infrastructure Complete (2026-07-28)
+
+Tagged `v1.0.0-infrastructure-complete`. Closes out the backend/
+infrastructure phase — the dual-storage form workflow, the platform-
+wide sequential record ID standard, and the Admin Portal operational
+reporting layer are all built, migrated, and directly verified
+end-to-end on **both staging and production**: Contact Enquiry,
+Workshop Registration (staging only — production has no published
+workshops yet, a content gap not a code gap), Project Request, Admin
+Reporting, CSV export, Excel export, and Email to Operations (test
+mode, since `FORMS_SENDING_ENABLED` is still off in production).
+
+Two things surfaced and were fixed during this closing verification
+pass, both documented in full in migration `0016_service_role_grants.sql`:
+
+- **Migrations 0013–0015 had only been applied to staging**, not
+  production, despite the app already being deployed against
+  production — every real Contact Enquiry/Workshop Registration
+  submitted on the live site would have failed with a 503 until this
+  was caught and fixed the same session.
+- **`service_role` was missing base table grants** on `enquiries`,
+  `workshop_registrations`, `project_requests`, `record_sequences`, and
+  `sheet_sync_failures` in production — same root cause as
+  `0010_service_role_grants_fix.sql` ("Automatically expose new
+  tables" is disabled on production), hit again because the lesson
+  from 0010 wasn't carried into the new tables this phase added.
+
+**Deployment note:** one production deployment (commit `6707ffc`, the
+0016 migration file itself — no app code) hung in Vercel's "Deploying
+outputs" phase for 15+ minutes after a clean 2-minute build, with
+Vercel's own status page reporting all systems operational — an
+isolated, platform-side deployment hang, not a code or config issue.
+Resolved by removing the stuck deployment (`vercel remove --safe`,
+which refuses to touch anything with an active alias) and pushing a
+new commit; the replacement deployment completed normally in ~2
+minutes. Production was never down during this — Vercel keeps serving
+the last successful deployment until a new one is ready to promote.
+
+New this pass: `POST /api/admin/google-sheets/setup` (admin-gated) —
+runs the same worksheet bootstrap as `scripts/setupGoogleSheets.ts`
+against whichever environment it's deployed to, needed specifically
+because Vercel's "Sensitive" environment variables can be used by a
+running deployment but never read back by anyone, including via the
+CLI — there was no other way to run the bootstrap against production
+without the credentials passing through a human's hands.
+
+**What's explicitly not in scope for this milestone** (tracked
+separately, Google Sheets credentials wiring already in progress as of
+this date): Google Sheets worksheet bootstrap execution, Resend
+production email, enabling live form delivery
+(`FORMS_SENDING_ENABLED`), legal page approval
+(`LEGAL_PAGES_APPROVED`), and all real content population. Per the
+explicit instruction accompanying this milestone, no further
+migrations, backend features, or infrastructure work should be started
+beyond finishing the Google Sheets/Resend/legal items already in
+motion, unless a genuine bug is found or it's explicitly requested.
+
 ### Phase E — Recovery 🟡 PENDING OWNER DECISION (billing)
 Production Supabase project exists, but **the Free plan includes zero
 project backups at all** (confirmed directly in the Dashboard: "Free
