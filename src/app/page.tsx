@@ -3,6 +3,7 @@ import NavBar from "@/components/NavBar";
 import Footer from "@/components/Footer";
 import Button from "@/components/Button";
 import DepartmentCard from "@/components/DepartmentCard";
+import MediaPlaceholder from "@/components/media/MediaPlaceholder";
 import { contentRepository } from "@/lib/content";
 
 // Featured Work, Testimonials, Trusted-By/Clients, and Talent Spotlight are
@@ -35,28 +36,36 @@ export default async function Home() {
 
       {/* Hero */}
       <section className="bg-ordift-navy-950 text-white px-4 sm:px-8 py-16 sm:py-24">
-        <div className="max-w-6xl mx-auto">
-          <p className="font-sans font-semibold uppercase tracking-[0.2em] text-eyebrow lg:text-eyebrow-desktop text-ordift-gold mb-4">
-            {home.heroEyebrow}
-          </p>
-          <h1 className="font-serif font-medium text-hero sm:text-hero-tablet lg:text-hero-desktop leading-[var(--text-hero--line-height)] sm:leading-[var(--text-hero-tablet--line-height)] lg:leading-[var(--text-hero-desktop--line-height)] mb-6 max-w-4xl">
-            {home.heroHeadline}
-          </h1>
-          <p className="font-sans text-body lg:text-body-desktop text-white/80 max-w-2xl mb-8">
-            {home.heroSubheadline}
-          </p>
-          <div className="flex flex-wrap gap-3">
-            <Button href={home.heroPrimaryCta.href} variant="primary">
-              {home.heroPrimaryCta.label}
-            </Button>
-            <Button
-              href={home.heroSecondaryCta.href}
-              variant="secondary"
-              className="!border-white/30 !text-white"
-            >
-              {home.heroSecondaryCta.label}
-            </Button>
+        <div className="max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-[1.15fr_1fr] gap-10 lg:gap-12 items-center">
+          <div>
+            <p className="font-sans font-semibold uppercase tracking-[0.2em] text-eyebrow lg:text-eyebrow-desktop text-ordift-gold mb-4">
+              {home.heroEyebrow}
+            </p>
+            <h1 className="font-serif font-medium text-hero sm:text-hero-tablet lg:text-hero-desktop leading-[var(--text-hero--line-height)] sm:leading-[var(--text-hero-tablet--line-height)] lg:leading-[var(--text-hero-desktop--line-height)] mb-6 max-w-4xl">
+              {home.heroHeadline}
+            </h1>
+            <p className="font-sans text-body lg:text-body-desktop text-white/80 max-w-2xl mb-8">
+              {home.heroSubheadline}
+            </p>
+            <div className="flex flex-wrap gap-3">
+              <Button href={home.heroPrimaryCta.href} variant="primary">
+                {home.heroPrimaryCta.label}
+              </Button>
+              <Button
+                href={home.heroSecondaryCta.href}
+                variant="secondary"
+                className="!border-white/30 !text-white"
+              >
+                {home.heroSecondaryCta.label}
+              </Button>
+            </div>
           </div>
+          <MediaPlaceholder
+            aspectRatio="4/5"
+            tone="dark"
+            label="Signature Campaign Visual"
+            className="rounded-2xl w-full max-w-sm mx-auto lg:max-w-none"
+          />
         </div>
       </section>
 
