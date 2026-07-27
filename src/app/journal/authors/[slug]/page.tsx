@@ -5,6 +5,7 @@ import Footer from "@/components/Footer";
 import JournalPostCard from "@/components/journal/JournalPostCard";
 import Avatar from "@/components/media/Avatar";
 import { contentRepository } from "@/lib/content";
+import { fromJournalPost } from "@/lib/content/storiesFeed";
 
 export async function generateStaticParams() {
   const authors = await contentRepository.getAuthors();
@@ -71,7 +72,7 @@ export default async function AuthorProfilePage({
                 {posts.map((post) => (
                   <JournalPostCard
                     key={post.id}
-                    post={post}
+                    post={fromJournalPost(post)}
                     categories={post.categoryIds.map((id) => categoryById.get(id)!).filter(Boolean)}
                     author={author}
                   />
