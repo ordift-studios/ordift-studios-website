@@ -4,11 +4,15 @@ import { WORKSHEET_REGISTRY, type WorksheetKey } from "./registry";
 export type EnsureWorksheetResult = { tabName: string; created: boolean };
 
 // Idempotent: safe to run repeatedly. Creates the worksheet tab if it
-// doesn't exist yet, then (re)writes row 1 with the current header row —
-// so re-running after a registry change (e.g. a new column) brings an
-// already-created tab's header up to date without touching any data
-// rows beneath it. Used by scripts/setupGoogleSheets.ts; not called from
-// any request path.
+// doesn't exist yet, (re)writes row 1 with the current header row, and
+// (re)applies the standard operational formatting — bold navy header,
+// frozen header row, a basic filter across the header, and readable
+// auto-sized column widths — so re-running after a registry change
+// (e.g. a new column) brings an already-created tab fully up to date
+// without touching any data rows beneath it. Used by
+// scripts/setupGoogleSheets.ts and the admin-triggered
+// /api/admin/google-sheets/setup route; not called from any public
+// request path.
 export async function ensureWorksheet(key: WorksheetKey): Promise<EnsureWorksheetResult> {
   if (!isGoogleSheetsConfigured()) {
     throw new Error(
@@ -24,11 +28,14 @@ export async function ensureWorksheet(key: WorksheetKey): Promise<EnsureWorkshee
   const existing = meta.data.sheets?.find((sheet) => sheet.properties?.title === config.tabName);
 
   let created = false;
+  let sheetId = existing?.properties?.sheetId;
+
   if (!existing) {
-    await sheets.spreadsheets.batchUpdate({
+    const addResult = await sheets.spreadsheets.batchUpdate({
       spreadsheetId,
       requestBody: { requests: [{ addSheet: { properties: { title: config.tabName } } }] },
     });
+    sheetId = addResult.data.replies?.[0]?.addSheet?.properties?.sheetId ?? undefined;
     created = true;
   }
 
@@ -38,6 +45,53 @@ export async function ensureWorksheet(key: WorksheetKey): Promise<EnsureWorkshee
     valueInputOption: "RAW",
     requestBody: { values: [config.headerRow] },
   });
+
+  if (sheetId !== undefined && sheetId !== null) {
+    const columnCount = config.headerRow.length;
+    await sheets.spreadsheets.batchUpdate({
+      spreadsheetId,
+      requestBody: {
+        requests: [
+          // Bold white-on-navy header row, matching the site's brand navy.
+          {
+            repeatCell: {
+              range: { sheetId, startRowIndex: 0, endRowIndex: 1 },
+              cell: {
+                userEnteredFormat: {
+                  textFormat: { bold: true, foregroundColor: { red: 1, green: 1, blue: 1 } },
+                  backgroundColor: { red: 0.043, green: 0.071, blue: 0.125 },
+                },
+              },
+              fields: "userEnteredFormat(textFormat,backgroundColor)",
+            },
+          },
+          // Freeze the header row so it stays visible while scrolling.
+          {
+            updateSheetProperties: {
+              properties: { sheetId, gridProperties: { frozenRowCount: 1 } },
+              fields: "gridProperties.frozenRowCount",
+            },
+          },
+          // A basic filter across the header row — gives every tab
+          // sort/filter dropdowns without anyone having to add them by
+          // hand.
+          {
+            setBasicFilter: {
+              filter: { range: { sheetId, startRowIndex: 0, endColumnIndex: columnCount } },
+            },
+          },
+          // Auto-size every column to its content for readability —
+          // re-running this after new rows exist keeps widths sane
+          // rather than leaving them at Sheets' narrow default.
+          {
+            autoResizeDimensions: {
+              dimensions: { sheetId, dimension: "COLUMNS", startIndex: 0, endIndex: columnCount },
+            },
+          },
+        ],
+      },
+    });
+  }
 
   return { tabName: config.tabName, created };
 }
