@@ -1410,6 +1410,72 @@ Grade 10 (Founder/CEO), per the original spec's default.
 - **Staff Number format simplified** — dropped the visible `STAFF-` prefix and `YYYY` year (e.g. `STAFF-2026-000001` → `000001`), since the year duplicated the existing Date Joined field and the literal `STAFF` text made the identifier's purpose obvious to a casual viewer. The counter itself still reuses `next_record_sequence()` (migration 0013), now keyed by an internal, never-displayed `"STAFF"` prefix with a fixed year of `0` so it never resets annually — this matters because, with the year no longer part of the visible string, a per-year counter would otherwise eventually assign two different people the same-looking number.
 - **Last Login added to the Admin Users & Roles "Manage" panel** — previously only visible on a person's own Quick Card; now also visible to Admin/Super Admin for any account via `/admin/users`, using that page's existing admin-only gate (no new access-control code needed).
 
+### Member Number system + Admin Presence panel — shipped (2026-07-28)
+
+Replaces the staff-only Staff Number (above) with a **universal Member
+Number**: every account — staff or public-facing — gets an
+auto-generated, prefixed number driven by an admin-assigned **Account
+Classification**, never by Role, Engagement Type, or Operational Title.
+Eleven classifications shipped: Permanent Staff (no prefix), Intern
+(`IN`), Contractor (`CT`), Freelancer (`FL`), Volunteer (`VL`), Project
+Participant (`PR`), Instructor (`INT`), Workshop Participant (`WK`),
+Model (`MD`), Vendor (`VN`), Client (`CL`) — each with its own
+independent, never-resetting counter. Classifications are fully
+configurable from **Settings → Titles & Classifications**
+(`/admin/lookups`), not hardcoded — a Super Admin can add a new category
+(e.g. Speaker, Sponsor), set its prefix/padding/starting number, or
+disable one, with no code change.
+
+The number changes only when classification changes. Reclassifying
+archives the previous `member_numbers` row (`status='archived'`,
+timestamped) and inserts a new active one — the old number is never
+deleted or reused, even if the person is later reclassified back to a
+classification they previously held (verified: Permanent Staff `0001` →
+reclassify to Intern → `IN0002` → reclassify back to Permanent Staff →
+`0002`, not a reused `0001`). Reclassifying to the classification
+already held is a no-op (idempotent). New public signups auto-assign
+"Client"; new admin-invited collaborators require an explicit
+classification at invite time.
+
+Also ships a live **"Active Now" panel** on `/admin/overview`, above
+Recent Activity: Name, Member Number, Department for every Staff/Admin/
+Super Admin account currently online, via Supabase Realtime Presence on
+a **private, Authorization-gated channel** — the same trust boundary as
+every other internal-only surface, not a separate one, since an
+unprotected channel could otherwise be joined by any authenticated
+client (Client/Model/Vendor/Workshop Participant included) directly
+from browser dev tools regardless of what the UI renders. Users show
+Online/Away via a 5-minute client-side idle timer.
+
+**Bug found and fixed during production build verification:** the
+`admin` → `admin/overview` server redirect (hit on every login) briefly
+double-mounts the layout, leaving two concurrent presence connections
+under one person's key — the original "prefer online over away" dedupe
+logic could get stuck permanently online if the stale connection's last
+write was "online". Fixed by making dedupe recency-based (each tracked
+write carries a timestamp; newest wins), verified via direct inspection
+of the raw presence payload showing the duplicate entries, then
+confirmed fixed with a clean online → away → online round-trip.
+
+**Follow-up found during production migration 0020:** `activity_log`
+(created in migration `0004`) was never granted to `service_role` on
+production either — same gap class as `0010`/`0016`/`0018` above,
+production's "Automatically expose new tables" being disabled. Blocked
+service-role deletion of a QA test account (its `actor_user_id` FK to
+`profiles` had no cascade); worked around via one manual SQL Editor
+delete for that specific test row rather than folded into this pass, so
+this class of gap now has four instances on record — worth a dedicated
+audit-and-fix pass across every table.
+
+Migrations `0019` (classifications + `member_numbers` ledger,
+`profiles.member_number`, drops `staff_details.staff_number`) and
+`0020` (Realtime Authorization policies for the `admin-presence`
+channel) applied and verified on both staging and production — schema,
+seed data (11 classifications), RLS, grants, and live functionality
+(classification assignment, lifecycle archival, idempotency, and
+Realtime Presence connect/sync) all confirmed working end-to-end on
+production with a QA account, then fully cleaned up.
+
 ### Phase E — Recovery 🟡 PENDING OWNER DECISION (billing)
 Production Supabase project exists, but **the Free plan includes zero
 project backups at all** (confirmed directly in the Dashboard: "Free
