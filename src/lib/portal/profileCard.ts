@@ -25,7 +25,9 @@ export type ProfileCard = {
   phone: string | null;
   initials: string;
   avatarUrl: string | null;
-  staffNumber: string | null;
+  memberNumber: string | null;
+  classificationId: string | null;
+  classificationName: string | null;
   roles: RoleSlug[];
   roleLabel: string;
   operationalTitleId: string | null;
@@ -91,17 +93,26 @@ export async function getProfileCard(user: CurrentUser): Promise<ProfileCard> {
   const supabase = await createClient();
   const canViewGrade = hasRole(user, "admin") || isSuperAdmin(user);
 
-  const [{ data: profile }, { data: userRoles }, { data: staffDetails }] = await Promise.all([
-    supabase.from("profiles").select("full_name, phone, avatar_url, access_status, created_at").eq("id", user.id).maybeSingle(),
-    supabase.from("user_roles").select("roles(slug, name)").eq("user_id", user.id),
-    supabase
-      .from("staff_details")
-      .select(
-        "staff_number, department, operational_title_id, operational_titles(name), grade_id, grades(grade_code, name)"
-      )
-      .eq("id", user.id)
-      .maybeSingle(),
-  ]);
+  const [{ data: profile }, { data: userRoles }, { data: staffDetails }, { data: activeMemberNumber }] =
+    await Promise.all([
+      supabase
+        .from("profiles")
+        .select("full_name, phone, avatar_url, member_number, access_status, created_at")
+        .eq("id", user.id)
+        .maybeSingle(),
+      supabase.from("user_roles").select("roles(slug, name)").eq("user_id", user.id),
+      supabase
+        .from("staff_details")
+        .select("department, operational_title_id, operational_titles(name), grade_id, grades(grade_code, name)")
+        .eq("id", user.id)
+        .maybeSingle(),
+      supabase
+        .from("member_numbers")
+        .select("classification_id, member_number_classifications(name)")
+        .eq("profile_id", user.id)
+        .eq("status", "active")
+        .maybeSingle(),
+    ]);
 
   const roles = (userRoles ?? [])
     .map((r) => (r.roles as unknown as { slug: RoleSlug } | null)?.slug)
@@ -120,6 +131,7 @@ export async function getProfileCard(user: CurrentUser): Promise<ProfileCard> {
   const gradeId = canViewGrade ? (staffDetails?.grade_id ?? null) : null;
 
   const titleRow = staffDetails?.operational_titles as unknown as { name: string } | null;
+  const classificationRow = activeMemberNumber?.member_number_classifications as unknown as { name: string } | null;
 
   let lastLoginAt: string | null = null;
   try {
@@ -139,7 +151,9 @@ export async function getProfileCard(user: CurrentUser): Promise<ProfileCard> {
     phone: profile?.phone ?? null,
     initials: initialsFromName(profile?.full_name ?? null, user.email),
     avatarUrl: profile?.avatar_url ?? null,
-    staffNumber: staffDetails?.staff_number ?? null,
+    memberNumber: profile?.member_number ?? null,
+    classificationId: activeMemberNumber?.classification_id ?? null,
+    classificationName: classificationRow?.name ?? null,
     roles,
     roleLabel,
     operationalTitleId: staffDetails?.operational_title_id ?? null,

@@ -5,6 +5,7 @@ import { getCurrentUser, hasRole, isStaffOrAdmin, isSuperAdmin } from "@/lib/por
 import { signOutAction } from "@/app/portal/login/actions";
 import { getProfileCard } from "@/lib/portal/profileCard";
 import ProfileQuickCard from "@/components/admin/ProfileQuickCard";
+import { PresenceProvider } from "@/components/admin/PresenceProvider";
 
 // Internal operations console — separate from the customer/partner-facing
 // /portal, but built on the exact same auth/role foundation (Supabase Auth
@@ -21,7 +22,7 @@ const NAV_ITEMS: { label: string; href: string; adminOnly?: boolean; superAdminO
   { label: "Content", href: "/admin/content" },
   { label: "Activity", href: "/admin/activity" },
   { label: "Users & Roles", href: "/admin/users", adminOnly: true },
-  { label: "Titles & Engagement Types", href: "/admin/lookups", superAdminOnly: true },
+  { label: "Titles & Classifications", href: "/admin/lookups", superAdminOnly: true },
   { label: "Feature Flags", href: "/admin/flags", adminOnly: true },
   { label: "Settings", href: "/admin/settings", adminOnly: true },
 ];
@@ -71,7 +72,18 @@ export default async function AdminLayout({ children }: { children: React.ReactN
       </header>
 
       <main className="flex-1 bg-ordift-offwhite px-4 sm:px-8 py-10 sm:py-14">
-        <div className="max-w-6xl mx-auto">{children}</div>
+        <div className="max-w-6xl mx-auto">
+          <PresenceProvider
+            self={{
+              userId: user.id,
+              fullName: profileCard.fullName,
+              memberNumber: profileCard.memberNumber,
+              department: profileCard.department,
+            }}
+          >
+            {children}
+          </PresenceProvider>
+        </div>
       </main>
     </div>
   );

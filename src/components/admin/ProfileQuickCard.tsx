@@ -98,7 +98,8 @@ export default function ProfileQuickCard({ card }: { card: ProfileCard }) {
             </div>
 
             <div className="flex-1 overflow-y-auto px-6 py-5">
-              <Row label="Staff Number" value={card.staffNumber ?? "Not yet assigned"} />
+              <Row label="Member Number" value={card.memberNumber ?? "Not yet assigned"} />
+              {card.classificationName && <Row label="Classification" value={card.classificationName} />}
               <Row label="Job Title" value={card.jobTitle ?? "Not set"} />
               <Row label="Department" value={card.department ?? "Not set"} />
               {card.canViewGrade && <Row label="Grade" value={card.grade ? `${card.grade.name} (${card.grade.code})` : "Not assigned"} />}

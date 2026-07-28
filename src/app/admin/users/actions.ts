@@ -24,6 +24,7 @@ import {
 } from "@/lib/admin/projectAssignments";
 import { getActivityForEntity, type ActivityLogEntry } from "@/lib/admin/activityLog";
 import { siteUrl } from "@/lib/shared/env";
+import { assignClassification } from "@/lib/portal/memberNumbers";
 
 // ============================================================
 // Read-only data fetchers — thin server-action wrappers so the client
@@ -299,6 +300,29 @@ export async function updateCollaboratorDetailsAction(formData: FormData): Promi
 }
 
 // ============================================================
+// Account Classification / Member Number — Super Admin only, since
+// this determines a person's identity number, not just a descriptive
+// label. Only changes anything if the classification is actually
+// different from the current one (see assignClassification() —
+// reclassifying to the same classification is a no-op, never
+// generates a new number).
+// ============================================================
+export async function reclassifyUserAction(formData: FormData): Promise<{ error?: string }> {
+  const currentUser = await getCurrentUser();
+  if (!currentUser || !isSuperAdmin(currentUser)) return { error: "Only a Super Admin can change an account's classification." };
+
+  const userId = String(formData.get("userId") ?? "");
+  const classificationId = String(formData.get("classificationId") ?? "").trim();
+  if (!userId || !classificationId) return { error: "Choose a classification." };
+
+  const result = await assignClassification(userId, classificationId, currentUser.id);
+  if (!result.ok) return { error: result.error };
+
+  revalidatePath("/admin/users");
+  return {};
+}
+
+// ============================================================
 // Project assignments
 // ============================================================
 export async function assignToProjectAction(formData: FormData): Promise<{ error?: string }> {
@@ -358,9 +382,10 @@ export async function inviteCollaboratorAction(formData: FormData): Promise<{ er
   const role = String(formData.get("role") ?? "");
   const operationalTitleId = String(formData.get("operationalTitleId") ?? "").trim() || null;
   const engagementTypeId = String(formData.get("engagementTypeId") ?? "").trim() || null;
+  const classificationId = String(formData.get("classificationId") ?? "").trim() || null;
 
-  if (!email || !fullName || !isGrantableRole(role)) {
-    return { error: "Fill in name, email, and role." };
+  if (!email || !fullName || !isGrantableRole(role) || !classificationId) {
+    return { error: "Fill in name, email, role, and account classification." };
   }
   if (requiresSuperAdmin(role) && !isSuperAdmin(currentUser)) {
     return { error: "Only a Super Admin can invite an Admin or Super Admin." };
@@ -390,12 +415,18 @@ export async function inviteCollaboratorAction(formData: FormData): Promise<{ er
     );
   }
 
+  const classificationResult = await assignClassification(invited.user.id, classificationId, currentUser.id);
+
   await logActivity({
     actorUserId: currentUser.id,
     action: "collaborator.invited",
     entityType: "user",
     entityId: invited.user.id,
-    metadata: { email, role },
+    metadata: {
+      email,
+      role,
+      memberNumber: classificationResult.ok ? classificationResult.formattedNumber : null,
+    },
   });
 
   revalidatePath("/admin/users");

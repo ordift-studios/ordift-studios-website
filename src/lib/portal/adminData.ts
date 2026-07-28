@@ -17,6 +17,9 @@ export type AdminUserRow = {
   operationalTitleName: string | null;
   engagementTypeId: string | null;
   engagementTypeName: string | null;
+  memberNumber: string | null;
+  classificationId: string | null;
+  classificationName: string | null;
 };
 
 export type AdminUserListResult =
@@ -97,15 +100,21 @@ export async function listUsersWithRoles(): Promise<AdminUserListResult> {
     { data: staffDetails, error: staffDetailsError },
     { data: operationalTitles },
     { data: engagementTypes },
+    { data: activeMemberNumbers },
+    { data: classifications },
   ] = await Promise.all([
     admin
       .from("profiles")
-      .select("id, full_name, access_status, access_status_reason, access_status_changed_at, access_expires_at"),
+      .select(
+        "id, full_name, member_number, access_status, access_status_reason, access_status_changed_at, access_expires_at"
+      ),
     admin.from("user_roles").select("user_id, role_id"),
     admin.from("roles").select("id, slug"),
     admin.from("staff_details").select("id, operational_title_id, engagement_type_id"),
     admin.from("operational_titles").select("id, name"),
     admin.from("engagement_types").select("id, name"),
+    admin.from("member_numbers").select("profile_id, classification_id").eq("status", "active"),
+    admin.from("member_number_classifications").select("id, name"),
   ]);
 
   if (profilesError || userRolesError || rolesError || staffDetailsError) {
@@ -120,6 +129,10 @@ export async function listUsersWithRoles(): Promise<AdminUserListResult> {
   const staffDetailsById = new Map((staffDetails ?? []).map((s) => [s.id, s]));
   const titleNameById = new Map((operationalTitles ?? []).map((t) => [t.id, t.name as string]));
   const engagementNameById = new Map((engagementTypes ?? []).map((e) => [e.id, e.name as string]));
+  const classificationNameById = new Map((classifications ?? []).map((c) => [c.id, c.name as string]));
+  const activeClassificationByProfileId = new Map(
+    (activeMemberNumbers ?? []).map((m) => [m.profile_id, m.classification_id as string])
+  );
 
   const rolesByUserId = new Map<string, RoleSlug[]>();
   for (const ur of userRoles ?? []) {
@@ -154,6 +167,12 @@ export async function listUsersWithRoles(): Promise<AdminUserListResult> {
         engagementTypeName: details?.engagement_type_id
           ? (engagementNameById.get(details.engagement_type_id) ?? null)
           : null,
+        memberNumber: profile?.member_number ?? null,
+        classificationId: activeClassificationByProfileId.get(u.id) ?? null,
+        classificationName: (() => {
+          const classificationId = activeClassificationByProfileId.get(u.id);
+          return classificationId ? (classificationNameById.get(classificationId) ?? null) : null;
+        })(),
       };
     })
     .sort((a, b) => (a.email ?? "").localeCompare(b.email ?? ""));

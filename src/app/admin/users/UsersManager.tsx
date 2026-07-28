@@ -2,6 +2,7 @@
 
 import { useMemo, useState, useTransition } from "react";
 import type { AdminUserRow, LookupOption } from "@/lib/portal/adminData";
+import type { MemberClassification } from "@/lib/portal/memberNumbers";
 import type { RoleSlug } from "@/lib/portal/roles";
 import type { AdminProjectAssignment, AssignmentStatus, ProjectSearchResult } from "@/lib/admin/projectAssignments";
 import type { ActivityLogEntry } from "@/lib/admin/activityLog";
@@ -11,6 +12,7 @@ import {
   updateAccessStatusAction,
   setAccessExpiryAction,
   updateCollaboratorDetailsAction,
+  reclassifyUserAction,
   assignToProjectAction,
   updateAssignmentStatusAction,
   inviteCollaboratorAction,
@@ -100,11 +102,13 @@ function UserDetail({
   currentUserIsSuperAdmin,
   operationalTitles,
   engagementTypes,
+  classifications,
 }: {
   user: AdminUserRow;
   currentUserIsSuperAdmin: boolean;
   operationalTitles: LookupOption[];
   engagementTypes: LookupOption[];
+  classifications: MemberClassification[];
 }) {
   const [pending, startTransition] = useTransition();
   const [confirming, setConfirming] = useState<null | { kind: "suspend" | "deactivate" | "reactivate" | "restore" }>(
@@ -115,6 +119,7 @@ function UserDetail({
   const [expiry, setExpiry] = useState(user.accessExpiresAt ? user.accessExpiresAt.slice(0, 10) : "");
   const [titleId, setTitleId] = useState(user.operationalTitleId ?? "");
   const [engagementId, setEngagementId] = useState(user.engagementTypeId ?? "");
+  const [classificationId, setClassificationId] = useState(user.classificationId ?? "");
 
   const [assignments, setAssignments] = useState<AdminProjectAssignment[] | null>(null);
   const [history, setHistory] = useState<ActivityLogEntry[] | null>(null);
@@ -170,6 +175,17 @@ function UserDetail({
     fd.set("engagementTypeId", engagementId);
     startTransition(async () => {
       const result = await updateCollaboratorDetailsAction(fd);
+      if (result.error) setError(result.error);
+    });
+  }
+
+  function saveClassification() {
+    setError(null);
+    const fd = new FormData();
+    fd.set("userId", user.id);
+    fd.set("classificationId", classificationId);
+    startTransition(async () => {
+      const result = await reclassifyUserAction(fd);
       if (result.error) setError(result.error);
     });
   }
@@ -435,6 +451,52 @@ function UserDetail({
         </p>
       </section>
 
+      {/* Account Classification / Member Number — Super Admin only,
+          since this determines the person's identity number. */}
+      {currentUserIsSuperAdmin && (
+        <section className="space-y-2">
+          <h3 className="font-sans text-caption font-semibold uppercase tracking-wide text-ordift-ink-muted">
+            Account Classification &amp; Member Number
+          </h3>
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="font-sans text-body-small text-ordift-ink font-medium">
+              {user.memberNumber ?? "Not yet assigned"}
+            </span>
+            {user.classificationName && (
+              <span className="px-2 py-0.5 rounded-full bg-ordift-offwhite font-sans text-caption text-ordift-ink-muted">
+                {user.classificationName}
+              </span>
+            )}
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <select
+              value={classificationId}
+              onChange={(e) => setClassificationId(e.target.value)}
+              className="min-h-9 rounded-lg border border-black/15 bg-white px-2 font-sans text-body-small"
+            >
+              <option value="">Choose classification…</option>
+              {classifications.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name} {c.prefix ? `(${c.prefix}####)` : "(no prefix)"}
+                </option>
+              ))}
+            </select>
+            <button
+              type="button"
+              onClick={saveClassification}
+              disabled={pending || !classificationId}
+              className="font-sans text-body-small text-ordift-gold-pressed underline underline-offset-4 disabled:opacity-50"
+            >
+              {user.classificationId ? "Reclassify" : "Assign"}
+            </button>
+          </div>
+          <p className="font-sans text-caption text-ordift-ink-muted">
+            Changes only when the primary classification changes — never for a Title, Department, or Grade edit. The
+            previous number is archived, never reused.
+          </p>
+        </section>
+      )}
+
       {/* Operational title / engagement type */}
       <section className="space-y-2">
         <h3 className="font-sans text-caption font-semibold uppercase tracking-wide text-ordift-ink-muted">
@@ -614,11 +676,13 @@ function UserDetail({
 function InvitePanel({
   operationalTitles,
   engagementTypes,
+  classifications,
   currentUserIsSuperAdmin,
   onDone,
 }: {
   operationalTitles: LookupOption[];
   engagementTypes: LookupOption[];
+  classifications: MemberClassification[];
   currentUserIsSuperAdmin: boolean;
   onDone: () => void;
 }) {
@@ -629,6 +693,7 @@ function InvitePanel({
   const [role, setRole] = useState<RoleSlug | "">("");
   const [titleId, setTitleId] = useState("");
   const [engagementId, setEngagementId] = useState("");
+  const [classificationId, setClassificationId] = useState("");
 
   function submit() {
     setError(null);
@@ -638,6 +703,7 @@ function InvitePanel({
     fd.set("role", role);
     fd.set("operationalTitleId", titleId);
     fd.set("engagementTypeId", engagementId);
+    fd.set("classificationId", classificationId);
     startTransition(async () => {
       const result = await inviteCollaboratorAction(fd);
       if (result.error) setError(result.error);
@@ -647,6 +713,7 @@ function InvitePanel({
         setRole("");
         setTitleId("");
         setEngagementId("");
+        setClassificationId("");
         onDone();
       }
     });
@@ -713,11 +780,28 @@ function InvitePanel({
             </option>
           ))}
         </select>
+        <select
+          value={classificationId}
+          onChange={(e) => setClassificationId(e.target.value)}
+          className="rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small"
+        >
+          <option value="">Account classification (Member Number)…</option>
+          {classifications.map((c) => (
+            <option key={c.id} value={c.id}>
+              {c.name} {c.prefix ? `(${c.prefix}####)` : "(no prefix)"}
+            </option>
+          ))}
+        </select>
+        <div />
       </div>
+      <p className="font-sans text-caption text-ordift-ink-muted">
+        Determines this person&apos;s Member Number (e.g. IN0001) — separate from Role and never derived from
+        Operational Title or Engagement Type.
+      </p>
       <button
         type="button"
         onClick={submit}
-        disabled={pending || !email || !fullName || !role}
+        disabled={pending || !email || !fullName || !role || !classificationId}
         className="font-sans text-body-small font-semibold px-4 py-2 rounded-md bg-ordift-navy-950 text-white disabled:opacity-50"
       >
         {pending ? "Sending invite…" : "Send Invite"}
@@ -732,12 +816,14 @@ export default function UsersManager({
   currentUserIsSuperAdmin,
   operationalTitles,
   engagementTypes,
+  classifications,
 }: {
   users: AdminUserRow[];
   currentUserId: string;
   currentUserIsSuperAdmin: boolean;
   operationalTitles: LookupOption[];
   engagementTypes: LookupOption[];
+  classifications: MemberClassification[];
 }) {
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<"" | AdminUserRow["accessStatus"]>("");
@@ -804,6 +890,7 @@ export default function UsersManager({
         <InvitePanel
           operationalTitles={operationalTitles}
           engagementTypes={engagementTypes}
+          classifications={classifications}
           currentUserIsSuperAdmin={currentUserIsSuperAdmin}
           onDone={() => setShowInvite(false)}
         />
@@ -825,7 +912,10 @@ export default function UsersManager({
                 <p className="font-sans text-body-small text-ordift-ink font-medium">
                   {u.fullName ?? "—"} {u.id === currentUserId && <span className="text-ordift-ink-muted">(you)</span>}
                 </p>
-                <p className="font-sans text-caption text-ordift-ink-muted">{u.email ?? "—"}</p>
+                <p className="font-sans text-caption text-ordift-ink-muted">
+                  {u.email ?? "—"}
+                  {u.memberNumber ? ` · ${u.memberNumber}` : ""}
+                </p>
               </div>
               <StatusBadge status={u.accessStatus} />
               <span className="font-sans text-caption text-ordift-ink-muted">
@@ -854,6 +944,7 @@ export default function UsersManager({
                 currentUserIsSuperAdmin={currentUserIsSuperAdmin}
                 operationalTitles={operationalTitles}
                 engagementTypes={engagementTypes}
+                classifications={classifications}
               />
             )}
           </div>

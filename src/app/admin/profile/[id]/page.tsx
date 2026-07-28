@@ -4,7 +4,8 @@ import Link from "next/link";
 import { getCurrentUser, isSuperAdmin } from "@/lib/portal/roles";
 import { getProfileCard } from "@/lib/portal/profileCard";
 import { listOperationalTitles, listGrades } from "@/lib/portal/adminData";
-import { updateOwnContactDetailsAction, updateStaffOperationalDetailsAction, assignStaffNumberAction } from "./actions";
+import { listClassifications } from "@/lib/portal/memberNumbers";
+import { updateOwnContactDetailsAction, updateStaffOperationalDetailsAction, reclassifyAccountAction } from "./actions";
 
 export const metadata: Metadata = {
   title: "Profile — Ordift Studios Admin",
@@ -34,9 +35,9 @@ export default async function AdminProfilePage({
   const isEditing = edit === "1";
   const canEditOperational = isSuperAdmin(user);
 
-  const [operationalTitles, grades] = canEditOperational
-    ? await Promise.all([listOperationalTitles(), listGrades()])
-    : [[], []];
+  const [operationalTitles, grades, classifications] = canEditOperational
+    ? await Promise.all([listOperationalTitles(), listGrades(), listClassifications()])
+    : [[], [], []];
 
   return (
     <div className="max-w-2xl">
@@ -56,7 +57,8 @@ export default async function AdminProfilePage({
             [
               ["Email", card.email ?? "—"],
               ["Phone", card.phone ?? "Not set"],
-              ["Staff Number", card.staffNumber ?? "Not yet assigned"],
+              ["Member Number", card.memberNumber ?? "Not yet assigned"],
+              ["Classification", card.classificationName ?? "Not yet assigned"],
               ["Job Title", card.jobTitle ?? "Not set"],
               ["Department", card.department ?? "Not set"],
               ...(card.canViewGrade
@@ -174,18 +176,40 @@ export default async function AdminProfilePage({
             </form>
           )}
 
-          {canEditOperational && !card.staffNumber && (
-            <form action={assignStaffNumberAction} className="bg-white rounded-lg border border-ordift-ink/10 p-6 space-y-3">
+          {canEditOperational && (
+            <form action={reclassifyAccountAction} className="bg-white rounded-lg border border-ordift-ink/10 p-6 space-y-3">
               <input type="hidden" name="userId" value={card.id} />
-              <h2 className="font-serif font-medium text-card-title text-ordift-ink">Staff Number</h2>
+              <h2 className="font-serif font-medium text-card-title text-ordift-ink">Account Classification &amp; Member Number</h2>
               <p className="font-sans text-body-small text-ordift-ink-muted">
-                No staff number assigned yet. Generates the next sequential identifier.
+                Current: <span className="font-medium text-ordift-ink">{card.memberNumber ?? "Not yet assigned"}</span>
+                {card.classificationName ? ` (${card.classificationName})` : ""}
+              </p>
+              <label className="block">
+                <span className="font-sans text-body-small text-ordift-ink-muted">
+                  {card.classificationId ? "Reclassify to" : "Assign classification"}
+                </span>
+                <select
+                  name="classificationId"
+                  defaultValue=""
+                  className="mt-1 w-full rounded-md border border-ordift-ink/20 px-3 py-2 font-sans text-body-small bg-white"
+                >
+                  <option value="">Choose…</option>
+                  {classifications.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name} {c.prefix ? `(${c.prefix}####)` : "(no prefix)"}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <p className="font-sans text-caption text-ordift-ink-muted">
+                Only changes the Member Number when the classification actually changes — a Job Title, Department, or
+                Grade edit never touches it. The previous number is archived, never reused.
               </p>
               <button
                 type="submit"
                 className="rounded-full border border-ordift-ink/30 text-ordift-ink font-sans text-button font-semibold px-6 py-2.5 hover:border-ordift-ink/60 transition-colors"
               >
-                Assign Staff Number
+                {card.classificationId ? "Reclassify" : "Assign"}
               </button>
             </form>
           )}

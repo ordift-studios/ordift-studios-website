@@ -6,7 +6,7 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getCurrentUser, isSuperAdmin } from "@/lib/portal/roles";
 import { logActivity } from "@/lib/admin/activityLog";
-import { generateStaffNumber } from "@/lib/shared/recordId";
+import { assignClassification } from "@/lib/portal/memberNumbers";
 
 // All three actions return void and redirect back to the read-only view
 // on completion — same "plain <form action={...}>, no client wrapper"
@@ -89,35 +89,24 @@ export async function updateStaffOperationalDetailsAction(formData: FormData): P
   redirect(`/admin/profile/${targetUserId}`);
 }
 
-// Assigns the next staff number (numbers-only, e.g. "000001" — see
-// generateStaffNumber()) — Super Admin only, no-op if the target
-// already has one (never overwrites an existing number).
-export async function assignStaffNumberAction(formData: FormData): Promise<void> {
+// Account Classification / Member Number — Super Admin only. Changing
+// classification (or assigning one for the first time) is the only
+// thing that generates a new Member Number; it archives whatever was
+// previously active for this person first (see assignClassification()
+// in src/lib/portal/memberNumbers.ts) and no-ops if the classification
+// chosen is the same one they already have.
+export async function reclassifyAccountAction(formData: FormData): Promise<void> {
   const currentUser = await getCurrentUser();
   if (!currentUser || !isSuperAdmin(currentUser)) return;
 
   const targetUserId = String(formData.get("userId") ?? "");
-  if (!targetUserId) return;
+  const classificationId = String(formData.get("classificationId") ?? "").trim();
+  if (!targetUserId || !classificationId) return;
 
-  const admin = createAdminClient();
-  const { data: existing } = await admin.from("staff_details").select("staff_number").eq("id", targetUserId).maybeSingle();
-  if (!existing?.staff_number) {
-    const staffNumber = await generateStaffNumber();
-    const { error } = await admin
-      .from("staff_details")
-      .upsert({ id: targetUserId, staff_number: staffNumber }, { onConflict: "id" });
-    if (error) {
-      console.error("[admin profile] failed to assign staff number", error.message);
-      return;
-    }
-
-    await logActivity({
-      actorUserId: currentUser.id,
-      action: "profile.staff_number.assign",
-      entityType: "user",
-      entityId: targetUserId,
-      metadata: { staffNumber },
-    });
+  const result = await assignClassification(targetUserId, classificationId, currentUser.id);
+  if (!result.ok) {
+    console.error("[admin profile] failed to reclassify account", result.error);
+    return;
   }
 
   revalidatePath(`/admin/profile/${targetUserId}`);

@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { verifyTurnstileToken } from "@/lib/turnstile";
+import { assignClassificationBySlug } from "@/lib/portal/memberNumbers";
 
 export type SignupState = { error: string | null };
 
@@ -56,6 +57,10 @@ export async function signUpAction(_prev: SignupState, formData: FormData): Prom
   if (clientRole) {
     await admin.from("user_roles").insert({ user_id: data.user.id, role_id: clientRole.id });
   }
+
+  // Every self-signup starts as "Client" — see memberNumbers.ts. Never
+  // blocks signup on failure, same posture as the role grant above.
+  await assignClassificationBySlug(data.user.id, "client");
 
   if (!data.session) {
     redirect("/portal/login?confirmEmail=1");

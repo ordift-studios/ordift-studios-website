@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { getOverviewStats } from "@/lib/admin/overview";
 import { getRecentActivity } from "@/lib/admin/activityLog";
+import ActiveUsersPanel from "@/components/admin/ActiveUsersPanel";
 
 export const metadata: Metadata = {
   title: "Overview — Ordift Studios Admin",
@@ -66,6 +67,8 @@ export default async function AdminOverviewPage() {
           href="/admin/users"
         />
       </section>
+
+      <ActiveUsersPanel />
 
       <section>
         <h2 className="font-serif font-medium text-body text-ordift-ink mb-4">Recent Activity</h2>

@@ -3,9 +3,11 @@ import { redirect } from "next/navigation";
 import { getCurrentUser, isSuperAdmin } from "@/lib/portal/roles";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { addLookupOptionAction, toggleLookupOptionAction } from "./actions";
+import { listClassifications } from "@/lib/portal/memberNumbers";
+import ClassificationManager from "./ClassificationManager";
 
 export const metadata: Metadata = {
-  title: "Titles & Engagement Types — Ordift Studios Admin",
+  title: "Titles, Engagement Types & Classifications — Ordift Studios Admin",
   robots: { index: false, follow: false },
 };
 
@@ -65,9 +67,10 @@ export default async function AdminLookupsPage() {
   const user = await getCurrentUser();
   if (!user || !isSuperAdmin(user)) redirect("/admin/overview");
 
-  const [operationalTitles, engagementTypes] = await Promise.all([
+  const [operationalTitles, engagementTypes, classifications] = await Promise.all([
     loadLookup("operational_titles"),
     loadLookup("engagement_types"),
+    listClassifications(true),
   ]);
 
   return (
@@ -77,18 +80,19 @@ export default async function AdminLookupsPage() {
           Admin — Super Admin only
         </p>
         <h1 className="font-serif font-medium text-section-heading lg:text-section-heading-desktop text-ordift-ink">
-          Titles &amp; Engagement Types
+          Titles, Engagement Types &amp; Classifications
         </h1>
         <p className="font-sans text-body-small text-ordift-ink-muted mt-2 max-w-2xl">
-          These describe a collaborator&apos;s role and working relationship — they never affect system
-          permissions. Deactivating an option hides it from new selections without breaking accounts that
-          already use it.
+          Titles and Engagement Types describe a collaborator&apos;s role and working relationship — they never
+          affect system permissions. Account Classifications drive Member Numbers instead — a separate, configurable
+          identity system (see the section below).
         </p>
       </div>
 
       <div className="grid md:grid-cols-2 gap-6">
         <LookupTable table="operational_titles" title="Operational Titles" rows={operationalTitles} />
         <LookupTable table="engagement_types" title="Engagement Types" rows={engagementTypes} />
+        <ClassificationManager classifications={classifications} />
       </div>
     </div>
   );
