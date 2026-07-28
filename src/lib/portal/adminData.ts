@@ -8,6 +8,7 @@ export type AdminUserRow = {
   roles: RoleSlug[];
   createdAt: string;
   emailConfirmedAt: string | null;
+  lastSignInAt: string | null;
   accessStatus: AccessStatus;
   accessStatusReason: string | null;
   accessStatusChangedAt: string | null;
@@ -62,8 +63,13 @@ async function listUsersPage(admin: ReturnType<typeof createAdminClient>, page: 
 export async function listUsersWithRoles(): Promise<AdminUserListResult> {
   const admin = createAdminClient();
 
-  const allAuthUsers: { id: string; email: string | null; created_at: string; email_confirmed_at: string | null }[] =
-    [];
+  const allAuthUsers: {
+    id: string;
+    email: string | null;
+    created_at: string;
+    email_confirmed_at: string | null;
+    last_sign_in_at: string | null;
+  }[] = [];
   let page = 1;
   for (;;) {
     const { data, error } = await listUsersPage(admin, page);
@@ -77,6 +83,7 @@ export async function listUsersWithRoles(): Promise<AdminUserListResult> {
         email: u.email ?? null,
         created_at: u.created_at,
         email_confirmed_at: u.email_confirmed_at ?? null,
+        last_sign_in_at: u.last_sign_in_at ?? null,
       }))
     );
     if (!data.nextPage) break;
@@ -134,6 +141,7 @@ export async function listUsersWithRoles(): Promise<AdminUserListResult> {
         roles: rolesByUserId.get(u.id) ?? [],
         createdAt: u.created_at,
         emailConfirmedAt: u.email_confirmed_at,
+        lastSignInAt: u.last_sign_in_at,
         accessStatus: (profile?.access_status as AccessStatus | undefined) ?? "active",
         accessStatusReason: profile?.access_status_reason ?? null,
         accessStatusChangedAt: profile?.access_status_changed_at ?? null,

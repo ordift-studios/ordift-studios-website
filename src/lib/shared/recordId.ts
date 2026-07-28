@@ -26,7 +26,6 @@ export const RECORD_PREFIXES = [
   "CLT", // Client
   "INV", // Invoice
   "PRJ", // Project
-  "STAFF", // Staff Number (Admin Profile Quick Card, migration 0017)
 ] as const;
 
 export type RecordPrefix = (typeof RECORD_PREFIXES)[number];
@@ -51,4 +50,28 @@ export async function generateRecordId(prefix: RecordPrefix, date = new Date()):
 
   const sequence = String(data as number).padStart(6, "0");
   return `${prefix}-${year}-${sequence}`;
+}
+
+// Staff Numbers are numbers-only — no visible prefix, no visible year —
+// deliberately not part of the PREFIX-YYYY-NNNNNN family above, so the
+// value doesn't announce "this is an internal staff record" to a casual
+// viewer (per explicit instruction). Still reuses the same atomic
+// next_record_sequence() counter, keyed by an internal "STAFF" prefix
+// that is never displayed, with a fixed p_year of 0 (never a real
+// calendar year) so the counter never resets annually — since the year
+// isn't shown, resetting it would eventually produce two different
+// people with the same visible number, which a per-year counter would
+// allow but a single never-resetting one cannot.
+export async function generateStaffNumber(): Promise<string> {
+  const admin = createAdminClient();
+  const { data, error } = await admin.rpc("next_record_sequence", {
+    p_prefix: "STAFF",
+    p_year: 0,
+  });
+
+  if (error) {
+    throw new Error(`[recordId] failed to generate staff number: ${error.message}`);
+  }
+
+  return String(data as number).padStart(6, "0");
 }

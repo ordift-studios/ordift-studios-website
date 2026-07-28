@@ -179,7 +179,7 @@ export default async function AdminProfilePage({
               <input type="hidden" name="userId" value={card.id} />
               <h2 className="font-serif font-medium text-card-title text-ordift-ink">Staff Number</h2>
               <p className="font-sans text-body-small text-ordift-ink-muted">
-                No staff number assigned yet. Generates the next STAFF-{new Date().getFullYear()}-NNNNNN identifier.
+                No staff number assigned yet. Generates the next sequential identifier.
               </p>
               <button
                 type="submit"

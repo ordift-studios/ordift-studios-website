@@ -6,7 +6,7 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getCurrentUser, isSuperAdmin } from "@/lib/portal/roles";
 import { logActivity } from "@/lib/admin/activityLog";
-import { generateRecordId } from "@/lib/shared/recordId";
+import { generateStaffNumber } from "@/lib/shared/recordId";
 
 // All three actions return void and redirect back to the read-only view
 // on completion — same "plain <form action={...}>, no client wrapper"
@@ -89,8 +89,9 @@ export async function updateStaffOperationalDetailsAction(formData: FormData): P
   redirect(`/admin/profile/${targetUserId}`);
 }
 
-// Assigns the next STAFF-YYYY-NNNNNN number — Super Admin only, no-op if
-// the target already has one (never overwrites an existing number).
+// Assigns the next staff number (numbers-only, e.g. "000001" — see
+// generateStaffNumber()) — Super Admin only, no-op if the target
+// already has one (never overwrites an existing number).
 export async function assignStaffNumberAction(formData: FormData): Promise<void> {
   const currentUser = await getCurrentUser();
   if (!currentUser || !isSuperAdmin(currentUser)) return;
@@ -101,7 +102,7 @@ export async function assignStaffNumberAction(formData: FormData): Promise<void>
   const admin = createAdminClient();
   const { data: existing } = await admin.from("staff_details").select("staff_number").eq("id", targetUserId).maybeSingle();
   if (!existing?.staff_number) {
-    const staffNumber = await generateRecordId("STAFF");
+    const staffNumber = await generateStaffNumber();
     const { error } = await admin
       .from("staff_details")
       .upsert({ id: targetUserId, staff_number: staffNumber }, { onConflict: "id" });

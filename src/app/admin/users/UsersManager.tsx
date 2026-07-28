@@ -226,6 +226,22 @@ function UserDetail({
         </div>
       )}
 
+      {/* Account info — Last Login lives only here, inside the admin-gated
+          Manage panel (this whole page already requires hasRole(user,
+          "admin")), not on the summary row above or anywhere a
+          non-admin/-super_admin could see it. */}
+      <section className="space-y-1">
+        <h3 className="font-sans text-caption font-semibold uppercase tracking-wide text-ordift-ink-muted">
+          Account Info
+        </h3>
+        <p className="font-sans text-caption text-ordift-ink-muted">
+          Joined {new Date(user.createdAt).toLocaleString()}
+        </p>
+        <p className="font-sans text-caption text-ordift-ink-muted">
+          Last login {user.lastSignInAt ? new Date(user.lastSignInAt).toLocaleString() : "no record"}
+        </p>
+      </section>
+
       {/* Access status */}
       <section className="space-y-2">
         <h3 className="font-sans text-caption font-semibold uppercase tracking-wide text-ordift-ink-muted">
