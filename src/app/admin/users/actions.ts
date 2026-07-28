@@ -391,10 +391,22 @@ export async function inviteCollaboratorAction(formData: FormData): Promise<{ er
     return { error: "Only a Super Admin can invite an Admin or Super Admin." };
   }
 
+  // Supabase's invite email never sets a password — the recipient is
+  // meant to click through and set one. Redirecting to a plain sign-in
+  // form (as this used to) is a dead end: the invite link's session
+  // token gets silently consumed by the client SDK's own URL-detection
+  // on page load, but nothing on that page reads it or prompts for a
+  // password, so the account is left permanently password-less and
+  // every later login attempt fails with "Invalid email or password" —
+  // indistinguishable, from the outside, from a broken account.
+  // /portal/reset-password already parses this exact hash-token format
+  // (ResetPasswordForm.tsx — it doesn't care whether the link was typed
+  // "invite" or "recovery") and walks the person through setting one,
+  // so it's the correct destination for both flows.
   const admin = createAdminClient();
   const { data: invited, error: inviteError } = await admin.auth.admin.inviteUserByEmail(email, {
     data: { full_name: fullName },
-    redirectTo: `${siteUrl()}/portal/login`,
+    redirectTo: `${siteUrl()}/portal/reset-password`,
   });
   if (inviteError || !invited.user) {
     console.error("[admin] invite failed", inviteError?.message);

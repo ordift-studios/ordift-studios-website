@@ -1476,6 +1476,35 @@ seed data (11 classifications), RLS, grants, and live functionality
 Realtime Presence connect/sync) all confirmed working end-to-end on
 production with a QA account, then fully cleaned up.
 
+### Fixed — invited Staff accounts couldn't complete sign-in (2026-07-28)
+
+A real invited Staff member reported being unable to log in despite
+their account looking entirely correct in Staff Management (Active,
+Email Verified, Staff role, Operational Title, Full-time). Traced
+end-to-end before touching anything: middleware doesn't discriminate by
+role; `/admin` explicitly allows Staff; there is no missing "Staff
+Portal" — Staff and Admin share `/admin` by design (Task #85);
+`auth.users`/`profiles`/`staff_details`/`user_roles` were all correctly
+linked. **Root cause:** `inviteCollaboratorAction`'s invite email
+redirected to the plain `/portal/login` form, which has no code to
+consume the invite's session token — the Supabase client SDK silently
+confirmed the email and logged one sign-in event on page load, but the
+person was never prompted to set a password, leaving the account
+permanently password-less. Every later login attempt correctly failed
+with the same generic "Invalid email or password" a real credential
+mismatch would produce — indistinguishable from a broken account from
+the outside, but purely an authentication gap; every authorization
+guard was correct the whole time. **Fix:** the invite redirect now
+points at `/portal/reset-password` instead, reusing the same
+hash-token-parsing page already built for the forgot-password flow
+(`ResetPasswordForm.tsx`, which doesn't care whether the token type is
+`recovery` or `invite`). Verified by inviting a throwaway Staff account
+through the real, fixed action end-to-end — accept invite, set
+password, sign in, land on `/admin` — with no manual steps, then
+deleting the test account. The real affected user was separately
+unblocked via the existing "Forgot password?" flow, which already
+worked correctly and needed no code change.
+
 ### Phase E — Recovery 🟡 PENDING OWNER DECISION (billing)
 Production Supabase project exists, but **the Free plan includes zero
 project backups at all** (confirmed directly in the Dashboard: "Free
