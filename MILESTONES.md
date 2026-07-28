@@ -1464,8 +1464,9 @@ production's "Automatically expose new tables" being disabled. Blocked
 service-role deletion of a QA test account (its `actor_user_id` FK to
 `profiles` had no cascade); worked around via one manual SQL Editor
 delete for that specific test row rather than folded into this pass, so
-this class of gap now has four instances on record — worth a dedicated
-audit-and-fix pass across every table.
+this class of gap now has four instances on record. **Fixed by a
+dedicated audit pass — see migration `0021` below, applied to both
+environments the same day.**
 
 Migrations `0019` (classifications + `member_numbers` ledger,
 `profiles.member_number`, drops `staff_details.staff_number`) and
@@ -1475,6 +1476,64 @@ seed data (11 classifications), RLS, grants, and live functionality
 (classification assignment, lifecycle archival, idempotency, and
 Realtime Presence connect/sync) all confirmed working end-to-end on
 production with a QA account, then fully cleaned up.
+
+### Fixed — service_role grants audit, `0021` (2026-07-28)
+
+Fourth occurrence of the same gap class (`0010`, `0016`, `0018`, now
+`0021`) prompted a full audit instead of another one-off patch: every
+`create table public.*` across `supabase/migrations/*.sql` was
+cross-referenced against every `grant ... to service_role` statement,
+then every ungranted table was cross-referenced against actual
+`service_role` usage in `src/lib/**`, `src/app/**/actions.ts`, and
+`scripts/`. Result: `public.activity_log` was the only real gap —
+`logActivity()` itself never needed the grant (it deliberately uses the
+request-scoped RLS client), but ad-hoc service-role tooling (admin
+cleanup scripts, one-off data fixes) does, which is exactly what
+surfaced it. The other eight ungranted tables at the time
+(`businesses`, `enquiry_notes`, `feature_flags`,
+`deliverable_categories`, `deliverables`, `model_profiles`,
+`vendor_profiles`, `request_types`) were confirmed, table by table, to
+have no `service_role` code path anywhere — deliberately left
+ungranted rather than pre-granting speculatively. Verified on staging
+(full CRUD, then the exact previously-blocked cleanup scenario
+replicated and resolved end-to-end) and again on production after
+approval (grant live, blocked test account now deletes cleanly, the
+other eight tables independently confirmed still correctly restricted
+to `authenticated`-only — production is the environment where that
+restriction actually matters, since it's the one with "Automatically
+expose new tables" disabled).
+
+**Service-role grant policy, going forward** (added to
+`ADMIN_GUIDE.md` §10 — read it before writing any migration that
+creates a table or a `service_role`-touching code path):
+- **Grant `service_role` on a table only when code actually calls it
+  through the service-role client** (`createAdminClient()` in
+  `src/lib/supabase/admin.ts`, or a one-off script under `scripts/`).
+  Never grant "just in case."
+- **When adding a new service-role code path to an existing table**,
+  check whether that table already has a `service_role` grant before
+  assuming it does — production's "Automatically expose new tables"
+  setting is disabled, so a table can work perfectly for every
+  `authenticated`-session code path and still silently fail the moment
+  something tries to reach it via `service_role`.
+- **Staging is not a reliable check for this** — it has "Automatically
+  expose new tables" enabled, so `service_role` already has access to
+  everything there regardless of explicit grants. A grant (or its
+  absence) only becomes observable on production. Verify the
+  *mechanism* on staging (the grant statement runs, the CRUD works);
+  verify the *restriction* only matters on production.
+- **Checklist before shipping a migration that creates a table:**
+  1. Does any code path read/write this table via `createAdminClient()`
+     or a `scripts/` file? If yes, add the grant in the same migration
+     that creates the table — don't wait for it to break.
+  2. If unsure, grep `src/lib/**`, `src/app/**/actions.ts`, and
+     `scripts/` for the table name before deciding.
+  3. If no service-role path exists yet but one is clearly coming
+     (e.g. a companion admin-tooling script planned for the same
+     feature), grant it then, not speculatively now.
+  4. Never broaden a grant to "fix" an unrelated failure — trace the
+     actual failing table first (`error.code === '42501'` plus the
+     table name in the query is the tell).
 
 ### Fixed — invited Staff accounts couldn't complete sign-in (2026-07-28)
 

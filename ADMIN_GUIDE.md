@@ -138,6 +138,13 @@ For all future testing, use a reserved naming convention rather than ad hoc name
 - Auth providers should stay Email-only unless there's a specific reason to add an OAuth provider — every additional provider is additional attack surface.
 - Review the Supabase Security Advisor (Dashboard → Advisors → Security) periodically — it flags real, actionable issues (missing grants, overly-permissive functions) as they arise from schema changes.
 
+**`service_role` grants — this has recurred four times (`0010`, `0016`, `0018`, `0021`), so it's a standing policy now, not a one-off fix each time.** Production has "Automatically expose new tables" disabled — every new table needs `service_role` privileges granted *explicitly*, in the same migration that creates it, or `service_role` gets zero access to it no matter what RLS policies say. Staging has that setting enabled, so it can never surface a missing grant — a table can pass every staging check and still fail on production the first time something calls it via `service_role`.
+
+- **Grant only when something actually calls the table via `service_role`** (`createAdminClient()` in `src/lib/supabase/admin.ts`, or a `scripts/` file). Never grant speculatively — least privilege means an ungranted table is the correct, intentional default, not an oversight to "fix" preemptively.
+- **Before shipping a migration that creates a table:** grep `src/lib/**`, `src/app/**/actions.ts`, and `scripts/` for that table name. If a `service_role` path exists (or is clearly coming in the same feature), grant it there and then — don't wait for it to break in production.
+- **Staging "Success" on a grant migration proves the SQL is valid, not that the grant was necessary or sufficient** — the only environment that can confirm a grant actually matters is production, since only production enforces the restriction the grant lifts.
+- **Diagnosing a failure:** `error.code === '42501'` ("permission denied for table X") from a `service_role` client, on production specifically, is this exact gap — not an RLS problem, not a role problem. Add the grant for that one table; don't broaden anything else.
+
 ## 11. Backup and Recovery Procedures
 
 **Not yet formally verified as of this writing** — see `PRODUCTION_READINESS_REPORT.md` §2. Supabase provides automatic daily backups on paid plans; confirm the current retention window under Dashboard → Database → Backups, and do a test restore into a scratch project at least once before the platform holds real client data at volume. This is tracked as Milestone 0.6 in `MILESTONES.md`.

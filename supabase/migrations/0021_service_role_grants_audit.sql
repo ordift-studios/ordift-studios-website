@@ -1,0 +1,64 @@
+-- Ordift Studios — service_role grants audit (2026-07-28)
+--
+-- Prompted by the fourth occurrence of the same gap class: production
+-- has "Automatically expose new tables" disabled, so service_role gets
+-- zero table-level privileges until explicitly granted, regardless of
+-- RLS policies (0010_service_role_grants_fix.sql, then again in
+-- 0016_service_role_grants.sql, then again in
+-- 0018_grades_service_role_grant.sql). This time it was
+-- public.activity_log, discovered while cleaning up a QA verification
+-- account during 0019/0020's production rollout: a service-role delete
+-- of the account failed on the actor_user_id -> profiles(id) foreign
+-- key, because the service-role client couldn't SELECT or DELETE the
+-- activity_log row referencing it — service_role was never granted
+-- anything on this table, only `authenticated` (migration
+-- 0004_admin_platform.sql).
+--
+-- This migration is the result of a full audit rather than another
+-- one-off fix: every `create table public.*` across supabase/migrations
+-- was cross-referenced against every `grant ... to service_role`
+-- statement, then every table gap was cross-referenced against actual
+-- service_role usage in src/lib/**, src/app/**/actions.ts, and
+-- scripts/ (anything using src/lib/supabase/admin.ts's
+-- createAdminClient()) to separate "no code touches this via
+-- service_role" from "code does, uses tooling will need."
+--
+-- Result: public.activity_log is the only real gap.
+--   - The application itself never needed this grant — logActivity()
+--     (src/lib/admin/activityLog.ts) deliberately uses the
+--     request-scoped client, not service_role, relying on RLS
+--     ("activity_log: staff read"/"activity_log: staff insert"), by
+--     design. The gap only bites ad-hoc service-role tooling (admin
+--     cleanup scripts, one-off data fixes) — exactly what hit it today.
+--   - Every other currently-ungranted table (public.businesses,
+--     public.enquiry_notes, public.feature_flags,
+--     public.deliverable_categories, public.deliverables,
+--     public.model_profiles, public.vendor_profiles,
+--     public.request_types) was confirmed, table by table, to be
+--     accessed exclusively through the request-scoped client
+--     everywhere in the codebase — no service_role code path touches
+--     any of them. Granting them now would be speculative privilege
+--     expansion with no current caller, against this project's
+--     established least-privilege discipline (see
+--     PRODUCTION_READINESS_REPORT.md §4) — better to grant a table
+--     when something actually needs it, the same reactive pattern
+--     0010/0016/0018 already followed, than to pre-grant everything
+--     "just in case."
+--   - public.profiles has select+update but not insert/delete via
+--     service_role (0001_init.sql, 0012_service_role_update_profiles.sql)
+--     — checked and confirmed still correct: no service_role code path
+--     inserts or deletes a profile row; creation is exclusively the
+--     Auth trigger, deletion goes through Supabase Auth's own
+--     `admin.deleteUser()`, which cascades at the database level, not
+--     through a table-level DELETE from application code.
+--   - public.operational_titles and public.engagement_types are
+--     touched via service_role in src/app/admin/lookups/actions.ts
+--     through a dynamic `table` variable (not a literal string, so it
+--     didn't show up in a plain grep for `.from("...")`) — both
+--     already have full CRUD grants from 0010, so no gap there.
+
+begin;
+
+grant select, insert, update, delete on public.activity_log to service_role;
+
+commit;
