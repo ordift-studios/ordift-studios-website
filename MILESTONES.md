@@ -1402,8 +1402,13 @@ new tables" disabled, so `service_role` gets zero table privileges
 until explicitly granted). Doesn't affect the live feature itself
 (it only ever reads/writes `grades` through the logged-in admin's own
 session), but blocks service-role tooling. Fixed as migration `0018`
-(one-line grant), pending owner's staging → production run before the
-founder's own account gets Grade 10 assigned.
+(one-line grant) — applied and verified on staging and production; the
+founder's own account (`matetey@ordiftghana.com`) was then assigned
+Grade 10 (Founder/CEO), per the original spec's default.
+
+**Refinement (2026-07-28, same day):** two owner-requested changes shipped after the initial rollout:
+- **Staff Number format simplified** — dropped the visible `STAFF-` prefix and `YYYY` year (e.g. `STAFF-2026-000001` → `000001`), since the year duplicated the existing Date Joined field and the literal `STAFF` text made the identifier's purpose obvious to a casual viewer. The counter itself still reuses `next_record_sequence()` (migration 0013), now keyed by an internal, never-displayed `"STAFF"` prefix with a fixed year of `0` so it never resets annually — this matters because, with the year no longer part of the visible string, a per-year counter would otherwise eventually assign two different people the same-looking number.
+- **Last Login added to the Admin Users & Roles "Manage" panel** — previously only visible on a person's own Quick Card; now also visible to Admin/Super Admin for any account via `/admin/users`, using that page's existing admin-only gate (no new access-control code needed).
 
 ### Phase E — Recovery 🟡 PENDING OWNER DECISION (billing)
 Production Supabase project exists, but **the Free plan includes zero
