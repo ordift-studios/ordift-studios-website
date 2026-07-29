@@ -39,12 +39,33 @@ export async function sendEmail(params: {
   text: string;
   logPrefix: string;
 }): Promise<EmailResult> {
-  const { to, subject, html, text, logPrefix } = params;
+  const { to, subject, text, logPrefix } = params;
 
   if (!productionSendingEnabled()) {
     console.log(`${logPrefix} [test-mode] would send email to ${to}\nSubject: ${subject}\n${text}\n`);
     return { ok: true, mode: "logged", attempts: 0 };
   }
+
+  return sendEmailNow(params);
+}
+
+// Unconditional send with the same retry/backoff and classification
+// logic as sendEmail(), but skipping the productionSendingEnabled()
+// gate entirely. Every real form must go through sendEmail() above so
+// FORMS_SENDING_ENABLED is always respected — this exists solely for
+// the Super-Admin verify-send diagnostic
+// (src/app/api/admin/resend/verify-send/route.ts), whose entire
+// purpose is to prove Resend credentials/delivery work regardless of
+// whether the public-facing flag is on, so it must never silently
+// short-circuit into "logged" mode.
+export async function sendEmailNow(params: {
+  to: string;
+  subject: string;
+  html: string;
+  text: string;
+  logPrefix: string;
+}): Promise<EmailResult> {
+  const { to, subject, html, text, logPrefix } = params;
 
   const apiKey = process.env.RESEND_API_KEY;
   const from = process.env.EMAIL_FROM_ADDRESS;

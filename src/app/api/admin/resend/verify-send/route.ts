@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireSuperAdminApiUser } from "@/lib/admin/apiAuth";
-import { sendEmail } from "@/lib/shared/email/dispatch";
+import { sendEmailNow } from "@/lib/shared/email/dispatch";
 import { buildAcknowledgementEmail, buildAdminNotificationEmail } from "@/lib/enquiry/emailTemplates";
 import type { EnquiryRecord } from "@/lib/enquiry/storage";
 import {
@@ -16,26 +16,26 @@ import type { ProjectRequestRecord } from "@/lib/projectRequests/sheetsSync";
 
 // Super Admin-only, one-shot verification action — same precedent as
 // /api/admin/google-sheets/verify-write. Proves the production
-// RESEND_API_KEY actually authenticates and sends by calling the same
-// shared sendEmail() dispatcher every real form uses
-// (src/lib/shared/email/dispatch.ts) from inside the running
-// deployment — the only place that can read a Vercel "Sensitive"
-// environment variable's real value; the CLI/dashboard/`vercel env
-// pull` cannot, by design.
+// RESEND_API_KEY actually authenticates and sends by calling
+// sendEmailNow() (src/lib/shared/email/dispatch.ts) from inside the
+// running deployment — the only place that can read a Vercel
+// "Sensitive" environment variable's real value; the CLI/dashboard/
+// `vercel env pull` cannot, by design.
 //
 // Exercises the real template builders for every email-producing form
 // (Contact Enquiry, Workshop Registration, Project Requests) with
-// clearly-marked QA data, through the real dispatcher — so this proves
-// template rendering, delivery, AND retry/classification wiring, not
-// just that *an* email can be sent. Every send goes to
-// EMAIL_ADMIN_NOTIFICATION_TO only — never to a fabricated external
-// address — so nothing reaches a real third party.
+// clearly-marked QA data, through the real send/retry/classification
+// logic — so this proves template rendering, delivery, AND
+// retry/classification wiring, not just that *an* email can be sent.
+// Every send goes to EMAIL_ADMIN_NOTIFICATION_TO only — never to a
+// fabricated external address — so nothing reaches a real third party.
 //
-// Deliberately bypasses FORMS_SENDING_ENABLED's *visitor-facing* gate
-// on purpose (this route itself is never on a visitor-facing path) —
-// but still respects productionSendingEnabled() inside sendEmail()
-// itself, so on staging this correctly reports "logged" instead of
-// silently pretending to send.
+// Deliberately calls sendEmailNow() rather than the gated sendEmail():
+// this route's entire purpose is proving Resend actually works, so it
+// must always attempt a real send regardless of FORMS_SENDING_ENABLED
+// or environment — routing it through the gate would make every result
+// report "logged" without ever touching Resend, silently defeating the
+// verification (this happened once; see commit history).
 export async function POST() {
   const user = await requireSuperAdminApiUser();
   if (!user) {
@@ -66,7 +66,7 @@ export async function POST() {
   > = {};
 
   async function run(label: string, subject: string, html: string, text: string) {
-    const result = await sendEmail({ to, subject: `[QA VERIFY] ${subject}`, html, text, logPrefix: "[verify-send]" });
+    const result = await sendEmailNow({ to, subject: `[QA VERIFY] ${subject}`, html, text, logPrefix: "[verify-send]" });
     results[label] = result.ok
       ? { ok: true, mode: result.mode, attempts: result.attempts }
       : { ok: false, detail: result.error, attempts: result.attempts, permanent: result.permanent };
