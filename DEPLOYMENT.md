@@ -250,15 +250,63 @@ V1.3:
   happen after Migration 0003's live verification, which is now
   complete. **Not yet actioned as of V1.3 closure** — see MILESTONES.md
   V1.3 "Final closure" for the explicit flag on this.
-- **Backup and recovery checks** — ✅ audited (2026-07-30). Confirmed
-  directly in the Dashboard: Free plan includes zero automatic
-  backups, PITR is a Pro-plan add-on ($100/mo on top of Pro), no
-  Supabase Storage buckets are in use. Full findings, an interim
-  manual-backup procedure, and a documented restoration/rollback
-  process are in `DISASTER_RECOVERY.md`. **Still pending your
-  decision:** whether to upgrade to Pro for automatic backups — see
-  `MILESTONES.md` Phase E.
+- **Backup and recovery checks** — ✅ audited (2026-07-30) and ✅
+  decided (2026-07-30): staying on the Free plan, with a documented
+  weekly manual-backup schedule as the actual (not interim) strategy.
+  Full procedure, verification steps, restoration process, and the
+  concrete milestone for revisiting the Pro-plan decision are in
+  `DISASTER_RECOVERY.md`.
 - Test data deletion — **done** as part of V1.3's live verification
   (all test rows, test accounts, and temporary scripts removed,
   confirmed via direct re-query); listed here only so the full
   pre-launch list stays in one place.
+
+## Removing the launch holding page (final go-live step)
+
+`LAUNCH_HOLDING_PAGE=true` is currently set in Production, rewriting
+every public route to `/coming-soon` (see `src/proxy.ts` and
+`.env.example` for the mechanism). `/studio`, `/admin`, `/portal`, and
+`/api` stay reachable throughout, so this has never blocked any of the
+verification work in this project's history. This is the **last
+step** of the actual launch — do not remove it until every other item
+in `OPERATIONS_MANUAL.md`'s Business Launch Checklist is genuinely
+complete, since removing it makes the real site (including its current
+`[SAMPLE]`-labeled workshop content, if not yet replaced) visible to
+the public immediately.
+
+**Procedure — zero downtime, takes effect on the next request after
+the env var change propagates (typically under a minute, no redeploy
+required):**
+
+1. Confirm every item in the Business Launch Checklist is checked off
+   — technical *and* content. This step is irreversible in the sense
+   that the moment the page is live, it's live for real visitors;
+   there's no "soft launch" undo beyond turning the holding page back
+   on (which would then hide a site real visitors have already started
+   interacting with).
+2. In Vercel → Project Settings → Environment Variables, find
+   `LAUNCH_HOLDING_PAGE` under **Production** and either delete it
+   entirely or set its value to `false` (either works — `proxy.ts`
+   only checks for the exact string `"true"`).
+3. **No redeploy is required** — Vercel environment variable changes
+   take effect for new serverless function invocations without a
+   rebuild, since `process.env.LAUNCH_HOLDING_PAGE` is read at request
+   time, not at build time. If you want to be certain the change has
+   propagated everywhere, a fresh `vercel --prod` deploy is harmless
+   and guarantees it, but isn't strictly necessary.
+4. Verify immediately: visit `https://ordiftstudios.com/` in a private/
+   incognito window (to bypass any cached response) and confirm the
+   real homepage loads, not `/coming-soon`.
+5. Spot-check 2–3 other public routes (`/services`, `/work`,
+   `/workshops`, `/book`) to confirm the rewrite is fully gone
+   everywhere, not just on `/`.
+6. Confirm `/studio`, `/admin`, and `/portal` still work exactly as
+   before — this step should have zero effect on them, but verify
+   rather than assume.
+7. Document the actual go-live date and time in `MILESTONES.md`, same
+   as every other dated milestone in this project's history.
+
+**Rollback if something is wrong post-removal:** re-add
+`LAUNCH_HOLDING_PAGE=true` in Vercel Production — takes effect on the
+next request, no redeploy, no data impact (this flag never touches the
+database, only routing).
