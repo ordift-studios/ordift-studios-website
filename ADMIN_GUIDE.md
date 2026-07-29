@@ -147,16 +147,13 @@ For all future testing, use a reserved naming convention rather than ad hoc name
 
 ## 11. Backup and Recovery Procedures
 
-**Not yet formally verified as of this writing** — see `PRODUCTION_READINESS_REPORT.md` §2. Supabase provides automatic daily backups on paid plans; confirm the current retention window under Dashboard → Database → Backups, and do a test restore into a scratch project at least once before the platform holds real client data at volume. This is tracked as Milestone 0.6 in `MILESTONES.md`.
+**Superseded by `DISASTER_RECOVERY.md`** (2026-07-30) — the full audited backup capability, the manual backup strategy actually in effect (Free plan, weekly `pg_dump`), restoration procedures, and the concrete milestone for revisiting a Pro-plan upgrade all live there now, kept as one authoritative document rather than duplicated across two. See also `OPERATIONS_MANUAL.md` for the routine weekly/monthly backup checklist as part of ongoing operations.
 
 ## 12. Environment Variables and Deployment Notes
 
-Production environment variables live in Vercel (Project Settings → Environment Variables), never committed to git. As of this writing, production has:
-`RESEND_API_KEY`, `EMAIL_ADMIN_NOTIFICATION_TO`, `EMAIL_FROM_ADDRESS`, `LAUNCH_HOLDING_PAGE`, `NEXT_PUBLIC_SITE_URL`, `SANITY_API_TOKEN`, `SUPABASE_SECRET_KEY`, `LEGAL_PAGES_APPROVED`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`, `NEXT_PUBLIC_SUPABASE_URL`, `SANITY_API_VERSION`, `NEXT_PUBLIC_SANITY_DATASET`, `NEXT_PUBLIC_SANITY_PROJECT_ID`, `SITE_ENV`.
+Production environment variables live in Vercel (Project Settings → Environment Variables), never committed to git. **`.env.example` is the single source of truth for the full current variable list and what each one does** — a static list here would drift out of sync every time a variable is added (it already had, twice, before this note replaced it). Run `vercel env ls production` for the live, authoritative list at any time.
 
-**Not yet present in production** (see `.env.example` for the full expected set): Google Sheets service-account credentials, Google Analytics measurement ID, `OPERATIONS_EMAIL` (§16.2 — optional, falls back to `EMAIL_ADMIN_NOTIFICATION_TO`), and the public contact-info display variables. See `PRODUCTION_READINESS_REPORT.md` §2 for what each gates.
-
-Deployment is via Vercel, connected to the project's git repository. See `DEPLOYMENT.md` for the full historical deployment log and known issues.
+Deployment is via Vercel, connected to the project's git repository. See `DEPLOYMENT.md` for the full historical deployment log, known issues, and the launch-holding-page removal procedure.
 
 ## 13. Routine Maintenance
 
