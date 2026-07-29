@@ -26,6 +26,10 @@ export const workshopRegistrationSchema = z.object({
 
   // Honeypot — must stay empty.
   website: z.string().max(0).optional().or(z.literal("")),
+
+  // Cloudflare Turnstile response token — verified server-side in
+  // src/app/api/workshop-registration/route.ts via src/lib/turnstile.ts.
+  turnstileToken: z.string().optional().or(z.literal("")),
 });
 
 export type WorkshopRegistrationInput = z.infer<typeof workshopRegistrationSchema>;

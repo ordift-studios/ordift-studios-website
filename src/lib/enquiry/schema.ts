@@ -84,6 +84,11 @@ export const enquirySchema = z.object({
 
   // Anti-spam — must stay empty. Never surfaced in the real UI.
   website: z.string().max(0).optional().or(z.literal("")),
+
+  // Cloudflare Turnstile response token — verified server-side in
+  // src/app/api/enquiry/route.ts via src/lib/turnstile.ts. Not a form
+  // field the visitor fills in, so it's excluded from STEP_FIELDS.
+  turnstileToken: z.string().optional().or(z.literal("")),
 });
 
 export type EnquiryInput = z.infer<typeof enquirySchema>;

@@ -5,6 +5,7 @@ import Link from "next/link";
 import { z } from "zod";
 import { workshopRegistrationSchema } from "@/lib/workshops/registrationSchema";
 import Button from "@/components/Button";
+import TurnstileWidget from "@/components/TurnstileWidget";
 
 const inputClasses =
   "w-full min-h-11 rounded-lg border border-black/15 bg-white px-4 py-2.5 font-sans text-body text-ordift-ink placeholder:text-ordift-ink-muted/60 focus:outline-none focus:ring-2 focus:ring-ordift-gold focus:border-transparent";
@@ -22,7 +23,13 @@ type FormState = {
   experienceLevel: "" | "beginner" | "intermediate" | "advanced" | "all-levels";
   consent: boolean;
   website: string;
+  turnstileToken: string;
 };
+
+// Inlined at build time, same as inside TurnstileWidget itself — lets
+// the submit button require a completed challenge only when Turnstile
+// is actually configured, without a round trip to find out.
+const turnstileRequired = Boolean(process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY);
 
 export default function RegistrationForm({ workshopSlug }: { workshopSlug: string }) {
   const [data, setData] = useState<FormState>({
@@ -33,6 +40,7 @@ export default function RegistrationForm({ workshopSlug }: { workshopSlug: strin
     experienceLevel: "",
     consent: false,
     website: "",
+    turnstileToken: "",
   });
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState(false);
@@ -208,7 +216,17 @@ export default function RegistrationForm({ workshopSlug }: { workshopSlug: strin
       </label>
       <FieldError message={errors.consent} />
 
-      <Button type="submit" variant="primary" disabled={submitting} className="w-full sm:w-auto">
+      <TurnstileWidget
+        onVerify={(token) => update("turnstileToken", token)}
+        onExpire={() => update("turnstileToken", "")}
+      />
+
+      <Button
+        type="submit"
+        variant="primary"
+        disabled={submitting || (turnstileRequired && !data.turnstileToken)}
+        className="w-full sm:w-auto"
+      >
         {submitting ? "Registering…" : "Register"}
       </Button>
     </form>

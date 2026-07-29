@@ -7,6 +7,7 @@ import { PATHWAYS, pathwayLabel } from "@/lib/enquiry/pathways";
 import { BUDGET_RANGES, budgetRangeLabel } from "@/lib/enquiry/budgetRanges";
 import { enquirySchema, STEP_FIELDS, type EnquiryInput } from "@/lib/enquiry/schema";
 import Button from "@/components/Button";
+import TurnstileWidget from "@/components/TurnstileWidget";
 
 const STEP_LABELS = [
   "Choose a service",
@@ -40,7 +41,13 @@ const initialState: FormState = {
   sourcePage: "",
   idempotencyKey: "",
   website: "",
+  turnstileToken: "",
 };
+
+// Inlined at build time, same as inside TurnstileWidget itself — lets
+// the submit button require a completed challenge only when Turnstile
+// is actually configured, without a round trip to find out.
+const turnstileRequired = Boolean(process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY);
 
 function FieldLabel({ children, htmlFor, optional }: { children: React.ReactNode; htmlFor: string; optional?: boolean }) {
   return (
@@ -429,6 +436,13 @@ export default function BookingForm({ initialService }: { initialService?: strin
               <span className="text-ordift-ink-muted">(Optional.)</span>
             </span>
           </label>
+
+          <div className="mt-6">
+            <TurnstileWidget
+              onVerify={(token) => update("turnstileToken", token)}
+              onExpire={() => update("turnstileToken", "")}
+            />
+          </div>
         </div>
       )}
 
@@ -448,7 +462,12 @@ export default function BookingForm({ initialService }: { initialService?: strin
             </Button>
           )}
           {step === 5 && (
-            <Button variant="primary" onClick={handleSubmit} type="submit" disabled={submitting}>
+            <Button
+              variant="primary"
+              onClick={handleSubmit}
+              type="submit"
+              disabled={submitting || (turnstileRequired && !data.turnstileToken)}
+            >
               {submitting ? "Submitting…" : "Submit Enquiry"}
             </Button>
           )}

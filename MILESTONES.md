@@ -1658,6 +1658,84 @@ deploy. `FORMS_SENDING_ENABLED` remains unset in production throughout
 this entire pass — visitor-facing forms still log instead of sending
 real email until that flag is explicitly turned on.
 
+### CAPTCHA / automated abuse protection — Phase 4.1 (2026-07-29)
+
+Extended the existing Cloudflare Turnstile implementation (previously
+only wired into `/portal/signup` and `/portal/login`) to cover the two
+genuinely public, unauthenticated, record-creating forms: Contact
+Enquiry (`/book`) and Workshop Registration. Confirmed by enumerating
+every `POST` API route and every `"use server"` action outside
+`/portal/**`/`/admin/**` that Project Requests are **not** publicly
+accessible (gated behind portal auth in
+`src/app/portal/(dashboard)/client/projects/[kind]/[id]/requests/actions.ts`)
+and there are no other anonymous form-submission surfaces — so no
+CAPTCHA was needed there per the original scope's own "(if publicly
+accessible)" qualifier.
+
+- `src/lib/turnstile.ts` — `verifyTurnstileToken()` signature unchanged
+  (still a boolean, still a no-op until `TURNSTILE_SECRET_KEY` is set),
+  now logs Cloudflare's specific `error-codes` for observability.
+- `src/components/TurnstileWidget.tsx` — rewritten to support an
+  optional `onVerify`/`onExpire` callback pair (Cloudflare's
+  `data-callback`/`data-expired-callback`) alongside its original
+  implicit form-auto-injection behavior, which stays exactly as-is for
+  `/portal/signup`/`/portal/login` (zero changes needed there). The two
+  new consumers need the token handed to them directly since they
+  submit via `fetch()` with a JSON body, not a native form POST — one
+  (Workshop Registration) has a wrapping `<form>`, the other (Contact
+  Enquiry's multi-step `BookingForm`) has none at all, so callback-based
+  token capture is the only approach that works for both.
+- `enquirySchema`/`workshopRegistrationSchema` gained an optional
+  `turnstileToken` field, verified server-side only — the secret key
+  never leaves `src/lib/turnstile.ts`, never appears in any API
+  response.
+- **Verification order matters:** idempotency check now runs *before*
+  CAPTCHA verification in both routes (previously honeypot → CAPTCHA →
+  idempotency). A Turnstile token is single-use — Cloudflare returns
+  the same `timeout-or-duplicate` error for an expired token and a
+  reused one — so a genuine client retry after a perceived failure
+  (same `idempotencyKey`, but a token already spent on the first
+  attempt) must return the cached result without needing a fresh
+  challenge. Confirmed this is not just theoretical: submitting the
+  same `idempotencyKey` twice, with a valid token on the first call and
+  no token at all on the second, correctly returned the cached
+  reference both times.
+- Client-side: submit buttons on both forms stay disabled until a
+  token is captured, but only when `NEXT_PUBLIC_TURNSTILE_SITE_KEY` is
+  actually set — inert everywhere until real credentials exist, same
+  "code complete, waiting on credentials" pattern as Google Sheets and
+  Resend before their credentials were configured.
+
+**Tested using Cloudflare's own publicly documented dummy test
+credentials** (https://developers.cloudflare.com/turnstile/troubleshooting/testing/),
+not real production keys — every scenario runs deterministically
+without needing an interactive challenge or a real Turnstile site:
+- Valid submission — real dummy sitekey, "always passes" secret key,
+  full flow through the actual widget in a browser: form completed,
+  submitted, saved. **PASS.**
+- Missing token — omitted entirely, rejected by
+  `verifyTurnstileToken()`'s own guard before ever calling Cloudflare.
+  **PASS.**
+- Invalid token — "always fails" secret key. **PASS** (rejected).
+- Expired/reused token — "token already spent" secret key (Cloudflare
+  treats both cases identically). **PASS** (rejected).
+- Duplicate request — same `idempotencyKey` resubmitted without a
+  token, returned the cached reference instead of requiring a fresh
+  challenge or creating a second record. **PASS.**
+- Rate-limit interaction — confirmed the Redis-backed rate limiter
+  (still the very first check in both routes) fires independently and
+  takes priority when tripped, unaffected by the CAPTCHA changes.
+  **PASS** (discovered incidentally during testing — the test client
+  tripped its own rate limit after repeated calls, proving the two
+  layers stack correctly rather than interfering).
+
+All test data (QA enquiry records, temporary dummy-key env vars)
+cleaned up from the staging Supabase project and `.env.local`
+afterward. **Still needed before this protects anything in
+production:** a real Turnstile site created in the Cloudflare
+dashboard and its site key/secret key added to Vercel's Production
+environment — code is complete and tested, but inert until then.
+
 ### Phase E — Recovery 🟡 PENDING OWNER DECISION (billing)
 Production Supabase project exists, but **the Free plan includes zero
 project backups at all** (confirmed directly in the Dashboard: "Free

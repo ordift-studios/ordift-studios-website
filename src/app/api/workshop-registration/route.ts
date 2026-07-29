@@ -19,6 +19,7 @@ import { saveWorkshopRegistrationToSupabase } from "@/lib/supabase/primaryWrite"
 import { checkRateLimit } from "@/lib/shared/rateLimit";
 import { getCachedResult, storeResult } from "@/lib/shared/idempotency";
 import { isStaging } from "@/lib/shared/env";
+import { verifyTurnstileToken } from "@/lib/turnstile";
 
 function clientKey(request: NextRequest): string {
   const forwarded = request.headers.get("x-forwarded-for");
@@ -62,14 +63,32 @@ export async function POST(request: NextRequest) {
     });
   }
 
-  const { website: _honeypot, idempotencyKey, ...data } = parsed.data;
+  const { website: _honeypot, idempotencyKey, turnstileToken, ...data } = parsed.data;
   void _honeypot;
 
+  // Idempotency before CAPTCHA — see src/app/api/enquiry/route.ts for
+  // the identical rationale (a Turnstile token is single-use, so a
+  // genuine retry with the same idempotencyKey must not be forced
+  // through a second challenge).
   if (idempotencyKey) {
     const cached = await getCachedResult(idempotencyKey);
     if (cached) {
       return NextResponse.json({ ok: true, registrationReference: cached.referenceNumber });
     }
+  }
+
+  // CAPTCHA — see src/app/api/enquiry/route.ts for the identical
+  // rationale.
+  const turnstileOk = await verifyTurnstileToken(turnstileToken || null);
+  if (!turnstileOk) {
+    return NextResponse.json(
+      {
+        ok: false,
+        error: "captcha-failed",
+        message: "We couldn't verify you're human. Please refresh the page and try again.",
+      },
+      { status: 403 }
+    );
   }
 
   const workshop = await contentRepository.getWorkshopBySlug(data.workshopSlug);

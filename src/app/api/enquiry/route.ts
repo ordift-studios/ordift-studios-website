@@ -9,6 +9,7 @@ import { syncEnquiryToSheets, type EnquiryRecord } from "@/lib/enquiry/storage";
 import { sendAcknowledgementEmail, sendAdminNotificationEmail } from "@/lib/enquiry/email";
 import { saveEnquiryToSupabase } from "@/lib/supabase/primaryWrite";
 import { isStaging } from "@/lib/shared/env";
+import { verifyTurnstileToken } from "@/lib/turnstile";
 
 function clientKey(request: NextRequest): string {
   const forwarded = request.headers.get("x-forwarded-for");
@@ -73,17 +74,39 @@ export async function POST(request: NextRequest) {
     });
   }
 
-  const { website: _honeypot, idempotencyKey, ...data } = parsed.data;
+  const { website: _honeypot, idempotencyKey, turnstileToken, ...data } = parsed.data;
   void _honeypot;
 
-  // Idempotency: if this exact submission was already processed (client
-  // retried after a perceived failure), return the original result
-  // instead of creating a second enquiry.
+  // Idempotency check comes before CAPTCHA verification on purpose: a
+  // Turnstile token is single-use, so a genuine client retry after a
+  // perceived failure (network blip, etc.) — resubmitting with the same
+  // idempotencyKey but a token already spent on the first attempt —
+  // must be able to return the cached result without needing a fresh
+  // challenge. A truly new submission always has a new idempotencyKey
+  // (generated once per form session) and still goes through CAPTCHA
+  // normally below.
   if (idempotencyKey) {
     const cached = await getCachedResult(idempotencyKey);
     if (cached) {
       return NextResponse.json({ ok: true, referenceNumber: cached.referenceNumber });
     }
+  }
+
+  // CAPTCHA — server-verified only, never trusted from the client beyond
+  // the token itself. No-ops (always passes) until TURNSTILE_SECRET_KEY
+  // is configured, matching the honeypot/rate-limit "protection layers
+  // stack independently" design: this never replaces them, it adds to
+  // them.
+  const turnstileOk = await verifyTurnstileToken(turnstileToken || null);
+  if (!turnstileOk) {
+    return NextResponse.json(
+      {
+        ok: false,
+        error: "captcha-failed",
+        message: "We couldn't verify you're human. Please refresh the page and try again.",
+      },
+      { status: 403 }
+    );
   }
 
   const forcedError = forcedErrorFor(request);
