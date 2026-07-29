@@ -18,9 +18,36 @@ const inter = Inter({
   subsets: ["latin"],
 });
 
+// No dedicated 1200x630 social-share image exists yet — using the gold
+// full-lockup logo as a real, honest stopgap (not a placeholder/invented
+// asset) rather than shipping with no image at all. Swap for a proper
+// OG image whenever one's designed; nothing else needs to change.
+const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? "https://ordiftstudios.com";
+const SITE_DESCRIPTION =
+  "Ordift Studios is a multidisciplinary creative house where photography, film, design, branding, content and talent work as one connected system.";
+
 export const metadata: Metadata = {
-  title: "Ordift Studios",
-  description: "Ordift Studios — a multidisciplinary creative house.",
+  metadataBase: new URL(SITE_URL),
+  title: {
+    default: "Ordift Studios — A Multidisciplinary Creative House",
+    template: "%s — Ordift Studios",
+  },
+  description: SITE_DESCRIPTION,
+  openGraph: {
+    title: "Ordift Studios — A Multidisciplinary Creative House",
+    description: SITE_DESCRIPTION,
+    url: SITE_URL,
+    siteName: "Ordift Studios",
+    images: [{ url: "/brand/logo-full-gold.png", width: 474, height: 524, alt: "Ordift Studios" }],
+    locale: "en_US",
+    type: "website",
+  },
+  twitter: {
+    card: "summary",
+    title: "Ordift Studios — A Multidisciplinary Creative House",
+    description: SITE_DESCRIPTION,
+    images: ["/brand/logo-full-gold.png"],
+  },
 };
 
 export default function RootLayout({
