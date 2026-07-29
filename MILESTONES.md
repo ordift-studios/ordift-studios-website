@@ -1736,6 +1736,31 @@ production:** a real Turnstile site created in the Cloudflare
 dashboard and its site key/secret key added to Vercel's Production
 environment — code is complete and tested, but inert until then.
 
+### Backup & recovery readiness audit — Phase 4.2 (2026-07-30)
+
+Re-verified the 2026-07-27 "zero backups" finding directly against the
+live Supabase dashboard (Database → Backups, Storage → Files, and the
+organization's plan page) rather than trusting the prior note —
+confirmed unchanged: Free plan, zero automatic backups, PITR is a
+Pro-plan add-on at $100/month on top of Pro, and zero Supabase Storage
+buckets exist (all media is served by Sanity, not Supabase Storage, so
+there's nothing to lose there). New finding this pass: the exact PITR
+price point, and explicit confirmation both projects (staging +
+production) share one organization-level Free plan.
+
+Produced `DISASTER_RECOVERY.md` — the documented recovery procedure
+requested: current capability (above), an interim manual `pg_dump`
+backup method usable today without a plan upgrade, database/Storage/
+environment-variable/Vercel-deployment restoration steps, a
+post-recovery validation checklist, and explicit recovery
+responsibilities (who needs what access, since no AI session — this
+one included — retains credentials between conversations). The core
+risk remains exactly what it was: production data (not schema — that's
+always reproducible from `supabase/migrations/*.sql`) has no recovery
+path today unless a manual backup was taken first. Non-destructive
+throughout — no restore, pause, or delete action was performed against
+any project, only read-only dashboard verification.
+
 ### Phase E — Recovery 🟡 PENDING OWNER DECISION (billing)
 Production Supabase project exists, but **the Free plan includes zero
 project backups at all** (confirmed directly in the Dashboard: "Free

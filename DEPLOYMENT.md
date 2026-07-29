@@ -250,10 +250,14 @@ V1.3:
   happen after Migration 0003's live verification, which is now
   complete. **Not yet actioned as of V1.3 closure** — see MILESTONES.md
   V1.3 "Final closure" for the explicit flag on this.
-- **Backup and recovery checks** — Supabase's automatic backup
-  schedule/retention for the project should be confirmed (Dashboard →
-  Database → Backups) and a restore procedure understood before
-  production holds real client data, not just verified in the abstract.
+- **Backup and recovery checks** — ✅ audited (2026-07-30). Confirmed
+  directly in the Dashboard: Free plan includes zero automatic
+  backups, PITR is a Pro-plan add-on ($100/mo on top of Pro), no
+  Supabase Storage buckets are in use. Full findings, an interim
+  manual-backup procedure, and a documented restoration/rollback
+  process are in `DISASTER_RECOVERY.md`. **Still pending your
+  decision:** whether to upgrade to Pro for automatic backups — see
+  `MILESTONES.md` Phase E.
 - Test data deletion — **done** as part of V1.3's live verification
   (all test rows, test accounts, and temporary scripts removed,
   confirmed via direct re-query); listed here only so the full
