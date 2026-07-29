@@ -1736,6 +1736,38 @@ production:** a real Turnstile site created in the Cloudflare
 dashboard and its site key/secret key added to Vercel's Production
 environment — code is complete and tested, but inert until then.
 
+### Cloudflare Turnstile activated in production (2026-07-30)
+
+Real Turnstile credentials created and wired in: a Cloudflare account
+was created for Ordift Studios, a Managed-mode Turnstile site created
+for `ordiftstudios.com`/`www.ordiftstudios.com` (no staging domain —
+this project has no persistent staging URL, and local dev continues
+using Cloudflare's public dummy test keys), and the resulting Site Key
+(`NEXT_PUBLIC_TURNSTILE_SITE_KEY`, Preview + Production) and Secret Key
+(`TURNSTILE_SECRET_KEY`, Preview + Production, Sensitive-flagged) added
+directly in the Vercel dashboard by you — never passed through chat or
+handled by me, per this project's standing secret-handling rule.
+
+Deployed and verified against the real keys: missing-token and
+invalid-token rejection on both `/api/enquiry` and
+`/api/workshop-registration` (confirmed the real secret key correctly
+calls Cloudflare's live siteverify API and rejects a non-genuine
+token), email delivery (all 5 types still sending, zero regression),
+and the full admin dashboard (live stats, Realtime presence, audit
+log, Users & Roles) all functioning normally post-deploy.
+
+**One verification gap, disclosed rather than glossed over:**
+confirming a *successful* real-widget challenge completion in a
+browser wasn't possible this pass — `LAUNCH_HOLDING_PAGE` (kept on,
+per your explicit instruction) rewrites `/book` and
+`/workshops/[slug]` to `/coming-soon` for every request regardless of
+who's asking, so the actual public forms aren't reachable to load the
+real widget on right now. This is a real, outstanding item for the
+Go-Live sequence: once the holding page comes down (`DEPLOYMENT.md`'s
+removal procedure), completing one real form submission with the real
+widget is the first thing to verify, before treating CAPTCHA as fully
+confirmed end-to-end.
+
 ### Backup & recovery readiness audit — Phase 4.2 (2026-07-30)
 
 Re-verified the 2026-07-27 "zero backups" finding directly against the
