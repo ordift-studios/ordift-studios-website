@@ -1761,6 +1761,57 @@ path today unless a manual backup was taken first. Non-destructive
 throughout — no restore, pause, or delete action was performed against
 any project, only read-only dashboard verification.
 
+### Final production audit — Phase 4.3 (2026-07-30)
+
+Full-application sweep following the staging/production migration-
+history sync (both environments now consistent through `0022`, per
+your own confirmation — not re-verified or re-touched this pass, per
+your instruction). Found and fixed two real gaps, confirmed everything
+else already sound:
+
+- **Fixed:** no security response headers existed at all (`X-Frame-
+  Options`, `X-Content-Type-Options`, `Referrer-Policy`, `Permissions-
+  Policy`) — added in `next.config.ts`, deployed, confirmed live via
+  `curl -I`. Deliberately did **not** add a Content-Security-Policy —
+  that needs every legitimate script/frame source (Turnstile, Sanity
+  Studio) enumerated and tested first, not guessed.
+- **Fixed:** `LAUNCH_HOLDING_PAGE` — the flag currently gating the
+  entire public site behind "Coming Soon" — was completely
+  undocumented in `.env.example`. Documented, along with the three
+  auto-injected-but-unused Upstash env vars found during the same
+  pass.
+- **Confirmed clean:** zero `TODO`/`FIXME`/`debugger` statements, only
+  two `console.log` calls in the whole codebase (both intentional
+  test-mode operational logging, not debug cruft), no obsolete
+  verification endpoints (every `/api/admin/**` route is permanent
+  operational tooling), no leftover QA data in either Supabase project
+  (swept `enquiries`, `workshop_registrations`, `project_requests`,
+  `email_send_failures` on both).
+- **RLS reviewed:** all 26 tables have RLS enabled; 3 system-only
+  tables (`record_sequences`, `sheet_sync_failures`,
+  `email_send_failures`) correctly have zero policies (deny-all for
+  `authenticated`/`anon`, service-role-only by design) — confirmed via
+  direct migration-file audit, not assumption.
+- **Dependency vulnerabilities reviewed, not auto-fixed:** `npm audit`
+  reports 31 findings, all transitive, all with only a breaking
+  Next.js downgrade (16.2.11 → 9.3.3) as the suggested fix — correctly
+  left alone per the explicit no-breaking-changes constraint. Notably,
+  confirmed the flagged `sharp` vulnerability's code path is never
+  actually exercised at runtime, since this app's `next/image` loader
+  delegates all resizing to Sanity's CDN.
+- Redis rate limiting and idempotency re-verified healthy against
+  production post-migration-sync (fresh round-trip check, cleaned up
+  after).
+
+Produced `PHASE_4_PRODUCTION_AUDIT_REPORT.md` — Production Readiness,
+Security, and Performance reports; a prioritized Critical/High/Medium/
+Low task list; a 92% launch readiness score; the recommended Go-Live
+sequence; and remaining risks with impact/mitigation. Two Critical
+items remain, both requiring your decision/action rather than further
+code work: the Supabase Pro-plan backup decision, and creating a real
+Cloudflare Turnstile site (CAPTCHA code is complete and tested, inert
+until real credentials exist).
+
 ### Phase E — Recovery 🟡 PENDING OWNER DECISION (billing)
 Production Supabase project exists, but **the Free plan includes zero
 project backups at all** (confirmed directly in the Dashboard: "Free
