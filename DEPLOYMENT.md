@@ -53,6 +53,33 @@ Everything else (`STAGING_BASIC_AUTH_*`, `GOOGLE_SHEETS_SPREADSHEET_ID`,
 `RESEND_API_KEY`, etc.) follows the existing rules already documented in
 `.env.example` and `STAGING.md` — unaffected by this milestone.
 
+### Upstash Redis (rate limiting + idempotency, added 2026-07-29)
+
+Provisioned via the Vercel Marketplace one-click integration ("Upstash
+for Redis") rather than a standalone Upstash account — `vercel
+integration add upstash-kv` provisions the database and injects its
+credentials automatically. One shared instance is connected across
+Production, Preview, and Development (not separate databases per
+environment) — this is a deliberate exception to the usual staging/
+production isolation rule, since rate-limit counters and idempotency
+keys are short-lived, non-sensitive, and namespaced by request key, not
+by user data.
+
+| Variable | Source |
+|---|---|
+| `KV_REST_API_URL` | Auto-injected by the Vercel integration |
+| `KV_REST_API_TOKEN` | Auto-injected by the Vercel integration |
+| `KV_REST_API_READ_ONLY_TOKEN` | Auto-injected, unused by this app |
+| `KV_URL` / `REDIS_URL` | Auto-injected, TCP connection strings — unused (the app uses the REST client, `@upstash/redis`, since it's serverless-safe with no persistent connection to manage) |
+
+Read by `src/lib/shared/redis.ts`. If unset (e.g. local dev before
+`vercel env pull`), `src/lib/shared/rateLimit.ts` and
+`src/lib/shared/idempotency.ts` both fall back to an in-memory `Map` —
+correct for local dev, not safe for a real multi-instance deployment.
+Never set these manually; always let the Vercel integration manage them
+so a resource change (e.g. if the plan is ever upgraded) doesn't
+require a manual env var edit across every environment.
+
 ### Supabase (Authentication & Client Portal — V1.3, not yet live)
 
 Not configured anywhere yet — `/portal/**` currently 503s everywhere

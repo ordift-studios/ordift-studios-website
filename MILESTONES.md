@@ -1564,6 +1564,100 @@ deleting the test account. The real affected user was separately
 unblocked via the existing "Forgot password?" flow, which already
 worked correctly and needed no code change.
 
+### Production email infrastructure hardening (2026-07-29)
+
+Full production-first hardening pass over the email subsystem,
+following a completed Resend production verification pass and a
+root-cause fix for a multi-message RESEND_API_KEY debugging saga
+(delivered as a Production Email Readiness Report directly in
+conversation, not a committed file): the real cause was
+Vercel's "Sensitive" environment variable type being write-only by
+design — `vercel env pull`/dashboard/API can never read the value back
+once flagged Sensitive, which made every local/CLI-based verification
+attempt structurally impossible regardless of whether the key itself
+was correct. Resolved by verifying entirely from inside the running
+deployment instead (`/api/admin/resend/verify-send`, Super-Admin-gated,
+same precedent as the Google Sheets verify-write route).
+
+**1. Redis-backed rate limiting and idempotency** — replaced the
+in-memory `Map`-based stores in `src/lib/shared/rateLimit.ts` and
+`src/lib/shared/idempotency.ts` (which explicitly documented their own
+"won't survive multiple serverless instances" limitation) with Upstash
+Redis, provisioned via the Vercel Marketplace one-click integration
+(`upstash-kv-cobalt-forest`, connected to Production/Preview/
+Development). Rate limiting runs as an atomic Lua script server-side
+(sliding window, trim-then-check-then-add in one round trip) so
+concurrent requests across instances can't race past the 5-per-10-
+minute limit; idempotency uses a 30-minute TTL key. Both fall back to
+the original in-memory behavior when Redis isn't configured (local dev
+before `vercel env pull`) and fail open (allow the request) if Redis is
+briefly unreachable, so a Redis outage degrades to "less protected,"
+never "forms stop working." Verified directly against the live
+production Redis instance (5 allowed, 6th correctly blocked with the
+right retry-after) and end-to-end through the real production
+`/api/enquiry` route (duplicate submission with the same idempotency
+key correctly returned the original reference number instead of
+creating a second record).
+
+**2. Retry-with-backoff email dispatcher** — new
+`src/lib/shared/email/dispatch.ts` centralizes what was three
+copy-pasted `dispatch()`/Resend-client implementations (enquiry,
+workshop registration) into one shared path: up to 3 attempts,
+exponential backoff (500ms base, doubling), and transient-vs-permanent
+classification based on Resend's actual HTTP `statusCode` (null/429/5xx
+= transient and retried; other 4xx = permanent, fails fast). Exposes
+two functions: `sendEmail()` (respects `FORMS_SENDING_ENABLED` — the
+one every real form uses) and `sendEmailNow()` (unconditional, used
+only by the verify-send diagnostic, whose entire purpose requires it to
+always attempt a real send regardless of the flag).
+
+**3. Project Request email workflow** — Project Requests previously had
+no email step at all (traced through the actual code before building
+anything, rather than assuming). Added acknowledgement + admin
+notification emails (`src/lib/projectRequests/emailTemplates.ts`,
+`email.ts`), matching the existing enquiry/workshop branding and the
+same "local copy, not shared import" template convention, wired as
+fire-and-forget sends in the portal request action alongside the
+existing Sheets sync.
+
+**4. Email dead-letter logging** — new `email_send_failures` table
+(migration `0022`, mirrors `sheet_sync_failures`'s pattern exactly,
+including granting `service_role` in the same migration rather than a
+follow-up one — this exact class of gap had already recurred four times
+for other tables). An email that exhausts every retry, or fails
+permanently, is now logged there (best-effort, never blocks the send
+path) instead of only existing as a server log line. Verified via a
+direct insert/read/delete round trip against the production table.
+
+**Migration history repair (2026-07-29):** discovered mid-deployment
+that migrations `0009`–`0021` had all been applied to production
+correctly (via manual SQL Editor execution) but were missing from the
+Supabase CLI's remote migration-history bookkeeping table, which made
+`supabase db push` attempt to replay all 13 of them. Before touching
+history: independently verified via the production PostgREST OpenAPI
+introspection endpoint that every table, altered column, and RPC
+function from those 13 migrations already existed exactly as expected
+(25 tables enumerated, all present; `staff_details.staff_number`
+correctly absent post-0019's drop). Only after that confirmation was
+`supabase migration repair --status applied 0009 0010 ... 0021` run,
+followed by `supabase db push` applying `0022` alone.
+
+Also caught and fixed mid-session: an earlier QA idempotency test's
+cleanup step used stale credentials from `.env.local` (which, it turned
+out, had been silently overwritten with **Development**-environment
+values by an unrelated `vercel integration add` step earlier the same
+session) and deleted from the wrong Supabase project — the real test
+row was still live in production. Found via direct cross-check against
+`.env.production.local`, corrected, and reconfirmed empty.
+
+All five email types (Contact Enquiry, Workshop Registration, Project
+Request — each acknowledgement + admin notification, plus a generic
+credential check) verified sending successfully in production via the
+Super-Admin verify-send endpoint, both before and after the dead-letter
+deploy. `FORMS_SENDING_ENABLED` remains unset in production throughout
+this entire pass — visitor-facing forms still log instead of sending
+real email until that flag is explicitly turned on.
+
 ### Phase E — Recovery 🟡 PENDING OWNER DECISION (billing)
 Production Supabase project exists, but **the Free plan includes zero
 project backups at all** (confirmed directly in the Dashboard: "Free
