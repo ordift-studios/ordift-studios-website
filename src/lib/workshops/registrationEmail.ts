@@ -12,7 +12,15 @@ export async function sendRegistrationAcknowledgementEmail(
   record: WorkshopRegistrationRecord
 ): Promise<EmailResult> {
   const { subject, html, text } = buildRegistrationAcknowledgementEmail(record);
-  return sendEmail({ to: record.email, subject, html, text, logPrefix: "[workshops]" });
+  return sendEmail({
+    to: record.email,
+    subject,
+    html,
+    text,
+    logPrefix: "[workshops]",
+    emailType: "workshop-registration-acknowledgement",
+    referenceNumber: record.registrationReference,
+  });
 }
 
 export async function sendRegistrationAdminNotificationEmail(
@@ -30,5 +38,7 @@ export async function sendRegistrationAdminNotificationEmail(
     html,
     text,
     logPrefix: "[workshops]",
+    emailType: "workshop-registration-admin-notification",
+    referenceNumber: record.registrationReference,
   });
 }

@@ -1,5 +1,6 @@
 import { Resend } from "resend";
 import { productionSendingEnabled } from "@/lib/shared/env";
+import { logEmailSendFailure } from "./deadLetter";
 
 // Single shared send path for every email-producing form (Contact
 // Enquiry, Workshop Registration, Project Requests) — previously each
@@ -38,6 +39,8 @@ export async function sendEmail(params: {
   html: string;
   text: string;
   logPrefix: string;
+  emailType: string;
+  referenceNumber: string | null;
 }): Promise<EmailResult> {
   const { to, subject, text, logPrefix } = params;
 
@@ -64,8 +67,10 @@ export async function sendEmailNow(params: {
   html: string;
   text: string;
   logPrefix: string;
+  emailType: string;
+  referenceNumber: string | null;
 }): Promise<EmailResult> {
-  const { to, subject, html, text, logPrefix } = params;
+  const { to, subject, html, text, logPrefix, emailType, referenceNumber } = params;
 
   const apiKey = process.env.RESEND_API_KEY;
   const from = process.env.EMAIL_FROM_ADDRESS;
@@ -100,6 +105,14 @@ export async function sendEmailNow(params: {
         // Permanent failure (bad address, auth, payload) — retrying the
         // identical request will only ever produce the identical
         // failure. Fail fast instead of burning attempts/latency.
+        await logEmailSendFailure({
+          emailType,
+          recipient: to,
+          referenceNumber,
+          errorMessage: lastError,
+          attempts: attempt,
+          permanent: true,
+        });
         return { ok: false, error: lastError, attempts: attempt, permanent: true };
       }
     } catch (err) {
@@ -117,5 +130,13 @@ export async function sendEmailNow(params: {
   }
 
   console.error(`${logPrefix} email send exhausted all ${MAX_ATTEMPTS} attempts to ${to}`, lastError);
+  await logEmailSendFailure({
+    emailType,
+    recipient: to,
+    referenceNumber,
+    errorMessage: lastError,
+    attempts: MAX_ATTEMPTS,
+    permanent: false,
+  });
   return { ok: false, error: lastError, attempts: MAX_ATTEMPTS, permanent: false };
 }

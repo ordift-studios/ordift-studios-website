@@ -66,7 +66,15 @@ export async function POST() {
   > = {};
 
   async function run(label: string, subject: string, html: string, text: string) {
-    const result = await sendEmailNow({ to, subject: `[QA VERIFY] ${subject}`, html, text, logPrefix: "[verify-send]" });
+    const result = await sendEmailNow({
+      to,
+      subject: `[QA VERIFY] ${subject}`,
+      html,
+      text,
+      logPrefix: "[verify-send]",
+      emailType: `verify-send-${label}`,
+      referenceNumber: null,
+    });
     results[label] = result.ok
       ? { ok: true, mode: result.mode, attempts: result.attempts }
       : { ok: false, detail: result.error, attempts: result.attempts, permanent: result.permanent };

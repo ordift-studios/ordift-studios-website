@@ -7,7 +7,15 @@ export type { EmailResult };
 
 export async function sendProjectRequestAcknowledgementEmail(record: ProjectRequestRecord): Promise<EmailResult> {
   const { subject, html, text } = buildProjectRequestAcknowledgementEmail(record);
-  return sendEmail({ to: record.email, subject, html, text, logPrefix: "[projectRequests]" });
+  return sendEmail({
+    to: record.email,
+    subject,
+    html,
+    text,
+    logPrefix: "[projectRequests]",
+    emailType: "project-request-acknowledgement",
+    referenceNumber: record.referenceNumber,
+  });
 }
 
 export async function sendProjectRequestAdminNotificationEmail(record: ProjectRequestRecord): Promise<EmailResult> {
@@ -23,5 +31,7 @@ export async function sendProjectRequestAdminNotificationEmail(record: ProjectRe
     html,
     text,
     logPrefix: "[projectRequests]",
+    emailType: "project-request-admin-notification",
+    referenceNumber: record.referenceNumber,
   });
 }

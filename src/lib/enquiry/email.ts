@@ -7,7 +7,15 @@ export type { EmailResult };
 
 export async function sendAcknowledgementEmail(record: EnquiryRecord): Promise<EmailResult> {
   const { subject, html, text } = buildAcknowledgementEmail(record);
-  return sendEmail({ to: record.email, subject, html, text, logPrefix: "[enquiry]" });
+  return sendEmail({
+    to: record.email,
+    subject,
+    html,
+    text,
+    logPrefix: "[enquiry]",
+    emailType: "enquiry-acknowledgement",
+    referenceNumber: record.referenceNumber,
+  });
 }
 
 export async function sendAdminNotificationEmail(record: EnquiryRecord): Promise<EmailResult> {
@@ -27,5 +35,7 @@ export async function sendAdminNotificationEmail(record: EnquiryRecord): Promise
     html,
     text,
     logPrefix: "[enquiry]",
+    emailType: "enquiry-admin-notification",
+    referenceNumber: record.referenceNumber,
   });
 }
