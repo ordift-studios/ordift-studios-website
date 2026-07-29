@@ -27,7 +27,7 @@ function clientKey(request: NextRequest): string {
 
 export async function POST(request: NextRequest) {
   const key = clientKey(request);
-  const rateLimit = checkRateLimit(key);
+  const rateLimit = await checkRateLimit(key);
   if (!rateLimit.allowed) {
     return NextResponse.json(
       { ok: false, error: "rate-limited", message: "Too many requests. Please try again shortly." },
@@ -66,7 +66,7 @@ export async function POST(request: NextRequest) {
   void _honeypot;
 
   if (idempotencyKey) {
-    const cached = getCachedResult(idempotencyKey);
+    const cached = await getCachedResult(idempotencyKey);
     if (cached) {
       return NextResponse.json({ ok: true, registrationReference: cached.referenceNumber });
     }
@@ -148,7 +148,7 @@ export async function POST(request: NextRequest) {
   }
 
   if (idempotencyKey) {
-    storeResult(idempotencyKey, record.registrationReference, "supabase");
+    await storeResult(idempotencyKey, record.registrationReference, "supabase");
   }
 
   // Google Sheets is a best-effort secondary copy (see

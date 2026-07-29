@@ -28,7 +28,7 @@ function forcedErrorFor(request: NextRequest): ForcedError {
 
 export async function POST(request: NextRequest) {
   const key = clientKey(request);
-  const rateLimit = checkRateLimit(key);
+  const rateLimit = await checkRateLimit(key);
   if (!rateLimit.allowed) {
     return NextResponse.json(
       {
@@ -80,7 +80,7 @@ export async function POST(request: NextRequest) {
   // retried after a perceived failure), return the original result
   // instead of creating a second enquiry.
   if (idempotencyKey) {
-    const cached = getCachedResult(idempotencyKey);
+    const cached = await getCachedResult(idempotencyKey);
     if (cached) {
       return NextResponse.json({ ok: true, referenceNumber: cached.referenceNumber });
     }
@@ -137,7 +137,7 @@ export async function POST(request: NextRequest) {
   // fails, a retry with the same idempotency key won't create a second
   // saved enquiry.
   if (idempotencyKey) {
-    storeResult(idempotencyKey, record.referenceNumber, "supabase");
+    await storeResult(idempotencyKey, record.referenceNumber, "supabase");
   }
 
   // Google Sheets is a best-effort secondary copy (see
