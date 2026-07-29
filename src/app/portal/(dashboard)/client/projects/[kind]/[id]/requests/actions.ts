@@ -11,7 +11,11 @@ import {
   type PortalWorkshopRegistration,
 } from "@/lib/portal/data";
 import { generateRecordId } from "@/lib/shared/recordId";
-import { syncProjectRequestToSheets } from "@/lib/projectRequests/sheetsSync";
+import { syncProjectRequestToSheets, type ProjectRequestRecord } from "@/lib/projectRequests/sheetsSync";
+import {
+  sendProjectRequestAcknowledgementEmail,
+  sendProjectRequestAdminNotificationEmail,
+} from "@/lib/projectRequests/email";
 
 // Client-facing submission only — never touches status/staff_decision
 // beyond the column defaults, so nothing a client submits can ever
@@ -68,9 +72,7 @@ export async function submitProjectRequestAction(formData: FormData): Promise<vo
 
   revalidatePath(`/portal/client/projects/${kind}/${id}/requests`);
 
-  // Secondary Sheets copy — fire-and-forget, never blocks the response
-  // above (revalidatePath has already run by the time this settles).
-  void syncProjectRequestToSheets({
+  const record: ProjectRequestRecord = {
     referenceNumber,
     requestTypeLabel: requestType?.label ?? "Request",
     relatedProjectReference:
@@ -83,12 +85,33 @@ export async function submitProjectRequestAction(formData: FormData): Promise<vo
     phone: owner.phone,
     clientNotes: clientNotes || null,
     createdAt: new Date().toISOString(),
-  }).catch((err) => {
+  };
+
+  // Secondary Sheets copy — fire-and-forget, never blocks the response
+  // above (revalidatePath has already run by the time this settles).
+  void syncProjectRequestToSheets(record).catch((err) => {
     // syncProjectRequestToSheets already catches its own errors and
     // never rejects — this is a defensive backstop only, mirroring the
     // same pattern used everywhere else best-effort Sheets syncs are
     // fired without awaiting (see src/app/api/enquiry/route.ts).
     console.error("[portal] project request Sheets sync threw unexpectedly", err);
+  });
+
+  // Same fire-and-forget reasoning as the Sheets sync above — a client
+  // submitting a request from their own authenticated workspace should
+  // never wait on (or be blocked by) an email round-trip. Both sends
+  // use the shared retry-with-backoff dispatcher
+  // (src/lib/shared/email/dispatch.ts), same as Contact Enquiry and
+  // Workshop Registration.
+  void sendProjectRequestAcknowledgementEmail(record).then((result) => {
+    if (!result.ok) {
+      console.error("[portal] project request acknowledgement email failed", record.referenceNumber, result.error);
+    }
+  });
+  void sendProjectRequestAdminNotificationEmail(record).then((result) => {
+    if (!result.ok) {
+      console.error("[portal] project request admin notification failed", record.referenceNumber, result.error);
+    }
   });
 }
 
