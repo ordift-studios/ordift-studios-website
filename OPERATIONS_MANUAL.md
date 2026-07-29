@@ -30,7 +30,7 @@ Full detail in `ADMIN_GUIDE.md` §2–§4 (role capabilities). Day-to-day: `/adm
 `/admin/bookings` — same pattern as enquiries (filters, export, status).
 
 ### Workshop management
-Content (title, dates, capacity, etc.) is managed in Sanity Studio (`/studio`), not the admin app — see `WORKSHOP_CONTENT_CHECKLIST.md` for exactly which fields exist and what still needs real content before launch. Registrations themselves (who signed up, waitlist position, payment status) are managed via the admin app's workshop-registration views.
+Content (title, dates, capacity, etc.) is managed in Sanity Studio (`/studio`), not the admin app — see `CONTENT_READINESS_CHECKLIST.md` for exactly which fields exist and what still needs real content before launch. Registrations themselves (who signed up, waitlist position, payment status) are managed via the admin app's workshop-registration views.
 
 ### Staff management
 `ADMIN_GUIDE.md` §5–§7 — inviting, assigning/revoking roles, suspending/deactivating/restoring/removing users. Don't duplicate that detail here; it's the authoritative source.
@@ -81,8 +81,8 @@ Detailed how-to for each of these already exists in named documents — this sec
 | Task | Where |
 |---|---|
 | Creating new services | `src/lib/content/local/*` or Sanity, depending on current content-source status (`CMS_MIGRATION.md`) |
-| Creating new workshops | Sanity Studio (`/studio`) — see `WORKSHOP_CONTENT_CHECKLIST.md` for the field list |
-| Updating pricing | No structured pricing field exists yet (see `WORKSHOP_CONTENT_CHECKLIST.md`'s pricing note) — currently a manual, off-platform conversation with the client |
+| Creating new workshops | Sanity Studio (`/studio`) — see `CONTENT_READINESS_CHECKLIST.md` for the field list |
+| Updating pricing | No structured pricing field exists yet (see `CONTENT_READINESS_CHECKLIST.md`'s pricing note) — currently a manual, off-platform conversation with the client |
 | Updating schedules | Sanity Studio, workshop `startDate`/`endDate`/`registrationDeadline` fields |
 | Managing enquiries | `/admin/enquiries`, `ADMIN_GUIDE.md` |
 | Managing bookings | `/admin/bookings`, `ADMIN_GUIDE.md` |
@@ -155,7 +155,7 @@ Detailed how-to for each of these already exists in named documents — this sec
 - [ ] Portfolio content real and complete (not sample/placeholder)
 - [ ] Pricing information accurate wherever shown
 - [ ] Services pages reflect what's actually offered today
-- [ ] Workshop listings real, per `WORKSHOP_CONTENT_CHECKLIST.md` (or sample workshops unpublished if none are ready yet)
+- [ ] Workshop listings real, per `CONTENT_READINESS_CHECKLIST.md` (or sample workshops unpublished if none are ready yet)
 - [ ] Photography galleries populated with real work
 - [ ] Terms & Conditions, Privacy Policy, Cookie Policy published and approved (`LEGAL_PAGES_APPROVED` gates this — confirm it's set correctly)
 - [ ] Contact details correct (`NEXT_PUBLIC_CONTACT_EMAIL`, `NEXT_PUBLIC_WHATSAPP_NUMBER`, or their fallback defaults)

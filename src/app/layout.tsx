@@ -28,10 +28,11 @@ const SITE_DESCRIPTION =
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
-  title: {
-    default: "Ordift Studios — A Multidisciplinary Creative House",
-    template: "%s — Ordift Studios",
-  },
+  // No template: every page under src/app/**/page.tsx already appends
+  // "— Ordift Studios" to its own title via generateMetadata() (see
+  // e.g. about/page.tsx) — a template here would double it up. `default`
+  // only applies to the rare route with no title of its own at all.
+  title: "Ordift Studios — A Multidisciplinary Creative House",
   description: SITE_DESCRIPTION,
   openGraph: {
     title: "Ordift Studios — A Multidisciplinary Creative House",

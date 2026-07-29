@@ -23,11 +23,11 @@ Every infrastructure, security, and operational system this audit could verify o
 | Security headers | ✅ Live (`X-Frame-Options`, `X-Content-Type-Options`, `Referrer-Policy`, `Permissions-Policy`, plus Vercel's automatic `Strict-Transport-Security`) |
 | RLS | ✅ All 26 tables enabled, policy coverage reviewed and correct |
 | Deployment | ✅ Healthy — latest production deploy confirmed `READY`, aliased correctly |
-| Documentation | ✅ Current — `MILESTONES.md`, `DEPLOYMENT.md`, `DISASTER_RECOVERY.md`, `OPERATIONS_MANUAL.md`, `WORKSHOP_CONTENT_CHECKLIST.md`, `DOCUMENTATION_INDEX.md` all updated this pass |
+| Documentation | ✅ Current — `MILESTONES.md`, `DEPLOYMENT.md`, `DISASTER_RECOVERY.md`, `OPERATIONS_MANUAL.md`, `CONTENT_READINESS_CHECKLIST.md`, `DOCUMENTATION_INDEX.md` all updated this pass |
 | Homepage, navigation, Services, Workshops pages | ✅ Verified rendering correctly, zero console errors, mobile + desktop |
 | Client-side form validation | ✅ Confirmed working (all required-field messages present and correct) |
 | Staff Portal / Super Admin Portal | ✅ Verified live — real accounts, correct roles, dashboard stats accurate (zero leftover test data), audit log populated correctly, Realtime presence working |
-| Workshop content | ⚠️ Explicitly placeholder (`[SAMPLE]` throughout) — a business/content task, checklist provided in `WORKSHOP_CONTENT_CHECKLIST.md`, not touched per your instruction |
+| Workshop content | ⚠️ Explicitly placeholder (`[SAMPLE]` throughout) — a business/content task, checklist provided in `CONTENT_READINESS_CHECKLIST.md`, not touched per your instruction |
 
 ## 3. Security Review
 
@@ -57,7 +57,7 @@ Complete, documented procedures exist for database restoration, environment-vari
 |---|---|---|
 | No backup has actually been taken yet | Medium — the plan exists, but until the first `pg_dump` runs, today's decision hasn't yet produced real recoverability | Run the first backup this week (§6 above) |
 | Real-widget CAPTCHA success path unverified | Low — the rejection paths are proven with real keys; only the "does a legitimate visitor pass cleanly" path is unconfirmed, and Managed-mode Turnstile is designed to be invisible for real browsers by default | Verify as the very first step once the holding page comes down (§9) |
-| Workshop content is placeholder | Medium (business, not technical) — launching with `[SAMPLE]` content visible would look unfinished to real visitors | Work through `WORKSHOP_CONTENT_CHECKLIST.md` before removing the holding page |
+| Workshop content is placeholder | Medium (business, not technical) — launching with `[SAMPLE]` content visible would look unfinished to real visitors | Work through `CONTENT_READINESS_CHECKLIST.md` before removing the holding page |
 | `npm audit` findings (transitive, tooling-only or unused-at-runtime) | Low | Track upstream fixes; do not force a breaking downgrade |
 | No CSP header yet | Low-Medium | Deliberately deferred until Turnstile/Sanity's script sources are enumerated and tested |
 
@@ -79,7 +79,7 @@ Complete, documented procedures exist for database restoration, environment-vari
 
 **Must happen before removing the holding page:**
 - [ ] Run and verify the first manual database backup (§6)
-- [ ] Work through `WORKSHOP_CONTENT_CHECKLIST.md` (or unpublish the sample workshops if none are ready)
+- [ ] Work through `CONTENT_READINESS_CHECKLIST.md` (or unpublish the sample workshops if none are ready)
 - [ ] Confirm portfolio, pricing, services, legal pages, contact details, and branding are all final (`OPERATIONS_MANUAL.md` §7's Business checklist)
 - [ ] Decide on `FORMS_SENDING_ENABLED` — per your own Phase 5 directive from earlier in this engagement, this requires your explicit written approval before I enable it, deploy, and run the final controlled real-submission test across every public form
 
