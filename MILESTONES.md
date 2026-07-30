@@ -2185,6 +2185,53 @@ progress on the legal-pages gap, not just re-scoring),
 launch documents synchronized and cross-referenced, per your explicit
 Phase 5 instruction.
 
+### TECHNOLOGY_COST_REGISTER.md — Phase 6 (2026-07-30)
+
+Built the permanent Technology & Running Costs Master Register, held
+until Phase 6 per your own explicit sequencing ("only after the
+platform reaches genuine Version 1 launch readiness"). Scoped strictly
+per your rule: every service listed is traceable either to the real
+codebase (`package.json`, `.env.example`, verified live integrations)
+or to a non-superseded mention in `PRODUCT_ROADMAP.md` — nothing
+invented, nothing speculative.
+
+Enumerated 8 real services (Vercel, Supabase, Sanity, Resend, Upstash
+Redis, Cloudflare Turnstile, Google Sheets API, GitHub) via a
+systematic check of `package.json` dependencies and every env var in
+`.env.example`, not from memory. Checked current pricing for each via
+live web search rather than relying on potentially stale training
+data. Finding: 7 of 8 run on free tiers today; Vercel likely needs a
+paid seat for commercial use per its own terms (flagged as an
+assumption to confirm in the dashboard, not asserted as fact, since
+the exact plan wasn't independently verifiable from the CLI).
+
+Usage-scaled the real cost at 10/50/150 active-clients/month using
+the platform's actual architecture (2 emails + 1 DB write + 1 Sheets
+write + a few Redis ops per submission) rather than generic estimates
+— conclusion: the stack's cost stays effectively flat across all three
+scenarios, since every paid-capable service's free tier comfortably
+covers this project's realistic volume. The only real future cost
+driver remains Supabase's already-documented Pro-plan trigger
+(`DISASTER_RECOVERY.md` §9).
+
+Google Analytics is the only entry in "Future Planned Integrations" —
+explicitly named in `PRODUCT_ROADMAP.md`, free regardless of when
+adopted. The previously-considered payment gateway (retired "Version
+3.0 — Commerce" in this document) is explicitly named and excluded,
+not included as a placeholder, since it's marked unscheduled, not
+approved — per your explicit instruction not to include anything
+short of a real approval.
+
+Regional pricing section deliberately short, per your own agreement:
+every real service bills identical global USD pricing; nowhere for a
+Ghana/Qatar comparison to add value until a genuinely region-priced
+service (payment gateway, SMS, local banking) is actually scheduled.
+
+Added to `DOCUMENTATION_INDEX.md` as a living document, maintained the
+same way as `OPERATIONS_MANUAL.md`/`MAINTENANCE_SCHEDULE.md` — updated
+when a new external dependency is actually introduced, not on a fixed
+schedule.
+
 ## Version 4.0 (partial) — Ordift Pulse Architecture — 2026-07-27 ✅ architecture complete
 
 Pulled forward from `PRODUCT_ROADMAP.md`'s Version 4.0 per explicit direction, while the media architecture (immediately above) was still fresh. Architecture and CMS schema only — see `PULSE_ARCHITECTURE.md` for full design detail.
