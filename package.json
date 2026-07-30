@@ -10,6 +10,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:integration": "vitest run --config vitest.integration.config.ts",
+    "verify:staging-test-cleanup": "tsx scripts/verifyStagingTestCleanup.ts",
     "seed:sanity-connection-test": "tsx scripts/seedSanityConnectionTest.ts",
     "seed:sanity-sample-data": "tsx scripts/seedSanitySampleData.ts",
     "seed:sanity-site-wide": "tsx scripts/seedSanitySiteWideContent.ts",

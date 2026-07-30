@@ -129,7 +129,22 @@
 - **Why accepted:** this is the direct, deliberate consequence of TDR-002 (RLS-as-security-boundary) — the whole point of that decision was to get a structural guarantee only Postgres RLS provides. Depth of integration was the goal, not an accident.
 - **Current impact:** none today; named here so it's a visible, tracked trade-off rather than an unstated assumption.
 - **Pay-down trigger:** none planned — this isn't debt to pay down so much as a concentration risk to keep visible. Worth revisiting only if Supabase's pricing, reliability, or product direction ever changes enough to threaten the relationship — not proactively.
-- **Status:** Open (tracked, not scheduled for action)
+- **Status:** Open (tracked, not scheduled for action; kept as accepted architectural debt, not an immediate migration project, per explicit 2026-07-30 direction)
+
+**Dependency inventory (added 2026-07-30, per explicit request):**
+
+- **What depends on Supabase:**
+  - *Auth*: every login/signup/password-reset flow (`src/app/portal/login`, `signup`, `forgot-password`, `reset-password`), session management via `@supabase/ssr`, custom SMTP routing through Resend.
+  - *RLS-based authorization*: the actual security boundary (TDR-002) for every table — `profiles`, `enquiries`, `workshop_registrations`, `project_requests`, `project_assignments`, and every other table under RLS. This is the single deepest dependency — RLS policies are Postgres-native SQL, not portable to another provider without a full rewrite.
+  - *Realtime*: the Active Users presence panel (`/admin/overview`, migration `0019`'s presence channel).
+  - *Primary data store*: every table in `supabase/migrations/0001`–`0022` — this is also just "using Postgres," the least Supabase-specific layer.
+  - *Storage/database functions*: `find_user_id_by_email`, `next_record_sequence`, `has_project_access`, `is_staff_or_admin`, and others — Postgres functions, portable in principle, but currently invoked via Supabase's RPC mechanism.
+- **What would be genuinely difficult to migrate:** (1) Auth — session/token handling, password reset flows, and the custom-SMTP wiring would need to be rebuilt against a different provider's auth model, not just reconfigured; (2) RLS policies — while the SQL itself is standard Postgres and portable to any Postgres host, the *combination* of RLS + Supabase Auth's `auth.uid()` function is Supabase-specific plumbing that a migration would need to reproduce; (3) Realtime presence — would need a different pub/sub mechanism entirely.
+- **What would be comparatively easy:** the raw data itself (any Postgres-compatible host can restore a `pg_dump`), and every table/function that doesn't reference `auth.*` schema objects.
+- **Available export and recovery paths today:** `pg_dump`/`pg_restore` already proven working (`DISASTER_RECOVERY.md`, the verified 2026-07-30 production backup) — this is both the disaster-recovery mechanism and, incidentally, the data-portability mechanism. Auth users themselves are also exportable via Supabase's Admin API (`listUsers`), though passwords/hashes are not portable to a different auth provider by design (a real migration would require a password-reset flow for every existing user, not a data copy).
+- **Reasonable warning indicators to watch for** (not currently present): sustained Supabase outages beyond their published SLA; pricing changes that don't scale reasonably with usage; deprecation of RLS, Realtime, or the Auth product; a security incident affecting Supabase's infrastructure specifically (as opposed to this project's own configuration).
+- **Future reassessment triggers:** any of the warning indicators above becoming real, or a genuine business requirement emerging that Supabase structurally can't meet (not before).
+- **Practical steps that reduce lock-in without duplicating the platform** (none currently implemented, listed for future reference, not scheduled): (1) keep RLS policy SQL itself well-documented and centralized in versioned migrations (already true) so it's at least readable/portable even if the runtime coupling to `auth.uid()` isn't; (2) maintain the existing `pg_dump` backup discipline, which doubles as data-portability insurance; (3) avoid growing *new* Supabase-specific coupling casually — e.g., prefer standard Postgres functions over Supabase-proprietary extensions where a standard approach works equally well. **Explicitly not recommended:** introducing a second database/auth provider in parallel "just in case" — that duplicates real operational complexity today to hedge a risk that isn't currently materializing, the opposite of proportionate engineering.
 
 ### TD-013 — No uptime/synthetic monitoring for the public site
 - **Category:** Infra
@@ -157,6 +172,15 @@
 - **Current impact:** low — the one known instance (Workshop status field) was already caught and flagged, showing the discipline works today at small scale.
 - **Pay-down trigger:** if the legal suite is ever approved/published, a one-time cross-check against current platform behavior (the same discipline already used in the QC pass) before publishing is the practical mitigation — not a permanent automated system, which would be disproportionate at this scale.
 - **Status:** Open
+
+### TD-016 — Concurrent cleanup raced a restrictive FK, orphaning test users (found and fixed 2026-07-30)
+- **Category:** Testing
+- **Severity:** Low (found, fixed, and verified within the same session — logged for the historical record per the standing "nothing should exist only in memory" discipline, not because it's still open)
+- **What:** `projectRequests.integration.test.ts`'s original `afterAll` deleted `project_requests` and every test auth user inside one `Promise.allSettled`, running them concurrently. `project_requests.created_by`/`decided_by` reference `public.profiles(id)` with Postgres's default `RESTRICT` (no `on delete cascade`/`set null`, unlike every other test-adjacent FK in this schema) — when a `deleteUser()` call reached the database before the `project_requests` row was gone, deleting the profile (cascaded from the auth user) violated that FK and the deletion silently failed. `scripts/verifyStagingTestCleanup.ts` (built the same session, specifically to catch exactly this class of problem) caught 2 orphaned `*.invalid` staging accounts that the test suite's own "cleanup succeeded" self-check had missed.
+- **Why this happened:** the concurrent-cleanup pattern is correct and safe for every other suite in this project, because every other FK a test touches uses `on delete cascade` or `on delete set null` — `project_requests.created_by`/`decided_by` is the one exception, and it wasn't checked for before writing the cleanup logic.
+- **Current impact:** none — fixed same-session (sequential delete of dependent rows, then users), re-run twice to confirm, independently re-verified clean via `verifyStagingTestCleanup.ts` after the fix.
+- **Pay-down trigger:** N/A — resolved. Worth remembering as a pattern: any future table with a non-cascading FK to `profiles` needs sequential (not concurrent) cleanup ordering in its integration tests.
+- **Status:** Resolved (2026-07-30)
 
 ---
 

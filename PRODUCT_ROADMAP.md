@@ -84,6 +84,8 @@ Error tracking, performance monitoring, source maps, alerting.
 
 Recommendation: Sentry now; revisit only if usage outgrows the free tier.
 
+**Scope approved 2026-07-30 (absorbs TD-013):** synthetic/uptime monitoring folds into this workstream rather than becoming a separate one — treated as part of observability, not a distinct initiative. Design constraint, per explicit direction: proportionate to current scale. Checks should verify important public and authenticated paths without creating unnecessary production data, triggering real customer communications, consuming avoidable third-party quota, or becoming a monitoring system of its own — a small, focused synthetic-check set (e.g. homepage + one or two critical authenticated paths, on a modest interval), not a full synthetic-monitoring platform.
+
 ### D — Technical Documentation
 `ENGINEERING_GUIDE.md`, `ENGINEERING_STANDARDS.md`, `RELEASE_PLAYBOOK.md` covering engineering standards, testing standards, deployment standards, rollback procedures, incident response, monitoring architecture, repository structure, coding standards.
 - **Why it matters:** the standing goal is that a future senior engineer with zero session history can understand the system. Substantial pieces already exist (`ARCHITECTURE.md`, `OPERATIONS_MANUAL.md`, `ADMIN_GUIDE.md`) — this workstream fills genuine gaps and cross-references rather than duplicating them.
@@ -115,6 +117,7 @@ Permanent `TECHNICAL_DEBT_REGISTER.md`: every compromise, shortcut, known limita
 - **Dependencies:** benefits from B, C, E all existing (it's substantially a synthesis view over their outputs).
 - **Risks:** a markdown doc goes stale if not updated; mitigate by treating updates to it as part of the definition-of-done for future milestones, same discipline as `MILESTONES.md`.
 - **Long-term value:** medium now, high later once a live version is warranted.
+- **Scope confirmed 2026-07-30:** `SYSTEM_HEALTH.md` is a documentation/evidence layer, not a new build — it consolidates or references (not duplicates) test status, CI status, deployment health, monitoring status, backup status, restore-test status, security review status, dependency risks, open technical debt, service health, release readiness, last verification date, evidence location, and responsible owner, each sourced from the living document that already owns that fact. A future live dashboard is reconsidered only when: manual maintenance becomes unreliable, multiple engineers/environments need centralized visibility, incident volume justifies it, real-time operational decisions depend on it, or the cost of not automating exceeds the build/maintenance cost — that trigger-based decision is recorded as TDR-009 (`TECHNICAL_DECISION_RECORDS.md`).
 
 ### H — Disaster Recovery Review
 Stress-test against "a disaster happened today," not checklist confirmation: backup verification, restore procedures, rollback procedures, credential recovery, infrastructure recovery.
@@ -131,6 +134,8 @@ Re-challenge every layer: authentication, authorization, RLS, API protection, ra
 - **Dependencies:** none.
 - **Risks:** none from doing it; risk is in *not* doing it periodically as the system grows.
 - **Long-term value:** high — security is the one category where "it passed once" doesn't mean "it's still true."
+
+**Scope approved 2026-07-30 (absorbs TD-014):** produce a practical secrets-management and credential-rotation policy covering every credential currently in use — Vercel environment variables, Supabase credentials/keys, Resend, Google service-account credentials, Upstash Redis, Cloudflare Turnstile, GitHub secrets, Sanity, and any future third-party integration secrets. For each: owner, location, sensitivity, rotation trigger, recommended cadence, emergency-rotation procedure, dependency impact, post-rotation verification, revocation procedure, recovery procedure, documentation requirements. Explicit constraint: do not rotate any functioning production secret merely to satisfy documentation — establish the policy, inventory, and safe procedure first. Any actual production-secret rotation that needs dashboard access or carries service-disruption risk gets presented for approval before execution, never done unilaterally.
 
 ### J — Scalability Assessment
 Per major subsystem (Supabase, Sanity, Vercel, Redis rate-limiting, Google Sheets sync): current capacity, expected bottlenecks, scaling strategy, and the specific trigger point that should prompt a redesign — explicitly documentation, not premature optimization or actual scaling work now.

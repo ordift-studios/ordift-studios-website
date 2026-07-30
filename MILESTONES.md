@@ -2501,6 +2501,118 @@ dashboard app rather than the lightweight status doc already scoped.
 Presented for approval per your standing instruction — no
 implementation proceeds until you confirm or redirect the sequence.
 
+### Workstream A complete: full integration coverage, TDR/governance additions, one real bug found and fixed (2026-07-30)
+
+You approved the Platform Health Review and the A→B→C→I→H→J→D→G
+sequence, with detailed scope for the C/I/G folds, confirmed Version
+1.1 stays frozen until 1.0.5 closes, and two further standing
+requests: a permanent Platform Health Review before every major
+increment going forward, and a Technical Decision Record (TDR) system
+with a richer field set than the ADR log built earlier this session.
+
+Migrated `ARCHITECTURE_DECISIONS.md`'s 8 ADRs into
+`TECHNICAL_DECISION_RECORDS.md` (TDR-001..008) rather than running two
+parallel logs, updating every cross-reference. Then completed the rest
+of Workstream A from the checkpoint, following your explicit execution
+rules (staging only, config-injected environment, `TEST-` identity,
+automatic cleanup, no real email in routine runs, no avoidable
+third-party quota, no credentials in logs/commits, RLS never weakened
+for testability):
+
+- **Google Sheets sync** (`sheetsSync.integration.test.ts`) — real
+  write+read-back+cleanup against the unused `clientBookings` worksheet
+  (created but unfed by any form, so zero collision risk with real
+  data), plus the dead-letter resilience path via Supabase. Honestly
+  reported rather than overstated: this local environment has no
+  Google Sheets credentials in `.env.local`, so the positive-path test
+  correctly skips (verified directly — grepped for the three required
+  env vars, found none) rather than false-passing.
+- **Email dispatch** (`dispatch.integration.test.ts`) — Resend stubbed
+  at the class boundary (`vi.mock("resend")`), 5 tests proving
+  retry/backoff/429-handling/permanent-vs-transient classification and
+  real dead-letter writes to `email_send_failures` — zero real email
+  sent, per your instruction.
+- **Booking/enquiry workflow** (`bookingWorkflow.integration.test.ts`)
+  — real record-ID generation, the primary Supabase write, the
+  email-to-account auto-linking RPC, and the full `enquiries` RLS
+  boundary (own/blocked/staff/anonymous).
+- **Client-portal project-request workflow**
+  (`projectRequests.integration.test.ts`) — the one RLS shape in this
+  codebase that's join-based rather than a direct owner column (via
+  the parent enquiry's `user_id`), including the staff-decide vs.
+  client-blocked-update boundary.
+- **Admin/role-boundary tests** (`adminAccess.integration.test.ts`) —
+  the same "own OR staff/admin" pattern proven on `workshop_registrations`
+  too, plus `private.has_project_access()` — the contractor
+  project-scoped grant mechanism, genuinely different from every other
+  RLS shape tested so far, exercised for the first time.
+- **Stale-data verification tooling**
+  (`scripts/verifyStagingTestCleanup.ts`, `npm run
+  verify:staging-test-cleanup`) — an independent scanner, not a
+  self-report, checking staging directly for any leftover `TEST-`/
+  `*.invalid` artifact across every table an integration test touches.
+
+**This tooling caught a real bug, not a hypothetical one.** Running it
+found 2 orphaned `*.invalid` staging accounts that
+`projectRequests.integration.test.ts`'s own "cleanup succeeded"
+self-check had missed. Root cause: that suite's cleanup deleted
+`project_requests` and every test auth user concurrently in one
+`Promise.allSettled` — safe for every other suite, because every other
+FK a test touches uses `on delete cascade`/`set null`, but
+`project_requests.created_by`/`decided_by` reference `profiles(id)`
+with Postgres's default `RESTRICT`. When a `deleteUser()` call reached
+the database before the `project_requests` row was gone, the FK
+violation silently failed the delete. Fixed by sequencing dependent-row
+deletes before user deletes; re-ran the suite twice to confirm; the
+two orphaned accounts were removed manually; re-verified staging clean
+independently afterward. Logged as TD-016 (Resolved) — the concrete
+proof-of-value for building the verification tool in the first place,
+plus a synthetic `cleanupFailureHandling.integration.test.ts` locking
+in the failure-detection logic every suite's `afterAll` relies on.
+
+Also completed, as part of "update the relevant living documents"
+before closing this workstream:
+- Recorded the detailed approved scope for Workstreams C (proportionate
+  synthetic monitoring, folded from TD-013), I (the 11-field
+  secrets-management/rotation policy covering all 9 credential systems,
+  folded from TD-014, with an explicit no-blind-rotation constraint),
+  and G (the `SYSTEM_HEALTH.md` field list and live-dashboard
+  reactivation triggers) directly into `PRODUCT_ROADMAP.md`'s Version
+  1.0.5 section.
+- **TDR-009** — the G-stays-lightweight-until-named-triggers decision,
+  recorded per your explicit instruction.
+- **TD-012 expanded** with the full requested Supabase dependency
+  inventory: what depends on it, what's genuinely hard to migrate,
+  available export/recovery paths (the existing `pg_dump` backup
+  discipline doubles as data-portability insurance), warning
+  indicators, reassessment triggers, and lock-in-reduction steps that
+  explicitly exclude introducing a duplicate vendor "just in case."
+- **`GOVERNANCE_HANDOVER_STANDARD.md`** + **`GOVERNANCE_HANDOVER_LOG.md`**
+  — addresses TD-015 as a permanent governance concern: one
+  authoritative technical source, one authoritative governance source
+  (Claude Chat), and a controlled, pointer-only handover record between
+  them, with 13 named trigger categories (personal data, cookies, auth,
+  storage, retention, email/notifications, third-party processors, file
+  handling, AI, payments, client rights, staff/talent workflows,
+  international transfers). Backfilled the one known real instance (the
+  Workshop status field discrepancy, already caught by manual QC) as
+  the log's first entry.
+- `DOCUMENTATION_INDEX.md` updated with all 6 new/changed documents
+  from this session.
+
+Final verification before closing: full unit suite (35/35) and full
+integration suite (28/28, 2 correctly skipped for missing Sheets
+credentials) both green; `tsc --noEmit` and `eslint` both clean;
+`npm run build` exited 0; `verify:staging-test-cleanup` confirmed
+zero stale artifacts remain. Two local commits made (the TDR/Platform
+Health Review work, then this Workstream A completion) — not pushed,
+per your instruction to verify no secrets/generated sensitive data
+first.
+
+Full Workstream A Completion Report presented in-conversation per your
+requested format. Awaiting confirmation before proceeding to
+Workstream B.
+
 ## Version 4.0 (partial) — Ordift Pulse Architecture — 2026-07-27 ✅ architecture complete
 
 Pulled forward from `PRODUCT_ROADMAP.md`'s Version 4.0 per explicit direction, while the media architecture (immediately above) was still fresh. Architecture and CMS schema only — see `PULSE_ARCHITECTURE.md` for full design detail.

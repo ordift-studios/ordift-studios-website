@@ -120,6 +120,18 @@ Every new major engineering decision going forward gets a new TDR here at decisi
 - **Related Files:** `src/lib/admin/deliverables.ts`, `PRODUCT_ROADMAP.md` (Version 2.0 dependency).
 - **Review Date:** Version 2.0's kickoff — the storage evaluation must happen as its own explicit decision point before any code touches real sensitive documents.
 
+### TDR-009 — Platform Health Dashboard stays a documentation layer, not a live application, until named triggers are met
+- **Status:** Accepted, implemented (documentation layer only)
+- **Context:** Version 1.0.5 Workstream G originally named a "Platform Health Dashboard." At current scale — pre-launch, founder-led, no engineering team checking a dashboard daily — a live internal application is itself a new feature, which cuts directly against this milestone's purpose ("not another feature above the platform").
+- **Problem:** how to give visibility into test/CI/deployment/monitoring/backup/security/debt/release status without building disproportionate infrastructure for the team size that exists today.
+- **Options Considered:** (1) build a live, real-time internal dashboard application now; (2) a maintained `SYSTEM_HEALTH.md` documentation/evidence layer, consolidating or referencing facts already owned by other living documents, with no new infrastructure.
+- **Decision Made:** (2) — `SYSTEM_HEALTH.md`, explicitly scoped as documentation/evidence, not a new build.
+- **Reasoning:** confirmed 2026-07-30 — the maintenance cost of a live app (hosting, auth, upkeep) isn't justified when the person who'd check it is also the person maintaining the underlying documents it would summarize. A markdown layer gets most of the visibility value at near-zero ongoing cost.
+- **Consequences:** `SYSTEM_HEALTH.md` can go stale if not updated as part of each milestone's definition-of-done — an accepted, actively mitigated trade-off, not an oversight.
+- **Alternatives Rejected:** the live dashboard — not rejected permanently, deferred behind explicit, named reactivation triggers (below) rather than built speculatively.
+- **Related Files:** `SYSTEM_HEALTH.md` (Workstream G), `PRODUCT_ROADMAP.md` Version 1.0.5 Workstream G, `PLATFORM_HEALTH_REVIEW.md`.
+- **Review Date:** reconsider a live dashboard only when any of these becomes true — manual maintenance of `SYSTEM_HEALTH.md` becomes unreliable; multiple engineers or environments need centralized visibility; incident volume justifies it; real-time operational decisions start depending on it; or the cost of not automating demonstrably exceeds the cost of building and maintaining it. None of these are true as of 2026-07-30.
+
 ---
 
 *Cross-references: `PRODUCT_ROADMAP.md` (Version 1.0.5), `TECHNICAL_DEBT_REGISTER.md`, `INTEGRATION_TESTING_STRATEGY.md`, `ENGINEERING_GUIDE.md`, `MEDIA_ARCHITECTURE.md`, `PULSE_ARCHITECTURE.md`, `DOCUMENTATION_INDEX.md`.*
