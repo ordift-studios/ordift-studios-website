@@ -101,7 +101,7 @@ Permanent `TECHNICAL_DEBT_REGISTER.md`: every compromise, shortcut, known limita
 - **Long-term value:** high and immediate; also the input list for prioritizing later versions' scope.
 
 ### F — Architecture Decision Records
-`ARCHITECTURE_DECISIONS.md`: problem / options considered / decision / reasoning / consequences / date / future review trigger, for every major technical decision — backfilled for past decisions (Sanity dataset isolation, Supabase RLS-first authorization model, dual-write record-ID/Sheets-sync architecture, CMS-agnostic content-repository abstraction, the four-independent-axis IAM model), then required for every major decision going forward.
+`TECHNICAL_DECISION_RECORDS.md` (the TDR system, superseding the earlier ADR log 2026-07-30 at explicit request): Context / Problem / Options Considered / Decision Made / Reasoning / Consequences / Alternatives Rejected / Related Files / Review Date, for every major technical decision — backfilled for past decisions (Sanity dataset isolation, Supabase RLS-first authorization model, dual-write record-ID/Sheets-sync architecture, CMS-agnostic content-repository abstraction, the four-independent-axis IAM model), then required for every major decision going forward.
 - **Why it matters:** several major architectural choices already made this build (e.g., why Sheets is a secondary durability layer and not the primary store; why Grade/Role/Position/Engagement Type must never couple) exist only as reasoning inside a very long conversation history. Same urgency as Workstream E.
 - **Effort:** Medium — backfilling ~6-8 real historical decisions accurately takes more care than writing new ones going forward.
 - **Dependencies:** none.
@@ -140,7 +140,7 @@ Per major subsystem (Supabase, Sanity, Vercel, Redis rate-limiting, Google Sheet
 - **Risks:** none; the only failure mode is over-scoping into actual infrastructure changes, which this workstream explicitly excludes.
 - **Long-term value:** medium-high — cheap insurance against being surprised by a limit.
 
-**Release criteria:** CI pipeline green and blocking on every push; Sentry capturing real errors in production with source maps resolved; all six living documents (`ENGINEERING_GUIDE.md`, `TECHNICAL_DEBT_REGISTER.md`, `ARCHITECTURE_DECISIONS.md`, `ENGINEERING_STANDARDS.md`, `RELEASE_PLAYBOOK.md`, `SYSTEM_HEALTH.md`) exist and are cross-referenced in `DOCUMENTATION_INDEX.md`; DR review and security re-review each produce a written findings list (even if the finding is "no gap found"); scalability trigger points documented for every major subsystem.
+**Release criteria:** CI pipeline green and blocking on every push; Sentry capturing real errors in production with source maps resolved; all living documents (`ENGINEERING_GUIDE.md`, `TECHNICAL_DEBT_REGISTER.md`, `TECHNICAL_DECISION_RECORDS.md`, `ENGINEERING_STANDARDS.md`, `RELEASE_PLAYBOOK.md`, `SYSTEM_HEALTH.md`, `PLATFORM_HEALTH_REVIEW.md`) exist and are cross-referenced in `DOCUMENTATION_INDEX.md`; DR review and security re-review each produce a written findings list (even if the finding is "no gap found"); scalability trigger points documented for every major subsystem.
 
 **Priority:** Highest — approved ahead of Version 1.1.
 

@@ -2455,6 +2455,52 @@ the architecture proven here (config-injected environment, `TEST-`
 identity, automatic cleanup with debt-logging on failure) extends
 directly to them without needing to be redesigned.
 
+### Technical Decision Record (TDR) system + first Platform Health Review (2026-07-30)
+
+You approved Workstream A's progress and set a further permanent
+standing instruction: before every major engineering increment, a
+Platform Health Review across 17 dimensions (technical/architectural
+debt, security, operations, observability, testing, deployment,
+dependencies, vendor lock-in, disaster recovery, performance,
+scalability, maintainability, documentation drift, monitoring,
+compliance, roadmap blockers), ending in a prioritized recommendation
+that's approved before implementation continues — never silently
+executed. You also asked for a formal Technical Decision Record (TDR)
+system, with a richer field set than the ADR log I'd built earlier
+this session (Context split from Problem, Alternatives Rejected made
+explicit, Related Files and Review Date added).
+
+Rather than run two parallel decision-log systems — itself exactly
+the kind of documentation drift this whole milestone exists to
+prevent — migrated `ARCHITECTURE_DECISIONS.md`'s 8 entries into a new
+`TECHNICAL_DECISION_RECORDS.md` under the TDR-001..008 numbering and
+field set, turned the old file into a pointer (same pattern already
+used for `VERSIONS.md`'s retired roadmap table), and updated every
+cross-reference across `TECHNICAL_DEBT_REGISTER.md`,
+`INTEGRATION_TESTING_STRATEGY.md`, `ENGINEERING_GUIDE.md`,
+`PRODUCT_ROADMAP.md`, and `DOCUMENTATION_INDEX.md`.
+
+Conducted the first Platform Health Review (`PLATFORM_HEALTH_REVIEW.md`),
+covering all 17 dimensions honestly — including reporting "no new
+finding" where that was the accurate answer, rather than padding for
+apparent thoroughness. Found and logged four new debt items (TD-012
+vendor lock-in concentrated in Supabase — a named, accepted
+consequence of TDR-002, not a problem to fix; TD-013 no uptime/
+synthetic monitoring, distinct from Sentry's application-error
+scope; TD-014 no recurring secret-rotation cadence; TD-015
+documentation-drift risk across the new Claude Code/Claude Chat
+split, with the one known real instance — the Workshop-status
+discrepancy — already caught by manual QC as evidence the practice
+holds at current scale). The review validated Version 1.0.5's existing
+execution order (A→B→C→I→H→J→D→G) rather than proposing a different
+one, folding TD-013 into Workstream C's scope and TD-014 into
+Workstream I's, and explicitly recommended *against* two things:
+starting Version 1.1 early, and building Workstream G as a live
+dashboard app rather than the lightweight status doc already scoped.
+
+Presented for approval per your standing instruction — no
+implementation proceeds until you confirm or redirect the sequence.
+
 ## Version 4.0 (partial) — Ordift Pulse Architecture — 2026-07-27 ✅ architecture complete
 
 Pulled forward from `PRODUCT_ROADMAP.md`'s Version 4.0 per explicit direction, while the media architecture (immediately above) was still fresh. Architecture and CMS schema only — see `PULSE_ARCHITECTURE.md` for full design detail.

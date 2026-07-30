@@ -122,10 +122,46 @@
 - **Pay-down trigger:** when component-level testing is actually prioritized, either (a) re-check whether `@vitejs/plugin-react`/`@rolldown/plugin-babel` has released a version compatible with Sanity's pinned `@babel/core`, or (b) install with `--legacy-peer-deps` after confirming it doesn't silently break Sanity Studio's own build.
 - **Status:** Open
 
+### TD-012 — Vendor lock-in concentrated in Supabase (Auth + RLS + Realtime)
+- **Category:** Infra
+- **Severity:** Low (accepted trade-off, not an oversight — surfaced here for visibility, not as a problem to fix)
+- **What:** identified during the 2026-07-30 Platform Health Review. Most of this platform's third-party dependencies are shallow and swappable (Resend for email, Upstash for rate limiting, Turnstile for CAPTCHA — all stateless, low-switching-cost). Supabase is different: Auth, RLS-based authorization (TDR-002), and Realtime presence are all deeply load-bearing architectural choices, not interchangeable plumbing. Migrating off Supabase would mean rebuilding authentication and every RLS policy from scratch, not swapping a client library.
+- **Why accepted:** this is the direct, deliberate consequence of TDR-002 (RLS-as-security-boundary) — the whole point of that decision was to get a structural guarantee only Postgres RLS provides. Depth of integration was the goal, not an accident.
+- **Current impact:** none today; named here so it's a visible, tracked trade-off rather than an unstated assumption.
+- **Pay-down trigger:** none planned — this isn't debt to pay down so much as a concentration risk to keep visible. Worth revisiting only if Supabase's pricing, reliability, or product direction ever changes enough to threaten the relationship — not proactively.
+- **Status:** Open (tracked, not scheduled for action)
+
+### TD-013 — No uptime/synthetic monitoring for the public site
+- **Category:** Infra
+- **Severity:** Medium
+- **What:** identified during the 2026-07-30 Platform Health Review. Workstream C (Sentry) will catch application errors, but nothing currently pings the live site from outside to detect "the site is down" — a Vercel platform incident, a DNS problem, or an expired certificate would currently be discovered by a client noticing, not by the platform.
+- **Why accepted:** not yet built — site is still behind `LAUNCH_HOLDING_PAGE`, so there's no real uptime to monitor yet.
+- **Current impact:** none pre-launch; becomes a real gap the moment the holding page comes down.
+- **Pay-down trigger:** should land alongside or shortly after Workstream C (Sentry) — a lightweight synthetic check (e.g. a free-tier uptime pinger hitting the homepage every few minutes) is a natural, low-cost extension of the same observability push, not a separate initiative.
+- **Status:** Open
+
+### TD-014 — No recurring secret-rotation cadence
+- **Category:** Security
+- **Severity:** Low
+- **What:** identified during the 2026-07-30 Platform Health Review. The Supabase production Secret Key was rotated once, as a specific incident response (Task #68). There is no standing policy for periodically rotating API keys/secrets (Supabase, Sanity, Resend, Google service account, Upstash) on a cadence — only reactive, one-off rotation.
+- **Why accepted:** reasonable for current scale and single-operator context; a rotation cadence is more valuable once there's a team with turnover to protect against.
+- **Current impact:** low today; the risk profile changes once more than one person holds these credentials.
+- **Pay-down trigger:** `MAINTENANCE_SCHEDULE.md`'s Annual review is the natural home for this — add a secret-rotation line item there once Workstream I (security re-review) reaches credential management.
+- **Status:** Open
+
+### TD-015 — Documentation split across two tools (Claude Code / Claude Chat) has no drift check
+- **Category:** Documentation
+- **Severity:** Low
+- **What:** identified during the 2026-07-30 Platform Health Review, specific to this project's 2026-07-30 workflow split: legal/governance/commercial documentation now lives in and is maintained via Claude Chat, while technical documentation (this register, `PRODUCT_ROADMAP.md`, `TECHNICAL_DECISION_RECORDS.md`, etc.) is maintained here. Nothing currently checks that a legal-suite change made in Claude Chat that touches a factual/technical claim (e.g. the already-found Workshop-status-field discrepancy in `LEGAL_REVIEW_REPORT.md`) gets flagged back here, or vice versa.
+- **Why accepted:** the split itself was a deliberate, explicit decision (2026-07-30) to separate concerns cleanly; this entry names the one coordination cost that decision introduces, rather than leaving it implicit.
+- **Current impact:** low — the one known instance (Workshop status field) was already caught and flagged, showing the discipline works today at small scale.
+- **Pay-down trigger:** if the legal suite is ever approved/published, a one-time cross-check against current platform behavior (the same discipline already used in the QC pass) before publishing is the practical mitigation — not a permanent automated system, which would be disproportionate at this scale.
+- **Status:** Open
+
 ---
 
 ## Adding new entries
 
-Any future compromise — a deferred edge case, a "fix properly later" comment, a scope-narrowing decision made under time pressure — gets an entry here at the time it's made, not retroactively. Cross-reference the relevant `ARCHITECTURE_DECISIONS.md` ADR if the debt stems from a documented architectural trade-off.
+Any future compromise — a deferred edge case, a "fix properly later" comment, a scope-narrowing decision made under time pressure — gets an entry here at the time it's made, not retroactively. Cross-reference the relevant `TECHNICAL_DECISION_RECORDS.md` ADR if the debt stems from a documented architectural trade-off.
 
-*Cross-references: `PRODUCT_ROADMAP.md` (Version 1.0.5, this register's parent milestone), `ARCHITECTURE_DECISIONS.md` (the "why" behind decisions that produced some of this debt), `DISASTER_RECOVERY.md` (TD-008), `PHASE_4_PRODUCTION_AUDIT_REPORT.md` (TD-006 origin), `DOCUMENTATION_INDEX.md`.*
+*Cross-references: `PRODUCT_ROADMAP.md` (Version 1.0.5, this register's parent milestone), `TECHNICAL_DECISION_RECORDS.md` (the "why" behind decisions that produced some of this debt), `DISASTER_RECOVERY.md` (TD-008), `PHASE_4_PRODUCTION_AUDIT_REPORT.md` (TD-006 origin), `DOCUMENTATION_INDEX.md`.*
