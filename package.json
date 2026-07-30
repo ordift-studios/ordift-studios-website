@@ -7,6 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "seed:sanity-connection-test": "tsx scripts/seedSanityConnectionTest.ts",
     "seed:sanity-sample-data": "tsx scripts/seedSanitySampleData.ts",
     "seed:sanity-site-wide": "tsx scripts/seedSanitySiteWideContent.ts",
@@ -37,6 +39,8 @@
     "supabase": "^2.109.1",
     "tailwindcss": "^4",
     "tsx": "^4.23.1",
-    "typescript": "^5"
+    "typescript": "^5",
+    "vite-tsconfig-paths": "^6.1.1",
+    "vitest": "^4.1.10"
   }
 }

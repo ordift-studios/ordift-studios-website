@@ -36,6 +36,126 @@ No further planning fields apply — this version is done, not proposed.
 
 ---
 
+## Version 1.0.5 — Platform Foundation Hardening
+
+**Approved:** 2026-07-30, inserted ahead of Version 1.1 at the user's direction, after a CTO-level current-state assessment surfaced a gap no feature checklist had caught: zero automated tests, no CI pipeline, no production error monitoring anywhere in the codebase (verified directly — no `.test.ts`/`.spec.ts` files, no `.github/workflows`, no Sentry/analytics dependency in `package.json`).
+
+**Vision:** this is not a feature version — it is the engineering foundation every future version inherits. The objective is not new visible functionality; it is making every future feature safer, faster, more maintainable, easier to deploy, debug, recover, and scale. Every decision in this version is evaluated against one question: *"Will this reduce operational risk over the next 10–20 years?"* If yes, it belongs here.
+
+**Objectives:**
+- Give the platform a regression safety net before Version 1.1+ adds more schema/permission/workflow surface area to it.
+- Make production failures visible via alerting instead of via client emails.
+- Convert everything currently living only in this project's session history — technical debt, architectural reasoning, "why we did it this way" — into permanent, queryable documents.
+- Stress-test disaster recovery and security against adversarial "assume it already went wrong" scenarios, not just checklist confirmation.
+- Document scaling trigger points without doing premature scaling work.
+
+**Workstreams:**
+
+### A — Engineering Test Foundation
+Testing *architecture*, not isolated tests: unit, integration, role-permission, API, authentication, RLS verification, booking workflow, client portal workflow, admin workflow, Google Sheets sync, email delivery. Goal is confidence, not a coverage percentage.
+- **Why it matters:** every subsequent version (starting with 1.1's Grade/Department schema) adds surface area with no regression net today. This is the single highest-leverage item on the whole list.
+- **Effort:** Medium — framework setup (Vitest + React Testing Library fits the existing Next.js/TS stack with no new infra) plus writing tests for the highest-risk logic first (RLS-dependent queries, record-ID/Sheets-sync service, auth/role resolution), not full coverage everywhere.
+- **Dependencies:** none. Fully additive.
+- **Risks:** scope creep toward "100% coverage" instead of confidence on the highest-risk paths; mitigate by explicitly prioritizing RLS/auth/money-adjacent flows first.
+- **Long-term value:** very high, compounding — this is what Workstream B needs to have anything to run.
+
+### B — Continuous Integration
+GitHub Actions: lint, typecheck, test, build-verify on every push. No deploy proceeds if any gate fails.
+- **Why it matters:** currently every one of ~250 completed milestones was verified manually by hand. That does not scale, and it is the first thing that silently degrades as the codebase grows.
+- **Effort:** Low — standard GitHub Actions workflow, no new services.
+- **Dependencies:** Workstream A (needs tests to run in the pipeline; can start with lint/typecheck/build-only gates before A finishes and add the test gate once A lands).
+- **Risks:** minimal — worst case is a slower push-to-deploy loop, tunable via caching.
+- **Long-term value:** high — this is the mechanism that makes Workstream A's value durable instead of one-time.
+
+### C — Production Observability
+Error tracking, performance monitoring, source maps, alerting.
+- **Why it matters:** today, a production failure is discovered when a client reports it, not before. For a platform meant to run 10–20 years, flying blind on errors is a real operational risk, not a nice-to-have.
+- **Effort:** Low-Medium — Sentry's free tier fits current scale; evaluated against alternatives before implementation per your instruction (see below).
+- **Dependencies:** none.
+- **Risks:** low; the main discipline risk is alert fatigue if thresholds aren't tuned — start conservative.
+- **Long-term value:** high — turns silent failures into actionable alerts.
+
+**Tool evaluation (Sentry vs. alternatives), as requested:**
+| Option | Fit for Ordift at this scale |
+|---|---|
+| **Sentry** (recommended) | Free tier covers current traffic comfortably; native Next.js SDK (auto source-map upload, edge/server/client coverage in one config); combines error tracking + performance + session context in one tool instead of three. This is the standard choice for a solo/small-team Next.js + Vercel stack and needs the least glue code. |
+| Vercel's own Observability (Web Analytics + Speed Insights) | Good complementary signal (Core Web Vitals, traffic), but it is not an error tracker — no stack traces, no alerting on exceptions. Worth adding alongside Sentry later as a cheap add-on, not a substitute. |
+| LogRocket / Datadog / self-hosted (GlitchTip) | Overkill or costly at this scale — session-replay and full APM suites solve problems Ordift doesn't have yet (no team of engineers triaging dashboards daily). GlitchTip (self-hosted, Sentry-API-compatible) is worth keeping in mind as a future zero-cost pivot if Sentry's free tier is ever outgrown, since the SDK integration wouldn't need to change. |
+
+Recommendation: Sentry now; revisit only if usage outgrows the free tier.
+
+### D — Technical Documentation
+`ENGINEERING_GUIDE.md`, `ENGINEERING_STANDARDS.md`, `RELEASE_PLAYBOOK.md` covering engineering standards, testing standards, deployment standards, rollback procedures, incident response, monitoring architecture, repository structure, coding standards.
+- **Why it matters:** the standing goal is that a future senior engineer with zero session history can understand the system. Substantial pieces already exist (`ARCHITECTURE.md`, `OPERATIONS_MANUAL.md`, `ADMIN_GUIDE.md`) — this workstream fills genuine gaps and cross-references rather than duplicating them.
+- **Effort:** Medium — mostly synthesis of what's already been learned, plus the genuinely new pieces (incident response runbook, monitoring architecture doc once C exists).
+- **Dependencies:** benefits from B and C existing first (nothing to document as "CI process" or "monitoring architecture" before they're built).
+- **Risks:** documentation sprawl if not checked against `DOCUMENTATION_INDEX.md` for overlap before writing.
+- **Long-term value:** high for continuity/handover; the actual bar is "another engineer, years from now, with no memory of this project."
+
+### E — Technical Debt Register
+Permanent `TECHNICAL_DEBT_REGISTER.md`: every compromise, shortcut, known limitation, and deferred architectural decision made across the build so far.
+- **Why it matters:** a large amount of this currently exists only in this session's history — the exact thing the "nothing should exist only in memory" principle is meant to prevent. Urgency is real: this should be captured before further context compaction or session boundaries erode it further.
+- **Effort:** Low — this is a capture exercise against already-known facts, not new investigation.
+- **Dependencies:** none.
+- **Risks:** none of consequence — pure documentation.
+- **Long-term value:** high and immediate; also the input list for prioritizing later versions' scope.
+
+### F — Architecture Decision Records
+`ARCHITECTURE_DECISIONS.md`: problem / options considered / decision / reasoning / consequences / date / future review trigger, for every major technical decision — backfilled for past decisions (Sanity dataset isolation, Supabase RLS-first authorization model, dual-write record-ID/Sheets-sync architecture, CMS-agnostic content-repository abstraction, the four-independent-axis IAM model), then required for every major decision going forward.
+- **Why it matters:** several major architectural choices already made this build (e.g., why Sheets is a secondary durability layer and not the primary store; why Grade/Role/Position/Engagement Type must never couple) exist only as reasoning inside a very long conversation history. Same urgency as Workstream E.
+- **Effort:** Medium — backfilling ~6-8 real historical decisions accurately takes more care than writing new ones going forward.
+- **Dependencies:** none.
+- **Risks:** low; the discipline risk is letting ADRs lapse once this initial burst is done — mitigate by making "write an ADR" part of the standard defined in Workstream D.
+- **Long-term value:** high — this is literally "why does it work this way," which is the hardest thing for a future engineer (or future me, post-compaction) to reconstruct without it being written down.
+
+### G — Platform Health Dashboard
+**Scope flag, per your invitation to challenge unnecessary complexity:** a full live internal dashboard *application* is itself a new feature — the thing this version is explicitly not supposed to be ("not another feature above it"). At current scale — pre-launch, founder-led, no engineering team checking a dashboard daily — a maintained `SYSTEM_HEALTH.md` capturing deployment health, test/CI status, monitoring status, backup status, security-check status, outstanding technical debt, and release readiness, with direct links out to Vercel/Sentry/Supabase's own dashboards (which already provide live graphs), delivers most of the value at a fraction of the cost and zero new infrastructure to maintain.
+- **Recommendation:** build the `SYSTEM_HEALTH.md` version now; revisit an in-app live dashboard once Version 1.1's staff/org structure means there's an actual team who would check it regularly.
+- **Effort:** Low (doc) vs. High (live app) — recommending the low-effort path.
+- **Dependencies:** benefits from B, C, E all existing (it's substantially a synthesis view over their outputs).
+- **Risks:** a markdown doc goes stale if not updated; mitigate by treating updates to it as part of the definition-of-done for future milestones, same discipline as `MILESTONES.md`.
+- **Long-term value:** medium now, high later once a live version is warranted.
+
+### H — Disaster Recovery Review
+Stress-test against "a disaster happened today," not checklist confirmation: backup verification, restore procedures, rollback procedures, credential recovery, infrastructure recovery.
+- **Why it matters:** `DISASTER_RECOVERY.md` and one verified backup already exist, but "we took a backup once" and "we could actually recover today" are different claims — this workstream tests the second one.
+- **Effort:** Low-Medium — largely a rigorous review pass plus a genuine restore-test rehearsal (already flagged as outstanding in `LAUNCH_CHECKLIST.md`'s After Launch section).
+- **Dependencies:** none technically, though doing it after E (debt register) means any gap found here can immediately be logged there.
+- **Risks:** none — this is a review, not a build.
+- **Long-term value:** high — untested recovery procedures are the classic "found out the hard way" risk.
+
+### I — Security Hardening Re-Review
+Re-challenge every layer: authentication, authorization, RLS, API protection, rate limiting, secrets management, environment variables, logging, audit trails — a skeptical second look, not a first pass.
+- **Why it matters:** several security passes already happened during launch prep (Phase 4 audit, backup/Turnstile work); this is deliberately an adversarial re-review rather than trusting those findings are still complete as the system has grown.
+- **Effort:** Medium — review-heavy, code changes only where a real gap is found.
+- **Dependencies:** none.
+- **Risks:** none from doing it; risk is in *not* doing it periodically as the system grows.
+- **Long-term value:** high — security is the one category where "it passed once" doesn't mean "it's still true."
+
+### J — Scalability Assessment
+Per major subsystem (Supabase, Sanity, Vercel, Redis rate-limiting, Google Sheets sync): current capacity, expected bottlenecks, scaling strategy, and the specific trigger point that should prompt a redesign — explicitly documentation, not premature optimization or actual scaling work now.
+- **Why it matters:** at current scale none of these subsystems are under real load, so building for scale now would be waste — but knowing *what number* should trigger action (e.g., "reassess Supabase plan at X concurrent connections," "Sheets sync becomes a bottleneck past Y submissions/day") means the decision is planned instead of reactive.
+- **Effort:** Low — analysis and documentation against known service tiers/limits, no implementation.
+- **Dependencies:** none.
+- **Risks:** none; the only failure mode is over-scoping into actual infrastructure changes, which this workstream explicitly excludes.
+- **Long-term value:** medium-high — cheap insurance against being surprised by a limit.
+
+**Release criteria:** CI pipeline green and blocking on every push; Sentry capturing real errors in production with source maps resolved; all six living documents (`ENGINEERING_GUIDE.md`, `TECHNICAL_DEBT_REGISTER.md`, `ARCHITECTURE_DECISIONS.md`, `ENGINEERING_STANDARDS.md`, `RELEASE_PLAYBOOK.md`, `SYSTEM_HEALTH.md`) exist and are cross-referenced in `DOCUMENTATION_INDEX.md`; DR review and security re-review each produce a written findings list (even if the finding is "no gap found"); scalability trigger points documented for every major subsystem.
+
+**Priority:** Highest — approved ahead of Version 1.1.
+
+**Suggested execution order** (dependency-driven, not workstream-letter order):
+1. **E, F** (Technical Debt Register, ADRs) — pure knowledge capture from what's already known, zero code risk, most time-sensitive (currently exists only in session history).
+2. **A** (Testing foundation) — the technical bedrock everything else in this version either depends on or is more valuable alongside.
+3. **B** (CI) — immediately follows A.
+4. **C** (Observability/Sentry) — independent of A/B, high value, low effort.
+5. **I** (Security re-review) and **H** (DR review) — independent reviews, can run in either order or in parallel with the above.
+6. **J** (Scalability assessment) — pure documentation, low effort, any time.
+7. **D** (Standards docs) — most valuable once B/C exist to describe.
+8. **G** (Health status doc, lightweight version) — synthesis view over B/C/E's outputs, naturally last.
+
+---
+
 ## Version 1.1 — Internal Organization Module
 
 **Vision:** give Ordift Studios a real internal-HR foundation — departments, positions, reporting lines, and organizational seniority — without touching or complicating the permission system that already works. This is about *who reports to whom and how the organization is structured*, not about *what anyone is allowed to do in the system*.

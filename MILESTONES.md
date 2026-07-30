@@ -2330,6 +2330,66 @@ With this pass complete, the Legal Suite phase is considered
 technically closed from this environment's side. Regenerated and
 resent both PDFs reflecting the QC pass and new dashboard.
 
+### Permanent Claude Code / Claude Chat split + Version 1.0.5 approved (2026-07-30)
+
+You set a permanent operating mandate: Claude Chat becomes the Legal,
+Governance and Commercial Documentation Authority going forward; this
+environment remains the permanent Technical Authority — Lead Software
+Architect, Technical Product Manager, and Infrastructure Lead —
+operating with platform-level thinking rather than feature-by-feature
+thinking, and acting as Technical Program Manager (assessing
+priorities/dependencies/blockers/impact before recommending what to
+build next, not assuming it).
+
+Asked me to identify the next highest-value engineering milestone and
+present it for approval before building anything. I reconciled your
+own rough Phase 2/3/4 checklist against what's actually built
+(Client Dashboard, CRM, Reports, and Staff Management were already
+substantially built; your checklist undercounted this), confirmed
+Version 1.0's LC1 feature freeze is still active and launch is
+blocked almost entirely on business/content decisions now owned by
+Claude Chat, and then surfaced a gap no feature checklist had shown:
+verified directly that the codebase has zero automated tests, no CI
+pipeline (no `.github/workflows`), and no production error monitoring.
+
+You approved inserting a new milestone ahead of Version 1.1:
+**Version 1.0.5 — Platform Foundation Hardening**, then expanded its
+scope yourself into ten workstreams (A: testing architecture, B: CI,
+C: observability, D: engineering documentation, E: technical debt
+register, F: architecture decision records, G: platform health
+status, H: disaster recovery review, I: security re-review, J:
+scalability assessment) plus six permanent living documents. Full
+per-workstream vision/objectives/why/effort/dependencies/risks/value,
+the Sentry-vs-alternatives evaluation, the scope concern on
+Workstream G (recommended a `SYSTEM_HEALTH.md` doc now over a full
+live dashboard app, since building one would itself be "another
+feature above the platform" — the opposite of this milestone's
+purpose), and the dependency-driven execution order are all recorded
+in `PRODUCT_ROADMAP.md`'s new Version 1.0.5 section.
+
+Started execution with Workstreams E and F — pure knowledge-capture,
+zero code risk, and the most time-sensitive since the material was
+otherwise living only in this session's history. Shipped
+`TECHNICAL_DEBT_REGISTER.md` (10 verified entries — no automated
+tests, no CI, no error monitoring, the deliberately-excluded CSP
+header, unalerted Sheets/email dead-letter tables, 31 npm audit
+findings in transitive deps judged non-blocking with reasoning, the
+by-design link-only Deliverables model, the Free-plan backup gap, no
+load testing yet, and the plain-text `legalPage` body field) and
+`ARCHITECTURE_DECISIONS.md` (8 backfilled ADRs covering the
+content-repository abstraction, RLS-as-security-boundary, the
+Sheets dual-write pattern, the four-independent-axis IAM model,
+Sanity dataset isolation, the forward-built media component library,
+the Pulse/Journal integration decision, and the Tier 1/Tier 2 forms
+upload split) — every claim in both checked directly against the
+codebase (ran `npm audit`, grepped for CSP/rate-limit/dead-letter
+handling, confirmed the deliverables `url` field) rather than
+recalled from memory alone.
+
+Next: Workstream A (testing architecture), per the dependency-driven
+execution order — B (CI) and D (standards docs) both need it in place
+first.
+
 ## Version 4.0 (partial) — Ordift Pulse Architecture — 2026-07-27 ✅ architecture complete
 
 Pulled forward from `PRODUCT_ROADMAP.md`'s Version 4.0 per explicit direction, while the media architecture (immediately above) was still fresh. Architecture and CMS schema only — see `PULSE_ARCHITECTURE.md` for full design detail.
