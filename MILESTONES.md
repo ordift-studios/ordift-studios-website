@@ -2232,6 +2232,65 @@ same way as `OPERATIONS_MANUAL.md`/`MAINTENANCE_SCHEDULE.md` — updated
 when a new external dependency is actually introduced, not on a fixed
 schedule.
 
+### ORDIFT_STUDIOS_LEGAL_SUITE_v1.md drafted — scaffold, not published (2026-07-30)
+
+After sending the exact current text of all four legal pages for your
+independent offline legal review, you redirected the work: expand from
+four pages into a full 11-part legal framework — Introduction, Shared
+Definitions, then Privacy Notice/Booking Terms/Cookie Notice/Website
+Terms (rewritten) plus four entirely new documents (Media Usage &
+Portfolio Policy, Intellectual Property Policy, AI & Digital Workflow
+Policy, Client Portal Terms, Workshop Terms).
+
+**Flagged a real concern before drafting, since you'd asked me to
+raise issues rather than silently proceed:** this scope covers clauses
+(force majeure, international dispute resolution, model/property
+releases, IP buy-outs, AI-liability language) that carry real legal
+risk if drafted with confident-sounding AI-written language rather
+than genuine legal review — and doing so before your own outside
+review of even the simpler four-page version had happened seemed to
+work against your own stated sequencing. You confirmed: build the
+full structure, but any clause requiring jurisdiction-specific
+expertise gets a structured placeholder (purpose, business decisions
+required, why legal review is recommended, drafting notes for future
+counsel) instead of fabricated legal language — only factual/
+operational content, verified against the actual codebase, gets
+drafted to production quality.
+
+**Verification done before drafting** (not assumed): confirmed via
+direct code search that the Client Portal has no file-upload
+capability (explicitly noted as unbuilt in `model/page.tsx`'s own
+comments), that Deliverables are external links rather than
+platform-hosted files, that no `localStorage`/`sessionStorage` usage
+exists anywhere, and that the Workshop schema genuinely has a
+per-workshop certificate field — all used to keep the Client Portal
+Terms and Workshop Terms parts factually accurate rather than
+assumed.
+
+Produced `LEGAL_REVIEW_REPORT.md` (the pre-draft audit of the
+original four pages — duplicated wording, inconsistent terminology,
+missing definitions/protections found — plus the post-draft business
+protection review naming model/property releases and international
+data transfers as the two highest-priority open risks, an overall
+legal documentation readiness score of 55%, explicitly *not* meant to
+read as "55% legally protected") and
+`ORDIFT_STUDIOS_LEGAL_SUITE_v1.md` itself.
+
+**Explicitly excluded rather than fabricated:** Future NFT/digital-
+asset and online-sales sections were included per your brief but
+flagged inline as not appearing anywhere in `PRODUCT_ROADMAP.md` or
+the codebase — structural placeholders only, not implying either is
+actually planned.
+
+**Nothing published.** The four live Sanity `legalPage` documents are
+unchanged — this new suite is a standalone draft awaiting your
+approved wording before anything is copied into production or
+`isApproved` is set to `true`. Updated `DOCUMENTATION_INDEX.md`,
+`LAUNCH_CHECKLIST.md`, and `FINAL_LAUNCH_CERTIFICATION.md` to point at
+the new suite as the current legal-review surface, without touching
+their underlying readiness scores (unchanged, since nothing has
+actually been approved or published yet).
+
 ## Version 4.0 (partial) — Ordift Pulse Architecture — 2026-07-27 ✅ architecture complete
 
 Pulled forward from `PRODUCT_ROADMAP.md`'s Version 4.0 per explicit direction, while the media architecture (immediately above) was still fresh. Architecture and CMS schema only — see `PULSE_ARCHITECTURE.md` for full design detail.
