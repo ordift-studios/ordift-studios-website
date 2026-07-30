@@ -46,6 +46,8 @@ Three tiers, roughly in order of how often each changes:
 | `OPERATIONS_MANUAL.md` | **The day-to-day operational entry point** — Daily/Weekly/Monthly operations checklists, a System Administration routing table, Disaster Recovery pointers, Monitoring guidance, and the Business/Post-Launch checklists. Cross-references `ADMIN_GUIDE.md`/`DISASTER_RECOVERY.md`/`DEPLOYMENT.md` for detailed "how," rather than duplicating them | Whenever the operational cadence or launch checklist changes |
 | `ADMIN_GUIDE.md` | The detailed reference for roles/permissions, inviting and managing users, account lifecycle, email infrastructure, troubleshooting, and (as of 2026-07-27) Internal Governance standards — see `OPERATIONS_MANUAL.md` for the higher-level day-to-day entry point that routes here | Whenever how the platform is operated day-to-day changes |
 | `PRODUCT_ROADMAP.md` | **The authoritative long-term plan** — Versions 1.1 through 4.0, each with vision/objectives/features/dependencies/risks/release criteria, plus Vision 2030 and Engineering Standards for future work | Whenever roadmap scope, priority, or sequencing is deliberately revisited — not casually |
+| `LAUNCH_CHECKLIST.md` | **The canonical Before Launch / Launch Day / After Launch runbook** — every concrete item from technical/content/business readiness through the exact holding-page removal steps to first-day/week/month/three-month post-launch actions. Points to the detailed "how" docs rather than duplicating them | Whenever a Before Launch item's status changes, or the Launch Day procedure itself changes |
+| `MAINTENANCE_SCHEDULE.md` | The full Daily → Annual maintenance cadence in one place — Daily/Weekly/Monthly summarize `OPERATIONS_MANUAL.md` §1–§3; Quarterly and Annual are defined here for the first time (dependency upgrades, restore-test rehearsals, full security/performance audits, credential review, documentation audits) | Whenever a cadence item is added, retired, or its frequency changes |
 | `DOCUMENTATION_INDEX.md` | This document | Whenever a document is added, removed, or repurposed |
 
 ## 3. What Changed in This Cross-Reference Pass (2026-07-27)
@@ -59,17 +61,17 @@ To remove duplicate/conflicting guidance, per this session's explicit instructio
 
 ## 4. Remaining Strategic Decisions Needing Your Approval
 
-These are the genuine open decision points surfaced across `PRODUCTION_READINESS_REPORT.md`, `ADMIN_GUIDE.md`, and `PRODUCT_ROADMAP.md` — listed once, here, rather than scattered:
+Updated 2026-07-30 — superseded items from the original 2026-07-27 list (Turnstile credentials, the backup-plan decision) removed now that `FINAL_GO_LIVE_REPORT.md` resolved them:
 
-1. **When to begin Version 1.1 (Internal Organization/Grade system).** Fully specified and ready; not started. Your call on timing relative to closing the remaining Milestone 0 production-readiness items.
-2. **Supabase Pro-plan upgrade** — needed to enable leaked-password protection (a real, if minor, security improvement). A billing decision, not a technical one; flagged, not acted on.
+1. **When to begin Version 1.1 (Internal Organization/Grade system).** Fully specified and ready; not started. Your call on timing relative to actual public launch.
+2. **Supabase Pro-plan upgrade** — the decision (2026-07-30) is to stay on Free plan with a documented manual `pg_dump` schedule; a concrete trigger for revisiting this is in `DISASTER_RECOVERY.md` §9. Also would enable leaked-password protection as a side benefit whenever it does happen.
 3. **Reply-To header for auth emails** (`info@ordiftstudios.com`) — would need a custom Supabase Auth Hook (new code path, not yet built). Worth confirming whether this is actually needed before building it, since reply traffic to a `no-reply@` sender is typically rare.
-4. **Google Sheets / CAPTCHA / Analytics setup** — all gated on you generating the relevant credentials (Google Cloud service account, Turnstile keys, GA measurement ID); these are the main remaining blockers to closing Milestone 0 and considering the site ready for full public launch.
-5. **Backup and restore verification** — needs you to confirm Supabase's backup retention settings and approve a test-restore being run (into a scratch project, not production) before the platform holds real client data at volume.
+4. **`FORMS_SENDING_ENABLED`** — the master flag gating real (vs. logged-only) email/Sheets sends. Requires your explicit written approval before it's turned on, per your standing instruction — see `LAUNCH_CHECKLIST.md`.
+5. **First manual production backup** — code/documentation is ready (`DISASTER_RECOVERY.md` §2); the first actual backup hasn't been taken yet and needs your database password entered directly wherever the backup is run, not through chat.
 6. **Version 2.0 (Talent Management)'s secure-document-storage decision** — before any Contract/Document feature is built, a deliberate choice between signed-URL object storage (e.g. S3/R2) vs. a dedicated secure-forms provider needs to be made and reviewed with you — flagged in the roadmap as a hard release-blocking dependency, not something to default into.
 7. **Ordift Pulse's content-source legal vetting** (Version 4.0) — the specific news providers/APIs/RSS feeds to actually use need a legal-usability check before integration, beyond the general "don't scrape, don't republish" principle already documented.
 8. **Whether to reorder Ordift Pulse ahead of the rest of Version 4.0** — it has no real dependency on Versions 1.1–3.0's data (unlike the Business Intelligence half of Version 4.0), so it could be pulled forward if keeping the public site editorially fresh becomes a nearer-term priority. Flagged in `PRODUCT_ROADMAP.md` as a genuine scheduling option, not a fixed position.
 
 ---
 
-*Read `PRODUCT_ROADMAP.md` first for where the platform is going; `ADMIN_GUIDE.md` for how to run what's already live; `PRODUCTION_READINESS_REPORT.md` for exactly what's verified as of the last checkpoint.*
+*Read `PRODUCT_ROADMAP.md` first for where the platform is going; `ADMIN_GUIDE.md` for how to run what's already live; `FINAL_GO_LIVE_REPORT.md` for exactly what's verified as of the last checkpoint; `LAUNCH_CHECKLIST.md` for the concrete steps from here to public launch.*
