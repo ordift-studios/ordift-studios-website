@@ -28,12 +28,13 @@ The single canonical checklist for going from "platform is technically ready" to
 Full detail and current status on each item: `OPERATIONS_MANUAL.md` §7, `FINAL_GO_LIVE_REPORT.md`.
 
 ### Content
-- [ ] Homepage, About, Services — already real and launch-ready, re-confirmed 2026-07-30
+- [x] Homepage, About, Services, Founder, Client Portal — confirmed real and launch-ready via full business audit 2026-07-30 (`BUSINESS_LAUNCH_AUDIT.md`)
+- [ ] **Legal pages (Terms, Privacy, Cookies, Booking Terms) — confirmed unapproved drafts on production** (`isApproved: false` on all four, verified via direct query 2026-07-30) — the single highest-priority remaining item; real, approved text needed before the holding page comes down, see `BUSINESS_LAUNCH_AUDIT.md`
 - [ ] Portfolio, Journal, Workshops — currently 100% `[SAMPLE]` placeholder; work through `CONTENT_READINESS_CHECKLIST.md`, or unpublish the sample entries in Sanity if none will be ready by launch
+- [ ] Every department page's "Featured Work" section shows unlabeled placeholder cards, cascading from the Portfolio gap above — resolves automatically once Portfolio content is real
 - [ ] Pricing information accurate wherever shown
-- [ ] Legal pages (Terms, Privacy, Cookies, Booking Terms) published and approved, `LEGAL_PAGES_APPROVED` set correctly
-- [ ] Contact details correct (`NEXT_PUBLIC_CONTACT_EMAIL`, `NEXT_PUBLIC_WHATSAPP_NUMBER`)
-- [ ] Social media links correct, if/where displayed
+- [ ] Contact details — `ordift.ghana@gmail.com` and a UK (+44) WhatsApp number are confirmed live on production; confirm these are the intended public values
+- [ ] Social media links — confirmed empty on both datasets; decide whether to add real accounts or confirm the empty state is intentional
 - [ ] Branding (logo, colors, typography) final
 
 ### Business

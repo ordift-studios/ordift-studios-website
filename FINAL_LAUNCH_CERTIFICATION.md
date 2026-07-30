@@ -1,7 +1,7 @@
 # Final Launch Certification
 
-**Date:** 2026-07-30 (updated same day — backup taken, forms sending enabled and verified)
-**Scope:** The final pre-launch pass across all 10 phases — technical platform, business/content review, documentation consistency, permanent operations docs, backup readiness, launch simulation, security, and performance. This document supersedes `FINAL_GO_LIVE_REPORT.md` (95%) as the current, final checkpoint; that report's detail is still valid and cross-referenced throughout, not replaced.
+**Date:** 2026-07-30 (updated same day — backup taken, forms sending enabled and verified, full business content audit completed)
+**Scope:** The final pre-launch pass across all 10 phases plus a dedicated business-owner content audit — technical platform, business/content review, documentation consistency, permanent operations docs, backup readiness, launch simulation, security, and performance. This document supersedes `FINAL_GO_LIVE_REPORT.md` (95%) as the current, final checkpoint; that report's detail is still valid and cross-referenced throughout, not replaced.
 
 ---
 
@@ -10,11 +10,11 @@
 | Area | Score | Basis |
 |---|---|---|
 | **Technical** | 99% | Every system built or audited this engagement is live, tested, and verified against real production, including a first real backup and real production email/Sheets sends (both confirmed today). The 1% gap is the one deliberately-deferred CAPTCHA success-path check on the public `/book` form — blocked by the holding page, by design, not a defect. |
-| **Business** | 95% | Homepage/About/Services are real, professional, launch-ready copy (re-verified this pass). One live content bug found and fixed (misleading footer Talent links). Portfolio/Journal/Workshops remain placeholder — a genuine content task, not a defect. |
-| **Security** | 97% | RLS, headers, secrets handling, Studio/Admin auth all verified. Only gap: no CSP yet (deliberately deferred pending a tested script-source allowlist) and the tracked `npm audit` findings (no safe fix available). |
+| **Business** | 88% | Down from 95% after a full page-by-page content audit (`BUSINESS_LAUNCH_AUDIT.md`) surfaced a real, previously under-flagged gap: all four legal pages are confirmed unapproved drafts on production, and `FORMS_SENDING_ENABLED` is now live — meaning real personal data can currently be collected without an approved Privacy Notice. Home/About/Services remain genuinely strong; Portfolio/Journal/Workshops remain the already-tracked placeholder-content gap. |
+| **Security** | 97% | RLS, headers, secrets handling, Studio/Admin auth all verified. Only gap: no CSP yet (deliberately deferred pending a tested script-source allowlist) and the tracked `npm audit` findings (no safe fix available). The legal-pages/data-collection gap above is tracked under Business, not here, since nothing about the platform's technical security posture is affected. |
 | **Performance** | 90% | Production build is clean (zero errors/warnings, 72 static/SSG pages generated correctly). The one oversized bundle (4.1 MB) is Sanity Studio's own client bundle, confirmed scoped exclusively to `/studio` — never loaded by a public visitor. No formal Lighthouse/load-testing pass has been run yet (tracked, not a launch blocker). |
 | **Operations** | 100% | `OPERATIONS_MANUAL.md`, `LAUNCH_CHECKLIST.md`, `MAINTENANCE_SCHEDULE.md`, `DISASTER_RECOVERY.md`, `DOCUMENTATION_INDEX.md` all current and cross-referenced, including the first real backup and today's forms-enablement verification. |
-| **Overall Launch Readiness** | **97%** | Up from 96% earlier today, 95% at `FINAL_GO_LIVE_REPORT.md`. The remaining 3% is entirely items below that are your decision, your content, or a step that correctly waits for the actual launch moment — none of it is unresolved technical work. |
+| **Overall Launch Readiness** | **95%** | Down from 97% earlier today, after the business content audit surfaced the legal-pages gap — a real finding, not a step backward in actual work done. Every other area held or improved. The remaining 5% is entirely items below that are your decision, your content, or a step that correctly waits for the actual launch moment. |
 
 ---
 
@@ -44,12 +44,16 @@
 - **Idempotency and dead-letter logging** — not re-tested this pass (both are independent of the `FORMS_SENDING_ENABLED` gate at the code level, and were already proven working in earlier production testing — see `PRODUCTION_HARDENING_REPORT.md`). Dead-letter tables couldn't be freshly queried this round (would need a service-role credential not available in this session), but nothing in today's testing produced a failure that would have written to them.
 - **The one thing still genuinely untested:** a complete real visitor journey through the actual `/book` page with a real Turnstile widget — impossible until the holding page comes down, since `/book` itself isn't reachable yet. This was always the deliberately-deferred Launch Day step, not a new gap.
 
+**Full business content audit** (completed 2026-07-30): every public page reviewed as a first-time visitor would see it, cross-checked against real Sanity data on both datasets rather than assumed. Full detail, page-by-page findings, a Critical/Recommended/Future checklist, and a persona-based review (wedding/commercial/corporate/portrait/model/event-organizer/partner) in `BUSINESS_LAUNCH_AUDIT.md`. Headline findings: Home/About/Services/Founder/Client-Portal all genuinely strong; the Talent Management department page's honest "Coming Soon" handling is the pattern the rest of the site should be judged against; every department page's "Featured Work" section currently shows unlabeled placeholder cards (cascades from the Portfolio content gap); contact email (`ordift.ghana@gmail.com`) and WhatsApp number (+44, UK) are both confirmed-live production values worth a deliberate go/no-go decision, not an oversight; social links are confirmed empty on both datasets.
+
 ---
 
 ## Requires Your Approval
 
-1. **Content readiness for Portfolio/Journal/Workshops** — either replace the `[SAMPLE]` entries with real content (`CONTENT_READINESS_CHECKLIST.md`), or explicitly decide to unpublish them for launch and add real content after.
-2. **Removing `LAUNCH_HOLDING_PAGE`** — the actual go-live moment. Only after every item in `LAUNCH_CHECKLIST.md`'s Before Launch section is genuinely checked. Not actioned this pass per your explicit instruction to change nothing else yet.
+1. **Legal pages — real, approved text** (new, highest-priority finding from today's audit). All four (`privacy`, `terms`, `cookies`, `booking`) are confirmed unapproved drafts on production right now, and `FORMS_SENDING_ENABLED` is already live. I did not draft replacement legal text myself — this genuinely needs either your own words or actual legal review, not invented boilerplate. Once you have real text, updating each Sanity `legalPage` document's body and setting `isApproved: true` is a fast, low-risk change I can make the moment you have the words.
+2. **Content readiness for Portfolio/Journal/Workshops** — either replace the `[SAMPLE]` entries with real content (`CONTENT_READINESS_CHECKLIST.md`), or explicitly decide to unpublish them for launch and add real content after.
+3. **Contact email and WhatsApp number** — confirm `ordift.ghana@gmail.com` and the +44 WhatsApp number are exactly what you want live publicly, or provide replacements.
+4. **Removing `LAUNCH_HOLDING_PAGE`** — the actual go-live moment. Only after every item in `LAUNCH_CHECKLIST.md`'s Before Launch section is genuinely checked. Not actioned this pass per your explicit instruction to change nothing else yet.
 
 ---
 
@@ -72,11 +76,12 @@
 ## Recommended Launch Sequence
 
 1. ~~Take the first real production backup.~~ ✅ Done 2026-07-30.
-2. Decide on Portfolio/Journal/Workshops content (replace or unpublish) — the one remaining item that's genuinely yours.
-3. ~~Confirm `FORMS_SENDING_ENABLED` in writing.~~ ✅ Done and verified 2026-07-30.
-4. Remove `LAUNCH_HOLDING_PAGE` per `LAUNCH_CHECKLIST.md`'s Launch Day runbook.
-5. Complete the one real Turnstile widget challenge on the live `/book` page — the last verification gap, closed the moment the site is reachable.
-6. The platform is live.
+2. **Get real, approved legal-page text into all four `legalPage` documents** — the new top-priority item; everything else on this list can proceed in parallel, but the holding page shouldn't come down without this.
+3. Decide on Portfolio/Journal/Workshops content (replace or unpublish), and confirm the contact email/WhatsApp number.
+4. ~~Confirm `FORMS_SENDING_ENABLED` in writing.~~ ✅ Done and verified 2026-07-30.
+5. Remove `LAUNCH_HOLDING_PAGE` per `LAUNCH_CHECKLIST.md`'s Launch Day runbook.
+6. Complete the one real Turnstile widget challenge on the live `/book` page — the last verification gap, closed the moment the site is reachable.
+7. The platform is live.
 
 ### First Week
 Monitor form submissions/emails closely; watch Vercel function logs for an error spike; confirm the first real enquiry flows through end-to-end; run the Weekly Operations checklist (`OPERATIONS_MANUAL.md` §2) at least once even off-cycle.

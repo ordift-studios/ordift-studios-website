@@ -2074,6 +2074,48 @@ Updated `FINAL_LAUNCH_CERTIFICATION.md` (Technical 98%→99%, Overall
 96%→97%) and `LAUNCH_CHECKLIST.md` to reflect both this and the
 backup completion above.
 
+### Full business content audit — BUSINESS_LAUNCH_AUDIT.md (2026-07-30)
+
+A dedicated business-owner, first-time-visitor review of every public
+page, requested explicitly as its own phase separate from the
+technical pre-launch work above. Browsed every listed page fresh
+(local environment, since production stays behind the holding page),
+and — critically — cross-checked anything "is this really live"
+against the real Sanity data on both staging and production datasets
+directly, rather than trusting what a stale local fixture might show.
+
+**The headline finding:** all four legal pages (`privacy`, `terms`,
+`cookies`, `booking`) are confirmed unapproved drafts (`isApproved:
+false`) on **both** datasets, each literally rendering "This page is
+a placeholder... Nothing on this page should be relied on until it is
+reviewed and approved." This existed before today, but matters more
+now that `FORMS_SENDING_ENABLED` went live earlier this same session —
+real personal data can currently be collected with no approved
+Privacy Notice behind it. Not a code defect (the code correctly shows
+the draft state and `noindex`s it) — a genuine content/legal gap that
+this audit surfaced clearly for the first time.
+
+Other findings: Home/About/Founder/Services/Client-Portal all
+confirmed genuinely strong, professional, launch-ready copy; the
+Talent Management department page's honest "Coming Soon" handling
+identified as the pattern the rest of the site should be judged
+against; every department page's "Featured Work" section shows
+unlabeled placeholder cards (cascades from the already-tracked
+Portfolio content gap); the live production contact email
+(`ordift.ghana@gmail.com`) and WhatsApp number (+44, UK) both
+confirmed via direct data query, flagged for a deliberate go/no-go
+decision rather than assumed wrong; social links confirmed empty on
+both datasets.
+
+Produced `BUSINESS_LAUNCH_AUDIT.md` — full page-by-page audit, a
+Critical/Recommended/Future content checklist, and a persona-based
+review (wedding/commercial/corporate/portrait/model/event-organizer/
+partner client). Updated `FINAL_LAUNCH_CERTIFICATION.md` (Business
+95%→88%, Overall 97%→95% — a real finding surfacing, not work
+regressing) and `LAUNCH_CHECKLIST.md`'s Content section to reflect
+the legal-pages finding as the new top-priority item, ahead of the
+already-tracked Portfolio/Journal/Workshops content gap.
+
 ## Version 4.0 (partial) — Ordift Pulse Architecture — 2026-07-27 ✅ architecture complete
 
 Pulled forward from `PRODUCT_ROADMAP.md`'s Version 4.0 per explicit direction, while the media architecture (immediately above) was still fresh. Architecture and CMS schema only — see `PULSE_ARCHITECTURE.md` for full design detail.
