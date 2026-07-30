@@ -19,7 +19,7 @@ This document exists so that a real incident (accidental data deletion, a bad mi
 | Project region | Central EU (Frankfurt) | Supabase Dashboard → Settings → General |
 | Project ownership | Single owner (`matetey@ordiftghana.com`), org-wide access | Supabase Dashboard → Settings → General |
 
-**The real risk in plain terms:** if the production database is corrupted, has data accidentally deleted, or the project is lost, **there is currently no way to restore the actual data** (enquiries, workshop registrations, client accounts, profiles, everything in `public.*`). The *schema* is always recoverable (every table/column/function/grant exists as SQL in `supabase/migrations/*.sql`, replayable against a fresh project), but the *rows* are not, unless a manual export was taken first. This is not a new finding — it was flagged 2026-07-27 in `MILESTONES.md` (Phase E) as a pending owner decision — this audit confirms it is still true as of today and adds the PITR pricing detail and the Storage/ownership confirmation that weren't previously verified directly.
+**The real risk in plain terms:** if the production database is corrupted, has data accidentally deleted, or the project is lost, the *schema* is always recoverable (every table/column/function/grant exists as SQL in `supabase/migrations/*.sql`, replayable against a fresh project), but the *rows* are only recoverable as of the most recent manual export. **A first manual backup was taken and verified 2026-07-30** (§2.5) — real row-level recoverability now exists as of that timestamp, but it degrades every day the weekly cadence in §2.1 isn't actually followed. This is not a new finding — it was flagged 2026-07-27 in `MILESTONES.md` (Phase E) as a pending owner decision — this audit confirms it is still true as of today and adds the PITR pricing detail and the Storage/ownership confirmation that weren't previously verified directly.
 
 **Decision (2026-07-30):** stay on the Free plan for now. §2 below is therefore the **primary** backup strategy, not a stopgap — it must actually be followed on the schedule given, not treated as optional. §9 gives the concrete milestone for revisiting the Pro-plan decision.
 
@@ -72,6 +72,16 @@ A backup you haven't verified is not a backup — it's an assumption. After ever
 - Keep at least the **last 4 weekly backups** (one month of rollback depth) before deleting older ones — balances real recoverability against unbounded storage growth.
 - Encrypt at rest if the storage location doesn't already do so by default (most cloud storage does).
 - Whoever holds backup files should be the same person(s) with Supabase dashboard access — don't create a new access surface just for backups.
+
+### 2.5 First backup — completed 2026-07-30
+
+The very first manual production backup was taken and verified 2026-07-30, closing the "no row-level recoverability" gap named in §1:
+
+- **File:** `ordift-production-20260730-043436.dump`, 377 KB, custom format (`pg_dump -F c`), via the Session Pooler connection.
+- **Verification performed:** file non-empty; `pg_restore --list` independently re-run and confirmed structurally valid — 683 total TOC entries, all 26 `public.*` tables present with both schema and data entries (`businesses`, `profiles`, `roles`, `user_roles`, `enquiries`, `workshop_registrations`, `model_profiles`, `vendor_profiles`, `staff_details`, `enquiry_notes`, `feature_flags`, `activity_log`, `deliverable_categories`, `deliverables`, `request_types`, `project_requests`, `operational_titles`, `engagement_types`, `project_assignments`, `project_updates`, `record_sequences`, `sheet_sync_failures`, `grades`, `member_number_classifications`, `member_numbers`, `email_send_failures`).
+- **Not yet performed this round:** the row-count sanity check against the admin dashboard's own counts (§2.3 step 3), and a full restore-into-a-scratch-project rehearsal (§3) — both worth doing before this is treated as a fully rehearsed recovery path, not just a valid file.
+- **Stored:** `~/ordift-backups/` on the operator's Mac, outside the git repository, with `backup-log.txt` in the same folder per §2.4's logging guidance above. Not yet moved to a separate cloud storage location with independent access control — recommended as the next hardening step per §2.4.
+- **A troubleshooting note for future backups:** the first attempt produced a silent 0-byte file because the database password contained special characters that broke the connection URI's parsing. The working fix — percent-encoding the password via a `read -s` prompt piped through `urllib.parse.quote` rather than typing it directly into the command — avoids both the parsing failure and leaving the password in shell history; worth reusing verbatim for the next backup unless the password changes.
 
 ## 3. Database Restoration Procedure
 

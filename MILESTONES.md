@@ -1983,12 +1983,49 @@ sitemap/OG/content-checklist work already logged above:
 Produced `FINAL_LAUNCH_CERTIFICATION.md` — Technical (98%) / Business
 (95%) / Security (97%) / Performance (90%) / Operations (100%) scores,
 Overall Launch Readiness **96%**, superseding `FINAL_GO_LIVE_REPORT.md`
-(95%). Remaining gaps are named explicitly: the first real backup
-hasn't been taken yet (guided step-by-step in the certification doc,
-requires your database password entered directly in your own
-terminal), `FORMS_SENDING_ENABLED` awaits your written approval, and
+(95%). Remaining gaps named explicitly: the first real backup hadn't
+been taken yet (guided step-by-step in the certification doc, requires
+your database password entered directly in your own terminal),
+`FORMS_SENDING_ENABLED` awaits your written approval, and
 Portfolio/Journal/Workshops content awaits your decision to replace or
 unpublish.
+
+### First production database backup — completed 2026-07-30
+
+Walked through step-by-step per `DISASTER_RECOVERY.md` §2.2, entirely
+in your own terminal — I never saw the database password. Two real
+issues hit and fixed along the way, not a clean first attempt:
+
+- **PATH issue:** Homebrew's `libpq` (bundles `pg_dump`/`pg_restore`)
+  is keg-only by design, so the binaries existed immediately after
+  install but weren't on PATH. Fixed by creating `~/.zshrc` (none
+  existed) with the PATH export Homebrew itself recommends — confirmed
+  via a simulated interactive shell before asking you to retry, since
+  `.zshrc` only loads for interactive shells, not `-l`/non-interactive
+  ones (an easy thing to get a false negative on while debugging).
+- **Silent 0-byte dump:** the first real attempt produced an empty
+  file — no error surfaced, but `ls -lh` immediately showed 0 bytes,
+  caught before it was ever treated as a valid backup. Root cause: the
+  database password contains special characters that broke the
+  connection URI's parsing. Fixed with a `read -s` prompt piped
+  through Python's `urllib.parse.quote` to percent-encode the password
+  in-memory, never written to disk or shell history, never typed
+  directly into a command line.
+
+**Result, independently re-verified (not just taken on your word):**
+`ordift-production-20260730-043436.dump`, 377 KB, `pg_restore --list`
+confirms all 26 `public.*` tables present with both schema and data
+entries, 683 total TOC entries across the full database. Stored in
+`~/ordift-backups/` outside the repo, with a `backup-log.txt` started
+per `DISASTER_RECOVERY.md` §2.3's logging guidance. Full detail and
+the exact working command sequence in `DISASTER_RECOVERY.md` §2.5, so
+the next weekly backup doesn't have to rediscover either fix.
+
+**Not yet done:** the row-count sanity check against admin dashboard
+counts, a full restore-into-scratch-project rehearsal, and moving the
+file to a proper cloud storage location with independent access
+control (currently just this Mac) — all named as next steps in §2.5,
+none of them launch-blocking for a first backup.
 
 ## Version 4.0 (partial) — Ordift Pulse Architecture — 2026-07-27 ✅ architecture complete
 

@@ -22,7 +22,7 @@ The single canonical checklist for going from "platform is technically ready" to
 - [ ] Sitemap (`/sitemap.xml`) and `robots.txt` present and correct — done 2026-07-30
 - [ ] Open Graph / social-share preview correct — done 2026-07-30
 - [ ] Favicon present — confirmed live
-- [ ] **First manual production database backup taken and verified** (`DISASTER_RECOVERY.md` §2) — genuinely outstanding; needs your database password entered directly in the tool you back up with, never in chat
+- [x] **First manual production database backup taken and verified** (`DISASTER_RECOVERY.md` §2.5) — completed 2026-07-30, `ordift-production-20260730-043436.dump`, all 26 tables confirmed present via `pg_restore --list`
 - [ ] **`FORMS_SENDING_ENABLED` decision made** — requires your explicit written approval before I enable it, deploy, and run one final controlled real-submission test across every public form
 
 Full detail and current status on each item: `OPERATIONS_MANUAL.md` §7, `FINAL_GO_LIVE_REPORT.md`.
