@@ -36,7 +36,7 @@ Every part of this suite uses the Part 2 definitions rather than redefining term
 | Term | Definition |
 |---|---|
 | **Ordift Studios** / **we** / **us** / **our** | The multidisciplinary creative studio operating as Ordift Studios, based in Ghana. |
-| **Client** | A person or organization who has engaged, or is in the process of engaging, Ordift Studios for Services, whether or not a Booking has been confirmed. |
+| **Client** | A person or organisation who has engaged, or is in the process of engaging, Ordift Studios for Services, whether or not a Booking has been confirmed. |
 | **Visitor** | Any person browsing the Site who has not (yet) become a Client. |
 | **User** | A Client, Visitor, workshop attendee, or Account holder — used where a statement applies regardless of which category someone falls into. |
 | **Site** | ordiftstudios.com and all pages, forms, and functionality on it. |
@@ -146,7 +146,7 @@ Following an Enquiry, we provide a quote or proposal covering scope, timeline, a
 > **Purpose of this clause:** to state deposit percentage, payment schedule, accepted payment methods, and consequences of late/non-payment.
 > **Business decisions required:** the deposit percentage (if any), payment schedule, and accepted payment methods. Note per `TECHNOLOGY_COST_REGISTER.md`: no online payment processing is currently implemented on the Site — all payment today happens outside the platform, by arrangement.
 > **Why legal review is recommended:** payment default and late-payment consequences (interest, suspension of work) are enforceable-clause territory, not just a business preference.
-> **Drafting note for counsel:** once online payments are actually implemented (see Part 6.9's forward-looking note), this section will need to reference the payment processor by name and its own terms.
+> **Drafting note for counsel:** once online payments are actually implemented (see Part 4.21), this section will need to reference the payment processor by name and its own terms.
 
 ### 4.4 Project Confirmation
 A Booking is only confirmed once both parties have agreed the quote in writing (including by email) and, where applicable, any required deposit has been received.
@@ -375,7 +375,7 @@ Wedding Media follows the general default (Section 7.2) unless the Client reques
 > **Purpose of this clause:** to establish a specific policy for photographing/recording children and using their imagery, distinct from the general adult-Client default.
 > **Business decisions required:** whether children's imagery requires a parent/guardian's separate written consent before any Portfolio/marketing use, and how that consent is captured given no release-capture mechanism currently exists on the platform.
 > **Why legal review is recommended:** most jurisdictions treat children's imagery and data with heightened protection; this is flagged in `LEGAL_REVIEW_REPORT.md` as a priority item, not an equal-weight placeholder among the others.
-> **Drafting note for counsel:** this interacts directly with 7.9 (Model Releases) — likely needs its own dedicated release form/process, not just policy language.
+> **Drafting note for counsel:** this interacts directly with 7.7 (Model Releases) — likely needs its own dedicated release form/process, not just policy language.
 
 ### 7.7 Model Releases
 

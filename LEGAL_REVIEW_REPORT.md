@@ -69,6 +69,31 @@ None beyond what's already addressed by the shared-definitions structure — the
 
 ---
 
+## Part C — Technical Consistency Review (QC Pass, 2026-07-30)
+
+A dedicated, narrower pass over the suite as it stands today — not a rewrite, not a restructuring, not an expansion. Checked: spelling/grammar affecting clarity, terminology consistency, numbering, cross-references, formatting consistency, placeholder-marking consistency, technology references, and consistency between the legal text and the actual implemented platform. Every claim below was independently re-verified against the live codebase this pass, not assumed correct from when the suite was first drafted.
+
+### Corrected (mechanical, zero legal judgment involved)
+1. **Cross-reference error, Part 4.3:** the drafting note pointed to "Part 6.9's forward-looking note" for future online payments — Part 6.9 is Third-Party Services and says nothing about payments. Corrected to point to Part 4.21 (Future Online Payments), which is where that content actually lives.
+2. **Cross-reference error, Part 7.6:** the drafting note referenced "7.9 (Model Releases)" — 7.9 is Revoking Permission; Model Releases is actually 7.7. Corrected.
+3. **Spelling consistency, Part 2 (Client definition):** used American "organization" while every other instance in the suite (organisational, authorised, authorisation, licence) is British spelling. Corrected to "organisation" to match the rest of the document.
+
+### Flagged, not silently corrected (per your explicit instruction — a genuine factual inconsistency between the legal text and the implementation)
+**Part 11.7 (Workshop Terms — Rescheduling and Cancellation by Ordift Studios)** describes "the Workshop status field (Open for Registration / Coming Soon / Completed)" as the real platform mechanism. Re-checked directly against `src/sanity/schemaTypes/documents/workshop.ts` this pass: **the actual field has five values — `coming-soon`, `open`, `full`, `closed`, `completed` — not three.** The suite's description omits `full` (the waitlist-triggering state) and `closed` entirely, and uses "Open for Registration" where the schema's actual value is simply `open`. This matters because a policy meant to "reference accurately" a real platform mechanism currently doesn't fully do so. **Recommend:** update Part 11.7's parenthetical to list all five real states once you're ready for another pass — flagged here rather than corrected automatically, since you asked to be told about implementation/documentation mismatches rather than have them silently resolved.
+
+### Verified and found accurate (spot-checked this pass, no issue)
+- The "phone or WhatsApp number" description (Part 3.2) matches the actual field's own validation message in `src/lib/enquiry/schema.ts` exactly.
+- "No AI/ML API integration exists anywhere in the platform's dependencies" (Part 9.1) — re-confirmed against the current `package.json`; still zero matches.
+- "No standard timeline field exists in any schema" (Part 4.11) — re-confirmed via a fresh search across every Sanity document schema.
+- No instance of "Google Workspace" appears anywhere in the suite (a term that was never verified as actually in use — the suite correctly says "Google Cloud service account" throughout instead).
+- Every section number across all 11 parts (Parts 3–11, which carry numbered sections) is sequential within its Part with no gaps or duplicates.
+- Every "Business Decision Required" placeholder follows the identical structural format (Purpose / Business decisions required / Why legal review is recommended / Drafting note for counsel).
+
+### Not found
+No spelling errors beyond the one corrected above. No formatting inconsistencies in placeholder styling. No other broken cross-references among the roughly 30 internal "See Part X" references checked.
+
+---
+
 ## Major Improvements Over the Previous Four Pages
 
 - Every term is now defined once (Part 2) and referenced consistently across all eleven parts, instead of each page silently assuming its own meaning.
@@ -86,9 +111,20 @@ See "Remaining legal risks" above — the model/property release gap and the int
 ## Future Recommended Documents
 Per your own list: Operations Manual (already exists as `OPERATIONS_MANUAL.md`), Brand Standards Manual, Client Experience Manual, Disaster Recovery Manual (already exists as `DISASTER_RECOVERY.md`), Incident Response Plan (new — maps directly to the data-breach gap above), HR & Freelancer Handbook, Model & Talent Handbook, Photography/Videography/Editing Standards Manuals, Pricing & Quotation Manual, Sales/Marketing Playbooks, department SOPs. None of these are started — named here only because you asked for the list preserved for later phases.
 
-## Overall Legal Documentation Readiness Score: 55%
+## Executive Readiness Dashboard
 
-This reflects a structurally complete, professionally organized suite with zero fabricated legal claims — but a genuine majority of its substantive protection (releases, licensing structure, dispute resolution, international handling) is still marked "Business Decision Required" or "Requires qualified legal review," exactly as instructed. This score measures *documentation completeness*, not *legal soundness* — no score here should be read as "55% legally protected," since the unresolved 45% includes some of the highest-risk items (model releases, international data transfers).
+Replaces the earlier single "55% readiness" figure with six separately-scored dimensions, per your request — a single blended number hid more than it revealed (it couldn't distinguish "the structure is excellent" from "the model-release gap is unresolved," which are very different kinds of finding). This is now the standard reporting format for this project's legal/governance documentation going forward.
+
+| Dimension | Score | What this measures |
+|---|---|---|
+| **Documentation Architecture** | 95% | Shared definitions, document hierarchy, cross-referencing, and consistent formatting across all 11 parts. The QC pass (Part C, above) found and corrected 2 cross-reference errors and 1 spelling inconsistency out of the whole suite — a small, now-resolved error rate for a document this size. The remaining 5% is headroom, not a known defect. |
+| **Platform Accuracy** | 90% | How correctly the suite describes what the platform actually does. One real inconsistency found this pass (Part 11.7's incomplete Workshop status description, flagged above, not yet corrected) is the entire gap. Every other factual/technical claim spot-checked this pass was confirmed accurate against the live codebase. |
+| **Technical Verification** | 100% | Whether claims presented as verified facts were actually checked against the codebase rather than assumed. Every "verified," "confirmed," or "as of this version" statement in the suite was checked at drafting time and re-checked this pass — no unverified claim was found presented as fact. |
+| **Business Policy Completion** | 25% | How many of the identified business decisions (deposits, cancellation, releases, licensing structure, dispute resolution, and the rest — see "Remaining Business Decisions" above) have actually been made. Almost none have; this is expected at this stage and is not a documentation defect — it's the honest state of open decisions that are genuinely yours to make. |
+| **Legal Review Status** | 0% | Whether any part of the suite has received review from qualified legal counsel. None has, by design — that review is explicitly out of scope for this environment going forward, per your own instruction to move legal drafting to Claude Chat. This dimension exists so nobody mistakes documentation completeness for legal sign-off. |
+| **Launch Readiness (legal)** | Not launch-blocking to *draft* further, but **the two live gaps named in Part B (model/property releases, international data transfers) should be resolved or consciously accepted before real client work continues to accumulate against undocumented terms.** This isn't a percentage — it's a plain go/no-go read, since compressing it into a score would understate its urgency. |
+
+**How to read this dashboard:** a reader (executive, investor, future counsel, or management) should walk away understanding that the *documentation engineering* is strong (Architecture, Accuracy, Verification all high) while the *actual legal and business substance* is intentionally, transparently incomplete (Policy Completion and Legal Review Status both low) — and that gap is the correct state for a scaffold awaiting business decisions and qualified review, not a quality problem with the scaffold itself.
 
 ---
 

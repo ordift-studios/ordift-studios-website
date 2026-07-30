@@ -2291,6 +2291,45 @@ the new suite as the current legal-review surface, without touching
 their underlying readiness scores (unchanged, since nothing has
 actually been approved or published yet).
 
+### Legal Suite QC pass + workflow change (2026-07-30)
+
+After approving the Legal Suite's overall quality, you changed how
+responsibilities split going forward: legal drafting, contractual
+wording, and document refinement move to Claude Chat from here; this
+environment stays focused on the software platform, and only verifies
+facts about the implemented system when a legal document needs to
+reference it accurately. Requested one final technical QC pass on the
+suite (not a rewrite — spelling/grammar, terminology, numbering,
+cross-references, formatting, placeholder-marking, and consistency
+with the actual implementation) before closing this phase.
+
+Found and corrected 2 broken internal cross-references (Part 4.3
+pointed at the wrong section for the future-payments note; Part 7.6
+cited the wrong section number for Model Releases) and 1 spelling
+inconsistency (American "organization" in an otherwise consistently
+British-spelled document). **Found and explicitly flagged rather than
+silently fixed, per your instruction:** Part 11.7 describes the
+Workshop status field as having three values
+(Open for Registration/Coming Soon/Completed) — re-checked directly
+against `workshop.ts` this pass and confirmed the real schema has
+five (`coming-soon`, `open`, `full`, `closed`, `completed`), omitting
+the waitlist-triggering `full` state entirely. Also re-verified
+several other claims (phone/WhatsApp field wording, zero AI/ML
+dependencies, no timeline field in any schema) and confirmed all
+still accurate.
+
+Redesigned `LEGAL_REVIEW_REPORT.md`'s single readiness percentage into
+an Executive Readiness Dashboard (Documentation Architecture 95% /
+Platform Accuracy 90% / Technical Verification 100% / Business Policy
+Completion 25% / Legal Review Status 0% / Launch Readiness as a plain
+go-no-go read rather than a score) — this becomes the standard
+reporting format for this project's governance documentation going
+forward, per your explicit instruction.
+
+With this pass complete, the Legal Suite phase is considered
+technically closed from this environment's side. Regenerated and
+resent both PDFs reflecting the QC pass and new dashboard.
+
 ## Version 4.0 (partial) — Ordift Pulse Architecture — 2026-07-27 ✅ architecture complete
 
 Pulled forward from `PRODUCT_ROADMAP.md`'s Version 4.0 per explicit direction, while the media architecture (immediately above) was still fresh. Architecture and CMS schema only — see `PULSE_ARCHITECTURE.md` for full design detail.
