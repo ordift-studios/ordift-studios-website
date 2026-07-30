@@ -13,6 +13,11 @@ export default defineConfig({
   plugins: [tsconfigPaths()],
   test: {
     environment: "node",
+    // Excludes *.integration.test.ts — that tier touches real staging
+    // infrastructure and runs separately via `npm run test:integration`
+    // (vitest.integration.config.ts), never as part of the fast,
+    // dependency-free unit layer this config drives.
     include: ["src/**/*.test.ts"],
+    exclude: ["**/node_modules/**", "src/**/*.integration.test.ts"],
   },
 });

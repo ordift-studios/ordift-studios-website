@@ -210,6 +210,17 @@ Only one service meets the bar of "explicitly named in official project planning
 
 ---
 
+## Testing Infrastructure — Cost Watch (2026-07-30, no cost today)
+
+Version 1.0.5's integration-test layer (`INTEGRATION_TESTING_STRATEGY.md`) runs against the **existing staging** Supabase project, Google Sheets spreadsheet, and Resend configuration — no new service, no new billing account, $0 additional cost today. Recorded here per the standing instruction to log testing-infrastructure cost implications the moment they're identified, even as future considerations rather than current spend:
+
+- **Supabase (staging):** test runs add query/auth volume on top of existing staging usage. Free-tier limits (500MB DB, bandwidth caps) are shared with all other staging activity — if CI ever runs integration tests on every push (Workstream B) *and* staging usage grows, this is a future trigger to watch, tracked here rather than left implicit.
+- **Google Sheets API:** current quota (verified 2026-07-30) is 300 read + 300 write requests/minute per project, 60/minute per user — an integration-test suite at Ordift's current scale is nowhere near this. Worth noting: Google has signaled that **exceeding quota may start incurring Cloud billing charges later in 2026** — currently not a concern, but a genuine future watch item, not merely a rate-limit inconvenience.
+- **Resend (staging):** the free tier is 3,000 emails/month and 100/day. Per `INTEGRATION_TESTING_STRATEGY.md`, integration tests do **not** send real emails (Resend calls are stubbed at the boundary) specifically to avoid consuming this quota — so this stays $0/no-impact by design, not by accident.
+- **Future ephemeral test environment** (the migration path `INTEGRATION_TESTING_STRATEGY.md` designs toward but doesn't build yet): if Ordift Studios ever stands up a dedicated disposable Supabase/Sheets/Resend test environment instead of reusing staging, that becomes a **new row in this register** at that time — likely a second free-tier Supabase project ($0 to start, same upgrade triggers as production) plus whatever the equivalent Sheets/Resend setup costs (both $0 at this scale). Not scheduled; flagged here only so it isn't a surprise when it happens.
+
+---
+
 ## Living Register — Maintenance Convention
 
 This document is maintained the same way every other living document in this project is (`OPERATIONS_MANUAL.md`, `MAINTENANCE_SCHEDULE.md`): updated when the underlying reality changes, not on a fixed schedule. Whenever a new external dependency is actually introduced to the codebase — a new npm package tied to a paid service, a new env var for a new provider, or a roadmap item that moves from "planned" to "approved and scheduled" — this register gets a new row with:
