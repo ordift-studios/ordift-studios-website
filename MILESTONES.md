@@ -2613,6 +2613,56 @@ Full Workstream A Completion Report presented in-conversation per your
 requested format. Awaiting confirmation before proceeding to
 Workstream B.
 
+### Workstream B built (CI pipeline); permanent CTO/Principal Architect operating standard set (2026-07-30)
+
+You approved Workstream A's report and set a further permanent
+standing instruction: think as CTO/Principal Architect against five
+guiding questions (technically correct / commercially sensible /
+maintainable in five years / secure / still sensible if Ordift
+Studios becomes multiple international companies) before every
+decision; a permanent testing standard (unit/integration/boundary/
+failure-path/cleanup/independent verification on every feature); a
+mandatory documentation-update list per milestone; explicit debt
+classification (Accepted/Deferred/Resolved/Rejected); and, once
+Workstream B stabilizes, a shift toward six production-readiness
+review areas (Performance, Security, Observability, Disaster
+Recovery, Scalability, Commercial Readiness) plus a new
+`ORDIFT_STUDIOS_MASTER_ROADMAP.md` executive dashboard.
+
+Built `.github/workflows/ci.yml`: lint/typecheck/unit-tests run
+unconditionally; a `build` job runs after (needing Sanity credentials
+as GitHub repo secrets for the static-generated routes' real content
+fetch — `src/sanity/lib/client.ts`'s documented behavior). Deliberately
+scoped integration tests OUT of this first CI pass — wiring real
+staging credentials into GitHub Actions is a security decision this
+project's own standards require flagging explicitly, not bundling
+into "build CI" — recorded as TDR-010, to be revisited once
+Workstream I's secrets policy exists. Validated the workflow's YAML
+structure directly (Ruby's YAML parser) and independently confirmed
+every command it runs (`npm ci --dry-run`, lint, typecheck, unit
+tests, build) already succeeds locally — the one thing that
+genuinely cannot be verified from here is a live GitHub Actions run,
+since that requires pushing, which also triggers this project's
+connected Vercel auto-deploy. Held for your explicit confirmation
+before pushing, consistent with the standing "stop for credential/
+dashboard actions and anything affecting shared state" rule, rather
+than pushing unilaterally to get a "real" green checkmark.
+
+Also built `ORDIFT_STUDIOS_MASTER_ROADMAP.md` now (not gated behind
+Workstream B, since it's synthesis of already-known facts, not new
+engineering work) — Business/Engineering/Governance/Brand/Operations/
+Commercial/Marketing status in one executive-friendly document,
+linking to detailed sources rather than duplicating them, and marking
+anything not independently verifiable from this environment (e.g.
+Governance's Constitution status, owned by Claude Chat) as **Unknown**
+rather than guessed.
+
+The six production-readiness review areas (Performance, Security,
+Observability, Disaster Recovery, Scalability, Commercial Readiness)
+remain queued for after Workstream B reaches a stable checkpoint, per
+your explicit sequencing — not started this pass, to avoid a rushed,
+lower-quality version of six major review documents.
+
 ## Version 4.0 (partial) — Ordift Pulse Architecture — 2026-07-27 ✅ architecture complete
 
 Pulled forward from `PRODUCT_ROADMAP.md`'s Version 4.0 per explicit direction, while the media architecture (immediately above) was still fresh. Architecture and CMS schema only — see `PULSE_ARCHITECTURE.md` for full design detail.

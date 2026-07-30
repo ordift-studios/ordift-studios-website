@@ -132,6 +132,18 @@ Every new major engineering decision going forward gets a new TDR here at decisi
 - **Related Files:** `SYSTEM_HEALTH.md` (Workstream G), `PRODUCT_ROADMAP.md` Version 1.0.5 Workstream G, `PLATFORM_HEALTH_REVIEW.md`.
 - **Review Date:** reconsider a live dashboard only when any of these becomes true — manual maintenance of `SYSTEM_HEALTH.md` becomes unreliable; multiple engineers or environments need centralized visibility; incident volume justifies it; real-time operational decisions start depending on it; or the cost of not automating demonstrably exceeds the cost of building and maintaining it. None of these are true as of 2026-07-30.
 
+### TDR-010 — CI pipeline scoped to lint/typecheck/unit-tests/build; integration tests deliberately excluded for now
+- **Status:** Accepted, implemented
+- **Context:** Version 1.0.5 Workstream B needed a CI pipeline. The integration-test suite built in Workstream A runs against real staging Supabase/Sheets credentials (`INTEGRATION_TESTING_STRATEGY.md`), which would need to exist as GitHub Actions repository secrets to run in CI.
+- **Problem:** whether to wire the full test suite (unit + integration) into CI immediately, or scope the first CI pass more narrowly.
+- **Options Considered:** (1) wire everything, including integration tests, requiring staging secrets to be added to GitHub immediately; (2) scope CI to lint + typecheck + unit tests + build only, matching Workstream B's original description exactly, and treat wiring integration tests into CI as a distinct, later decision.
+- **Decision Made:** (2). `.github/workflows/ci.yml` runs lint/typecheck/unit-tests unconditionally, plus a production build (which itself needs Sanity credentials for static-generated routes — see below), and does not run integration tests.
+- **Reasoning:** adding real staging credentials to a third-party CI system (GitHub Actions) is a security-relevant decision this project's own standards require flagging for explicit approval, not bundling into a "build the CI pipeline" task. It's also more naturally sequenced after Workstream I (secrets-management policy) than before it.
+- **Consequences:** CI provides real, immediate regression protection for logic/types/lint/build correctness starting now; integration-test protection in CI is a follow-up decision, not yet made. The `build` job needs `NEXT_PUBLIC_SANITY_PROJECT_ID`/`NEXT_PUBLIC_SANITY_DATASET`/`SANITY_API_VERSION`/`SANITY_API_TOKEN` set as GitHub repository secrets (Settings → Secrets and variables → Actions) — without them, the build job will fail or silently generate static routes with zero content, per `src/sanity/lib/client.ts`'s documented behavior (both Sanity datasets require a token even for reads). This is a manual step only you can do (no GitHub dashboard/secrets access from this environment) — flagged explicitly rather than worked around.
+- **Alternatives Rejected:** wiring integration tests into CI now — rejected as premature given the credential-security question hasn't been deliberately decided yet.
+- **Related Files:** `.github/workflows/ci.yml`, `INTEGRATION_TESTING_STRATEGY.md` §6, `src/sanity/lib/client.ts`.
+- **Review Date:** once Workstream I (secrets-management policy) is complete, revisit whether/how integration tests join CI.
+
 ---
 
 *Cross-references: `PRODUCT_ROADMAP.md` (Version 1.0.5), `TECHNICAL_DEBT_REGISTER.md`, `INTEGRATION_TESTING_STRATEGY.md`, `ENGINEERING_GUIDE.md`, `MEDIA_ARCHITECTURE.md`, `PULSE_ARCHITECTURE.md`, `DOCUMENTATION_INDEX.md`.*

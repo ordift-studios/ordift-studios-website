@@ -66,6 +66,7 @@ GitHub Actions: lint, typecheck, test, build-verify on every push. No deploy pro
 - **Dependencies:** Workstream A (needs tests to run in the pipeline; can start with lint/typecheck/build-only gates before A finishes and add the test gate once A lands).
 - **Risks:** minimal — worst case is a slower push-to-deploy loop, tunable via caching.
 - **Long-term value:** high — this is the mechanism that makes Workstream A's value durable instead of one-time.
+- **Status (2026-07-30):** `.github/workflows/ci.yml` built and locally verified — lint/typecheck/unit-tests always run; a `build` job (SSG routes fetch real Sanity content at build time) runs after, needing `NEXT_PUBLIC_SANITY_PROJECT_ID`/`DATASET`/`SANITY_API_VERSION`/`SANITY_API_TOKEN` as GitHub repository secrets, which only you can add (no dashboard/secrets access from this environment — see TDR-010). Integration tests deliberately excluded from CI for now, per TDR-010. Not yet pushed — the first real (not locally-simulated) verification of this workflow requires a push, which also triggers Vercel's connected auto-deploy; held pending your confirmation.
 
 ### C — Production Observability
 Error tracking, performance monitoring, source maps, alerting.
