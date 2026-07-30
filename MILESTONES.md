@@ -2663,6 +2663,42 @@ remain queued for after Workstream B reaches a stable checkpoint, per
 your explicit sequencing — not started this pass, to avoid a rushed,
 lower-quality version of six major review documents.
 
+### Workstream B verified live: real CI run, real failure diagnosed and fixed, real Vercel deploy confirmed (2026-07-30)
+
+The local `git push` was blocked by this session's own permission
+classifier — a separate gate from your in-chat approval. Rather than
+attempt a workaround, stopped and asked how you wanted to proceed; you
+pushed no secret values through me (delivered a checklist naming
+which of the 4 needed values goes where, sourced from where, without
+ever displaying them), added the four Sanity secrets to GitHub
+yourself, and asked me to retry.
+
+Pushed `6f8ae0d`. The quality-gates job (lint/typecheck/unit tests)
+passed on the very first live run — genuine, not simulated. The build
+job failed with `projectId can only contain only a-z, 0-9 and dashes`
+— a real, specific, diagnosable error, not a flake. Rather than retry
+blindly, identified the likely cause (a malformed secret value — extra
+quotes/whitespace/prefix from copy-paste) and asked you to re-check
+that one specific secret. You corrected it; re-ran the failed job via
+`gh run rerun --failed`; both jobs passed for real.
+
+Independently checked the passing build's logs for secret leakage
+(none — every injected value correctly masked) and unexpected warnings
+(none new beyond already-tracked items; logged the small set of
+newly-surfaced transitive-dependency deprecation notices as DW-004).
+Confirmed the same push's connected Vercel deployment via `vercel ls`/
+`vercel inspect` — `Ready`, aliased to the real production domain,
+build cache created successfully. Live-curled five production routes
+(`/`, `/coming-soon`, `/admin`, `/portal/login`, `/sitemap.xml`) —
+every response code matched expected behavior, `/admin`'s 307 redirect
+confirming the auth gate still works correctly post-deploy.
+
+This is the first time in this project's history that CI ran on
+GitHub's infrastructure rather than being simulated locally, and the
+first real production deploy verified end-to-end (push → Actions →
+Vercel → live routes) using CLI tooling (`gh`, `vercel`) instead of
+manual dashboard checking.
+
 ## Version 4.0 (partial) — Ordift Pulse Architecture — 2026-07-27 ✅ architecture complete
 
 Pulled forward from `PRODUCT_ROADMAP.md`'s Version 4.0 per explicit direction, while the media architecture (immediately above) was still fresh. Architecture and CMS schema only — see `PULSE_ARCHITECTURE.md` for full design detail.

@@ -33,6 +33,12 @@ This project runs **Next.js 16.2.11** and **React 19.2.4** — both current-gene
 - **Recommended path:** resolves itself once DW-002 is addressed (removing `vite-tsconfig-paths` removes this transitive dependency too).
 - **Status:** Open, cosmetic, tied to DW-002.
 
+### DW-004 — Additional transitive deprecation notices surfaced in the first real CI run (2026-07-30)
+- **What:** GitHub Actions' clean-environment `npm ci` (real CI run `30570600185`) surfaced deprecation warnings not visible in this project's already-populated local `node_modules`: `glob@10.5.0` (unmaintained, publisher recommends upgrading — pulled in transitively, not a direct dependency), `uuid@10.0.0` (deprecated in favor of `uuid@11`+, same transitive path as TD-006's `typeid-js`/`uuid` finding), `node-domexception@1.0.0` (recommends the platform-native `DOMException` instead). Also two Node.js runtime `DEP0040`/`DEP0169` warnings (`punycode` module, `url.parse()`) from GitHub's own runner tooling, not this project's code.
+- **Impact:** none — all build-time/transitive, not reachable at runtime by untrusted input, consistent with TD-006's existing reasoning for the same `uuid` chain.
+- **Recommended path:** monitor; no direct dependency to bump. Re-check each Quarterly review per `DEPENDENCY_WATCHLIST.md`'s standing cadence.
+- **Status:** Open, cosmetic.
+
 ## npm audit Findings (security-relevant; full detail in `TECHNICAL_DEBT_REGISTER.md` TD-006)
 
 31 advisories (6 moderate, 25 high) as of 2026-07-30, entirely in transitive dependencies (`sharp`'s inherited `libvips` CVEs, `smol-toml` via `@vercel/frameworks`, `uuid` via `typeid-js`). Every `npm audit fix` path requires a breaking major-version bump of either Next.js (an actual downgrade relative to what's installed) or Sanity — neither is a safe blind fix. See TD-006 for the non-reachability reasoning on why these are monitored rather than blocking.
