@@ -1905,6 +1905,39 @@ billing decision resolved first.
   this date: production Supabase is on the Free plan, which has zero
   backup coverage — escalated as Phase E's blocker.
 
+### Final pre-launch: sitemap, OG metadata, and content-readiness scope expansion (2026-07-30)
+
+Part of the 10-phase final pre-launch pass. Two real technical gaps
+found and fixed, plus one content finding that broadens an earlier
+checklist:
+
+- **Fixed:** `robots.ts` referenced `/sitemap.xml`, but no
+  `sitemap.ts` route ever existed — a real 404 for any crawler that
+  followed it. Added `src/app/sitemap.ts`, generating entries for every
+  static route, legal page, and every `contentRepository`-backed
+  content type (services, portfolio, journal, workshops, instructors).
+- **Added:** Open Graph and Twitter card metadata to the root
+  `metadata` export in `src/app/layout.tsx` (title, description, a real
+  existing image — the gold full-lockup logo, not an invented asset —
+  and site URL/name), so links shared on social/messaging platforms
+  render a real preview instead of a bare URL.
+- **Caught and fixed same-session:** the first version of that metadata
+  change added a `title.template` on the root layout, which doubled
+  every page's title (e.g. "About — Ordift Studios — Ordift Studios"),
+  since every `src/app/**/page.tsx` already appends "— Ordift Studios"
+  itself via its own `generateMetadata()`. Caught via direct browser
+  verification immediately after deploying, fixed by removing the
+  template and keeping only the plain default title, re-verified live.
+- **Content finding:** direct browser checks of `/work` and `/journal`
+  confirmed Portfolio and Journal are, like Workshops, entirely
+  `[SAMPLE]` placeholder content — a broader finding than the original
+  `WORKSHOP_CONTENT_CHECKLIST.md` covered. Replaced that file with
+  `CONTENT_READINESS_CHECKLIST.md`, covering all three content types
+  plus an explicit "already real, launch-ready" section for Homepage/
+  About/Services (re-confirmed real, no placeholder markers, this
+  pass). Cross-references updated in `DOCUMENTATION_INDEX.md`,
+  `FINAL_GO_LIVE_REPORT.md`, `OPERATIONS_MANUAL.md`.
+
 ## Version 4.0 (partial) — Ordift Pulse Architecture — 2026-07-27 ✅ architecture complete
 
 Pulled forward from `PRODUCT_ROADMAP.md`'s Version 4.0 per explicit direction, while the media architecture (immediately above) was still fresh. Architecture and CMS schema only — see `PULSE_ARCHITECTURE.md` for full design detail.
