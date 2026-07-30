@@ -2390,6 +2390,71 @@ Next: Workstream A (testing architecture), per the dependency-driven
 execution order — B (CI) and D (standards docs) both need it in place
 first.
 
+### Workstream A: unit layer + hybrid integration-testing architecture (2026-07-30)
+
+Built and verified the Vitest unit-test layer (`vitest.config.ts`,
+`node` environment): 35 tests covering portal-routing/role-permission
+precedence, the Redis-fallback rate limiter's sliding window, and the
+idempotency store's retry-safety guarantee and TTL boundary. All
+green. Found and logged one new debt item along the way (TD-011):
+React Testing Library is currently blocked by a Babel peer-dependency
+conflict between this repo's bleeding-edge Next 16/React 19 toolchain
+and Sanity's bundled tooling — worked around by keeping this first
+increment to pure-logic tests, which needed no component rendering.
+
+Raised the next real question rather than silently deciding it: RLS,
+Google Sheets sync, and email-delivery tests can't be honestly proven
+with mocks (RLS's whole guarantee lives in Postgres, not JS), so I
+asked how far to reuse real staging infrastructure for that tier.
+
+You approved a hybrid model and expanded it with your own detailed
+requirements: reuse staging now, but design the environment as
+something injected through configuration so a future migration to a
+disposable test environment is a config change, not a rewrite; every
+test resource `TEST-`-prefixed and cleaned up automatically, with
+cleanup failures logged as debt rather than left stale; provider
+limits/quotas/costs researched and surfaced *before* writing any test
+code; documented in `ENGINEERING_GUIDE.md` plus a dedicated
+`INTEGRATION_TESTING_STRATEGY.md`; cost implications tracked in
+`TECHNOLOGY_COST_REGISTER.md`; and a new `DEPENDENCY_WATCHLIST.md` for
+conflicts/deprecations/upgrade paths generally.
+
+Before writing any integration-test code, researched actual current
+limits (not assumed) for the three providers involved: Supabase Auth's
+30-new-users/hour default (and that email delivery is governed by
+Resend once custom SMTP is active), Google Sheets API's 300 req/min
+project quota (with a note that overages may start incurring Cloud
+billing later in 2026), and Resend's 100/day free-tier cap shared with
+real production traffic once launched. These findings directly shaped
+the design: test users are created via the Supabase service-role Admin
+API with `email_confirm: true` (skipping the public signup flow and
+its email trigger entirely) rather than through real signup, and
+Resend calls are stubbed at the boundary for automated runs — real
+end-to-end delivery stays the job of the existing manual `verify-send`
+diagnostic, run on its own cadence.
+
+Implemented the architecture: `src/lib/testing/testEnvironment.ts`
+(config-injected Supabase client factories, falling back to the
+existing staging env vars until dedicated `TEST_` vars are ever
+introduced), a separate `vitest.integration.config.ts` tier so this
+never runs as part of the fast unit layer, and one real integration
+test proving the whole thing end-to-end: `rls.integration.test.ts`,
+which creates two real `client`-role staging users and verifies the
+actual Postgres RLS policy on `profiles` — a user can read their own
+row, cannot read another client's row, and a signed-out anonymous
+client can't read any row. **Ran it for real against staging: 3/3
+passing.** Independently re-verified cleanup worked (queried staging
+directly for any leftover `ordiftstudios.invalid` test accounts after
+the run) rather than trusting the green test output alone — zero
+stale users remained.
+
+Sheets-sync and email-delivery-assertion integration tests, plus the
+rest of Workstream A's named categories (booking/portal/admin
+workflow tests), are the next increment within this same workstream —
+the architecture proven here (config-injected environment, `TEST-`
+identity, automatic cleanup with debt-logging on failure) extends
+directly to them without needing to be redesigned.
+
 ## Version 4.0 (partial) — Ordift Pulse Architecture — 2026-07-27 ✅ architecture complete
 
 Pulled forward from `PRODUCT_ROADMAP.md`'s Version 4.0 per explicit direction, while the media architecture (immediately above) was still fresh. Architecture and CMS schema only — see `PULSE_ARCHITECTURE.md` for full design detail.
