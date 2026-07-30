@@ -1,8 +1,10 @@
 # Business Launch Audit
 
-**Date:** 2026-07-30. A full business-owner-perspective review of every publicly accessible page, done as if discovering Ordift Studios for the first time — not a code review. Method: every page below was loaded fresh (local environment, since production is intentionally behind `LAUNCH_HOLDING_PAGE`), read for content/UX/professionalism, and cross-checked against the real Sanity data (staging *and* production datasets queried directly, read-only) wherever "is this really live" mattered rather than assumed.
+**Date:** 2026-07-30, updated same day with a second, fresh-eyes technical pass and real legal-page drafts. A full business-owner-perspective review of every publicly accessible page, done as if discovering Ordift Studios for the first time — not a code review. Method: every page below was loaded fresh (local environment, since production is intentionally behind `LAUNCH_HOLDING_PAGE`), read for content/UX/professionalism, and cross-checked against the real Sanity data (staging *and* production datasets queried directly, read-only) wherever "is this really live" mattered rather than assumed.
 
-**The one finding that matters more than all the others combined:** all four legal pages (Privacy Notice, Website Terms, Cookie Notice, Booking Terms) are still literal unapproved draft placeholders — on **both** staging and production — and say so on the page itself ("This page is a placeholder... Nothing on this page should be relied on until it is reviewed and approved"). `FORMS_SENDING_ENABLED` was turned on earlier today, meaning the site can now collect real names, emails, phone numbers, and project details from real visitors while the page explaining what happens to that data is explicitly marked not to be trusted. This isn't a code defect — the code does exactly what it was built to do (show a draft, `noindex` it, warn the visitor) — it's a business/legal gap that existed before today and is now more urgent because forms are live. See Phase 2 below.
+**Status update (same day):** real, drafted legal-page text is now loaded into all four `legalPage` documents on both datasets — `isApproved` is deliberately left `false` on every one, so nothing about what's publicly visible has changed. This closes the "literal placeholder" version of the finding below; the review-and-approve step is now the only remaining part. See Phase 2 for the full text and exactly what needs your sign-off.
+
+**The one finding that still matters more than all the others combined:** the four legal pages are drafted but not yet approved, and `FORMS_SENDING_ENABLED` is live — meaning real personal data can currently be collected before an approved Privacy Notice exists. The draft text is ready for your review; approving it is now a fast, simple step, not a from-scratch writing task.
 
 ---
 
@@ -36,16 +38,20 @@ There's no separate `/contact` page — "Contact" in navigation routes to `/book
 Clean, professional, on-brand — same design system as the public site, working Turnstile widget (observed a real "Success!" pass during this session), clear "Create an account" and "Forgot password?" links. No issues found.
 
 ### Legal Pages (`/legal/privacy`, `/legal/terms`, `/legal/cookies`, `/legal/booking`)
-**Critical finding — see the top of this document.** All four are unapproved drafts, confirmed live on production via direct read-only query:
+**Real text now drafted and loaded — your review is the only remaining step.** All four were confirmed unapproved drafts via direct read-only query on production; real, tailored text (grounded in what the site actually does — see below) has now been written into all four `legalPage` documents on both staging and production, with `isApproved` deliberately left `false` so nothing publicly visible has changed:
 
-| Page | `isApproved` (production) |
-|---|---|
-| Privacy Notice | `false` |
-| Website Terms | `false` |
-| Cookie Notice | `false` |
-| Booking Terms | `false` |
+| Page | `isApproved` (production) | Body text |
+|---|---|---|
+| Privacy Notice | `false` (unchanged) | Real draft loaded |
+| Website Terms | `false` (unchanged) | Real draft loaded |
+| Cookie Notice | `false` (unchanged) | Real draft loaded |
+| Booking Terms | `false` (unchanged) | Real draft loaded |
 
-Each renders a "DRAFT — NOT YET APPROVED" banner and placeholder body text ("This page is a placeholder...") and is correctly `noindex`'d — the code is doing exactly what it was designed to do. The gap is that real content was never written and approved for any of the four.
+**What each draft covers, grounded in the actual codebase, not invented:** Privacy Notice — what the enquiry/booking/registration/portal forms actually collect, why, that it's stored in Supabase with a Google Sheets operational copy and sent via Resend, Cloudflare Turnstile's role, retention, and rights. Cookie Notice — honestly states the site currently uses only two functional cookies (Turnstile, portal session) and no analytics/marketing cookies, since `NEXT_PUBLIC_GA_MEASUREMENT_ID` is genuinely unset. Website Terms — standard use/IP/liability terms, governing law set to Ghana (the business's actual home jurisdiction). Booking Terms — matches the real UI copy ("Submitting this form does not confirm a booking") and is honest about what it can't invent: **two sections (payment/deposit terms, and cancellation policy) are explicitly marked `[Business note: ...]` inline, flagging that these need your actual policy, not fabricated numbers.**
+
+**A real rendering bug was found and fixed while drafting this:** the page template rendered the entire body as a single `<p>` tag with no line-break handling, so any paragraph breaks would have collapsed into one unreadable wall of text — the short placeholder text never exposed this. Fixed to render proper paragraphs plus a "Last updated" date; verified live with the real draft text.
+
+**Exactly where your approval is required:** read the four drafts (in Sanity Studio under each Legal Page document, or ask me to paste them here), confirm the Booking Terms `[Business note]` sections with your real payment/cancellation policy, and once satisfied, either tell me to set `isApproved: true` on each or do it yourself in Studio. Nothing here has been silently published.
 
 ### Footer
 Now accurate after this session's earlier fix (the misleading three-link "Talent" column collapsed to one real link). Legal links all present and correctly routed. Tagline and service/studio link columns are clean and accurate.
@@ -65,12 +71,30 @@ CTA copy is consistently strong and varied across the site ("Start a Project," "
 
 ---
 
+## Fresh-Eyes Technical Pass (same day, second sweep)
+
+A dedicated re-audit for exactly the categories the first pass didn't systematically check — done via direct verification (link crawl, code inspection), not spot-checking.
+
+**Broken links:** a full recursive crawl starting from the homepage, following every internal link found, reached 41 unique routes. **Zero broken links, zero errors.** Every Portfolio/Journal/Workshops sample entry, every legal page, every service department, every author/instructor profile — all return `200`.
+
+**Accessibility:** the shared `MediaAsset`/`ResponsiveImage` component makes `alt` a required (non-optional) prop at the type level — it is structurally impossible to add an image anywhere on the site without alt text, and a direct search found zero raw `<img>` tags bypassing the component. The booking form's inputs are properly labelled (`<label>`/`htmlFor` pairs confirmed in code, not just visually adjacent text). Heading structure on sampled pages is sane (a single `h1`, sequential `h2`s). No further a11y issues found in this pass.
+
+**Metadata/SEO completeness:** checked every `page.tsx` in the project for metadata presence. Every customer-facing public page has it. The only pages missing explicit metadata are internal, authenticated tools not meant for search — `/admin`, the Client Portal dashboard pages, and `/studio` — which inherit the site's generic default title rather than something like "Client Dashboard — Ordift Studios." Cosmetic (a browser-tab label on tools only staff/clients ever see), not an SEO issue since none of these are indexable anyway.
+
+**A page nobody had flagged: `/style-preview`.** Discovered in an earlier build-output review, not in anyone's original page list. It's an internal design-QA tool (typography/component/email-template reference), not customer-facing. Good news: it's already correctly `robots: { index: false, follow: false }` on all three of its routes, so it will never appear in search results. It remains reachable by direct URL to anyone who knows it exists, which is low risk (no sensitive data, just a style guide) but slightly unpolished for a "premium creative house" if a curious visitor stumbles onto it. Recommend: low-priority, not launch-blocking — either gate it behind the same auth as `/admin`, or exclude it from the production build entirely once it's served its purpose.
+
+**Department page consistency:** all 7 service department pages read now (Photography, Videography, Graphic Design, Branding & Strategy, Content Creation, Talent Management, Production) — confirmed consistent voice, quality, and structure throughout. The only recurring issue is the already-documented "Featured Work" placeholder cascade (identical on all 7), not a per-page content problem.
+
+**Legal-page rendering bug:** found and fixed while drafting real legal text — see the Legal Pages section above.
+
+---
+
 ## Phase 2 — Launch Readiness Content Checklist
 
 ### Critical Before Launch
 Must be resolved before removing the holding page.
 
-1. **Legal pages must be real and approved** — Privacy Notice, Website Terms, Cookie Notice, Booking Terms. Currently 100% unapproved drafts on production. This is the single most important item on this entire list, because `FORMS_SENDING_ENABLED` is already on and collecting real personal data.
+1. **Legal pages must be approved** — real text is now drafted and loaded for all four (Privacy Notice, Website Terms, Cookie Notice, Booking Terms); `isApproved` is still `false` by design. Review the drafts, confirm the two `[Business note]` sections in Booking Terms with your real payment/cancellation policy, then approve. This is still the single most important item on this list, because `FORMS_SENDING_ENABLED` is already on and collecting real personal data.
 2. **Portfolio, Journal, and Workshops content** — currently 100% `[SAMPLE]`. Either replace with real content (`CONTENT_READINESS_CHECKLIST.md`) or explicitly decide to unpublish/hide the sample entries for launch.
 3. **Confirm the contact email and WhatsApp number are the ones the business actually wants publicly listed** — `ordift.ghana@gmail.com` and a UK (+44) WhatsApp number are both live on production right now.
 
@@ -105,6 +129,43 @@ Can safely wait until after launch.
 **Potential partner/collaborator:** The "Collaborate With Us" CTA and the footer's honest "founder-led... works with selected creative professionals and production partners" framing set accurate expectations — a partner isn't misled into thinking this is a large agency. This persona is well-served by the current honest positioning.
 
 **Common thread across all personas:** everyone who reaches the Portfolio, Journal, or Workshops section hits the same wall. Everyone who reads the About/Services/Founder content comes away with a strong, credible first impression. The gap is specifically "proof of work," not "trust in the business."
+
+---
+
+## Consolidated Launch Readiness Review
+
+One final independent pass, adding the remaining perspectives requested (first-time visitor, potential client, commercial photographer, SEO specialist, cybersecurity reviewer, QA engineer) to the client-type personas above, and rolling every finding from this entire audit into one severity-ranked list. **Only genuine launch blockers appear under Critical.**
+
+**First-time visitor / potential client:** consistent with the personas above — strong first impression from Home/About/Services, real friction at Portfolio/Journal/Workshops. Nothing new to add.
+
+**Commercial photographer (evaluating Ordift as a peer/potential collaborator):** the Founder bio and process explanation read as genuinely credible from an industry perspective — specific, not generic. The "Featured Work" placeholder gap would read the same way to a peer as to a client: unfinished, not incompetent.
+
+**SEO specialist:** sitemap, robots.txt, OG tags, and per-page metadata are all correctly implemented (verified this session and in the earlier pre-launch pass). No `noindex` accidentally left on real pages; `/style-preview` correctly `noindex`'d. The one real SEO-adjacent gap is that three entire site sections (Portfolio/Journal/Workshops) currently have zero indexable real content — not a technical defect, but worth knowing that search engines will have almost nothing substantive to rank until real content replaces the samples.
+
+**Cybersecurity reviewer:** re-confirms rather than re-derives the security work already done and documented in `FINAL_LAUNCH_CERTIFICATION.md` — RLS, headers, Turnstile, secrets handling all sound. The one item that overlaps security/compliance rather than pure content is the legal-pages gap: collecting personal data without an approved Privacy Notice is a trust/compliance issue, not a technical vulnerability, which is why it's scored under Business, not Security, in the certification doc.
+
+**QA engineer:** the link crawl (41 routes, zero broken), the alt-text enforcement, and the metadata-completeness check above are exactly the kind of systematic, non-sampled verification a QA pass should do rather than spot-checking. Confirms the earlier audit's page-by-page findings weren't missing anything larger.
+
+### Critical Issues (genuine launch blockers only)
+1. Legal pages require your review and approval (drafts ready, see Phase 2 above).
+2. Portfolio/Journal/Workshops content is 100% sample — decide to replace or unpublish before launch.
+
+### High Priority
+1. Confirm contact email/WhatsApp number are the intended public values.
+2. Resolve the "Featured Work" placeholder cascade on all 7 department pages (resolves automatically once Portfolio content is real — not a separate fix).
+
+### Medium Priority
+1. Real hero/department imagery rollout (even partial).
+2. Decide on social links — add real accounts or confirm the intentional empty state.
+
+### Minor Improvements
+1. `/style-preview` — gate behind auth or exclude from production build.
+2. Internal tool pages (`/admin`, Client Portal, `/studio`) show a generic browser-tab title rather than a specific one — cosmetic only, not indexable anyway.
+3. Founder bio's "Having studied Business at Senior High School" line reads slightly like a CV fragment — a five-minute polish.
+
+### Nice-to-Have
+1. Consider a branded email domain (`@ordiftstudios.com`) if available.
+2. Once real Portfolio content exists, revisit whether department pages' "Featured Work" should be curated per-department rather than a shared global feed.
 
 ---
 

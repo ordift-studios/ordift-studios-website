@@ -2116,6 +2116,75 @@ regressing) and `LAUNCH_CHECKLIST.md`'s Content section to reflect
 the legal-pages finding as the new top-priority item, ahead of the
 already-tracked Portfolio/Journal/Workshops content gap.
 
+### Disciplined launch-completion pass: legal drafts, fresh-eyes re-audit, doc sync (2026-07-30)
+
+Following your explicit "no new features, complete the launch" directive,
+worked through a 6-phase sequence: resolve every remaining launch
+blocker, prioritize legal pages specifically, continue the business
+audit to completion, produce one consolidated persona-based review,
+synchronize all launch documentation, then hold Phase 6 (Technology
+Cost Register) until genuine V1 readiness — per your own instruction,
+not started this pass.
+
+**Fresh-eyes technical re-audit** (systematic, not spot-checked):
+a full recursive link crawl from the homepage reached 41 unique
+routes with **zero broken links**; confirmed `alt` text is a required
+prop at the type level on the shared media component, so no image
+anywhere on the site can omit it; confirmed every public page has
+metadata (only internal auth-gated tools — `/admin`, Client Portal,
+`/studio` — lack it, cosmetic only, not indexable anyway); found
+`/style-preview` (an internal design-QA tool, not in anyone's original
+page list) is already correctly `noindex`'d, flagged as a minor
+post-launch cleanup rather than a blocker; re-read all 7 department
+pages individually and confirmed the "Featured Work" placeholder issue
+is the only recurring problem, not a per-page content gap.
+
+**Legal pages — drafted, not published.** Wrote real, tailored text
+for all four legal pages (Privacy Notice, Cookie Notice, Website
+Terms, Booking Terms), grounded in what the codebase actually does —
+the real forms/fields collected, Supabase/Sheets/Resend/Turnstile as
+the actual data processors, Ghana as the actual governing
+jurisdiction, and an honest statement that no analytics/marketing
+cookies exist today since `NEXT_PUBLIC_GA_MEASUREMENT_ID` is unset.
+Two Booking Terms sections (payment/deposit terms, cancellation
+policy) are explicitly marked `[Business note: ...]` rather than
+inventing numbers never set. Loaded into all four `legalPage`
+documents on both staging and production via direct Sanity patch —
+`isApproved` deliberately left `false` throughout, so nothing publicly
+visible changed; this is preparation for your review, not silent
+publishing.
+
+**A real bug found while drafting:** the legal-page template rendered
+the entire `body` field as a single `<p>` tag with no line-break
+handling — any paragraph breaks would have collapsed into one
+unreadable wall of text. The short placeholder text never exposed
+this. Fixed to split on blank lines into real paragraphs and show a
+"Last updated" date; verified live locally with the real draft text
+before deploying, then deployed to production and re-verified.
+
+**One safe cosmetic fix applied** (explicitly in scope per your Phase
+3 instruction to "apply fixes where appropriate" for non-business-
+decision content): the Founder bio's "Having studied Business at
+Senior High School..." sentence, flagged in the earlier audit as
+reading like a CV fragment, smoothed into natural prose with the same
+facts, no invention — applied to both datasets.
+
+**Consolidated Launch Readiness Review** added to
+`BUSINESS_LAUNCH_AUDIT.md` — folded in the remaining requested
+perspectives (first-time visitor, potential client, commercial
+photographer, SEO specialist, cybersecurity reviewer, QA engineer)
+alongside the earlier client-type personas, and rolled every finding
+from both audit passes into one Critical/High/Medium/Minor/Nice-to-Have
+list. Only two items remain genuinely Critical: legal-page approval,
+and the Portfolio/Journal/Workshops content decision.
+
+Updated `FINAL_LAUNCH_CERTIFICATION.md` (Business 88%→92%, Technical
+99% unchanged but basis expanded, Overall 95%→96% — reflecting real
+progress on the legal-pages gap, not just re-scoring),
+`LAUNCH_CHECKLIST.md`, and `DOCUMENTATION_INDEX.md` to keep all five
+launch documents synchronized and cross-referenced, per your explicit
+Phase 5 instruction.
+
 ## Version 4.0 (partial) — Ordift Pulse Architecture — 2026-07-27 ✅ architecture complete
 
 Pulled forward from `PRODUCT_ROADMAP.md`'s Version 4.0 per explicit direction, while the media architecture (immediately above) was still fresh. Architecture and CMS schema only — see `PULSE_ARCHITECTURE.md` for full design detail.

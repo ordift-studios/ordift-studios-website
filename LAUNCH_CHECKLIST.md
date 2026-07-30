@@ -29,7 +29,7 @@ Full detail and current status on each item: `OPERATIONS_MANUAL.md` §7, `FINAL_
 
 ### Content
 - [x] Homepage, About, Services, Founder, Client Portal — confirmed real and launch-ready via full business audit 2026-07-30 (`BUSINESS_LAUNCH_AUDIT.md`)
-- [ ] **Legal pages (Terms, Privacy, Cookies, Booking Terms) — confirmed unapproved drafts on production** (`isApproved: false` on all four, verified via direct query 2026-07-30) — the single highest-priority remaining item; real, approved text needed before the holding page comes down, see `BUSINESS_LAUNCH_AUDIT.md`
+- [ ] **Legal pages (Terms, Privacy, Cookies, Booking Terms) — real draft text loaded, awaiting your review and approval** (`isApproved: false` on all four by design, both datasets, 2026-07-30) — still the single highest-priority remaining item; two Booking Terms sections need your real payment/cancellation policy before approval, see `BUSINESS_LAUNCH_AUDIT.md`
 - [ ] Portfolio, Journal, Workshops — currently 100% `[SAMPLE]` placeholder; work through `CONTENT_READINESS_CHECKLIST.md`, or unpublish the sample entries in Sanity if none will be ready by launch
 - [ ] Every department page's "Featured Work" section shows unlabeled placeholder cards, cascading from the Portfolio gap above — resolves automatically once Portfolio content is real
 - [ ] Pricing information accurate wherever shown
