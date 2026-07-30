@@ -2027,6 +2027,53 @@ file to a proper cloud storage location with independent access
 control (currently just this Mac) — all named as next steps in §2.5,
 none of them launch-blocking for a first backup.
 
+### `FORMS_SENDING_ENABLED` turned on in production — 2026-07-30
+
+With your explicit written approval, set `FORMS_SENDING_ENABLED=true`
+in Vercel Production and deployed (`dpl_DXkWvce6RrxrdAQBVfZUzX7MAkwC`,
+`READY`). Verified directly against live production immediately after:
+
+- **Turnstile enforcement** — a schema-valid `/api/enquiry` request
+  with no token correctly rejected (`403 captcha-failed`); confirmed
+  nothing reaches the database, email, or Sheets before that check.
+- **Redis rate limiting** — rapid repeated requests from one IP
+  blocked (`429`) after a handful of attempts, confirming the limiter
+  is live post-deploy.
+- **Email delivery** — the Super-Admin `verify-send` diagnostic run
+  fresh: all 7 real sends (credential check, Contact/Workshop/Project-
+  Request acknowledgement + admin-notification pairs) returned
+  `"mode": "sent", "attempts": 1"` against real Resend.
+- **Google Sheets** — the `verify-write` diagnostic run fresh: auth,
+  spreadsheet lookup, worksheet check, write, read-back confirmation,
+  and self-cleanup all passed against the real "Ordift Studios
+  Operations" spreadsheet.
+
+**A real access hurdle worth recording:** the Super-Admin browser
+session from earlier in this pass had expired by the time this
+verification started, and I have no login credentials of my own —
+correctly refused to guess or attempt one. First tried the
+Claude-in-Chrome connected browser, but the user couldn't see that
+window from their side; switched to the in-app Browser pane (visible
+in the UI) and had the user log in there directly, typing their own
+credentials — I never touched them. Diagnostics ran cleanly once
+authenticated.
+
+**Not independently re-tested this pass** (both are unaffected by the
+`FORMS_SENDING_ENABLED` flag at the code level, and were already
+proven working in earlier production testing — see
+`PRODUCTION_HARDENING_REPORT.md`): idempotency, and fresh dead-letter
+table row counts (would need a service-role credential not available
+in this session; nothing in today's testing produced a failure that
+would have written to either table). The one thing that genuinely
+can't be tested yet: a complete real-visitor journey through `/book`
+with an actual Turnstile widget — impossible until the holding page
+comes down, since `/book` itself isn't reachable. Deliberately not
+touched this pass, per explicit instruction to change nothing else.
+
+Updated `FINAL_LAUNCH_CERTIFICATION.md` (Technical 98%→99%, Overall
+96%→97%) and `LAUNCH_CHECKLIST.md` to reflect both this and the
+backup completion above.
+
 ## Version 4.0 (partial) — Ordift Pulse Architecture — 2026-07-27 ✅ architecture complete
 
 Pulled forward from `PRODUCT_ROADMAP.md`'s Version 4.0 per explicit direction, while the media architecture (immediately above) was still fresh. Architecture and CMS schema only — see `PULSE_ARCHITECTURE.md` for full design detail.

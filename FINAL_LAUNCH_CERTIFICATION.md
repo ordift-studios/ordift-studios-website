@@ -1,6 +1,6 @@
 # Final Launch Certification
 
-**Date:** 2026-07-30
+**Date:** 2026-07-30 (updated same day — backup taken, forms sending enabled and verified)
 **Scope:** The final pre-launch pass across all 10 phases — technical platform, business/content review, documentation consistency, permanent operations docs, backup readiness, launch simulation, security, and performance. This document supersedes `FINAL_GO_LIVE_REPORT.md` (95%) as the current, final checkpoint; that report's detail is still valid and cross-referenced throughout, not replaced.
 
 ---
@@ -9,12 +9,12 @@
 
 | Area | Score | Basis |
 |---|---|---|
-| **Technical** | 98% | Every system built or audited this engagement is live, tested, and verified against real production. The 2% gap is the one deliberately-deferred CAPTCHA success-path check (blocked by the holding page, by design) and the not-yet-taken first real backup. |
+| **Technical** | 99% | Every system built or audited this engagement is live, tested, and verified against real production, including a first real backup and real production email/Sheets sends (both confirmed today). The 1% gap is the one deliberately-deferred CAPTCHA success-path check on the public `/book` form — blocked by the holding page, by design, not a defect. |
 | **Business** | 95% | Homepage/About/Services are real, professional, launch-ready copy (re-verified this pass). One live content bug found and fixed (misleading footer Talent links). Portfolio/Journal/Workshops remain placeholder — a genuine content task, not a defect. |
 | **Security** | 97% | RLS, headers, secrets handling, Studio/Admin auth all verified. Only gap: no CSP yet (deliberately deferred pending a tested script-source allowlist) and the tracked `npm audit` findings (no safe fix available). |
 | **Performance** | 90% | Production build is clean (zero errors/warnings, 72 static/SSG pages generated correctly). The one oversized bundle (4.1 MB) is Sanity Studio's own client bundle, confirmed scoped exclusively to `/studio` — never loaded by a public visitor. No formal Lighthouse/load-testing pass has been run yet (tracked, not a launch blocker). |
-| **Operations** | 100% | `OPERATIONS_MANUAL.md`, `LAUNCH_CHECKLIST.md`, `MAINTENANCE_SCHEDULE.md`, `DISASTER_RECOVERY.md`, `DOCUMENTATION_INDEX.md` all current and cross-referenced. Every document has a clear purpose and an "update when" trigger. |
-| **Overall Launch Readiness** | **96%** | Up from 95% (`FINAL_GO_LIVE_REPORT.md`). The remaining 4% is entirely items below that are your decision, your content, or a step that correctly waits for the actual launch moment — none of it is unresolved technical work. |
+| **Operations** | 100% | `OPERATIONS_MANUAL.md`, `LAUNCH_CHECKLIST.md`, `MAINTENANCE_SCHEDULE.md`, `DISASTER_RECOVERY.md`, `DOCUMENTATION_INDEX.md` all current and cross-referenced, including the first real backup and today's forms-enablement verification. |
+| **Overall Launch Readiness** | **97%** | Up from 96% earlier today, 95% at `FINAL_GO_LIVE_REPORT.md`. The remaining 3% is entirely items below that are your decision, your content, or a step that correctly waits for the actual launch moment — none of it is unresolved technical work. |
 
 ---
 
@@ -34,25 +34,28 @@
 
 **Performance** (Phase 9): First formal build-output review of this engagement. Production build is clean — zero errors, zero warnings, all 72 routes generate correctly (static/SSG/dynamic mix as expected). The single large bundle (4.1 MB) is Sanity Studio's own editor, confirmed via the build's client-reference manifest to load only on `/studio` — never shipped to a public visitor. No other bundle-size concerns found.
 
+**First production backup** (Phase 6, completed 2026-07-30): `ordift-production-20260730-043436.dump`, 377 KB, independently verified via `pg_restore --list` — all 26 `public.*` tables present, 683 total TOC entries. Two real issues hit and fixed along the way (a `libpq` PATH problem, and a special-character database password breaking connection-string parsing) — both documented in `DISASTER_RECOVERY.md` §2.5 so the next backup doesn't rediscover either one. Full detail there.
+
+**`FORMS_SENDING_ENABLED` enabled and verified** (completed 2026-07-30, with your written approval): set in Vercel Production, deployed (`dpl_DXkWvce6...`, `READY`). Verified directly against live production:
+- **Turnstile enforcement** — a schema-valid request with no token is correctly rejected (`403 captcha-failed`); nothing reaches the database, email, or Sheets until a genuine token passes.
+- **Rate limiting** — rapid repeated requests from one IP get blocked (`429`) after a handful of attempts; Redis-backed limiter confirmed active post-deploy.
+- **Email delivery** — all 7 real sends (credential check + Contact/Workshop/Project-Request acknowledgement and admin-notification pairs) via `verify-send`, every one `"mode": "sent"`, single attempt, against real Resend.
+- **Google Sheets** — full `verify-write` round trip: authentication, spreadsheet lookup, worksheet check, write, read-back confirmation, and self-cleanup all passed against the real "Ordift Studios Operations" spreadsheet.
+- **Idempotency and dead-letter logging** — not re-tested this pass (both are independent of the `FORMS_SENDING_ENABLED` gate at the code level, and were already proven working in earlier production testing — see `PRODUCTION_HARDENING_REPORT.md`). Dead-letter tables couldn't be freshly queried this round (would need a service-role credential not available in this session), but nothing in today's testing produced a failure that would have written to them.
+- **The one thing still genuinely untested:** a complete real visitor journey through the actual `/book` page with a real Turnstile widget — impossible until the holding page comes down, since `/book` itself isn't reachable yet. This was always the deliberately-deferred Launch Day step, not a new gap.
+
 ---
 
 ## Requires Your Approval
 
-1. **`FORMS_SENDING_ENABLED`** — turning on real (vs. logged-only) email/Sheets sends. Per your standing instruction, this needs your explicit written approval before I enable it, deploy, and run one final controlled real-submission test across every public form.
-2. **Content readiness for Portfolio/Journal/Workshops** — either replace the `[SAMPLE]` entries with real content (`CONTENT_READINESS_CHECKLIST.md`), or explicitly decide to unpublish them for launch and add real content after.
-3. **Removing `LAUNCH_HOLDING_PAGE`** — the actual go-live moment. Only after every item in `LAUNCH_CHECKLIST.md`'s Before Launch section is genuinely checked.
+1. **Content readiness for Portfolio/Journal/Workshops** — either replace the `[SAMPLE]` entries with real content (`CONTENT_READINESS_CHECKLIST.md`), or explicitly decide to unpublish them for launch and add real content after.
+2. **Removing `LAUNCH_HOLDING_PAGE`** — the actual go-live moment. Only after every item in `LAUNCH_CHECKLIST.md`'s Before Launch section is genuinely checked. Not actioned this pass per your explicit instruction to change nothing else yet.
 
 ---
 
 ## Requires Manual Dashboard Action
 
-1. **First manual production database backup** — the procedure is documented and ready (`DISASTER_RECOVERY.md` §2.2), but I cannot run it myself: it requires your database connection string/password from Supabase Dashboard → Settings → Database, which must never pass through this chat. Step-by-step, whenever you're ready:
-   - Copy the Postgres connection string from Supabase Dashboard → Settings → Database → Connection string.
-   - Run the `pg_dump` command in `DISASTER_RECOVERY.md` §2.2 in your own terminal, pasting the connection string directly there (never here).
-   - Run the 4-step verification in §2.3 immediately after (file exists and isn't empty, `pg_restore --list` shows all 26 tables, row counts look sane, log it).
-   - Store the file per §2.4's safe-storage guidance.
-   - Tell me once it's done and I'll update `MILESTONES.md` and `LAUNCH_CHECKLIST.md`'s status for you.
-2. **Analytics / Search Console setup** — optional, gated on Cookie Notice approval; your call on timing.
+1. **Analytics / Search Console setup** — optional, gated on Cookie Notice approval; your call on timing.
 
 ---
 
@@ -68,9 +71,9 @@
 
 ## Recommended Launch Sequence
 
-1. Take the first real production backup (guided above).
-2. Decide on Portfolio/Journal/Workshops content (replace or unpublish).
-3. Confirm `FORMS_SENDING_ENABLED` in writing — I enable it, deploy, run the final controlled verification.
+1. ~~Take the first real production backup.~~ ✅ Done 2026-07-30.
+2. Decide on Portfolio/Journal/Workshops content (replace or unpublish) — the one remaining item that's genuinely yours.
+3. ~~Confirm `FORMS_SENDING_ENABLED` in writing.~~ ✅ Done and verified 2026-07-30.
 4. Remove `LAUNCH_HOLDING_PAGE` per `LAUNCH_CHECKLIST.md`'s Launch Day runbook.
 5. Complete the one real Turnstile widget challenge on the live `/book` page — the last verification gap, closed the moment the site is reachable.
 6. The platform is live.

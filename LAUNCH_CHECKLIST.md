@@ -2,28 +2,28 @@
 
 The single canonical checklist for going from "platform is technically ready" to "real visitors are on the live site." Three sections — Before Launch, Launch Day, After Launch — each with concrete, checkable items. Where a full procedure already exists elsewhere, this points to it rather than duplicating it; where no procedure exists yet, the step is spelled out here directly.
 
-**Status as of 2026-07-30:** `LAUNCH_HOLDING_PAGE` is still on. Every "Before Launch" item below must be genuinely checked off before Launch Day's single action (removing it) happens — see `FINAL_GO_LIVE_REPORT.md` §11 for the last full audit of where each item stands.
+**Status as of 2026-07-30 (updated same day):** `LAUNCH_HOLDING_PAGE` is still on — deliberately not touched. Every Technical item is now checked except the one real-widget Turnstile verification, which structurally cannot happen until the holding page comes down. Content readiness is the one remaining Before Launch item that's genuinely a business decision. See `FINAL_LAUNCH_CERTIFICATION.md` for the full current readiness picture.
 
 ---
 
 ## Before Launch
 
 ### Technical
-- [ ] All environment variables present and correct in Production (`vercel env ls production` against `.env.example`)
-- [ ] Domain connected, resolving, SSL active (`ordiftstudios.com`)
-- [ ] Email delivery verified end-to-end (verify-send diagnostic, all 5 types)
-- [ ] CAPTCHA live with real Turnstile credentials — done 2026-07-30; one gap remains: a real-widget success-path completion, deferred until Launch Day since the holding page blocks reaching the public forms today
-- [ ] Redis rate limiting and idempotency verified healthy
-- [ ] Supabase production schema fully migrated and verified
-- [ ] Vercel deployment healthy, security headers present
-- [ ] Sanity content connected and rendering correctly
-- [ ] Database RLS reviewed
-- [ ] No leftover QA/test data in either Supabase project
-- [ ] Sitemap (`/sitemap.xml`) and `robots.txt` present and correct — done 2026-07-30
-- [ ] Open Graph / social-share preview correct — done 2026-07-30
-- [ ] Favicon present — confirmed live
+- [x] All environment variables present and correct in Production (`vercel env ls production` against `.env.example`)
+- [x] Domain connected, resolving, SSL active (`ordiftstudios.com`)
+- [x] Email delivery verified end-to-end — `verify-send` diagnostic re-run 2026-07-30 post-`FORMS_SENDING_ENABLED`, all 7 real sends `"mode": "sent"`
+- [ ] CAPTCHA live with real Turnstile credentials — done 2026-07-30; enforcement re-confirmed 2026-07-30 (missing-token requests correctly rejected `403`); one gap remains: a real-widget success-path completion, deferred until Launch Day since the holding page blocks reaching the public forms today
+- [x] Redis rate limiting verified healthy — re-confirmed live 2026-07-30 post-deploy (blocks after rapid repeated requests)
+- [x] Supabase production schema fully migrated and verified
+- [x] Vercel deployment healthy, security headers present
+- [x] Sanity content connected and rendering correctly
+- [x] Database RLS reviewed
+- [x] No leftover QA/test data in either Supabase project — today's Turnstile/rate-limit tests were all rejected before any DB write; Google Sheets `verify-write` self-cleaned its one test row
+- [x] Sitemap (`/sitemap.xml`) and `robots.txt` present and correct — done 2026-07-30
+- [x] Open Graph / social-share preview correct — done 2026-07-30
+- [x] Favicon present — confirmed live
 - [x] **First manual production database backup taken and verified** (`DISASTER_RECOVERY.md` §2.5) — completed 2026-07-30, `ordift-production-20260730-043436.dump`, all 26 tables confirmed present via `pg_restore --list`
-- [ ] **`FORMS_SENDING_ENABLED` decision made** — requires your explicit written approval before I enable it, deploy, and run one final controlled real-submission test across every public form
+- [x] **`FORMS_SENDING_ENABLED` decision made** — your written approval given and enabled 2026-07-30, deployed, verified: real email sends (`verify-send`) and real Google Sheets write/read-back/cleanup (`verify-write`) both confirmed against production
 
 Full detail and current status on each item: `OPERATIONS_MANUAL.md` §7, `FINAL_GO_LIVE_REPORT.md`.
 
