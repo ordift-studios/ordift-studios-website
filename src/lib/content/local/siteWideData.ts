@@ -156,9 +156,11 @@ export const FOOTER_SETTINGS: FooterSettings = {
     {
       heading: "Talent",
       links: [
-        { label: "Talent Directory", href: "/services/talent-management" },
-        { label: "Book Talent", href: "/services/talent-management" },
-        { label: "Apply as Talent", href: "/services/talent-management" },
+        // A single accurate link, not three — "Talent Directory"/"Book
+        // Talent"/"Apply as Talent" each implied a distinct feature that
+        // doesn't exist yet (Talent Management is Phase 1B, unbuilt);
+        // all three pointed at this same service page anyway.
+        { label: "Talent Management", href: "/services/talent-management" },
       ],
     },
   ],
