@@ -57,7 +57,22 @@ export default async function LegalPage({
           <h1 className="font-serif font-medium text-page-title text-white mb-4">
             {page.title}
           </h1>
-          <p className="font-sans text-body text-white/80">{page.body}</p>
+          {page.lastUpdated && (
+            <p className="font-sans text-body-small text-white/50 mb-6">
+              Last updated {new Date(page.lastUpdated).toLocaleDateString("en-GB", {
+                day: "numeric",
+                month: "long",
+                year: "numeric",
+              })}
+            </p>
+          )}
+          <div className="space-y-4">
+            {(page.body ?? "").split(/\n{2,}/).map((paragraph, i) => (
+              <p key={i} className="font-sans text-body text-white/80">
+                {paragraph}
+              </p>
+            ))}
+          </div>
         </div>
       </section>
       <Footer />
