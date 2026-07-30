@@ -1938,6 +1938,58 @@ checklist:
   pass). Cross-references updated in `DOCUMENTATION_INDEX.md`,
   `FINAL_GO_LIVE_REPORT.md`, `OPERATIONS_MANUAL.md`.
 
+### Final pre-launch: 10-phase completion pass — FINAL_LAUNCH_CERTIFICATION.md (2026-07-30)
+
+Closed out the full final pre-launch program. New this pass, beyond the
+sitemap/OG/content-checklist work already logged above:
+
+- **Fixed a live content bug found during a fresh business-eyes review:**
+  the footer's "Talent" column had three separately-labeled links
+  ("Talent Directory", "Book Talent", "Apply as Talent") all pointing at
+  the same `/services/talent-management` page — promising three
+  features that don't exist yet (Talent Management is Phase 1B,
+  unbuilt; the department page itself already handles this honestly
+  with a "Coming Soon" state). Collapsed to one accurate "Talent
+  Management" link, patched directly into both the staging and
+  production Sanity `footerSettings` documents with your explicit
+  go-ahead, and fixed in the local fixture (`siteWideData.ts`) so a
+  future re-seed doesn't reintroduce it.
+- **Created `LAUNCH_CHECKLIST.md`** (Before Launch/Launch Day/After
+  Launch) and **`MAINTENANCE_SCHEDULE.md`** (Daily through Annual —
+  Quarterly and Annual cadences defined for the first time this
+  session).
+- **Refreshed `DOCUMENTATION_INDEX.md`'s "Remaining Strategic
+  Decisions" list**, which still named the Turnstile-credentials and
+  backup-plan decisions as open blockers — both resolved 2026-07-30.
+- **Launch simulation (Phase 7):** a fresh click-through (Home →
+  Services → Portfolio → Workshops → Book) confirmed zero console/
+  network errors and correct multi-step form behavior. Did not
+  resubmit a full-stack test enquiry — CAPTCHA/rate-limiting/
+  idempotency/email/Sheets/dead-letter logging were already proven
+  end-to-end as of the Turnstile production deploy, and another round
+  of test data would add cleanup without new signal. The one genuinely
+  outstanding check (a real Turnstile widget completion) stays
+  deferred to Launch Day, since the holding page blocks reaching the
+  real public forms until then.
+- **First formal build-output review (Phase 9):** production build is
+  clean (zero errors/warnings, all 72 routes generate correctly). The
+  one large bundle (4.1 MB) was traced via the build's client-reference
+  manifest to Sanity Studio's own editor — confirmed scoped exclusively
+  to `/studio`, never shipped to a public visitor.
+- **Security (Phase 8):** re-confirmed rather than re-derived — no
+  regressions found in RLS, headers, secrets handling, or Studio/Admin
+  auth.
+
+Produced `FINAL_LAUNCH_CERTIFICATION.md` — Technical (98%) / Business
+(95%) / Security (97%) / Performance (90%) / Operations (100%) scores,
+Overall Launch Readiness **96%**, superseding `FINAL_GO_LIVE_REPORT.md`
+(95%). Remaining gaps are named explicitly: the first real backup
+hasn't been taken yet (guided step-by-step in the certification doc,
+requires your database password entered directly in your own
+terminal), `FORMS_SENDING_ENABLED` awaits your written approval, and
+Portfolio/Journal/Workshops content awaits your decision to replace or
+unpublish.
+
 ## Version 4.0 (partial) — Ordift Pulse Architecture — 2026-07-27 ✅ architecture complete
 
 Pulled forward from `PRODUCT_ROADMAP.md`'s Version 4.0 per explicit direction, while the media architecture (immediately above) was still fresh. Architecture and CMS schema only — see `PULSE_ARCHITECTURE.md` for full design detail.
