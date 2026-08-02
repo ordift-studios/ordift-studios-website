@@ -182,6 +182,15 @@
 - **Pay-down trigger:** N/A — resolved. Worth remembering as a pattern: any future table with a non-cascading FK to `profiles` needs sequential (not concurrent) cleanup ordering in its integration tests.
 - **Status:** Resolved (2026-07-30)
 
+### TD-017 — Disabled `Button` links were still keyboard-activatable (found and fixed 2026-08-01)
+- **Category:** Security / Accessibility
+- **Severity:** Low (found, fixed, and verified same-session — logged for the historical record)
+- **What:** found during the customer-lens production audit (real browser walkthrough, real staging login). `src/components/Button.tsx`'s `href` branch always rendered a real Next.js `<Link>`, using CSS `pointer-events-none` plus `aria-disabled` to represent a disabled state. `pointer-events-none` only blocks mouse activation; `aria-disabled` is purely informational to assistive tech and does not stop native anchor behavior. A keyboard user could Tab to a "disabled" quick-action link (`View Deliverables`, `Request Reschedule`, `Edit Profile` on the client dashboard — the only call site combining `disabled` + `href`) and press Enter to navigate it anyway, landing on `href="#"` with no explanation.
+- **Why this happened:** the pattern correctly handled mouse users but was never checked against keyboard-only navigation, a real WCAG-relevant user population this project's own engineering standards (mobile-first, accessible) are meant to cover.
+- **Current impact:** none — fixed same-session. `Button` now renders a non-interactive `<span aria-disabled="true">` (no href, no tab stop) whenever `disabled` is true, for every input method, not just the mouse.
+- **Pay-down trigger:** N/A — resolved.
+- **Status:** Resolved (2026-08-01)
+
 ---
 
 ## Adding new entries

@@ -2699,6 +2699,68 @@ first real production deploy verified end-to-end (push → Actions →
 Vercel → live routes) using CLI tooling (`gh`, `vercel`) instead of
 manual dashboard checking.
 
+### Customer + administrator production audit; one real accessibility bug found and fixed (2026-08-01)
+
+Resumed, per your instruction, from the exact pause point set 2026-07-30
+(saved to durable memory ahead of the weekly usage-limit reset): a
+read-only-first audit of the platform from a real customer's and a
+real administrator's perspective, fixing anything fixable without a
+business decision, ending in a Launch Readiness Report.
+
+Ran the app locally against real staging content (`SITE_ENV=staging`,
+no `LAUNCH_HOLDING_PAGE` set) — the only way to audit the real site
+experience while production stays behind the holding page. Walked
+through every major public route (home, services, department pages,
+portfolio, journal, workshops, the booking form, legal pages) via a
+real browser: console clean throughout, no broken links, form
+interactivity confirmed working, legal pages correctly show their
+"DRAFT — NOT YET APPROVED" banner.
+
+For the portal and admin lenses, created real (not simulated) `TEST-`
+identified staging accounts via the same service-role pattern proven
+in Workstream A — a client account and an admin account — logged in
+as each through the actual UI, walked the real client dashboard and
+every major admin surface (Overview, Enquiries, Users & Roles,
+Reports, Content, Settings), then deleted both accounts and
+independently re-ran `verify:staging-test-cleanup` to confirm nothing
+was left behind.
+
+**Found a real, fixable-without-a-business-decision bug**, not a
+hypothetical one: the client dashboard's "Coming soon" quick actions
+(View Deliverables, Request Reschedule, Edit Profile) were disabled
+only for mouse users. `Button.tsx`'s `href` branch used
+`pointer-events-none` (CSS, mouse-only) plus `aria-disabled`
+(informational only, doesn't block native anchor activation) to
+represent disabled state — a keyboard user could still Tab to these
+links and press Enter to navigate them, landing on a bare `#` with no
+explanation. Fixed at the shared-component level (one call site was
+affected, `QuickActionsWidget.tsx`, so the fix covers it site-wide):
+disabled `href` buttons now render as a non-interactive `<span
+aria-disabled="true">` — no href, no tab stop, for every input method,
+not just the mouse. Logged as TD-017 (Resolved). Verified live via
+HMR (the "generic" element replacing the "link" role in the
+accessibility tree), then re-confirmed with a full `tsc --noEmit` /
+`eslint` / `npm test` / `npm run build` pass, all clean.
+
+Also verified, against real production (not local): security headers
+present (X-Frame-Options, X-Content-Type-Options, Referrer-Policy,
+Permissions-Policy, HSTS — CSP absence remains TD-004, deliberate),
+`robots.txt` correctly disallows `/admin`/`/portal`/`/studio`/
+`/style-preview` and points at the sitemap, `sitemap.xml` generates
+correctly, Open Graph/Twitter meta tags render correctly on the
+holding page. Spot-checked every `dangerouslySetInnerHTML` usage in
+the codebase (3, all JSON-LD structured data via `JSON.stringify`,
+not raw user input) — no XSS concern found.
+
+One observation, not a finding: staging's Users & Roles list still
+shows a "Turnstile QA Test" account from earlier CAPTCHA verification
+work. Left untouched — staging is expected to carry test/QA data per
+this project's own isolation design (`STAGING.md`), unlike production,
+which has already been swept clean multiple times.
+
+Launch Readiness Report presented in-conversation per your requested
+format, reflecting the current state after this audit.
+
 ## Version 4.0 (partial) — Ordift Pulse Architecture — 2026-07-27 ✅ architecture complete
 
 Pulled forward from `PRODUCT_ROADMAP.md`'s Version 4.0 per explicit direction, while the media architecture (immediately above) was still fresh. Architecture and CMS schema only — see `PULSE_ARCHITECTURE.md` for full design detail.

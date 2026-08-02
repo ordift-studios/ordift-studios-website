@@ -42,8 +42,22 @@ export default function Button({
   } ${className}`;
 
   if (href) {
+    // `pointer-events-none` above only blocks mouse activation — a
+    // disabled <Link> is still focusable and a keyboard Enter/Space
+    // press would still navigate it, since aria-disabled is purely
+    // informational to assistive tech and doesn't stop native anchor
+    // behavior. A disabled action must be non-interactive for every
+    // input method, not just the mouse, so it renders as a plain
+    // <span> instead — no href, no tab stop, nothing to activate.
+    if (disabled) {
+      return (
+        <span className={classes} aria-disabled="true">
+          {children}
+        </span>
+      );
+    }
     return (
-      <Link href={href} className={classes} aria-disabled={disabled}>
+      <Link href={href} className={classes}>
         {children}
       </Link>
     );
