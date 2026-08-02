@@ -3,6 +3,8 @@
 **Date:** 2026-07-30 (updated same day — backup taken, forms sending enabled and verified, full business content audit completed, real legal-page text drafted, a fresh-eyes technical re-audit completed)
 **Scope:** The final pre-launch pass across all 10 phases plus a dedicated business-owner content audit and a second fresh-eyes technical sweep — technical platform, business/content review, documentation consistency, permanent operations docs, backup readiness, launch simulation, security, and performance. This document supersedes `FINAL_GO_LIVE_REPORT.md` (95%) as the current, final checkpoint; that report's detail is still valid and cross-referenced throughout, not replaced.
 
+**Update — 2026-08-01:** the scores below predate Version 1.0.5 (Platform Foundation Hardening — real unit/integration test suite, real GitHub Actions CI verified live, Technical Decision Records, Technical Debt Register, Platform Health Review process) and today's customer + administrator production audit. That audit found and fixed one real issue (TD-017 — a disabled dashboard action was still keyboard-activatable) and independently re-verified security headers, `robots.txt`, `sitemap.xml`, OG/Twitter metadata, and XSS-pattern usage directly against production — all clean. None of this changes the Business-score gap below (still the real blocker); Technical/Security are, if anything, better-evidenced than when these scores were set, not worse. Not re-scored numerically — see the Launch Readiness Report delivered 2026-08-01 for the current itemized state.
+
 ---
 
 ## Readiness Scores
