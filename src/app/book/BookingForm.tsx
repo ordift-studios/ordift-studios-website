@@ -58,9 +58,24 @@ function FieldLabel({ children, htmlFor, optional }: { children: React.ReactNode
   );
 }
 
-function FieldError({ message }: { message?: string }) {
+function FieldError({ id, message }: { id: string; message?: string }) {
   if (!message) return null;
-  return <p className="mt-1.5 font-sans text-caption text-red-700">{message}</p>;
+  return (
+    <p id={id} role="alert" className="mt-1.5 font-sans text-caption text-red-700">
+      {message}
+    </p>
+  );
+}
+
+// Spread onto an input/textarea/select alongside its `id` so screen
+// readers announce the associated FieldError paragraph and flag the
+// field as invalid — aria-disabled-style informational markers alone
+// don't get this association for free, it has to be wired per field.
+function fieldAria(fieldId: string, error?: string) {
+  return {
+    "aria-describedby": error ? `${fieldId}-error` : undefined,
+    "aria-invalid": error ? (true as const) : undefined,
+  };
 }
 
 const inputClasses =
@@ -260,7 +275,7 @@ export default function BookingForm({ initialService }: { initialService?: strin
               </button>
             ))}
           </div>
-          <FieldError message={errors.service} />
+          <FieldError id="service-error" message={errors.service} />
           <p className="mt-6 font-sans text-body-small text-ordift-ink-muted">
             Looking for talent booking or applications?{" "}
             <Link href="/services/talent-management" className="text-ordift-gold-pressed underline underline-offset-4">
@@ -278,23 +293,23 @@ export default function BookingForm({ initialService }: { initialService?: strin
           </h2>
           <div>
             <FieldLabel htmlFor="projectType" optional>Project type</FieldLabel>
-            <input id="projectType" className={inputClasses} value={data.projectType} onChange={(e) => update("projectType", e.target.value)} placeholder="e.g. Product shoot, brand film, logo design" />
-            <FieldError message={errors.projectType} />
+            <input id="projectType" className={inputClasses} value={data.projectType} onChange={(e) => update("projectType", e.target.value)} placeholder="e.g. Product shoot, brand film, logo design" {...fieldAria("projectType", errors.projectType)} />
+            <FieldError id="projectType-error" message={errors.projectType} />
           </div>
           <div>
             <FieldLabel htmlFor="projectLocation" optional>Project location</FieldLabel>
-            <input id="projectLocation" className={inputClasses} value={data.projectLocation} onChange={(e) => update("projectLocation", e.target.value)} placeholder="e.g. Accra, Ghana" />
-            <FieldError message={errors.projectLocation} />
+            <input id="projectLocation" className={inputClasses} value={data.projectLocation} onChange={(e) => update("projectLocation", e.target.value)} placeholder="e.g. Accra, Ghana" {...fieldAria("projectLocation", errors.projectLocation)} />
+            <FieldError id="projectLocation-error" message={errors.projectLocation} />
           </div>
           <div>
             <FieldLabel htmlFor="description">Brief project description</FieldLabel>
-            <textarea id="description" rows={5} className={inputClasses} value={data.description} onChange={(e) => update("description", e.target.value)} placeholder="What are you building, and what does it need to do?" />
-            <FieldError message={errors.description} />
+            <textarea id="description" rows={5} className={inputClasses} value={data.description} onChange={(e) => update("description", e.target.value)} placeholder="What are you building, and what does it need to do?" {...fieldAria("description", errors.description)} />
+            <FieldError id="description-error" message={errors.description} />
           </div>
           <div>
             <FieldLabel htmlFor="referenceLink" optional>Reference or mood-board link</FieldLabel>
-            <input id="referenceLink" className={inputClasses} value={data.referenceLink} onChange={(e) => update("referenceLink", e.target.value)} placeholder="https://…" />
-            <FieldError message={errors.referenceLink} />
+            <input id="referenceLink" className={inputClasses} value={data.referenceLink} onChange={(e) => update("referenceLink", e.target.value)} placeholder="https://…" {...fieldAria("referenceLink", errors.referenceLink)} />
+            <FieldError id="referenceLink-error" message={errors.referenceLink} />
           </div>
         </div>
       )}
@@ -306,8 +321,8 @@ export default function BookingForm({ initialService }: { initialService?: strin
           </h2>
           <div>
             <FieldLabel htmlFor="timeframe" optional>Preferred date or timeframe</FieldLabel>
-            <input id="timeframe" className={inputClasses} value={data.timeframe} onChange={(e) => update("timeframe", e.target.value)} placeholder="e.g. mid-August 2026, or 'flexible'" />
-            <FieldError message={errors.timeframe} />
+            <input id="timeframe" className={inputClasses} value={data.timeframe} onChange={(e) => update("timeframe", e.target.value)} placeholder="e.g. mid-August 2026, or 'flexible'" {...fieldAria("timeframe", errors.timeframe)} />
+            <FieldError id="timeframe-error" message={errors.timeframe} />
           </div>
           <div>
             <FieldLabel htmlFor="budgetRange" optional>Estimated budget range</FieldLabel>
@@ -316,6 +331,7 @@ export default function BookingForm({ initialService }: { initialService?: strin
               className={inputClasses}
               value={data.budgetRange}
               onChange={(e) => update("budgetRange", e.target.value)}
+              {...fieldAria("budgetRange", errors.budgetRange)}
             >
               <option value="">Select a range…</option>
               {BUDGET_RANGES.map((b) => (
@@ -324,7 +340,7 @@ export default function BookingForm({ initialService }: { initialService?: strin
                 </option>
               ))}
             </select>
-            <FieldError message={errors.budgetRange} />
+            <FieldError id="budgetRange-error" message={errors.budgetRange} />
           </div>
         </div>
       )}
@@ -336,35 +352,35 @@ export default function BookingForm({ initialService }: { initialService?: strin
           </h2>
           <div>
             <FieldLabel htmlFor="fullName">Full name</FieldLabel>
-            <input id="fullName" className={inputClasses} value={data.fullName} onChange={(e) => update("fullName", e.target.value)} />
-            <FieldError message={errors.fullName} />
+            <input id="fullName" className={inputClasses} value={data.fullName} onChange={(e) => update("fullName", e.target.value)} {...fieldAria("fullName", errors.fullName)} />
+            <FieldError id="fullName-error" message={errors.fullName} />
           </div>
           <div>
             <FieldLabel htmlFor="companyName" optional>Company or brand name</FieldLabel>
-            <input id="companyName" className={inputClasses} value={data.companyName} onChange={(e) => update("companyName", e.target.value)} />
-            <FieldError message={errors.companyName} />
+            <input id="companyName" className={inputClasses} value={data.companyName} onChange={(e) => update("companyName", e.target.value)} {...fieldAria("companyName", errors.companyName)} />
+            <FieldError id="companyName-error" message={errors.companyName} />
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
             <div>
               <FieldLabel htmlFor="email">Email address</FieldLabel>
-              <input id="email" type="email" className={inputClasses} value={data.email} onChange={(e) => update("email", e.target.value)} />
-              <FieldError message={errors.email} />
+              <input id="email" type="email" className={inputClasses} value={data.email} onChange={(e) => update("email", e.target.value)} {...fieldAria("email", errors.email)} />
+              <FieldError id="email-error" message={errors.email} />
             </div>
             <div>
               <FieldLabel htmlFor="phone">Phone or WhatsApp number</FieldLabel>
-              <input id="phone" type="tel" className={inputClasses} value={data.phone} onChange={(e) => update("phone", e.target.value)} />
-              <FieldError message={errors.phone} />
+              <input id="phone" type="tel" className={inputClasses} value={data.phone} onChange={(e) => update("phone", e.target.value)} {...fieldAria("phone", errors.phone)} />
+              <FieldError id="phone-error" message={errors.phone} />
             </div>
           </div>
           <div>
             <FieldLabel htmlFor="country" optional>Country or current location</FieldLabel>
-            <input id="country" className={inputClasses} value={data.country} onChange={(e) => update("country", e.target.value)} />
-            <FieldError message={errors.country} />
+            <input id="country" className={inputClasses} value={data.country} onChange={(e) => update("country", e.target.value)} {...fieldAria("country", errors.country)} />
+            <FieldError id="country-error" message={errors.country} />
           </div>
           <div>
             <FieldLabel htmlFor="hearAboutUs" optional>How did you hear about Ordift Studios?</FieldLabel>
-            <input id="hearAboutUs" className={inputClasses} value={data.hearAboutUs} onChange={(e) => update("hearAboutUs", e.target.value)} />
-            <FieldError message={errors.hearAboutUs} />
+            <input id="hearAboutUs" className={inputClasses} value={data.hearAboutUs} onChange={(e) => update("hearAboutUs", e.target.value)} {...fieldAria("hearAboutUs", errors.hearAboutUs)} />
+            <FieldError id="hearAboutUs-error" message={errors.hearAboutUs} />
           </div>
         </div>
       )}
@@ -410,6 +426,7 @@ export default function BookingForm({ initialService }: { initialService?: strin
               className="mt-1 w-4 h-4 accent-ordift-gold"
               checked={data.consent === true}
               onChange={(e) => update("consent", e.target.checked ? true : undefined)}
+              {...fieldAria("consent", errors.consent)}
             />
             <span className="font-sans text-body-small text-ordift-ink">
               I&apos;ve read and agree to the{" "}
@@ -419,7 +436,7 @@ export default function BookingForm({ initialService }: { initialService?: strin
               . <span className="text-ordift-ink-muted">(Required to process this enquiry.)</span>
             </span>
           </label>
-          <FieldError message={errors.consent} />
+          <FieldError id="consent-error" message={errors.consent} />
 
           {/* Separate, optional, unchecked by default — submitting an
               enquiry must never auto-subscribe anyone to marketing. */}

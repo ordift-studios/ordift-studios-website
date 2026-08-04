@@ -2761,6 +2761,568 @@ which has already been swept clean multiple times.
 Launch Readiness Report presented in-conversation per your requested
 format, reflecting the current state after this audit.
 
+### Public site deep pass: form-validation accessibility gap found and fixed (2026-08-02)
+
+Resumed per your six-point instruction to complete production audit
+follow-ups, review the live site from customer and administrator
+perspectives, and fix engineering defects without touching business
+content (pricing, portfolio, workshops, journals, legal wording,
+contact information — all confirmed untouched this session).
+
+Continued the public-site deep pass into `/book`'s multi-step form.
+Triggered the "Brief project description" required-field validation
+in a real browser and noticed the error message rendered as a plain,
+unassociated paragraph in the accessibility tree. Grepped
+`aria-describedby`/`aria-invalid` across `src/components` and
+`src/app` — zero matches anywhere in the codebase, confirming this
+was real, not a display limitation of the audit tooling.
+
+**Found and fixed a second real accessibility bug** (WCAG 3.3.1,
+Error Identification): both multi-step forms with client-side,
+per-field validation — `BookingForm.tsx` (~15 fields) and the
+workshop `RegistrationForm.tsx` (fullName/email/phone/consent) —
+had a local `FieldError` component rendering a plain `<p>` with no
+`id`, never linked to its input via `aria-describedby`, and never
+flagged the input as invalid via `aria-invalid`. A screen-reader
+user got no indication which field an error belonged to, or that a
+field was invalid at all. Checked every other file in the codebase
+using similarly-styled red error text (`ClassificationManager.tsx`,
+`UsersManager.tsx`, `LoginForm.tsx`, `SignupForm.tsx`,
+`ForgotPasswordForm.tsx`, `ResetPasswordForm.tsx`,
+`ProjectRequestsManager.tsx`, `DeliverablesManager.tsx`,
+`ProfileQuickCard.tsx`, `TurnstileWidget.tsx`) — all of those use a
+single top-level error banner rather than per-field errors (or
+already had `role="alert"`, as `TurnstileWidget.tsx` did), so the
+gap was scoped correctly to just the two forms.
+
+Fixed both: `FieldError` now accepts an explicit `id` and renders
+`role="alert"`; a small `fieldAria(fieldId, error)` helper returns
+the matching `aria-describedby`/`aria-invalid` pair, spread onto
+every field. Verified live in-browser (not just by static
+inspection) via direct DOM queries on both forms after triggering
+real validation errors — confirmed `aria-describedby` correctly
+points at the error paragraph's `id` and `aria-invalid="true"` is
+set exactly when an error is present, on both `/book` and a real
+workshop registration form. Logged as TD-018 (Resolved). Re-verified
+with a full `tsc --noEmit` / `eslint` pass, both clean.
+
+### API endpoint sanity checks, and a real access-control bug found in the admin deep pass (2026-08-02)
+
+Verified every API route (`/api/enquiry`, `/api/workshop-registration`,
+`/api/admin/google-sheets/*`, `/api/admin/reports/*`,
+`/api/admin/resend/verify-send`) against real requests: validation
+failures return 422 with field-level errors and no stack traces,
+unauthenticated admin routes return 401 with a generic `unauthorized`
+body (no data leakage), unknown routes 404. A full sitemap-driven
+crawl of all 34 public URLs returned 200 with zero broken links;
+elevated response times on CMS-driven detail pages were investigated
+via source (`src/sanity/lib/client.ts`) and confirmed to be staging's
+deliberate `useCdn: false` freshness setting, not a real performance
+regression — production uses `useCdn: true`. Confirmed every
+`/admin/*` and `/portal/*` route correctly redirects an unauthenticated
+visitor to login (no route serves protected content unauthenticated).
+
+For the admin and portal deep pass, created three real (not simulated)
+`TEST-`-identified staging accounts via the established service-role
+pattern — `super_admin`, `client`, and `vendor` — logged in as each
+through the actual UI (`form.requestSubmit()`, after discovering the
+browser tool's coordinate-based `click` wasn't registering on this
+button — a tool artifact, confirmed by the same click coordinates
+landing correctly once dispatched via the DOM, not a site bug).
+
+**Found and fixed a real access-control bug**, not a hypothetical
+one: logged in as the `super_admin`-only test account and found the
+"Users & Roles," "Feature Flags," and "Settings" nav links missing,
+and those three pages redirecting back to Overview. Root cause:
+`hasRole()` does exact-match role checks with no built-in hierarchy,
+so `hasRole(user, "admin")` is `false` for an account that holds only
+`super_admin` — even though Super Admin is meant to be the top of the
+role hierarchy (able to grant/revoke `admin` itself). Eight call sites
+across the admin surface used this narrow check directly instead of
+the codebase's own broader `isStaffOrAdmin()` pattern: the nav
+visibility filter, both `flags` and `users` pages plus their server
+actions, the `settings` page, `deliverables/actions.ts`'s
+`createCategoryAction`, and the `isAdmin` prop passed from the
+bookings and enquiries detail pages. Fixed all eight to
+`hasRole(user, "admin") || isSuperAdmin(user)`, consistent with the
+existing `isStaffOrAdmin()` pattern. Logged as TD-019 (Resolved).
+Live-reverified with the same super_admin test account: all three nav
+items now appear, all three pages load with no redirect, no console
+errors. Re-ran `tsc --noEmit` and `eslint`, both clean.
+
+Also verified, with the same accounts: the client portal dashboard
+renders correct empty states for every widget (no fabricated
+"sample" data), the vendor portal shell loads cleanly, and
+`/admin/bookings`, `/admin/activity` render correctly with 0 records
+(none exist in staging). Deleted all three test accounts and
+independently confirmed cleanup via direct `profiles`/`user_roles`
+queries (0 rows) and a full `npm run verify:staging-test-cleanup`
+pass (clean).
+
+## Ordift Studios Enterprise Legal Series (OSELS) — OS-LGL-001 Privacy Policy live (2026-08-04)
+
+Received the first approved Enterprise Legal Series document (OS-LGL-001,
+Privacy Policy) and the official letterhead artwork, and implemented the
+Legal Suite integration requested the same day — after first pausing to
+confirm the actual document text and letterhead file hadn't reached this
+environment (only a description of requirements had), consistent with
+this project's standing "never invent legal content" discipline. The
+user then provided both directly.
+
+**Architecture:** rather than force structured content (anchor-linked
+headings, a Document Control metadata block, an inline definitions
+list, mixed prose/list/table sections) into the existing Sanity
+`legalPage.body` plain-text field — already flagged as `TD-010` for
+exactly this reason — built a parallel, code-based content source
+(`src/lib/legal/`) following this project's own established
+CMS-agnostic pattern: `types.ts` (domain model), `documents/os-lgl-001-privacy.ts`
+(verbatim content), `registry.ts` (the single extension point future
+documents plug into). `/legal/[slug]` checks the registry first and
+falls through unchanged to the existing Sanity-backed renderer for any
+slug not yet registered — `/legal/cookies`, `/legal/terms`,
+`/legal/booking` are completely unaffected, verified live (still show
+their "Draft — not yet approved" banner exactly as before). Full
+reasoning in `TECHNICAL_DECISION_RECORDS.md` TDR-011.
+
+**Website version:** `LegalDocumentLayout` + `TableOfContents` (sticky
+on desktop via pure CSS, an expandable native `<details>` disclosure
+on mobile — zero JavaScript required for either) + `DocumentControlCard`
++ `DefinitionsList` + `LegalSection`, all server components. Semantic
+`<article>`/`<section>`/heading hierarchy (h1 → h2 → h3 → h4, verified
+via direct DOM query — 56 headings, correctly nested, no skipped
+levels), SEO metadata (title/description/canonical/OG/JSON-LD),
+responsive at mobile/desktop (verified via DOM overflow checks — the
+browser tool's own screenshot renderer has a known display artifact
+this session, worked around throughout via JS-based verification
+instead of visual screenshots).
+
+**Publication version:** a Python generator
+(`scripts/generateLegalPublication.py`) reads a JSON export of the same
+TypeScript content (`scripts/exportLegalDocumentJson.ts` — single
+source of truth stays in code) and produces PDF, DOCX, HTML, and MD.
+The provided letterhead was measured pixel-precisely (PIL/numpy — logo
+occupies the top 16.5% of the image, the footer bar the bottom ~10.5%)
+to size safe content margins that never overlap the artwork; the PDF
+page size is set to the letterhead's own exact aspect ratio (603.29pt
+× 792pt) so the full-bleed background renders with zero stretch
+distortion in either dimension — the artwork itself is never resized,
+cropped, or recompressed relative to the source file. PDF: cover page,
+Document Control page, Revision History, a real auto-paginated Table
+of Contents (reportlab's two-pass `multiBuild` + `TableOfContents`
+flowable — verified against rendered page images, page numbers are
+accurate, not placeholders), running header/footer with page numbers,
+Controlled Document Notice, copyright — 30 pages, visually verified via
+`pypdfium2` page rendering (cover, Document Control, TOC, two body
+pages, and the final page all inspected directly). DOCX: the same
+letterhead anchored full-page behind the text via raw OOXML
+manipulation (`behindDoc="1"`, positioned at the page origin,
+`python-docx` has no high-level API for this), a native Word `TOC`
+field (auto-populates from heading styles when opened in Word, more
+robust than a manually-computed one), `PAGE` field in the footer —
+validated structurally (well-formed XML throughout every part
+including the header's anchor element, zip integrity confirmed) since
+Word itself isn't available in this environment to open it directly.
+HTML and MD: self-contained, standalone, verified in-browser and via
+direct read.
+
+Download links wired into the website page
+(`/legal/publications/privacy/os-lgl-001.{pdf,docx,html,md}`, served
+from `public/`). Added `npm run legal:publish:privacy` chaining the
+export + generate steps.
+
+**Scope not completed, and why:** OS-LGL-000 (Master Definitions
+Register) and OS-LGL-099 (Document Control & Numbering Standard) were
+requested alongside OS-LGL-001, but neither document's actual text was
+provided — only OS-LGL-001 was. Built the code-level capability both
+would need (a definitions-aggregation module seeded with OS-LGL-001's
+own 7 real defined terms; a `DocumentControlMetadata` type
+reverse-engineered from OS-LGL-001's own Document Control block) but
+did not fabricate either document's actual content. Logged as `TD-020`
+— open, blocked on the source documents arriving, not on effort.
+Cookie Policy / Website Terms / Booking Terms (OS-LGL-002/003/004)
+remain registered as pending stubs (`registry.ts`'s
+`upcomingDocuments`) with no content, per the same discipline.
+
+Full regression check: `tsc --noEmit` and `eslint` both clean, a full
+production `npm run build` succeeded with `/legal/privacy` correctly
+statically generated alongside the other three legal slugs, and the
+existing three legal pages verified live to be completely unchanged.
+
+### OS-LGL-001 v1.1: standing Appendices, defined-term cross-linking, running change log (2026-08-04)
+
+Implemented 7 of 10 items from a same-day follow-up direction, built as
+shared architecture ("cut across every other document yet to be
+added") rather than hand-copied into OS-LGL-001 alone — flagged the
+remaining 3 rather than drafting them, since they required either
+genuine legal-compliance analysis of Ghana's Data Protection Act,
+Qatar's PDPPL, and GDPR, or asserting a specific internal incident
+response process this environment has no record of. Logged as `TD-021`.
+
+**Implemented:** `DefinedTerm` gained a stable `id` (independent of
+wording, so rewording a term later won't break existing deep links);
+`DocumentControlMetadata.changeLog` replaced the single synthesized
+revision row with a real, append-only array (v1.0 + v1.1 entries, both
+real); four standing Appendices (A: Interpretation & Severability, B:
+Accessibility Commitment, C: Contact Escalation Procedure, D:
+Cross-Document Hierarchy) added after the original approved 22
+sections — using the exact or near-exact clause text provided, not
+drafted from scratch, and structured so every future Enterprise Legal
+Series document inherits the same appendix set automatically rather
+than each document redefining them; Section 2 reframed to reference a
+Master Definitions Register (OS-LGL-000) without fabricating that
+register's actual content (still `TD-020`, unchanged); defined-term
+cross-referencing implemented as whole-word, case-sensitive matching
+(`LinkedText.tsx` on the website, equivalent logic in the Python
+generator for PDF/HTML/MD) — verified live with a real match ("Client"
+in §5.3, confirmed as a real gold-styled clickable link to its
+Definitions entry, not a hypothetical).
+
+**Publication formats re-verified after the changes:** PDF grew from
+30 to 32 pages (two-pass TOC + page numbers still accurate); a real
+internal PDF hyperlink confirmed working via rendered page images
+(reportlab's `<a name>`/`<a href="#...">` paragraph mini-markup,
+`canvas.bookmarkPage` not needed); DOCX cross-references implemented
+as bold styling rather than clickable internal links — a deliberate,
+documented scope decision (native Word internal hyperlinks need the
+same raw-OOXML technique as the letterhead background; judged not
+worth the added fragility for this specific feature), not an
+oversight; HTML and Markdown both get full anchor-based cross-linking
+(same mechanism as the website). DOCX zip integrity and XML
+well-formedness re-validated after every regeneration.
+
+Known, accepted limitation: whole-word case-sensitive matching means a
+defined term used as a generic word elsewhere (e.g. "Website" in a
+document title like "Website Terms of Use," or as a plain label
+"Website:") can produce an imprecise (though harmless — it still
+correctly opens the Definitions section) cross-link. Not fixed this
+session; a context-aware matcher would add real complexity for a
+cosmetic-only issue.
+
+Full regression: `tsc --noEmit`, `eslint`, and a full production
+`npm run build` all clean.
+
+### OS-LGL-001 v1.2: the 3 flagged clauses drafted (conservative language); OS-LGL-002 Cookie Policy integrated (2026-08-04)
+
+Two pieces of same-day follow-up work. First, the 3 items flagged (not
+drafted) in the v1.1 entry above — the user explicitly authorized
+drafting them, with the constraint "use legally conservative language...
+do not invent certifications, registrations, or operational procedures."
+Second, immediately after, the user supplied the complete verbatim text
+of OS-LGL-002 (Cookie Policy) plus three specified enhancements, to be
+integrated the same way OS-LGL-001 was.
+
+**The 3 clauses (Appendices E, F, G):** drafted directly into
+`src/lib/legal/boilerplate.ts` rather than `os-lgl-001-privacy.ts`
+itself — see the architecture change below. Appendix E (Jurisdiction-
+Specific Data Protection Addendum) names Ghana's Data Protection Act,
+Qatar's PDPPL, and GDPR only as laws Ordift Studios "aims to process
+personal information in a manner consistent with," and explicitly
+states the Appendix "does not constitute a representation of
+certification, accreditation, or registration under any specific law."
+Appendix F (Government and Law Enforcement Requests) commits only to
+responding to lawful requests and limiting disclosure to what's legally
+required, without describing a verification process as already in
+place. Appendix G (Data Breach Response Summary) commits to
+investigate/contain/remediate/notify "where required by applicable
+law" and explicitly states it "does not describe specific internal
+procedures." `TD-021` updated from Open to Resolved.
+
+**Architecture change:** with a second real document (Cookie Policy)
+arriving, the 7 standing appendices (the 4 from v1.1 plus these 3) were
+extracted from `os-lgl-001-privacy.ts` into a new shared
+`src/lib/legal/boilerplate.ts`, applied to every registered document
+automatically via `registry.ts`'s `withStandardAppendices()`. This
+caught a real correctness issue: the original Appendix C (Contact
+Escalation) referenced "Section 20" by number, correct only for Privacy
+Policy's own Contact section — generalized to "the contact details
+provided in this document" so it stays correct regardless of which
+document it's paired with. Full reasoning in
+`TECHNICAL_DECISION_RECORDS.md` TDR-012.
+
+**OS-LGL-002 Cookie Policy:** transcribed verbatim into
+`src/lib/legal/documents/os-lgl-002-cookies.ts` — 10 sections plus 6
+lettered subsections (Essential/Functional/Performance & Analytics/
+Security/Preference/Future Service Cookies). The 3 requested
+enhancements used the wording supplied directly, not invented: a
+Cookie Categories summary table (5 rows, exact headers/content given)
+in Section 4; a Consent Log statement appended to Section 6; a
+Future-Proofing statement appended to Section 9. Registered in
+`registry.ts` alongside Privacy Policy; removed from `upcomingDocuments`
+(only Website Terms and Booking Terms remain as pending stubs).
+
+**Cross-cutting fix:** Cookie Policy's lettered subsections ("A.
+Essential Cookies" … "F. Future Service Cookies") needed the same "."
+numeric-style suffix as decimal sections, not the em-dash style used
+for "Appendix A" labels. `LegalSection.tsx`'s `NUMERIC_SECTION` regex
+widened from `/^[\d.]+$/` to `/^[\dA-Z.]+$/`; the same widened pattern
+applied to all four independent copies inside
+`scripts/generateLegalPublication.py` (one each in `generate_pdf`,
+`generate_docx`, `generate_html`, `generate_markdown`) so the website
+and all four publication formats agree.
+
+**Verification:** `tsc --noEmit` and `eslint` both clean. Both
+documents' publications regenerated (`npm run legal:publish:privacy`,
+new `npm run legal:publish:cookies`) — Privacy Policy PDF grew to 32
+pages, Cookie Policy PDF is 12 pages. Visually verified via
+`pypdfium2` page rendering: Privacy Policy's Appendices E/F/G render
+cleanly with no letterhead overlap; Cookie Policy's categories table
+and "A."–"F." subsection numbering render correctly. Both DOCX files'
+zip integrity and `document.xml` well-formedness verified. Full
+production `npm run build` succeeded, with `/legal/cookies` now
+statically generated from the new Enterprise Legal Series system.
+Live-verified in-browser: `/legal/privacy` shows v1.2 with all three
+new appendices present in the DOM; `/legal/cookies` renders the real
+Cookie Policy content (not the prior Sanity-backed "Draft" placeholder
+page it showed before this turn), with correct "A."/"B." subsection
+numbering and no console errors on either page.
+
+**Still pending at that point:** OS-LGL-003 (Website Terms of Use) and
+OS-LGL-004 (Master Booking Terms & Conditions) remained unregistered
+stubs — no content had been provided for either yet.
+
+### OS-LGL-003 Website Terms of Use integrated — third document in the series (2026-08-04)
+
+Same-day follow-up: the user supplied the complete verbatim text of
+OS-LGL-003 (21 sections) plus 4 additional inclusions (Accessibility
+Commitment, Electronic Communications, Force Majeure, Severability &
+Entire Agreement), integrated the same way as the first two documents.
+
+**Content:** transcribed verbatim into
+`src/lib/legal/documents/os-lgl-003-terms.ts` — 21 numbered sections
+(Acceptance, Definitions, Eligibility, Scope of Services, Website
+Availability, User Accounts, Acceptable Use, Prohibited Conduct,
+Intellectual Property, User-Generated Content, Booking & Service
+Requests, Third-Party Services & Links, AI & Digital Services,
+Disclaimers, Limitation of Liability, Indemnification, Suspension &
+Termination, Changes to the Website, Governing Law & Jurisdiction,
+Changes to These Terms, Contact Information) plus 4 new sections (22-25)
+drafted from the descriptions given, using the same conservative,
+non-specific language as OS-LGL-001's Appendices E-G — no certifications,
+procedures, or facts beyond what was supplied. Registered in
+`registry.ts`; removed from `upcomingDocuments` (only OS-LGL-004,
+Booking Terms, remains a pending stub).
+
+**Flagged, not silently resolved:** two of the requested additions
+overlap in subject with appendices every document already inherits from
+the shared boilerplate (`TECHNICAL_DECISION_RECORDS.md` TDR-012) —
+Section 22 "Accessibility Commitment" duplicates the heading text (not
+the content — Section 22 is about website accessibility, Appendix B is
+about document formats) of the shared Appendix B, and Section 25
+"Severability & Entire Agreement" duplicates the shared Appendix A's
+severability wording alongside its own new Entire Agreement clause.
+Both were transcribed exactly as given rather than unilaterally renamed
+or trimmed to avoid the overlap — logged as `TD-022` for the user to
+decide whether to leave as harmless redundancy or adjust.
+
+**Verification:** `tsc --noEmit` and `eslint` both clean. Publications
+regenerated (new `npm run legal:publish:terms`) — PDF is 14 pages,
+visually verified via `pypdfium2` (TOC through all 25 sections plus
+inherited Appendices A-G confirmed, no letterhead overlap). DOCX zip
+integrity and `document.xml` well-formedness verified. Full production
+`npm run build` succeeded with `/legal/terms` statically generated.
+Live-verified in-browser: all 4 new sections and the inherited Appendix
+E present in the DOM with correct numbering, no console errors;
+`/legal/privacy`, `/legal/cookies`, and the still-pending
+`/legal/booking` stub all re-confirmed responding correctly (no
+regression from registering a third document).
+
+**Still pending at that point:** OS-LGL-004 (Master Booking Terms &
+Conditions) remained the only unregistered stub in the series.
+
+### OS-LGL-004 Master Booking Terms & Conditions drafted as a staged Production Draft (2026-08-04)
+
+Same-day follow-up: the user supplied the complete text of OS-LGL-004,
+by far the largest document in the series — 121 base clauses across 11
+named Parts (A-K), plus roughly 50 "Strategic Enhancement" items
+(descriptions of clauses to draft, not drafted text) interleaved
+throughout. Given the size and the fact the source was explicitly
+labeled "Version 1.0 (Production Draft)," asked three clarifying
+questions before starting (how to treat the enhancement items, how to
+handle a Table-of-Contents/body mismatch, and whether to publish it
+live) rather than guessing on a document this large. The user answered
+with a consolidated "Master Approval Instruction": draft all
+enhancement items into full clauses using the same conservative
+language already approved for Privacy Policy's Appendices E-G; fill the
+two sections the TOC promised but the body never delivered (Part K —
+International Clients, and Contact Information) using the same
+discipline; and keep the document staged as Draft, not published, until
+explicit approval.
+
+**Built:** `src/lib/legal/documents/os-lgl-004-booking.ts` — 166
+sections (11 Part headers + Contact Information, all level 1; 165
+continuously-numbered clauses, level 2, nested under their Part — no
+type-system changes needed, since this reuses the same wrapper/child
+pattern already proven by the shared Appendices; see
+`TECHNICAL_DECISION_RECORDS.md` TDR-013). Verified programmatically: no
+duplicate section ids across all 166 sections, clause numbers run 1-165
+with no gaps or duplicates, one deliberately unnumbered closing
+"Statement of Professional Commitment" matching the source's own
+framing that it isn't a binding clause.
+
+**Flagged rather than silently resolved:** the verbatim source itself
+contains three topic duplications not introduced by this pass — "No
+Waiver" (Part A) vs. "Waiver" (Part J); "Assignment" (Part A, client
+restriction) vs. "Assignment" (Part J, broader); and a short
+"International Clients" dispute-resolution clause (Part I) vs. the new,
+full "Part K — International Clients." None are factually contradictory,
+so all three were transcribed/drafted as given rather than guessed at —
+logged as `TD-023` for the user to decide (kept as intentional
+redundancy, or merged/renamed).
+
+**Kept staged, not published:** `control.status` is `"draft"` and
+`approvedBy` is `"Pending — not yet approved"` — unlike the other three
+documents' `"approved"` status. The document is deliberately **not**
+added to `registry.ts`'s `rawDocuments` map, so `/legal/booking`
+continues to show exactly what it showed before (the pre-existing
+Sanity-backed draft placeholder) — zero live change. A one-off
+`npm run legal:publish:booking-draft` script
+(`scripts/exportDraftBookingJson.ts`) generates publications to a
+clearly-separated `public/legal/publications/booking-draft/` folder for
+private review only, bypassing the live registry entirely.
+
+**Verification:** `tsc --noEmit` and `eslint` both clean. Draft PDF
+(65 pages) visually verified via `pypdfium2`: Document Control page
+correctly shows Status "Draft" and Approved By "Pending — not yet
+approved"; Part K and Contact Information render with correct clause
+numbering (162-166) and working defined-term cross-links; no letterhead
+overlap anywhere. DOCX zip integrity and `document.xml`
+well-formedness verified.
+
+**When approved:** flip `control.status` to `"approved"`, add
+`bookingTerms` to `registry.ts`, remove the `"booking"` stub from
+`upcomingDocuments`, and regenerate into the live
+`public/legal/publications/booking/` path.
+
+### OS-LGL-004 editorial consolidation pass — duplications resolved, still Production Draft (2026-08-04)
+
+Same-day follow-up: rather than leave the three previously-flagged
+duplications side-by-side for later, the user asked for a full
+document-wide editorial review — consolidate genuine duplicates while
+preserving every unique legal protection, keep headings unique unless
+intentional, renumber, and re-verify cross-references, definitions, and
+formatting.
+
+**A full audit found five genuine duplications, not three:** the three
+originally flagged (No Waiver/Waiver, Assignment/Assignment,
+International Clients/International Clients), plus two more surfaced
+by the audit itself — "Acceptance of Terms" (Part A and Part J, heavily
+overlapping trigger lists) and "Rescheduling" (Part C and Part F, both
+with genuinely distinct unique protections on each side).
+
+**Consolidated:** No Waiver and the Part A Assignment clause were
+removed, with their unique protections folded into Part J's Waiver and
+Assignment clauses. The duplicate Acceptance of Terms in Part J was
+removed and merged into Part A's clause 4 (combining every trigger from
+both versions, including each side's unique ones). International
+Clients (Part I) was renamed "Cross-Border Dispute Cooperation,"
+trimmed of redundant bullets, and now cross-references Part K — kept
+as the authoritative section — instead of repeating it. Rescheduling
+(Part C and Part F) was merged into one comprehensive clause in Part F
+(matching Part F's own title), preserving every unique protection from
+both sides (Part C's "not guaranteed" disclaimer and excessive-request
+right; Part F's pricing implications and complimentary-reschedule
+allowance), with Part C's slot replaced by a short cross-reference
+rather than removed — the same stub pattern used for International
+Clients.
+
+**Two heading repeats deliberately left as intentional by design:** the
+Rescheduling stub/authoritative pair (mirrors the International Clients
+pattern), and "Accessibility Commitment" (this document's own clause
+covers service accommodation; the shared series-wide Appendix B covers
+document formats — different legal subjects, the same distinction
+already left open in OS-LGL-003 per `TD-022`).
+
+**Verification:** removing 3 true duplicates brought the document from
+165 to 162 numbered clauses; every clause renumbered sequentially by
+position via a scripted pass, verified programmatically — no gaps, no
+duplicate numbers, no duplicate section ids, exactly one intentionally
+unnumbered closing clause. Every internal numeric cross-reference in
+the body re-verified against the final numbering. `tsc --noEmit` and
+`eslint` both clean. Draft publications regenerated (64-page PDF,
+DOCX) and visually verified: the consolidated Acceptance of Terms,
+Waiver, and Assignment clauses render correctly with all merged content
+present; the Rescheduling stub and its Part F counterpart both render
+correctly; no letterhead overlap anywhere.
+
+**Still staged at that point, not yet published:** `control.status`
+remained `"draft"` and the document was unregistered in `registry.ts`
+per explicit instruction — `/legal/booking` was unaffected.
+
+### 🔒 OS-LGL-004 approved and published — Public Website Legal Suite v1.0 complete, all four documents live (2026-08-04)
+
+Final publication-readiness audit performed at the user's request
+before approval: legal consistency (no conflicting clauses, no
+duplicated obligations, defined terms used consistently), cross-document
+consistency against Privacy Policy/Cookie Policy/Website Terms,
+commercial review (business/client/regulator/court perspectives),
+editorial review (grammar, spelling, numbering, headings, TOC,
+appendices, PDF/DOCX/HTML rendering), and future-scalability check
+(Governing Law, Currency, and Scope clauses all open-ended by design —
+no hardcoded assumption blocks new countries or services). Found and
+fixed 7 internal spelling/capitalisation inconsistencies (3×
+"unauthorized"→"unauthorised", "client authorization"→"authorisation",
+3× lowercase "client portal"→"Client Portal" matching its own defined
+usage) — zero wording or legal-meaning changes. Surfaced two
+cross-document findings requiring the user's decision rather than a
+silent fix (recorded as `TD-024`): (1) Client/Services/Creative Works
+defined-term wording differs slightly across Privacy Policy, Website
+Terms, and Booking Terms; (2) Booking Terms used the informal phrase
+"the company" six times where the rest of the series names "Ordift
+Studios" directly.
+
+**User's decisions:** (1) leave cross-document definitions unchanged
+for Version 1.0 — legally consistent even if not identical; defer a
+single controlled harmonization pass across the whole legal framework
+until OS-LGL-000 (Master Definitions Register) is completed, rather
+than editing already-approved documents piecemeal now (`TD-020`
+updated to record this as the agreed remediation). (2) replace all 6
+"the company" references with "Ordift Studios" (clauses 8, 31, 48, 66,
+94, 96) for consistent legal entity naming.
+
+**Executed:** made the "the company" → "Ordift Studios" replacement,
+then re-ran the full verification the user required: `tsc --noEmit`
+and `eslint` clean; structural audit confirmed zero change to clause
+count, numbering (still 1-162, sequential, no gaps/duplicates), or
+cross-references (Cross-Border Dispute Cooperation → Governing Law
+cl.126, International Data Handling → Cross-Border Data Transfers
+cl.112, both unaffected). Flipped `control.status` from `"draft"` to
+`"approved"`, `approvedBy` to `"Management"`, replaced the Production
+Draft controlled-document notice with the standard series notice
+matching the other three documents. Registered `bookingTerms` in
+`registry.ts`'s `rawDocuments`; `upcomingDocuments` is now empty — no
+documents remain pending in the series' original scope. Regenerated
+all four production publication formats to the live
+`public/legal/publications/booking/` path (PDF 65 pages, DOCX, HTML,
+MD) via new `npm run legal:publish:booking` script; removed the
+now-superseded `-draft` script, folder, and export file.
+
+**Verified live:** full production `npm run build` succeeded with
+`/legal/booking` now generated under the same `/legal/[slug]` SSG
+group as the other three documents (previously it fell through to the
+legacy Sanity-backed placeholder). Live-verified in-browser: Document
+Control block correctly shows Status "Approved", Approved By
+"Management", Version "1.0"; no console errors; confirmed the "the
+company" phrase appears nowhere in actual clause content (the one
+text match found was inside the document's own changeLog description
+narrating the fix, not live clause text). DOCX zip/XML integrity and
+PDF page count re-verified after the final regeneration. `TD-023` and
+`TD-024` both updated to Resolved/Closed.
+
+**The Ordift Studios Public Website Legal Suite is now complete and
+published (Version 1.0)**: OS-LGL-001 (Privacy Policy), OS-LGL-002
+(Cookie Policy), OS-LGL-003 (Website Terms of Use), and OS-LGL-004
+(Master Booking Terms & Conditions) — the four public-facing website
+policies — are all Approved and live at `/legal/privacy`,
+`/legal/cookies`, `/legal/terms`, and `/legal/booking` respectively.
+This is a milestone within the broader **Ordift Studios Enterprise
+Legal Series**, which remains **In Progress**: the series will
+eventually include additional internal legal, contractual, governance,
+and operational documents beyond these four public website policies —
+starting with OS-LGL-000 (Master Definitions Register) and OS-LGL-099
+(Document Control Standard), both still outstanding and blocked on
+source content (`TD-020`, open), and extending further to future
+enterprise/commercial agreements as the business grows.
+
 ## Version 4.0 (partial) — Ordift Pulse Architecture — 2026-07-27 ✅ architecture complete
 
 Pulled forward from `PRODUCT_ROADMAP.md`'s Version 4.0 per explicit direction, while the media architecture (immediately above) was still fresh. Architecture and CMS schema only — see `PULSE_ARCHITECTURE.md` for full design detail.

@@ -17,7 +17,7 @@ export default async function AdminUsersPage() {
   // listUsersWithRoles() reads via the service-role client (bypasses
   // RLS), so there's no database-level backstop the way there is on the
   // Enquiries/Bookings views.
-  if (!user || !hasRole(user, "admin")) redirect("/admin/overview");
+  if (!user || (!hasRole(user, "admin") && !isSuperAdmin(user))) redirect("/admin/overview");
 
   const [result, operationalTitles, engagementTypes, classifications] = await Promise.all([
     listUsersWithRoles(),

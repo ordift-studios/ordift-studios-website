@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import { crmStageLabel } from "@/lib/portal/data";
 import { getEnquiryById, getEnquiryNotes, CRM_STAGES } from "@/lib/admin/enquiries";
-import { getCurrentUser, hasRole } from "@/lib/portal/roles";
+import { getCurrentUser, hasRole, isSuperAdmin } from "@/lib/portal/roles";
 import { getDeliverableCategories, getDeliverablesForEntity } from "@/lib/admin/deliverables";
 import DeliverablesManager from "@/components/admin/DeliverablesManager";
 import { getProjectRequestsForEntity } from "@/lib/admin/projectRequests";
@@ -135,7 +135,7 @@ export default async function AdminEnquiryDetailPage({ params }: { params: Promi
             entityId={enquiry.id}
             deliverables={deliverables}
             categories={categories}
-            isAdmin={hasRole(user, "admin")}
+            isAdmin={hasRole(user, "admin") || isSuperAdmin(user)}
           />
 
           <ProjectRequestsManager entityType="enquiry" entityId={enquiry.id} requests={requests} />

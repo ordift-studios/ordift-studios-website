@@ -14,7 +14,11 @@
     "seed:sanity-connection-test": "tsx scripts/seedSanityConnectionTest.ts",
     "seed:sanity-sample-data": "tsx scripts/seedSanitySampleData.ts",
     "seed:sanity-site-wide": "tsx scripts/seedSanitySiteWideContent.ts",
-    "setup:google-sheets": "tsx scripts/setupGoogleSheets.ts"
+    "setup:google-sheets": "tsx scripts/setupGoogleSheets.ts",
+    "legal:publish:privacy": "tsx scripts/exportLegalDocumentJson.ts privacy scripts/legal-export/os-lgl-001.json && python3 scripts/generateLegalPublication.py scripts/legal-export/os-lgl-001.json public/legal/publications/privacy",
+    "legal:publish:cookies": "tsx scripts/exportLegalDocumentJson.ts cookies scripts/legal-export/os-lgl-002.json && python3 scripts/generateLegalPublication.py scripts/legal-export/os-lgl-002.json public/legal/publications/cookies",
+    "legal:publish:terms": "tsx scripts/exportLegalDocumentJson.ts terms scripts/legal-export/os-lgl-003.json && python3 scripts/generateLegalPublication.py scripts/legal-export/os-lgl-003.json public/legal/publications/terms",
+    "legal:publish:booking": "tsx scripts/exportLegalDocumentJson.ts booking scripts/legal-export/os-lgl-004.json && python3 scripts/generateLegalPublication.py scripts/legal-export/os-lgl-004.json public/legal/publications/booking"
   },
   "dependencies": {
     "@sanity/image-url": "^2.1.1",

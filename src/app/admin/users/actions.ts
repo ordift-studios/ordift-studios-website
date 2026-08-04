@@ -49,7 +49,7 @@ export async function getAccessHistoryForUserAction(userId: string): Promise<Act
 
 async function requireAdmin() {
   const user = await getCurrentUser();
-  if (!user || !hasRole(user, "admin")) {
+  if (!user || (!hasRole(user, "admin") && !isSuperAdmin(user))) {
     throw new Error("Not authorized.");
   }
   return user;

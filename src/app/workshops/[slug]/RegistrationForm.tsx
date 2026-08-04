@@ -10,9 +10,20 @@ import TurnstileWidget from "@/components/TurnstileWidget";
 const inputClasses =
   "w-full min-h-11 rounded-lg border border-black/15 bg-white px-4 py-2.5 font-sans text-body text-ordift-ink placeholder:text-ordift-ink-muted/60 focus:outline-none focus:ring-2 focus:ring-ordift-gold focus:border-transparent";
 
-function FieldError({ message }: { message?: string }) {
+function FieldError({ id, message }: { id: string; message?: string }) {
   if (!message) return null;
-  return <p className="mt-1.5 font-sans text-caption text-red-700">{message}</p>;
+  return (
+    <p id={id} role="alert" className="mt-1.5 font-sans text-caption text-red-700">
+      {message}
+    </p>
+  );
+}
+
+function fieldAria(fieldId: string, error?: string) {
+  return {
+    "aria-describedby": error ? `${fieldId}-error` : undefined,
+    "aria-invalid": error ? (true as const) : undefined,
+  };
 }
 
 type FormState = {
@@ -153,8 +164,8 @@ export default function RegistrationForm({ workshopSlug }: { workshopSlug: strin
         <label htmlFor="fullName" className="block font-sans text-body-small font-medium text-ordift-ink mb-2">
           Full name
         </label>
-        <input id="fullName" className={inputClasses} value={data.fullName} onChange={(e) => update("fullName", e.target.value)} />
-        <FieldError message={errors.fullName} />
+        <input id="fullName" className={inputClasses} value={data.fullName} onChange={(e) => update("fullName", e.target.value)} {...fieldAria("fullName", errors.fullName)} />
+        <FieldError id="fullName-error" message={errors.fullName} />
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
@@ -162,15 +173,15 @@ export default function RegistrationForm({ workshopSlug }: { workshopSlug: strin
           <label htmlFor="email" className="block font-sans text-body-small font-medium text-ordift-ink mb-2">
             Email address
           </label>
-          <input id="email" type="email" className={inputClasses} value={data.email} onChange={(e) => update("email", e.target.value)} />
-          <FieldError message={errors.email} />
+          <input id="email" type="email" className={inputClasses} value={data.email} onChange={(e) => update("email", e.target.value)} {...fieldAria("email", errors.email)} />
+          <FieldError id="email-error" message={errors.email} />
         </div>
         <div>
           <label htmlFor="phone" className="block font-sans text-body-small font-medium text-ordift-ink mb-2">
             Phone or WhatsApp number
           </label>
-          <input id="phone" type="tel" className={inputClasses} value={data.phone} onChange={(e) => update("phone", e.target.value)} />
-          <FieldError message={errors.phone} />
+          <input id="phone" type="tel" className={inputClasses} value={data.phone} onChange={(e) => update("phone", e.target.value)} {...fieldAria("phone", errors.phone)} />
+          <FieldError id="phone-error" message={errors.phone} />
         </div>
       </div>
 
@@ -205,6 +216,7 @@ export default function RegistrationForm({ workshopSlug }: { workshopSlug: strin
           className="mt-1 w-4 h-4 accent-ordift-gold"
           checked={data.consent}
           onChange={(e) => update("consent", e.target.checked)}
+          {...fieldAria("consent", errors.consent)}
         />
         <span className="font-sans text-body-small text-ordift-ink">
           I&apos;ve read and agree to the{" "}
@@ -214,7 +226,7 @@ export default function RegistrationForm({ workshopSlug }: { workshopSlug: strin
           .
         </span>
       </label>
-      <FieldError message={errors.consent} />
+      <FieldError id="consent-error" message={errors.consent} />
 
       <TurnstileWidget
         onVerify={(token) => update("turnstileToken", token)}

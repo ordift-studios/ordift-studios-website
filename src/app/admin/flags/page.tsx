@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
-import { getCurrentUser, hasRole } from "@/lib/portal/roles";
+import { getCurrentUser, hasRole, isSuperAdmin } from "@/lib/portal/roles";
 import { getFeatureFlags } from "@/lib/admin/flags";
 import { toggleFlagAction, createFlagAction } from "./actions";
 
@@ -21,7 +21,7 @@ function formatDateTime(iso: string): string {
 
 export default async function AdminFlagsPage() {
   const user = await getCurrentUser();
-  if (!user || !hasRole(user, "admin")) redirect("/admin/overview");
+  if (!user || (!hasRole(user, "admin") && !isSuperAdmin(user))) redirect("/admin/overview");
 
   const flags = await getFeatureFlags();
 

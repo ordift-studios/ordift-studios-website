@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import Link from "next/link";
-import { getCurrentUser, hasRole } from "@/lib/portal/roles";
+import { getCurrentUser, hasRole, isSuperAdmin } from "@/lib/portal/roles";
 import { contentRepository } from "@/lib/content";
 import { legalPagesApproved, formsSendingEnabled, isStaging } from "@/lib/shared/env";
 
@@ -24,7 +24,7 @@ function StatusPill({ ok, label }: { ok: boolean; label: string }) {
 
 export default async function AdminSettingsPage() {
   const user = await getCurrentUser();
-  if (!user || !hasRole(user, "admin")) redirect("/admin/overview");
+  if (!user || (!hasRole(user, "admin") && !isSuperAdmin(user))) redirect("/admin/overview");
 
   const siteSettings = await contentRepository.getSiteSettings();
 

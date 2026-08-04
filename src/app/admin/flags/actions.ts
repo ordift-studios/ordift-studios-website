@@ -2,12 +2,12 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
-import { getCurrentUser, hasRole } from "@/lib/portal/roles";
+import { getCurrentUser, hasRole, isSuperAdmin } from "@/lib/portal/roles";
 import { logActivity } from "@/lib/admin/activityLog";
 
 async function requireAdmin() {
   const user = await getCurrentUser();
-  if (!user || !hasRole(user, "admin")) {
+  if (!user || (!hasRole(user, "admin") && !isSuperAdmin(user))) {
     throw new Error("Not authorized.");
   }
   return user;

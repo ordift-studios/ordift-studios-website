@@ -32,8 +32,13 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   if (!user) redirect("/portal/login?next=/admin");
   if (!isStaffOrAdmin(user)) redirect("/portal");
 
-  const isAdmin = hasRole(user, "admin");
   const isSuper = isSuperAdmin(user);
+  // Super Admin is a strict superset of Admin (it can grant/revoke the
+  // Admin role itself — see SUPER_ADMIN_ONLY_ROLES), so `adminOnly` nav
+  // items must stay visible to it even when the account only literally
+  // holds "super_admin" and never "admin" — hasRole() has no built-in
+  // hierarchy, so that has to be spelled out here.
+  const isAdmin = hasRole(user, "admin") || isSuper;
   const visibleNavItems = NAV_ITEMS.filter(
     (item) => (!item.adminOnly || isAdmin) && (!item.superAdminOnly || isSuper)
   );

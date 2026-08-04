@@ -54,3 +54,10 @@ next-env.d.ts
 # local test log for staging enquiry submissions (Plan Part G) — contains
 # test PII, never committed, never mixed with production records
 .data
+
+# intermediate JSON export used to hand structured legal-document content
+# to the Python publication generator (scripts/generateLegalPublication.py)
+# — regenerate via scripts/exportLegalDocumentJson.ts, never a source of
+# truth (that's src/lib/legal/documents/), so it doesn't need to be tracked
+scripts/legal-export/
+__pycache__/

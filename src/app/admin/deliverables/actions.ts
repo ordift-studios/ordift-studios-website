@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
-import { getCurrentUser, hasRole, isStaffOrAdmin } from "@/lib/portal/roles";
+import { getCurrentUser, hasRole, isStaffOrAdmin, isSuperAdmin } from "@/lib/portal/roles";
 import { logActivity } from "@/lib/admin/activityLog";
 import type { DeliverableEntityType } from "@/lib/admin/deliverables";
 
@@ -84,7 +84,7 @@ export async function deleteDeliverableAction(formData: FormData): Promise<void>
 
 export async function createCategoryAction(formData: FormData): Promise<void> {
   const user = await getCurrentUser();
-  if (!user || !hasRole(user, "admin")) {
+  if (!user || (!hasRole(user, "admin") && !isSuperAdmin(user))) {
     throw new Error("Not authorized.");
   }
 
