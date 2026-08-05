@@ -18,9 +18,26 @@ export default defineType({
       name: "status",
       title: "Status",
       type: "string",
-      options: { list: ["draft", "published"] },
+      options: {
+        list: [
+          { title: "Draft", value: "draft" },
+          { title: "Pending Review", value: "pending_review" },
+          { title: "Approved", value: "approved" },
+          { title: "Published", value: "published" },
+          { title: "Archived", value: "archived" },
+        ],
+      },
       initialValue: "draft",
       validation: (r) => r.required(),
+      description:
+        "Portfolio Management System lifecycle (Admin Platform, /admin/portfolio) — moved forward via the Admin Portal's review actions, not usually edited directly here. Only \"published\" is publicly visible (see portfolioProjectsQuery).",
+    }),
+    defineField({
+      name: "scheduledFor",
+      title: "Scheduled For",
+      type: "datetime",
+      description:
+        "Optional. When set on a \"published\" project, it stays hidden from the public site until this moment — same scheduled-publishing pattern as Journal/Pulse.",
     }),
     defineField({ name: "featured", title: "Featured", type: "boolean", initialValue: false }),
     defineField({ name: "heroMedia", title: "Hero Media", type: "mediaAsset", validation: (r) => r.required() }),

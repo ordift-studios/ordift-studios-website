@@ -131,7 +131,12 @@ export type Workshop = {
 
 // --- Portfolio (Version 1.1) ---
 
-export type PortfolioStatus = "draft" | "published";
+// "draft"/"published" are the only two values ever returned to
+// public-facing code (portfolioProjectsQuery filters to "published"
+// only) — the three intermediate values exist for the Portfolio
+// Management System's review workflow (/admin/portfolio) and are only
+// ever seen there. See PORTFOLIO_MANAGEMENT.md.
+export type PortfolioStatus = "draft" | "pending_review" | "approved" | "published" | "archived";
 
 // Fixed to the site's existing department routes (/services/[slug]) —
 // not a repository-backed entity, since these are structural to the site
@@ -222,6 +227,7 @@ export type PortfolioProject = {
   slug: string;
   title: string;
   status: PortfolioStatus;
+  scheduledFor: string | null; // ISO datetime — only visible publicly once status is "published" AND this has passed (or is unset)
   featured: boolean;
   heroMedia: MediaAsset;
   disciplines: PortfolioDiscipline[];

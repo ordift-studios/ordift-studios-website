@@ -262,6 +262,16 @@
 - **Related:** `TD-020` (OS-LGL-000 Master Definitions Register not yet provided — the root cause of finding 1; the deferred single-pass harmonization across the full legal framework is the agreed remediation once it lands).
 - **Status:** Resolved (2026-08-04) — both items resolved by explicit user decision (one deferred by design, one fixed); Booking Terms approved and published. Privacy Policy's internal spelling mix remains a separate, unscheduled, non-blocking observation.
 
+### TD-025 — `private.is_staff_or_admin()` doesn't include `super_admin`, so a Super-Admin-only account can't write to tables gated by it
+
+- **Category:** Access Management
+- **Severity:** Low (real accounts are expected to hold `admin` alongside `super_admin` — 0009's own comment: "stacks on top of admin" — so this is a latent edge case, not an active gap for any known account)
+- **What:** found live while building and testing the Portfolio Management System (2026-08-05): a disposable QA account granted only the `super_admin` role could correctly update Sanity content (unaffected by this), but its writes to `activity_log` and the new `workflow_statuses` table were silently rejected by RLS. Both tables' insert policies call `private.is_staff_or_admin()` (migration 0004/0023), which checks `has_role('staff') or has_role('admin')` — `super_admin` is not included. `deliverables` (0007) likely has the same characteristic, since its policies follow the same helper.
+- **Why not fixed now:** `is_staff_or_admin()` is shared, load-bearing infrastructure used well beyond Portfolio — changing it is a security-relevant edit to already-live production RLS policies, out of scope for a Portfolio-specific build. The immediate work-around (granting the test account `admin` too, matching the documented intended pairing) resolved the test; this entry exists so the underlying inconsistency isn't lost.
+- **Current impact:** none known — assumes every real `super_admin` account also holds `admin` (true by the migration's stated design intent; not verified against the live production owner account, which does not exist on the staging project used for this test).
+- **Pay-down trigger:** either (a) confirm and document that `super_admin` must always be granted alongside `admin` (a UI/process fix in `/admin/users`, not a schema change), or (b) redefine `is_staff_or_admin()` to include `super_admin` explicitly — the latter should get its own review given how many policies depend on it.
+- **Status:** Open, low priority — flag only, no other action taken.
+
 ---
 
 ## Adding new entries

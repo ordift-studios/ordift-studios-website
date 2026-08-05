@@ -36,6 +36,20 @@ No further planning fields apply — this version is done, not proposed.
 
 ---
 
+## Portfolio Management System — future enhancements (proposed 2026-08-05)
+
+Not a numbered version — a feature-level backlog for the Portfolio Management System (`MILESTONES.md`, 2026-08-05 entry), noted by the user at approval time as roadmap items, not blockers, and explicitly not scheduled for this phase.
+
+- **Project Templates** — reusable starting structures (Wedding, Portrait, Corporate, Product, Event, Workshop, etc.) so a new project begins pre-populated with the right fields/sections instead of a blank form.
+- **AI-Assisted Metadata** — AI-suggested categories, tags, alt text, SEO metadata, hero image recommendations, and caption drafts. Every suggestion must remain reviewable before publication — never auto-applied.
+- **Publish Readiness Checklist** — a pre-publish gate surfacing what's missing (hero image, complete gallery, case study, category assignment, SEO fields, alt text, required metadata) before a project can move to Published, for quality control without slowing down publishing.
+
+None of these are designed yet — evaluate each against the existing workflow-engine/permission-matrix architecture (`src/lib/workflow/`, `src/lib/admin/portfolioPermissions.ts`) when picked up, rather than bolting on a parallel mechanism.
+
+**Also decided at the same approval (2026-08-05):** the Photographer/Contractor-tier upload interface stays deliberately out of scope for now. Super Admins (and the Owner, via the existing `super_admin` role) create projects; collaborators work only on projects explicitly assigned to them (`workflow_assignments`, already built). A simplified photographer upload interface may be introduced later if operational needs justify it — revisit only if requested.
+
+---
+
 ## Version 1.0.5 — Platform Foundation Hardening
 
 **Approved:** 2026-07-30, inserted ahead of Version 1.1 at the user's direction, after a CTO-level current-state assessment surfaced a gap no feature checklist had caught: zero automated tests, no CI pipeline, no production error monitoring anywhere in the codebase (verified directly — no `.test.ts`/`.spec.ts` files, no `.github/workflows`, no Sentry/analytics dependency in `package.json`).

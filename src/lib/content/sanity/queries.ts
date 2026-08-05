@@ -86,11 +86,18 @@ export const sponsorsQuery = `*[_type == "sponsor"] ${sponsorFragment}`;
 export const workshopCategoriesQuery = `*[_type == "workshopCategory"] ${categoryFragment}`;
 export const workshopCategoryBySlugQuery = `*[_type == "workshopCategory" && slug.current == $slug][0] ${categoryFragment}`;
 
+// Scheduled publishing gate: visible once status is "published" AND
+// either no scheduledFor is set, or it's already in the past — same
+// pattern as journalVisibilityFilter above (defined ahead of first
+// use so both this and journalPostsQuery can share the exact wording).
+const portfolioVisibilityFilter = `status == "published" && (!defined(scheduledFor) || scheduledFor <= now())`;
+
 export const portfolioProjectFragment = `{
   "id": _id,
   "slug": slug.current,
   title,
   status,
+  scheduledFor,
   featured,
   ${requiredMediaAssetFragment("heroMedia", "heroMedia")},
   disciplines,
@@ -131,8 +138,13 @@ export const portfolioProjectFragment = `{
   ${seoFragment("seo")}
 }`;
 
-export const portfolioProjectsQuery = `*[_type == "portfolioProject" && status == "published"] | order(_createdAt desc) ${portfolioProjectFragment}`;
-export const portfolioProjectBySlugQuery = `*[_type == "portfolioProject" && slug.current == $slug && status == "published"][0] ${portfolioProjectFragment}`;
+export const portfolioProjectsQuery = `*[_type == "portfolioProject" && ${portfolioVisibilityFilter}] | order(_createdAt desc) ${portfolioProjectFragment}`;
+export const portfolioProjectBySlugQuery = `*[_type == "portfolioProject" && slug.current == $slug && ${portfolioVisibilityFilter}][0] ${portfolioProjectFragment}`;
+
+// Admin Portal (/admin/portfolio) — every project regardless of status,
+// for the management dashboard/list. Never used by public-facing code.
+export const allPortfolioProjectsQuery = `*[_type == "portfolioProject"] | order(_createdAt desc) ${portfolioProjectFragment}`;
+export const portfolioProjectByIdQuery = `*[_type == "portfolioProject" && _id == $id][0] ${portfolioProjectFragment}`;
 
 export const portfolioCategoriesQuery = `*[_type == "portfolioCategory"] ${categoryFragment}`;
 export const portfolioCategoryBySlugQuery = `*[_type == "portfolioCategory" && slug.current == $slug][0] ${categoryFragment}`;
