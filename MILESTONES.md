@@ -3465,6 +3465,22 @@ Following your feedback that the "New Project (Studio)" redirect broke the promi
 
 ---
 
+## Audit Identity Standard — platform-wide, `profiles.member_number` as the authoritative actor label (2026-08-05)
+
+Following review of the Portfolio Management System, the user asked that every audit/workflow "…By" field platform-wide (Created/Updated/Reviewed/Approved/Published/Featured/Archived/Deleted/Restored/Assigned/Submitted By) be recorded against an immutable identifier rather than a display name that can change — and, going forward, that this become the standard architecture for every future module (bookings, HR, models, workshops, finance, legal, CRM, reports), not a one-off Portfolio feature.
+
+**Architectural review finding:** the platform already had everything this required, just not fully surfaced. Every relevant table already records "who" as a `profiles.id` foreign key, never a stored name (`activity_log.actor_user_id`, `workflow_statuses.submitted_by`/`reviewed_by`, `workflow_assignments.assigned_by`/`removed_by`) — so "align with existing design rather than introducing duplicate identity fields" (the user's own instruction) meant resolving those FKs against `profiles.member_number`, the immutable, append-only-ledger-backed identifier (migration 0019) the platform standardized on when the earlier `staff_details.staff_number` was deliberately retired for exactly this "one consistent identification system" reason. No new columns, no new migration. Full reasoning in `TECHNICAL_DECISION_RECORDS.md` TDR-014.
+
+**What shipped:** one shared resolver, `resolveActorIdentities()` (`src/lib/portal/actorIdentity.ts`), batching profile ids to `{fullName, memberNumber, roleLabel, department}` in 3 queries regardless of actor count, plus a `formatActorLabel()` helper producing the requested "MEMBER-NUMBER — Full Name" display format (falling back to name-only for accounts not yet member-numbered, never blank). `src/lib/admin/activityLog.ts` (the shared audit trail every module already writes to) now resolves every entry through it instead of a bare `profiles.full_name` join — every consumer of `getRecentActivity()`/`getRecentActivityByType()`/`getActivityForEntity()` picked this up automatically, including the Admin Activity feed (`/admin/activity`) and the Portfolio project detail page's History panel. The Portfolio detail page's Review Record (Submitted By/Reviewed By) and Assigned Collaborators list were updated the same way.
+
+**Gap found and closed during this review:** `saveProjectFieldsAction` (the native wizard's per-step field save) never wrote to `activity_log` at all — every full lifecycle transition was audited, but a plain field edit wasn't, leaving no "Updated By" trail for content changes short of a status change. Added the missing `logActivity({ action: "portfolio.updated", ... })` call, closing the gap for the one action in the user's list that wasn't yet covered.
+
+**Verified:** `tsc --noEmit`, `eslint`, and `vitest run` (35/35) all clean; production build generates all routes correctly. Staging E2E confirmed the Admin Activity feed and Portfolio project detail page now display Member Number as the primary label (name alongside), including for an account with roles/department populated and one without a member_number yet (name-only fallback, no blank/error).
+
+**This is now the required pattern for every future module**, per the user's explicit direction: a new module inventing its own actor-label logic instead of calling `resolveActorIdentities()`/`formatActorLabel()` is a regression against `TECHNICAL_DECISION_RECORDS.md` TDR-014, not a fresh design choice.
+
+---
+
 ## How this roadmap is maintained
 
 - Checkboxes get checked off as work ships and is approved — not before.

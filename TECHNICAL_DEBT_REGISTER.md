@@ -292,6 +292,15 @@
 - **Verification:** re-tested live — the same project's public page rendered correctly after the fix; `tsc`/`eslint`/`vitest`/production build all clean afterward.
 - **Status:** Resolved (2026-08-05), same session it was found in.
 
+### TD-028 — Audit trail "Department" label resolves from the legacy `staff_details.department` free-text column, not `operational_title_id`
+
+- **Category:** Data Model / Consistency
+- **Severity:** Low
+- **What:** `resolveActorIdentities()` (`src/lib/portal/actorIdentity.ts`, built for `TECHNICAL_DECISION_RECORDS.md` TDR-014's Audit Identity Standard) resolves an actor's "Department" from `staff_details.department` — a free-text column migration 0009 itself already flags as predating `operational_title_id`/`engagement_type_id` and states "prefer the latter going forward." No account currently has `operational_title_id` populated with anything department-equivalent, so this wasn't a live choice between two populated sources — it's simply the only one with data today.
+- **Why not fixed now:** out of scope for the Audit Identity Standard change itself, which was about *where* identity resolves from (member_number via existing FKs), not about migrating the underlying department/title data model — that's a separate, pre-existing piece of debt this work only surfaced by consuming the field, not one it created.
+- **Pay-down trigger:** if/when `operational_title_id` (or a dedicated department lookup table) becomes the actual source of truth for department/function, update `resolveActorIdentities()`'s single query to match — every audit display downstream picks it up automatically, no other file changes needed.
+- **Status:** Open, low priority.
+
 ---
 
 ## Adding new entries

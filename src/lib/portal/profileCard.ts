@@ -44,7 +44,10 @@ export type ProfileCard = {
 
 // Highest-privilege first — matches primaryPortalPath()'s ordering in
 // roles.ts, reused here purely for display order, not access control.
-const ROLE_DISPLAY_ORDER: RoleSlug[] = [
+// Exported so src/lib/portal/actorIdentity.ts (the audit-trail identity
+// resolver) can format a role label the same way, instead of a second
+// copy of this list drifting out of sync.
+export const ROLE_DISPLAY_ORDER: RoleSlug[] = [
   "super_admin",
   "admin",
   "staff",
@@ -55,7 +58,7 @@ const ROLE_DISPLAY_ORDER: RoleSlug[] = [
   "client",
 ];
 
-const ROLE_LABELS: Record<RoleSlug, string> = {
+export const ROLE_LABELS: Record<RoleSlug, string> = {
   super_admin: "Super Admin",
   admin: "Admin",
   staff: "Staff",

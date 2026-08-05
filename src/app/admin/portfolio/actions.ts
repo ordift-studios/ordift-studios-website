@@ -278,7 +278,7 @@ export async function checkSlugAvailableAction(slug: string, excludeId?: string)
 // wizard's own live check can't fully protect against a race between
 // two tabs/editors.
 export async function saveProjectFieldsAction(id: string, fields: Record<string, unknown>): Promise<ActionResult> {
-  await requireNativeCreator();
+  const user = await requireNativeCreator();
 
   const slugField = fields.slug as { current?: string } | undefined;
   if (slugField?.current) {
@@ -288,6 +288,15 @@ export async function saveProjectFieldsAction(id: string, fields: Record<string,
   }
 
   await patchPortfolioProject(id, fields);
+
+  await logActivity({
+    actorUserId: user.id,
+    action: "portfolio.updated",
+    entityType: "portfolio_project",
+    entityId: id,
+    metadata: { fields: Object.keys(fields) },
+  });
+
   revalidatePath(`/admin/portfolio/${id}`);
   revalidatePath(`/admin/portfolio/${id}/edit`);
   return { ok: true };

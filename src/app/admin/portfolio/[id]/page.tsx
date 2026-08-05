@@ -13,7 +13,7 @@ import { getPortfolioProjectByIdAdmin } from "@/lib/content/sanity/portfolioAdmi
 import { getPortfolioWorkflowStatus, listPortfolioAssignments } from "@/lib/admin/portfolioWorkflow";
 import { getActivityForEntity } from "@/lib/admin/activityLog";
 import { listUsersWithRoles } from "@/lib/portal/adminData";
-import { createClient } from "@/lib/supabase/server";
+import { resolveActorIdentities, formatActorLabel } from "@/lib/portal/actorIdentity";
 import { getPublishReadiness } from "@/lib/admin/portfolioValidation";
 import {
   transitionPortfolioProjectAction,
@@ -43,13 +43,6 @@ const TRANSITION_BUTTON_LABELS: Record<WorkflowStatus, string> = {
   published: "Publish",
   archived: "Archive",
 };
-
-async function profileName(id: string | null): Promise<string | null> {
-  if (!id) return null;
-  const supabase = await createClient();
-  const { data } = await supabase.from("profiles").select("full_name").eq("id", id).maybeSingle();
-  return data?.full_name ?? null;
-}
 
 function formatDateTime(iso: string | null): string {
   if (!iso) return "—";
@@ -81,10 +74,14 @@ export default async function AdminPortfolioProjectPage({ params }: { params: Pr
     }
   }
 
-  const [submittedByName, reviewedByName] = await Promise.all([
-    profileName(workflow?.submittedBy ?? null),
-    profileName(workflow?.reviewedBy ?? null),
-  ]);
+  const reviewActorIds = [workflow?.submittedBy, workflow?.reviewedBy, ...assignments.map((a) => a.userId)].filter(
+    (v): v is string => Boolean(v)
+  );
+  const actorIdentities = await resolveActorIdentities(reviewActorIds);
+  const submittedByLabel = workflow?.submittedBy
+    ? formatActorLabel(actorIdentities.get(workflow.submittedBy))
+    : null;
+  const reviewedByLabel = workflow?.reviewedBy ? formatActorLabel(actorIdentities.get(workflow.reviewedBy)) : null;
 
   const granted = getGrantedCapabilities(user, PORTFOLIO_CAPABILITIES);
   const status = project.status as WorkflowStatus;
@@ -210,7 +207,7 @@ export default async function AdminPortfolioProjectPage({ params }: { params: Pr
         <dl className="grid grid-cols-2 gap-4 font-sans text-body-small">
           <div>
             <dt className="text-ordift-ink-muted text-caption uppercase tracking-wide">Submitted By</dt>
-            <dd className="text-ordift-ink">{submittedByName ?? "—"}</dd>
+            <dd className="text-ordift-ink">{submittedByLabel ?? "—"}</dd>
           </div>
           <div>
             <dt className="text-ordift-ink-muted text-caption uppercase tracking-wide">Submitted At</dt>
@@ -218,7 +215,7 @@ export default async function AdminPortfolioProjectPage({ params }: { params: Pr
           </div>
           <div>
             <dt className="text-ordift-ink-muted text-caption uppercase tracking-wide">Reviewed By</dt>
-            <dd className="text-ordift-ink">{reviewedByName ?? "—"}</dd>
+            <dd className="text-ordift-ink">{reviewedByLabel ?? "—"}</dd>
           </div>
           <div>
             <dt className="text-ordift-ink-muted text-caption uppercase tracking-wide">Reviewed At</dt>
@@ -247,7 +244,9 @@ export default async function AdminPortfolioProjectPage({ params }: { params: Pr
             <ul className="divide-y divide-black/5">
               {assignments.map((a) => (
                 <li key={a.id} className="flex items-center justify-between py-2">
-                  <span className="font-sans text-body-small text-ordift-ink">{a.fullName ?? a.userId}</span>
+                  <span className="font-sans text-body-small text-ordift-ink">
+                    {formatActorLabel(actorIdentities.get(a.userId)) || a.fullName || a.userId}
+                  </span>
                   {canManageAssignments && (
                     <form action={removeCollaboratorAction}>
                       <input type="hidden" name="assignmentId" value={a.id} />
@@ -300,7 +299,7 @@ export default async function AdminPortfolioProjectPage({ params }: { params: Pr
               <div key={entry.id} className="px-5 py-3 flex items-center justify-between gap-4">
                 <p className="font-sans text-body-small text-ordift-ink">
                   {entry.action.replace("portfolio.", "").replace(/_/g, " ")}
-                  {entry.actorName ? ` — ${entry.actorName}` : ""}
+                  {entry.actorUserId ? ` — ${entry.actorLabel}` : ""}
                 </p>
                 <p className="font-sans text-caption text-ordift-ink-muted whitespace-nowrap">
                   {formatDateTime(entry.createdAt)}

@@ -243,7 +243,7 @@ export default async function AdminPortfolioPage({
                 <div>
                   <p className="font-sans text-body-small text-ordift-ink">
                     {entry.action.replace("portfolio.", "").replace(/_/g, " ")}
-                    {entry.actorName ? ` — ${entry.actorName}` : ""}
+                    {entry.actorUserId ? ` — ${entry.actorLabel}` : ""}
                   </p>
                   {typeof entry.metadata.title === "string" && (
                     <p className="font-sans text-caption text-ordift-ink-muted">{entry.metadata.title}</p>

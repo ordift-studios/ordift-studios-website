@@ -81,7 +81,7 @@ export default async function AdminOverviewPage() {
                 <div>
                   <p className="font-sans text-body-small text-ordift-ink">
                     {ACTION_LABELS[entry.action] ?? entry.action}
-                    {entry.actorName ? ` — ${entry.actorName}` : ""}
+                    {entry.actorUserId ? ` — ${entry.actorLabel}` : ""}
                   </p>
                   {entry.entityId && (
                     <p className="font-sans text-caption text-ordift-ink-muted">{entry.entityId}</p>

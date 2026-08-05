@@ -661,7 +661,7 @@ function UserDetail({
           <ul className="space-y-1.5">
             {history.map((h) => (
               <li key={h.id} className="font-sans text-caption text-ordift-ink-muted">
-                <span className="text-ordift-ink">{h.action}</span> by {h.actorName ?? "unknown"} —{" "}
+                <span className="text-ordift-ink">{h.action}</span> by {h.actorUserId ? h.actorLabel : "unknown"} —{" "}
                 {new Date(h.createdAt).toLocaleString()}
                 {Object.keys(h.metadata).length > 0 && <span> ({JSON.stringify(h.metadata)})</span>}
               </li>

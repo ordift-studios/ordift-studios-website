@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
+import { resolveActorIdentities, formatActorLabel } from "@/lib/portal/actorIdentity";
 
 // Shared audit trail for the Admin Platform (public.activity_log,
 // migration 0004). Every module that mutates something writes here the
@@ -6,17 +7,63 @@ import { createClient } from "@/lib/supabase/server";
 // and insert to staff/admin (see supabase/migrations/0004_admin_platform.sql),
 // so the session-scoped client is enough; no need for the admin/service-role
 // client here.
+//
+// Actor identity (2026-08-05, Audit Identity Standard — see
+// ARCHITECTURE_DECISIONS.md): actor_user_id was always, and remains,
+// the authoritative reference — a profile_id FK, never a stored name.
+// What changed is the display layer — every row now also resolves the
+// actor's immutable member_number (via src/lib/portal/actorIdentity.ts)
+// alongside their current display name, role, and department, instead
+// of surfacing only full_name as before.
 
 export type ActivityLogEntry = {
   id: string;
   actorUserId: string | null;
   actorName: string | null;
+  actorMemberNumber: string | null;
+  actorRoleLabel: string | null;
+  actorDepartment: string | null;
+  actorLabel: string;
   action: string;
   entityType: string | null;
   entityId: string | null;
   metadata: Record<string, unknown>;
   createdAt: string;
 };
+
+type RawActivityRow = {
+  id: string;
+  actor_user_id: string | null;
+  action: string;
+  entity_type: string | null;
+  entity_id: string | null;
+  metadata: unknown;
+  created_at: string;
+};
+
+async function enrichWithActorIdentity(rows: RawActivityRow[]): Promise<ActivityLogEntry[]> {
+  const identities = await resolveActorIdentities(
+    rows.map((r) => r.actor_user_id).filter((id): id is string => Boolean(id))
+  );
+
+  return rows.map((row) => {
+    const identity = row.actor_user_id ? (identities.get(row.actor_user_id) ?? null) : null;
+    return {
+      id: row.id,
+      actorUserId: row.actor_user_id,
+      actorName: identity?.fullName ?? null,
+      actorMemberNumber: identity?.memberNumber ?? null,
+      actorRoleLabel: identity?.roleLabel ?? null,
+      actorDepartment: identity?.department ?? null,
+      actorLabel: formatActorLabel(identity),
+      action: row.action,
+      entityType: row.entity_type,
+      entityId: row.entity_id,
+      metadata: (row.metadata as Record<string, unknown>) ?? {},
+      createdAt: row.created_at,
+    };
+  });
+}
 
 export async function logActivity(params: {
   actorUserId: string;
@@ -47,7 +94,7 @@ export async function getRecentActivity(limit = RECENT_ACTIVITY_LIMIT): Promise<
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("activity_log")
-    .select("id, actor_user_id, action, entity_type, entity_id, metadata, created_at, profiles(full_name)")
+    .select("id, actor_user_id, action, entity_type, entity_id, metadata, created_at")
     .order("created_at", { ascending: false })
     .limit(limit);
 
@@ -56,16 +103,7 @@ export async function getRecentActivity(limit = RECENT_ACTIVITY_LIMIT): Promise<
     return [];
   }
 
-  return (data ?? []).map((row) => ({
-    id: row.id,
-    actorUserId: row.actor_user_id,
-    actorName: (row.profiles as unknown as { full_name: string | null } | null)?.full_name ?? null,
-    action: row.action,
-    entityType: row.entity_type,
-    entityId: row.entity_id,
-    metadata: (row.metadata as Record<string, unknown>) ?? {},
-    createdAt: row.created_at,
-  }));
+  return enrichWithActorIdentity(data ?? []);
 }
 
 const TYPE_ACTIVITY_LIMIT = 20;
@@ -82,7 +120,7 @@ export async function getRecentActivityByType(
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("activity_log")
-    .select("id, actor_user_id, action, entity_type, entity_id, metadata, created_at, profiles(full_name)")
+    .select("id, actor_user_id, action, entity_type, entity_id, metadata, created_at")
     .eq("entity_type", entityType)
     .order("created_at", { ascending: false })
     .limit(limit);
@@ -92,16 +130,7 @@ export async function getRecentActivityByType(
     return [];
   }
 
-  return (data ?? []).map((row) => ({
-    id: row.id,
-    actorUserId: row.actor_user_id,
-    actorName: (row.profiles as unknown as { full_name: string | null } | null)?.full_name ?? null,
-    action: row.action,
-    entityType: row.entity_type,
-    entityId: row.entity_id,
-    metadata: (row.metadata as Record<string, unknown>) ?? {},
-    createdAt: row.created_at,
-  }));
+  return enrichWithActorIdentity(data ?? []);
 }
 
 const ENTITY_ACTIVITY_LIMIT = 50;
@@ -117,7 +146,7 @@ export async function getActivityForEntity(
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("activity_log")
-    .select("id, actor_user_id, action, entity_type, entity_id, metadata, created_at, profiles(full_name)")
+    .select("id, actor_user_id, action, entity_type, entity_id, metadata, created_at")
     .eq("entity_type", entityType)
     .eq("entity_id", entityId)
     .order("created_at", { ascending: false })
@@ -128,14 +157,5 @@ export async function getActivityForEntity(
     return [];
   }
 
-  return (data ?? []).map((row) => ({
-    id: row.id,
-    actorUserId: row.actor_user_id,
-    actorName: (row.profiles as unknown as { full_name: string | null } | null)?.full_name ?? null,
-    action: row.action,
-    entityType: row.entity_type,
-    entityId: row.entity_id,
-    metadata: (row.metadata as Record<string, unknown>) ?? {},
-    createdAt: row.created_at,
-  }));
+  return enrichWithActorIdentity(data ?? []);
 }

@@ -56,12 +56,17 @@ export default async function AdminActivityPage() {
               <div>
                 <p className="font-sans text-body-small text-ordift-ink">
                   {ACTION_LABELS[entry.action] ?? entry.action}
-                  {entry.actorName ? ` — ${entry.actorName}` : ""}
+                  {entry.actorUserId ? ` — ${entry.actorLabel}` : ""}
                 </p>
-                {entry.entityType && (
+                {(entry.entityType || entry.actorRoleLabel || entry.actorDepartment) && (
                   <p className="font-sans text-caption text-ordift-ink-muted">
-                    {entry.entityType}
-                    {entry.entityId ? ` · ${entry.entityId}` : ""}
+                    {[
+                      entry.entityType ? `${entry.entityType}${entry.entityId ? ` · ${entry.entityId}` : ""}` : null,
+                      entry.actorRoleLabel,
+                      entry.actorDepartment,
+                    ]
+                      .filter(Boolean)
+                      .join(" · ")}
                   </p>
                 )}
               </div>
