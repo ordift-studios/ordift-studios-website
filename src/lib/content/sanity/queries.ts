@@ -92,6 +92,16 @@ export const workshopCategoryBySlugQuery = `*[_type == "workshopCategory" && slu
 // use so both this and journalPostsQuery can share the exact wording).
 const portfolioVisibilityFilter = `status == "published" && (!defined(scheduledFor) || scheduledFor <= now())`;
 
+// Every array field below is wrapped in coalesce(..., []) — Sanity
+// returns null (not []) for an array field that was never initialized
+// at all, as opposed to one saved empty. Found live (2026-08-05): a
+// project created via the native Admin Portal wizard crashed its own
+// public page with "Cannot read properties of null (reading
+// 'includes')" because relatedWorkshops/beforeAfterGallery are
+// deliberately Studio-only fields the wizard never touches, so they
+// stayed fully unset rather than merely empty. Defended at the query
+// layer (not just the wizard) since a Studio editor can just as
+// easily leave any optional array field untouched.
 export const portfolioProjectFragment = `{
   "id": _id,
   "slug": slug.current,
@@ -100,40 +110,40 @@ export const portfolioProjectFragment = `{
   scheduledFor,
   featured,
   ${requiredMediaAssetFragment("heroMedia", "heroMedia")},
-  disciplines,
-  "categoryIds": categories[]._ref,
-  "collectionIds": collections[]._ref,
+  "disciplines": coalesce(disciplines, []),
+  "categoryIds": coalesce(categories[]._ref, []),
+  "collectionIds": coalesce(collections[]._ref, []),
   seriesOrder,
   client,
   year,
   location,
-  servicesProvided,
-  equipmentUsed,
-  tags,
-  "collaborators": collaborators[]{"id": _key, name, role},
+  "servicesProvided": coalesce(servicesProvided, []),
+  "equipmentUsed": coalesce(equipmentUsed, []),
+  "tags": coalesce(tags, []),
+  "collaborators": coalesce(collaborators[]{"id": _key, name, role}, []),
   story,
   objective,
   strategy,
   challenges,
   solution,
   process,
-  deliverables,
+  "deliverables": coalesce(deliverables, []),
   results,
-  "awards": awards[]{"id": _key, title, issuer, year},
-  "publications": publications[]{"id": _key, name, url, year},
-  "gallery": gallery[]${galleryImageFragment},
-  "behindTheScenesGallery": behindTheScenesGallery[]${galleryImageFragment},
-  "beforeAfterGallery": beforeAfterGallery[]{
+  "awards": coalesce(awards[]{"id": _key, title, issuer, year}, []),
+  "publications": coalesce(publications[]{"id": _key, name, url, year}, []),
+  "gallery": coalesce(gallery[]${galleryImageFragment}, []),
+  "behindTheScenesGallery": coalesce(behindTheScenesGallery[]${galleryImageFragment}, []),
+  "beforeAfterGallery": coalesce(beforeAfterGallery[]{
     "id": _key,
     "before": before${mediaAssetFragment},
     "after": after${mediaAssetFragment},
     caption
-  },
-  "videos": videos[]${mediaAssetFragment},
-  "downloadableAssets": downloadableAssets[]{"id": _key, label, "url": file.asset->url, fileType},
-  "testimonialIds": testimonials[]._ref,
-  "relatedProjectIds": relatedProjects[]._ref,
-  "relatedWorkshopIds": relatedWorkshops[]._ref,
+  }, []),
+  "videos": coalesce(videos[]${mediaAssetFragment}, []),
+  "downloadableAssets": coalesce(downloadableAssets[]{"id": _key, label, "url": file.asset->url, fileType}, []),
+  "testimonialIds": coalesce(testimonials[]._ref, []),
+  "relatedProjectIds": coalesce(relatedProjects[]._ref, []),
+  "relatedWorkshopIds": coalesce(relatedWorkshops[]._ref, []),
   isPasswordProtected,
   ${seoFragment("seo")}
 }`;
@@ -145,6 +155,51 @@ export const portfolioProjectBySlugQuery = `*[_type == "portfolioProject" && slu
 // for the management dashboard/list. Never used by public-facing code.
 export const allPortfolioProjectsQuery = `*[_type == "portfolioProject"] | order(_createdAt desc) ${portfolioProjectFragment}`;
 export const portfolioProjectByIdQuery = `*[_type == "portfolioProject" && _id == $id][0] ${portfolioProjectFragment}`;
+
+// Native creation/editing (2026-08-05) — slug-uniqueness check for the
+// wizard's Project Basics step.
+export const portfolioSlugExistsQuery = `*[_type == "portfolioProject" && slug.current == $slug][0]._id`;
+
+// Edit-mode fetch — unlike portfolioProjectFragment (resolved read
+// shape, used everywhere else), this keeps each image field's raw
+// asset id + hotspot alongside the resolved preview URL, so the
+// wizard (PortfolioProjectForm.tsx) can round-trip an unmodified image
+// back into a Sanity patch without the user having to re-upload it.
+const editImageShape = `{
+  type, alt,
+  "assetId": image.asset._ref,
+  "url": image.asset->url,
+  "hotspotX": image.hotspot.x,
+  "hotspotY": image.hotspot.y
+}`;
+const editGalleryItemShape = `{
+  "key": _key, alt, caption,
+  "assetId": image.asset._ref,
+  "url": image.asset->url,
+  "hotspotX": image.hotspot.x,
+  "hotspotY": image.hotspot.y
+}`;
+
+export const portfolioProjectEditQuery = `*[_type == "portfolioProject" && _id == $id][0]{
+  _id, title, "slug": slug.current, status,
+  disciplines, year, location, client, isPasswordProtected,
+  "heroMedia": heroMedia${editImageShape},
+  "gallery": gallery[]${editGalleryItemShape},
+  "behindTheScenesGallery": behindTheScenesGallery[]${editGalleryItemShape},
+  "videos": videos[]{type, url, alt},
+  "downloadableAssets": downloadableAssets[]{"key": _key, label, fileType, "assetId": file.asset._ref, "url": file.asset->url},
+  "categoryIds": categories[]._ref,
+  "collectionIds": collections[]._ref,
+  seriesOrder, tags, servicesProvided, equipmentUsed,
+  story, objective, strategy, challenges, solution, process, results, deliverables,
+  "awards": awards[]{"key": _key, title, issuer, year},
+  "publications": publications[]{"key": _key, name, url, year},
+  "collaborators": collaborators[]{"key": _key, name, role},
+  "testimonialIds": testimonials[]._ref,
+  "relatedProjectIds": relatedProjects[]._ref,
+  "seoTitle": seo.metaTitle,
+  "seoDescription": seo.metaDescription
+}`;
 
 export const portfolioCategoriesQuery = `*[_type == "portfolioCategory"] ${categoryFragment}`;
 export const portfolioCategoryBySlugQuery = `*[_type == "portfolioCategory" && slug.current == $slug][0] ${categoryFragment}`;

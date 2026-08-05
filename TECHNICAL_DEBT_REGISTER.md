@@ -272,6 +272,26 @@
 - **Pay-down trigger:** either (a) confirm and document that `super_admin` must always be granted alongside `admin` (a UI/process fix in `/admin/users`, not a schema change), or (b) redefine `is_staff_or_admin()` to include `super_admin` explicitly — the latter should get its own review given how many policies depend on it.
 - **Status:** Open, low priority — flag only, no other action taken.
 
+### TD-026 — Native Portfolio Project creator can't upload direct video files or edit the before/after gallery, relatedWorkshopIds, or SEO ogImage/canonicalUrl
+
+- **Category:** Feature Scope
+- **Severity:** Low (by design, disclosed at proposal time, not an oversight)
+- **What:** the native Admin Portal project creator/editor (`/admin/portfolio/new`, `/admin/portfolio/[id]/edit`, shipped 2026-08-05) covers every field the user's 32-item capability list named, but deliberately does not cover: direct video FILE upload (embed URLs — YouTube/Vimeo/etc. — are fully native), the before/after gallery, `relatedWorkshopIds`, and SEO `ogImage`/`canonicalUrl`.
+- **Why accepted:** Vercel's Serverless Functions enforce a hard ~4.5MB request-body ceiling (platform-level, not configurable), which makes direct video upload impractical through the same upload path used for images (images are viable because they're compressed client-side first — see `src/lib/media/clientImageCompress.ts`). Sending Sanity write credentials to the browser to bypass this via a direct-to-Sanity upload was explicitly ruled out by the user's own security constraint. The other three fields (before/after gallery, relatedWorkshopIds, SEO extras) were simply not in the requested 32-item list and were scoped out to control the size of an already-large build, consistent with "avoid duplicating functionality already provided by Sanity unless there is a clear operational benefit."
+- **Current impact:** none for the confirmed everyday workflow (photos, all metadata, full case study, categories/collections, workflow lifecycle) — Sanity Studio remains available as the fallback ("Open Advanced Editor in Sanity Studio") for these four specific fields.
+- **Pay-down trigger:** revisit only if a real project needs one of these four fields and the Studio fallback proves genuinely inconvenient in practice — not scheduled.
+- **Status:** Open, accepted scope boundary — not a defect.
+
+### TD-027 — `portfolioProjectFragment` returned `null` (not `[]`) for any array-reference field that was never initialized on the Sanity document, crashing the public project page
+
+- **Category:** Correctness / Regression Risk
+- **Severity:** Medium while open (crashed a live public page); Resolved same day
+- **What:** found live during Portfolio Management System native-editor QA (2026-08-05): a project created entirely through the new native wizard crashed its own `/work/[slug]` page with `TypeError: Cannot read properties of null (reading 'includes')`. Root cause: GROQ returns `null` (not `[]`) for an array field that was never set at all on a document, as distinct from one saved empty — and the native wizard deliberately never writes to `relatedWorkshops`/`beforeAfterGallery` (see TD-026), leaving those fields fully unset rather than merely empty. `src/app/work/[slug]/page.tsx` called `.includes()` on the result without a null check.
+- **Why this could also have affected Studio-created content:** the same risk exists for any document where a Studio editor leaves an optional array field (awards, publications, videos, downloadableAssets, etc.) completely untouched rather than explicitly saving it empty — not unique to the native editor, just first surfaced by it.
+- **Fix:** every array-typed projection in `portfolioProjectFragment` (`src/lib/content/sanity/queries.ts`) now wrapped in `coalesce(..., [])`, so the query layer itself guarantees an array regardless of whether the underlying Sanity field was ever initialized — fixes the root cause for all content, not just wizard-created projects, and needed no change to the consuming page components.
+- **Verification:** re-tested live — the same project's public page rendered correctly after the fix; `tsc`/`eslint`/`vitest`/production build all clean afterward.
+- **Status:** Resolved (2026-08-05), same session it was found in.
+
 ---
 
 ## Adding new entries

@@ -1,6 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import type { CurrentUser } from "@/lib/portal/roles";
-import { hasRole } from "@/lib/portal/roles";
+import { hasRole, isSuperAdmin } from "@/lib/portal/roles";
 import type { WorkflowCapabilityMatrix } from "@/lib/workflow/types";
 
 // Portfolio Management System permission matrix — approved 2026-08-04.
@@ -66,6 +66,15 @@ export function canAccessPortfolioAdmin(user: CurrentUser | null): boolean {
   return Boolean(
     user && (hasRole(user, "staff") || hasRole(user, "admin") || hasRole(user, "super_admin"))
   );
+}
+
+// Native project creation/editing (2026-08-05) — deliberately narrower
+// than canAccessPortfolioAdmin(): approved as Super-Admin-only for now
+// ("acceptable for the full native project creator to be Super-Admin-
+// only"), not the same super_admin+admin pairing the rest of the
+// Portfolio Management System uses. Revisit only on explicit instruction.
+export function canCreatePortfolioProjectsNatively(user: CurrentUser | null): boolean {
+  return isSuperAdmin(user);
 }
 
 // Project-scoping check for the Photographer/contractor tier — mirrors

@@ -2,7 +2,11 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/portal/roles";
-import { canAccessPortfolioAdmin, PORTFOLIO_CAPABILITIES } from "@/lib/admin/portfolioPermissions";
+import {
+  canAccessPortfolioAdmin,
+  canCreatePortfolioProjectsNatively,
+  PORTFOLIO_CAPABILITIES,
+} from "@/lib/admin/portfolioPermissions";
 import { allowedTransitions, canToggleFeatured, getGrantedCapabilities, hasCapability } from "@/lib/workflow/engine";
 import type { WorkflowStatus } from "@/lib/workflow/types";
 import { getPortfolioProjectByIdAdmin } from "@/lib/content/sanity/portfolioAdmin";
@@ -10,12 +14,14 @@ import { getPortfolioWorkflowStatus, listPortfolioAssignments } from "@/lib/admi
 import { getActivityForEntity } from "@/lib/admin/activityLog";
 import { listUsersWithRoles } from "@/lib/portal/adminData";
 import { createClient } from "@/lib/supabase/server";
+import { getPublishReadiness } from "@/lib/admin/portfolioValidation";
 import {
   transitionPortfolioProjectAction,
   toggleFeaturedAction,
   assignCollaboratorAction,
   removeCollaboratorAction,
 } from "../actions";
+import DeleteProjectButton from "../DeleteProjectButton";
 
 export const metadata: Metadata = {
   title: "Project — Portfolio — Ordift Studios Admin",
@@ -84,6 +90,9 @@ export default async function AdminPortfolioProjectPage({ params }: { params: Pr
   const status = project.status as WorkflowStatus;
   const transitions = allowedTransitions(status).filter((t) => granted.includes(t.capability));
   const canFeature = canToggleFeatured(status, granted);
+  const canEditNatively = canCreatePortfolioProjectsNatively(user);
+  const canDelete = hasCapability(user, PORTFOLIO_CAPABILITIES, "delete");
+  const readiness = getPublishReadiness(project);
 
   return (
     <div className="space-y-10 max-w-3xl">
@@ -98,16 +107,38 @@ export default async function AdminPortfolioProjectPage({ params }: { params: Pr
               {[project.client, project.location, project.year].filter(Boolean).join(" · ") || "No client/location set"}
             </p>
           </div>
-          <a
-            href={`/studio/structure/portfolioProject;${project.id}`}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="font-sans text-body-small font-semibold px-4 py-2 rounded-md bg-ordift-navy-950 text-white whitespace-nowrap"
-          >
-            Edit Content in Studio →
-          </a>
+          <div className="flex flex-wrap gap-2">
+            {canEditNatively && (
+              <Link
+                href={`/admin/portfolio/${project.id}/edit`}
+                className="font-sans text-body-small font-semibold px-4 py-2 rounded-md bg-ordift-navy-950 text-white whitespace-nowrap"
+              >
+                Edit Project
+              </Link>
+            )}
+            <a
+              href={`/studio/structure/portfolioProject;${project.id}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="font-sans text-body-small font-medium px-4 py-2 rounded-md border border-black/15 text-ordift-ink whitespace-nowrap"
+            >
+              Open Advanced Editor in Sanity Studio →
+            </a>
+          </div>
         </div>
       </div>
+
+      {(readiness.blocking.length > 0 || readiness.warnings.length > 0) && (
+        <section className="rounded-xl border border-black/10 bg-white p-6">
+          <p className="font-sans text-body-small font-semibold text-ordift-ink mb-2">Publish Readiness</p>
+          {readiness.blocking.map((b) => (
+            <p key={b} className="font-sans text-caption text-red-700">✕ {b}</p>
+          ))}
+          {readiness.warnings.map((w) => (
+            <p key={w} className="font-sans text-caption text-amber-700">⚠ {w}</p>
+          ))}
+        </section>
+      )}
 
       <section className="rounded-xl border border-black/10 bg-white p-6 space-y-4">
         <div className="flex items-center justify-between">
@@ -279,6 +310,13 @@ export default async function AdminPortfolioProjectPage({ params }: { params: Pr
           </div>
         )}
       </section>
+
+      {canDelete && (
+        <section>
+          <h2 className="font-serif font-medium text-body text-ordift-ink mb-4">Danger Zone</h2>
+          <DeleteProjectButton id={project.id} title={project.title} />
+        </section>
+      )}
     </div>
   );
 }

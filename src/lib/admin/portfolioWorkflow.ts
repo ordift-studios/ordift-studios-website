@@ -139,3 +139,21 @@ export async function removePortfolioCollaborator(assignmentId: string, removedB
     console.error("[admin] failed to remove workflow_assignments row", error.message);
   }
 }
+
+// Full cleanup when a project is permanently deleted (not archived) —
+// the Sanity document itself is gone by the time this runs, so its
+// companion rows here would otherwise become orphaned, unresolvable
+// references. Best-effort, same principle as every other write in this
+// file: the Sanity delete (the source-of-truth action) has already
+// succeeded by the time this is called.
+export async function deletePortfolioWorkflowData(entityId: string): Promise<void> {
+  const supabase = await createClient();
+  const [statusResult, assignmentsResult] = await Promise.all([
+    supabase.from("workflow_statuses").delete().eq("entity_type", ENTITY_TYPE).eq("entity_id", entityId),
+    supabase.from("workflow_assignments").delete().eq("entity_type", ENTITY_TYPE).eq("entity_id", entityId),
+  ]);
+  if (statusResult.error) console.error("[admin] failed to delete workflow_statuses row", statusResult.error.message);
+  if (assignmentsResult.error) {
+    console.error("[admin] failed to delete workflow_assignments rows", assignmentsResult.error.message);
+  }
+}

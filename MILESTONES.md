@@ -3445,6 +3445,26 @@ Following the Portfolio Architecture Report (2026-08-05, same day — confirmed 
 
 ---
 
+## Native Portfolio Project creator — Sanity Studio now optional for everyday Super Admin work (2026-08-05)
+
+Following your feedback that the "New Project (Studio)" redirect broke the promise of a fully in-Admin-Portal workflow, built a native project creation/editing interface at `/admin/portfolio/new` and `/admin/portfolio/[id]/edit`, replacing that redirect as the primary action while keeping Sanity Studio as an explicit secondary "Open Advanced Editor" link. Super-Admin-only for now, per the approved decision — Owner is the existing `super_admin` role with no separate tier, and normal Admins/Editors/Photographers/Contractors are unaffected.
+
+**Architecture:** a 7-step wizard (`PortfolioProjectForm.tsx`, Client Component — the one significant Client Component in an otherwise Server-Component-heavy admin surface) creates the Sanity document on step 1 and saves each subsequent step's fields via a new generic `patchPortfolioProject()`/`saveProjectFieldsAction()` pair — the wizard builds correctly-shaped raw Sanity field values (mediaAsset objects, galleryImage array items with `_key`, reference arrays), keeping `portfolioAdmin.ts` a thin, schema-agnostic write layer. Edit mode loads via a new admin-only `portfolioProjectEditQuery` that returns raw asset references and hotspot coordinates (not resolved URLs) so unmodified images round-trip without re-upload.
+
+**Media upload — the one real platform constraint found in review:** Vercel's Serverless Functions enforce a hard ~4.5MB request-body ceiling. Images are resized/recompressed client-side before upload (`src/lib/media/clientImageCompress.ts`, plain Canvas API, no new dependency) to stay under it; a new Route Handler (`POST /api/admin/portfolio/assets`) — Super-Admin-gated, content-length and mime-type validated — streams the file server-side to Sanity's asset API via the existing write-capable `client`, returning only an asset id and public CDN URL, never the token. Video stays embed-URL-only (YouTube/Vimeo etc., fully native); direct video file upload, the before/after gallery, `relatedWorkshopIds`, and SEO ogImage/canonicalUrl remain Sanity-Studio-only, disclosed as `TD-026` rather than silently dropped. The focal-point picker is a simplified click-to-set-center control (writes a real Sanity `hotspot`) rather than Studio's full resizable crop rectangle — the "secure equivalent" the approved spec explicitly allowed for.
+
+**Publish Readiness Checklist:** implemented as a single function (`src/lib/admin/portfolioValidation.ts`) used in two places — the wizard's Review & Preview step for immediate feedback, and re-checked server-side inside `transitionPortfolioProjectAction` before any `pending_review`/`published` transition, so the check can't be bypassed by a request crafted outside the UI. Only genuinely required items (title, slug, hero image + alt, story, ≥1 category, gallery images having alt text) block; everything else (SEO, tags, client attribution, empty gallery) is a warning, per the approved spec.
+
+**Delete:** added for the first time in this system — type-the-title-to-confirm, full Sanity delete plus Supabase `workflow_statuses`/`workflow_assignments` cleanup, logged to `activity_log`, Super-Admin-only.
+
+**Bug found and fixed during QA (worth noting, not just logging):** a project created entirely through the new wizard crashed its own public `/work/[slug]` page — GROQ returns `null`, not `[]`, for an array field a document never had set at all (as opposed to saved empty), and the wizard deliberately never touches `relatedWorkshops`/`beforeAfterGallery`. Fixed at the query layer (`portfolioProjectFragment` in `src/lib/content/sanity/queries.ts`, every array projection now wrapped in `coalesce(..., [])`), which protects all content — Studio-created included — not just the native path. Full detail in `TECHNICAL_DEBT_REGISTER.md` TD-027.
+
+**Verified end-to-end on staging**, via disposable QA accounts (a Super Admin + a Staff-only account, both deleted afterward): created a complete project natively including real uploaded hero + gallery images (confirmed via network inspection that the upload response never contains a Sanity token, and that the HTML/JS bundle contains no secret-shaped strings), through Draft → Pending Review → Approved → Published, confirmed live on `/work` and its own detail page, Featured toggle, then permanently deleted via the new Danger Zone flow. Separately confirmed the Staff-only account is blocked both at the `/admin/portfolio/new` page level (redirected) and directly at the `/api/admin/portfolio/assets` route (403, bypassing the UI entirely) — the security boundary holds even against a request that skips the interface.
+
+`tsc --noEmit`, `eslint` (0 errors, 2 pre-existing `<img>`-vs-`next/image` warnings on admin-only preview thumbnails), `vitest run` (35/35), and the production build all clean. Public Website Legal Suite and the existing `/work` rendering pipeline (aside from the TD-027 fix, which is a correctness improvement, not a behavior change for already-working content) untouched.
+
+---
+
 ## How this roadmap is maintained
 
 - Checkboxes get checked off as work ships and is approved — not before.

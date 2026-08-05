@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/portal/roles";
-import { canAccessPortfolioAdmin } from "@/lib/admin/portfolioPermissions";
+import { canAccessPortfolioAdmin, canCreatePortfolioProjectsNatively } from "@/lib/admin/portfolioPermissions";
 import {
   getAllPortfolioProjectsAdmin,
   getPortfolioCategoriesAdmin,
@@ -71,6 +71,7 @@ export default async function AdminPortfolioPage({
 }) {
   const user = await getCurrentUser();
   if (!user || !canAccessPortfolioAdmin(user)) redirect("/admin/overview");
+  const canCreateNatively = canCreatePortfolioProjectsNatively(user);
 
   const { status: statusFilter, q } = await searchParams;
 
@@ -135,13 +136,21 @@ export default async function AdminPortfolioPage({
           >
             Collections
           </Link>
+          {canCreateNatively && (
+            <Link
+              href="/admin/portfolio/new"
+              className="font-sans text-body-small font-semibold px-4 py-2 rounded-md bg-ordift-navy-950 text-white"
+            >
+              New Project
+            </Link>
+          )}
           <a
             href="/studio/structure/portfolioProject"
             target="_blank"
             rel="noopener noreferrer"
-            className="font-sans text-body-small font-semibold px-4 py-2 rounded-md bg-ordift-navy-950 text-white"
+            className="font-sans text-body-small font-medium px-4 py-2 rounded-md border border-black/15 text-ordift-ink hover:border-black/30"
           >
-            New Project (Studio) →
+            Open Advanced Editor in Sanity Studio →
           </a>
         </div>
       </div>
