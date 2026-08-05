@@ -7,6 +7,8 @@ import Avatar from "@/components/media/Avatar";
 import { contentRepository } from "@/lib/content";
 import { fromJournalPost } from "@/lib/content/storiesFeed";
 
+const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://ordiftstudios.com";
+
 export async function generateStaticParams() {
   const authors = await contentRepository.getAuthors();
   return authors.map((author) => ({ slug: author.slug }));
@@ -20,7 +22,11 @@ export async function generateMetadata({
   const { slug } = await params;
   const author = await contentRepository.getAuthorBySlug(slug);
   if (!author) return {};
-  return { title: `${author.name} — Ordift Studios Stories`, description: author.title };
+  return {
+    title: `${author.name} — Ordift Studios Stories`,
+    description: author.title,
+    alternates: { canonical: `${SITE_URL}/journal/authors/${author.slug}` },
+  };
 }
 
 export default async function AuthorProfilePage({

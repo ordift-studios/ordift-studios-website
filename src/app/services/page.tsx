@@ -4,10 +4,13 @@ import Footer from "@/components/Footer";
 import DepartmentCard from "@/components/DepartmentCard";
 import { contentRepository } from "@/lib/content";
 
+const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://ordiftstudios.com";
+
 export const metadata: Metadata = {
   title: "Services — Ordift Studios",
   description:
     "Photography, videography, graphic design, branding, content, talent management and production — one connected creative system.",
+  alternates: { canonical: `${SITE_URL}/services` },
 };
 
 export default async function ServicesPage() {

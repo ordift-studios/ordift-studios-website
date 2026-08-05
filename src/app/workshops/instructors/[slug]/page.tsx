@@ -6,6 +6,8 @@ import WorkshopCard from "@/components/workshops/WorkshopCard";
 import Avatar from "@/components/media/Avatar";
 import { contentRepository } from "@/lib/content";
 
+const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://ordiftstudios.com";
+
 export async function generateStaticParams() {
   const instructors = await contentRepository.getInstructors();
   return instructors.map((instructor) => ({ slug: instructor.slug }));
@@ -22,6 +24,7 @@ export async function generateMetadata({
   return {
     title: `${instructor.name} — Ordift Studios Workshops`,
     description: instructor.title,
+    alternates: { canonical: `${SITE_URL}/workshops/instructors/${instructor.slug}` },
   };
 }
 

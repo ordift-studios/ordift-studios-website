@@ -6,10 +6,13 @@ import { contentRepository } from "@/lib/content";
 import { whatsAppLink, formattedWhatsAppNumber } from "@/lib/whatsapp";
 import { visitorFormsOpen } from "@/lib/shared/env";
 
+const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://ordiftstudios.com";
+
 export const metadata: Metadata = {
   title: "Book a Service — Ordift Studios",
   description:
     "Tell us what you're building. Submit an enquiry for photography, videography, design, branding, content, production, or a general or partnership enquiry.",
+  alternates: { canonical: `${SITE_URL}/book` },
 };
 
 export default async function BookPage({

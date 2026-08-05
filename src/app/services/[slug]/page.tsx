@@ -7,6 +7,8 @@ import MediaPlaceholder from "@/components/media/MediaPlaceholder";
 import PortfolioCard from "@/components/portfolio/PortfolioCard";
 import { contentRepository } from "@/lib/content";
 
+const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://ordiftstudios.com";
+
 // Single dynamic route replacing 7 near-identical static pages (migrated
 // 2026-07-24, Version 1.2.6) — consistent with the Workshops/Portfolio/
 // Stories pattern already established. Existing URLs are unchanged:
@@ -29,6 +31,7 @@ export async function generateMetadata({
   return {
     title: service.seo.metaTitle ?? `${service.name} — Ordift Studios`,
     description: service.seo.metaDescription ?? service.summaryDescription,
+    alternates: { canonical: `${SITE_URL}/services/${service.slug}` },
   };
 }
 

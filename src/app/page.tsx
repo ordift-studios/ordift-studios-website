@@ -17,6 +17,8 @@ import { contentRepository } from "@/lib/content";
 // Featured Projects section (src/app/work/page.tsx) rather than a new
 // pattern.
 
+const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://ordiftstudios.com";
+
 export async function generateMetadata(): Promise<Metadata> {
   const home = await contentRepository.getHomePage();
   return {
@@ -24,6 +26,7 @@ export async function generateMetadata(): Promise<Metadata> {
     description:
       home.seo.metaDescription ??
       "Ordift Studios is a multidisciplinary creative house where photography, film, design, branding, content and talent work as one connected system.",
+    alternates: { canonical: SITE_URL },
   };
 }
 

@@ -21,6 +21,8 @@ import {
 import { visitorFormsOpen } from "@/lib/shared/env";
 import RegistrationForm from "./RegistrationForm";
 
+const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://ordiftstudios.com";
+
 export async function generateStaticParams() {
   const workshops = await contentRepository.getWorkshops();
   return workshops.map((workshop) => ({ slug: workshop.slug }));
@@ -37,6 +39,7 @@ export async function generateMetadata({
   return {
     title: `${workshop.title} — Ordift Studios Workshops`,
     description: workshop.shortDescription,
+    alternates: { canonical: `${SITE_URL}/workshops/${workshop.slug}` },
   };
 }
 

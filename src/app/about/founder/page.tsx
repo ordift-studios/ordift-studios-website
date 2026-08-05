@@ -11,9 +11,12 @@ import ResponsiveImage from "@/components/media/ResponsiveImage";
 // from the approved Brand Bible section 8 (website version), migrated
 // into Sanity 2026-07-24 (Version 1.2.6).
 
+const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://ordiftstudios.com";
+
 export const metadata: Metadata = {
   title: "Founder — Ordift Studios",
   description: "Myredlive Anim-Tetey, Founder and Creative Director of Ordift Studios.",
+  alternates: { canonical: `${SITE_URL}/about/founder` },
 };
 
 export default async function FounderPage() {

@@ -6,10 +6,13 @@ import WorkshopCard from "@/components/workshops/WorkshopCard";
 import { contentRepository } from "@/lib/content";
 import { isPastWorkshop } from "@/lib/content/workshopHelpers";
 
+const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://ordiftstudios.com";
+
 export const metadata: Metadata = {
   title: "Workshops — Ordift Studios",
   description:
     "Hands-on workshops from Ordift Studios — photography, filmmaking, branding and the business of creativity.",
+  alternates: { canonical: `${SITE_URL}/workshops` },
 };
 
 export default async function WorkshopsPage({

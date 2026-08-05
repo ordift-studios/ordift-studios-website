@@ -13,10 +13,13 @@ import {
   type StoriesGrouping,
 } from "@/lib/content/storiesFeed";
 
+const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://ordiftstudios.com";
+
 export const metadata: Metadata = {
   title: "Stories — Ordift Studios",
   description:
     "Stories from Ordift Studios — photography insights, behind-the-scenes, business lessons, curated creative-industry news and opportunities, and everything in between.",
+  alternates: { canonical: `${SITE_URL}/journal` },
 };
 
 function buildHref(params: { type?: string; category?: string; tag?: string; q?: string }) {

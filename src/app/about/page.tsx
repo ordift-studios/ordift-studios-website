@@ -13,6 +13,8 @@ import { contentRepository } from "@/lib/content";
 // collectively rather than a founder biography (direction changed
 // 2026-07-23) — full founder bio lives at /about/founder instead.
 
+const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://ordiftstudios.com";
+
 export async function generateMetadata(): Promise<Metadata> {
   const about = await contentRepository.getAboutPage();
   return {
@@ -20,6 +22,7 @@ export async function generateMetadata(): Promise<Metadata> {
     description:
       about.seo.metaDescription ??
       "Ordift Studios is a multidisciplinary creative house — our story, mission, vision, values and team.",
+    alternates: { canonical: `${SITE_URL}/about` },
   };
 }
 
