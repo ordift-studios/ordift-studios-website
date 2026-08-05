@@ -2,7 +2,6 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import NavBar from "@/components/NavBar";
 import Footer from "@/components/Footer";
-import Button from "@/components/Button";
 import JournalPostCard from "@/components/journal/JournalPostCard";
 import { contentRepository } from "@/lib/content";
 import {
@@ -222,21 +221,16 @@ export default async function JournalPage({
             {hasFilters ? "Results" : "All Stories"}
           </h2>
           {filtered.length === 0 && items.length === 0 ? (
-            <div className="max-w-2xl mx-auto text-center py-6">
-              <p className="font-sans font-semibold uppercase tracking-[0.2em] text-eyebrow text-ordift-gold-pressed mb-3">
-                Coming Soon
-              </p>
-              <h3 className="font-serif font-medium text-card-title text-ordift-ink mb-4">
-                Stories from Ordift Studios are on the way.
-              </h3>
-              <p className="font-sans text-body text-ordift-ink-muted mb-8">
-                We&rsquo;re preparing photography insights, behind-the-scenes and studio news to share here. In the
-                meantime, get in touch directly.
-              </p>
-              <Button href="/book?service=general" variant="primary">
-                Get in Touch
-              </Button>
-            </div>
+            <p className="font-sans text-body text-ordift-ink-muted">
+              Stories from Ordift Studios are on the way. In the meantime,{" "}
+              <Link
+                href="/book?service=general"
+                className="text-ordift-gold hover:text-ordift-gold-hover underline underline-offset-4"
+              >
+                get in touch directly
+              </Link>
+              .
+            </p>
           ) : filtered.length === 0 ? (
             <p className="font-sans text-body text-ordift-ink-muted">
               No stories match these filters yet.
