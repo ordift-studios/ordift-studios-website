@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import NavBar from "@/components/NavBar";
 import Footer from "@/components/Footer";
+import Button from "@/components/Button";
 import WorkshopCard from "@/components/workshops/WorkshopCard";
 import { contentRepository } from "@/lib/content";
 import { isPastWorkshop } from "@/lib/content/workshopHelpers";
@@ -92,7 +93,23 @@ export default async function WorkshopsPage({
           <h2 className="font-serif font-medium text-section-heading lg:text-section-heading-desktop text-ordift-ink mb-6">
             Upcoming Workshops
           </h2>
-          {upcoming.length === 0 ? (
+          {allWorkshops.length === 0 ? (
+            <div className="max-w-2xl mx-auto text-center py-6">
+              <p className="font-sans font-semibold uppercase tracking-[0.2em] text-eyebrow text-ordift-gold-pressed mb-3">
+                Coming Soon
+              </p>
+              <h3 className="font-serif font-medium text-card-title text-ordift-ink mb-4">
+                Workshops from Ordift Studios are being planned.
+              </h3>
+              <p className="font-sans text-body text-ordift-ink-muted mb-8">
+                We&rsquo;re preparing hands-on sessions in photography, filmmaking, branding and the business of
+                creativity. In the meantime, get in touch directly.
+              </p>
+              <Button href="/book?service=general" variant="primary">
+                Get in Touch
+              </Button>
+            </div>
+          ) : upcoming.length === 0 ? (
             <p className="font-sans text-body text-ordift-ink-muted mb-4">
               No upcoming workshops{activeCategory ? ` in ${activeCategory.name}` : ""} right now. Check back soon.
             </p>
