@@ -87,7 +87,7 @@ export default async function JournalPostPage({
     const categoryById = new Map(categories.map((c) => [c.id, c]));
     const author = authors.find((a) => a.id === post.authorId) ?? null;
     const postCategories = categories.filter((c) => post.categoryIds.includes(c.id));
-    const relatedPosts = allPosts.filter((p) => post.relatedPostIds.includes(p.id));
+    const relatedPosts = allPosts.filter((p) => p.id !== post.id && post.relatedPostIds.includes(p.id));
     const relatedProjects = allProjects.filter((p) => post.relatedProjectIds.includes(p.id));
     const relatedWorkshops = allWorkshops.filter((w) => post.relatedWorkshopIds.includes(w.id));
 
@@ -265,7 +265,9 @@ export default async function JournalPostPage({
   const author = article.authorId ? authors.find((a) => a.id === article.authorId) ?? null : null;
   const articleCategories = [...journalCategories, ...pulseCategories].filter((c) => article.categoryIds.includes(c.id));
   const articleOpportunityTypes = pulseOpportunityTypes.filter((o) => article.opportunityTypeIds.includes(o.id));
-  const relatedArticles = allArticles.filter((a) => article.relatedArticleIds.includes(a.id));
+  const relatedArticles = allArticles.filter(
+    (a) => a.id !== article.id && article.relatedArticleIds.includes(a.id),
+  );
   const relatedProjects = allProjects.filter((p) => article.relatedProjectIds.includes(p.id));
   const relatedWorkshops = allWorkshops.filter((w) => article.relatedWorkshopIds.includes(w.id));
   const item = fromPulseArticle(article, opportunityTypeById, sourceById);

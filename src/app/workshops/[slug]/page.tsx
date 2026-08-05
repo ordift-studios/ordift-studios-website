@@ -61,7 +61,9 @@ export default async function WorkshopDetailPage({
   const workshopInstructors = instructors.filter((i) => workshop.instructorIds.includes(i.id));
   const venue = workshop.venueId ? venues.find((v) => v.id === workshop.venueId) ?? null : null;
   const testimonials = allTestimonials.filter((t) => workshop.testimonialIds.includes(t.id));
-  const relatedWorkshops = allWorkshops.filter((w) => workshop.relatedWorkshopIds.includes(w.id));
+  const relatedWorkshops = allWorkshops.filter(
+    (w) => w.id !== workshop.id && workshop.relatedWorkshopIds.includes(w.id),
+  );
 
   const venueById = new Map(venues.map((v) => [v.id, v]));
   const categoryById = new Map(categories.map((c) => [c.id, c]));

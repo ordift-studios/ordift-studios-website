@@ -74,7 +74,9 @@ export default async function PortfolioProjectPage({
   ]);
   const categoryById = new Map(categories.map((c) => [c.id, c]));
   const projectCategories = categories.filter((c) => project.categoryIds.includes(c.id));
-  const relatedProjects = allProjects.filter((p) => project.relatedProjectIds.includes(p.id));
+  const relatedProjects = allProjects.filter(
+    (p) => p.id !== project.id && project.relatedProjectIds.includes(p.id),
+  );
 
   const index = allProjects.findIndex((p) => p.id === project.id);
   const prevProject = index > 0 ? allProjects[index - 1] : null;
@@ -84,6 +86,8 @@ export default async function PortfolioProjectPage({
     contentRepository.getWorkshops(),
     contentRepository.getTestimonials(),
   ]);
+  // No self-exclusion needed: workshops and portfolio projects are distinct
+  // content types with distinct ids, so a workshop can never equal the project.
   const relatedWorkshops = allWorkshops.filter((w) => project.relatedWorkshopIds.includes(w.id));
   const testimonials = allTestimonials.filter((t) => project.testimonialIds.includes(t.id));
 
