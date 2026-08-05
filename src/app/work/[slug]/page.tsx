@@ -36,12 +36,19 @@ export async function generateMetadata({
   // resized for social platforms (see ogImageUrl.ts) rather than handed
   // the raw source file.
   const rawImage = project.seo.ogImageUrl ?? project.heroMedia.url;
-  const images = rawImage ? [ogImageUrl(rawImage)] : [];
+  // A page that defines its own openGraph/twitter object fully replaces
+  // the root layout's — Next.js does not merge in the root's dynamic
+  // opengraph-image.tsx for just the missing `images` field (confirmed
+  // live, 2026-08-05: an explicit openGraph without `images` still
+  // suppressed the root default entirely). So a project with no hero
+  // image yet must point at the same branded default explicitly, rather
+  // than omitting `images` and hoping it inherits.
+  const images = [rawImage ? ogImageUrl(rawImage) : `${siteUrl}/opengraph-image`];
   return {
     title,
     description,
     alternates: { canonical: canonicalUrl },
-    openGraph: { title, description, url: canonicalUrl, images, type: "article" },
+    openGraph: { title, description, url: canonicalUrl, type: "article", images },
     // Explicit twitter block — without one, Next.js keeps the root
     // layout's site-wide default (generic title/description/logo) rather
     // than inheriting these project-specific openGraph values. Found live

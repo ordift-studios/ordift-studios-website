@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Fraunces, Inter } from "next/font/google";
+import { contentRepository } from "@/lib/content";
 import "./globals.css";
 
 // Approved 2026-07-23 (Plan/Brand Bible section 28): display/heading font.
@@ -18,10 +19,6 @@ const inter = Inter({
   subsets: ["latin"],
 });
 
-// No dedicated 1200x630 social-share image exists yet — using the gold
-// full-lockup logo as a real, honest stopgap (not a placeholder/invented
-// asset) rather than shipping with no image at all. Swap for a proper
-// OG image whenever one's designed; nothing else needs to change.
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? "https://ordiftstudios.com";
 const SITE_DESCRIPTION =
   "Ordift Studios is a multidisciplinary creative house where photography, film, design, branding, content and talent work as one connected system.";
@@ -39,29 +36,68 @@ export const metadata: Metadata = {
     description: SITE_DESCRIPTION,
     url: SITE_URL,
     siteName: "Ordift Studios",
-    images: [{ url: "/brand/logo-full-gold.png", width: 474, height: 524, alt: "Ordift Studios" }],
+    // Image intentionally omitted here — the opengraph-image.tsx/
+    // twitter-image.tsx file conventions in this same route segment
+    // generate the default share image. A more specific page (e.g. the
+    // portfolio case study) still wins with its own explicit images.
     locale: "en_US",
     type: "website",
   },
   twitter: {
-    card: "summary",
+    card: "summary_large_image",
     title: "Ordift Studios — A Multidisciplinary Creative House",
     description: SITE_DESCRIPTION,
-    images: ["/brand/logo-full-gold.png"],
   },
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const siteSettings = await contentRepository.getSiteSettings();
+  const logoUrl = siteSettings.logoUrl
+    ? new URL(siteSettings.logoUrl, SITE_URL).toString()
+    : new URL("/brand/logo-full-gold.png", SITE_URL).toString();
+
+  // Sourced entirely from real SiteSettings data — never a hardcoded
+  // street address, founding date, or social profile that doesn't
+  // actually exist. sameAs is omitted whenever socialLinks is empty
+  // rather than guessed at.
+  const organizationJsonLd = {
+    "@context": "https://schema.org",
+    "@type": "Organization",
+    name: siteSettings.siteName,
+    url: SITE_URL,
+    logo: logoUrl,
+    description: SITE_DESCRIPTION,
+    ...(siteSettings.socialLinks.length > 0
+      ? { sameAs: siteSettings.socialLinks.map((link) => link.url) }
+      : {}),
+  };
+  const websiteJsonLd = {
+    "@context": "https://schema.org",
+    "@type": "WebSite",
+    name: siteSettings.siteName,
+    url: SITE_URL,
+  };
+
   return (
     <html
       lang="en"
       className={`${fraunces.variable} ${inter.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col font-sans">{children}</body>
+      <body className="min-h-full flex flex-col font-sans">
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(organizationJsonLd) }}
+        />
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(websiteJsonLd) }}
+        />
+        {children}
+      </body>
     </html>
   );
 }

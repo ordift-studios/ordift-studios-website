@@ -48,11 +48,17 @@ export async function generateMetadata({
       description,
       alternates: { canonical },
       robots: { index: control.classification === "public" && control.status === "approved", follow: true },
+      // images explicit here (site-wide branded default — legal documents
+      // have no natural hero image of their own) because this page's own
+      // openGraph object fully replaces the root layout's; omitting
+      // images would silently drop the share image entirely rather than
+      // inheriting the root's, per Next's metadata resolution.
       openGraph: {
         title: `${control.documentTitle} — Ordift Studios`,
         description,
         url: canonical,
         type: "article",
+        images: [`${siteUrl()}/opengraph-image`],
       },
     };
   }

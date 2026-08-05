@@ -41,25 +41,37 @@ export async function generateMetadata({
 
   const post = await contentRepository.getJournalPostBySlug(slug);
   if (post) {
+    const title = post.seo.metaTitle ?? `${post.title} — Ordift Studios Stories`;
+    const description = post.seo.metaDescription ?? post.excerpt;
+    const canonical = post.seo.canonicalUrl ?? `${siteUrl}/journal/${post.slug}`;
+    // Previously this openGraph object only set `images` — title,
+    // description, url and type were all silently missing (a page's own
+    // openGraph object fully replaces the root's, per top-level key, so
+    // Next doesn't fill in the gaps). Found live 2026-08-05 alongside the
+    // S2-T5 default-share-image work. images falls back to the site-wide
+    // branded default rather than an empty array, for the same reason.
+    const images = [post.seo.ogImageUrl ?? post.heroImage.url ?? `${siteUrl}/opengraph-image`];
     return {
-      title: post.seo.metaTitle ?? `${post.title} — Ordift Studios Stories`,
-      description: post.seo.metaDescription ?? post.excerpt,
-      alternates: { canonical: post.seo.canonicalUrl ?? `${siteUrl}/journal/${post.slug}` },
-      openGraph: {
-        images: [post.seo.ogImageUrl ?? post.heroImage.url].filter((url): url is string => Boolean(url)),
-      },
+      title,
+      description,
+      alternates: { canonical },
+      openGraph: { title, description, url: canonical, type: "article", images },
+      twitter: { card: "summary_large_image", title, description, images },
     };
   }
 
   const article = await contentRepository.getPulseArticleBySlug(slug);
   if (article) {
+    const title = article.seo.metaTitle ?? `${article.title} — Ordift Studios Stories`;
+    const description = article.seo.metaDescription ?? article.excerpt;
+    const canonical = article.seo.canonicalUrl ?? `${siteUrl}/journal/${article.slug}`;
+    const images = [article.seo.ogImageUrl ?? article.heroMedia.url ?? `${siteUrl}/opengraph-image`];
     return {
-      title: article.seo.metaTitle ?? `${article.title} — Ordift Studios Stories`,
-      description: article.seo.metaDescription ?? article.excerpt,
-      alternates: { canonical: article.seo.canonicalUrl ?? `${siteUrl}/journal/${article.slug}` },
-      openGraph: {
-        images: [article.seo.ogImageUrl ?? article.heroMedia.url].filter((url): url is string => Boolean(url)),
-      },
+      title,
+      description,
+      alternates: { canonical },
+      openGraph: { title, description, url: canonical, type: "article", images },
+      twitter: { card: "summary_large_image", title, description, images },
     };
   }
 
