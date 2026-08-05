@@ -151,8 +151,8 @@ The site largely succeeds at communicating a premium, intentional creative house
 ## 10. Launch Checklist
 
 ### Must Complete Before Launch
-- [ ] **C-1** — Fix "Related Projects" self-reference on the case study page.
-- [ ] **C-2** — Resolve empty Journal/Workshops nav destinations (populate minimally, or de-emphasize until ready).
+- [x] **C-1** — Fix "Related Projects" self-reference on the case study page. *Done 2026-08-05 — see `LAUNCH_READINESS_IMPLEMENTATION_PLAN.md` S1-T1.*
+- [x] **C-2** — Resolve empty Journal/Workshops nav destinations. *Done 2026-08-05 via honest "Coming Soon" empty states — see `LAUNCH_READINESS_IMPLEMENTATION_PLAN.md` S1-T2. Full content population remains tracked separately as Sprint 4 / Phase 3.*
 
 ### Should Complete Soon After Launch
 - [ ] **H-1** — Surface the real project on the Photography department page.

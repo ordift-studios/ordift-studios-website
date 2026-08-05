@@ -2,7 +2,7 @@
 
 **Date:** 2026-08-05
 **Source:** every finding in `PRODUCT_LAUNCH_READINESS_REVIEW.md`, grouped into four sprints and broken into individually implementable, individually verifiable tasks.
-**Status:** Sprint 1 approved for implementation. Sprints 2-4 are planned but **not started** — each requires a separate go-ahead before work begins, per this project's standing approval-gate discipline.
+**Status:** **Sprint 1 complete (2026-08-05)** — both Critical tasks implemented, verified, documented, and committed. Sprints 2-4 are planned but **not started** — each requires a separate go-ahead before work begins, per this project's standing approval-gate discipline.
 **Working method (binding for every task, not just Sprint 1):** implement → verify functionality → update documentation → commit → only then move to the next task. No batching multiple tasks into one commit.
 
 ---
