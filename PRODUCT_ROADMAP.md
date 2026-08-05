@@ -50,6 +50,21 @@ None of these are designed yet — evaluate each against the existing workflow-e
 
 ---
 
+## Product Launch Readiness Review — post-launch backlog (2026-08-05)
+
+Not a numbered version — the Medium/Low/Future-tier findings from `PRODUCT_LAUNCH_READINESS_REVIEW.md` (the live-production launch-readiness assessment), recorded here for tracking per that report's Launch Checklist. Critical and High findings are tracked as near-term punch-list items in that report directly, not here; only items explicitly scheduled for later live in this roadmap.
+
+- **Talent nav placement (M-3)** — `/about` top-level nav points "Talent" at a Services sub-page (`/services/[slug]`) rather than a dedicated section; revisit once the Talent directory itself ships (Phase 1B, Version 2.0 below).
+- **Competitive benchmarking pass (F-1)** — a dedicated review against world-class creative-agency sites, most useful once portfolio volume grows past one project. Time to Phase 3 (Portfolio Population).
+- **Dedicated WCAG accessibility audit (F-2)** — contrast ratios, screen-reader flow, keyboard focus order, beyond the lightweight alt-text/heading-hierarchy checks already done. Candidate for Version 1.1.
+- **Site-wide Organization/WebSite structured data** — extend `src/app/layout.tsx`'s root metadata with a shared JSON-LD block; the one portfolio project (`src/app/work/[slug]/page.tsx`) already has a working `CreativeWork` pattern to extend from.
+- **Canonical tag coverage** — replicate the existing `alternates.canonical` pattern (already correct in `src/app/work/page.tsx`, `src/app/work/[slug]/page.tsx`, `src/app/journal/[slug]/page.tsx`, `src/app/legal/[slug]/page.tsx`) across the remaining routes: `src/app/page.tsx`, `src/app/about/page.tsx`, `src/app/about/founder/page.tsx`, `src/app/services/page.tsx`, `src/app/services/[slug]/page.tsx`, `src/app/journal/page.tsx`, `src/app/journal/authors/[slug]/page.tsx`, `src/app/workshops/page.tsx`, `src/app/workshops/[slug]/page.tsx`, `src/app/workshops/instructors/[slug]/page.tsx`, `src/app/book/page.tsx`.
+- **Default social-share image** — extend `src/lib/media/ogImageUrl.ts`'s pattern (currently only used on the project detail page) into a proper 1200×630 branded default for `src/app/layout.tsx`'s root metadata, replacing the raw `logo-full-gold.png` fallback.
+
+These stay unscheduled — not committed to a version — until picked up alongside the Critical/High punch-list work from the same review.
+
+---
+
 ## Version 1.0.5 — Platform Foundation Hardening
 
 **Approved:** 2026-07-30, inserted ahead of Version 1.1 at the user's direction, after a CTO-level current-state assessment surfaced a gap no feature checklist had caught: zero automated tests, no CI pipeline, no production error monitoring anywhere in the codebase (verified directly — no `.test.ts`/`.spec.ts` files, no `.github/workflows`, no Sentry/analytics dependency in `package.json`).

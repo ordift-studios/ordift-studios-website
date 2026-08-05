@@ -1,5 +1,7 @@
 # Business Launch Audit
 
+**Superseded 2026-08-05 by `PRODUCT_LAUNCH_READINESS_REVIEW.md`** — the current, authoritative pre-Version-1.0 launch-readiness assessment, conducted live against production after this document's findings (Portfolio Management System, native editor, Legal Suite approval, Engineering Standards Manual) had shipped. Kept below as historical record only; do not treat its findings as current.
+
 **Date:** 2026-07-30, updated same day with a second, fresh-eyes technical pass and real legal-page drafts. A full business-owner-perspective review of every publicly accessible page, done as if discovering Ordift Studios for the first time — not a code review. Method: every page below was loaded fresh (local environment, since production is intentionally behind `LAUNCH_HOLDING_PAGE`), read for content/UX/professionalism, and cross-checked against the real Sanity data (staging *and* production datasets queried directly, read-only) wherever "is this really live" mattered rather than assumed.
 
 **Status update (same day):** real, drafted legal-page text is now loaded into all four `legalPage` documents on both datasets — `isApproved` is deliberately left `false` on every one, so nothing about what's publicly visible has changed. This closes the "literal placeholder" version of the finding below; the review-and-approve step is now the only remaining part. See Phase 2 for the full text and exactly what needs your sign-off.
