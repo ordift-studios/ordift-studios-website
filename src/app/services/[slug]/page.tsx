@@ -28,10 +28,16 @@ export async function generateMetadata({
   const { slug } = await params;
   const service = await contentRepository.getServiceBySlug(slug);
   if (!service) return {};
+  const title = service.seo.metaTitle ?? `${service.name} — Ordift Studios`;
+  const description = service.seo.metaDescription ?? service.summaryDescription;
+  const canonical = `${SITE_URL}/services/${service.slug}`;
+  const images = [`${SITE_URL}/opengraph-image`];
   return {
-    title: service.seo.metaTitle ?? `${service.name} — Ordift Studios`,
-    description: service.seo.metaDescription ?? service.summaryDescription,
-    alternates: { canonical: `${SITE_URL}/services/${service.slug}` },
+    title,
+    description,
+    alternates: { canonical },
+    openGraph: { title, description, url: canonical, type: "website", images },
+    twitter: { card: "summary_large_image", title, description, images },
   };
 }
 

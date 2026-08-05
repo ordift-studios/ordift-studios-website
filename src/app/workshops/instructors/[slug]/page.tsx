@@ -21,10 +21,16 @@ export async function generateMetadata({
   const { slug } = await params;
   const instructor = await contentRepository.getInstructorBySlug(slug);
   if (!instructor) return {};
+  const title = `${instructor.name} — Ordift Studios Workshops`;
+  const description = instructor.title;
+  const canonical = `${SITE_URL}/workshops/instructors/${instructor.slug}`;
+  const images = [`${SITE_URL}/opengraph-image`];
   return {
-    title: `${instructor.name} — Ordift Studios Workshops`,
-    description: instructor.title,
-    alternates: { canonical: `${SITE_URL}/workshops/instructors/${instructor.slug}` },
+    title,
+    description,
+    alternates: { canonical },
+    openGraph: { title, description, url: canonical, type: "profile", images },
+    twitter: { card: "summary_large_image", title, description, images },
   };
 }
 

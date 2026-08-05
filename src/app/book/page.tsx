@@ -8,11 +8,18 @@ import { visitorFormsOpen } from "@/lib/shared/env";
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://ordiftstudios.com";
 
+const BOOK_TITLE = "Book a Service — Ordift Studios";
+const BOOK_DESCRIPTION =
+  "Tell us what you're building. Submit an enquiry for photography, videography, design, branding, content, production, or a general or partnership enquiry.";
+const BOOK_CANONICAL = `${SITE_URL}/book`;
+const BOOK_IMAGES = [`${SITE_URL}/opengraph-image`];
+
 export const metadata: Metadata = {
-  title: "Book a Service — Ordift Studios",
-  description:
-    "Tell us what you're building. Submit an enquiry for photography, videography, design, branding, content, production, or a general or partnership enquiry.",
-  alternates: { canonical: `${SITE_URL}/book` },
+  title: BOOK_TITLE,
+  description: BOOK_DESCRIPTION,
+  alternates: { canonical: BOOK_CANONICAL },
+  openGraph: { title: BOOK_TITLE, description: BOOK_DESCRIPTION, url: BOOK_CANONICAL, type: "website", images: BOOK_IMAGES },
+  twitter: { card: "summary_large_image", title: BOOK_TITLE, description: BOOK_DESCRIPTION, images: BOOK_IMAGES },
 };
 
 export default async function BookPage({

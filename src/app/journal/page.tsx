@@ -15,11 +15,18 @@ import {
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://ordiftstudios.com";
 
+const TITLE = "Stories — Ordift Studios";
+const DESCRIPTION =
+  "Stories from Ordift Studios — photography insights, behind-the-scenes, business lessons, curated creative-industry news and opportunities, and everything in between.";
+const CANONICAL = `${SITE_URL}/journal`;
+const IMAGES = [`${SITE_URL}/opengraph-image`];
+
 export const metadata: Metadata = {
-  title: "Stories — Ordift Studios",
-  description:
-    "Stories from Ordift Studios — photography insights, behind-the-scenes, business lessons, curated creative-industry news and opportunities, and everything in between.",
-  alternates: { canonical: `${SITE_URL}/journal` },
+  title: TITLE,
+  description: DESCRIPTION,
+  alternates: { canonical: CANONICAL },
+  openGraph: { title: TITLE, description: DESCRIPTION, url: CANONICAL, type: "website", images: IMAGES },
+  twitter: { card: "summary_large_image", title: TITLE, description: DESCRIPTION, images: IMAGES },
 };
 
 function buildHref(params: { type?: string; category?: string; tag?: string; q?: string }) {

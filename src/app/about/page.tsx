@@ -17,12 +17,18 @@ const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://ordiftstudios.com"
 
 export async function generateMetadata(): Promise<Metadata> {
   const about = await contentRepository.getAboutPage();
+  const title = about.seo.metaTitle ?? "About — Ordift Studios";
+  const description =
+    about.seo.metaDescription ??
+    "Ordift Studios is a multidisciplinary creative house — our story, mission, vision, values and team.";
+  const canonical = `${SITE_URL}/about`;
+  const images = [`${SITE_URL}/opengraph-image`];
   return {
-    title: about.seo.metaTitle ?? "About — Ordift Studios",
-    description:
-      about.seo.metaDescription ??
-      "Ordift Studios is a multidisciplinary creative house — our story, mission, vision, values and team.",
-    alternates: { canonical: `${SITE_URL}/about` },
+    title,
+    description,
+    alternates: { canonical },
+    openGraph: { title, description, url: canonical, type: "website", images },
+    twitter: { card: "summary_large_image", title, description, images },
   };
 }
 

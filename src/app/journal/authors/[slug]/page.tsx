@@ -22,10 +22,16 @@ export async function generateMetadata({
   const { slug } = await params;
   const author = await contentRepository.getAuthorBySlug(slug);
   if (!author) return {};
+  const title = `${author.name} — Ordift Studios Stories`;
+  const description = author.title;
+  const canonical = `${SITE_URL}/journal/authors/${author.slug}`;
+  const images = [`${SITE_URL}/opengraph-image`];
   return {
-    title: `${author.name} — Ordift Studios Stories`,
-    description: author.title,
-    alternates: { canonical: `${SITE_URL}/journal/authors/${author.slug}` },
+    title,
+    description,
+    alternates: { canonical },
+    openGraph: { title, description, url: canonical, type: "profile", images },
+    twitter: { card: "summary_large_image", title, description, images },
   };
 }
 

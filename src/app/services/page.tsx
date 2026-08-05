@@ -6,11 +6,18 @@ import { contentRepository } from "@/lib/content";
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://ordiftstudios.com";
 
+const TITLE = "Services — Ordift Studios";
+const DESCRIPTION =
+  "Photography, videography, graphic design, branding, content, talent management and production — one connected creative system.";
+const CANONICAL = `${SITE_URL}/services`;
+const IMAGES = [`${SITE_URL}/opengraph-image`];
+
 export const metadata: Metadata = {
-  title: "Services — Ordift Studios",
-  description:
-    "Photography, videography, graphic design, branding, content, talent management and production — one connected creative system.",
-  alternates: { canonical: `${SITE_URL}/services` },
+  title: TITLE,
+  description: DESCRIPTION,
+  alternates: { canonical: CANONICAL },
+  openGraph: { title: TITLE, description: DESCRIPTION, url: CANONICAL, type: "website", images: IMAGES },
+  twitter: { card: "summary_large_image", title: TITLE, description: DESCRIPTION, images: IMAGES },
 };
 
 export default async function ServicesPage() {

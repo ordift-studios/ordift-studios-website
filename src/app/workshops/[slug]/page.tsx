@@ -36,10 +36,16 @@ export async function generateMetadata({
   const { slug } = await params;
   const workshop = await contentRepository.getWorkshopBySlug(slug);
   if (!workshop) return {};
+  const title = `${workshop.title} — Ordift Studios Workshops`;
+  const description = workshop.shortDescription;
+  const canonical = `${SITE_URL}/workshops/${workshop.slug}`;
+  const images = [`${SITE_URL}/opengraph-image`];
   return {
-    title: `${workshop.title} — Ordift Studios Workshops`,
-    description: workshop.shortDescription,
-    alternates: { canonical: `${SITE_URL}/workshops/${workshop.slug}` },
+    title,
+    description,
+    alternates: { canonical },
+    openGraph: { title, description, url: canonical, type: "website", images },
+    twitter: { card: "summary_large_image", title, description, images },
   };
 }
 

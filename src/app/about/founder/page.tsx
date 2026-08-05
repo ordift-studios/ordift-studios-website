@@ -13,10 +13,17 @@ import ResponsiveImage from "@/components/media/ResponsiveImage";
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://ordiftstudios.com";
 
+const TITLE = "Founder — Ordift Studios";
+const DESCRIPTION = "Myredlive Anim-Tetey, Founder and Creative Director of Ordift Studios.";
+const CANONICAL = `${SITE_URL}/about/founder`;
+const IMAGES = [`${SITE_URL}/opengraph-image`];
+
 export const metadata: Metadata = {
-  title: "Founder — Ordift Studios",
-  description: "Myredlive Anim-Tetey, Founder and Creative Director of Ordift Studios.",
-  alternates: { canonical: `${SITE_URL}/about/founder` },
+  title: TITLE,
+  description: DESCRIPTION,
+  alternates: { canonical: CANONICAL },
+  openGraph: { title: TITLE, description: DESCRIPTION, url: CANONICAL, type: "website", images: IMAGES },
+  twitter: { card: "summary_large_image", title: TITLE, description: DESCRIPTION, images: IMAGES },
 };
 
 export default async function FounderPage() {

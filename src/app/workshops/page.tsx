@@ -8,11 +8,18 @@ import { isPastWorkshop } from "@/lib/content/workshopHelpers";
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://ordiftstudios.com";
 
+const TITLE = "Workshops — Ordift Studios";
+const DESCRIPTION =
+  "Hands-on workshops from Ordift Studios — photography, filmmaking, branding and the business of creativity.";
+const CANONICAL = `${SITE_URL}/workshops`;
+const IMAGES = [`${SITE_URL}/opengraph-image`];
+
 export const metadata: Metadata = {
-  title: "Workshops — Ordift Studios",
-  description:
-    "Hands-on workshops from Ordift Studios — photography, filmmaking, branding and the business of creativity.",
-  alternates: { canonical: `${SITE_URL}/workshops` },
+  title: TITLE,
+  description: DESCRIPTION,
+  alternates: { canonical: CANONICAL },
+  openGraph: { title: TITLE, description: DESCRIPTION, url: CANONICAL, type: "website", images: IMAGES },
+  twitter: { card: "summary_large_image", title: TITLE, description: DESCRIPTION, images: IMAGES },
 };
 
 export default async function WorkshopsPage({

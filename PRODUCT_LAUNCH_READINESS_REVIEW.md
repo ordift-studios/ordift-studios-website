@@ -155,15 +155,15 @@ The site largely succeeds at communicating a premium, intentional creative house
 - [x] **C-2** — Resolve empty Journal/Workshops nav destinations. *Done 2026-08-05 via honest "Coming Soon" empty states — see `LAUNCH_READINESS_IMPLEMENTATION_PLAN.md` S1-T2. Full content population remains tracked separately as Sprint 4 / Phase 3.*
 
 ### Should Complete Soon After Launch
-- [ ] **H-1** — Surface the real project on the Photography department page.
-- [ ] **H-3** — Add a founder photo to `/about/founder`.
-- [ ] **H-4 / H-5** — Copy polish on the case study (grammar, duplicate caption).
-- [ ] **H-6** — Add canonical tags to the remaining 11 routes.
-- [ ] **H-7** — Add site-wide Organization/WebSite JSON-LD.
-- [ ] **H-8** — Replace the default social-share image with a proper 1200×630 branded asset.
-- [ ] **M-1** — Add `/about/founder` to the sitemap.
-- [ ] **M-2** — Add Content Creation and Production Services to the footer.
-- [ ] **H-2** — Hide or resolve the empty "Destination Weddings" filter option.
+- [x] **H-1** — Surface the real project on the Photography department page. *Done 2026-08-05 — see `LAUNCH_READINESS_IMPLEMENTATION_PLAN.md` S2-T1.*
+- [ ] **H-3** — Add a founder photo to `/about/founder`. *Blocked — needs a real photograph supplied; see `LAUNCH_READINESS_IMPLEMENTATION_PLAN.md` S2-T2.*
+- [x] **H-4 / H-5** — Copy polish on the case study (grammar, duplicate caption). *Done 2026-08-05 via production Sanity content edit — see `LAUNCH_READINESS_IMPLEMENTATION_PLAN.md` S2-T6.*
+- [x] **H-6** — Add canonical tags to the remaining 11 routes. *Done 2026-08-05 — see `LAUNCH_READINESS_IMPLEMENTATION_PLAN.md` S2-T3.*
+- [x] **H-7** — Add site-wide Organization/WebSite JSON-LD. *Done 2026-08-05 — see `LAUNCH_READINESS_IMPLEMENTATION_PLAN.md` S2-T4.*
+- [x] **H-8** — Replace the default social-share image with a proper 1200×630 branded asset. *Done 2026-08-05 via dynamic `opengraph-image.tsx`/`twitter-image.tsx` — see `LAUNCH_READINESS_IMPLEMENTATION_PLAN.md` S2-T5.*
+- [ ] **M-1** — Add `/about/founder` to the sitemap. *Sprint 3, not yet started.*
+- [ ] **M-2** — Add Content Creation and Production Services to the footer. *Sprint 3, not yet started.*
+- [x] **H-2** — Hide or resolve the empty "Destination Weddings" filter option. *Done 2026-08-05 — see `LAUNCH_READINESS_IMPLEMENTATION_PLAN.md` S2-T7.*
 
 ### Future Roadmap
 - **F-1** — Competitive benchmarking pass, timed to Phase 3 (Portfolio Population).
