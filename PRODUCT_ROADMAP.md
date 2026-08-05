@@ -346,6 +346,21 @@ Per major subsystem (Supabase, Sanity, Vercel, Redis rate-limiting, Google Sheet
 
 ---
 
+## Future Enhancements — Portfolio Presentation (backlog)
+
+**Established:** 2026-08-05, from the "Nice to Have" tier of the first Website Presentation Review (see `MILESTONES.md` for that review and the Critical/Recommended fixes shipped alongside it, commit `8fd72f9`). Unlike the version-scale items above, these are smaller, page-level polish items — logged here per explicit instruction rather than implemented immediately, so they aren't lost between now and full portfolio population.
+
+| Item | What it is | Complexity | Dependencies |
+|---|---|---|---|
+| Full-screen gallery lightbox | Click-to-expand viewer for Final Gallery / Behind the Scenes images, instead of the static grid only. Standard on photography portfolio sites. | Medium — new client component, keyboard nav (Esc/arrows), focus trapping for accessibility, touch gestures for mobile. | None — works with the existing `GalleryImage` shape. |
+| Richer JSON-LD structured data | Add `image`, `author`/`creator` (Ordift Studios as an Organization), `keywords`, and switch `dateCreated` from a bare year string to full ISO 8601 on portfolio project pages. | Low — additive fields to the existing `jsonLd` object in `src/app/work/[slug]/page.tsx`. | None. |
+| Gallery caption authoring guidance | The render-layer de-duplication shipped 2026-08-05 (Phase 2) stops the *symptom* (the same sentence repeating 5-7 times in a row); it doesn't address the underlying authoring habit. Worth a short note in `ADMIN_GUIDE.md`'s portfolio section once more projects are being entered, encouraging either genuinely unique per-image captions or leaving weaker shots uncaptioned. | Low — documentation only, no code. | None — informational, for whoever is populating future projects. |
+| Homepage hero: dedicated campaign visual | The homepage hero now borrows the first Featured project's image as a real interim visual (2026-08-05) rather than a placeholder. `homepage.heroImage` already exists as a schema field and takes priority the moment it's set — this line item is just "actually set it" once a proper signature campaign shot is chosen/shot, not new engineering work. | Low — content entry via Sanity Studio, no code change needed. | A chosen campaign visual, distinct from whichever project happens to be Featured at the time. |
+
+*Previous/Next project navigation was checked during this review and found already built (`src/app/work/[slug]/page.tsx`) — it renders nothing today only because there's a single published project; no backlog item needed.*
+
+---
+
 ## Vision 2030
 
 By 2030, Ordift Studios should have evolved from a creative-services website into a **comprehensive operating platform** for a multidisciplinary creative business — one system covering:

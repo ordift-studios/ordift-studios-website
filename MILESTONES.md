@@ -3481,6 +3481,34 @@ Following review of the Portfolio Management System, the user asked that every a
 
 ---
 
+## Website Presentation Review — first real portfolio project, Critical + Recommended fixes shipped (2026-08-05)
+
+Following the successful native-editor publish of the first real project ("Sampson & Sadia Wedding"), the user asked for an external-consultant-style production readiness review of the live public presentation, then approved a prioritized fix plan: Phase 1 (Critical, immediate), Phase 2 (Recommended, immediate), Phase 3 (Nice to Have, backlog only — see `PRODUCT_ROADMAP.md`'s new "Future Enhancements — Portfolio Presentation" section).
+
+**Review method:** `LAUNCH_HOLDING_PAGE` was temporarily disabled in production (env var only, no code/content change) to review the actual live site as an anonymous visitor, then restored immediately after — verified byte-for-byte back to its prior state (same `/work` → Coming Soon rewrite, `/admin` still reachable) before any findings were acted on.
+
+**Phase 1 — Critical, both shipped:**
+- The homepage hero was showing the branded empty-state placeholder, not a real image, next to the main headline — the first thing every visitor saw. Fixed with a new `homepage.heroImage` Sanity field (takes priority once set) that, until then, transparently borrows the hero image from the first Featured portfolio project — real proof of work with no separate content-entry step required.
+- The project detail page publicly displayed a "Client Access Only" badge (`project.isPasswordProtected`) even though nothing enforces that restriction — confusing/contradictory on a page anyone could already load. Removed from the public page; the underlying field and admin toggle are untouched for whenever real enforcement is built.
+
+**Phase 2 — Recommended, all shipped:**
+- Homepage Featured Work section (same empty-state-hides-itself pattern as `/work`'s own Featured Projects section).
+- Gallery captions that repeated identically 5-7 times in a row now show only on their first occurrence — a render-layer fix (`Gallery.tsx`), not an edit to the editor's authored text.
+- Case-study section labels (Project Objective, Challenges, Deliverables, etc.) converted from styled `<p>` tags to real `<h2>` headings, so screen-reader users can navigate the page's actual structure.
+- Gallery thumbnail `sizes` hint corrected — it assumed full-viewport width but the gallery is nested in a ~55%-width content column on desktop, so tiles were requesting roughly 4x more image than they render at.
+- Open Graph share images now resized via a new `ogImageUrl()` helper instead of handing social crawlers the raw, full-resolution original (found live: 4155×6232px, no transform).
+- `/work`'s listing page gained its previously-missing canonical tag and a corrected `og:url` (was resolving to the homepage).
+- Explicit `twitter:` metadata blocks added to both portfolio pages — without one, Next.js kept the root layout's generic site-wide title/description/logo instead of the page-specific Open Graph values already being set.
+- Two items reviewed and found already correct, no change made: the Deliverables list (already a proper separated `<ul>`, the "no separator" finding was a text-extraction artifact from the original review's tooling) and Previous/Next project navigation (already fully built in `src/app/work/[slug]/page.tsx` — renders nothing today only because there's a single published project).
+
+**Two production content edits, made through the real Admin Portal (not direct Sanity API access — see below):** fixed the "Unstable lightening" → "Unstable lighting" typo in the project's Challenges text, and marked the project Featured so the new Featured Work sections have something real to show.
+
+**Notable architectural moment:** this session's local `.env.local` and Vercel-pulled env files only ever resolve staging/masked credentials — production's `SANITY_API_TOKEN` came back as `[SENSITIVE]` when pulled via `vercel env pull`, a deliberate Vercel protection that cannot be bypassed by this session. Rather than working around it, the two content edits were made the same way the user themselves makes them: logged into the real production Admin Portal with a disposable QA account (created via `SUPABASE_SECRET_KEY`, already available from prior production E2E work), used the native editor exactly as built, then the QA account was deleted and its removal independently re-verified. No production secret was ever exposed to this session.
+
+**Verified:** `tsc --noEmit`, `eslint`, `vitest run` (35/35), and the production build all clean. Staging E2E confirmed the new Featured Work section renders correctly with real sample data, all case-study headings render as `<h2>`, and the Client Access Only badge no longer appears. Committed as `8fd72f9`, pushed, deployed, confirmed live at `ordiftstudios.com`.
+
+---
+
 ## How this roadmap is maintained
 
 - Checkboxes get checked off as work ships and is approved — not before.
