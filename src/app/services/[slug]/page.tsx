@@ -4,6 +4,7 @@ import NavBar from "@/components/NavBar";
 import Footer from "@/components/Footer";
 import Button from "@/components/Button";
 import MediaPlaceholder from "@/components/media/MediaPlaceholder";
+import PortfolioCard from "@/components/portfolio/PortfolioCard";
 import { contentRepository } from "@/lib/content";
 
 // Single dynamic route replacing 7 near-identical static pages (migrated
@@ -48,6 +49,11 @@ export default async function ServiceDetailPage({
   // to back whenever Featured Work renders (every non-isComingSoon
   // service).
   const showFeaturedWork = !service.isComingSoon;
+  const [allProjects, categories] = showFeaturedWork
+    ? await Promise.all([contentRepository.getPortfolioProjects(), contentRepository.getPortfolioCategories()])
+    : [[], []];
+  const categoryById = new Map(categories.map((c) => [c.id, c]));
+  const matchingProjects = allProjects.filter((p) => p.disciplines.includes(service.slug)).slice(0, 3);
   let lastBg: "white" | "offwhite" = showFeaturedWork ? "offwhite" : "white";
   const showAdditional = Boolean(service.additionalHeading && service.additionalItems.length > 0);
   const additionalBg = lastBg === "white" ? "offwhite" : "white";
@@ -111,9 +117,17 @@ export default async function ServiceDetailPage({
               A glimpse of what we deliver
             </h2>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 sm:gap-6">
-              <MediaPlaceholder aspectRatio="4/3" tone="light" label={service.name} className="rounded-xl" />
-              <MediaPlaceholder aspectRatio="4/3" tone="light" label={service.name} className="rounded-xl" />
-              <MediaPlaceholder aspectRatio="4/3" tone="light" label={service.name} className="rounded-xl" />
+              {matchingProjects.length > 0
+                ? matchingProjects.map((project) => (
+                    <PortfolioCard
+                      key={project.id}
+                      project={project}
+                      categories={project.categoryIds.map((id) => categoryById.get(id)!).filter(Boolean)}
+                    />
+                  ))
+                : [0, 1, 2].map((i) => (
+                    <MediaPlaceholder key={i} aspectRatio="4/3" tone="light" label={service.name} className="rounded-xl" />
+                  ))}
             </div>
           </div>
         </section>

@@ -66,6 +66,16 @@ export default async function PortfolioPage({
 
   const featured = allProjects.filter((p) => p.featured);
 
+  // Only offer category chips that can actually return a result under the
+  // current discipline filter — a chip with a guaranteed-empty result is a
+  // dead end, not a useful filter option.
+  const projectsForDiscipline = discipline
+    ? allProjects.filter((p) => p.disciplines.includes(discipline as PortfolioDiscipline))
+    : allProjects;
+  const visibleCategories = categories.filter((cat) =>
+    projectsForDiscipline.some((p) => p.categoryIds.includes(cat.id)),
+  );
+
   return (
     <main>
       <NavBar />
@@ -143,7 +153,7 @@ export default async function PortfolioPage({
             >
               All Categories
             </Link>
-            {categories.map((cat) => (
+            {visibleCategories.map((cat) => (
               <Link
                 key={cat.id}
                 href={buildHref({ discipline, category: cat.slug, q })}
