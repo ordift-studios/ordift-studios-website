@@ -11,6 +11,7 @@ import { DISCIPLINE_HREF, DISCIPLINE_LABEL } from "@/lib/content/portfolioHelper
 import MediaAsset from "@/components/media/MediaAsset";
 import Gallery from "@/components/media/Gallery";
 import BeforeAfterGallery from "@/components/media/BeforeAfterGallery";
+import { ogImageUrl } from "@/lib/media/ogImageUrl";
 
 export async function generateStaticParams() {
   const projects = await contentRepository.getPortfolioProjects();
@@ -26,16 +27,27 @@ export async function generateMetadata({
   const project = await contentRepository.getPortfolioProjectBySlug(slug);
   if (!project) return {};
   const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000";
+  const canonicalUrl = project.seo.canonicalUrl ?? `${siteUrl}/work/${project.slug}`;
+  const title = project.seo.metaTitle ?? `${project.title} — Ordift Studios Portfolio`;
+  const description = project.seo.metaDescription ?? project.story.slice(0, 160);
+  // Falls back to the project's own hero image when no dedicated OG image
+  // is set — most editors won't remember to fill in a separate
+  // social-share image, and the hero is already the right shot. Always
+  // resized for social platforms (see ogImageUrl.ts) rather than handed
+  // the raw source file.
+  const rawImage = project.seo.ogImageUrl ?? project.heroMedia.url;
+  const images = rawImage ? [ogImageUrl(rawImage)] : [];
   return {
-    title: project.seo.metaTitle ?? `${project.title} — Ordift Studios Portfolio`,
-    description: project.seo.metaDescription ?? project.story.slice(0, 160),
-    alternates: { canonical: project.seo.canonicalUrl ?? `${siteUrl}/work/${project.slug}` },
-    // Falls back to the project's own hero image when no dedicated OG
-    // image is set — most editors won't remember to fill in a separate
-    // social-share image, and the hero is already the right shot.
-    openGraph: {
-      images: [project.seo.ogImageUrl ?? project.heroMedia.url].filter((url): url is string => Boolean(url)),
-    },
+    title,
+    description,
+    alternates: { canonical: canonicalUrl },
+    openGraph: { title, description, url: canonicalUrl, images, type: "article" },
+    // Explicit twitter block — without one, Next.js keeps the root
+    // layout's site-wide default (generic title/description/logo) rather
+    // than inheriting these project-specific openGraph values. Found live
+    // during the 2026-08-05 review: a project shared on Twitter/X showed
+    // the site logo and default copy, not this project's photo and title.
+    twitter: { card: "summary_large_image", title, description, images },
   };
 }
 
@@ -120,11 +132,10 @@ export default async function PortfolioProjectPage({
                 Featured
               </span>
             )}
-            {project.isPasswordProtected && (
-              <span className="inline-block rounded-full px-3 py-1 font-sans text-caption font-semibold uppercase tracking-[0.1em] bg-white/10 text-white/80">
-                Client Access Only
-              </span>
-            )}
+            {/* project.isPasswordProtected intentionally not surfaced here — it's a
+                metadata flag with no real access enforcement behind it, so showing a
+                "Client Access Only" badge on a page anyone can already load was
+                confusing/contradictory. Revisit once real enforcement exists. */}
           </div>
         </div>
       </section>
@@ -140,9 +151,9 @@ export default async function PortfolioProjectPage({
 
             {NARRATIVE_SECTIONS.filter((section) => project[section.key]).map((section) => (
               <div key={section.key} className="mb-8">
-                <p className="font-serif font-medium text-card-title text-ordift-ink mb-2">
+                <h2 className="font-serif font-medium text-card-title text-ordift-ink mb-2">
                   {section.label}
-                </p>
+                </h2>
                 <p className="font-sans text-body-small text-ordift-ink-muted whitespace-pre-line">
                   {project[section.key]}
                 </p>
@@ -151,9 +162,9 @@ export default async function PortfolioProjectPage({
 
             {project.collaborators.length > 0 && (
               <div className="mb-8">
-                <p className="font-serif font-medium text-card-title text-ordift-ink mb-3">
+                <h2 className="font-serif font-medium text-card-title text-ordift-ink mb-3">
                   Collaborators
-                </p>
+                </h2>
                 <ul className="flex flex-wrap gap-x-6 gap-y-2">
                   {project.collaborators.map((c) => (
                     <li key={c.id} className="font-sans text-body-small text-ordift-ink">
@@ -167,9 +178,9 @@ export default async function PortfolioProjectPage({
 
             {project.deliverables.length > 0 && (
               <div className="mb-8">
-                <p className="font-serif font-medium text-card-title text-ordift-ink mb-3">
+                <h2 className="font-serif font-medium text-card-title text-ordift-ink mb-3">
                   Deliverables
-                </p>
+                </h2>
                 <ul className="flex flex-col gap-2">
                   {project.deliverables.map((item, i) => (
                     <li key={i} className="font-sans text-body-small text-ordift-ink flex gap-2">
@@ -183,9 +194,9 @@ export default async function PortfolioProjectPage({
 
             {project.results && (
               <div className="mb-8 rounded-lg bg-ordift-offwhite p-5">
-                <p className="font-serif font-medium text-card-title text-ordift-ink mb-2">
+                <h2 className="font-serif font-medium text-card-title text-ordift-ink mb-2">
                   Results &amp; Impact
-                </p>
+                </h2>
                 <p className="font-sans text-body-small text-ordift-ink-muted">{project.results}</p>
               </div>
             )}
@@ -194,7 +205,7 @@ export default async function PortfolioProjectPage({
               <div className="mb-8 grid grid-cols-1 sm:grid-cols-2 gap-6">
                 {project.awards.length > 0 && (
                   <div>
-                    <p className="font-serif font-medium text-card-title text-ordift-ink mb-3">Awards</p>
+                    <h2 className="font-serif font-medium text-card-title text-ordift-ink mb-3">Awards</h2>
                     <ul className="flex flex-col gap-2">
                       {project.awards.map((a) => (
                         <li key={a.id} className="font-sans text-body-small text-ordift-ink">
@@ -206,9 +217,9 @@ export default async function PortfolioProjectPage({
                 )}
                 {project.publications.length > 0 && (
                   <div>
-                    <p className="font-serif font-medium text-card-title text-ordift-ink mb-3">
+                    <h2 className="font-serif font-medium text-card-title text-ordift-ink mb-3">
                       Publications
-                    </p>
+                    </h2>
                     <ul className="flex flex-col gap-2">
                       {project.publications.map((p) =>
                         p.url ? (
@@ -236,16 +247,24 @@ export default async function PortfolioProjectPage({
 
             {project.gallery.length > 0 && (
               <div className="mb-8">
-                <p className="font-serif font-medium text-card-title text-ordift-ink mb-3">
+                <h2 className="font-serif font-medium text-card-title text-ordift-ink mb-3">
                   Final Gallery
-                </p>
-                <Gallery images={project.gallery} columns={3} />
+                </h2>
+                {/* Nested inside this page's ~55%-width content column (not full
+                    viewport width) from `lg` up — the default `sizes` guess assumes
+                    full-bleed and was requesting a much larger image than the tile
+                    actually renders at. Found during the 2026-08-05 review. */}
+                <Gallery
+                  images={project.gallery}
+                  columns={3}
+                  sizes="(min-width: 1024px) 18vw, (min-width: 640px) 33vw, 50vw"
+                />
               </div>
             )}
 
             {project.videos.length > 0 && (
               <div className="mb-8">
-                <p className="font-serif font-medium text-card-title text-ordift-ink mb-3">Videos</p>
+                <h2 className="font-serif font-medium text-card-title text-ordift-ink mb-3">Videos</h2>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   {project.videos.map((video, i) => (
                     <MediaAsset key={i} media={video} aspectRatio="16/9" className="rounded-lg" />
@@ -256,25 +275,29 @@ export default async function PortfolioProjectPage({
 
             {project.behindTheScenesGallery.length > 0 && (
               <div className="mb-8">
-                <p className="font-serif font-medium text-card-title text-ordift-ink mb-3">
+                <h2 className="font-serif font-medium text-card-title text-ordift-ink mb-3">
                   Behind the Scenes
-                </p>
-                <Gallery images={project.behindTheScenesGallery} columns={3} />
+                </h2>
+                <Gallery
+                  images={project.behindTheScenesGallery}
+                  columns={3}
+                  sizes="(min-width: 1024px) 18vw, (min-width: 640px) 33vw, 50vw"
+                />
               </div>
             )}
 
             {project.beforeAfterGallery.length > 0 && (
               <div className="mb-8">
-                <p className="font-serif font-medium text-card-title text-ordift-ink mb-3">
+                <h2 className="font-serif font-medium text-card-title text-ordift-ink mb-3">
                   Before &amp; After
-                </p>
+                </h2>
                 <BeforeAfterGallery pairs={project.beforeAfterGallery} />
               </div>
             )}
 
             {project.downloadableAssets.length > 0 && (
               <div className="mb-8">
-                <p className="font-serif font-medium text-card-title text-ordift-ink mb-3">Downloads</p>
+                <h2 className="font-serif font-medium text-card-title text-ordift-ink mb-3">Downloads</h2>
                 <ul className="flex flex-col gap-2">
                   {project.downloadableAssets.map((asset) => (
                     <li key={asset.id}>
@@ -292,9 +315,9 @@ export default async function PortfolioProjectPage({
 
             {testimonials.length > 0 && (
               <div className="mb-8">
-                <p className="font-serif font-medium text-card-title text-ordift-ink mb-3">
+                <h2 className="font-serif font-medium text-card-title text-ordift-ink mb-3">
                   What the client says
-                </p>
+                </h2>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   {testimonials.map((t) => (
                     <TestimonialCard key={t.id} testimonial={t} />

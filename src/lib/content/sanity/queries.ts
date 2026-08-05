@@ -274,6 +274,7 @@ export const siteSettingsQuery = `*[_type == "siteSettings"][0]{
 
 export const homePageQuery = `*[_type == "homepage"][0]{
   heroEyebrow, heroHeadline, heroSubheadline, heroPrimaryCta, heroSecondaryCta,
+  ${requiredMediaAssetFragment("heroImage", "heroImage")},
   whoWeAreEyebrow, whoWeAreBody,
   originalsEyebrow, originalsHeadline, originalsBody,
   process,

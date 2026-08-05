@@ -346,6 +346,7 @@ export type HomePage = {
   heroSubheadline: string;
   heroPrimaryCta: CtaButton;
   heroSecondaryCta: CtaButton;
+  heroImage: MediaAsset;
   whoWeAreEyebrow: string;
   whoWeAreBody: string;
   originalsEyebrow: string;

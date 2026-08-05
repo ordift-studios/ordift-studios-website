@@ -21,6 +21,14 @@ export default defineType({
     defineField({ name: "heroSubheadline", title: "Subheadline", type: "text", rows: 2, group: "hero" }),
     defineField({ name: "heroPrimaryCta", title: "Primary Button", type: "ctaButton", group: "hero" }),
     defineField({ name: "heroSecondaryCta", title: "Secondary Button", type: "ctaButton", group: "hero" }),
+    defineField({
+      name: "heroImage",
+      title: "Hero Image",
+      type: "mediaAsset",
+      group: "hero",
+      description:
+        "Signature campaign visual shown beside the hero headline. Optional — the branded placeholder shows until this is set.",
+    }),
 
     defineField({ name: "whoWeAreEyebrow", title: "Eyebrow", type: "string", group: "whoWeAre" }),
     defineField({ name: "whoWeAreBody", title: "Body", type: "text", rows: 4, group: "whoWeAre" }),

@@ -7,10 +7,21 @@ import { contentRepository } from "@/lib/content";
 import { DISCIPLINE_LABEL, matchesSearch } from "@/lib/content/portfolioHelpers";
 import type { PortfolioDiscipline } from "@/lib/content/types";
 
+const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://ordiftstudios.com";
+const PAGE_TITLE = "Portfolio — Ordift Studios";
+const PAGE_DESCRIPTION =
+  "Selected work from Ordift Studios across photography, videography, branding, design and content.";
+
 export const metadata: Metadata = {
-  title: "Portfolio — Ordift Studios",
-  description:
-    "Selected work from Ordift Studios across photography, videography, branding, design and content.",
+  title: PAGE_TITLE,
+  description: PAGE_DESCRIPTION,
+  // Previously missing entirely — found live during the 2026-08-05
+  // review: this page had no canonical tag and its Open Graph fields
+  // silently fell back to the root layout's homepage URL/copy instead of
+  // its own.
+  alternates: { canonical: `${SITE_URL}/work` },
+  openGraph: { title: PAGE_TITLE, description: PAGE_DESCRIPTION, url: `${SITE_URL}/work` },
+  twitter: { card: "summary_large_image", title: PAGE_TITLE, description: PAGE_DESCRIPTION },
 };
 
 const DISCIPLINE_ORDER: PortfolioDiscipline[] = [

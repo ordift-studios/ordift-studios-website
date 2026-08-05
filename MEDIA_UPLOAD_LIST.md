@@ -18,7 +18,7 @@ Three genuinely different situations show up below, and the **Status** column te
 
 | Section | Type | Orientation | Aspect / Dimensions | Format | Suggested subject | Status |
 |---|---|---|---|---|---|---|
-| Hero visual | Single image or video | Portrait | 4:5, min. 1600×2000px | JPG/PNG (photo) or MP4 H.264 (video) | Signature studio/shoot moment that captures "photography, film, design, branding, content and talent as one system" | 🎨 Placeholder in place |
+| Hero visual | Single image or video | Portrait | 4:5, min. 1600×2000px | JPG/PNG (photo) or MP4 H.264 (video) | Signature studio/shoot moment that captures "photography, film, design, branding, content and talent as one system" | ✅ Ready — schema field exists (`homepage.heroImage`) and renders; currently borrowing the first Featured portfolio project's hero image as a real interim visual (2026-08-05) until a dedicated campaign shot is set |
 | Department grid thumbnails (4 cards: Photography, Videography, Design, Branding) | 4 images, one per department | Landscape | 4:3, min. 1200×900px | JPG/PNG | One representative shot per department/discipline | 🎨 Placeholder in place |
 
 ## About (`/about`)
