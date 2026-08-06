@@ -8,18 +8,19 @@ import type { LegalPageSlug } from "@/lib/content/types";
 // file) auto-generates /sitemap.xml with zero extra config.
 const LEGAL_SLUGS: LegalPageSlug[] = ["privacy", "terms", "cookies", "booking"];
 
-const STATIC_ROUTES = ["", "/about", "/services", "/work", "/workshops", "/journal", "/book"];
+const STATIC_ROUTES = ["", "/about", "/about/founder", "/services", "/work", "/workshops", "/journal", "/book"];
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "https://ordiftstudios.com";
   const now = new Date();
 
-  const [services, portfolioProjects, journalPosts, workshops, instructors] = await Promise.all([
+  const [services, portfolioProjects, journalPosts, workshops, instructors, authors] = await Promise.all([
     contentRepository.getServices(),
     contentRepository.getPortfolioProjects(),
     contentRepository.getJournalPosts(),
     contentRepository.getWorkshops(),
     contentRepository.getInstructors(),
+    contentRepository.getAuthors(),
   ]);
 
   const entries: MetadataRoute.Sitemap = [
@@ -37,6 +38,10 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     ...workshops.map((w) => ({ url: `${siteUrl}/workshops/${w.slug}`, lastModified: now })),
     ...instructors.map((i) => ({
       url: `${siteUrl}/workshops/instructors/${i.slug}`,
+      lastModified: now,
+    })),
+    ...authors.map((a) => ({
+      url: `${siteUrl}/journal/authors/${a.slug}`,
       lastModified: now,
     })),
   ];
