@@ -18,7 +18,7 @@ Ordift Studios is a multidisciplinary creative house's marketing site, client po
 - **Admin Platform:** a custom `/admin` surface (server-side auth-gated in its layout, not client-hidden) covering enquiries, bookings, content, users, portfolio management (with a native editor plus Sanity Studio access), reporting, and settings.
 - **Client/Collaborator Portal:** `/portal/**`, role-routed, covering project workspaces, deliverables, requests, and workshop registrations.
 - **Forms & Data Durability:** Contact/Book and Workshop Registration write to Supabase as the primary store, with best-effort sync to Google Sheets and email notification (Resend) as a durability/visibility layer — failures are logged (`sheet_sync_failures`), not silently dropped.
-- **Middleware (`src/proxy.ts`):** gates staging behind Basic Auth (fails closed if unconfigured), gates the whole public site behind the holding page when `LAUNCH_HOLDING_PAGE=true` (with an allowlist for `/admin`, `/portal`, `/studio`, `/api`, `/robots.txt`, `/sitemap.xml`), and handles the `www` → apex redirect.
+- **Middleware (`src/proxy.ts`):** gates staging behind Basic Auth (fails closed if unconfigured), gates the whole public site behind the holding page when `LAUNCH_HOLDING_PAGE=true` (with an allowlist for `/admin`, `/portal`, `/studio`, `/api`, `/robots.txt`, `/sitemap.xml`), and handles the `www` → apex redirect. **Admin preview bypass (added 2026-08-06, see §4 below):** while the holding page is active, an authenticated `staff`/`admin`/`super_admin` session (the same Supabase session that already gates `/admin` — no separate password or cookie) skips the `/coming-soon` rewrite, so the team can review the real production site/content while it stays hidden from everyone else. Bypassed responses carry `X-Robots-Tag: noindex, nofollow` as defense-in-depth. A reusable `PreviewOnLiveSiteButton` component (`src/components/admin/`) opens the corresponding public page in one click from an Admin Platform entity page — wired into Portfolio today, intended to extend to other content types as they get native admin editing surfaces.
 - **Rate limiting:** Upstash Redis (KV) backed, with an in-memory fallback for local dev.
 - **Security:** Cloudflare Turnstile on public forms and portal auth; standard security headers (`X-Frame-Options`, `X-Content-Type-Options`, `Referrer-Policy`, `Permissions-Policy`); HSTS and CSP deliberately not yet added (tracked, not blocking).
 
@@ -31,6 +31,8 @@ Ordift Studios is a multidisciplinary creative house's marketing site, client po
 | **Sprint 3** | Final High-severity findings + Medium reassessment | Fixed a `Workshop` TypeScript type gap that was silently discarding editor-authored SEO input; added branded 404/error boundaries (previously Next's bare defaults); closed two sitemap gaps; added `Event`/`Service` structured data to Workshop/Service pages; fixed a real accessibility gap (empty `alt=""` on client deliverable thumbnails); closed out footer content parity across both Sanity datasets, surfacing and resolving a genuine dataset-configuration discovery along the way. |
 
 Full task-by-task detail (Objective, Effort, Risk, Dependencies, Acceptance Criteria, Validation) lives in `LAUNCH_READINESS_IMPLEMENTATION_PLAN.md`.
+
+**Post-Sprint-3 (2026-08-06):** while continuing to upload portfolio content behind the holding page, three small additions landed: (1) the admin preview bypass described in §2, letting you review the real production deployment without taking the holding page down; (2) a reusable "Preview on Live Site" action in the Admin Platform; (3) a refinement to Portfolio's publish-readiness check — alt text no longer blocks submit/publish for whoever holds the Portfolio `publish` capability (currently `admin`/`super_admin`), while it stays mandatory for contributors who can only submit — plus a new internal-only "Production Notes" field on gallery images (technical/creative context for reviewers, never public, never indexed). See `src/lib/admin/portfolioValidation.ts` and `src/sanity/schemaTypes/objects/galleryImage.ts`.
 
 ## 4. Outstanding Backlog
 
@@ -56,6 +58,11 @@ Full task-by-task detail (Objective, Effort, Risk, Dependencies, Acceptance Crit
 - Fix remaining raw `<img>` tags in admin-only surfaces
 - Extend `prefers-reduced-motion` to hover/transition animations
 - Make Turnstile fail closed instead of open when misconfigured
+- Sanity Draft Mode + Presentation tool — preview an *unpublished* document edit on its real page URL, not just published content (today's admin preview bypass only shows published content); would use Next.js `draftMode()` + a perspective-aware Sanity client
+- Extend the "Preview on Live Site" pattern + Portfolio's workflow engine (`src/lib/workflow/`, already entity-agnostic in its DB schema) to Journal/Services/About once those get native Admin Platform editing surfaces
+- Content review/health dashboard (`/admin/content-health`): draft/pending/missing-SEO/missing-alt-text visibility across content types
+- Additional RBAC role slugs (Editor/Content Manager/Writer/Marketing/QA Reviewer) with their own capability matrices, once real second users beyond the founder need scoped access
+- 2FA (Supabase Auth's built-in TOTP MFA), session/device management UI, login IP logging, brute-force monitoring on `/portal/login` — all flagged during this addition's design discussion, none built yet
 
 ## 5. Rollback Procedures
 

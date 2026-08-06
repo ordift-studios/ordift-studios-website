@@ -301,6 +301,16 @@
 - **Pay-down trigger:** if/when `operational_title_id` (or a dedicated department lookup table) becomes the actual source of truth for department/function, update `resolveActorIdentities()`'s single query to match — every audit display downstream picks it up automatically, no other file changes needed.
 - **Status:** Open, low priority.
 
+### TD-029 — No functional Portfolio workflow exists for `contractor`-role accounts, despite permission-layer scaffolding suggesting one does
+
+- **Category:** Access Model / Feature Gap
+- **Severity:** Medium
+- **What:** discovered while verifying the admin holding-page bypass (2026-08-06). `PORTFOLIO_CAPABILITIES` (`src/lib/admin/portfolioPermissions.ts`) grants `contractor` the capabilities `upload`, `edit_own`, `submit` — implying contractors can upload images, edit their own submissions, and submit for review. In practice, none of this is reachable: `/admin/**` redirects any non-`staff`/`admin`/`super_admin` account straight to `/portal` at the layout level (`src/app/admin/layout.tsx`), before the request ever reaches the portfolio-specific capability checks. `/portal/collaborator` (the actual landing surface for `contractor` accounts, per `primaryPortalPath()` in `src/lib/portal/roles.ts`) only handles `enquiry`/`workshop` project kinds (`src/lib/portal/collaboratorData.ts`'s `ProjectKind` type) — Portfolio was never wired into it. Additionally, `isAssignedToProject()` (`src/lib/admin/portfolioPermissions.ts`) — the function that's supposed to scope a contractor to only their assigned projects — is dead code with zero call sites; the "Assigned Collaborators" section on `/admin/portfolio/[id]` (which only `staff`/`admin`/`super_admin` can even view) lets an admin assign a contractor to a project, but nothing then grants that contractor anywhere to act on it.
+- **Why not fixed now:** out of scope for the admin preview-bypass work that surfaced it — building a real contractor Portfolio workflow (assigned-project listing, image upload, mandatory Alt Text, the new Production Notes field, submit-for-review, explicitly no publish authority) is a meaningfully sized feature in its own right, not a bug fix, and was explicitly descoped by the project owner from the current task.
+- **Current impact:** the `contractor` role's Portfolio capabilities are currently inert — granting `upload`/`edit_own`/`submit` to a contractor account today has no effect, since no route exists for them to exercise it. Not a security issue (nothing is under-protected — if anything, contractors are more restricted than the permission matrix implies), but a functionality gap if the business intends to onboard photographers/contributors this way.
+- **Pay-down trigger:** when a real contractor/photographer needs to submit portfolio work directly, rather than via a staff/admin account uploading on their behalf. Design should cover: assigned-project access (finally wiring up `isAssignedToProject`/`workflow_assignments`), image upload reusing the existing compression/upload pipeline, mandatory Alt Text (no `publish`-capability exemption — contractors should never get the skip), the new Production Notes field for photographer context, and a submit-for-review action with no direct publish authority.
+- **Status:** Open, not scheduled. Also logged in `PRODUCT_ROADMAP.md`.
+
 ---
 
 ## Adding new entries

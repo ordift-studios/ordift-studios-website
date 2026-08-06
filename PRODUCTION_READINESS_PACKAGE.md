@@ -93,3 +93,7 @@ No Critical or High risks remain open.
 ## 9. Recommendation
 
 Sprint 1–3 work is complete, internally consistent, and verified. **No further engineering work is required before deployment can be authorized**, pending your review of this package and the companion Release Candidate / Go-No-Go audit below. See that document for the platform-wide final assessment before you make the deployment call.
+
+## 10. Addendum — Admin Preview Bypass (2026-08-06, post-Sprint-3)
+
+Sprint 3 shipped and was deployed to production. While you continue publishing portfolio content behind `LAUNCH_HOLDING_PAGE`, a small follow-on change was implemented and verified: an authenticated `staff`/`admin`/`super_admin` session now bypasses the holding page on the real production routes (no new password, no new cookie — reuses the existing Supabase session/role system), plus a one-click "Preview on Live Site" action on Portfolio Projects in the Admin Platform, plus a Portfolio publish-readiness refinement (Alt Text no longer blocks whoever holds the `publish` capability; a new internal-only "Production Notes" field on gallery images). Full detail: `LAUNCH_BINDER.md` §2 and §4. `npx tsc --noEmit`, `npm run lint`, and `npm run build` all pass clean; local behavior verified (unauthenticated → Coming Soon; `/admin` still gates through `/portal/login` as before, no regression). This work is implemented and verified but **not yet committed or deployed** — awaiting your review before it goes further, per your standing instruction.

@@ -65,6 +65,19 @@ These stay unscheduled — not committed to a version — until picked up alongs
 
 ---
 
+## Admin Preview Bypass — future enhancements (deferred 2026-08-06)
+
+Not a numbered version — items explicitly scoped out when the minimal admin holding-page bypass + "Preview on Live Site" action (`LAUNCH_BINDER.md` §2/§4) was approved and built. The approved version reuses the existing Supabase session/role system and shows only published content; everything below was deliberately deferred rather than bundled in, to keep that change small.
+
+- **Sanity Draft Mode + Presentation tool** — preview an *unpublished* document edit on its real page URL (today's bypass only shows already-published content). Would add Next.js `draftMode()`, a perspective-aware Sanity client, and `@sanity/presentation` in Studio. No draft-preview infrastructure exists in the codebase today — this would be net-new, not an extension of something partial.
+- **Extend "Preview on Live Site" + the workflow engine to other content types** — `src/lib/workflow/`'s DB schema (`workflow_statuses`/`workflow_assignments`, migration 0023) is already entity-agnostic; only `WorkflowEntityType` and a `<entity>Permissions.ts` need adding per type. Do this once Journal/Services/About get native Admin Platform editing surfaces (they're Studio-only today, see `src/app/admin/content/page.tsx`).
+- **Content review/health dashboard** (`/admin/content-health`) — draft/pending/scheduled/published counts, missing-SEO/missing-alt-text/missing-featured-image warnings, duplicate slugs — a new module following the existing `/admin/portfolio`-style convention.
+- **Additional RBAC role slugs** (Editor, Content Manager, Writer, Marketing, QA Reviewer) with their own capability-matrix rows (`src/lib/admin/portfolioPermissions.ts` is the existing template) — only worth building once real second users beyond the founder need scoped access.
+- **Session/security hardening**: 2FA via Supabase Auth's built-in TOTP MFA, a device/session management UI, login IP logging + notifications, brute-force monitoring on `/portal/login` (today's `checkRateLimit` only guards form-submission routes).
+- **A real Contributor/Photographer Portfolio workflow** — discovered as a gap (not built) while verifying this addition, logged in full as `TECHNICAL_DEBT_REGISTER.md` TD-029. Today, `contractor`-role accounts cannot access any Portfolio submission or image-editing workflow: `/portal/collaborator` only supports `enquiry`/`workshop` project kinds, and `/admin/**` redirects contractors away before they'd ever reach the portfolio-specific checks — so the `upload`/`edit_own`/`submit` capabilities already defined for `contractor` in `PORTFOLIO_CAPABILITIES`, and the `isAssignedToProject()`/`workflow_assignments` scoping model, are currently inert. A future contractor Portfolio workflow should be designed separately and should include: assigned-project access, image uploads, mandatory Alt Text (no `publish`-capability exemption), the Production Notes field, submission for review, and explicitly no direct publishing authority. Not scheduled — revisit when the business needs contractors submitting portfolio work directly rather than via staff/admin on their behalf.
+
+---
+
 ## Version 1.0.5 — Platform Foundation Hardening
 
 **Approved:** 2026-07-30, inserted ahead of Version 1.1 at the user's direction, after a CTO-level current-state assessment surfaced a gap no feature checklist had caught: zero automated tests, no CI pipeline, no production error monitoring anywhere in the codebase (verified directly — no `.test.ts`/`.spec.ts` files, no `.github/workflows`, no Sentry/analytics dependency in `package.json`).
