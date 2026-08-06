@@ -142,6 +142,8 @@ export const FOOTER_SETTINGS: FooterSettings = {
         { label: "Videography", href: "/services/videography" },
         { label: "Graphic Design", href: "/services/graphic-design" },
         { label: "Branding & Strategy", href: "/services/branding" },
+        { label: "Content Creation", href: "/services/content-creation" },
+        { label: "Production Services", href: "/services/production" },
       ],
     },
     {
