@@ -69,8 +69,22 @@ export default async function ServiceDetailPage({
   if (showAdditional) lastBg = additionalBg;
   const ctaBg = lastBg === "white" ? "offwhite" : "white";
 
+  const jsonLd = {
+    "@context": "https://schema.org",
+    "@type": "Service",
+    name: service.name,
+    description: service.seo.metaDescription ?? service.summaryDescription,
+    url: `${SITE_URL}/services/${service.slug}`,
+    provider: { "@type": "Organization", name: "Ordift Studios", url: SITE_URL },
+    ...(service.offerings.length > 0 ? { hasOfferCatalog: { "@type": "OfferCatalog", name: service.offeringsHeadline, itemListElement: service.offerings.map((o) => ({ "@type": "Offer", itemOffered: { "@type": "Service", name: o } })) } } : {}),
+  };
+
   return (
     <main>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+      />
       <NavBar />
 
       <section className="bg-ordift-navy-950 text-white px-4 sm:px-8 py-16 sm:py-24">

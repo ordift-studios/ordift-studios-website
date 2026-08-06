@@ -36,10 +36,10 @@ export async function generateMetadata({
   const { slug } = await params;
   const workshop = await contentRepository.getWorkshopBySlug(slug);
   if (!workshop) return {};
-  const title = `${workshop.title} — Ordift Studios Workshops`;
-  const description = workshop.shortDescription;
-  const canonical = `${SITE_URL}/workshops/${workshop.slug}`;
-  const images = [`${SITE_URL}/opengraph-image`];
+  const title = workshop.seo.metaTitle ?? `${workshop.title} — Ordift Studios Workshops`;
+  const description = workshop.seo.metaDescription ?? workshop.shortDescription;
+  const canonical = workshop.seo.canonicalUrl ?? `${SITE_URL}/workshops/${workshop.slug}`;
+  const images = [workshop.seo.ogImageUrl ?? `${SITE_URL}/opengraph-image`];
   return {
     title,
     description,
@@ -77,8 +77,36 @@ export default async function WorkshopDetailPage({
   const venueById = new Map(venues.map((v) => [v.id, v]));
   const categoryById = new Map(categories.map((c) => [c.id, c]));
 
+  const eventAttendanceMode = !venue
+    ? "https://schema.org/MixedEventAttendanceMode"
+    : venue.format === "online"
+      ? "https://schema.org/OnlineEventAttendanceMode"
+      : venue.format === "hybrid"
+        ? "https://schema.org/MixedEventAttendanceMode"
+        : "https://schema.org/OfflineEventAttendanceMode";
+  const jsonLd = {
+    "@context": "https://schema.org",
+    "@type": "Event",
+    name: workshop.title,
+    description: workshop.seo.metaDescription ?? workshop.shortDescription,
+    url: `${SITE_URL}/workshops/${workshop.slug}`,
+    ...(workshop.startDate ? { startDate: workshop.startDate } : {}),
+    ...(workshop.endDate ? { endDate: workshop.endDate } : {}),
+    eventAttendanceMode,
+    eventStatus: "https://schema.org/EventScheduled",
+    organizer: { "@type": "Organization", name: "Ordift Studios", url: SITE_URL },
+    location:
+      venue && venue.format !== "online"
+        ? { "@type": "Place", name: venue.name, ...(venue.addressLine ? { address: venue.addressLine } : {}) }
+        : { "@type": "VirtualLocation", url: `${SITE_URL}/workshops/${workshop.slug}` },
+  };
+
   return (
     <main>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+      />
       <NavBar />
 
       <section className="bg-ordift-navy-950 text-white px-4 sm:px-8 py-16 sm:py-20">

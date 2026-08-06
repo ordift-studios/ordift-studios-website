@@ -13,7 +13,7 @@ type ViewMode = "grid" | "list";
 function Thumbnail({ deliverable, className }: { deliverable: ClientDeliverable; className: string }) {
   if (deliverable.thumbnailUrl) {
     // eslint-disable-next-line @next/next/no-img-element -- staff-provided external reference links, not a Next-managed asset
-    return <img src={deliverable.thumbnailUrl} alt="" className={`${className} object-cover`} />;
+    return <img src={deliverable.thumbnailUrl} alt={deliverable.title} className={`${className} object-cover`} />;
   }
   return (
     <div className={`${className} bg-ordift-offwhite flex items-center justify-center`}>
