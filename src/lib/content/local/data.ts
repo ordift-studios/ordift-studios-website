@@ -185,6 +185,13 @@ export const WORKSHOPS: Workshop[] = [
     isOnlineAttendancePossible: false,
     hasRecordedSession: false,
     isMembersOnly: false,
+    seo: {
+      metaTitle: "[SAMPLE] Portrait Lighting Workshop — Ordift Studios",
+      metaDescription:
+        "[SAMPLE] Editor-authored SEO override, demonstrating that Workshop.seo is fetched and used rather than falling back to shortDescription.",
+      ogImageUrl: null,
+      canonicalUrl: null,
+    },
   },
   {
     id: "sample-workshop-2",
@@ -239,6 +246,7 @@ export const WORKSHOPS: Workshop[] = [
     isOnlineAttendancePossible: true,
     hasRecordedSession: true,
     isMembersOnly: false,
+    seo: { metaTitle: null, metaDescription: null, ogImageUrl: null, canonicalUrl: null },
   },
   {
     id: "sample-workshop-3",
@@ -271,6 +279,7 @@ export const WORKSHOPS: Workshop[] = [
     isOnlineAttendancePossible: false,
     hasRecordedSession: false,
     isMembersOnly: false,
+    seo: { metaTitle: null, metaDescription: null, ogImageUrl: null, canonicalUrl: null },
   },
   {
     id: "sample-workshop-4",
@@ -303,5 +312,6 @@ export const WORKSHOPS: Workshop[] = [
     isOnlineAttendancePossible: false,
     hasRecordedSession: false,
     isMembersOnly: true,
+    seo: { metaTitle: null, metaDescription: null, ogImageUrl: null, canonicalUrl: null },
   },
 ];

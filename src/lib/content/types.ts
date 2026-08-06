@@ -127,6 +127,7 @@ export type Workshop = {
   isOnlineAttendancePossible: boolean; // true if a virtual seat exists alongside/instead of in-person
   hasRecordedSession: boolean; // true if a recording is made available after the fact
   isMembersOnly: boolean;
+  seo: SeoFields;
 };
 
 // --- Portfolio (Version 1.1) ---
