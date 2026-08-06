@@ -28,9 +28,10 @@ export async function updateSession(request: NextRequest) {
       return {
         response: new NextResponse("The Client Portal is not configured yet.", { status: 503 }),
         user: null,
+        supabase: null,
       };
     }
-    return { response, user: null };
+    return { response, user: null, supabase: null };
   }
 
   const supabase = createServerClient(
@@ -80,8 +81,8 @@ export async function updateSession(request: NextRequest) {
   if (isPortalRoute && !isPublicAuthRoute && !user) {
     const loginUrl = new URL("/portal/login", request.url);
     loginUrl.searchParams.set("next", request.nextUrl.pathname);
-    return { response: NextResponse.redirect(loginUrl), user };
+    return { response: NextResponse.redirect(loginUrl), user, supabase };
   }
 
-  return { response, user };
+  return { response, user, supabase };
 }

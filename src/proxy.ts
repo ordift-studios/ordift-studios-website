@@ -4,6 +4,11 @@ import { updateSession } from "@/lib/supabase/middleware";
 
 const LOCAL_HOSTNAMES = new Set(["localhost", "127.0.0.1", "::1"]);
 
+// Roles allowed to bypass the holding page below and see the real
+// production site while it's gated — the same roles that already gate
+// /admin (see isStaffOrAdmin in src/lib/portal/roles.ts).
+const HOLDING_PAGE_BYPASS_ROLES = new Set(["staff", "admin", "super_admin"]);
+
 /**
  * Staging access gate (Plan Part J). Next.js 16 renamed `middleware.ts` to
  * `proxy.ts` — this is that file, not legacy middleware.
@@ -64,6 +69,14 @@ export async function proxy(request: NextRequest) {
     return NextResponse.redirect(url, 308);
   }
 
+  // Session refresh (Version 1.3) — also redirects unauthenticated
+  // /portal/** requests to /portal/login. Runs after the staging gate
+  // above so a blocked staging visitor never even reaches this check.
+  // Moved ahead of the holding-page block below (2026-08-06) so that
+  // block can check the caller's session before deciding whether to
+  // rewrite — see HOLDING_PAGE_BYPASS_ROLES.
+  const { response, user, supabase } = await updateSession(request);
+
   // Temporary launch holding page (Milestone 0, Phase 3). When
   // LAUNCH_HOLDING_PAGE=true, every public route rewrites to
   // /coming-soon instead of the real site — used only for the window
@@ -78,15 +91,45 @@ export async function proxy(request: NextRequest) {
     process.env.LAUNCH_HOLDING_PAGE === "true" &&
     !HOLDING_PAGE_ALLOWLIST.some((path) => request.nextUrl.pathname.startsWith(path))
   ) {
+    // Admin preview bypass (2026-08-06): an authenticated staff/admin/
+    // super_admin session lets the real site through instead of
+    // /coming-soon, so the team can review the actual production
+    // deployment while it stays hidden from everyone else. Reuses the
+    // existing Supabase session + roles table — no separate password,
+    // no new cookie. Fails closed on any error, missing session, or
+    // unrecognized role: same /coming-soon rewrite as today.
+    let authorized = false;
+    if (user && supabase) {
+      try {
+        const [{ data: profile }, { data: userRoles }] = await Promise.all([
+          supabase.from("profiles").select("access_status, access_expires_at").eq("id", user.id).maybeSingle(),
+          supabase.from("user_roles").select("roles(slug)").eq("user_id", user.id),
+        ]);
+
+        const accessStatus = profile?.access_status ?? "active";
+        const expired = Boolean(profile?.access_expires_at && new Date(profile.access_expires_at) <= new Date());
+
+        if (accessStatus === "active" && !expired) {
+          const roleSlugs = (userRoles ?? [])
+            .map((r) => (r.roles as unknown as { slug: string } | null)?.slug)
+            .filter((slug): slug is string => Boolean(slug));
+          authorized = roleSlugs.some((slug) => HOLDING_PAGE_BYPASS_ROLES.has(slug));
+        }
+      } catch (err) {
+        console.error("[proxy] Holding-page bypass check failed, falling back to Coming Soon", err);
+        authorized = false;
+      }
+    }
+
+    if (authorized) {
+      response.headers.set("X-Robots-Tag", "noindex, nofollow");
+      return response;
+    }
+
     const url = request.nextUrl.clone();
     url.pathname = "/coming-soon";
     return NextResponse.rewrite(url);
   }
-
-  // Session refresh (Version 1.3) — also redirects unauthenticated
-  // /portal/** requests to /portal/login. Runs after the staging gate
-  // above so a blocked staging visitor never even reaches this check.
-  const { response } = await updateSession(request);
 
   if (process.env.SITE_ENV === "staging" && !LOCAL_HOSTNAMES.has(request.nextUrl.hostname)) {
     response.headers.set("X-Robots-Tag", "noindex, nofollow, noarchive");
