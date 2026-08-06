@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/portal/roles";
-import { canCreatePortfolioProjectsNatively } from "@/lib/admin/portfolioPermissions";
+import { canCreatePortfolioProjectsNatively, PORTFOLIO_CAPABILITIES } from "@/lib/admin/portfolioPermissions";
+import { hasCapability } from "@/lib/workflow/engine";
 import {
   getAllPortfolioProjectsAdmin,
   getPortfolioCategoriesAdmin,
@@ -40,6 +41,7 @@ export default async function EditPortfolioProjectPage({ params }: { params: Pro
       collections={collections}
       testimonials={testimonials}
       otherProjects={projects.filter((p) => p.id !== id).map((p) => ({ id: p.id, title: p.title }))}
+      canPublish={hasCapability(user, PORTFOLIO_CAPABILITIES, "publish")}
     />
   );
 }

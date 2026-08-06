@@ -22,6 +22,7 @@ import {
   removeCollaboratorAction,
 } from "../actions";
 import DeleteProjectButton from "../DeleteProjectButton";
+import PreviewOnLiveSiteButton from "@/components/admin/PreviewOnLiveSiteButton";
 
 export const metadata: Metadata = {
   title: "Project — Portfolio — Ordift Studios Admin",
@@ -89,7 +90,8 @@ export default async function AdminPortfolioProjectPage({ params }: { params: Pr
   const canFeature = canToggleFeatured(status, granted);
   const canEditNatively = canCreatePortfolioProjectsNatively(user);
   const canDelete = hasCapability(user, PORTFOLIO_CAPABILITIES, "delete");
-  const readiness = getPublishReadiness(project);
+  const canPublish = hasCapability(user, PORTFOLIO_CAPABILITIES, "publish");
+  const readiness = getPublishReadiness(project, { skipAltTextCheck: canPublish });
 
   return (
     <div className="space-y-10 max-w-3xl">
@@ -121,6 +123,7 @@ export default async function AdminPortfolioProjectPage({ params }: { params: Pr
             >
               Open Advanced Editor in Sanity Studio →
             </a>
+            <PreviewOnLiveSiteButton publicPath={`/work/${project.slug}`} />
           </div>
         </div>
       </div>

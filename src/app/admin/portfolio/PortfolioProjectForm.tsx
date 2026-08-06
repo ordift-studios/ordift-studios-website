@@ -42,6 +42,10 @@ type GalleryItem = {
   url: string | null;
   alt: string;
   caption: string;
+  // Internal-only — never sent to public-facing queries/pages. See
+  // src/sanity/schemaTypes/objects/galleryImage.ts and the deliberate
+  // omission from galleryImageFragment in groqFragments.ts.
+  productionNotes: string;
   hotspotX: number;
   hotspotY: number;
   uploading: boolean;
@@ -203,6 +207,7 @@ function galleryField(items: GalleryItem[]) {
       _key: i.key,
       alt: i.alt,
       caption: i.caption || undefined,
+      productionNotes: i.productionNotes || undefined,
       image: {
         _type: "image",
         asset: { _type: "reference", _ref: i.assetId },
@@ -300,6 +305,7 @@ export default function PortfolioProjectForm({
   collections,
   testimonials,
   otherProjects,
+  canPublish,
 }: {
   mode: "create" | "edit";
   projectId?: string;
@@ -308,6 +314,11 @@ export default function PortfolioProjectForm({
   collections: Collection[];
   testimonials: Testimonial[];
   otherProjects: { id: string; title: string }[];
+  // Whoever holds the Portfolio "publish" capability (currently
+  // super_admin/admin) never gets blocked by missing alt text here —
+  // mirrors the server-side check in actions.ts so this live preview
+  // never shows a false blocker. See src/lib/admin/portfolioValidation.ts.
+  canPublish: boolean;
 }) {
   const router = useRouter();
   const [projectId, setProjectId] = useState<string | null>(initialProjectId ?? null);
@@ -540,7 +551,7 @@ export default function PortfolioProjectForm({
   async function handleGalleryFiles(files: FileList, target: "gallery" | "behindTheScenes") {
     for (const file of Array.from(files)) {
       const key = newKey();
-      const item: GalleryItem = { key, assetId: null, url: null, alt: "", caption: "", hotspotX: 0.5, hotspotY: 0.5, uploading: true, progress: 0, error: null };
+      const item: GalleryItem = { key, assetId: null, url: null, alt: "", caption: "", productionNotes: "", hotspotX: 0.5, hotspotY: 0.5, uploading: true, progress: 0, error: null };
       setForm((f) => ({ ...f, [target]: [...f[target], item] }));
       try {
         const compressed = await compressImageFile(file);
@@ -590,18 +601,21 @@ export default function PortfolioProjectForm({
 
   const readiness = useMemo(
     () =>
-      getPublishReadiness({
-        title: form.title,
-        slug: form.slug,
-        heroMedia: { url: form.hero.url, type: "image", alt: form.hero.alt },
-        story: form.story,
-        categoryIds: form.categoryIds,
-        seo: { metaTitle: form.seoTitle || null, metaDescription: form.seoDescription || null, ogImageUrl: null, canonicalUrl: null },
-        gallery: form.gallery.map((g) => ({ id: g.key, url: g.url, alt: g.alt, caption: g.caption || null })),
-        tags: form.tags,
-        client: form.client,
-      }),
-    [form]
+      getPublishReadiness(
+        {
+          title: form.title,
+          slug: form.slug,
+          heroMedia: { url: form.hero.url, type: "image", alt: form.hero.alt },
+          story: form.story,
+          categoryIds: form.categoryIds,
+          seo: { metaTitle: form.seoTitle || null, metaDescription: form.seoDescription || null, ogImageUrl: null, canonicalUrl: null },
+          gallery: form.gallery.map((g) => ({ id: g.key, url: g.url, alt: g.alt, caption: g.caption || null })),
+          tags: form.tags,
+          client: form.client,
+        },
+        { skipAltTextCheck: canPublish }
+      ),
+    [form, canPublish]
   );
 
   const isFirstStep = step === 0;
@@ -770,6 +784,7 @@ export default function PortfolioProjectForm({
                 setForm((f) => ({ ...f, gallery: f.gallery.map((g) => (g.key === key ? { ...g, ...patch } : g)) }))
               }
               onRemove={(key) => setForm((f) => ({ ...f, gallery: f.gallery.filter((g) => g.key !== key) }))}
+              canPublish={canPublish}
             />
 
             <GalleryEditor
@@ -781,6 +796,7 @@ export default function PortfolioProjectForm({
                 setForm((f) => ({ ...f, behindTheScenes: f.behindTheScenes.map((g) => (g.key === key ? { ...g, ...patch } : g)) }))
               }
               onRemove={(key) => setForm((f) => ({ ...f, behindTheScenes: f.behindTheScenes.filter((g) => g.key !== key) }))}
+              canPublish={canPublish}
             />
 
             <div>
@@ -1255,6 +1271,7 @@ function GalleryEditor({
   onReorder,
   onUpdateItem,
   onRemove,
+  canPublish,
 }: {
   title: string;
   items: GalleryItem[];
@@ -1262,6 +1279,7 @@ function GalleryEditor({
   onReorder: (from: number, to: number) => void;
   onUpdateItem: (key: string, patch: Partial<GalleryItem>) => void;
   onRemove: (key: string) => void;
+  canPublish: boolean;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [dragOver, setDragOver] = useState(false);
@@ -1325,16 +1343,23 @@ function GalleryEditor({
                   {item.error && <p className="font-sans text-caption text-red-700">{item.error}</p>}
                   <input
                     type="text"
-                    placeholder="Alt text *"
-                    value={item.alt}
-                    onChange={(e) => onUpdateItem(item.key, { alt: e.target.value })}
+                    placeholder="Caption (optional)"
+                    value={item.caption}
+                    onChange={(e) => onUpdateItem(item.key, { caption: e.target.value })}
                     className="w-full rounded border border-black/15 px-2 py-1 font-sans text-caption"
                   />
                   <input
                     type="text"
-                    placeholder="Caption (optional)"
-                    value={item.caption}
-                    onChange={(e) => onUpdateItem(item.key, { caption: e.target.value })}
+                    placeholder={canPublish ? "Alt text (optional for you)" : "Alt text *"}
+                    value={item.alt}
+                    onChange={(e) => onUpdateItem(item.key, { alt: e.target.value })}
+                    className="w-full rounded border border-black/15 px-2 py-1 font-sans text-caption"
+                  />
+                  <textarea
+                    placeholder="Production notes (internal only — never shown publicly)"
+                    value={item.productionNotes}
+                    onChange={(e) => onUpdateItem(item.key, { productionNotes: e.target.value })}
+                    rows={2}
                     className="w-full rounded border border-black/15 px-2 py-1 font-sans text-caption"
                   />
                 </div>

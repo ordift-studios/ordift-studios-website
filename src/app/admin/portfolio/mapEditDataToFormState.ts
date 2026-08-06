@@ -4,7 +4,7 @@ import type { FormState } from "./PortfolioProjectForm";
 // (see getPortfolioProjectForEdit's own comment); this is the one place
 // that shape gets turned into something FormState-compatible.
 type RawImage = { assetId?: string | null; url?: string | null; alt?: string | null; hotspotX?: number | null; hotspotY?: number | null };
-type RawGalleryItem = RawImage & { key: string; caption?: string | null };
+type RawGalleryItem = RawImage & { key: string; caption?: string | null; productionNotes?: string | null };
 
 function toImgState(raw?: RawImage | null) {
   return {
@@ -26,6 +26,7 @@ function toGalleryItems(raw?: RawGalleryItem[] | null) {
     url: g.url ?? null,
     alt: g.alt ?? "",
     caption: g.caption ?? "",
+    productionNotes: g.productionNotes ?? "",
     hotspotX: g.hotspotX ?? 0.5,
     hotspotY: g.hotspotY ?? 0.5,
     uploading: false,

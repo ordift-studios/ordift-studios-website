@@ -81,7 +81,9 @@ export async function transitionPortfolioProjectAction(formData: FormData): Prom
   // transition; warnings are informational only (see
   // src/lib/admin/portfolioValidation.ts).
   if (to === "pending_review" || to === "published") {
-    const readiness = getPublishReadiness(project);
+    const readiness = getPublishReadiness(project, {
+      skipAltTextCheck: hasCapability(user, PORTFOLIO_CAPABILITIES, "publish"),
+    });
     if (readiness.blocking.length > 0) {
       throw new Error(`Not ready: ${readiness.blocking.join(" ")}`);
     }

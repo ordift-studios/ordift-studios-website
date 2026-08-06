@@ -23,22 +23,28 @@ export type ReadinessInput = Pick<
   "title" | "slug" | "heroMedia" | "story" | "categoryIds" | "seo" | "gallery" | "tags" | "client"
 >;
 
-export function getPublishReadiness(project: ReadinessInput): ReadinessResult {
+export function getPublishReadiness(
+  project: ReadinessInput,
+  options?: { skipAltTextCheck?: boolean }
+): ReadinessResult {
   const blocking: string[] = [];
   const warnings: string[] = [];
+  const skipAltTextCheck = options?.skipAltTextCheck ?? false;
 
   if (!project.title?.trim()) blocking.push("Project title is required.");
   if (!project.slug?.trim()) blocking.push("A URL slug is required.");
   if (!project.heroMedia?.url) blocking.push("A hero image is required.");
-  else if (!project.heroMedia?.alt?.trim()) blocking.push("The hero image needs alt text.");
+  else if (!skipAltTextCheck && !project.heroMedia?.alt?.trim()) blocking.push("The hero image needs alt text.");
   if (!project.story?.trim()) blocking.push("A project story / summary is required.");
   if (!project.categoryIds || project.categoryIds.length === 0) {
     blocking.push("At least one category is required.");
   }
 
-  const galleryMissingAlt = (project.gallery ?? []).filter((img) => !img.alt?.trim());
-  if (galleryMissingAlt.length > 0) {
-    blocking.push(`${galleryMissingAlt.length} gallery image(s) are missing alt text.`);
+  if (!skipAltTextCheck) {
+    const galleryMissingAlt = (project.gallery ?? []).filter((img) => !img.alt?.trim());
+    if (galleryMissingAlt.length > 0) {
+      blocking.push(`${galleryMissingAlt.length} gallery image(s) are missing alt text.`);
+    }
   }
 
   if (!project.gallery || project.gallery.length === 0) {
