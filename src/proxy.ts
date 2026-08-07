@@ -4,6 +4,19 @@ import { updateSession } from "@/lib/supabase/middleware";
 
 const LOCAL_HOSTNAMES = new Set(["localhost", "127.0.0.1", "::1"]);
 
+// Narrow Basic-Auth exemption (2026-08-07) — Paystack's webhook
+// delivery system has no way to send the staging Basic-Auth header, so
+// without this exemption a real webhook POST would 401 before ever
+// reaching the handler. Exempted from Basic Auth ONLY — every other
+// protection stays in force: HMAC-SHA512 Paystack signature
+// verification, the replay/age window, idempotency (fails closed),
+// amount/currency validation, and payment_webhook_events audit
+// logging all still run exactly as before, inside the route itself
+// (src/app/api/payments/webhook/paystack/route.ts). Deliberately an
+// exact-path match, not a prefix — /api/payments/** and /api/** stay
+// fully gated.
+const BASIC_AUTH_EXEMPT_PATHS = new Set(["/api/payments/webhook/paystack"]);
+
 // Roles allowed to bypass the holding page below and see the real
 // production site while it's gated — the same roles that already gate
 // /admin (see isStaffOrAdmin in src/lib/portal/roles.ts).
@@ -24,10 +37,14 @@ const HOLDING_PAGE_BYPASS_ROLES = new Set(["staff", "admin", "super_admin"]);
  * requiring it locally only pushed toward embedding credentials in
  * preview URLs (`user:pass@localhost`), which is its own bad practice —
  * browsers warn on it and it risks leaking into history/logs. The real
- * staging deployment (any non-localhost hostname) stays fully gated.
+ * staging deployment (any non-localhost hostname) stays fully gated,
+ * except the one exact path in BASIC_AUTH_EXEMPT_PATHS above (the
+ * Paystack webhook — see that constant's comment for why).
  */
 export async function proxy(request: NextRequest) {
-  if (process.env.SITE_ENV === "staging" && !LOCAL_HOSTNAMES.has(request.nextUrl.hostname)) {
+  const basicAuthExempt = BASIC_AUTH_EXEMPT_PATHS.has(request.nextUrl.pathname);
+
+  if (process.env.SITE_ENV === "staging" && !LOCAL_HOSTNAMES.has(request.nextUrl.hostname) && !basicAuthExempt) {
     const expectedUser = process.env.STAGING_BASIC_AUTH_USER;
     const expectedPass = process.env.STAGING_BASIC_AUTH_PASS;
 
