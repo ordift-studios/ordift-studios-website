@@ -8,6 +8,7 @@ import {
 } from "@/lib/portal/data";
 import { crmStageProgress, nextCrmStage } from "@/lib/portal/dashboard";
 import type { ProjectRequestStatus } from "@/lib/admin/projectRequests";
+import type { Payment, PaymentEntityType } from "@/lib/payments/types";
 
 // The reusable Project Workspace's data layer — every tab reads through
 // here, never queries a table directly, so a future project kind
@@ -348,4 +349,180 @@ export async function getClientProjectRequests(
     decidedAt: row.decided_at,
     createdAt: row.created_at,
   }));
+}
+
+// ============================================================
+// Payments (Payments & Finance Module, migration 0024)
+// ============================================================
+
+export type WorkspacePaymentSummary = {
+  amountDueUsd: number;
+  amountPaidUsd: number;
+  balanceUsd: number;
+  paymentStatus: string | null;
+  entityId: string;
+};
+
+// Maps a ProjectKind onto the payments table's own entity_type values —
+// same "enquiry" | "workshop_registration" split every payments module
+// query already uses (checkoutService.ts, the webhook route's sync
+// logic), so a workspace "kind" of "workshop" maps to the payments
+// table's "workshop_registration", not a 1:1 string match.
+function toPaymentEntityType(kind: ProjectKind): PaymentEntityType {
+  return kind === "enquiry" ? "enquiry" : "workshop_registration";
+}
+
+export async function getWorkspacePaymentSummary(
+  kind: ProjectKind,
+  id: string,
+  userId: string
+): Promise<WorkspacePaymentSummary | null> {
+  const owner =
+    kind === "enquiry" ? await getEnquiryByIdForUser(id, userId) : await getWorkshopRegistrationByIdForUser(id, userId);
+  if (!owner) return null;
+
+  const amountDueUsd = Number(owner.amountDue ?? 0);
+  const amountPaidUsd = Number(owner.amountPaid ?? 0);
+
+  return {
+    amountDueUsd,
+    amountPaidUsd,
+    balanceUsd: Math.max(0, Math.round((amountDueUsd - amountPaidUsd) * 100) / 100),
+    paymentStatus: owner.paymentStatus,
+    entityId: owner.id,
+  };
+}
+
+export type WorkspacePaymentHistoryItem = Pick<
+  Payment,
+  | "id"
+  | "recordId"
+  | "paymentType"
+  | "paymentMethod"
+  | "status"
+  | "provider"
+  | "referenceAmountUsd"
+  | "paymentCurrency"
+  | "convertedAmount"
+  | "createdAt"
+>;
+
+// Every attempt, including failed/rejected ones — UX Spec §14: "a
+// complete record, not just successful ones." RLS's "payments: own
+// read" policy (user_id = auth.uid()) already scopes this correctly;
+// the entity_type/entity_id filter here narrows it to this specific
+// project rather than the client's entire payment history across every
+// project, which is what this tab is meant to show.
+export async function getWorkspacePaymentHistory(
+  kind: ProjectKind,
+  id: string,
+  userId: string
+): Promise<WorkspacePaymentHistoryItem[]> {
+  const owner =
+    kind === "enquiry" ? await getEnquiryByIdForUser(id, userId) : await getWorkshopRegistrationByIdForUser(id, userId);
+  if (!owner) return [];
+
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("payments")
+    .select(
+      "id, record_id, payment_type, payment_method, status, provider, reference_amount_usd, payment_currency, converted_amount, created_at"
+    )
+    .eq("entity_type", toPaymentEntityType(kind))
+    .eq("entity_id", id)
+    .eq("user_id", userId)
+    .order("created_at", { ascending: false });
+
+  if (error) {
+    console.error("[portal] failed to load workspace payment history", error.message);
+    return [];
+  }
+
+  return (data ?? []).map((row) => ({
+    id: row.id,
+    recordId: row.record_id,
+    paymentType: row.payment_type,
+    paymentMethod: row.payment_method,
+    status: row.status,
+    provider: row.provider,
+    referenceAmountUsd: Number(row.reference_amount_usd),
+    paymentCurrency: row.payment_currency,
+    convertedAmount: Number(row.converted_amount),
+    createdAt: row.created_at,
+  }));
+}
+
+// Single-payment fetch for the status/receipt pages — the redirect
+// target after checkout and the receipt link both need one full row,
+// not the trimmed list shape getWorkspacePaymentHistory returns.
+// Ownership is checked twice, belt-and-suspenders: the project
+// (kind/id) must belong to userId, and the payment row itself must
+// carry that same entity_type/entity_id/user_id — consistent with
+// every other function in this file, and backed by the "payments: own
+// read" RLS policy either way.
+export async function getWorkspacePaymentById(
+  kind: ProjectKind,
+  id: string,
+  paymentId: string,
+  userId: string
+): Promise<Payment | null> {
+  const owner =
+    kind === "enquiry" ? await getEnquiryByIdForUser(id, userId) : await getWorkshopRegistrationByIdForUser(id, userId);
+  if (!owner) return null;
+
+  const supabase = await createClient();
+  const { data: row, error } = await supabase
+    .from("payments")
+    .select(
+      "id, business_id, record_id, entity_type, entity_id, related_type, related_id, business_unit, user_id, reference_amount_usd, payment_currency, exchange_rate, exchange_rate_source, exchange_rate_locked_at, converted_amount, amount_collected, settlement_currency, gateway_fee, net_amount_received, conversion_performed_by, tax_amount_usd, payment_type, payment_method, status, provider, gateway_reference, idempotency_key, channel, card_brand, card_last4, proof_of_payment_asset_path, submitted_by, submitted_at, reviewed_by, reviewed_at, review_notes, posted_at, created_at, updated_at"
+    )
+    .eq("id", paymentId)
+    .eq("entity_type", toPaymentEntityType(kind))
+    .eq("entity_id", id)
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  if (error || !row) return null;
+
+  return {
+    id: row.id,
+    businessId: row.business_id,
+    recordId: row.record_id,
+    entityType: row.entity_type,
+    entityId: row.entity_id,
+    relatedType: row.related_type,
+    relatedId: row.related_id,
+    businessUnit: row.business_unit,
+    userId: row.user_id,
+    referenceAmountUsd: Number(row.reference_amount_usd),
+    paymentCurrency: row.payment_currency,
+    exchangeRate: Number(row.exchange_rate),
+    exchangeRateSource: row.exchange_rate_source,
+    exchangeRateLockedAt: row.exchange_rate_locked_at,
+    convertedAmount: Number(row.converted_amount),
+    amountCollected: row.amount_collected != null ? Number(row.amount_collected) : null,
+    settlementCurrency: row.settlement_currency,
+    gatewayFee: row.gateway_fee != null ? Number(row.gateway_fee) : null,
+    netAmountReceived: row.net_amount_received != null ? Number(row.net_amount_received) : null,
+    conversionPerformedBy: row.conversion_performed_by,
+    taxAmountUsd: row.tax_amount_usd != null ? Number(row.tax_amount_usd) : null,
+    paymentType: row.payment_type,
+    paymentMethod: row.payment_method,
+    status: row.status,
+    provider: row.provider,
+    gatewayReference: row.gateway_reference,
+    idempotencyKey: row.idempotency_key,
+    channel: row.channel,
+    cardBrand: row.card_brand,
+    cardLast4: row.card_last4,
+    proofOfPaymentAssetPath: row.proof_of_payment_asset_path,
+    submittedBy: row.submitted_by,
+    submittedAt: row.submitted_at,
+    reviewedBy: row.reviewed_by,
+    reviewedAt: row.reviewed_at,
+    reviewNotes: row.review_notes,
+    postedAt: row.posted_at,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
 }

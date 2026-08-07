@@ -14,7 +14,7 @@ This is not an accident: the project's own history shows deliberate free-tier di
 
 **The one service scaffolded but not active:** Google Analytics — an env var already exists (`NEXT_PUBLIC_GA_MEASUREMENT_ID`), explicitly flagged in `PRODUCT_ROADMAP.md` as "no code built yet; needs a decision + measurement ID before it's worth building." Free regardless of when it's turned on.
 
-**No payment gateway, SMS provider, or similar is included here.** `MILESTONES.md`'s retired "Version 3.0 — Commerce" section explicitly marks payment integration "unscheduled" — per your own instruction not to include anything that isn't actually approved, it's absent from this register, not merely deprioritized. If and when a payment provider is actually scheduled, it belongs here as a new entry, not as a placeholder today.
+**Payment gateway (Paystack, Ghana) is now approved architecture, added below (§9) as of 2026-08-06** — the payment/finance module moved from `MILESTONES.md`'s retired "unscheduled" status to an approved Ghana-first architecture (see `PAYMENT_FINANCE_ARCHITECTURE_PROPOSAL.md`), per this document's own stated rule: "If and when a payment provider is actually scheduled, it belongs here as a new entry." No live implementation exists yet — this is the register entry for the approved plan, not a live integration. Full gateway-fee and Qatar-candidate detail lives in the dedicated `PAYMENT_COST_REGISTER.md` (too specialized — per-country fee schedules, volume scenarios, multi-vendor comparison — to inline here without duplicating that document); this register's job stays the same as every other entry: the summary line, the trigger, and the cross-reference.
 
 ---
 
@@ -99,6 +99,17 @@ This is not an accident: the project's own history shows deliberate free-tier di
 - **Annual cost:** $0.
 - **Free tier:** unlimited private repositories for individuals/small teams — comfortably covers this project.
 - **Scaling considerations:** none at this team size.
+
+### 9. Paystack — Ghana Payment Gateway (approved architecture, not yet integrated)
+- **Purpose:** processes card and Ghana Mobile Money (MTN, Telecel, AirtelTigo) payments for bookings, deposits, balances, and workshop registrations.
+- **Implementation status:** **architecture approved, not yet built or connected** — see `PAYMENT_FINANCE_ARCHITECTURE_PROPOSAL.md` (schema, gateway-agnostic interface) and `PAYMENT_SECURITY_REVIEW.md`/`PAYMENT_TEST_PLAN.md` for the full design. No account created, no live keys, no code committed as of this entry.
+- **Dependencies (once built):** every payable booking/workshop-registration flow in the Client Portal; webhook processing reuses `src/lib/shared/idempotency.ts` and `src/lib/shared/rateLimit.ts`.
+- **Pricing model:** no setup/monthly fee; flat 1.95% per-transaction fee, no cap in Ghana (confirmed via Paystack's own pricing page — see `PAYMENT_COST_REGISTER.md` §1.1 for the full fee breakdown by category).
+- **Monthly cost:** **$0 fixed** — 100% usage-based (transaction fee only). Not yet incurred — no live transactions exist.
+- **Annual cost:** $0 fixed; variable cost scales with real transaction volume once live (see `PAYMENT_COST_REGISTER.md` §4 for volume-scenario projections — illustrative planning assumptions, not confirmed figures).
+- **Free tier:** N/A (fee-per-transaction model, no tiered plans).
+- **Scaling considerations:** this is the one service in the register whose cost is genuinely usage-driven rather than tier-driven — see `PAYMENT_COST_REGISTER.md` for the detailed scenario modeling this document doesn't duplicate.
+- **Trigger this satisfies for Supabase (§2 above):** `DISASTER_RECOVERY.md` §9 names "the first real payment" as one of the three documented Supabase Pro-upgrade triggers — once Paystack goes live, that trigger fires regardless of raw data volume. Flagged here so the Supabase Pro decision isn't made in isolation from the payment-module timeline.
 
 ### Domain & DNS
 - **Purpose:** `ordiftstudios.com`, the production domain.
@@ -206,7 +217,7 @@ Only one service meets the bar of "explicitly named in official project planning
 |---|---|---|---|---|---|---|---|
 | Google Analytics | Visitor/traffic analytics for the public site | Named explicitly in `PRODUCT_ROADMAP.md`: "no code built yet; needs a decision + measurement ID before it's worth building" | Any time after launch — no dependency on client volume or revenue, purely a "do you want this data" decision | $0 (free product) | A Google Analytics 4 property, a measurement ID, and — per `DEPLOYMENT.md`'s own note — Cookie Notice approval, since it would introduce the site's first analytics cookie | Gives the business real visitor behavior data instead of relying on enquiry-form conversion alone | **Optional** — genuinely nice-to-have, not required for the platform to operate or for any current feature to function |
 
-**Explicitly excluded, and why:** a payment gateway was considered in this project's early history (`MILESTONES.md`'s retired "Version 3.0 — Commerce" section) but is explicitly marked **unscheduled**, not approved for any version. Per your instruction not to include anything short of an actual approval, it does not appear here. If a payment provider is ever genuinely scheduled in `PRODUCT_ROADMAP.md`, it becomes a real entry in this table at that time — not before.
+**Payment gateway moved out of this table and into the Current Technology Stack (§9) on 2026-08-06** — no longer "unscheduled": the Ghana-first Paystack architecture is approved, though not yet integrated. The Qatar gateway (MyFatoorah or Dibsy, undecided) remains genuinely unscheduled — pending your direct vendor conversation per `PAYMENT_FINANCE_ARCHITECTURE_PROPOSAL.md` §6 — and stays out of this register entirely until a provider is actually selected, matching the same discipline applied to Paystack before its own approval.
 
 ---
 
@@ -243,4 +254,4 @@ Per your explicit agreement, this section is deliberately short: **every service
 
 ---
 
-*Cross-references: `DISASTER_RECOVERY.md` §9 (Supabase Pro-upgrade triggers, not duplicated here), `PRODUCT_ROADMAP.md` (the only source for anything in Future Planned Integrations), `DEPLOYMENT.md` (environment variables per service), `MILESTONES.md` (the retired Commerce/payment-gateway history this register deliberately excludes).*
+*Cross-references: `DISASTER_RECOVERY.md` §9 (Supabase Pro-upgrade triggers, not duplicated here), `PRODUCT_ROADMAP.md` (the only source for anything in Future Planned Integrations), `DEPLOYMENT.md` (environment variables per service), `MILESTONES.md` (the retired Commerce/payment-gateway history this register deliberately excludes), `PAYMENT_COST_REGISTER.md` (the payment module's own deep-dive companion register — per-country gateway fee schedules, Qatar candidate comparison, volume-scenario modeling — this document stays the platform-wide authority and single source of truth; `PAYMENT_COST_REGISTER.md` is scoped narrower and defers to this document for every non-payment-specific service figure, never restating them independently).*

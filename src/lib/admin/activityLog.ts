@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { resolveActorIdentities, formatActorLabel } from "@/lib/portal/actorIdentity";
 
 // Shared audit trail for the Admin Platform (public.activity_log,
@@ -66,7 +67,13 @@ async function enrichWithActorIdentity(rows: RawActivityRow[]): Promise<Activity
 }
 
 export async function logActivity(params: {
-  actorUserId: string;
+  // Nullable as of 2026-08-06 (Payments & Finance Module): a
+  // gateway-webhook-driven transition (e.g. a payment completing) has
+  // no human session to attribute it to. null renders through
+  // enrichWithActorIdentity() the same way an already-null
+  // actor_user_id from the database does — no special-casing needed
+  // on the read side, this was already a handled state.
+  actorUserId: string | null;
   action: string;
   entityType?: string;
   entityId?: string;
@@ -85,6 +92,36 @@ export async function logActivity(params: {
     // recording, same reasoning as src/lib/supabase/primaryWrite.ts's
     // best-effort role-grant step.
     console.error("[admin] failed to write activity_log", error.message);
+  }
+}
+
+// Webhook-safe variant (2026-08-06, Payments & Finance Module) — a
+// gateway webhook has no cookie session for createClient() to read, so
+// the RLS-gated "activity_log: staff insert" policy above can't apply
+// (there's no authenticated staff user in that request at all). Uses
+// the same admin/secret-key client already established for exactly
+// this class of problem (src/lib/supabase/admin.ts's own doc comment:
+// "the visitor submitting isn't necessarily logged in"). Only call
+// this from genuinely unauthenticated server-to-server contexts
+// (webhook handlers) — every human-initiated action should still go
+// through logActivity() above, which runs under the acting user's own
+// session.
+export async function logActivityAsSystem(params: {
+  action: string;
+  entityType?: string;
+  entityId?: string;
+  metadata?: Record<string, unknown>;
+}): Promise<void> {
+  const admin = createAdminClient();
+  const { error } = await admin.from("activity_log").insert({
+    actor_user_id: null,
+    action: params.action,
+    entity_type: params.entityType ?? null,
+    entity_id: params.entityId ?? null,
+    metadata: params.metadata ?? {},
+  });
+  if (error) {
+    console.error("[admin] failed to write activity_log (system)", error.message);
   }
 }
 
