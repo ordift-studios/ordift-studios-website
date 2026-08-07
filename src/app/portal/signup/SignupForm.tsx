@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
 import Link from "next/link";
 import Button from "@/components/Button";
 import TurnstileWidget from "@/components/TurnstileWidget";
@@ -10,6 +10,13 @@ const initialState: SignupState = { error: null };
 
 export default function SignupForm() {
   const [state, formAction, pending] = useActionState(signUpAction, initialState);
+  // Turnstile still relies on Cloudflare's implicit hidden-field
+  // injection for the actual server-side check (see
+  // TurnstileWidget.tsx's doc comment) — this token is only tracked
+  // client-side to gate the submit button, so a click can't fire
+  // before the widget has actually finished its challenge (the same
+  // pattern BookingForm.tsx/RegistrationForm.tsx already use).
+  const [turnstileToken, setTurnstileToken] = useState("");
 
   return (
     <form action={formAction} className="space-y-5 max-w-sm">
@@ -60,9 +67,12 @@ export default function SignupForm() {
         <p className="mt-1.5 font-sans text-caption text-ordift-ink-muted">At least 8 characters.</p>
       </div>
 
-      <TurnstileWidget />
+      <TurnstileWidget
+        onVerify={(token) => setTurnstileToken(token)}
+        onExpire={() => setTurnstileToken("")}
+      />
 
-      <Button type="submit" variant="primary" disabled={pending} className="w-full">
+      <Button type="submit" variant="primary" disabled={pending || !turnstileToken} className="w-full">
         {pending ? "Creating account…" : "Create Account"}
       </Button>
 

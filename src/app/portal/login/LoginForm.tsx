@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
 import Link from "next/link";
 import Button from "@/components/Button";
 import TurnstileWidget from "@/components/TurnstileWidget";
@@ -16,6 +16,8 @@ export default function LoginForm({
   passwordReset?: boolean;
 }) {
   const [state, formAction, pending] = useActionState(signInAction, initialState);
+  // Same submit-gating fix as SignupForm.tsx — see that file's comment.
+  const [turnstileToken, setTurnstileToken] = useState("");
 
   return (
     <form action={formAction} className="space-y-5 max-w-sm">
@@ -69,9 +71,12 @@ export default function LoginForm({
         />
       </div>
 
-      <TurnstileWidget />
+      <TurnstileWidget
+        onVerify={(token) => setTurnstileToken(token)}
+        onExpire={() => setTurnstileToken("")}
+      />
 
-      <Button type="submit" variant="primary" disabled={pending} className="w-full">
+      <Button type="submit" variant="primary" disabled={pending || !turnstileToken} className="w-full">
         {pending ? "Signing in…" : "Sign In"}
       </Button>
 
