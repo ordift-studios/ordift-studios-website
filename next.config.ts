@@ -1,4 +1,5 @@
 import type { NextConfig } from "next";
+import { withSentryConfig } from "@sentry/nextjs";
 
 // Baseline security headers — Next.js and Vercel don't set these by
 // default. Deliberately excludes Content-Security-Policy: this app
@@ -36,4 +37,18 @@ const nextConfig: NextConfig = {
   },
 };
 
-export default nextConfig;
+// Wraps the config to upload source maps to Sentry at build time —
+// silently skips that step if SENTRY_AUTH_TOKEN isn't set (e.g. local
+// dev, or before the org/project/token are configured), so this is
+// safe to leave on unconditionally rather than gating it separately.
+export default withSentryConfig(nextConfig, {
+  org: process.env.SENTRY_ORG,
+  project: process.env.SENTRY_PROJECT,
+  authToken: process.env.SENTRY_AUTH_TOKEN,
+  silent: true,
+  widenClientFileUpload: true,
+  webpack: {
+    treeshake: { removeDebugLogging: true },
+    automaticVercelMonitors: false,
+  },
+});
