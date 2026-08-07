@@ -24,6 +24,7 @@ export const PAYMENT_CAPABILITIES: WorkflowCapabilityMatrix = {
     "issue_refund",
     "manage_bank_accounts",
     "manage_currencies",
+    "manage_project_amount",
   ],
   admin: [
     "view_all_payments",
@@ -32,6 +33,7 @@ export const PAYMENT_CAPABILITIES: WorkflowCapabilityMatrix = {
     "issue_refund",
     "manage_bank_accounts",
     "manage_currencies",
+    "manage_project_amount",
   ],
   staff: ["view_all_payments", "approve_bank_transfer", "reject_bank_transfer"],
 };

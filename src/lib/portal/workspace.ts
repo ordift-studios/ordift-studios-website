@@ -356,7 +356,11 @@ export async function getClientProjectRequests(
 // ============================================================
 
 export type WorkspacePaymentSummary = {
-  amountDueUsd: number;
+  // null distinguishes "no admin has quoted an amount yet" from a
+  // genuine zero/fully-settled balance (2026-08-07) — collapsing both
+  // to 0 previously made an un-quoted enquiry display as "Paid in
+  // full" on the Payments tab.
+  amountDueUsd: number | null;
   amountPaidUsd: number;
   balanceUsd: number;
   paymentStatus: string | null;
@@ -381,13 +385,13 @@ export async function getWorkspacePaymentSummary(
     kind === "enquiry" ? await getEnquiryByIdForUser(id, userId) : await getWorkshopRegistrationByIdForUser(id, userId);
   if (!owner) return null;
 
-  const amountDueUsd = Number(owner.amountDue ?? 0);
+  const amountDueUsd = owner.amountDue != null ? Number(owner.amountDue) : null;
   const amountPaidUsd = Number(owner.amountPaid ?? 0);
 
   return {
     amountDueUsd,
     amountPaidUsd,
-    balanceUsd: Math.max(0, Math.round((amountDueUsd - amountPaidUsd) * 100) / 100),
+    balanceUsd: amountDueUsd == null ? 0 : Math.max(0, Math.round((amountDueUsd - amountPaidUsd) * 100) / 100),
     paymentStatus: owner.paymentStatus,
     entityId: owner.id,
   };

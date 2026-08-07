@@ -35,7 +35,13 @@ export type WorkflowCapability =
   | "reject_bank_transfer"
   | "issue_refund"
   | "manage_bank_accounts"
-  | "manage_currencies";
+  | "manage_currencies"
+  // Sets/amends the agreed amount_due on an enquiry or workshop
+  // registration — i.e. turning a mere enquiry into a payable
+  // obligation (2026-08-07). Grouped with the other direct-financial-
+  // consequence capabilities (issue_refund, manage_currencies), not
+  // view_all_payments — same admin/super_admin-only tier.
+  | "manage_project_amount";
 
 // Extend as future consumers land — kept a literal union (not a bare
 // `string`) so a typo in a future entity_type is a compile error, not

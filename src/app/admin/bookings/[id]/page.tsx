@@ -3,11 +3,17 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import { getRegistrationById, REGISTRATION_STATUSES, PAYMENT_STATUSES } from "@/lib/admin/bookings";
 import { getCurrentUser, hasRole, isSuperAdmin } from "@/lib/portal/roles";
+import { hasCapability } from "@/lib/workflow/engine";
+import { PAYMENT_CAPABILITIES } from "@/lib/payments/paymentPermissions";
 import { getDeliverableCategories, getDeliverablesForEntity } from "@/lib/admin/deliverables";
 import DeliverablesManager from "@/components/admin/DeliverablesManager";
 import { getProjectRequestsForEntity } from "@/lib/admin/projectRequests";
 import ProjectRequestsManager from "@/components/admin/ProjectRequestsManager";
-import { updateBookingStatusAction } from "../actions";
+import { updateBookingStatusAction, setAmountDueAction } from "../actions";
+
+function formatUsd(amount: number): string {
+  return `$${amount.toFixed(2)}`;
+}
 
 export const metadata: Metadata = {
   title: "Booking — Ordift Studios Admin",
@@ -34,6 +40,8 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
     getCurrentUser(),
   ]);
   if (!registration) notFound();
+
+  const canManageAmount = hasCapability(user, PAYMENT_CAPABILITIES, "manage_project_amount");
 
   return (
     <div className="space-y-10">
@@ -100,7 +108,57 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
           />
         </div>
 
-        <div>
+        <div className="space-y-6">
+          <div className="rounded-xl border border-black/10 bg-white p-6">
+            <p className="font-sans text-caption uppercase tracking-wide text-ordift-ink-muted mb-3">
+              Financial
+            </p>
+            <div className="space-y-1 mb-4">
+              <p className="font-sans text-body-small text-ordift-ink-muted">
+                Amount Due:{" "}
+                <span className="font-medium text-ordift-ink">
+                  {registration.amountDue != null ? formatUsd(registration.amountDue) : "Not set"}
+                </span>
+              </p>
+              <p className="font-sans text-body-small text-ordift-ink-muted">
+                Amount Paid:{" "}
+                <span className="font-medium text-ordift-ink">{formatUsd(registration.amountPaid ?? 0)}</span>
+              </p>
+            </div>
+            {canManageAmount ? (
+              <form action={setAmountDueAction} className="space-y-3">
+                <input type="hidden" name="registrationId" value={registration.id} />
+                <div>
+                  <label htmlFor="amount-due" className="font-sans text-caption text-ordift-ink-muted block mb-1">
+                    Set Amount Due (USD)
+                  </label>
+                  <input
+                    id="amount-due"
+                    name="amountDue"
+                    type="number"
+                    step="0.01"
+                    min="0.01"
+                    max="1000000"
+                    required
+                    defaultValue={registration.amountDue ?? ""}
+                    placeholder="e.g. 350.00"
+                    className="w-full min-h-11 rounded-lg border border-black/15 bg-white px-3 font-sans text-body-small text-ordift-ink"
+                  />
+                </div>
+                <button
+                  type="submit"
+                  className="w-full min-h-11 rounded-full bg-ordift-gold text-ordift-navy-950 font-sans font-semibold text-body-small"
+                >
+                  {registration.amountDue != null ? "Update Amount Due" : "Set Amount Due"}
+                </button>
+              </form>
+            ) : (
+              <p className="font-sans text-caption text-ordift-ink-muted">
+                Only Admin/Super Admin can set the payable amount.
+              </p>
+            )}
+          </div>
+
           <div className="rounded-xl border border-black/10 bg-white p-6">
             <p className="font-sans text-caption uppercase tracking-wide text-ordift-ink-muted mb-3">
               Status

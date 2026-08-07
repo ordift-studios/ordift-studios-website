@@ -48,17 +48,27 @@ export default async function PaymentsTabPage({ params }: { params: Promise<{ ki
         <p className="font-sans text-caption uppercase tracking-wide text-ordift-ink-muted mb-2">Balance</p>
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div>
-            <p className="font-serif font-medium text-3xl text-ordift-ink">
-              {formatUsd(summary.balanceUsd)}{" "}
-              <span className="font-sans text-body-small text-ordift-ink-muted font-normal">due of {formatUsd(summary.amountDueUsd)}</span>
-            </p>
+            {summary.amountDueUsd == null ? (
+              <p className="font-serif font-medium text-3xl text-ordift-ink">Awaiting Quote</p>
+            ) : (
+              <p className="font-serif font-medium text-3xl text-ordift-ink">
+                {formatUsd(summary.balanceUsd)}{" "}
+                <span className="font-sans text-body-small text-ordift-ink-muted font-normal">
+                  due of {formatUsd(summary.amountDueUsd)}
+                </span>
+              </p>
+            )}
             {summary.amountPaidUsd > 0 && (
               <p className="font-sans text-body-small text-ordift-ink-muted mt-1">
                 {formatUsd(summary.amountPaidUsd)} paid so far
               </p>
             )}
           </div>
-          {summary.balanceUsd > 0 ? (
+          {summary.amountDueUsd == null ? (
+            <span className="inline-flex items-center px-4 py-2 rounded-full bg-ordift-offwhite font-sans text-body-small font-medium text-ordift-ink-muted">
+              Amount Not Set
+            </span>
+          ) : summary.balanceUsd > 0 ? (
             <Link
               href={`/portal/client/projects/${kind}/${id}/payments/checkout`}
               className="inline-flex items-center justify-center min-h-11 px-6 rounded-full font-sans font-semibold text-button bg-ordift-gold text-ordift-navy-950 hover:bg-ordift-gold-hover transition-all duration-150 hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ordift-gold focus-visible:ring-offset-2"

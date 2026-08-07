@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { primaryPortalPath, type RoleSlug } from "@/lib/portal/roles";
 import { verifyTurnstileToken } from "@/lib/turnstile";
+import { linkGuestRecordsToAccount } from "@/lib/supabase/accountLinking";
 
 export type LoginState = { error: string | null };
 
@@ -30,6 +31,14 @@ export async function signInAction(_prev: LoginState, formData: FormData): Promi
     // registered (same principle as every other form in this project:
     // no information leaks through error messages).
     return { error: "Invalid email or password." };
+  }
+
+  // Best-effort: sweep in any guest enquiries/workshop registrations
+  // submitted under this email before this account existed. Never
+  // blocks login on failure — see accountLinking.ts's doc comment for
+  // why a successful login is an appropriate trust bar for this.
+  if (data.user.email) {
+    await linkGuestRecordsToAccount(data.user.id, data.user.email);
   }
 
   const { data: userRoles } = await supabase

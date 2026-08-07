@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { verifyTurnstileToken } from "@/lib/turnstile";
 import { assignClassificationBySlug } from "@/lib/portal/memberNumbers";
+import { linkGuestRecordsToAccount } from "@/lib/supabase/accountLinking";
 
 export type SignupState = { error: string | null };
 
@@ -65,6 +66,12 @@ export async function signUpAction(_prev: SignupState, formData: FormData): Prom
   if (!data.session) {
     redirect("/portal/login?confirmEmail=1");
   }
+
+  // Only reached when email confirmation is off and a session exists
+  // immediately — the confirmation-required path links at first login
+  // instead (src/app/portal/login/actions.ts), the only point that
+  // path ever gets a real session.
+  await linkGuestRecordsToAccount(data.user.id, email);
 
   redirect("/portal/client");
 }
