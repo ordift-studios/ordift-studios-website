@@ -19,6 +19,20 @@ export default function LoginForm({
   // Same submit-gating fix as SignupForm.tsx — see that file's comment.
   const [turnstileToken, setTurnstileToken] = useState("");
 
+  // A failed attempt (wrong password, etc.) must force a fresh
+  // Turnstile challenge before the next retry — a token is single-use,
+  // so silently allowing a retry with the same one produces a
+  // misleading "Verification failed" even when the real problem was
+  // something else entirely. See TurnstileWidget.tsx's resetSignal doc.
+  // Reset during render (React's documented "adjusting state when a
+  // prop changes" pattern), not in an effect — avoids an extra
+  // cascading render for what's ultimately synchronous, derived state.
+  const [prevState, setPrevState] = useState(state);
+  if (state !== prevState) {
+    setPrevState(state);
+    if (state.error) setTurnstileToken("");
+  }
+
   return (
     <form action={formAction} className="space-y-5 max-w-sm">
       <input type="hidden" name="next" value={next} />
@@ -72,6 +86,7 @@ export default function LoginForm({
       </div>
 
       <TurnstileWidget
+        resetSignal={state}
         onVerify={(token) => setTurnstileToken(token)}
         onExpire={() => setTurnstileToken("")}
       />

@@ -18,6 +18,14 @@ export default function SignupForm() {
   // pattern BookingForm.tsx/RegistrationForm.tsx already use).
   const [turnstileToken, setTurnstileToken] = useState("");
 
+  // Same retry-after-failure reset as LoginForm.tsx, done during
+  // render rather than in an effect — see that file's comment.
+  const [prevState, setPrevState] = useState(state);
+  if (state !== prevState) {
+    setPrevState(state);
+    if (state.error) setTurnstileToken("");
+  }
+
   return (
     <form action={formAction} className="space-y-5 max-w-sm">
       {state.error && (
@@ -68,6 +76,7 @@ export default function SignupForm() {
       </div>
 
       <TurnstileWidget
+        resetSignal={state}
         onVerify={(token) => setTurnstileToken(token)}
         onExpire={() => setTurnstileToken("")}
       />

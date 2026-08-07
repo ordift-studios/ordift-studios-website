@@ -6,6 +6,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { verifyTurnstileToken } from "@/lib/turnstile";
 import { assignClassificationBySlug } from "@/lib/portal/memberNumbers";
 import { linkGuestRecordsToAccount } from "@/lib/supabase/accountLinking";
+import { siteUrl } from "@/lib/shared/env";
 
 export type SignupState = { error: string | null };
 
@@ -39,7 +40,15 @@ export async function signUpAction(_prev: SignupState, formData: FormData): Prom
   const { data, error } = await supabase.auth.signUp({
     email,
     password,
-    options: { data: { full_name: fullName } },
+    options: {
+      data: { full_name: fullName },
+      // Explicit, matching the same pattern already used by
+      // requestPasswordResetAction (forgot-password/actions.ts) —
+      // without this, Supabase falls back entirely to the project's
+      // own dashboard "Site URL" setting, which defaults to
+      // http://localhost:3000 until manually changed (2026-08-07).
+      emailRedirectTo: `${siteUrl()}/portal/login`,
+    },
   });
   if (error || !data.user) {
     return { error: error?.message ?? "Couldn't create your account. Please try again." };

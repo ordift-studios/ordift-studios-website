@@ -1,11 +1,14 @@
 "use client";
 
 import Script from "next/script";
-import { useEffect, useId, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 
 declare global {
   interface Window {
     [key: string]: unknown;
+    turnstile?: {
+      reset: (idOrContainer?: string | HTMLElement) => void;
+    };
   }
 }
 
@@ -21,15 +24,29 @@ type Props = {
   // from.
   onVerify?: (token: string) => void;
   onExpire?: () => void;
+  // Change this (e.g. pass the useActionState result object, which
+  // gets a fresh identity on every dispatch) after a failed form
+  // submission to force a new challenge (2026-08-07). A Turnstile
+  // token is single-use: Cloudflare returns the identical
+  // "timeout-or-duplicate" error for both an expired token AND one
+  // that's already been redeemed (see turnstile.ts's doc comment).
+  // Without this, the widget keeps showing its last "Success!" state
+  // and a retried submission silently carries the already-spent
+  // token, surfacing as an unhelpful "Verification failed" even when
+  // the real problem was something else entirely (e.g. a wrong
+  // password) on the first attempt. Ignored on initial mount.
+  resetSignal?: unknown;
 };
 
 // Renders nothing until NEXT_PUBLIC_TURNSTILE_SITE_KEY is set — see
 // src/lib/turnstile.ts for the matching server-side gate.
-export default function TurnstileWidget({ onVerify, onExpire }: Props) {
+export default function TurnstileWidget({ onVerify, onExpire, resetSignal }: Props) {
   const siteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY;
   const rawId = useId();
   const suffix = rawId.replace(/[^a-zA-Z0-9]/g, "");
+  const containerId = `turnstile-${suffix}`;
   const [erroredToLoad, setErroredToLoad] = useState(false);
+  const hasMounted = useRef(false);
 
   const verifyName = `__turnstileVerify_${suffix}`;
   const expireName = `__turnstileExpire_${suffix}`;
@@ -47,6 +64,15 @@ export default function TurnstileWidget({ onVerify, onExpire }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [verifyName, expireName, errorName]);
 
+  useEffect(() => {
+    if (!hasMounted.current) {
+      hasMounted.current = true;
+      return;
+    }
+    window.turnstile?.reset(containerId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [resetSignal]);
+
   if (!siteKey) return null;
 
   return (
@@ -58,6 +84,7 @@ export default function TurnstileWidget({ onVerify, onExpire }: Props) {
         onError={() => setErroredToLoad(true)}
       />
       <div
+        id={containerId}
         className="cf-turnstile"
         data-sitekey={siteKey}
         data-theme="light"
