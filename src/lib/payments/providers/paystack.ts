@@ -185,6 +185,34 @@ export const paystackProvider: PaymentProvider = {
     const body = (await response.json()) as PaystackVerifyResponse;
     const data = body.data;
 
+    // A non-ok/unsuccessful response (most commonly "Transaction
+    // reference not found") means Paystack never created a transaction
+    // record for this reference at all — the checkout widget rejected
+    // it client-side before a charge attempt reached their backend.
+    // That's a decisive, permanent "failed": no webhook or later verify
+    // call will ever resolve it either, since there's nothing on
+    // Paystack's side to resolve. Logged, not swallowed silently — a
+    // gap the first version of this method had.
+    if (!response.ok || !body.status) {
+      console.error("[paystack] verifyTransaction: API call unsuccessful, treating as failed", {
+        reference,
+        httpStatus: response.status,
+        message: body.message,
+      });
+      return {
+        eventType: "transaction.verify",
+        gatewayReference: reference,
+        status: "failed",
+        amount: null,
+        currency: null,
+        channel: null,
+        cardBrand: null,
+        cardLast4: null,
+        gatewayFee: null,
+        raw: body as unknown as Record<string, unknown>,
+      };
+    }
+
     // "abandoned"/"failed" both mean no charge will ever land — the
     // customer sees the same "Payment Failed, try again" outcome
     // either way. "reversed" is Paystack's own refund-equivalent
