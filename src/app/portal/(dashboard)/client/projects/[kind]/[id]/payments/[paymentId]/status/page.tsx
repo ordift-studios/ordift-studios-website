@@ -2,6 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/portal/roles";
 import { getWorkspacePaymentById, isProjectKind } from "@/lib/portal/workspace";
+import { reconcilePendingGatewayPayment } from "@/lib/payments/reconcilePendingPayment";
 import PendingAutoRefresh from "./PendingAutoRefresh";
 
 function formatUsd(amount: number): string {
@@ -31,8 +32,21 @@ export default async function PaymentStatusPage({
   const user = await getCurrentUser();
   if (!user) redirect("/portal/login");
 
-  const payment = await getWorkspacePaymentById(kind, id, paymentId, user.id);
+  let payment = await getWorkspacePaymentById(kind, id, paymentId, user.id);
   if (!payment) redirect(`/portal/client/projects/${kind}/${id}/payments`);
+
+  // Webhooks are best-effort, not guaranteed — a checkout the customer
+  // abandons, or a decline that never completes a full charge attempt
+  // on the gateway's side, can arrive with no webhook at all. Actively
+  // verify with the gateway here so this page doesn't say "Confirming
+  // Your Payment" forever; PendingAutoRefresh re-runs this on every
+  // reload while still pending.
+  if (payment.status === "pending") {
+    const resolvedStatus = await reconcilePendingGatewayPayment(paymentId);
+    if (resolvedStatus !== "pending") {
+      payment = (await getWorkspacePaymentById(kind, id, paymentId, user.id)) ?? payment;
+    }
+  }
 
   const paymentsHref = `/portal/client/projects/${kind}/${id}/payments`;
   const checkoutHref = `/portal/client/projects/${kind}/${id}/payments/checkout`;

@@ -123,5 +123,14 @@ export interface PaymentProvider {
   initCharge(params: ChargeParams): Promise<ChargeResult>;
   verifyWebhookSignature(rawBody: string, signatureHeader: string | null): boolean;
   parseWebhookEvent(rawBody: string): PaymentWebhookEvent;
+  // Active reconciliation counterpart to parseWebhookEvent — queries
+  // the gateway directly for a reference's current status. Webhooks
+  // are best-effort, not guaranteed (a checkout the customer abandons
+  // or that's declined before a full charge attempt may never fire
+  // one), so callers use this to resolve a payment stuck at "pending"
+  // rather than waiting indefinitely. Returns the same
+  // PaymentWebhookEvent shape so both paths share one downstream
+  // handler.
+  verifyTransaction(reference: string): Promise<PaymentWebhookEvent>;
   refund(params: RefundParams): Promise<RefundResult>;
 }

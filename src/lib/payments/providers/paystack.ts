@@ -58,6 +58,16 @@ type PaystackRefundResponse = {
   data?: { status: string; id: number };
 };
 
+// GET /transaction/verify/:reference response shape — data.status here
+// is Paystack's transaction status ('success' | 'failed' | 'abandoned'
+// | 'reversed' | ...), distinct from the top-level 'status: boolean'
+// (which only means "did this API call itself succeed").
+type PaystackVerifyResponse = {
+  status: boolean;
+  message: string;
+  data?: PaystackChargeEventData & { status: string };
+};
+
 // Paystack's charge.success webhook payload shape — only the fields
 // this adapter actually reads are typed; the full raw payload is still
 // stored verbatim in payment_webhook_events.raw_payload for anything
@@ -164,6 +174,43 @@ export const paystackProvider: PaymentProvider = {
       cardLast4: data?.authorization?.last4 ?? null,
       gatewayFee: data?.fees != null ? toMajorUnit(data.fees) : null,
       raw: payload as unknown as Record<string, unknown>,
+    };
+  },
+
+  async verifyTransaction(reference: string): Promise<PaymentWebhookEvent> {
+    const response = await fetch(`${PAYSTACK_API_BASE}/transaction/verify/${encodeURIComponent(reference)}`, {
+      headers: { Authorization: `Bearer ${requireSecretKey()}` },
+    });
+
+    const body = (await response.json()) as PaystackVerifyResponse;
+    const data = body.data;
+
+    // "abandoned"/"failed" both mean no charge will ever land — the
+    // customer sees the same "Payment Failed, try again" outcome
+    // either way. "reversed" is Paystack's own refund-equivalent
+    // status. Anything else (e.g. a mobile-money charge still awaiting
+    // the customer's phone-side approval) stays "unknown" so the
+    // caller leaves the payment pending rather than resolving early.
+    const status: PaymentWebhookEvent["status"] =
+      data?.status === "success"
+        ? "completed"
+        : data?.status === "failed" || data?.status === "abandoned"
+          ? "failed"
+          : data?.status === "reversed"
+            ? "refunded"
+            : "unknown";
+
+    return {
+      eventType: "transaction.verify",
+      gatewayReference: data?.reference ?? reference,
+      status,
+      amount: data?.amount != null ? toMajorUnit(data.amount) : null,
+      currency: data?.currency ?? null,
+      channel: mapChannel(data?.channel ?? data?.authorization?.channel),
+      cardBrand: data?.authorization?.card_type ?? null,
+      cardLast4: data?.authorization?.last4 ?? null,
+      gatewayFee: data?.fees != null ? toMajorUnit(data.fees) : null,
+      raw: body as unknown as Record<string, unknown>,
     };
   },
 
