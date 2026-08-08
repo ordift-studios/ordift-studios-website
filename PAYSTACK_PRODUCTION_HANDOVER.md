@@ -1,6 +1,6 @@
 # Paystack Payments — Production Handover / Next-Session Checklist
 
-**Status as of:** 2026-08-08 · **Branch:** `staging` @ `19e7c74` (pushed, matches `origin/staging`)
+**Status as of:** 2026-08-08 · **Branch:** `staging` @ `2394c81` (pushed, matches `origin/staging`)
 **Production state:** untouched — no payments schema, no Paystack config, no code merged to `main`.
 
 Paste this whole file into a fresh session to resume exactly here — no re-investigation needed.
