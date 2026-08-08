@@ -51,9 +51,11 @@ Production is at **0022**. Needed, in order:
 - **Declined/failed transaction handling**: after this session's fix, a genuinely-declined charge now resolves correctly instead of hanging at `pending` indefinitely.
 - **Bank Transfer isolation**: confirmed via `git log` that zero commits this session touched the bank-transfer code path (`bank-transfer/proof/route.ts`, `admin/payments/actions.ts`, `bankAccounts.ts`); its balance-sync logic is a separate function, not shared with anything changed today. No regression risk. (Full live smoke test of Bank Transfer was already done earlier in the broader engagement, task-tracked as complete.)
 
-## 7. ⚠️ REQUIRED BEFORE LAUNCH — Mobile Money not yet tested
+## 7. Mobile Money — ✅ COMPLETE (2026-08-08)
 
-Mobile Money appeared as an available channel during Card testing but was **never actually transacted**. **One full real Mobile Money test on staging is required before enabling Production payments** — same rigor as the Card test: checkout → Paystack MoMo flow → webhook → `payments.status`/`amount_paid` sync, confirmed by direct DB check, not just the UI.
+Verified end-to-end on staging, same rigor as Card: `PAY-2026-000007`, $50.00 (GHS 588.00), `channel: mobile_money`. Exactly one `charge.success` webhook, `signature_valid: true`, single event (idempotent). `enquiries.amount_paid` synced to $200.00 = `amount_due` (enquiry now fully paid, $0 balance). Receipt rendered correctly. Confirmed via direct DB queries, not just the UI. No further Mobile Money testing needed before launch.
+
+**Note on the stale-pending-payment guard hit during this test:** the earlier abandoned/declined test attempts (`PAY-2026-000004`, `-000006`) had left a `pending` row that tripped `checkoutService.ts`'s duplicate-checkout guard, blocking a new "balance"-type checkout. Resolved using the **existing reconciliation mechanism already in the codebase** (no new code, no manual DB edits) — visited the payment's own `/payments/[id]/status` page directly (not linked from Payment History, so requires the direct URL), which triggered `reconcilePendingGatewayPayment()` and correctly resolved `PAY-2026-000004` to `failed` via a real Paystack verify call. `PAY-2026-000006` remains `pending` (harmless — different `payment_type`, doesn't block anything, contributes nothing to `amount_paid`). This confirms the reconciliation code from §1 works correctly when actually reachable — the only real gap is the missing UI link, already captured in §8.
 
 ## 8. Deferred: scheduled pending-payment reconciliation job
 
@@ -63,13 +65,13 @@ Related, same fix would also close: Payment History list currently has no link/c
 
 ## 9. Staging test data (do NOT delete now — just noted for later cleanup)
 
-- Test payments `PAY-2026-000002` through `PAY-2026-000006` on enquiry `ENQ-2026-000017`.
+- Test payments `PAY-2026-000002` through `PAY-2026-000007` on enquiry `ENQ-2026-000017` (enquiry now shows fully paid, $200/$200).
 - Test enquiry `ENQ-2026-000017` itself (linked to `ordiftmodels2@gmail.com`).
-- Two orphaned `pending` payment rows (`PAY-2026-000004` $80, `PAY-2026-000006` $30) — safe as-is, confirmed not affecting accounting; will self-resolve once Mobile Money/reconciliation work touches this area, or can be manually closed out during cleanup.
+- One remaining orphaned `pending` row (`PAY-2026-000006`, $30, `payment_type: partial`) — safe as-is, confirmed not affecting accounting. `PAY-2026-000004` was resolved to `failed` on 2026-08-08 via the existing reconciliation mechanism (see §7), not deleted.
 
 ## 10. Recommended execution order, next session onward
 
-1. **Mobile Money live test on staging** (§7 — blocking item, do this first).
+1. ~~Mobile Money live test on staging~~ — ✅ done (§7).
 2. Reconcile migration 0026's tracking gap, then promote 0023 → 0024 → 0025 → 0026 to Production (§2).
 3. Complete Paystack Live Mode business verification (§4.1) — start this early, it's likely the longest pole.
 4. Add Production `PAYSTACK_SECRET_KEY` (Live) + any other Live keys to Vercel Production env (§3).
@@ -78,6 +80,6 @@ Related, same fix would also close: Payment History list currently has no link/c
 7. Add a real GHS exchange rate in Production via Admin UI (§3).
 8. Decide who performs the **first real Production payment** and at what amount — Live Mode has no test cards, so this is genuine money from the first transaction on.
 9. Merge `staging` → `main`, deploy to Production (**requires your explicit approval at the time**, not implied by this checklist).
-10. Post-launch, first 1–2 weeks: build the scheduled pending-payment reconciliation job (§8).
+10. Post-launch, first 1–2 weeks: build the scheduled pending-payment reconciliation job (§8), which would also add the missing click-through link on `pending` Payment History rows.
 
 **Nothing in this document authorizes any Production action.** Every step above still requires your explicit go-ahead when you're ready to execute it.
