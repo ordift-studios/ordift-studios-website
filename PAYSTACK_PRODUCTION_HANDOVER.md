@@ -1,6 +1,6 @@
 # Paystack Payments — Production Handover / Next-Session Checklist
 
-**Status as of:** 2026-08-08 · **Branch:** `staging` @ `35de4f1` (pushed, matches `origin/staging`)
+**Status as of:** 2026-08-08 · **Branch:** `staging` @ `19e7c74` (pushed, matches `origin/staging`)
 **Production state:** untouched — no payments schema, no Paystack config, no code merged to `main`.
 
 Paste this whole file into a fresh session to resume exactly here — no re-investigation needed.
@@ -49,7 +49,7 @@ Production is at **0022**. Needed, in order:
 - **Idempotency**: confirmed exactly one `payment_webhook_events` row per real event — no duplicate processing.
 - **Amount/currency validation**: confirmed present and unchanged (rejects any gateway-confirmed amount that doesn't match the locked checkout amount).
 - **Declined/failed transaction handling**: after this session's fix, a genuinely-declined charge now resolves correctly instead of hanging at `pending` indefinitely.
-- **Bank Transfer isolation**: confirmed via `git log` that zero commits this session touched the bank-transfer code path (`bank-transfer/proof/route.ts`, `admin/payments/actions.ts`, `bankAccounts.ts`); its balance-sync logic is a separate function, not shared with anything changed today. No regression risk. (Full live smoke test of Bank Transfer was already done earlier in the broader engagement, task-tracked as complete.)
+- **Bank Transfer isolation**: confirmed via `git log` that zero commits this session touched the bank-transfer code path (`bank-transfer/proof/route.ts`, `admin/payments/actions.ts`, `bankAccounts.ts`); its balance-sync logic is a separate function, not shared with anything changed today. No regression risk. **Caveat:** this session verified isolation via code inspection only, not a fresh live click-through — the last live smoke test of Bank Transfer was earlier in the broader engagement (task-tracked complete), before this session's changes existed. If you want belt-and-suspenders confidence, one live Bank Transfer run on staging before Production is cheap insurance, not a requirement.
 
 ## 7. Mobile Money — ✅ COMPLETE (2026-08-08)
 
@@ -71,15 +71,19 @@ Related, same fix would also close: Payment History list currently has no link/c
 
 ## 10. Recommended execution order, next session onward
 
-1. ~~Mobile Money live test on staging~~ — ✅ done (§7).
-2. Reconcile migration 0026's tracking gap, then promote 0023 → 0024 → 0025 → 0026 to Production (§2).
-3. Complete Paystack Live Mode business verification (§4.1) — start this early, it's likely the longest pole.
-4. Add Production `PAYSTACK_SECRET_KEY` (Live) + any other Live keys to Vercel Production env (§3).
-5. Register Production webhook in Paystack Live Mode dashboard (§4.2).
-6. Confirm/resolve Vercel Deployment Protection status on Production (§5).
-7. Add a real GHS exchange rate in Production via Admin UI (§3).
-8. Decide who performs the **first real Production payment** and at what amount — Live Mode has no test cards, so this is genuine money from the first transaction on.
-9. Merge `staging` → `main`, deploy to Production (**requires your explicit approval at the time**, not implied by this checklist).
-10. Post-launch, first 1–2 weeks: build the scheduled pending-payment reconciliation job (§8), which would also add the missing click-through link on `pending` Payment History rows.
+Labeled by type — **[READ-ONLY]** = safe to just do; **[PRODUCTION]** = modifies Production in some way, **do not execute without your explicit go-ahead in that moment**, this document alone does not authorize it.
 
-**Nothing in this document authorizes any Production action.** Every step above still requires your explicit go-ahead when you're ready to execute it.
+1. ~~Mobile Money live test on staging~~ — ✅ done (§7). Nothing to repeat.
+2. **[READ-ONLY]** (optional) One live Bank Transfer click-through on staging, per the caveat in §6, if you want it before Production.
+3. **[STOP — GET APPROVAL]** Everything from here on touches Production. Confirm with the user before starting any of steps 4–10.
+4. **[PRODUCTION]** Reconcile migration 0026's tracking gap, then promote 0023 → 0024 → 0025 → 0026 (§2).
+5. **[EXTERNAL, not code]** Complete Paystack Live Mode business verification (§4.1) — start early, likely the longest pole; can run in parallel with waiting on other approvals.
+6. **[PRODUCTION]** Add `PAYSTACK_SECRET_KEY` (Live) + any other Live keys to Vercel Production env (§3).
+7. **[PRODUCTION-ADJACENT, external]** Register Production webhook in Paystack Live Mode dashboard (§4.2).
+8. **[READ-ONLY check, then possibly PRODUCTION]** Confirm Vercel Deployment Protection status on Production (§5) — read-only to check; only becomes a Production change if the bypass pattern turns out to be needed.
+9. **[PRODUCTION]** Add a real GHS exchange rate in Production via Admin UI (§3).
+10. **[DECISION, then real money]** Decide who performs the **first real Production payment** and at what amount — Live Mode has no test cards, so this is genuine money from the first transaction on.
+11. **[PRODUCTION — the big one]** Merge `staging` → `main`, deploy to Production.
+12. **[POST-LAUNCH, first 1–2 weeks]** Build the scheduled pending-payment reconciliation job (§8), which would also add the missing click-through link on `pending` Payment History rows.
+
+**Nothing in this document authorizes any Production action.** Every step marked `[PRODUCTION]` above still requires your explicit go-ahead at the time, not implied by having read this checklist.
