@@ -1,6 +1,6 @@
 # Paystack Payments — Production Handover / Next-Session Checklist
 
-**Status as of:** 2026-08-08 · **Branch:** `staging` @ `2394c81` (pushed, matches `origin/staging`)
+**Status as of:** 2026-08-08 · **Branch:** `staging` @ `ceef300` (pushed, matches `origin/staging`) — note: the very next commit that edits this file will make this hash stale again by definition; check `git log -1` for ground truth.
 **Production state:** untouched — no payments schema, no Paystack config, no code merged to `main`.
 
 Paste this whole file into a fresh session to resume exactly here — no re-investigation needed.
@@ -61,7 +61,7 @@ Verified end-to-end on staging, same rigor as Card: `PAY-2026-000007`, $50.00 (G
 
 **Not required before launch.** Assessment: the gap (abandoned/pre-charge-declined checkouts stay `pending` with no auto-resolution) never affects money movement or balance accuracy — confirmed this session that stuck `pending` rows do not increment `amount_paid` or generate receipts. It's a UX rough edge, not a financial-integrity risk. Build in the first 1–2 weeks post-launch, not before — unless a future investigation surfaces a financial-integrity angle, in which case re-escalate.
 
-Related, same fix would also close: Payment History list currently has no link/click-through on `pending` rows (only `completed` rows get a Receipt link) — this is *why* reconciliation wasn't reachable mid-session; not a blocker, just context for whoever builds the cron job.
+**Update 2026-08-08 — the missing click-through link is now fixed, staging-only.** Commit `ceef300` (branch `staging`): non-completed rows in Payment History now link to the existing `/payments/[id]/status` page (same page `completed` rows already linked to for receipts) instead of having no link at all. Reuses that page's existing ownership checks and reconciliation-before-render logic entirely — no new route, no new query, no mutation path, purely additive. Also added a small always-shown reference/amount/method/date summary line to that page so every status (not just `completed`) shows useful context. `tsc`/`lint`/`build` all clean; deployed live to staging. This closes the practical UX gap that made reconciliation hard to reach mid-session — the scheduled cron job above remains the more complete long-term fix (auto-resolving without a client needing to click at all) and is still deferred to post-launch as assessed above.
 
 ## 9. Staging test data (do NOT delete now — just noted for later cleanup)
 
