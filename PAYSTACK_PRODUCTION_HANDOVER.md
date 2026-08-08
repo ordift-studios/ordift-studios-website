@@ -39,7 +39,7 @@ Production is at **0022**. Needed, in order:
 ## 5. Supabase/Vercel configuration still required
 
 - Apply migrations per §2.
-- Confirm whether Production sits behind Vercel Deployment Protection the way Preview does. If yes, the same Protection Bypass query-param pattern used for staging's webhook will be needed for Production's. If Production is fully public (likely), this step is not needed — verify explicitly, don't assume.
+- ~~Confirm whether Production sits behind Vercel Deployment Protection~~ — ✅ **checked 2026-08-08, empirically confirmed OFF.** `curl -I https://ordiftstudios.com/` returns a clean `HTTP 200` with normal app headers, no redirect to `vercel.com/sso-api`, no `WWW-Authenticate` challenge — the exact signature that *was* present when Preview's Deployment Protection was first discovered earlier in this engagement. Its absence here means Production has no Vercel-level auth wall; the Protection Bypass query-param pattern used for staging's webhook is **not needed** for Production's webhook. (Method: external HTTP check, not a direct dashboard read — conclusive by the same signature already validated once in this engagement, but a 10-second dashboard glance at Project Settings → Deployment Protection would make it a first-hand-read-too if you want belt-and-suspenders confirmation.)
 - Cloudflare Turnstile is already live in Production for public forms — no new Turnstile work needed for payments (checkout isn't Turnstile-gated).
 
 ## 6. Confirmed working on staging (do not re-test unless something changes)
@@ -80,7 +80,7 @@ Labeled by type — **[READ-ONLY]** = safe to just do; **[PRODUCTION]** = modifi
 5. **[EXTERNAL, not code]** Complete Paystack Live Mode business verification (§4.1) — start early, likely the longest pole; can run in parallel with waiting on other approvals.
 6. **[PRODUCTION]** Add `PAYSTACK_SECRET_KEY` (Live) + any other Live keys to Vercel Production env (§3).
 7. **[PRODUCTION-ADJACENT, external]** Register Production webhook in Paystack Live Mode dashboard (§4.2).
-8. **[READ-ONLY check, then possibly PRODUCTION]** Confirm Vercel Deployment Protection status on Production (§5) — read-only to check; only becomes a Production change if the bypass pattern turns out to be needed.
+8. ~~Confirm Vercel Deployment Protection status~~ — ✅ done 2026-08-08 (§5), confirmed OFF, no Production action needed here.
 9. **[PRODUCTION]** Add a real GHS exchange rate in Production via Admin UI (§3).
 10. **[DECISION, then real money]** Decide who performs the **first real Production payment** and at what amount — Live Mode has no test cards, so this is genuine money from the first transaction on.
 11. **[PRODUCTION — the big one]** Merge `staging` → `main`, deploy to Production.

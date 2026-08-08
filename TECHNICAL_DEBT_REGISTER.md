@@ -30,7 +30,7 @@
 - **Why accepted:** early-stage single-session build velocity mattered more than test infrastructure; manual verification was tractable at v1.0's feature count.
 - **Current impact:** regression risk grows with every new feature; no safety net for refactors.
 - **Pay-down trigger:** this is exactly what Version 1.0.5 Workstream A exists to resolve.
-- **Status:** Scheduled (Workstream A, in progress)
+- **Status:** Resolved (Workstream A, 2026-07-30). 12 `.test.ts` files now exist covering unit + hybrid integration tests (rate limiting, idempotency, role/permission boundaries, Google Sheets sync, email dispatch, booking/enquiry and project-request workflows, RLS). Verified via `4af9b83` ("Complete Version 1.0.5 Workstream A: full integration coverage + TDR/governance additions") and `94e8f50`. Component-level (React Testing Library) coverage is still not possible — see TD-011, unaffected by this resolution.
 
 ### TD-002 — No CI pipeline
 - **Category:** Infra
@@ -39,7 +39,7 @@
 - **Why accepted:** same as TD-001 — solo-session velocity over process overhead at small scale.
 - **Current impact:** a bad push can reach production without an automated gate catching it first.
 - **Pay-down trigger:** Version 1.0.5 Workstream B.
-- **Status:** Scheduled (Workstream B)
+- **Status:** Resolved (Workstream B, 2026-07-30). `.github/workflows/ci.yml` exists and has been live-verified with a real run — `36aa71d` ("Document Workstream B live verification: real CI run, real bug, real deploy") confirms the pipeline actually caught a real bug on a real push, not just that the YAML exists. Built via `6f8ae0d`.
 
 ### TD-003 — No production error monitoring
 - **Category:** Infra
@@ -48,7 +48,7 @@
 - **Why accepted:** deferred until real production traffic existed to justify it; site is still behind `LAUNCH_HOLDING_PAGE`.
 - **Current impact:** currently low (no real visitors yet), but this is the single most time-sensitive item to fix before the holding page comes down.
 - **Pay-down trigger:** Version 1.0.5 Workstream C — should land before `LAUNCH_HOLDING_PAGE` is removed.
-- **Status:** Scheduled (Workstream C)
+- **Status:** Partially resolved — code scaffolding only, not yet active anywhere. `@sentry/nextjs` instrumentation (server/edge/client) landed 2026-08-07 (`d28c361`, "Add Sentry production error monitoring (Workstream C)"), but that commit's own message states it is "inert until `SENTRY_DSN` is set" — deliberately matching the existing Turnstile inert-until-configured pattern, same as `next.config.ts`'s source-map upload needing `SENTRY_AUTH_TOKEN`. Verified via `vercel env ls` (2026-08-08) that `SENTRY_DSN`, `NEXT_PUBLIC_SENTRY_DSN`, and `SENTRY_AUTH_TOKEN` are **not set in any environment** (staging or Production) — no Sentry project has been created/connected yet. **This entry stays Open until a real Sentry project exists and its DSN is configured** — until then, this is still functionally "no production error monitoring," just with the wiring ready to receive one.
 
 ### TD-004 — No Content-Security-Policy header
 - **Category:** Security
