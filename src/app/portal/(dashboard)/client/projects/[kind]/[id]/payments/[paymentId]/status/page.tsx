@@ -9,6 +9,16 @@ function formatUsd(amount: number): string {
   return `$${amount.toFixed(2)}`;
 }
 
+function formatDateTime(iso: string): string {
+  return new Date(iso).toLocaleString("en-GB", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
 const CHANNEL_LABELS: Record<string, string> = {
   mobile_money: "Mobile Money",
   card: "Card",
@@ -62,7 +72,18 @@ export default async function PaymentStatusPage({
   );
 
   return (
-    <div className="max-w-xl mx-auto">
+    <div className="max-w-xl mx-auto space-y-4">
+      {/* Reference/amount/method/date summary — shown for every status, not
+          just completed, so a client opening a pending/failed/refunded
+          payment from history still sees exactly what it's for. Purely
+          display: sourced from the same already-ownership-checked `payment`
+          row every branch below uses, nothing fetched separately. */}
+      <p className="font-sans text-caption text-ordift-ink-muted text-center">
+        {payment.recordId ?? "Payment"} · {payment.paymentCurrency} {payment.convertedAmount.toFixed(2)}
+        {payment.paymentCurrency !== "USD" && ` (${formatUsd(payment.referenceAmountUsd)})`} ·{" "}
+        {methodLabel(payment.paymentMethod, payment.channel)} · {formatDateTime(payment.createdAt)}
+      </p>
+
       {payment.status === "completed" && (
         <div className="rounded-xl border border-green-200 bg-green-50 p-6 sm:p-8 text-center space-y-4">
           <p className="font-serif font-medium text-xl text-ordift-ink">Payment Successful</p>

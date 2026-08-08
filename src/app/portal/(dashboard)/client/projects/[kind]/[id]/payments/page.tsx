@@ -129,12 +129,19 @@ export default async function PaymentsTabPage({ params }: { params: Promise<{ ki
                       {formatDate(p.createdAt)}
                     </td>
                     <td className="py-3 px-4">
-                      {p.status === "completed" && (
+                      {p.status === "completed" ? (
                         <Link
                           href={`/portal/client/projects/${kind}/${id}/payments/${p.id}/receipt`}
                           className="font-sans text-caption text-ordift-gold-pressed underline underline-offset-4"
                         >
                           Receipt
+                        </Link>
+                      ) : (
+                        <Link
+                          href={`/portal/client/projects/${kind}/${id}/payments/${p.id}/status`}
+                          className="font-sans text-caption text-ordift-gold-pressed underline underline-offset-4"
+                        >
+                          View Status
                         </Link>
                       )}
                     </td>
