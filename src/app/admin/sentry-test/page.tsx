@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { notFound, redirect } from "next/navigation";
 import * as Sentry from "@sentry/nextjs";
 import { getCurrentUser, isStaffOrAdmin } from "@/lib/portal/roles";
@@ -44,6 +45,10 @@ interface DsnShape {
   hasKeyHostSeparator: boolean;
   endsWithNumericProjectId: boolean;
   containsGithubCom: boolean;
+}
+
+function shortHash(value: string): string {
+  return createHash("sha256").update(value).digest("hex").slice(0, 8);
 }
 
 function dsnShape(value: string | undefined): DsnShape {
@@ -107,9 +112,17 @@ export default async function SentryTestPage({
   const clientShape = dsnShape(process.env.NEXT_PUBLIC_SENTRY_DSN);
   const orgPresent = Boolean(process.env.SENTRY_ORG);
   const projectPresent = Boolean(process.env.SENTRY_PROJECT);
-  const dsnsMatch = Boolean(
-    process.env.SENTRY_DSN && process.env.SENTRY_DSN === process.env.NEXT_PUBLIC_SENTRY_DSN,
-  );
+  // A prior round used a raw `===` here; it reported `true` despite the
+  // structural checks above showing clearly different values, and no
+  // application-code cause was found (grep confirms both vars are read
+  // directly, once each, with no aliasing/fallback anywhere). Rather
+  // than trust or keep chasing a possible Turbopack/RSC compile quirk
+  // in a throwaway diagnostic, this compares independent SHA-256
+  // digests instead — a different computation path, safe to display
+  // (hashes aren't reversible) — as corroborating evidence.
+  const serverDsnHash = process.env.SENTRY_DSN ? shortHash(process.env.SENTRY_DSN) : null;
+  const clientDsnHash = process.env.NEXT_PUBLIC_SENTRY_DSN ? shortHash(process.env.NEXT_PUBLIC_SENTRY_DSN) : null;
+  const dsnsMatch = Boolean(serverDsnHash && serverDsnHash === clientDsnHash);
 
   return (
     <div style={{ padding: 40, fontFamily: "sans-serif", maxWidth: 560 }}>
@@ -133,9 +146,13 @@ export default async function SentryTestPage({
             </td>
           </tr>
           <tr>
-            <td style={{ padding: "4px 12px 4px 0", color: "#666" }}>DSNs match exactly</td>
+            <td style={{ padding: "4px 12px 4px 0", color: "#666" }}>DSNs match (sha256[0:8])</td>
             <td>
               <strong>{String(dsnsMatch)}</strong>
+              <span style={{ color: "#666" }}>
+                {" "}
+                (server={serverDsnHash ?? "n/a"}, client={clientDsnHash ?? "n/a"})
+              </span>
             </td>
           </tr>
         </tbody>
