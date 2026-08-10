@@ -161,8 +161,8 @@
 - **What:** identified during the 2026-07-30 Platform Health Review. The Supabase production Secret Key was rotated once, as a specific incident response (Task #68). There is no standing policy for periodically rotating API keys/secrets (Supabase, Sanity, Resend, Google service account, Upstash) on a cadence — only reactive, one-off rotation.
 - **Why accepted:** reasonable for current scale and single-operator context; a rotation cadence is more valuable once there's a team with turnover to protect against.
 - **Current impact:** low today; the risk profile changes once more than one person holds these credentials.
-- **Pay-down trigger:** `MAINTENANCE_SCHEDULE.md`'s Annual review is the natural home for this — add a secret-rotation line item there once Workstream I (security re-review) reaches credential management.
-- **Status:** Open
+- **Pay-down trigger:** `MAINTENANCE_SCHEDULE.md`'s Annual review is the natural home for this — add a secret-rotation line item there once a real rotation cadence is scheduled.
+- **Status:** Open. Workstream I (2026-08-10, `WORKSTREAM_I_SECURITY_REREVIEW.md`) built the full credential inventory this entry calls for (every distinct secret, its env var, referencing file(s), and blast radius if leaked) as part of its secrets-management scope, and closed one inventory gap found along the way (`PAYSTACK_SECRET_KEY` was missing from `.env.example`). The actual rotation *cadence/policy* itself — not just the inventory — remains unscheduled.
 
 ### TD-015 — Documentation split across two tools (Claude Code / Claude Chat) has no drift check
 - **Category:** Documentation
@@ -310,6 +310,16 @@
 - **Current impact:** the `contractor` role's Portfolio capabilities are currently inert — granting `upload`/`edit_own`/`submit` to a contractor account today has no effect, since no route exists for them to exercise it. Not a security issue (nothing is under-protected — if anything, contractors are more restricted than the permission matrix implies), but a functionality gap if the business intends to onboard photographers/contributors this way.
 - **Pay-down trigger:** when a real contractor/photographer needs to submit portfolio work directly, rather than via a staff/admin account uploading on their behalf. Design should cover: assigned-project access (finally wiring up `isAssignedToProject`/`workflow_assignments`), image upload reusing the existing compression/upload pipeline, mandatory Alt Text (no `publish`-capability exemption — contractors should never get the skip), the new Production Notes field for photographer context, and a submit-for-review action with no direct publish authority.
 - **Status:** Open, not scheduled. Also logged in `PRODUCT_ROADMAP.md`.
+
+### TD-030 — File uploads validate declared MIME type, not actual file content
+
+- **Category:** Security
+- **Severity:** Low
+- **What:** found during the 2026-08-10 Workstream I security re-review (`WORKSTREAM_I_SECURITY_REREVIEW.md` §3). Both upload routes — portfolio assets (`src/app/api/admin/portfolio/assets/route.ts`) and bank-transfer proof-of-payment (`src/app/api/payments/bank-transfer/proof/route.ts`) — correctly enforce auth/capability gating, a server-side size limit, and a server-side MIME-type allow-list. None of that is client-trust-only. But the type check trusts the browser/multipart-supplied `Content-Type` header rather than sniffing the file's actual magic bytes — a file with a spoofed `Content-Type` and a matching extension currently passes the allow-list regardless of its real content.
+- **Why not fixed now:** narrow audience for both routes (portfolio uploads are super-admin-only; bank-transfer proofs require an authenticated, ownership-verified session per the same review's §3 fix), and no live exploitation path was found during this review — logged as defense-in-depth to close, not an active gap being exploited.
+- **Current impact:** low; Sanity's own asset pipeline reprocesses `image`-kind uploads (some mitigation), but the `file`-kind path (PDF/zip) and the bank-transfer proof upload have no equivalent reprocessing.
+- **Pay-down trigger:** add real content-sniffing (e.g. the `file-type` package, or an equivalent magic-byte check) to both routes' validation step, replacing/supplementing the declared-`Content-Type` check.
+- **Status:** Open
 
 ---
 
