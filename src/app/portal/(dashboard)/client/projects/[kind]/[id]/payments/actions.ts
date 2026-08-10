@@ -5,6 +5,7 @@ import { getCurrentUser } from "@/lib/portal/roles";
 import { isProjectKind, type ProjectKind } from "@/lib/portal/workspace";
 import { initiateGatewayCheckout } from "@/lib/payments/checkoutService";
 import type { PaymentEntityType, PaymentType } from "@/lib/payments/types";
+import { checkRateLimit } from "@/lib/shared/rateLimit";
 
 // Ghana-first (architecture proposal §6/§13) — no country selector in
 // the UI yet since payment_country_config has exactly one active row.
@@ -33,6 +34,11 @@ export async function startGatewayCheckoutAction(formData: FormData): Promise<vo
 
   if (!isProjectKind(kind) || !id || !paymentType) {
     redirect(`/portal/client/projects/${kind}/${id}/payments/checkout?error=invalid-request`);
+  }
+
+  const rateLimit = await checkRateLimit(`checkout-init:${user.id}`);
+  if (!rateLimit.allowed) {
+    redirect(`/portal/client/projects/${kind}/${id}/payments/checkout?error=rate-limited`);
   }
 
   const origin = process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000";

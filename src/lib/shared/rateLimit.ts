@@ -1,3 +1,4 @@
+import { headers } from "next/headers";
 import { getRedis } from "./redis";
 
 // Shared rate limiter — used by every form-submission API route
@@ -82,4 +83,15 @@ export async function checkRateLimit(key: string): Promise<{ allowed: boolean; r
     console.error("[rateLimit] Redis check failed, allowing request", err);
     return { allowed: true };
   }
+}
+
+// Server Actions don't receive a NextRequest (unlike Route Handlers,
+// which read x-forwarded-for directly off the request object) — this
+// reads the same header via next/headers so anonymous, pre-auth
+// actions (login, signup, forgot-password) can still be rate-limited
+// per-IP. Workstream I security re-review (2026-08-10).
+export async function getClientIp(): Promise<string> {
+  const headerList = await headers();
+  const forwarded = headerList.get("x-forwarded-for");
+  return forwarded?.split(",")[0]?.trim() || "unknown";
 }

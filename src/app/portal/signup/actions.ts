@@ -7,6 +7,7 @@ import { verifyTurnstileToken } from "@/lib/turnstile";
 import { assignClassificationBySlug } from "@/lib/portal/memberNumbers";
 import { linkGuestRecordsToAccount } from "@/lib/supabase/accountLinking";
 import { siteUrl } from "@/lib/shared/env";
+import { checkRateLimit, getClientIp } from "@/lib/shared/rateLimit";
 
 export type SignupState = { error: string | null };
 
@@ -27,6 +28,11 @@ export async function signUpAction(_prev: SignupState, formData: FormData): Prom
   }
   if (password.length < 8) {
     return { error: "Password must be at least 8 characters." };
+  }
+
+  const rateLimit = await checkRateLimit(`signup:${await getClientIp()}`);
+  if (!rateLimit.allowed) {
+    return { error: "Too many attempts. Please try again shortly." };
   }
 
   const turnstileOk = await verifyTurnstileToken(

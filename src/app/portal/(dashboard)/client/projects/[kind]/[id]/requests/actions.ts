@@ -16,6 +16,7 @@ import {
   sendProjectRequestAcknowledgementEmail,
   sendProjectRequestAdminNotificationEmail,
 } from "@/lib/projectRequests/email";
+import { checkRateLimit } from "@/lib/shared/rateLimit";
 
 // Client-facing submission only — never touches status/staff_decision
 // beyond the column defaults, so nothing a client submits can ever
@@ -26,6 +27,9 @@ import {
 export async function submitProjectRequestAction(formData: FormData): Promise<void> {
   const user = await getCurrentUser();
   if (!user) return;
+
+  const rateLimit = await checkRateLimit(`project-request:${user.id}`);
+  if (!rateLimit.allowed) return;
 
   const kind = String(formData.get("kind") ?? "");
   const id = String(formData.get("id") ?? "");

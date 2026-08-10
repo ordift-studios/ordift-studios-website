@@ -14,6 +14,7 @@ const ERROR_MESSAGES: Record<string, string> = {
   "invalid-or-unavailable-amount": "That amount isn't available to pay right now — please refresh and try again.",
   "no-exchange-rate-set": "Card and Mobile Money payments aren't available in your currency yet — please use Bank Transfer, or contact us.",
   "gateway-init-failed": "We couldn't start your payment right now. Please try again shortly, or contact us if this continues.",
+  "rate-limited": "Too many attempts. Please wait a few minutes and try again.",
 };
 
 export default function CheckoutForm({

@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import { primaryPortalPath, type RoleSlug } from "@/lib/portal/roles";
 import { verifyTurnstileToken } from "@/lib/turnstile";
 import { linkGuestRecordsToAccount } from "@/lib/supabase/accountLinking";
+import { checkRateLimit, getClientIp } from "@/lib/shared/rateLimit";
 
 export type LoginState = { error: string | null };
 
@@ -15,6 +16,11 @@ export async function signInAction(_prev: LoginState, formData: FormData): Promi
 
   if (!email || !password) {
     return { error: "Enter your email and password." };
+  }
+
+  const rateLimit = await checkRateLimit(`login:${await getClientIp()}`);
+  if (!rateLimit.allowed) {
+    return { error: "Too many attempts. Please try again shortly." };
   }
 
   const turnstileOk = await verifyTurnstileToken(
