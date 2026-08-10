@@ -1,7 +1,10 @@
 // Cloudflare Turnstile verification — protects every publicly accessible
 // form capable of creating a record or triggering an email:
-// /portal/signup, /portal/login, Contact Enquiry (/book), and Workshop
-// Registration. Inert until TURNSTILE_SECRET_KEY is set: verifyTurnstileToken()
+// /portal/signup, /portal/login, /portal/forgot-password (added
+// 2026-08-10, Workstream I security re-review — this one anonymous,
+// email-triggering form had no CAPTCHA at all), Contact Enquiry
+// (/book), and Workshop Registration. Inert until TURNSTILE_SECRET_KEY
+// is set: verifyTurnstileToken()
 // short-circuits to true, and the client widget
 // (src/components/TurnstileWidget.tsx) renders nothing when
 // NEXT_PUBLIC_TURNSTILE_SITE_KEY is unset. Same "code complete, waiting

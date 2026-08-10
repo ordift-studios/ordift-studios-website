@@ -1,14 +1,24 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
 import Link from "next/link";
 import Button from "@/components/Button";
+import TurnstileWidget from "@/components/TurnstileWidget";
 import { requestPasswordResetAction, type ForgotPasswordState } from "./actions";
 
 const initialState: ForgotPasswordState = { submitted: false, error: null };
 
 export default function ForgotPasswordForm() {
   const [state, formAction, pending] = useActionState(requestPasswordResetAction, initialState);
+  // Same submit-gating + forced-fresh-challenge pattern as LoginForm.tsx
+  // — added 2026-08-10 (Workstream I security re-review): this was the
+  // one auth-adjacent form with no CAPTCHA at all.
+  const [turnstileToken, setTurnstileToken] = useState("");
+  const [prevState, setPrevState] = useState(state);
+  if (state !== prevState) {
+    setPrevState(state);
+    if (state.error) setTurnstileToken("");
+  }
 
   if (state.submitted) {
     return (
@@ -55,7 +65,13 @@ export default function ForgotPasswordForm() {
         />
       </div>
 
-      <Button type="submit" variant="primary" disabled={pending} className="w-full">
+      <TurnstileWidget
+        resetSignal={state}
+        onVerify={(token) => setTurnstileToken(token)}
+        onExpire={() => setTurnstileToken("")}
+      />
+
+      <Button type="submit" variant="primary" disabled={pending || !turnstileToken} className="w-full">
         {pending ? "Sending…" : "Send reset link"}
       </Button>
 
