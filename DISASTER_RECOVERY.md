@@ -1,6 +1,9 @@
 # Disaster Recovery Procedure
 
 **Last audited:** 2026-07-30, directly against the live Supabase and Vercel dashboards (not from memory or a prior note) — see §1 for what was actually checked and how.
+**Re-stress-tested:** 2026-08-10 (Workstream I → H, `PRODUCT_ROADMAP.md`'s dependency-ordered plan). This pass asked "does this document still describe what would actually happen if Production broke today, and what breaks it as soon as tomorrow" — not just "does the text still read correctly." Findings below; no content was rewritten to match staging's more advanced schema, because this document is specifically about **Production**, and Production has not moved since the 2026-07-30 audit (confirmed against `PAYSTACK_PRODUCTION_HANDOVER.md` §2, itself actively maintained this same session: Production is still on migration `0022`; migrations 0023–0025 remain pending promotion, gated on your explicit go-ahead).
+
+**The one finding that matters most: this document has no built-in trigger for its own staleness.** The moment migrations 0023–0025 are promoted to Production (Workflow engine, Payments schema, and — critically — the first-ever Supabase Storage bucket), every number and claim in §2.5, §4, and §7 below goes stale **on that exact day**, not gradually. See the callout in §4 and the new item added to `PAYSTACK_PRODUCTION_HANDOVER.md`'s own promotion checklist, so this isn't the fourth time a known gap quietly rots before being caught (same pattern TD-014 already names for secret rotation).
 
 This document exists so that a real incident (accidental data deletion, a bad migration, a compromised credential, a broken deployment) has a documented path back to a working state — written *before* an incident, not improvised during one.
 
@@ -93,7 +96,7 @@ The very first manual production backup was taken and verified 2026-07-30, closi
 5. Proceed to §7 (full post-recovery validation).
 
 **If no backup exists or the most recent one is unusably old (should not happen if §2's schedule is followed — treat this branch as the failure case, not the plan):**
-1. Schema-only recovery is still possible: run every file in `supabase/migrations/` in order (`0001` through `0022`) against a fresh project via `supabase db push` or the SQL Editor.
+1. Schema-only recovery is still possible: run every file in `supabase/migrations/` in order, all the way through the highest-numbered one present, against a fresh project via `supabase db push` or the SQL Editor. (Deliberately phrased without a hardcoded endpoint number — the same staleness problem flagged in §4 for the Storage bucket applies here too, since Production's actual migration level moves independently of when this document was last read. Cross-check the true current count for whichever environment you're recovering via `supabase migration list` rather than trusting a number written down here.)
 2. **Data since the last good backup is unrecoverable** unless it can be reconstructed from a secondary source:
    - Google Sheets (`GOOGLE_SHEETS_INTEGRATION.md`) holds a best-effort secondary copy of Enquiries, Workshop Registrations, and Project Requests — check the "Ordift Studios Operations" spreadsheet for whatever rows synced successfully.
    - `sheet_sync_failures` and `email_send_failures` (if the primary Supabase write itself failed, these would be empty for that row — they only capture *secondary*-system failures, not primary data).
@@ -111,7 +114,11 @@ Don't consider a restore complete just because `pg_restore` exited without an er
 
 ## 4. Storage Restoration
 
-**Not applicable today** — no Supabase Storage buckets are in use; all media is served by Sanity (a separate CDN-backed system with its own dataset versioning, outside this document's scope). If a future feature starts using Supabase Storage (e.g., Tier 2 sensitive-document uploads per the original Plan Part G), this document must be revisited before that feature launches, since Storage files are backed up separately from the database and are also excluded from the Free plan's (nonexistent) backup coverage.
+**Not applicable to Production today** — confirmed accurate as of this 2026-08-10 review: no Supabase Storage buckets exist on the Production project. All media is served by Sanity (a separate CDN-backed system with its own dataset versioning, outside this document's scope).
+
+**This is about to change, and it's not the speculative "future feature" this section originally anticipated.** Migration `0024` (Payments) — already built, verified on staging, and next in `PAYSTACK_PRODUCTION_HANDOVER.md`'s promotion queue — creates a real, private `payment-proofs` bucket (bank-transfer proof-of-payment uploads, up to 8MB each, image/PDF). **Storage buckets are not captured by `pg_dump` at all** — the backup procedure in §2 only covers `public.*` tables. The moment `0024` reaches Production, this document's backup coverage has a real gap the day it opens, not a hypothetical one: uploaded proof-of-payment files would have zero backup coverage under the current §2 strategy.
+
+**Action required at that promotion, not before:** either (a) accept the risk explicitly for now — proof-of-payment files can plausibly be re-requested from the client if lost, unlike a database row — and note that decision here, or (b) add a periodic `supabase storage` object listing/download step to the §2.1 backup routine. This is a decision for you, not something to resolve unilaterally now while the bucket doesn't exist yet on Production. Flagged in `PAYSTACK_PRODUCTION_HANDOVER.md`'s promotion checklist so it surfaces at the right moment.
 
 ## 5. Environment Variable Recovery
 
@@ -120,6 +127,7 @@ Don't consider a restore complete just because `pg_restore` exited without an er
 - **Recommendation:** maintain your own secure, encrypted copy (password manager, not a plaintext file) of every Sensitive-flagged production value at the moment it's set, specifically because Vercel cannot ever show it to you again.
 - **Non-Sensitive variables** (most of them) remain readable via `vercel env pull` or the dashboard at any time — no special recovery action needed for those.
 - **Full current variable list:** `.env.example` documents every variable this app uses and why; use it as the checklist when rebuilding an environment from scratch.
+- **Blast-radius reference (added 2026-08-10):** `WORKSTREAM_I_SECURITY_REREVIEW.md` §6 catalogs every distinct credential this app depends on — env var name, referencing file(s), and blast radius if leaked — built during the security re-review for exactly this kind of recovery-prioritization use. The single highest-stakes one to protect a password-manager copy of: `PAYSTACK_SECRET_KEY` (full Paystack API access including refunds, and the same key that signs/verifies webhooks) — it's also, per that same review, currently missing a documented example in `.env.example` history prior to this session, so double-check a real password-manager copy actually exists for it, not just an assumption that it does.
 
 ## 6. Vercel Deployment Rollback
 
@@ -139,7 +147,7 @@ This only changes which build serves traffic — it does **not** touch the datab
 
 After any recovery action (schema restore, data restore, or deployment rollback), confirm before considering the incident closed:
 
-- [ ] Production PostgREST introspection (`GET /rest/v1/`) enumerates all expected tables — compare against the list in this session's migration-verification pass (25 tables as of migration 0022).
+- [ ] Production PostgREST introspection (`GET /rest/v1/`) enumerates all expected tables — compare against `supabase/migrations/*.sql`'s actual `create table public.*` statements for whatever the current migration level is (not a hardcoded count here — see §3's note on why a written-down number goes stale independently of this document).
 - [ ] `service_role` grants intact on every table that needs them (see `ADMIN_GUIDE.md` §10's checklist) — a schema-only restore from raw migration files should include these automatically, but verify.
 - [ ] A test account can sign up, log in, and reach the correct portal for its role.
 - [ ] Contact Enquiry and Workshop Registration forms submit successfully (staging first) and create the expected database row.
@@ -167,3 +175,5 @@ Staying on Free is a reasonable choice *before* the business is handling real, o
 3. **The first real payment/booking is confirmed** — the point at which the business has a direct financial relationship with a client tied to records in this database.
 
 Whichever happens first, upgrade within that same week — don't let "we'll do it later" quietly become the permanent state, which is exactly how the Free-plan gap got flagged three times (2026-07-27, 2026-07-30 audit, and now this decision) before actually being resolved. When you hit any of these three triggers, tell me and I'll walk you through the upgrade (dashboard clicks, verifying backups activate, and updating this document to reflect Pro coverage) the same way this document walks through the current manual process.
+
+**2026-08-10 stress-test note:** this review specifically checked whether trigger #1 might already have silently fired without the Pro upgrade following it — the exact failure mode this section warns against. `FORMS_SENDING_ENABLED` is confirmed present in Production's environment variables (`vercel env ls production`), but its actual `true`/`false` value couldn't be determined via CLI — an empty read is structurally identical whether the variable is genuinely unset or marked Sensitive, the same ambiguity documented in this session's Sentry DSN investigation. The project's own task history is the stronger signal here: "Enable production form delivery" remains an explicitly pending milestone, consistent with this trigger not having fired yet — but worth a direct one-line confirmation from you rather than resting on that inference alone.
