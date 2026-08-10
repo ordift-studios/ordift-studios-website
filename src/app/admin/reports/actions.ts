@@ -7,6 +7,7 @@ import { getSummaryReportModule } from "@/lib/admin/reports/summaryModules";
 import { rowsToXlsxBuffer } from "@/lib/admin/reports/xlsx";
 import { sendReportEmail } from "@/lib/admin/reports/sendReportEmail";
 import type { ReportRow } from "@/lib/admin/reports/types";
+import { logActivity } from "@/lib/admin/activityLog";
 
 // Plain <form action={...}> submission, no client JS — same pattern as
 // src/app/portal/login/actions.ts's signOutAction. Redirects back to
@@ -53,5 +54,16 @@ export async function emailReportAction(formData: FormData): Promise<void> {
   });
 
   if (!result.ok) redirect(`/admin/reports?error=${result.error}`);
+
+  // Sensitive-data-egress action (report may contain client/payment
+  // PII) — audit-logged same as every other privileged mutation, added
+  // 2026-08-10 (Workstream I security re-review: this was the one
+  // export/email action with no audit trail).
+  await logActivity({
+    actorUserId: user.id,
+    action: "report.emailed",
+    metadata: { kind, key, label, rowCount: rows.length, mode: result.mode },
+  });
+
   redirect(`/admin/reports?sent=${encodeURIComponent(label)}&mode=${result.mode}`);
 }

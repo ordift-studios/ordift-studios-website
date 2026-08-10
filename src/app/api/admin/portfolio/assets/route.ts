@@ -3,6 +3,7 @@ import type { NextRequest } from "next/server";
 import { getCurrentUser } from "@/lib/portal/roles";
 import { canCreatePortfolioProjectsNatively } from "@/lib/admin/portfolioPermissions";
 import { uploadPortfolioFile, uploadPortfolioImage } from "@/lib/content/sanity/portfolioAssets";
+import { logActivity } from "@/lib/admin/activityLog";
 
 // Native Portfolio Project creator (2026-08-05) — the one route where a
 // browser payload reaches the server carrying real media bytes. Every
@@ -69,6 +70,17 @@ export async function POST(request: NextRequest) {
       kind === "image"
         ? await uploadPortfolioImage(buffer, file.name, file.type)
         : await uploadPortfolioFile(buffer, file.name, file.type);
+
+    // Who uploaded this specific asset wasn't previously recorded —
+    // the downstream project-creation/field-save actions that consume
+    // it are audit-logged, but the upload itself wasn't. Added 2026-08-10
+    // (Workstream I security re-review).
+    await logActivity({
+      actorUserId: user.id,
+      action: "portfolio.asset_uploaded",
+      metadata: { kind, filename: file.name, sizeBytes: file.size, contentType: file.type },
+    });
+
     return NextResponse.json({ ok: true, ...asset });
   } catch (error) {
     console.error("[admin] portfolio asset upload failed", error);
