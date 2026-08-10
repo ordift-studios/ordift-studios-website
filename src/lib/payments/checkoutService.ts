@@ -35,7 +35,11 @@ export type InitiateCheckoutResult =
   | { ok: true; checkoutUrl: string; paymentId: string }
   | { ok: false; error: string };
 
-async function resolveEntityAmounts(
+// Exported so the bank-transfer initiation route can reuse the exact
+// same ownership-scoped lookup and balance-bounding logic rather than
+// re-deriving amounts from a client-supplied value (Security Review
+// §9/§10 applies equally to bank transfers, not just gateway checkout).
+export async function resolveEntityAmounts(
   entityType: PaymentEntityType,
   entityId: string
 ): Promise<{ amountDueUsd: number; amountPaidUsd: number } | null> {
@@ -59,7 +63,7 @@ async function resolveEntityAmounts(
   };
 }
 
-function resolveAmountToCharge(
+export function resolveAmountToCharge(
   paymentType: PaymentType,
   amountDueUsd: number,
   amountPaidUsd: number,

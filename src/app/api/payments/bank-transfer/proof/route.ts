@@ -3,6 +3,9 @@ import type { NextRequest } from "next/server";
 import { getCurrentUser, isStaffOrAdmin } from "@/lib/portal/roles";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { generateRecordId } from "@/lib/shared/recordId";
+import { checkRateLimit } from "@/lib/shared/rateLimit";
+import { resolveEntityAmounts, resolveAmountToCharge } from "@/lib/payments/checkoutService";
+import type { PaymentEntityType, PaymentType } from "@/lib/payments/types";
 
 // Bank-transfer proof-of-payment submission (Ghana Phase 3, sandbox —
 // real Ghana banking details are not populated until go-live per your
@@ -98,6 +101,9 @@ export async function POST(request: NextRequest) {
   return NextResponse.json({ ok: true, paymentId: payment.id });
 }
 
+const ENTITY_TYPES = new Set<PaymentEntityType>(["enquiry", "workshop_registration"]);
+const PAYMENT_TYPES = new Set<PaymentType>(["full", "balance", "deposit", "partial"]);
+
 // Companion helper (called from a client-side "Bank Transfer" checkout
 // step before the proof-upload form is shown) — creates the initial
 // 'pending' bank_transfer payment row so the upload route above always
@@ -110,6 +116,14 @@ export async function PUT(request: NextRequest) {
     return NextResponse.json({ ok: false, error: "unauthorized" }, { status: 401 });
   }
 
+  const rateLimit = await checkRateLimit(`bank-transfer-init:${user.id}`);
+  if (!rateLimit.allowed) {
+    return NextResponse.json(
+      { ok: false, error: "rate-limited" },
+      { status: 429, headers: { "Retry-After": String(rateLimit.retryAfterSeconds ?? 60) } }
+    );
+  }
+
   const body = (await request.json().catch(() => null)) as {
     entityType?: string;
     entityId?: string;
@@ -120,6 +134,32 @@ export async function PUT(request: NextRequest) {
 
   if (!body?.entityType || !body.entityId || !body.paymentType || !body.country || !body.amountUsd) {
     return NextResponse.json({ ok: false, error: "missing-fields" }, { status: 400 });
+  }
+  if (!ENTITY_TYPES.has(body.entityType as PaymentEntityType) || !PAYMENT_TYPES.has(body.paymentType as PaymentType)) {
+    return NextResponse.json({ ok: false, error: "invalid-fields" }, { status: 400 });
+  }
+
+  // Ownership + amount validated server-side exactly like the gateway
+  // checkout path (checkoutService.ts) — never trust a client-supplied
+  // entityId/amountUsd directly. resolveEntityAmounts uses the
+  // session-scoped (RLS-bound) client, so an entity the caller doesn't
+  // own resolves to null here, same as it would for gateway checkout.
+  const entityType = body.entityType as PaymentEntityType;
+  const paymentType = body.paymentType as PaymentType;
+
+  const amounts = await resolveEntityAmounts(entityType, body.entityId);
+  if (!amounts) {
+    return NextResponse.json({ ok: false, error: "entity-not-found" }, { status: 404 });
+  }
+
+  const validatedAmountUsd = resolveAmountToCharge(
+    paymentType,
+    amounts.amountDueUsd,
+    amounts.amountPaidUsd,
+    body.amountUsd
+  );
+  if (validatedAmountUsd == null) {
+    return NextResponse.json({ ok: false, error: "invalid-amount" }, { status: 422 });
   }
 
   const admin = createAdminClient();
@@ -151,17 +191,17 @@ export async function PUT(request: NextRequest) {
   }
 
   const rateToUsd = Number(rateRow.rate_to_usd);
-  const convertedAmount = Math.round(body.amountUsd * rateToUsd * 100) / 100;
+  const convertedAmount = Math.round(validatedAmountUsd * rateToUsd * 100) / 100;
   const recordId = await generateRecordId("PAY");
 
   const { data: payment, error } = await admin
     .from("payments")
     .insert({
       record_id: recordId,
-      entity_type: body.entityType,
+      entity_type: entityType,
       entity_id: body.entityId,
       user_id: user.id,
-      reference_amount_usd: body.amountUsd,
+      reference_amount_usd: validatedAmountUsd,
       payment_currency: countryConfig.default_currency_code,
       exchange_rate: rateToUsd,
       exchange_rate_source: "ordift",
