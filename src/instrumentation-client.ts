@@ -1,0 +1,12 @@
+import * as Sentry from "@sentry/nextjs";
+
+// Client-side half of production error monitoring (Version 1.0.5
+// Workstream C). Same inert-until-configured behavior as the server
+// side in instrumentation.ts — Sentry.init() no-ops without a DSN.
+Sentry.init({
+  dsn: process.env.NEXT_PUBLIC_SENTRY_DSN,
+  tracesSampleRate: 0.1,
+  environment: process.env.NODE_ENV,
+});
+
+export const onRouterTransitionStart = Sentry.captureRouterTransitionStart;
