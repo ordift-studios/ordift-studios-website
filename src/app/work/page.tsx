@@ -3,8 +3,9 @@ import Link from "next/link";
 import NavBar from "@/components/NavBar";
 import Footer from "@/components/Footer";
 import PortfolioCard from "@/components/portfolio/PortfolioCard";
+import PortfolioHeroSlideshow from "@/components/portfolio/PortfolioHeroSlideshow";
 import { contentRepository } from "@/lib/content";
-import { DISCIPLINE_LABEL, matchesSearch } from "@/lib/content/portfolioHelpers";
+import { DISCIPLINE_LABEL, getSlideshowProjects, matchesSearch } from "@/lib/content/portfolioHelpers";
 import type { PortfolioDiscipline } from "@/lib/content/types";
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://ordiftstudios.com";
@@ -65,6 +66,7 @@ export default async function PortfolioPage({
   });
 
   const featured = allProjects.filter((p) => p.featured);
+  const slideshowProjects = getSlideshowProjects(allProjects);
 
   // Only offer category chips that can actually return a result under the
   // current discipline filter — a chip with a guaranteed-empty result is a
@@ -79,6 +81,10 @@ export default async function PortfolioPage({
   return (
     <main>
       <NavBar />
+
+      {!hasFilters && slideshowProjects.length > 0 && (
+        <PortfolioHeroSlideshow projects={slideshowProjects} />
+      )}
 
       <section className="bg-ordift-navy-950 text-white px-4 sm:px-8 py-16 sm:py-20">
         <div className="max-w-6xl mx-auto">
