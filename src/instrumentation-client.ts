@@ -6,7 +6,11 @@ import * as Sentry from "@sentry/nextjs";
 Sentry.init({
   dsn: process.env.NEXT_PUBLIC_SENTRY_DSN,
   tracesSampleRate: 0.1,
-  environment: process.env.NODE_ENV,
+  // NODE_ENV is "production" on every optimized Vercel build, staging
+  // included — it can't distinguish which deployment an event came from.
+  // NEXT_PUBLIC_SITE_ENV mirrors the server-only SITE_ENV already used
+  // correctly in instrumentation.ts (TD-032).
+  environment: process.env.NEXT_PUBLIC_SITE_ENV ?? "development",
 });
 
 export const onRouterTransitionStart = Sentry.captureRouterTransitionStart;
