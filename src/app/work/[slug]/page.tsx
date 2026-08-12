@@ -4,13 +4,14 @@ import { notFound } from "next/navigation";
 import NavBar from "@/components/NavBar";
 import Footer from "@/components/Footer";
 import PortfolioCard from "@/components/portfolio/PortfolioCard";
-import SocialShare from "@/components/SocialShare";
-import TestimonialCard from "@/components/TestimonialCard";
 import { contentRepository } from "@/lib/content";
 import { DISCIPLINE_HREF, DISCIPLINE_LABEL } from "@/lib/content/portfolioHelpers";
+import { resolvePrimaryDiscipline } from "@/lib/content/portfolioTreatment";
 import MediaAsset from "@/components/media/MediaAsset";
-import Gallery from "@/components/media/Gallery";
-import BeforeAfterGallery from "@/components/media/BeforeAfterGallery";
+import PhotographyProjectView from "@/components/portfolio/PhotographyProjectView";
+import VideographyProjectView from "@/components/portfolio/VideographyProjectView";
+import GraphicDesignProjectView from "@/components/portfolio/GraphicDesignProjectView";
+import GenericProjectView from "@/components/portfolio/GenericProjectView";
 import { ogImageUrl } from "@/lib/media/ogImageUrl";
 
 export async function generateStaticParams() {
@@ -57,14 +58,6 @@ export async function generateMetadata({
     twitter: { card: "summary_large_image", title, description, images },
   };
 }
-
-const NARRATIVE_SECTIONS: { key: "objective" | "strategy" | "challenges" | "solution" | "process"; label: string }[] = [
-  { key: "objective", label: "Project Objective" },
-  { key: "strategy", label: "Creative Strategy" },
-  { key: "challenges", label: "Challenges" },
-  { key: "solution", label: "Solution" },
-  { key: "process", label: "Creative Process" },
-];
 
 export default async function PortfolioProjectPage({
   params,
@@ -156,188 +149,32 @@ export default async function PortfolioProjectPage({
       <section className="bg-white px-4 sm:px-8 py-14 sm:py-20">
         <div className="max-w-4xl mx-auto grid grid-cols-1 lg:grid-cols-[1.1fr_0.9fr] gap-10 lg:gap-16">
           <div>
-            <p className="font-sans text-body text-ordift-ink mb-8 whitespace-pre-line">
-              {project.story}
-            </p>
-
-            {NARRATIVE_SECTIONS.filter((section) => project[section.key]).map((section) => (
-              <div key={section.key} className="mb-8">
-                <h2 className="font-serif font-medium text-card-title text-ordift-ink mb-2">
-                  {section.label}
-                </h2>
-                <p className="font-sans text-body-small text-ordift-ink-muted whitespace-pre-line">
-                  {project[section.key]}
-                </p>
-              </div>
-            ))}
-
-            {project.collaborators.length > 0 && (
-              <div className="mb-8">
-                <h2 className="font-serif font-medium text-card-title text-ordift-ink mb-3">
-                  Collaborators
-                </h2>
-                <ul className="flex flex-wrap gap-x-6 gap-y-2">
-                  {project.collaborators.map((c) => (
-                    <li key={c.id} className="font-sans text-body-small text-ordift-ink">
-                      <span className="font-medium">{c.name}</span>{" "}
-                      <span className="text-ordift-ink-muted">— {c.role}</span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-
-            {project.deliverables.length > 0 && (
-              <div className="mb-8">
-                <h2 className="font-serif font-medium text-card-title text-ordift-ink mb-3">
-                  Deliverables
-                </h2>
-                <ul className="flex flex-col gap-2">
-                  {project.deliverables.map((item, i) => (
-                    <li key={i} className="font-sans text-body-small text-ordift-ink flex gap-2">
-                      <span className="text-ordift-gold-pressed">—</span>
-                      <span>{item}</span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-
-            {project.results && (
-              <div className="mb-8 rounded-lg bg-ordift-offwhite p-5">
-                <h2 className="font-serif font-medium text-card-title text-ordift-ink mb-2">
-                  Results &amp; Impact
-                </h2>
-                <p className="font-sans text-body-small text-ordift-ink-muted">{project.results}</p>
-              </div>
-            )}
-
-            {(project.awards.length > 0 || project.publications.length > 0) && (
-              <div className="mb-8 grid grid-cols-1 sm:grid-cols-2 gap-6">
-                {project.awards.length > 0 && (
-                  <div>
-                    <h2 className="font-serif font-medium text-card-title text-ordift-ink mb-3">Awards</h2>
-                    <ul className="flex flex-col gap-2">
-                      {project.awards.map((a) => (
-                        <li key={a.id} className="font-sans text-body-small text-ordift-ink">
-                          {a.title} <span className="text-ordift-ink-muted">— {a.issuer}{a.year ? `, ${a.year}` : ""}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-                {project.publications.length > 0 && (
-                  <div>
-                    <h2 className="font-serif font-medium text-card-title text-ordift-ink mb-3">
-                      Publications
-                    </h2>
-                    <ul className="flex flex-col gap-2">
-                      {project.publications.map((p) =>
-                        p.url ? (
-                          <li key={p.id}>
-                            <a
-                              href={p.url}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="font-sans text-body-small text-ordift-gold-pressed underline underline-offset-4"
-                            >
-                              {p.name}
-                            </a>
-                          </li>
-                        ) : (
-                          <li key={p.id} className="font-sans text-body-small text-ordift-ink">
-                            {p.name}
-                          </li>
-                        )
-                      )}
-                    </ul>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {project.gallery.length > 0 && (
-              <div className="mb-8">
-                <h2 className="font-serif font-medium text-card-title text-ordift-ink mb-3">
-                  Final Gallery
-                </h2>
-                {/* Nested inside this page's ~55%-width content column (not full
-                    viewport width) from `lg` up — the default `sizes` guess assumes
-                    full-bleed and was requesting a much larger image than the tile
-                    actually renders at. Found during the 2026-08-05 review. */}
-                <Gallery
-                  images={project.gallery}
-                  columns={3}
-                  sizes="(min-width: 1024px) 18vw, (min-width: 640px) 33vw, 50vw"
-                />
-              </div>
-            )}
-
-            {project.videos.length > 0 && (
-              <div className="mb-8">
-                <h2 className="font-serif font-medium text-card-title text-ordift-ink mb-3">Videos</h2>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  {project.videos.map((video, i) => (
-                    <MediaAsset key={i} media={video} aspectRatio="16/9" className="rounded-lg" />
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {project.behindTheScenesGallery.length > 0 && (
-              <div className="mb-8">
-                <h2 className="font-serif font-medium text-card-title text-ordift-ink mb-3">
-                  Behind the Scenes
-                </h2>
-                <Gallery
-                  images={project.behindTheScenesGallery}
-                  columns={3}
-                  sizes="(min-width: 1024px) 18vw, (min-width: 640px) 33vw, 50vw"
-                />
-              </div>
-            )}
-
-            {project.beforeAfterGallery.length > 0 && (
-              <div className="mb-8">
-                <h2 className="font-serif font-medium text-card-title text-ordift-ink mb-3">
-                  Before &amp; After
-                </h2>
-                <BeforeAfterGallery pairs={project.beforeAfterGallery} />
-              </div>
-            )}
-
-            {project.downloadableAssets.length > 0 && (
-              <div className="mb-8">
-                <h2 className="font-serif font-medium text-card-title text-ordift-ink mb-3">Downloads</h2>
-                <ul className="flex flex-col gap-2">
-                  {project.downloadableAssets.map((asset) => (
-                    <li key={asset.id}>
-                      <a
-                        href={asset.url}
-                        className="font-sans text-body-small text-ordift-gold-pressed underline underline-offset-4"
-                      >
-                        {asset.label} ({asset.fileType})
-                      </a>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-
-            {testimonials.length > 0 && (
-              <div className="mb-8">
-                <h2 className="font-serif font-medium text-card-title text-ordift-ink mb-3">
-                  What the client says
-                </h2>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  {testimonials.map((t) => (
-                    <TestimonialCard key={t.id} testimonial={t} />
-                  ))}
-                </div>
-              </div>
-            )}
-
-            <SocialShare url={shareUrl} title={project.title} />
+            {/* Discipline-specific presentation architecture (Portfolio
+                redesign Phase 2) — Photography/Videography/Graphic Design
+                each get a purpose-built view; everything else falls back to
+                the original, unchanged generic view. Shared surroundings
+                (this section's shell, sidebar, prev/next, related sections,
+                SEO/JSON-LD above) stay identical for every discipline. */}
+            {(() => {
+              const primaryDiscipline = resolvePrimaryDiscipline(project);
+              if (primaryDiscipline === "photography") {
+                return (
+                  <PhotographyProjectView
+                    project={project}
+                    categories={projectCategories}
+                    testimonials={testimonials}
+                    shareUrl={shareUrl}
+                  />
+                );
+              }
+              if (primaryDiscipline === "videography") {
+                return <VideographyProjectView project={project} testimonials={testimonials} shareUrl={shareUrl} />;
+              }
+              if (primaryDiscipline === "graphic-design") {
+                return <GraphicDesignProjectView project={project} testimonials={testimonials} shareUrl={shareUrl} />;
+              }
+              return <GenericProjectView project={project} testimonials={testimonials} shareUrl={shareUrl} />;
+            })()}
           </div>
 
           <div>
