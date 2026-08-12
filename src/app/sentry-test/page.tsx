@@ -8,11 +8,20 @@ import * as Sentry from "@sentry/nextjs";
 // Supabase, Paystack, forms, auth, storage, or business-workflow
 // imports. Remove this route entirely once verification is complete.
 export default function SentryTestPage() {
-  const [sent, setSent] = useState(false);
+  const [status, setStatus] = useState<"idle" | "sent" | "unavailable">("idle");
 
   function handleSendTestError() {
+    // Sentry.init() no-ops without a valid DSN — captureException() would
+    // still return without throwing, so a message here can't be trusted
+    // unless a client actually exists. (Found live 2026-08-12: this page
+    // reported "sent" for several hours while Production's DSN held a
+    // masked placeholder value, not a real one, and no event ever arrived.)
+    if (!Sentry.getClient()) {
+      setStatus("unavailable");
+      return;
+    }
     Sentry.captureException(new Error("Ordift Production Sentry Verification Test"));
-    setSent(true);
+    setStatus("sent");
   }
 
   return (
@@ -31,9 +40,14 @@ export default function SentryTestPage() {
         >
           Send Sentry Test Error
         </button>
-        {sent && (
+        {status === "sent" && (
           <p className="font-sans text-sm mt-6" role="status">
             Test event sent. Check Sentry.
+          </p>
+        )}
+        {status === "unavailable" && (
+          <p className="font-sans text-sm mt-6 text-red-600" role="status">
+            Sentry client is not initialized in this environment — no event was sent.
           </p>
         )}
       </div>
