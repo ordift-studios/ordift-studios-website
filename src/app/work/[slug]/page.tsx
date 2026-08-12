@@ -107,26 +107,32 @@ export default async function PortfolioProjectPage({
 
   const primaryDiscipline = resolvePrimaryDiscipline(project);
 
-  // Photography gets its own full page shape — image-first, no sidebar
-  // metadata dashboard — rather than sharing the shell below (Portfolio
-  // redesign, revised 2026-08-12 after visual review). Videography/Graphic
-  // Design keep the original shell for now; they'll get the same treatment
-  // in a later, separately-reviewed pass.
+  // Photography/Videography/Graphic Design each get their own full page
+  // shape — work-first, no sidebar metadata dashboard — rather than
+  // sharing the shell below (Portfolio redesign, completed 2026-08-12).
+  // Only disciplines without a dedicated view yet (branding,
+  // content-creation, talent-management, production) still use the
+  // original shell + GenericProjectView, unchanged.
+  const disciplineViewProps = {
+    project,
+    categories: projectCategories,
+    testimonials,
+    shareUrl,
+    jsonLd,
+    prevProject,
+    nextProject,
+    relatedProjects,
+    relatedWorkshops,
+    categoryById,
+  };
   if (primaryDiscipline === "photography") {
-    return (
-      <PhotographyProjectView
-        project={project}
-        categories={projectCategories}
-        testimonials={testimonials}
-        shareUrl={shareUrl}
-        jsonLd={jsonLd}
-        prevProject={prevProject}
-        nextProject={nextProject}
-        relatedProjects={relatedProjects}
-        relatedWorkshops={relatedWorkshops}
-        categoryById={categoryById}
-      />
-    );
+    return <PhotographyProjectView {...disciplineViewProps} />;
+  }
+  if (primaryDiscipline === "videography") {
+    return <VideographyProjectView {...disciplineViewProps} />;
+  }
+  if (primaryDiscipline === "graphic-design") {
+    return <GraphicDesignProjectView {...disciplineViewProps} />;
   }
 
   return (
@@ -173,20 +179,10 @@ export default async function PortfolioProjectPage({
       <section className="bg-white px-4 sm:px-8 py-14 sm:py-20">
         <div className="max-w-4xl mx-auto grid grid-cols-1 lg:grid-cols-[1.1fr_0.9fr] gap-10 lg:gap-16">
           <div>
-            {/* Discipline-specific presentation architecture (Portfolio
-                redesign Phase 2) — Videography/Graphic Design each get a
-                purpose-built content view; everything else falls back to
-                the original, unchanged generic view. Photography no longer
-                uses this shell at all (see the branch above). */}
-            {(() => {
-              if (primaryDiscipline === "videography") {
-                return <VideographyProjectView project={project} testimonials={testimonials} shareUrl={shareUrl} />;
-              }
-              if (primaryDiscipline === "graphic-design") {
-                return <GraphicDesignProjectView project={project} testimonials={testimonials} shareUrl={shareUrl} />;
-              }
-              return <GenericProjectView project={project} testimonials={testimonials} shareUrl={shareUrl} />;
-            })()}
+            {/* Only disciplines without a dedicated view yet reach this
+                shell now — Photography/Videography/Graphic Design all
+                return their own full page above. */}
+            <GenericProjectView project={project} testimonials={testimonials} shareUrl={shareUrl} />
           </div>
 
           <div>

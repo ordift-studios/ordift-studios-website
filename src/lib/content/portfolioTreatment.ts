@@ -9,14 +9,12 @@ export function resolvePrimaryDiscipline(project: PortfolioProject): PortfolioDi
   return project.disciplines[0] ?? null;
 }
 
-// Photography sub-treatments (Portfolio redesign spec §7, refined after
-// visual review 2026-08-12: image-first, minimal text, no case-study feel).
-// Resolved from the project's existing categories — no schema change: a
-// "Wedding" category doesn't exist in the taxonomy yet, but the moment one
-// is added through the existing admin category manager
-// (/admin/portfolio/categories), it starts matching here automatically,
-// because this is a plain slug lookup, not a hardcoded enum tied to what
-// happens to exist today.
+// Photography sub-treatments (Portfolio redesign spec §7). Resolved from the
+// project's existing categories — no schema change: a "Wedding" category
+// doesn't exist in the taxonomy yet, but the moment one is added through the
+// existing admin category manager (/admin/portfolio/categories), it starts
+// matching here automatically, because this is a plain slug lookup, not a
+// hardcoded enum tied to what happens to exist today.
 export type PhotographyTreatment =
   | "wedding"
   | "portrait"
@@ -46,110 +44,119 @@ export function resolvePhotographyTreatment(categories: Category[]): Photography
   return "general";
 }
 
-// One shared gallery engine (FlexiblePhotoGallery), six distinct visual
-// rhythms driven by these recipes — not six separate layout components.
-// Each recipe controls: spacing (gap), whether three portrait images can
-// group into a sequence, whether pairs are preferred over triples, whether
-// full-width blocks bleed to the viewport edge or sit inset, the crop ratio
-// used per block type, and (Portrait only) whether full blocks alternate
-// left/right inset placement for asymmetric composition.
+// One shared gallery engine (FlexiblePhotoGallery), six visual personalities
+// — not six separate layout components. Rather than a fixed repeating
+// sequence, the engine scores candidate groupings (full / pair / triple /
+// asymmetric) at each position using these weights, biased against
+// repeating the same shape too many times in a row (see
+// FlexiblePhotoGallery's buildBlocks). Two projects in the same treatment
+// produce different rhythms because the algorithm responds to each
+// project's actual image count and orientation sequence, not a canned
+// pattern.
 export type PhotoGalleryRecipe = {
   gap: string;
+  weights: { full: number; pair: number; triple: number; asymmetric: number };
   allowTriple: boolean;
-  preferDiptych: boolean;
+  allowAsymmetric: boolean;
   edgeToEdge: boolean;
-  fullAspect: string;
-  pairAspect: string;
-  tripleAspect: string;
   alternateOffset: boolean;
+  fallbackAspect: string;
 };
 
 export const PHOTO_GALLERY_RECIPES: Record<PhotographyTreatment, PhotoGalleryRecipe> = {
-  // Luxury wedding journal — generous editorial spacing, full-bleed
-  // establishing shots alternating with paired portraits, an occasional
-  // triple for a sequence of small moments.
+  // Luxury wedding journal — generous spacing, large emotional moments
+  // mixed with paired portraits/details and occasional editorial triples.
   wedding: {
     gap: "gap-6 sm:gap-10",
+    weights: { full: 3, pair: 4, triple: 2, asymmetric: 2 },
     allowTriple: true,
-    preferDiptych: false,
+    allowAsymmetric: true,
     edgeToEdge: true,
-    fullAspect: "3/2",
-    pairAspect: "3/4",
-    tripleAspect: "4/5",
     alternateOffset: false,
+    fallbackAspect: "3/2",
   },
-  // Subject-first portrait book — oversized single frames and diptychs
-  // only, generous negative space, asymmetric left/right placement rather
-  // than a centered grid.
+  // Subject-first portrait book — statement portraits, diptychs/triptychs,
+  // generous negative space, asymmetric editorial placement.
   portrait: {
     gap: "gap-10 sm:gap-16",
-    allowTriple: false,
-    preferDiptych: true,
+    weights: { full: 4, pair: 3, triple: 1, asymmetric: 3 },
+    allowTriple: true,
+    allowAsymmetric: true,
     edgeToEdge: false,
-    fullAspect: "4/5",
-    pairAspect: "4/5",
-    tripleAspect: "4/5",
     alternateOffset: true,
+    fallbackAspect: "4/5",
   },
-  // Editorial fashion spread — dramatic scale, tight controlled spacing,
-  // full-height vertical frames and diptych pairings rather than loose
-  // sequences.
+  // Editorial fashion spread — dramatic scale changes, full-bleed moments,
+  // controlled unconventional groupings rather than loose sequences.
   fashion: {
     gap: "gap-2 sm:gap-3",
-    allowTriple: false,
-    preferDiptych: true,
+    weights: { full: 4, pair: 3, triple: 1, asymmetric: 3 },
+    allowTriple: true,
+    allowAsymmetric: true,
     edgeToEdge: true,
-    fullAspect: "3/4",
-    pairAspect: "3/4",
-    tripleAspect: "3/4",
     alternateOffset: false,
+    fallbackAspect: "3/4",
   },
-  // Documentary energy — denser sequencing, triples allowed and preferred
-  // over pairs, tighter spacing than Wedding/Portrait.
+  // Documentary energy — denser combinations of atmosphere, portraits,
+  // candid moments and details.
   event: {
     gap: "gap-2 sm:gap-3",
+    weights: { full: 2, pair: 3, triple: 4, asymmetric: 1 },
     allowTriple: true,
-    preferDiptych: false,
+    allowAsymmetric: true,
     edgeToEdge: false,
-    fullAspect: "3/2",
-    pairAspect: "4/5",
-    tripleAspect: "4/5",
     alternateOffset: false,
+    fallbackAspect: "3/2",
   },
-  // Clean campaign showcase — no triples, generous whitespace, larger
-  // single "hero" moments and simple pairs only.
+  // Clean campaign showcase — structured, generous whitespace, campaign
+  // statements mixed with product/detail groupings; least asymmetry.
   commercial: {
     gap: "gap-8 sm:gap-14",
-    allowTriple: false,
-    preferDiptych: false,
+    weights: { full: 4, pair: 3, triple: 1, asymmetric: 1 },
+    allowTriple: true,
+    allowAsymmetric: false,
     edgeToEdge: false,
-    fullAspect: "16/9",
-    pairAspect: "4/5",
-    tripleAspect: "4/5",
     alternateOffset: false,
+    fallbackAspect: "16/9",
   },
-  // Appetizing wide heroes alternating with tight detail-shot pairs.
+  // Hero dishes, detail/close-up pairs, wider environmental shots.
   food: {
     gap: "gap-6 sm:gap-10",
-    allowTriple: false,
-    preferDiptych: true,
+    weights: { full: 3, pair: 4, triple: 1, asymmetric: 2 },
+    allowTriple: true,
+    allowAsymmetric: true,
     edgeToEdge: false,
-    fullAspect: "3/2",
-    pairAspect: "1/1",
-    tripleAspect: "1/1",
     alternateOffset: false,
+    fallbackAspect: "3/2",
   },
-  // Default flexible treatment for photography without a matched category.
+  // Default balanced treatment for photography without a matched category.
   general: {
     gap: "gap-4 sm:gap-6",
+    weights: { full: 3, pair: 3, triple: 2, asymmetric: 2 },
     allowTriple: true,
-    preferDiptych: false,
+    allowAsymmetric: true,
     edgeToEdge: false,
-    fullAspect: "3/2",
-    pairAspect: "4/5",
-    tripleAspect: "4/5",
     alternateOffset: false,
+    fallbackAspect: "3/2",
   },
+};
+
+// Graphic Design's own gallery personality — large statement mockups,
+// paired compositions, multi-item grids and close-up/detail sections
+// rather than photography's editorial rhythm. Reuses the same scored
+// FlexiblePhotoGallery engine (it's discipline-agnostic), just tuned
+// differently: more triples for grid-like multi-application sequences,
+// asymmetric on for large-mockup + detail-shot pairings, no edge-to-edge
+// bleed (design work reads better with a contained margin than full-bleed
+// photography does).
+export const DESIGN_GALLERY_RECIPE: PhotoGalleryRecipe = {
+  gap: "gap-6 sm:gap-10",
+  weights: { full: 3, pair: 3, triple: 3, asymmetric: 2 },
+  allowTriple: true,
+  allowAsymmetric: true,
+  edgeToEdge: false,
+  alternateOffset: false,
+  fallbackAspect: "4/5",
 };
 
 export const PHOTOGRAPHY_TREATMENT_LABEL: Record<PhotographyTreatment, string> = {
