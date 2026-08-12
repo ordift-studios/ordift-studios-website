@@ -3,7 +3,6 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import NavBar from "@/components/NavBar";
 import Footer from "@/components/Footer";
-import PortfolioCard from "@/components/portfolio/PortfolioCard";
 import { contentRepository } from "@/lib/content";
 import { DISCIPLINE_HREF, DISCIPLINE_LABEL } from "@/lib/content/portfolioHelpers";
 import { resolvePrimaryDiscipline } from "@/lib/content/portfolioTreatment";
@@ -12,6 +11,7 @@ import PhotographyProjectView from "@/components/portfolio/PhotographyProjectVie
 import VideographyProjectView from "@/components/portfolio/VideographyProjectView";
 import GraphicDesignProjectView from "@/components/portfolio/GraphicDesignProjectView";
 import GenericProjectView from "@/components/portfolio/GenericProjectView";
+import PortfolioProjectFooterSections from "@/components/portfolio/PortfolioProjectFooterSections";
 import { ogImageUrl } from "@/lib/media/ogImageUrl";
 
 export async function generateStaticParams() {
@@ -105,6 +105,30 @@ export default async function PortfolioProjectPage({
     ...(project.client ? { creditText: `Client: ${project.client}` } : {}),
   };
 
+  const primaryDiscipline = resolvePrimaryDiscipline(project);
+
+  // Photography gets its own full page shape — image-first, no sidebar
+  // metadata dashboard — rather than sharing the shell below (Portfolio
+  // redesign, revised 2026-08-12 after visual review). Videography/Graphic
+  // Design keep the original shell for now; they'll get the same treatment
+  // in a later, separately-reviewed pass.
+  if (primaryDiscipline === "photography") {
+    return (
+      <PhotographyProjectView
+        project={project}
+        categories={projectCategories}
+        testimonials={testimonials}
+        shareUrl={shareUrl}
+        jsonLd={jsonLd}
+        prevProject={prevProject}
+        nextProject={nextProject}
+        relatedProjects={relatedProjects}
+        relatedWorkshops={relatedWorkshops}
+        categoryById={categoryById}
+      />
+    );
+  }
+
   return (
     <main>
       <script
@@ -150,23 +174,11 @@ export default async function PortfolioProjectPage({
         <div className="max-w-4xl mx-auto grid grid-cols-1 lg:grid-cols-[1.1fr_0.9fr] gap-10 lg:gap-16">
           <div>
             {/* Discipline-specific presentation architecture (Portfolio
-                redesign Phase 2) — Photography/Videography/Graphic Design
-                each get a purpose-built view; everything else falls back to
-                the original, unchanged generic view. Shared surroundings
-                (this section's shell, sidebar, prev/next, related sections,
-                SEO/JSON-LD above) stay identical for every discipline. */}
+                redesign Phase 2) — Videography/Graphic Design each get a
+                purpose-built content view; everything else falls back to
+                the original, unchanged generic view. Photography no longer
+                uses this shell at all (see the branch above). */}
             {(() => {
-              const primaryDiscipline = resolvePrimaryDiscipline(project);
-              if (primaryDiscipline === "photography") {
-                return (
-                  <PhotographyProjectView
-                    project={project}
-                    categories={projectCategories}
-                    testimonials={testimonials}
-                    shareUrl={shareUrl}
-                  />
-                );
-              }
               if (primaryDiscipline === "videography") {
                 return <VideographyProjectView project={project} testimonials={testimonials} shareUrl={shareUrl} />;
               }
@@ -244,68 +256,13 @@ export default async function PortfolioProjectPage({
         </div>
       </section>
 
-      <section className="bg-ordift-offwhite px-4 sm:px-8 py-8">
-        <div className="max-w-4xl mx-auto flex items-center justify-between gap-4">
-          {prevProject ? (
-            <Link
-              href={`/work/${prevProject.slug}`}
-              className="font-sans text-body-small text-ordift-ink hover:text-ordift-gold-pressed"
-            >
-              ← {prevProject.title}
-            </Link>
-          ) : (
-            <span />
-          )}
-          {nextProject && (
-            <Link
-              href={`/work/${nextProject.slug}`}
-              className="font-sans text-body-small text-ordift-ink hover:text-ordift-gold-pressed text-right"
-            >
-              {nextProject.title} →
-            </Link>
-          )}
-        </div>
-      </section>
-
-      {relatedProjects.length > 0 && (
-        <section className="bg-white px-4 sm:px-8 py-14 sm:py-20">
-          <div className="max-w-6xl mx-auto">
-            <h2 className="font-serif font-medium text-section-heading lg:text-section-heading-desktop text-ordift-ink mb-6">
-              Related Projects
-            </h2>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5 sm:gap-6">
-              {relatedProjects.map((related) => (
-                <PortfolioCard
-                  key={related.id}
-                  project={related}
-                  categories={related.categoryIds.map((id) => categoryById.get(id)!).filter(Boolean)}
-                />
-              ))}
-            </div>
-          </div>
-        </section>
-      )}
-
-      {relatedWorkshops.length > 0 && (
-        <section className="bg-ordift-offwhite px-4 sm:px-8 py-14 sm:py-20">
-          <div className="max-w-6xl mx-auto">
-            <h2 className="font-serif font-medium text-section-heading lg:text-section-heading-desktop text-ordift-ink mb-6">
-              Related Workshops
-            </h2>
-            <div className="flex flex-wrap gap-4">
-              {relatedWorkshops.map((w) => (
-                <Link
-                  key={w.id}
-                  href={`/workshops/${w.slug}`}
-                  className="inline-flex items-center min-h-11 px-5 rounded-full border border-black/15 font-sans text-body-small text-ordift-ink hover:border-black/30"
-                >
-                  {w.title} →
-                </Link>
-              ))}
-            </div>
-          </div>
-        </section>
-      )}
+      <PortfolioProjectFooterSections
+        prevProject={prevProject}
+        nextProject={nextProject}
+        relatedProjects={relatedProjects}
+        relatedWorkshops={relatedWorkshops}
+        categoryById={categoryById}
+      />
 
       <Footer />
     </main>

@@ -1,4 +1,5 @@
 import type { GalleryImage } from "@/lib/content/types";
+import type { PhotoGalleryRecipe } from "@/lib/content/portfolioTreatment";
 import ResponsiveImage from "@/components/media/ResponsiveImage";
 
 // Image-led gallery for the Portfolio redesign — deliberately separate from
@@ -7,17 +8,18 @@ import ResponsiveImage from "@/components/media/ResponsiveImage";
 // This component reads each image's own aspect ratio and arranges them into
 // full-bleed / editorial-pair / sequence blocks instead of stretching every
 // photo into the same shape.
-export type FlexiblePhotoGalleryProps = {
-  images: GalleryImage[];
-  /** "flexible" (default) reads aspect ratios and varies the layout.
-   * "sequential" renders a steady 3-up rhythm regardless of orientation —
-   * for Event photography, where pacing/progression matters more than
-   * showcasing any single frame. "controlled" forces every image into the
-   * same square crop in a 3-up grid — for Commercial/Product work, where a
-   * uniform, controlled presentation is the correct choice, not a
-   * limitation. */
-  mode?: "flexible" | "sequential" | "controlled";
-};
+//
+// Two ways to drive it:
+// - `recipe` (Photography, six sub-treatments — portfolioTreatment.ts):
+//   full control over spacing, triple/diptych bias, edge-to-edge bleed,
+//   per-block crop ratios, and (Portrait) alternating asymmetric placement.
+// - `mode` (Videography stills, Graphic Design — unchanged since Phase 2):
+//   simple flexible/sequential/controlled presets, untouched by the
+//   Photography visual-system rework so those disciplines don't shift
+//   under a review that hasn't reached them yet.
+export type FlexiblePhotoGalleryProps =
+  | { images: GalleryImage[]; recipe: PhotoGalleryRecipe; mode?: never }
+  | { images: GalleryImage[]; mode?: "flexible" | "sequential" | "controlled"; recipe?: never };
 
 type Block =
   | { type: "full"; images: GalleryImage[] }
@@ -28,11 +30,45 @@ function isPortrait(image: GalleryImage): boolean {
   return Boolean(image.width && image.height && image.height > image.width);
 }
 
+const LEGACY_RECIPES: Record<"flexible" | "sequential" | "controlled", PhotoGalleryRecipe> = {
+  flexible: {
+    gap: "gap-4",
+    allowTriple: true,
+    preferDiptych: false,
+    edgeToEdge: false,
+    fullAspect: "3/2",
+    pairAspect: "4/5",
+    tripleAspect: "4/5",
+    alternateOffset: false,
+  },
+  sequential: {
+    gap: "gap-4",
+    allowTriple: true,
+    preferDiptych: false,
+    edgeToEdge: false,
+    fullAspect: "4/5",
+    pairAspect: "4/5",
+    tripleAspect: "4/5",
+    alternateOffset: false,
+  },
+  controlled: {
+    gap: "gap-4",
+    allowTriple: false,
+    preferDiptych: false,
+    edgeToEdge: false,
+    fullAspect: "1/1",
+    pairAspect: "1/1",
+    tripleAspect: "1/1",
+    alternateOffset: false,
+  },
+};
+
 // Greedy pass: a landscape (or orientation-unknown) image stands alone,
-// full-bleed, since it's usually the stronger single statement. Two
-// consecutive portraits become an editorial pairing. Otherwise images group
-// into threes. Deterministic and cheap — no layout library, no client JS.
-function buildFlexibleBlocks(images: GalleryImage[]): Block[] {
+// full-bleed. Two consecutive portraits pair into an editorial diptych. A
+// recipe with allowTriple + not preferDiptych groups three consecutive
+// portraits into a sequence instead. Deterministic and cheap — no layout
+// library, no client JS.
+function buildBlocks(images: GalleryImage[], recipe: PhotoGalleryRecipe): Block[] {
   const blocks: Block[] = [];
   let i = 0;
   while (i < images.length) {
@@ -43,65 +79,75 @@ function buildFlexibleBlocks(images: GalleryImage[]): Block[] {
       continue;
     }
     const next = images[i + 1];
-    if (next && isPortrait(next)) {
-      blocks.push({ type: "pair", images: [image, next] });
+    const nextIsPortrait = Boolean(next && isPortrait(next));
+    if (recipe.allowTriple && !recipe.preferDiptych) {
+      const third = images[i + 2];
+      if (nextIsPortrait && third && isPortrait(third)) {
+        blocks.push({ type: "triple", images: [image, next!, third] });
+        i += 3;
+        continue;
+      }
+    }
+    if (nextIsPortrait) {
+      blocks.push({ type: "pair", images: [image, next!] });
       i += 2;
       continue;
     }
-    const chunk = images.slice(i, i + 3);
-    blocks.push(chunk.length === 3 ? { type: "triple", images: chunk } : { type: "pair", images: chunk });
-    i += chunk.length;
+    blocks.push({ type: "full", images: [image] });
+    i += 1;
   }
   return blocks;
 }
 
-function buildSequentialBlocks(images: GalleryImage[]): Block[] {
-  const blocks: Block[] = [];
-  for (let i = 0; i < images.length; i += 3) {
-    blocks.push({ type: "triple", images: images.slice(i, i + 3) });
-  }
-  return blocks;
-}
-
-export default function FlexiblePhotoGallery({ images, mode = "flexible" }: FlexiblePhotoGalleryProps) {
+// (mode === "controlled" special-case removed from Phase 2 in favor of a
+// square recipe with allowTriple:false, above — same visual result, one
+// code path instead of two.)
+export default function FlexiblePhotoGallery(props: FlexiblePhotoGalleryProps) {
+  const { images } = props;
   if (images.length === 0) return null;
+  const recipe: PhotoGalleryRecipe = props.recipe ?? LEGACY_RECIPES[props.mode ?? "flexible"];
 
-  if (mode === "controlled") {
-    return (
-      <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
-        {images.map((image) => (
-          <Figure key={image.id} image={image} aspectRatio="1/1" sizes="(min-width: 640px) 33vw, 50vw" />
-        ))}
-      </div>
-    );
-  }
-
-  const blocks = mode === "sequential" ? buildSequentialBlocks(images) : buildFlexibleBlocks(images);
+  const blocks = buildBlocks(images, recipe);
+  // Precomputed with no mutation (each block's position among "full"
+  // blocks only) — used for the Portrait treatment's alternating
+  // left/right asymmetric placement and for marking the very first
+  // full-bleed image as priority. Galleries are small (tens of images at
+  // most), so the O(n²) scan here is negligible.
+  const fullBlockIndexes = blocks.map((block, i) =>
+    block.type === "full" ? blocks.slice(0, i).filter((b) => b.type === "full").length : -1,
+  );
+  // Rounded corners read as a "card" — right for images inset within the
+  // page, wrong for ones bleeding to the viewport edge.
+  const imageClassName = recipe.edgeToEdge ? "" : "rounded-lg";
 
   return (
-    <div className="flex flex-col gap-4">
-      {blocks.map((block, i) => {
+    <div className={recipe.edgeToEdge ? `flex flex-col ${recipe.gap}` : `mx-auto max-w-6xl px-4 sm:px-8 flex flex-col ${recipe.gap}`}>
+      {blocks.map((block, blockIndex) => {
         if (block.type === "full") {
+          const offsetIndex = fullBlockIndexes[blockIndex];
+          const asymmetric = recipe.alternateOffset && offsetIndex % 2 === 1;
           return (
-            <Figure
+            <div
               key={block.images[0].id}
-              image={block.images[0]}
-              aspectRatio="3/2"
-              sizes="(min-width: 1024px) 55vw, 100vw"
-              priority={i === 0}
-            />
+              className={asymmetric ? "max-w-3xl ml-auto mr-0 w-full sm:w-4/5" : "w-full"}
+            >
+              <Figure
+                image={block.images[0]}
+                aspectRatio={recipe.fullAspect}
+                sizes="100vw"
+                priority={offsetIndex === 0}
+                className={imageClassName}
+              />
+            </div>
           );
         }
         const cols = block.type === "pair" ? "grid-cols-2" : "grid-cols-3";
+        const aspect = block.type === "pair" ? recipe.pairAspect : recipe.tripleAspect;
+        const sizes = block.type === "pair" ? "(min-width: 1024px) 40vw, 50vw" : "(min-width: 1024px) 27vw, 33vw";
         return (
-          <div key={block.images.map((img) => img.id).join("-")} className={`grid ${cols} gap-4`}>
+          <div key={block.images.map((img) => img.id).join("-")} className={`grid ${cols} ${recipe.gap}`}>
             {block.images.map((image) => (
-              <Figure
-                key={image.id}
-                image={image}
-                aspectRatio="4/5"
-                sizes={block.type === "pair" ? "(min-width: 1024px) 27vw, 50vw" : "(min-width: 1024px) 18vw, 33vw"}
-              />
+              <Figure key={image.id} image={image} aspectRatio={aspect} sizes={sizes} className={imageClassName} />
             ))}
           </div>
         );
@@ -115,11 +161,13 @@ function Figure({
   aspectRatio,
   sizes,
   priority,
+  className,
 }: {
   image: GalleryImage;
   aspectRatio: string;
   sizes: string;
   priority?: boolean;
+  className?: string;
 }) {
   return (
     <figure>
@@ -132,10 +180,12 @@ function Figure({
         aspectRatio={aspectRatio}
         sizes={sizes}
         priority={priority}
-        className="rounded-lg"
+        className={className}
       />
       {image.caption && (
-        <figcaption className="mt-2 font-sans text-caption text-ordift-ink-muted">{image.caption}</figcaption>
+        <figcaption className="mt-2 px-4 sm:px-0 font-sans text-caption text-ordift-ink-muted">
+          {image.caption}
+        </figcaption>
       )}
     </figure>
   );
