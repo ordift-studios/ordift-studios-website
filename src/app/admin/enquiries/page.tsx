@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { getAllEnquiries, crmStageLabel } from "@/lib/portal/data";
 import { CRM_STAGES } from "@/lib/admin/enquiries";
-import { PATHWAYS } from "@/lib/enquiry/pathways";
+import { PATHWAYS, pathwayLabel } from "@/lib/enquiry/pathways";
 import ReportExportLinks from "@/components/admin/ReportExportLinks";
 
 export const metadata: Metadata = {
@@ -212,8 +212,8 @@ export default async function AdminEnquiriesPage({
                       <p className="font-sans text-caption text-ordift-ink-muted">{e.referenceNumber}</p>
                     </Link>
                   </td>
-                  <td className="py-3 px-4 font-sans text-body-small text-ordift-ink capitalize">
-                    {e.service.replace(/-/g, " ")}
+                  <td className="py-3 px-4 font-sans text-body-small text-ordift-ink">
+                    {pathwayLabel(e.service)}
                   </td>
                   <td className="py-3 px-4 font-sans text-body-small text-ordift-ink-muted">
                     {crmStageLabel(e.crmStage)}

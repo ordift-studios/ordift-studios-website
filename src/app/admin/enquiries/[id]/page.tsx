@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { crmStageLabel } from "@/lib/portal/data";
+import { pathwayLabel } from "@/lib/enquiry/pathways";
 import { getEnquiryById, getEnquiryNotes, CRM_STAGES } from "@/lib/admin/enquiries";
 import { getCurrentUser, hasRole, isSuperAdmin } from "@/lib/portal/roles";
 import { hasCapability } from "@/lib/workflow/engine";
@@ -71,8 +72,8 @@ export default async function AdminEnquiryDetailPage({ params }: { params: Promi
 
           <div className="rounded-xl border border-black/10 bg-white p-6 space-y-2">
             <p className="font-sans text-caption uppercase tracking-wide text-ordift-ink-muted">Service</p>
-            <p className="font-sans text-body text-ordift-ink capitalize">
-              {enquiry.service.replace(/-/g, " ")}
+            <p className="font-sans text-body text-ordift-ink">
+              {pathwayLabel(enquiry.service)}
             </p>
             <p className="font-sans text-caption uppercase tracking-wide text-ordift-ink-muted pt-3">
               Submitted
