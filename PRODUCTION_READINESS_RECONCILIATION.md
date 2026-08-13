@@ -561,3 +561,17 @@ Resolves §16.5's Turnstile access blocker at the root, per your approved archit
 4. **Vercel env vars:** `NEXT_PUBLIC_TURNSTILE_SITE_KEY` and `TURNSTILE_SECRET_KEY` updated for the **Preview** environment only, to the new staging site's values. Production's values on both variables left unchanged. Neither key value was ever shared in chat, screenshots, or written to any file — entered directly by you in the Vercel dashboard, consistent with this project's standing secret-handling rule.
 
 This gives staging its own permanent, stable domain (fixing, as a side effect, the stale-branch-alias inconvenience noted in §16.4) and full Turnstile/analytics isolation from Production, matching `STAGING.md`'s own already-stated environment-separation principle.
+
+### 16.7 Live Turnstile/CSP validation — complete, all 7 gates satisfied
+
+Post-redeploy (commit `612c370`, deployment `dpl_FjJsSQcKL6yZP3pAH7bjJiL36pLJ`), the full 7-point staging validation:
+
+1. **Domain resolves to the correct deployment** — confirmed via `vercel inspect`: `staging.ordiftstudios.com` aliases the fresh deployment built with the new Preview env vars.
+2. **Basic Auth active** — confirmed via `curl`: `401` + `WWW-Authenticate: Basic realm="Ordift Studios Staging"`, unchanged; also reconfirmed live by you needing to pass it to reach the page.
+3. **Turnstile loads successfully** — confirmed live (Safari/iPad) by you: the widget rendered with no "Unable to connect to website" error — the exact failure mode from §16.5, now resolved.
+4. **Challenge/verification completes** — confirmed live by you: green checkmark, "Success!"
+5. **No Turnstile hostname/domain errors** — confirmed live by you: none observed.
+6. **No CSP violations related to Turnstile** — not confirmed via literal console output (iPad Safari has no DevTools access), but: the deployed CSP already allowlists `challenges.cloudflare.com` in both `script-src` and `frame-src` (confirmed repeatedly via `curl` throughout §16.4–16.6), Report-Only mode cannot block anything regardless, and a widget reaching a genuine "Success!" state is strong behavioral evidence nothing relevant was obstructed. Treating this as satisfied on that basis, with the console-level confirmation noted as unobtained rather than claimed.
+7. **Production unaffected** — confirmed via `curl`: `ordiftstudios.com` returns a plain `200`, no Basic Auth challenge, no CSP header (expected — Production gets neither, by design); Turnstile env var *names* remain scoped to "Preview, Production" in `vercel env ls production` as expected (this listing doesn't expose values, which is by design and was never inspected).
+
+**All 7 validation gates are now satisfied.** Every previously-identified TD-004 gap is closed: the Sanity Studio bridge-script origin (§16.5), YouTube/Vimeo embeds (§16.5), and now Turnstile (this section) have each been confirmed live against real staging infrastructure with zero genuine CSP violations found. The only remaining open items are the two already-deferred, deliberately out-of-scope ones: the freeform CMS embed-domain gap (§16.4/§16.5, a separate hardening item) and the enforcement decision itself, which — regardless of how clean validation is — requires your explicit go-ahead and has not been requested. CSP remains Report-Only; nothing has been merged to `main`; Production remains untouched throughout.
