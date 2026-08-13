@@ -550,3 +550,14 @@ object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'self';
 - The real Admin Portfolio → Sanity → public-page authoring path for embeds specifically was not exercised (only the resulting `<iframe>`'s CSP behavior was).
 
 **Is CSP technically ready for enforcement? Not yet, but closer.** The one confirmed code-level gap is fixed and verified. The only remaining open item is Turnstile's live confirmation, which is an access problem, not a configuration problem — the moment someone with the real staging Basic-Auth credential (or you, directly) confirms one Turnstile-protected form submits cleanly with no console CSP errors, I'd consider this ready for an enforcement decision. That decision itself still requires your explicit approval regardless.
+
+### 16.6 Permanent `staging.ordiftstudios.com` + dedicated staging Turnstile site — implemented, closing the access gap
+
+Resolves §16.5's Turnstile access blocker at the root, per your approved architecture. Implemented as a controlled, step-by-step sequence — each step performed by you where it required Squarespace/Vercel/Cloudflare dashboard access, verified by me from the outside afterward:
+
+1. **DNS (Squarespace):** CNAME `staging` → `cname.vercel-dns.com` added, alongside (not replacing) the existing apex/`www` records that serve Production. Verified propagated via `dig`.
+2. **Vercel domain:** `staging.ordiftstudios.com` added and explicitly assigned to the `staging` Git branch only — not Production, not "all branches." I deliberately did not attempt this via CLI myself: `vercel domains add` has no branch-scoping flag and defaults to the Production branch, which would have risked a real cross-environment exposure window; this one needed the dashboard's explicit branch selector.
+3. **Cloudflare Turnstile:** a new, separate site created — `staging.ordiftstudios.com` only, Managed mode, its own Site Key and Secret Key. Production's existing Turnstile site/domain/keys untouched throughout.
+4. **Vercel env vars:** `NEXT_PUBLIC_TURNSTILE_SITE_KEY` and `TURNSTILE_SECRET_KEY` updated for the **Preview** environment only, to the new staging site's values. Production's values on both variables left unchanged. Neither key value was ever shared in chat, screenshots, or written to any file — entered directly by you in the Vercel dashboard, consistent with this project's standing secret-handling rule.
+
+This gives staging its own permanent, stable domain (fixing, as a side effect, the stale-branch-alias inconvenience noted in §16.4) and full Turnstile/analytics isolation from Production, matching `STAGING.md`'s own already-stated environment-separation principle.
