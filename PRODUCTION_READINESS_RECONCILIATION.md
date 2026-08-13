@@ -427,3 +427,33 @@ Dependency-ordered. **[YOU]** = requires your direct action (Paystack dashboard,
 10. **[ENGINEERING, post-launch, first 1–2 weeks, not blocking]** Build the deferred scheduled pending-payment reconciliation job (`PAYSTACK_PRODUCTION_HANDOVER.md` §8) — already assessed as safe to defer past initial launch.
 
 Nothing above is authorized by this checklist existing. Each numbered step still requires your go-ahead at the time it's actually performed, exactly as every prior step in this engagement has.
+
+## 16. Independent readiness work while Paystack KYC is pending (2026-08-13, continued)
+
+Resumed after committing/pushing §14's documentation update (commit `8a7134b`, deployment verified `● Ready` — GitHub commit-status API `state: success`, deployment `31SCou4ZTtQnfjkLWbRmTvGArTYz`). Scope: engineering work genuinely independent of Paystack, worked sequentially, each item tested and documented before the next. Standing restrictions unchanged throughout (no Paystack Live Mode, no Production Supabase migrations/data, no reopening Sentry, TD-030 untouched, no `staging`→`main`).
+
+### 16.1 Collaborator/Contractor portal verification — DONE
+
+Re-ran the authenticated Collaborator/Contractor check that was rate-limited out of the 2026-08-13 deep-pass. Same methodology: a single disposable `.invalid`-domain staging account created via the approved service-role fixture mechanism, contractor role granted, tested live against local dev pointed at staging, then deleted immediately after — same controlled creation → verification → cleanup discipline as the completed deep-pass, no exceptions.
+
+- **Login and routing:** signed in successfully, correctly routed to `/portal/collaborator` ("My Projects — Ordift Studios Portal").
+- **Empty state:** "You don't have any active project assignments yet. An admin will assign you to a project when there's work for you." — correct, honest placeholder, consistent with TD-029's documented finding that the contractor role's Portfolio capabilities are currently inert (no real assigned-project workflow built yet).
+- **Console:** clean — no new errors beyond leftover HMR/API-sanity-check noise from earlier in the session.
+- **Role-boundary check:** navigating to `/admin` correctly redirected back to the collaborator's own portal (`/portal/collaborator`), not to Sign In and not into `/admin` — the same fail-closed pattern already verified for every other non-admin role.
+- **Cleanup confirmed:** account deleted via the same service-role cleanup script used throughout; the two throwaway scripts (`_createCollaboratorTestUser.ts`, `_cleanupCollaboratorTestUser.ts`) deleted immediately after, never committed, no trace in git history.
+
+**Result:** all 6 of 6 portal roles (Client, Staff, Admin/Super Admin, Vendor, Model, Collaborator/Contractor) are now confirmed live and correct against staging. The deep-pass's one open item from §13 is closed. No code changes required — this was verification only.
+
+### 16.2 TD-005 — Google Sheets/email sync failure alerting — DONE
+
+Investigated first, reported to you before implementing, per your instruction. Root cause: `sheet_sync_failures` (migration `0013`) and `email_send_failures` (migration `0022`) captured every dead-letter row, but nothing read either table proactively — a failure sat silently until someone thought to query it. Confirmed zero overlap with payment code (`grep` across `src/lib/payments`, `src/app/admin/payments`, `src/app/api/payments` for "sheet"/"Sheet" returned nothing).
+
+**Fix:** `Sentry.captureException()` — already verified working in Production, documented as safe to call unconditionally (never throws, no-ops without a configured DSN) — is now called at the top of both `logSheetSyncFailure()` (`src/lib/shared/sheetSyncFailures.ts`) and `logEmailSendFailure()` (`src/lib/shared/email/deadLetter.ts`), ahead of the existing best-effort DB insert. 21 lines added across the two files, no other files touched, no new dependencies or credentials.
+
+- Built and tested on isolated branch `td-005-sync-failure-alerting` (commit `cb8c147`): `tsc --noEmit`, `eslint`, targeted tests, `next build` all clean.
+- Merged into `staging` (merge commit `acb2b7f`), pushed to `origin/staging`.
+- Deployment verified: GitHub commit-status API `state: success` for `acb2b7f`; Vercel deployment `dpl_9cEyrufoAGDPsvriTyf15nxGKKrZ` confirmed `● Ready` via `vercel inspect`, same deployment ID as the commit-status `target_url`.
+- Smoke check: unauthenticated request to the deployment returned `401` with `WWW-Authenticate: Basic realm="Ordift Studios Staging"` and the full expected security-header set (`Permissions-Policy`, `Referrer-Policy`, `X-Frame-Options`, `X-Content-Type-Options`, `Strict-Transport-Security`, `X-Robots-Tag: noindex`) — confirms the deployment is live and serving correctly; the Basic-Auth gate itself is untouched by this change.
+- No payment, Production-data, credential, or completed-Sentry-configuration changes were made. `TECHNICAL_DEBT_REGISTER.md` TD-005 entry updated to `Status: Resolved`.
+
+**Result:** both dead-letter paths now alert to Sentry the moment a sync/email failure is logged, closing the "silent until someone queries it" gap. TD-005 is closed.

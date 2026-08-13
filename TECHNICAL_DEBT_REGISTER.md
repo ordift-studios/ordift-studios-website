@@ -66,7 +66,7 @@
 - **Why accepted:** the resilience pattern (log-and-continue rather than blocking the user-facing submission on a third-party API) was the priority; alerting on the dead-letter table was explicitly flagged as a follow-up, not built at the time.
 - **Current impact:** a sustained Sheets or Resend outage could accumulate unnoticed failures until a manual check catches it.
 - **Pay-down trigger:** natural fit once Workstream C's alerting infrastructure exists — route dead-letter-table growth into the same alert channel.
-- **Status:** Open
+- **Status:** Resolved (2026-08-13) — `Sentry.captureException()` now fires unconditionally in both `logSheetSyncFailure()` and `logEmailSendFailure()`, ahead of the existing best-effort DB insert. Deployed to staging (`acb2b7f`), verified `● Ready`. See `PRODUCTION_READINESS_RECONCILIATION.md` §16.2.
 
 ### TD-006 — 31 npm audit findings (6 moderate, 25 high), all in transitive dependencies
 - **Category:** Security
