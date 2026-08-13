@@ -31,7 +31,16 @@ export async function POST(request: NextRequest) {
   const rawBody = await request.text();
   const signatureHeader = request.headers.get("x-paystack-signature");
 
-  const signatureValid = paystackProvider.verifyWebhookSignature(rawBody, signatureHeader);
+  // Wrapped in try/catch so any failure mode — a bad signature, or the
+  // secret key itself being unset/misconfigured — fails closed with the
+  // intended 401 rather than propagating as an unhandled 500.
+  let signatureValid: boolean;
+  try {
+    signatureValid = paystackProvider.verifyWebhookSignature(rawBody, signatureHeader);
+  } catch (err) {
+    console.error("[payments] paystack webhook: signature verification threw", err);
+    signatureValid = false;
+  }
   if (!signatureValid) {
     console.error("[payments] paystack webhook: invalid signature");
     return NextResponse.json({ ok: false }, { status: 401 });
