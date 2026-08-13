@@ -4,6 +4,7 @@ import { getCurrentUser } from "@/lib/portal/roles";
 import { canCreatePortfolioProjectsNatively } from "@/lib/admin/portfolioPermissions";
 import { uploadPortfolioFile, uploadPortfolioImage } from "@/lib/content/sanity/portfolioAssets";
 import { logActivity } from "@/lib/admin/activityLog";
+import { detectFileMimeType } from "@/lib/shared/fileContentSniff";
 
 // Native Portfolio Project creator (2026-08-05) — the one route where a
 // browser payload reaches the server carrying real media bytes. Every
@@ -29,6 +30,14 @@ const ALLOWED_FILE_TYPES = new Set([
   "application/x-zip-compressed",
   ...ALLOWED_IMAGE_TYPES,
 ]);
+
+// TD-030: the sniffed-content comparison set, distinct from
+// ALLOWED_FILE_TYPES above — file-type always normalizes a real zip
+// file's magic bytes to the single canonical "application/zip", never
+// the "application/x-zip-compressed" alias some browsers/OSes declare
+// in the multipart Content-Type, so that alias is intentionally absent
+// here (it would never match a sniffed result either way).
+const SNIFFABLE_FILE_TYPES = new Set(["application/pdf", "application/zip", ...ALLOWED_IMAGE_TYPES]);
 
 export async function POST(request: NextRequest) {
   const user = await getCurrentUser();
@@ -64,6 +73,16 @@ export async function POST(request: NextRequest) {
   }
 
   const buffer = Buffer.from(await file.arrayBuffer());
+
+  // TD-030: corroborate the declared Content-Type against the file's
+  // actual magic bytes — supplements, doesn't replace, the allow-list
+  // check above. Uses the same kind-scoped set (images can't pass as
+  // the file-kind allow-list or vice versa) as the declared-type check.
+  const sniffedMime = await detectFileMimeType(buffer);
+  const sniffAllowed = kind === "image" ? ALLOWED_IMAGE_TYPES : SNIFFABLE_FILE_TYPES;
+  if (!sniffedMime || !sniffAllowed.has(sniffedMime)) {
+    return NextResponse.json({ ok: false, error: "unsupported-file-type" }, { status: 415 });
+  }
 
   try {
     const asset =

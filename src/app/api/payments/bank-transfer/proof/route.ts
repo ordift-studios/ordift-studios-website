@@ -6,6 +6,8 @@ import { generateRecordId } from "@/lib/shared/recordId";
 import { checkRateLimit } from "@/lib/shared/rateLimit";
 import { resolveEntityAmounts, resolveAmountToCharge } from "@/lib/payments/checkoutService";
 import type { PaymentEntityType, PaymentType } from "@/lib/payments/types";
+import { logActivityAsSystem } from "@/lib/admin/activityLog";
+import { detectFileMimeType } from "@/lib/shared/fileContentSniff";
 
 // Bank-transfer proof-of-payment submission (Ghana Phase 3, sandbox —
 // real Ghana banking details are not populated until go-live per your
@@ -76,6 +78,16 @@ export async function POST(request: NextRequest) {
   const objectPath = `${payment.id}/${Date.now()}.${extension}`;
   const buffer = Buffer.from(await file.arrayBuffer());
 
+  // TD-030: corroborate the declared Content-Type against the file's
+  // actual magic bytes — supplements, doesn't replace, the ALLOWED_TYPES
+  // check above. A file whose real content doesn't match any type this
+  // route accepts (or that file-type can't identify at all) is rejected
+  // here even if its declared Content-Type passed the earlier check.
+  const sniffedMime = await detectFileMimeType(buffer);
+  if (!sniffedMime || !ALLOWED_TYPES.has(sniffedMime)) {
+    return NextResponse.json({ ok: false, error: "unsupported-file-type" }, { status: 415 });
+  }
+
   const { error: uploadError } = await admin.storage
     .from("payment-proofs")
     .upload(objectPath, buffer, { contentType: file.type, upsert: false });
@@ -97,6 +109,20 @@ export async function POST(request: NextRequest) {
       reviewed_at: null,
     })
     .eq("id", payment.id);
+
+  // TD-033: audited via logActivityAsSystem() (service-role client),
+  // not logActivity() — activity_log's only insert policy is
+  // staff-only, and the actor here is routinely a plain client (see
+  // this route's own submitted-on-a-client's-behalf comment above).
+  // actorUserId is the server-verified user.id from getCurrentUser()
+  // at the top of this handler, never client-supplied; only reached
+  // after auth, ownership, and the upload itself all succeeded.
+  await logActivityAsSystem({
+    actorUserId: user.id,
+    action: "payment.bank_transfer_submitted",
+    entityType: "payment",
+    entityId: payment.id,
+  });
 
   return NextResponse.json({ ok: true, paymentId: payment.id });
 }
@@ -219,6 +245,17 @@ export async function PUT(request: NextRequest) {
     console.error("[payments] failed to create bank-transfer payment row", error?.message);
     return NextResponse.json({ ok: false, error: "failed-to-create-payment" }, { status: 500 });
   }
+
+  // TD-033: see the POST handler above for why logActivityAsSystem()
+  // (not logActivity()) is used here. Only reached after auth, field
+  // validation, entity ownership, amount resolution, and the insert
+  // itself all succeeded — never for a rejected/failed request.
+  await logActivityAsSystem({
+    actorUserId: user.id,
+    action: "payment.bank_transfer_initiated",
+    entityType: "payment",
+    entityId: payment.id,
+  });
 
   return NextResponse.json({ ok: true, paymentId: payment.id });
 }
