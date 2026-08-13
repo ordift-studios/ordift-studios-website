@@ -620,3 +620,24 @@ While spot-checking a sample workshop's detail page, its "OPEN FOR REGISTRATION"
 `npx tsc --noEmit`, `npm run lint`, and `next build` all run clean against the unchanged `staging` branch (no source files were modified — Sections A–C were verification-only, and §17.4 was deliberately left unfixed pending your decision). This document is the only file changed in this pass; committed and pushed to `staging` only, per your instruction to document and commit/push category-1 work.
 
 **Task #280 (Public Site deep-pass) is now complete** except for the one Category-3 item above, which stays open until you decide. Next up per the existing register: task #281 (Portal deep-pass — project workspace, vendor/model/collaborator shells).
+
+## 18. TD-034 resolved — automatic workshop registration-deadline enforcement (2026-08-13)
+
+Implements the business rule you confirmed for §17.4's finding: staff may close a workshop early; a manually-`"open"` workshop must auto-close once `registrationDeadline` passes; enforcement must be server-side, not just visual; the public badge/button must match the API's effective state; a future deadline must never auto-reopen a workshop staff closed manually.
+
+**Pre-implementation investigation (as requested):** confirmed `registrationDeadline` is a Sanity `date` field — date-only, no time/timezone component. The codebase already had an established parsing convention (`formatDate()`, `CountdownTimer` both `new Date("YYYY-MM-DD")`, which parses as UTC midnight of that date). The fix reuses that exact instant as the enforcement boundary, so the new gate closes at precisely the moment the existing countdown timer already visually expires — no second, conflicting definition of "the deadline" introduced.
+
+**Implementation:**
+- `src/lib/content/workshopHelpers.ts` — added `isRegistrationDeadlinePassed()`, `getEffectiveWorkshopStatus()` (demotes `"open"`→`"closed"` only once past deadline; every other status passes through unchanged), and `isRegistrationOpen()`.
+- `src/app/workshops/[slug]/page.tsx` — computes the effective status once and uses it for the status badge, the countdown-timer gate, and the register-form-vs-closed-message panel (previously all three read the raw CMS `status` independently).
+- `src/components/workshops/WorkshopCard.tsx` — same effective-status badge, so the `/workshops` hub and "Related Workshops" cards match the detail page.
+- `src/app/api/workshop-registration/route.ts` — the actual accept/reject gate (`workshop.status !== "open"`) replaced with the same shared `isRegistrationOpen()` the frontend calls, so frontend and API read from one function and cannot disagree.
+- New `src/lib/content/workshopHelpers.test.ts` — 11 unit tests, including explicit no-auto-reopen guarantees for manually-`"closed"` workshops regardless of deadline, and pass-through checks for `"full"`/`"coming-soon"`/`"completed"`.
+
+**Verification (staging only, local dev pointed at staging Supabase):**
+- `tsc --noEmit`: clean. `eslint` on the 5 changed files: clean. Full `vitest run`: 59/59 passed, no regressions. `SITE_ENV=staging next build`: clean, all workshop routes prerendered correctly.
+- Live browser test against `sample-portrait-lighting-workshop` (CMS status `"open"`, deadline 31 July 2026 — already past): detail-page badge changed from "Open for Registration" to "Closed"; the registration form was replaced by "Registration for this workshop is closed."; the `/workshops` hub card badge matched ("Closed").
+- Server-side enforcement confirmed independently of the UI: a direct `curl POST /api/workshop-registration` against this workshop returned `409 {"error":"workshop-not-open"}` — the API rejects on its own, not merely because the form was hidden.
+- Happy path confirmed unaffected: `sample-social-content-two-day-intensive` (status `"open"`, deadline still in the future) continued to show "Open for Registration" on the hub, unchanged.
+
+No schema, Paystack, CSP, Sentry, Supabase, Cloudflare, or DNS changes. No Production data or CMS records touched — this is application code only. Not merged to `main`. TD-034 in `TECHNICAL_DEBT_REGISTER.md` updated to Resolved with the same detail.
