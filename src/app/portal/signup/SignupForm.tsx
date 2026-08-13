@@ -8,6 +8,12 @@ import { signUpAction, type SignupState } from "./actions";
 
 const initialState: SignupState = { error: null };
 
+// Mirrors BookingForm.tsx/RegistrationForm.tsx's gate — without this,
+// the submit button stays permanently disabled in any environment
+// where NEXT_PUBLIC_TURNSTILE_SITE_KEY is unset (TurnstileWidget
+// renders nothing, so onVerify never fires), with no error shown.
+const turnstileRequired = Boolean(process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY);
+
 export default function SignupForm() {
   const [state, formAction, pending] = useActionState(signUpAction, initialState);
   // Turnstile still relies on Cloudflare's implicit hidden-field
@@ -81,7 +87,12 @@ export default function SignupForm() {
         onExpire={() => setTurnstileToken("")}
       />
 
-      <Button type="submit" variant="primary" disabled={pending || !turnstileToken} className="w-full">
+      <Button
+        type="submit"
+        variant="primary"
+        disabled={pending || (turnstileRequired && !turnstileToken)}
+        className="w-full"
+      >
         {pending ? "Creating account…" : "Create Account"}
       </Button>
 

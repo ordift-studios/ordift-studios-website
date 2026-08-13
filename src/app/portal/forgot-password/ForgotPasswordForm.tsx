@@ -8,6 +8,12 @@ import { requestPasswordResetAction, type ForgotPasswordState } from "./actions"
 
 const initialState: ForgotPasswordState = { submitted: false, error: null };
 
+// Mirrors BookingForm.tsx/RegistrationForm.tsx's gate — without this,
+// the submit button stays permanently disabled in any environment
+// where NEXT_PUBLIC_TURNSTILE_SITE_KEY is unset (TurnstileWidget
+// renders nothing, so onVerify never fires), with no error shown.
+const turnstileRequired = Boolean(process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY);
+
 export default function ForgotPasswordForm() {
   const [state, formAction, pending] = useActionState(requestPasswordResetAction, initialState);
   // Same submit-gating + forced-fresh-challenge pattern as LoginForm.tsx
@@ -71,7 +77,12 @@ export default function ForgotPasswordForm() {
         onExpire={() => setTurnstileToken("")}
       />
 
-      <Button type="submit" variant="primary" disabled={pending || !turnstileToken} className="w-full">
+      <Button
+        type="submit"
+        variant="primary"
+        disabled={pending || (turnstileRequired && !turnstileToken)}
+        className="w-full"
+      >
         {pending ? "Sending…" : "Send reset link"}
       </Button>
 

@@ -169,6 +169,44 @@ Assumptions: each new client interaction (enquiry, booking, or workshop registra
 
 ---
 
+## Scalability Assessment (Workstream J)
+
+**Re-reviewed: 2026-08-10.** Distinct in framing from "Usage Scaling" above — that section answers "what would this cost more"; this section answers "what would break or need redesign first, and at what specific point." Per `PRODUCT_ROADMAP.md`'s Version 1.0.5 definition, scoped to the five subsystems that actually carry request/data throughput: Supabase, Sanity, Vercel, Redis rate-limiting, Google Sheets sync. Documentation only, per that workstream's own scope — no scaling work performed, no premature optimization.
+
+### Supabase
+- **Current capacity:** Free tier — 500MB DB, 50K MAU (§2). Architecturally, the app talks to Supabase exclusively through `supabase-js`'s Data API (PostgREST) over HTTPS — never a raw Postgres connection string — so there is no app-level connection-pool setting to exhaust; Supabase's own Supavisor pooler sits transparently in front of PostgREST on their infrastructure side.
+- **Expected bottleneck:** not connection exhaustion (see above). The real constraint is Free tier's shared compute allocation and project-level API throughput, both of which scale with plan tier, not app code.
+- **Scaling strategy:** a plan-tier upgrade (Free → Pro), not a code or architecture redesign.
+- **Trigger point:** already documented in `DISASTER_RECOVERY.md` §9 (real bookings live, first real payment, or ~20 paid bookings/month) — cross-referenced here, not duplicated.
+
+### Sanity
+- **Current capacity:** 2 datasets, 2 users, 500K CDN API requests/month, 10GB bandwidth, 20GB asset storage (§3).
+- **Expected bottleneck:** `src/sanity/lib/client.ts` sets `useCdn: true` only when `SITE_ENV === "production"` — every production page read hits Sanity's cached CDN, which absorbs traffic spikes by design and makes the 500K/month figure a non-issue for public traffic. Staging/preview always hit the non-cached live API instead, which matters for editorial/preview load, not visitor load.
+- **Scaling strategy:** none needed on the read side. The only real lever is the **2-user editor seat cap**, a headcount limit, not a technical one.
+- **Trigger point:** hiring a second content editor/collaborator who needs concurrent Studio access — a staffing event, not a traffic number.
+
+### Vercel
+- **Current capacity:** plan tier unconfirmed from the CLI (§1 — flagged as needing dashboard confirmation). No route in this codebase sets an explicit `maxDuration` or `export const runtime` override, so every serverless function (`/api/*`, Server Actions) runs on whichever execution-time ceiling the account's plan defaults to.
+- **Expected bottleneck:** the only genuinely long-running server-side work is `/admin/reports` CSV/XLSX generation + email dispatch, and the Paystack webhook handler. Neither has been observed to approach a timeout at current data volumes, but with no explicit `maxDuration` set, there's also no early warning before one silently starts failing under a larger report or a slow upstream call.
+- **Scaling strategy:** horizontal by default — Vercel autoscales function instances, no redesign needed for request volume. If report-generation time becomes a real concern, the fix is an explicit `maxDuration` override, and if still insufficient, moving export generation to a background job instead of a synchronous request.
+- **Trigger point:** an admin report export or webhook call measurably approaching the plan's default duration ceiling — worth a one-time explicit check once the Vercel plan itself is confirmed (§1).
+
+### Upstash Redis (rate limiting)
+- **Current capacity:** 500K commands/month, 256MB (§5). Current config: sliding-window limiter, 10-minute window, 5 requests/window, keyed per-IP for anonymous routes and per-`user.id` for authenticated ones (`src/lib/shared/rateLimit.ts`).
+- **Expected bottleneck:** not command volume — Usage Scaling above already shows this nowhere close. The real bottleneck is a **design** one: IP-keyed limiting under-serves any legitimate scenario where multiple users share one IP (an office, shared Wi-Fi, carrier NAT) — a busy client-facing office could hit the 5-requests/10-minutes ceiling from ordinary use, not abuse.
+- **Scaling strategy:** no infrastructure change needed. If false-positive lockouts occur, the fix is application-level — e.g. raising the per-IP ceiling, or preferring a per-account/session key wherever a session already exists (already true for authenticated routes), reserving strict IP-keying for genuinely anonymous routes. Logged as **TD-031** in `TECHNICAL_DEBT_REGISTER.md`.
+- **Trigger point:** a real support complaint or a log pattern showing a legitimate user blocked — not a capacity metric, since Redis capacity was never the constraint.
+
+### Google Sheets sync
+- **Current capacity:** 300 read + 300 write requests/minute per project, 60/minute per user (§7, verified 2026-07-30). 3 of the registry's 10 configured worksheets are actually live (`workshopRegistrations`, `contactEnquiries`, `projectRequests`), sharing one spreadsheet ("Ordift Studios Operations").
+- **Expected bottleneck:** not API quota — negligible headroom even at 150 clients/month (Usage Scaling above). The real bottleneck is Google Sheets' own per-spreadsheet cell cap (10,000,000 cells, shared across all tabs) combined with human usability: `contactEnquiries` alone has 25 columns, so that one live tab could theoretically hold roughly 400,000 rows before threatening the cell cap — but a flat operational sheet becomes slow for staff to open, filter, and scroll long before that, typically well under 100,000 rows.
+- **Scaling strategy:** a data-lifecycle fix (archiving old rows out of the live tab), not an infrastructure or quota change. The sync mechanism itself (`appendToWorksheet` — best-effort, non-blocking, Supabase remains primary per the existing dual-write architecture) needs no redesign at any realistic volume.
+- **Trigger point:** staff-reported sluggishness opening/filtering a live worksheet, or as a hard proxy, any single live tab crossing roughly 20,000–30,000 rows — well short of the ~400,000-row theoretical cap, but where UI usability degrades first in practice.
+
+**Cross-cutting conclusion:** none of the five subsystems is within a realistic distance of a genuine capacity failure at current or near-term (150 clients/month) volume. Every near-term trigger identified above is either a **business-milestone trigger already documented elsewhere** (Supabase, via `DISASTER_RECOVERY.md` §9), a **plan/config confirmation gap** (Vercel plan tier), or a **design/UX threshold** rather than a hard technical ceiling (Redis IP-keying, Sheets row-count usability). No redesign work is warranted now — this section exists so each threshold is written down before it's reached, not discovered after.
+
+---
+
 ## Feature Dependency Map
 
 ```

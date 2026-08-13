@@ -4,10 +4,12 @@ import { createTestAdminClient, createTestAnonClient, testEmail, testRunId } fro
 // Exchange Rate Management (2026-08-07) — proves the two enforcement
 // layers the append-only architecture depends on:
 //   1. RLS on public.exchange_rates itself: any authenticated user can
-//      read every row (needed for the admin history list); staff-tier-
-//      and-above can INSERT; nothing can UPDATE or DELETE, because no
-//      such policy exists at all (migration 0024, unchanged by 0025's
-//      additive reason column) — Postgres denies both by default.
+//      read every row (needed for the admin history list); admin-tier-
+//      and-above can INSERT (narrowed from staff-tier-and-above by
+//      migration 0027 — see the 2026-08-10 correction below); nothing
+//      can UPDATE or DELETE, because no such policy exists at all
+//      (migration 0024, unchanged by 0025's additive reason column) —
+//      Postgres denies both by default.
 //   2. The Audit Identity Standard's read path: an actor_user_id
 //      resolves to a real member_number-labelled identity, the same
 //      mechanism addExchangeRateAction's logActivity() call relies on.
@@ -18,33 +20,59 @@ import { createTestAdminClient, createTestAnonClient, testEmail, testRunId } fro
 // the RLS policies the app-layer functions sit on top of is the
 // meaningful boundary to prove here, same principle as every other
 // *.integration.test.ts in this suite.
+//
+// Correction (2026-08-10, Production Readiness Reconciliation): this
+// suite originally asserted a plain staff-tier account could INSERT a
+// rate row. Migration 0027 (Workstream I security re-review, same
+// date) deliberately narrowed exchange_rates' insert policy from
+// is_staff_or_admin() to the new is_admin_or_super_admin(), matching
+// src/lib/payments/paymentPermissions.ts's manage_currencies capability
+// (already admin/super_admin-only, staff never had it at the app
+// layer). This suite was stale relative to that intentional tightening
+// — found via a real integration-test run against staging that failed
+// with a genuine 42501 RLS rejection, not a code regression. Updated to
+// use an admin-tier account for the INSERT-succeeds case, and added an
+// explicit test proving staff is now correctly blocked.
 
 const runId = testRunId();
 const admin = createTestAdminClient();
 
 let staffUserId: string;
+let adminUserId: string;
 let clientUserId: string;
 const staffPassword = `Test-${testRunId()}-Ss1!`;
+const adminPassword = `Test-${testRunId()}-Aa1!`;
 const clientPassword = `Test-${testRunId()}-Cc1!`;
 const staffEmail = testEmail(`exrate-staff-${runId}`, runId);
+const adminEmail = testEmail(`exrate-admin-${runId}`, runId);
 const clientEmail = testEmail(`exrate-client-${runId}`, runId);
 
 const insertedRateIds: string[] = [];
 
 beforeAll(async () => {
-  const [{ data: staff, error: sErr }, { data: client, error: cErr }] = await Promise.all([
+  const [{ data: staff, error: sErr }, { data: adminUser, error: aErr }, { data: client, error: cErr }] = await Promise.all([
     admin.auth.admin.createUser({ email: staffEmail, password: staffPassword, email_confirm: true }),
+    admin.auth.admin.createUser({ email: adminEmail, password: adminPassword, email_confirm: true }),
     admin.auth.admin.createUser({ email: clientEmail, password: clientPassword, email_confirm: true }),
   ]);
   if (sErr || !staff.user) throw new Error(`failed to create staff test user: ${sErr?.message}`);
+  if (aErr || !adminUser.user) throw new Error(`failed to create admin test user: ${aErr?.message}`);
   if (cErr || !client.user) throw new Error(`failed to create client test user: ${cErr?.message}`);
   staffUserId = staff.user.id;
+  adminUserId = adminUser.user.id;
   clientUserId = client.user.id;
 
-  const { data: staffRole, error: staffRoleError } = await admin.from("roles").select("id").eq("slug", "staff").single();
-  if (staffRoleError || !staffRole) throw new Error(`failed to look up staff role: ${staffRoleError?.message}`);
-  const { error: grantError } = await admin.from("user_roles").insert({ user_id: staffUserId, role_id: staffRole.id });
-  if (grantError) throw new Error(`failed to grant staff role: ${grantError.message}`);
+  const { data: roles, error: rolesError } = await admin.from("roles").select("id, slug").in("slug", ["staff", "admin"]);
+  if (rolesError || !roles) throw new Error(`failed to look up roles: ${rolesError?.message}`);
+  const staffRole = roles.find((r) => r.slug === "staff");
+  const adminRole = roles.find((r) => r.slug === "admin");
+  if (!staffRole || !adminRole) throw new Error("staff or admin role not found");
+
+  const { error: grantError } = await admin.from("user_roles").insert([
+    { user_id: staffUserId, role_id: staffRole.id },
+    { user_id: adminUserId, role_id: adminRole.id },
+  ]);
+  if (grantError) throw new Error(`failed to grant roles: ${grantError.message}`);
 });
 
 afterAll(async () => {
@@ -53,6 +81,7 @@ afterAll(async () => {
       ? admin.from("exchange_rates").delete().in("id", insertedRateIds)
       : Promise.resolve({ error: null }),
     admin.auth.admin.deleteUser(staffUserId),
+    admin.auth.admin.deleteUser(adminUserId),
     admin.auth.admin.deleteUser(clientUserId),
   ]);
   const failures = results.filter((r) => r.status === "rejected" || (r.status === "fulfilled" && "value" in r && r.value?.error));
@@ -71,19 +100,35 @@ describe("exchange_rates RLS", () => {
     expect((data ?? []).length).toBeGreaterThan(0); // at least the seeded USD row
   });
 
-  it("lets a staff-tier user INSERT a new rate row", async () => {
+  it("lets an admin-tier user INSERT a new rate row", async () => {
     const anon = createTestAnonClient();
-    await anon.auth.signInWithPassword({ email: staffEmail, password: staffPassword });
+    await anon.auth.signInWithPassword({ email: adminEmail, password: adminPassword });
 
     const { data, error } = await anon
       .from("exchange_rates")
-      .insert({ currency_code: "USD", rate_to_usd: 1, reason: `integration test ${runId}`, updated_by: staffUserId })
+      .insert({ currency_code: "USD", rate_to_usd: 1, reason: `integration test ${runId}`, updated_by: adminUserId })
       .select("id")
       .single();
 
     expect(error).toBeNull();
     expect(data?.id).toBeTruthy();
     if (data) insertedRateIds.push(data.id);
+  });
+
+  it("blocks a plain staff-tier user (below admin) from INSERTing a rate row — migration 0027", async () => {
+    const anon = createTestAnonClient();
+    await anon.auth.signInWithPassword({ email: staffEmail, password: staffPassword });
+
+    const { error } = await anon
+      .from("exchange_rates")
+      .insert({ currency_code: "USD", rate_to_usd: 1, reason: `integration test ${runId}`, updated_by: staffUserId });
+
+    // Migration 0027 deliberately narrowed this policy from
+    // is_staff_or_admin() to is_admin_or_super_admin() — plain staff
+    // must now be rejected, matching paymentPermissions.ts's
+    // admin/super_admin-only manage_currencies capability.
+    expect(error).not.toBeNull();
+    expect(error?.code).toBe("42501");
   });
 
   it("blocks a plain client (no staff/admin role) from INSERTing a rate row", async () => {
@@ -97,9 +142,9 @@ describe("exchange_rates RLS", () => {
     expect(error).not.toBeNull();
   });
 
-  it("blocks UPDATE entirely, even for staff — no update policy exists on this table", async () => {
+  it("blocks UPDATE entirely, even for admin — no update policy exists on this table", async () => {
     const anon = createTestAnonClient();
-    await anon.auth.signInWithPassword({ email: staffEmail, password: staffPassword });
+    await anon.auth.signInWithPassword({ email: adminEmail, password: adminPassword });
 
     // Update the row this same suite just inserted — proves it's not
     // an ownership issue, the operation itself is disallowed.
@@ -115,9 +160,9 @@ describe("exchange_rates RLS", () => {
     if (!error) expect(count).toBe(0);
   });
 
-  it("blocks DELETE entirely, even for staff — no delete policy exists on this table", async () => {
+  it("blocks DELETE entirely, even for admin — no delete policy exists on this table", async () => {
     const anon = createTestAnonClient();
-    await anon.auth.signInWithPassword({ email: staffEmail, password: staffPassword });
+    await anon.auth.signInWithPassword({ email: adminEmail, password: adminPassword });
 
     const targetId = insertedRateIds[0];
     const { error, count } = await anon.from("exchange_rates").delete({ count: "exact" }).eq("id", targetId);

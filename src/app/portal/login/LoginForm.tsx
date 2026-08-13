@@ -8,6 +8,12 @@ import { signInAction, type LoginState } from "./actions";
 
 const initialState: LoginState = { error: null };
 
+// Mirrors BookingForm.tsx/RegistrationForm.tsx's gate — without this,
+// the submit button stays permanently disabled in any environment
+// where NEXT_PUBLIC_TURNSTILE_SITE_KEY is unset (TurnstileWidget
+// renders nothing, so onVerify never fires), with no error shown.
+const turnstileRequired = Boolean(process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY);
+
 export default function LoginForm({
   next,
   passwordReset,
@@ -91,7 +97,12 @@ export default function LoginForm({
         onExpire={() => setTurnstileToken("")}
       />
 
-      <Button type="submit" variant="primary" disabled={pending || !turnstileToken} className="w-full">
+      <Button
+        type="submit"
+        variant="primary"
+        disabled={pending || (turnstileRequired && !turnstileToken)}
+        className="w-full"
+      >
         {pending ? "Signing in…" : "Sign In"}
       </Button>
 

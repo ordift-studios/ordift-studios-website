@@ -1,6 +1,8 @@
 # Deployment Guide
 
-Status: **not yet deployed anywhere** — this documents how to deploy once
+**Status correction (2026-08-10, Production Readiness Reconciliation):** the line below ("not yet deployed anywhere") and most of this document's checklist describe the platform's *pre-launch build-out* state (2026-07-24) — genuinely historical at this point, not current. The platform has been deployed to Production for weeks: staging and production are separate Supabase projects (item 10 below, then marked "not yet done," has been done), Production is live behind `LAUNCH_HOLDING_PAGE` with real infrastructure, and migrations well past `0003` are in play (see `PRODUCTION_READINESS_RECONCILIATION.md` for the current, authoritative migration/environment state). This document is kept as-is rather than rewritten — the CORS setup commands, the deployment-hang fix, the first-admin-bootstrap SQL, and the holding-page removal procedure (still the exact, current procedure) all remain genuinely useful reference material. Read it as **operational reference**, not as a live status report; for current state, see `PRODUCTION_READINESS_RECONCILIATION.md`, `LAUNCH_CHECKLIST.md`, and `PAYSTACK_PRODUCTION_HANDOVER.md`.
+
+Original status line, preserved for historical accuracy: **not yet deployed anywhere** — this documents how to deploy once
 you're ready, and captures the real operational requirements discovered
 while connecting Sanity and Supabase (2026-07-24). Both CMS (Sanity) and
 Auth/Database (Supabase) are live and fully verified for one environment

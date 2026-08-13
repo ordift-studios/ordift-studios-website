@@ -93,7 +93,7 @@
 - **Why accepted:** flagged explicitly as a "Pending Owner Decision" (Supabase Pro-plan billing) in `PRODUCT_ROADMAP.md` Version 1.0 rather than silently upgraded — a billing decision, not a technical one.
 - **Current impact:** any data loss since the one manual backup would not be recoverable until another manual backup is taken; no restore rehearsal has been performed yet (only a `pg_restore --list` table-presence check, not a full restore drill).
 - **Pay-down trigger:** the three Supabase Pro-upgrade trigger conditions already documented in `DISASTER_RECOVERY.md` §9; Version 1.0.5 Workstream H should also schedule the first genuine restore-test rehearsal.
-- **Status:** Open, owner-decision-gated
+- **Status:** ✅ **Resolved 2026-08-10** — Production Supabase project upgraded from Free to Pro's base tier, confirmed by the user via the organization dashboard ("PRO — Current plan"). PITR add-on deliberately not enabled, per the approved decision. Automated daily backups are now active on the Pro tier's standard terms; the earlier "zero automated backup coverage" condition no longer holds. Remaining related item: no restore rehearsal has been performed yet — tracked separately under `PRODUCTION_READINESS_RECONCILIATION.md`'s downstream action list (post-migration-promotion), not this entry. See `DISASTER_RECOVERY.md` §9 and `PRODUCTION_READINESS_RECONCILIATION.md` §10.4 for the full record.
 
 ### TD-009 — No load testing has ever been performed
 - **Category:** Performance
@@ -270,7 +270,7 @@
 - **Why not fixed now:** `is_staff_or_admin()` is shared, load-bearing infrastructure used well beyond Portfolio — changing it is a security-relevant edit to already-live production RLS policies, out of scope for a Portfolio-specific build. The immediate work-around (granting the test account `admin` too, matching the documented intended pairing) resolved the test; this entry exists so the underlying inconsistency isn't lost.
 - **Current impact:** none known — assumes every real `super_admin` account also holds `admin` (true by the migration's stated design intent; not verified against the live production owner account, which does not exist on the staging project used for this test).
 - **Pay-down trigger:** either (a) confirm and document that `super_admin` must always be granted alongside `admin` (a UI/process fix in `/admin/users`, not a schema change), or (b) redefine `is_staff_or_admin()` to include `super_admin` explicitly — the latter should get its own review given how many policies depend on it.
-- **Status:** Open, low priority — flag only, no other action taken.
+- **Status:** Resolved. Migration `0026_is_staff_or_admin_include_super_admin.sql` (2026-08-07) took option (b) — redefined `private.is_staff_or_admin()` to include `super_admin` in its OR condition, exactly as this entry's pay-down trigger anticipated. Applied to **both** staging and Production the same day (`8166aa7`, per `PAYSTACK_PRODUCTION_HANDOVER.md` §1) — one of only two migrations (`0022` baseline plus this one) currently live on Production ahead of the payments/workflow migrations still pending promotion. **Correction (2026-08-10, Production Readiness Reconciliation):** this entry was still marked "Open" despite the fix having shipped over two weeks earlier — found stale during the full reconciliation pass and corrected here.
 
 ### TD-026 — Native Portfolio Project creator can't upload direct video files or edit the before/after gallery, relatedWorkshopIds, or SEO ogImage/canonicalUrl
 
@@ -320,6 +320,36 @@
 - **Current impact:** low; Sanity's own asset pipeline reprocesses `image`-kind uploads (some mitigation), but the `file`-kind path (PDF/zip) and the bank-transfer proof upload have no equivalent reprocessing.
 - **Pay-down trigger:** add real content-sniffing (e.g. the `file-type` package, or an equivalent magic-byte check) to both routes' validation step, replacing/supplementing the declared-`Content-Type` check.
 - **Status:** Open
+
+### TD-031 — Rate limiting is IP-keyed for anonymous routes, which can false-positive-lock legitimate shared-IP users
+
+- **Category:** Design / UX
+- **Severity:** Low
+- **What:** found during the 2026-08-10 Workstream J scalability assessment (`TECHNOLOGY_COST_REGISTER.md`'s "Scalability Assessment" section). `checkRateLimit()` (`src/lib/shared/rateLimit.ts`) keys anonymous-route limits (login, signup, forgot-password, public forms) by client IP — 5 requests per 10-minute sliding window. This is correct behavior against abuse, but it means any group of legitimate users sharing one public IP (an office, shared Wi-Fi, a carrier's NAT pool) shares the same 5-request budget. No incident has been observed; this is a design property identified by inspection, not a bug report.
+- **Why not fixed now:** no evidence yet that it has caused a real false-positive lockout — logged proactively rather than fixed speculatively, per this project's standing discipline against solving hypothetical problems.
+- **Current impact:** none observed. Latent risk grows with client volume, specifically office-based or in-person enquiry submission scenarios.
+- **Pay-down trigger:** a real support complaint, or a log pattern showing a legitimate user blocked. Fix direction: raise the per-IP ceiling, and/or key authenticated flows by `user.id`/session where a session already exists (already true for authenticated routes today), reserving strict IP-keying for genuinely anonymous, unauthenticated routes.
+- **Status:** Open, not scheduled.
+
+### TD-032 — Client-side Sentry events are tagged by `NODE_ENV`, not `SITE_ENV`, so staging errors appear tagged "production"
+
+- **Category:** Observability
+- **Severity:** Low
+- **What:** found during the 2026-08-10 Workstream D documentation pass (`OPERATIONS_MANUAL.md` §6.1). Server/edge-side Sentry init (`src/instrumentation.ts`) tags events with `process.env.SITE_ENV` — this project's own staging/production distinction, used consistently everywhere else in the codebase (Sanity CDN usage, the staging Basic-Auth gate, etc.). Client-side Sentry init (`src/instrumentation-client.ts`) instead tags events with `process.env.NODE_ENV`, which Next.js/Vercel sets to `production` for every optimized build — staging included, since staging is still a `next build` production build, just pointed at different infrastructure. The result: a client-side error captured on staging shows up in the Sentry dashboard tagged `environment: production`, indistinguishable from a real production error at a glance.
+- **Why not fixed now:** the fix requires adding a new `NEXT_PUBLIC_SITE_ENV` environment variable (client bundles can only read `NEXT_PUBLIC_`-prefixed vars) to both Vercel scopes (Preview/staging and Production), which is an environment-variable/dashboard change — out of scope for the documentation-only workstream that found it, and the kind of change this project's standing rules ask to be flagged rather than made in passing.
+- **Current impact:** low — server-side events (which cover most of the meaningful error surface, including all API routes, Server Actions, and the webhook handler) are already tagged correctly. Only genuinely client-side errors (a React rendering error, a client-side fetch failure) are affected, and the event's actual URL/host in the Sentry event detail still reveals the true origin on inspection — this is a triage-friction issue, not a data-loss or security issue.
+- **Pay-down trigger:** add `NEXT_PUBLIC_SITE_ENV` (mirroring the existing `SITE_ENV` value) to Vercel's Preview and Production environment scopes, update `src/instrumentation-client.ts` to read it instead of `NODE_ENV`, and verify a staging-triggered client error now arrives tagged `staging` in Sentry.
+- **Status:** **Resolved (2026-08-12).** Fixed on both `staging` and `main`; `NEXT_PUBLIC_SITE_ENV` added to both Vercel scopes. Verified with a real Production event via `/sentry-test`, confirmed tagged `environment: production` in the Sentry dashboard. See `PRODUCTION_READINESS_RECONCILIATION.md` §12 item 6 for the full incident/resolution writeup (a related but separate issue — masked Production env var values from a flawed copy pipeline — was also found and fixed during this same verification pass).
+
+### TD-033 — Bank-transfer proof submission has no `activity_log` entry (the staff decision does, the client's submission doesn't)
+
+- **Category:** Audit / Observability
+- **Severity:** Low
+- **What:** found during the 2026-08-10 Production Readiness Reconciliation's Action #13 (a real authenticated-session test of the bank-transfer proof upload + staff approve/reject workflow, staging only). `src/app/api/payments/bank-transfer/proof/route.ts`'s `PUT` (initiate) and `POST` (upload proof) handlers make no `logActivity()` call — confirmed by querying `activity_log` directly after a real client-side submission: zero rows existed for the payment until the staff decision, which correctly logs `payment.bank_transfer_approved`/`_rejected`. This is the same class of gap already found and fixed once for the Portfolio native editor's per-step field save (see the resolved TD-027-adjacent history in `MILESTONES.md`'s Audit Identity Standard entry) — a mutation that "doesn't feel like a big event" missing the call `ENGINEERING_GUIDE.md` §11 requires for every state-changing action.
+- **Why not fixed now:** found during a verification/testing pass, not an implementation pass — per this project's standing "reconcile, don't silently implement" discipline for reconciliation work, logged here rather than patched in passing.
+- **Current impact:** low — the financially-authoritative decision (approve/reject) is correctly audited with the right actor; only the client's own submission step is missing from the trail, meaning "who submitted this proof and when" is reconstructable from `payments.submitted_by`/`submitted_at` (still recorded on the row itself) but not from the `activity_log` feed staff actually use for the platform-wide audit view.
+- **Pay-down trigger:** add a `logActivity({ actorUserId: user.id, action: "payment.bank_transfer_submitted", entityType: "payment", entityId: payment.id })` call to the `POST` handler in `src/app/api/payments/bank-transfer/proof/route.ts`, immediately after the successful proof-upload update, matching the existing pattern already used for the approve/reject actions in `src/app/admin/payments/actions.ts`.
+- **Status:** Open, not scheduled.
 
 ---
 

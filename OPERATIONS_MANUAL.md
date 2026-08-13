@@ -119,6 +119,20 @@ Detailed how-to for each of these already exists in named documents — this sec
 
 ## 6. Monitoring
 
+### 6.1 Application error monitoring (Sentry) — added Version 1.0.5 Workstream C, documented here 2026-08-10
+
+**What's actually instrumented:** Sentry (`@sentry/nextjs`) covers all three Next.js runtimes — server (`src/instrumentation.ts`, Node.js runtime), edge (same file, edge runtime), and client (`src/instrumentation-client.ts`). A dedicated React error boundary (`src/app/error.tsx`) calls `Sentry.captureException(error)` for any unhandled error in the component tree, in addition to Sentry's own automatic instrumentation of unhandled server exceptions (`onRequestError = Sentry.captureRequestError` in `instrumentation.ts`) and client-side route-transition tracking (`onRouterTransitionStart`). Source maps are uploaded automatically at build time via `withSentryConfig()` in `next.config.ts` (`SENTRY_ORG`/`SENTRY_PROJECT`/`SENTRY_AUTH_TOKEN`), so stack traces in the Sentry dashboard resolve to real source lines, not minified bundle output. Verified end-to-end 2026-08-10: a deliberately-triggered test exception was confirmed to arrive in the Sentry dashboard on staging, closing out `TECHNICAL_DEBT_REGISTER.md` TD-003.
+
+**Where to look when something goes wrong:** the Sentry project dashboard (not linked here — access is via your own Sentry account) is the first place to check for an unhandled exception, not the Vercel function logs (though those remain useful for anything Sentry doesn't capture, e.g. a build failure). Sample rate is intentionally low (`tracesSampleRate: 0.1`, i.e. 10% of transactions get full performance tracing) — appropriate for current traffic; error capture itself is not sampled, every unhandled exception is captured regardless of this setting.
+
+**Environment tagging — a known asymmetry, not yet fixed (`TECHNICAL_DEBT_REGISTER.md` TD-032):** server/edge-side Sentry events are tagged with this project's own `SITE_ENV` value (`staging`/`production`, the same variable that drives every other staging/production distinction in this codebase — Sanity CDN usage, the staging Basic-Auth gate, etc.). Client-side events are tagged with `NODE_ENV` instead, which Next.js/Vercel sets to `production` for **every** optimized build, staging included — so a client-side error captured on staging currently shows up in Sentry's dashboard tagged `environment: production`, indistinguishable from a real production error unless cross-checked against the URL/release in the event detail. **When triaging a Sentry alert, always open the event and check its actual URL/host before assuming a "production"-tagged event is really from production.** The concrete fix (adding a `NEXT_PUBLIC_SITE_ENV` variable so the client bundle can read the same staging/production distinction server code already has) is deliberately not applied in this documentation pass — it's an environment-variable change across both Vercel scopes, out of scope for a docs-only workstream; see TD-032 for the pay-down trigger.
+
+**Payments-specific overlay:** payment-webhook failures, signature-verification failures, and amount mismatches get a distinct Sentry tag/context on top of this general setup — see `PAYMENT_SECURITY_REVIEW.md` §19 for the payments-specific incident-response procedure, which layers on top of (not instead of) this section.
+
+**What's still genuinely open, not just undocumented:** `TECHNICAL_DEBT_REGISTER.md` TD-013 — no uptime/synthetic monitoring exists yet (nothing pings the live site from outside to detect "the site is down" independent of an application error Sentry would catch — a DNS problem, an expired certificate, or a full platform outage). This was explicitly scoped into Workstream C from the start but has not been built; Sentry's error-tracking half of Workstream C is complete and verified, the synthetic-monitoring half is not. Don't read this section as implying uptime monitoring exists just because error monitoring does.
+
+### 6.2 Day-to-day monitoring signals
+
 **What should be monitored daily:** new form submissions arriving, emails sending, no repeated dead-letter entries — see §1's Monitoring checklist above.
 
 **What indicates something is wrong:**
@@ -126,6 +140,7 @@ Detailed how-to for each of these already exists in named documents — this sec
 - Repeated rows in `email_send_failures` for the same recipient/type (a systemic issue, not a one-off).
 - The Active Users panel never showing anyone, including yourself when logged in (a Realtime/presence regression).
 - `npx vercel ls --yes` showing a deployment you didn't expect.
+- A new, unexplained cluster of events in the Sentry dashboard (§6.1) — check whether it correlates with a recent deploy before assuming it's unrelated.
 
 **Expected system behavior:** forms save to Supabase first and always (this never depends on email or Sheets succeeding); email and Sheets sync are best-effort and retried/logged on failure, never block the visitor-facing response; CAPTCHA (once live) and rate limiting reject abuse before any of that even runs.
 

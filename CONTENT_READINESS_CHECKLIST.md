@@ -10,12 +10,14 @@ A page-by-page audit of what's real vs. placeholder, done as part of final pre-l
 
 ## Entirely placeholder — needs your action before launch
 
-All three of the following content types are explicitly labeled `[SAMPLE]` and their own copy says so directly. This isn't a defect — it's how the platform was built and verified — but none of it should be visible to real visitors at launch.
+**Correction (2026-08-10, Production Readiness Reconciliation): Portfolio is no longer 100% sample.** One real project ("Sampson & Sadia Wedding") has been published live via the native Admin Portal editor since 2026-08-05, with a full Website Presentation Review (`MILESTONES.md`, same date) fixing homepage/gallery/SEO issues found while reviewing it live. The Portfolio section below still describes the original 5-sample-entry state and has not been re-audited field-by-field against current content this pass — treat it as a description of what the sample entries still need if kept, not as "Portfolio is still all placeholder." Workshops remains unverified this pass — treat that section as still accurate.
+
+The following content types were, as of the original 2026-07-30 audit, explicitly labeled `[SAMPLE]` in their own copy. This isn't a defect — it's how the platform was built and verified — but sample content should not be visible to real visitors at launch.
 
 ### Workshops (4 sample entries)
 Full field-by-field checklist already exists — see the Workshops section below, unchanged from the original audit.
 
-### Portfolio / Work (5 sample entries: `sample-atelier-fashion-editorial`, `sample-heritage-brand-film`, `sample-artisan-market-branding`, and 2 more)
+### Portfolio / Work (5 sample entries: `sample-atelier-fashion-editorial`, `sample-heritage-brand-film`, `sample-artisan-market-branding`, and 2 more — plus one real, published project not covered by this list, see correction note above)
 
 Real Sanity `portfolioProject` schema fields to fill in per project:
 - [ ] Title (currently `[SAMPLE] ...`)
