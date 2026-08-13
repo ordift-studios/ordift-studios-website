@@ -641,3 +641,15 @@ Implements the business rule you confirmed for §17.4's finding: staff may close
 - Happy path confirmed unaffected: `sample-social-content-two-day-intensive` (status `"open"`, deadline still in the future) continued to show "Open for Registration" on the hub, unchanged.
 
 No schema, Paystack, CSP, Sentry, Supabase, Cloudflare, or DNS changes. No Production data or CMS records touched — this is application code only. Not merged to `main`. TD-034 in `TECHNICAL_DEBT_REGISTER.md` updated to Resolved with the same detail.
+
+### 18.1 TD-034 amendment — inclusive deadline day (2026-08-13, same day)
+
+You asked for one adjustment before closing this permanently: the deadline day itself should stay fully open, closing only once the following day begins (e.g. `registrationDeadline = "2026-08-20"` → open all of 20 August, closed from 21 August). The original implementation closed at the *start* of the deadline day instead, matching `CountdownTimer`'s pre-existing UTC-midnight parse.
+
+**Minimal adjustment:** added `getRegistrationCloseInstant()` to `src/lib/content/workshopHelpers.ts` — deadline's UTC midnight **+ 24 hours** (start of the following day) — and changed `isRegistrationDeadlinePassed()` to compare against that instead of the deadline's own midnight. `getEffectiveWorkshopStatus()`, `isRegistrationOpen()`, `WorkshopCard.tsx`, and `route.ts` were unaffected — they only consume the boolean result. One necessary side-effect: `src/app/workshops/[slug]/page.tsx`'s `CountdownTimer` now targets `getRegistrationCloseInstant(workshop)` instead of the raw `registrationDeadline` field, so the visible countdown, the badge, and the API all expire at the identical instant — otherwise the countdown would have hit zero a full day before registration actually closed, contradicting "the badge/button must reflect the same effective state." The separately-displayed "Registration deadline: 20 August 2026" text is untouched.
+
+**Tests:** replaced the single boundary-instant test with explicit day-inclusive coverage in `workshopHelpers.test.ts` — deadline day's start, midday, and last instant (23:59:59.999 UTC) all confirmed still open; the first instant of the following day (00:00:00.000 UTC) confirmed closed. 17/17 tests passing (up from 11).
+
+**Re-verified on staging:** `tsc --noEmit`, `eslint` (3 changed files), full `vitest run` (65/65, no regressions), `SITE_ENV=staging next build` all clean. Live: `sample-portrait-lighting-workshop` still correctly shows "Closed" (deadline weeks in the past regardless of the boundary shift). `sample-social-content-two-day-intensive` (deadline 23 August 2026) — screenshotted the countdown reading "10 Days 21 Hrs 45 Min 28 Sec" from the dev clock, arithmetically confirming it targets 24 August 00:00 UTC (the day *after* the deadline), not 23 August 00:00 UTC.
+
+No schema, Paystack, CSP, Sentry, Supabase, Cloudflare, or DNS changes. No Production data or CMS records touched. Not merged to `main`. TD-034 is now fully closed with the inclusive-end-of-day behavior confirmed correct.

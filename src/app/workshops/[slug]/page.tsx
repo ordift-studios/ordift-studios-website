@@ -17,6 +17,7 @@ import {
   formatDate,
   formatDateRange,
   getEffectiveWorkshopStatus,
+  getRegistrationCloseInstant,
   isMultiDay,
 } from "@/lib/content/workshopHelpers";
 import { visitorFormsOpen } from "@/lib/shared/env";
@@ -64,6 +65,10 @@ export default async function WorkshopDetailPage({
   // "closed" everywhere on this page — badge, countdown, and the
   // register-vs-message panel all read this instead of the raw status.
   const effectiveStatus = getEffectiveWorkshopStatus(workshop);
+  // Same instant the effective-status check closes at (end of the
+  // deadline day, not its start) — the countdown must expire at exactly
+  // the moment registration actually closes, not a day early.
+  const registrationClosesAt = getRegistrationCloseInstant(workshop);
 
   const [categories, instructors, venues, allWorkshops, allTestimonials] = await Promise.all([
     contentRepository.getCategories(),
@@ -161,9 +166,9 @@ export default async function WorkshopDetailPage({
               {workshop.description}
             </p>
 
-            {effectiveStatus === "open" && workshop.registrationDeadline && (
+            {effectiveStatus === "open" && registrationClosesAt && (
               <div className="mb-8">
-                <CountdownTimer targetDate={workshop.registrationDeadline} label="Registration closes in" />
+                <CountdownTimer targetDate={registrationClosesAt.toISOString()} label="Registration closes in" />
               </div>
             )}
 

@@ -31,16 +31,26 @@ export function isPastWorkshop(workshop: Workshop): boolean {
 }
 
 // TD-034: `registrationDeadline` is a Sanity `date` field (no time/zone
-// component), so it parses as UTC midnight of that date — the same
-// convention CountdownTimer and formatDate already use. Treated as the
-// exact enforcement instant rather than "through the end of that day" so
-// there's only ever one definition of "the deadline" in this codebase.
+// component), so it parses as UTC midnight of that date. The deadline
+// day itself stays open — registration closes only once the following
+// day begins, giving visitors the full deadline day rather than closing
+// at its first instant. Exported so CountdownTimer can count down to
+// this exact instant too — the countdown, the badge, and the API must
+// all agree on one closing moment.
+export function getRegistrationCloseInstant(
+  workshop: Pick<Workshop, "registrationDeadline">
+): Date | null {
+  if (!workshop.registrationDeadline) return null;
+  const deadlineStart = new Date(workshop.registrationDeadline);
+  return new Date(deadlineStart.getTime() + 24 * 60 * 60 * 1000);
+}
+
 export function isRegistrationDeadlinePassed(
   workshop: Pick<Workshop, "registrationDeadline">,
   now: Date = new Date()
 ): boolean {
-  if (!workshop.registrationDeadline) return false;
-  return now.getTime() >= new Date(workshop.registrationDeadline).getTime();
+  const closesAt = getRegistrationCloseInstant(workshop);
+  return closesAt !== null && now.getTime() >= closesAt.getTime();
 }
 
 // The status actually shown and enforced everywhere — same as the raw
