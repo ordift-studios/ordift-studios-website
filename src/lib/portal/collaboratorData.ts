@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
+import { crmStageLabel } from "@/lib/portal/data";
 
 // Data layer for the Contractor/Collaborator portal (migration 0009).
 // Deliberately separate from src/lib/portal/workspace.ts (the Client
@@ -106,7 +107,7 @@ export async function getAssignedProjectOverview(kind: ProjectKind, id: string):
       kind,
       id: data.id,
       title: `${data.service} — ${data.reference_number}`,
-      statusLabel: data.crm_stage,
+      statusLabel: crmStageLabel(data.crm_stage),
       submittedAt: data.submitted_at,
     };
   }
