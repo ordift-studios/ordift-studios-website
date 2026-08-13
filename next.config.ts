@@ -39,6 +39,10 @@ function buildCsp(directives: Record<string, (string | null)[]>): string {
 
 const TURNSTILE_ORIGIN = "https://challenges.cloudflare.com";
 const SANITY_MEDIA_ORIGIN = "https://cdn.sanity.io";
+// Sanity's own host-communication "bridge" script for Studio, loaded
+// from a hashed filename (bridge-<hash>.js) — found as a genuine
+// Report-Only violation on /studio; /studio-only, not needed elsewhere.
+const SANITY_BRIDGE_ORIGIN = "https://core.sanity-cdn.com";
 
 function reportOnlyCsp(): { main: string; studio: string } | null {
   // Report-Only is staging-only for this first pass — Production gets
@@ -95,7 +99,9 @@ function reportOnlyCsp(): { main: string; studio: string } | null {
     // No 'unsafe-eval' added preemptively — if Studio's own tooling
     // needs it, that will show up as an observed script-src violation
     // (see regression report) rather than being assumed here.
-    "script-src": ["'self'", "'unsafe-inline'"],
+    // SANITY_BRIDGE_ORIGIN: confirmed genuine Report-Only violation —
+    // Studio loads its host-communication bridge script from here.
+    "script-src": ["'self'", "'unsafe-inline'", SANITY_BRIDGE_ORIGIN],
     // Sanity's @sanity/ui runs on styled-components, which injects
     // inline <style> tags with no CSP nonce support — this directive
     // is expected to need 'unsafe-inline' permanently on this route,
