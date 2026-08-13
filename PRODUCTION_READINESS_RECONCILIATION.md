@@ -673,3 +673,53 @@ Continuation of the readiness/debt register's Portal deep-pass (task #281), scop
 No schema, Paystack, CSP, Sentry, Supabase Production, Cloudflare, DNS, or Vercel Production changes. No Production data touched — staging only. Not merged to `main`. `src/lib/portal/collaboratorData.ts` and this document are the only files changed in this pass.
 
 **Task #281 (Portal deep-pass) is now complete.** Next up per the existing register: task #282 (Admin deep-pass — bookings, activity, flags, lookups, deliverables, profile pages).
+
+## 20. Admin deep-pass — full staff/admin/super_admin authorization matrix (2026-08-13)
+
+Continuation of the readiness/debt register's Admin deep-pass (task #282), scoped to authenticated live testing of the full Admin Platform authorization boundary across all three internal tiers (`staff`, `admin`, `super_admin`), on staging only, per the same category-1/2/3/4 classification instruction used elsewhere in this engagement.
+
+**Investigation first:** cross-referenced #282's named modules (bookings, activity, flags, lookups, deliverables, profile pages) against everything already tested. Bookings/Activity/Flags/Users/Settings were already live-tested once, generically, in §13's 2026-08-13 regression pass. Lookups, Deliverables, and Profile pages had **no prior live-test coverage** since being built — Profile pages last touched 2026-07-28 at build time, for the Grade-confidentiality boundary specifically, never re-verified since. Source review of the full auth architecture (`proxy.ts`, `middleware.ts`, `admin/layout.tsx`, and all ~12 `actions.ts` files) confirmed every restricted route/action independently re-checks role server-side — nav-item hiding is UX only, never the enforcement boundary.
+
+**Test method:** three disposable staff/admin/super_admin accounts plus one disposable "booking" (`workshop_registrations` row), created via the same approved `.invalid`-domain fixture mechanism used throughout this engagement, hard-locked to the confirmed staging host with a fail-closed pre-write guard. Anything created live through the browser during testing (Feature Flag, Deliverable Category, Operational Title) used a consistent `test-282`/`TEST 282` naming marker so cleanup could find and remove it without a pre-recorded ID.
+
+### 20.1 Authorization matrix — every result live-verified by direct URL, not nav-link absence
+
+| Area | staff | admin | super_admin |
+|---|---|---|---|
+| `/admin` base + Overview/Enquiries/Bookings/Payments/Portfolio/Reports/Content | allow | allow | allow |
+| Activity | allow | allow | allow |
+| Bookings — status update | allow (persisted, confirmed via fresh server render) | — | — |
+| Deliverables — publish/delete | allow (created + deleted live) | — | — |
+| Deliverables — New Category | hidden client-side + would deny server-side (`hasRole("admin")‖isSuperAdmin`) | allow (created live) | — |
+| Payments — set Amount Due | read-only message shown, no field | allow ($150.00 set live) | — |
+| Users & Roles | deny (direct URL → redirect to Overview) | allow | allow |
+| Feature Flags | deny (direct URL → redirect) | allow (created + toggled a flag live) | allow |
+| Settings | deny (direct URL → redirect) | allow | allow |
+| Lookups (Titles/Engagement/Classifications) | deny (direct URL → redirect) | deny (direct URL → redirect) | allow (created an Operational Title live) |
+| Profile — self-view | allow | allow | allow |
+| Profile — direct-URL to another user's id | redirected to own profile | redirected to own profile | (same code path, not separately re-tested) |
+| Unauthenticated → any `/admin/**` | redirects to `/portal/login?next=/admin` | — | — |
+
+Every "deny" row above was tested by direct URL against an authenticated session lacking the required role, not by observing an absent nav link.
+
+### 20.2 Activity-page visibility — investigated as explicitly requested
+
+Confirmed live: a plain `staff` session sees the full platform-wide Activity feed unfiltered, including real `payment.completed`, `payment.failed`, `payment.exchange_rate_added`, and `enquiry.amount_due_set` entries. Traced to source and confirmed **intentional current design**, not a defect: `NAV_ITEMS` deliberately omits `adminOnly` for Activity (unlike Users/Flags/Settings/Lookups), the RLS policy is literally named `"activity_log: staff read"` with a plain `is_staff_or_admin()` check, and `getRecentActivity()` has no action-type or actor-role filtering anywhere. Per instruction, **no authorization/RLS/query/navigation/schema/business-logic change was made**. Logged as **TD-035** in `TECHNICAL_DEBT_REGISTER.md` for a deliberate least-privilege policy review before Production readiness is finalized — staff keeps operational visibility, financial activity considered for admin/super_admin only, role/security-sensitive activity considered for super_admin only, exact classification and UX to be decided before any implementation.
+
+### 20.3 Findings
+
+**No application defects found.** One near-miss during testing, not an app bug: a static "Registered" date-section label on the Bookings detail page was briefly misread as the live status value while verifying a status-change persisted; the actual status (in the `<select>`'s server-rendered `defaultValue`) had updated correctly the whole time. Caught and corrected before being reported as a finding.
+
+**Console errors:** zero, across all three roles and every page/action tested.
+
+### 20.4 Cleanup and verification
+
+Cleanup targeted: the fixture booking's deliverables (0 found — both create and delete were exercised live during testing, so nothing was left behind), the marker-named Feature Flag (1 row), Operational Title (1 row), Deliverable Category (1 row), every `activity_log` row generated by any of the three fixture accounts (9 rows — covering bookings/flags/lookups/deliverables/profile actions in one filter, since every `logActivity()` call site records the acting user's own id), the fixture booking itself, and the three disposable auth accounts (profile/role-grant/staff_details cascaded automatically). The cleanup script's own final read-only check confirmed **0 fixture rows/accounts remaining** before it removed its own record file. The two throwaway scripts (`_createAdminDeepPassFixtures.ts`, `_cleanupAdminDeepPassFixtures.ts`) were then deleted — never committed, no longer needed.
+
+### 20.5 Verification
+
+`npx tsc --noEmit` clean. Full `vitest run`: 65/65 passing, no regressions. `TECHNICAL_DEBT_REGISTER.md` and this document are the only files changed in this pass — no application source code was modified for #282, since no defects were found.
+
+No schema, Paystack, CSP, Sentry, Supabase Production, Cloudflare, DNS, or Vercel Production changes. No Production data touched — staging only. Not merged to `main`.
+
+**Task #282 (Admin deep-pass) is now complete.** Next up per the existing register: task #283 (site-wide link crawl + console-error sweep).
