@@ -457,3 +457,18 @@ Investigated first, reported to you before implementing, per your instruction. R
 - No payment, Production-data, credential, or completed-Sentry-configuration changes were made. `TECHNICAL_DEBT_REGISTER.md` TD-005 entry updated to `Status: Resolved`.
 
 **Result:** both dead-letter paths now alert to Sentry the moment a sync/email failure is logged, closing the "silent until someone queries it" gap. TD-005 is closed.
+
+### 16.3 TD-008 (register: TD-006) — dependency/security audit re-run — INVESTIGATED, Bucket A tested and reverted, no changes applied
+
+Note on numbering: this work order's "TD-008" refers to the npm audit findings, which are recorded as **TD-006** in `TECHNICAL_DEBT_REGISTER.md`. The register's own TD-008 is a different, already-resolved item (Supabase Free→Pro plan decision). Updated the correct entry, TD-006.
+
+Re-ran `npm audit`: **19 findings (8 moderate, 11 high)**, down from the previously-recorded 31 (6 moderate, 25 high). Categorized into the 4 requested buckets — full detail in `TECHNICAL_DEBT_REGISTER.md` TD-006:
+
+- **Bucket A (reported non-breaking):** `undici`, `nanoid`, `brace-expansion`, `adm-zip`, `@module-federation/dts-plugin`, `@module-federation/vite`, `@sanity/workbench-cli`, `dompurify` — 8 findings.
+- **Bucket B (upgrade + regression testing):** `next` 16.2.11→16.3.0, resolving `next`/`postcss`/`sharp` — 3 findings.
+- **Bucket C (dev-only/non-Production residual risk):** `@vercel/frameworks` — 1 finding, reachable only via `@sanity/cli`'s own binary tooling, never a deployed request path.
+- **Bucket D (no viable non-breaking fix upstream):** `sanity`, `@sanity/cli`, `next-sanity`, `js-yaml`, `smol-toml`, `typeid-js`, `uuid` — 7 findings. npm's suggested fix (`sanity@5.14.1`) is a downgrade two majors below installed; the vulnerable range has no upper bound, so no current release resolves it.
+
+**Bucket A tested and reverted.** On an isolated branch (`td-008-audit-fix-bucket-a`, off the now-updated `staging`), ran plain `npm audit fix` (no `--force`). Diffing the resulting lockfile against the pre-fix baseline showed `package.json` and the root manifest's declared ranges were untouched, but the *resolved* transitive tree picked up major-version bumps the static `fixAvailable: true` signal hadn't disclosed: `undici` 6.27.0→7.29.0, `groq-js` 1.30.3→2.0.0, `framer-motion`/`motion` 12.x→13.x, `path-to-regexp` 6.3.0→8.4.2, and removal of `react-compiler-runtime`; the direct runtime deps `sanity` and `next-sanity` also moved (6.6.0→6.9.2, 13.2.1→13.3.2). This is outside the approved Bucket A scope (non-breaking only). Reverted `package.json`/`package-lock.json` to the pre-fix state, ran `npm install` to resync, deleted the branch — **nothing tested, committed, merged, or deployed.** `staging` was unaffected throughout; verified clean against `origin/staging` before and after.
+
+**Decision (per your instruction):** all 4 buckets left for a future dedicated dependency-upgrade/security-remediation session with full regression testing. No dependency changes applied this pass.
