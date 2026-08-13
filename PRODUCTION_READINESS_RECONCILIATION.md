@@ -472,3 +472,57 @@ Re-ran `npm audit`: **19 findings (8 moderate, 11 high)**, down from the previou
 **Bucket A tested and reverted.** On an isolated branch (`td-008-audit-fix-bucket-a`, off the now-updated `staging`), ran plain `npm audit fix` (no `--force`). Diffing the resulting lockfile against the pre-fix baseline showed `package.json` and the root manifest's declared ranges were untouched, but the *resolved* transitive tree picked up major-version bumps the static `fixAvailable: true` signal hadn't disclosed: `undici` 6.27.0→7.29.0, `groq-js` 1.30.3→2.0.0, `framer-motion`/`motion` 12.x→13.x, `path-to-regexp` 6.3.0→8.4.2, and removal of `react-compiler-runtime`; the direct runtime deps `sanity` and `next-sanity` also moved (6.6.0→6.9.2, 13.2.1→13.3.2). This is outside the approved Bucket A scope (non-breaking only). Reverted `package.json`/`package-lock.json` to the pre-fix state, ran `npm install` to resync, deleted the branch — **nothing tested, committed, merged, or deployed.** `staging` was unaffected throughout; verified clean against `origin/staging` before and after.
 
 **Decision (per your instruction):** all 4 buckets left for a future dedicated dependency-upgrade/security-remediation session with full regression testing. No dependency changes applied this pass.
+
+### 16.4 TD-004 — staging-only Content-Security-Policy-Report-Only header — IMPLEMENTED, tested, not enforced
+
+Implemented the lower-risk staged approach: a static (non-nonce), non-enforcing `Content-Security-Policy-Report-Only` header, gated on `SITE_ENV=staging` so it never applies to a Production build, split into two policies by route.
+
+**Policy — main (public site, portal, admin; everything except `/studio`):**
+```
+default-src 'self';
+script-src 'self' 'unsafe-inline' https://challenges.cloudflare.com;
+style-src 'self' 'unsafe-inline';
+img-src 'self' data: blob: https://cdn.sanity.io;
+media-src 'self' https://cdn.sanity.io;
+font-src 'self';
+connect-src 'self' <Supabase origin> <Supabase wss origin> <Sentry ingest origin> https://challenges.cloudflare.com;
+frame-src 'self' https://challenges.cloudflare.com https://www.youtube.com https://www.youtube-nocookie.com https://player.vimeo.com;
+object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'self';
+```
+
+**Policy — `/studio`:** same baseline, plus `https://api.sanity.io https://*.api.sanity.io` and their `wss://` equivalents in `connect-src`; `frame-src` narrowed to `'self'` only (Studio doesn't embed YouTube/Vimeo itself). Both `<Supabase origin>` and `<Sentry ingest origin>` are computed from `NEXT_PUBLIC_SUPABASE_URL` / `NEXT_PUBLIC_SENTRY_DSN` at build time via `new URL(...).origin`, not hardcoded — confirmed correct for staging on the actual deployment (`https://omtmxvsjmlrnbtxiesqn.supabase.co`, `https://o4511879284719616.ingest.us.sentry.io`).
+
+**External origins allowed, and why:**
+- `https://challenges.cloudflare.com` — Turnstile's `api.js` and its challenge iframe, used on all 5 Turnstile-protected forms.
+- `https://cdn.sanity.io` — every real image and uploaded video on the site.
+- `https://www.youtube.com`, `https://www.youtube-nocookie.com`, `https://player.vimeo.com` — the two embed providers portfolio/journal gallery items currently expect (schema's embed field is freeform CMS input; not solved here, see below).
+- Supabase origin (+ `wss://`) — Auth, Postgrest, Storage, and Realtime (Active Users presence) from the browser.
+- Sentry ingest origin — client-side error reporting.
+- `/studio` additionally: Sanity's own API/realtime origins for Studio's editing/collaboration features.
+- Paystack needed **no allowance at all** — checkout is a full-page server-initiated redirect to Paystack's hosted `authorization_url`; the browser navigates away entirely, so no script/frame/connect-src on our own pages is ever involved.
+
+**Implementation:** branch `td-004-csp-report-only` off `staging`, commit `0ce3194`. `tsc --noEmit`, `eslint`, `vitest run` (48/48 passed), and `SITE_ENV=staging npm run build` all clean. Merged to `staging` (`90eb28a`), pushed, deployed — Vercel `dpl_GYiF3uWJ1mGHvPKNDXEWKUSBfLm9` confirmed `● Ready`. Live header verified via `curl` on `/`, `/studio`, `/portal/login` — correct policy, correct route split, correct real origins.
+
+**Staging regression pass (local production-mode build against staging Supabase, plus the live deployment for header verification):**
+- **Public pages** (home, about, work, a real portfolio project with Sanity-hosted video): zero CSP violations.
+- **`/studio`**: renders and functions correctly (Report-Only never blocks). One genuine finding — see below.
+- **Turnstile forms**: origin allowlisting confirmed correct in the live header (`script-src`/`frame-src` both include `challenges.cloudflare.com`); full interactive click-through wasn't possible locally because `NEXT_PUBLIC_TURNSTILE_SITE_KEY` isn't set in the local dev env by design (the component renders nothing without it) — this is a local-testing gap only, not a staging gap; Turnstile keys are confirmed present on the real Vercel staging environment from earlier work this engagement.
+- **Supabase (auth, Postgrest, Realtime)**: logged in as a disposable staging Super Admin test account (created and deleted per the established `.invalid`-domain methodology), landed on `/admin` with live enquiry/workshop counts (Postgrest), the Active Users panel showing the session online (Realtime `wss://`), and a real activity feed — zero CSP violations. Since the CSP policy is route-scoped, not role-scoped, this single deep authenticated test validates the same Supabase client code path every portal role shares.
+- **Sanity images/video**: confirmed via the real portfolio project page — an uploaded video (Sanity CDN, not YouTube/Vimeo) rendered with zero violations.
+- **YouTube/Vimeo embeds**: no live gallery item with a real embed exists in the current dataset to click-through; origins are allowlisted per the schema's documented contract, but this specific path is unverified end-to-end. Flagged as a gap, not a pass.
+- **Sentry client-side reporting**: connect-src origin confirmed correct against the live deployment via `curl`; the local build has no `NEXT_PUBLIC_SENTRY_DSN` configured (by design, matches `.env.example`), so an actual local trigger-and-observe test wasn't possible. CSP semantics mean an allowlisted origin is allowed for `fetch`, so this is a low-risk gap, not a genuine open question.
+- **Paystack checkout redirect**: not click-tested end-to-end (would require a funded/active test project); confirmed architecturally instead — `redirect()` to `authorization_url` is a top-level navigation, which no CSP directive here governs (`connect-src`/`frame-src`/`form-action` all apply to resource loads and framing, not full-page `Location` redirects).
+
+**CSP violations observed, filtered for signal (a `securitypolicyviolation` listener was installed to separate genuine findings from noise):**
+1. **`unsafe-eval` script-src violations, every page** — React's development build uses `eval()` for enhanced error stack traces. Confirmed via Next.js's own bundled docs (`node_modules/next/dist/docs/.../content-security-policy.md`): *"unsafe-eval is not required for production. Neither React nor Next.js use eval in production by default."* This is dev-mode-only noise, not a real Production/staging finding — excluded from the assessment above.
+2. **Genuine finding: `/studio` loads `https://core.sanity-cdn.com/bridge.js`** (and a hashed variant), blocked by the current `script-src`. This is Sanity's own host-communication "bridge" script, not currently allowlisted. **Needs adding to the `/studio` policy's `script-src` before this policy could ever be enforced.**
+3. No `style-src` violations on `/studio` — the deliberate `'unsafe-inline'` already included there (for `@sanity/ui`'s styled-components runtime) is confirmed sufficient; no further changes needed there.
+
+**Changes required before enforcement:**
+1. Add `https://core.sanity-cdn.com` to the `/studio` policy's `script-src` (and re-verify whether it also needs `connect-src`).
+2. Confirm the YouTube/Vimeo `frame-src` allowance against a real embed once one exists in the live dataset.
+3. Confirm Turnstile end-to-end against the actual deployed staging site (Basic-Auth-capable testing, or ask you to click through once) rather than relying on origin-config alone.
+4. Decide separately whether to invest in nonce-based `script-src`/`style-src` for the main site later — the current policy keeps `'unsafe-inline'` deliberately (Next's documented non-nonce fallback) since nonces would force those routes off static/ISR rendering (confirmed via the build output: public pages are prerendered `○`/`●`, not `ƒ`), which is a bigger, separate decision.
+5. The freeform CMS embed-URL gap (any domain, not just YouTube/Vimeo, can currently be entered) remains a separately-tracked hardening item — not solved in this pass, per your instruction.
+
+**Recommendation:** do **not** progress to enforcing yet. One genuine missing origin (`core.sanity-cdn.com`) is a known, fixable gap; the YouTube/Vimeo and Turnstile paths have origin-level confidence but lack full end-to-end confirmation on the real deployment. Recommend: fix the Sanity bridge-script gap, run this Report-Only policy for a longer real-world observation window (ideally with a small `report-to` endpoint added deliberately as its own reviewed change, not silently), and get one real click-through each of Turnstile and a YouTube/Vimeo embed on the live staging site, before considering enforcement.

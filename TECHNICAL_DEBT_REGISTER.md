@@ -53,10 +53,10 @@
 ### TD-004 — No Content-Security-Policy header
 - **Category:** Security
 - **Severity:** Medium
-- **What:** `next.config.ts` deliberately excludes CSP while shipping the other baseline security headers (X-Frame-Options, X-Content-Type-Options, Referrer-Policy, Permissions-Policy). Documented in-code: *"this app loads third-party scripts (Cloudflare Turnstile, Sanity Studio's own asset pipeline) that a CSP would need careful, tested scoping to not break."*
-- **Why accepted:** a wrong CSP silently breaks Turnstile or Studio rather than failing loudly — judged riskier to guess than to ship without one initially.
-- **Current impact:** one layer of defense-in-depth against XSS/injection is missing; other mitigations (React's default escaping, no `dangerouslySetInnerHTML` misuse observed) still apply.
-- **Pay-down trigger:** Version 1.0.5 Workstream I (security re-review) should scope a tested CSP covering exactly Turnstile + Sanity's script/frame sources.
+- **What:** `next.config.ts` shipped without CSP for most of this engagement alongside the other baseline security headers (X-Frame-Options, X-Content-Type-Options, Referrer-Policy, Permissions-Policy). **2026-08-13: a staging-only, non-enforcing `Content-Security-Policy-Report-Only` header is now implemented** (gated on `SITE_ENV=staging`, split by route: main site/portal/admin vs. `/studio`) — see `PRODUCTION_READINESS_RECONCILIATION.md` §16.4 for the full policy, external-origin inventory, and regression results. Not yet enforcing; Production untouched.
+- **Why accepted (historical, no CSP at all):** a wrong CSP silently breaks Turnstile or Studio rather than failing loudly — judged riskier to guess than to ship without one initially.
+- **Current impact:** Report-Only mode restores the missing defense-in-depth signal (violations are now observable) without any enforcement risk. One genuine gap found and not yet fixed: Sanity Studio's `https://core.sanity-cdn.com` bridge script isn't yet in the `/studio` policy's `script-src` — must be added before any enforcement is considered.
+- **Pay-down trigger:** fix the Sanity bridge-script gap, get real click-throughs of Turnstile and a YouTube/Vimeo embed against the live staging deployment (local testing lacked the env keys for both), then decide on enforcement — a decision requiring explicit approval, not a default.
 - **Status:** Open
 
 ### TD-005 — Google Sheets sync failures are logged but not alerted
