@@ -357,6 +357,16 @@
 - **Pay-down trigger:** add a `logActivity({ actorUserId: user.id, action: "payment.bank_transfer_submitted", entityType: "payment", entityId: payment.id })` call to the `POST` handler in `src/app/api/payments/bank-transfer/proof/route.ts`, immediately after the successful proof-upload update, matching the existing pattern already used for the approve/reject actions in `src/app/admin/payments/actions.ts`.
 - **Status:** Open, not scheduled.
 
+### TD-034 — Workshop registration never auto-closes when `registrationDeadline` passes
+
+- **Category:** Business logic / CMS-editorial
+- **Severity:** Low (currently — sample/placeholder data only)
+- **What:** found during the 2026-08-13 Public Site deep-pass responsive check (`PRODUCTION_READINESS_RECONCILIATION.md` §17.4). A workshop's `registrationDeadline` field (`src/app/workshops/[slug]/page.tsx`) is display-only — it drives the countdown timer and the formatted date shown to visitors, but is never compared against the current date anywhere. Whether the "OPEN FOR REGISTRATION" badge shows and whether new registrations are accepted are both gated purely on the CMS-editable `workshop.status` field (`"open"`/`"coming-soon"`/`"full"`/`"closed"`/`"completed"`), confirmed both client-side (`page.tsx:157,337`) and server-side (`src/app/api/workshop-registration/route.ts:101`, which checks only `workshop.status !== "open"`). A workshop whose deadline has passed stays open to registrations indefinitely unless a staff member manually flips its status in Sanity.
+- **Why not fixed now:** this is a business-logic decision, not a bug with one correct fix — whether the deadline should auto-close registration, or manual `status` control is the intentional design (e.g. to let staff extend a deadline without a code deploy), needs a product decision before any code change. Flagged to the user per this engagement's category-3 classification rule rather than fixed in passing.
+- **Current impact:** none today — the only workshop data in the system is explicitly placeholder/sample content already flagged for replacement before launch (see the existing workshop content-replacement checklist). The gap would carry into real workshops once real dates are entered.
+- **Pay-down trigger:** once the user decides the intended behavior — e.g. auto-close in both `page.tsx` and `route.ts` once `new Date() > registrationDeadline`, with a decision on whether "closed by deadline" should render differently from manually-set "closed" — implement and verify on staging.
+- **Status:** Open, awaiting product decision (flagged to user 2026-08-13, not yet answered).
+
 ---
 
 ## Adding new entries

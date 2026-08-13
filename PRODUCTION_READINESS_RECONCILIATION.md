@@ -575,3 +575,48 @@ Post-redeploy (commit `612c370`, deployment `dpl_FjJsSQcKL6yZP3pAH7bjJiL36pLJ`),
 7. **Production unaffected** — confirmed via `curl`: `ordiftstudios.com` returns a plain `200`, no Basic Auth challenge, no CSP header (expected — Production gets neither, by design); Turnstile env var *names* remain scoped to "Preview, Production" in `vercel env ls production` as expected (this listing doesn't expose values, which is by design and was never inspected).
 
 **All 7 validation gates are now satisfied.** Every previously-identified TD-004 gap is closed: the Sanity Studio bridge-script origin (§16.5), YouTube/Vimeo embeds (§16.5), and now Turnstile (this section) have each been confirmed live against real staging infrastructure with zero genuine CSP violations found. The only remaining open items are the two already-deferred, deliberately out-of-scope ones: the freeform CMS embed-domain gap (§16.4/§16.5, a separate hardening item) and the enforcement decision itself, which — regardless of how clean validation is — requires your explicit go-ahead and has not been requested. CSP remains Report-Only; nothing has been merged to `main`; Production remains untouched throughout.
+
+## 17. Public Site deep-pass — remaining pages, responsive, form validation (2026-08-13)
+
+Continuation of the readiness/debt register's Public Site deep-pass (task #280), scoped against local dev pointed at staging Supabase, per the same category-1/2/3/4 classification instruction used elsewhere in this engagement. All items investigated turned out to be Category 1 (safe to verify entirely on staging, no code changes needed) except one new finding surfaced mid-pass, which is Category 3 and is reported below without being fixed. No merges to `main`, no Production changes, CSP unchanged (Report-Only), no Paystack Live config, no dependency/infrastructure upgrades.
+
+### 17.1 Section A — remaining non-sitemap public pages — DONE, all clean
+
+Verified `style-preview` (+`components`, `+emails`), `coming-soon`, `sentry-test`, `not-found.tsx`, `error.tsx` (read directly, not live-triggered — forcing a real unhandled exception wasn't appropriate for a verification-only pass), and `opengraph-image.tsx`/`twitter-image.tsx` (`curl`-confirmed `200 image/png`, 73652 bytes each, correctly shared between the two meta tags). Zero bugs found; only benign HMR websocket console noise, consistent with dev-mode behavior seen throughout this engagement.
+
+### 17.2 Section B — responsive pass (375px mobile, 768px tablet) — DONE, all clean
+
+Mobile (375×812): home (including the mobile hamburger nav — confirmed via screenshot to open cleanly with Close button, full nav list, and gold CTA, after a `computer`-click timeout was worked around with a direct `javascript_tool` click, the same known tooling quirk documented earlier in this engagement), about, services hub, a department page (photography), work hub (filters/search/featured card), a project detail page, journal hub, a post detail page, workshops hub, a workshop detail page, a legal page (privacy), and `/book`. Tablet (768×1024): re-checked home, `/book`, and a project detail page as a representative subset. No overflow, no broken wrapping, no clipped content on any page.
+
+One apparent issue was investigated and ruled out: a home-page screenshot at tablet width showed an empty band on the right of the canvas. `getBoundingClientRect()` on `<nav>` and the hero container both confirmed `right: 768` (the full requested viewport width) with `document.documentElement.scrollWidth` also exactly `768` — no overflow, no dead space in the actual page. The apparent gap was the screenshot tool's own canvas padding at `devicePixelRatio: 2`, not a layout bug. No fix made.
+
+A single `[error] 404` appeared once in the console while on `/services`, but did not correlate to any request in the last 100 network entries (home/services/about page loads) — consistent with the transient HMR/dev-tooling noise already characterized elsewhere in this pass, not a Services-page defect.
+
+### 17.3 Section C — form validation states, `BookingForm` and `RegistrationForm` — DONE, all clean
+
+Explicitly scoped to these two public forms only; Login/Signup/Forgot-Password remain deferred to the separate Portal deep-pass (task #281) to avoid double-scoping.
+
+**`BookingForm` (`/book`, `src/app/book/BookingForm.tsx`)** — read the source first (zod-schema-backed per-step validation via `enquirySchema`/`STEP_FIELDS`), then exercised live:
+- Step 1 empty submit → "Please choose a service." Selecting a service and continuing works.
+- Step 2 empty/short "Brief project description" → "Tell us a little more — at least 20 characters." (both required + min-length correctly enforced).
+- Step 4 malformed email (`not-a-valid-email`) → "Please enter a valid email address."; name/phone accepted correctly; navigation correctly blocked until fixed.
+- Step 5: submitting without the required Privacy Notice consent checkbox → "Please confirm you've read the Privacy Notice to continue."; the separate marketing-consent checkbox correctly remains optional and unchecked by default.
+- Turnstile-gated submit-disable (`disabled={submitting || (turnstileRequired && !data.turnstileToken)}`): confirmed the submit button is *not* disabled and no Turnstile iframe renders locally, because `NEXT_PUBLIC_TURNSTILE_SITE_KEY` is intentionally unset in local `.env.local` (matches `.env.example`, by design — local dev never needed it since `proxy.ts` skips Basic Auth for `localhost`). This is expected, not a regression: the same gating logic and the real Turnstile site were already confirmed working end-to-end live on `staging.ordiftstudios.com` in §16.7.
+
+**`RegistrationForm`** (`/workshops/[slug]`, `src/app/workshops/[slug]/RegistrationForm.tsx`) — same validation architecture (zod `workshopRegistrationSchema`, same field-error pattern, same Turnstile-gate expression). Live-tested on `/workshops/sample-portrait-lighting-workshop`: submitting fully empty correctly produced all four expected errors simultaneously — "Please enter your full name.", "Please enter a valid email address.", "Please enter a phone or WhatsApp number.", "Please confirm you've read the Privacy Notice to continue." — with Country and Experience Level correctly left optional (no error).
+
+No code changes were required for Section C — both forms' validation, error display, and submit-gating behave correctly.
+
+### 17.4 New finding surfaced during Section B — Category 3, reported not fixed
+
+While spot-checking a sample workshop's detail page, its "OPEN FOR REGISTRATION" badge was showing despite a registration deadline (31 July 2026) already in the past. Traced the cause: `workshop.status` (`src/app/workshops/[slug]/page.tsx`) is a manually-set CMS field with values like `"open"`/`"coming-soon"`/`"full"`/`"closed"`/`"completed"` — it is never derived from `registrationDeadline`, which is used only for display (the countdown timer and the formatted date). Confirmed server-side too: `/api/workshop-registration/route.ts:101` gates purely on `workshop.status !== "open"`; the deadline is never read there either.
+
+**Why this is Category 3, not a quick fix:** deciding whether `registrationDeadline` should automatically close registration, versus staff retaining full manual control over `status` (e.g., to intentionally extend a deadline, or hold a workshop open past its nominal date), is a business-logic/workflow decision, not a bug with one obviously-correct fix. The current sample-data instance is placeholder content already flagged for replacement before launch (per the existing workshop content-replacement checklist), so there's no live customer-facing impact today — but the underlying gap would carry into real workshops once real dates are entered.
+
+**What's needed from you:** a decision on the intended behavior — e.g., (a) leave it as-is (staff-controlled `status` is the intended design, deadline is informational only), (b) auto-close registration once `registrationDeadline` passes (would need both the detail-page gate and the server-side check in `route.ts` updated, plus a decision on whether "closed-by-deadline" should look different in the UI than manually-set "closed"), or (c) something else. No change has been made pending your direction.
+
+### 17.5 Verification and deployment
+
+`npx tsc --noEmit`, `npm run lint`, and `next build` all run clean against the unchanged `staging` branch (no source files were modified — Sections A–C were verification-only, and §17.4 was deliberately left unfixed pending your decision). This document is the only file changed in this pass; committed and pushed to `staging` only, per your instruction to document and commit/push category-1 work.
+
+**Task #280 (Public Site deep-pass) is now complete** except for the one Category-3 item above, which stays open until you decide. Next up per the existing register: task #281 (Portal deep-pass — project workspace, vendor/model/collaborator shells).
