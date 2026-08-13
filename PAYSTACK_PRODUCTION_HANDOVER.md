@@ -2,6 +2,7 @@
 
 **Status as of:** 2026-08-08 · **Branch:** `staging` @ `ceef300` (pushed, matches `origin/staging`) — note: the very next commit that edits this file will make this hash stale again by definition; check `git log -1` for ground truth.
 **Production state:** untouched — no payments schema, no Paystack config, no code merged to `main`.
+**Superseded (2026-08-13):** §10's execution order below predates migrations 0023–0027 landing on Production, the Sentry/TD-032 fix, the deep-pass regression audit, and Paystack KYC actually being submitted. For the current, authoritative resume checklist, use `PRODUCTION_READINESS_RECONCILIATION.md` §14 (pause-state snapshot) and §15 (resume checklist) instead — this file's remaining sections (§1–§9) are still accurate historical record of what was verified on staging and aren't being rewritten.
 
 Paste this whole file into a fresh session to resume exactly here — no re-investigation needed.
 

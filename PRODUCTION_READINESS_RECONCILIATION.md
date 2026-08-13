@@ -1,6 +1,6 @@
 # Ordift Studios — Production Readiness Reconciliation
 
-**Date:** 2026-08-10
+**Date:** 2026-08-10, last updated 2026-08-13 (§13–§15: deep-pass regression audit, Turnstile fix, staging push/deploy verification, and final pause-state record — see §14 for the current authoritative snapshot)
 **Scope:** formal closure of Version 1.0.5 (Platform Foundation Hardening) plus a full re-verification of every current-state claim across `PRODUCT_ROADMAP.md`, `MILESTONES.md`, `TECHNICAL_DEBT_REGISTER.md`, `SYSTEM_HEALTH.md`, `DISASTER_RECOVERY.md`, `WORKSTREAM_I_SECURITY_REREVIEW.md`, `PAYSTACK_PRODUCTION_HANDOVER.md`, `.env.example`, `DEPLOYMENT.md`, `LAUNCH_CHECKLIST.md`, `PAYMENT_SECURITY_REVIEW.md`, `PAYMENT_FINANCE_ARCHITECTURE_PROPOSAL.md`, `PAYMENT_TEST_PLAN.md`, and `CONTENT_READINESS_CHECKLIST.md` — before any Production action is considered.
 **What this is not:** an implementation pass. No Production code, Production environment variable, Production Supabase project, Production Vercel configuration, Paystack Live setting, DNS record, or any other live infrastructure was touched while producing this document. Several stale documents were corrected in place (see §8) — all documentation-only changes, cross-referenced below, never silently deleted.
 **Verification performed:** `npx tsc --noEmit`, `npx eslint .`, `npx vitest run`, and a full production `next build` — all against the current working tree, none against Production. Results in §9.
@@ -395,3 +395,35 @@ Resumed while waiting on Paystack KYC review, continuing from the interrupted de
 **What remains blocked specifically by Paystack KYC:** everything already listed in §12's Remaining Actions items 8–12 (Live key, Live webhook, real GHS rate, first real payment, go-live authorization) — unchanged by this pass, still gated on Paystack's review outcome.
 
 **Verdict for this pass:** no new engineering blockers found. The one real bug (Turnstile button-gating) is fixed, verified, and did not affect any real deployed environment. Every other surface checked is clean. This does **not** change the overall CONDITIONAL GO verdict in §12 — Paystack Live Mode approval remains the sole live blocker to full go-live.
+
+## 14. Final pause-state record (2026-08-13)
+
+Engineering work on `staging` is paused here, deliberately, pending Paystack's Live Mode KYC decision. This section is the authoritative snapshot of exactly where things stand — read this first if resuming after a gap.
+
+- **Commit `d5c6ee6`** ("Fix Turnstile submit-gating on auth forms; reconcile Production readiness docs") is on `staging` and pushed — `origin/staging` confirmed at the identical SHA via `git log origin/staging -1`.
+- **Deployment verified Ready and healthy.** Confirmed two independent ways: GitHub's own commit-status API (`state: success`, `"Deployment has completed"`) and `vercel inspect` on the resulting deployment (`dpl_Edico2Qyp9W3jDNKqbzeahK2xEPu`, `status: ● Ready`, target `preview`).
+- **Staging Basic-Auth protection verified live** on that exact deployment — an anonymous request to the deployed URL returned `401 Authentication required`, confirming the app's own staging gate (`src/proxy.ts`) is active and no accidental public exposure was introduced by this push.
+- **Deep-pass regression audit (§13) is complete and closed.** Full public site, API sanity, and an authenticated walkthrough of 5 of 6 portal roles (Client, Staff, Admin/Super Admin, Vendor, Model — Collaborator/Contractor not re-verified live this specific pass, rate-limited out, previously fully regression-tested) all passed. One real, isolated, non-payment bug found and fixed (Turnstile submit-gating on the three auth forms).
+- **All temporary test accounts and throwaway scripts cleaned up and confirmed.** Read-only re-check after cleanup showed 0 `.invalid`-domain accounts remaining on staging (this includes both the 6 accounts this pass created and the 4 unrelated stale ones found from an earlier session). All three throwaway scripts (`scripts/_deepPassTestUsers.ts`, `_listDeepPassTestUsers.ts`, `_cleanupDeepPassTestUsers.ts`) deleted — never tracked, no trace in git history.
+- **Paystack Live Mode KYC remains "Awaiting Review"** — Paystack's own dashboard, submitted 2026-08-13, their stated window is 7 days. This is the **primary external go-live blocker**; nothing engineering-side is waiting on anything else to reach full go-live.
+- **No Live Paystack credentials, Live webhook registration, real GHS exchange rate entry, or any real-payment configuration is authorized.** None have been added. This stays true until Paystack's decision arrives *and* you separately authorize each step in §15 below.
+- **TD-030** (upload MIME-type validated by declared `Content-Type`, not actual file content) **remains deliberately deferred**, unchanged, per your explicit instruction — still `Open` in `TECHNICAL_DEBT_REGISTER.md`, not fixed, not scheduled.
+- **`staging` → `main` promotion has not occurred.** No merge, no fast-forward, no Production deploy. Requires your explicit approval when the time comes — nothing in this document or any prior one authorizes it implicitly.
+- **Working tree:** clean except two untracked, local-only directories that were deliberately never staged — `backups/` (local `pg_dump` artifacts) and `supabase/.branches/` (local Supabase CLI branch-link state). Neither belongs in git; neither is a pending change.
+
+## 15. Resume checklist — once Paystack approves Live Mode
+
+Dependency-ordered. **[YOU]** = requires your direct action (Paystack dashboard, Vercel dashboard, or an explicit go-ahead in chat) — cannot be delegated to this session by design or by credential. **[ENGINEERING]** = safe for a future session to execute once you've given the go-ahead for that specific step; still stop and confirm before each one, per this project's standing discipline — nothing here is pre-authorized by virtue of appearing on this list.
+
+1. **[YOU]** Confirm Paystack's Live Mode decision (approved / more info requested / declined) and share the outcome.
+2. **[YOU]** If approved: retrieve the Live secret key (`sk_live_...`) and any other Live-mode key from Paystack's dashboard. Never paste it into chat — enter it directly into Vercel's dashboard yourself, or hand it to engineering via the same hidden-prompt/env-var pattern already used for every other Production secret this engagement (see §12 item 6's Sentry incident for why).
+3. **[ENGINEERING, once you've supplied the value per step 2]** Add `PAYSTACK_SECRET_KEY` (Live) and any other Live-mode key to Vercel **Production** environment only — confirm by name/scope via `vercel env ls production`, never by reading the value.
+4. **[YOU, external]** Register Production's webhook URL (`https://ordiftstudios.com/api/payments/webhook/paystack`) under Paystack's **Live Mode** settings — separate from staging's already-registered Test Mode webhook.
+5. **[YOU]** Confirm which payment channels (Card, Mobile Money, Bank Transfer-via-Paystack, Apple Pay) are actually enabled on the Live merchant account — Test Mode may show channels Live doesn't have yet.
+6. **[ENGINEERING, after your explicit go-ahead]** Enter the real GHS exchange rate in Production via `/admin/payments/exchange-rates` (table starts empty on Production).
+7. **[YOU]** Decide who performs the first real Production payment, and at what amount — Live Mode has no test cards, so this is genuine money from the first transaction on.
+8. **[YOU]** Give explicit go-live authorization before any Live Mode key is used for a real transaction.
+9. **[YOU, approval required; ENGINEERING, executes once given]** Merge `staging` → `main`, deploy to Production. This is the point where everything reconciled across this whole engagement — migrations, Sentry, disaster recovery, the deep-pass audit, and this Turnstile fix — actually reaches real users. Nothing before this step touches Production traffic.
+10. **[ENGINEERING, post-launch, first 1–2 weeks, not blocking]** Build the deferred scheduled pending-payment reconciliation job (`PAYSTACK_PRODUCTION_HANDOVER.md` §8) — already assessed as safe to defer past initial launch.
+
+Nothing above is authorized by this checklist existing. Each numbered step still requires your go-ahead at the time it's actually performed, exactly as every prior step in this engagement has.
