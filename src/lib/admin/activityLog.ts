@@ -1,6 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { resolveActorIdentities, formatActorLabel } from "@/lib/portal/actorIdentity";
+import { getCurrentUser, hasRole, isSuperAdmin } from "@/lib/portal/roles";
 
 // Shared audit trail for the Admin Platform (public.activity_log,
 // migration 0004). Every module that mutates something writes here the
@@ -147,13 +148,61 @@ export async function logActivityAsSystem(params: {
 
 const RECENT_ACTIVITY_LIMIT = 20;
 
+// Sensitivity tiering for the global feed (TD-035, 2026-08-14) — RLS
+// already restricts *read* on activity_log to staff-or-above (migration
+// 0004's "activity_log: staff read" policy); this is a narrower,
+// app-layer restriction on top of that for getRecentActivity()
+// specifically (the unfiltered, platform-wide /admin/activity feed), so
+// an ordinary staff-tier account doesn't see financial or role/security
+// events that policy alone would otherwise let through to them. Every
+// other consumer of this table (getRecentActivityByType,
+// getActivityForEntity) is already scoped to a single non-sensitive
+// entity type or a single already-access-controlled record, so this
+// tiering is deliberately not applied there.
+//
+// Real action strings pulled directly from every logActivity()/
+// logActivityAsSystem() call site in the codebase at the time this was
+// written — not a speculative list. A future new action name defaults
+// to staff-visible (fail-open on the *classification*, not on auth)
+// unless explicitly added to one of the two restricted sets below.
+const SUPER_ADMIN_ONLY_ACTIONS = new Set<string>(["role.grant", "role.revoke", "access_status.change", "access_expiry.change"]);
+
+const ADMIN_TIER_ACTIONS = new Set<string>([
+  "payment.completed",
+  "payment.failed",
+  "payment.amount_mismatch",
+  "payment.exchange_rate_added",
+  "payment.bank_transfer_initiated",
+  "payment.bank_transfer_submitted",
+  "payment.bank_transfer_approved",
+  "payment.bank_transfer_rejected",
+  "enquiry.amount_due_set",
+  "booking.amount_due_set",
+]);
+
+function isAdminTierViewer(user: Awaited<ReturnType<typeof getCurrentUser>>): boolean {
+  return hasRole(user, "admin") || isSuperAdmin(user);
+}
+
 export async function getRecentActivity(limit = RECENT_ACTIVITY_LIMIT): Promise<ActivityLogEntry[]> {
   const supabase = await createClient();
-  const { data, error } = await supabase
+  const viewer = await getCurrentUser();
+
+  const excludedActions: string[] = [];
+  if (!isSuperAdmin(viewer)) excludedActions.push(...SUPER_ADMIN_ONLY_ACTIONS);
+  if (!isAdminTierViewer(viewer)) excludedActions.push(...ADMIN_TIER_ACTIONS);
+
+  let query = supabase
     .from("activity_log")
     .select("id, actor_user_id, action, entity_type, entity_id, metadata, created_at")
     .order("created_at", { ascending: false })
     .limit(limit);
+
+  if (excludedActions.length > 0) {
+    query = query.not("action", "in", `(${excludedActions.join(",")})`);
+  }
+
+  const { data, error } = await query;
 
   if (error) {
     console.error("[admin] failed to load activity_log", error.message);
