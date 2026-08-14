@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { resolveActorIdentities, formatActorLabel } from "@/lib/portal/actorIdentity";
 
 // Shared audit trail for the Admin Platform (public.activity_log,
@@ -66,7 +67,13 @@ async function enrichWithActorIdentity(rows: RawActivityRow[]): Promise<Activity
 }
 
 export async function logActivity(params: {
-  actorUserId: string;
+  // Nullable as of 2026-08-06 (Payments & Finance Module): a
+  // gateway-webhook-driven transition (e.g. a payment completing) has
+  // no human session to attribute it to. null renders through
+  // enrichWithActorIdentity() the same way an already-null
+  // actor_user_id from the database does — no special-casing needed
+  // on the read side, this was already a handled state.
+  actorUserId: string | null;
   action: string;
   entityType?: string;
   entityId?: string;
@@ -85,6 +92,56 @@ export async function logActivity(params: {
     // recording, same reasoning as src/lib/supabase/primaryWrite.ts's
     // best-effort role-grant step.
     console.error("[admin] failed to write activity_log", error.message);
+  }
+}
+
+// Service-role variant (2026-08-06, Payments & Finance Module) — for
+// contexts where the RLS-gated "activity_log: staff insert" policy
+// can't apply to a session client. Two distinct situations use this:
+//
+// 1. Genuinely unauthenticated server-to-server contexts (webhook
+//    handlers) — there is no cookie session for createClient() to
+//    read at all, so actorUserId is omitted/null (a gateway webhook
+//    has no human to attribute the row to).
+//
+// 2. A trusted server-side audit write on behalf of an already
+//    authenticated and authorized human actor, when that actor's own
+//    role doesn't satisfy the staff-only insert policy — e.g. a plain
+//    client submitting their own bank-transfer proof (TD-033,
+//    2026-08-14). The route itself must already have independently
+//    verified authentication and ownership/authorization *before*
+//    calling this — logActivityAsSystem() performs no auth check of
+//    its own, exactly like logActivity() doesn't. actorUserId in this
+//    case must come only from the server-verified session
+//    (`getCurrentUser()`/equivalent), never from request body, query
+//    params, or any other client-supplied value — this function
+//    trusts its caller completely, so the caller carries that
+//    responsibility.
+//
+// In both cases: uses the same admin/secret-key client already
+// established for exactly this class of problem
+// (src/lib/supabase/admin.ts's own doc comment: "the visitor
+// submitting isn't necessarily logged in"). This function only ever
+// runs server-side (this module has no "use client" boundary and the
+// admin client it constructs is never sent to the browser) — the
+// service-role credential itself never leaves trusted server code.
+export async function logActivityAsSystem(params: {
+  actorUserId?: string | null;
+  action: string;
+  entityType?: string;
+  entityId?: string;
+  metadata?: Record<string, unknown>;
+}): Promise<void> {
+  const admin = createAdminClient();
+  const { error } = await admin.from("activity_log").insert({
+    actor_user_id: params.actorUserId ?? null,
+    action: params.action,
+    entity_type: params.entityType ?? null,
+    entity_id: params.entityId ?? null,
+    metadata: params.metadata ?? {},
+  });
+  if (error) {
+    console.error("[admin] failed to write activity_log (system)", error.message);
   }
 }
 

@@ -3,14 +3,15 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import NavBar from "@/components/NavBar";
 import Footer from "@/components/Footer";
-import PortfolioCard from "@/components/portfolio/PortfolioCard";
-import SocialShare from "@/components/SocialShare";
-import TestimonialCard from "@/components/TestimonialCard";
 import { contentRepository } from "@/lib/content";
 import { DISCIPLINE_HREF, DISCIPLINE_LABEL } from "@/lib/content/portfolioHelpers";
+import { resolvePrimaryDiscipline } from "@/lib/content/portfolioTreatment";
 import MediaAsset from "@/components/media/MediaAsset";
-import Gallery from "@/components/media/Gallery";
-import BeforeAfterGallery from "@/components/media/BeforeAfterGallery";
+import PhotographyProjectView from "@/components/portfolio/PhotographyProjectView";
+import VideographyProjectView from "@/components/portfolio/VideographyProjectView";
+import GraphicDesignProjectView from "@/components/portfolio/GraphicDesignProjectView";
+import GenericProjectView from "@/components/portfolio/GenericProjectView";
+import PortfolioProjectFooterSections from "@/components/portfolio/PortfolioProjectFooterSections";
 import { ogImageUrl } from "@/lib/media/ogImageUrl";
 
 export async function generateStaticParams() {
@@ -58,14 +59,6 @@ export async function generateMetadata({
   };
 }
 
-const NARRATIVE_SECTIONS: { key: "objective" | "strategy" | "challenges" | "solution" | "process"; label: string }[] = [
-  { key: "objective", label: "Project Objective" },
-  { key: "strategy", label: "Creative Strategy" },
-  { key: "challenges", label: "Challenges" },
-  { key: "solution", label: "Solution" },
-  { key: "process", label: "Creative Process" },
-];
-
 export default async function PortfolioProjectPage({
   params,
 }: {
@@ -112,6 +105,36 @@ export default async function PortfolioProjectPage({
     ...(project.client ? { creditText: `Client: ${project.client}` } : {}),
   };
 
+  const primaryDiscipline = resolvePrimaryDiscipline(project);
+
+  // Photography/Videography/Graphic Design each get their own full page
+  // shape — work-first, no sidebar metadata dashboard — rather than
+  // sharing the shell below (Portfolio redesign, completed 2026-08-12).
+  // Only disciplines without a dedicated view yet (branding,
+  // content-creation, talent-management, production) still use the
+  // original shell + GenericProjectView, unchanged.
+  const disciplineViewProps = {
+    project,
+    categories: projectCategories,
+    testimonials,
+    shareUrl,
+    jsonLd,
+    prevProject,
+    nextProject,
+    relatedProjects,
+    relatedWorkshops,
+    categoryById,
+  };
+  if (primaryDiscipline === "photography") {
+    return <PhotographyProjectView {...disciplineViewProps} />;
+  }
+  if (primaryDiscipline === "videography") {
+    return <VideographyProjectView {...disciplineViewProps} />;
+  }
+  if (primaryDiscipline === "graphic-design") {
+    return <GraphicDesignProjectView {...disciplineViewProps} />;
+  }
+
   return (
     <main>
       <script
@@ -156,188 +179,10 @@ export default async function PortfolioProjectPage({
       <section className="bg-white px-4 sm:px-8 py-14 sm:py-20">
         <div className="max-w-4xl mx-auto grid grid-cols-1 lg:grid-cols-[1.1fr_0.9fr] gap-10 lg:gap-16">
           <div>
-            <p className="font-sans text-body text-ordift-ink mb-8 whitespace-pre-line">
-              {project.story}
-            </p>
-
-            {NARRATIVE_SECTIONS.filter((section) => project[section.key]).map((section) => (
-              <div key={section.key} className="mb-8">
-                <h2 className="font-serif font-medium text-card-title text-ordift-ink mb-2">
-                  {section.label}
-                </h2>
-                <p className="font-sans text-body-small text-ordift-ink-muted whitespace-pre-line">
-                  {project[section.key]}
-                </p>
-              </div>
-            ))}
-
-            {project.collaborators.length > 0 && (
-              <div className="mb-8">
-                <h2 className="font-serif font-medium text-card-title text-ordift-ink mb-3">
-                  Collaborators
-                </h2>
-                <ul className="flex flex-wrap gap-x-6 gap-y-2">
-                  {project.collaborators.map((c) => (
-                    <li key={c.id} className="font-sans text-body-small text-ordift-ink">
-                      <span className="font-medium">{c.name}</span>{" "}
-                      <span className="text-ordift-ink-muted">— {c.role}</span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-
-            {project.deliverables.length > 0 && (
-              <div className="mb-8">
-                <h2 className="font-serif font-medium text-card-title text-ordift-ink mb-3">
-                  Deliverables
-                </h2>
-                <ul className="flex flex-col gap-2">
-                  {project.deliverables.map((item, i) => (
-                    <li key={i} className="font-sans text-body-small text-ordift-ink flex gap-2">
-                      <span className="text-ordift-gold-pressed">—</span>
-                      <span>{item}</span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-
-            {project.results && (
-              <div className="mb-8 rounded-lg bg-ordift-offwhite p-5">
-                <h2 className="font-serif font-medium text-card-title text-ordift-ink mb-2">
-                  Results &amp; Impact
-                </h2>
-                <p className="font-sans text-body-small text-ordift-ink-muted">{project.results}</p>
-              </div>
-            )}
-
-            {(project.awards.length > 0 || project.publications.length > 0) && (
-              <div className="mb-8 grid grid-cols-1 sm:grid-cols-2 gap-6">
-                {project.awards.length > 0 && (
-                  <div>
-                    <h2 className="font-serif font-medium text-card-title text-ordift-ink mb-3">Awards</h2>
-                    <ul className="flex flex-col gap-2">
-                      {project.awards.map((a) => (
-                        <li key={a.id} className="font-sans text-body-small text-ordift-ink">
-                          {a.title} <span className="text-ordift-ink-muted">— {a.issuer}{a.year ? `, ${a.year}` : ""}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-                {project.publications.length > 0 && (
-                  <div>
-                    <h2 className="font-serif font-medium text-card-title text-ordift-ink mb-3">
-                      Publications
-                    </h2>
-                    <ul className="flex flex-col gap-2">
-                      {project.publications.map((p) =>
-                        p.url ? (
-                          <li key={p.id}>
-                            <a
-                              href={p.url}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="font-sans text-body-small text-ordift-gold-pressed underline underline-offset-4"
-                            >
-                              {p.name}
-                            </a>
-                          </li>
-                        ) : (
-                          <li key={p.id} className="font-sans text-body-small text-ordift-ink">
-                            {p.name}
-                          </li>
-                        )
-                      )}
-                    </ul>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {project.gallery.length > 0 && (
-              <div className="mb-8">
-                <h2 className="font-serif font-medium text-card-title text-ordift-ink mb-3">
-                  Final Gallery
-                </h2>
-                {/* Nested inside this page's ~55%-width content column (not full
-                    viewport width) from `lg` up — the default `sizes` guess assumes
-                    full-bleed and was requesting a much larger image than the tile
-                    actually renders at. Found during the 2026-08-05 review. */}
-                <Gallery
-                  images={project.gallery}
-                  columns={3}
-                  sizes="(min-width: 1024px) 18vw, (min-width: 640px) 33vw, 50vw"
-                />
-              </div>
-            )}
-
-            {project.videos.length > 0 && (
-              <div className="mb-8">
-                <h2 className="font-serif font-medium text-card-title text-ordift-ink mb-3">Videos</h2>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  {project.videos.map((video, i) => (
-                    <MediaAsset key={i} media={video} aspectRatio="16/9" className="rounded-lg" />
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {project.behindTheScenesGallery.length > 0 && (
-              <div className="mb-8">
-                <h2 className="font-serif font-medium text-card-title text-ordift-ink mb-3">
-                  Behind the Scenes
-                </h2>
-                <Gallery
-                  images={project.behindTheScenesGallery}
-                  columns={3}
-                  sizes="(min-width: 1024px) 18vw, (min-width: 640px) 33vw, 50vw"
-                />
-              </div>
-            )}
-
-            {project.beforeAfterGallery.length > 0 && (
-              <div className="mb-8">
-                <h2 className="font-serif font-medium text-card-title text-ordift-ink mb-3">
-                  Before &amp; After
-                </h2>
-                <BeforeAfterGallery pairs={project.beforeAfterGallery} />
-              </div>
-            )}
-
-            {project.downloadableAssets.length > 0 && (
-              <div className="mb-8">
-                <h2 className="font-serif font-medium text-card-title text-ordift-ink mb-3">Downloads</h2>
-                <ul className="flex flex-col gap-2">
-                  {project.downloadableAssets.map((asset) => (
-                    <li key={asset.id}>
-                      <a
-                        href={asset.url}
-                        className="font-sans text-body-small text-ordift-gold-pressed underline underline-offset-4"
-                      >
-                        {asset.label} ({asset.fileType})
-                      </a>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-
-            {testimonials.length > 0 && (
-              <div className="mb-8">
-                <h2 className="font-serif font-medium text-card-title text-ordift-ink mb-3">
-                  What the client says
-                </h2>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  {testimonials.map((t) => (
-                    <TestimonialCard key={t.id} testimonial={t} />
-                  ))}
-                </div>
-              </div>
-            )}
-
-            <SocialShare url={shareUrl} title={project.title} />
+            {/* Only disciplines without a dedicated view yet reach this
+                shell now — Photography/Videography/Graphic Design all
+                return their own full page above. */}
+            <GenericProjectView project={project} testimonials={testimonials} shareUrl={shareUrl} />
           </div>
 
           <div>
@@ -407,68 +252,13 @@ export default async function PortfolioProjectPage({
         </div>
       </section>
 
-      <section className="bg-ordift-offwhite px-4 sm:px-8 py-8">
-        <div className="max-w-4xl mx-auto flex items-center justify-between gap-4">
-          {prevProject ? (
-            <Link
-              href={`/work/${prevProject.slug}`}
-              className="font-sans text-body-small text-ordift-ink hover:text-ordift-gold-pressed"
-            >
-              ← {prevProject.title}
-            </Link>
-          ) : (
-            <span />
-          )}
-          {nextProject && (
-            <Link
-              href={`/work/${nextProject.slug}`}
-              className="font-sans text-body-small text-ordift-ink hover:text-ordift-gold-pressed text-right"
-            >
-              {nextProject.title} →
-            </Link>
-          )}
-        </div>
-      </section>
-
-      {relatedProjects.length > 0 && (
-        <section className="bg-white px-4 sm:px-8 py-14 sm:py-20">
-          <div className="max-w-6xl mx-auto">
-            <h2 className="font-serif font-medium text-section-heading lg:text-section-heading-desktop text-ordift-ink mb-6">
-              Related Projects
-            </h2>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5 sm:gap-6">
-              {relatedProjects.map((related) => (
-                <PortfolioCard
-                  key={related.id}
-                  project={related}
-                  categories={related.categoryIds.map((id) => categoryById.get(id)!).filter(Boolean)}
-                />
-              ))}
-            </div>
-          </div>
-        </section>
-      )}
-
-      {relatedWorkshops.length > 0 && (
-        <section className="bg-ordift-offwhite px-4 sm:px-8 py-14 sm:py-20">
-          <div className="max-w-6xl mx-auto">
-            <h2 className="font-serif font-medium text-section-heading lg:text-section-heading-desktop text-ordift-ink mb-6">
-              Related Workshops
-            </h2>
-            <div className="flex flex-wrap gap-4">
-              {relatedWorkshops.map((w) => (
-                <Link
-                  key={w.id}
-                  href={`/workshops/${w.slug}`}
-                  className="inline-flex items-center min-h-11 px-5 rounded-full border border-black/15 font-sans text-body-small text-ordift-ink hover:border-black/30"
-                >
-                  {w.title} →
-                </Link>
-              ))}
-            </div>
-          </div>
-        </section>
-      )}
+      <PortfolioProjectFooterSections
+        prevProject={prevProject}
+        nextProject={nextProject}
+        relatedProjects={relatedProjects}
+        relatedWorkshops={relatedWorkshops}
+        categoryById={categoryById}
+      />
 
       <Footer />
     </main>

@@ -2,11 +2,7 @@ import type { NextConfig } from "next";
 import { withSentryConfig } from "@sentry/nextjs";
 
 // Baseline security headers — Next.js and Vercel don't set these by
-// default. Deliberately excludes Content-Security-Policy: this app
-// loads third-party scripts (Cloudflare Turnstile, Sanity Studio's own
-// asset pipeline) that a CSP would need careful, tested scoping to not
-// break — safer to add that separately once each script/frame source
-// is enumerated and verified, rather than guess a policy here.
+// default.
 const SECURITY_HEADERS = [
   // Blocks this site from being framed by another origin (clickjacking).
   { key: "X-Frame-Options", value: "SAMEORIGIN" },
@@ -18,9 +14,127 @@ const SECURITY_HEADERS = [
   { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=()" },
 ];
 
+// TD-004, staging-only Report-Only rollout (see
+// PRODUCTION_READINESS_RECONCILIATION.md §16.4). Deliberately not
+// nonce-based — that would force every page onto dynamic rendering,
+// which is a separate, bigger decision than "add a CSP" — and
+// deliberately not enforcing yet. Report-Only never blocks a resource,
+// so this can safely include /studio even though Sanity Studio's own
+// styled-components runtime is expected to violate style-src; that's
+// data to observe, not a breakage risk, while in Report-Only mode.
+function originOf(url: string | undefined): string | null {
+  if (!url) return null;
+  try {
+    return new URL(url).origin;
+  } catch {
+    return null;
+  }
+}
+
+function buildCsp(directives: Record<string, (string | null)[]>): string {
+  return Object.entries(directives)
+    .map(([directive, sources]) => `${directive} ${sources.filter((s): s is string => Boolean(s)).join(" ")}`)
+    .join("; ");
+}
+
+const TURNSTILE_ORIGIN = "https://challenges.cloudflare.com";
+const SANITY_MEDIA_ORIGIN = "https://cdn.sanity.io";
+// Sanity's own host-communication "bridge" script for Studio, loaded
+// from a hashed filename (bridge-<hash>.js) — found as a genuine
+// Report-Only violation on /studio; /studio-only, not needed elsewhere.
+const SANITY_BRIDGE_ORIGIN = "https://core.sanity-cdn.com";
+
+function reportOnlyCsp(): { main: string; studio: string } | null {
+  // Report-Only is staging-only for this first pass — Production gets
+  // a completely separate build with SITE_ENV=production, so this
+  // never applies there regardless of what happens on this branch.
+  if (process.env.SITE_ENV !== "staging") return null;
+
+  // Built from the actual per-environment config, not hardcoded —
+  // staging and Production have distinct Supabase projects and Sentry
+  // DSNs (confirmed earlier in this engagement), so a literal string
+  // here would silently be wrong the moment this pattern is ever
+  // reused for Production.
+  const supabaseOrigin = originOf(process.env.NEXT_PUBLIC_SUPABASE_URL);
+  const supabaseWsOrigin = supabaseOrigin?.replace(/^https:/, "wss:") ?? null;
+  const sentryOrigin = originOf(process.env.NEXT_PUBLIC_SENTRY_DSN);
+
+  const sharedConnectSrc = ["'self'", supabaseOrigin, supabaseWsOrigin, sentryOrigin, TURNSTILE_ORIGIN];
+
+  const mainCsp = buildCsp({
+    "default-src": ["'self'"],
+    // No nonce (out of scope for this pass) — 'unsafe-inline' is the
+    // documented Next.js fallback for a static, non-nonce CSP. Kept
+    // deliberately so this Report-Only pass surfaces genuinely missing
+    // third-party origins rather than drowning in expected violations
+    // from Next's own inline hydration scripts.
+    "script-src": ["'self'", "'unsafe-inline'", TURNSTILE_ORIGIN],
+    "style-src": ["'self'", "'unsafe-inline'"],
+    "img-src": ["'self'", "data:", "blob:", SANITY_MEDIA_ORIGIN],
+    "media-src": ["'self'", SANITY_MEDIA_ORIGIN],
+    "font-src": ["'self'"],
+    "connect-src": sharedConnectSrc,
+    // Turnstile's own challenge iframe, plus the two embed providers
+    // portfolio/journal gallery items actually use today (TD-004
+    // investigation: the schema's embed field is freeform, so this is
+    // a known, separately-tracked gap, not solved here).
+    "frame-src": ["'self'", TURNSTILE_ORIGIN, "https://www.youtube.com", "https://www.youtube-nocookie.com", "https://player.vimeo.com"],
+    "object-src": ["'none'"],
+    "base-uri": ["'self'"],
+    "form-action": ["'self'"],
+    // Mirrors the existing X-Frame-Options: SAMEORIGIN.
+    "frame-ancestors": ["'self'"],
+  });
+
+  const sanityApiOrigin = process.env.NEXT_PUBLIC_SANITY_PROJECT_ID
+    ? "https://api.sanity.io https://*.api.sanity.io"
+    : "https://api.sanity.io";
+  const sanityApiWsOrigin = sanityApiOrigin
+    .split(" ")
+    .map((o) => o.replace(/^https:/, "wss:"))
+    .join(" ");
+
+  const studioCsp = buildCsp({
+    "default-src": ["'self'"],
+    // No 'unsafe-eval' added preemptively — if Studio's own tooling
+    // needs it, that will show up as an observed script-src violation
+    // (see regression report) rather than being assumed here.
+    // SANITY_BRIDGE_ORIGIN: confirmed genuine Report-Only violation —
+    // Studio loads its host-communication bridge script from here.
+    "script-src": ["'self'", "'unsafe-inline'", SANITY_BRIDGE_ORIGIN],
+    // Sanity's @sanity/ui runs on styled-components, which injects
+    // inline <style> tags with no CSP nonce support — this directive
+    // is expected to need 'unsafe-inline' permanently on this route,
+    // not just during Report-Only.
+    "style-src": ["'self'", "'unsafe-inline'"],
+    "img-src": ["'self'", "data:", "blob:", SANITY_MEDIA_ORIGIN],
+    "media-src": ["'self'", SANITY_MEDIA_ORIGIN],
+    "font-src": ["'self'"],
+    "connect-src": [...sharedConnectSrc, sanityApiOrigin, sanityApiWsOrigin],
+    "frame-src": ["'self'"],
+    "object-src": ["'none'"],
+    "base-uri": ["'self'"],
+    "form-action": ["'self'"],
+    "frame-ancestors": ["'self'"],
+  });
+
+  return { main: mainCsp, studio: studioCsp };
+}
+
 const nextConfig: NextConfig = {
   async headers() {
-    return [{ source: "/:path*", headers: SECURITY_HEADERS }];
+    const csp = reportOnlyCsp();
+    const mainHeaders = csp
+      ? [...SECURITY_HEADERS, { key: "Content-Security-Policy-Report-Only", value: csp.main }]
+      : SECURITY_HEADERS;
+    const studioHeaders = csp
+      ? [...SECURITY_HEADERS, { key: "Content-Security-Policy-Report-Only", value: csp.studio }]
+      : SECURITY_HEADERS;
+    return [
+      { source: "/((?!studio).*)", headers: mainHeaders },
+      { source: "/studio", headers: studioHeaders },
+      { source: "/studio/:path*", headers: studioHeaders },
+    ];
   },
   images: {
     // Every real image on the site is Sanity-hosted (see

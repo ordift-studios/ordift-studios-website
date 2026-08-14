@@ -1,3 +1,4 @@
+import * as Sentry from "@sentry/nextjs";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { WorksheetKey } from "@/lib/googleSheets/registry";
 
@@ -11,12 +12,23 @@ import type { WorksheetKey } from "@/lib/googleSheets/registry";
 // or block the request that triggered it. If even this insert fails,
 // the only fallback left is the server log line below — the
 // already-saved Supabase record is never at risk either way.
+//
+// TD-005 fix: the Sentry capture below is the actual alert — a row in
+// sheet_sync_failures was previously the only trace of this, and
+// nothing read that table proactively. Sentry.captureException never
+// throws (no-ops if the client isn't configured), so this is safe to
+// call unconditionally ahead of the best-effort DB insert.
 export async function logSheetSyncFailure(params: {
   worksheetKey: WorksheetKey;
   recordId: string;
   rowData: unknown;
   errorMessage: string;
 }): Promise<void> {
+  Sentry.captureException(new Error(`Google Sheets sync failed: ${params.errorMessage}`), {
+    tags: { worksheetKey: params.worksheetKey },
+    extra: { recordId: params.recordId },
+  });
+
   try {
     const admin = createAdminClient();
     const { error } = await admin.from("sheet_sync_failures").insert({

@@ -2,6 +2,8 @@
 
 import { createClient } from "@/lib/supabase/server";
 import { siteUrl } from "@/lib/shared/env";
+import { checkRateLimit, getClientIp } from "@/lib/shared/rateLimit";
+import { verifyTurnstileToken } from "@/lib/turnstile";
 
 export type ForgotPasswordState = { submitted: boolean; error: string | null };
 
@@ -15,6 +17,18 @@ export async function requestPasswordResetAction(
   const email = String(formData.get("email") ?? "").trim();
   if (!email) {
     return { submitted: false, error: "Enter your email address." };
+  }
+
+  const rateLimit = await checkRateLimit(`forgot-password:${await getClientIp()}`);
+  if (!rateLimit.allowed) {
+    return { submitted: false, error: "Too many attempts. Please try again shortly." };
+  }
+
+  const turnstileOk = await verifyTurnstileToken(
+    String(formData.get("cf-turnstile-response") ?? "") || null
+  );
+  if (!turnstileOk) {
+    return { submitted: false, error: "Verification failed. Please try again." };
   }
 
   const supabase = await createClient();

@@ -14,7 +14,7 @@ This is not an accident: the project's own history shows deliberate free-tier di
 
 **The one service scaffolded but not active:** Google Analytics — an env var already exists (`NEXT_PUBLIC_GA_MEASUREMENT_ID`), explicitly flagged in `PRODUCT_ROADMAP.md` as "no code built yet; needs a decision + measurement ID before it's worth building." Free regardless of when it's turned on.
 
-**No payment gateway, SMS provider, or similar is included here.** `MILESTONES.md`'s retired "Version 3.0 — Commerce" section explicitly marks payment integration "unscheduled" — per your own instruction not to include anything that isn't actually approved, it's absent from this register, not merely deprioritized. If and when a payment provider is actually scheduled, it belongs here as a new entry, not as a placeholder today.
+**Payment gateway (Paystack, Ghana) is now approved architecture, added below (§9) as of 2026-08-06** — the payment/finance module moved from `MILESTONES.md`'s retired "unscheduled" status to an approved Ghana-first architecture (see `PAYMENT_FINANCE_ARCHITECTURE_PROPOSAL.md`), per this document's own stated rule: "If and when a payment provider is actually scheduled, it belongs here as a new entry." No live implementation exists yet — this is the register entry for the approved plan, not a live integration. Full gateway-fee and Qatar-candidate detail lives in the dedicated `PAYMENT_COST_REGISTER.md` (too specialized — per-country fee schedules, volume scenarios, multi-vendor comparison — to inline here without duplicating that document); this register's job stays the same as every other entry: the summary line, the trigger, and the cross-reference.
 
 ---
 
@@ -100,6 +100,17 @@ This is not an accident: the project's own history shows deliberate free-tier di
 - **Free tier:** unlimited private repositories for individuals/small teams — comfortably covers this project.
 - **Scaling considerations:** none at this team size.
 
+### 9. Paystack — Ghana Payment Gateway (approved architecture, not yet integrated)
+- **Purpose:** processes card and Ghana Mobile Money (MTN, Telecel, AirtelTigo) payments for bookings, deposits, balances, and workshop registrations.
+- **Implementation status:** **architecture approved, not yet built or connected** — see `PAYMENT_FINANCE_ARCHITECTURE_PROPOSAL.md` (schema, gateway-agnostic interface) and `PAYMENT_SECURITY_REVIEW.md`/`PAYMENT_TEST_PLAN.md` for the full design. No account created, no live keys, no code committed as of this entry.
+- **Dependencies (once built):** every payable booking/workshop-registration flow in the Client Portal; webhook processing reuses `src/lib/shared/idempotency.ts` and `src/lib/shared/rateLimit.ts`.
+- **Pricing model:** no setup/monthly fee; flat 1.95% per-transaction fee, no cap in Ghana (confirmed via Paystack's own pricing page — see `PAYMENT_COST_REGISTER.md` §1.1 for the full fee breakdown by category).
+- **Monthly cost:** **$0 fixed** — 100% usage-based (transaction fee only). Not yet incurred — no live transactions exist.
+- **Annual cost:** $0 fixed; variable cost scales with real transaction volume once live (see `PAYMENT_COST_REGISTER.md` §4 for volume-scenario projections — illustrative planning assumptions, not confirmed figures).
+- **Free tier:** N/A (fee-per-transaction model, no tiered plans).
+- **Scaling considerations:** this is the one service in the register whose cost is genuinely usage-driven rather than tier-driven — see `PAYMENT_COST_REGISTER.md` for the detailed scenario modeling this document doesn't duplicate.
+- **Trigger this satisfies for Supabase (§2 above):** `DISASTER_RECOVERY.md` §9 names "the first real payment" as one of the three documented Supabase Pro-upgrade triggers — once Paystack goes live, that trigger fires regardless of raw data volume. Flagged here so the Supabase Pro decision isn't made in isolation from the payment-module timeline.
+
 ### Domain & DNS
 - **Purpose:** `ordiftstudios.com`, the production domain.
 - **Implementation status:** live, connected (`DNS_SNAPSHOT_PRE_LAUNCH.md` documents the pre-launch DNS state).
@@ -158,6 +169,44 @@ Assumptions: each new client interaction (enquiry, booking, or workshop registra
 
 ---
 
+## Scalability Assessment (Workstream J)
+
+**Re-reviewed: 2026-08-10.** Distinct in framing from "Usage Scaling" above — that section answers "what would this cost more"; this section answers "what would break or need redesign first, and at what specific point." Per `PRODUCT_ROADMAP.md`'s Version 1.0.5 definition, scoped to the five subsystems that actually carry request/data throughput: Supabase, Sanity, Vercel, Redis rate-limiting, Google Sheets sync. Documentation only, per that workstream's own scope — no scaling work performed, no premature optimization.
+
+### Supabase
+- **Current capacity:** Free tier — 500MB DB, 50K MAU (§2). Architecturally, the app talks to Supabase exclusively through `supabase-js`'s Data API (PostgREST) over HTTPS — never a raw Postgres connection string — so there is no app-level connection-pool setting to exhaust; Supabase's own Supavisor pooler sits transparently in front of PostgREST on their infrastructure side.
+- **Expected bottleneck:** not connection exhaustion (see above). The real constraint is Free tier's shared compute allocation and project-level API throughput, both of which scale with plan tier, not app code.
+- **Scaling strategy:** a plan-tier upgrade (Free → Pro), not a code or architecture redesign.
+- **Trigger point:** already documented in `DISASTER_RECOVERY.md` §9 (real bookings live, first real payment, or ~20 paid bookings/month) — cross-referenced here, not duplicated.
+
+### Sanity
+- **Current capacity:** 2 datasets, 2 users, 500K CDN API requests/month, 10GB bandwidth, 20GB asset storage (§3).
+- **Expected bottleneck:** `src/sanity/lib/client.ts` sets `useCdn: true` only when `SITE_ENV === "production"` — every production page read hits Sanity's cached CDN, which absorbs traffic spikes by design and makes the 500K/month figure a non-issue for public traffic. Staging/preview always hit the non-cached live API instead, which matters for editorial/preview load, not visitor load.
+- **Scaling strategy:** none needed on the read side. The only real lever is the **2-user editor seat cap**, a headcount limit, not a technical one.
+- **Trigger point:** hiring a second content editor/collaborator who needs concurrent Studio access — a staffing event, not a traffic number.
+
+### Vercel
+- **Current capacity:** plan tier unconfirmed from the CLI (§1 — flagged as needing dashboard confirmation). No route in this codebase sets an explicit `maxDuration` or `export const runtime` override, so every serverless function (`/api/*`, Server Actions) runs on whichever execution-time ceiling the account's plan defaults to.
+- **Expected bottleneck:** the only genuinely long-running server-side work is `/admin/reports` CSV/XLSX generation + email dispatch, and the Paystack webhook handler. Neither has been observed to approach a timeout at current data volumes, but with no explicit `maxDuration` set, there's also no early warning before one silently starts failing under a larger report or a slow upstream call.
+- **Scaling strategy:** horizontal by default — Vercel autoscales function instances, no redesign needed for request volume. If report-generation time becomes a real concern, the fix is an explicit `maxDuration` override, and if still insufficient, moving export generation to a background job instead of a synchronous request.
+- **Trigger point:** an admin report export or webhook call measurably approaching the plan's default duration ceiling — worth a one-time explicit check once the Vercel plan itself is confirmed (§1).
+
+### Upstash Redis (rate limiting)
+- **Current capacity:** 500K commands/month, 256MB (§5). Current config: sliding-window limiter, 10-minute window, 5 requests/window, keyed per-IP for anonymous routes and per-`user.id` for authenticated ones (`src/lib/shared/rateLimit.ts`).
+- **Expected bottleneck:** not command volume — Usage Scaling above already shows this nowhere close. The real bottleneck is a **design** one: IP-keyed limiting under-serves any legitimate scenario where multiple users share one IP (an office, shared Wi-Fi, carrier NAT) — a busy client-facing office could hit the 5-requests/10-minutes ceiling from ordinary use, not abuse.
+- **Scaling strategy:** no infrastructure change needed. If false-positive lockouts occur, the fix is application-level — e.g. raising the per-IP ceiling, or preferring a per-account/session key wherever a session already exists (already true for authenticated routes), reserving strict IP-keying for genuinely anonymous routes. Logged as **TD-031** in `TECHNICAL_DEBT_REGISTER.md`.
+- **Trigger point:** a real support complaint or a log pattern showing a legitimate user blocked — not a capacity metric, since Redis capacity was never the constraint.
+
+### Google Sheets sync
+- **Current capacity:** 300 read + 300 write requests/minute per project, 60/minute per user (§7, verified 2026-07-30). 3 of the registry's 10 configured worksheets are actually live (`workshopRegistrations`, `contactEnquiries`, `projectRequests`), sharing one spreadsheet ("Ordift Studios Operations").
+- **Expected bottleneck:** not API quota — negligible headroom even at 150 clients/month (Usage Scaling above). The real bottleneck is Google Sheets' own per-spreadsheet cell cap (10,000,000 cells, shared across all tabs) combined with human usability: `contactEnquiries` alone has 25 columns, so that one live tab could theoretically hold roughly 400,000 rows before threatening the cell cap — but a flat operational sheet becomes slow for staff to open, filter, and scroll long before that, typically well under 100,000 rows.
+- **Scaling strategy:** a data-lifecycle fix (archiving old rows out of the live tab), not an infrastructure or quota change. The sync mechanism itself (`appendToWorksheet` — best-effort, non-blocking, Supabase remains primary per the existing dual-write architecture) needs no redesign at any realistic volume.
+- **Trigger point:** staff-reported sluggishness opening/filtering a live worksheet, or as a hard proxy, any single live tab crossing roughly 20,000–30,000 rows — well short of the ~400,000-row theoretical cap, but where UI usability degrades first in practice.
+
+**Cross-cutting conclusion:** none of the five subsystems is within a realistic distance of a genuine capacity failure at current or near-term (150 clients/month) volume. Every near-term trigger identified above is either a **business-milestone trigger already documented elsewhere** (Supabase, via `DISASTER_RECOVERY.md` §9), a **plan/config confirmation gap** (Vercel plan tier), or a **design/UX threshold** rather than a hard technical ceiling (Redis IP-keying, Sheets row-count usability). No redesign work is warranted now — this section exists so each threshold is written down before it's reached, not discovered after.
+
+---
+
 ## Feature Dependency Map
 
 ```
@@ -206,7 +255,7 @@ Only one service meets the bar of "explicitly named in official project planning
 |---|---|---|---|---|---|---|---|
 | Google Analytics | Visitor/traffic analytics for the public site | Named explicitly in `PRODUCT_ROADMAP.md`: "no code built yet; needs a decision + measurement ID before it's worth building" | Any time after launch — no dependency on client volume or revenue, purely a "do you want this data" decision | $0 (free product) | A Google Analytics 4 property, a measurement ID, and — per `DEPLOYMENT.md`'s own note — Cookie Notice approval, since it would introduce the site's first analytics cookie | Gives the business real visitor behavior data instead of relying on enquiry-form conversion alone | **Optional** — genuinely nice-to-have, not required for the platform to operate or for any current feature to function |
 
-**Explicitly excluded, and why:** a payment gateway was considered in this project's early history (`MILESTONES.md`'s retired "Version 3.0 — Commerce" section) but is explicitly marked **unscheduled**, not approved for any version. Per your instruction not to include anything short of an actual approval, it does not appear here. If a payment provider is ever genuinely scheduled in `PRODUCT_ROADMAP.md`, it becomes a real entry in this table at that time — not before.
+**Payment gateway moved out of this table and into the Current Technology Stack (§9) on 2026-08-06** — no longer "unscheduled": the Ghana-first Paystack architecture is approved, though not yet integrated. The Qatar gateway (MyFatoorah or Dibsy, undecided) remains genuinely unscheduled — pending your direct vendor conversation per `PAYMENT_FINANCE_ARCHITECTURE_PROPOSAL.md` §6 — and stays out of this register entirely until a provider is actually selected, matching the same discipline applied to Paystack before its own approval.
 
 ---
 
@@ -243,4 +292,4 @@ Per your explicit agreement, this section is deliberately short: **every service
 
 ---
 
-*Cross-references: `DISASTER_RECOVERY.md` §9 (Supabase Pro-upgrade triggers, not duplicated here), `PRODUCT_ROADMAP.md` (the only source for anything in Future Planned Integrations), `DEPLOYMENT.md` (environment variables per service), `MILESTONES.md` (the retired Commerce/payment-gateway history this register deliberately excludes).*
+*Cross-references: `DISASTER_RECOVERY.md` §9 (Supabase Pro-upgrade triggers, not duplicated here), `PRODUCT_ROADMAP.md` (the only source for anything in Future Planned Integrations), `DEPLOYMENT.md` (environment variables per service), `MILESTONES.md` (the retired Commerce/payment-gateway history this register deliberately excludes), `PAYMENT_COST_REGISTER.md` (the payment module's own deep-dive companion register — per-country gateway fee schedules, Qatar candidate comparison, volume-scenario modeling — this document stays the platform-wide authority and single source of truth; `PAYMENT_COST_REGISTER.md` is scoped narrower and defers to this document for every non-payment-specific service figure, never restating them independently).*

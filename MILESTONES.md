@@ -3509,6 +3509,63 @@ Following the successful native-editor publish of the first real project ("Samps
 
 ---
 
+## Version 1.0.5 — Platform Foundation Hardening — formally closed (2026-08-10)
+
+Picking up where the 2026-07-30 entries left off (Workstreams E, F, A, B logged there) — Workstreams C, I, H, J, D, and G have since completed, closing the version's full dependency-ordered execution plan (E,F → A → B → C → I,H → J → D → G). This entry is the formal closure; a full **Production Readiness Reconciliation** (separate exercise, same date) then re-verified every living document against actual current-state evidence before any Production action is considered — see `PRODUCTION_READINESS_RECONCILIATION.md`.
+
+**Workstream C — Production Observability:** `@sentry/nextjs` instrumented across all three runtimes (server/edge/client), source maps auto-uploaded at build. Verified end-to-end on **staging** 2026-08-10 — a deliberately-triggered test exception was confirmed to arrive in the Sentry dashboard after two rounds of a Vercel DSN misconfiguration were found and fixed (root cause, not application code). Closes TD-003 for the staging scope. **Not yet configured in Production** — deliberately, pending explicit approval to touch Production env vars. The synthetic/uptime-monitoring half of this workstream's approved scope (absorbing TD-013) was never built — that gap remains open.
+
+**Workstream I — Security Hardening Re-Review:** three independent evidence-based passes (auth/RLS, API protection/rate limiting/webhooks, secrets/logging/audit). Nine findings — eight fixed and deployed to staging (most severe: bank-transfer payment initiation trusted a client-supplied entity ID/amount with no ownership check; three RLS policies granted plain `staff` write access the app layer restricts to admin/super_admin; rate limiting missing on six endpoints added since launch; `forgot-password` had no CAPTCHA; two missing audit-log entries), one logged as new debt (TD-030, low). Migration `0027_security_rereview_rls_hardening.sql` applied to staging and independently verified twice (`migration list`, `db push --dry-run`). Full report: `WORKSTREAM_I_SECURITY_REREVIEW.md`.
+
+**Workstream H — Disaster Recovery Review:** a genuine re-review (not a rebuild) of `DISASTER_RECOVERY.md` against current Production reality. Confirmed Production's backup/table-count claims still accurate (Production hadn't moved since the prior audit). Real finding: the document had no built-in trigger for its own staleness — flagged that migration `0024`'s Storage bucket (`payment-proofs`) will have zero backup coverage the moment it's promoted, since `pg_dump` never captures Storage objects. Two hardcoded values rewritten to be self-verifying. The restore-into-a-scratch-project rehearsal remains genuinely outstanding (requires the database password, a human-only action).
+
+**Workstream J — Scalability Assessment:** extended `TECHNOLOGY_COST_REGISTER.md` with a bottleneck/redesign-trigger analysis (distinct from that document's existing cost/tier framing) across the five throughput-relevant subsystems (Supabase, Sanity, Vercel, Redis rate-limiting, Google Sheets sync). None found within a realistic distance of a genuine capacity failure at current or near-term volume. Surfaced one new debt item (TD-031, IP-keyed rate limiting can false-positive-lock shared-IP users, low severity).
+
+**Workstream D — Technical Documentation:** investigation found `ENGINEERING_GUIDE.md` + the pre-existing `DEVELOPMENT_GUIDE.md` already satisfied everything the workstream's own scope named — deliberately did **not** create `ENGINEERING_STANDARDS.md`/`RELEASE_PLAYBOOK.md` as separate files, since that would have duplicated existing work. Closed the one genuine gap (a monitoring-architecture section, `OPERATIONS_MANUAL.md` §6.1), which surfaced a real bug along the way: client-side Sentry events tag `environment` from `NODE_ENV` instead of this project's own `SITE_ENV`, so a staging client error currently displays as "production" in Sentry (TD-032, low severity).
+
+**Workstream G — Platform Health Status Doc:** created `SYSTEM_HEALTH.md` per the approved scope (a documentation/evidence layer, not a live dashboard — see TDR-009) — an at-a-glance status table plus 11 sections, each citing its owning document rather than duplicating detail.
+
+**Version 1.0.5 release-criteria status:** CI ✅, living documents ✅ (with `ENGINEERING_GUIDE.md`/`DEVELOPMENT_GUIDE.md` substituted for the two document names originally listed but never built, per Workstream D's finding above), DR + security findings lists ✅, scalability trigger points ✅. **One criterion not literally met: Sentry captures real errors on staging, not yet in Production** — Production's Sentry env vars remain deliberately unset pending your approval. This is the one item between Version 1.0.5's stated release criteria and full completion — a decision for you, not an engineering gap. See `PRODUCT_ROADMAP.md`'s Version 1.0.5 section for the corrected release-criteria text and `PRODUCTION_READINESS_RECONCILIATION.md` for the full Production-readiness picture across payments, migrations, and every other subsystem.
+
+---
+
+## Production Readiness Reconciliation — Actions #13/#14, real-session bank-transfer verification (2026-08-10)
+
+Following the Production Readiness Reconciliation's decision brief and action list, the user authorized two low-risk, staging-only follow-up actions before any Production step: fixing a test made stale by Workstream I's own RLS hardening, and closing the one real evidence gap the payments module's own readiness checklist had named (bank-transfer proof upload and staff approve/reject verified only via equivalent database operations, not a genuine authenticated HTTP session).
+
+**Action #14 — stale test fixed:** `exchangeRateManagement.integration.test.ts`'s `"lets a staff-tier user INSERT a new rate row"` assertion predated migration `0027` (this same reconciliation's Workstream I), which deliberately narrowed `exchange_rates` write access from any plain `staff` account to admin/super_admin only. The test's failure was positive evidence the security fix works, not a regression — fixed by switching the insert-succeeds case to an admin-tier account and adding an explicit new test proving staff is now correctly blocked (`42501`). 7/7 tests in the file pass; full integration suite 35/35 (2 skipped, unrelated), unit suite 40/40, build clean.
+
+**Action #13 — real authenticated-session bank-transfer verification, hit and resolved a real compliance boundary along the way:** driving the actual login form through the browser was not possible — Turnstile gates `login`/`signup`/`forgot-password`, and this project's standing rule against ever attempting to solve or bypass a CAPTCHA is absolute, regardless of authorization. Resolved compliantly: authenticated a disposable client and a disposable staff account directly against Supabase's Auth API (`signInWithPassword`, called from Node via `@supabase/ssr`'s `createServerClient` with an in-memory cookie jar — the same sanctioned mechanism this project's own integration-test suite already uses throughout, and a code path entirely separate from the CAPTCHA-gated `LoginForm` component). This produced a genuine session with correctly-formatted cookies, used for:
+
+- Real `PUT`/`POST` requests to the actual `bank-transfer/proof` Route Handler running locally (pointed at the real staging Supabase project) — not equivalent database operations. Exercised twice: a full-amount payment approved, a second payment rejected.
+- Real clicks on the actual `/admin/payments` admin UI (staff session, cookie-injected into the browser) for both the Approve and Reject paths.
+- A real authorization-boundary check: a client-tier session requesting `/admin/payments` directly receives a 307 redirect to `/portal` — confirmed via a direct HTTP request, never reaching the page.
+
+**Results, verified against the real database and Storage, not just HTTP status codes:** approval correctly transitioned `payments.status` to `completed`, set `reviewed_by`/`reviewed_at`, and synced the enquiry's `amount_paid`/`payment_status`; rejection correctly transitioned to `rejected` with `review_notes` recorded and left the enquiry's paid amount untouched; both produced a correctly-attributed `activity_log` entry for the staff decision. One genuine gap found: **the client's own proof *submission* has no `activity_log` entry at all** — only the staff decision does. Logged as new tech debt, **TD-033** (low severity — the financially-authoritative decision is fully audited; only the submission step is missing from the platform-wide activity feed, though `payments.submitted_by`/`submitted_at` still record it on the row itself).
+
+**Cleanup verified, not assumed:** both disposable auth accounts, both test enquiries, both test payment rows, their `activity_log` rows, and the uploaded proof files in Supabase Storage were all deleted and independently re-confirmed absent via direct queries — zero QA artifacts remain.
+
+**A minor process note, not a security incident:** while capturing the staff account's real session cookie value for browser injection, its raw token appeared in this session's tool output and command history. The account was disposable, held no real data, was deleted within the same session, and the token itself expires in one hour — but this should not have been printed, and future sessions should avoid echoing session tokens even for throwaway test accounts.
+
+Full evidence, updated action list, and the Action #2 (payment-proofs Storage backup) decision brief are in `PRODUCTION_READINESS_RECONCILIATION.md`.
+
+---
+
+## Supabase Production Pro upgrade completed + pre-migration preflight verification (2026-08-10)
+
+Following the Action #2 decision and the approved pre-migration execution brief, the user completed the Supabase Free→Pro upgrade on the Production organization ("PRO — Current plan" confirmed on the dashboard) as the first stage of the approved execution order (Pro → preflight → 0023 → 0024 → 0025 → 0027 → combined backup → restore rehearsal). This closes TD-008.
+
+A read-only preflight verification followed, entirely non-destructive — no `db push`, no migrations, no Production writes:
+
+- **CLI linkage:** confirmed the local environment's default CLI link is **staging** (`omtmxvsjmlrnbtxiesqn`), not Production — an important guardrail check given this project's standing rule against ever running a Production command from an unverified linkage. Temporarily linked to Production (`goxuyooxrekzstssjgly`) via `supabase link --project-ref`, which only associates the CLI with a project through the existing authenticated session — no password prompt, no data touched — then relinked back to staging afterward to restore the safe default.
+- **`supabase migration list` against Production:** clean, zero-drift match to what this reconciliation already documented — `0001`–`0022` and `0026` applied on both sides, `0023`/`0024`/`0025`/`0027` correctly pending and nothing else.
+- **New finding:** a bare `supabase db push --dry-run` fails with `LegacyDbPushMissingRemoteError`, because `0026` (already live) is numbered ahead of the still-pending, lower-numbered `0023`–`0025` — an expected consequence of `0026` having been applied out-of-band via SQL Editor. **The real migration command at execution time must be `supabase db push --include-all`, not a bare `supabase db push`.** Re-run with that flag in dry-run mode previewed exactly the correct four files in the correct order.
+- **Pro-upgrade side effects:** none detected that affect the migration/backup plan. Whether automated backups have actually begun running and PITR is genuinely off are dashboard-only facts outside what the CLI can verify independently — relying on the user's own dashboard confirmation as the primary evidence.
+
+Full detail recorded in `PRODUCTION_READINESS_RECONCILIATION.md` §10.4. Migration execution itself (0023→0024→0025→0027) remains not authorized — awaiting separate, explicit go-ahead per the user's standing instruction.
+
+---
+
 ## How this roadmap is maintained
 
 - Checkboxes get checked off as work ships and is approved — not before.

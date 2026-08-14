@@ -1,6 +1,11 @@
 import Link from "next/link";
 import type { Category, Venue, Workshop } from "@/lib/content/types";
-import { STATUS_BADGE_CLASSES, STATUS_LABEL, formatDateRange } from "@/lib/content/workshopHelpers";
+import {
+  STATUS_BADGE_CLASSES,
+  STATUS_LABEL,
+  formatDateRange,
+  getEffectiveWorkshopStatus,
+} from "@/lib/content/workshopHelpers";
 
 type WorkshopCardProps = {
   workshop: Workshop;
@@ -9,6 +14,7 @@ type WorkshopCardProps = {
 };
 
 export default function WorkshopCard({ workshop, categories, venue }: WorkshopCardProps) {
+  const effectiveStatus = getEffectiveWorkshopStatus(workshop);
   return (
     <Link
       href={`/workshops/${workshop.slug}`}
@@ -16,9 +22,9 @@ export default function WorkshopCard({ workshop, categories, venue }: WorkshopCa
     >
       <div className="flex flex-wrap items-center gap-2 mb-4">
         <span
-          className={`inline-block rounded-full px-3 py-1 font-sans text-caption font-semibold uppercase tracking-[0.1em] ${STATUS_BADGE_CLASSES[workshop.status]}`}
+          className={`inline-block rounded-full px-3 py-1 font-sans text-caption font-semibold uppercase tracking-[0.1em] ${STATUS_BADGE_CLASSES[effectiveStatus]}`}
         >
-          {STATUS_LABEL[workshop.status]}
+          {STATUS_LABEL[effectiveStatus]}
         </span>
         {venue && (
           <span className="inline-block rounded-full px-3 py-1 font-sans text-caption font-semibold uppercase tracking-[0.1em] bg-ordift-navy-950/5 text-ordift-ink-muted">

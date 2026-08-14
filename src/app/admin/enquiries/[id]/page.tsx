@@ -2,13 +2,20 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { crmStageLabel } from "@/lib/portal/data";
+import { pathwayLabel } from "@/lib/enquiry/pathways";
 import { getEnquiryById, getEnquiryNotes, CRM_STAGES } from "@/lib/admin/enquiries";
 import { getCurrentUser, hasRole, isSuperAdmin } from "@/lib/portal/roles";
+import { hasCapability } from "@/lib/workflow/engine";
+import { PAYMENT_CAPABILITIES } from "@/lib/payments/paymentPermissions";
 import { getDeliverableCategories, getDeliverablesForEntity } from "@/lib/admin/deliverables";
 import DeliverablesManager from "@/components/admin/DeliverablesManager";
 import { getProjectRequestsForEntity } from "@/lib/admin/projectRequests";
 import ProjectRequestsManager from "@/components/admin/ProjectRequestsManager";
-import { updateStageAction, addNoteAction } from "../actions";
+import { updateStageAction, addNoteAction, setAmountDueAction } from "../actions";
+
+function formatUsd(amount: number): string {
+  return `$${amount.toFixed(2)}`;
+}
 
 export const metadata: Metadata = {
   title: "Enquiry — Ordift Studios Admin",
@@ -39,6 +46,8 @@ export default async function AdminEnquiryDetailPage({ params }: { params: Promi
 
   if (!enquiry) notFound();
 
+  const canManageAmount = hasCapability(user, PAYMENT_CAPABILITIES, "manage_project_amount");
+
   return (
     <div className="space-y-10">
       <div>
@@ -63,8 +72,8 @@ export default async function AdminEnquiryDetailPage({ params }: { params: Promi
 
           <div className="rounded-xl border border-black/10 bg-white p-6 space-y-2">
             <p className="font-sans text-caption uppercase tracking-wide text-ordift-ink-muted">Service</p>
-            <p className="font-sans text-body text-ordift-ink capitalize">
-              {enquiry.service.replace(/-/g, " ")}
+            <p className="font-sans text-body text-ordift-ink">
+              {pathwayLabel(enquiry.service)}
             </p>
             <p className="font-sans text-caption uppercase tracking-wide text-ordift-ink-muted pt-3">
               Submitted
@@ -141,7 +150,56 @@ export default async function AdminEnquiryDetailPage({ params }: { params: Promi
           <ProjectRequestsManager entityType="enquiry" entityId={enquiry.id} requests={requests} />
         </div>
 
-        <div>
+        <div className="space-y-6">
+          <div className="rounded-xl border border-black/10 bg-white p-6">
+            <p className="font-sans text-caption uppercase tracking-wide text-ordift-ink-muted mb-3">
+              Financial
+            </p>
+            <div className="space-y-1 mb-4">
+              <p className="font-sans text-body-small text-ordift-ink-muted">
+                Amount Due:{" "}
+                <span className="font-medium text-ordift-ink">
+                  {enquiry.amountDue != null ? formatUsd(enquiry.amountDue) : "Not set"}
+                </span>
+              </p>
+              <p className="font-sans text-body-small text-ordift-ink-muted">
+                Amount Paid: <span className="font-medium text-ordift-ink">{formatUsd(enquiry.amountPaid ?? 0)}</span>
+              </p>
+            </div>
+            {canManageAmount ? (
+              <form action={setAmountDueAction} className="space-y-3">
+                <input type="hidden" name="enquiryId" value={enquiry.id} />
+                <div>
+                  <label htmlFor="amount-due" className="font-sans text-caption text-ordift-ink-muted block mb-1">
+                    Set Amount Due (USD)
+                  </label>
+                  <input
+                    id="amount-due"
+                    name="amountDue"
+                    type="number"
+                    step="0.01"
+                    min="0.01"
+                    max="1000000"
+                    required
+                    defaultValue={enquiry.amountDue ?? ""}
+                    placeholder="e.g. 1500.00"
+                    className="w-full min-h-11 rounded-lg border border-black/15 bg-white px-3 font-sans text-body-small text-ordift-ink"
+                  />
+                </div>
+                <button
+                  type="submit"
+                  className="w-full min-h-11 rounded-full bg-ordift-gold text-ordift-navy-950 font-sans font-semibold text-body-small"
+                >
+                  {enquiry.amountDue != null ? "Update Amount Due" : "Set Amount Due"}
+                </button>
+              </form>
+            ) : (
+              <p className="font-sans text-caption text-ordift-ink-muted">
+                Only Admin/Super Admin can set the payable amount.
+              </p>
+            )}
+          </div>
+
           <div className="rounded-xl border border-black/10 bg-white p-6">
             <p className="font-sans text-caption uppercase tracking-wide text-ordift-ink-muted mb-3">
               CRM Stage

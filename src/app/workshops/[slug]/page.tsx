@@ -16,6 +16,8 @@ import {
   STATUS_LABEL,
   formatDate,
   formatDateRange,
+  getEffectiveWorkshopStatus,
+  getRegistrationCloseInstant,
   isMultiDay,
 } from "@/lib/content/workshopHelpers";
 import { visitorFormsOpen } from "@/lib/shared/env";
@@ -57,6 +59,16 @@ export default async function WorkshopDetailPage({
   const { slug } = await params;
   const workshop = await contentRepository.getWorkshopBySlug(slug);
   if (!workshop) notFound();
+
+  // TD-034: reflects the CMS `status` unless it's manually "open" but
+  // registrationDeadline has passed, in which case it's treated as
+  // "closed" everywhere on this page — badge, countdown, and the
+  // register-vs-message panel all read this instead of the raw status.
+  const effectiveStatus = getEffectiveWorkshopStatus(workshop);
+  // Same instant the effective-status check closes at (end of the
+  // deadline day, not its start) — the countdown must expire at exactly
+  // the moment registration actually closes, not a day early.
+  const registrationClosesAt = getRegistrationCloseInstant(workshop);
 
   const [categories, instructors, venues, allWorkshops, allTestimonials] = await Promise.all([
     contentRepository.getCategories(),
@@ -119,9 +131,9 @@ export default async function WorkshopDetailPage({
           </h1>
           <div className="flex flex-wrap items-center gap-2">
             <span
-              className={`inline-block rounded-full px-3 py-1 font-sans text-caption font-semibold uppercase tracking-[0.1em] ${STATUS_BADGE_CLASSES[workshop.status]}`}
+              className={`inline-block rounded-full px-3 py-1 font-sans text-caption font-semibold uppercase tracking-[0.1em] ${STATUS_BADGE_CLASSES[effectiveStatus]}`}
             >
-              {STATUS_LABEL[workshop.status]}
+              {STATUS_LABEL[effectiveStatus]}
             </span>
             {venue && (
               <span className="inline-block rounded-full px-3 py-1 font-sans text-caption font-semibold uppercase tracking-[0.1em] bg-white/10 text-white/80">
@@ -154,9 +166,9 @@ export default async function WorkshopDetailPage({
               {workshop.description}
             </p>
 
-            {workshop.status === "open" && workshop.registrationDeadline && (
+            {effectiveStatus === "open" && registrationClosesAt && (
               <div className="mb-8">
-                <CountdownTimer targetDate={workshop.registrationDeadline} label="Registration closes in" />
+                <CountdownTimer targetDate={registrationClosesAt.toISOString()} label="Registration closes in" />
               </div>
             )}
 
@@ -334,7 +346,7 @@ export default async function WorkshopDetailPage({
               <p className="font-serif font-medium text-card-title text-ordift-ink mb-1">
                 Register
               </p>
-              {workshop.status === "open" && visitorFormsOpen() ? (
+              {effectiveStatus === "open" && visitorFormsOpen() ? (
                 <>
                   <p className="font-sans text-body-small text-ordift-ink-muted mb-5">
                     Spaces are limited. If the workshop is full, you&apos;ll be added to a
@@ -344,14 +356,14 @@ export default async function WorkshopDetailPage({
                 </>
               ) : (
                 <p className="font-sans text-body-small text-ordift-ink-muted">
-                  {workshop.status === "open" && !visitorFormsOpen() && "Bookings will open soon."}
-                  {workshop.status === "coming-soon" &&
+                  {effectiveStatus === "open" && !visitorFormsOpen() && "Bookings will open soon."}
+                  {effectiveStatus === "coming-soon" &&
                     "Registration isn't open yet for this workshop. Check back soon."}
-                  {workshop.status === "full" &&
+                  {effectiveStatus === "full" &&
                     "This workshop is currently full and not accepting new registrations."}
-                  {workshop.status === "closed" &&
+                  {effectiveStatus === "closed" &&
                     "Registration for this workshop is closed."}
-                  {workshop.status === "completed" &&
+                  {effectiveStatus === "completed" &&
                     "This workshop has already taken place."}
                 </p>
               )}

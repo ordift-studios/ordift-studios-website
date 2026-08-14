@@ -4,6 +4,8 @@ The single canonical checklist for going from "platform is technically ready" to
 
 **Status as of 2026-07-30 (updated same day):** `LAUNCH_HOLDING_PAGE` is still on — deliberately not touched. Every Technical item is now checked except the one real-widget Turnstile verification, which structurally cannot happen until the holding page comes down. Content readiness is the one remaining Before Launch item that's genuinely a business decision. See `FINAL_LAUNCH_CERTIFICATION.md` for the full current readiness picture.
 
+**Correction (2026-08-10, Production Readiness Reconciliation):** two Content items below are stale and corrected in place rather than left contradicting current reality — see the checkboxes themselves for detail. `LAUNCH_HOLDING_PAGE` is still on as of this correction; nothing here implies otherwise. For the full current-state picture (migrations, Sentry, Paystack, security, technical debt), see `PRODUCTION_READINESS_RECONCILIATION.md`.
+
 ---
 
 ## Before Launch
@@ -29,8 +31,8 @@ Full detail and current status on each item: `OPERATIONS_MANUAL.md` §7, `FINAL_
 
 ### Content
 - [x] Homepage, About, Services, Founder, Client Portal — confirmed real and launch-ready via full business audit 2026-07-30 (`BUSINESS_LAUNCH_AUDIT.md`)
-- [ ] **Legal documentation — out for your independent review, now expanded into a full suite.** The four live pages (`isApproved: false` on all four, both datasets) hold the earlier draft; that draft is now superseded in scope by `ORDIFT_STUDIOS_LEGAL_SUITE_v1.md` (11 parts) and its companion `LEGAL_REVIEW_REPORT.md` (full audit, open business decisions, readiness score). Still the single highest-priority remaining item — nothing publishes until you return with approved wording.
-- [ ] Portfolio, Journal, Workshops — currently 100% `[SAMPLE]` placeholder; work through `CONTENT_READINESS_CHECKLIST.md`, or unpublish the sample entries in Sanity if none will be ready by launch
+- [x] **Legal documentation — STALE, corrected 2026-08-10.** This item as originally written (superseded by `ORDIFT_STUDIOS_LEGAL_SUITE_v1.md`, "nothing publishes until you return with approved wording") is no longer accurate. The Public Website Legal Suite v1.0 (Privacy Policy, Cookie Policy, Website Terms, Booking Terms — `OS-LGL-001` through `-004`) was approved and published live 2026-08-04 (commit `2f914c7`); all four carry `status: "approved"` in `src/lib/legal/registry.ts`. An Enterprise Legal Library (ESA/MSA and similar) remains planned but paused — not a Before-Launch blocker, a separate future initiative.
+- [~] Portfolio, Journal, Workshops — **partially stale, corrected 2026-08-10.** Portfolio is no longer 100% sample: one real project ("Sampson & Sadia Wedding") has been published live via the native Admin Portal editor since 2026-08-05. Journal and Workshops remain sample content as originally stated — `CONTENT_READINESS_CHECKLIST.md` itself has not been re-verified this pass; treat its Workshops/Journal sections as still accurate but its Portfolio section as superseded by the above.
 - [ ] Every department page's "Featured Work" section shows unlabeled placeholder cards, cascading from the Portfolio gap above — resolves automatically once Portfolio content is real
 - [ ] Pricing information accurate wherever shown
 - [ ] Contact details — `ordift.ghana@gmail.com` and a UK (+44) WhatsApp number are confirmed live on production; confirm these are the intended public values

@@ -9,6 +9,7 @@ export const WORKSPACE_TABS: WorkspaceTab[] = [
   { slug: "timeline", label: "Timeline" },
   { slug: "deliverables", label: "Deliverables" },
   { slug: "booking-details", label: "Booking Details" },
+  { slug: "payments", label: "Payments" },
   { slug: "requests", label: "Requests" },
   { slug: "updates", label: "Updates" },
 ];

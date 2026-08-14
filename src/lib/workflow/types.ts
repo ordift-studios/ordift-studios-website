@@ -23,11 +23,29 @@ export type WorkflowCapability =
   | "archive" // published -> archived
   | "delete" // remove entirely
   | "manage_taxonomy" // categories/collections or equivalent groupings
-  | "manage_assignments"; // scope collaborators to specific entities (Photographer-tier access)
+  | "manage_assignments" // scope collaborators to specific entities (Photographer-tier access)
+  // Payments & Finance Module (2026-08-06) — second consumer of this
+  // engine, per its own doc comment above. approve/reject already exist
+  // above but are deliberately not reused here: bank-transfer review is
+  // its own distinct action space (it doesn't move a Portfolio-style
+  // draft/pending_review/approved status), so it gets its own capability
+  // names rather than overloading Portfolio's semantics.
+  | "view_all_payments" // staff read access to every client's payment history, not just their own
+  | "approve_bank_transfer"
+  | "reject_bank_transfer"
+  | "issue_refund"
+  | "manage_bank_accounts"
+  | "manage_currencies"
+  // Sets/amends the agreed amount_due on an enquiry or workshop
+  // registration — i.e. turning a mere enquiry into a payable
+  // obligation (2026-08-07). Grouped with the other direct-financial-
+  // consequence capabilities (issue_refund, manage_currencies), not
+  // view_all_payments — same admin/super_admin-only tier.
+  | "manage_project_amount";
 
 // Extend as future consumers land — kept a literal union (not a bare
 // `string`) so a typo in a future entity_type is a compile error, not
 // a silent no-op capability check.
-export type WorkflowEntityType = "portfolio_project";
+export type WorkflowEntityType = "portfolio_project" | "payment";
 
 export type WorkflowCapabilityMatrix = Partial<Record<RoleSlug, WorkflowCapability[]>>;

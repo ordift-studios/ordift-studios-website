@@ -1,3 +1,4 @@
+import * as Sentry from "@sentry/nextjs";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 // The resilience half of the email send workflow: when sendEmailNow()
@@ -10,6 +11,9 @@ import { createAdminClient } from "@/lib/supabase/admin";
 // or block the request that triggered the send. If even this insert
 // fails, the only fallback left is the server log line already
 // written by dispatch.ts.
+//
+// TD-005 fix: same alerting gap as sheetSyncFailures.ts, same fix —
+// Sentry.captureException never throws, safe to call unconditionally.
 export async function logEmailSendFailure(params: {
   emailType: string;
   recipient: string;
@@ -18,6 +22,11 @@ export async function logEmailSendFailure(params: {
   attempts: number;
   permanent: boolean;
 }): Promise<void> {
+  Sentry.captureException(new Error(`Email send failed: ${params.errorMessage}`), {
+    tags: { emailType: params.emailType, permanent: String(params.permanent) },
+    extra: { recipient: params.recipient, referenceNumber: params.referenceNumber, attempts: params.attempts },
+  });
+
   try {
     const admin = createAdminClient();
     const { error } = await admin.from("email_send_failures").insert({

@@ -4,6 +4,7 @@ import { z } from "zod";
 import { workshopRegistrationSchema } from "@/lib/workshops/registrationSchema";
 import { generateRecordId } from "@/lib/shared/recordId";
 import { contentRepository } from "@/lib/content";
+import { isRegistrationOpen } from "@/lib/content/workshopHelpers";
 import {
   countRegisteredForWorkshop,
   countWaitlistedForWorkshop,
@@ -98,7 +99,11 @@ export async function POST(request: NextRequest) {
       { status: 404 }
     );
   }
-  if (workshop.status !== "open") {
+  // TD-034: same shared helper the frontend uses for its badge/button —
+  // a manually-"open" workshop past its registrationDeadline is treated
+  // as closed here too, so the API can never accept a submission the UI
+  // wouldn't have offered.
+  if (!isRegistrationOpen(workshop)) {
     return NextResponse.json(
       {
         ok: false,

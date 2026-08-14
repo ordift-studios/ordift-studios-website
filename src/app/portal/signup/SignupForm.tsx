@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
 import Link from "next/link";
 import Button from "@/components/Button";
 import TurnstileWidget from "@/components/TurnstileWidget";
@@ -8,8 +8,29 @@ import { signUpAction, type SignupState } from "./actions";
 
 const initialState: SignupState = { error: null };
 
+// Mirrors BookingForm.tsx/RegistrationForm.tsx's gate — without this,
+// the submit button stays permanently disabled in any environment
+// where NEXT_PUBLIC_TURNSTILE_SITE_KEY is unset (TurnstileWidget
+// renders nothing, so onVerify never fires), with no error shown.
+const turnstileRequired = Boolean(process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY);
+
 export default function SignupForm() {
   const [state, formAction, pending] = useActionState(signUpAction, initialState);
+  // Turnstile still relies on Cloudflare's implicit hidden-field
+  // injection for the actual server-side check (see
+  // TurnstileWidget.tsx's doc comment) — this token is only tracked
+  // client-side to gate the submit button, so a click can't fire
+  // before the widget has actually finished its challenge (the same
+  // pattern BookingForm.tsx/RegistrationForm.tsx already use).
+  const [turnstileToken, setTurnstileToken] = useState("");
+
+  // Same retry-after-failure reset as LoginForm.tsx, done during
+  // render rather than in an effect — see that file's comment.
+  const [prevState, setPrevState] = useState(state);
+  if (state !== prevState) {
+    setPrevState(state);
+    if (state.error) setTurnstileToken("");
+  }
 
   return (
     <form action={formAction} className="space-y-5 max-w-sm">
@@ -60,9 +81,18 @@ export default function SignupForm() {
         <p className="mt-1.5 font-sans text-caption text-ordift-ink-muted">At least 8 characters.</p>
       </div>
 
-      <TurnstileWidget />
+      <TurnstileWidget
+        resetSignal={state}
+        onVerify={(token) => setTurnstileToken(token)}
+        onExpire={() => setTurnstileToken("")}
+      />
 
-      <Button type="submit" variant="primary" disabled={pending} className="w-full">
+      <Button
+        type="submit"
+        variant="primary"
+        disabled={pending || (turnstileRequired && !turnstileToken)}
+        className="w-full"
+      >
         {pending ? "Creating account…" : "Create Account"}
       </Button>
 

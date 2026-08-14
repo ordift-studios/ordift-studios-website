@@ -30,6 +30,53 @@ export function isPastWorkshop(workshop: Workshop): boolean {
   return workshop.status === "completed";
 }
 
+// TD-034: `registrationDeadline` is a Sanity `date` field (no time/zone
+// component), so it parses as UTC midnight of that date. The deadline
+// day itself stays open — registration closes only once the following
+// day begins, giving visitors the full deadline day rather than closing
+// at its first instant. Exported so CountdownTimer can count down to
+// this exact instant too — the countdown, the badge, and the API must
+// all agree on one closing moment.
+export function getRegistrationCloseInstant(
+  workshop: Pick<Workshop, "registrationDeadline">
+): Date | null {
+  if (!workshop.registrationDeadline) return null;
+  const deadlineStart = new Date(workshop.registrationDeadline);
+  return new Date(deadlineStart.getTime() + 24 * 60 * 60 * 1000);
+}
+
+export function isRegistrationDeadlinePassed(
+  workshop: Pick<Workshop, "registrationDeadline">,
+  now: Date = new Date()
+): boolean {
+  const closesAt = getRegistrationCloseInstant(workshop);
+  return closesAt !== null && now.getTime() >= closesAt.getTime();
+}
+
+// The status actually shown and enforced everywhere — same as the raw
+// CMS `status` field except a manually-"open" workshop is demoted to
+// "closed" once its deadline has passed. Every other status (staff-set
+// "closed", "full", "coming-soon", "completed") passes through
+// unchanged, so a deadline that's still in the future never reopens a
+// workshop staff closed manually. Shared by the detail page, WorkshopCard,
+// and the registration API so the frontend and server can't disagree.
+export function getEffectiveWorkshopStatus(
+  workshop: Pick<Workshop, "status" | "registrationDeadline">,
+  now: Date = new Date()
+): WorkshopStatus {
+  if (workshop.status === "open" && isRegistrationDeadlinePassed(workshop, now)) {
+    return "closed";
+  }
+  return workshop.status;
+}
+
+export function isRegistrationOpen(
+  workshop: Pick<Workshop, "status" | "registrationDeadline">,
+  now: Date = new Date()
+): boolean {
+  return getEffectiveWorkshopStatus(workshop, now) === "open";
+}
+
 export function formatDateRange(workshop: Workshop): string {
   if (!workshop.startDate) return "To be announced";
   const start = formatDate(workshop.startDate);

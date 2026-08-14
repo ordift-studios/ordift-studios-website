@@ -5,6 +5,9 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { verifyTurnstileToken } from "@/lib/turnstile";
 import { assignClassificationBySlug } from "@/lib/portal/memberNumbers";
+import { linkGuestRecordsToAccount } from "@/lib/supabase/accountLinking";
+import { siteUrl } from "@/lib/shared/env";
+import { checkRateLimit, getClientIp } from "@/lib/shared/rateLimit";
 
 export type SignupState = { error: string | null };
 
@@ -27,6 +30,11 @@ export async function signUpAction(_prev: SignupState, formData: FormData): Prom
     return { error: "Password must be at least 8 characters." };
   }
 
+  const rateLimit = await checkRateLimit(`signup:${await getClientIp()}`);
+  if (!rateLimit.allowed) {
+    return { error: "Too many attempts. Please try again shortly." };
+  }
+
   const turnstileOk = await verifyTurnstileToken(
     String(formData.get("cf-turnstile-response") ?? "") || null
   );
@@ -38,7 +46,15 @@ export async function signUpAction(_prev: SignupState, formData: FormData): Prom
   const { data, error } = await supabase.auth.signUp({
     email,
     password,
-    options: { data: { full_name: fullName } },
+    options: {
+      data: { full_name: fullName },
+      // Explicit, matching the same pattern already used by
+      // requestPasswordResetAction (forgot-password/actions.ts) —
+      // without this, Supabase falls back entirely to the project's
+      // own dashboard "Site URL" setting, which defaults to
+      // http://localhost:3000 until manually changed (2026-08-07).
+      emailRedirectTo: `${siteUrl()}/portal/login`,
+    },
   });
   if (error || !data.user) {
     return { error: error?.message ?? "Couldn't create your account. Please try again." };
@@ -65,6 +81,12 @@ export async function signUpAction(_prev: SignupState, formData: FormData): Prom
   if (!data.session) {
     redirect("/portal/login?confirmEmail=1");
   }
+
+  // Only reached when email confirmation is off and a session exists
+  // immediately — the confirmation-required path links at first login
+  // instead (src/app/portal/login/actions.ts), the only point that
+  // path ever gets a real session.
+  await linkGuestRecordsToAccount(data.user.id, email);
 
   redirect("/portal/client");
 }
