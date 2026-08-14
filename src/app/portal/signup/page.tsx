@@ -8,7 +8,12 @@ export const metadata: Metadata = {
   robots: { index: false, follow: false },
 };
 
-export default function PortalSignupPage() {
+export default async function PortalSignupPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ next?: string }>;
+}) {
+  const { next } = await searchParams;
   return (
     <main>
       <NavBar />
@@ -28,7 +33,7 @@ export default function PortalSignupPage() {
         </div>
       </section>
       <section className="bg-white px-4 sm:px-8 py-14 sm:py-20">
-        <SignupForm />
+        <SignupForm next={next ?? ""} />
       </section>
       <Footer />
     </main>

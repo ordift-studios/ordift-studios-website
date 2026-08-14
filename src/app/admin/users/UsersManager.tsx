@@ -16,6 +16,7 @@ import {
   assignToProjectAction,
   updateAssignmentStatusAction,
   inviteCollaboratorAction,
+  inviteClientToPortalAction,
   searchProjectsAction,
   getAssignmentsForUserAction,
   getAccessHistoryForUserAction,
@@ -810,6 +811,73 @@ function InvitePanel({
   );
 }
 
+// Deliberately separate from InvitePanel above, not a "client" option
+// added to its role dropdown — this is the counterpart to public
+// self-signup, not a variant of the internal-role invite flow. Use case:
+// a client's business record already exists as a guest enquiry/booking
+// (submitted before they had an account), and staff want to give that
+// same person portal access without asking them to sign up separately.
+// No role field exists in this form or in inviteClientToPortalAction()
+// — "client" is the only role this path can ever grant.
+function InviteClientPanel({ onDone }: { onDone: () => void }) {
+  const [pending, startTransition] = useTransition();
+  const [error, setError] = useState<string | null>(null);
+  const [email, setEmail] = useState("");
+  const [fullName, setFullName] = useState("");
+
+  function submit() {
+    setError(null);
+    const fd = new FormData();
+    fd.set("email", email);
+    fd.set("fullName", fullName);
+    startTransition(async () => {
+      const result = await inviteClientToPortalAction(fd);
+      if (result.error) setError(result.error);
+      else {
+        setEmail("");
+        setFullName("");
+        onDone();
+      }
+    });
+  }
+
+  return (
+    <div className="rounded-xl border border-black/10 bg-white p-5 space-y-3">
+      <h2 className="font-serif font-medium text-body text-ordift-ink">Invite Existing Client to Portal</h2>
+      <p className="font-sans text-caption text-ordift-ink-muted">
+        For a client who already has a booking/enquiry on file but no portal account yet. Sends a real Supabase
+        Auth invite email — the client sets their own password. Always grants Client access only; their existing
+        bookings/enquiries link automatically the first time they log in.
+      </p>
+      {error && <p className="font-sans text-caption text-red-700">{error}</p>}
+      <div className="grid sm:grid-cols-2 gap-3">
+        <input
+          type="text"
+          value={fullName}
+          onChange={(e) => setFullName(e.target.value)}
+          placeholder="Client's full name"
+          className="rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small"
+        />
+        <input
+          type="email"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          placeholder="Client's email"
+          className="rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small"
+        />
+      </div>
+      <button
+        type="button"
+        onClick={submit}
+        disabled={pending || !email || !fullName}
+        className="font-sans text-body-small font-semibold px-4 py-2 rounded-md bg-ordift-navy-950 text-white disabled:opacity-50"
+      >
+        {pending ? "Sending invite…" : "Send Invite"}
+      </button>
+    </div>
+  );
+}
+
 export default function UsersManager({
   users,
   currentUserId,
@@ -830,6 +898,7 @@ export default function UsersManager({
   const [roleFilter, setRoleFilter] = useState<"" | RoleSlug>("");
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [showInvite, setShowInvite] = useState(false);
+  const [showClientInvite, setShowClientInvite] = useState(false);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -880,9 +949,16 @@ export default function UsersManager({
         <button
           type="button"
           onClick={() => setShowInvite((v) => !v)}
-          className="ml-auto font-sans text-body-small font-semibold px-4 py-2 rounded-md bg-ordift-gold text-ordift-navy-950 hover:bg-ordift-gold-hover"
+          className="font-sans text-body-small font-semibold px-4 py-2 rounded-md bg-ordift-gold text-ordift-navy-950 hover:bg-ordift-gold-hover"
         >
           {showInvite ? "Close" : "Invite Collaborator"}
+        </button>
+        <button
+          type="button"
+          onClick={() => setShowClientInvite((v) => !v)}
+          className="ml-auto font-sans text-body-small font-semibold px-4 py-2 rounded-md border border-black/15 text-ordift-ink hover:border-black/30"
+        >
+          {showClientInvite ? "Close" : "Invite Existing Client to Portal"}
         </button>
       </div>
 
@@ -895,6 +971,8 @@ export default function UsersManager({
           onDone={() => setShowInvite(false)}
         />
       )}
+
+      {showClientInvite && <InviteClientPanel onDone={() => setShowClientInvite(false)} />}
 
       <p className="font-sans text-caption text-ordift-ink-muted">
         {filtered.length} of {users.length} accounts

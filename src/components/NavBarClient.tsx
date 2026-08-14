@@ -9,9 +9,15 @@ import type { CtaButton, NavLink } from "@/lib/content/types";
 export default function NavBarClient({
   links,
   primaryCta,
+  accountHref,
 }: {
   links: NavLink[];
   primaryCta: CtaButton;
+  // Precomputed server-side via primaryPortalPath() — null means the
+  // visitor isn't authenticated. This component never derives a
+  // destination from role data itself, so there's only one place
+  // role-based routing logic lives.
+  accountHref: string | null;
 }) {
   const [open, setOpen] = useState(false);
 
@@ -32,6 +38,20 @@ export default function NavBarClient({
               {link.label}
             </Link>
           ))}
+          {accountHref ? (
+            <Link href={accountHref} className="hover:text-white transition-colors">
+              My Account
+            </Link>
+          ) : (
+            <>
+              <Link href="/portal/login" className="hover:text-white transition-colors">
+                Log in
+              </Link>
+              <Link href="/portal/signup" className="hover:text-white transition-colors">
+                Create account
+              </Link>
+            </>
+          )}
         </div>
 
         <div className="hidden md:block">
@@ -66,6 +86,32 @@ export default function NavBarClient({
               {link.label}
             </Link>
           ))}
+          {accountHref ? (
+            <Link
+              href={accountHref}
+              className="font-sans text-nav text-white/80 hover:text-white transition-colors"
+              onClick={() => setOpen(false)}
+            >
+              My Account
+            </Link>
+          ) : (
+            <>
+              <Link
+                href="/portal/login"
+                className="font-sans text-nav text-white/80 hover:text-white transition-colors"
+                onClick={() => setOpen(false)}
+              >
+                Log in
+              </Link>
+              <Link
+                href="/portal/signup"
+                className="font-sans text-nav text-white/80 hover:text-white transition-colors"
+                onClick={() => setOpen(false)}
+              >
+                Create account
+              </Link>
+            </>
+          )}
           <Button href={primaryCta.href} variant="primary" className="w-full">
             {primaryCta.label}
           </Button>

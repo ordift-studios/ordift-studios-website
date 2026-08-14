@@ -2,7 +2,7 @@
 
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { primaryPortalPath, type RoleSlug } from "@/lib/portal/roles";
+import { primaryPortalPath, isSafeReturnPath, type RoleSlug } from "@/lib/portal/roles";
 import { verifyTurnstileToken } from "@/lib/turnstile";
 import { linkGuestRecordsToAccount } from "@/lib/supabase/accountLinking";
 import { checkRateLimit, getClientIp } from "@/lib/shared/rateLimit";
@@ -33,6 +33,10 @@ export async function signInAction(_prev: LoginState, formData: FormData): Promi
   const supabase = await createClient();
   const { data, error } = await supabase.auth.signInWithPassword({ email, password });
   if (error || !data.user) {
+    // Server-side only — never shown to the user (see below). Lets a
+    // future case like "account exists but email unconfirmed" actually
+    // be diagnosable from logs instead of requiring a full code trace.
+    if (error) console.error("[portal] login failed", error.message);
     // Deliberately generic — never confirm/deny whether an email is
     // registered (same principle as every other form in this project:
     // no information leaks through error messages).
@@ -55,7 +59,7 @@ export async function signInAction(_prev: LoginState, formData: FormData): Promi
     .map((r) => (r.roles as unknown as { slug: RoleSlug } | null)?.slug)
     .filter((slug): slug is RoleSlug => Boolean(slug));
 
-  redirect(next && next.startsWith("/portal") ? next : primaryPortalPath(roles));
+  redirect(next && isSafeReturnPath(next) ? next : primaryPortalPath(roles));
 }
 
 export async function signOutAction() {

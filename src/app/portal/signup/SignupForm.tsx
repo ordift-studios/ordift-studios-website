@@ -14,7 +14,7 @@ const initialState: SignupState = { error: null };
 // renders nothing, so onVerify never fires), with no error shown.
 const turnstileRequired = Boolean(process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY);
 
-export default function SignupForm() {
+export default function SignupForm({ next }: { next: string }) {
   const [state, formAction, pending] = useActionState(signUpAction, initialState);
   // Turnstile still relies on Cloudflare's implicit hidden-field
   // injection for the actual server-side check (see
@@ -34,6 +34,7 @@ export default function SignupForm() {
 
   return (
     <form action={formAction} className="space-y-5 max-w-sm">
+      <input type="hidden" name="next" value={next} />
       {state.error && (
         <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3">
           <p className="font-sans text-body-small text-red-700">{state.error}</p>

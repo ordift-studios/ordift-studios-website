@@ -3,7 +3,6 @@
 import { useEffect } from "react";
 import * as Sentry from "@sentry/nextjs";
 import Link from "next/link";
-import NavBar from "@/components/NavBar";
 import Footer from "@/components/Footer";
 import Button from "@/components/Button";
 import Logo from "@/components/Logo";
@@ -29,7 +28,20 @@ export default function Error({
 
   return (
     <main>
-      <NavBar />
+      {/* A minimal, static header — not the full NavBar. An error
+          boundary must stay a Client Component (Next.js requirement),
+          and NavBar is a Server Component that reads cookies (session)
+          and fetches CMS content — neither is safe or appropriate to
+          pull into client-bundled code, and both are exactly the kind
+          of thing that might be failing when this page renders at
+          all. */}
+      <nav className="bg-ordift-navy-950 px-4 sm:px-8 py-5">
+        <div className="max-w-6xl mx-auto">
+          <Link href="/" aria-label="Ordift Studios home">
+            <Logo variant="nav" color="white" height={28} />
+          </Link>
+        </div>
+      </nav>
 
       <section className="relative overflow-hidden bg-ordift-navy-950 text-white px-4 sm:px-8 py-24 sm:py-32">
         <div
