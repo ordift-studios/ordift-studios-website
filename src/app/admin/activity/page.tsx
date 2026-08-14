@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { getRecentActivity } from "@/lib/admin/activityLog";
+import { getCurrentUser, hasRole, isSuperAdmin } from "@/lib/portal/roles";
 
 export const metadata: Metadata = {
   title: "Activity — Ordift Studios Admin",
@@ -31,7 +32,8 @@ function formatDateTime(iso: string): string {
 const ACTIVITY_PAGE_LIMIT = 100;
 
 export default async function AdminActivityPage() {
-  const activity = await getRecentActivity(ACTIVITY_PAGE_LIMIT);
+  const [activity, user] = await Promise.all([getRecentActivity(ACTIVITY_PAGE_LIMIT), getCurrentUser()]);
+  const isAdminTier = hasRole(user, "admin") || isSuperAdmin(user);
 
   return (
     <div>
@@ -45,6 +47,11 @@ export default async function AdminActivityPage() {
         <p className="font-sans text-body-small text-ordift-ink-muted mt-2">
           Last {activity.length} action{activity.length === 1 ? "" : "s"} across the Admin Platform.
         </p>
+        {!isAdminTier && (
+          <p className="font-sans text-caption text-ordift-ink-muted mt-1">
+            Financial and access-management events are only shown to Admin and Super Admin accounts.
+          </p>
+        )}
       </div>
 
       {activity.length === 0 ? (
