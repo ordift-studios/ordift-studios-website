@@ -1,0 +1,180 @@
+# Production Readiness Checklist — Final Go-Live Reference
+
+**Established:** 2026-08-14, Task #286, closing the readiness/task register sequence (#280–#286).
+**Purpose:** a single authoritative go-live checklist, built strictly from the repository's current verified state — not a re-investigation. Every claim below traces to `PRODUCTION_READINESS_RECONCILIATION.md` (the evidentiary record), `PAYSTACK_PRODUCTION_HANDOVER.md`, and `TECHNICAL_DEBT_REGISTER.md`. Where this document and those disagree, the more recent, more specific source wins — this document does not introduce any new fact those didn't already establish.
+**What this is not:** an implementation pass. No Production code, environment variable, Supabase project, Vercel configuration, Paystack Live setting, DNS record, or other live infrastructure was touched producing this document. Nothing here is pre-authorized by virtue of appearing on this list — every `[YOU]`-marked or Production-facing step still requires your explicit go-ahead at the moment it's actually performed.
+**Current stopping point: Paystack Live Mode KYC — Awaiting Review** (submitted 2026-08-13, ~7-day window per Paystack's own dashboard). Nothing engineering-side is waiting on anything else to reach full go-live.
+
+---
+
+## 1. Already completed and verified
+
+**Engineering / platform (all subsystems, staging-verified):**
+- CI pipeline, automated test suite (unit + integration), production observability design — all live and green.
+- Security re-review (Workstream I) — all high/medium findings fixed, including a real bank-transfer ownership/amount vulnerability found and fixed before it ever reached Production.
+- Disaster recovery re-stress-tested; scalability assessed, no near-term risk at current/projected volume.
+- TD-030 (file-upload content-sniffing) and TD-033 (bank-transfer `activity_log` gap) — both resolved and regression-tested, Task #285.
+- Paystack webhook fail-closed bug (unhandled exception → leaking 500 instead of documented 401) — found and fixed, Task #284.
+- Full site-wide link crawl + console-error sweep clean (Task #283); API endpoint sanity sweep clean (Task #284).
+
+**Payments module (real Paystack test-mode transactions, not synthetic):**
+- Card payment end-to-end: checkout → hosted page → webhook → `payments.status = completed` → entity `amount_paid` synced.
+- Mobile Money end-to-end: `PAY-2026-000007`, confirmed via direct DB query, receipt rendered, enquiry reached full-paid status.
+- Webhook signature verification against a real Paystack-originated event (`signature_valid: true`).
+- Idempotency: exactly one `payment_webhook_events` row per real event.
+- Amount/currency validation, confirmed present and unchanged.
+- Bank-transfer proof-upload + staff approve/reject, tested via a real authenticated HTTP session (not equivalent DB operations) — both the client submission and staff decision paths, and the authorization boundary (client session denied `/admin/payments`).
+- A real concurrent-request idempotency/duplicate-checkout test.
+
+**Production infrastructure (already live, confirmed independently, no action needed):**
+- Migrations `0023` → `0024` → `0025` → `0027` all promoted to Production (2026-08-12), independently re-verified read-only via `supabase migration list` — `local`/`remote` matched, nothing else pending. (`0026` was already live; `0022` is baseline.)
+- `payments`, `bank_accounts`, `currencies`, `exchange_rates`, `payment_country_config`, `payment_webhook_events` tables, their RLS, and the private `payment-proofs` Storage bucket are all live in Production (currently empty — no real bank-transfer proof has been submitted against Production yet).
+- Supabase Free→Pro upgrade executed; automated backups active.
+- Fresh Production database backup taken post-migration (`ordift-production-20260812-185016.dump`, 34 tables verified) and a Storage backup script run (0 objects — correctly expected, bucket has no real data yet).
+- A full restore rehearsal performed (local Docker, byte-identical Postgres version to Production) — table counts, row counts, and referential integrity all confirmed correct.
+- Production Sentry configured and verified (2026-08-12) — a real deliberately-triggered error confirmed arriving in the dashboard tagged `environment: production`; TD-032 (client-side environment mistagging) fixed in the same pass. **(TD-003 corrected in the register this session to reflect this — see the closure package below.)**
+- Production custom domain (`ordiftstudios.com`) connected and live; Vercel Deployment Protection confirmed OFF (no bypass mechanism needed for the Production webhook).
+- `FORMS_SENDING_ENABLED` confirmed very likely already `true` in Production (documentary evidence, §4 of the reconciliation doc) — the Supabase Pro-upgrade trigger this implies has already been acted on.
+
+---
+
+## 2. Items completable now, without any Production change
+
+None outstanding. Every remaining item is either genuinely blocked on Paystack's KYC decision, requires a Production-facing action, or is optional/deferred debt (§7 below) with no engineering work pending against it.
+
+---
+
+## 3. Blocked specifically by Paystack Live KYC approval
+
+**Everything below this line cannot proceed until Paystack's decision arrives** — submitted 2026-08-13, dashboard states "Awaiting Review," ~7-day estimated window. No downstream action is authorized on the assumption of approval.
+
+- Retrieving the Live secret key and any other Live-mode key.
+- Adding Live keys to Vercel Production.
+- Registering Production's Live-mode webhook URL.
+- Confirming which channels are actually enabled on the Live merchant account.
+- Entering the real GHS exchange rate in Production (technically independent of KYC, but sequenced here — see §4, it's the one item that *could* move earlier if you choose).
+- Deciding who performs the first real payment, and at what amount.
+- Giving go-live authorization.
+- The `staging` → `main` merge and Production deploy.
+
+---
+
+## 4. Manual actions requiring you specifically
+
+- Confirm Paystack's Live Mode decision when it arrives (approved / more info requested / declined).
+- Retrieve the Live secret key (`sk_live_...`) and any other Live-mode key from Paystack's dashboard — enter it directly into Vercel yourself, or hand it over via the same hidden-prompt/env-var pattern already used for every other Production secret this engagement (never pasted into chat).
+- Register Production's webhook URL under Paystack's **Live Mode** settings.
+- Confirm enabled Live payment channels.
+- Decide who performs the first real Production payment, and at what amount.
+- Give explicit go-live authorization before any Live key is used for a real transaction.
+- Approve the `staging` → `main` merge/Production deploy at the time it's actually performed.
+- **Independent of Paystack, still outstanding:** the restore-into-a-scratch-project rehearsal using a real Supabase Cloud project (the local-Docker rehearsal already done proved the backup file itself and internal data consistency; it didn't exercise Supabase-Cloud-specific concerns — RLS enforcement, PostgREST-generated endpoints, exact grant parity). Not urgent given the local rehearsal's results, but listed here since it requires the database password.
+
+---
+
+## 5. Engineering actions — only after Live credentials become available
+
+- Add `PAYSTACK_SECRET_KEY` (Live) + any other Live key to Vercel Production, once you've retrieved it and given the go-ahead.
+- Enter the real GHS exchange rate in Production via `/admin/payments/exchange-rates`, once migrations-land + go-ahead (migrations are already live; this is just gated behind your go-ahead to touch Production config).
+- After the first real transaction: verify webhook receipt, signature validation, payment-status update, balance sync, and idempotency exactly as done on staging (full procedure in §9 below).
+- Once Production has real payment traffic: verify Sentry catches a real payment-specific webhook error with its own distinct tag/context (`PAYMENT_SECURITY_REVIEW.md` §19) — general Production Sentry is already verified; this narrower case is not yet separately confirmed.
+
+---
+
+## 6. Final Production actions — require your explicit go-live authorization
+
+1. Add Live Paystack keys to Vercel Production.
+2. Register the Live webhook URL.
+3. Enter the real GHS exchange rate in Production.
+4. Merge `staging` → `main`, deploy to Production — the single event that brings migrations, Sentry, disaster recovery, the deep-pass audit fixes, and Tasks #283–#285 to real users. Nothing before this step touches Production traffic.
+5. Execute the first real Production payment, at the amount and by the person you decide.
+
+None of these five are performed by this document, and none are implied to be pre-authorized by appearing here.
+
+---
+
+## 7. Optional/deferred — do not block launch
+
+- **TD-004** — CSP is Report-Only on staging (fully validated, zero violations found); the only remaining step is the enforcement decision (Report-Only → enforcing), pending your explicit approval. Not a hard blocker.
+- **TD-013** — no uptime/synthetic monitoring for the public site yet. Recommended, not blocking.
+- **TD-006** — non-reachable npm audit findings (transitive deps, no live exploitation path). Monitored, not blocking.
+- **TD-007, TD-009, TD-010, TD-011, TD-012, TD-014, TD-015, TD-020, TD-022, TD-026, TD-028, TD-029, TD-031, TD-035** — see `TECHNICAL_DEBT_REGISTER.md` for each; all explicitly classified Open/accepted/not-scheduled, none rise to a launch blocker.
+- **Refund action** — not built (Phase 2 scope was approve/reject only). Future phase.
+- **Reconciliation CSV export** — not built (Phase 4 scope). Future phase.
+- **Scheduled pending-payment reconciliation job** — explicitly assessed as a UX rough edge, not a financial-integrity risk (stuck `pending` rows never affect `amount_paid` or receipts); deferred to the first 1–2 weeks post-launch.
+- **Automated `PAYMENT_TEST_PLAN.md` suite** (2 of ~15 proposed files exist) — recommended before/shortly after launch; manual staging verification already covers the same ground, not a hard blocker.
+- Post-launch: reassess `npm audit` (TD-006), review Redis rate-limit thresholds after real traffic, secret-rotation cadence (TD-014).
+
+---
+
+## 8. Paystack go-live chain — dependency order preserved
+
+```
+[CURRENT STOPPING POINT]
+Paystack Live Mode KYC — Awaiting Review  (submitted 2026-08-13, ~7-day window)
+        │
+        ▼
+1. [YOU] Confirm KYC outcome
+        │
+        ▼
+2. [YOU] Retrieve Live secret key (+ any other Live key)
+        │
+        ▼
+3. [YOU authorizes → ENGINEERING configures] Add Live key(s) to Vercel Production
+        │
+        ▼
+4. [YOU, external] Register Production's Live-mode webhook URL in Paystack's dashboard
+        │
+        ▼
+5. [YOU] Confirm which channels are actually enabled on the Live merchant account
+        │
+        ▼
+6. [YOU authorizes → ENGINEERING executes] Enter the real GHS exchange rate in Production
+        │
+        ▼
+7. [YOU] Decide who performs the first real payment, and at what amount
+        │
+        ▼
+8. [YOU] Give explicit go-live authorization
+        │
+        ▼
+9. [YOU approves → ENGINEERING executes] Merge staging → main, deploy to Production
+        │
+        ▼
+10. First real Production transaction (see §9 below for the controlled checklist)
+```
+
+Nothing in this chain skips ahead of the KYC decision. Steps 2–9 are listed in the same order established in `PRODUCTION_READINESS_RECONCILIATION.md` §15.
+
+---
+
+## 9. First-live-transaction checklist (reference only — nothing here is executed by this document)
+
+To be worked through, in order, once Section 6's authorizations are given. Each numbered item should be independently confirmed before moving to the next — do not batch-verify at the end.
+
+1. **Live credential installation** — `PAYSTACK_SECRET_KEY` (Live) and any public/inline key present in Vercel Production only, confirmed by name/scope via `vercel env ls production` (values never read, printed, or exposed — same discipline already used for Sentry's Production setup).
+2. **Production webhook registration** — Live-mode webhook URL (`https://ordiftstudios.com/api/payments/webhook/paystack`) confirmed registered in Paystack's dashboard, distinct from staging's Test-mode registration.
+3. **Enabled Live payment-channel confirmation** — confirm in Paystack's dashboard which of Card / Mobile Money / Bank Transfer / Apple Pay are actually live on the merchant account, since Test Mode may show channels Live doesn't have yet.
+4. **Production GHS exchange-rate configuration** — a real rate entered via `/admin/payments/exchange-rates`, confirmed present (table starts empty).
+5. **`staging` → `main` merge/deployment** — merge executed, Vercel Production deployment confirmed `● Ready`, correctly aliased to `ordiftstudios.com`, responding `200`.
+6. **First real transaction** — a single, deliberately small, real payment initiated by the person and at the amount decided in §6 item 5.
+7. **Webhook receipt and signature validation** — confirm the Live webhook actually fires, and `verifyWebhookSignature()` returns valid against the real Live-mode payload (HMAC-SHA512, same mechanism already proven on staging's Test Mode).
+8. **Payment-status update** — confirm the `payments` row transitions to `completed` (or the correct terminal state for the method used).
+9. **Balance/accounting synchronization** — confirm the entity's `amount_paid` reflects the transaction correctly.
+10. **Idempotency verification** — confirm exactly one `payment_webhook_events` row exists for the event (guards against a duplicate webhook delivery being double-processed).
+11. **Production Sentry / payment-specific monitoring** — confirm no unexpected error was captured for this transaction, and separately confirm (if not already done) that a deliberately-triggered payment-webhook error is caught with its own distinct tag/context, closing the one narrower monitoring gap noted in §5.
+12. **Immediate rollback/stop conditions** — if any of steps 6–11 shows unexpected behavior:
+    - **Do not attempt a second real transaction** until the discrepancy is understood.
+    - **Do not run any Supabase migration-history-modifying command** (`migration repair`, `db reset`) — this project's absolute standing rule.
+    - Capture the exact error/observed state (webhook payload, Sentry event, `payments` row state) for read-only diagnosis, the same discipline used for every prior incident this engagement (the Sentry masking incident, the migration-history scare).
+    - If a webhook signature fails to validate or a payment amount doesn't match the locked checkout amount, the route already fails closed by design (rejects, doesn't silently accept) — confirm the rejection happened rather than assuming it did.
+    - If the discrepancy is financial (amount mismatch, missing sync), stop and do not process further real transactions until root-caused — this is a "stop and bring back for diagnosis" event, not something to patch live against real money.
+    - Nothing about a failed first transaction requires touching migration history, RLS policies, or any schema — the payments schema is additive-only and unaffected by a single bad transaction; the fix, if needed, is application-code or configuration, diagnosed the same read-only way every other issue this engagement has been.
+
+---
+
+## 10. Verdict
+
+**CONDITIONAL GO — unchanged from `PRODUCTION_READINESS_RECONCILIATION.md` §12.** Every engineering subsystem is staging-verified, including a real security vulnerability found and fixed before it ever reached Production. The sole live blocker is Paystack's own external KYC review. No open engineering defect blocks go-live; every remaining item is either external, a manual credential/decision action reserved for you, or explicitly optional/deferred debt with no bearing on launch safety.
+
+**Exact next action once Paystack approves Live Mode:** confirm the outcome with engineering, then begin §8's chain at step 2 (retrieve the Live secret key) — nothing engineering-side needs to happen before that confirmation arrives.
