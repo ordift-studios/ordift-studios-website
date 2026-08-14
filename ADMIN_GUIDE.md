@@ -57,7 +57,7 @@ Reserved for a very small set of high-risk actions — day-to-day operations sho
 ## 3. Admin Capabilities
 
 Everything else — the actual day-to-day work:
-- Invite new collaborators/contractors, staff, vendors, models, or clients.
+- Invite new collaborators/contractors, staff, vendors, or models via **Invite a Collaborator**; invite an existing client to the portal (who already has a booking/enquiry on file but no account yet) via the separate **Invite Existing Client to Portal** panel — see the correction in §5 (this line previously, incorrectly, implied clients were invited from the same panel as internal roles; they never have been and can't be — the code enforces this).
 - Grant or revoke any role *except* `admin`/`super_admin`.
 - Suspend, deactivate, reactivate, or set an access-expiry date for any non-Super-Admin account.
 - Assign a collaborator/contractor to a project, and update their assignment status.
@@ -72,13 +72,23 @@ Everything else — the actual day-to-day work:
 - **Client** — the default customer-facing role. Everyone starts here.
 - **Workshop Participant** — auto-granted the moment a workshop registration email matches an account; not something you assign manually.
 
+**Correction (2026-08-14):** this section previously stated clients could be invited from the same collaborator panel as internal roles. They never could — `inviteCollaboratorAction`'s own code comment and the panel's own on-screen copy both say *"Never grants Client access"* — `client` isn't in the set of roles that action can grant, by construction. Corrected below.
+
+**A guest enquiry/booking is the "account not yet created" state for a client — not a gap.** Before someone signs up (or is invited, see below), their business record already exists as a normal `enquiries`/`workshop_registrations` row with no `user_id` — submitted through the public Book/Contact form, no account required. There is no separate "CRM client record" table, and none is planned at this stage: the guest record itself *is* the pre-account client state. The moment that person creates an account (self-signup with a matching email, or accepts an admin's portal invite), `linkGuestRecordsToAccount()` (`src/lib/supabase/accountLinking.ts`) sweeps their existing guest records onto the new account automatically, on first login/signup — nothing has to be manually reassigned.
+
 ## 5. Inviting New Users
 
-From **Admin → Users & Roles**, use the **Invite Collaborator** panel:
+Two separate panels, both on **Admin → Users & Roles**, deliberately not merged into one:
+
+**Invite a Collaborator** — for internal/privileged roles only (staff, contractor, vendor, model, and — Super Admin only — admin/super_admin). `client` is not, and cannot be, selected here.
 1. Enter the person's name, email, and the role you want them to start with.
 2. Submitting sends a real Supabase Auth invite email (delivered via Resend, see §8) to that address, with a link to **`/portal/reset-password`** — clicking it establishes a one-time session from the invite token and lets them set their own password immediately (2026-07-28: previously redirected to the plain sign-in form instead, a dead end — see the incident note below). Nothing about the account is usable via email+password until they've done this.
 3. Accepting the invite creates their account with **exactly the role you specified** — no default `client` role is added on top, and no other role leaks in.
 4. The invite action is written to the audit log (`activity_log`) as `collaborator.invited`, with the target role and email in the metadata — this is your record of who invited whom, and with what access.
+
+**Invite Existing Client to Portal** — for a client who already has a booking/enquiry on file (per the guest-record note above) and needs portal access, without asking them to sign up separately. Just a name and email — no role field exists in this form at all; it can only ever grant `client`. Uses the exact same secure invite mechanism as above (real Supabase Auth invite email, `/portal/reset-password` to set a password — never a plaintext password generated or stored). Logged as `client.invited_to_portal`. Their existing guest enquiries/bookings link to the new account automatically the first time they log in, same as any self-signup.
+
+Clients can also always create their own account directly — **Create account** on the main site, or `/portal/signup` — which is still the primary, expected path for most clients; the admin-invite panel above is for the specific case where staff already have the relationship and want to extend portal access proactively.
 
 **A note on invite validation:** Resend/Supabase Auth reject sending to an address on a "reserved" test TLD (e.g. `.test`). Always invite to a real, deliverable address — use the QA convention in §9.3 for test invites.
 

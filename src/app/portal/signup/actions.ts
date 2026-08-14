@@ -8,6 +8,7 @@ import { assignClassificationBySlug } from "@/lib/portal/memberNumbers";
 import { linkGuestRecordsToAccount } from "@/lib/supabase/accountLinking";
 import { siteUrl } from "@/lib/shared/env";
 import { checkRateLimit, getClientIp } from "@/lib/shared/rateLimit";
+import { isSafeReturnPath, primaryPortalPath } from "@/lib/portal/roles";
 
 export type SignupState = { error: string | null };
 
@@ -22,6 +23,8 @@ export async function signUpAction(_prev: SignupState, formData: FormData): Prom
   const email = String(formData.get("email") ?? "").trim();
   const password = String(formData.get("password") ?? "");
   const fullName = String(formData.get("fullName") ?? "").trim();
+  const rawNext = String(formData.get("next") ?? "");
+  const next = rawNext && isSafeReturnPath(rawNext) ? rawNext : "";
 
   if (!email || !password || !fullName) {
     return { error: "Fill in your name, email, and password." };
@@ -53,7 +56,7 @@ export async function signUpAction(_prev: SignupState, formData: FormData): Prom
       // without this, Supabase falls back entirely to the project's
       // own dashboard "Site URL" setting, which defaults to
       // http://localhost:3000 until manually changed (2026-08-07).
-      emailRedirectTo: `${siteUrl()}/portal/login`,
+      emailRedirectTo: `${siteUrl()}/portal/login${next ? `?next=${encodeURIComponent(next)}` : ""}`,
     },
   });
   if (error || !data.user) {
@@ -79,7 +82,7 @@ export async function signUpAction(_prev: SignupState, formData: FormData): Prom
   await assignClassificationBySlug(data.user.id, "client");
 
   if (!data.session) {
-    redirect("/portal/login?confirmEmail=1");
+    redirect(`/portal/login?confirmEmail=1${next ? `&next=${encodeURIComponent(next)}` : ""}`);
   }
 
   // Only reached when email confirmation is off and a session exists
@@ -88,5 +91,5 @@ export async function signUpAction(_prev: SignupState, formData: FormData): Prom
   // path ever gets a real session.
   await linkGuestRecordsToAccount(data.user.id, email);
 
-  redirect("/portal/client");
+  redirect(next || primaryPortalPath(["client"]));
 }

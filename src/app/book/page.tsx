@@ -1,10 +1,12 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import NavBar from "@/components/NavBar";
 import Footer from "@/components/Footer";
 import BookingForm from "./BookingForm";
 import { contentRepository } from "@/lib/content";
 import { whatsAppLink, formattedWhatsAppNumber } from "@/lib/whatsapp";
 import { visitorFormsOpen } from "@/lib/shared/env";
+import { getCurrentUser } from "@/lib/portal/roles";
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://ordiftstudios.com";
 
@@ -27,9 +29,10 @@ export default async function BookPage({
 }: {
   searchParams: Promise<{ service?: string }>;
 }) {
-  const [{ service }, siteSettings] = await Promise.all([
+  const [{ service }, siteSettings, user] = await Promise.all([
     searchParams,
     contentRepository.getSiteSettings(),
+    getCurrentUser(),
   ]);
 
   return (
@@ -49,7 +52,27 @@ export default async function BookPage({
 
       <section className="bg-white px-4 sm:px-8 py-14 sm:py-20">
         {visitorFormsOpen() ? (
-          <BookingForm initialService={service} />
+          <>
+            {!user && (
+              <div className="max-w-2xl mx-auto mb-10 rounded-xl border border-black/10 bg-ordift-offwhite px-5 py-4 sm:px-6 sm:py-5">
+                <p className="font-sans text-body-small text-ordift-ink">
+                  Already have an account?{" "}
+                  <Link href="/portal/login?next=/book" className="text-ordift-gold-pressed underline underline-offset-4 font-medium">
+                    Log in
+                  </Link>
+                  <span className="text-ordift-ink-muted"> — or </span>
+                  <Link href="/portal/signup?next=/book" className="text-ordift-gold-pressed underline underline-offset-4 font-medium">
+                    create an account
+                  </Link>{" "}
+                  <span className="text-ordift-ink-muted">to manage your bookings, projects, payments and receipts.</span>
+                </p>
+                <p className="font-sans text-caption text-ordift-ink-muted mt-2">
+                  No account needed — you can also continue as a guest using the form below.
+                </p>
+              </div>
+            )}
+            <BookingForm initialService={service} />
+          </>
         ) : (
           <div className="max-w-2xl mx-auto text-center">
             <p className="font-serif font-medium text-card-title text-ordift-ink mb-3">

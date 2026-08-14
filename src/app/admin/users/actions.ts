@@ -24,7 +24,7 @@ import {
 } from "@/lib/admin/projectAssignments";
 import { getActivityForEntity, type ActivityLogEntry } from "@/lib/admin/activityLog";
 import { siteUrl } from "@/lib/shared/env";
-import { assignClassification } from "@/lib/portal/memberNumbers";
+import { assignClassification, assignClassificationBySlug } from "@/lib/portal/memberNumbers";
 
 // ============================================================
 // Read-only data fetchers — thin server-action wrappers so the client
@@ -439,6 +439,80 @@ export async function inviteCollaboratorAction(formData: FormData): Promise<{ er
       role,
       memberNumber: classificationResult.ok ? classificationResult.formattedNumber : null,
     },
+  });
+
+  revalidatePath("/admin/users");
+  return {};
+}
+
+// ============================================================
+// Invite an existing client to the portal — the intentional counterpart
+// to inviteCollaboratorAction() above, and to public self-signup
+// (src/app/portal/signup/actions.ts). Use case: a client's business
+// record already exists as a guest enquiry/booking (submitted before
+// they had an account — the architecture's normal pre-account state,
+// not a gap to fix), and staff want to give that same person portal
+// access without asking them to sign up separately.
+//
+// Deliberately narrower than inviteCollaboratorAction(): no role
+// parameter exists anywhere in this function's signature or the form
+// that calls it — "client" is the only role this code path can ever
+// grant, the same hardcoded guarantee public signup already relies on
+// (see signUpAction's own doc comment). There is no way to pass a
+// different role through this action, by construction, not by a
+// runtime check that could be bypassed.
+//
+// Reuses the exact same secure mechanism as staff/collaborator invites
+// (admin.auth.admin.inviteUserByEmail() + the /portal/reset-password
+// set-a-password flow) — no plaintext password is ever generated,
+// handled, or stored. Supabase's own invite API rejects an email that
+// already has an account, so this can't create a duplicate identity —
+// the existing error path below surfaces that the same way it already
+// does for inviteCollaboratorAction().
+//
+// On first login, the resulting account picks up its existing guest
+// enquiries/bookings automatically via linkGuestRecordsToAccount()
+// (src/app/portal/login/actions.ts) — the same linking every self-signup
+// client already goes through. No separate linking step is needed here.
+export async function inviteClientToPortalAction(formData: FormData): Promise<{ error?: string }> {
+  const currentUser = await requireAdmin();
+
+  const email = String(formData.get("email") ?? "").trim();
+  const fullName = String(formData.get("fullName") ?? "").trim();
+
+  if (!email || !fullName) {
+    return { error: "Fill in the client's name and email." };
+  }
+
+  const admin = createAdminClient();
+  const { data: invited, error: inviteError } = await admin.auth.admin.inviteUserByEmail(email, {
+    data: { full_name: fullName },
+    redirectTo: `${siteUrl()}/portal/reset-password`,
+  });
+  if (inviteError || !invited.user) {
+    console.error("[admin] client invite failed", inviteError?.message);
+    return { error: inviteError?.message ?? "Couldn't send the invite." };
+  }
+
+  const { data: clientRoleRow } = await admin.from("roles").select("id").eq("slug", "client").single();
+  if (clientRoleRow) {
+    await admin
+      .from("user_roles")
+      .upsert({ user_id: invited.user.id, role_id: clientRoleRow.id }, { onConflict: "user_id,role_id", ignoreDuplicates: true });
+  }
+
+  // Every client account — self-signed-up or admin-invited — gets the
+  // same fixed "client" classification, matching signUpAction()'s
+  // behavior exactly (never blocks the invite on failure, same posture
+  // as every classification assignment in this codebase).
+  await assignClassificationBySlug(invited.user.id, "client");
+
+  await logActivity({
+    actorUserId: currentUser.id,
+    action: "client.invited_to_portal",
+    entityType: "user",
+    entityId: invited.user.id,
+    metadata: { email },
   });
 
   revalidatePath("/admin/users");

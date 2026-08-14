@@ -17,9 +17,11 @@ const turnstileRequired = Boolean(process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY);
 export default function LoginForm({
   next,
   passwordReset,
+  confirmEmail,
 }: {
   next: string;
   passwordReset?: boolean;
+  confirmEmail?: boolean;
 }) {
   const [state, formAction, pending] = useActionState(signInAction, initialState);
   // Same submit-gating fix as SignupForm.tsx — see that file's comment.
@@ -47,6 +49,14 @@ export default function LoginForm({
         <div className="rounded-lg border border-black/10 bg-ordift-offwhite px-4 py-3">
           <p className="font-sans text-body-small text-ordift-ink">
             Your password has been updated. Sign in with your new password.
+          </p>
+        </div>
+      )}
+
+      {confirmEmail && !state.error && (
+        <div className="rounded-lg border border-black/10 bg-ordift-offwhite px-4 py-3">
+          <p className="font-sans text-body-small text-ordift-ink">
+            Account created. Check your email to confirm your address before signing in.
           </p>
         </div>
       )}

@@ -11,9 +11,9 @@ export const metadata: Metadata = {
 export default async function PortalLoginPage({
   searchParams,
 }: {
-  searchParams: Promise<{ next?: string; passwordReset?: string }>;
+  searchParams: Promise<{ next?: string; passwordReset?: string; confirmEmail?: string }>;
 }) {
-  const { next, passwordReset } = await searchParams;
+  const { next, passwordReset, confirmEmail } = await searchParams;
 
   return (
     <main>
@@ -29,7 +29,7 @@ export default async function PortalLoginPage({
         </div>
       </section>
       <section className="bg-white px-4 sm:px-8 py-14 sm:py-20">
-        <LoginForm next={next ?? ""} passwordReset={passwordReset === "1"} />
+        <LoginForm next={next ?? ""} passwordReset={passwordReset === "1"} confirmEmail={confirmEmail === "1"} />
       </section>
       <Footer />
     </main>

@@ -122,3 +122,12 @@ export function primaryPortalPath(roles: RoleSlug[]): string {
   if (roles.includes("workshop_participant")) return "/portal/workshops";
   return "/portal/client";
 }
+
+// Shared open-redirect guard for the login and signup actions' `next`
+// param (e.g. returning a visitor to /book after they authenticate from
+// the Book a Service page). Only ever an internal, relative path — never
+// an absolute/external URL — is honored; anything else falls back to
+// primaryPortalPath() at the call site.
+export function isSafeReturnPath(path: string): boolean {
+  return path.startsWith("/portal") || path === "/book";
+}

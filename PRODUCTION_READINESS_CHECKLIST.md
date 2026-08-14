@@ -39,6 +39,7 @@
 - Production Sentry configured and verified (2026-08-12) — a real deliberately-triggered error confirmed arriving in the dashboard tagged `environment: production`; TD-032 (client-side environment mistagging) fixed in the same pass. **(TD-003 corrected in the register this session to reflect this — see the closure package below.)**
 - Production custom domain (`ordiftstudios.com`) connected and live; Vercel Deployment Protection confirmed OFF (no bypass mechanism needed for the Production webhook).
 - `FORMS_SENDING_ENABLED` confirmed very likely already `true` in Production (documentary evidence, §4 of the reconciliation doc) — the Supabase Pro-upgrade trigger this implies has already been acted on.
+- **(2026-08-14, pre-Step-G correction)** Admin Payments dashboard's hardcoded "Sandbox / test mode — no live gateway credentials connected" banner — leftover Phase 2 copy, inaccurate since Live Paystack credentials were added — replaced with an `isStaging()`-derived message (the same non-secret `SITE_ENV` signal already used for Sentry tagging/holding-page gating elsewhere), never inferring from the Paystack secret key. `staging` → `main` (`6fbb1bd`), deployed and read-only verified (no new runtime errors, `/admin/payments` and `/admin/payments/exchange-rates` both responding normally, webhook still reachable and fails closed).
 
 ---
 
