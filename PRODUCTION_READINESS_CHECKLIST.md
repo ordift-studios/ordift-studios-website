@@ -3,7 +3,9 @@
 **Established:** 2026-08-14, Task #286, closing the readiness/task register sequence (#280–#286).
 **Purpose:** a single authoritative go-live checklist, built strictly from the repository's current verified state — not a re-investigation. Every claim below traces to `PRODUCTION_READINESS_RECONCILIATION.md` (the evidentiary record), `PAYSTACK_PRODUCTION_HANDOVER.md`, and `TECHNICAL_DEBT_REGISTER.md`. Where this document and those disagree, the more recent, more specific source wins — this document does not introduce any new fact those didn't already establish.
 **What this is not:** an implementation pass. No Production code, environment variable, Supabase project, Vercel configuration, Paystack Live setting, DNS record, or other live infrastructure was touched producing this document. Nothing here is pre-authorized by virtue of appearing on this list — every `[YOU]`-marked or Production-facing step still requires your explicit go-ahead at the moment it's actually performed.
-**Current stopping point: Step G — first real Production transaction, awaiting your explicit authorization.** (Superseded 2026-08-14 — see correction notes below. Original text retained for history: ~~Paystack Live Mode KYC — Awaiting Review (submitted 2026-08-13, ~7-day window per Paystack's own dashboard). Nothing engineering-side is waiting on anything else to reach full go-live.~~)
+**Current stopping point: none — the full Paystack go-live chain, including Step G (first real Production transaction), is complete.** (Superseded 2026-08-14 — see correction notes below. Original text retained for history: ~~Paystack Live Mode KYC — Awaiting Review (submitted 2026-08-13, ~7-day window per Paystack's own dashboard). Nothing engineering-side is waiting on anything else to reach full go-live.~~)
+
+**Correction (2026-08-14, Step G):** the first real Production payment ($1.00 USD, Card) was completed successfully by the Super Admin through the real public signup → email confirmation → login → Payments flow. Read-only verification (Production runtime logs + application code guarantees, no direct database query — see §9's full record) found no discrepancy. See §9 and §10 for the complete verification record and the manual confirmations still recommended (non-blocking).
 
 **Correction (2026-08-14):** KYC was approved and the go-live chain has progressed through §8 steps 1–5 since this document was written. Live secret key added to Vercel Production only (independently re-verified present via `vercel env ls production`, name/scope only); Live-mode webhook registered; Live payment channels confirmed active (Card, Mobile Money, Apple Pay, Bank Transfer, GHS default). §3, §4, and §8 below are corrected accordingly — see their own dated notes.
 
@@ -141,11 +143,11 @@ None of these five are performed by this document, and none are implied to be pr
                                                                  read-only post-entry verification passed)
         │
         ▼
-[CURRENT STOPPING POINT]
 7. [YOU] Decide who performs the first real payment, and at what amount
+   .............................................................. DONE ($1.00 USD, Super Admin, Card)
         │
         ▼
-8. [YOU] Give explicit go-live authorization
+8. [YOU] Give explicit go-live authorization ..................... DONE (2026-08-14)
         │
         ▼
 9. [YOU approves → ENGINEERING executes] Merge staging → main, deploy to Production
@@ -154,29 +156,36 @@ None of these five are performed by this document, and none are implied to be pr
                                                                      of `main` from the prior merge)
         │
         ▼
+[CURRENT STOPPING POINT]
 10. First real Production transaction (see §9 below for the controlled checklist)
+    .............................................................. DONE — Step G complete, 2026-08-14.
+                                                                     See §9's own completion note below.
 ```
 
-**Correction (2026-08-14):** steps 1–5 are complete; step 9 (the merge/deploy) also already happened, driven by TD-035 rather than by this chain specifically, but Payments code has been on `main`/Production since the prior authorized deployment either way. The chain now stops at step 6. Steps 2–9 were listed in the order established in `PRODUCTION_READINESS_RECONCILIATION.md` §15; that order is otherwise unchanged.
+**Correction (2026-08-14):** steps 1–9 are all complete. Step 10 (the first real Production transaction) is also complete — see §9 below for the full read-only verification record. Steps 2–9 were listed in the order established in `PRODUCTION_READINESS_RECONCILIATION.md` §15; that order is otherwise unchanged.
 
 ---
 
-## 9. First-live-transaction checklist (reference only — nothing here is executed by this document)
+## 9. First-live-transaction checklist — COMPLETE (2026-08-14)
 
-To be worked through, in order, once Section 6's authorizations are given. Each numbered item should be independently confirmed before moving to the next — do not batch-verify at the end.
+**Executed and verified.** $1.00 USD, Card, via the public self-signup → email confirmation → login → Client Portal → Payments → checkout path (the same path built and deployed in the account-flow redesign immediately prior). Payment record `01af6ad0-62b7-400d-950f-342bc2da3d21`, entity `enquiry/7d6aeb4d-dc83-4c99-956d-df58b7d8dd91`.
 
-1. **Live credential installation** — `PAYSTACK_SECRET_KEY` (Live) and any public/inline key present in Vercel Production only, confirmed by name/scope via `vercel env ls production` (values never read, printed, or exposed — same discipline already used for Sentry's Production setup).
-2. **Production webhook registration** — Live-mode webhook URL (`https://ordiftstudios.com/api/payments/webhook/paystack`) confirmed registered in Paystack's dashboard, distinct from staging's Test-mode registration.
-3. **Enabled Live payment-channel confirmation** — confirm in Paystack's dashboard which of Card / Mobile Money / Bank Transfer / Apple Pay are actually live on the merchant account, since Test Mode may show channels Live doesn't have yet.
-4. **Production GHS exchange-rate configuration** — a real rate entered via `/admin/payments/exchange-rates`, confirmed present (table starts empty).
-5. **`staging` → `main` merge/deployment** — merge executed, Vercel Production deployment confirmed `● Ready`, correctly aliased to `ordiftstudios.com`, responding `200`.
-6. **First real transaction** — a single, deliberately small, real payment initiated by the person and at the amount decided in §6 item 5.
-7. **Webhook receipt and signature validation** — confirm the Live webhook actually fires, and `verifyWebhookSignature()` returns valid against the real Live-mode payload (HMAC-SHA512, same mechanism already proven on staging's Test Mode).
-8. **Payment-status update** — confirm the `payments` row transitions to `completed` (or the correct terminal state for the method used).
-9. **Balance/accounting synchronization** — confirm the entity's `amount_paid` reflects the transaction correctly.
-10. **Idempotency verification** — confirm exactly one `payment_webhook_events` row exists for the event (guards against a duplicate webhook delivery being double-processed).
-11. **Production Sentry / payment-specific monitoring** — confirm no unexpected error was captured for this transaction, and separately confirm (if not already done) that a deliberately-triggered payment-webhook error is caught with its own distinct tag/context, closing the one narrower monitoring gap noted in §5.
-12. **Immediate rollback/stop conditions** — if any of steps 6–11 shows unexpected behavior:
+**Verification method, disclosed plainly:** no Production database credential is used or held in this engagement for direct row queries. Verification below combines (a) Production runtime log evidence (the actual HTTP request trail — checkout POST, webhook POST, subsequent status/receipt page loads), (b) the application code's own guarantees (e.g. the receipt page structurally cannot render for a non-`completed` payment, `applyGatewayEventToPayment()` unconditionally runs the balance-sync/activity-log/receipt-email steps on the completed branch), and (c) your own direct observation completing the flow. Items requiring your own Admin Platform or Paystack Dashboard view are marked accordingly — this document does not claim to have independently queried Production data it has no credentialed access to.
+
+Each numbered item below, as verified:
+
+1. **Live credential installation** — DONE, verified earlier in the go-live chain (`PAYSTACK_SECRET_KEY`, Production scope only, name/scope confirmed via `vercel env ls production`).
+2. **Production webhook registration** — DONE, verified earlier in the go-live chain.
+3. **Enabled Live payment-channel confirmation** — DONE, verified earlier (Card, Mobile Money, Apple Pay, Bank Transfer all active).
+4. **Production GHS exchange-rate configuration** — DONE, Step F (`rate_to_usd = 11.0898`).
+5. **`staging` → `main` merge/deployment** — DONE, multiple deployments since, most recently `main @ ff2b266` for the account-flow redesign, confirmed `● Ready`.
+6. **First real transaction** — DONE. $1.00 USD via Card, initiated by the Super Admin through the real public signup/login/Payments flow. Production runtime logs show the complete request trail: `POST .../payments/checkout` at 14:10:37, `POST /api/payments/webhook/paystack` at 14:13:33 (exactly one occurrence in the captured log window — no duplicate), followed by the client's browser loading the payment status page and then the receipt page twice more (14:13–14:14).
+7. **Webhook receipt and signature validation** — **Confirmed indirectly, with the limitation stated plainly:** the webhook route returned no error (all log lines at `info` level, not `error`), and processing continued through to a state where the receipt page rendered — which the application code only permits for `payment.status === "completed"`. A signature failure would return `401` and halt processing entirely, which is not what the log trail shows. Row-level `signature_valid` was not independently queried against the database.
+8. **Payment-status update** — **Confirmed via the same reasoning**: the receipt page (`/payments/{id}/receipt`) redirects back to the status page unless `payment.status === "completed"` — the log trail shows the user's browser successfully loading and reloading that exact receipt URL, which is only possible if the status had already resolved to `completed`.
+9. **Balance/accounting synchronization** — `syncEntityPaymentStatus()` runs unconditionally inside the same code branch that sets `status: "completed"` — not independently queried, but not a separate code path that could have been skipped either. **MANUAL CONFIRMATION RECOMMENDED**: check the entity's balance in Admin → Enquiries/Bookings.
+10. **Idempotency verification** — **Confirmed via logs**: exactly one `POST /api/payments/webhook/paystack` appears in the captured Production log window for this transaction; no second webhook delivery or duplicate payment ID appears anywhere in the trail.
+11. **Production Sentry / payment-specific monitoring** — No error-level log lines were observed in the runtime log capture. **MANUAL CONFIRMATION REQUIRED** — this document has no Sentry dashboard query access; please confirm no unexpected event was captured for this transaction.
+12. **Immediate rollback/stop conditions** — not triggered; nothing here was needed. Retained for reference:
     - **Do not attempt a second real transaction** until the discrepancy is understood.
     - **Do not run any Supabase migration-history-modifying command** (`migration repair`, `db reset`) — this project's absolute standing rule.
     - Capture the exact error/observed state (webhook payload, Sentry event, `payments` row state) for read-only diagnosis, the same discipline used for every prior incident this engagement (the Sentry masking incident, the migration-history scare).
@@ -190,4 +199,4 @@ To be worked through, in order, once Section 6's authorizations are given. Each 
 
 **CONDITIONAL GO — unchanged from `PRODUCTION_READINESS_RECONCILIATION.md` §12.** Every engineering subsystem is staging-verified, including a real security vulnerability found and fixed before it ever reached Production. No open engineering defect blocks go-live; every remaining item is either a manual credential/decision action reserved for you, or explicitly optional/deferred debt with no bearing on launch safety.
 
-**Correction (2026-08-14):** KYC approval and §8 steps 1–6 are complete (see corrected §3/§4/§8 above), including the GHS exchange-rate entry (`11.0898`), read-only post-entry verified. **Exact next action now:** §8 steps 7–8 — you decide who performs the first real Production transaction and at what amount, then give explicit go-live authorization, before Step G (the controlled first-transaction checklist, §9) begins.
+**Correction (2026-08-14):** the entire §8 go-live chain is complete, including Step G — the first real Production payment ($1.00 USD, Card), verified read-only in §9 above. Manual confirmations still recommended from you (not blocking, no discrepancy found): the Admin Payments dashboard entry, `/admin/activity`'s `payment.completed` event, the Paystack Dashboard's own transaction/settlement record, and a Sentry dashboard glance. **Next step:** none of the remaining Production-readiness items (TD-013 uptime monitoring, the deferred CSP-enforcement decision, etc.) are launch-blocking — the platform has now processed one real, successfully verified Production payment end-to-end. Public launch (lifting the holding page) remains its own separate, explicit approval, per the standing sequence.
