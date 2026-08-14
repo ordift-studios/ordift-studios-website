@@ -5,6 +5,7 @@ import { getCurrentUser } from "@/lib/portal/roles";
 import { canAccessPaymentsAdmin, PAYMENT_CAPABILITIES } from "@/lib/payments/paymentPermissions";
 import { hasCapability } from "@/lib/workflow/engine";
 import { createClient } from "@/lib/supabase/server";
+import { isStaging } from "@/lib/shared/env";
 import { approveBankTransferAction, rejectBankTransferAction } from "./actions";
 
 export const metadata: Metadata = {
@@ -54,7 +55,9 @@ export default async function AdminPaymentsPage() {
             Payments
           </h1>
           <p className="font-sans text-body-small text-ordift-ink-muted mt-2">
-            Sandbox / test mode — no live gateway credentials connected.
+            {isStaging()
+              ? "Staging — Paystack Test Mode. No real charges are made here."
+              : "Production — Paystack Live Mode."}
           </p>
         </div>
         {canManageCurrencies && (
