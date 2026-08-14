@@ -3,7 +3,9 @@
 **Established:** 2026-08-14, Task #286, closing the readiness/task register sequence (#280–#286).
 **Purpose:** a single authoritative go-live checklist, built strictly from the repository's current verified state — not a re-investigation. Every claim below traces to `PRODUCTION_READINESS_RECONCILIATION.md` (the evidentiary record), `PAYSTACK_PRODUCTION_HANDOVER.md`, and `TECHNICAL_DEBT_REGISTER.md`. Where this document and those disagree, the more recent, more specific source wins — this document does not introduce any new fact those didn't already establish.
 **What this is not:** an implementation pass. No Production code, environment variable, Supabase project, Vercel configuration, Paystack Live setting, DNS record, or other live infrastructure was touched producing this document. Nothing here is pre-authorized by virtue of appearing on this list — every `[YOU]`-marked or Production-facing step still requires your explicit go-ahead at the moment it's actually performed.
-**Current stopping point: Paystack Live Mode KYC — Awaiting Review** (submitted 2026-08-13, ~7-day window per Paystack's own dashboard). Nothing engineering-side is waiting on anything else to reach full go-live.
+**Current stopping point: Step F — GHS exchange-rate entry, awaiting your explicit rate approval.** (Superseded 2026-08-14 — see correction note below. Original text retained for history: ~~Paystack Live Mode KYC — Awaiting Review (submitted 2026-08-13, ~7-day window per Paystack's own dashboard). Nothing engineering-side is waiting on anything else to reach full go-live.~~)
+
+**Correction (2026-08-14):** KYC was approved and the go-live chain has progressed through §8 steps 1–5 since this document was written. Live secret key added to Vercel Production only (independently re-verified present via `vercel env ls production`, name/scope only); Live-mode webhook registered; Live payment channels confirmed active (Card, Mobile Money, Apple Pay, Bank Transfer, GHS default). §3, §4, and §8 below are corrected accordingly — see their own dated notes. Nothing engineering-side blocks the remaining chain; the sole outstanding item is your rate approval for §8 step 6.
 
 ---
 
@@ -46,26 +48,26 @@ None outstanding. Every remaining item is either genuinely blocked on Paystack's
 
 ## 3. Blocked specifically by Paystack Live KYC approval
 
-**Everything below this line cannot proceed until Paystack's decision arrives** — submitted 2026-08-13, dashboard states "Awaiting Review," ~7-day estimated window. No downstream action is authorized on the assumption of approval.
+**Correction (2026-08-14):** KYC was approved. The four items below are now **done**, not blocked — retained here with their outcome for history instead of being silently deleted. Only the last three items remain genuinely pending.
 
-- Retrieving the Live secret key and any other Live-mode key.
-- Adding Live keys to Vercel Production.
-- Registering Production's Live-mode webhook URL.
-- Confirming which channels are actually enabled on the Live merchant account.
-- Entering the real GHS exchange rate in Production (technically independent of KYC, but sequenced here — see §4, it's the one item that *could* move earlier if you choose).
-- Deciding who performs the first real payment, and at what amount.
-- Giving go-live authorization.
-- The `staging` → `main` merge and Production deploy.
+- ~~Retrieving the Live secret key and any other Live-mode key.~~ **Done** — retrieved by you (2026-08-14).
+- ~~Adding Live keys to Vercel Production.~~ **Done** — `PAYSTACK_SECRET_KEY` added, Production scope only; independently re-verified present via `vercel env ls production` (name/scope only, value never read).
+- ~~Registering Production's Live-mode webhook URL.~~ **Done** — registered in Paystack's Live Mode settings.
+- ~~Confirming which channels are actually enabled on the Live merchant account.~~ **Done** — Card, Mobile Money, Apple Pay, Bank Transfer all active; GHS default currency confirmed (screenshot-verified 2026-08-14).
+- Entering the real GHS exchange rate in Production — **still pending**, currently in preparation (Step F), gated on your rate approval.
+- Deciding who performs the first real payment, and at what amount — still pending.
+- Giving go-live authorization — still pending.
+- The `staging` → `main` merge and Production deploy — **done independently of this chain**, on 2026-08-14, to ship TD-035 (unrelated fix). Payments code was part of that same merge (it was already on `main` as of the prior authorized deployment), so this item is effectively satisfied, though it wasn't performed *for* the Paystack chain specifically.
 
 ---
 
 ## 4. Manual actions requiring you specifically
 
-- Confirm Paystack's Live Mode decision when it arrives (approved / more info requested / declined).
-- Retrieve the Live secret key (`sk_live_...`) and any other Live-mode key from Paystack's dashboard — enter it directly into Vercel yourself, or hand it over via the same hidden-prompt/env-var pattern already used for every other Production secret this engagement (never pasted into chat).
-- Register Production's webhook URL under Paystack's **Live Mode** settings.
-- Confirm enabled Live payment channels.
-- Decide who performs the first real Production payment, and at what amount.
+- ~~Confirm Paystack's Live Mode decision when it arrives.~~ **Done (2026-08-14)** — approved.
+- ~~Retrieve the Live secret key... enter it directly into Vercel yourself.~~ **Done (2026-08-14)** — added to Vercel Production only.
+- ~~Register Production's webhook URL under Paystack's Live Mode settings.~~ **Done (2026-08-14).**
+- ~~Confirm enabled Live payment channels.~~ **Done (2026-08-14)** — Card, Mobile Money, Apple Pay, Bank Transfer, GHS default.
+- Decide who performs the first real Production payment, and at what amount — still pending.
 - Give explicit go-live authorization before any Live key is used for a real transaction.
 - Approve the `staging` → `main` merge/Production deploy at the time it's actually performed.
 - **Independent of Paystack, still outstanding:** the restore-into-a-scratch-project rehearsal using a real Supabase Cloud project (the local-Docker rehearsal already done proved the backup file itself and internal data consistency; it didn't exercise Supabase-Cloud-specific concerns — RLS enforcement, PostgREST-generated endpoints, exact grant parity). Not urgent given the local rehearsal's results, but listed here since it requires the database password.
@@ -110,26 +112,31 @@ None of these five are performed by this document, and none are implied to be pr
 ## 8. Paystack go-live chain — dependency order preserved
 
 ```
+1. [YOU] Confirm KYC outcome ................................ DONE (approved, 2026-08-14)
+        │
+        ▼
+2. [YOU] Retrieve Live secret key (+ any other Live key) ..... DONE
+        │
+        ▼
+3. [YOU authorizes → ENGINEERING configures]
+   Add Live key(s) to Vercel Production ...................... DONE (Production scope only,
+                                                                 independently re-verified)
+        │
+        ▼
+4. [YOU, external] Register Production's Live-mode
+   webhook URL in Paystack's dashboard ....................... DONE
+        │
+        ▼
+5. [YOU] Confirm which channels are actually enabled
+   on the Live merchant account .............................. DONE (Card, Mobile Money,
+                                                                 Apple Pay, Bank Transfer; GHS default)
+        │
+        ▼
 [CURRENT STOPPING POINT]
-Paystack Live Mode KYC — Awaiting Review  (submitted 2026-08-13, ~7-day window)
-        │
-        ▼
-1. [YOU] Confirm KYC outcome
-        │
-        ▼
-2. [YOU] Retrieve Live secret key (+ any other Live key)
-        │
-        ▼
-3. [YOU authorizes → ENGINEERING configures] Add Live key(s) to Vercel Production
-        │
-        ▼
-4. [YOU, external] Register Production's Live-mode webhook URL in Paystack's dashboard
-        │
-        ▼
-5. [YOU] Confirm which channels are actually enabled on the Live merchant account
-        │
-        ▼
-6. [YOU authorizes → ENGINEERING executes] Enter the real GHS exchange rate in Production
+6. [YOU authorizes → ENGINEERING executes]
+   Enter the real GHS exchange rate in Production ............ PENDING — in preparation
+                                                                 (fresh BoG rate check underway,
+                                                                 awaiting your approval of the figure)
         │
         ▼
 7. [YOU] Decide who performs the first real payment, and at what amount
@@ -139,12 +146,15 @@ Paystack Live Mode KYC — Awaiting Review  (submitted 2026-08-13, ~7-day window
         │
         ▼
 9. [YOU approves → ENGINEERING executes] Merge staging → main, deploy to Production
+   .............................................................. DONE (2026-08-14, for TD-035;
+                                                                     Payments code was already part
+                                                                     of `main` from the prior merge)
         │
         ▼
 10. First real Production transaction (see §9 below for the controlled checklist)
 ```
 
-Nothing in this chain skips ahead of the KYC decision. Steps 2–9 are listed in the same order established in `PRODUCTION_READINESS_RECONCILIATION.md` §15.
+**Correction (2026-08-14):** steps 1–5 are complete; step 9 (the merge/deploy) also already happened, driven by TD-035 rather than by this chain specifically, but Payments code has been on `main`/Production since the prior authorized deployment either way. The chain now stops at step 6. Steps 2–9 were listed in the order established in `PRODUCTION_READINESS_RECONCILIATION.md` §15; that order is otherwise unchanged.
 
 ---
 
@@ -175,6 +185,6 @@ To be worked through, in order, once Section 6's authorizations are given. Each 
 
 ## 10. Verdict
 
-**CONDITIONAL GO — unchanged from `PRODUCTION_READINESS_RECONCILIATION.md` §12.** Every engineering subsystem is staging-verified, including a real security vulnerability found and fixed before it ever reached Production. The sole live blocker is Paystack's own external KYC review. No open engineering defect blocks go-live; every remaining item is either external, a manual credential/decision action reserved for you, or explicitly optional/deferred debt with no bearing on launch safety.
+**CONDITIONAL GO — unchanged from `PRODUCTION_READINESS_RECONCILIATION.md` §12.** Every engineering subsystem is staging-verified, including a real security vulnerability found and fixed before it ever reached Production. No open engineering defect blocks go-live; every remaining item is either a manual credential/decision action reserved for you, or explicitly optional/deferred debt with no bearing on launch safety.
 
-**Exact next action once Paystack approves Live Mode:** confirm the outcome with engineering, then begin §8's chain at step 2 (retrieve the Live secret key) — nothing engineering-side needs to happen before that confirmation arrives.
+**Correction (2026-08-14):** KYC approval and §8 steps 1–5 are complete (see corrected §3/§4/§8 above). **Exact next action now:** you approve the GHS `rate_to_usd` figure (prepared separately), then §8 step 6 (rate entry) is performed through the Admin Platform UI by you directly, for audit-actor-attribution reasons — not by an engineering-side script.
