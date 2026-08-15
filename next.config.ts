@@ -14,14 +14,15 @@ const SECURITY_HEADERS = [
   { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=()" },
 ];
 
-// TD-004, staging-only CSP (see PRODUCTION_READINESS_RECONCILIATION.md
-// §16.4). Deliberately not nonce-based — that would force every page
-// onto dynamic rendering, which is a separate, bigger decision than
-// "add a CSP." Ran in Report-Only mode first (2026-08-13) with zero
+// TD-004 CSP (see PRODUCTION_READINESS_RECONCILIATION.md §16.4).
+// Deliberately not nonce-based — that would force every page onto
+// dynamic rendering, which is a separate, bigger decision than "add a
+// CSP." Ran in Report-Only mode first (2026-08-13) with zero
 // violations found across every route/embed/auth flow; promoted to
-// enforcing mode on staging only (2026-08-15) after that full
-// validation pass. Still gated to SITE_ENV=staging below — Production
-// is a separate build and never evaluates this function at all.
+// enforcing mode on staging (2026-08-15), then extended to Production
+// (2026-08-16) after that same validation. Gated to SITE_ENV in
+// {"staging", "production"} below — any other value (e.g. local dev)
+// keeps the prior no-CSP behavior.
 function originOf(url: string | undefined): string | null {
   if (!url) return null;
   try {
@@ -44,11 +45,11 @@ const SANITY_MEDIA_ORIGIN = "https://cdn.sanity.io";
 // Report-Only violation on /studio; /studio-only, not needed elsewhere.
 const SANITY_BRIDGE_ORIGIN = "https://core.sanity-cdn.com";
 
-function stagingCsp(): { main: string; studio: string } | null {
-  // Enforcing mode is staging-only — Production gets a completely
-  // separate build with SITE_ENV=production, so this never applies
-  // there regardless of what happens on this branch.
-  if (process.env.SITE_ENV !== "staging") return null;
+function enforcingCsp(): { main: string; studio: string } | null {
+  // Enforcing mode applies to both staging and Production builds.
+  // Anything else (local dev, a future third SITE_ENV value) falls
+  // through to the SECURITY_HEADERS-only behavior below, unchanged.
+  if (process.env.SITE_ENV !== "staging" && process.env.SITE_ENV !== "production") return null;
 
   // Built from the actual per-environment config, not hardcoded —
   // staging and Production have distinct Supabase projects and Sentry
@@ -123,7 +124,7 @@ function stagingCsp(): { main: string; studio: string } | null {
 
 const nextConfig: NextConfig = {
   async headers() {
-    const csp = stagingCsp();
+    const csp = enforcingCsp();
     const mainHeaders = csp
       ? [...SECURITY_HEADERS, { key: "Content-Security-Policy", value: csp.main }]
       : SECURITY_HEADERS;
