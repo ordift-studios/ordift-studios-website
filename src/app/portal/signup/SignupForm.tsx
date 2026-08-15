@@ -88,6 +88,12 @@ export default function SignupForm({ next }: { next: string }) {
         onExpire={() => setTurnstileToken("")}
       />
 
+      {turnstileRequired && !turnstileToken && (
+        <p className="font-sans text-caption text-ordift-ink-muted">
+          Complete the verification above to continue.
+        </p>
+      )}
+
       <Button
         type="submit"
         variant="primary"

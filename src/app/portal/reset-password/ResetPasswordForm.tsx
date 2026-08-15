@@ -6,17 +6,13 @@ import { useRouter } from "next/navigation";
 import Button from "@/components/Button";
 import { createClient } from "@/lib/supabase/client";
 
-// This project's Supabase Auth email templates use the implicit
-// recovery flow — the emailed link redirects here with the session
-// tokens in the URL *fragment* (`#access_token=...&type=recovery`),
-// never in a query string. A fragment is never sent to the server, so
-// there is no server-side equivalent of this check.
-//
-// createBrowserClient (@supabase/ssr) does not auto-parse an implicit-
-// flow hash the way the plain supabase-js client's detectSessionInUrl
-// does — confirmed by testing: getSession() came back empty with the
-// hash still sitting untouched in the URL. So the fragment is parsed
-// manually here and handed to setSession() explicitly.
+// createBrowserClient (@supabase/ssr) defaults to the PKCE flow, so the
+// live recovery link redirects here with a `?code=...` query parameter,
+// redeemed via exchangeCodeForSession(). The legacy implicit-flow shape
+// (`#access_token=...&refresh_token=...` in the URL *fragment*, never
+// sent to the server) is kept as a fallback for compatibility rather
+// than assumed — confirmed via code audit (2026-08-15) that this
+// project's Supabase clients never override the default flowType.
 type Status = "checking" | "ready" | "invalid";
 
 export default function ResetPasswordForm() {
@@ -27,6 +23,17 @@ export default function ResetPasswordForm() {
 
   useEffect(() => {
     async function establishSession(): Promise<Status> {
+      const supabase = createClient();
+
+      const code = new URLSearchParams(window.location.search).get("code");
+      if (code) {
+        const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
+        // Clear the code out of the URL now that it's been redeemed —
+        // no reason to leave it sitting in history.
+        window.history.replaceState(null, "", window.location.pathname);
+        return exchangeError ? "invalid" : "ready";
+      }
+
       const hash = new URLSearchParams(window.location.hash.slice(1));
       const accessToken = hash.get("access_token");
       const refreshToken = hash.get("refresh_token");
@@ -35,7 +42,6 @@ export default function ResetPasswordForm() {
         return "invalid";
       }
 
-      const supabase = createClient();
       const { error: sessionError } = await supabase.auth.setSession({
         access_token: accessToken,
         refresh_token: refreshToken,

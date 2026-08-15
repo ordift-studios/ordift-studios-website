@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
+import { Suspense } from "react";
 import { Fraunces, Inter } from "next/font/google";
 import { contentRepository } from "@/lib/content";
+import NavigationProgressBar from "@/components/NavigationProgressBar";
 import "./globals.css";
 
 // Approved 2026-07-23 (Plan/Brand Bible section 28): display/heading font.
@@ -88,6 +90,9 @@ export default async function RootLayout({
       className={`${fraunces.variable} ${inter.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col font-sans">
+        <Suspense fallback={null}>
+          <NavigationProgressBar />
+        </Suspense>
         <script
           type="application/ld+json"
           dangerouslySetInnerHTML={{ __html: JSON.stringify(organizationJsonLd) }}

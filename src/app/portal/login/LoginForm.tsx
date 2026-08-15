@@ -107,6 +107,12 @@ export default function LoginForm({
         onExpire={() => setTurnstileToken("")}
       />
 
+      {turnstileRequired && !turnstileToken && (
+        <p className="font-sans text-caption text-ordift-ink-muted">
+          Complete the verification above to continue.
+        </p>
+      )}
+
       <Button
         type="submit"
         variant="primary"
