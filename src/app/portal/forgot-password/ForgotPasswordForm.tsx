@@ -15,15 +15,28 @@ const initialState: ForgotPasswordState = { status: "idle", error: null, email: 
 // diagnostic block: this one observes the *origin* side (immediately
 // after resetPasswordForEmail() resolves) instead of the callback
 // side. Only presence of the verifier cookie is checked (substring
-// match on the cookie name), never its value — never logs or displays
-// any token, verifier, session, or API key.
+// match on the cookie name), never its value. The Supabase error
+// object's name/code/status/message are auth-js's own short, static,
+// non-secret classification strings (e.g. "captcha_failed") — never a
+// token, verifier, authorization code, session, or API key. The
+// Supabase project hostname is derived from NEXT_PUBLIC_SUPABASE_URL,
+// which is already public in the client bundle to any visitor
+// regardless of this diagnostic.
 type OriginDiagnostic = {
   requestExecuted: boolean;
   resetResult: "success" | "error";
+  errorName: string | null;
+  errorCode: string | null;
+  errorStatus: number | null;
+  errorMessage: string | null;
+  captchaTokenSupplied: boolean;
+  redirectToHostname: string;
+  redirectToPath: string;
+  supabaseProjectHostname: string;
   hostname: string;
   storageMechanism: string;
   verifierPresentImmediately: boolean;
-  verifierPresentAfterDelay: boolean | null;
+  verifierPresentAfterDelay: boolean;
 };
 
 // Mirrors BookingForm.tsx/RegistrationForm.tsx's gate — without this,
@@ -59,32 +72,54 @@ export default function ForgotPasswordForm() {
     handledState.current = state;
 
     const hasVerifierCookie = () => document.cookie.includes("-code-verifier=");
+    const redirectTo = `${siteUrl()}/portal/reset-password`;
+    const supabaseProjectHostname = (() => {
+      try {
+        return new URL(process.env.NEXT_PUBLIC_SUPABASE_URL ?? "").hostname;
+      } catch {
+        return "(unresolvable)";
+      }
+    })();
 
     setRequesting(true);
     createClient()
-      .auth.resetPasswordForEmail(state.email, {
-        redirectTo: `${siteUrl()}/portal/reset-password`,
-      })
+      .auth.resetPasswordForEmail(state.email, { redirectTo })
       // Same no-information-leak principle as before: the generic
       // "submitted" result shows regardless of whether Supabase's own
       // call succeeded, so neither branch is distinguishable to a
       // visitor probing for registered emails.
-      .then(({ error: resetError }) => {
+      .then(async ({ error: resetError }) => {
         const verifierPresentImmediately = hasVerifierCookie();
+        // Await the re-check in-line (rather than a detached
+        // setTimeout) so the diagnostic box only ever renders once
+        // both values are fully resolved — never stuck on "checking".
+        await new Promise((resolve) => setTimeout(resolve, 2000));
+        const verifierPresentAfterDelay = hasVerifierCookie();
+        let redirectToHostname = "(unresolvable)";
+        let redirectToPath = "(unresolvable)";
+        try {
+          const parsed = new URL(redirectTo);
+          redirectToHostname = parsed.hostname;
+          redirectToPath = parsed.pathname;
+        } catch {
+          // leave as unresolvable
+        }
         setOriginDiagnostic({
           requestExecuted: true,
           resetResult: resetError ? "error" : "success",
+          errorName: resetError?.name ?? null,
+          errorCode: resetError?.code ?? null,
+          errorStatus: resetError?.status ?? null,
+          errorMessage: resetError?.message ?? null,
+          captchaTokenSupplied: false, // this call passes no options.captchaToken
+          redirectToHostname,
+          redirectToPath,
+          supabaseProjectHostname,
           hostname: window.location.hostname,
           storageMechanism: "document.cookie (createBrowserClient default)",
           verifierPresentImmediately,
-          verifierPresentAfterDelay: null,
+          verifierPresentAfterDelay,
         });
-        // Re-check shortly after, on the same page, to catch a
-        // write-then-immediately-cleared scenario the first check
-        // alone couldn't distinguish from "never written".
-        setTimeout(() => {
-          setOriginDiagnostic((prev) => (prev ? { ...prev, verifierPresentAfterDelay: hasVerifierCookie() } : prev));
-        }, 2000);
       })
       .finally(() => {
         setRequesting(false);
@@ -112,7 +147,27 @@ export default function ForgotPasswordForm() {
             <p className="font-sans text-caption text-amber-900">
               Supabase reset result: {originDiagnostic.resetResult}
             </p>
-            <p className="font-sans text-caption text-amber-900">hostname: {originDiagnostic.hostname}</p>
+            {originDiagnostic.resetResult === "error" && (
+              <>
+                <p className="font-sans text-caption text-amber-900">error name: {originDiagnostic.errorName}</p>
+                <p className="font-sans text-caption text-amber-900">error code: {originDiagnostic.errorCode ?? "(none)"}</p>
+                <p className="font-sans text-caption text-amber-900">
+                  error status: {originDiagnostic.errorStatus ?? "(none)"}
+                </p>
+                <p className="font-sans text-caption text-amber-900">error message: {originDiagnostic.errorMessage}</p>
+              </>
+            )}
+            <p className="font-sans text-caption text-amber-900">
+              captcha token supplied to Supabase: {String(originDiagnostic.captchaTokenSupplied)}
+            </p>
+            <p className="font-sans text-caption text-amber-900">
+              redirectTo: {originDiagnostic.redirectToHostname}
+              {originDiagnostic.redirectToPath}
+            </p>
+            <p className="font-sans text-caption text-amber-900">
+              Supabase project hostname: {originDiagnostic.supabaseProjectHostname}
+            </p>
+            <p className="font-sans text-caption text-amber-900">page hostname: {originDiagnostic.hostname}</p>
             <p className="font-sans text-caption text-amber-900">
               storage mechanism: {originDiagnostic.storageMechanism}
             </p>
@@ -120,10 +175,7 @@ export default function ForgotPasswordForm() {
               verifier present immediately after request: {String(originDiagnostic.verifierPresentImmediately)}
             </p>
             <p className="font-sans text-caption text-amber-900">
-              verifier present ~2s later (same page):{" "}
-              {originDiagnostic.verifierPresentAfterDelay === null
-                ? "checking…"
-                : String(originDiagnostic.verifierPresentAfterDelay)}
+              verifier present ~2s later (same page): {String(originDiagnostic.verifierPresentAfterDelay)}
             </p>
           </div>
         )}
