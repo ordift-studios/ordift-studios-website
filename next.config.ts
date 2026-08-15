@@ -14,14 +14,14 @@ const SECURITY_HEADERS = [
   { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=()" },
 ];
 
-// TD-004, staging-only Report-Only rollout (see
-// PRODUCTION_READINESS_RECONCILIATION.md §16.4). Deliberately not
-// nonce-based — that would force every page onto dynamic rendering,
-// which is a separate, bigger decision than "add a CSP" — and
-// deliberately not enforcing yet. Report-Only never blocks a resource,
-// so this can safely include /studio even though Sanity Studio's own
-// styled-components runtime is expected to violate style-src; that's
-// data to observe, not a breakage risk, while in Report-Only mode.
+// TD-004, staging-only CSP (see PRODUCTION_READINESS_RECONCILIATION.md
+// §16.4). Deliberately not nonce-based — that would force every page
+// onto dynamic rendering, which is a separate, bigger decision than
+// "add a CSP." Ran in Report-Only mode first (2026-08-13) with zero
+// violations found across every route/embed/auth flow; promoted to
+// enforcing mode on staging only (2026-08-15) after that full
+// validation pass. Still gated to SITE_ENV=staging below — Production
+// is a separate build and never evaluates this function at all.
 function originOf(url: string | undefined): string | null {
   if (!url) return null;
   try {
@@ -44,10 +44,10 @@ const SANITY_MEDIA_ORIGIN = "https://cdn.sanity.io";
 // Report-Only violation on /studio; /studio-only, not needed elsewhere.
 const SANITY_BRIDGE_ORIGIN = "https://core.sanity-cdn.com";
 
-function reportOnlyCsp(): { main: string; studio: string } | null {
-  // Report-Only is staging-only for this first pass — Production gets
-  // a completely separate build with SITE_ENV=production, so this
-  // never applies there regardless of what happens on this branch.
+function stagingCsp(): { main: string; studio: string } | null {
+  // Enforcing mode is staging-only — Production gets a completely
+  // separate build with SITE_ENV=production, so this never applies
+  // there regardless of what happens on this branch.
   if (process.env.SITE_ENV !== "staging") return null;
 
   // Built from the actual per-environment config, not hardcoded —
@@ -123,12 +123,12 @@ function reportOnlyCsp(): { main: string; studio: string } | null {
 
 const nextConfig: NextConfig = {
   async headers() {
-    const csp = reportOnlyCsp();
+    const csp = stagingCsp();
     const mainHeaders = csp
-      ? [...SECURITY_HEADERS, { key: "Content-Security-Policy-Report-Only", value: csp.main }]
+      ? [...SECURITY_HEADERS, { key: "Content-Security-Policy", value: csp.main }]
       : SECURITY_HEADERS;
     const studioHeaders = csp
-      ? [...SECURITY_HEADERS, { key: "Content-Security-Policy-Report-Only", value: csp.studio }]
+      ? [...SECURITY_HEADERS, { key: "Content-Security-Policy", value: csp.studio }]
       : SECURITY_HEADERS;
     return [
       { source: "/((?!studio).*)", headers: mainHeaders },
