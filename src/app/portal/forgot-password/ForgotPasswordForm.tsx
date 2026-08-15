@@ -10,6 +10,22 @@ import { validatePasswordResetRequestAction, type ForgotPasswordState } from "./
 
 const initialState: ForgotPasswordState = { status: "idle", error: null, email: null };
 
+// TEMPORARY DIAGNOSTIC (2026-08-15) — remove once the PKCE recovery
+// investigation is closed. Companion to ResetPasswordForm.tsx's
+// diagnostic block: this one observes the *origin* side (immediately
+// after resetPasswordForEmail() resolves) instead of the callback
+// side. Only presence of the verifier cookie is checked (substring
+// match on the cookie name), never its value — never logs or displays
+// any token, verifier, session, or API key.
+type OriginDiagnostic = {
+  requestExecuted: boolean;
+  resetResult: "success" | "error";
+  hostname: string;
+  storageMechanism: string;
+  verifierPresentImmediately: boolean;
+  verifierPresentAfterDelay: boolean | null;
+};
+
 // Mirrors BookingForm.tsx/RegistrationForm.tsx's gate — without this,
 // the submit button stays permanently disabled in any environment
 // where NEXT_PUBLIC_TURNSTILE_SITE_KEY is unset (TurnstileWidget
@@ -25,6 +41,7 @@ export default function ForgotPasswordForm() {
   const [prevState, setPrevState] = useState(state);
   const [requesting, setRequesting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
+  const [originDiagnostic, setOriginDiagnostic] = useState<OriginDiagnostic | null>(null);
   // Guards against re-firing the Supabase call if this same "validated"
   // state object is seen again across re-renders (React effect
   // semantics, not a real second submission — `state` is otherwise
@@ -41,6 +58,8 @@ export default function ForgotPasswordForm() {
     if (handledState.current === state) return;
     handledState.current = state;
 
+    const hasVerifierCookie = () => document.cookie.includes("-code-verifier=");
+
     setRequesting(true);
     createClient()
       .auth.resetPasswordForEmail(state.email, {
@@ -50,6 +69,23 @@ export default function ForgotPasswordForm() {
       // "submitted" result shows regardless of whether Supabase's own
       // call succeeded, so neither branch is distinguishable to a
       // visitor probing for registered emails.
+      .then(({ error: resetError }) => {
+        const verifierPresentImmediately = hasVerifierCookie();
+        setOriginDiagnostic({
+          requestExecuted: true,
+          resetResult: resetError ? "error" : "success",
+          hostname: window.location.hostname,
+          storageMechanism: "document.cookie (createBrowserClient default)",
+          verifierPresentImmediately,
+          verifierPresentAfterDelay: null,
+        });
+        // Re-check shortly after, on the same page, to catch a
+        // write-then-immediately-cleared scenario the first check
+        // alone couldn't distinguish from "never written".
+        setTimeout(() => {
+          setOriginDiagnostic((prev) => (prev ? { ...prev, verifierPresentAfterDelay: hasVerifierCookie() } : prev));
+        }, 2000);
+      })
       .finally(() => {
         setRequesting(false);
         setSubmitted(true);
@@ -65,6 +101,32 @@ export default function ForgotPasswordForm() {
             password. Check your inbox (and spam folder).
           </p>
         </div>
+        {originDiagnostic && (
+          <div className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 space-y-1">
+            <p className="font-sans text-caption font-semibold text-amber-900">
+              Temporary diagnostic (staging investigation only)
+            </p>
+            <p className="font-sans text-caption text-amber-900">
+              reset request executed: {String(originDiagnostic.requestExecuted)}
+            </p>
+            <p className="font-sans text-caption text-amber-900">
+              Supabase reset result: {originDiagnostic.resetResult}
+            </p>
+            <p className="font-sans text-caption text-amber-900">hostname: {originDiagnostic.hostname}</p>
+            <p className="font-sans text-caption text-amber-900">
+              storage mechanism: {originDiagnostic.storageMechanism}
+            </p>
+            <p className="font-sans text-caption text-amber-900">
+              verifier present immediately after request: {String(originDiagnostic.verifierPresentImmediately)}
+            </p>
+            <p className="font-sans text-caption text-amber-900">
+              verifier present ~2s later (same page):{" "}
+              {originDiagnostic.verifierPresentAfterDelay === null
+                ? "checking…"
+                : String(originDiagnostic.verifierPresentAfterDelay)}
+            </p>
+          </div>
+        )}
         <Link
           href="/portal/login"
           className="font-sans text-body-small text-ordift-gold-pressed underline underline-offset-4"
