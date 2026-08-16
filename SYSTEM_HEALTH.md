@@ -19,7 +19,7 @@
 | Deployment health (staging) | 🟢 Green | 2026-08-10 | Migration 0027 + Workstream I fixes deployed and verified this session |
 | Deployment health (production) | 🟡 Behind staging | 2026-07-30 | `PAYSTACK_PRODUCTION_HANDOVER.md` §2 — see "Deployment & migration state" below |
 | Error monitoring | 🟢 Green (with one known gap) | 2026-08-10 | `OPERATIONS_MANUAL.md` §6.1 — Sentry verified end-to-end on staging |
-| Uptime/synthetic monitoring | 🔴 Not built | 2026-07-30 | TD-013, still open — no external ping of the live site exists |
+| Uptime/synthetic monitoring | 🟡 Endpoint live, monitor not configured | 2026-08-16 | TD-013 — `GET /api/health` deployed to Production and verified; external UptimeRobot monitor still a pending manual step |
 | Backup | 🟡 Manual, working, unrehearsed restore | 2026-08-10 | `DISASTER_RECOVERY.md` — weekly manual `pg_dump`, restore-into-scratch-project never rehearsed |
 | Security review | 🟢 Green | 2026-08-10 | `WORKSTREAM_I_SECURITY_REREVIEW.md` — 9 findings, 8 fixed + deployed to staging, 1 tracked as debt |
 | Dependency risks | 🟡 4 open, all low-severity/cosmetic | 2026-07-30 | `DEPENDENCY_WATCHLIST.md`, DW-001 through DW-004 |
@@ -56,7 +56,7 @@ Live and verified — not just present as YAML. The first real run (`30570600185
 
 **Owning document:** `OPERATIONS_MANUAL.md` §6.1 (added this session, Workstream D).
 
-Sentry error tracking (server, edge, and client runtimes) is implemented and verified end-to-end on staging (2026-08-10) — closes TD-003. Not yet configured in Production (deliberate — Production env vars are untouched pending your approval, per this project's standing "never modify Production without explicit approval" rule). One known gap: client-side events tag `environment` from `NODE_ENV` rather than this project's own `SITE_ENV`, so a staging client-side error currently displays as "production" in the Sentry dashboard — TD-032, low severity, fix requires a new Vercel env var. **Uptime/synthetic monitoring does not exist** — TD-013, open since 2026-07-30, explicitly scoped into Workstream C but never built; nothing currently detects a platform-level outage (DNS, certificate, full Vercel incident) independent of an application error Sentry would catch.
+Sentry error tracking (server, edge, and client runtimes) is implemented and verified end-to-end on staging (2026-08-10) — closes TD-003. Not yet configured in Production (deliberate — Production env vars are untouched pending your approval, per this project's standing "never modify Production without explicit approval" rule). One known gap: client-side events tag `environment` from `NODE_ENV` rather than this project's own `SITE_ENV`, so a staging client-side error currently displays as "production" in the Sentry dashboard — TD-032, low severity, fix requires a new Vercel env var. **Uptime/synthetic monitoring endpoint is live, external monitor still pending** — TD-013, `GET /api/health` deployed to Production and verified 2026-08-16 (static `200 {"status":"ok"}`, `Cache-Control: no-store`, no auth, no downstream calls); an actual external monitor (recommended: UptimeRobot) still needs to be manually created and pointed at it before this closes — until then nothing is actually watching for a platform-level outage (DNS, certificate, full Vercel incident) independent of an application error Sentry would catch.
 
 ## 5. Backup & restore-test status
 
