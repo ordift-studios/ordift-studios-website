@@ -15,7 +15,16 @@ const LOCAL_HOSTNAMES = new Set(["localhost", "127.0.0.1", "::1"]);
 // (src/app/api/payments/webhook/paystack/route.ts). Deliberately an
 // exact-path match, not a prefix — /api/payments/** and /api/** stay
 // fully gated.
-const BASIC_AUTH_EXEMPT_PATHS = new Set(["/api/payments/webhook/paystack"]);
+//
+// /portal/reset-password (2026-08-16) — the only page in the portal
+// meant to be reached by a not-yet-authenticated external visitor
+// (someone clicking a real password-recovery email). Without this
+// exemption, the staging Basic-Auth gate can re-challenge mid-flow
+// (e.g. via background same-origin Link-prefetch requests the NavBar
+// issues) and interrupt an in-progress Supabase recovery session. With
+// no valid `?code=`, this route only ever renders a static
+// "invalid or expired" message, so exempting it exposes nothing.
+const BASIC_AUTH_EXEMPT_PATHS = new Set(["/api/payments/webhook/paystack", "/portal/reset-password"]);
 
 // Roles allowed to bypass the holding page below and see the real
 // production site while it's gated — the same roles that already gate

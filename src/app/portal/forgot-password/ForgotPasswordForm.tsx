@@ -1,12 +1,14 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useActionState, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import Button from "@/components/Button";
 import TurnstileWidget from "@/components/TurnstileWidget";
-import { requestPasswordResetAction, type ForgotPasswordState } from "./actions";
+import { createClient } from "@/lib/supabase/client";
+import { siteUrl } from "@/lib/shared/env";
+import { validatePasswordResetRequestAction, type ForgotPasswordState } from "./actions";
 
-const initialState: ForgotPasswordState = { submitted: false, error: null };
+const initialState: ForgotPasswordState = { status: "idle", error: null, email: null };
 
 // Mirrors BookingForm.tsx/RegistrationForm.tsx's gate — without this,
 // the submit button stays permanently disabled in any environment
@@ -15,18 +17,46 @@ const initialState: ForgotPasswordState = { submitted: false, error: null };
 const turnstileRequired = Boolean(process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY);
 
 export default function ForgotPasswordForm() {
-  const [state, formAction, pending] = useActionState(requestPasswordResetAction, initialState);
+  const [state, formAction, pending] = useActionState(validatePasswordResetRequestAction, initialState);
   // Same submit-gating + forced-fresh-challenge pattern as LoginForm.tsx
   // — added 2026-08-10 (Workstream I security re-review): this was the
   // one auth-adjacent form with no CAPTCHA at all.
   const [turnstileToken, setTurnstileToken] = useState("");
   const [prevState, setPrevState] = useState(state);
+  const [requesting, setRequesting] = useState(false);
+  const [submitted, setSubmitted] = useState(false);
+  // Guards against re-firing the Supabase call if this same "validated"
+  // state object is seen again across re-renders (React effect
+  // semantics, not a real second submission — `state` is otherwise
+  // referentially stable until the next action dispatch).
+  const handledState = useRef<ForgotPasswordState | null>(null);
+
   if (state !== prevState) {
     setPrevState(state);
-    if (state.error) setTurnstileToken("");
+    if (state.status === "error") setTurnstileToken("");
   }
 
-  if (state.submitted) {
+  useEffect(() => {
+    if (state.status !== "validated" || !state.email) return;
+    if (handledState.current === state) return;
+    handledState.current = state;
+
+    const redirectTo = `${siteUrl()}/portal/reset-password`;
+
+    setRequesting(true);
+    createClient()
+      .auth.resetPasswordForEmail(state.email, { redirectTo })
+      // Same no-information-leak principle as before: the generic
+      // "submitted" result shows regardless of whether Supabase's own
+      // call succeeded, so neither branch is distinguishable to a
+      // visitor probing for registered emails.
+      .finally(() => {
+        setRequesting(false);
+        setSubmitted(true);
+      });
+  }, [state]);
+
+  if (submitted) {
     return (
       <div className="max-w-sm space-y-5">
         <div className="rounded-lg border border-black/10 bg-ordift-offwhite px-4 py-3">
@@ -86,10 +116,10 @@ export default function ForgotPasswordForm() {
       <Button
         type="submit"
         variant="primary"
-        disabled={pending || (turnstileRequired && !turnstileToken)}
+        disabled={pending || requesting || (turnstileRequired && !turnstileToken)}
         className="w-full"
       >
-        {pending ? "Sending…" : "Send reset link"}
+        {pending || requesting ? "Sending…" : "Send reset link"}
       </Button>
 
       <p className="font-sans text-body-small text-ordift-ink-muted text-center">
