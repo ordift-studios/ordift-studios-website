@@ -4,7 +4,9 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import Button from "@/components/Button";
+import PkceVerifierDiagnosticFields from "@/components/PkceVerifierDiagnosticFields";
 import { createClient } from "@/lib/supabase/client";
+import { capturePkceVerifierDiagnostic, type PkceVerifierDiagnostic } from "@/lib/testing/pkceVerifierDiagnostics";
 
 // TEMPORARY DIAGNOSTIC (2026-08-15) — remove once the PKCE recovery
 // failure is root-caused. Captures only safe, non-secret metadata:
@@ -20,6 +22,8 @@ type Diagnostic = {
   hasHashTokens: boolean;
   verifierCookiePresentBefore: boolean;
   verifierCookiePresentAfter: boolean;
+  pkceBefore: PkceVerifierDiagnostic | null;
+  pkceAfter: PkceVerifierDiagnostic | null;
   error: { name: string; code: string | null; status: number | null; message: string } | null;
 };
 
@@ -52,8 +56,10 @@ export default function ResetPasswordForm() {
         attemptCount.current += 1;
         const attempt = attemptCount.current;
         const verifierCookiePresentBefore = hasVerifierCookie();
+        const pkceBefore = await capturePkceVerifierDiagnostic(supabase);
         const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
         const verifierCookiePresentAfter = hasVerifierCookie();
+        const pkceAfter = await capturePkceVerifierDiagnostic(supabase);
         // Clear the code out of the URL now that it's been redeemed —
         // no reason to leave it sitting in history.
         window.history.replaceState(null, "", window.location.pathname);
@@ -64,6 +70,8 @@ export default function ResetPasswordForm() {
           hasHashTokens: false,
           verifierCookiePresentBefore,
           verifierCookiePresentAfter,
+          pkceBefore,
+          pkceAfter,
           error: exchangeError
             ? {
                 name: exchangeError.name,
@@ -88,6 +96,8 @@ export default function ResetPasswordForm() {
           hasHashTokens: false,
           verifierCookiePresentBefore: hasVerifierCookie(),
           verifierCookiePresentAfter: hasVerifierCookie(),
+          pkceBefore: null,
+          pkceAfter: null,
           error: null,
         });
         return "invalid";
@@ -109,6 +119,8 @@ export default function ResetPasswordForm() {
         hasHashTokens: true,
         verifierCookiePresentBefore: hasVerifierCookie(),
         verifierCookiePresentAfter: hasVerifierCookie(),
+        pkceBefore: null,
+        pkceAfter: null,
         error: sessionError
           ? {
               name: sessionError.name,
@@ -193,6 +205,12 @@ export default function ResetPasswordForm() {
                 <p className="font-sans text-caption text-amber-900">error status: {diagnostic.error.status ?? "(none)"}</p>
                 <p className="font-sans text-caption text-amber-900">error message: {diagnostic.error.message}</p>
               </>
+            )}
+            {diagnostic.pkceBefore && (
+              <PkceVerifierDiagnosticFields label="immediately before exchangeCodeForSession" diagnostic={diagnostic.pkceBefore} />
+            )}
+            {diagnostic.pkceAfter && (
+              <PkceVerifierDiagnosticFields label="immediately after (failure)" diagnostic={diagnostic.pkceAfter} />
             )}
           </div>
         )}

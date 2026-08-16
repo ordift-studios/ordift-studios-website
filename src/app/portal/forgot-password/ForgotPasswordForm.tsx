@@ -4,7 +4,9 @@ import { useActionState, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import Button from "@/components/Button";
 import TurnstileWidget from "@/components/TurnstileWidget";
+import PkceVerifierDiagnosticFields from "@/components/PkceVerifierDiagnosticFields";
 import { createClient } from "@/lib/supabase/client";
+import { capturePkceVerifierDiagnostic, type PkceVerifierDiagnostic } from "@/lib/testing/pkceVerifierDiagnostics";
 import { siteUrl } from "@/lib/shared/env";
 import { validatePasswordResetRequestAction, type ForgotPasswordState } from "./actions";
 
@@ -37,6 +39,7 @@ type OriginDiagnostic = {
   storageMechanism: string;
   verifierPresentImmediately: boolean;
   verifierPresentAfterDelay: boolean;
+  pkceDiagnostic: PkceVerifierDiagnostic | null;
 };
 
 // Mirrors BookingForm.tsx/RegistrationForm.tsx's gate — without this,
@@ -82,8 +85,9 @@ export default function ForgotPasswordForm() {
     })();
 
     setRequesting(true);
-    createClient()
-      .auth.resetPasswordForEmail(state.email, { redirectTo })
+    const supabase = createClient();
+    supabase.auth
+      .resetPasswordForEmail(state.email, { redirectTo })
       // Same no-information-leak principle as before: the generic
       // "submitted" result shows regardless of whether Supabase's own
       // call succeeded, so neither branch is distinguishable to a
@@ -95,6 +99,7 @@ export default function ForgotPasswordForm() {
         // both values are fully resolved — never stuck on "checking".
         await new Promise((resolve) => setTimeout(resolve, 2000));
         const verifierPresentAfterDelay = hasVerifierCookie();
+        const pkceDiagnostic = await capturePkceVerifierDiagnostic(supabase);
         let redirectToHostname = "(unresolvable)";
         let redirectToPath = "(unresolvable)";
         try {
@@ -119,6 +124,7 @@ export default function ForgotPasswordForm() {
           storageMechanism: "document.cookie (createBrowserClient default)",
           verifierPresentImmediately,
           verifierPresentAfterDelay,
+          pkceDiagnostic,
         });
       })
       .finally(() => {
@@ -177,6 +183,9 @@ export default function ForgotPasswordForm() {
             <p className="font-sans text-caption text-amber-900">
               verifier present ~2s later (same page): {String(originDiagnostic.verifierPresentAfterDelay)}
             </p>
+            {originDiagnostic.pkceDiagnostic && (
+              <PkceVerifierDiagnosticFields label="origin, ~2s after request" diagnostic={originDiagnostic.pkceDiagnostic} />
+            )}
           </div>
         )}
         <Link
