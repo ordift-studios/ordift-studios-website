@@ -160,12 +160,12 @@
 
 ### TD-013 — No uptime/synthetic monitoring for the public site
 - **Category:** Infra
-- **Severity:** Medium (was; see status)
+- **Severity:** Low (was Medium; see status)
 - **What:** identified during the 2026-07-30 Platform Health Review. Workstream C (Sentry) will catch application errors, but nothing currently pings the live site from outside to detect "the site is down" — a Vercel platform incident, a DNS problem, or an expired certificate would currently be discovered by a client noticing, not by the platform.
 - **Why accepted:** not yet built — site is still behind `LAUNCH_HOLDING_PAGE`, so there's no real uptime to monitor yet.
-- **Current impact:** low — the monitoring *target* now exists in Production; the external monitor itself is not yet configured, so nothing is actually watching it.
-- **Pay-down trigger:** should land alongside or shortly after Workstream C (Sentry) — a lightweight synthetic check (e.g. a free-tier uptime pinger hitting the homepage every few minutes) is a natural, low-cost extension of the same observability push, not a separate initiative.
-- **Status:** Partially resolved (2026-08-16). `GET /api/health` built and deployed to Production (commit `f029069`, isolated cherry-pick of staging `35b85c9`, promoted independently of unrelated staging work) — verified live at `https://ordiftstudios.com/api/health`: `200`, body `{"status":"ok"}`, `Cache-Control: no-store`, no authentication required, no secrets/internal information exposed. Reachable even while `LAUNCH_HOLDING_PAGE` is active (`/api` is on the holding-page allowlist) and unaffected by the staging Basic-Auth gate (`SITE_ENV`-scoped, never applies in Production). **Remaining to close:** an external uptime monitor (recommended: UptimeRobot) still needs to be manually created and pointed at this endpoint — see `PRODUCTION_READINESS_CHECKLIST.md` for the pending manual setup steps.
+- **Current impact:** none — an external monitor is live and watching Production.
+- **Pay-down trigger:** n/a — resolved.
+- **Status:** Resolved — CLOSED / COMPLETE (2026-08-16). `GET /api/health` built and deployed to Production (commit `f029069`, isolated cherry-pick of staging `35b85c9`, promoted independently of unrelated staging work) — verified live at `https://ordiftstudios.com/api/health`: `200`, body `{"status":"ok"}`, `Cache-Control: no-store`, no authentication required, no secrets/internal information exposed. Reachable even while `LAUNCH_HOLDING_PAGE` is active (`/api` is on the holding-page allowlist) and unaffected by the staging Basic-Auth gate (`SITE_ENV`-scoped, never applies in Production). An UptimeRobot HTTPS monitor was manually created and configured against this endpoint the same day — confirmed by you as UP with 100% uptime, 0 real incidents, and a successful test-notification delivery to the configured alert email. External monitoring and alert delivery are both live and verified.
 
 ### TD-014 — No recurring secret-rotation cadence
 - **Category:** Security
