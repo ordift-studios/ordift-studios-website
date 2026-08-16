@@ -4,43 +4,11 @@ import { useActionState, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import Button from "@/components/Button";
 import TurnstileWidget from "@/components/TurnstileWidget";
-import PkceVerifierDiagnosticFields from "@/components/PkceVerifierDiagnosticFields";
 import { createClient } from "@/lib/supabase/client";
-import { capturePkceVerifierDiagnostic, type PkceVerifierDiagnostic } from "@/lib/testing/pkceVerifierDiagnostics";
 import { siteUrl } from "@/lib/shared/env";
 import { validatePasswordResetRequestAction, type ForgotPasswordState } from "./actions";
 
 const initialState: ForgotPasswordState = { status: "idle", error: null, email: null };
-
-// TEMPORARY DIAGNOSTIC (2026-08-15) — remove once the PKCE recovery
-// investigation is closed. Companion to ResetPasswordForm.tsx's
-// diagnostic block: this one observes the *origin* side (immediately
-// after resetPasswordForEmail() resolves) instead of the callback
-// side. Only presence of the verifier cookie is checked (substring
-// match on the cookie name), never its value. The Supabase error
-// object's name/code/status/message are auth-js's own short, static,
-// non-secret classification strings (e.g. "captcha_failed") — never a
-// token, verifier, authorization code, session, or API key. The
-// Supabase project hostname is derived from NEXT_PUBLIC_SUPABASE_URL,
-// which is already public in the client bundle to any visitor
-// regardless of this diagnostic.
-type OriginDiagnostic = {
-  requestExecuted: boolean;
-  resetResult: "success" | "error";
-  errorName: string | null;
-  errorCode: string | null;
-  errorStatus: number | null;
-  errorMessage: string | null;
-  captchaTokenSupplied: boolean;
-  redirectToHostname: string;
-  redirectToPath: string;
-  supabaseProjectHostname: string;
-  hostname: string;
-  storageMechanism: string;
-  verifierPresentImmediately: boolean;
-  verifierPresentAfterDelay: boolean;
-  pkceDiagnostic: PkceVerifierDiagnostic | null;
-};
 
 // Mirrors BookingForm.tsx/RegistrationForm.tsx's gate — without this,
 // the submit button stays permanently disabled in any environment
@@ -57,7 +25,6 @@ export default function ForgotPasswordForm() {
   const [prevState, setPrevState] = useState(state);
   const [requesting, setRequesting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
-  const [originDiagnostic, setOriginDiagnostic] = useState<OriginDiagnostic | null>(null);
   // Guards against re-firing the Supabase call if this same "validated"
   // state object is seen again across re-renders (React effect
   // semantics, not a real second submission — `state` is otherwise
@@ -74,59 +41,15 @@ export default function ForgotPasswordForm() {
     if (handledState.current === state) return;
     handledState.current = state;
 
-    const hasVerifierCookie = () => document.cookie.includes("-code-verifier=");
     const redirectTo = `${siteUrl()}/portal/reset-password`;
-    const supabaseProjectHostname = (() => {
-      try {
-        return new URL(process.env.NEXT_PUBLIC_SUPABASE_URL ?? "").hostname;
-      } catch {
-        return "(unresolvable)";
-      }
-    })();
 
     setRequesting(true);
-    const supabase = createClient();
-    supabase.auth
-      .resetPasswordForEmail(state.email, { redirectTo })
+    createClient()
+      .auth.resetPasswordForEmail(state.email, { redirectTo })
       // Same no-information-leak principle as before: the generic
       // "submitted" result shows regardless of whether Supabase's own
       // call succeeded, so neither branch is distinguishable to a
       // visitor probing for registered emails.
-      .then(async ({ error: resetError }) => {
-        const verifierPresentImmediately = hasVerifierCookie();
-        // Await the re-check in-line (rather than a detached
-        // setTimeout) so the diagnostic box only ever renders once
-        // both values are fully resolved — never stuck on "checking".
-        await new Promise((resolve) => setTimeout(resolve, 2000));
-        const verifierPresentAfterDelay = hasVerifierCookie();
-        const pkceDiagnostic = await capturePkceVerifierDiagnostic(supabase);
-        let redirectToHostname = "(unresolvable)";
-        let redirectToPath = "(unresolvable)";
-        try {
-          const parsed = new URL(redirectTo);
-          redirectToHostname = parsed.hostname;
-          redirectToPath = parsed.pathname;
-        } catch {
-          // leave as unresolvable
-        }
-        setOriginDiagnostic({
-          requestExecuted: true,
-          resetResult: resetError ? "error" : "success",
-          errorName: resetError?.name ?? null,
-          errorCode: resetError?.code ?? null,
-          errorStatus: resetError?.status ?? null,
-          errorMessage: resetError?.message ?? null,
-          captchaTokenSupplied: false, // this call passes no options.captchaToken
-          redirectToHostname,
-          redirectToPath,
-          supabaseProjectHostname,
-          hostname: window.location.hostname,
-          storageMechanism: "document.cookie (createBrowserClient default)",
-          verifierPresentImmediately,
-          verifierPresentAfterDelay,
-          pkceDiagnostic,
-        });
-      })
       .finally(() => {
         setRequesting(false);
         setSubmitted(true);
@@ -142,52 +65,6 @@ export default function ForgotPasswordForm() {
             password. Check your inbox (and spam folder).
           </p>
         </div>
-        {originDiagnostic && (
-          <div className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 space-y-1">
-            <p className="font-sans text-caption font-semibold text-amber-900">
-              Temporary diagnostic (staging investigation only)
-            </p>
-            <p className="font-sans text-caption text-amber-900">
-              reset request executed: {String(originDiagnostic.requestExecuted)}
-            </p>
-            <p className="font-sans text-caption text-amber-900">
-              Supabase reset result: {originDiagnostic.resetResult}
-            </p>
-            {originDiagnostic.resetResult === "error" && (
-              <>
-                <p className="font-sans text-caption text-amber-900">error name: {originDiagnostic.errorName}</p>
-                <p className="font-sans text-caption text-amber-900">error code: {originDiagnostic.errorCode ?? "(none)"}</p>
-                <p className="font-sans text-caption text-amber-900">
-                  error status: {originDiagnostic.errorStatus ?? "(none)"}
-                </p>
-                <p className="font-sans text-caption text-amber-900">error message: {originDiagnostic.errorMessage}</p>
-              </>
-            )}
-            <p className="font-sans text-caption text-amber-900">
-              captcha token supplied to Supabase: {String(originDiagnostic.captchaTokenSupplied)}
-            </p>
-            <p className="font-sans text-caption text-amber-900">
-              redirectTo: {originDiagnostic.redirectToHostname}
-              {originDiagnostic.redirectToPath}
-            </p>
-            <p className="font-sans text-caption text-amber-900">
-              Supabase project hostname: {originDiagnostic.supabaseProjectHostname}
-            </p>
-            <p className="font-sans text-caption text-amber-900">page hostname: {originDiagnostic.hostname}</p>
-            <p className="font-sans text-caption text-amber-900">
-              storage mechanism: {originDiagnostic.storageMechanism}
-            </p>
-            <p className="font-sans text-caption text-amber-900">
-              verifier present immediately after request: {String(originDiagnostic.verifierPresentImmediately)}
-            </p>
-            <p className="font-sans text-caption text-amber-900">
-              verifier present ~2s later (same page): {String(originDiagnostic.verifierPresentAfterDelay)}
-            </p>
-            {originDiagnostic.pkceDiagnostic && (
-              <PkceVerifierDiagnosticFields label="origin, ~2s after request" diagnostic={originDiagnostic.pkceDiagnostic} />
-            )}
-          </div>
-        )}
         <Link
           href="/portal/login"
           className="font-sans text-body-small text-ordift-gold-pressed underline underline-offset-4"

@@ -1,31 +1,10 @@
 "use client";
 
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import Button from "@/components/Button";
-import PkceVerifierDiagnosticFields from "@/components/PkceVerifierDiagnosticFields";
 import { createClient } from "@/lib/supabase/client";
-import { capturePkceVerifierDiagnostic, type PkceVerifierDiagnostic } from "@/lib/testing/pkceVerifierDiagnostics";
-
-// TEMPORARY DIAGNOSTIC (2026-08-15) — remove once the PKCE recovery
-// failure is root-caused. Captures only safe, non-secret metadata:
-// error name/code/status/message (all short, static, human-readable
-// strings from auth-js's own error classes — never the auth code,
-// verifier, or any token), a same-origin cookie *presence* check
-// (substring match only, never reads the cookie's value), and the
-// runtime hostname. None of this is normally shown to visitors.
-type Diagnostic = {
-  attempt: number;
-  hostname: string;
-  hasCode: boolean;
-  hasHashTokens: boolean;
-  verifierCookiePresentBefore: boolean;
-  verifierCookiePresentAfter: boolean;
-  pkceBefore: PkceVerifierDiagnostic | null;
-  pkceAfter: PkceVerifierDiagnostic | null;
-  error: { name: string; code: string | null; status: number | null; message: string } | null;
-};
 
 // createBrowserClient (@supabase/ssr) defaults to the PKCE flow, so the
 // live recovery link redirects here with a `?code=...` query parameter,
@@ -41,46 +20,17 @@ export default function ResetPasswordForm() {
   const [status, setStatus] = useState<Status>("checking");
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
-  const [diagnostic, setDiagnostic] = useState<Diagnostic | null>(null);
-  // Proves (or disproves) whether establishSession's exchange/setSession
-  // call runs more than once for a single page load.
-  const attemptCount = useRef(0);
 
   useEffect(() => {
     async function establishSession(): Promise<Status> {
       const supabase = createClient();
-      const hasVerifierCookie = () => document.cookie.includes("-code-verifier=");
 
       const code = new URLSearchParams(window.location.search).get("code");
       if (code) {
-        attemptCount.current += 1;
-        const attempt = attemptCount.current;
-        const verifierCookiePresentBefore = hasVerifierCookie();
-        const pkceBefore = await capturePkceVerifierDiagnostic(supabase);
         const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
-        const verifierCookiePresentAfter = hasVerifierCookie();
-        const pkceAfter = await capturePkceVerifierDiagnostic(supabase);
         // Clear the code out of the URL now that it's been redeemed —
         // no reason to leave it sitting in history.
         window.history.replaceState(null, "", window.location.pathname);
-        setDiagnostic({
-          attempt,
-          hostname: window.location.hostname,
-          hasCode: true,
-          hasHashTokens: false,
-          verifierCookiePresentBefore,
-          verifierCookiePresentAfter,
-          pkceBefore,
-          pkceAfter,
-          error: exchangeError
-            ? {
-                name: exchangeError.name,
-                code: exchangeError.code ?? null,
-                status: exchangeError.status ?? null,
-                message: exchangeError.message,
-              }
-            : null,
-        });
         return exchangeError ? "invalid" : "ready";
       }
 
@@ -89,22 +39,9 @@ export default function ResetPasswordForm() {
       const refreshToken = hash.get("refresh_token");
 
       if (!accessToken || !refreshToken) {
-        setDiagnostic({
-          attempt: attemptCount.current,
-          hostname: window.location.hostname,
-          hasCode: false,
-          hasHashTokens: false,
-          verifierCookiePresentBefore: hasVerifierCookie(),
-          verifierCookiePresentAfter: hasVerifierCookie(),
-          pkceBefore: null,
-          pkceAfter: null,
-          error: null,
-        });
         return "invalid";
       }
 
-      attemptCount.current += 1;
-      const attempt = attemptCount.current;
       const { error: sessionError } = await supabase.auth.setSession({
         access_token: accessToken,
         refresh_token: refreshToken,
@@ -112,24 +49,6 @@ export default function ResetPasswordForm() {
       // Clear the tokens out of the URL now that the session is
       // established — no reason to leave them sitting in history.
       window.history.replaceState(null, "", window.location.pathname);
-      setDiagnostic({
-        attempt,
-        hostname: window.location.hostname,
-        hasCode: false,
-        hasHashTokens: true,
-        verifierCookiePresentBefore: hasVerifierCookie(),
-        verifierCookiePresentAfter: hasVerifierCookie(),
-        pkceBefore: null,
-        pkceAfter: null,
-        error: sessionError
-          ? {
-              name: sessionError.name,
-              code: sessionError.code ?? null,
-              status: sessionError.status ?? null,
-              message: sessionError.message,
-            }
-          : null,
-      });
       return sessionError ? "invalid" : "ready";
     }
 
@@ -182,38 +101,6 @@ export default function ResetPasswordForm() {
             This reset link is invalid or has expired.
           </p>
         </div>
-        {diagnostic && (
-          <div className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 space-y-1">
-            <p className="font-sans text-caption font-semibold text-amber-900">
-              Temporary diagnostic (staging investigation only)
-            </p>
-            <p className="font-sans text-caption text-amber-900">hostname: {diagnostic.hostname}</p>
-            <p className="font-sans text-caption text-amber-900">
-              mode: {diagnostic.hasCode ? "code (PKCE)" : diagnostic.hasHashTokens ? "hash (implicit)" : "neither"}
-            </p>
-            <p className="font-sans text-caption text-amber-900">exchange attempt #: {diagnostic.attempt}</p>
-            <p className="font-sans text-caption text-amber-900">
-              verifier cookie present before: {String(diagnostic.verifierCookiePresentBefore)}
-            </p>
-            <p className="font-sans text-caption text-amber-900">
-              verifier cookie present after: {String(diagnostic.verifierCookiePresentAfter)}
-            </p>
-            {diagnostic.error && (
-              <>
-                <p className="font-sans text-caption text-amber-900">error name: {diagnostic.error.name}</p>
-                <p className="font-sans text-caption text-amber-900">error code: {diagnostic.error.code ?? "(none)"}</p>
-                <p className="font-sans text-caption text-amber-900">error status: {diagnostic.error.status ?? "(none)"}</p>
-                <p className="font-sans text-caption text-amber-900">error message: {diagnostic.error.message}</p>
-              </>
-            )}
-            {diagnostic.pkceBefore && (
-              <PkceVerifierDiagnosticFields label="immediately before exchangeCodeForSession" diagnostic={diagnostic.pkceBefore} />
-            )}
-            {diagnostic.pkceAfter && (
-              <PkceVerifierDiagnosticFields label="immediately after (failure)" diagnostic={diagnostic.pkceAfter} />
-            )}
-          </div>
-        )}
         <Link
           href="/portal/forgot-password"
           className="font-sans text-body-small text-ordift-gold-pressed underline underline-offset-4"
