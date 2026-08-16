@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { getCurrentUser } from "@/lib/portal/roles";
 import { hasCapability } from "@/lib/workflow/engine";
 import { PAYMENT_CAPABILITIES } from "@/lib/payments/paymentPermissions";
@@ -31,7 +32,12 @@ export async function approveBankTransferAction(formData: FormData): Promise<voi
   const paymentId = String(formData.get("paymentId") ?? "");
   if (!paymentId) return;
 
-  const supabase = await createClient();
+  // Admin/secret-key client, not the session client — public.payments
+  // grants UPDATE to service_role only (see migration 0024's RLS
+  // section comment); authorization is already enforced above via
+  // requireCapability(), this just supplies the DB privilege the write
+  // itself needs.
+  const supabase = createAdminClient();
   const { data: payment } = await supabase
     .from("payments")
     .select("id, entity_type, entity_id, reference_amount_usd, payment_type")
@@ -78,7 +84,9 @@ export async function rejectBankTransferAction(formData: FormData): Promise<void
   // applied here to rejections too.
   if (!paymentId || !reason) return;
 
-  const supabase = await createClient();
+  // Same admin/secret-key client as approveBankTransferAction above,
+  // same reason — public.payments grants UPDATE to service_role only.
+  const supabase = createAdminClient();
   const { error } = await supabase
     .from("payments")
     .update({
