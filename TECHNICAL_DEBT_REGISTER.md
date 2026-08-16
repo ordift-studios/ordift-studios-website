@@ -456,6 +456,19 @@
 - **Pay-down trigger:** none — this entry closes once the fix is promoted to Production and re-verified there with one real (or one more disposable) bank-transfer approval.
 - **Status:** **Resolved on staging (2026-08-16), pending Production promotion and Production-side re-verification.**
 
+### TD-039 — Staging and Production Supabase projects differ in "Automatically expose new tables," giving staging an implicit grant Production doesn't have (found during TD-038 verification, 2026-08-16, not yet audited for other tables)
+
+- **Category:** Infrastructure / Environment Parity
+- **Severity:** Medium — not itself an exploit (RLS still correctly gates row-level access even when this implicit grant is present, confirmed during TD-038 verification), but it means staging can mask a real Production-only privilege bug, exactly as it did for TD-038. Any future table where application code relies on an `authenticated`-role client for a write Production doesn't grant could pass staging testing and silently fail (or behave differently) in Production.
+- **What:** Production's Supabase project was built with "Automatically expose new tables" disabled (documented in `0001_init.sql`'s own Hardening Pass 4 note), meaning no table gets an implicit `alter default privileges ... grant ... to anon, authenticated, service_role` when created — every grant must be explicit in a migration. Staging's project was not confirmed to have the same setting. Direct empirical evidence from TD-038's verification: a real **staff**-role session, using the exact old buggy `authenticated`-role client pattern, successfully updated `public.payments` on staging — a table whose migrations grant UPDATE to `service_role` only. The same code path was independently confirmed blocked on Production via your own `information_schema.role_table_grants` query. RLS itself was confirmed still correctly enforced on staging in the same test (a plain client-role session was blocked, zero rows affected) — this is specifically a **grant-layer** difference, not an RLS difference.
+- **Why not fixed now:** out of scope for TD-038 and explicitly deferred by you to a separate environment-parity audit after the launch-blocking payment issues are handled. Neither Supabase environment was touched to investigate or correct this.
+- **Current impact:** unknown scope — this was discovered incidentally while diagnosing one specific bug (TD-038); no systematic check has been run across every other table for the same staging/Production grant divergence.
+- **Pay-down trigger — recorded for the future parity audit (design/investigation only, not yet approved for implementation):**
+  - confirm directly (Supabase Dashboard → Project Settings → API, or `information_schema.role_table_grants` via SQL Editor) whether staging's project actually has "Automatically expose new tables" enabled, and if so, whether toggling it off would be safe (it may have been relied upon elsewhere, however unintentionally — needs a full grant audit first, not just this one table);
+  - if left enabled on staging (e.g. because disabling it retroactively has other effects), the safer general fix is likely a standing testing discipline: any staging test of a write path should verify it works via the *documented* grant model (i.e. assert which client a given write actually requires), not merely that the write succeeded, precisely because staging can be more permissive than Production;
+  - audit whether any other admin/staff write path in the codebase has the same session-client-for-a-service-role-only-table pattern TD-038 found, now that the pattern is known to look for.
+- **Status:** Open, not scheduled — deferred to the post-launch environment-parity audit you specified.
+
 ---
 
 ## Adding new entries
