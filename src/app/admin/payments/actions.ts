@@ -2,7 +2,6 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getCurrentUser } from "@/lib/portal/roles";
 import { hasCapability } from "@/lib/workflow/engine";
@@ -155,18 +154,40 @@ export async function addExchangeRateAction(formData: FormData): Promise<void> {
 }
 
 async function syncEntityAfterBankTransferDecision(entityType: string, entityId: string): Promise<void> {
-  const supabase = await createClient();
+  // Admin/secret-key client, not the session client — same reason as
+  // the payments write in approveBankTransferAction above: the caller
+  // has already enforced authorization via requireCapability(), this
+  // is already-authorized bookkeeping, not a fresh access decision.
+  // Matches src/lib/payments/gatewaySync.ts's syncEntityPaymentStatus
+  // — the webhook-side equivalent this function was written to mirror
+  // — which creates its own admin client the exact same way.
+  const supabase = createAdminClient();
   const table = entityType === "enquiry" ? "enquiries" : "workshop_registrations";
 
-  const { data: entity } = await supabase.from(table).select("amount_due").eq("id", entityId).maybeSingle();
-  if (!entity) return;
+  const { data: entity, error: entityError } = await supabase
+    .from(table)
+    .select("amount_due")
+    .eq("id", entityId)
+    .maybeSingle();
+  if (entityError) {
+    console.error("[admin] bank transfer sync: failed to read entity", { table, entityId, error: entityError.message });
+    return;
+  }
+  if (!entity) {
+    console.error("[admin] bank transfer sync: entity not found", { table, entityId });
+    return;
+  }
 
-  const { data: completedPayments } = await supabase
+  const { data: completedPayments, error: paymentsError } = await supabase
     .from("payments")
     .select("reference_amount_usd, payment_type")
     .eq("entity_type", entityType)
     .eq("entity_id", entityId)
     .eq("status", "completed");
+  if (paymentsError) {
+    console.error("[admin] bank transfer sync: failed to read completed payments", { entityType, entityId, error: paymentsError.message });
+    return;
+  }
 
   const totalPaidUsd = (completedPayments ?? []).reduce((sum, p) => {
     const isRefund = p.payment_type === "refund";
@@ -177,8 +198,11 @@ async function syncEntityAfterBankTransferDecision(entityType: string, entityId:
   const amountDue = Number(entity.amount_due ?? 0);
   const paymentStatus = totalPaidUsd <= 0 ? "Pending" : totalPaidUsd >= amountDue ? "Paid" : "Pending";
 
-  await supabase
+  const { error: updateError } = await supabase
     .from(table)
     .update({ amount_paid: Math.round(totalPaidUsd * 100) / 100, payment_status: paymentStatus })
     .eq("id", entityId);
+  if (updateError) {
+    console.error("[admin] bank transfer sync: failed to update entity balance", { table, entityId, error: updateError.message });
+  }
 }
