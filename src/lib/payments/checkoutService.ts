@@ -113,6 +113,20 @@ export function resolveAmountToCharge(
   return null;
 }
 
+// TD-043 Test 4 fix — Paystack's own "abandoned" status can appear for
+// a transaction that simply hasn't been completed yet, well before any
+// real customer abandonment (observed on staging: resolved within
+// 90s-6min of creation, while the checkout tab was still open and
+// nothing had actually been abandoned). Trusting that verdict
+// immediately let a rapid retry — same customer, a second tab, or a
+// second click — tear down a still-genuinely-live pending payment and
+// open a second concurrent checkout. This grace period defers to
+// Paystack only once enough real time has passed for "abandoned" to be
+// a meaningful signal. Reconcile Now (a deliberate staff action on a
+// payment already known to be stuck) is intentionally NOT subject to
+// this gate — see reconcilePaymentAction in admin/payments/actions.ts.
+const PENDING_RECONCILE_GRACE_PERIOD_MS = 5 * 60 * 1000;
+
 // TD-043 — looks up a still-`pending` gateway payment for this exact
 // entity+payment_type, if one exists. Shared between the normal
 // duplicate-check path and the unique-violation race-recovery path so
@@ -122,17 +136,17 @@ async function findPendingGatewayPayment(
   entityType: PaymentEntityType,
   entityId: string,
   paymentType: PaymentType
-): Promise<{ id: string } | null> {
+): Promise<{ id: string; createdAt: string } | null> {
   const { data } = await admin
     .from("payments")
-    .select("id")
+    .select("id, created_at")
     .eq("entity_type", entityType)
     .eq("entity_id", entityId)
     .eq("payment_type", paymentType)
     .eq("payment_method", "gateway")
     .eq("status", "pending")
     .maybeSingle();
-  return data;
+  return data ? { id: data.id, createdAt: data.created_at } : null;
 }
 
 // TD-043 — reconciles a found pending payment against Paystack's own
@@ -158,6 +172,23 @@ async function resolveExistingPendingPayment(paymentId: string): Promise<Initiat
   // "failed" by the provider) means this attempt is authoritatively
   // over — signal the caller to proceed with a fresh one.
   return null;
+}
+
+// TD-043 Test 4 fix — gates resolveExistingPendingPayment behind the
+// grace period above. A payment younger than the threshold is blocked
+// outright, with no Paystack call at all — the fastest possible path,
+// and one that can never be raced, since it doesn't depend on what
+// Paystack says. Only once the row has aged past the threshold do we
+// defer to reconciliation exactly as before.
+async function resolveOrBlockExistingPendingPayment(
+  paymentId: string,
+  createdAt: string
+): Promise<InitiateCheckoutResult | null> {
+  const ageMs = Date.now() - new Date(createdAt).getTime();
+  if (ageMs < PENDING_RECONCILE_GRACE_PERIOD_MS) {
+    return { ok: false, error: "checkout-already-in-progress" };
+  }
+  return resolveExistingPendingPayment(paymentId);
 }
 
 export async function initiateGatewayCheckout(
@@ -228,7 +259,7 @@ export async function initiateGatewayCheckout(
   const existingPending = await findPendingGatewayPayment(admin, params.entityType, params.entityId, params.paymentType);
 
   if (existingPending) {
-    const resolution = await resolveExistingPendingPayment(existingPending.id);
+    const resolution = await resolveOrBlockExistingPendingPayment(existingPending.id, existingPending.createdAt);
     if (resolution) return resolution;
     // resolution === null means the prior attempt is now confirmed
     // failed/abandoned/reversed by Paystack itself — fall through and
@@ -267,7 +298,7 @@ export async function initiateGatewayCheckout(
     // whichever row won, the same way as the normal duplicate path.
     const winner = await findPendingGatewayPayment(admin, params.entityType, params.entityId, params.paymentType);
     if (winner) {
-      const resolution = await resolveExistingPendingPayment(winner.id);
+      const resolution = await resolveOrBlockExistingPendingPayment(winner.id, winner.createdAt);
       if (resolution) return resolution;
     }
     return { ok: false, error: "checkout-already-in-progress" };

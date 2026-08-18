@@ -12,7 +12,7 @@ type AmountMode = "full" | "custom";
 type Step = "select" | "confirm-gateway" | "bank-details" | "bank-upload" | "bank-submitted";
 
 const ERROR_MESSAGES: Record<string, string> = {
-  "checkout-already-in-progress": "You already have a payment in progress for this — check your payment history below, or try again in a moment.",
+  "checkout-already-in-progress": "A payment attempt is already in progress. Please complete the existing payment, or wait a few minutes and try again.",
   "invalid-or-unavailable-amount": "That amount isn't available to pay right now — please refresh and try again.",
   "no-exchange-rate-set": "Card and Mobile Money payments aren't available in your currency yet — please use Bank Transfer, or contact us.",
   "gateway-init-failed": "We couldn't start your payment right now. Please try again shortly, or contact us if this continues.",
