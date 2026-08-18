@@ -3,7 +3,15 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { generateRecordId } from "@/lib/shared/recordId";
 import { lockExchangeRate, convertedAmountsMatch } from "@/lib/payments/currency";
 import { getActiveCountryConfig, getProvider } from "@/lib/payments/providerRegistry";
+import { reconcilePendingGatewayPayment } from "@/lib/payments/reconcilePendingPayment";
 import type { PaymentEntityType, PaymentType } from "@/lib/payments/types";
+
+// Postgres unique_violation — raised by the partial unique index
+// (migration 0028) when two near-simultaneous requests both pass the
+// SELECT-based duplicate check below before either has inserted its
+// row (TD-043). Recognized by code, not message text, since message
+// text isn't a stable contract.
+const POSTGRES_UNIQUE_VIOLATION = "23505";
 
 // Checkout initiation — the one place that resolves an authoritative
 // USD price server-side (PAYMENT_SECURITY_REVIEW.md §9/§10: never
@@ -42,6 +50,12 @@ export type InitiateCheckoutParams = {
 export type InitiateCheckoutResult =
   | { ok: true; checkoutUrl: string; paymentId: string }
   | { ok: false; error: "rate_changed"; currentRateToUsd: number; currentConvertedAmount: number; currencyCode: string }
+  // TD-043 — an existing pending attempt for this entity+payment_type
+  // reconciled to "completed" against Paystack's own authoritative
+  // record before we'd have created a second charge. paymentId is the
+  // already-paid row, so the caller can route the customer to its
+  // receipt instead of erroring.
+  | { ok: false; error: "already_paid"; paymentId: string }
   | { ok: false; error: string };
 
 // Exported so the bank-transfer initiation route can reuse the exact
@@ -96,6 +110,53 @@ export function resolveAmountToCharge(
     return Math.round(requestedAmountUsd * 100) / 100;
   }
 
+  return null;
+}
+
+// TD-043 — looks up a still-`pending` gateway payment for this exact
+// entity+payment_type, if one exists. Shared between the normal
+// duplicate-check path and the unique-violation race-recovery path so
+// both resolve a found row identically.
+async function findPendingGatewayPayment(
+  admin: ReturnType<typeof createAdminClient>,
+  entityType: PaymentEntityType,
+  entityId: string,
+  paymentType: PaymentType
+): Promise<{ id: string } | null> {
+  const { data } = await admin
+    .from("payments")
+    .select("id")
+    .eq("entity_type", entityType)
+    .eq("entity_id", entityId)
+    .eq("payment_type", paymentType)
+    .eq("payment_method", "gateway")
+    .eq("status", "pending")
+    .maybeSingle();
+  return data;
+}
+
+// TD-043 — reconciles a found pending payment against Paystack's own
+// authoritative state (via reconcilePendingGatewayPayment, the exact
+// same verify-and-apply path the client status page already uses)
+// before deciding whether a fresh attempt may proceed. Returns a
+// result to return immediately (already paid, or genuinely still in
+// progress), or null to signal "resolved to failed/abandoned —
+// proceed to create a new attempt."
+async function resolveExistingPendingPayment(paymentId: string): Promise<InitiateCheckoutResult | null> {
+  const resolvedStatus = await reconcilePendingGatewayPayment(paymentId);
+
+  if (resolvedStatus === "completed") {
+    return { ok: false, error: "already_paid", paymentId };
+  }
+  if (resolvedStatus === "pending") {
+    // Still genuinely in progress on Paystack's side (e.g. mobile
+    // money awaiting the customer's approval) — correctly keep
+    // blocking rather than opening a second live session.
+    return { ok: false, error: "checkout-already-in-progress" };
+  }
+  // Any other resolved status (failed/abandoned/reversed, mapped to
+  // "failed" by the provider) means this attempt is authoritatively
+  // over — signal the caller to proceed with a fresh one.
   return null;
 }
 
@@ -156,28 +217,22 @@ export async function initiateGatewayCheckout(
     };
   }
 
-  // Duplicate-checkout prevention (Security Review §8) — an existing
-  // pending gateway payment for the same entity+payment_type is
-  // reused rather than starting a second one. Uses the admin client
-  // since this check spans a table clients can't SELECT beyond their
-  // own rows, and this runs regardless of who's checking out.
+  // Duplicate-checkout prevention (Security Review §8; reconciliation
+  // behavior added under TD-043) — an existing pending gateway payment
+  // for the same entity+payment_type is reconciled against Paystack's
+  // own authoritative state before we decide whether to block. Uses
+  // the admin client since this check spans a table clients can't
+  // SELECT beyond their own rows, and this runs regardless of who's
+  // checking out.
   const admin = createAdminClient();
-  const { data: existing } = await admin
-    .from("payments")
-    .select("id, gateway_reference, status")
-    .eq("entity_type", params.entityType)
-    .eq("entity_id", params.entityId)
-    .eq("payment_type", params.paymentType)
-    .eq("payment_method", "gateway")
-    .eq("status", "pending")
-    .maybeSingle();
+  const existingPending = await findPendingGatewayPayment(admin, params.entityType, params.entityId, params.paymentType);
 
-  if (existing?.gateway_reference) {
-    // Re-resolve the same checkout URL from Paystack would require a
-    // second API call; simplest correct behavior for Phase 2 is to
-    // tell the caller a session is already in progress and let the
-    // UI re-poll/re-fetch rather than silently opening a second one.
-    return { ok: false, error: "checkout-already-in-progress" };
+  if (existingPending) {
+    const resolution = await resolveExistingPendingPayment(existingPending.id);
+    if (resolution) return resolution;
+    // resolution === null means the prior attempt is now confirmed
+    // failed/abandoned/reversed by Paystack itself — fall through and
+    // create a fresh attempt exactly as if no pending row existed.
   }
 
   const provider = getProvider(countryConfig.gatewayProvider);
@@ -203,6 +258,20 @@ export async function initiateGatewayCheckout(
     })
     .select("id")
     .single();
+
+  if (insertError?.code === POSTGRES_UNIQUE_VIOLATION) {
+    // TD-043 — the partial unique index (migration 0028) caught a
+    // genuine race: another request for this same entity+payment_type
+    // inserted its row in the gap between our SELECT above and this
+    // INSERT (rapid double-click, two open tabs). Re-resolve against
+    // whichever row won, the same way as the normal duplicate path.
+    const winner = await findPendingGatewayPayment(admin, params.entityType, params.entityId, params.paymentType);
+    if (winner) {
+      const resolution = await resolveExistingPendingPayment(winner.id);
+      if (resolution) return resolution;
+    }
+    return { ok: false, error: "checkout-already-in-progress" };
+  }
 
   if (insertError || !payment) {
     console.error("[payments] failed to create payments row", insertError?.message);

@@ -8,9 +8,15 @@ import { hasCapability } from "@/lib/workflow/engine";
 import { PAYMENT_CAPABILITIES } from "@/lib/payments/paymentPermissions";
 import { logActivity } from "@/lib/admin/activityLog";
 import { insertExchangeRate } from "@/lib/payments/currency";
+import { reconcilePendingGatewayPayment } from "@/lib/payments/reconcilePendingPayment";
 
 async function requireCapability(
-  capability: "approve_bank_transfer" | "reject_bank_transfer" | "issue_refund" | "manage_currencies"
+  capability:
+    | "approve_bank_transfer"
+    | "reject_bank_transfer"
+    | "issue_refund"
+    | "manage_currencies"
+    | "reconcile_payment"
 ) {
   const user = await getCurrentUser();
   if (!user || !hasCapability(user, PAYMENT_CAPABILITIES, capability)) {
@@ -108,6 +114,55 @@ export async function rejectBankTransferAction(formData: FormData): Promise<void
     entityType: "payment",
     entityId: paymentId,
     metadata: { reason },
+  });
+
+  revalidatePath("/admin/payments");
+}
+
+// TD-043 — "Reconcile Now": lets staff manually trigger the same
+// authoritative Paystack verify-and-apply path the customer's own
+// payment status page already runs automatically (reconcilePending
+// GatewayPayment / applyGatewayEventToPayment), for a gateway payment
+// stuck at "pending" with no webhook ever received and no return
+// visit from the customer.
+//
+// Deliberately the ONLY thing this action can do: it takes nothing
+// but a paymentId, and reconcilePendingGatewayPayment() itself decides
+// the resulting status purely from what Paystack's own verify API
+// reports — there is no parameter, code path, or capability here that
+// lets a human choose or force a payment into any status. If you're
+// looking for "just mark it Paid," that action does not exist by
+// design (per PAYMENT_SECURITY_REVIEW.md's authoritative-source rule
+// and your explicit instruction on this TD).
+export async function reconcilePaymentAction(formData: FormData): Promise<void> {
+  const user = await requireCapability("reconcile_payment");
+  const paymentId = String(formData.get("paymentId") ?? "");
+  if (!paymentId) return;
+
+  // Defensive scope check — reconcilePendingGatewayPayment() already
+  // no-ops safely on a non-gateway or already-resolved row, but
+  // confirming here first keeps the audit log entry meaningful (only
+  // logged when there was actually something to reconcile) rather
+  // than recording a no-op attempt.
+  const supabase = createAdminClient();
+  const { data: payment } = await supabase
+    .from("payments")
+    .select("id, status, payment_method")
+    .eq("id", paymentId)
+    .maybeSingle();
+
+  if (!payment || payment.payment_method !== "gateway" || payment.status !== "pending") {
+    return;
+  }
+
+  const resolvedStatus = await reconcilePendingGatewayPayment(paymentId);
+
+  await logActivity({
+    actorUserId: user.id,
+    action: "payment.reconciled",
+    entityType: "payment",
+    entityId: paymentId,
+    metadata: { resolvedStatus },
   });
 
   revalidatePath("/admin/payments");

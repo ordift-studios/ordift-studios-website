@@ -75,10 +75,10 @@ export async function startGatewayCheckoutAction(
   });
 
   if (!result.ok) {
-    // "in" check, not `result.error === "rate_changed"` — the
-    // fallback variant's error is a wide `string`, so TS can't prove
-    // narrowing from a literal comparison alone; property presence
-    // narrows reliably regardless.
+    // "in" checks, not `result.error === "..."` — the fallback
+    // variant's error is a wide `string`, so TS can't prove narrowing
+    // from a literal comparison alone; property presence narrows
+    // reliably regardless.
     if ("currentRateToUsd" in result) {
       return {
         error: "rate_changed",
@@ -86,6 +86,13 @@ export async function startGatewayCheckoutAction(
         currentConvertedAmount: result.currentConvertedAmount,
         currencyCode: result.currencyCode,
       };
+    }
+    // TD-043 — an earlier attempt for this same balance was found to
+    // already be paid (reconciled against Paystack's own record, not
+    // guessed). Route to that payment's receipt rather than erroring
+    // or silently letting the customer open a second charge.
+    if ("paymentId" in result) {
+      redirect(`/portal/client/projects/${kind}/${id}/payments/${result.paymentId}/receipt`);
     }
     redirect(`/portal/client/projects/${kind}/${id}/payments/checkout?error=${encodeURIComponent(result.error)}`);
   }

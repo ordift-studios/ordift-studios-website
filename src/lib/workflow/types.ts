@@ -41,7 +41,17 @@ export type WorkflowCapability =
   // obligation (2026-08-07). Grouped with the other direct-financial-
   // consequence capabilities (issue_refund, manage_currencies), not
   // view_all_payments — same admin/super_admin-only tier.
-  | "manage_project_amount";
+  | "manage_project_amount"
+  // TD-043 (2026-08-18) — triggers reconcilePendingGatewayPayment()
+  // for a specific stuck-"pending" gateway payment: pulls Paystack's
+  // own authoritative verify result and applies it exactly as the
+  // customer's own status page already would. Deliberately grouped
+  // with the same tier as approve/reject_bank_transfer, not the
+  // higher issue_refund/manage_currencies tier — this can only ever
+  // sync state with what Paystack already reports, never choose or
+  // force an outcome, so it carries none of the financial-decision
+  // risk those capabilities do.
+  | "reconcile_payment";
 
 // Extend as future consumers land — kept a literal union (not a bare
 // `string`) so a typo in a future entity_type is a compile error, not

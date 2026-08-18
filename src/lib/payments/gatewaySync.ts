@@ -47,7 +47,21 @@ export async function applyGatewayEventToPayment(
         expected: { amount: payment.converted_amount, currency: payment.payment_currency },
         received: { amount: event.amount, currency: event.currency },
       });
-      await admin.from("payments").update({ status: "failed" }).eq("id", payment.id);
+      // TD-043 — conditional on the row still being "pending" so a
+      // race against another caller resolving this same payment
+      // (webhook vs. on-demand reconciliation, both learning the
+      // outcome at nearly the same moment) can only ever apply once.
+      // .select() lets us tell whether *this* call actually won the
+      // write, rather than trusting the pre-fetched `payment` object
+      // (which could already be stale by the time we get here).
+      const { data: updated } = await admin
+        .from("payments")
+        .update({ status: "failed" })
+        .eq("id", payment.id)
+        .eq("status", "pending")
+        .select("id");
+      if (!updated || updated.length === 0) return { outcome: "ignored" };
+
       await logActivityAsSystem({
         action: "payment.amount_mismatch",
         entityType: "payment",
@@ -60,7 +74,11 @@ export async function applyGatewayEventToPayment(
     const netAmountReceived =
       event.amount != null && event.gatewayFee != null ? event.amount - event.gatewayFee : null;
 
-    await admin
+    // TD-043 — same conditional-write idempotency guard as above,
+    // guaranteeing the completion side effects below (entity sync,
+    // audit log, receipt email) run at most once regardless of which
+    // path (webhook or verify) or how many times it's called.
+    const { data: updated } = await admin
       .from("payments")
       .update({
         status: "completed",
@@ -72,7 +90,10 @@ export async function applyGatewayEventToPayment(
         card_brand: event.cardBrand,
         card_last4: event.cardLast4,
       })
-      .eq("id", payment.id);
+      .eq("id", payment.id)
+      .eq("status", "pending")
+      .select("id");
+    if (!updated || updated.length === 0) return { outcome: "ignored" };
 
     await syncEntityPaymentStatus(payment.entity_type, payment.entity_id);
 
@@ -93,7 +114,16 @@ export async function applyGatewayEventToPayment(
   }
 
   if (event.status === "failed") {
-    await admin.from("payments").update({ status: "failed" }).eq("id", payment.id);
+    // TD-043 — same conditional-write idempotency guard as the
+    // completed/mismatch branches above.
+    const { data: updated } = await admin
+      .from("payments")
+      .update({ status: "failed" })
+      .eq("id", payment.id)
+      .eq("status", "pending")
+      .select("id");
+    if (!updated || updated.length === 0) return { outcome: "ignored" };
+
     await logActivityAsSystem({
       action: "payment.failed",
       entityType: "payment",
