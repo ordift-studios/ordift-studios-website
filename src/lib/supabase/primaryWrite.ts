@@ -31,7 +31,21 @@ async function findUserIdByEmail(admin: AdminClient, email: string): Promise<str
 // GOOGLE_SHEETS_INTEGRATION.md). A failure here must fail the whole
 // submission: the caller (src/app/api/enquiry/route.ts) returns 503
 // rather than silently losing the record.
-export async function saveEnquiryToSupabase(record: EnquiryRecord): Promise<PrimaryWriteResult> {
+//
+// authenticatedUserId (2026-08-19, client-workspace ownership fix) —
+// when the submitter has a verified server-side session, that session
+// is authoritative for ownership and completely bypasses the email-
+// match lookup below: a logged-in client's enquiry always belongs to
+// their account regardless of what contact email they typed (that
+// email is stored as-is on the row for correspondence, never used to
+// determine user_id when a session exists). The caller is responsible
+// for deriving this from server-side auth state only — see
+// src/app/api/enquiry/route.ts — never from anything client-supplied.
+// null (the default) preserves the exact prior guest behavior.
+export async function saveEnquiryToSupabase(
+  record: EnquiryRecord,
+  authenticatedUserId: string | null = null
+): Promise<PrimaryWriteResult> {
   if (!supabaseConfigured()) {
     console.error("[supabase] cannot save enquiry — Supabase is not configured");
     return { ok: false, error: "supabase-not-configured" };
@@ -39,7 +53,7 @@ export async function saveEnquiryToSupabase(record: EnquiryRecord): Promise<Prim
 
   try {
     const admin = createAdminClient();
-    const userId = await findUserIdByEmail(admin, record.email);
+    const userId = authenticatedUserId ?? (await findUserIdByEmail(admin, record.email));
 
     const { error } = await admin.from("enquiries").insert({
       user_id: userId,

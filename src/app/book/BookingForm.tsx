@@ -81,11 +81,24 @@ function fieldAria(fieldId: string, error?: string) {
 const inputClasses =
   "w-full min-h-11 rounded-lg border border-black/15 bg-white px-4 py-2.5 font-sans text-body text-ordift-ink placeholder:text-ordift-ink-muted/60 focus:outline-none focus:ring-2 focus:ring-ordift-gold focus:border-transparent";
 
-export default function BookingForm({ initialService }: { initialService?: string }) {
+export default function BookingForm({
+  initialService,
+  initialEmail,
+}: {
+  initialService?: string;
+  // 2026-08-19 — convenience prefill only, from the logged-in account's
+  // own email (see book/page.tsx). Freely editable: this field is
+  // stored as the enquiry's contact email, never used to determine
+  // ownership — see primaryWrite.ts's saveEnquiryToSupabase, which
+  // derives user_id from the authenticated session server-side,
+  // independent of whatever ends up in this field.
+  initialEmail?: string | null;
+}) {
   const [step, setStep] = useState(1);
   const [data, setData] = useState<FormState>({
     ...initialState,
     service: initialService && PATHWAYS.some((p) => p.value === initialService) ? initialService : "",
+    email: initialEmail ?? "",
     // Generated once per form session — lets the server recognize a
     // retried submission and avoid creating a duplicate enquiry.
     idempotencyKey: typeof crypto !== "undefined" ? crypto.randomUUID() : "",
@@ -364,6 +377,11 @@ export default function BookingForm({ initialService }: { initialService?: strin
             <div>
               <FieldLabel htmlFor="email">Email address</FieldLabel>
               <input id="email" type="email" className={inputClasses} value={data.email} onChange={(e) => update("email", e.target.value)} {...fieldAria("email", errors.email)} />
+              {initialEmail && (
+                <p className="mt-1.5 font-sans text-caption text-ordift-ink-muted">
+                  This is the contact email for this booking — edit it if you&apos;d like updates sent elsewhere.
+                </p>
+              )}
               <FieldError id="email-error" message={errors.email} />
             </div>
             <div>

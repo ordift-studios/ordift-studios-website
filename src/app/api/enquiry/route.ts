@@ -10,6 +10,7 @@ import { sendAcknowledgementEmail, sendAdminNotificationEmail } from "@/lib/enqu
 import { saveEnquiryToSupabase } from "@/lib/supabase/primaryWrite";
 import { isStaging } from "@/lib/shared/env";
 import { verifyTurnstileToken } from "@/lib/turnstile";
+import { createClient } from "@/lib/supabase/server";
 
 function clientKey(request: NextRequest): string {
   const forwarded = request.headers.get("x-forwarded-for");
@@ -25,6 +26,21 @@ function forcedErrorFor(request: NextRequest): ForcedError {
   if (!isStaging()) return null;
   const value = request.headers.get("x-test-force-error");
   return value === "storage" || value === "email" ? value : null;
+}
+
+// Client-workspace ownership fix (2026-08-19) — a logged-in submitter's
+// session is authoritative for enquiry ownership, never the email typed
+// into the form (see primaryWrite.ts's saveEnquiryToSupabase doc
+// comment). Derived here from the server-side session cookie only —
+// never from the request body — so a submission can't forge ownership
+// onto another account. Returns null for a genuine guest, which
+// preserves the existing email-match fallback exactly as before.
+async function getAuthenticatedUserId(): Promise<string | null> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  return user?.id ?? null;
 }
 
 export async function POST(request: NextRequest) {
@@ -136,10 +152,11 @@ export async function POST(request: NextRequest) {
 
   // Supabase is the primary, required application database — a failure
   // here fails the whole submission (see src/lib/supabase/primaryWrite.ts).
+  const authenticatedUserId = await getAuthenticatedUserId();
   const saveResult =
     forcedError === "storage"
       ? ({ ok: false, error: "forced-test-failure" } as const)
-      : await saveEnquiryToSupabase(record);
+      : await saveEnquiryToSupabase(record, authenticatedUserId);
 
   if (!saveResult.ok) {
     console.error("[enquiry] failed to save submission", record.referenceNumber, saveResult.error);

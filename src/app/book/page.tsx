@@ -71,7 +71,7 @@ export default async function BookPage({
                 </p>
               </div>
             )}
-            <BookingForm initialService={service} />
+            <BookingForm initialService={service} initialEmail={user?.email} />
           </>
         ) : (
           <div className="max-w-2xl mx-auto text-center">
