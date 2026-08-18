@@ -18,11 +18,28 @@ function toPaymentEntityType(kind: ProjectKind): PaymentEntityType {
   return kind === "enquiry" ? "enquiry" : "workshop_registration";
 }
 
+// TD-036 — state shape for the useActionState-driven confirm-gateway
+// form. Every field beyond `error` is only ever populated for the
+// "rate_changed" case, giving CheckoutForm the fresh rate/amount to
+// re-render with in place, without a page navigation.
+export type GatewayCheckoutState = {
+  error: string | null;
+  currentRateToUsd?: number;
+  currentConvertedAmount?: number;
+  currencyCode?: string;
+};
+
 // Initiates a real Paystack checkout session and redirects the browser
-// to the hosted checkout URL — UX Spec §4. Server Action rather than a
-// Route Handler: this is a plain form submission that always ends in a
-// redirect, no client-side fetch/JSON handling needed.
-export async function startGatewayCheckoutAction(formData: FormData): Promise<void> {
+// to the hosted checkout URL — UX Spec §4. useActionState (not a
+// plain <form action> as before TD-036) because a rate_changed result
+// must re-render this form in place with the fresh amount rather than
+// navigate away and lose the customer's amount/method selection —
+// every other outcome (success, or any pre-existing error) still
+// redirects exactly as before.
+export async function startGatewayCheckoutAction(
+  _prevState: GatewayCheckoutState,
+  formData: FormData
+): Promise<GatewayCheckoutState> {
   const user = await getCurrentUser();
   if (!user || !user.email) redirect("/portal/login");
 
@@ -31,8 +48,9 @@ export async function startGatewayCheckoutAction(formData: FormData): Promise<vo
   const paymentType = String(formData.get("paymentType") ?? "") as PaymentType;
   const requestedAmountRaw = formData.get("requestedAmountUsd");
   const requestedAmountUsd = requestedAmountRaw ? Number(requestedAmountRaw) : undefined;
+  const quotedConvertedAmount = Number(formData.get("quotedConvertedAmount"));
 
-  if (!isProjectKind(kind) || !id || !paymentType) {
+  if (!isProjectKind(kind) || !id || !paymentType || !Number.isFinite(quotedConvertedAmount)) {
     redirect(`/portal/client/projects/${kind}/${id}/payments/checkout?error=invalid-request`);
   }
 
@@ -53,9 +71,22 @@ export async function startGatewayCheckoutAction(formData: FormData): Promise<vo
     email: user.email,
     callbackUrlBase,
     requestedAmountUsd,
+    quotedConvertedAmount,
   });
 
   if (!result.ok) {
+    // "in" check, not `result.error === "rate_changed"` — the
+    // fallback variant's error is a wide `string`, so TS can't prove
+    // narrowing from a literal comparison alone; property presence
+    // narrows reliably regardless.
+    if ("currentRateToUsd" in result) {
+      return {
+        error: "rate_changed",
+        currentRateToUsd: result.currentRateToUsd,
+        currentConvertedAmount: result.currentConvertedAmount,
+        currencyCode: result.currencyCode,
+      };
+    }
     redirect(`/portal/client/projects/${kind}/${id}/payments/checkout?error=${encodeURIComponent(result.error)}`);
   }
 

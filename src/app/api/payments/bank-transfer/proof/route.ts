@@ -5,6 +5,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { generateRecordId } from "@/lib/shared/recordId";
 import { checkRateLimit } from "@/lib/shared/rateLimit";
 import { resolveEntityAmounts, resolveAmountToCharge } from "@/lib/payments/checkoutService";
+import { convertedAmountsMatch } from "@/lib/payments/currency";
 import type { PaymentEntityType, PaymentType } from "@/lib/payments/types";
 import { logActivityAsSystem } from "@/lib/admin/activityLog";
 import { detectFileMimeType } from "@/lib/shared/fileContentSniff";
@@ -156,9 +157,22 @@ export async function PUT(request: NextRequest) {
     paymentType?: string;
     country?: string;
     amountUsd?: number;
+    // TD-036 — the converted amount the customer actually saw on the
+    // checkout page immediately before clicking "I've Sent This
+    // Payment". Required: this is the one legitimate customer-facing
+    // caller of this endpoint (CheckoutForm.tsx), and the whole point
+    // of the guard below is that it can't be silently omitted.
+    quotedConvertedAmount?: number;
   } | null;
 
-  if (!body?.entityType || !body.entityId || !body.paymentType || !body.country || !body.amountUsd) {
+  if (
+    !body?.entityType ||
+    !body.entityId ||
+    !body.paymentType ||
+    !body.country ||
+    !body.amountUsd ||
+    !Number.isFinite(body.quotedConvertedAmount)
+  ) {
     return NextResponse.json({ ok: false, error: "missing-fields" }, { status: 400 });
   }
   if (!ENTITY_TYPES.has(body.entityType as PaymentEntityType) || !PAYMENT_TYPES.has(body.paymentType as PaymentType)) {
@@ -218,6 +232,22 @@ export async function PUT(request: NextRequest) {
 
   const rateToUsd = Number(rateRow.rate_to_usd);
   const convertedAmount = Math.round(validatedAmountUsd * rateToUsd * 100) / 100;
+
+  // TD-036 — server-authoritative compare-and-reconfirm, same
+  // guarantee as checkoutService.ts's initiateGatewayCheckout(): the
+  // rateRow read above and the comparison/insert below all use this
+  // one fresh read, so there is no gap for a rate change to slip
+  // through between "decided the quote is still valid" and "created
+  // the payment." On a mismatch, nothing below this point runs — no
+  // record ID generated, no insert — the caller gets the fresh rate
+  // back and must resubmit, which re-runs this identical check.
+  if (!convertedAmountsMatch(body.quotedConvertedAmount as number, convertedAmount)) {
+    return NextResponse.json(
+      { ok: false, error: "rate_changed", rateToUsd, convertedAmount, currencyCode: countryConfig.default_currency_code },
+      { status: 409 }
+    );
+  }
+
   const recordId = await generateRecordId("PAY");
 
   const { data: payment, error } = await admin

@@ -1,7 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { generateRecordId } from "@/lib/shared/recordId";
-import { lockExchangeRate } from "@/lib/payments/currency";
+import { lockExchangeRate, convertedAmountsMatch } from "@/lib/payments/currency";
 import { getActiveCountryConfig, getProvider } from "@/lib/payments/providerRegistry";
 import type { PaymentEntityType, PaymentType } from "@/lib/payments/types";
 
@@ -29,10 +29,19 @@ export type InitiateCheckoutParams = {
   // actually still owed. 'balance' and 'full' are always computed
   // server-side, never accepted from the caller.
   requestedAmountUsd?: number;
+  // TD-036 — the converted amount the customer actually saw on the
+  // checkout page immediately before submitting. Required, not
+  // optional: the one legitimate caller (startGatewayCheckoutAction)
+  // always has this, and the whole point of the guard below is that
+  // it can't be silently skipped by a caller that simply omits it.
+  // Never trusted as the source of truth — only ever compared against
+  // a freshly-locked rate, never used to compute the actual charge.
+  quotedConvertedAmount: number;
 };
 
 export type InitiateCheckoutResult =
   | { ok: true; checkoutUrl: string; paymentId: string }
+  | { ok: false; error: "rate_changed"; currentRateToUsd: number; currentConvertedAmount: number; currencyCode: string }
   | { ok: false; error: string };
 
 // Exported so the bank-transfer initiation route can reuse the exact
@@ -93,6 +102,15 @@ export function resolveAmountToCharge(
 export async function initiateGatewayCheckout(
   params: InitiateCheckoutParams
 ): Promise<InitiateCheckoutResult> {
+  // TD-036 — fail safe rather than silently proceeding without
+  // reconciliation if the quote is missing or malformed. The type
+  // signature already makes this required for the one legitimate
+  // caller; this is the runtime backstop for a malformed/tampered
+  // request reaching this function some other way.
+  if (!Number.isFinite(params.quotedConvertedAmount)) {
+    return { ok: false, error: "missing-quote" };
+  }
+
   const countryConfig = await getActiveCountryConfig(params.country);
   if (!countryConfig) {
     return { ok: false, error: "no-active-payment-config-for-country" };
@@ -116,6 +134,26 @@ export async function initiateGatewayCheckout(
   const lockedRate = await lockExchangeRate(amountToCharge, countryConfig.defaultCurrencyCode);
   if (!lockedRate) {
     return { ok: false, error: "no-exchange-rate-set" };
+  }
+
+  // TD-036 — server-authoritative compare-and-reconfirm. lockedRate is
+  // the one fresh read of the current rate; comparison and the
+  // eventual payments insert below both use this exact same value, so
+  // there is no gap between "decided the quote is still valid" and
+  // "created the payment" for a rate change to slip through. On a
+  // mismatch, nothing below this point runs — no duplicate-checkout
+  // check, no insert, no gateway call — the caller gets the fresh
+  // rate back and must resubmit, which re-runs this identical check
+  // against whatever is current at that later moment. Never a
+  // privileged second attempt.
+  if (!convertedAmountsMatch(params.quotedConvertedAmount, lockedRate.convertedAmount)) {
+    return {
+      ok: false,
+      error: "rate_changed",
+      currentRateToUsd: lockedRate.rateToUsd,
+      currentConvertedAmount: lockedRate.convertedAmount,
+      currencyCode: lockedRate.currencyCode,
+    };
   }
 
   // Duplicate-checkout prevention (Security Review §8) — an existing
