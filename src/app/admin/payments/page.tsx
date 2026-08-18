@@ -6,7 +6,7 @@ import { canAccessPaymentsAdmin, PAYMENT_CAPABILITIES } from "@/lib/payments/pay
 import { hasCapability } from "@/lib/workflow/engine";
 import { createClient } from "@/lib/supabase/server";
 import { isStaging } from "@/lib/shared/env";
-import { approveBankTransferAction, rejectBankTransferAction, reconcilePaymentAction } from "./actions";
+import { approveBankTransferAction, rejectBankTransferAction } from "./actions";
 
 export const metadata: Metadata = {
   title: "Payments — Ordift Studios Admin",
@@ -28,9 +28,6 @@ export default async function AdminPaymentsPage() {
   const user = await getCurrentUser();
   if (!user || !canAccessPaymentsAdmin(user)) redirect("/portal");
   const canManageCurrencies = hasCapability(user, PAYMENT_CAPABILITIES, "manage_currencies");
-  // TD-043 — gates the "Reconcile Now" button below; the action itself
-  // re-checks this same capability server-side regardless.
-  const canReconcile = hasCapability(user, PAYMENT_CAPABILITIES, "reconcile_payment");
 
   const supabase = await createClient();
 
@@ -89,6 +86,7 @@ export default async function AdminPaymentsPage() {
                   <th className="font-sans text-caption uppercase tracking-wide text-ordift-ink-muted py-3 px-4">Amount</th>
                   <th className="font-sans text-caption uppercase tracking-wide text-ordift-ink-muted py-3 px-4">Submitted</th>
                   <th className="font-sans text-caption uppercase tracking-wide text-ordift-ink-muted py-3 px-4">Decision</th>
+                  <th className="font-sans text-caption uppercase tracking-wide text-ordift-ink-muted py-3 px-4">Details</th>
                 </tr>
               </thead>
               <tbody>
@@ -133,6 +131,14 @@ export default async function AdminPaymentsPage() {
                         </form>
                       </div>
                     </td>
+                    <td className="py-3 px-4">
+                      <Link
+                        href={`/admin/payments/${p.id}`}
+                        className="font-sans text-body-small font-medium text-ordift-gold-pressed hover:underline"
+                      >
+                        View →
+                      </Link>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -153,9 +159,7 @@ export default async function AdminPaymentsPage() {
                 <th className="font-sans text-caption uppercase tracking-wide text-ordift-ink-muted py-3 px-4">Status</th>
                 <th className="font-sans text-caption uppercase tracking-wide text-ordift-ink-muted py-3 px-4">Amount (USD)</th>
                 <th className="font-sans text-caption uppercase tracking-wide text-ordift-ink-muted py-3 px-4">Date</th>
-                {canReconcile && (
-                  <th className="font-sans text-caption uppercase tracking-wide text-ordift-ink-muted py-3 px-4">Reconcile</th>
-                )}
+                <th className="font-sans text-caption uppercase tracking-wide text-ordift-ink-muted py-3 px-4">Details</th>
               </tr>
             </thead>
             <tbody>
@@ -173,26 +177,18 @@ export default async function AdminPaymentsPage() {
                   <td className="py-3 px-4 font-sans text-body-small text-ordift-ink-muted whitespace-nowrap">
                     {formatDate(p.created_at)}
                   </td>
-                  {canReconcile && (
-                    <td className="py-3 px-4">
-                      {/* TD-043 — only ever visible for a stuck gateway/pending
-                          row; the action itself only calls Paystack's own verify
-                          API, never sets a status directly. */}
-                      {p.payment_method === "gateway" && p.status === "pending" ? (
-                        <form action={reconcilePaymentAction}>
-                          <input type="hidden" name="paymentId" value={p.id} />
-                          <button
-                            type="submit"
-                            className="min-h-8 rounded-lg border border-black/15 px-3 font-sans text-body-small text-ordift-ink hover:bg-black/5"
-                          >
-                            Reconcile Now
-                          </button>
-                        </form>
-                      ) : (
-                        <span className="font-sans text-body-small text-ordift-ink-muted">—</span>
-                      )}
-                    </td>
-                  )}
+                  <td className="py-3 px-4">
+                    {/* TD-043 Part B — the individual payment detail page is
+                        where Reconcile Now now lives (gated there on gateway +
+                        pending + the reconcile_payment capability), not inline
+                        in this list. */}
+                    <Link
+                      href={`/admin/payments/${p.id}`}
+                      className="font-sans text-body-small font-medium text-ordift-gold-pressed hover:underline"
+                    >
+                      View →
+                    </Link>
+                  </td>
                 </tr>
               ))}
             </tbody>

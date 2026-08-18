@@ -166,6 +166,10 @@ export async function reconcilePaymentAction(formData: FormData): Promise<void> 
   });
 
   revalidatePath("/admin/payments");
+  // TD-043 Part B — Reconcile Now now lives on the payment detail
+  // page; revalidate it too so the resulting status (completed/
+  // failed/still-pending) shows immediately without a manual refresh.
+  revalidatePath(`/admin/payments/${paymentId}`);
 }
 
 // Ghana-only today, same as every other payments module file — see
