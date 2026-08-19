@@ -10,6 +10,7 @@ import { logActivity } from "@/lib/admin/activityLog";
 import { insertExchangeRate } from "@/lib/payments/currency";
 import { reconcilePendingGatewayPayment } from "@/lib/payments/reconcilePendingPayment";
 import { sendPaymentReceiptEmail } from "@/lib/payments/receipts";
+import { advanceStageOnFullPayment } from "@/lib/payments/crmStageSync";
 
 async function requireCapability(
   capability:
@@ -281,7 +282,12 @@ export async function addExchangeRateAction(formData: FormData): Promise<void> {
   redirect("/admin/payments/exchange-rates");
 }
 
-async function syncEntityAfterBankTransferDecision(entityType: string, entityId: string): Promise<void> {
+// Exported so it can be exercised directly by integration tests, the
+// same way gatewaySync.ts's applyGatewayEventToPayment() is — this
+// project's established pattern for testing an admin-action's core
+// logic without a real session/cookie context (see
+// crmStageAutoAdvance.integration.test.ts).
+export async function syncEntityAfterBankTransferDecision(entityType: string, entityId: string): Promise<void> {
   // Admin/secret-key client, not the session client — same reason as
   // the payments write in approveBankTransferAction above: the caller
   // has already enforced authorization via requireCapability(), this
@@ -332,5 +338,8 @@ async function syncEntityAfterBankTransferDecision(entityType: string, entityId:
     .eq("id", entityId);
   if (updateError) {
     console.error("[admin] bank transfer sync: failed to update entity balance", { table, entityId, error: updateError.message });
+    return;
   }
+
+  await advanceStageOnFullPayment(supabase, entityType, entityId, paymentStatus);
 }
