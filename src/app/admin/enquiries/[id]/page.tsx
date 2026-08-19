@@ -11,8 +11,9 @@ import { getDeliverableCategories, getDeliverablesForEntity } from "@/lib/admin/
 import DeliverablesManager from "@/components/admin/DeliverablesManager";
 import { getProjectRequestsForEntity } from "@/lib/admin/projectRequests";
 import ProjectRequestsManager from "@/components/admin/ProjectRequestsManager";
-import { updateStageAction, addNoteAction } from "../actions";
+import { addNoteAction } from "../actions";
 import SetAmountDueForm from "./SetAmountDueForm";
+import UpdateStageForm from "./UpdateStageForm";
 
 function formatUsd(amount: number): string {
   return `$${amount.toFixed(2)}`;
@@ -180,26 +181,11 @@ export default async function AdminEnquiryDetailPage({ params }: { params: Promi
             <p className="font-sans text-caption uppercase tracking-wide text-ordift-ink-muted mb-3">
               CRM Stage
             </p>
-            <form action={updateStageAction} className="space-y-3">
-              <input type="hidden" name="enquiryId" value={enquiry.id} />
-              <select
-                name="stage"
-                defaultValue={enquiry.crmStage}
-                className="w-full min-h-11 rounded-lg border border-black/15 bg-white px-3 font-sans text-body-small text-ordift-ink"
-              >
-                {CRM_STAGES.map((s) => (
-                  <option key={s} value={s}>
-                    {crmStageLabel(s)}
-                  </option>
-                ))}
-              </select>
-              <button
-                type="submit"
-                className="w-full min-h-11 rounded-full bg-ordift-gold text-ordift-navy-950 font-sans font-semibold text-body-small"
-              >
-                Update Stage
-              </button>
-            </form>
+            <UpdateStageForm
+              enquiryId={enquiry.id}
+              currentStage={enquiry.crmStage}
+              stageOptions={CRM_STAGES.map((s) => ({ value: s, label: crmStageLabel(s) }))}
+            />
           </div>
         </div>
       </div>

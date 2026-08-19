@@ -7,6 +7,7 @@ import { hasCapability } from "@/lib/workflow/engine";
 import { PAYMENT_CAPABILITIES } from "@/lib/payments/paymentPermissions";
 import { logActivity } from "@/lib/admin/activityLog";
 import { CRM_STAGES, type CrmStage } from "@/lib/admin/enquiries";
+import { crmStageLabel } from "@/lib/portal/data";
 
 async function requireStaffOrAdmin() {
   const user = await getCurrentUser();
@@ -32,30 +33,64 @@ function isCrmStage(value: string): value is CrmStage {
   return (CRM_STAGES as readonly string[]).includes(value);
 }
 
-export async function updateStageAction(formData: FormData): Promise<void> {
-  const user = await requireStaffOrAdmin();
+// useActionState-compatible result — Admin Platform UX audit (2026-08-19):
+// the previous plain void action gave the admin zero visible feedback on
+// whether a stage change was saving, saved, or silently failed (a real
+// attempt on ENQ-2026-000007 appeared to "revert" with no explanation).
+// Matches the SetAmountDueState pattern (setAmountDueAction) exactly.
+export type UpdateStageState = { ok: boolean; error?: string; stageLabel?: string } | null;
+
+export async function updateStageAction(
+  _prevState: UpdateStageState,
+  formData: FormData
+): Promise<UpdateStageState> {
+  let user;
+  try {
+    user = await requireStaffOrAdmin();
+  } catch {
+    return { ok: false, error: "You are not authorized to change this." };
+  }
 
   const enquiryId = String(formData.get("enquiryId") ?? "");
   const stage = String(formData.get("stage") ?? "");
-  if (!enquiryId || !isCrmStage(stage)) return;
-
-  const supabase = await createClient();
-  const { error } = await supabase.from("enquiries").update({ crm_stage: stage }).eq("id", enquiryId);
-  if (error) {
-    console.error("[admin] enquiry stage update failed", error.message);
-    return;
+  if (!enquiryId || !isCrmStage(stage)) {
+    return { ok: false, error: "Select a valid stage." };
   }
 
-  await logActivity({
-    actorUserId: user.id,
-    action: "enquiry.stage_change",
-    entityType: "enquiry",
-    entityId: enquiryId,
-    metadata: { stage },
-  });
+  const supabase = await createClient();
+
+  // Atomic conditional UPDATE, not a prior read-then-write — the same
+  // guard shape proven necessary by setAmountDueAction's own double-
+  // submit fix. A double-click or slow-network retry submitting the
+  // same target stage twice must never log two identical activity
+  // rows; the "is this actually a change" check lives in the UPDATE's
+  // own WHERE clause, not a separate SELECT.
+  const { data: updatedRows, error } = await supabase
+    .from("enquiries")
+    .update({ crm_stage: stage })
+    .eq("id", enquiryId)
+    .neq("crm_stage", stage)
+    .select("id");
+
+  if (error) {
+    console.error("[admin] enquiry stage update failed", error.message);
+    return { ok: false, error: "Save failed. Please try again." };
+  }
+
+  if (updatedRows && updatedRows.length > 0) {
+    await logActivity({
+      actorUserId: user.id,
+      action: "enquiry.stage_change",
+      entityType: "enquiry",
+      entityId: enquiryId,
+      metadata: { stage },
+    });
+  }
 
   revalidatePath(`/admin/enquiries/${enquiryId}`);
   revalidatePath("/admin/enquiries");
+
+  return { ok: true, stageLabel: crmStageLabel(stage) };
 }
 
 // Stages before "quotation_sent" in the CRM pipeline — setting an
