@@ -1,5 +1,6 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { sendPaymentReceiptEmail } from "@/lib/payments/receipts";
+import { advanceStageOnFullPayment } from "@/lib/payments/crmStageSync";
 import type { PaymentWebhookEvent } from "@/lib/payments/types";
 
 // Shared between the Paystack webhook handler and active
@@ -374,4 +375,6 @@ export async function syncEntityPaymentStatus(entityType: string, entityId: stri
     .from(table)
     .update({ amount_paid: Math.round(totalPaidUsd * 100) / 100, payment_status: paymentStatus })
     .eq("id", entityId);
+
+  await advanceStageOnFullPayment(admin, entityType, entityId, paymentStatus);
 }
