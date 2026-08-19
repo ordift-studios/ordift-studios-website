@@ -177,12 +177,22 @@ export async function reconcilePaymentAction(formData: FormData): Promise<void> 
 // entry in the durable receipt outbox (payment_receipt_jobs). This is
 // deliberately narrow and cannot touch anything financial: it never
 // reads or writes payments.status, amount_collected, gateway_reference,
-// or any other payment field, and it never creates a payment. It only
-// operates on the receipt job row itself, and only when that job is
-// not already 'sent' — a confirmed-sent receipt is never re-dispatched
-// through this path (see PAYMENT_SECURITY_REVIEW.md's authoritative-
-// source rule: no path here lets a human force a financial outcome,
-// same reasoning as reconcilePaymentAction above).
+// or any other payment field, and it never creates a payment or a new
+// receipt-job row. It only operates on the receipt job row itself, and
+// only when that job is not already 'sent' — a confirmed-sent receipt
+// is never re-dispatched through this path (see PAYMENT_SECURITY_
+// REVIEW.md's authoritative-source rule: no path here lets a human
+// force a financial outcome, same reasoning as reconcilePaymentAction
+// above).
+//
+// TD-043 defense-in-depth (migration 0032) — the actual claim decision
+// (pending/failed always claimable; a stuck 'processing' job claimable
+// only once genuinely stale) is delegated entirely to
+// reclaim_stale_receipt_job(), a single atomic Postgres statement using
+// only the database's own now() — never this process's Date.now(). A
+// job that's really still in flight (processing, not yet stale) or
+// already 'sent' matches none of that function's branches and this
+// action correctly no-ops, exactly as before this change.
 export async function retryReceiptJobAction(formData: FormData): Promise<void> {
   const user = await requireCapability("reconcile_payment");
   const paymentId = String(formData.get("paymentId") ?? "");
@@ -191,31 +201,22 @@ export async function retryReceiptJobAction(formData: FormData): Promise<void> {
   const supabase = createAdminClient();
   const { data: job } = await supabase
     .from("payment_receipt_jobs")
-    .select("id, status, attempt_count")
+    .select("id, status")
     .eq("payment_id", paymentId)
     .eq("outcome", "completed")
     .maybeSingle();
 
-  if (!job || job.status === "sent" || job.status === "processing") {
-    // Nothing to retry: no job, already confirmed sent (never
-    // re-dispatched from here), or a genuinely concurrent attempt is
-    // already in flight.
+  if (!job || job.status === "sent") return; // nothing to retry, or already confirmed sent
+
+  const { data: claimedRows, error: claimError } = await supabase.rpc("reclaim_stale_receipt_job", {
+    p_job_id: job.id,
+  });
+  if (claimError) {
+    console.error("[admin] reclaim_stale_receipt_job failed", claimError.message);
     return;
   }
-
-  // Conditional claim on this specific retry attempt — mirrors the
-  // same "conditional UPDATE, check the row count" pattern used
-  // throughout TD-043, so a rapid double-click on this button can't
-  // trigger two concurrent sends either.
-  const { data: claimed } = await supabase
-    .from("payment_receipt_jobs")
-    .update({ status: "processing", attempt_count: job.attempt_count + 1, last_attempted_at: new Date().toISOString() })
-    .eq("id", job.id)
-    .eq("status", job.status)
-    .select("id")
-    .maybeSingle();
-
-  if (!claimed) return; // lost a race to another retry attempt
+  const claimed = Array.isArray(claimedRows) && claimedRows.length > 0 ? claimedRows[0] : null;
+  if (!claimed) return; // lost a race, or genuinely not yet eligible (fresh processing / already sent)
 
   const result = await sendPaymentReceiptEmail(paymentId);
 
@@ -226,14 +227,14 @@ export async function retryReceiptJobAction(formData: FormData): Promise<void> {
       provider_result: result.ok ? result.mode : null,
       last_error: result.ok ? null : result.error,
     })
-    .eq("id", job.id);
+    .eq("id", claimed.id);
 
   await logActivity({
     actorUserId: user.id,
     action: "payment.receipt_retry",
     entityType: "payment",
     entityId: paymentId,
-    metadata: { outcome: result.ok ? "sent" : "failed", attemptCount: job.attempt_count + 1 },
+    metadata: { outcome: result.ok ? "sent" : "failed", attemptCount: claimed.attempt_count },
   });
 
   revalidatePath("/admin/payments");

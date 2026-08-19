@@ -301,4 +301,65 @@ describe("payment completion idempotency — top-level claim (TD-043)", () => {
     const job = await getReceiptJob(payment.id);
     expect(job).toBeFalsy();
   });
+
+  // TD-043 defense-in-depth review — the unconditional-side-effect
+  // review concluded 'failed' and 'amount_mismatch' get the identical
+  // acquireCompletionClaim()/logPaymentActivity() protection as
+  // 'completed', by code inspection; these two tests convert that into
+  // the same tested guarantee 'completed' already had above. Reuses
+  // payment_type "full" and "refund" — both already resolved away from
+  // 'pending' by the first and fifth tests above, by file execution
+  // order, so no collision with migration 0028's one-pending-per-
+  // entity-and-type index.
+  it("lets exactly one of two truly concurrent 'failed' events win, and only it logs activity once", async () => {
+    const payment = await createPendingPayment("full");
+
+    const [resultA, resultB] = await Promise.all([
+      applyGatewayEventToPayment(payment, { status: "failed", ...GATEWAY_EVENT_BASE }, "verify"),
+      applyGatewayEventToPayment(payment, { status: "failed", ...GATEWAY_EVENT_BASE }, "webhook"),
+    ]);
+
+    const outcomes = [resultA.outcome, resultB.outcome].sort();
+    expect(outcomes).toEqual(["failed", "ignored"]);
+
+    const { data: finalPayment } = await admin.from("payments").select("status").eq("id", payment.id).maybeSingle();
+    expect(finalPayment?.status).toBe("failed");
+
+    expect(await activityCountFor(payment.id, "payment.failed")).toBe(1);
+
+    const claim = await getClaim(payment.id, "failed");
+    expect(claim?.completed_at).toBeTruthy();
+
+    // No receipt job for a failed payment — dispatchReceiptJob() is
+    // never called on this branch.
+    const job = await getReceiptJob(payment.id);
+    expect(job).toBeFalsy();
+  });
+
+  it("lets exactly one of two truly concurrent 'amount_mismatch' events win, and only it logs activity once", async () => {
+    const payment = await createPendingPayment("refund");
+    // payment.converted_amount is 60 (createPendingPayment's fixed
+    // value) — a wildly different reported amount forces the
+    // amount/currency-mismatch branch rather than a genuine completion.
+    const mismatchedEvent = { ...GATEWAY_EVENT_BASE, amount: 999 };
+
+    const [resultA, resultB] = await Promise.all([
+      applyGatewayEventToPayment(payment, { status: "completed", ...mismatchedEvent }, "verify"),
+      applyGatewayEventToPayment(payment, { status: "completed", ...mismatchedEvent }, "webhook"),
+    ]);
+
+    const outcomes = [resultA.outcome, resultB.outcome].sort();
+    expect(outcomes).toEqual(["amount-mismatch", "ignored"]);
+
+    const { data: finalPayment } = await admin.from("payments").select("status").eq("id", payment.id).maybeSingle();
+    expect(finalPayment?.status).toBe("failed"); // amount-mismatch resolves payments.status to 'failed'
+
+    expect(await activityCountFor(payment.id, "payment.amount_mismatch")).toBe(1);
+
+    const claim = await getClaim(payment.id, "amount_mismatch");
+    expect(claim?.completed_at).toBeTruthy();
+
+    const job = await getReceiptJob(payment.id);
+    expect(job).toBeFalsy();
+  });
 });

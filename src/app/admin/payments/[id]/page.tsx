@@ -19,6 +19,16 @@ export const metadata: Metadata = {
 // new or weaker permission model. Reconcile Now lives here now,
 // relocated from the Recent Payments list row.
 
+// TD-043 defense-in-depth (migration 0032) — mirrors
+// reclaim_stale_receipt_job()'s own 2-minute default so the "stuck"
+// badge below appears at roughly the same point the database would
+// actually let it be reclaimed. This is display guidance only, not a
+// correctness boundary: retryReceiptJobAction always calls the RPC
+// regardless of what this heuristic decided to show, and the RPC's own
+// database-clock check is what actually decides eligibility — a few
+// seconds of drift here changes nothing about whether a click succeeds.
+const RECEIPT_JOB_STALE_AFTER_MS = 2 * 60 * 1000;
+
 function formatDateTime(iso: string | null): string {
   if (!iso) return "—";
   return new Date(iso).toLocaleString("en-GB", {
@@ -28,6 +38,15 @@ function formatDateTime(iso: string | null): string {
     hour: "2-digit",
     minute: "2-digit",
   });
+}
+
+// TD-043 defense-in-depth (migration 0032) — display-only staleness
+// heuristic, deliberately kept out of the page component's own body
+// (see RECEIPT_JOB_STALE_AFTER_MS above for why the read of the current
+// clock here is harmless even though it's not a pure computation).
+function isStaleProcessingReceiptJob(status: string, lastAttemptedAt: string | null): boolean {
+  if (status !== "processing" || !lastAttemptedAt) return false;
+  return Date.now() - new Date(lastAttemptedAt).getTime() > RECEIPT_JOB_STALE_AFTER_MS;
 }
 
 function statusLabel(status: string): { label: string; tone: string } {
@@ -84,7 +103,14 @@ export default async function AdminPaymentDetailPage({ params }: { params: Promi
           .eq("outcome", "completed")
           .maybeSingle()
       : { data: null };
-  const eligibleForReceiptRetry = canReconcile && receiptJob && receiptJob.status !== "sent" && receiptJob.status !== "processing";
+  // TD-043 defense-in-depth (migration 0032) — a 'processing' job is
+  // only shown as stuck/recoverable once it's plausibly past the same
+  // staleness window reclaim_stale_receipt_job() itself enforces in the
+  // database. This is UI guidance only; see RECEIPT_JOB_STALE_AFTER_MS
+  // above for why a small drift here is harmless.
+  const isStaleReceiptJob = !!receiptJob && isStaleProcessingReceiptJob(receiptJob.status, receiptJob.last_attempted_at);
+  const eligibleForReceiptRetry =
+    canReconcile && !!receiptJob && (receiptJob.status === "pending" || receiptJob.status === "failed" || isStaleReceiptJob);
 
   const entityReference =
     entity && "reference_number" in entity ? entity.reference_number : entity && "registration_reference" in entity ? entity.registration_reference : null;
@@ -210,7 +236,14 @@ export default async function AdminPaymentDetailPage({ params }: { params: Promi
           <dl className="grid grid-cols-2 gap-x-6 gap-y-3 mb-4">
             <div>
               <dt className="font-sans text-caption uppercase tracking-wide text-ordift-ink-muted">Status</dt>
-              <dd className="font-sans text-body-small text-ordift-ink mt-1 capitalize">{receiptJob.status}</dd>
+              <dd className="font-sans text-body-small text-ordift-ink mt-1 capitalize">
+                {receiptJob.status}
+                {isStaleReceiptJob && (
+                  <span className="ml-2 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 font-sans text-caption font-medium capitalize text-amber-800">
+                    Stuck — interrupted mid-send
+                  </span>
+                )}
+              </dd>
             </div>
             <div>
               <dt className="font-sans text-caption uppercase tracking-wide text-ordift-ink-muted">Attempts</dt>
@@ -234,11 +267,13 @@ export default async function AdminPaymentDetailPage({ params }: { params: Promi
                 type="submit"
                 className="min-h-10 rounded-lg border border-black/20 px-4 font-sans text-body-small font-medium text-ordift-ink hover:bg-black/5"
               >
-                Retry Receipt
+                {isStaleReceiptJob ? "Recover Stuck Receipt" : "Retry Receipt"}
               </button>
             </form>
           ) : receiptJob.status === "sent" ? (
             <p className="font-sans text-caption text-ordift-ink-muted">Confirmed sent — not re-dispatched from here.</p>
+          ) : receiptJob.status === "processing" ? (
+            <p className="font-sans text-caption text-ordift-ink-muted">In progress — recovery becomes available if this doesn&apos;t resolve shortly.</p>
           ) : null}
         </section>
       )}
