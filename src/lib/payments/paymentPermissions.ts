@@ -25,6 +25,7 @@ export const PAYMENT_CAPABILITIES: WorkflowCapabilityMatrix = {
     "manage_bank_accounts",
     "manage_currencies",
     "manage_project_amount",
+    "reconcile_payment",
   ],
   admin: [
     "view_all_payments",
@@ -34,8 +35,14 @@ export const PAYMENT_CAPABILITIES: WorkflowCapabilityMatrix = {
     "manage_bank_accounts",
     "manage_currencies",
     "manage_project_amount",
+    "reconcile_payment",
   ],
-  staff: ["view_all_payments", "approve_bank_transfer", "reject_bank_transfer"],
+  // TD-043 — reconcile_payment sits at the same tier as
+  // approve/reject_bank_transfer, not the higher issue_refund/
+  // manage_currencies tier: it can only pull Paystack's own
+  // authoritative verify result, never choose or force a financial
+  // outcome, so it carries none of the risk those capabilities do.
+  staff: ["view_all_payments", "approve_bank_transfer", "reject_bank_transfer", "reconcile_payment"],
 };
 
 // Same staff/admin/super_admin boundary as every other /admin/** module

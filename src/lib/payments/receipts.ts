@@ -1,5 +1,5 @@
 import { createAdminClient } from "@/lib/supabase/admin";
-import { sendEmail } from "@/lib/shared/email/dispatch";
+import { sendEmail, type EmailResult } from "@/lib/shared/email/dispatch";
 
 // Payment receipts — reuses the existing Resend pipeline directly
 // (src/lib/shared/email/dispatch.ts), same staging/production gating
@@ -14,7 +14,12 @@ function formatCurrency(amount: number, currency: string): string {
   return `${currency} ${amount.toFixed(2)}`;
 }
 
-export async function sendPaymentReceiptEmail(paymentId: string): Promise<void> {
+// TD-043 — returns the real send outcome (rather than a bare void) so
+// the durable receipt outbox (gatewaySync.ts's dispatchReceiptJob) can
+// record what actually happened — sent, logged (Staging's own
+// suppressed-send mode), or genuinely failed — instead of assuming
+// success merely because this function was called.
+export async function sendPaymentReceiptEmail(paymentId: string): Promise<EmailResult> {
   const admin = createAdminClient();
   const { data: payment } = await admin
     .from("payments")
@@ -26,7 +31,7 @@ export async function sendPaymentReceiptEmail(paymentId: string): Promise<void> 
 
   if (!payment) {
     console.error("[payments] receipt: payment not found", paymentId);
-    return;
+    return { ok: false, error: "payment-not-found", attempts: 0, permanent: true };
   }
 
   let email: string | null = null;
@@ -50,7 +55,7 @@ export async function sendPaymentReceiptEmail(paymentId: string): Promise<void> 
 
   if (!email) {
     console.error("[payments] receipt: no email resolved for payment", paymentId);
-    return;
+    return { ok: false, error: "no-email-resolved", attempts: 0, permanent: true };
   }
 
   const amountLocal = formatCurrency(Number(payment.amount_collected ?? payment.reference_amount_usd), payment.payment_currency);
@@ -73,7 +78,7 @@ export async function sendPaymentReceiptEmail(paymentId: string): Promise<void> 
 <strong>Date:</strong> ${new Date(payment.created_at).toLocaleDateString()}</p>
 <p>Ordift Studios</p>`;
 
-  await sendEmail({
+  return sendEmail({
     to: email,
     subject,
     html,

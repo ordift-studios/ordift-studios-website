@@ -51,5 +51,15 @@ export async function reconcilePendingGatewayPayment(paymentId: string): Promise
   const result = await applyGatewayEventToPayment(payment, event, "verify");
   if (result.outcome === "completed") return "completed";
   if (result.outcome === "failed" || result.outcome === "amount-mismatch") return "failed";
+  if (result.outcome === "ignored") {
+    // TD-043 — "ignored" means applyGatewayEventToPayment's
+    // conditional write lost a race to another caller (the webhook,
+    // most likely) that resolved this exact payment moments earlier.
+    // The payment is NOT still pending — re-read its actual current
+    // status rather than assuming "pending", which would incorrectly
+    // report a resolved payment as still stuck.
+    const { data: current } = await admin.from("payments").select("status").eq("id", paymentId).maybeSingle();
+    return (current?.status as PaymentStatus) ?? "pending";
+  }
   return "pending";
 }

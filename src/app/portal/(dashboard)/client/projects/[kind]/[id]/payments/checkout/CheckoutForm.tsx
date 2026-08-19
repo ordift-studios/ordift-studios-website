@@ -1,16 +1,18 @@
 "use client";
 
-import { useState, useId } from "react";
+import { useActionState, useState, useId } from "react";
 import { useRouter } from "next/navigation";
-import { startGatewayCheckoutAction } from "../actions";
+import { startGatewayCheckoutAction, type GatewayCheckoutState } from "../actions";
 import type { BankAccountDisplay } from "@/lib/payments/bankAccounts";
+
+const initialGatewayState: GatewayCheckoutState = { error: null };
 
 type Method = "gateway" | "bank_transfer";
 type AmountMode = "full" | "custom";
 type Step = "select" | "confirm-gateway" | "bank-details" | "bank-upload" | "bank-submitted";
 
 const ERROR_MESSAGES: Record<string, string> = {
-  "checkout-already-in-progress": "You already have a payment in progress for this — check your payment history below, or try again in a moment.",
+  "checkout-already-in-progress": "A payment attempt is already in progress. Please complete the existing payment, or wait a few minutes and try again.",
   "invalid-or-unavailable-amount": "That amount isn't available to pay right now — please refresh and try again.",
   "no-exchange-rate-set": "Card and Mobile Money payments aren't available in your currency yet — please use Bank Transfer, or contact us.",
   "gateway-init-failed": "We couldn't start your payment right now. Please try again shortly, or contact us if this continues.",
@@ -49,10 +51,30 @@ export default function CheckoutForm({
   const [proofFile, setProofFile] = useState<File | null>(null);
   const [referenceNote, setReferenceNote] = useState("");
 
+  // TD-036 — the rate actually driving the displayed preview. Starts
+  // as the page-render-time value, but is overwritten with the
+  // server's authoritative rate whenever either checkout path reports
+  // rate_changed, so the customer always sees (and next quotes) the
+  // number that will actually be reconciled against.
+  const [activeRateToUsd, setActiveRateToUsd] = useState<number | null>(rateToUsd);
+  const [bankRateChanged, setBankRateChanged] = useState(false);
+
+  const [gatewayState, gatewayFormAction, gatewayPending] = useActionState(startGatewayCheckoutAction, initialGatewayState);
+  // Same "adjust state during render when a dependency changes"
+  // pattern as LoginForm.tsx's Turnstile reset — avoids an extra
+  // cascading render for what's ultimately synchronous, derived state.
+  const [prevGatewayState, setPrevGatewayState] = useState(gatewayState);
+  if (gatewayState !== prevGatewayState) {
+    setPrevGatewayState(gatewayState);
+    if (gatewayState.error === "rate_changed" && gatewayState.currentRateToUsd != null) {
+      setActiveRateToUsd(gatewayState.currentRateToUsd);
+    }
+  }
+
   const paymentType = amountMode === "full" ? (hasExistingPayment ? "balance" : "full") : "partial";
   const amountUsd = amountMode === "full" ? balanceUsd : Number(customAmount) || 0;
   const amountValid = amountUsd > 0 && amountUsd <= balanceUsd;
-  const convertedPreview = rateToUsd != null ? Math.round(amountUsd * rateToUsd * 100) / 100 : null;
+  const convertedPreview = activeRateToUsd != null ? Math.round(amountUsd * activeRateToUsd * 100) / 100 : null;
 
   function handleContinue() {
     if (!amountValid) {
@@ -65,16 +87,33 @@ export default function CheckoutForm({
   }
 
   async function handleStartBankTransfer() {
+    if (convertedPreview == null) return;
     setSubmitting(true);
     setError(null);
     try {
       const res = await fetch("/api/payments/bank-transfer/proof", {
         method: "PUT",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ entityType: kind === "enquiry" ? "enquiry" : "workshop_registration", entityId: id, paymentType, country: "GH", amountUsd }),
+        body: JSON.stringify({
+          entityType: kind === "enquiry" ? "enquiry" : "workshop_registration",
+          entityId: id,
+          paymentType,
+          country: "GH",
+          amountUsd,
+          quotedConvertedAmount: convertedPreview,
+        }),
       });
       const body = await res.json();
+      // TD-036 — a stale quote returns rate_changed rather than
+      // succeeding or throwing; update the displayed amount and
+      // require an explicit new click, never auto-resubmit.
+      if (body.error === "rate_changed") {
+        setActiveRateToUsd(body.rateToUsd);
+        setBankRateChanged(true);
+        return;
+      }
       if (!body.ok) throw new Error(body.error ?? "failed");
+      setBankRateChanged(false);
       setBankPaymentId(body.paymentId);
       setStep("bank-upload");
     } catch (err) {
@@ -189,6 +228,12 @@ export default function CheckoutForm({
       {step === "confirm-gateway" && (
         <div className="rounded-xl border border-black/10 bg-white p-6 sm:p-8 space-y-5">
           <p className="font-sans text-caption uppercase tracking-wide text-ordift-ink-muted">Confirm Payment</p>
+          {gatewayState.error === "rate_changed" && (
+            <p role="status" className="font-sans text-body-small text-amber-800 bg-amber-50 rounded-lg px-4 py-3">
+              The exchange rate was updated while you were checking out. Your payment is now {gatewayState.currencyCode}{" "}
+              {gatewayState.currentConvertedAmount?.toFixed(2)}. Please review the updated amount and confirm to continue.
+            </p>
+          )}
           <div>
             <p className="font-serif font-medium text-2xl text-ordift-ink">${amountUsd.toFixed(2)} USD</p>
             {convertedPreview != null ? (
@@ -204,17 +249,18 @@ export default function CheckoutForm({
           <p className="font-sans text-caption text-ordift-ink-muted">
             Your bank or card provider may apply its own exchange rate or fee — this is outside Ordift Studios&apos; control.
           </p>
-          <form action={startGatewayCheckoutAction} className="flex flex-col sm:flex-row gap-3">
+          <form action={gatewayFormAction} className="flex flex-col sm:flex-row gap-3">
             <input type="hidden" name="kind" value={kind} />
             <input type="hidden" name="id" value={id} />
             <input type="hidden" name="paymentType" value={paymentType} />
             {amountMode === "custom" && <input type="hidden" name="requestedAmountUsd" value={amountUsd} />}
+            {convertedPreview != null && <input type="hidden" name="quotedConvertedAmount" value={convertedPreview} />}
             <button
               type="submit"
-              disabled={convertedPreview == null}
+              disabled={convertedPreview == null || gatewayPending}
               className="flex-1 inline-flex items-center justify-center min-h-11 px-6 rounded-full font-sans font-semibold text-button bg-ordift-gold text-ordift-navy-950 hover:bg-ordift-gold-hover disabled:opacity-50 disabled:pointer-events-none transition-all duration-150"
             >
-              Continue to Secure Payment
+              {gatewayPending ? "Please wait…" : gatewayState.error === "rate_changed" ? "Confirm Updated Amount" : "Continue to Secure Payment"}
             </button>
             <button
               type="button"
@@ -232,6 +278,12 @@ export default function CheckoutForm({
           <p className="font-sans text-caption uppercase tracking-wide text-ordift-ink-muted">Bank Transfer Details</p>
           {bankAccount ? (
             <>
+              {bankRateChanged && (
+                <p role="status" className="font-sans text-body-small text-amber-800 bg-amber-50 rounded-lg px-4 py-3">
+                  The exchange rate was updated while you were checking out. Your payment is now {bankAccount.currencyCode}{" "}
+                  {convertedPreview?.toFixed(2)}. Please review the updated amount and confirm to continue.
+                </p>
+              )}
               <div>
                 <p className="font-serif font-medium text-2xl text-ordift-ink">${amountUsd.toFixed(2)} USD</p>
                 {convertedPreview != null && (
@@ -270,11 +322,14 @@ export default function CheckoutForm({
                   disabled={submitting}
                   className="flex-1 inline-flex items-center justify-center min-h-11 px-6 rounded-full font-sans font-semibold text-button bg-ordift-gold text-ordift-navy-950 hover:bg-ordift-gold-hover disabled:opacity-50"
                 >
-                  {submitting ? "Please wait…" : "I've Sent This Payment"}
+                  {submitting ? "Please wait…" : bankRateChanged ? "Confirm Updated Amount" : "I've Sent This Payment"}
                 </button>
                 <button
                   type="button"
-                  onClick={() => setStep("select")}
+                  onClick={() => {
+                    setBankRateChanged(false);
+                    setStep("select");
+                  }}
                   className="inline-flex items-center justify-center min-h-11 px-6 rounded-full font-sans font-semibold text-button border border-ordift-ink/30 text-ordift-ink hover:border-ordift-ink/60"
                 >
                   Back

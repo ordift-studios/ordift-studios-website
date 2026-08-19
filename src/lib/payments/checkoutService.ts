@@ -1,9 +1,17 @@
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { generateRecordId } from "@/lib/shared/recordId";
-import { lockExchangeRate } from "@/lib/payments/currency";
+import { lockExchangeRate, convertedAmountsMatch } from "@/lib/payments/currency";
 import { getActiveCountryConfig, getProvider } from "@/lib/payments/providerRegistry";
+import { reconcilePendingGatewayPayment } from "@/lib/payments/reconcilePendingPayment";
 import type { PaymentEntityType, PaymentType } from "@/lib/payments/types";
+
+// Postgres unique_violation — raised by the partial unique index
+// (migration 0028) when two near-simultaneous requests both pass the
+// SELECT-based duplicate check below before either has inserted its
+// row (TD-043). Recognized by code, not message text, since message
+// text isn't a stable contract.
+const POSTGRES_UNIQUE_VIOLATION = "23505";
 
 // Checkout initiation — the one place that resolves an authoritative
 // USD price server-side (PAYMENT_SECURITY_REVIEW.md §9/§10: never
@@ -29,10 +37,25 @@ export type InitiateCheckoutParams = {
   // actually still owed. 'balance' and 'full' are always computed
   // server-side, never accepted from the caller.
   requestedAmountUsd?: number;
+  // TD-036 — the converted amount the customer actually saw on the
+  // checkout page immediately before submitting. Required, not
+  // optional: the one legitimate caller (startGatewayCheckoutAction)
+  // always has this, and the whole point of the guard below is that
+  // it can't be silently skipped by a caller that simply omits it.
+  // Never trusted as the source of truth — only ever compared against
+  // a freshly-locked rate, never used to compute the actual charge.
+  quotedConvertedAmount: number;
 };
 
 export type InitiateCheckoutResult =
   | { ok: true; checkoutUrl: string; paymentId: string }
+  | { ok: false; error: "rate_changed"; currentRateToUsd: number; currentConvertedAmount: number; currencyCode: string }
+  // TD-043 — an existing pending attempt for this entity+payment_type
+  // reconciled to "completed" against Paystack's own authoritative
+  // record before we'd have created a second charge. paymentId is the
+  // already-paid row, so the caller can route the customer to its
+  // receipt instead of erroring.
+  | { ok: false; error: "already_paid"; paymentId: string }
   | { ok: false; error: string };
 
 // Exported so the bank-transfer initiation route can reuse the exact
@@ -90,9 +113,96 @@ export function resolveAmountToCharge(
   return null;
 }
 
+// TD-043 Test 4 fix — Paystack's own "abandoned" status can appear for
+// a transaction that simply hasn't been completed yet, well before any
+// real customer abandonment (observed on staging: resolved within
+// 90s-6min of creation, while the checkout tab was still open and
+// nothing had actually been abandoned). Trusting that verdict
+// immediately let a rapid retry — same customer, a second tab, or a
+// second click — tear down a still-genuinely-live pending payment and
+// open a second concurrent checkout. This grace period defers to
+// Paystack only once enough real time has passed for "abandoned" to be
+// a meaningful signal. Reconcile Now (a deliberate staff action on a
+// payment already known to be stuck) is intentionally NOT subject to
+// this gate — see reconcilePaymentAction in admin/payments/actions.ts.
+const PENDING_RECONCILE_GRACE_PERIOD_MS = 5 * 60 * 1000;
+
+// TD-043 — looks up a still-`pending` gateway payment for this exact
+// entity+payment_type, if one exists. Shared between the normal
+// duplicate-check path and the unique-violation race-recovery path so
+// both resolve a found row identically.
+async function findPendingGatewayPayment(
+  admin: ReturnType<typeof createAdminClient>,
+  entityType: PaymentEntityType,
+  entityId: string,
+  paymentType: PaymentType
+): Promise<{ id: string; createdAt: string } | null> {
+  const { data } = await admin
+    .from("payments")
+    .select("id, created_at")
+    .eq("entity_type", entityType)
+    .eq("entity_id", entityId)
+    .eq("payment_type", paymentType)
+    .eq("payment_method", "gateway")
+    .eq("status", "pending")
+    .maybeSingle();
+  return data ? { id: data.id, createdAt: data.created_at } : null;
+}
+
+// TD-043 — reconciles a found pending payment against Paystack's own
+// authoritative state (via reconcilePendingGatewayPayment, the exact
+// same verify-and-apply path the client status page already uses)
+// before deciding whether a fresh attempt may proceed. Returns a
+// result to return immediately (already paid, or genuinely still in
+// progress), or null to signal "resolved to failed/abandoned —
+// proceed to create a new attempt."
+async function resolveExistingPendingPayment(paymentId: string): Promise<InitiateCheckoutResult | null> {
+  const resolvedStatus = await reconcilePendingGatewayPayment(paymentId);
+
+  if (resolvedStatus === "completed") {
+    return { ok: false, error: "already_paid", paymentId };
+  }
+  if (resolvedStatus === "pending") {
+    // Still genuinely in progress on Paystack's side (e.g. mobile
+    // money awaiting the customer's approval) — correctly keep
+    // blocking rather than opening a second live session.
+    return { ok: false, error: "checkout-already-in-progress" };
+  }
+  // Any other resolved status (failed/abandoned/reversed, mapped to
+  // "failed" by the provider) means this attempt is authoritatively
+  // over — signal the caller to proceed with a fresh one.
+  return null;
+}
+
+// TD-043 Test 4 fix — gates resolveExistingPendingPayment behind the
+// grace period above. A payment younger than the threshold is blocked
+// outright, with no Paystack call at all — the fastest possible path,
+// and one that can never be raced, since it doesn't depend on what
+// Paystack says. Only once the row has aged past the threshold do we
+// defer to reconciliation exactly as before.
+async function resolveOrBlockExistingPendingPayment(
+  paymentId: string,
+  createdAt: string
+): Promise<InitiateCheckoutResult | null> {
+  const ageMs = Date.now() - new Date(createdAt).getTime();
+  if (ageMs < PENDING_RECONCILE_GRACE_PERIOD_MS) {
+    return { ok: false, error: "checkout-already-in-progress" };
+  }
+  return resolveExistingPendingPayment(paymentId);
+}
+
 export async function initiateGatewayCheckout(
   params: InitiateCheckoutParams
 ): Promise<InitiateCheckoutResult> {
+  // TD-036 — fail safe rather than silently proceeding without
+  // reconciliation if the quote is missing or malformed. The type
+  // signature already makes this required for the one legitimate
+  // caller; this is the runtime backstop for a malformed/tampered
+  // request reaching this function some other way.
+  if (!Number.isFinite(params.quotedConvertedAmount)) {
+    return { ok: false, error: "missing-quote" };
+  }
+
   const countryConfig = await getActiveCountryConfig(params.country);
   if (!countryConfig) {
     return { ok: false, error: "no-active-payment-config-for-country" };
@@ -118,28 +228,42 @@ export async function initiateGatewayCheckout(
     return { ok: false, error: "no-exchange-rate-set" };
   }
 
-  // Duplicate-checkout prevention (Security Review §8) — an existing
-  // pending gateway payment for the same entity+payment_type is
-  // reused rather than starting a second one. Uses the admin client
-  // since this check spans a table clients can't SELECT beyond their
-  // own rows, and this runs regardless of who's checking out.
-  const admin = createAdminClient();
-  const { data: existing } = await admin
-    .from("payments")
-    .select("id, gateway_reference, status")
-    .eq("entity_type", params.entityType)
-    .eq("entity_id", params.entityId)
-    .eq("payment_type", params.paymentType)
-    .eq("payment_method", "gateway")
-    .eq("status", "pending")
-    .maybeSingle();
+  // TD-036 — server-authoritative compare-and-reconfirm. lockedRate is
+  // the one fresh read of the current rate; comparison and the
+  // eventual payments insert below both use this exact same value, so
+  // there is no gap between "decided the quote is still valid" and
+  // "created the payment" for a rate change to slip through. On a
+  // mismatch, nothing below this point runs — no duplicate-checkout
+  // check, no insert, no gateway call — the caller gets the fresh
+  // rate back and must resubmit, which re-runs this identical check
+  // against whatever is current at that later moment. Never a
+  // privileged second attempt.
+  if (!convertedAmountsMatch(params.quotedConvertedAmount, lockedRate.convertedAmount)) {
+    return {
+      ok: false,
+      error: "rate_changed",
+      currentRateToUsd: lockedRate.rateToUsd,
+      currentConvertedAmount: lockedRate.convertedAmount,
+      currencyCode: lockedRate.currencyCode,
+    };
+  }
 
-  if (existing?.gateway_reference) {
-    // Re-resolve the same checkout URL from Paystack would require a
-    // second API call; simplest correct behavior for Phase 2 is to
-    // tell the caller a session is already in progress and let the
-    // UI re-poll/re-fetch rather than silently opening a second one.
-    return { ok: false, error: "checkout-already-in-progress" };
+  // Duplicate-checkout prevention (Security Review §8; reconciliation
+  // behavior added under TD-043) — an existing pending gateway payment
+  // for the same entity+payment_type is reconciled against Paystack's
+  // own authoritative state before we decide whether to block. Uses
+  // the admin client since this check spans a table clients can't
+  // SELECT beyond their own rows, and this runs regardless of who's
+  // checking out.
+  const admin = createAdminClient();
+  const existingPending = await findPendingGatewayPayment(admin, params.entityType, params.entityId, params.paymentType);
+
+  if (existingPending) {
+    const resolution = await resolveOrBlockExistingPendingPayment(existingPending.id, existingPending.createdAt);
+    if (resolution) return resolution;
+    // resolution === null means the prior attempt is now confirmed
+    // failed/abandoned/reversed by Paystack itself — fall through and
+    // create a fresh attempt exactly as if no pending row existed.
   }
 
   const provider = getProvider(countryConfig.gatewayProvider);
@@ -165,6 +289,20 @@ export async function initiateGatewayCheckout(
     })
     .select("id")
     .single();
+
+  if (insertError?.code === POSTGRES_UNIQUE_VIOLATION) {
+    // TD-043 — the partial unique index (migration 0028) caught a
+    // genuine race: another request for this same entity+payment_type
+    // inserted its row in the gap between our SELECT above and this
+    // INSERT (rapid double-click, two open tabs). Re-resolve against
+    // whichever row won, the same way as the normal duplicate path.
+    const winner = await findPendingGatewayPayment(admin, params.entityType, params.entityId, params.paymentType);
+    if (winner) {
+      const resolution = await resolveOrBlockExistingPendingPayment(winner.id, winner.createdAt);
+      if (resolution) return resolution;
+    }
+    return { ok: false, error: "checkout-already-in-progress" };
+  }
 
   if (insertError || !payment) {
     console.error("[payments] failed to create payments row", insertError?.message);

@@ -86,6 +86,7 @@ export default async function AdminPaymentsPage() {
                   <th className="font-sans text-caption uppercase tracking-wide text-ordift-ink-muted py-3 px-4">Amount</th>
                   <th className="font-sans text-caption uppercase tracking-wide text-ordift-ink-muted py-3 px-4">Submitted</th>
                   <th className="font-sans text-caption uppercase tracking-wide text-ordift-ink-muted py-3 px-4">Decision</th>
+                  <th className="font-sans text-caption uppercase tracking-wide text-ordift-ink-muted py-3 px-4">Details</th>
                 </tr>
               </thead>
               <tbody>
@@ -130,6 +131,14 @@ export default async function AdminPaymentsPage() {
                         </form>
                       </div>
                     </td>
+                    <td className="py-3 px-4">
+                      <Link
+                        href={`/admin/payments/${p.id}`}
+                        className="font-sans text-body-small font-medium text-ordift-gold-pressed hover:underline"
+                      >
+                        View →
+                      </Link>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -150,6 +159,7 @@ export default async function AdminPaymentsPage() {
                 <th className="font-sans text-caption uppercase tracking-wide text-ordift-ink-muted py-3 px-4">Status</th>
                 <th className="font-sans text-caption uppercase tracking-wide text-ordift-ink-muted py-3 px-4">Amount (USD)</th>
                 <th className="font-sans text-caption uppercase tracking-wide text-ordift-ink-muted py-3 px-4">Date</th>
+                <th className="font-sans text-caption uppercase tracking-wide text-ordift-ink-muted py-3 px-4">Details</th>
               </tr>
             </thead>
             <tbody>
@@ -166,6 +176,18 @@ export default async function AdminPaymentsPage() {
                   </td>
                   <td className="py-3 px-4 font-sans text-body-small text-ordift-ink-muted whitespace-nowrap">
                     {formatDate(p.created_at)}
+                  </td>
+                  <td className="py-3 px-4">
+                    {/* TD-043 Part B — the individual payment detail page is
+                        where Reconcile Now now lives (gated there on gateway +
+                        pending + the reconcile_payment capability), not inline
+                        in this list. */}
+                    <Link
+                      href={`/admin/payments/${p.id}`}
+                      className="font-sans text-body-small font-medium text-ordift-gold-pressed hover:underline"
+                    >
+                      View →
+                    </Link>
                   </td>
                 </tr>
               ))}

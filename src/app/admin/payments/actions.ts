@@ -8,9 +8,16 @@ import { hasCapability } from "@/lib/workflow/engine";
 import { PAYMENT_CAPABILITIES } from "@/lib/payments/paymentPermissions";
 import { logActivity } from "@/lib/admin/activityLog";
 import { insertExchangeRate } from "@/lib/payments/currency";
+import { reconcilePendingGatewayPayment } from "@/lib/payments/reconcilePendingPayment";
+import { sendPaymentReceiptEmail } from "@/lib/payments/receipts";
 
 async function requireCapability(
-  capability: "approve_bank_transfer" | "reject_bank_transfer" | "issue_refund" | "manage_currencies"
+  capability:
+    | "approve_bank_transfer"
+    | "reject_bank_transfer"
+    | "issue_refund"
+    | "manage_currencies"
+    | "reconcile_payment"
 ) {
   const user = await getCurrentUser();
   if (!user || !hasCapability(user, PAYMENT_CAPABILITIES, capability)) {
@@ -111,6 +118,127 @@ export async function rejectBankTransferAction(formData: FormData): Promise<void
   });
 
   revalidatePath("/admin/payments");
+}
+
+// TD-043 — "Reconcile Now": lets staff manually trigger the same
+// authoritative Paystack verify-and-apply path the customer's own
+// payment status page already runs automatically (reconcilePending
+// GatewayPayment / applyGatewayEventToPayment), for a gateway payment
+// stuck at "pending" with no webhook ever received and no return
+// visit from the customer.
+//
+// Deliberately the ONLY thing this action can do: it takes nothing
+// but a paymentId, and reconcilePendingGatewayPayment() itself decides
+// the resulting status purely from what Paystack's own verify API
+// reports — there is no parameter, code path, or capability here that
+// lets a human choose or force a payment into any status. If you're
+// looking for "just mark it Paid," that action does not exist by
+// design (per PAYMENT_SECURITY_REVIEW.md's authoritative-source rule
+// and your explicit instruction on this TD).
+export async function reconcilePaymentAction(formData: FormData): Promise<void> {
+  const user = await requireCapability("reconcile_payment");
+  const paymentId = String(formData.get("paymentId") ?? "");
+  if (!paymentId) return;
+
+  // Defensive scope check — reconcilePendingGatewayPayment() already
+  // no-ops safely on a non-gateway or already-resolved row, but
+  // confirming here first keeps the audit log entry meaningful (only
+  // logged when there was actually something to reconcile) rather
+  // than recording a no-op attempt.
+  const supabase = createAdminClient();
+  const { data: payment } = await supabase
+    .from("payments")
+    .select("id, status, payment_method")
+    .eq("id", paymentId)
+    .maybeSingle();
+
+  if (!payment || payment.payment_method !== "gateway" || payment.status !== "pending") {
+    return;
+  }
+
+  const resolvedStatus = await reconcilePendingGatewayPayment(paymentId);
+
+  await logActivity({
+    actorUserId: user.id,
+    action: "payment.reconciled",
+    entityType: "payment",
+    entityId: paymentId,
+    metadata: { resolvedStatus },
+  });
+
+  revalidatePath("/admin/payments");
+  // TD-043 Part B — Reconcile Now now lives on the payment detail
+  // page; revalidate it too so the resulting status (completed/
+  // failed/still-pending) shows immediately without a manual refresh.
+  revalidatePath(`/admin/payments/${paymentId}`);
+}
+
+// TD-043 completion-idempotency remediation — retries a stuck/failed
+// entry in the durable receipt outbox (payment_receipt_jobs). This is
+// deliberately narrow and cannot touch anything financial: it never
+// reads or writes payments.status, amount_collected, gateway_reference,
+// or any other payment field, and it never creates a payment or a new
+// receipt-job row. It only operates on the receipt job row itself, and
+// only when that job is not already 'sent' — a confirmed-sent receipt
+// is never re-dispatched through this path (see PAYMENT_SECURITY_
+// REVIEW.md's authoritative-source rule: no path here lets a human
+// force a financial outcome, same reasoning as reconcilePaymentAction
+// above).
+//
+// TD-043 defense-in-depth (migration 0032) — the actual claim decision
+// (pending/failed always claimable; a stuck 'processing' job claimable
+// only once genuinely stale) is delegated entirely to
+// reclaim_stale_receipt_job(), a single atomic Postgres statement using
+// only the database's own now() — never this process's Date.now(). A
+// job that's really still in flight (processing, not yet stale) or
+// already 'sent' matches none of that function's branches and this
+// action correctly no-ops, exactly as before this change.
+export async function retryReceiptJobAction(formData: FormData): Promise<void> {
+  const user = await requireCapability("reconcile_payment");
+  const paymentId = String(formData.get("paymentId") ?? "");
+  if (!paymentId) return;
+
+  const supabase = createAdminClient();
+  const { data: job } = await supabase
+    .from("payment_receipt_jobs")
+    .select("id, status")
+    .eq("payment_id", paymentId)
+    .eq("outcome", "completed")
+    .maybeSingle();
+
+  if (!job || job.status === "sent") return; // nothing to retry, or already confirmed sent
+
+  const { data: claimedRows, error: claimError } = await supabase.rpc("reclaim_stale_receipt_job", {
+    p_job_id: job.id,
+  });
+  if (claimError) {
+    console.error("[admin] reclaim_stale_receipt_job failed", claimError.message);
+    return;
+  }
+  const claimed = Array.isArray(claimedRows) && claimedRows.length > 0 ? claimedRows[0] : null;
+  if (!claimed) return; // lost a race, or genuinely not yet eligible (fresh processing / already sent)
+
+  const result = await sendPaymentReceiptEmail(paymentId);
+
+  await supabase
+    .from("payment_receipt_jobs")
+    .update({
+      status: result.ok ? "sent" : "failed",
+      provider_result: result.ok ? result.mode : null,
+      last_error: result.ok ? null : result.error,
+    })
+    .eq("id", claimed.id);
+
+  await logActivity({
+    actorUserId: user.id,
+    action: "payment.receipt_retry",
+    entityType: "payment",
+    entityId: paymentId,
+    metadata: { outcome: result.ok ? "sent" : "failed", attemptCount: claimed.attempt_count },
+  });
+
+  revalidatePath("/admin/payments");
+  revalidatePath(`/admin/payments/${paymentId}`);
 }
 
 // Ghana-only today, same as every other payments module file — see

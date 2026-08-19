@@ -20,6 +20,21 @@ export type LockedRate = {
   source: ExchangeRateSource;
 };
 
+// TD-036 — compares a customer-quoted converted amount against the
+// server's own freshly-computed authoritative amount, in whole cents,
+// rather than the raw multi-decimal rate. Two reads of an unchanged
+// rate can serialize through JSON with harmless floating-point noise
+// in a decimal place the customer never sees; rounding both sides to
+// money (the same Math.round(x * 100) / 100 convention used
+// everywhere else in this module) before comparing is the correct
+// definition of "did anything the customer would notice change," not
+// a precision workaround — a change too small to move the charged
+// amount by even one cent isn't a change requiring reconfirmation,
+// and any change that does move it is always caught.
+export function convertedAmountsMatch(quotedConvertedAmount: number, authoritativeConvertedAmount: number): boolean {
+  return Math.round(quotedConvertedAmount * 100) === Math.round(authoritativeConvertedAmount * 100);
+}
+
 export async function getCurrentRate(currencyCode: string): Promise<number | null> {
   if (currencyCode === "USD") return 1;
 
