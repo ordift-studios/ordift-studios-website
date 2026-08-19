@@ -64,6 +64,13 @@ export async function updateStageAction(formData: FormData): Promise<void> {
 // (e.g. "booked") back to "quotation_sent".
 const PRE_QUOTATION_STAGES: readonly CrmStage[] = ["new_lead", "contacted", "discovery_meeting"];
 
+// useActionState-compatible result — lets the form (SetAmountDueForm)
+// show a real pending/success/error state instead of a fire-and-forget
+// submit, matching the pattern already established for CheckoutForm
+// (TD-036). `ok` distinguishes "nothing to report" from an actual
+// problem the admin should see.
+export type SetAmountDueState = { ok: boolean; error?: string } | null;
+
 // Turns a mere enquiry into a payable obligation (PAYMENT_FINANCE_
 // ARCHITECTURE_PROPOSAL.md's Payments tab gate) — deliberately a plain
 // UPDATE, not an append-only ledger like exchange_rates: this is a
@@ -72,15 +79,21 @@ const PRE_QUOTATION_STAGES: readonly CrmStage[] = ["new_lead", "contacted", "dis
 // themselves remain the immutable record). Amount is always USD,
 // matching the module's reference-currency architecture — no separate
 // currency field.
-export async function setAmountDueAction(formData: FormData): Promise<void> {
+export async function setAmountDueAction(
+  _prevState: SetAmountDueState,
+  formData: FormData
+): Promise<SetAmountDueState> {
   const user = await requireManageProjectAmount();
 
   const enquiryId = String(formData.get("enquiryId") ?? "");
   const amountRaw = String(formData.get("amountDue") ?? "");
   const amountDue = Number(amountRaw);
-  if (!enquiryId || !Number.isFinite(amountDue) || amountDue <= 0 || amountDue > 1_000_000) return;
+  if (!enquiryId || !Number.isFinite(amountDue) || amountDue <= 0 || amountDue > 1_000_000) {
+    return { ok: false, error: "Enter a valid amount." };
+  }
 
   const supabase = await createClient();
+  const roundedAmount = Math.round(amountDue * 100) / 100;
 
   const { data: current } = await supabase
     .from("enquiries")
@@ -89,16 +102,43 @@ export async function setAmountDueAction(formData: FormData): Promise<void> {
     .maybeSingle();
 
   const updates: { amount_due: number; crm_stage?: CrmStage } = {
-    amount_due: Math.round(amountDue * 100) / 100,
+    amount_due: roundedAmount,
   };
   if (current && PRE_QUOTATION_STAGES.includes(current.crm_stage as CrmStage)) {
     updates.crm_stage = "quotation_sent";
   }
 
-  const { error } = await supabase.from("enquiries").update(updates).eq("id", enquiryId);
+  // Atomic guard against a repeated identical submission (a double-
+  // click that beats the client-side disable, a slow-network retry,
+  // two tabs) — the "is this actually a change" check is part of the
+  // same conditional UPDATE, not a separate preceding read. A plain
+  // read-then-compare-then-write here would race exactly the way
+  // TD-043's own original defect did: this project's regression test
+  // for this fix (setAmountDueDoubleSubmit.integration.test.ts) proved
+  // a naive prior version of this guard let all 9 concurrent
+  // submissions through under real load, because every one of them
+  // read the same pre-write value before any of them committed. The
+  // `.or(...)` clause is Postgres NULL-safe — it matches both "was
+  // never set" and "was a different number" — so a row is affected
+  // only when the value is genuinely changing; a genuinely different
+  // amount (including reverting to an earlier value later) always
+  // proceeds and is logged.
+  const { data: updatedRows, error } = await supabase
+    .from("enquiries")
+    .update(updates)
+    .eq("id", enquiryId)
+    .or(`amount_due.is.null,amount_due.neq.${roundedAmount}`)
+    .select("id");
+
   if (error) {
     console.error("[admin] enquiry amount_due update failed", error.message);
-    return;
+    return { ok: false, error: "Save failed. Please try again." };
+  }
+
+  if (!updatedRows || updatedRows.length === 0) {
+    // The requested amount already matched what's on the row — a
+    // legitimate no-op, not an error. Nothing to log.
+    return { ok: true };
   }
 
   await logActivity({
@@ -112,6 +152,8 @@ export async function setAmountDueAction(formData: FormData): Promise<void> {
   revalidatePath(`/admin/enquiries/${enquiryId}`);
   revalidatePath("/admin/enquiries");
   revalidatePath(`/portal/client/projects/enquiry/${enquiryId}/payments`);
+
+  return { ok: true };
 }
 
 const NOTE_AUDIENCES = ["internal", "client"] as const;

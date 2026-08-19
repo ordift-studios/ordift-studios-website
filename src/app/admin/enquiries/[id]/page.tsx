@@ -11,7 +11,8 @@ import { getDeliverableCategories, getDeliverablesForEntity } from "@/lib/admin/
 import DeliverablesManager from "@/components/admin/DeliverablesManager";
 import { getProjectRequestsForEntity } from "@/lib/admin/projectRequests";
 import ProjectRequestsManager from "@/components/admin/ProjectRequestsManager";
-import { updateStageAction, addNoteAction, setAmountDueAction } from "../actions";
+import { updateStageAction, addNoteAction } from "../actions";
+import SetAmountDueForm from "./SetAmountDueForm";
 
 function formatUsd(amount: number): string {
   return `$${amount.toFixed(2)}`;
@@ -167,32 +168,7 @@ export default async function AdminEnquiryDetailPage({ params }: { params: Promi
               </p>
             </div>
             {canManageAmount ? (
-              <form action={setAmountDueAction} className="space-y-3">
-                <input type="hidden" name="enquiryId" value={enquiry.id} />
-                <div>
-                  <label htmlFor="amount-due" className="font-sans text-caption text-ordift-ink-muted block mb-1">
-                    Set Amount Due (USD)
-                  </label>
-                  <input
-                    id="amount-due"
-                    name="amountDue"
-                    type="number"
-                    step="0.01"
-                    min="0.01"
-                    max="1000000"
-                    required
-                    defaultValue={enquiry.amountDue ?? ""}
-                    placeholder="e.g. 1500.00"
-                    className="w-full min-h-11 rounded-lg border border-black/15 bg-white px-3 font-sans text-body-small text-ordift-ink"
-                  />
-                </div>
-                <button
-                  type="submit"
-                  className="w-full min-h-11 rounded-full bg-ordift-gold text-ordift-navy-950 font-sans font-semibold text-body-small"
-                >
-                  {enquiry.amountDue != null ? "Update Amount Due" : "Set Amount Due"}
-                </button>
-              </form>
+              <SetAmountDueForm enquiryId={enquiry.id} currentAmountDue={enquiry.amountDue} />
             ) : (
               <p className="font-sans text-caption text-ordift-ink-muted">
                 Only Admin/Super Admin can set the payable amount.

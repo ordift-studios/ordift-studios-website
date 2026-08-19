@@ -6,14 +6,22 @@ import type { EnquiryRecord } from "./storage";
 // reliably supported across email clients, so these are the closest
 // email-safe analogs: a serif for the display line, a system sans for
 // body copy. Same navy/gold palette as the site.
-const SERIF = "Georgia, 'Times New Roman', serif";
-const SANS = "-apple-system, Segoe UI, Roboto, Arial, sans-serif";
-const NAVY = "#0B1220";
-const GOLD = "#BFA14A";
-const OFFWHITE = "#F7F5F1";
-const INK_MUTED = "#5B5F6B";
+//
+// Exported (2026-08-19, TD-043 follow-up) — this is now the shared
+// branded wrapper for every transactional email in this project, not
+// just enquiries; the payment receipt email (src/lib/payments/
+// receipts.ts) reuses it directly rather than duplicating the markup,
+// so every automated email keeps the same look with one source of
+// truth. `footerText` lets a caller override the default enquiry-
+// specific line below without needing its own copy of the wrapper.
+export const SERIF = "Georgia, 'Times New Roman', serif";
+export const SANS = "-apple-system, Segoe UI, Roboto, Arial, sans-serif";
+export const NAVY = "#0B1220";
+export const GOLD = "#BFA14A";
+export const OFFWHITE = "#F7F5F1";
+export const INK_MUTED = "#5B5F6B";
 
-function wrap(bodyHtml: string): string {
+export function wrap(bodyHtml: string, footerText: string = "Ordift Studios · This is an automated message regarding your enquiry."): string {
   return `<!DOCTYPE html>
 <html>
   <body style="margin:0;padding:0;background:${OFFWHITE};font-family:${SANS};">
@@ -35,7 +43,7 @@ function wrap(bodyHtml: string): string {
             <tr>
               <td style="padding:20px 32px;border-top:1px solid #eeeeee;">
                 <p style="margin:0;font-family:${SANS};font-size:12px;color:${INK_MUTED};">
-                  Ordift Studios · This is an automated message regarding your enquiry.
+                  ${footerText}
                 </p>
               </td>
             </tr>
@@ -130,7 +138,7 @@ function toPlainText(record: EnquiryRecord): string {
   ].join("\n");
 }
 
-function escapeHtml(value: string): string {
+export function escapeHtml(value: string): string {
   return value
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")

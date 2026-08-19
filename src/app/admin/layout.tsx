@@ -45,6 +45,14 @@ export default async function AdminLayout({ children }: { children: React.ReactN
     (item) => (!item.adminOnly || isAdmin) && (!item.superAdminOnly || isSuper)
   );
   const profileCard = await getProfileCard(user);
+  // Navigation only — a dual-role account (e.g. a staff member who is
+  // also a client, or a test account deliberately granted both) can
+  // otherwise get stuck here with no way back to the Client Portal
+  // short of typing the URL. Doesn't grant, revoke, or check anything
+  // beyond what's already true of this account; every server-side
+  // permission check on the Client Portal's own routes stays exactly
+  // as it is.
+  const hasClientAccess = hasRole(user, "client");
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -54,6 +62,14 @@ export default async function AdminLayout({ children }: { children: React.ReactN
             <Logo variant="nav" color="white" height={24} priority />
           </Link>
           <div className="flex items-center gap-4">
+            {hasClientAccess && (
+              <Link
+                href="/portal/client"
+                className="font-sans text-body-small text-white/70 hover:text-white underline underline-offset-4"
+              >
+                Client Portal
+              </Link>
+            )}
             <ProfileQuickCard card={profileCard} />
             <form action={signOutAction}>
               <button
