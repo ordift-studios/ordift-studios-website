@@ -3,15 +3,22 @@ import { applyGatewayEventToPayment } from "./gatewaySync";
 import { generateRecordId } from "@/lib/shared/recordId";
 import { createTestAdminClient, testRunId } from "@/lib/testing/testEnvironment";
 
-// TD-043 idempotency hardening (migration 0029) — proves, deterministically,
-// what real staging testing found by accident: a webhook and an on-demand
-// verify reconciliation landing within about a second of each other on the
-// same payment both used to run the full completion sequence (entity sync,
-// activity log, receipt email). Real network timing can't be forced on
-// demand, so this calls applyGatewayEventToPayment() directly and
-// concurrently — the same function every real caller (webhook route,
-// reconcilePendingPayment.ts, and any future gateway integration) funnels
-// through — rather than trying to race two HTTP requests against each other.
+// TD-043 idempotency hardening (migration 0029) + database-authoritative
+// remediation (migration 0030) — proves, deterministically, what real
+// staging testing found twice (PAY-2026-000033, then again on
+// PAY-2026-000040 despite migration 0029's claim table): a webhook and an
+// on-demand verify reconciliation landing close together on the same
+// payment could both run the full completion sequence. Real network
+// timing can't be forced on demand, so this calls
+// applyGatewayEventToPayment() directly and concurrently — the same
+// function every real caller (webhook route, reconcilePendingPayment.ts,
+// and any future gateway integration) funnels through — rather than
+// trying to race two HTTP requests against each other. The one gap this
+// same-process concurrency model cannot exercise — genuine cross-machine
+// clock skew — is why the stale-claim decision (migration 0030) was
+// moved entirely into Postgres; the test below proves that migration
+// directly, using a manually backdated claimed_at rather than relying on
+// this process's own clock to ever actually observe skew.
 
 const runId = testRunId();
 const admin = createTestAdminClient();
@@ -29,7 +36,11 @@ let enquiryId: string;
 const referenceNumber = `TEST-${runId}`;
 const createdPaymentIds: string[] = [];
 
-async function createPendingPayment(paymentType: "full" | "balance" = "full") {
+// Each test gets a distinct payment_type so its disposable payment
+// never collides with migration 0028's "one pending gateway payment
+// per entity+payment_type" unique index against a still-pending row
+// left behind by an earlier test sharing the same enquiry.
+async function createPendingPayment(paymentType: "full" | "balance" | "deposit" | "partial" | "refund" = "full") {
   const recordId = await generateRecordId("PAY");
   const { data, error } = await admin
     .from("payments")
@@ -71,6 +82,16 @@ async function getClaim(paymentId: string, outcome: string) {
   return data;
 }
 
+async function getReceiptJob(paymentId: string) {
+  const { data } = await admin
+    .from("payment_receipt_jobs")
+    .select("*")
+    .eq("payment_id", paymentId)
+    .eq("outcome", "completed")
+    .maybeSingle();
+  return data;
+}
+
 beforeAll(async () => {
   const { data: enquiry, error } = await admin
     .from("enquiries")
@@ -89,6 +110,10 @@ beforeAll(async () => {
 
 afterAll(async () => {
   const results = await Promise.allSettled([
+    admin.from("payment_receipt_jobs").delete().in(
+      "payment_id",
+      createdPaymentIds.length > 0 ? createdPaymentIds : ["00000000-0000-0000-0000-000000000000"]
+    ),
     admin.from("payment_completion_claims").delete().in(
       "payment_id",
       createdPaymentIds.length > 0 ? createdPaymentIds : ["00000000-0000-0000-0000-000000000000"]
@@ -109,7 +134,7 @@ afterAll(async () => {
   }
 });
 
-describe("payment completion idempotency (TD-043 claim table)", () => {
+describe("payment completion idempotency — top-level claim (TD-043)", () => {
   it("lets exactly one of two truly concurrent 'completed' events win, and only it runs side effects", async () => {
     const payment = await createPendingPayment();
 
@@ -133,21 +158,82 @@ describe("payment completion idempotency (TD-043 claim table)", () => {
     expect(Number(entity?.amount_paid)).toBeGreaterThanOrEqual(5);
     expect(entity?.payment_status).toBe("Paid");
 
+    // Exactly one activity_log row, via the atomic claim_and_log_
+    // payment_activity() RPC — this is the exact symptom that
+    // recurred on PAY-2026-000040 despite migration 0029 alone.
     expect(await activityCountFor(payment.id, "payment.completed")).toBe(1);
 
     const claim = await getClaim(payment.id, "completed");
     expect(claim?.completed_at).toBeTruthy();
-    expect(claim?.receipt_dispatched_at).toBeTruthy(); // dispatch was attempted exactly once (Staging suppresses the actual send — see receipts.ts)
+
+    // Exactly one durable receipt job, successfully "sent" (Staging
+    // suppresses the real Resend call — see receipts.ts — so mode is
+    // 'logged', but the outbox row correctly reflects a completed
+    // attempt, not an assumption).
+    const job = await getReceiptJob(payment.id);
+    expect(job).toBeTruthy();
+    expect(job?.status).toBe("sent");
+    expect(job?.attempt_count).toBe(1);
+  });
+
+  it("database-clock stale takeover: a claim backdated past the threshold in the DATABASE (never via this process's Date.now()) is correctly stolen", async () => {
+    const payment = await createPendingPayment("balance");
+
+    // Seed a claim whose claimed_at is backdated directly in Postgres —
+    // this process's own Date.now() is never consulted by
+    // acquire_payment_completion_claim(); only the database's own
+    // now() decides staleness (migration 0030).
+    const { error: seedError } = await admin.from("payment_completion_claims").insert({
+      payment_id: payment.id,
+      outcome: "completed",
+      source: "webhook",
+      claimed_at: new Date(Date.now() - 3 * 60 * 1000).toISOString(), // 3 minutes old, past the 2-minute threshold
+    });
+    if (seedError) throw new Error(`failed to seed backdated claim: ${seedError.message}`);
+
+    const { data: stolen, error } = await admin.rpc("acquire_payment_completion_claim", {
+      p_payment_id: payment.id,
+      p_outcome: "completed",
+      p_source: "verify",
+    });
+    expect(error).toBeNull();
+    expect(Array.isArray(stolen) && stolen.length).toBe(1);
+    expect((stolen as { source: string }[])[0]?.source).toBe("verify");
+  });
+
+  it("a genuinely fresh claim (a few seconds old) is NOT stolen", async () => {
+    const payment = await createPendingPayment("deposit");
+
+    const { error: seedError } = await admin.from("payment_completion_claims").insert({
+      payment_id: payment.id,
+      outcome: "completed",
+      source: "webhook",
+      // default claimed_at = now() — genuinely fresh, well under the
+      // 2-minute threshold.
+    });
+    if (seedError) throw new Error(`failed to seed fresh claim: ${seedError.message}`);
+
+    const { data: stolen, error } = await admin.rpc("acquire_payment_completion_claim", {
+      p_payment_id: payment.id,
+      p_outcome: "completed",
+      p_source: "verify",
+    });
+    expect(error).toBeNull();
+    expect(Array.isArray(stolen) ? stolen.length : -1).toBe(0);
+
+    // The original claim must be untouched — still owned by "webhook".
+    const claim = await getClaim(payment.id, "completed");
+    expect(claim?.source).toBe("webhook");
   });
 
   it("recovers a stale/crashed claim without repeating steps that already finished", async () => {
-    const payment = await createPendingPayment();
+    const payment = await createPendingPayment("partial");
 
     // Simulate Caller A having actually finished the DB update, entity
-    // sync, and activity log — then crashing immediately before marking
-    // receipt_dispatched_at/completed_at (the exact scenario flagged in
-    // review: completed_at alone must not be trusted as proof nothing
-    // happened).
+    // sync, AND the activity log (a real row, matching what
+    // claim_and_log_payment_activity() would have produced) — then
+    // crashing immediately before dispatching the receipt or marking
+    // completed_at.
     await admin
       .from("payments")
       .update({ status: "completed", amount_collected: 60, settlement_currency: "GHS", channel: "card" })
@@ -159,35 +245,39 @@ describe("payment completion idempotency (TD-043 claim table)", () => {
       .insert({ action: "payment.completed", entity_type: "payment", entity_id: payment.id, metadata: { simulated: "pre-crash", source: "webhook" } });
     if (preLogError) throw new Error(`failed to seed pre-crash activity row: ${preLogError.message}`);
 
-    const staleClaimedAt = new Date(Date.now() - 3 * 60 * 1000).toISOString(); // older than STALE_CLAIM_MS
+    const staleClaimedAt = new Date(Date.now() - 3 * 60 * 1000).toISOString();
     const { error: claimSeedError } = await admin.from("payment_completion_claims").insert({
       payment_id: payment.id,
       outcome: "completed",
       source: "webhook",
       claimed_at: staleClaimedAt,
       entity_synced_at: staleClaimedAt,
-      activity_logged_at: staleClaimedAt,
-      // receipt_dispatched_at and completed_at intentionally left null — the crash point.
+      activity_logged_at: staleClaimedAt, // matches the real row seeded above
+      // receipt_dispatched_at/completed_at intentionally null — the crash point.
     });
     if (claimSeedError) throw new Error(`failed to seed stale claim: ${claimSeedError.message}`);
 
-    // Caller B — e.g. the webhook retrying, or a browser reload triggering
-    // verify — reports the same completion again.
+    // Caller B — e.g. the webhook retrying, or a browser reload
+    // triggering verify — reports the same completion again.
+    // logPaymentActivity() is called unconditionally by the new design
+    // (§ gatewaySync.ts) — this proves it stays safe: the atomic RPC's
+    // own UPDATE ... WHERE activity_logged_at IS NULL correctly finds
+    // zero rows and never re-inserts.
     const recovery = await applyGatewayEventToPayment(payment, { status: "completed", ...GATEWAY_EVENT_BASE }, "verify");
     expect(recovery.outcome).toBe("completed");
 
-    // The pre-crash activity_log row must still be the only one — recovery
-    // must not have re-logged.
+    // Still just the one pre-crash row — recovery must not have re-logged.
     expect(await activityCountFor(payment.id, "payment.completed")).toBe(1);
 
+    const job = await getReceiptJob(payment.id);
+    expect(job?.status).toBe("sent"); // the step that never ran before the simulated crash did run now
+
     const claim = await getClaim(payment.id, "completed");
-    expect(claim?.receipt_dispatched_at).toBeTruthy(); // the step that never ran before the simulated crash did run now
     expect(claim?.completed_at).toBeTruthy();
-    expect(claim?.source).toBe("verify"); // reflects the recovering caller, confirming the steal actually happened
   });
 
   it("does not let a later 'completed' report resurrect a payment already resolved to 'failed', but still surfaces it", async () => {
-    const payment = await createPendingPayment();
+    const payment = await createPendingPayment("refund");
 
     const failedResult = await applyGatewayEventToPayment(payment, { status: "failed", ...GATEWAY_EVENT_BASE }, "verify");
     expect(failedResult.outcome).toBe("failed");
@@ -195,26 +285,20 @@ describe("payment completion idempotency (TD-043 claim table)", () => {
     const { data: afterFailed } = await admin.from("payments").select("status").eq("id", payment.id).maybeSingle();
     expect(afterFailed?.status).toBe("failed");
 
-    // A later, authoritative report says it actually succeeded (e.g. the
-    // earlier 'abandoned' read was premature — see Test 4's investigation).
     const completedResult = await applyGatewayEventToPayment(payment, { status: "completed", ...GATEWAY_EVENT_BASE }, "webhook");
     expect(completedResult.outcome).toBe("ignored");
 
-    // The payment must NOT be silently resurrected to completed.
     const { data: finalPayment } = await admin.from("payments").select("status, amount_collected").eq("id", payment.id).maybeSingle();
     expect(finalPayment?.status).toBe("failed");
     expect(finalPayment?.amount_collected).toBeNull();
 
-    // No duplicate/incorrect side effects.
     expect(await activityCountFor(payment.id, "payment.failed")).toBe(1);
     expect(await activityCountFor(payment.id, "payment.completed")).toBe(0);
-
-    // But the conflict must be surfaced, not silently dropped.
     expect(await activityCountFor(payment.id, "payment.completion_conflict")).toBe(1);
 
-    const completedClaim = await getClaim(payment.id, "completed");
-    expect(completedClaim?.completed_at).toBeTruthy(); // claim itself resolved (so a future retry doesn't hang), but...
-    expect(completedClaim?.entity_synced_at).toBeNull(); // ...no side effects actually ran for it
-    expect(completedClaim?.receipt_dispatched_at).toBeNull();
+    // No receipt job was ever created for a completion that never
+    // actually applied.
+    const job = await getReceiptJob(payment.id);
+    expect(job).toBeFalsy();
   });
 });

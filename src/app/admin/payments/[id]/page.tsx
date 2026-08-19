@@ -5,7 +5,7 @@ import { getCurrentUser } from "@/lib/portal/roles";
 import { canAccessPaymentsAdmin, PAYMENT_CAPABILITIES } from "@/lib/payments/paymentPermissions";
 import { hasCapability } from "@/lib/workflow/engine";
 import { createClient } from "@/lib/supabase/server";
-import { reconcilePaymentAction } from "../actions";
+import { reconcilePaymentAction, retryReceiptJobAction } from "../actions";
 
 export const metadata: Metadata = {
   title: "Payment Details — Ordift Studios Admin",
@@ -70,6 +70,21 @@ export default async function AdminPaymentDetailPage({ params }: { params: Promi
 
   const status = statusLabel(payment.status);
   const eligibleForReconcile = canReconcile && payment.payment_method === "gateway" && payment.status === "pending";
+
+  // TD-043 completion-idempotency remediation — the durable receipt
+  // outbox record for this payment, if any (only 'completed' payments
+  // ever get one; a gateway payment that's never reached completed
+  // simply has no row here yet).
+  const { data: receiptJob } =
+    payment.status === "completed"
+      ? await supabase
+          .from("payment_receipt_jobs")
+          .select("status, attempt_count, last_attempted_at, last_error, provider_result")
+          .eq("payment_id", payment.id)
+          .eq("outcome", "completed")
+          .maybeSingle()
+      : { data: null };
+  const eligibleForReceiptRetry = canReconcile && receiptJob && receiptJob.status !== "sent" && receiptJob.status !== "processing";
 
   const entityReference =
     entity && "reference_number" in entity ? entity.reference_number : entity && "registration_reference" in entity ? entity.registration_reference : null;
@@ -165,7 +180,7 @@ export default async function AdminPaymentDetailPage({ params }: { params: Promi
           reconcilePendingGatewayPayment() — no path here or in the
           action can set a status directly. */}
       {eligibleForReconcile && (
-        <section className="rounded-xl border border-black/10 bg-ordift-offwhite p-6">
+        <section className="rounded-xl border border-black/10 bg-ordift-offwhite p-6 mb-8">
           <h2 className="font-serif font-medium text-lg text-ordift-ink mb-2">Reconcile with Paystack</h2>
           <p className="font-sans text-body-small text-ordift-ink-muted mb-4">
             This payment is still showing as Pending. Reconcile Now checks Paystack&apos;s own record for this transaction —
@@ -180,6 +195,51 @@ export default async function AdminPaymentDetailPage({ params }: { params: Promi
               Reconcile Now
             </button>
           </form>
+        </section>
+      )}
+
+      {/* TD-043 completion-idempotency remediation — the durable
+          receipt outbox job for this payment, if one exists. Retry
+          only ever touches this job row and re-runs the email send —
+          it never re-runs the financial payment, never creates
+          another payment, and refuses to fire for a job already
+          confirmed 'sent'. */}
+      {receiptJob && (
+        <section className="rounded-xl border border-black/10 bg-white p-6">
+          <h2 className="font-serif font-medium text-lg text-ordift-ink mb-2">Receipt Delivery</h2>
+          <dl className="grid grid-cols-2 gap-x-6 gap-y-3 mb-4">
+            <div>
+              <dt className="font-sans text-caption uppercase tracking-wide text-ordift-ink-muted">Status</dt>
+              <dd className="font-sans text-body-small text-ordift-ink mt-1 capitalize">{receiptJob.status}</dd>
+            </div>
+            <div>
+              <dt className="font-sans text-caption uppercase tracking-wide text-ordift-ink-muted">Attempts</dt>
+              <dd className="font-sans text-body-small text-ordift-ink mt-1">{receiptJob.attempt_count}</dd>
+            </div>
+            <div>
+              <dt className="font-sans text-caption uppercase tracking-wide text-ordift-ink-muted">Last Attempted</dt>
+              <dd className="font-sans text-body-small text-ordift-ink mt-1">{formatDateTime(receiptJob.last_attempted_at)}</dd>
+            </div>
+            {receiptJob.last_error && (
+              <div className="col-span-2">
+                <dt className="font-sans text-caption uppercase tracking-wide text-ordift-ink-muted">Last Error</dt>
+                <dd className="font-sans text-body-small text-red-700 mt-1 break-all">{receiptJob.last_error}</dd>
+              </div>
+            )}
+          </dl>
+          {eligibleForReceiptRetry ? (
+            <form action={retryReceiptJobAction}>
+              <input type="hidden" name="paymentId" value={payment.id} />
+              <button
+                type="submit"
+                className="min-h-10 rounded-lg border border-black/20 px-4 font-sans text-body-small font-medium text-ordift-ink hover:bg-black/5"
+              >
+                Retry Receipt
+              </button>
+            </form>
+          ) : receiptJob.status === "sent" ? (
+            <p className="font-sans text-caption text-ordift-ink-muted">Confirmed sent — not re-dispatched from here.</p>
+          ) : null}
         </section>
       )}
     </div>

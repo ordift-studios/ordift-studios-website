@@ -171,6 +171,8 @@ const ADMIN_TIER_ACTIONS = new Set<string>([
   "payment.completed",
   "payment.failed",
   "payment.amount_mismatch",
+  "payment.completion_conflict",
+  "payment.receipt_retry",
   "payment.exchange_rate_added",
   "payment.bank_transfer_initiated",
   "payment.bank_transfer_submitted",

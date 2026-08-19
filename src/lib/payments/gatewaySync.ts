@@ -1,5 +1,4 @@
 import { createAdminClient } from "@/lib/supabase/admin";
-import { logActivityAsSystem } from "@/lib/admin/activityLog";
 import { sendPaymentReceiptEmail } from "@/lib/payments/receipts";
 import type { PaymentWebhookEvent } from "@/lib/payments/types";
 
@@ -19,17 +18,51 @@ export type GatewaySyncResult =
   | { outcome: "amount-mismatch" }
   | { outcome: "ignored" };
 
-// TD-043 idempotency hardening (migration 0029) — a real staging race
-// (webhook + browser-verify landing ~1s apart on the same successful
-// payment) proved the `.eq("status","pending")` conditional UPDATE
-// alone wasn't a strong enough gate for the *side effects* of
-// resolving a payment: both callers ran the full completion sequence,
-// producing two activity_log rows and, but for Staging's own email
-// suppression, would have sent two real receipt emails. This claim
-// table is a structurally different guard — a unique-constrained
-// INSERT — that decides who's allowed to run those side effects at
-// all, before payments.status itself (still the sole authority for
-// which outcome is real) is ever touched for this attempt.
+// TD-043 completion-idempotency architectural remediation (migration
+// 0030, 2026-08-19) — a real Staging payment (PAY-2026-000040)
+// reproduced the same duplicate payment.completed activity_log
+// symptom as the original TD-043 finding (PAY-2026-000033), despite
+// the migration-0029 claim table showing exactly one row for the
+// claim itself. The exact mechanism was never conclusively proven
+// (see TD-043) — but two real architectural weaknesses were
+// identified regardless, and both are closed here:
+//
+// 1. The stale-claim decision compared application-side Date.now()
+//    against a database-generated claimed_at across multiple round
+//    trips. acquireCompletionClaim() now delegates the *entire*
+//    decision to acquire_payment_completion_claim() (migration
+//    0030), a single atomic Postgres round trip that uses only
+//    Postgres's own now() — no application clock is ever consulted,
+//    by any caller, on any machine.
+//
+// 2. Every completion side effect used a "check marker -> act ->
+//    write marker" pattern gated on an in-memory claim snapshot
+//    rather than an atomic database operation — meaning even a
+//    genuinely non-null claim couldn't guarantee a step ran at most
+//    once if two callers each read that snapshot independently. Each
+//    side effect below is now idempotent at its own point of action,
+//    not because of anything read earlier:
+//      - entity sync was already naturally idempotent (recomputes
+//        fresh from source every time) — now always called,
+//        unconditionally.
+//      - activity logging goes through claim_and_log_payment_activity()
+//        (migration 0030), which claims the step and inserts the
+//        activity_log row in one transaction — if either half fails,
+//        neither persists, and a second caller's claim attempt
+//        atomically fails closed.
+//      - receipt dispatch goes through a durable outbox
+//        (payment_receipt_jobs, migration 0030) uniquely constrained
+//        per (payment_id, outcome) — its own existence, not a
+//        boolean on the claims row, is what prevents a duplicate
+//        send, and its status is a real, recoverable record rather
+//        than an assumption.
+//
+// The net effect: even if two callers somehow both obtained a
+// non-null top-level claim (the class of risk Hypothesis 1 in TD-043
+// describes, never confirmed), none of the three real side effects
+// below could be duplicated — each is independently, atomically
+// guarded regardless of how many times or by whom this function is
+// invoked for the same payment+outcome.
 type ClaimOutcome = "completed" | "failed" | "amount_mismatch";
 
 type ClaimRow = {
@@ -43,69 +76,100 @@ type ClaimRow = {
   completed_at: string | null;
 };
 
-// How long an unfinished claim (claimed but never marked completed_at
-// — the caller crashed, timed out, or errored partway through) is
-// treated as still genuinely in-flight before a later caller is
-// allowed to take over and finish the remaining steps. Comfortably
-// longer than this sequence ever normally takes (a few hundred ms),
-// short enough that a genuine crash doesn't leave the payment stuck.
-const STALE_CLAIM_MS = 2 * 60 * 1000;
-
 async function acquireCompletionClaim(
   admin: ReturnType<typeof createAdminClient>,
   paymentId: string,
   outcome: ClaimOutcome,
   source: GatewaySyncSource
 ): Promise<ClaimRow | null> {
-  const { data: inserted, error: insertError } = await admin
-    .from("payment_completion_claims")
-    .insert({ payment_id: paymentId, outcome, source })
-    .select("*")
-    .single();
-  if (!insertError && inserted) return inserted as ClaimRow;
-
-  if (insertError && insertError.code !== "23505") {
-    console.error("[payments] completion claim insert failed unexpectedly", insertError.message);
+  const { data, error } = await admin.rpc("acquire_payment_completion_claim", {
+    p_payment_id: paymentId,
+    p_outcome: outcome,
+    p_source: source,
+  });
+  if (error) {
+    console.error("[payments] acquire_payment_completion_claim failed", error.message);
     return null;
   }
-
-  // Conflict — someone already holds (or finished) this exact
-  // (paymentId, outcome) claim. Read it to decide whether to stand
-  // down or, if it's stale, take over.
-  const { data: existing } = await admin
-    .from("payment_completion_claims")
-    .select("*")
-    .eq("payment_id", paymentId)
-    .eq("outcome", outcome)
-    .maybeSingle();
-  if (!existing || existing.completed_at) return null;
-
-  const ageMs = Date.now() - new Date(existing.claimed_at).getTime();
-  if (ageMs < STALE_CLAIM_MS) return null; // still genuinely in-flight elsewhere
-
-  const { data: stolen } = await admin
-    .from("payment_completion_claims")
-    .update({ claimed_at: new Date().toISOString(), source })
-    .eq("payment_id", paymentId)
-    .eq("outcome", outcome)
-    .is("completed_at", null)
-    .lt("claimed_at", new Date(Date.now() - STALE_CLAIM_MS).toISOString())
-    .select("*")
-    .maybeSingle();
-  return (stolen as ClaimRow | null) ?? null; // null if someone else stole/finished it first
+  return (Array.isArray(data) && data.length > 0 ? data[0] : null) as ClaimRow | null;
 }
 
 async function markClaimStep(
   admin: ReturnType<typeof createAdminClient>,
   paymentId: string,
   outcome: ClaimOutcome,
-  field: "entity_synced_at" | "activity_logged_at" | "receipt_dispatched_at" | "completed_at"
+  field: "entity_synced_at" | "receipt_dispatched_at" | "completed_at"
 ): Promise<void> {
   await admin
     .from("payment_completion_claims")
     .update({ [field]: new Date().toISOString() })
     .eq("payment_id", paymentId)
     .eq("outcome", outcome);
+}
+
+// Atomic (single-transaction) claim-and-log — see claim_and_log_
+// payment_activity() (migration 0030). Safe to call unconditionally;
+// it's a no-op if this exact step was already completed by anyone.
+async function logPaymentActivity(
+  admin: ReturnType<typeof createAdminClient>,
+  paymentId: string,
+  outcome: ClaimOutcome,
+  action: string,
+  entityType: string,
+  entityId: string,
+  metadata: Record<string, unknown>
+): Promise<void> {
+  const { error } = await admin.rpc("claim_and_log_payment_activity", {
+    p_payment_id: paymentId,
+    p_outcome: outcome,
+    p_action: action,
+    p_entity_type: entityType,
+    p_entity_id: entityId,
+    p_metadata: metadata,
+  });
+  if (error) {
+    console.error("[payments] claim_and_log_payment_activity failed", error.message);
+  }
+}
+
+// Durable receipt outbox — creates (or finds an already-existing) job
+// atomically via the table's own unique constraint, and only the
+// creator attempts the send. A pre-existing job means another caller
+// already owns dispatching (or has already dispatched) this exact
+// receipt; the admin recovery action (reconcilePaymentAction's
+// sibling, retryReceiptJobAction) is the intended path for a job
+// stuck at 'pending'/'failed', not a second automatic attempt here —
+// see TD-043's crash-recovery note on why an automatic retry loop
+// isn't built at this stage.
+async function dispatchReceiptJob(admin: ReturnType<typeof createAdminClient>, paymentId: string): Promise<void> {
+  const { data: created, error: createError } = await admin
+    .from("payment_receipt_jobs")
+    .upsert({ payment_id: paymentId, outcome: "completed" }, { onConflict: "payment_id,outcome", ignoreDuplicates: true })
+    .select("id, attempt_count");
+
+  if (createError) {
+    console.error("[payments] failed to create receipt job", createError.message);
+    return;
+  }
+
+  const job = created?.[0];
+  if (!job) return; // a job already exists for this payment — not ours to dispatch
+
+  await admin
+    .from("payment_receipt_jobs")
+    .update({ status: "processing", attempt_count: job.attempt_count + 1, last_attempted_at: new Date().toISOString() })
+    .eq("id", job.id);
+
+  const result = await sendPaymentReceiptEmail(paymentId);
+
+  await admin
+    .from("payment_receipt_jobs")
+    .update({
+      status: result.ok ? "sent" : "failed",
+      provider_result: result.ok ? result.mode : null,
+      last_error: result.ok ? null : result.error,
+    })
+    .eq("id", job.id);
 }
 
 export async function applyGatewayEventToPayment(
@@ -150,9 +214,6 @@ export async function applyGatewayEventToPayment(
       if (!updatedRows || updatedRows.length === 0) {
         const { data: current } = await admin.from("payments").select("status").eq("id", payment.id).maybeSingle();
         if (current?.status !== "failed") {
-          // The payment already resolved to something else (most
-          // likely already 'completed') before this mismatch report
-          // arrived — do not downgrade a resolved payment.
           await markClaimStep(admin, payment.id, "amount_mismatch", "completed_at");
           console.warn("[payments] amount-mismatch reported for a payment already resolved differently — ignoring", {
             paymentId: payment.id,
@@ -161,20 +222,15 @@ export async function applyGatewayEventToPayment(
           });
           return { outcome: "ignored" };
         }
-        // else: status is already 'failed' — this is crash recovery of
-        // our own earlier attempt at this exact claim; fall through to
-        // finish whatever step didn't complete before the crash.
+        // else: status already 'failed' — crash recovery of our own
+        // earlier attempt at this claim; fall through and finish.
       }
 
-      if (!claim.activity_logged_at) {
-        await logActivityAsSystem({
-          action: "payment.amount_mismatch",
-          entityType: "payment",
-          entityId: payment.id,
-          metadata: { expected: payment.converted_amount, received: event.amount, source },
-        });
-        await markClaimStep(admin, payment.id, "amount_mismatch", "activity_logged_at");
-      }
+      await logPaymentActivity(admin, payment.id, "amount_mismatch", "payment.amount_mismatch", "payment", payment.id, {
+        expected: payment.converted_amount,
+        received: event.amount,
+        source,
+      });
       await markClaimStep(admin, payment.id, "amount_mismatch", "completed_at");
       return { outcome: "amount-mismatch" };
     }
@@ -204,25 +260,17 @@ export async function applyGatewayEventToPayment(
     if (!updatedRows || updatedRows.length === 0) {
       const { data: current } = await admin.from("payments").select("status").eq("id", payment.id).maybeSingle();
       if (current?.status !== "completed") {
-        // The payment was already resolved to a different outcome
-        // (most likely a premature 'failed'/'abandoned' report earlier
-        // — see TD-043's Test 4 investigation) before this genuine
-        // completion arrived. Automatically flipping an already-
-        // resolved payment's financial status isn't safe to do
-        // silently — surface it for staff review rather than either
-        // discarding it or auto-correcting the ledger.
+        // Already resolved to a different outcome (most likely a
+        // premature 'failed'/'abandoned' report earlier — see TD-043's
+        // Test 4 investigation). Never silently flip an already-
+        // resolved payment's financial status — surface for review.
         await markClaimStep(admin, payment.id, "completed", "completed_at");
-        await logActivityAsSystem({
-          action: "payment.completion_conflict",
-          entityType: "payment",
-          entityId: payment.id,
-          metadata: {
-            reportedOutcome: "completed",
-            currentStatus: current?.status ?? "unknown",
-            source,
-            amount: event.amount,
-            currency: event.currency,
-          },
+        await logPaymentActivity(admin, payment.id, "completed", "payment.completion_conflict", "payment", payment.id, {
+          reportedOutcome: "completed",
+          currentStatus: current?.status ?? "unknown",
+          source,
+          amount: event.amount,
+          currency: event.currency,
         });
         console.error("[payments] gateway reported completed for a payment already resolved differently — flagged for review", {
           paymentId: payment.id,
@@ -231,42 +279,27 @@ export async function applyGatewayEventToPayment(
         });
         return { outcome: "ignored" };
       }
-      // else: status is already 'completed' — crash recovery of our
-      // own earlier attempt at this exact claim; fall through to
-      // finish whichever step(s) didn't complete before the crash.
+      // else: status already 'completed' — crash recovery of our own
+      // earlier attempt at this claim; fall through and finish
+      // whichever step(s) didn't complete before the crash. Every
+      // step below is independently safe to re-run.
     }
 
-    if (!claim.entity_synced_at) {
-      await syncEntityPaymentStatus(payment.entity_type, payment.entity_id);
-      await markClaimStep(admin, payment.id, "completed", "entity_synced_at");
-    }
+    await syncEntityPaymentStatus(payment.entity_type, payment.entity_id);
+    await markClaimStep(admin, payment.id, "completed", "entity_synced_at");
 
-    if (!claim.activity_logged_at) {
-      // System-attributed: the customer's own action caused this
-      // completion, but there's no human session in a webhook request
-      // (or in server-side reconciliation) — see logActivityAsSystem()'s
-      // doc comment for why null is correct here rather than inventing
-      // a synthetic "system user."
-      await logActivityAsSystem({
-        action: "payment.completed",
-        entityType: "payment",
-        entityId: payment.id,
-        metadata: { amount: event.amount, currency: event.currency, channel: event.channel, source },
-      });
-      await markClaimStep(admin, payment.id, "completed", "activity_logged_at");
-    }
+    // System-attributed: the customer's own action caused this
+    // completion, but there's no human session in a webhook request
+    // (or in server-side reconciliation).
+    await logPaymentActivity(admin, payment.id, "completed", "payment.completed", "payment", payment.id, {
+      amount: event.amount,
+      currency: event.currency,
+      channel: event.channel,
+      source,
+    });
 
-    if (!claim.receipt_dispatched_at) {
-      // Marked *before* the send attempt, not after — an "at most
-      // once" bias for a customer-facing email: a hard crash in the
-      // narrow window during the send itself could rarely mean a
-      // receipt never goes out, which staff can notice and resend
-      // manually; a duplicate receipt landing in a customer's inbox is
-      // the worse failure mode this whole investigation exists to
-      // prevent.
-      await markClaimStep(admin, payment.id, "completed", "receipt_dispatched_at");
-      await sendPaymentReceiptEmail(payment.id);
-    }
+    await dispatchReceiptJob(admin, payment.id);
+    await markClaimStep(admin, payment.id, "completed", "receipt_dispatched_at");
 
     await markClaimStep(admin, payment.id, "completed", "completed_at");
     return { outcome: "completed" };
@@ -286,8 +319,6 @@ export async function applyGatewayEventToPayment(
     if (!updatedRows || updatedRows.length === 0) {
       const { data: current } = await admin.from("payments").select("status").eq("id", payment.id).maybeSingle();
       if (current?.status !== "failed") {
-        // Already resolved differently (most likely already
-        // 'completed') — never downgrade a resolved payment.
         await markClaimStep(admin, payment.id, "failed", "completed_at");
         console.warn("[payments] failed reported for a payment already resolved differently — ignoring", {
           paymentId: payment.id,
@@ -299,15 +330,7 @@ export async function applyGatewayEventToPayment(
       // else: crash recovery of our own earlier attempt at this claim.
     }
 
-    if (!claim.activity_logged_at) {
-      await logActivityAsSystem({
-        action: "payment.failed",
-        entityType: "payment",
-        entityId: payment.id,
-        metadata: { source },
-      });
-      await markClaimStep(admin, payment.id, "failed", "activity_logged_at");
-    }
+    await logPaymentActivity(admin, payment.id, "failed", "payment.failed", "payment", payment.id, { source });
     await markClaimStep(admin, payment.id, "failed", "completed_at");
     return { outcome: "failed" };
   }
