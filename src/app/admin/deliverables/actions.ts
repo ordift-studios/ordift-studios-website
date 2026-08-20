@@ -8,6 +8,7 @@ import { logActivity } from "@/lib/admin/activityLog";
 import type { DeliverableEntityType } from "@/lib/admin/deliverables";
 import { sendFilesReadyEmail } from "@/lib/enquiry/lifecycleEmails";
 import { pathwayLabel } from "@/lib/enquiry/pathways";
+import type { CrmStage } from "@/lib/admin/enquiries";
 
 async function requireStaffOrAdmin() {
   const user = await getCurrentUser();
@@ -31,6 +32,17 @@ function entityBasePath(entityType: string): string {
 // double-submit is no longer merely a harmless duplicate list row, so
 // it's fixed here too rather than left as-is.
 export type CreateDeliverableState = { ok: boolean; error?: string } | null;
+
+// CRM Lifecycle Automation Phase 1, Batch 6 (2026-08-20) — the only
+// stages a deliverable publish may auto-advance FROM. Deliberately a
+// positive allow-list, not "everything before delivered" — an enquiry
+// that hasn't even been booked yet (new_lead/contacted/quotation_sent/
+// negotiation) publishing a deliverable would be premature and should
+// not auto-jump straight to "Delivered"; that stays a manual decision.
+// Every stage at or after "delivered" (delivered itself, completed,
+// repeat_client, referral, declined, closed) is excluded so this can
+// never regress or duplicate-transition an enquiry already there.
+const DELIVERY_ELIGIBLE_STAGES: readonly CrmStage[] = ["booked", "in_progress"];
 
 export async function createDeliverableAction(
   _prevState: CreateDeliverableState,
@@ -105,12 +117,52 @@ export async function createDeliverableAction(
     metadata: { title },
   });
 
+  // CRM stage auto-advance — Batch 6, deliberately independent of the
+  // Files Ready email below (its own try/catch; neither can affect the
+  // other or this already-successful publish). Only ever reached after
+  // a genuine new insert (not a duplicate-publish no-op, not a failed
+  // insert) — the exact same idempotency guarantee this action already
+  // proved for the deliverable row and the two activity logs above
+  // extends automatically to this transition too. Workshop
+  // registrations have no crm_stage column, so this only ever applies
+  // to entityType === "enquiry". Same atomic conditional UPDATE shape
+  // as advanceStageOnFullPayment (crmStageSync.ts) — the "is this
+  // still eligible" check lives in the UPDATE's own WHERE clause
+  // (DELIVERY_ELIGIBLE_STAGES), not a preceding read, so this is safe
+  // under concurrency and naturally idempotent: a repeat call (e.g. a
+  // later deliverable published against an already-"delivered"
+  // enquiry) always affects zero rows.
+  if (entityType === "enquiry") {
+    try {
+      const { data: updatedRows, error: stageError } = await supabase
+        .from("enquiries")
+        .update({ crm_stage: "delivered" })
+        .eq("id", entityId)
+        .in("crm_stage", DELIVERY_ELIGIBLE_STAGES)
+        .select("id");
+
+      if (stageError) {
+        console.error("[admin] deliverable-triggered stage advance failed", { entityId, error: stageError.message });
+      } else if (updatedRows && updatedRows.length > 0) {
+        await logActivity({
+          actorUserId: user.id,
+          action: "enquiry.stage_change",
+          entityType,
+          entityId,
+          metadata: { stage: "delivered", automated: true, reason: "deliverable_published" },
+        });
+      }
+    } catch (err) {
+      console.error("[admin] deliverable-triggered stage advance threw", { entityId, err });
+    }
+  }
+
   // Files Ready client email — fires only after the insert above has
   // genuinely succeeded (this line is unreached on any failure or
-  // duplicate-publish return above). Deliberately does not touch
-  // crm_stage — publishing an individual deliverable and completing
-  // the overall project remain separate concepts for now. A failure
-  // resolving contact details or sending must never fail this
+  // duplicate-publish return above). Unaffected by the stage-advance
+  // above or its outcome — publishing an individual deliverable and
+  // completing the overall project remain separate concepts, and a
+  // failure resolving contact details or sending must never fail this
   // already-successful publish.
   try {
     const entityTable = entityType === "enquiry" ? "enquiries" : "workshop_registrations";

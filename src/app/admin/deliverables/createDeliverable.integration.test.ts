@@ -242,7 +242,18 @@ describe("publish_deliverable_with_claim — atomic duplicate-publish guard", ()
     expect(await countActivity("deliverable.files_ready_email_sent")).toBe(beforeEmail + 1);
   });
 
-  it("crm_stage is completely unaffected by any publish attempt in this suite", async () => {
+  // Corrected 2026-08-20 (Batch 6): this file's own attemptPublish()
+  // helper calls the real publish_deliverable_with_claim() RPC directly
+  // (the exact atomic guard createDeliverableAction itself calls), then
+  // mirrors only the deliverable.published + files_ready_email_sent
+  // logging that follows it — it does not exercise Batch 6's separate
+  // crm_stage auto-advance step, so this assertion only proves that
+  // narrower sequence never touches crm_stage on its own, not that the
+  // real createDeliverableAction never does. The real action's
+  // crm_stage behavior (booked/in_progress -> delivered, every other
+  // stage a no-op, no regression/duplicate) is covered comprehensively
+  // in deliverableStageAdvance.integration.test.ts.
+  it("this file's own duplicate-window/insert/logging sequence never touches crm_stage on its own", async () => {
     const { data: enquiry } = await admin.from("enquiries").select("crm_stage").eq("id", enquiryId).maybeSingle();
     expect(enquiry?.crm_stage).toBe("in_progress");
   });
