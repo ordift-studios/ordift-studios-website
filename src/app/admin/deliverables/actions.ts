@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { getCurrentUser, hasRole, isStaffOrAdmin, isSuperAdmin } from "@/lib/portal/roles";
 import { logActivity } from "@/lib/admin/activityLog";
 import type { DeliverableEntityType } from "@/lib/admin/deliverables";
@@ -31,16 +32,6 @@ function entityBasePath(entityType: string): string {
 // it's fixed here too rather than left as-is.
 export type CreateDeliverableState = { ok: boolean; error?: string } | null;
 
-// A duplicate created within this window is treated as an accidental
-// resubmission (double-click, slow-network retry, back-button replay)
-// — not a schema-level uniqueness constraint (deliberately, per
-// instruction: no migration unless genuinely necessary), but combined
-// with the client-side pending-disable guard (PublishDeliverableForm.tsx),
-// this closes the realistic case without one. A staff member
-// genuinely re-publishing the exact same title+url later (a rare,
-// deliberate action) is unaffected — the window is short.
-const DUPLICATE_PUBLISH_WINDOW_SECONDS = 15;
-
 export async function createDeliverableAction(
   _prevState: CreateDeliverableState,
   formData: FormData
@@ -65,44 +56,45 @@ export async function createDeliverableAction(
 
   const supabase = await createClient();
 
-  // Duplicate-publish check — see DUPLICATE_PUBLISH_WINDOW_SECONDS above.
-  // A read-then-write, not an atomic guard (this table has no unique
-  // constraint to condition an UPDATE on, unlike the CRM-stage guards
-  // elsewhere in this project) — a genuinely simultaneous race from two
-  // different tabs could theoretically still slip through, but the
-  // client-side pending-disable guard already prevents the common
-  // same-tab double-click case at the source, so this is a deliberate,
-  // proportionate defense-in-depth choice, not a claim of atomicity.
-  const sinceIso = new Date(Date.now() - DUPLICATE_PUBLISH_WINDOW_SECONDS * 1000).toISOString();
-  const { data: recentDuplicate } = await supabase
-    .from("deliverables")
-    .select("id")
-    .eq("entity_type", entityType)
-    .eq("entity_id", entityId)
-    .eq("title", title)
-    .eq("url", url)
-    .gte("published_at", sinceIso)
-    .maybeSingle();
+  // Batch 5 hardening (2026-08-20) — the previous SELECT-then-INSERT
+  // duplicate check was proven, empirically, not to be safe under real
+  // concurrency (a 6-way Promise.all of identical requests produced 6
+  // writes, not 1). publish_deliverable_with_claim() (migration 0034)
+  // does the claim-acquisition and the actual deliverable insert
+  // atomically in one Postgres transaction — genuinely race-proof,
+  // enforced by a real unique index, not a subquery. requireStaffOrAdmin()
+  // has already gated this request, so calling it via the admin client
+  // is already-authorized bookkeeping, the same reasoning already used
+  // elsewhere in this codebase for a session-authenticated action that
+  // needs one atomic admin-privileged operation.
+  const admin = createAdminClient();
+  const { data: claimResult, error: claimError } = await admin.rpc("publish_deliverable_with_claim", {
+    p_entity_type: entityType,
+    p_entity_id: entityId,
+    p_category_id: categoryId,
+    p_title: title,
+    p_description: description || null,
+    p_url: url,
+    p_thumbnail_url: thumbnailUrl || null,
+    p_published_by: user.id,
+  });
 
-  if (recentDuplicate) {
-    // Already published moments ago — a legitimate no-op, not an
-    // error. No second insert, no second activity row, no second email.
-    return { ok: true };
+  if (claimError) {
+    // Includes a genuine insert failure (e.g. an invalid category_id) —
+    // the whole function call rolled back atomically inside Postgres,
+    // so no claim and no deliverable exist. Nothing to clean up here;
+    // the same request can be retried immediately once corrected.
+    console.error("[admin] deliverable publish failed", claimError.message);
+    return { ok: false, error: "Save failed. Please try again." };
   }
 
-  const { error } = await supabase.from("deliverables").insert({
-    entity_type: entityType,
-    entity_id: entityId,
-    category_id: categoryId,
-    title,
-    description: description || null,
-    url,
-    thumbnail_url: thumbnailUrl || null,
-    published_by: user.id,
-  });
-  if (error) {
-    console.error("[admin] deliverable insert failed", error.message);
-    return { ok: false, error: "Save failed. Please try again." };
+  const result = claimResult?.[0];
+  if (!result || result.claim_status === "duplicate") {
+    // Already published moments ago (or currently being published by a
+    // truly simultaneous request that won the claim) — a legitimate
+    // no-op, not an error. No second deliverable, no second activity
+    // row, no second email.
+    return { ok: true };
   }
 
   await logActivity({
