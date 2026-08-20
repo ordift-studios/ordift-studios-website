@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import Logo from "@/components/Logo";
-import { getCurrentUser, hasRole, isStaffOrAdmin, isSuperAdmin } from "@/lib/portal/roles";
+import { getCurrentUser, hasRole, isStaffOrAdmin, isSuperAdmin, type RoleSlug } from "@/lib/portal/roles";
 import { signOutAction } from "@/app/portal/login/actions";
 import { getProfileCard } from "@/lib/portal/profileCard";
 import ProfileQuickCard from "@/components/admin/ProfileQuickCard";
@@ -29,6 +29,23 @@ const NAV_ITEMS: { label: string; href: string; adminOnly?: boolean; superAdminO
   { label: "Settings", href: "/admin/settings", adminOnly: true },
 ];
 
+// Mirrors the exact pattern src/app/portal/(dashboard)/layout.tsx
+// already uses to cross-link every non-staff role a dual-role account
+// holds — previously this only checked `hasRole(user, "client")`, so a
+// staff/admin account who was also vendor/model/contractor/
+// workshop_participant (but not client) had no way back to their own
+// portal short of typing the URL. Navigation only — doesn't grant,
+// revoke, or check anything beyond what's already true of the account;
+// every server-side permission check on each destination stays exactly
+// as it is.
+const PORTAL_LINK_ITEMS: { role: RoleSlug; label: string; href: string }[] = [
+  { role: "client", label: "Client Portal", href: "/portal/client" },
+  { role: "workshop_participant", label: "Workshop Portal", href: "/portal/workshops" },
+  { role: "model", label: "Model Portal", href: "/portal/model" },
+  { role: "vendor", label: "Vendor Portal", href: "/portal/vendor" },
+  { role: "contractor", label: "Collaborator Portal", href: "/portal/collaborator" },
+];
+
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
   const user = await getCurrentUser();
   if (!user) redirect("/portal/login?next=/admin");
@@ -45,14 +62,10 @@ export default async function AdminLayout({ children }: { children: React.ReactN
     (item) => (!item.adminOnly || isAdmin) && (!item.superAdminOnly || isSuper)
   );
   const profileCard = await getProfileCard(user);
-  // Navigation only — a dual-role account (e.g. a staff member who is
-  // also a client, or a test account deliberately granted both) can
-  // otherwise get stuck here with no way back to the Client Portal
-  // short of typing the URL. Doesn't grant, revoke, or check anything
-  // beyond what's already true of this account; every server-side
-  // permission check on the Client Portal's own routes stays exactly
-  // as it is.
-  const hasClientAccess = hasRole(user, "client");
+  const matchingPortalLinks = PORTAL_LINK_ITEMS.filter((item) => hasRole(user, item.role));
+  const visiblePortalLinks = matchingPortalLinks.filter(
+    (item, index) => matchingPortalLinks.findIndex((other) => other.href === item.href) === index
+  );
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -62,14 +75,15 @@ export default async function AdminLayout({ children }: { children: React.ReactN
             <Logo variant="nav" color="white" height={24} priority />
           </Link>
           <div className="flex items-center gap-4">
-            {hasClientAccess && (
+            {visiblePortalLinks.map((item) => (
               <Link
-                href="/portal/client"
+                key={item.href}
+                href={item.href}
                 className="font-sans text-body-small text-white/70 hover:text-white underline underline-offset-4"
               >
-                Client Portal
+                {item.label}
               </Link>
-            )}
+            ))}
             <ProfileQuickCard card={profileCard} />
             <form action={signOutAction}>
               <button
