@@ -1,6 +1,7 @@
 import type { createAdminClient } from "@/lib/supabase/admin";
 import { CRM_STAGES } from "@/lib/admin/enquiries";
 import { logActivityAsSystem } from "@/lib/admin/activityLog";
+import { sendBookingConfirmedEmail } from "@/lib/enquiry/lifecycleEmails";
 
 // TD-043 follow-up (Item 3, 2026-08-19) — the moment an enquiry's
 // aggregate payment status reaches "Paid", the booking is secured and
@@ -74,4 +75,38 @@ export async function advanceStageOnFullPayment(
     entityId,
     metadata: { stage: "booked", automated: true, reason: "full_payment" },
   });
+
+  // Booking Confirmed client email — fires only on this same guarded
+  // transition (the UPDATE above already returned zero rows for a
+  // duplicate webhook/retry, so this line is unreached in that case).
+  // Deliberately not the payment receipt (receipts.ts) — that's
+  // dispatched separately, keyed off the completed payment itself, not
+  // the stage transition. A failure resolving contact details or
+  // sending must never fail this already-successful stage advance.
+  try {
+    const { data: entity } = await admin
+      .from("enquiries")
+      .select("email, full_name, service, reference_number")
+      .eq("id", entityId)
+      .maybeSingle();
+
+    if (entity?.email && entity?.full_name) {
+      const result = await sendBookingConfirmedEmail({
+        enquiryId: entityId,
+        referenceNumber: entity.reference_number ?? entityId,
+        fullName: entity.full_name,
+        email: entity.email,
+        service: entity.service ?? "",
+      });
+      await logActivityAsSystem({
+        actorUserId: null,
+        action: "enquiry.booking_confirmed_email_sent",
+        entityType: "enquiry",
+        entityId,
+        metadata: { ok: result?.ok ?? false, automated: true },
+      });
+    }
+  } catch (err) {
+    console.error("[payments] advanceStageOnFullPayment: booking confirmed email failed", { entityId, err });
+  }
 }

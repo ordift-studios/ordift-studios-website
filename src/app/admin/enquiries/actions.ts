@@ -6,6 +6,7 @@ import { getCurrentUser, isStaffOrAdmin } from "@/lib/portal/roles";
 import { hasCapability } from "@/lib/workflow/engine";
 import { PAYMENT_CAPABILITIES } from "@/lib/payments/paymentPermissions";
 import { CRM_CAPABILITIES } from "@/lib/admin/crmPermissions";
+import { sendQuotationReadyEmail } from "@/lib/enquiry/lifecycleEmails";
 import { logActivity } from "@/lib/admin/activityLog";
 import { CRM_STAGES, type CrmStage } from "@/lib/admin/enquiries";
 import { crmStageLabel } from "@/lib/portal/data";
@@ -147,7 +148,7 @@ export async function setAmountDueAction(
 
   const { data: current } = await supabase
     .from("enquiries")
-    .select("crm_stage")
+    .select("crm_stage, email, full_name, service, reference_number")
     .eq("id", enquiryId)
     .maybeSingle();
 
@@ -198,6 +199,31 @@ export async function setAmountDueAction(
     entityId: enquiryId,
     metadata: { amountDue: updates.amount_due, stageAdvanced: Boolean(updates.crm_stage) },
   });
+
+  // Quotation Ready client email — fires only on the genuine
+  // pre-quotation -> quotation_sent transition (the exact same
+  // `updates.crm_stage` signal already used for `stageAdvanced` above),
+  // never on a later amount amendment to an enquiry already past that
+  // stage, and never reachable from a manual stage edit
+  // (updateStageAction is a separate code path that never calls this).
+  // Failure here must never fail this action — see lifecycleEmails.ts.
+  if (updates.crm_stage === "quotation_sent" && current?.email && current?.full_name) {
+    const result = await sendQuotationReadyEmail({
+      enquiryId,
+      referenceNumber: current.reference_number ?? enquiryId,
+      fullName: current.full_name,
+      email: current.email,
+      service: current.service ?? "",
+      amountDue: updates.amount_due,
+    });
+    await logActivity({
+      actorUserId: user.id,
+      action: "enquiry.quotation_email_sent",
+      entityType: "enquiry",
+      entityId: enquiryId,
+      metadata: { ok: result?.ok ?? false },
+    });
+  }
 
   revalidatePath(`/admin/enquiries/${enquiryId}`);
   revalidatePath("/admin/enquiries");
