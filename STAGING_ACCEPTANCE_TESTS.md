@@ -159,3 +159,54 @@ dropdown remains fully Admin/Super-Admin-only exactly as Batch 1 left it;
 the transition is logged with the real actor; no client email fires.
 
 ---
+
+## Test 3 — Files Ready: end-to-end publish → notification → portal verification
+
+**Status:** PASSED — performed 2026-08-20 against `ENQ-2026-000174` (a fresh
+test enquiry, auto-linked at submission to an existing Client account for
+the same email) and a genuine Staff-only Staging account.
+
+**Why this needs a manual staging run:** `createDeliverableAction`
+(`src/app/admin/deliverables/actions.ts`) requires a real authenticated
+session, same limitation as Tests 1 and 2. Its guard/idempotency logic and
+the email template are covered by automated tests
+(`createDeliverable.integration.test.ts`, `lifecycleEmails.test.ts`); this
+procedure proved the full real-world path: publish → notification content →
+the client actually seeing the file in their own Portal.
+
+**Covers:** CRM Lifecycle Automation Phase 1, Batch 5
+(`src/components/admin/PublishDeliverableForm.tsx`,
+`src/app/admin/deliverables/actions.ts`).
+
+### Steps performed
+
+1. Fresh test enquiry submitted via `/book` with a real, controlled email —
+   found already auto-linked (`user_id` populated at submission) to an
+   existing Client account for that email.
+2. Logged into the Client Portal as that client — confirmed the Deliverables
+   tab genuinely empty beforehand.
+3. Logged in as a genuine Staff-only account, published a test deliverable
+   against the enquiry — observed the "Publishing…" pending state, the form
+   disabling, and a repeat click while disabled doing nothing.
+4. Read-only verification: exactly one deliverable row, one
+   `deliverable.published` activity row, one `deliverable.files_ready_email_sent`
+   activity row (`ok: true`), `crm_stage` unchanged.
+5. Since Staging never sends real email (test-mode logging, by design,
+   regardless of any other setting), the notification's actual content was
+   verified directly from the Staging runtime log — correct recipient,
+   subject (`Your Files Are Ready — <reference>`), body, and portal link —
+   rather than an inbox.
+6. Logged back in as the client and confirmed the deliverable is genuinely
+   visible via that exact portal link.
+7. Final read-only re-check found nothing had drifted — same counts as
+   step 4.
+
+### Overall pass criteria
+
+A genuine publish produces exactly one deliverable, one Files Ready
+notification, correctly addressed and worded, with a portal link that
+genuinely resolves to the right client's project; the CRM stage never
+moves; the pending-state guard visibly prevents a same-session double
+submission.
+
+---
