@@ -51,7 +51,17 @@ export type WorkflowCapability =
   // sync state with what Paystack already reports, never choose or
   // force an outcome, so it carries none of the financial-decision
   // risk those capabilities do.
-  | "reconcile_payment";
+  | "reconcile_payment"
+  // CRM Lifecycle Automation Phase 1, Batch 1 (2026-08-20) — manual
+  // crm_stage edits on an enquiry/booking. Previously gated only by
+  // the flat isStaffOrAdmin() check (any staff, admin, or super_admin
+  // could freely move any enquiry to any stage); narrowed to
+  // admin/super_admin only, matching manage_project_amount's tier.
+  // Automatic system transitions (advanceStageOnFullPayment,
+  // setAmountDueAction's quotation_sent side effect) are separate code
+  // paths that don't call through this capability at all, so this
+  // change only affects manual edits, never automation.
+  | "edit_crm_stage";
 
 // Extend as future consumers land — kept a literal union (not a bare
 // `string`) so a typo in a future entity_type is a compile error, not

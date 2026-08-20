@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getCurrentUser, isStaffOrAdmin } from "@/lib/portal/roles";
 import { hasCapability } from "@/lib/workflow/engine";
 import { PAYMENT_CAPABILITIES } from "@/lib/payments/paymentPermissions";
+import { CRM_CAPABILITIES } from "@/lib/admin/crmPermissions";
 import { logActivity } from "@/lib/admin/activityLog";
 import { CRM_STAGES, type CrmStage } from "@/lib/admin/enquiries";
 import { crmStageLabel } from "@/lib/portal/data";
@@ -20,10 +21,24 @@ async function requireStaffOrAdmin() {
 // Narrower than requireStaffOrAdmin() — setting the payable amount has
 // direct financial consequences (same tier as issue_refund/
 // manage_currencies in PAYMENT_CAPABILITIES), so plain staff can't do
-// this even though they can update crm_stage/notes above.
+// this even though they can update notes above.
 async function requireManageProjectAmount() {
   const user = await getCurrentUser();
   if (!user || !hasCapability(user, PAYMENT_CAPABILITIES, "manage_project_amount")) {
+    throw new Error("Not authorized.");
+  }
+  return user;
+}
+
+// CRM Lifecycle Automation Phase 1, Batch 1 (2026-08-20) — narrower
+// than requireStaffOrAdmin(): manual crm_stage edits are admin/
+// super_admin only (see src/lib/admin/crmPermissions.ts). Automatic
+// system transitions (advanceStageOnFullPayment, setAmountDueAction's
+// quotation_sent side effect below) are separate code paths that
+// never call through this action, so they're unaffected.
+async function requireEditCrmStage() {
+  const user = await getCurrentUser();
+  if (!user || !hasCapability(user, CRM_CAPABILITIES, "edit_crm_stage")) {
     throw new Error("Not authorized.");
   }
   return user;
@@ -46,7 +61,7 @@ export async function updateStageAction(
 ): Promise<UpdateStageState> {
   let user;
   try {
-    user = await requireStaffOrAdmin();
+    user = await requireEditCrmStage();
   } catch {
     return { ok: false, error: "You are not authorized to change this." };
   }
