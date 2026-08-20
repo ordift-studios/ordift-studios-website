@@ -7,6 +7,7 @@ import { getEnquiryById, getEnquiryNotes, CRM_STAGES } from "@/lib/admin/enquiri
 import { getCurrentUser, hasRole, isSuperAdmin } from "@/lib/portal/roles";
 import { hasCapability } from "@/lib/workflow/engine";
 import { PAYMENT_CAPABILITIES } from "@/lib/payments/paymentPermissions";
+import { CRM_CAPABILITIES } from "@/lib/admin/crmPermissions";
 import { getDeliverableCategories, getDeliverablesForEntity } from "@/lib/admin/deliverables";
 import DeliverablesManager from "@/components/admin/DeliverablesManager";
 import { getProjectRequestsForEntity } from "@/lib/admin/projectRequests";
@@ -14,6 +15,7 @@ import ProjectRequestsManager from "@/components/admin/ProjectRequestsManager";
 import { addNoteAction } from "../actions";
 import SetAmountDueForm from "./SetAmountDueForm";
 import UpdateStageForm from "./UpdateStageForm";
+import StartHandlingButton from "./StartHandlingButton";
 
 function formatUsd(amount: number): string {
   return `$${amount.toFixed(2)}`;
@@ -49,6 +51,7 @@ export default async function AdminEnquiryDetailPage({ params }: { params: Promi
   if (!enquiry) notFound();
 
   const canManageAmount = hasCapability(user, PAYMENT_CAPABILITIES, "manage_project_amount");
+  const canEditCrmStage = hasCapability(user, CRM_CAPABILITIES, "edit_crm_stage");
 
   return (
     <div className="space-y-10">
@@ -181,11 +184,25 @@ export default async function AdminEnquiryDetailPage({ params }: { params: Promi
             <p className="font-sans text-caption uppercase tracking-wide text-ordift-ink-muted mb-3">
               CRM Stage
             </p>
-            <UpdateStageForm
-              enquiryId={enquiry.id}
-              currentStage={enquiry.crmStage}
-              stageOptions={CRM_STAGES.map((s) => ({ value: s, label: crmStageLabel(s) }))}
-            />
+            {enquiry.crmStage === "new_lead" && (
+              <div className="mb-4">
+                <StartHandlingButton enquiryId={enquiry.id} />
+              </div>
+            )}
+            {canEditCrmStage ? (
+              <UpdateStageForm
+                enquiryId={enquiry.id}
+                currentStage={enquiry.crmStage}
+                stageOptions={CRM_STAGES.map((s) => ({ value: s, label: crmStageLabel(s) }))}
+              />
+            ) : (
+              <>
+                <p className="font-sans text-body text-ordift-ink mb-2">{crmStageLabel(enquiry.crmStage)}</p>
+                <p className="font-sans text-caption text-ordift-ink-muted">
+                  Only Admin/Super Admin can change the CRM stage.
+                </p>
+              </>
+            )}
           </div>
         </div>
       </div>

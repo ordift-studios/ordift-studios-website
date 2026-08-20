@@ -91,6 +91,36 @@ async function countAutomatedStageChangeActivity(enquiryId: string): Promise<num
   return data?.length ?? 0;
 }
 
+// CRM Lifecycle Automation Phase 1, Batch 2 (2026-08-20) — the Booking
+// Confirmed client email is dispatched from inside the exact same
+// guarded branch as the stage-change activity log above, so it should
+// share its idempotency exactly: one genuine "booked" transition, one
+// email attempt (logged here as staging always logs instead of really
+// sending — see productionSendingEnabled()), zero for a repeat/no-op
+// call or a never-regress case.
+async function countBookingConfirmedEmailActivity(enquiryId: string): Promise<number> {
+  const { data } = await admin
+    .from("activity_log")
+    .select("id")
+    .eq("entity_type", "enquiry")
+    .eq("entity_id", enquiryId)
+    .eq("action", "enquiry.booking_confirmed_email_sent");
+  return data?.length ?? 0;
+}
+
+// CRM Lifecycle Automation Phase 1, Batch 3 (2026-08-20) — the internal
+// New Booking notification is dispatched from the exact same guarded
+// branch, so it shares the same idempotency proof.
+async function countNewBookingNotificationActivity(enquiryId: string): Promise<number> {
+  const { data } = await admin
+    .from("activity_log")
+    .select("id")
+    .eq("entity_type", "enquiry")
+    .eq("entity_id", enquiryId)
+    .eq("action", "enquiry.new_booking_notification_sent");
+  return data?.length ?? 0;
+}
+
 async function completeGatewayPayment(entityType: string, entityId: string, paymentType: "full" | "balance" = "full") {
   const recordId = await generateRecordId("PAY");
   const { data: payment, error } = await admin
@@ -180,6 +210,8 @@ describe("advanceStageOnFullPayment — direct guard coverage (Part A)", () => {
       await advanceStageOnFullPayment(admin, "enquiry", enquiryId, "Paid");
       expect(await getEnquiryStage(enquiryId)).toBe("booked");
       expect(await countAutomatedStageChangeActivity(enquiryId)).toBe(1);
+      expect(await countBookingConfirmedEmailActivity(enquiryId)).toBe(1);
+      expect(await countNewBookingNotificationActivity(enquiryId)).toBe(1);
     }
   );
 
@@ -190,6 +222,8 @@ describe("advanceStageOnFullPayment — direct guard coverage (Part A)", () => {
       await advanceStageOnFullPayment(admin, "enquiry", enquiryId, "Paid");
       expect(await getEnquiryStage(enquiryId)).toBe(startStage);
       expect(await countAutomatedStageChangeActivity(enquiryId)).toBe(0);
+      expect(await countBookingConfirmedEmailActivity(enquiryId)).toBe(0);
+      expect(await countNewBookingNotificationActivity(enquiryId)).toBe(0);
     }
   );
 
@@ -205,16 +239,48 @@ describe("advanceStageOnFullPayment — direct guard coverage (Part A)", () => {
     await expect(advanceStageOnFullPayment(admin, "workshop_registration", workshopId, "Paid")).resolves.not.toThrow();
   });
 
-  it("repeated/concurrent calls for the same already-fully-paid enquiry produce exactly one write and one activity row", async () => {
+  // CRM Lifecycle Automation Phase 1, Batch 3 — a manual admin edit to
+  // "booked" (updateStageAction, src/app/admin/enquiries/actions.ts)
+  // never calls advanceStageOnFullPayment at all; this proves that
+  // empirically by performing the exact plain UPDATE updateStageAction
+  // itself issues (mirroring the same approach already used by
+  // updateStageDoubleSubmit.integration.test.ts) and confirming no
+  // notification activity results — only a genuine payment-driven
+  // transition through advanceStageOnFullPayment ever notifies anyone.
+  it("a manual stage edit directly to 'booked' produces no client email and no internal notification", async () => {
+    const enquiryId = await createTestEnquiry("negotiation", "manual-edit");
+
+    const { data: updatedRows, error } = await admin
+      .from("enquiries")
+      .update({ crm_stage: "booked" })
+      .eq("id", enquiryId)
+      .neq("crm_stage", "booked")
+      .select("id");
+    if (error) throw new Error(`manual update failed: ${error.message}`);
+    expect(updatedRows).toHaveLength(1);
+
+    expect(await getEnquiryStage(enquiryId)).toBe("booked");
+    expect(await countBookingConfirmedEmailActivity(enquiryId)).toBe(0);
+    expect(await countNewBookingNotificationActivity(enquiryId)).toBe(0);
+  });
+
+  it("repeated/concurrent calls for the same already-fully-paid enquiry produce exactly one write, one activity row, one client email attempt, and one internal notification attempt", async () => {
     const enquiryId = await createTestEnquiry("negotiation", "repeated");
     await Promise.all(Array.from({ length: 5 }, () => advanceStageOnFullPayment(admin, "enquiry", enquiryId, "Paid")));
     expect(await getEnquiryStage(enquiryId)).toBe("booked");
     expect(await countAutomatedStageChangeActivity(enquiryId)).toBe(1);
+    expect(await countBookingConfirmedEmailActivity(enquiryId)).toBe(1);
+    expect(await countNewBookingNotificationActivity(enquiryId)).toBe(1);
 
-    // A further call after it's already booked must still be a clean no-op.
+    // A further call after it's already booked must still be a clean no-op —
+    // no duplicate write, activity row, or notification attempt (proves this
+    // is safe against a genuinely duplicated webhook delivery or a repeated
+    // reconciliation, not just concurrent requests within the same batch).
     await advanceStageOnFullPayment(admin, "enquiry", enquiryId, "Paid");
     expect(await getEnquiryStage(enquiryId)).toBe("booked");
     expect(await countAutomatedStageChangeActivity(enquiryId)).toBe(1);
+    expect(await countBookingConfirmedEmailActivity(enquiryId)).toBe(1);
+    expect(await countNewBookingNotificationActivity(enquiryId)).toBe(1);
   });
 });
 
