@@ -2,8 +2,10 @@ import { describe, expect, it } from "vitest";
 import {
   buildQuotationReadyEmail,
   buildBookingConfirmedEmail,
+  buildFilesReadyEmail,
   type QuotationReadyData,
   type BookingConfirmedData,
+  type FilesReadyData,
 } from "./lifecycleEmails";
 
 // Render/template coverage for the two new CRM Lifecycle Automation
@@ -27,6 +29,16 @@ const BOOKING_BASE: BookingConfirmedData = {
   fullName: "Nita Owusu",
   email: "nita@example.com",
   service: "photography",
+};
+
+const FILES_READY_BASE: FilesReadyData = {
+  entityId: "abc-123",
+  portalKind: "enquiry",
+  referenceNumber: "ENQ-2026-000009",
+  fullName: "Nita Owusu",
+  email: "nita@example.com",
+  projectLabel: "Photography",
+  deliverableTitle: "Final Edited Gallery",
 };
 
 describe("buildQuotationReadyEmail", () => {
@@ -80,6 +92,46 @@ describe("buildBookingConfirmedEmail", () => {
 
   it("never renders literal 'null' or 'undefined'", () => {
     const { html, text } = buildBookingConfirmedEmail(BOOKING_BASE);
+    expect(html).not.toContain("null");
+    expect(html).not.toContain("undefined");
+    expect(text).not.toContain("null");
+    expect(text).not.toContain("undefined");
+  });
+});
+
+describe("buildFilesReadyEmail", () => {
+  it("renders reference, greeting, the deliverable title, and a portal link scoped to this entity", () => {
+    const { subject, html, text } = buildFilesReadyEmail(FILES_READY_BASE);
+
+    expect(subject).toBe("Your Files Are Ready — ENQ-2026-000009");
+    expect(html).toContain("Files Ready");
+    expect(html).toContain("Hi Nita,");
+    expect(html).toContain("ENQ-2026-000009");
+    expect(html).toContain("Final Edited Gallery");
+    expect(html).toContain("/portal/client/projects/enquiry/abc-123/deliverables");
+    expect(html).toContain("View in Client Portal");
+    expect(text).toContain("ENQ-2026-000009");
+    expect(text).toContain("Final Edited Gallery");
+  });
+
+  it("uses the workshop portal path when portalKind is 'workshop'", () => {
+    const { html } = buildFilesReadyEmail({ ...FILES_READY_BASE, portalKind: "workshop" });
+    expect(html).toContain("/portal/client/projects/workshop/abc-123/deliverables");
+    expect(html).not.toContain("/portal/client/projects/enquiry/abc-123/deliverables");
+  });
+
+  it("client name and deliverable title are HTML-escaped, not raw-interpolated", () => {
+    const { html } = buildFilesReadyEmail({
+      ...FILES_READY_BASE,
+      fullName: `<script>alert('x')</script>`,
+      deliverableTitle: `<img src=x onerror=alert(1)>`,
+    });
+    expect(html).not.toContain("<script>");
+    expect(html).not.toContain("<img src=x onerror");
+  });
+
+  it("never renders literal 'null' or 'undefined'", () => {
+    const { html, text } = buildFilesReadyEmail(FILES_READY_BASE);
     expect(html).not.toContain("null");
     expect(html).not.toContain("undefined");
     expect(text).not.toContain("null");

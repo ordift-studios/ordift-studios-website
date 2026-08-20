@@ -1,5 +1,6 @@
 import type { AdminDeliverable, DeliverableCategory, DeliverableEntityType } from "@/lib/admin/deliverables";
-import { createDeliverableAction, createCategoryAction, deleteDeliverableAction } from "@/app/admin/deliverables/actions";
+import { createCategoryAction, deleteDeliverableAction } from "@/app/admin/deliverables/actions";
+import PublishDeliverableForm from "./PublishDeliverableForm";
 
 function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
@@ -70,86 +71,7 @@ export default function DeliverablesManager({
         </div>
       )}
 
-      <form action={createDeliverableAction} className="space-y-3 rounded-lg border border-black/10 bg-white p-4">
-        <input type="hidden" name="entityType" value={entityType} />
-        <input type="hidden" name="entityId" value={entityId} />
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <div>
-            <label htmlFor="deliverable-title" className="font-sans text-caption text-ordift-ink-muted block mb-1">
-              Title
-            </label>
-            <input
-              id="deliverable-title"
-              type="text"
-              name="title"
-              required
-              placeholder="e.g. Final Edited Gallery"
-              className="w-full min-h-11 rounded-lg border border-black/15 bg-white px-3 font-sans text-body-small text-ordift-ink"
-            />
-          </div>
-          <div>
-            <label htmlFor="deliverable-category" className="font-sans text-caption text-ordift-ink-muted block mb-1">
-              Category
-            </label>
-            <select
-              id="deliverable-category"
-              name="categoryId"
-              required
-              className="w-full min-h-11 rounded-lg border border-black/15 bg-white px-3 font-sans text-body-small text-ordift-ink"
-            >
-              {categories.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.label}
-                </option>
-              ))}
-            </select>
-          </div>
-        </div>
-        <div>
-          <label htmlFor="deliverable-description" className="font-sans text-caption text-ordift-ink-muted block mb-1">
-            Description (optional)
-          </label>
-          <input
-            id="deliverable-description"
-            type="text"
-            name="description"
-            className="w-full min-h-11 rounded-lg border border-black/15 bg-white px-3 font-sans text-body-small text-ordift-ink"
-          />
-        </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <div>
-            <label htmlFor="deliverable-url" className="font-sans text-caption text-ordift-ink-muted block mb-1">
-              Link
-            </label>
-            <input
-              id="deliverable-url"
-              type="url"
-              name="url"
-              required
-              placeholder="https://…"
-              className="w-full min-h-11 rounded-lg border border-black/15 bg-white px-3 font-sans text-body-small text-ordift-ink"
-            />
-          </div>
-          <div>
-            <label htmlFor="deliverable-thumbnail" className="font-sans text-caption text-ordift-ink-muted block mb-1">
-              Thumbnail URL (optional)
-            </label>
-            <input
-              id="deliverable-thumbnail"
-              type="url"
-              name="thumbnailUrl"
-              placeholder="https://…"
-              className="w-full min-h-11 rounded-lg border border-black/15 bg-white px-3 font-sans text-body-small text-ordift-ink"
-            />
-          </div>
-        </div>
-        <button
-          type="submit"
-          className="min-h-11 px-5 rounded-full bg-ordift-navy-950 text-white font-sans text-body-small"
-        >
-          Publish Deliverable
-        </button>
-      </form>
+      <PublishDeliverableForm entityType={entityType} entityId={entityId} categories={categories} />
 
       {isAdmin && (
         <form

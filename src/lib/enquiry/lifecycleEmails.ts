@@ -199,3 +199,95 @@ export async function sendBookingConfirmedEmail(data: BookingConfirmedData): Pro
     return null;
   }
 }
+
+// CRM Lifecycle Automation Phase 1, Batch 5 (2026-08-20) — Files Ready:
+// fires once per genuine successful deliverable publish
+// (createDeliverableAction, src/app/admin/deliverables/actions.ts —
+// only after the insert itself succeeds; a failed publish never
+// reaches this call). Deliberately entity-agnostic (unlike Quotation
+// Ready/Booking Confirmed above, which are enquiry-only) — deliverables
+// exist on both enquiries and workshop_registrations, so this takes a
+// plain `projectLabel`/`portalKind` resolved by the caller rather than
+// importing pathway-specific logic here, the same separation of
+// concerns receipts.ts already uses for its own dual-entity case.
+// No CRM stage change is triggered by this email or its caller —
+// publishing an individual deliverable and completing the overall
+// project remain deliberately separate concepts for now.
+export type FilesReadyData = {
+  entityId: string;
+  portalKind: "enquiry" | "workshop";
+  referenceNumber: string;
+  fullName: string;
+  email: string;
+  projectLabel: string;
+  deliverableTitle: string;
+};
+
+export function buildFilesReadyEmail(data: FilesReadyData): { subject: string; html: string; text: string } {
+  const subject = `Your Files Are Ready — ${data.referenceNumber}`;
+  const portalUrl = `${siteUrl()}/portal/client/projects/${data.portalKind}/${data.entityId}/deliverables`;
+  const greetingName = escapeHtml(data.fullName.split(" ")[0] || data.fullName);
+
+  const bodyHtml = `
+    <p style="margin:0 0 4px;font-family:${SANS};font-size:13px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:${GOLD};">
+      Files Ready
+    </p>
+    <h1 style="margin:0 0 20px;font-family:${SERIF};font-size:26px;color:${NAVY};font-weight:normal;">
+      Hi ${greetingName}, your files are ready.
+    </h1>
+    <p style="margin:0 0 20px;font-family:${SANS};font-size:15px;line-height:1.6;color:${NAVY};">
+      New deliverables have been published for your ${escapeHtml(data.projectLabel)} project
+      (reference ${escapeHtml(data.referenceNumber)}): <strong>${escapeHtml(data.deliverableTitle)}</strong>.
+    </p>
+    <table role="presentation" width="100%" style="margin-bottom:24px;">
+      <tr>
+        <td align="center">
+          <a href="${portalUrl}" style="display:inline-block;padding:12px 28px;background:${GOLD};color:${NAVY};font-family:${SANS};font-size:14px;font-weight:600;text-decoration:none;border-radius:999px;">
+            View in Client Portal
+          </a>
+        </td>
+      </tr>
+    </table>
+    <p style="margin:0;font-family:${SANS};font-size:13px;line-height:1.6;color:${INK_MUTED};">
+      If you have questions about your files, just reply to this email and mention your reference number.
+    </p>
+  `;
+
+  const html = wrap(bodyHtml, "Ordift Studios · This is an automated message regarding your project.");
+  const text = [
+    `Files Ready`,
+    ``,
+    `Hi ${data.fullName}, your files are ready.`,
+    ``,
+    `Reference: ${data.referenceNumber}`,
+    `New deliverable: ${data.deliverableTitle}`,
+    ``,
+    `View in the Client Portal: ${portalUrl}`,
+    ``,
+    `Questions? Reply to this email and mention your reference number.`,
+  ].join("\n");
+
+  return { subject, html, text };
+}
+
+export async function sendFilesReadyEmail(data: FilesReadyData): Promise<EmailResult | null> {
+  try {
+    const { subject, html, text } = buildFilesReadyEmail(data);
+    const result = await dispatchNotification({
+      channels: ["email"],
+      email: {
+        to: data.email,
+        subject,
+        html,
+        text,
+        logPrefix: "[deliverables]",
+        emailType: "deliverable-files-ready",
+        referenceNumber: data.referenceNumber,
+      },
+    });
+    return result.email ?? null;
+  } catch (err) {
+    console.error("[deliverables] sendFilesReadyEmail threw", data.referenceNumber, err);
+    return null;
+  }
+}
