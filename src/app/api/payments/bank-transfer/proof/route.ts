@@ -18,9 +18,17 @@ import { detectFileMimeType } from "@/lib/shared/fileContentSniff";
 // 1. First submission for an entity (no existing payments row yet) —
 //    creates one, status starts 'pending' then moves to
 //    'awaiting_verification' once the proof is attached.
-// 2. Resubmission after a rejection (UX Spec §10) — reuses the
-//    existing payment row rather than creating a new one, matching
-//    the "resubmit against the same attempt" design decision.
+// 2. Resubmission after a rejection — the POST handler below *can*
+//    reopen an existing 'rejected' row in place (see its status check),
+//    but the client-side "Try Again" flow (checkout page) never routes
+//    back into it; it always restarts through PUT, creating a fresh
+//    row instead. TD-042 (TECHNICAL_DEBT_REGISTER.md) — this was
+//    previously mis-documented here as "reuses the existing row." It
+//    doesn't, and that's fine: a fresh row re-validates the exchange
+//    rate at resubmission time (below, "rate_changed"), the same
+//    guarantee the gateway checkout path gets — reusing the old row
+//    would resubmit proof against a now-possibly-stale locked rate
+//    instead. Intentionally retained as-is; not a bug.
 //
 // Storage: private 'payment-proofs' bucket (migration 0024), object
 // path `{paymentId}/{filename}` — matches the RLS policy's

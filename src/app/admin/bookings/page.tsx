@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { getAllWorkshopRegistrations } from "@/lib/portal/data";
+import { getAllWorkshopRegistrations, paymentStatusLabel } from "@/lib/portal/data";
 import { REGISTRATION_STATUSES, PAYMENT_STATUSES } from "@/lib/admin/bookings";
 import { contentRepository } from "@/lib/content";
 import ReportExportLinks from "@/components/admin/ReportExportLinks";
@@ -227,7 +227,9 @@ export default async function AdminBookingsPage({
                       ? ` (${r.waitingListPosition})`
                       : ""}
                   </td>
-                  <td className="py-3 px-4 font-sans text-body-small text-ordift-ink-muted">{r.paymentStatus}</td>
+                  <td className="py-3 px-4 font-sans text-body-small text-ordift-ink-muted">
+                    {paymentStatusLabel(r.paymentStatus, r.amountPaid)}
+                  </td>
                   <td className="py-3 px-4 font-sans text-body-small text-ordift-ink-muted whitespace-nowrap">
                     {formatDate(r.registrationDate)}
                   </td>

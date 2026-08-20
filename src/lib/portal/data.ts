@@ -326,3 +326,20 @@ const CRM_STAGE_LABELS: Record<string, string> = {
 export function crmStageLabel(stage: string): string {
   return CRM_STAGE_LABELS[stage] ?? stage;
 }
+
+// Display-only refinement (pre-launch polish pass, 2026-08-20) — the
+// stored payment_status itself stays exactly "Pending" | "Paid"
+// (computed in syncEntityPaymentStatus()/syncEntityAfterBankTransferDecision(),
+// src/lib/payments/gatewaySync.ts / src/app/admin/payments/actions.ts —
+// untouched by this function), including for the CRM auto-advance
+// guard, which checks that literal string. This only changes what an
+// admin list table *shows* when some money has already been collected
+// but the entity isn't fully paid yet — otherwise indistinguishable
+// from "nothing paid at all." Never called anywhere payment_status is
+// written or compared, only where it's rendered.
+export function paymentStatusLabel(paymentStatus: string | null, amountPaid: number | null): string {
+  if (paymentStatus === "Pending" && amountPaid != null && amountPaid > 0) {
+    return "Partially Paid";
+  }
+  return paymentStatus ?? "—";
+}

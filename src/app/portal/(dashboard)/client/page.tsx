@@ -14,8 +14,15 @@ import ActiveProjectsWidget from "@/components/portal/dashboard/ActiveProjectsWi
 import UpcomingSessionsWidget from "@/components/portal/dashboard/UpcomingSessionsWidget";
 import LatestUpdatesWidget from "@/components/portal/dashboard/LatestUpdatesWidget";
 import DeliverablesReadyWidget from "@/components/portal/dashboard/DeliverablesReadyWidget";
-import PendingPaymentsWidget from "@/components/portal/dashboard/PendingPaymentsWidget";
-import RecentNotificationsWidget from "@/components/portal/dashboard/RecentNotificationsWidget";
+// PendingPaymentsWidget / RecentNotificationsWidget — hidden from the
+// dashboard for public launch (pre-launch polish pass, 2026-08-20):
+// both are honest "coming in a future release" placeholders (real
+// payment tracking is v1.4.x, notifications are Milestone 5), which
+// read as unfinished to a real customer landing on their own
+// workspace. Components themselves are untouched and still fully
+// functional — this is only a presentation-level removal from this
+// page. Restore by re-adding both imports below and the two JSX
+// lines further down once the underlying functionality ships.
 import RecentActivityWidget from "@/components/portal/dashboard/RecentActivityWidget";
 import QuickActionsWidget from "@/components/portal/dashboard/QuickActionsWidget";
 
@@ -49,10 +56,8 @@ export default async function ClientPortalPage() {
 
       <LatestUpdatesWidget projects={latestUpdates} />
       <DeliverablesReadyWidget count={deliverablesSummary.totalCount} />
-      <PendingPaymentsWidget />
 
       <RecentActivityWidget items={recentActivity} />
-      <RecentNotificationsWidget />
 
       <QuickActionsWidget deliverablesHref={deliverablesHref} />
     </div>
