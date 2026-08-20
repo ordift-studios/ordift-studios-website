@@ -25,6 +25,7 @@ import {
 import { getActivityForEntity, type ActivityLogEntry } from "@/lib/admin/activityLog";
 import { siteUrl } from "@/lib/shared/env";
 import { assignClassification, assignClassificationBySlug } from "@/lib/portal/memberNumbers";
+import { setNotificationPreference } from "@/lib/notifications/preferences";
 
 // ============================================================
 // Read-only data fetchers — thin server-action wrappers so the client
@@ -317,6 +318,41 @@ export async function reclassifyUserAction(formData: FormData): Promise<{ error?
 
   const result = await assignClassification(userId, classificationId, currentUser.id);
   if (!result.ok) return { error: result.error };
+
+  revalidatePath("/admin/users");
+  return {};
+}
+
+// ============================================================
+// New Booking notification opt-in — CRM Lifecycle Automation Phase 1,
+// Batch 3 refinement (2026-08-20). Super Admin only, same inline-check
+// pattern as reclassifyUserAction directly above: being granted the
+// `admin` role must never itself opt someone into this notification,
+// so only an explicit Super Admin action can turn it on or off. Super
+// Admins themselves are unconditional recipients (resolveNewBookingRecipients())
+// and don't go through this preference at all, so this action only
+// ever makes sense to call for a target user holding `admin`.
+// ============================================================
+export async function setNewBookingAlertsAction(formData: FormData): Promise<{ error?: string }> {
+  const currentUser = await getCurrentUser();
+  if (!currentUser || !isSuperAdmin(currentUser)) {
+    return { error: "Only a Super Admin can change notification settings." };
+  }
+
+  const userId = String(formData.get("userId") ?? "");
+  const enabled = String(formData.get("enabled") ?? "") === "true";
+  if (!userId) return { error: "Invalid request." };
+
+  const result = await setNotificationPreference(userId, "new_booking", enabled);
+  if (!result.ok) return { error: result.error };
+
+  await logActivity({
+    actorUserId: currentUser.id,
+    action: "notification_preference.change",
+    entityType: "user",
+    entityId: userId,
+    metadata: { category: "new_booking", enabled },
+  });
 
   revalidatePath("/admin/users");
   return {};

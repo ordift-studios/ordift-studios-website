@@ -20,6 +20,7 @@ import {
   searchProjectsAction,
   getAssignmentsForUserAction,
   getAccessHistoryForUserAction,
+  setNewBookingAlertsAction,
 } from "./actions";
 
 const ROLE_LABELS: Record<RoleSlug, string> = {
@@ -121,6 +122,7 @@ function UserDetail({
   const [titleId, setTitleId] = useState(user.operationalTitleId ?? "");
   const [engagementId, setEngagementId] = useState(user.engagementTypeId ?? "");
   const [classificationId, setClassificationId] = useState(user.classificationId ?? "");
+  const [newBookingAlertsEnabled, setNewBookingAlertsEnabled] = useState(user.newBookingAlertsEnabled);
 
   const [assignments, setAssignments] = useState<AdminProjectAssignment[] | null>(null);
   const [history, setHistory] = useState<ActivityLogEntry[] | null>(null);
@@ -188,6 +190,22 @@ function UserDetail({
     startTransition(async () => {
       const result = await reclassifyUserAction(fd);
       if (result.error) setError(result.error);
+    });
+  }
+
+  function toggleNewBookingAlerts(next: boolean) {
+    setError(null);
+    const previous = newBookingAlertsEnabled;
+    setNewBookingAlertsEnabled(next); // optimistic; resynced to `previous` on failure below
+    const fd = new FormData();
+    fd.set("userId", user.id);
+    fd.set("enabled", String(next));
+    startTransition(async () => {
+      const result = await setNewBookingAlertsAction(fd);
+      if (result.error) {
+        setError(result.error);
+        setNewBookingAlertsEnabled(previous);
+      }
     });
   }
 
@@ -494,6 +512,34 @@ function UserDetail({
           <p className="font-sans text-caption text-ordift-ink-muted">
             Changes only when the primary classification changes — never for a Title, Department, or Grade edit. The
             previous number is archived, never reused.
+          </p>
+        </section>
+      )}
+
+      {/* Notifications — Super Admin only, and only shown for a plain
+          Admin. Super Admin recipients are unconditional (see
+          resolveNewBookingRecipients()), so a toggle here for a Super
+          Admin user wouldn't actually control anything — hidden rather
+          than shown as a misleading no-op. Being granted the `admin`
+          role never itself enables this; it starts OFF until a Super
+          Admin explicitly turns it on. */}
+      {currentUserIsSuperAdmin && user.roles.includes("admin") && !user.roles.includes("super_admin") && (
+        <section className="space-y-2">
+          <h3 className="font-sans text-caption font-semibold uppercase tracking-wide text-ordift-ink-muted">
+            Notifications
+          </h3>
+          <label className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              checked={newBookingAlertsEnabled}
+              disabled={pending}
+              onChange={(e) => toggleNewBookingAlerts(e.target.checked)}
+              className="h-4 w-4"
+            />
+            <span className="font-sans text-body-small text-ordift-ink">Receive New Booking Alerts</span>
+          </label>
+          <p className="font-sans text-caption text-ordift-ink-muted">
+            Off by default for every Admin — being granted the Admin role does not enable this on its own.
           </p>
         </section>
       )}

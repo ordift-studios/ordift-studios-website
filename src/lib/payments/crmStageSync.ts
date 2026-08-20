@@ -2,6 +2,7 @@ import type { createAdminClient } from "@/lib/supabase/admin";
 import { CRM_STAGES } from "@/lib/admin/enquiries";
 import { logActivityAsSystem } from "@/lib/admin/activityLog";
 import { sendBookingConfirmedEmail } from "@/lib/enquiry/lifecycleEmails";
+import { sendNewBookingNotification } from "@/lib/notifications/newBookingNotification";
 
 // TD-043 follow-up (Item 3, 2026-08-19) — the moment an enquiry's
 // aggregate payment status reaches "Paid", the booking is secured and
@@ -76,20 +77,23 @@ export async function advanceStageOnFullPayment(
     metadata: { stage: "booked", automated: true, reason: "full_payment" },
   });
 
-  // Booking Confirmed client email — fires only on this same guarded
+  // Three independent notifications fire from this one guarded
   // transition (the UPDATE above already returned zero rows for a
-  // duplicate webhook/retry, so this line is unreached in that case).
-  // Deliberately not the payment receipt (receipts.ts) — that's
-  // dispatched separately, keyed off the completed payment itself, not
-  // the stage transition. A failure resolving contact details or
-  // sending must never fail this already-successful stage advance.
-  try {
-    const { data: entity } = await admin
-      .from("enquiries")
-      .select("email, full_name, service, reference_number")
-      .eq("id", entityId)
-      .maybeSingle();
+  // duplicate webhook/retry/reconciliation, so none of this is reached
+  // in that case — the same idempotency guarantee already proven for
+  // the stage-change log above covers all of them): the client Booking
+  // Confirmed email, the internal New Booking notification, and
+  // (dispatched separately, keyed off the completed payment itself, not
+  // this stage transition) the payment receipt in receipts.ts. Each is
+  // its own try/catch so one failing can never suppress the other or
+  // fail this already-successful stage advance.
+  const { data: entity } = await admin
+    .from("enquiries")
+    .select("email, full_name, service, reference_number, amount_paid, amount_due")
+    .eq("id", entityId)
+    .maybeSingle();
 
+  try {
     if (entity?.email && entity?.full_name) {
       const result = await sendBookingConfirmedEmail({
         enquiryId: entityId,
@@ -108,5 +112,28 @@ export async function advanceStageOnFullPayment(
     }
   } catch (err) {
     console.error("[payments] advanceStageOnFullPayment: booking confirmed email failed", { entityId, err });
+  }
+
+  try {
+    if (entity) {
+      const result = await sendNewBookingNotification({
+        entityType: "enquiry",
+        entityId,
+        referenceNumber: entity.reference_number ?? entityId,
+        clientName: entity.full_name ?? "Unknown",
+        service: entity.service ?? "",
+        amountPaid: Number(entity.amount_paid ?? 0),
+        amountDue: Number(entity.amount_due ?? 0),
+      });
+      await logActivityAsSystem({
+        actorUserId: null,
+        action: "enquiry.new_booking_notification_sent",
+        entityType: "enquiry",
+        entityId,
+        metadata: { ...result, automated: true },
+      });
+    }
+  } catch (err) {
+    console.error("[payments] advanceStageOnFullPayment: new booking notification failed", { entityId, err });
   }
 }

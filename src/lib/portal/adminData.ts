@@ -1,5 +1,6 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { AccessStatus, RoleSlug } from "@/lib/portal/roles";
+import { getNotificationPreferences } from "@/lib/notifications/preferences";
 
 export type AdminUserRow = {
   id: string;
@@ -20,6 +21,13 @@ export type AdminUserRow = {
   memberNumber: string | null;
   classificationId: string | null;
   classificationName: string | null;
+  // New Booking notification opt-in (notification_preferences,
+  // category "new_booking") — only meaningful for a plain `admin`; a
+  // Super Admin always receives these regardless of this value (see
+  // resolveNewBookingRecipients()), so the UI hides the toggle for
+  // them rather than showing a value that wouldn't actually control
+  // anything.
+  newBookingAlertsEnabled: boolean;
 };
 
 export type AdminUserListResult =
@@ -102,6 +110,7 @@ export async function listUsersWithRoles(): Promise<AdminUserListResult> {
     { data: engagementTypes },
     { data: activeMemberNumbers },
     { data: classifications },
+    newBookingAlertPrefs,
   ] = await Promise.all([
     admin
       .from("profiles")
@@ -115,6 +124,10 @@ export async function listUsersWithRoles(): Promise<AdminUserListResult> {
     admin.from("engagement_types").select("id, name"),
     admin.from("member_numbers").select("profile_id, classification_id").eq("status", "active"),
     admin.from("member_number_classifications").select("id, name"),
+    getNotificationPreferences(
+      allAuthUsers.map((u) => u.id),
+      "new_booking"
+    ),
   ]);
 
   if (profilesError || userRolesError || rolesError || staffDetailsError) {
@@ -173,6 +186,7 @@ export async function listUsersWithRoles(): Promise<AdminUserListResult> {
           const classificationId = activeClassificationByProfileId.get(u.id);
           return classificationId ? (classificationNameById.get(classificationId) ?? null) : null;
         })(),
+        newBookingAlertsEnabled: newBookingAlertPrefs.get(u.id) ?? false,
       };
     })
     .sort((a, b) => (a.email ?? "").localeCompare(b.email ?? ""));
