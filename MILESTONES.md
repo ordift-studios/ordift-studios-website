@@ -3566,6 +3566,24 @@ Full detail recorded in `PRODUCTION_READINESS_RECONCILIATION.md` §10.4. Migrati
 
 ---
 
+## CRM Lifecycle Automation Phase 1 — Batches 1–4 complete, formally closed on Staging (2026-08-20)
+
+Post-launch enhancement work, built and verified across four sequential batches, each Staging-tested and approved before the next began. **Not yet merged to `main` or deployed to Production** — all four live on `feature/crm-lifecycle-phase1`/`feature/crm-lifecycle-phase1-batch4`, verified against the real Staging database and (for Batch 4's manual step) a real Staging login.
+
+- **Batch 1 — CRM stage capability matrix:** manual `crm_stage` edits narrowed from any staff/admin/super_admin to admin/super_admin only (`src/lib/admin/crmPermissions.ts`), closing a real gap where plain Staff could freely move any enquiry to any stage.
+- **Batch 2 — Quotation Ready / Booking Confirmed client emails:** new provider-neutral notification abstraction (`src/lib/notifications/`), SMS declared but inactive. Both emails fire only on genuine automatic transitions, never from a manual stage edit.
+- **Batch 3 — New Booking internal notification + Super-Admin-controlled recipient preferences:** internal ops notification on genuine payment→`booked`, with a new `notification_preferences` table (migration `0033`) giving Super Admin per-Admin opt-in control from the existing `/admin/users` Manage panel. Super Admin is always an unconditional recipient. Migration `0033` applied to Staging only (2026-08-20, via the Supabase Dashboard SQL Editor, migration-history bookkeeping reconciled afterward via `supabase migration repair`) — **not applied to Production.**
+- **Batch 4 — "Start Handling" deliberate action:** replaces the originally-considered automatic "first internal note added" trigger (judged too ambiguous) with a single button, available to plain Staff, hard-scoped server-side to exactly `new_lead → contacted` and nothing else — a narrow, explicit carve-out that leaves Batch 1's general Admin/Super-Admin-only stage editor completely untouched.
+
+**Batch 4 final acceptance — formally CLOSED (2026-08-20):**
+- Automated: 15/15 tests against Staging — exactly-once, idempotent under 9-way concurrent clicks, a clean no-op from every one of the other 12 CRM stages (proving this can never function as a generic stage setter), and zero notification activity generated.
+- Manual, real Staging login (Test 2, `STAGING_ACCEPTANCE_TESTS.md`): performed end-to-end using a genuine Staff-only test account against a real test enquiry (`ENQ-2026-000173`). Confirmed live: the button is visible to Staff and the general dropdown is not; clicking it moves the enquiry from "New Enquiry" to "Contacted" with no error; the button disappears once the stage changes; and — verified independently and read-only afterward against the database — exactly one `enquiry.stage_change` activity row exists, correctly attributed to the real Staff account (not `null`, not `automated`), with zero rows in any of the three notification-activity actions. No duplicate transition, no duplicate log entry.
+- Full Batch 1–4 regression sweep (66+ integration tests, 89 unit tests) re-run clean after every merge step, including after reconciling Staging's own independent, older TD-043 work into the same branch.
+
+**What's still open, by design:** none of Batches 1–4 have been merged into `main` or deployed to Production — that remains a separate, explicit approval not yet given. Migration `0033` remains Staging-only. A real, unrelated, already-tested bug fix (`61b42f4`, "server-side session determines ownership, not typed email," 2026-08-19, addressing actual Production issue ENQ-2026-000034/035) was discovered living only on the `staging` branch during this reconciliation — flagged for a separate decision, not acted on as part of this closure.
+
+---
+
 ## How this roadmap is maintained
 
 - Checkboxes get checked off as work ships and is approved — not before.

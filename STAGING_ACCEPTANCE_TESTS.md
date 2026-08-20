@@ -97,7 +97,16 @@ email at all.
 
 ## Test 2 — "Start Handling": Staff-eligible action stays isolated from the Admin/Super-Admin-only general stage editor
 
-**Status:** Not yet performed.
+**Status:** PASSED — performed 2026-08-20 against `ENQ-2026-000173` using a
+genuine Staff-only Staging test account (`myliannforever@gmail.com`, role
+`staff` only). All steps confirmed live: the button was visible to Staff
+with no general dropdown available; clicking it moved the enquiry from
+"New Enquiry" to "Contacted" with no error; the button disappeared once the
+stage changed; and a read-only database check afterward confirmed exactly
+one `enquiry.stage_change` activity row, correctly attributed to the real
+Staff account, with zero rows across all three notification-activity
+actions. See `MILESTONES.md`'s "CRM Lifecycle Automation Phase 1 — Batches
+1–4" entry for the full closure record.
 
 **Why this needs a manual staging run:** `startHandlingAction`
 (`src/app/admin/enquiries/actions.ts`) requires a real authenticated
