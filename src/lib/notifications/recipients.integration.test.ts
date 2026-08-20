@@ -7,13 +7,14 @@ import { createTestAdminClient, createTestAnonClient, testEmail, testRunId } fro
 // end-to-end against a real staging database, per INTEGRATION_TESTING_
 // STRATEGY.md's "RLS/authorization can only be tested honestly against
 // a real database" principle (see rls.integration.test.ts). Requires
-// migration 0028_notification_preferences.sql to already be applied —
-// see NOT_YET_RUN note in the Batch 3 refinement report.
+// migration 0033_notification_preferences.sql to already be applied —
+// manually applied to Staging 2026-08-20.
 
 const runId = testRunId();
 const admin = createTestAdminClient();
 
 let superAdminId: string;
+let superAdminWithStrayDisabledRowId: string;
 let optedInAdminId: string;
 let optedOutAdminId: string;
 let newAdminId: string; // holds admin role, no preference row at all
@@ -49,19 +50,29 @@ async function setPreference(userId: string, enabled: boolean): Promise<void> {
 }
 
 beforeAll(async () => {
-  [superAdminId, optedInAdminId, optedOutAdminId, newAdminId, suspendedOptedInAdminId, staffId, clientId] =
-    await Promise.all([
-      createTestUser("superadmin"),
-      createTestUser("optedin"),
-      createTestUser("optedout"),
-      createTestUser("newadmin"),
-      createTestUser("suspended"),
-      createTestUser("staff"),
-      createTestUser("client"),
-    ]);
+  [
+    superAdminId,
+    superAdminWithStrayDisabledRowId,
+    optedInAdminId,
+    optedOutAdminId,
+    newAdminId,
+    suspendedOptedInAdminId,
+    staffId,
+    clientId,
+  ] = await Promise.all([
+    createTestUser("superadmin"),
+    createTestUser("superadmin-strayrow"),
+    createTestUser("optedin"),
+    createTestUser("optedout"),
+    createTestUser("newadmin"),
+    createTestUser("suspended"),
+    createTestUser("staff"),
+    createTestUser("client"),
+  ]);
 
   await Promise.all([
     grantRole(superAdminId, "super_admin"),
+    grantRole(superAdminWithStrayDisabledRowId, "super_admin"),
     grantRole(optedInAdminId, "admin"),
     grantRole(optedOutAdminId, "admin"),
     grantRole(newAdminId, "admin"),
@@ -77,6 +88,11 @@ beforeAll(async () => {
     setPreference(optedOutAdminId, false),
     // newAdminId: deliberately no preference row at all.
     setPreference(suspendedOptedInAdminId, true),
+    // A Super Admin can never be "disabled" through this mechanism —
+    // resolveNewBookingRecipients() never even queries the preference
+    // table for a Super Admin, so a stray disabled row (however it got
+    // there) must have zero effect on whether they're notified.
+    setPreference(superAdminWithStrayDisabledRowId, false),
     // Stray rows on non-admin/-super_admin users — proves the role gate
     // is checked independently of whatever the preference table says.
     setPreference(staffId, true),
@@ -91,9 +107,16 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  const ids = [superAdminId, optedInAdminId, optedOutAdminId, newAdminId, suspendedOptedInAdminId, staffId, clientId].filter(
-    Boolean
-  );
+  const ids = [
+    superAdminId,
+    superAdminWithStrayDisabledRowId,
+    optedInAdminId,
+    optedOutAdminId,
+    newAdminId,
+    suspendedOptedInAdminId,
+    staffId,
+    clientId,
+  ].filter(Boolean);
   // profiles/notification_preferences both reference auth.users(id) with
   // on delete cascade — deleting the auth user is sufficient.
   const results = await Promise.allSettled(ids.map((id) => admin.auth.admin.deleteUser(id)));
@@ -127,6 +150,11 @@ describe("resolveNewBookingRecipients", () => {
     expect(recipients.map((r) => r.userId)).toContain(superAdminId);
   });
 
+  it("a Super Admin cannot be disabled even by a stray preference row set to false", async () => {
+    const recipients = await resolveNewBookingRecipients("enquiry", "irrelevant-for-this-test");
+    expect(recipients.map((r) => r.userId)).toContain(superAdminWithStrayDisabledRowId);
+  });
+
   it("never includes Staff or Client even with a stray opted-in preference row", async () => {
     const recipients = await resolveNewBookingRecipients("enquiry", "irrelevant-for-this-test");
     const ids = recipients.map((r) => r.userId);
@@ -149,19 +177,33 @@ describe("notification_preferences RLS/grants: only the service role can write",
     });
     expect(signInError).toBeNull();
 
-    const { error } = await anon
+    const { data: updateData, error } = await anon
       .from("notification_preferences")
       .update({ enabled: false })
       .eq("user_id", optedInAdminId)
-      .eq("category", "new_booking");
+      .eq("category", "new_booking")
+      .select();
 
-    // No INSERT/UPDATE/DELETE grant to `authenticated` exists at all
-    // (migration 0028) — this must fail at the grant level, not merely
-    // be filtered to zero rows by RLS.
-    expect(error).not.toBeNull();
+    // Corrected 2026-08-20 against real Staging behavior: this
+    // project's Supabase instance grants broad table privileges
+    // (INSERT/UPDATE/DELETE) to `authenticated`/`anon` by default on
+    // every new table — confirmed identical on payment_completion_claims
+    // (migration 0029, applied via the normal CLI path), so this is a
+    // pre-existing project-wide baseline, not specific to this table or
+    // to how 0033 was applied. Real protection here comes from Postgres
+    // RLS's own default-deny: this table has RLS enabled with only a
+    // SELECT policy, so UPDATE has zero applicable policies and matches
+    // zero rows — the same "RLS filters, doesn't error" behavior already
+    // documented in rls.integration.test.ts for reads. An UPDATE
+    // matching no rows is not an error condition, so `error` stays
+    // null; `updateData` (returned via .select()) is the real signal —
+    // an authorized update returns the changed row, an RLS-blocked one
+    // returns none.
+    expect(error).toBeNull();
+    expect(updateData).toEqual([]);
 
-    // Confirm the value was genuinely untouched, not just that an error
-    // was returned.
+    // Confirm the value was genuinely untouched, not just that no rows
+    // were returned.
     const { data } = await admin
       .from("notification_preferences")
       .select("enabled")

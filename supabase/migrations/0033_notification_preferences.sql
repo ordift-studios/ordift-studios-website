@@ -48,14 +48,29 @@ create policy "notification_preferences: read own or super admin"
   to authenticated
   using (auth.uid() = user_id or private.is_super_admin());
 
--- No INSERT/UPDATE/DELETE grant to `authenticated` at all — every write
--- goes through the service-role admin client from a Super-Admin-gated
--- server action (src/app/admin/users/actions.ts's setNewBookingAlertsAction),
+-- Corrected 2026-08-20 after Staging verification: this project's
+-- Supabase instance grants broad default table privileges (INSERT/
+-- UPDATE/DELETE) to `anon`/`authenticated` on every new table in
+-- `public` regardless of what's explicitly GRANTed here — confirmed
+-- identical on payment_completion_claims (migration 0029, applied via
+-- the normal CLI path), so this is a pre-existing project-wide
+-- baseline, not something this migration or how it was applied
+-- introduced. The GRANTs below are declarative of intent but not the
+-- actual enforcement mechanism.
+--
+-- The real protection is Postgres RLS's own default-deny: this table
+-- has RLS enabled with only a SELECT policy defined above, so INSERT/
+-- UPDATE/DELETE have zero applicable policies for `authenticated`/
+-- `anon` and are denied for every row — verified directly against
+-- Staging (an authenticated non-service-role UPDATE attempt returns no
+-- error but affects zero rows; the underlying data is provably
+-- untouched — see recipients.integration.test.ts). This is the same
+-- mechanism (not a grant-level one) that already protects every other
+-- "service-role-only-write" table in this project. Every write in the
+-- application goes through the service-role admin client from a
+-- Super-Admin-gated server action
+-- (src/app/admin/users/actions.ts's setNewBookingAlertsAction),
 -- mirroring the existing profiles.access_status pattern
--- (0012_service_role_update_profiles.sql) rather than relying on an
--- RLS row-check a client session could ever reach directly. This means
--- even a Super Admin's own authenticated session cannot write this
--- table directly — only the gated server action, using the service-
--- role client, can.
+-- (0012_service_role_update_profiles.sql).
 grant select on public.notification_preferences to authenticated;
 grant select, insert, update, delete on public.notification_preferences to service_role;

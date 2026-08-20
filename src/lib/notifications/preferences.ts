@@ -55,11 +55,12 @@ export async function getNotificationPreference(userId: string, category: Notifi
   return map.get(userId) ?? false;
 }
 
-// The only write path for this table (see migration 0028 — no
-// INSERT/UPDATE grant to `authenticated` at all). Callers MUST enforce
-// Super-Admin-only authorization themselves before calling this — this
-// function does not re-check the caller's role, matching the existing
-// pattern where the server action (e.g. reclassifyUserAction) is the
+// The only write path for this table — see migration 0033: RLS default-
+// deny (no INSERT/UPDATE policy exists) blocks `authenticated` writes,
+// verified directly against Staging. Callers MUST enforce Super-Admin-
+// only authorization themselves before calling this — this function
+// does not re-check the caller's role, matching the existing pattern
+// where the server action (e.g. reclassifyUserAction) is the
 // authorization boundary and the lib function underneath is already-
 // authorized bookkeeping.
 export async function setNotificationPreference(
