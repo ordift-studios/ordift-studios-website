@@ -449,6 +449,17 @@
 
 ---
 
+### TD-048 — Unidentified rapid multi-payment test sequence on Production (2026-08-20)
+- **Category:** Operational Process / Investigation
+- **Severity:** Low — no evidence of harm to any real customer, payment, or data; flagged purely because its origin is unconfirmed, not because anything appears broken.
+- **What:** during a read-only Production assessment following the unplanned `main`→Production auto-deploy of commit `bc66e90` (CRM Lifecycle Automation Phase 1, Batches 1–3), `activity_log` showed a single enquiry (`entity_id` `172dcf10-4bf9-4ced-8bfb-e35c915e0088`, distinct from the protected `ENQ-2026-000008`) receive 7 payment records in under 20 seconds (2026-08-20 16:36:40–16:36:57 UTC) spanning full/deposit/balance/partial/refund types with mixed completed/pending/failed outcomes, followed by two genuine full-payment→`booked` CRM transitions (16:36:42 and 16:50:34 UTC), each correctly firing the Booking Confirmed client email and the new internal New Booking notification (`recipientCount: 2, sentCount: 2` both times, no errors). The underlying enquiry row no longer exists — a direct lookup by id returned nothing — consistent with, but not confirmed as, standard test-data cleanup.
+- **Why not investigated further now:** explicitly deferred by instruction — Batch 1–3 close-out took priority, and this finding does not block or affect that close-out (the notification pipeline behaved correctly throughout, per `PRODUCTION_READINESS_CHECKLIST.md`-style read-only verification).
+- **Current impact:** none identified — this activity is the strongest available evidence that the new Batch 3 code (CRM stage automation, client emails, internal notification) already works correctly end-to-end under real Production conditions, missing `notification_preferences` table included. The open question is purely "who/what ran this," not "did anything go wrong."
+- **Pay-down trigger:** confirm with whoever has access to Production browser/session history or a personal recollection of testing around 2026-08-20 16:30–17:00 UTC whether this was deliberate (e.g. manual verification of the just-deployed Batch 3 code) or unexplained. If unexplained, broaden the investigation (Paystack dashboard transaction history for this window, any other recent orphaned `activity_log` entity_ids) before treating it as fully resolved.
+- **Status:** Open — investigation deferred, not started beyond the read-only findings recorded here.
+
+---
+
 ## Adding new entries
 
 Any future compromise — a deferred edge case, a "fix properly later" comment, a scope-narrowing decision made under time pressure — gets an entry here at the time it's made, not retroactively. Cross-reference the relevant `TECHNICAL_DECISION_RECORDS.md` ADR if the debt stems from a documented architectural trade-off.
