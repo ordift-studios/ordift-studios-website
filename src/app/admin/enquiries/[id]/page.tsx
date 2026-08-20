@@ -15,6 +15,7 @@ import ProjectRequestsManager from "@/components/admin/ProjectRequestsManager";
 import { addNoteAction } from "../actions";
 import SetAmountDueForm from "./SetAmountDueForm";
 import UpdateStageForm from "./UpdateStageForm";
+import StartHandlingButton from "./StartHandlingButton";
 
 function formatUsd(amount: number): string {
   return `$${amount.toFixed(2)}`;
@@ -183,6 +184,11 @@ export default async function AdminEnquiryDetailPage({ params }: { params: Promi
             <p className="font-sans text-caption uppercase tracking-wide text-ordift-ink-muted mb-3">
               CRM Stage
             </p>
+            {enquiry.crmStage === "new_lead" && (
+              <div className="mb-4">
+                <StartHandlingButton enquiryId={enquiry.id} />
+              </div>
+            )}
             {canEditCrmStage ? (
               <UpdateStageForm
                 enquiryId={enquiry.id}

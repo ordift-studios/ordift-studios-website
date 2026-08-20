@@ -109,6 +109,80 @@ export async function updateStageAction(
   return { ok: true, stageLabel: crmStageLabel(stage) };
 }
 
+// CRM Lifecycle Automation Phase 1, Batch 4 (2026-08-20) — "Start
+// Handling," a deliberate manual action, not an automatic one. The
+// original plan considered auto-advancing new_lead -> contacted on
+// "first internal note added," but that signal is too ambiguous (a
+// note might be added for an unrelated reason) — per explicit
+// instruction, this is a human clicking a button, nothing else.
+//
+// Deliberately gated by the broader requireStaffOrAdmin(), not the
+// narrower requireEditCrmStage() that guards updateStageAction — this
+// is the one "deliberate business reason" carve-out for plain Staff
+// referenced when Batch 1's restriction was designed: starting to
+// handle a new enquiry is routine day-to-day staff work, unlike
+// jumping to "Booked." This does not reopen general stage-editing to
+// Staff — the guard below hard-codes exactly one transition
+// (new_lead -> contacted) and nothing else; Staff still cannot reach
+// updateStageAction at all.
+//
+// No client notification fires here — a routine internal movement
+// like this must never auto-email the client (same rule already
+// applied to every other manual stage change).
+export type StartHandlingState = { ok: boolean; error?: string } | null;
+
+export async function startHandlingAction(
+  _prevState: StartHandlingState,
+  formData: FormData
+): Promise<StartHandlingState> {
+  let user;
+  try {
+    user = await requireStaffOrAdmin();
+  } catch {
+    return { ok: false, error: "You are not authorized to do this." };
+  }
+
+  const enquiryId = String(formData.get("enquiryId") ?? "");
+  if (!enquiryId) {
+    return { ok: false, error: "Invalid request." };
+  }
+
+  const supabase = await createClient();
+
+  // Atomic conditional UPDATE, same shape as every other guarded
+  // stage transition in this file — hard-scoped to the single
+  // new_lead -> contacted edge via .eq("crm_stage", "new_lead"), so
+  // this can never be used to jump to or from any other stage, and a
+  // double-click or repeat submission after the first success is a
+  // clean no-op (zero rows affected, nothing logged twice).
+  const { data: updatedRows, error } = await supabase
+    .from("enquiries")
+    .update({ crm_stage: "contacted" })
+    .eq("id", enquiryId)
+    .eq("crm_stage", "new_lead")
+    .select("id");
+
+  if (error) {
+    console.error("[admin] enquiry start-handling update failed", error.message);
+    return { ok: false, error: "Save failed. Please try again." };
+  }
+
+  if (updatedRows && updatedRows.length > 0) {
+    await logActivity({
+      actorUserId: user.id,
+      action: "enquiry.stage_change",
+      entityType: "enquiry",
+      entityId: enquiryId,
+      metadata: { stage: "contacted", reason: "start_handling" },
+    });
+  }
+
+  revalidatePath(`/admin/enquiries/${enquiryId}`);
+  revalidatePath("/admin/enquiries");
+
+  return { ok: true };
+}
+
 // Stages before "quotation_sent" in the CRM pipeline — setting an
 // amount auto-advances the stage only from one of these, never
 // regressing a stage the admin has already moved further along

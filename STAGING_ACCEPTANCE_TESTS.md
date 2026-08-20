@@ -94,3 +94,59 @@ amendment sends no second email, and a manual stage edit never triggers the
 email at all.
 
 ---
+
+## Test 2 — "Start Handling": Staff-eligible action stays isolated from the Admin/Super-Admin-only general stage editor
+
+**Status:** Not yet performed.
+
+**Why this needs a manual staging run:** `startHandlingAction`
+(`src/app/admin/enquiries/actions.ts`) requires a real authenticated
+session — it cannot be called directly in the integration test environment,
+same limitation as Test 1. Its guard/idempotency logic and the "zero
+notification" outcome are already covered by automated tests
+(`startHandling.integration.test.ts`); this procedure proves the one thing
+those can't: that a plain Staff account can genuinely use this one narrow
+action while remaining blocked from the general CRM Stage dropdown.
+
+**Covers:** CRM Lifecycle Automation Phase 1, Batch 4
+(`src/app/admin/enquiries/[id]/StartHandlingButton.tsx`).
+
+### Steps
+
+1. **(Admin/tester)** On Staging, submit a real test enquiry through the
+   public `/book` form (fresh reference number). Confirm the Admin Platform
+   shows it at **New Enquiry** (`new_lead`).
+2. **(Staff account)** Log in as a **plain Staff** user and open this
+   enquiry's detail page.
+   - **Pass criteria:** the CRM Stage card shows both a **"Start
+     Handling"** button and, below it, the read-only "Only Admin/Super
+     Admin can change the CRM stage." message with no editable dropdown —
+     the two controls coexist without contradiction.
+3. **(Staff account)** Click **Start Handling**.
+   - **Pass criteria:** the button click succeeds; the page shows the
+     enquiry now at **Contacted**; the "Start Handling" button itself is
+     gone (the stage is no longer `new_lead`); the read-only
+     Admin/Super-Admin-only message remains for the general editor.
+4. **(Staff account, read-only)** Confirm exactly one `enquiry.stage_change`
+   activity row exists for this enquiry, with `metadata.reason:
+   "start_handling"` and the **real Staff member's own** `actorUserId` (not
+   `null`, not `automated: true`).
+5. **(Staff account)** Attempt to invoke `updateStageAction` directly against
+   this same enquiry (bypassing the hidden UI).
+   - **Pass criteria:** rejected with "You are not authorized to change
+     this." — confirms Batch 1's general restriction is completely
+     unaffected by Batch 4's narrower carve-out.
+6. **(Admin/tester)** Confirm no email was sent to the enquiry's contact
+   address as a result of steps 3–5 (check inbox or, on a
+   `FORMS_SENDING_ENABLED=false` Staging environment, the
+   `[test-mode] would send email` log lines) — there should be **none** at
+   all from this test.
+7. **(Admin/tester)** Clean up per the normal Staging test-data convention.
+
+### Overall pass criteria
+
+Staff can use Start Handling and only Start Handling; the general CRM Stage
+dropdown remains fully Admin/Super-Admin-only exactly as Batch 1 left it;
+the transition is logged with the real actor; no client email fires.
+
+---
