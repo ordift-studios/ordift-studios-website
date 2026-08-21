@@ -148,7 +148,16 @@ async function completeGatewayPayment(entityType: string, entityId: string, paym
 
   const result = await applyGatewayEventToPayment(
     payment,
-    { status: "completed", amount: 60, currency: "GHS", gatewayFee: 1.5, channel: "card", cardBrand: "visa", cardLast4: "4081" },
+    {
+      status: "completed",
+      amount: 60,
+      currency: "GHS",
+      gatewayFee: 1.5,
+      channel: "card",
+      cardBrand: "visa",
+      cardLast4: "4081",
+      refundReference: null,
+    },
     "webhook"
   );
   return { paymentId: payment.id as string, result };

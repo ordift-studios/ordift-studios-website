@@ -81,9 +81,30 @@ type PaystackChargeEventData = {
   authorization?: { card_type?: string; bin?: string; last4?: string; channel?: string };
 };
 
+// Paystack's refund.processed webhook payload shape — a genuinely
+// different shape from a charge event, not a variant of it. Confirmed
+// directly against a real captured Production payload (2026-08-21,
+// PAY-2026-000003's GHS 11.09 partial refund), not inferred from
+// documentation: transaction_reference is the *original* transaction's
+// reference (the same value Ordift's own initCharge() supplied as
+// `reference`, later echoed back — the same field a charge.success
+// event's own `reference` carries), while refund_reference is the
+// refund's own, separate identifier. amount is minor-unit, same
+// convention as charge events.
+type PaystackRefundEventData = {
+  id: string;
+  amount: number; // minor unit
+  currency: string;
+  status: string;
+  refund_reference: string;
+  transaction_reference: string;
+  customer_note?: string;
+  merchant_note?: string;
+};
+
 type PaystackWebhookPayload = {
   event: string; // 'charge.success' | 'charge.failed' | 'refund.processed' | ...
-  data: PaystackChargeEventData;
+  data: PaystackChargeEventData | PaystackRefundEventData;
 };
 
 function mapChannel(raw: string | undefined): PaymentChannel | null {
@@ -152,20 +173,42 @@ export const paystackProvider: PaymentProvider = {
 
   parseWebhookEvent(rawBody: string): PaymentWebhookEvent {
     const payload = JSON.parse(rawBody) as PaystackWebhookPayload;
-    const data = payload.data;
 
+    if (payload.event === "refund.processed") {
+      // A genuinely different payload shape from a charge event — see
+      // PaystackRefundEventData's own comment for how this was
+      // confirmed. gatewayReference is deliberately the *original*
+      // transaction's reference (transaction_reference), not the
+      // refund's own — so the existing gateway_reference-based payment
+      // lookup (src/app/api/payments/webhook/paystack/route.ts) finds
+      // the original payment unchanged, exactly as it already does for
+      // charge events. The refund's own reference goes in
+      // refundReference, kept separate so it can't be confused with
+      // the lookup key.
+      const data = payload.data as PaystackRefundEventData;
+      return {
+        eventType: payload.event,
+        gatewayReference: data?.transaction_reference ?? null,
+        refundReference: data?.refund_reference ?? null,
+        status: "refunded",
+        amount: data?.amount != null ? toMajorUnit(data.amount) : null,
+        currency: data?.currency ?? null,
+        channel: null,
+        cardBrand: null,
+        cardLast4: null,
+        gatewayFee: null,
+        raw: payload as unknown as Record<string, unknown>,
+      };
+    }
+
+    const data = payload.data as PaystackChargeEventData;
     const status: PaymentWebhookEvent["status"] =
-      payload.event === "charge.success"
-        ? "completed"
-        : payload.event === "charge.failed"
-          ? "failed"
-          : payload.event === "refund.processed"
-            ? "refunded"
-            : "unknown";
+      payload.event === "charge.success" ? "completed" : payload.event === "charge.failed" ? "failed" : "unknown";
 
     return {
       eventType: payload.event,
       gatewayReference: data?.reference ?? null,
+      refundReference: null,
       status,
       amount: data?.amount != null ? toMajorUnit(data.amount) : null,
       currency: data?.currency ?? null,
@@ -202,6 +245,7 @@ export const paystackProvider: PaymentProvider = {
       return {
         eventType: "transaction.verify",
         gatewayReference: reference,
+        refundReference: null,
         status: "failed",
         amount: null,
         currency: null,
@@ -231,6 +275,13 @@ export const paystackProvider: PaymentProvider = {
     return {
       eventType: "transaction.verify",
       gatewayReference: data?.reference ?? reference,
+      // The verify endpoint returns transaction state, not a refund
+      // object — it has no refund-specific reference to offer even
+      // when status resolves to "refunded" (Paystack's "reversed").
+      // applyGatewayEventToPayment() treats a "refunded" outcome with
+      // no refundReference as unable to safely reconcile (idempotency
+      // depends on it) rather than guessing one.
+      refundReference: null,
       status,
       amount: data?.amount != null ? toMajorUnit(data.amount) : null,
       currency: data?.currency ?? null,

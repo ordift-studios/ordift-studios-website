@@ -3590,6 +3590,20 @@ Post-launch enhancement work, built and verified across five sequential batches,
 
 ---
 
+## Production refund reconciliation — `PAY-2026-000003` / `ENQ-2026-000008` — closed 2026-08-21
+
+Following the Batches 1–6 Production deployment and functional verification (above), a full read-only Production launch-readiness audit surfaced one live operational gap as P0: a real Paystack partial refund (GHS 11.09 of an original GHS 22.18 / USD 2.00 payment, Paystack refund reference `623214176889`, processed 2026-08-20) had never been reconciled into Ordift's own ledger — a real, pre-existing gap named in `TECHNICAL_DEBT_REGISTER.md` TD-046 (no in-app refund feature; Paystack's `refund.processed` webhook is captured but not automatically applied).
+
+**Investigation, entirely read-only before any write:** confirmed via the Paystack Dashboard and a Production Supabase Table Editor lookup (no service-role credential used by this session for the lookup itself) that the refund had genuinely already been processed externally, that Ordift's `payments` table had no corresponding refund row, and that the `refund.processed` webhook event was correctly captured (unmodified) in `payment_webhook_events` with `signature_valid: true` — matching source-code inspection of `applyGatewayEventToPayment()` (`src/lib/payments/gatewaySync.ts`), which confirmed the gap is a single missing status branch, not a schema problem.
+
+**Remediation:** a disposable, single-purpose script (`scripts/reconcilePay2026000003Refund.ts`, retained in the repository as evidence rather than deleted — not a reusable tool, hardcoded to this exact case) was written, statically reviewed (clean `tsc`/`eslint`), and dry-run verified against real Production data before any mutation was authorized. Run with explicit human-supplied Production credentials (never exposed to or handled by the assistant), it performed exactly three operations after re-confirming every precondition: inserted one `payment_type='refund'` row (`payments.id` confirmed in the execution output, `reference_amount_usd=1.00`, `converted_amount=11.09`, `gateway_reference='623214176889'`, `idempotency_key='paystack-refund:623214176889'`, `related_id` pointing back to the original `PAY-2026-000003` row), called the real (not reimplemented) `syncEntityPaymentStatus('enquiry', ...)`, and wrote one `activity_log` entry (`action: 'payment.refund_reconciled'`).
+
+**Verified result, read-only, immediately after:** `ENQ-2026-000008`'s `amount_paid` correctly recomputed from `2.00` to `1.00`; `amount_due` (`5.00`) and `crm_stage` (`quotation_sent`) both explicitly confirmed unchanged; the original `PAY-2026-000003` row explicitly confirmed byte-for-byte unchanged; exactly one `activity_log` entry exists. No Paystack API call was made at any point in this remediation — the actual refund had already happened externally; this work only brought Ordift's own records into agreement with it.
+
+**Status:** closed. The launch-readiness audit's P0 refund item is resolved. `TECHNICAL_DEBT_REGISTER.md` TD-046 remains **Open** — this was the interim manual procedure working correctly on a real case, not a fix for the underlying missing in-app/automatic-webhook capability, which remains future work ("Part B"/"Part C," approved in design, not yet implemented).
+
+---
+
 ## How this roadmap is maintained
 
 - Checkboxes get checked off as work ships and is approved — not before.

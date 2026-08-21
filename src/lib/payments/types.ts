@@ -102,7 +102,20 @@ export type RefundResult = {
 
 export type PaymentWebhookEvent = {
   eventType: string;
+  // For a refund event, this is deliberately the *original transaction's*
+  // reference (Paystack's refund.processed payload's transaction_reference),
+  // not the refund's own reference — so the existing payment-lookup path
+  // (keyed on gateway_reference) finds the original payment unchanged,
+  // exactly as it already does for charge events. The refund's own
+  // reference lives in refundReference below.
   gatewayReference: string | null;
+  // Only ever populated for a refund event — the refund's own reference
+  // (Paystack's refund_reference), used as the new refund payments row's
+  // own gateway_reference and as the basis for refund-specific
+  // idempotency, both at the payments.idempotency_key layer and at the
+  // webhook-route idempotency layer (so two separate refunds against the
+  // same original transaction never collide on gatewayReference alone).
+  refundReference: string | null;
   status: "completed" | "failed" | "refunded" | "unknown";
   amount: number | null; // major currency unit (e.g. GHS, not pesewas)
   currency: string | null;

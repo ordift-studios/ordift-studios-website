@@ -101,7 +101,20 @@ export async function POST(request: NextRequest) {
 
   // Idempotency — fails closed (Security Review §7): a store outage
   // returns a retriable error rather than risking double-processing.
-  const idempotencyKey = `${event.eventType}:${event.gatewayReference ?? "unknown"}`;
+  //
+  // Deliberately keyed on refundReference, not gatewayReference, for a
+  // refund event: gatewayReference is set (see parseWebhookEvent()) to
+  // the *original transaction's* reference, shared by every refund
+  // ever issued against that same transaction — a second, genuinely
+  // separate partial refund would otherwise collide here and be
+  // silently dropped as a "duplicate" before ever reaching the
+  // refund-specific idempotency_key protection in
+  // applyGatewayEventToPayment(). refundReference is unique per refund,
+  // same role gatewayReference already plays for a charge event (each
+  // charge only ever has one).
+  const idempotencyKeyReference =
+    event.status === "refunded" ? (event.refundReference ?? event.gatewayReference) : event.gatewayReference;
+  const idempotencyKey = `${event.eventType}:${idempotencyKeyReference ?? "unknown"}`;
   const idempotency = await checkAndMarkWebhookEvent(idempotencyKey);
   if (idempotency.outcome === "store_unavailable") {
     return NextResponse.json({ ok: false, error: "idempotency-store-unavailable" }, { status: 503 });
@@ -117,7 +130,7 @@ export async function POST(request: NextRequest) {
   const { data: payment } = await admin
     .from("payments")
     .select(
-      "id, entity_type, entity_id, user_id, converted_amount, payment_currency, reference_amount_usd, payment_type, status"
+      "id, entity_type, entity_id, user_id, converted_amount, payment_currency, reference_amount_usd, payment_type, status, exchange_rate, exchange_rate_source, exchange_rate_locked_at, provider, payment_method"
     )
     .eq("gateway_reference", event.gatewayReference)
     .maybeSingle();

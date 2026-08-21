@@ -1,6 +1,7 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { sendPaymentReceiptEmail } from "@/lib/payments/receipts";
 import { advanceStageOnFullPayment } from "@/lib/payments/crmStageSync";
+import { logActivityAsSystem } from "@/lib/admin/activityLog";
 import type { PaymentWebhookEvent } from "@/lib/payments/types";
 
 // Shared between the Paystack webhook handler and active
@@ -17,6 +18,7 @@ export type GatewaySyncResult =
   | { outcome: "completed" }
   | { outcome: "failed" }
   | { outcome: "amount-mismatch" }
+  | { outcome: "refunded" }
   | { outcome: "ignored" };
 
 // TD-043 completion-idempotency architectural remediation (migration
@@ -180,8 +182,25 @@ export async function applyGatewayEventToPayment(
     entity_id: string;
     converted_amount: number | string;
     payment_currency: string;
+    // Only required for a "refunded" outcome — the refund row copies
+    // the original payment's locked rate rather than re-resolving one,
+    // same reasoning as the manual reconciliation this branch
+    // replaces: the refund returns money at the rate it was collected
+    // at, not today's rate. reconcilePendingPayment.ts's caller never
+    // reaches the "refunded" branch (it only ever processes payments
+    // still 'pending', and a refund only ever targets an already-
+    // completed payment), so it's the only caller not required to
+    // supply these.
+    exchange_rate?: number | string;
+    exchange_rate_source?: string;
+    exchange_rate_locked_at?: string;
+    provider?: string;
+    payment_method?: string;
   },
-  event: Pick<PaymentWebhookEvent, "status" | "amount" | "currency" | "gatewayFee" | "channel" | "cardBrand" | "cardLast4">,
+  event: Pick<
+    PaymentWebhookEvent,
+    "status" | "amount" | "currency" | "gatewayFee" | "channel" | "cardBrand" | "cardLast4" | "refundReference"
+  >,
   source: GatewaySyncSource
 ): Promise<GatewaySyncResult> {
   const admin = createAdminClient();
@@ -334,6 +353,108 @@ export async function applyGatewayEventToPayment(
     await logPaymentActivity(admin, payment.id, "failed", "payment.failed", "payment", payment.id, { source });
     await markClaimStep(admin, payment.id, "failed", "completed_at");
     return { outcome: "failed" };
+  }
+
+  // Refund reconciliation — Part B (2026-08-21), replacing the manual
+  // procedure documented in TECHNICAL_DEBT_REGISTER.md TD-046. `payment`
+  // here is already the *original* payment (the caller resolved it via
+  // gateway_reference = the refund event's transaction_reference — see
+  // parseWebhookEvent()'s own comment for why), never mutated by this
+  // branch. A companion payment_type='refund' row is inserted instead,
+  // exactly the pattern proven manually on PAY-2026-000003 tonight, now
+  // automated. No claim table is used here (unlike "completed"/"failed"
+  // above) — the payments.idempotency_key unique constraint alone
+  // already gives real, database-enforced atomicity for "has this exact
+  // refund already been recorded," and is simpler than reusing a claim
+  // shape (payment_completion_claims) built for resolving a single
+  // existing row's own status, not inserting a new one.
+  if (event.status === "refunded") {
+    if (!event.refundReference || event.amount == null) {
+      console.warn("[payments] refund event missing refundReference or amount — cannot safely reconcile, ignoring", {
+        paymentId: payment.id,
+        source,
+      });
+      return { outcome: "ignored" };
+    }
+
+    const currency = event.currency ?? payment.payment_currency;
+    const exchangeRate = Number(payment.exchange_rate ?? 0);
+    // Converts back through the *original* payment's own locked rate —
+    // the refund returns money at the rate it was collected at, not
+    // today's rate. A missing/zero original rate means this can't be
+    // done safely; ignored rather than guessed.
+    if (!exchangeRate) {
+      console.warn("[payments] refund event: original payment has no usable exchange_rate — cannot safely reconcile", {
+        paymentId: payment.id,
+        source,
+      });
+      return { outcome: "ignored" };
+    }
+    const referenceAmountUsd = Math.round((event.amount / exchangeRate) * 100) / 100;
+
+    const idempotencyKey = `${payment.provider ?? "paystack"}-refund:${event.refundReference}`;
+
+    const { data: refundRow, error: insertError } = await admin
+      .from("payments")
+      .insert({
+        entity_type: payment.entity_type,
+        entity_id: payment.entity_id,
+        payment_type: "refund",
+        status: "completed",
+        reference_amount_usd: referenceAmountUsd,
+        payment_currency: currency,
+        converted_amount: event.amount,
+        amount_collected: event.amount,
+        exchange_rate: payment.exchange_rate,
+        exchange_rate_source: payment.exchange_rate_source,
+        exchange_rate_locked_at: payment.exchange_rate_locked_at,
+        provider: payment.provider ?? "paystack",
+        payment_method: payment.payment_method ?? "gateway",
+        gateway_reference: event.refundReference,
+        related_type: "payment",
+        related_id: payment.id,
+        idempotency_key: idempotencyKey,
+      })
+      .select("id")
+      .single();
+
+    if (insertError) {
+      // Postgres unique_violation — this exact refund was already
+      // recorded (a redelivered webhook, or a concurrent duplicate).
+      // Genuinely safe to treat as already-handled: the insert and
+      // every field on it either succeeded together earlier or not at
+      // all, there is no partial state to reconcile.
+      if (insertError.code === "23505") {
+        console.warn("[payments] refund already reconciled (idempotency_key exists) — ignoring redelivery", {
+          paymentId: payment.id,
+          refundReference: event.refundReference,
+          source,
+        });
+        return { outcome: "ignored" };
+      }
+      console.error("[payments] refund row insert failed", insertError.message, { paymentId: payment.id, source });
+      return { outcome: "ignored" };
+    }
+
+    await syncEntityPaymentStatus(payment.entity_type, payment.entity_id);
+
+    await logActivityAsSystem({
+      actorUserId: null,
+      action: "payment.refund_reconciled",
+      entityType: payment.entity_type,
+      entityId: payment.entity_id,
+      metadata: {
+        reconciliationType: "automatic_gateway_webhook",
+        originalPaymentId: payment.id,
+        refundPaymentId: refundRow?.id,
+        gatewayRefundReference: event.refundReference,
+        refundAmount: event.amount,
+        refundCurrency: currency,
+        source,
+      },
+    });
+
+    return { outcome: "refunded" };
   }
 
   return { outcome: "ignored" };

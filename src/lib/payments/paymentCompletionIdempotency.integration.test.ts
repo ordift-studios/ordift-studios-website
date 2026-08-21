@@ -30,6 +30,7 @@ const GATEWAY_EVENT_BASE = {
   channel: "card",
   cardBrand: "visa",
   cardLast4: "4081",
+  refundReference: null,
 } as const;
 
 let enquiryId: string;
