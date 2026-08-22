@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import type { PointerEvent as ReactPointerEvent } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import type { PortfolioProject } from "@/lib/content/types";
@@ -20,9 +21,29 @@ export type PortfolioHeroSlideshowProps = {
 const AUTOPLAY_INTERVAL_MS = 6000;
 const TRANSITION_MS = 900;
 
+// Signed shortest-path offset (in whole slides) of slide `i` relative to
+// the current `index`, wrapping around the ring of `count` slides — e.g.
+// the immediate next slide is always +1 (positioned off-screen right),
+// the immediate previous slide is always -1 (off-screen left), regardless
+// of where they sit in the underlying array. Driving each slide's
+// translateX purely from this formula (recomputed every render, no
+// separate "direction" state needed) is what makes Next/autoplay always
+// enter from the right and Previous always enter from the left, including
+// across the wrap-around from the last slide back to the first.
+function ringOffset(i: number, index: number, count: number): number {
+  let diff = i - index;
+  if (diff > count / 2) diff -= count;
+  if (diff < -count / 2) diff += count;
+  return diff;
+}
+
+const SWIPE_THRESHOLD_PX = 50;
+
 export default function PortfolioHeroSlideshow({ projects }: PortfolioHeroSlideshowProps) {
   const [index, setIndex] = useState(0);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const pointerStartX = useRef<number | null>(null);
+  const pointerDeltaX = useRef(0);
   const count = projects.length;
 
   const goTo = useCallback(
@@ -31,6 +52,29 @@ export default function PortfolioHeroSlideshow({ projects }: PortfolioHeroSlides
     },
     [count],
   );
+
+  function onPointerDown(e: ReactPointerEvent<HTMLElement>) {
+    pauseAutoplay();
+    pointerStartX.current = e.clientX;
+    pointerDeltaX.current = 0;
+  }
+
+  function onPointerMove(e: ReactPointerEvent<HTMLElement>) {
+    if (pointerStartX.current === null) return;
+    pointerDeltaX.current = e.clientX - pointerStartX.current;
+  }
+
+  function onPointerUp() {
+    if (pointerStartX.current === null) return;
+    const delta = pointerDeltaX.current;
+    if (delta <= -SWIPE_THRESHOLD_PX) {
+      goTo(index + 1); // swiped left -> next
+    } else if (delta >= SWIPE_THRESHOLD_PX) {
+      goTo(index - 1); // swiped right -> previous
+    }
+    pointerStartX.current = null;
+    pointerDeltaX.current = 0;
+  }
 
   useEffect(() => {
     if (count <= 1) return;
@@ -59,10 +103,14 @@ export default function PortfolioHeroSlideshow({ projects }: PortfolioHeroSlides
 
   return (
     <section
-      className="relative w-full h-[75vh] min-h-[420px] sm:h-[85vh] sm:min-h-[560px] overflow-hidden bg-ordift-navy-950"
+      className="relative w-full h-[75vh] min-h-[420px] sm:h-[85vh] sm:min-h-[560px] overflow-hidden bg-ordift-navy-950 touch-pan-y"
       aria-roledescription="carousel"
       aria-label="Featured Portfolio work"
       onMouseEnter={pauseAutoplay}
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={onPointerUp}
+      onPointerCancel={onPointerUp}
     >
       {projects.map((project, i) => (
         <Link
@@ -70,9 +118,9 @@ export default function PortfolioHeroSlideshow({ projects }: PortfolioHeroSlides
           href={`/work/${project.slug}`}
           aria-hidden={i !== index}
           tabIndex={i === index ? 0 : -1}
-          className="absolute inset-0 block transition-opacity ease-in-out"
+          className="absolute inset-0 block transition-transform ease-in-out motion-reduce:transition-none"
           style={{
-            opacity: i === index ? 1 : 0,
+            transform: `translateX(${ringOffset(i, index, count) * 100}%)`,
             transitionDuration: `${TRANSITION_MS}ms`,
             pointerEvents: i === index ? "auto" : "none",
           }}
