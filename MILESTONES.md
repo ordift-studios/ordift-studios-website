@@ -3604,6 +3604,36 @@ Following the Batches 1–6 Production deployment and functional verification (a
 
 ---
 
+## Part B — automatic Paystack refund webhook reconciliation: implemented, Staging-verified end-to-end, credential incident resolved (2026-08-21/22)
+
+Following the refund reconciliation closure above, Part B — the permanent code fix so `refund.processed` webhooks apply automatically instead of requiring the manual procedure — was designed, approved, implemented, and verified this session. **Not yet merged to `main` or deployed to Production.**
+
+**Implementation:** a `"refunded"` branch added to `applyGatewayEventToPayment()` (`src/lib/payments/gatewaySync.ts`), a new `refundReference` field threaded through `PaymentWebhookEvent`/`parseWebhookEvent()` (`src/lib/payments/types.ts`, `src/lib/payments/providers/paystack.ts`) so a refund's own reference stays separate from the original transaction's reference used for payment lookup, and a small idempotency-key fix in the webhook route (`src/app/api/payments/webhook/paystack/route.ts`) preventing two separate refunds against the same original transaction from colliding. Payload field mapping was confirmed against a real captured Production `refund.processed` payload, not guessed. Full detail (design questions, field mapping, exact boundaries) preserved in this session's own record; see `TECHNICAL_DEBT_REGISTER.md` TD-046 for the design note.
+
+**Local validation:** unit tests (`paystack.test.ts`, 8/8), a new integration suite against real Staging data (`refundReconciliation.integration.test.ts`, 9/9, including a real test-infrastructure bug found and fixed — a cleanup-ordering FK violation that silently leaked test rows across two prior runs, root-caused via verbose test output, fixed, and verified clean across 3 consecutive runs), full regression suite, `tsc`/`eslint`/`next build` all clean.
+
+**Staging deployment and end-to-end HTTP verification (2026-08-21/22):** deployed to `staging` only (`77a7cc0`, `main` unchanged at `a88ea35`). A disposable end-to-end test sent real signed HTTP webhooks to the actual deployed `https://staging.ordiftstudios.com/api/payments/webhook/paystack` endpoint (not direct function calls) using the Staging-scoped `PAYSTACK_SECRET_KEY` (obtained via `vercel env pull` plus a hidden-terminal-input step for the one Vercel marks "Sensitive" and excludes from CLI pulls) — never displayed or logged. Verified, against real Staging data: signature validation; refund payload parsing; lookup via `transaction_reference`; exactly one refund row per genuine refund; correct historical-exchange-rate conversion; correct `amount_paid`/`payment_status` recalculation; `amount_due` and `crm_stage` correctly left unchanged; exact-redelivery idempotency (no duplicate row, no duplicate activity log entry); two genuinely separate refunds against the same original payment both succeeding independently; and a `charge.success` regression check proving the pre-existing charge path is unaffected. All disposable fixtures (enquiries, payments, `payment_webhook_events`, `activity_log`, `payment_completion_claims`/`payment_receipt_jobs`) were fully cleaned up and confirmed at zero residue by direct query — including a real gap found and fixed in the test harness itself (the "completed" branch logs `activity_log` under the *payment's* id, not the enquiry's, which the first cleanup pass missed; found via read-only inspection, one stray disposable row removed, harness fixed, re-verified clean).
+
+**Credential incident, surfaced during this same verification work:** see `TECHNICAL_DEBT_REGISTER.md` TD-049 in full. In summary — an assistant file-read mistake briefly exposed three Upstash/Redis (Vercel KV integration) credential values in the session transcript; rotated via the integration's supported path; both Staging and Production redeployed by the user; Redis connectivity independently confirmed healthy on **both** environments via a minimal signed no-match webhook probe (Staging: `200`/`no-matching-payment`; Production: `200`/`no-matching-payment`, not the `503` a genuine Redis failure would produce) rather than assumed; each probe's own harmless audit-log row removed and confirmed gone afterward. Closed 2026-08-22.
+
+**Status:** Part B is implemented and fully verified on Staging, including against the actual HTTP endpoint. `main`/Production remain unmodified. Promotion to Production is the next step, pending separate explicit authorization.
+
+---
+
+## Part B promoted to Production (2026-08-22)
+
+Following separate explicit authorization, `staging` (`77a7cc0`) was fast-forward merged into `main` and deployed to Production.
+
+**Pre-flight:** confirmed `staging` carried exactly 2 commits ahead of `main` (the TD-048 doc commit and the Part B feature commit, both already-known from this session), with a file diff matching exactly Part B's intended scope — no unrelated changes. A genuine, benign complication surfaced and was resolved before proceeding: this repository's `main` branch is checked out in a different git worktree (`/Users/myli/ordift-migration-reconcile-candidate`) than the one used for `staging` work — a `git checkout main` in the wrong worktree failed cleanly (no damage, no push) rather than silently doing the wrong thing. The correct worktree's local `main` was found to be a stale-but-genuine ancestor of `origin/main` (confirmed via `git merge-base --is-ancestor`, not assumed), synced with a clean fast-forward, then merged with `staging` and pushed — also a clean fast-forward, no conflicts.
+
+**Deployment:** new Production deployment (`dpl_DdQx5D2wxqCBNyeXtmSdUzaM9TQE`) reached Ready, `target: production`, both `ordiftstudios.com` and `www.ordiftstudios.com` correctly aliased, confirmed via two independent sources (Vercel CLI + GitHub commit-status API, matching this session's standing dual-verification practice). No error-level runtime logs on the new deployment.
+
+**Post-deployment verification:** a second minimal signed `charge.success` no-match webhook probe (same pattern as the pre-merge Redis health checks, deliberately not `refund.processed` — Production's automatic refund handling itself was not live-tested against a real Paystack event) confirmed `200`/`no-matching-payment` — the webhook route and Redis idempotency path are healthy on the new Production code. Its one harmless audit-log row (`payment_webhook_events`, `gateway_reference` starting `TEST-PROD-POSTDEPLOY-PROBE-`) was manually deleted by the user via the Supabase Table Editor, following exact assistant-provided instructions, and confirmed removed by re-applying the same filter — the assistant holds no Production data-write credential.
+
+**Status:** Part B is live in Production. `TECHNICAL_DEBT_REGISTER.md` TD-046 remains **Open** (not Resolved) by design — the interim manual refund procedure stays the documented fallback until the automatic workflow has processed one genuine real-world Paystack refund; only disposable Staging test data and harmless non-matching Production probes have exercised the deployed code so far.
+
+---
+
 ## How this roadmap is maintained
 
 - Checkboxes get checked off as work ships and is approved — not before.
