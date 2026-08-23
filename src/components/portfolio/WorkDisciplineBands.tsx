@@ -21,7 +21,23 @@ import type { PortfolioDiscipline } from "@/lib/content/types";
 export type WorkDiscipline = {
   slug: PortfolioDiscipline;
   name: string;
-  heroImage: { url: string; alt: string; width?: number | null; height?: number | null; lqip?: string | null } | null;
+  heroImage:
+    | {
+        url: string;
+        alt: string;
+        width?: number | null;
+        height?: number | null;
+        lqip?: string | null;
+        // Image Repositioning (2026-08-23) — admin-chosen focal point
+        // (0–100, 0–100), only ever set on a deliberately-picked Work
+        // Landing Image. Optional: the automatic real-project-image
+        // fallback has no focal point of its own, so this defaults to
+        // 50/50 (dead center) at render time, identical to this band's
+        // pre-existing behaviour.
+        focalX?: number;
+        focalY?: number;
+      }
+    | null;
   hasProjects: boolean;
   // Optional per-discipline destination override (2026-08-23) — used
   // once a discipline has its own dedicated index page (Photography
@@ -51,6 +67,7 @@ export default function WorkDisciplineBands({ disciplines }: { disciplines: Work
                 placeholder={d.heroImage.lqip ? "blur" : "empty"}
                 blurDataURL={d.heroImage.lqip ?? undefined}
                 className="object-cover"
+                style={{ objectPosition: `${d.heroImage.focalX ?? 50}% ${d.heroImage.focalY ?? 50}%` }}
               />
             ) : (
               <MediaPlaceholder

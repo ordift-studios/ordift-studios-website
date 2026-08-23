@@ -166,6 +166,18 @@ export type PresentationImage = {
   width: number | null;
   height: number | null;
   lqip: string | null;
+  // Image Repositioning (2026-08-23) — reuses Sanity's native image
+  // hotspot as a focal point. Both 0–100, (0,0) is the image's top-left.
+  // Always present (defaults to 50/50 — dead center — when no hotspot
+  // has been saved), so every consumer can use it unconditionally as an
+  // object-position percentage without a fallback check.
+  focalX: number;
+  focalY: number;
+  // Not a secret — already embedded in `url` itself (Sanity CDN URLs
+  // encode the asset id in the filename). Exposed here only so the
+  // Admin UI can re-save this exact same underlying asset (e.g. when
+  // repositioning an already-chosen image) without a duplicate upload.
+  assetId: string;
 };
 
 // "embed" = YouTube/Vimeo/etc — `url` is the embeddable URL, rendered as

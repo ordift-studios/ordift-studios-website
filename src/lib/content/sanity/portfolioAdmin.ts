@@ -86,13 +86,26 @@ export async function setPortfolioProjectScheduledFor(id: string, scheduledFor: 
 // this field existed.
 export async function setPortfolioProjectCoverImage(
   id: string,
-  image: { assetId: string; alt: string } | null
+  image: { assetId: string; alt: string; focalX?: number; focalY?: number } | null
 ): Promise<void> {
   if (image) {
     await client
       .patch(id)
       .set({
-        coverImage: { _type: "image", asset: { _type: "reference", _ref: image.assetId } },
+        coverImage: {
+          _type: "image",
+          asset: { _type: "reference", _ref: image.assetId },
+          // Image Repositioning (2026-08-23) — Sanity's native hotspot,
+          // converted back from 0–100 to its native 0–1. height/width
+          // are hotspot's own required sub-fields (the size of the
+          // "region of interest" circle Sanity Studio would draw); they
+          // don't affect this feature's plain object-position use, so a
+          // small fixed size keeps the stored object well-formed without
+          // implying a specific crop shape.
+          ...(image.focalX !== undefined && image.focalY !== undefined
+            ? { hotspot: { _type: "sanity.imageHotspot", x: image.focalX / 100, y: image.focalY / 100, height: 0.1, width: 0.1 } }
+            : {}),
+        },
         coverImageAlt: image.alt,
       })
       .commit();

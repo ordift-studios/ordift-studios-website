@@ -5,6 +5,7 @@ import Image from "next/image";
 import { getProjectImagesForWorkLandingPickerAction, saveWorkLandingImageAction } from "./actions";
 import type { PickableProjectImage, ProjectPickableImages, PortfolioProjectRefOption } from "@/lib/content/sanity/homepageSlideshowAdmin";
 import type { WorkLandingImageAdmin } from "@/lib/content/sanity/workLandingImagesAdmin";
+import FocalPointEditor from "@/components/admin/FocalPointEditor";
 
 // Work Landing Images manager (2026-08-23) — one image per discipline
 // for its band on /work (WorkDisciplineBands). Same "tap to open Choose
@@ -12,14 +13,32 @@ import type { WorkLandingImageAdmin } from "@/lib/content/sanity/workLandingImag
 // Slideshow and the Portfolio Cover Image picker, saved independently
 // per discipline (no whole-array replace — each Service document holds
 // its own single image field).
-type Mode = "closed" | "menu" | "portfolio";
+//
+// Image Repositioning (2026-08-23) — picking a new image or tapping
+// "Reposition" on an already-saved one opens FocalPointEditor before
+// the final save.
+type Mode = "closed" | "menu" | "portfolio" | "reposition";
+
+// Representative crop-frame ratio for the reposition preview —
+// approximates WorkDisciplineBands' wide horizontal band (its exact
+// ratio varies by breakpoint, from ~1.9:1 on mobile to ~5:1 on desktop;
+// this sits toward the more compressed desktop end, where focal point
+// matters most).
+const PREVIEW_ASPECT_RATIO = 3.5;
+
+type PendingImage = { assetId: string; url: string; alt: string; focalX: number; focalY: number };
 
 type RowState = {
   serviceId: string;
   discipline: string;
   name: string;
+  assetId: string | null;
   url: string | null;
+  alt: string;
+  focalX: number;
+  focalY: number;
   mode: Mode;
+  pending: PendingImage | null;
   pickerProjectId: string;
   images: ProjectPickableImages | null;
   loadingImages: boolean;
@@ -55,8 +74,13 @@ export default function WorkLandingImagesManagerForm({
       serviceId: img.serviceId,
       discipline: img.discipline,
       name: img.name,
+      assetId: img.assetId ?? null,
       url: img.url,
+      alt: img.alt ?? "",
+      focalX: img.focalX ?? 50,
+      focalY: img.focalY ?? 50,
       mode: "closed",
+      pending: null,
       pickerProjectId: "",
       images: null,
       loadingImages: false,
@@ -77,6 +101,11 @@ export default function WorkLandingImagesManagerForm({
     );
   }
 
+  function openReposition(row: RowState) {
+    if (!row.assetId || !row.url) return;
+    patchRow(row.serviceId, { pending: { assetId: row.assetId, url: row.url, alt: row.alt, focalX: row.focalX, focalY: row.focalY }, mode: "reposition" });
+  }
+
   async function openPortfolioBrowser(serviceId: string) {
     patchRow(serviceId, { mode: "portfolio" });
   }
@@ -93,27 +122,16 @@ export default function WorkLandingImagesManagerForm({
     }
   }
 
-  async function persist(row: RowState, image: { assetId: string; alt: string } | null, nextUrl: string | null) {
-    patchRow(row.serviceId, { saving: true, error: null });
-    try {
-      const result = await saveWorkLandingImageAction(row.serviceId, row.name, image);
-      if (!result.ok) throw new Error(result.error);
-      patchRow(row.serviceId, { url: nextUrl, saving: false, saved: true, mode: "closed" });
-    } catch (err) {
-      patchRow(row.serviceId, { saving: false, error: err instanceof Error ? err.message : "Save failed" });
-    }
-  }
-
   function selectPickedImage(row: RowState, image: PickableProjectImage) {
     const alt = image.alt || defaultAlt(row.name);
-    persist(row, { assetId: image.assetId, alt }, image.url);
+    patchRow(row.serviceId, { pending: { assetId: image.assetId, url: image.url, alt, focalX: 50, focalY: 50 }, mode: "reposition" });
   }
 
   async function handleUpload(row: RowState, file: File) {
     patchRow(row.serviceId, { uploading: true, error: null });
     try {
       const { assetId, url } = await uploadImage(file);
-      await persist(row, { assetId, alt: defaultAlt(row.name) }, url);
+      patchRow(row.serviceId, { pending: { assetId, url, alt: defaultAlt(row.name), focalX: 50, focalY: 50 }, mode: "reposition" });
     } catch (err) {
       patchRow(row.serviceId, { error: err instanceof Error ? err.message : "Upload failed" });
     } finally {
@@ -121,8 +139,42 @@ export default function WorkLandingImagesManagerForm({
     }
   }
 
-  function handleRemove(row: RowState) {
-    persist(row, null, null);
+  async function handleSavePosition(row: RowState) {
+    if (!row.pending) return;
+    patchRow(row.serviceId, { saving: true, error: null });
+    try {
+      const result = await saveWorkLandingImageAction(row.serviceId, row.name, {
+        assetId: row.pending.assetId,
+        alt: row.pending.alt,
+        focalX: row.pending.focalX,
+        focalY: row.pending.focalY,
+      });
+      if (!result.ok) throw new Error(result.error);
+      patchRow(row.serviceId, {
+        assetId: row.pending.assetId,
+        url: row.pending.url,
+        alt: row.pending.alt,
+        focalX: row.pending.focalX,
+        focalY: row.pending.focalY,
+        saving: false,
+        saved: true,
+        mode: "closed",
+        pending: null,
+      });
+    } catch (err) {
+      patchRow(row.serviceId, { saving: false, error: err instanceof Error ? err.message : "Save failed" });
+    }
+  }
+
+  async function handleRemove(row: RowState) {
+    patchRow(row.serviceId, { saving: true, error: null });
+    try {
+      const result = await saveWorkLandingImageAction(row.serviceId, row.name, null);
+      if (!result.ok) throw new Error(result.error);
+      patchRow(row.serviceId, { assetId: null, url: null, alt: "", focalX: 50, focalY: 50, saving: false, saved: true, mode: "closed" });
+    } catch (err) {
+      patchRow(row.serviceId, { saving: false, error: err instanceof Error ? err.message : "Save failed" });
+    }
   }
 
   return (
@@ -139,7 +191,14 @@ export default function WorkLandingImagesManagerForm({
             }`}
           >
             {row.url ? (
-              <Image src={row.url} alt="" fill sizes="320px" className="object-cover" />
+              <Image
+                src={row.url}
+                alt=""
+                fill
+                sizes="320px"
+                className="object-cover"
+                style={{ objectPosition: `${row.focalX}% ${row.focalY}%` }}
+              />
             ) : (
               <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 text-caption text-ordift-ink-muted/70 px-3 text-center">
                 <span>No custom image</span>
@@ -176,6 +235,15 @@ export default function WorkLandingImagesManagerForm({
                   className="hidden"
                 />
               </label>
+              {row.url && (
+                <button
+                  type="button"
+                  onClick={() => openReposition(row)}
+                  className="w-full min-h-11 rounded-md border border-black/15 text-body-small font-sans px-3 hover:border-black/30"
+                >
+                  Reposition
+                </button>
+              )}
               {row.url && (
                 <button
                   type="button"
@@ -230,6 +298,41 @@ export default function WorkLandingImagesManagerForm({
               <button type="button" onClick={() => patchRow(row.serviceId, { mode: "menu" })} className="text-caption text-ordift-ink-muted underline">
                 Back
               </button>
+            </div>
+          )}
+
+          {row.mode === "reposition" && row.pending && (
+            <div className="rounded-lg border border-black/15 bg-white p-3 space-y-3">
+              <p className="font-sans text-caption text-ordift-ink-muted">
+                Preview approximates the live band on /work.
+              </p>
+              <FocalPointEditor
+                key={row.pending.assetId}
+                imageUrl={row.pending.url}
+                previewAspectRatio={PREVIEW_ASPECT_RATIO}
+                initialFocalX={row.pending.focalX}
+                initialFocalY={row.pending.focalY}
+                onChange={(x, y) =>
+                  patchRow(row.serviceId, { pending: row.pending ? { ...row.pending, focalX: x, focalY: y } : row.pending })
+                }
+              />
+              <div className="flex gap-3">
+                <button
+                  type="button"
+                  onClick={() => handleSavePosition(row)}
+                  disabled={row.saving}
+                  className="min-h-10 px-4 rounded-md bg-ordift-navy-950 text-white font-sans text-body-small font-semibold disabled:opacity-50"
+                >
+                  {row.saving ? "Saving…" : "Save Position"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => patchRow(row.serviceId, { mode: "closed", pending: null })}
+                  className="text-caption text-ordift-ink-muted underline"
+                >
+                  Cancel
+                </button>
+              </div>
             </div>
           )}
 

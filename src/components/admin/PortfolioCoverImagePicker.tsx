@@ -4,6 +4,7 @@ import { useState } from "react";
 import Image from "next/image";
 import { getProjectOwnImagesForCoverPickerAction, saveCoverImageAction } from "@/app/admin/portfolio/actions";
 import type { PickableProjectImage, ProjectPickableImages } from "@/lib/content/sanity/homepageSlideshowAdmin";
+import FocalPointEditor from "./FocalPointEditor";
 
 // Portfolio Cover / Index Image picker (2026-08-23) — a single clickable
 // image slot, same "tap to open Choose from Portfolio / Upload from
@@ -16,7 +17,20 @@ import type { PickableProjectImage, ProjectPickableImages } from "@/lib/content/
 // Slideshow: reuse the source image's real alt text when picked from
 // Portfolio, or generate a safe non-empty fallback when freshly
 // uploaded.
-type Mode = "closed" | "menu" | "portfolio";
+//
+// Image Repositioning (2026-08-23) — picking a new image (from
+// Portfolio or by upload) or tapping "Reposition" on an already-saved
+// one opens FocalPointEditor before the final save, so the focal point
+// is always chosen deliberately rather than silently defaulting.
+type Mode = "closed" | "menu" | "portfolio" | "reposition";
+
+// Representative crop-frame ratio for the reposition preview — an
+// approximation of a discipline index band's typical landscape framing
+// (PhotographyIndexStrip clamps each project's own real aspect ratio
+// between 0.6–2.4 rather than using one fixed ratio; 16:9 sits well
+// inside that range and reads as "a wide editorial band" without
+// needing to replicate the per-image clamp exactly here).
+const PREVIEW_ASPECT_RATIO = 16 / 9;
 
 function defaultCoverAlt(projectTitle: string): string {
   return `${projectTitle} — Ordift Studios`;
@@ -32,24 +46,36 @@ async function uploadImage(file: File) {
   return { assetId: json.assetId as string, url: json.url as string };
 }
 
+type PendingImage = { assetId: string; url: string; alt: string; focalX: number; focalY: number };
+
 export default function PortfolioCoverImagePicker({
   projectId,
   projectTitle,
   fallbackUrl,
   fallbackAlt,
+  initialAssetId,
   initialUrl,
   initialAlt,
+  initialFocalX,
+  initialFocalY,
 }: {
   projectId: string;
   projectTitle: string;
   fallbackUrl: string | null;
   fallbackAlt: string;
+  initialAssetId: string | null;
   initialUrl: string | null;
   initialAlt: string | null;
+  initialFocalX: number | null;
+  initialFocalY: number | null;
 }) {
+  const [assetId, setAssetId] = useState(initialAssetId);
   const [url, setUrl] = useState(initialUrl);
   const [alt, setAlt] = useState(initialAlt ?? "");
+  const [focalX, setFocalX] = useState(initialFocalX ?? 50);
+  const [focalY, setFocalY] = useState(initialFocalY ?? 50);
   const [mode, setMode] = useState<Mode>("closed");
+  const [pending, setPending] = useState<PendingImage | null>(null);
   const [images, setImages] = useState<ProjectPickableImages | null>(null);
   const [loadingImages, setLoadingImages] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -78,14 +104,70 @@ export default function PortfolioCoverImagePicker({
     }
   }
 
-  async function persist(image: { assetId: string; alt: string } | null, nextUrl: string | null, nextAlt: string) {
+  function openReposition() {
+    if (!assetId || !url) return;
+    setPending({ assetId, url, alt, focalX, focalY });
+    setMode("reposition");
+  }
+
+  function selectPickedImage(image: PickableProjectImage) {
+    const nextAlt = image.alt || defaultCoverAlt(projectTitle);
+    setPending({ assetId: image.assetId, url: image.url, alt: nextAlt, focalX: 50, focalY: 50 });
+    setMode("reposition");
+  }
+
+  async function handleUpload(file: File) {
+    setUploading(true);
+    setError(null);
+    try {
+      const { assetId: newAssetId, url: uploadedUrl } = await uploadImage(file);
+      setPending({ assetId: newAssetId, url: uploadedUrl, alt: defaultCoverAlt(projectTitle), focalX: 50, focalY: 50 });
+      setMode("reposition");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Upload failed");
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  async function handleSavePosition() {
+    if (!pending) return;
     setSaving(true);
     setError(null);
     try {
-      const result = await saveCoverImageAction(projectId, image);
+      const result = await saveCoverImageAction(projectId, {
+        assetId: pending.assetId,
+        alt: pending.alt,
+        focalX: pending.focalX,
+        focalY: pending.focalY,
+      });
       if (!result.ok) throw new Error(result.error);
-      setUrl(nextUrl);
-      setAlt(nextAlt);
+      setAssetId(pending.assetId);
+      setUrl(pending.url);
+      setAlt(pending.alt);
+      setFocalX(pending.focalX);
+      setFocalY(pending.focalY);
+      setSaved(true);
+      setMode("closed");
+      setPending(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Save failed");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleRemove() {
+    setSaving(true);
+    setError(null);
+    try {
+      const result = await saveCoverImageAction(projectId, null);
+      if (!result.ok) throw new Error(result.error);
+      setAssetId(null);
+      setUrl(null);
+      setAlt("");
+      setFocalX(50);
+      setFocalY(50);
       setSaved(true);
       setMode("closed");
     } catch (err) {
@@ -95,31 +177,9 @@ export default function PortfolioCoverImagePicker({
     }
   }
 
-  function selectPickedImage(image: PickableProjectImage) {
-    const nextAlt = image.alt || defaultCoverAlt(projectTitle);
-    persist({ assetId: image.assetId, alt: nextAlt }, image.url, nextAlt);
-  }
-
-  async function handleUpload(file: File) {
-    setUploading(true);
-    setError(null);
-    try {
-      const { assetId, url: uploadedUrl } = await uploadImage(file);
-      const nextAlt = defaultCoverAlt(projectTitle);
-      await persist({ assetId, alt: nextAlt }, uploadedUrl, nextAlt);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Upload failed");
-    } finally {
-      setUploading(false);
-    }
-  }
-
-  function handleRemove() {
-    persist(null, null, "");
-  }
-
   const displayUrl = url ?? fallbackUrl;
   const displayAlt = url ? alt : fallbackAlt;
+  const displayFocal = url ? { x: focalX, y: focalY } : { x: 50, y: 50 };
 
   return (
     <div className="space-y-2 max-w-xs">
@@ -131,7 +191,14 @@ export default function PortfolioCoverImagePicker({
         }`}
       >
         {displayUrl ? (
-          <Image src={displayUrl} alt={displayAlt || ""} fill sizes="320px" className="object-cover" />
+          <Image
+            src={displayUrl}
+            alt={displayAlt || ""}
+            fill
+            sizes="320px"
+            className="object-cover"
+            style={{ objectPosition: `${displayFocal.x}% ${displayFocal.y}%` }}
+          />
         ) : (
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 text-caption text-ordift-ink-muted/70 px-3 text-center">
             <span>No image yet</span>
@@ -176,6 +243,15 @@ export default function PortfolioCoverImagePicker({
           {url && (
             <button
               type="button"
+              onClick={openReposition}
+              className="w-full min-h-11 rounded-md border border-black/15 text-body-small font-sans px-3 hover:border-black/30"
+            >
+              Reposition
+            </button>
+          )}
+          {url && (
+            <button
+              type="button"
               onClick={handleRemove}
               disabled={saving}
               className="w-full min-h-9 text-caption text-red-700 underline underline-offset-4"
@@ -212,6 +288,42 @@ export default function PortfolioCoverImagePicker({
           <button type="button" onClick={() => setMode("menu")} className="text-caption text-ordift-ink-muted underline">
             Back
           </button>
+        </div>
+      )}
+
+      {mode === "reposition" && pending && (
+        <div className="rounded-lg border border-black/15 bg-white p-3 space-y-3">
+          <p className="font-sans text-caption text-ordift-ink-muted">
+            Preview approximates the live crop on the discipline index page.
+          </p>
+          <FocalPointEditor
+            key={pending.assetId}
+            imageUrl={pending.url}
+            previewAspectRatio={PREVIEW_ASPECT_RATIO}
+            initialFocalX={pending.focalX}
+            initialFocalY={pending.focalY}
+            onChange={(x, y) => setPending((p) => (p ? { ...p, focalX: x, focalY: y } : p))}
+          />
+          <div className="flex gap-3">
+            <button
+              type="button"
+              onClick={handleSavePosition}
+              disabled={saving}
+              className="min-h-10 px-4 rounded-md bg-ordift-navy-950 text-white font-sans text-body-small font-semibold disabled:opacity-50"
+            >
+              {saving ? "Saving…" : "Save Position"}
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setPending(null);
+                setMode("closed");
+              }}
+              className="text-caption text-ordift-ink-muted underline"
+            >
+              Cancel
+            </button>
+          </div>
         </div>
       )}
 

@@ -61,7 +61,7 @@ export default async function PhotographyIndexPage() {
         title: p.title,
         categoryName: categoryById.get(p.categoryIds[0] ?? "")?.name ?? null,
         heroImage: cover
-          ? { url: cover.url, alt: cover.alt, width: cover.width, height: cover.height, lqip: cover.lqip }
+          ? { url: cover.url, alt: cover.alt, width: cover.width, height: cover.height, lqip: cover.lqip, focalX: cover.focalX, focalY: cover.focalY }
           : {
               url: p.heroMedia.url!,
               alt: p.heroMedia.alt,

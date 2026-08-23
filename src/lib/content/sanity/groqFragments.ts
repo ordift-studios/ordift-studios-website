@@ -70,24 +70,38 @@ export function requiredMediaAssetFragment(fieldName: string, fieldPath: string)
   return `"${fieldName}": coalesce(${fieldPath}${mediaAssetFragment}, ${defaultMediaAsset})`;
 }
 
-// PresentationImage { url, alt, width, height, lqip } — a single plain
-// Sanity `image` field (not the polymorphic MediaAsset union), used for
-// admin-chosen presentation-only images (Service.workLandingImage,
-// PortfolioProject.coverImage). Alt text lives in a separate sibling
-// field (`${fieldName}Alt`, matching homepageSlideshowSlide's own
-// landscapeAlt/portraitAlt convention), not nested inside the image
-// object, so every reference is a full path from the document root
-// rather than relying on GROQ's projection scope. `select(defined(...))`
-// returns null outright when the field was never set, rather than an
-// object of all-null sub-fields, so callers can use a simple `?? fallback`
-// check.
+// PresentationImage { url, alt, width, height, lqip, focalX, focalY } —
+// a single plain Sanity `image` field (not the polymorphic MediaAsset
+// union), used for admin-chosen presentation-only images
+// (Service.workLandingImage, PortfolioProject.coverImage). Alt text
+// lives in a separate sibling field (`${fieldName}Alt`, matching
+// homepageSlideshowSlide's own landscapeAlt/portraitAlt convention),
+// not nested inside the image object, so every reference is a full path
+// from the document root rather than relying on GROQ's projection
+// scope. `select(defined(...))` returns null outright when the field
+// was never set, rather than an object of all-null sub-fields, so
+// callers can use a simple `?? fallback` check.
+//
+// focalX/focalY (2026-08-23, Image Repositioning) reuse Sanity's own
+// native image hotspot (`${fieldName}.hotspot.x`/`.y`, both already
+// 0–1 with (0,0) at top-left — the same coordinate space CSS
+// object-position expects) rather than a parallel custom field —
+// converted to 0–100 here so the frontend can use them directly as an
+// object-position percentage. `coalesce(..., 50)` defaults to dead
+// center whenever no hotspot has been saved yet (every image that
+// existed before this feature, or one saved without ever opening the
+// reposition control), which is pixel-identical to the plain
+// object-cover/center-center behaviour those images already had.
 export function optionalImageFragment(fieldName: string): string {
   return `"${fieldName}": select(defined(${fieldName}.asset) => {
     "url": ${fieldName}.asset->url,
     "alt": ${fieldName}Alt,
     "width": ${fieldName}.asset->metadata.dimensions.width,
     "height": ${fieldName}.asset->metadata.dimensions.height,
-    "lqip": ${fieldName}.asset->metadata.lqip
+    "lqip": ${fieldName}.asset->metadata.lqip,
+    "focalX": coalesce(${fieldName}.hotspot.x * 100, 50),
+    "focalY": coalesce(${fieldName}.hotspot.y * 100, 50),
+    "assetId": ${fieldName}.asset->_id
   })`;
 }
 

@@ -28,7 +28,7 @@ export type ActionResult = { ok: true } | { ok: false; error: string };
 export async function saveWorkLandingImageAction(
   serviceId: string,
   serviceName: string,
-  image: { assetId: string; alt: string } | null
+  image: { assetId: string; alt: string; focalX?: number; focalY?: number } | null
 ): Promise<ActionResult> {
   const user = await requirePortfolioPresentationManager();
 

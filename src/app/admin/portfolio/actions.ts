@@ -382,7 +382,7 @@ export async function getProjectOwnImagesForCoverPickerAction(projectId: string)
 
 export async function saveCoverImageAction(
   id: string,
-  image: { assetId: string; alt: string } | null
+  image: { assetId: string; alt: string; focalX?: number; focalY?: number } | null
 ): Promise<ActionResult> {
   const user = await requirePortfolioPresentationManager();
 

@@ -25,7 +25,20 @@ export type PhotographyStripProject = {
   slug: string;
   title: string;
   categoryName: string | null;
-  heroImage: { url: string; alt: string; width: number | null; height: number | null; lqip: string | null };
+  heroImage: {
+    url: string;
+    alt: string;
+    width: number | null;
+    height: number | null;
+    lqip: string | null;
+    // Image Repositioning (2026-08-23) — admin-chosen focal point
+    // (0–100, 0–100), only ever set on a deliberately-picked Portfolio
+    // Cover Image. Optional: the automatic Hero Media fallback has no
+    // focal point of its own, so this defaults to 50/50 (dead center)
+    // at render time, identical to this band's pre-existing behaviour.
+    focalX?: number;
+    focalY?: number;
+  };
 };
 
 function clampAspectRatio(width: number | null, height: number | null): number {
@@ -59,6 +72,7 @@ export default function PhotographyIndexStrip({ projects }: { projects: Photogra
               placeholder={project.heroImage.lqip ? "blur" : "empty"}
               blurDataURL={project.heroImage.lqip ?? undefined}
               className="object-cover"
+              style={{ objectPosition: `${project.heroImage.focalX ?? 50}% ${project.heroImage.focalY ?? 50}%` }}
             />
           </div>
 

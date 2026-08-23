@@ -158,8 +158,11 @@ export default async function AdminPortfolioProjectPage({ params }: { params: Pr
             projectTitle={project.title}
             fallbackUrl={project.heroMedia.type === "image" ? project.heroMedia.url : null}
             fallbackAlt={project.heroMedia.alt}
+            initialAssetId={project.coverImage?.assetId ?? null}
             initialUrl={project.coverImage?.url ?? null}
             initialAlt={project.coverImage?.alt ?? null}
+            initialFocalX={project.coverImage?.focalX ?? null}
+            initialFocalY={project.coverImage?.focalY ?? null}
           />
         </section>
       )}

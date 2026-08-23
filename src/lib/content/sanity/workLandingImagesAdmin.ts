@@ -16,6 +16,15 @@ export type WorkLandingImageAdmin = {
   name: string;
   url: string | null;
   alt: string | null;
+  // Not a secret — already embedded in `url` (Sanity CDN URLs encode
+  // the asset id). Exposed so "Reposition" can re-save this exact same
+  // asset without a duplicate upload.
+  assetId: string | null;
+  // Image Repositioning (2026-08-23) — Sanity's native hotspot,
+  // converted to a 0–100 focal point; null when never set (renders as
+  // dead center, same as before this feature existed).
+  focalX: number | null;
+  focalY: number | null;
 };
 
 const WORK_LANDING_IMAGES_QUERY = `*[_type == "service"] | order(displayOrder asc){
@@ -23,7 +32,10 @@ const WORK_LANDING_IMAGES_QUERY = `*[_type == "service"] | order(displayOrder as
   "discipline": slug.current,
   name,
   "url": workLandingImage.asset->url,
-  "alt": workLandingImageAlt
+  "alt": workLandingImageAlt,
+  "assetId": workLandingImage.asset->_id,
+  "focalX": workLandingImage.hotspot.x * 100,
+  "focalY": workLandingImage.hotspot.y * 100
 }`;
 
 export async function getWorkLandingImagesAdmin(): Promise<WorkLandingImageAdmin[]> {
@@ -32,13 +44,19 @@ export async function getWorkLandingImagesAdmin(): Promise<WorkLandingImageAdmin
 
 export async function setServiceWorkLandingImage(
   serviceId: string,
-  image: { assetId: string; alt: string } | null
+  image: { assetId: string; alt: string; focalX?: number; focalY?: number } | null
 ): Promise<void> {
   if (image) {
     await client
       .patch(serviceId)
       .set({
-        workLandingImage: { _type: "image", asset: { _type: "reference", _ref: image.assetId } },
+        workLandingImage: {
+          _type: "image",
+          asset: { _type: "reference", _ref: image.assetId },
+          ...(image.focalX !== undefined && image.focalY !== undefined
+            ? { hotspot: { _type: "sanity.imageHotspot", x: image.focalX / 100, y: image.focalY / 100, height: 0.1, width: 0.1 } }
+            : {}),
+        },
         workLandingImageAlt: image.alt,
       })
       .commit();
