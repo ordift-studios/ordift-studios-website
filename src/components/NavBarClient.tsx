@@ -32,17 +32,20 @@ export default function NavBarClient({
 
   return (
     <nav
-      className={`text-white transition-colors duration-300 ${
-        transparent ? "absolute top-0 inset-x-0 z-20" : "relative bg-ordift-navy-950"
-      }`}
+      className={`text-white ${transparent ? "absolute top-0 inset-x-0 z-20" : "relative bg-ordift-navy-950"}`}
       // Inline style, not a Tailwind utility class, for the transparent-mode
-      // background specifically: a `bg-ordift-navy-950` utility applied here
-      // was silently losing to `bg-transparent` regardless of which one was
-      // actually present in the className (confirmed live via computed
-      // style + CSSOM inspection on the deployed page) — a Tailwind v4
-      // cascade-layer interaction, not a typo. An inline style always wins
-      // over any stylesheet layer, so it sidesteps the issue entirely
-      // rather than continuing to chase the exact cause.
+      // background specifically — a `bg-ordift-navy-950` utility applied
+      // here was silently failing to render regardless of which background
+      // utility was present in the className (confirmed live via computed
+      // style + CSSOM inspection on the deployed page), and even an inline
+      // `var(--color-navy-950)` style still failed to render while a CSS
+      // `transition-colors` was active on this element — pointing at a
+      // background-color transition/var() interpolation issue, not a
+      // cascade/specificity one. Removing the (non-essential, purely
+      // decorative) animated transition on this property and setting the
+      // value directly resolved it — confirmed live. No transition existed
+      // here before this homepage-overlay mode was added, so this is a
+      // net-zero change against the previously approved nav, not a loss.
       style={transparent ? { backgroundColor: open ? "var(--color-navy-950)" : "transparent" } : undefined}
     >
       {transparent && !open && (
