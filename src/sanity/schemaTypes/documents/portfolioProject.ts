@@ -91,6 +91,14 @@ export default defineType({
       description: "Freeform tags — e.g. \"outdoor\", \"black-and-white\", \"studio-lit\" — distinct from Disciplines/Categories (structured taxonomy) and Collections/Series (curated grouping).",
     }),
     defineField({
+      name: "showCollaborationCredits",
+      title: "Show Collaboration / Extended Credits Publicly",
+      type: "boolean",
+      initialValue: false,
+      description:
+        "Off by default — ordinary client work stays minimal (no Director/Photographer/Editor/crew shown). Turn on for collaborative projects, workshops, journal/editorial pieces, or productions involving another creative/production house, where the Collaborators list below should actually appear on the public page.",
+    }),
+    defineField({
       name: "collaborators",
       title: "Collaborators",
       type: "array",
@@ -163,7 +171,17 @@ export default defineType({
         },
       ],
     }),
-    defineField({ name: "videos", title: "Videos", type: "array", of: [{ type: "mediaAsset" }] }),
+    // "Additional Films" in the Admin Portal / public Videography page —
+    // field name kept as "videos" since it already existed and is
+    // already wired end-to-end; only its presentation label changed.
+    defineField({ name: "videos", title: "Videos (Additional Films)", type: "array", of: [{ type: "mediaAsset" }] }),
+    defineField({
+      name: "reels",
+      title: "Reels / Short Cuts",
+      type: "array",
+      of: [{ type: "mediaAsset" }],
+      description: "Optional short-form/vertical video (Videography). Leave empty if this project has none — the public page only shows a Reels section when at least one exists.",
+    }),
     defineField({
       name: "downloadableAssets",
       title: "Downloadable Assets",

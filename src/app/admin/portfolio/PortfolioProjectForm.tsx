@@ -34,6 +34,14 @@ type ImgState = {
   uploading: boolean;
   progress: number;
   error: string | null;
+  // Main Film support (2026-08-23, Videography) — "image" is the
+  // default and every other discipline's behavior is unchanged;
+  // "embed" lets a project's Hero Media be a YouTube/Vimeo video
+  // instead, mirroring the existing Additional Films/Reels embed-URL
+  // pattern. Native video file upload for the hero is deliberately out
+  // of scope here — same reasoning as Additional Films/Reels below.
+  mediaType: "image" | "embed";
+  embedUrl: string;
 };
 
 // Photography adaptive justified gallery (2026-08-23) — optional
@@ -61,7 +69,21 @@ type GalleryItem = {
   error: string | null;
 };
 
-type VideoItem = { key: string; url: string; alt: string };
+// Shared by Additional Films ("videos") and Reels — a poster is
+// optional per item (2026-08-23, Videography): shown before playback
+// instead of the video's often-black first frame. Falls back to the
+// project's own Portfolio Cover Image, then a placeholder, when unset
+// — see VideoPlayer.tsx.
+type VideoItem = {
+  key: string;
+  url: string;
+  alt: string;
+  posterAssetId: string | null;
+  posterUrl: string | null;
+  posterAlt: string;
+  posterUploading: boolean;
+  posterError: string | null;
+};
 type DownloadItem = {
   key: string;
   label: string;
@@ -87,7 +109,8 @@ export type FormState = {
   hero: ImgState;
   gallery: GalleryItem[];
   behindTheScenes: GalleryItem[];
-  videos: VideoItem[];
+  videos: VideoItem[]; // "Additional Films" on the public Videography page
+  reels: VideoItem[];
   downloads: DownloadItem[];
   categoryIds: string[];
   collectionIds: string[];
@@ -105,6 +128,7 @@ export type FormState = {
   deliverables: string[];
   awards: AwardItem[];
   publications: PublicationItem[];
+  showCollaborationCredits: boolean;
   collaborators: CollaboratorItem[];
   testimonialIds: string[];
   relatedProjectIds: string[];
@@ -162,7 +186,31 @@ function parseTagInput(value: string): string[] {
 }
 
 function emptyImg(): ImgState {
-  return { assetId: null, url: null, alt: "", hotspotX: 0.5, hotspotY: 0.5, uploading: false, progress: 0, error: null };
+  return {
+    assetId: null,
+    url: null,
+    alt: "",
+    hotspotX: 0.5,
+    hotspotY: 0.5,
+    uploading: false,
+    progress: 0,
+    error: null,
+    mediaType: "image",
+    embedUrl: "",
+  };
+}
+
+function emptyVideoItem(): VideoItem {
+  return {
+    key: newKey(),
+    url: "",
+    alt: "",
+    posterAssetId: null,
+    posterUrl: null,
+    posterAlt: "",
+    posterUploading: false,
+    posterError: null,
+  };
 }
 
 function uploadAsset(
@@ -194,6 +242,10 @@ function uploadAsset(
 }
 
 function mediaAssetField(img: ImgState) {
+  if (img.mediaType === "embed") {
+    if (!img.embedUrl) return null;
+    return { _type: "mediaAsset", type: "embed", alt: img.alt, url: img.embedUrl };
+  }
   if (!img.assetId) return null;
   return {
     _type: "mediaAsset",
@@ -205,6 +257,33 @@ function mediaAssetField(img: ImgState) {
       hotspot: { _type: "sanity.imageHotspot", x: img.hotspotX, y: img.hotspotY, height: 0.5, width: 0.5 },
     },
   };
+}
+
+// Additional Films ("videos") and Reels share this exact shape — each
+// item is always an embed (native video-file upload is out of scope
+// for this increment; see the Admin UI's own note), with an optional
+// per-item poster reusing the same asset-reference + hotspot pattern
+// as every other image field in this form.
+function videoItemsField(items: VideoItem[]) {
+  return items
+    .filter((i) => i.url)
+    .map((i) => ({
+      _type: "mediaAsset",
+      _key: i.key,
+      type: "embed",
+      url: i.url,
+      alt: i.alt,
+      ...(i.posterAssetId
+        ? {
+            poster: {
+              _type: "image",
+              asset: { _type: "reference", _ref: i.posterAssetId },
+              hotspot: { _type: "sanity.imageHotspot", x: 0.5, y: 0.5, height: 0.5, width: 0.5 },
+            },
+            posterAlt: i.posterAlt,
+          }
+        : {}),
+    }));
 }
 
 function galleryField(items: GalleryItem[]) {
@@ -351,6 +430,7 @@ export default function PortfolioProjectForm({
     gallery: [],
     behindTheScenes: [],
     videos: [],
+    reels: [],
     downloads: [],
     categoryIds: [],
     collectionIds: [],
@@ -368,6 +448,7 @@ export default function PortfolioProjectForm({
     deliverables: [],
     awards: [],
     publications: [],
+    showCollaborationCredits: false,
     collaborators: [],
     testimonialIds: [],
     relatedProjectIds: [],
@@ -429,9 +510,8 @@ export default function PortfolioProjectForm({
       if (hero) fields.heroMedia = hero;
       fields.gallery = galleryField(form.gallery);
       fields.behindTheScenesGallery = galleryField(form.behindTheScenes);
-      fields.videos = form.videos
-        .filter((v) => v.url)
-        .map((v) => ({ _type: "mediaAsset", type: "embed", url: v.url, alt: v.alt }));
+      fields.videos = videoItemsField(form.videos);
+      fields.reels = videoItemsField(form.reels);
       fields.downloadableAssets = form.downloads
         .filter((d) => d.assetId)
         .map((d) => ({
@@ -475,6 +555,7 @@ export default function PortfolioProjectForm({
       }));
     }
     if (scope === "team" || scope === "all") {
+      fields.showCollaborationCredits = form.showCollaborationCredits;
       fields.collaborators = form.collaborators.map((c) => ({ _type: "collaborator", _key: c.key, name: c.name, role: c.role }));
       fields.testimonials = form.testimonialIds.map((id) => ({ _type: "reference", _ref: id, _key: id }));
       fields.relatedProjects = form.relatedProjectIds.map((id) => ({ _type: "reference", _ref: id, _key: id }));
@@ -554,6 +635,33 @@ export default function PortfolioProjectForm({
       setDirty(true);
     } catch (err) {
       setForm((f) => ({ ...f, hero: { ...f.hero, uploading: false, error: (err as Error).message } }));
+    }
+  }
+
+  // Poster upload for one Additional Film/Reel item (2026-08-23,
+  // Videography) — mirrors handleHeroFile's compress-then-upload
+  // pattern exactly, just scoped to one array item by key instead of
+  // the single hero field.
+  async function handleVideoItemPosterFile(target: "videos" | "reels", key: string, file: File) {
+    setForm((f) => ({
+      ...f,
+      [target]: f[target].map((v) => (v.key === key ? { ...v, posterUploading: true, posterError: null } : v)),
+    }));
+    try {
+      const compressed = await compressImageFile(file);
+      const asset = await uploadAsset(compressed, "image", () => {});
+      setForm((f) => ({
+        ...f,
+        [target]: f[target].map((v) =>
+          v.key === key ? { ...v, posterAssetId: asset.assetId, posterUrl: asset.url, posterUploading: false } : v
+        ),
+      }));
+      setDirty(true);
+    } catch (err) {
+      setForm((f) => ({
+        ...f,
+        [target]: f[target].map((v) => (v.key === key ? { ...v, posterUploading: false, posterError: (err as Error).message } : v)),
+      }));
     }
   }
 
@@ -755,23 +863,80 @@ export default function PortfolioProjectForm({
         {step === 1 && (
           <div className="space-y-8">
             <div>
-              <h2 className="font-serif font-medium text-body text-ordift-ink mb-3">Hero Image *</h2>
-              <ImageDropZone img={form.hero} label="the hero image" onFile={handleHeroFile} />
-              {form.hero.url && (
-                <div className="grid sm:grid-cols-2 gap-4 mt-3">
-                  <FocalPointPicker
-                    url={form.hero.url}
-                    x={form.hero.hotspotX}
-                    y={form.hero.hotspotY}
-                    onChange={(x, y) => {
-                      setForm((f) => ({ ...f, hero: { ...f.hero, hotspotX: x, hotspotY: y } }));
-                      setDirty(true);
-                    }}
+              <h2 className="font-serif font-medium text-body text-ordift-ink mb-1">Hero Media *</h2>
+              <p className="font-sans text-caption text-ordift-ink-muted mb-3">
+                For a Videography project, this is the project&apos;s Main Film. Switch to Video Embed URL below —
+                the Poster shown before Play reuses this project&apos;s own Portfolio Cover Image (set further down
+                in Review &amp; Preview, or from Admin → Portfolio on the project&apos;s detail page).
+              </p>
+              <div className="flex gap-4 mb-3">
+                <label className="flex items-center gap-1.5 font-sans text-body-small text-ordift-ink">
+                  <input
+                    type="radio"
+                    checked={form.hero.mediaType === "image"}
+                    onChange={() => setForm((f) => ({ ...f, hero: { ...f.hero, mediaType: "image" } }))}
                   />
+                  Image
+                </label>
+                <label className="flex items-center gap-1.5 font-sans text-body-small text-ordift-ink">
+                  <input
+                    type="radio"
+                    checked={form.hero.mediaType === "embed"}
+                    onChange={() => setForm((f) => ({ ...f, hero: { ...f.hero, mediaType: "embed" } }))}
+                  />
+                  Video Embed URL
+                </label>
+              </div>
+
+              {form.hero.mediaType === "image" ? (
+                <>
+                  <ImageDropZone img={form.hero} label="the hero image" onFile={handleHeroFile} />
+                  {form.hero.url && (
+                    <div className="grid sm:grid-cols-2 gap-4 mt-3">
+                      <FocalPointPicker
+                        url={form.hero.url}
+                        x={form.hero.hotspotX}
+                        y={form.hero.hotspotY}
+                        onChange={(x, y) => {
+                          setForm((f) => ({ ...f, hero: { ...f.hero, hotspotX: x, hotspotY: y } }));
+                          setDirty(true);
+                        }}
+                      />
+                      <div>
+                        <label className="block font-sans text-body-small font-medium text-ordift-ink mb-1">Alt text *</label>
+                        <input
+                          type="text"
+                          value={form.hero.alt}
+                          onChange={(e) => {
+                            setForm((f) => ({ ...f, hero: { ...f.hero, alt: e.target.value } }));
+                            setDirty(true);
+                          }}
+                          className="w-full rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small"
+                        />
+                      </div>
+                    </div>
+                  )}
+                </>
+              ) : (
+                <div className="grid sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block font-sans text-body-small font-medium text-ordift-ink mb-1">Embed URL *</label>
+                    <input
+                      type="url"
+                      placeholder="https://youtube.com/watch?v=…"
+                      value={form.hero.embedUrl}
+                      onChange={(e) => {
+                        setForm((f) => ({ ...f, hero: { ...f.hero, embedUrl: e.target.value } }));
+                        setDirty(true);
+                      }}
+                      className="w-full rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small"
+                    />
+                  </div>
                   <div>
                     <label className="block font-sans text-body-small font-medium text-ordift-ink mb-1">Alt text *</label>
                     <input
                       type="text"
+                      placeholder="e.g. Sampson & Sadia's wedding film"
                       value={form.hero.alt}
                       onChange={(e) => {
                         setForm((f) => ({ ...f, hero: { ...f.hero, alt: e.target.value } }));
@@ -808,44 +973,27 @@ export default function PortfolioProjectForm({
               canPublish={canPublish}
             />
 
-            <div>
-              <h2 className="font-serif font-medium text-body text-ordift-ink mb-1">Videos</h2>
-              <p className="font-sans text-caption text-ordift-ink-muted mb-3">
-                Embed URLs only (YouTube, Vimeo, etc.) — direct video file upload still requires Sanity Studio.
-              </p>
-              {form.videos.map((v) => (
-                <div key={v.key} className="flex gap-2 mb-2">
-                  <input
-                    type="url"
-                    placeholder="https://youtube.com/watch?v=…"
-                    value={v.url}
-                    onChange={(e) =>
-                      update("videos", form.videos.map((x) => (x.key === v.key ? { ...x, url: e.target.value } : x)))
-                    }
-                    className="flex-1 rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small"
-                  />
-                  <input
-                    type="text"
-                    placeholder="Alt text"
-                    value={v.alt}
-                    onChange={(e) =>
-                      update("videos", form.videos.map((x) => (x.key === v.key ? { ...x, alt: e.target.value } : x)))
-                    }
-                    className="w-40 rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small"
-                  />
-                  <button type="button" onClick={() => update("videos", form.videos.filter((x) => x.key !== v.key))} className="font-sans text-caption text-red-700">
-                    Remove
-                  </button>
-                </div>
-              ))}
-              <button
-                type="button"
-                onClick={() => update("videos", [...form.videos, { key: newKey(), url: "", alt: "" }])}
-                className="font-sans text-caption text-ordift-gold-pressed underline underline-offset-4"
-              >
-                + Add video URL
-              </button>
-            </div>
+            <VideoItemEditor
+              title="Additional Films (Videography)"
+              helperText="Optional — Trailer, Teaser, Alternate Cut, Interview, etc. Embed URLs only (YouTube, Vimeo, etc.); direct video file upload still requires Sanity Studio. Leave empty if this project has none."
+              addLabel="+ Add Additional Film"
+              items={form.videos}
+              onUpdateItem={(key, patch) => setForm((f) => ({ ...f, videos: f.videos.map((v) => (v.key === key ? { ...v, ...patch } : v)) }))}
+              onAdd={() => setForm((f) => ({ ...f, videos: [...f.videos, emptyVideoItem()] }))}
+              onRemove={(key) => setForm((f) => ({ ...f, videos: f.videos.filter((v) => v.key !== key) }))}
+              onPosterFile={(key, file) => handleVideoItemPosterFile("videos", key, file)}
+            />
+
+            <VideoItemEditor
+              title="Reels / Short Cuts (Videography)"
+              helperText="Optional short-form/vertical video. Embed URLs only. Leave empty if this project has none."
+              addLabel="+ Add Reel"
+              items={form.reels}
+              onUpdateItem={(key, patch) => setForm((f) => ({ ...f, reels: f.reels.map((v) => (v.key === key ? { ...v, ...patch } : v)) }))}
+              onAdd={() => setForm((f) => ({ ...f, reels: [...f.reels, emptyVideoItem()] }))}
+              onRemove={(key) => setForm((f) => ({ ...f, reels: f.reels.filter((v) => v.key !== key) }))}
+              onPosterFile={(key, file) => handleVideoItemPosterFile("reels", key, file)}
+            />
 
             <div>
               <h2 className="font-serif font-medium text-body text-ordift-ink mb-1">Downloadable Assets</h2>
@@ -974,6 +1122,22 @@ export default function PortfolioProjectForm({
 
         {step === 4 && (
           <div className="space-y-6">
+            <label className="flex items-start gap-2 font-sans text-body-small text-ordift-ink">
+              <input
+                type="checkbox"
+                checked={form.showCollaborationCredits}
+                onChange={(e) => update("showCollaborationCredits", e.target.checked)}
+                className="mt-0.5"
+              />
+              <span>
+                Show Collaboration / Extended Credits publicly
+                <span className="block font-sans text-caption text-ordift-ink-muted">
+                  Off by default — ordinary client work stays minimal. Turn on for collaborative projects, workshops,
+                  journal/editorial pieces, or productions involving another creative/production house — only then
+                  does the Collaborators list below appear on the public page.
+                </span>
+              </span>
+            </label>
             <RepeaterFields
               title="Collaborators"
               items={form.collaborators}
@@ -1396,6 +1560,90 @@ function GalleryEditor({
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+// Shared by Additional Films and Reels (2026-08-23, Videography) —
+// each item is an embed URL (mirrors the pattern already established
+// for the pre-existing "videos" field; native video file upload is
+// out of scope for this increment — see the top-level section's own
+// helper text) plus an optional per-item poster image, so a project's
+// index/detail pages never fall back to a video's often-black first
+// frame. Reuses the same compress-then-upload pipeline as every other
+// image in this form (handleVideoItemPosterFile).
+function VideoItemEditor({
+  title,
+  helperText,
+  addLabel,
+  items,
+  onUpdateItem,
+  onAdd,
+  onRemove,
+  onPosterFile,
+}: {
+  title: string;
+  helperText: string;
+  addLabel: string;
+  items: VideoItem[];
+  onUpdateItem: (key: string, patch: Partial<VideoItem>) => void;
+  onAdd: () => void;
+  onRemove: (key: string) => void;
+  onPosterFile: (key: string, file: File) => void;
+}) {
+  return (
+    <div>
+      <h2 className="font-serif font-medium text-body text-ordift-ink mb-1">{title}</h2>
+      <p className="font-sans text-caption text-ordift-ink-muted mb-3">{helperText}</p>
+      {items.map((v) => (
+        <div key={v.key} className="rounded-lg border border-black/10 p-3 mb-2 space-y-2">
+          <div className="flex gap-3">
+            <label className="relative w-20 h-20 rounded bg-black/5 overflow-hidden shrink-0 cursor-pointer border border-black/10">
+              {v.posterUrl ? (
+                <img src={v.posterUrl} alt={v.posterAlt} className="w-full h-full object-cover" />
+              ) : (
+                <span className="absolute inset-0 flex items-center justify-center font-sans text-caption text-ordift-ink-muted/70 text-center px-1">
+                  {v.posterUploading ? "…" : "+ Poster"}
+                </span>
+              )}
+              <input
+                type="file"
+                accept="image/jpeg,image/png,image/webp,image/gif"
+                disabled={v.posterUploading}
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) onPosterFile(v.key, file);
+                  e.target.value = "";
+                }}
+                className="hidden"
+              />
+            </label>
+            <div className="flex-1 space-y-1.5">
+              {v.posterError && <p className="font-sans text-caption text-red-700">{v.posterError}</p>}
+              <input
+                type="url"
+                placeholder="https://youtube.com/watch?v=…"
+                value={v.url}
+                onChange={(e) => onUpdateItem(v.key, { url: e.target.value })}
+                className="w-full rounded border border-black/15 px-2 py-1 font-sans text-caption"
+              />
+              <input
+                type="text"
+                placeholder="Label / alt text (e.g. Trailer, Reel 1)"
+                value={v.alt}
+                onChange={(e) => onUpdateItem(v.key, { alt: e.target.value })}
+                className="w-full rounded border border-black/15 px-2 py-1 font-sans text-caption"
+              />
+            </div>
+          </div>
+          <button type="button" onClick={() => onRemove(v.key)} className="font-sans text-caption text-red-700">
+            Remove
+          </button>
+        </div>
+      ))}
+      <button type="button" onClick={onAdd} className="font-sans text-caption text-ordift-gold-pressed underline underline-offset-4">
+        {addLabel}
+      </button>
     </div>
   );
 }

@@ -206,6 +206,15 @@ export type MediaAsset = {
   width?: number | null;
   height?: number | null;
   lqip?: string | null;
+  // Videography (2026-08-23) — an admin-chosen poster shown before
+  // playback instead of the video's (often black/blank) first frame.
+  // Only meaningful for type "video"/"embed"; absent for type "image".
+  // A project's own Main Film (heroMedia) prefers PortfolioProject's
+  // existing coverImage instead of this — this field is specifically
+  // for individual Additional Films/Reels within a project, each of
+  // which needs its own poster. Optional key so non-video MediaAsset
+  // usages (image galleries, hero images) never need it.
+  poster?: PresentationImage | null;
 };
 
 export type SeoFields = {
@@ -288,6 +297,11 @@ export type PortfolioProject = {
   equipmentUsed: string[]; // optional
   tags: string[]; // freeform — distinct from disciplines/categories (structured) and collections (curated grouping)
   collaborators: Collaborator[];
+  // Videography (2026-08-23) — off by default; when false, the public
+  // Videography page never renders `collaborators` even if the array is
+  // populated (ordinary client work stays minimal). Optional key so the
+  // local fixture repository's projects don't need updating.
+  showCollaborationCredits?: boolean;
   story: string; // project story / case-study narrative
   objective: string | null; // project objective
   strategy: string | null; // creative strategy
@@ -301,7 +315,11 @@ export type PortfolioProject = {
   gallery: GalleryImage[]; // final gallery
   behindTheScenesGallery: GalleryImage[];
   beforeAfterGallery: BeforeAfterPair[];
-  videos: MediaAsset[];
+  videos: MediaAsset[]; // "Additional Films" on the public Videography page
+  // Videography (2026-08-23) — optional short-form/vertical video.
+  // Optional key so the local fixture repository's projects don't need
+  // updating.
+  reels?: MediaAsset[];
   downloadableAssets: DownloadableAsset[];
   testimonialIds: ID[];
   relatedProjectIds: ID[];

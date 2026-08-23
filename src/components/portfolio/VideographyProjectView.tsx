@@ -1,21 +1,23 @@
 import NavBar from "@/components/NavBar";
 import Footer from "@/components/Footer";
-import MediaAsset from "@/components/media/MediaAsset";
 import SocialShare from "@/components/SocialShare";
-import FlexiblePhotoGallery from "./FlexiblePhotoGallery";
+import VideoPlayer from "./VideoPlayer";
+import VideographyAdditionalFilms from "./VideographyAdditionalFilms";
+import VideographyReels from "./VideographyReels";
+import VideographyNextFilm from "./VideographyNextFilm";
+import PhotographyGalleryWithLightbox from "./PhotographyGalleryWithLightbox";
 import PortfolioProjectFooterSections from "./PortfolioProjectFooterSections";
 import type { Category, PortfolioProject, Testimonial, Workshop } from "@/lib/content/types";
 
-// The full page for a Videography project — cinematic, not the Photography
-// template with videos substituted in. Full page (bypasses the shared
-// two-column shell entirely), same principle as Photography: the film is
-// the hero, supporting information stays out of the way.
-//
-// What's deliberately absent, same reasoning as Photography: Client, Year,
-// Location, Services Provided, Equipment Used, Collaborators, Deliverables,
-// Results & Impact, Awards, Publications, testimonials. Every field still
-// exists in Sanity/the CMS untouched — presentation choice, not a data
-// change.
+// Videography's dedicated page (2026-08-23 redesign) — a cinematic
+// screening experience, deliberately not the Photography template with
+// videos substituted in. Dark, full-bleed, poster-then-play throughout;
+// content-aware — Additional Films/Reels/Behind the Scenes/Credits each
+// render only when the project actually has that content, so an older
+// Main-Film-only project still reads as complete and intentional, not
+// unfinished. See PhotographyProjectView.tsx for the equivalent
+// Photography design (light, editorial, justified photo grid) this
+// deliberately does not imitate.
 export type VideographyProjectViewProps = {
   project: PortfolioProject;
   categories: Category[];
@@ -31,6 +33,7 @@ export type VideographyProjectViewProps = {
 
 export default function VideographyProjectView({
   project,
+  categories,
   shareUrl,
   jsonLd,
   prevProject,
@@ -39,70 +42,89 @@ export default function VideographyProjectView({
   relatedWorkshops,
   categoryById,
 }: VideographyProjectViewProps) {
+  // Small category/type label where available (2026-08-23) — reuses the
+  // project's own existing category taxonomy (the same generic
+  // Categories system every discipline already has), not a new
+  // Videography-only sub-treatment system. Falls back to a plain "Film"
+  // label, matching the previous implementation's own default.
+  const categoryLabel = categories[0]?.name ?? "Film";
   const subtleMeta = [project.location, project.year].filter(Boolean).join(" · ");
-
-  // Additional cuts beyond the hero film get visual hierarchy rather than
-  // an endless stack of identical players: the first extra video is shown
-  // large, any further ones drop into a smaller two-up grid.
-  const [featuredExtra, ...remainingVideos] = project.videos;
+  const poster = project.coverImage ?? null;
+  const additionalFilms = project.videos;
+  const reels = project.reels ?? [];
+  const bts = project.behindTheScenesGallery;
+  const showCredits = Boolean(project.showCollaborationCredits) && project.collaborators.length > 0;
 
   return (
-    <main>
+    <main className="bg-ordift-navy-950">
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
       <NavBar />
 
+      {/* Minimal opening — category/type, title, optional client/
+          location/year, nothing else. The film itself carries the page,
+          not production metadata. */}
       <section className="px-4 sm:px-8 pt-14 sm:pt-20 pb-8 sm:pb-10 text-center">
         <div className="max-w-2xl mx-auto">
           <p className="font-sans font-semibold uppercase tracking-[0.2em] text-eyebrow text-ordift-gold mb-3">
-            Film
+            {categoryLabel}
           </p>
-          <h1 className="font-serif font-medium text-page-title sm:text-page-title-tablet lg:text-page-title-desktop text-ordift-ink mb-3">
+          <h1 className="font-serif font-medium text-page-title sm:text-page-title-tablet lg:text-page-title-desktop text-white mb-3">
             {project.title}
           </h1>
           {(subtleMeta || project.client) && (
-            <p className="font-sans text-caption uppercase tracking-[0.1em] text-ordift-ink-muted">
+            <p className="font-sans text-caption uppercase tracking-[0.1em] text-white/50">
               {[project.client, subtleMeta].filter(Boolean).join(" · ")}
-            </p>
-          )}
-          {project.story && (
-            <p className="font-serif italic text-body text-ordift-ink-muted mt-5 max-w-lg mx-auto whitespace-pre-line">
-              {project.story}
             </p>
           )}
         </div>
       </section>
 
-      {/* The hero film — cinematic 16:9, native controls, no autoplay
-          (respects data usage and motion preferences by default). */}
-      <MediaAsset media={project.heroMedia} aspectRatio="16/9" sizes="100vw" priority />
+      {/* Main Film — poster (Portfolio Cover Image) then Play; never
+          autoplays on load; audio never starts until a real click. */}
+      <VideoPlayer media={project.heroMedia} poster={poster} playLabel="Play Film" priority />
 
-      {featuredExtra && (
-        <div className="pt-8 sm:pt-14 px-4 sm:px-8">
-          <div className="max-w-5xl mx-auto">
-            <MediaAsset media={featuredExtra} aspectRatio="16/9" className="rounded-lg" />
+      {/* Everything below is content-aware — each section renders only
+          when the project actually has that material. */}
+      <VideographyAdditionalFilms films={additionalFilms} fallbackPoster={poster} />
+      <VideographyReels reels={reels} fallbackPoster={poster} />
+
+      {bts.length > 0 && (
+        <section className="py-10 sm:py-14">
+          <div className="max-w-6xl mx-auto px-4 sm:px-8 mb-5">
+            <p className="font-sans font-semibold uppercase tracking-[0.2em] text-eyebrow text-ordift-gold">
+              Behind the Scenes
+            </p>
           </div>
-        </div>
+          <PhotographyGalleryWithLightbox images={bts} />
+        </section>
       )}
 
-      {remainingVideos.length > 0 && (
-        <div className="pt-6 px-4 sm:px-8">
-          <div className="max-w-5xl mx-auto grid grid-cols-1 sm:grid-cols-2 gap-4">
-            {remainingVideos.map((video, i) => (
-              <MediaAsset key={i} media={video} aspectRatio="16/9" className="rounded-lg" />
-            ))}
+      {showCredits && (
+        <section className="px-4 sm:px-8 py-10 sm:py-14 border-t border-white/10">
+          <div className="max-w-2xl mx-auto text-center">
+            <p className="font-sans font-semibold uppercase tracking-[0.2em] text-eyebrow text-ordift-gold mb-4">
+              Credits
+            </p>
+            <p className="font-sans text-body-small text-white/70 mb-3">
+              Produced by Ordift Studios{project.client ? ` in collaboration with ${project.client}` : ""}.
+            </p>
+            <ul className="space-y-1">
+              {project.collaborators.map((c) => (
+                <li key={c.id} className="font-sans text-body-small text-white/70">
+                  {c.name}
+                  {c.role ? ` — ${c.role}` : ""}
+                </li>
+              ))}
+            </ul>
           </div>
-        </div>
-      )}
-
-      {project.behindTheScenesGallery.length > 0 && (
-        <div className="pt-10 sm:pt-14 pb-8 sm:pb-14">
-          <FlexiblePhotoGallery images={project.behindTheScenesGallery} mode="flexible" />
-        </div>
+        </section>
       )}
 
       <div className="flex justify-center py-10 sm:py-14">
-        <SocialShare url={shareUrl} title={project.title} />
+        <SocialShare url={shareUrl} title={project.title} dark />
       </div>
+
+      <VideographyNextFilm prevProject={prevProject} nextProject={nextProject} />
 
       <PortfolioProjectFooterSections
         prevProject={prevProject}
@@ -110,6 +132,7 @@ export default function VideographyProjectView({
         relatedProjects={relatedProjects}
         relatedWorkshops={relatedWorkshops}
         categoryById={categoryById}
+        showPrevNext={false}
       />
 
       <Footer />

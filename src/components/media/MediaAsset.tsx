@@ -12,11 +12,34 @@ export type MediaAssetProps = {
   sizes?: string;
   priority?: boolean;
   className?: string;
+  // Videography's VideoPlayer (2026-08-23) — only ever passed true right
+  // after a visitor's own click reveals this component in place of a
+  // poster, never on initial page load. Optional/undefined everywhere
+  // else, so every existing caller's behavior is unchanged.
+  autoPlay?: boolean;
 };
 
 const FALLBACK_ASPECT_RATIO = "16/9";
 
-export default function MediaAsset({ media, aspectRatio, sizes, priority, className = "" }: MediaAssetProps) {
+// Best-effort autoplay param for known embed hosts only — never throws
+// (mirrors the defensive try/catch pattern in sanityLoader.ts, root-
+// caused earlier this session): any URL that isn't a recognized host,
+// or that fails to parse, is returned completely unmodified.
+function withAutoplayParam(url: string): string {
+  try {
+    const u = new URL(url);
+    if (u.hostname.includes("youtube.com") || u.hostname.includes("youtu.be")) {
+      u.searchParams.set("autoplay", "1");
+    } else if (u.hostname.includes("vimeo.com")) {
+      u.searchParams.set("autoplay", "1");
+    }
+    return u.toString();
+  } catch {
+    return url;
+  }
+}
+
+export default function MediaAsset({ media, aspectRatio, sizes, priority, className = "", autoPlay = false }: MediaAssetProps) {
   const ratio = aspectRatio ?? FALLBACK_ASPECT_RATIO;
 
   // Content gap (field exists, no asset uploaded yet) rather than a
@@ -52,6 +75,7 @@ export default function MediaAsset({ media, aspectRatio, sizes, priority, classN
           controls
           playsInline
           preload="none"
+          autoPlay={autoPlay}
           className="absolute inset-0 h-full w-full object-cover"
         />
       </div>
@@ -63,7 +87,7 @@ export default function MediaAsset({ media, aspectRatio, sizes, priority, classN
   return (
     <div className={`relative overflow-hidden ${className}`} style={{ aspectRatio: ratio }}>
       <iframe
-        src={media.url}
+        src={autoPlay ? withAutoplayParam(media.url) : media.url}
         title={media.alt}
         loading="lazy"
         allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"

@@ -3,13 +3,20 @@
 // src/lib/content/types.ts exactly, so the query result can be used
 // as-is without further JS-side mapping. See CMS_MIGRATION.md.
 
-// MediaAsset { url, type, alt, width, height, lqip } — url resolves from
-// whichever of image/file/url is set, based on `type`. width/height/lqip
-// are only meaningful (and only fetched) for type == "image" — a video
-// file or embed URL has no Sanity-generated image metadata to read, so
-// those come back null rather than a wrong/misleading value. Consumed by
-// src/components/media/ResponsiveImage.tsx for automatic aspect-ratio
-// sizing and blur-up placeholders (see MEDIA_ARCHITECTURE.md).
+// MediaAsset { url, type, alt, width, height, lqip, poster } — url
+// resolves from whichever of image/file/url is set, based on `type`.
+// width/height/lqip are only meaningful (and only fetched) for
+// type == "image" — a video file or embed URL has no Sanity-generated
+// image metadata to read, so those come back null rather than a wrong/
+// misleading value. Consumed by src/components/media/ResponsiveImage.tsx
+// for automatic aspect-ratio sizing and blur-up placeholders (see
+// MEDIA_ARCHITECTURE.md).
+//
+// `poster` (2026-08-23, Videography) is only ever set for type
+// "video"/"embed" (schema hides it for "image"); null/absent otherwise.
+// Reuses the same PresentationImage-shaped projection as
+// optionalImageFragment, inlined here since this fragment isn't built
+// with that helper.
 export const mediaAssetFragment = `{
   type,
   "url": select(
@@ -20,7 +27,17 @@ export const mediaAssetFragment = `{
   alt,
   "width": select(type == "image" => image.asset->metadata.dimensions.width),
   "height": select(type == "image" => image.asset->metadata.dimensions.height),
-  "lqip": select(type == "image" => image.asset->metadata.lqip)
+  "lqip": select(type == "image" => image.asset->metadata.lqip),
+  "poster": select(defined(poster.asset) => {
+    "url": poster.asset->url,
+    "alt": posterAlt,
+    "width": poster.asset->metadata.dimensions.width,
+    "height": poster.asset->metadata.dimensions.height,
+    "lqip": poster.asset->metadata.lqip,
+    "focalX": coalesce(poster.hotspot.x * 100, 50),
+    "focalY": coalesce(poster.hotspot.y * 100, 50),
+    "assetId": poster.asset->_id
+  })
 }`;
 
 // GalleryImage { id, url, alt, caption, width, height, lqip,
@@ -70,7 +87,7 @@ export function certificateFragment(fieldPath: string): string {
 // MediaAsset is also non-nullable wherever it's used as a required field
 // (Workshop has none; PortfolioProject.heroMedia and JournalPost.heroImage
 // do) — same defensive treatment.
-const defaultMediaAsset = `{"type": "image", "url": null, "alt": "", "width": null, "height": null, "lqip": null}`;
+const defaultMediaAsset = `{"type": "image", "url": null, "alt": "", "width": null, "height": null, "lqip": null, "poster": null}`;
 export function requiredMediaAssetFragment(fieldName: string, fieldPath: string): string {
   return `"${fieldName}": coalesce(${fieldPath}${mediaAssetFragment}, ${defaultMediaAsset})`;
 }

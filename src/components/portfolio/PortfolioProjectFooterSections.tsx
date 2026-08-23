@@ -12,6 +12,12 @@ export type PortfolioProjectFooterSectionsProps = {
   relatedProjects: PortfolioProject[];
   relatedWorkshops: Workshop[];
   categoryById: Map<string, Category>;
+  // Videography (2026-08-23) — its own view renders a large visual
+  // Next Film/Previous presentation instead of this plain text row, so
+  // it passes false here to avoid an empty light-themed band between
+  // that dark cinematic section and Related Projects below. Every
+  // other caller omits this prop, defaulting true — unchanged.
+  showPrevNext?: boolean;
 };
 
 export default function PortfolioProjectFooterSections({
@@ -20,31 +26,34 @@ export default function PortfolioProjectFooterSections({
   relatedProjects,
   relatedWorkshops,
   categoryById,
+  showPrevNext = true,
 }: PortfolioProjectFooterSectionsProps) {
   return (
     <>
-      <section className="bg-ordift-offwhite px-4 sm:px-8 py-8">
-        <div className="max-w-4xl mx-auto flex items-center justify-between gap-4">
-          {prevProject ? (
-            <Link
-              href={`/work/${prevProject.slug}`}
-              className="font-sans text-body-small text-ordift-ink hover:text-ordift-gold-pressed"
-            >
-              ← {prevProject.title}
-            </Link>
-          ) : (
-            <span />
-          )}
-          {nextProject && (
-            <Link
-              href={`/work/${nextProject.slug}`}
-              className="font-sans text-body-small text-ordift-ink hover:text-ordift-gold-pressed text-right"
-            >
-              {nextProject.title} →
-            </Link>
-          )}
-        </div>
-      </section>
+      {showPrevNext && (
+        <section className="bg-ordift-offwhite px-4 sm:px-8 py-8">
+          <div className="max-w-4xl mx-auto flex items-center justify-between gap-4">
+            {prevProject ? (
+              <Link
+                href={`/work/${prevProject.slug}`}
+                className="font-sans text-body-small text-ordift-ink hover:text-ordift-gold-pressed"
+              >
+                ← {prevProject.title}
+              </Link>
+            ) : (
+              <span />
+            )}
+            {nextProject && (
+              <Link
+                href={`/work/${nextProject.slug}`}
+                className="font-sans text-body-small text-ordift-ink hover:text-ordift-gold-pressed text-right"
+              >
+                {nextProject.title} →
+              </Link>
+            )}
+          </div>
+        </section>
+      )}
 
       {relatedProjects.length > 0 && (
         <section className="bg-white px-4 sm:px-8 py-14 sm:py-20">

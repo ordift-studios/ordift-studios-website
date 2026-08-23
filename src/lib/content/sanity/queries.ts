@@ -122,6 +122,7 @@ export const portfolioProjectFragment = `{
   "servicesProvided": coalesce(servicesProvided, []),
   "equipmentUsed": coalesce(equipmentUsed, []),
   "tags": coalesce(tags, []),
+  showCollaborationCredits,
   "collaborators": coalesce(collaborators[]{"id": _key, name, role}, []),
   story,
   objective,
@@ -142,6 +143,7 @@ export const portfolioProjectFragment = `{
     caption
   }, []),
   "videos": coalesce(videos[]${mediaAssetFragment}, []),
+  "reels": coalesce(reels[]${mediaAssetFragment}, []),
   "downloadableAssets": coalesce(downloadableAssets[]{"id": _key, label, "url": file.asset->url, fileType}, []),
   "testimonialIds": coalesce(testimonials[]._ref, []),
   "relatedProjectIds": coalesce(relatedProjects[]._ref, []),
@@ -167,10 +169,15 @@ export const portfolioSlugExistsQuery = `*[_type == "portfolioProject" && slug.c
 // asset id + hotspot alongside the resolved preview URL, so the
 // wizard (PortfolioProjectForm.tsx) can round-trip an unmodified image
 // back into a Sanity patch without the user having to re-upload it.
+// "url" resolves to the embed URL when type is "embed" (Videography's
+// Main Film can now be a video, not just an image — see
+// PortfolioProjectForm.tsx's hero mediaType/embedUrl handling), or the
+// resolved image asset URL otherwise — a no-op change for every
+// existing type "image" hero.
 const editImageShape = `{
   type, alt,
   "assetId": image.asset._ref,
-  "url": image.asset->url,
+  "url": select(type == "embed" => url, image.asset->url),
   "hotspotX": image.hotspot.x,
   "hotspotY": image.hotspot.y
 }`;
@@ -181,6 +188,14 @@ const editGalleryItemShape = `{
   "hotspotX": image.hotspot.x,
   "hotspotY": image.hotspot.y
 }`;
+// Videography's Additional Films (existing "videos" field) and Reels —
+// edit-mode round-trip including each item's optional poster image.
+const editVideoItemShape = `{
+  "key": _key, type, url, alt,
+  "posterAssetId": poster.asset._ref,
+  "posterUrl": poster.asset->url,
+  posterAlt
+}`;
 
 export const portfolioProjectEditQuery = `*[_type == "portfolioProject" && _id == $id][0]{
   _id, title, "slug": slug.current, status,
@@ -188,7 +203,8 @@ export const portfolioProjectEditQuery = `*[_type == "portfolioProject" && _id =
   "heroMedia": heroMedia${editImageShape},
   "gallery": gallery[]${editGalleryItemShape},
   "behindTheScenesGallery": behindTheScenesGallery[]${editGalleryItemShape},
-  "videos": videos[]{type, url, alt},
+  "videos": videos[]${editVideoItemShape},
+  "reels": reels[]${editVideoItemShape},
   "downloadableAssets": downloadableAssets[]{"key": _key, label, fileType, "assetId": file.asset._ref, "url": file.asset->url},
   "categoryIds": categories[]._ref,
   "collectionIds": collections[]._ref,
@@ -196,6 +212,7 @@ export const portfolioProjectEditQuery = `*[_type == "portfolioProject" && _id =
   story, objective, strategy, challenges, solution, process, results, deliverables,
   "awards": awards[]{"key": _key, title, issuer, year},
   "publications": publications[]{"key": _key, name, url, year},
+  showCollaborationCredits,
   "collaborators": collaborators[]{"key": _key, name, role},
   "testimonialIds": testimonials[]._ref,
   "relatedProjectIds": relatedProjects[]._ref,

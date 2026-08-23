@@ -78,16 +78,18 @@ export default async function PortfolioProjectPage({
     (p) => p.id !== project.id && project.relatedProjectIds.includes(p.id),
   );
 
-  // Photography-only prev/next (2026-08-23, Photography detail redesign):
-  // scoped to other Photography projects so browsing never jumps from a
-  // photography project straight into an unrelated Videography/Graphic
-  // Design one. Every other discipline keeps the exact prior behavior —
-  // navProjects falls back to the full, undifferentiated list, so this
-  // is a no-op change for Videography, Graphic Design, and the rest.
+  // Discipline-scoped prev/next (2026-08-23, extended for Videography) —
+  // Photography and Videography each stay within their own discipline
+  // so browsing never jumps from one into an unrelated Graphic
+  // Design/Branding project. Every other discipline keeps the exact
+  // prior behavior — navProjects falls back to the full,
+  // undifferentiated list, a no-op change for Graphic Design and the
+  // rest.
   const primaryDiscipline = resolvePrimaryDiscipline(project);
+  const SCOPED_NAV_DISCIPLINES = new Set(["photography", "videography"]);
   const navProjects =
-    primaryDiscipline === "photography"
-      ? allProjects.filter((p) => resolvePrimaryDiscipline(p) === "photography")
+    primaryDiscipline && SCOPED_NAV_DISCIPLINES.has(primaryDiscipline)
+      ? allProjects.filter((p) => resolvePrimaryDiscipline(p) === primaryDiscipline)
       : allProjects;
   const index = navProjects.findIndex((p) => p.id === project.id);
   const prevProject = index > 0 ? navProjects[index - 1] : null;
