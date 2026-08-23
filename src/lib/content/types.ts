@@ -152,6 +152,22 @@ export type PortfolioDiscipline =
   | "talent-management"
   | "production";
 
+// A single admin-chosen presentation image (2026-08-23) — used for the
+// Portfolio Hero/Cover Image Management feature (Service.workLandingImage,
+// PortfolioProject.coverImage). Deliberately not MediaAsset: always an
+// image (no video/embed union), and always optional/absent until an
+// Admin/Super Admin explicitly picks one via Admin → Portfolio. Distinct
+// from Homepage Slideshow's own landscape/portrait images and from a
+// project's Hero Media — each presentation role can hold a different
+// image on purpose.
+export type PresentationImage = {
+  url: string;
+  alt: string;
+  width: number | null;
+  height: number | null;
+  lqip: string | null;
+};
+
 // "embed" = YouTube/Vimeo/etc — `url` is the embeddable URL, rendered as
 // an iframe. "video" = a native file, rendered as <video>. Distinguished
 // so the frontend knows which element to render without sniffing the URL.
@@ -231,6 +247,13 @@ export type PortfolioProject = {
   scheduledFor: string | null; // ISO datetime — only visible publicly once status is "published" AND this has passed (or is unset)
   featured: boolean;
   heroMedia: MediaAsset;
+  // Optional (2026-08-23) — absent until an Admin/Super Admin picks one
+  // from Admin → Portfolio for this specific project. Used by discipline
+  // index pages (e.g. /work/photography) instead of heroMedia when set;
+  // never affects this project's own detail page. Optional key (not just
+  // nullable) so the local fixture repository's PORTFOLIO_PROJECTS array
+  // doesn't need updating.
+  coverImage?: PresentationImage | null;
   disciplines: PortfolioDiscipline[];
   categoryIds: ID[];
   collectionIds: ID[];
@@ -440,6 +463,11 @@ export type Service = {
   ctaSecondaryLabel: string | null;
   isComingSoon: boolean; // Talent Management today
   displayOrder: number;
+  // Optional (2026-08-23) — absent for every service until an
+  // Admin/Super Admin deliberately picks one from Admin → Portfolio →
+  // Work Landing Images. Optional key (not just nullable) so the local
+  // fixture repository's existing SERVICES array doesn't need updating.
+  workLandingImage?: PresentationImage | null;
   seo: SeoFields;
 };
 

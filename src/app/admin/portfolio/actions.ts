@@ -10,6 +10,7 @@ import {
 import { canToggleFeatured, canTransition, getGrantedCapabilities, hasCapability } from "@/lib/workflow/engine";
 import type { WorkflowStatus } from "@/lib/workflow/types";
 import { getPublishReadiness } from "@/lib/admin/portfolioValidation";
+import { canManagePortfolioPresentation } from "@/lib/admin/portfolioPresentationPermissions";
 import {
   createPortfolioCategory,
   createPortfolioCollection,
@@ -20,9 +21,11 @@ import {
   getPortfolioProjectByIdAdmin,
   isSlugAvailable,
   patchPortfolioProject,
+  setPortfolioProjectCoverImage,
   setPortfolioProjectFeatured,
   setPortfolioProjectStatus,
 } from "@/lib/content/sanity/portfolioAdmin";
+import { getPortfolioProjectImagesForPicker, type ProjectPickableImages } from "@/lib/content/sanity/homepageSlideshowAdmin";
 import {
   assignPortfolioCollaborator,
   deletePortfolioWorkflowData,
@@ -353,5 +356,50 @@ export async function deletePortfolioProjectAction(id: string, title: string): P
   });
 
   revalidatePath("/admin/portfolio");
+  return { ok: true };
+}
+
+// ============================================================
+// Portfolio Cover / Index Image (2026-08-23) — gated
+// canManagePortfolioPresentation (Admin/Super Admin only), deliberately
+// not requirePortfolioAdmin()/the Portfolio capability matrix used
+// above: this is a presentation-only concern with a single tier, same
+// reasoning as the Homepage Slideshow feature it mirrors.
+// ============================================================
+
+async function requirePortfolioPresentationManager() {
+  const user = await getCurrentUser();
+  if (!user || !canManagePortfolioPresentation(user)) {
+    throw new Error("Not authorized.");
+  }
+  return user;
+}
+
+export async function getProjectOwnImagesForCoverPickerAction(projectId: string): Promise<ProjectPickableImages> {
+  await requirePortfolioPresentationManager();
+  return getPortfolioProjectImagesForPicker(projectId);
+}
+
+export async function saveCoverImageAction(
+  id: string,
+  image: { assetId: string; alt: string } | null
+): Promise<ActionResult> {
+  const user = await requirePortfolioPresentationManager();
+
+  const project = await getPortfolioProjectByIdAdmin(id);
+  if (!project) return { ok: false, error: "Project not found." };
+
+  await setPortfolioProjectCoverImage(id, image);
+
+  await logActivity({
+    actorUserId: user.id,
+    action: image ? "portfolio.cover_image_updated" : "portfolio.cover_image_removed",
+    entityType: "portfolio_project",
+    entityId: id,
+    metadata: { title: project.title },
+  });
+
+  revalidatePath(`/admin/portfolio/${id}`);
+  revalidatePath("/work/photography");
   return { ok: true };
 }

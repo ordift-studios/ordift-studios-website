@@ -48,20 +48,29 @@ export default async function PhotographyIndexPage() {
   const ordered = [...photographyProjects].sort((a, b) => Number(b.featured) - Number(a.featured));
 
   const stripProjects: PhotographyStripProject[] = ordered
-    .filter((p) => p.heroMedia.type === "image" && p.heroMedia.url)
-    .map((p) => ({
-      id: p.id,
-      slug: p.slug,
-      title: p.title,
-      categoryName: categoryById.get(p.categoryIds[0] ?? "")?.name ?? null,
-      heroImage: {
-        url: p.heroMedia.url!,
-        alt: p.heroMedia.alt,
-        width: p.heroMedia.width ?? null,
-        height: p.heroMedia.height ?? null,
-        lqip: p.heroMedia.lqip ?? null,
-      },
-    }));
+    // An admin-chosen Portfolio Cover/Index Image (Admin → Portfolio →
+    // project → "Portfolio Cover / Index Image") always has a usable
+    // image already; otherwise fall back to a real image-type Hero
+    // Media, same as before this field existed.
+    .filter((p) => Boolean(p.coverImage) || (p.heroMedia.type === "image" && p.heroMedia.url))
+    .map((p) => {
+      const cover = p.coverImage;
+      return {
+        id: p.id,
+        slug: p.slug,
+        title: p.title,
+        categoryName: categoryById.get(p.categoryIds[0] ?? "")?.name ?? null,
+        heroImage: cover
+          ? { url: cover.url, alt: cover.alt, width: cover.width, height: cover.height, lqip: cover.lqip }
+          : {
+              url: p.heroMedia.url!,
+              alt: p.heroMedia.alt,
+              width: p.heroMedia.width ?? null,
+              height: p.heroMedia.height ?? null,
+              lqip: p.heroMedia.lqip ?? null,
+            },
+      };
+    });
 
   return (
     <main>

@@ -86,7 +86,11 @@ export default async function PortfolioPage({
     .map((service) => ({
       slug: service.slug,
       name: service.name,
-      heroImage: pickDisciplineHeroImage(service.slug, allProjects),
+      // Admin-chosen Work Landing Image (Admin → Portfolio → Work
+      // Landing Images) takes priority when set; falls back to the
+      // existing automatic real-project-image logic otherwise, exactly
+      // as before this field existed.
+      heroImage: service.workLandingImage ?? pickDisciplineHeroImage(service.slug, allProjects),
       hasProjects: allProjects.some((p) => p.disciplines.includes(service.slug)),
       // Photography now has its own dedicated cinematic index page
       // (2026-08-23) — every other discipline still falls through to

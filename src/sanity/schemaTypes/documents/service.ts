@@ -32,6 +32,20 @@ export default defineType({
     defineField({ name: "ctaSecondaryLabel", title: "CTA Secondary Button Label", type: "string" }),
     defineField({ name: "isComingSoon", title: "Coming Soon (no live functionality yet)", type: "boolean", initialValue: false }),
     defineField({ name: "displayOrder", title: "Display Order", type: "number" }),
+    defineField({
+      name: "workLandingImage",
+      title: "Work Landing Image",
+      type: "image",
+      options: { hotspot: true },
+      description:
+        "Admin-chosen image shown on this discipline's band on /work (Portfolio management, not usually edited here — see Admin → Portfolio → Work Landing Images). Optional: when unset, the frontend falls back to a real published project's own image, same as before this field existed.",
+    }),
+    defineField({
+      name: "workLandingImageAlt",
+      title: "Work Landing Image Alt Text",
+      type: "string",
+      hidden: ({ parent }) => !parent?.workLandingImage,
+    }),
     defineField({ name: "seo", title: "SEO", type: "seo" }),
   ],
   preview: { select: { title: "name" } },

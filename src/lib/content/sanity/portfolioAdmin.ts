@@ -77,6 +77,30 @@ export async function setPortfolioProjectScheduledFor(id: string, scheduledFor: 
   }
 }
 
+// Portfolio Cover / Index Image (2026-08-23) — reuses an existing
+// already-uploaded Sanity asset by id (same "Choose from Portfolio /
+// Upload from Device" pattern as the Homepage Slideshow — see
+// saveHomepageSlideshowSlides in homepageSlideshowAdmin.ts), never a
+// fresh upload call itself. `null` removes the override entirely so the
+// discipline index page falls back to heroMedia again, same as before
+// this field existed.
+export async function setPortfolioProjectCoverImage(
+  id: string,
+  image: { assetId: string; alt: string } | null
+): Promise<void> {
+  if (image) {
+    await client
+      .patch(id)
+      .set({
+        coverImage: { _type: "image", asset: { _type: "reference", _ref: image.assetId } },
+        coverImageAlt: image.alt,
+      })
+      .commit();
+  } else {
+    await client.patch(id).unset(["coverImage", "coverImageAlt"]).commit();
+  }
+}
+
 export function slugify(input: string): string {
   return input
     .toLowerCase()

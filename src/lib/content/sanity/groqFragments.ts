@@ -70,6 +70,27 @@ export function requiredMediaAssetFragment(fieldName: string, fieldPath: string)
   return `"${fieldName}": coalesce(${fieldPath}${mediaAssetFragment}, ${defaultMediaAsset})`;
 }
 
+// PresentationImage { url, alt, width, height, lqip } — a single plain
+// Sanity `image` field (not the polymorphic MediaAsset union), used for
+// admin-chosen presentation-only images (Service.workLandingImage,
+// PortfolioProject.coverImage). Alt text lives in a separate sibling
+// field (`${fieldName}Alt`, matching homepageSlideshowSlide's own
+// landscapeAlt/portraitAlt convention), not nested inside the image
+// object, so every reference is a full path from the document root
+// rather than relying on GROQ's projection scope. `select(defined(...))`
+// returns null outright when the field was never set, rather than an
+// object of all-null sub-fields, so callers can use a simple `?? fallback`
+// check.
+export function optionalImageFragment(fieldName: string): string {
+  return `"${fieldName}": select(defined(${fieldName}.asset) => {
+    "url": ${fieldName}.asset->url,
+    "alt": ${fieldName}Alt,
+    "width": ${fieldName}.asset->metadata.dimensions.width,
+    "height": ${fieldName}.asset->metadata.dimensions.height,
+    "lqip": ${fieldName}.asset->metadata.lqip
+  })`;
+}
+
 // Category { id, slug, name, description } — shared shape across the
 // three separate category document types (workshopCategory,
 // portfolioCategory, journalCategory).

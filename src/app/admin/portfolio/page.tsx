@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/portal/roles";
 import { canAccessPortfolioAdmin, canCreatePortfolioProjectsNatively } from "@/lib/admin/portfolioPermissions";
 import { canManageHomepageSlideshow } from "@/lib/admin/homepageSlideshowPermissions";
+import { canManagePortfolioPresentation } from "@/lib/admin/portfolioPresentationPermissions";
 import {
   getAllPortfolioProjectsAdmin,
   getPortfolioCategoriesAdmin,
@@ -74,6 +75,7 @@ export default async function AdminPortfolioPage({
   if (!user || !canAccessPortfolioAdmin(user)) redirect("/admin/overview");
   const canCreateNatively = canCreatePortfolioProjectsNatively(user);
   const canManageSlideshow = canManageHomepageSlideshow(user);
+  const canManagePresentation = canManagePortfolioPresentation(user);
 
   const { status: statusFilter, q } = await searchParams;
 
@@ -132,6 +134,14 @@ export default async function AdminPortfolioPage({
               className="font-sans text-body-small font-semibold px-4 py-2 rounded-md border border-ordift-gold text-ordift-gold-pressed hover:bg-ordift-gold/10"
             >
               Homepage Slideshow
+            </Link>
+          )}
+          {canManagePresentation && (
+            <Link
+              href="/admin/portfolio/work-landing-images"
+              className="font-sans text-body-small font-semibold px-4 py-2 rounded-md border border-ordift-gold text-ordift-gold-pressed hover:bg-ordift-gold/10"
+            >
+              Work Landing Images
             </Link>
           )}
           <Link

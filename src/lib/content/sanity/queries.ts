@@ -3,6 +3,7 @@ import {
   certificateFragment,
   galleryImageFragment,
   mediaAssetFragment,
+  optionalImageFragment,
   requiredMediaAssetFragment,
   seoFragment,
 } from "./groqFragments";
@@ -110,6 +111,7 @@ export const portfolioProjectFragment = `{
   scheduledFor,
   featured,
   ${requiredMediaAssetFragment("heroMedia", "heroMedia")},
+  ${optionalImageFragment("coverImage")},
   "disciplines": coalesce(disciplines, []),
   "categoryIds": coalesce(categories[]._ref, []),
   "collectionIds": coalesce(collections[]._ref, []),
@@ -341,6 +343,7 @@ export const serviceFragment = `{
   ctaEyebrow, ctaHeadline, ctaBody, ctaPrimaryLabel, ctaSecondaryLabel,
   isComingSoon,
   displayOrder,
+  ${optionalImageFragment("workLandingImage")},
   ${seoFragment("seo")}
 }`;
 export const servicesQuery = `*[_type == "service"] | order(displayOrder asc) ${serviceFragment}`;

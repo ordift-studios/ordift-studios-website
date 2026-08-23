@@ -42,6 +42,20 @@ export default defineType({
     defineField({ name: "featured", title: "Featured", type: "boolean", initialValue: false }),
     defineField({ name: "heroMedia", title: "Hero Media", type: "mediaAsset", validation: (r) => r.required() }),
     defineField({
+      name: "coverImage",
+      title: "Portfolio Cover / Index Image",
+      type: "image",
+      options: { hotspot: true },
+      description:
+        "Admin-chosen image shown for this project on a discipline index page (e.g. /work/photography), instead of the frontend automatically picking one. Managed from Admin → Portfolio, not usually edited here. Optional: when unset, the index page falls back to Hero Media above, same as before this field existed. Does not affect this project's own detail page.",
+    }),
+    defineField({
+      name: "coverImageAlt",
+      title: "Portfolio Cover / Index Image Alt Text",
+      type: "string",
+      hidden: ({ parent }) => !parent?.coverImage,
+    }),
+    defineField({
       name: "disciplines",
       title: "Disciplines",
       type: "array",

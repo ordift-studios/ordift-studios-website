@@ -15,6 +15,7 @@ import { getActivityForEntity } from "@/lib/admin/activityLog";
 import { listUsersWithRoles } from "@/lib/portal/adminData";
 import { resolveActorIdentities, formatActorLabel } from "@/lib/portal/actorIdentity";
 import { getPublishReadiness } from "@/lib/admin/portfolioValidation";
+import { canManagePortfolioPresentation } from "@/lib/admin/portfolioPresentationPermissions";
 import {
   transitionPortfolioProjectAction,
   toggleFeaturedAction,
@@ -23,6 +24,7 @@ import {
 } from "../actions";
 import DeleteProjectButton from "../DeleteProjectButton";
 import PreviewOnLiveSiteButton from "@/components/admin/PreviewOnLiveSiteButton";
+import PortfolioCoverImagePicker from "@/components/admin/PortfolioCoverImagePicker";
 
 export const metadata: Metadata = {
   title: "Project — Portfolio — Ordift Studios Admin",
@@ -92,6 +94,7 @@ export default async function AdminPortfolioProjectPage({ params }: { params: Pr
   const canDelete = hasCapability(user, PORTFOLIO_CAPABILITIES, "delete");
   const canPublish = hasCapability(user, PORTFOLIO_CAPABILITIES, "publish");
   const readiness = getPublishReadiness(project, { skipAltTextCheck: canPublish });
+  const canManagePresentation = canManagePortfolioPresentation(user);
 
   return (
     <div className="space-y-10 max-w-3xl">
@@ -137,6 +140,27 @@ export default async function AdminPortfolioProjectPage({ params }: { params: Pr
           {readiness.warnings.map((w) => (
             <p key={w} className="font-sans text-caption text-amber-700">⚠ {w}</p>
           ))}
+        </section>
+      )}
+
+      {canManagePresentation && (
+        <section className="rounded-xl border border-black/10 bg-white p-6 space-y-3">
+          <div>
+            <h2 className="font-serif font-medium text-body text-ordift-ink">Portfolio Cover / Index Image</h2>
+            <p className="font-sans text-caption text-ordift-ink-muted mt-1 max-w-lg">
+              Shown for this project on discipline index pages (e.g. /work/photography) instead of Hero Media.
+              Doesn&apos;t change this project&apos;s own detail page. Leave unset to keep using Hero Media
+              automatically.
+            </p>
+          </div>
+          <PortfolioCoverImagePicker
+            projectId={project.id}
+            projectTitle={project.title}
+            fallbackUrl={project.heroMedia.type === "image" ? project.heroMedia.url : null}
+            fallbackAlt={project.heroMedia.alt}
+            initialUrl={project.coverImage?.url ?? null}
+            initialAlt={project.coverImage?.alt ?? null}
+          />
         </section>
       )}
 
