@@ -46,17 +46,22 @@ export default async function Home() {
   // curation logic already built and approved for /work's own opening
   // section, rather than a second implementation. Featured projects first,
   // then remaining published projects, image-hero-only, deduped, capped at
-  // 8 — see getSlideshowProjects() (portfolioHelpers.ts). With genuine
-  // Featured Work still limited today, this may render as few as one
-  // slide; PortfolioHeroSlideshow already handles that gracefully (no
-  // prev/next/dots when there's nothing to navigate between).
+  // 8 — see getSlideshowProjects() (portfolioHelpers.ts). Content source
+  // is still automatic (not yet the dedicated curated selection under
+  // discussion) — see this session's report for that scope boundary.
   const heroSlideshowProjects = getSlideshowProjects(portfolioProjects);
 
   return (
     <main>
-      <NavBar />
-
-      <PortfolioHeroSlideshow projects={heroSlideshowProjects} />
+      {/* NavBar + slideshow share this positioning context so the nav can
+          sit absolutely on top of the full-viewport photograph (its
+          `transparent` mode) instead of pushing it down the page. Every
+          other page keeps NavBar in normal flow (transparent defaults to
+          false there), unaffected by this. */}
+      <div className="relative">
+        <NavBar transparent />
+        <PortfolioHeroSlideshow projects={heroSlideshowProjects} variant="hero" />
+      </div>
 
       {/* Who We Are */}
       <section className="bg-white px-4 sm:px-8 py-14 sm:py-20">

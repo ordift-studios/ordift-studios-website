@@ -7,15 +7,26 @@ import Image from "next/image";
 import type { PortfolioProject } from "@/lib/content/types";
 import { DISCIPLINE_LABEL } from "@/lib/content/portfolioHelpers";
 
-// Immersive, curated opening statement for the Portfolio landing page —
-// deliberately not built on the shared `Gallery`/`ResponsiveImage`
-// components, which are grid-tile-oriented (uniform crops, lazy-loaded,
-// no crossfade). This is a full-bleed, auto-advancing single-image stage.
-// Slide selection/ordering is decided upstream by getSlideshowProjects()
-// (portfolioHelpers.ts) — this component only renders whatever list it's
-// given, so it stays reusable if the curation logic changes later.
+// Immersive, curated opening statement — deliberately not built on the
+// shared `Gallery`/`ResponsiveImage` components, which are grid-tile-
+// oriented (uniform crops, lazy-loaded, no crossfade). This is a
+// full-bleed, auto-advancing single-image stage. Slide selection/ordering
+// is decided upstream (getSlideshowProjects() for /work, or a curated
+// homepage source) — this component only renders whatever list it's given.
+//
+// Two presentation variants, both sharing every piece of slideshow
+// mechanics (transition, autoplay, swipe, wrap-around, reduced-motion,
+// arrows/dots) unchanged (2026-08-23):
+// - "portfolio" (default, unchanged behavior) — /work's own opening
+//   section: 75-85vh, each slide links to its project, discipline/title
+//   overlay shown.
+// - "hero" — the homepage opening experience: full 100dvh, no project
+//   metadata overlay, no click-through (a plain photographic showcase,
+//   not a portfolio-project card) — the surrounding page is responsible
+//   for any nav/CTA layered on top of it.
 export type PortfolioHeroSlideshowProps = {
   projects: PortfolioProject[];
+  variant?: "portfolio" | "hero";
 };
 
 const AUTOPLAY_INTERVAL_MS = 6000;
@@ -39,7 +50,8 @@ function ringOffset(i: number, index: number, count: number): number {
 
 const SWIPE_THRESHOLD_PX = 50;
 
-export default function PortfolioHeroSlideshow({ projects }: PortfolioHeroSlideshowProps) {
+export default function PortfolioHeroSlideshow({ projects, variant = "portfolio" }: PortfolioHeroSlideshowProps) {
+  const isHero = variant === "hero";
   const [index, setIndex] = useState(0);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const pointerStartX = useRef<number | null>(null);
@@ -103,53 +115,86 @@ export default function PortfolioHeroSlideshow({ projects }: PortfolioHeroSlides
 
   return (
     <section
-      className="relative w-full h-[75vh] min-h-[420px] sm:h-[85vh] sm:min-h-[560px] overflow-hidden bg-ordift-navy-950 touch-pan-y"
+      className={`relative w-full overflow-hidden bg-ordift-navy-950 touch-pan-y ${
+        isHero ? "h-dvh min-h-[480px]" : "h-[75vh] min-h-[420px] sm:h-[85vh] sm:min-h-[560px]"
+      }`}
       aria-roledescription="carousel"
-      aria-label="Featured Portfolio work"
+      aria-label={isHero ? "Ordift Studios" : "Featured Portfolio work"}
       onMouseEnter={pauseAutoplay}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
       onPointerCancel={onPointerUp}
     >
-      {projects.map((project, i) => (
-        <Link
-          key={project.id}
-          href={`/work/${project.slug}`}
-          aria-hidden={i !== index}
-          tabIndex={i === index ? 0 : -1}
-          className="absolute inset-0 block transition-transform ease-in-out motion-reduce:transition-none"
-          style={{
-            transform: `translateX(${ringOffset(i, index, count) * 100}%)`,
-            transitionDuration: `${TRANSITION_MS}ms`,
-            pointerEvents: i === index ? "auto" : "none",
-          }}
-        >
-          <Image
-            src={project.heroMedia.url!}
-            alt={project.heroMedia.alt}
-            fill
-            priority={i === 0}
-            sizes="100vw"
-            placeholder={project.heroMedia.lqip ? "blur" : "empty"}
-            blurDataURL={project.heroMedia.lqip ?? undefined}
-            className="object-cover"
-          />
-          <div className="absolute inset-0 bg-gradient-to-t from-ordift-navy-950/70 via-ordift-navy-950/10 to-transparent" />
-          <div className="absolute inset-x-0 bottom-0 px-4 sm:px-8 pb-10 sm:pb-14">
-            <div className="max-w-6xl mx-auto">
-              {project.disciplines[0] && (
-                <p className="font-sans font-semibold uppercase tracking-[0.2em] text-eyebrow text-ordift-gold mb-2">
-                  {DISCIPLINE_LABEL[project.disciplines[0]]}
-                </p>
-              )}
-              <p className="font-serif font-medium text-page-title sm:text-page-title-tablet lg:text-page-title-desktop text-white max-w-2xl">
-                {project.title}
-              </p>
+      {projects.map((project, i) => {
+        const slideStyle = {
+          transform: `translateX(${ringOffset(i, index, count) * 100}%)`,
+          transitionDuration: `${TRANSITION_MS}ms`,
+        };
+        const slideClassName = "absolute inset-0 block transition-transform ease-in-out motion-reduce:transition-none";
+
+        const slideContent = (
+          <>
+            <Image
+              src={project.heroMedia.url!}
+              alt={project.heroMedia.alt}
+              fill
+              priority={i === 0}
+              sizes="100vw"
+              placeholder={project.heroMedia.lqip ? "blur" : "empty"}
+              blurDataURL={project.heroMedia.lqip ?? undefined}
+              className="object-cover"
+            />
+            {/* Homepage "hero" variant is a clean photographic showcase —
+                no project metadata overlay, no darkening scrim. Any nav
+                legibility treatment over the top of the photo is the
+                surrounding page's responsibility (see NavBar's own
+                `transparent` mode), not this component's. */}
+            {!isHero && (
+              <>
+                <div className="absolute inset-0 bg-gradient-to-t from-ordift-navy-950/70 via-ordift-navy-950/10 to-transparent" />
+                <div className="absolute inset-x-0 bottom-0 px-4 sm:px-8 pb-10 sm:pb-14">
+                  <div className="max-w-6xl mx-auto">
+                    {project.disciplines[0] && (
+                      <p className="font-sans font-semibold uppercase tracking-[0.2em] text-eyebrow text-ordift-gold mb-2">
+                        {DISCIPLINE_LABEL[project.disciplines[0]]}
+                      </p>
+                    )}
+                    <p className="font-serif font-medium text-page-title sm:text-page-title-tablet lg:text-page-title-desktop text-white max-w-2xl">
+                      {project.title}
+                    </p>
+                  </div>
+                </div>
+              </>
+            )}
+          </>
+        );
+
+        // Homepage "hero" slides are a clean photographic showcase with no
+        // project-specific click-through — a plain, non-interactive div,
+        // not a Link (there's no visible affordance suggesting it's
+        // clickable once the metadata/CTA overlay is gone).
+        if (isHero) {
+          return (
+            <div key={project.id} aria-hidden={i !== index} className={slideClassName} style={slideStyle}>
+              {slideContent}
             </div>
-          </div>
-        </Link>
-      ))}
+          );
+        }
+
+        return (
+          <Link
+            key={project.id}
+            href={`/work/${project.slug}`}
+            aria-hidden={i !== index}
+            tabIndex={i === index ? 0 : -1}
+            className={slideClassName}
+            style={{ ...slideStyle, pointerEvents: i === index ? "auto" : "none" }}
+          >
+            {slideContent}
+          </Link>
+        );
+      })}
 
       {count > 1 && (
         <>

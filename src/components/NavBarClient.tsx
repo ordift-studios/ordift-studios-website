@@ -10,6 +10,7 @@ export default function NavBarClient({
   links,
   primaryCta,
   accountHref,
+  transparent = false,
 }: {
   links: NavLink[];
   primaryCta: CtaButton;
@@ -18,12 +19,32 @@ export default function NavBarClient({
   // destination from role data itself, so there's only one place
   // role-based routing logic lives.
   accountHref: string | null;
+  // Homepage-only overlay mode (2026-08-23) — the photograph beneath
+  // extends behind the nav instead of a solid navy bar pushing it down.
+  // Every other page keeps the exact existing solid-bar behavior
+  // (transparent defaults to false, unchanged from before this mode
+  // existed). Only the closed state is transparent — once the mobile
+  // menu is open, a solid backdrop returns so its links stay legible
+  // over whatever photograph is behind it.
+  transparent?: boolean;
 }) {
   const [open, setOpen] = useState(false);
 
   return (
-    <nav className="bg-ordift-navy-950 text-white relative">
-      <div className="max-w-6xl mx-auto px-4 sm:px-8 py-5 flex items-center justify-between">
+    <nav
+      className={`text-white transition-colors duration-300 ${
+        transparent
+          ? `absolute top-0 inset-x-0 z-20 ${open ? "bg-ordift-navy-950/95 backdrop-blur-sm" : "bg-transparent"}`
+          : "relative bg-ordift-navy-950"
+      }`}
+    >
+      {transparent && !open && (
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-x-0 top-0 h-28 bg-gradient-to-b from-black/35 to-transparent"
+        />
+      )}
+      <div className="relative max-w-6xl mx-auto px-4 sm:px-8 py-5 flex items-center justify-between">
         <Link href="/" aria-label="Ordift Studios home" className="shrink-0">
           <Logo variant="nav" color="white" height={28} priority />
         </Link>

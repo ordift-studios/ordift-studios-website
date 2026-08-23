@@ -13,8 +13,10 @@ import NavBarClient from "./NavBarClient";
 // once, here, server-side, and passed down as a plain href. This
 // deliberately avoids re-implementing role-routing logic in the client
 // component (or anywhere else) a second time.
-export default async function NavBar() {
+export default async function NavBar({ transparent = false }: { transparent?: boolean }) {
   const [nav, user] = await Promise.all([contentRepository.getNavigation(), getCurrentUser()]);
   const accountHref = user ? primaryPortalPath(user.roles) : null;
-  return <NavBarClient links={nav.links} primaryCta={nav.primaryCta} accountHref={accountHref} />;
+  return (
+    <NavBarClient links={nav.links} primaryCta={nav.primaryCta} accountHref={accountHref} transparent={transparent} />
+  );
 }
