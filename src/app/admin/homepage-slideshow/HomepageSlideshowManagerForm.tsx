@@ -76,6 +76,18 @@ type PickerState = {
   loadingImages: boolean;
 };
 
+// Automatic alt-text fallback (2026-08-23) — the manual Landscape/
+// Portrait alt text inputs were removed from this UI ("purely visual
+// image-selection interface"); every image still gets a real,
+// non-empty accessible name, generated rather than left blank. Mirrors
+// the exact same "no CMS value yet -> honest generic description"
+// pattern already used elsewhere in this codebase (e.g. the homepage
+// hero's own `heroVisual.alt || "Ordift Studios signature campaign
+// visual"` fallback) rather than inventing a new convention.
+function defaultSlideAlt(projectTitle: string | null | undefined): string {
+  return projectTitle ? `${projectTitle} — Ordift Studios` : "Ordift Studios — homepage slideshow photograph";
+}
+
 async function uploadImage(file: File, orientation: "landscape" | "portrait") {
   const formData = new FormData();
   formData.append("file", file);
@@ -137,10 +149,14 @@ export default function HomepageSlideshowManagerForm({
 
   function selectPickedImage(image: PickableProjectImage) {
     if (!picker) return;
+    const linkedProjectTitle = projectOptions.find((p) => p.id === slides[picker.slideIndex]?.projectId)?.title;
+    // Prefer the source image's own real Portfolio alt text; only fall
+    // back to the generic default if that image genuinely has none.
+    const alt = image.alt || defaultSlideAlt(linkedProjectTitle);
     const patch =
       picker.orientation === "landscape"
-        ? { landscapeAssetId: image.assetId, landscapeUrl: image.url, landscapeAlt: image.alt ?? "" }
-        : { portraitAssetId: image.assetId, portraitUrl: image.url, portraitAlt: image.alt ?? "" };
+        ? { landscapeAssetId: image.assetId, landscapeUrl: image.url, landscapeAlt: alt }
+        : { portraitAssetId: image.assetId, portraitUrl: image.url, portraitAlt: alt };
     updateSlide(picker.slideIndex, patch);
     closePicker();
   }
@@ -156,10 +172,15 @@ export default function HomepageSlideshowManagerForm({
     setError(null);
     try {
       const { assetId, url } = await uploadImage(file, orientation);
+      // A freshly uploaded file has no source alt text to inherit
+      // (unlike "Choose from Portfolio"), so it always gets the
+      // automatic fallback — see defaultSlideAlt()'s own comment.
+      const linkedProjectTitle = projectOptions.find((p) => p.id === slides[i]?.projectId)?.title;
+      const alt = defaultSlideAlt(linkedProjectTitle);
       if (orientation === "landscape") {
-        updateSlide(i, { landscapeAssetId: assetId, landscapeUrl: url });
+        updateSlide(i, { landscapeAssetId: assetId, landscapeUrl: url, landscapeAlt: alt });
       } else {
-        updateSlide(i, { portraitAssetId: assetId, portraitUrl: url });
+        updateSlide(i, { portraitAssetId: assetId, portraitUrl: url, portraitAlt: alt });
       }
       closePicker();
     } catch (err) {
@@ -171,33 +192,28 @@ export default function HomepageSlideshowManagerForm({
 
   function handleSave() {
     setError(null);
-    // Alt text is required by assistive tech whenever its image exists —
-    // enforced here so a slide can never be saved with an image but no
-    // accessible name, same rule the Sanity schema itself enforces in
-    // Studio.
-    for (const s of slides) {
-      if (s.landscapeAssetId && !s.landscapeAlt.trim()) {
-        setError("Every slide with a Landscape image needs Landscape alt text.");
-        return;
-      }
-      if (s.portraitAssetId && !s.portraitAlt.trim()) {
-        setError("Every slide with a Portrait image needs Portrait alt text.");
-        return;
-      }
-    }
 
     startTransition(async () => {
       try {
         await saveHomepageSlideshowSlidesAction(
           homepageId,
-          slides.map((s) => ({
-            projectId: s.projectId,
-            landscapeAssetId: s.landscapeAssetId,
-            landscapeAlt: s.landscapeAlt,
-            portraitAssetId: s.portraitAssetId,
-            portraitAlt: s.portraitAlt,
-            enabled: s.enabled,
-          })),
+          slides.map((s) => {
+            const linkedProjectTitle = projectOptions.find((p) => p.id === s.projectId)?.title;
+            return {
+              projectId: s.projectId,
+              landscapeAssetId: s.landscapeAssetId,
+              // Alt text is auto-generated whenever an image is chosen
+              // (see selectPickedImage()/handleUpload()) — there's no
+              // manual field for it in this UI, so this is only a
+              // defensive fallback for the rare case a value somehow
+              // never got set (never leaves an image with a blank
+              // accessible name, same rule Sanity's own schema enforces).
+              landscapeAlt: s.landscapeAssetId ? s.landscapeAlt || defaultSlideAlt(linkedProjectTitle) : s.landscapeAlt,
+              portraitAssetId: s.portraitAssetId,
+              portraitAlt: s.portraitAssetId ? s.portraitAlt || defaultSlideAlt(linkedProjectTitle) : s.portraitAlt,
+              enabled: s.enabled,
+            };
+          }),
         );
         setSaved(true);
       } catch (err) {
@@ -396,16 +412,6 @@ export default function HomepageSlideshowManagerForm({
                         )}
                       </div>
                     )}
-
-                    <input
-                      type="text"
-                      placeholder={`${orientation === "landscape" ? "Landscape" : "Portrait"} image alt text`}
-                      value={alt}
-                      onChange={(e) =>
-                        updateSlide(i, orientation === "landscape" ? { landscapeAlt: e.target.value } : { portraitAlt: e.target.value })
-                      }
-                      className="w-full min-h-9 rounded border border-black/15 px-2.5 text-body-small"
-                    />
                   </div>
                 );
               })}
