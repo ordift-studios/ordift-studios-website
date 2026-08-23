@@ -1,6 +1,7 @@
 import type { GalleryImage } from "@/lib/content/types";
 import type { PhotoGalleryRecipe } from "@/lib/content/portfolioTreatment";
 import ResponsiveImage from "@/components/media/ResponsiveImage";
+import InteractiveFigure from "./InteractiveFigure";
 
 // Image-led gallery for the Portfolio redesign — deliberately separate from
 // src/components/media/Gallery.tsx, which forces a uniform crop into a fixed
@@ -12,9 +13,21 @@ import ResponsiveImage from "@/components/media/ResponsiveImage";
 //   fixed repeating sequence, and not a rigid grid.
 // - `mode` (Videography stills, Graphic Design — unchanged since Phase 2):
 //   simple flexible/sequential/controlled presets.
+// onImageClick/revealOnScroll (2026-08-23, Photography detail redesign)
+// are both optional and additive — omitted entirely by every existing
+// caller (Videography, Graphic Design), whose rendered output is
+// therefore byte-for-byte unchanged. Only Photography's gallery wrapper
+// (PhotographyGalleryWithLightbox.tsx) passes them, which is also the
+// only thing that pulls the client-only InteractiveFigure into the
+// bundle — this file itself still has no hooks/browser APIs and needs
+// no "use client" directive.
+type InteractiveProps = {
+  onImageClick?: (index: number) => void;
+  revealOnScroll?: boolean;
+};
 export type FlexiblePhotoGalleryProps =
-  | { images: GalleryImage[]; recipe: PhotoGalleryRecipe; mode?: never }
-  | { images: GalleryImage[]; mode?: "flexible" | "sequential" | "controlled"; recipe?: never };
+  | ({ images: GalleryImage[]; recipe: PhotoGalleryRecipe; mode?: never } & InteractiveProps)
+  | ({ images: GalleryImage[]; mode?: "flexible" | "sequential" | "controlled"; recipe?: never } & InteractiveProps);
 
 type BlockType = "full" | "pair" | "triple" | "asymmetric";
 type Block = { type: BlockType; images: GalleryImage[] };
@@ -155,11 +168,12 @@ function buildBlocks(images: GalleryImage[], recipe: PhotoGalleryRecipe): Block[
 }
 
 export default function FlexiblePhotoGallery(props: FlexiblePhotoGalleryProps) {
-  const { images } = props;
+  const { images, onImageClick, revealOnScroll } = props;
   if (images.length === 0) return null;
   const recipe: PhotoGalleryRecipe = props.recipe ?? LEGACY_RECIPES[props.mode ?? "flexible"];
 
   const blocks = buildBlocks(images, recipe);
+  const flatIndexById = new Map(images.map((img, idx) => [img.id, idx]));
   // Precomputed with no mutation (each "full" block's position among full
   // blocks only) — used for the Portrait treatment's alternating
   // left/right asymmetric placement and to mark the first full-bleed image
@@ -198,6 +212,8 @@ export default function FlexiblePhotoGallery(props: FlexiblePhotoGalleryProps) {
                 sizes="100vw"
                 priority={offsetIndex === 0}
                 className={imageClassName}
+                onClick={onImageClick ? () => onImageClick(flatIndexById.get(block.images[0].id) ?? 0) : undefined}
+                revealOnScroll={revealOnScroll}
               />
             </div>
           );
@@ -217,6 +233,8 @@ export default function FlexiblePhotoGallery(props: FlexiblePhotoGalleryProps) {
                   aspectRatio={imageAspect(image, recipe.fallbackAspect)}
                   sizes="(min-width: 1024px) 35vw, 50vw"
                   className={imageClassName}
+                  onClick={onImageClick ? () => onImageClick(flatIndexById.get(image.id) ?? 0) : undefined}
+                  revealOnScroll={revealOnScroll}
                 />
               ))}
             </div>
@@ -234,6 +252,8 @@ export default function FlexiblePhotoGallery(props: FlexiblePhotoGalleryProps) {
                 aspectRatio={imageAspect(image, recipe.fallbackAspect)}
                 sizes={sizes}
                 className={imageClassName}
+                onClick={onImageClick ? () => onImageClick(flatIndexById.get(image.id) ?? 0) : undefined}
+                revealOnScroll={revealOnScroll}
               />
             ))}
           </div>
@@ -249,32 +269,52 @@ function Figure({
   sizes,
   priority,
   className,
+  onClick,
+  revealOnScroll,
 }: {
   image: GalleryImage;
   aspectRatio: string;
   sizes: string;
   priority?: boolean;
   className?: string;
+  onClick?: () => void;
+  revealOnScroll?: boolean;
 }) {
+  // Neither prop set (every existing caller — Videography, Graphic
+  // Design) → identical markup to before this feature existed.
+  if (!onClick && !revealOnScroll) {
+    return (
+      <figure>
+        <ResponsiveImage
+          src={image.url}
+          alt={image.alt}
+          width={image.width}
+          height={image.height}
+          lqip={image.lqip}
+          aspectRatio={aspectRatio}
+          sizes={sizes}
+          priority={priority}
+          className={className}
+        />
+        {image.caption && (
+          <figcaption className="mt-2 px-4 sm:px-0 font-sans text-caption text-ordift-ink-muted">
+            {image.caption}
+          </figcaption>
+        )}
+      </figure>
+    );
+  }
+
   return (
-    <figure>
-      <ResponsiveImage
-        src={image.url}
-        alt={image.alt}
-        width={image.width}
-        height={image.height}
-        lqip={image.lqip}
-        aspectRatio={aspectRatio}
-        sizes={sizes}
-        priority={priority}
-        className={className}
-      />
-      {image.caption && (
-        <figcaption className="mt-2 px-4 sm:px-0 font-sans text-caption text-ordift-ink-muted">
-          {image.caption}
-        </figcaption>
-      )}
-    </figure>
+    <InteractiveFigure
+      image={image}
+      aspectRatio={aspectRatio}
+      sizes={sizes}
+      priority={priority}
+      className={className}
+      onClick={onClick}
+      revealOnScroll={revealOnScroll}
+    />
   );
 }
 

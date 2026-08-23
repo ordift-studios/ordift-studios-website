@@ -2,7 +2,7 @@ import NavBar from "@/components/NavBar";
 import Footer from "@/components/Footer";
 import MediaAsset from "@/components/media/MediaAsset";
 import SocialShare from "@/components/SocialShare";
-import FlexiblePhotoGallery from "./FlexiblePhotoGallery";
+import PhotographyGalleryWithLightbox from "./PhotographyGalleryWithLightbox";
 import PortfolioProjectFooterSections from "./PortfolioProjectFooterSections";
 import {
   PHOTOGRAPHY_TREATMENT_LABEL,
@@ -93,7 +93,7 @@ export default function PhotographyProjectView({
       {/* The gallery carries the story. */}
       {project.gallery.length > 0 && (
         <div className="py-8 sm:py-14">
-          <FlexiblePhotoGallery images={project.gallery} recipe={recipe} />
+          <PhotographyGalleryWithLightbox images={project.gallery} recipe={recipe} />
         </div>
       )}
 
