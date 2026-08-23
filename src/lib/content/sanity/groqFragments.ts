@@ -55,7 +55,8 @@ export const galleryImageFragment = `{
   "width": image.asset->metadata.dimensions.width,
   "height": image.asset->metadata.dimensions.height,
   "lqip": image.asset->metadata.lqip,
-  presentation
+  presentation,
+  assetRole
 }`;
 
 // SeoFields { metaTitle, metaDescription, ogImageUrl, canonicalUrl }

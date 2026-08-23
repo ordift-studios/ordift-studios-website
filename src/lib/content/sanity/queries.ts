@@ -182,11 +182,24 @@ const editImageShape = `{
   "hotspotY": image.hotspot.y
 }`;
 const editGalleryItemShape = `{
-  "key": _key, alt, caption, productionNotes, presentation,
+  "key": _key, alt, caption, productionNotes, presentation, assetRole,
   "assetId": image.asset._ref,
   "url": image.asset->url,
   "hotspotX": image.hotspot.x,
   "hotspotY": image.hotspot.y
+}`;
+// Graphic Design's Before & After (2026-08-24) — edit-mode round-trip.
+// Both sides are always plain images in this Admin UI (native video
+// before/after isn't a real use case here), so the write side always
+// constructs type "image" mediaAsset objects underneath.
+const editBeforeAfterItemShape = `{
+  "key": _key, caption,
+  "beforeAssetId": before.image.asset._ref,
+  "beforeUrl": before.image.asset->url,
+  "beforeAlt": before.alt,
+  "afterAssetId": after.image.asset._ref,
+  "afterUrl": after.image.asset->url,
+  "afterAlt": after.alt
 }`;
 // Videography's Additional Films (existing "videos" field) and Reels —
 // edit-mode round-trip including each item's optional poster image.
@@ -203,6 +216,7 @@ export const portfolioProjectEditQuery = `*[_type == "portfolioProject" && _id =
   "heroMedia": heroMedia${editImageShape},
   "gallery": gallery[]${editGalleryItemShape},
   "behindTheScenesGallery": behindTheScenesGallery[]${editGalleryItemShape},
+  "beforeAfterGallery": beforeAfterGallery[]${editBeforeAfterItemShape},
   "videos": videos[]${editVideoItemShape},
   "reels": reels[]${editVideoItemShape},
   "downloadableAssets": downloadableAssets[]{"key": _key, label, fileType, "assetId": file.asset._ref, "url": file.asset->url},

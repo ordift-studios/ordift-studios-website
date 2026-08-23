@@ -33,5 +33,23 @@ export default defineType({
       description:
         "Optional hint for the Photography project gallery's adaptive justified layout. Leave as Automatic for the layout to decide — most images should stay Automatic. Only affects Photography's own gallery presentation; unused by every other discipline.",
     }),
+    defineField({
+      name: "assetRole",
+      title: "Role (Graphic Design case study)",
+      type: "string",
+      options: {
+        list: [
+          { title: "Automatic — Selected Work (default)", value: "automatic" },
+          { title: "Primary Logo", value: "logo" },
+          { title: "Secondary Mark", value: "secondary-mark" },
+          { title: "Colour Palette", value: "color-palette" },
+          { title: "Typography", value: "typography" },
+          { title: "Visual Element", value: "visual-element" },
+          { title: "Application / Mockup", value: "application" },
+        ],
+      },
+      description:
+        "Optional — routes this image into the Graphic Design project page's Identity/System breakdown or Applications/Mockups section instead of the general Selected Work gallery. Leave as Automatic for anything that's just part of the general showcase. Only affects Graphic Design's own case study page; unused by every other discipline.",
+    }),
   ],
 });

@@ -2,23 +2,30 @@ import NavBar from "@/components/NavBar";
 import Footer from "@/components/Footer";
 import MediaAsset from "@/components/media/MediaAsset";
 import SocialShare from "@/components/SocialShare";
-import BeforeAfterGallery from "@/components/media/BeforeAfterGallery";
-import FlexiblePhotoGallery from "./FlexiblePhotoGallery";
+import BeforeAfterSlider from "./BeforeAfterSlider";
+import DesignShowcase from "./DesignShowcase";
+import DesignIdentitySystem from "./DesignIdentitySystem";
+import GraphicDesignNextProject from "./GraphicDesignNextProject";
 import PortfolioProjectFooterSections from "./PortfolioProjectFooterSections";
-import { DESIGN_GALLERY_RECIPE } from "@/lib/content/portfolioTreatment";
+import { resolveDesignTreatment, DESIGN_TREATMENT_LABEL } from "@/lib/content/portfolioTreatment";
 import type { Category, PortfolioProject, Testimonial, Workshop } from "@/lib/content/types";
 
-// The full page for a Graphic Design project — the artwork is the hero, not
-// a Photography-gallery-with-mockups-instead-of-photos. Full page (bypasses
-// the shared two-column shell), same principle as Photography/Videography.
+// The full page for a Graphic Design project — a premium creative-agency
+// case study, not a photography-gallery-with-mockups-instead-of-photos.
+// Full page (bypasses the shared two-column shell), same principle as
+// Photography/Videography.
 //
-// Unlike Photography, Before & After is kept here when present — design
-// work legitimately shows development/before-after comparisons as part of
-// the public-facing craft (a brand refresh, a redesign), not as
-// case-study process documentation. Client/Year/Location/Services/
-// Equipment/Collaborators/Deliverables/Results/Awards/Publications/
-// testimonials stay out, same reasoning as the other two disciplines —
-// still intact in Sanity/the CMS, not deleted.
+// Content-aware rhythm (2026-08-24 redesign), never a fixed checklist:
+// Intro -> Hero/Key Artwork -> Selected Work -> Identity/System ->
+// Applications/Mockups -> Process -> Before & After -> Next Project.
+// Every section between the hero and the footer renders only when real
+// content actually routes into it — a single-poster project shows just
+// Intro + Hero + Selected Work and looks complete; a full branding
+// project can populate every section. Client/Year/Location stay
+// restrained; Services/Equipment/Collaborators/Deliverables/Results/
+// Awards/Publications/testimonials/Downloadable Assets stay out of the
+// public page, same reasoning as Photography/Videography — still intact
+// in the CMS, not deleted.
 export type GraphicDesignProjectViewProps = {
   project: PortfolioProject;
   categories: Category[];
@@ -32,8 +39,11 @@ export type GraphicDesignProjectViewProps = {
   categoryById: Map<string, Category>;
 };
 
+const IMAGE_QUALITY = 90;
+
 export default function GraphicDesignProjectView({
   project,
+  categories,
   shareUrl,
   jsonLd,
   prevProject,
@@ -43,6 +53,22 @@ export default function GraphicDesignProjectView({
   categoryById,
 }: GraphicDesignProjectViewProps) {
   const subtleMeta = [project.location, project.year].filter(Boolean).join(" · ");
+  const treatment = resolveDesignTreatment(categories);
+
+  const selectedWork = project.gallery.filter((img) => !img.assetRole || img.assetRole === "automatic");
+  const applications = project.gallery.filter((img) => img.assetRole === "application");
+  const hasIdentitySystem = project.gallery.some(
+    (img) =>
+      img.assetRole === "logo" ||
+      img.assetRole === "secondary-mark" ||
+      img.assetRole === "color-palette" ||
+      img.assetRole === "typography" ||
+      img.assetRole === "visual-element",
+  );
+  const hasProcess = project.behindTheScenesGallery.length > 0;
+  const validBeforeAfter = project.beforeAfterGallery.filter((p) => p.before.url && p.after.url);
+
+  const heroIsImage = project.heroMedia.type === "image";
 
   return (
     <main>
@@ -52,7 +78,7 @@ export default function GraphicDesignProjectView({
       <section className="px-4 sm:px-8 pt-14 sm:pt-20 pb-8 sm:pb-10 text-center">
         <div className="max-w-2xl mx-auto">
           <p className="font-sans font-semibold uppercase tracking-[0.2em] text-eyebrow text-ordift-gold mb-3">
-            Design
+            {DESIGN_TREATMENT_LABEL[treatment]}
           </p>
           <h1 className="font-serif font-medium text-page-title sm:text-page-title-tablet lg:text-page-title-desktop text-ordift-ink mb-3">
             {project.title}
@@ -70,26 +96,81 @@ export default function GraphicDesignProjectView({
         </div>
       </section>
 
-      <MediaAsset media={project.heroMedia} aspectRatio="4/5" sizes="100vw" priority />
+      {/* Hero / Key Artwork — aspect-ratio-aware, never force-cropped. An
+          image hero renders on a neutral canvas at its own true
+          proportions (object-contain), letterboxing rather than cropping
+          if a very tall/wide piece would otherwise dominate the viewport.
+          A video/embed hero (rare for this discipline, but the schema
+          allows it) keeps the standard 16:9 treatment every other
+          MediaAsset caller uses. */}
+      <div className="bg-[#f7f6f4]">
+        <MediaAsset
+          media={project.heroMedia}
+          aspectRatio={heroIsImage ? undefined : "16/9"}
+          sizes="100vw"
+          priority
+          objectFit={heroIsImage ? "contain" : undefined}
+          quality={IMAGE_QUALITY}
+          className={heroIsImage ? "sm:max-h-[82vh] mx-auto" : undefined}
+        />
+      </div>
 
-      {project.gallery.length > 0 && (
-        <div className="py-8 sm:py-14">
-          <FlexiblePhotoGallery images={project.gallery} recipe={DESIGN_GALLERY_RECIPE} />
-        </div>
+      {selectedWork.length > 0 && (
+        <section className="py-10 sm:py-16">
+          <div className="max-w-6xl mx-auto px-4 sm:px-8 mb-6 sm:mb-8">
+            <h2 className="font-serif font-medium text-card-title text-ordift-ink">Selected Work</h2>
+          </div>
+          <DesignShowcase images={selectedWork} quality={IMAGE_QUALITY} />
+        </section>
       )}
 
-      {project.beforeAfterGallery.length > 0 && (
-        <div className="pb-8 sm:pb-14 px-4 sm:px-8">
-          <div className="max-w-6xl mx-auto">
-            <h2 className="font-serif font-medium text-card-title text-ordift-ink mb-4">Before &amp; After</h2>
-            <BeforeAfterGallery pairs={project.beforeAfterGallery} />
+      {hasIdentitySystem && (
+        <section className="py-10 sm:py-16 bg-[#f7f6f4]">
+          <div className="max-w-6xl mx-auto px-4 sm:px-8 mb-6 sm:mb-8">
+            <h2 className="font-serif font-medium text-card-title text-ordift-ink">Identity System</h2>
           </div>
-        </div>
+          <DesignIdentitySystem images={project.gallery} quality={IMAGE_QUALITY} />
+        </section>
+      )}
+
+      {applications.length > 0 && (
+        <section className="py-10 sm:py-16">
+          <div className="max-w-6xl mx-auto px-4 sm:px-8 mb-6 sm:mb-8">
+            <h2 className="font-serif font-medium text-card-title text-ordift-ink">Applications &amp; Mockups</h2>
+          </div>
+          <DesignShowcase images={applications} quality={IMAGE_QUALITY} />
+        </section>
+      )}
+
+      {hasProcess && (
+        <section className="py-10 sm:py-16 bg-[#f7f6f4]">
+          <div className="max-w-6xl mx-auto px-4 sm:px-8 mb-6 sm:mb-8">
+            <h2 className="font-serif font-medium text-card-title text-ordift-ink">Process</h2>
+          </div>
+          <DesignShowcase images={project.behindTheScenesGallery} quality={IMAGE_QUALITY} />
+        </section>
+      )}
+
+      {validBeforeAfter.length > 0 && (
+        <section className="py-10 sm:py-16 px-4 sm:px-8">
+          <div className="max-w-4xl mx-auto">
+            <h2 className="font-serif font-medium text-card-title text-ordift-ink mb-6 sm:mb-8 text-center">
+              Before &amp; After
+            </h2>
+            <div className="space-y-10 sm:space-y-14">
+              {validBeforeAfter.map((pair) => (
+                <BeforeAfterSlider key={pair.id} pair={pair} quality={IMAGE_QUALITY} />
+              ))}
+            </div>
+          </div>
+        </section>
       )}
 
       <div className="flex justify-center pb-10 sm:pb-14">
         <SocialShare url={shareUrl} title={project.title} />
       </div>
+
+      <GraphicDesignNextProject prevProject={prevProject} nextProject={nextProject} />
 
       <PortfolioProjectFooterSections
         prevProject={prevProject}
@@ -97,6 +178,7 @@ export default function GraphicDesignProjectView({
         relatedProjects={relatedProjects}
         relatedWorkshops={relatedWorkshops}
         categoryById={categoryById}
+        showPrevNext={false}
       />
 
       <Footer />

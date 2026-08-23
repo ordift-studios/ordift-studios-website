@@ -86,7 +86,7 @@ export default async function PortfolioProjectPage({
   // undifferentiated list, a no-op change for Graphic Design and the
   // rest.
   const primaryDiscipline = resolvePrimaryDiscipline(project);
-  const SCOPED_NAV_DISCIPLINES = new Set(["photography", "videography"]);
+  const SCOPED_NAV_DISCIPLINES = new Set(["photography", "videography", "graphic-design"]);
   const navProjects =
     primaryDiscipline && SCOPED_NAV_DISCIPLINES.has(primaryDiscipline)
       ? allProjects.filter((p) => resolvePrimaryDiscipline(p) === primaryDiscipline)

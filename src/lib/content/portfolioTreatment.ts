@@ -177,3 +177,53 @@ export const PHOTOGRAPHY_TREATMENT_LABEL: Record<PhotographyTreatment, string> =
   food: "Food",
   general: "Photography",
 };
+
+// Graphic Design's project-type system (2026-08-24) — same pattern as
+// resolvePhotographyTreatment: resolved from the project's existing
+// categories, no new schema. This is a presentation hint, NOT a
+// checklist of mandatory sections — GraphicDesignProjectView still
+// decides what to render from what content actually exists (see its
+// own comments). A "brandIdentity" project is simply more likely to
+// have logo/palette/typography assetRole images than a "poster" one;
+// the page never assumes it does.
+export type DesignTreatment =
+  | "brand-identity"
+  | "logo"
+  | "campaign"
+  | "social-digital"
+  | "editorial-print"
+  | "packaging"
+  | "poster"
+  | "general";
+
+const DESIGN_TREATMENT_SLUGS: Record<Exclude<DesignTreatment, "general">, Set<string>> = {
+  "brand-identity": new Set(["brand-identity", "visual-identity", "branding"]),
+  logo: new Set(["logo", "logo-design"]),
+  campaign: new Set(["campaign", "advertising"]),
+  "social-digital": new Set(["social-media", "digital", "social-digital"]),
+  "editorial-print": new Set(["editorial", "print", "editorial-print"]),
+  packaging: new Set(["packaging"]),
+  poster: new Set(["poster", "promotional", "poster-design"]),
+};
+
+export function resolveDesignTreatment(categories: Category[]): DesignTreatment {
+  const slugs = categories.map((c) => c.slug);
+  for (const [treatment, set] of Object.entries(DESIGN_TREATMENT_SLUGS) as [
+    Exclude<DesignTreatment, "general">,
+    Set<string>,
+  ][]) {
+    if (slugs.some((slug) => set.has(slug))) return treatment;
+  }
+  return "general";
+}
+
+export const DESIGN_TREATMENT_LABEL: Record<DesignTreatment, string> = {
+  "brand-identity": "Brand Identity",
+  logo: "Logo Design",
+  campaign: "Campaign",
+  "social-digital": "Social & Digital",
+  "editorial-print": "Editorial & Print",
+  packaging: "Packaging",
+  poster: "Poster",
+  general: "Graphic Design",
+};

@@ -67,7 +67,22 @@ export type GalleryImage = {
   // Admin/Super Admin deliberately sets one. Optional key so the local
   // fixture repository's gallery arrays don't need updating.
   presentation?: GalleryImagePresentation | null;
+  // Graphic Design case study (2026-08-24) — routes a gallery image
+  // into "Selected Work" (unset/"automatic"), the Identity/System
+  // breakdown, or Applications/Mockups on the Graphic Design project
+  // page. Unused by every other discipline. Optional key so the local
+  // fixture repository's gallery arrays don't need updating.
+  assetRole?: GalleryAssetRole | null;
 };
+
+export type GalleryAssetRole =
+  | "automatic"
+  | "logo"
+  | "secondary-mark"
+  | "color-palette"
+  | "typography"
+  | "visual-element"
+  | "application";
 
 export type FAQ = {
   id: ID;

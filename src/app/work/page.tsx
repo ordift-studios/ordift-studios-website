@@ -92,14 +92,15 @@ export default async function PortfolioPage({
       // as before this field existed.
       heroImage: service.workLandingImage ?? pickDisciplineHeroImage(service.slug, allProjects),
       hasProjects: allProjects.some((p) => p.disciplines.includes(service.slug)),
-      // Photography and Videography now have their own dedicated index
-      // pages (2026-08-23) — every other discipline still falls through
+      // Photography, Videography and Graphic Design now have their own
+      // dedicated index pages (2026-08-23/24) — every other discipline still falls through
       // to this page's own filtered view (WorkDisciplineBands'
       // default), unchanged, until it gets its own dedicated page too.
       // The band itself (image, focal point, layout) is untouched —
       // only the destination changes.
       ...(service.slug === "photography" ? { href: "/work/photography" } : {}),
       ...(service.slug === "videography" ? { href: "/work/videography" } : {}),
+      ...(service.slug === "graphic-design" ? { href: "/work/graphic-design" } : {}),
     }));
   const activeService = discipline ? services.find((s) => s.slug === discipline) : undefined;
 

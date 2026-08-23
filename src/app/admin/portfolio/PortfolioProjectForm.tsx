@@ -51,6 +51,19 @@ type ImgState = {
 // discipline ignores this field entirely.
 export type GalleryItemPresentation = "automatic" | "featured" | "wide" | "portrait-pair" | "standard";
 
+// Graphic Design case study (2026-08-24) — routes a gallery image into
+// the Identity/System breakdown or Applications/Mockups section instead
+// of the general Selected Work showcase. "automatic" (default) does
+// nothing special and is unused by every other discipline.
+export type GalleryItemAssetRole =
+  | "automatic"
+  | "logo"
+  | "secondary-mark"
+  | "color-palette"
+  | "typography"
+  | "visual-element"
+  | "application";
+
 type GalleryItem = {
   key: string;
   assetId: string | null;
@@ -62,6 +75,7 @@ type GalleryItem = {
   // omission from galleryImageFragment in groqFragments.ts.
   productionNotes: string;
   presentation: GalleryItemPresentation;
+  assetRole: GalleryItemAssetRole;
   hotspotX: number;
   hotspotY: number;
   uploading: boolean;
@@ -84,6 +98,25 @@ type VideoItem = {
   posterUploading: boolean;
   posterError: string | null;
 };
+// Graphic Design's Before & After comparison (2026-08-24) — each pair
+// is two independently-uploaded plain images (no video/embed variant;
+// a before/after comparison is always a static image pair). Mirrors
+// VideoItem's per-item-upload pattern, doubled for the two sides.
+type BeforeAfterItem = {
+  key: string;
+  caption: string;
+  beforeAssetId: string | null;
+  beforeUrl: string | null;
+  beforeAlt: string;
+  beforeUploading: boolean;
+  beforeError: string | null;
+  afterAssetId: string | null;
+  afterUrl: string | null;
+  afterAlt: string;
+  afterUploading: boolean;
+  afterError: string | null;
+};
+
 type DownloadItem = {
   key: string;
   label: string;
@@ -109,6 +142,7 @@ export type FormState = {
   hero: ImgState;
   gallery: GalleryItem[];
   behindTheScenes: GalleryItem[];
+  beforeAfterGallery: BeforeAfterItem[]; // Graphic Design's Before & After comparisons
   videos: VideoItem[]; // "Additional Films" on the public Videography page
   reels: VideoItem[];
   downloads: DownloadItem[];
@@ -213,6 +247,23 @@ function emptyVideoItem(): VideoItem {
   };
 }
 
+function emptyBeforeAfterItem(): BeforeAfterItem {
+  return {
+    key: newKey(),
+    caption: "",
+    beforeAssetId: null,
+    beforeUrl: null,
+    beforeAlt: "",
+    beforeUploading: false,
+    beforeError: null,
+    afterAssetId: null,
+    afterUrl: null,
+    afterAlt: "",
+    afterUploading: false,
+    afterError: null,
+  };
+}
+
 function uploadAsset(
   file: File,
   kind: "image" | "file",
@@ -296,10 +347,38 @@ function galleryField(items: GalleryItem[]) {
       caption: i.caption || undefined,
       productionNotes: i.productionNotes || undefined,
       presentation: i.presentation !== "automatic" ? i.presentation : undefined,
+      assetRole: i.assetRole !== "automatic" ? i.assetRole : undefined,
       image: {
         _type: "image",
         asset: { _type: "reference", _ref: i.assetId },
         hotspot: { _type: "sanity.imageHotspot", x: i.hotspotX, y: i.hotspotY, height: 0.5, width: 0.5 },
+      },
+    }));
+}
+
+// Graphic Design's Before & After (2026-08-24) — only emits a pair once
+// BOTH sides have finished uploading; a half-complete pair would crash
+// the public page's mediaAsset rendering (alt is required, image is
+// required), so it's silently dropped from the saved payload until
+// complete rather than saved in an invalid partial state.
+function beforeAfterGalleryField(items: BeforeAfterItem[]) {
+  return items
+    .filter((i) => i.beforeAssetId && i.afterAssetId)
+    .map((i) => ({
+      _type: "beforeAfterPair",
+      _key: i.key,
+      caption: i.caption || undefined,
+      before: {
+        _type: "mediaAsset",
+        type: "image",
+        alt: i.beforeAlt,
+        image: { _type: "image", asset: { _type: "reference", _ref: i.beforeAssetId } },
+      },
+      after: {
+        _type: "mediaAsset",
+        type: "image",
+        alt: i.afterAlt,
+        image: { _type: "image", asset: { _type: "reference", _ref: i.afterAssetId } },
       },
     }));
 }
@@ -429,6 +508,7 @@ export default function PortfolioProjectForm({
     hero: emptyImg(),
     gallery: [],
     behindTheScenes: [],
+    beforeAfterGallery: [],
     videos: [],
     reels: [],
     downloads: [],
@@ -510,6 +590,7 @@ export default function PortfolioProjectForm({
       if (hero) fields.heroMedia = hero;
       fields.gallery = galleryField(form.gallery);
       fields.behindTheScenesGallery = galleryField(form.behindTheScenes);
+      fields.beforeAfterGallery = beforeAfterGalleryField(form.beforeAfterGallery);
       fields.videos = videoItemsField(form.videos);
       fields.reels = videoItemsField(form.reels);
       fields.downloadableAssets = form.downloads
@@ -668,7 +749,7 @@ export default function PortfolioProjectForm({
   async function handleGalleryFiles(files: FileList, target: "gallery" | "behindTheScenes") {
     for (const file of Array.from(files)) {
       const key = newKey();
-      const item: GalleryItem = { key, assetId: null, url: null, alt: "", caption: "", productionNotes: "", presentation: "automatic", hotspotX: 0.5, hotspotY: 0.5, uploading: true, progress: 0, error: null };
+      const item: GalleryItem = { key, assetId: null, url: null, alt: "", caption: "", productionNotes: "", presentation: "automatic", assetRole: "automatic", hotspotX: 0.5, hotspotY: 0.5, uploading: true, progress: 0, error: null };
       setForm((f) => ({ ...f, [target]: [...f[target], item] }));
       try {
         const compressed = await compressImageFile(file);
@@ -686,6 +767,40 @@ export default function PortfolioProjectForm({
           [target]: f[target].map((g) => (g.key === key ? { ...g, uploading: false, error: (err as Error).message } : g)),
         }));
       }
+    }
+  }
+
+  // Before & After (2026-08-24, Graphic Design) — same compress-then-
+  // upload pipeline as every other image in this form, scoped to one
+  // side ("before"/"after") of one pair by key.
+  async function handleBeforeAfterFile(key: string, side: "before" | "after", file: File) {
+    const uploadingKey = side === "before" ? "beforeUploading" : "afterUploading";
+    const errorKey = side === "before" ? "beforeError" : "afterError";
+    const assetIdKey = side === "before" ? "beforeAssetId" : "afterAssetId";
+    const urlKey = side === "before" ? "beforeUrl" : "afterUrl";
+    setForm((f) => ({
+      ...f,
+      beforeAfterGallery: f.beforeAfterGallery.map((p) =>
+        p.key === key ? { ...p, [uploadingKey]: true, [errorKey]: null } : p
+      ),
+    }));
+    try {
+      const compressed = await compressImageFile(file);
+      const asset = await uploadAsset(compressed, "image", () => {});
+      setForm((f) => ({
+        ...f,
+        beforeAfterGallery: f.beforeAfterGallery.map((p) =>
+          p.key === key ? { ...p, [assetIdKey]: asset.assetId, [urlKey]: asset.url, [uploadingKey]: false } : p
+        ),
+      }));
+      setDirty(true);
+    } catch (err) {
+      setForm((f) => ({
+        ...f,
+        beforeAfterGallery: f.beforeAfterGallery.map((p) =>
+          p.key === key ? { ...p, [uploadingKey]: false, [errorKey]: (err as Error).message } : p
+        ),
+      }));
     }
   }
 
@@ -971,6 +1086,16 @@ export default function PortfolioProjectForm({
               }
               onRemove={(key) => setForm((f) => ({ ...f, behindTheScenes: f.behindTheScenes.filter((g) => g.key !== key) }))}
               canPublish={canPublish}
+            />
+
+            <BeforeAfterEditor
+              items={form.beforeAfterGallery}
+              onAdd={() => setForm((f) => ({ ...f, beforeAfterGallery: [...f.beforeAfterGallery, emptyBeforeAfterItem()] }))}
+              onRemove={(key) => setForm((f) => ({ ...f, beforeAfterGallery: f.beforeAfterGallery.filter((p) => p.key !== key) }))}
+              onUpdateItem={(key, patch) =>
+                setForm((f) => ({ ...f, beforeAfterGallery: f.beforeAfterGallery.map((p) => (p.key === key ? { ...p, ...patch } : p)) }))
+              }
+              onFile={handleBeforeAfterFile}
             />
 
             <VideoItemEditor
@@ -1551,6 +1676,24 @@ function GalleryEditor({
                       <option value="standard">Standard</option>
                     </select>
                   </div>
+                  <div>
+                    <label className="block font-sans text-caption text-ordift-ink-muted mb-0.5">
+                      Role (Graphic Design case study only)
+                    </label>
+                    <select
+                      value={item.assetRole}
+                      onChange={(e) => onUpdateItem(item.key, { assetRole: e.target.value as GalleryItemAssetRole })}
+                      className="w-full rounded border border-black/15 px-2 py-1 font-sans text-caption"
+                    >
+                      <option value="automatic">Automatic — Selected Work (default)</option>
+                      <option value="logo">Primary Logo</option>
+                      <option value="secondary-mark">Secondary Mark</option>
+                      <option value="color-palette">Colour Palette</option>
+                      <option value="typography">Typography</option>
+                      <option value="visual-element">Visual Element</option>
+                      <option value="application">Application / Mockup</option>
+                    </select>
+                  </div>
                 </div>
               </div>
               <button type="button" onClick={() => onRemove(item.key)} className="font-sans text-caption text-red-700">
@@ -1560,6 +1703,93 @@ function GalleryEditor({
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+// Before & After comparison pairs (2026-08-24, Graphic Design) — each
+// pair needs two independent image uploads, so this is its own editor
+// rather than an extension of GalleryEditor (which is built around a
+// single image per item).
+function BeforeAfterEditor({
+  items,
+  onAdd,
+  onRemove,
+  onUpdateItem,
+  onFile,
+}: {
+  items: BeforeAfterItem[];
+  onAdd: () => void;
+  onRemove: (key: string) => void;
+  onUpdateItem: (key: string, patch: Partial<BeforeAfterItem>) => void;
+  onFile: (key: string, side: "before" | "after", file: File) => void;
+}) {
+  function slot(item: BeforeAfterItem, side: "before" | "after") {
+    const url = side === "before" ? item.beforeUrl : item.afterUrl;
+    const alt = side === "before" ? item.beforeAlt : item.afterAlt;
+    const uploading = side === "before" ? item.beforeUploading : item.afterUploading;
+    const error = side === "before" ? item.beforeError : item.afterError;
+    return (
+      <div className="flex-1 space-y-1.5">
+        <label className="relative block w-full aspect-[4/3] rounded bg-black/5 overflow-hidden cursor-pointer border border-black/10">
+          {url ? (
+            <img src={url} alt={alt} className="w-full h-full object-cover" />
+          ) : (
+            <span className="absolute inset-0 flex items-center justify-center font-sans text-caption text-ordift-ink-muted/70">
+              {uploading ? "Uploading…" : `+ ${side === "before" ? "Before" : "After"} image`}
+            </span>
+          )}
+          <input
+            type="file"
+            accept="image/jpeg,image/png,image/webp,image/gif"
+            disabled={uploading}
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) onFile(item.key, side, file);
+              e.target.value = "";
+            }}
+            className="hidden"
+          />
+        </label>
+        {error && <p className="font-sans text-caption text-red-700">{error}</p>}
+        <input
+          type="text"
+          placeholder={side === "before" ? "Before — alt text *" : "After — alt text *"}
+          value={alt}
+          onChange={(e) => onUpdateItem(item.key, side === "before" ? { beforeAlt: e.target.value } : { afterAlt: e.target.value })}
+          className="w-full rounded border border-black/15 px-2 py-1 font-sans text-caption"
+        />
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <h2 className="font-serif font-medium text-body text-ordift-ink mb-1">Before &amp; After (Graphic Design)</h2>
+      <p className="font-sans text-caption text-ordift-ink-muted mb-3">
+        Optional — a comparison pair (e.g. concept vs. final, rebrand before/after). Leave empty if this project has none.
+      </p>
+      {items.map((item) => (
+        <div key={item.key} className="rounded-lg border border-black/10 p-3 mb-3 space-y-2">
+          <div className="grid grid-cols-2 gap-3">
+            {slot(item, "before")}
+            {slot(item, "after")}
+          </div>
+          <input
+            type="text"
+            placeholder="Caption (optional)"
+            value={item.caption}
+            onChange={(e) => onUpdateItem(item.key, { caption: e.target.value })}
+            className="w-full rounded border border-black/15 px-2 py-1 font-sans text-caption"
+          />
+          <button type="button" onClick={() => onRemove(item.key)} className="font-sans text-caption text-red-700">
+            Remove
+          </button>
+        </div>
+      ))}
+      <button type="button" onClick={onAdd} className="font-sans text-caption text-ordift-gold-pressed underline underline-offset-4">
+        + Add Before &amp; After pair
+      </button>
     </div>
   );
 }

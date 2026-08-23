@@ -33,6 +33,13 @@ export type ResponsiveImageProps = {
   objectFit?: "cover" | "contain";
   /** Extra wrapper styles — e.g. a fixed pixel width/height for a small avatar, where aspect-ratio alone isn't enough to constrain size. */
   style?: React.CSSProperties;
+  // Graphic Design case study (2026-08-24) — fine typography/logo/
+  // line-work artifacts show compression more readily than photography
+  // does, so those call sites pass a higher value (90) here. Optional
+  // and additive: every existing caller stays on next/image's own
+  // default (75, matched by sanityLoader.ts's `quality ?? 75` fallback)
+  // when omitted.
+  quality?: number;
 };
 
 const DEFAULT_SIZES = "(min-width: 1024px) 50vw, 100vw";
@@ -50,6 +57,7 @@ export default function ResponsiveImage({
   className = "",
   objectFit = "cover",
   style,
+  quality,
 }: ResponsiveImageProps) {
   const ratio = aspectRatio ?? (width && height ? `${width}/${height}` : FALLBACK_ASPECT_RATIO);
 
@@ -67,6 +75,7 @@ export default function ResponsiveImage({
         priority={priority}
         placeholder={lqip ? "blur" : "empty"}
         blurDataURL={lqip ?? undefined}
+        quality={quality}
         className={objectFit === "contain" ? "object-contain" : "object-cover"}
       />
     </div>

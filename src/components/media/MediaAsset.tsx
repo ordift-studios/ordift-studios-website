@@ -17,6 +17,13 @@ export type MediaAssetProps = {
   // poster, never on initial page load. Optional/undefined everywhere
   // else, so every existing caller's behavior is unchanged.
   autoPlay?: boolean;
+  // Graphic Design case study (2026-08-24) — both optional/additive,
+  // passed straight through to ResponsiveImage; every other caller is
+  // unaffected. objectFit lets a GD hero show its own true proportions
+  // instead of being cropped; quality raises fidelity for fine
+  // typography/logo/line-work artwork. Only meaningful for type "image".
+  objectFit?: "cover" | "contain";
+  quality?: number;
 };
 
 const FALLBACK_ASPECT_RATIO = "16/9";
@@ -39,7 +46,16 @@ function withAutoplayParam(url: string): string {
   }
 }
 
-export default function MediaAsset({ media, aspectRatio, sizes, priority, className = "", autoPlay = false }: MediaAssetProps) {
+export default function MediaAsset({
+  media,
+  aspectRatio,
+  sizes,
+  priority,
+  className = "",
+  autoPlay = false,
+  objectFit,
+  quality,
+}: MediaAssetProps) {
   const ratio = aspectRatio ?? FALLBACK_ASPECT_RATIO;
 
   // Content gap (field exists, no asset uploaded yet) rather than a
@@ -62,6 +78,8 @@ export default function MediaAsset({ media, aspectRatio, sizes, priority, classN
         sizes={sizes}
         priority={priority}
         className={className}
+        objectFit={objectFit}
+        quality={quality}
       />
     );
   }

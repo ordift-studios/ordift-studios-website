@@ -1,4 +1,4 @@
-import type { FormState, GalleryItemPresentation } from "./PortfolioProjectForm";
+import type { FormState, GalleryItemPresentation, GalleryItemAssetRole } from "./PortfolioProjectForm";
 
 // Raw shape from portfolioProjectEditQuery — loosely typed on purpose
 // (see getPortfolioProjectForEdit's own comment); this is the one place
@@ -19,6 +19,19 @@ type RawGalleryItem = RawImage & {
   caption?: string | null;
   productionNotes?: string | null;
   presentation?: string | null;
+  assetRole?: string | null;
+};
+// Before & After (2026-08-24, Graphic Design) — mirrors
+// editBeforeAfterItemShape in queries.ts exactly.
+type RawBeforeAfterItem = {
+  key: string;
+  caption?: string | null;
+  beforeAssetId?: string | null;
+  beforeUrl?: string | null;
+  beforeAlt?: string | null;
+  afterAssetId?: string | null;
+  afterUrl?: string | null;
+  afterAlt?: string | null;
 };
 // Additional Films / Reels (2026-08-23, Videography) — mirrors
 // editVideoItemShape in queries.ts exactly.
@@ -57,11 +70,29 @@ function toGalleryItems(raw?: RawGalleryItem[] | null) {
     caption: g.caption ?? "",
     productionNotes: g.productionNotes ?? "",
     presentation: (g.presentation as GalleryItemPresentation | null) ?? "automatic",
+    assetRole: (g.assetRole as GalleryItemAssetRole | null) ?? "automatic",
     hotspotX: g.hotspotX ?? 0.5,
     hotspotY: g.hotspotY ?? 0.5,
     uploading: false,
     progress: 0,
     error: null,
+  }));
+}
+
+function toBeforeAfterItems(raw?: RawBeforeAfterItem[] | null) {
+  return (raw ?? []).map((p) => ({
+    key: p.key,
+    caption: p.caption ?? "",
+    beforeAssetId: p.beforeAssetId ?? null,
+    beforeUrl: p.beforeUrl ?? null,
+    beforeAlt: p.beforeAlt ?? "",
+    beforeUploading: false,
+    beforeError: null,
+    afterAssetId: p.afterAssetId ?? null,
+    afterUrl: p.afterUrl ?? null,
+    afterAlt: p.afterAlt ?? "",
+    afterUploading: false,
+    afterError: null,
   }));
 }
 
@@ -92,6 +123,7 @@ export function mapEditDataToFormState(raw: Record<string, unknown>): Partial<Fo
     heroMedia?: RawImage;
     gallery?: RawGalleryItem[];
     behindTheScenesGallery?: RawGalleryItem[];
+    beforeAfterGallery?: RawBeforeAfterItem[];
     videos?: RawVideoItem[];
     reels?: RawVideoItem[];
     downloadableAssets?: { key: string; label?: string; fileType?: string; assetId?: string; url?: string }[];
@@ -131,6 +163,7 @@ export function mapEditDataToFormState(raw: Record<string, unknown>): Partial<Fo
     hero: toImgState(r.heroMedia),
     gallery: toGalleryItems(r.gallery),
     behindTheScenes: toGalleryItems(r.behindTheScenesGallery),
+    beforeAfterGallery: toBeforeAfterItems(r.beforeAfterGallery),
     videos: toVideoItems(r.videos),
     reels: toVideoItems(r.reels),
     downloads: (r.downloadableAssets ?? []).map((d) => ({
