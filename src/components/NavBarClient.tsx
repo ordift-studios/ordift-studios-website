@@ -34,7 +34,7 @@ export default function NavBarClient({
     <nav
       className={`text-white transition-colors duration-300 ${
         transparent
-          ? `absolute top-0 inset-x-0 z-20 ${open ? "bg-ordift-navy-950/95 backdrop-blur-sm" : "bg-transparent"}`
+          ? `absolute top-0 inset-x-0 z-20 ${open ? "bg-ordift-navy-950" : "bg-transparent"}`
           : "relative bg-ordift-navy-950"
       }`}
     >
