@@ -88,6 +88,11 @@ export default async function PortfolioPage({
       name: service.name,
       heroImage: pickDisciplineHeroImage(service.slug, allProjects),
       hasProjects: allProjects.some((p) => p.disciplines.includes(service.slug)),
+      // Photography now has its own dedicated cinematic index page
+      // (2026-08-23) — every other discipline still falls through to
+      // this page's own filtered view (WorkDisciplineBands' default),
+      // unchanged, until it gets its own dedicated page too.
+      ...(service.slug === "photography" ? { href: "/work/photography" } : {}),
     }));
   const activeService = discipline ? services.find((s) => s.slug === discipline) : undefined;
 

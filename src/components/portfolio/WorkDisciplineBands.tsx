@@ -23,6 +23,11 @@ export type WorkDiscipline = {
   name: string;
   heroImage: { url: string; alt: string; width?: number | null; height?: number | null; lqip?: string | null } | null;
   hasProjects: boolean;
+  // Optional per-discipline destination override (2026-08-23) — used
+  // once a discipline has its own dedicated index page (Photography
+  // first); defaults to the existing /work?discipline=<slug> filtered
+  // view for every discipline that doesn't have one yet, unchanged.
+  href?: string;
 };
 
 export default function WorkDisciplineBands({ disciplines }: { disciplines: WorkDiscipline[] }) {
@@ -31,7 +36,7 @@ export default function WorkDisciplineBands({ disciplines }: { disciplines: Work
       {disciplines.map((d, i) => (
         <Link
           key={d.slug}
-          href={`/work?discipline=${d.slug}`}
+          href={d.href ?? `/work?discipline=${d.slug}`}
           className="group relative block h-[200px] sm:h-[240px] lg:h-[22vh] lg:min-h-[220px] lg:max-h-[280px] overflow-hidden border-b border-white/10 last:border-b-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ordift-gold"
         >
           {/* Image — scales within its own clipped band only; never
