@@ -73,10 +73,13 @@ export default function InteractiveFigure({
     </div>
   );
 
-  const caption = image.caption && (
-    <figcaption className="mt-2 px-4 sm:px-0 font-sans text-caption text-ordift-ink-muted">{image.caption}</figcaption>
-  );
-
+  // No visible <figcaption> here (2026-08-23, "purely visual collage"
+  // correction) — the gallery is image-only now, on purpose. Caption
+  // data is untouched in Sanity and still reaches the visitor: it's
+  // rendered inside PhotoLightbox when the photograph is opened (see
+  // that component), and the source image's real alt text is always
+  // present in the `<img>` itself for screen readers regardless of
+  // whether a caption is ever shown visually.
   if (onClick) {
     return (
       <figure ref={ref} className={`transition-[opacity,transform] duration-700 ease-out ${revealClass}`}>
@@ -88,15 +91,9 @@ export default function InteractiveFigure({
         >
           {image_}
         </button>
-        {caption}
       </figure>
     );
   }
 
-  return (
-    <figure ref={ref} className={`transition-[opacity,transform] duration-700 ease-out ${revealClass}`}>
-      {image_}
-      {caption}
-    </figure>
-  );
+  return <figure ref={ref} className={`transition-[opacity,transform] duration-700 ease-out ${revealClass}`}>{image_}</figure>;
 }

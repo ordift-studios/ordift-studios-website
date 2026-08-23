@@ -28,9 +28,25 @@ import type { ImageLoaderProps } from "next/image";
 // assets (e.g. Logo.tsx's /brand/*.png) are also routed through here.
 // Those aren't absolute URLs, so `new URL()` would throw; pass them
 // through unchanged and let Next.js serve them as-is.
+//
+// The prefix check below only rules out *relative* paths — it doesn't
+// guarantee the rest of the string is a well-formed URL. Found live
+// (2026-08-23, Work Landing Images): `new URL()` on a src that passes
+// the prefix check but is otherwise malformed throws a real, uncaught
+// exception during render (WebKit/Safari surfaces it as "The string
+// did not match the expected pattern"; Chrome/Firefox throw the same
+// class of error with different wording) — this loader runs for every
+// <Image> on the site, including ones fed by freshly
+// picked/uploaded admin imagery, so it needs to degrade gracefully
+// rather than crash the render tree over one bad URL.
 export default function sanityImageLoader({ src, width, quality }: ImageLoaderProps): string {
   if (!/^https?:\/\//.test(src)) return src;
-  const url = new URL(src);
+  let url: URL;
+  try {
+    url = new URL(src);
+  } catch {
+    return src;
+  }
   url.searchParams.set("w", width.toString());
   url.searchParams.set("q", (quality ?? 75).toString());
   url.searchParams.set("auto", "format");
