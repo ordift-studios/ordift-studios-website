@@ -3,9 +3,10 @@ import NavBar from "@/components/NavBar";
 import Footer from "@/components/Footer";
 import Button from "@/components/Button";
 import DepartmentCard from "@/components/DepartmentCard";
-import ResponsiveImage from "@/components/media/ResponsiveImage";
 import PortfolioCard from "@/components/portfolio/PortfolioCard";
+import PortfolioHeroSlideshow from "@/components/portfolio/PortfolioHeroSlideshow";
 import { contentRepository } from "@/lib/content";
+import { getSlideshowProjects } from "@/lib/content/portfolioHelpers";
 
 // Testimonials, Trusted-By/Clients, and Talent Spotlight are still
 // intentionally omitted — no approved real testimonials/clients exist yet
@@ -40,57 +41,22 @@ export default async function Home() {
   const departments = [...services].sort((a, b) => a.displayOrder - b.displayOrder);
   const featuredProjects = portfolioProjects.filter((p) => p.featured);
   const categoryById = new Map(portfolioCategories.map((c) => [c.id, c]));
-  // The homepage's own dedicated heroImage field (added 2026-08-05) takes
-  // priority once someone sets it in Sanity; until then, borrow the
-  // hero image from the first Featured project — real proof of work
-  // instead of the branded placeholder, with zero extra content-entry
-  // step. Falls through to the placeholder only if neither exists yet.
-  const featuredHeroImage = featuredProjects.find((p) => p.heroMedia.type === "image")?.heroMedia;
-  const heroVisual = home.heroImage.url ? home.heroImage : (featuredHeroImage ?? home.heroImage);
+  // Homepage opening experience (2026-08-23): the full-screen photographic
+  // slideshow, not a static hero — reusing the exact same component and
+  // curation logic already built and approved for /work's own opening
+  // section, rather than a second implementation. Featured projects first,
+  // then remaining published projects, image-hero-only, deduped, capped at
+  // 8 — see getSlideshowProjects() (portfolioHelpers.ts). With genuine
+  // Featured Work still limited today, this may render as few as one
+  // slide; PortfolioHeroSlideshow already handles that gracefully (no
+  // prev/next/dots when there's nothing to navigate between).
+  const heroSlideshowProjects = getSlideshowProjects(portfolioProjects);
 
   return (
     <main>
       <NavBar />
 
-      {/* Hero */}
-      <section className="bg-ordift-navy-950 text-white px-4 sm:px-8 py-16 sm:py-24">
-        <div className="max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-[1.15fr_1fr] gap-10 lg:gap-12 items-center">
-          <div>
-            <p className="font-sans font-semibold uppercase tracking-[0.2em] text-eyebrow lg:text-eyebrow-desktop text-ordift-gold mb-4">
-              {home.heroEyebrow}
-            </p>
-            <h1 className="font-serif font-medium text-hero sm:text-hero-tablet lg:text-hero-desktop leading-[var(--text-hero--line-height)] sm:leading-[var(--text-hero-tablet--line-height)] lg:leading-[var(--text-hero-desktop--line-height)] mb-6 max-w-4xl">
-              {home.heroHeadline}
-            </h1>
-            <p className="font-sans text-body lg:text-body-desktop text-white/80 max-w-2xl mb-8">
-              {home.heroSubheadline}
-            </p>
-            <div className="flex flex-wrap gap-3">
-              <Button href={home.heroPrimaryCta.href} variant="primary">
-                {home.heroPrimaryCta.label}
-              </Button>
-              <Button
-                href={home.heroSecondaryCta.href}
-                variant="secondary"
-                className="!border-white/30 !text-white"
-              >
-                {home.heroSecondaryCta.label}
-              </Button>
-            </div>
-          </div>
-          <ResponsiveImage
-            src={heroVisual.url}
-            alt={heroVisual.alt || "Ordift Studios signature campaign visual"}
-            width={heroVisual.width}
-            height={heroVisual.height}
-            lqip={heroVisual.lqip}
-            aspectRatio="4/5"
-            sizes="(min-width: 1024px) 40vw, 90vw"
-            priority
-            className="rounded-2xl w-full max-w-sm mx-auto lg:max-w-none"
-          />
-        </div>
-      </section>
+      <PortfolioHeroSlideshow projects={heroSlideshowProjects} />
 
       {/* Who We Are */}
       <section className="bg-white px-4 sm:px-8 py-14 sm:py-20">
