@@ -167,7 +167,16 @@ export default function PhotoLightbox({
             objectFit="contain"
             priority
             sizes="92vw"
-            style={{ maxWidth: "92vw", maxHeight: "78vh" }}
+            // aspect-ratio alone (as ResponsiveImage's wrapper sets by
+            // default) needs at least one definite dimension to derive
+            // the other — with only max-width/max-height as caps and
+            // no intrinsic content (the actual <img> is `fill`, i.e.
+            // position:absolute, so it contributes no size of its own),
+            // the wrapper collapsed to 0×0 (confirmed live). Anchoring
+            // on an explicit height and letting width derive from
+            // aspect-ratio, capped by max-width for wide images, gives
+            // the browser a definite dimension to start from.
+            style={{ height: "78vh", maxWidth: "92vw" }}
           />
         </div>
 
