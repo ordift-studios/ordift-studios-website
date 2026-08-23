@@ -4,10 +4,9 @@ import NavBar from "@/components/NavBar";
 import Footer from "@/components/Footer";
 import Button from "@/components/Button";
 import PortfolioCard from "@/components/portfolio/PortfolioCard";
-import PortfolioHeroSlideshow from "@/components/portfolio/PortfolioHeroSlideshow";
 import WorkDisciplineBands from "@/components/portfolio/WorkDisciplineBands";
 import { contentRepository } from "@/lib/content";
-import { DISCIPLINE_LABEL, getSlideshowProjects, matchesSearch } from "@/lib/content/portfolioHelpers";
+import { DISCIPLINE_LABEL, matchesSearch } from "@/lib/content/portfolioHelpers";
 import type { PortfolioDiscipline, PortfolioProject } from "@/lib/content/types";
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://ordiftstudios.com";
@@ -102,8 +101,14 @@ export default async function PortfolioPage({
     return true;
   });
 
-  const featured = allProjects.filter((p) => p.featured);
-  const slideshowProjects = getSlideshowProjects(allProjects);
+  // "Featured Work" presentation was removed from this page (2026-08-23)
+  // — see the removed-section note further down for exactly where it's
+  // intended to move. The underlying capability is untouched: `featured`
+  // remains a real field on `portfolioProject` (Sanity), PortfolioCard
+  // (imported below, still used by the All Work/Results grid) already
+  // knows how to render a featured badge, and the homepage's own
+  // Featured Work section (src/app/page.tsx) is completely separate and
+  // unaffected by this file.
 
   // Only offer category chips that can actually return a result under the
   // current discipline filter — a chip with a guaranteed-empty result is a
@@ -119,12 +124,11 @@ export default async function PortfolioPage({
     <main>
       <NavBar />
 
-      {!hasFilters && slideshowProjects.length > 0 && (
-        <PortfolioHeroSlideshow projects={slideshowProjects} />
-      )}
-
-      {/* Primary discipline-selection experience (2026-08-23) — replaces
-          the old filter/grid as the page's opening content. The
+      {/* Primary discipline-selection experience (2026-08-23) — the very
+          first content on /work, with no slideshow above it. The hero
+          slideshow lives on the homepage only (src/app/page.tsx) — the
+          shared PortfolioHeroSlideshow component is untouched, still used
+          there, just no longer imported/rendered on this page. The
           filter/search system below is retained, not removed, just no
           longer the dominant first thing a visitor sees. */}
       <WorkDisciplineBands disciplines={workDisciplines} />
@@ -219,24 +223,19 @@ export default async function PortfolioPage({
         </div>
       </section>
 
-      {!hasFilters && featured.length > 0 && (
-        <section className="bg-white px-4 sm:px-8 py-14 sm:py-16">
-          <div className="max-w-6xl mx-auto">
-            <h2 className="font-serif font-medium text-section-heading lg:text-section-heading-desktop text-ordift-ink mb-6">
-              Featured Projects
-            </h2>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5 sm:gap-6">
-              {featured.map((project) => (
-                <PortfolioCard
-                  key={project.id}
-                  project={project}
-                  categories={project.categoryIds.map((id) => categoryById.get(id)!).filter(Boolean)}
-                />
-              ))}
-            </div>
-          </div>
-        </section>
-      )}
+      {/* "Featured Work" section removed from /work (2026-08-23) — this
+          page now focuses on discipline navigation and the full project
+          catalog below, not a curated highlight reel. The intended future
+          home is the Stories/Journal editorial experience (not yet
+          redesigned) alongside project stories, behind-the-scenes, and
+          other editorial content — deferred rather than forced into a
+          Journal page not yet designed to hold it. Nothing about the
+          underlying capability was touched: `project.featured` is
+          untouched Sanity data, and PortfolioCard (still imported/used
+          just below) already renders a "Featured" badge on any card
+          whose project has it set — reusable as-is once Stories has a
+          real section to place it in. The homepage's own, separate
+          Featured Work section is unaffected by this removal. */}
 
       <section className="bg-ordift-offwhite px-4 sm:px-8 py-14 sm:py-20">
         <div className="max-w-6xl mx-auto">
