@@ -33,10 +33,17 @@ export default function NavBarClient({
   return (
     <nav
       className={`text-white transition-colors duration-300 ${
-        transparent
-          ? `absolute top-0 inset-x-0 z-20 ${open ? "bg-ordift-navy-950" : "bg-transparent"}`
-          : "relative bg-ordift-navy-950"
+        transparent ? "absolute top-0 inset-x-0 z-20" : "relative bg-ordift-navy-950"
       }`}
+      // Inline style, not a Tailwind utility class, for the transparent-mode
+      // background specifically: a `bg-ordift-navy-950` utility applied here
+      // was silently losing to `bg-transparent` regardless of which one was
+      // actually present in the className (confirmed live via computed
+      // style + CSSOM inspection on the deployed page) — a Tailwind v4
+      // cascade-layer interaction, not a typo. An inline style always wins
+      // over any stylesheet layer, so it sidesteps the issue entirely
+      // rather than continuing to chase the exact cause.
+      style={transparent ? { backgroundColor: open ? "var(--color-navy-950)" : "transparent" } : undefined}
     >
       {transparent && !open && (
         <div
