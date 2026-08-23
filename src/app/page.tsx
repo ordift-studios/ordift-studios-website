@@ -41,14 +41,17 @@ export default async function Home() {
   const departments = [...services].sort((a, b) => a.displayOrder - b.displayOrder);
   const featuredProjects = portfolioProjects.filter((p) => p.featured);
   const categoryById = new Map(portfolioCategories.map((c) => [c.id, c]));
-  // Homepage opening experience (2026-08-23): the full-screen photographic
-  // slideshow, not a static hero — reusing the exact same component and
-  // curation logic already built and approved for /work's own opening
-  // section, rather than a second implementation. Featured projects first,
-  // then remaining published projects, image-hero-only, deduped, capped at
-  // 8 — see getSlideshowProjects() (portfolioHelpers.ts). Content source
-  // is still automatic (not yet the dedicated curated selection under
-  // discussion) — see this session's report for that scope boundary.
+  // Homepage opening experience — full-screen photographic slideshow.
+  // Primary source (2026-08-23): Admin/Super-Admin-curated
+  // landscape/portrait slides (home.slideshowSlides — already filtered to
+  // enabled-only and fallback-resolved by getHomePage() itself, see
+  // repository.ts). Legacy fallback, unchanged and still computed every
+  // render: getSlideshowProjects() — featured projects first, then
+  // remaining published projects, image-hero-only, deduped, capped at 8.
+  // PortfolioHeroSlideshow itself decides which to use (curated whenever
+  // non-empty, else this) — see its own prop docs — so the live homepage
+  // is never left without a working slideshow, including before any
+  // curated slide has been added yet.
   const heroSlideshowProjects = getSlideshowProjects(portfolioProjects);
 
   return (
@@ -60,7 +63,7 @@ export default async function Home() {
           false there), unaffected by this. */}
       <div className="relative">
         <NavBar transparent />
-        <PortfolioHeroSlideshow projects={heroSlideshowProjects} variant="hero" />
+        <PortfolioHeroSlideshow projects={heroSlideshowProjects} slides={home.slideshowSlides} variant="hero" />
       </div>
 
       {/* Who We Are */}

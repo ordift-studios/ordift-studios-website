@@ -40,6 +40,7 @@ export const HOME_PAGE: HomePage = {
   heroPrimaryCta: { label: "Explore Our Work", href: "/work" },
   heroSecondaryCta: { label: "Book a Service", href: "/book" },
   heroImage: { type: "image", url: null, alt: "", width: null, height: null, lqip: null },
+  slideshowSlides: [], // local/dev fixture — always falls back to getSlideshowProjects()
   whoWeAreEyebrow: "Who We Are",
   whoWeAreBody:
     "Ordift Studios is a multidisciplinary creative house where photography, film, design, branding, content and talent work as one connected system. We create more than visual assets — we shape stories, identities and experiences that help brands, businesses and people become memorable.",

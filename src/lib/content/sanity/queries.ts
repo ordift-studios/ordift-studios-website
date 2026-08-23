@@ -272,9 +272,37 @@ export const siteSettingsQuery = `*[_type == "siteSettings"][0]{
   ${seoFragment("defaultSeo")}
 }`;
 
+// Raw slide shape, pre-fallback-resolution — resolveSlideshowSlide() in
+// repository.ts turns this into the clean HomepageSlideshowSlide the
+// frontend actually consumes. Only enabled slides are fetched at all
+// (filtered here, not in JS) so array order — which drives display
+// order — is preserved exactly as curated in Studio. `projectFallback`
+// is only ever used when BOTH landscapeImage and portraitImage are unset
+// on this slide; guarded to type == "image" since a project's heroMedia
+// can be a video, which this slideshow has never supported.
 export const homePageQuery = `*[_type == "homepage"][0]{
   heroEyebrow, heroHeadline, heroSubheadline, heroPrimaryCta, heroSecondaryCta,
   ${requiredMediaAssetFragment("heroImage", "heroImage")},
+  "slideshowSlides": slideshowSlides[enabled == true]{
+    "landscapeUrl": landscapeImage.asset->url,
+    "landscapeAlt": landscapeAlt,
+    "landscapeWidth": landscapeImage.asset->metadata.dimensions.width,
+    "landscapeHeight": landscapeImage.asset->metadata.dimensions.height,
+    "landscapeLqip": landscapeImage.asset->metadata.lqip,
+    "portraitUrl": portraitImage.asset->url,
+    "portraitAlt": portraitAlt,
+    "portraitWidth": portraitImage.asset->metadata.dimensions.width,
+    "portraitHeight": portraitImage.asset->metadata.dimensions.height,
+    "portraitLqip": portraitImage.asset->metadata.lqip,
+    "projectFallback": project->{
+      "type": heroMedia.type,
+      "url": heroMedia.image.asset->url,
+      "alt": heroMedia.alt,
+      "width": heroMedia.image.asset->metadata.dimensions.width,
+      "height": heroMedia.image.asset->metadata.dimensions.height,
+      "lqip": heroMedia.image.asset->metadata.lqip
+    }
+  },
   whoWeAreEyebrow, whoWeAreBody,
   originalsEyebrow, originalsHeadline, originalsBody,
   process,

@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { PointerEvent as ReactPointerEvent } from "react";
 import Link from "next/link";
 import Image from "next/image";
-import type { PortfolioProject } from "@/lib/content/types";
+import type { HomepageSlideshowSlide, PortfolioProject } from "@/lib/content/types";
 import { DISCIPLINE_LABEL } from "@/lib/content/portfolioHelpers";
 
 // Immersive, curated opening statement — deliberately not built on the
@@ -24,9 +24,20 @@ import { DISCIPLINE_LABEL } from "@/lib/content/portfolioHelpers";
 //   metadata overlay, no click-through (a plain photographic showcase,
 //   not a portfolio-project card) — the surrounding page is responsible
 //   for any nav/CTA layered on top of it.
+//
+// `slides` (2026-08-23, hero variant only) — curated landscape/portrait
+// pairs from Admin. When non-empty, these take priority over `projects`
+// and each slide renders BOTH its landscape and portrait image
+// simultaneously, toggled by a pure CSS `orientation` media query (not a
+// width breakpoint, and not JS) — so rotating a capable device switches
+// images instantly with no re-render, no autoplay/index reset, and no
+// dependency on which width bucket the device happens to fall into.
+// `projects` remains the fallback source when `slides` is empty/absent —
+// see the homepage's own page.tsx for exactly when each is used.
 export type PortfolioHeroSlideshowProps = {
   projects: PortfolioProject[];
   variant?: "portfolio" | "hero";
+  slides?: HomepageSlideshowSlide[];
 };
 
 const AUTOPLAY_INTERVAL_MS = 6000;
@@ -50,13 +61,14 @@ function ringOffset(i: number, index: number, count: number): number {
 
 const SWIPE_THRESHOLD_PX = 50;
 
-export default function PortfolioHeroSlideshow({ projects, variant = "portfolio" }: PortfolioHeroSlideshowProps) {
+export default function PortfolioHeroSlideshow({ projects, variant = "portfolio", slides }: PortfolioHeroSlideshowProps) {
   const isHero = variant === "hero";
+  const curatedSlides = isHero && slides && slides.length > 0 ? slides : null;
   const [index, setIndex] = useState(0);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const pointerStartX = useRef<number | null>(null);
   const pointerDeltaX = useRef(0);
-  const count = projects.length;
+  const count = curatedSlides ? curatedSlides.length : projects.length;
 
   const goTo = useCallback(
     (next: number) => {
@@ -126,13 +138,50 @@ export default function PortfolioHeroSlideshow({ projects, variant = "portfolio"
       onPointerUp={onPointerUp}
       onPointerCancel={onPointerUp}
     >
-      {projects.map((project, i) => {
+      {Array.from({ length: count }, (_, i) => {
         const slideStyle = {
           transform: `translateX(${ringOffset(i, index, count) * 100}%)`,
           transitionDuration: `${TRANSITION_MS}ms`,
         };
         const slideClassName = "absolute inset-0 block transition-transform ease-in-out motion-reduce:transition-none";
 
+        // Curated slide (landscape/portrait pair): both images always
+        // render; a CSS orientation media query shows exactly one. No
+        // metadata overlay — same clean-photograph rule as any other
+        // hero-variant slide.
+        if (curatedSlides) {
+          const slide = curatedSlides[i];
+          return (
+            <div key={i} aria-hidden={i !== index} className={slideClassName} style={slideStyle}>
+              {slide.landscape?.url && (
+                <Image
+                  src={slide.landscape.url}
+                  alt={slide.landscape.alt}
+                  fill
+                  priority={i === 0}
+                  sizes="100vw"
+                  placeholder={slide.landscape.lqip ? "blur" : "empty"}
+                  blurDataURL={slide.landscape.lqip ?? undefined}
+                  className="object-cover hidden [@media(orientation:landscape)]:block"
+                />
+              )}
+              {slide.portrait?.url && (
+                <Image
+                  src={slide.portrait.url}
+                  alt={slide.portrait.alt}
+                  fill
+                  priority={i === 0}
+                  sizes="100vw"
+                  placeholder={slide.portrait.lqip ? "blur" : "empty"}
+                  blurDataURL={slide.portrait.lqip ?? undefined}
+                  className="object-cover hidden [@media(orientation:portrait)]:block"
+                />
+              )}
+            </div>
+          );
+        }
+
+        const project = projects[i];
         const slideContent = (
           <>
             <Image
@@ -224,11 +273,11 @@ export default function PortfolioHeroSlideshow({ projects, variant = "portfolio"
           </button>
 
           <div className="absolute bottom-4 sm:bottom-5 left-1/2 -translate-x-1/2 z-10 flex gap-2">
-            {projects.map((project, i) => (
+            {Array.from({ length: count }, (_, i) => (
               <button
-                key={project.id}
+                key={i}
                 type="button"
-                aria-label={`Go to slide ${i + 1}: ${project.title}`}
+                aria-label={curatedSlides ? `Go to slide ${i + 1}` : `Go to slide ${i + 1}: ${projects[i].title}`}
                 aria-current={i === index}
                 onClick={(e) => {
                   e.preventDefault();

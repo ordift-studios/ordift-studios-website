@@ -8,6 +8,7 @@ import type {
   Founder,
   FooterSettings,
   HomePage,
+  HomepageSlideshowSlide,
   Instructor,
   JournalPost,
   LegalPage,
@@ -71,6 +72,56 @@ import {
 // categories). journalCategories/portfolioCollections currently have no
 // "by slug" method in the interface either, matching what the frontend
 // actually calls today.
+
+// Homepage slideshow landscape/portrait fallback resolution (2026-08-23).
+// homePageQuery fetches each curated slide's raw pieces (both orientation
+// images, plus the referenced project's own heroMedia as a last-resort
+// fallback); this turns that into the clean HomepageSlideshowSlide shape
+// the frontend actually consumes, so no fallback logic lives in a
+// component. Fallback order per orientation: that orientation's own
+// image -> the other orientation's image -> the linked project's
+// heroMedia (image-type only — a project's hero can be a video, which
+// this slideshow has never supported). A slide with nothing usable at
+// all (no images, no usable project fallback) is dropped entirely rather
+// than ever rendering broken.
+type RawSlideImage = {
+  url: string | null;
+  alt: string | null;
+  width: number | null;
+  height: number | null;
+  lqip: string | null;
+};
+type RawSlideshowSlide = {
+  landscapeUrl: string | null;
+  landscapeAlt: string | null;
+  landscapeWidth: number | null;
+  landscapeHeight: number | null;
+  landscapeLqip: string | null;
+  portraitUrl: string | null;
+  portraitAlt: string | null;
+  portraitWidth: number | null;
+  portraitHeight: number | null;
+  portraitLqip: string | null;
+  projectFallback: (RawSlideImage & { type: string | null }) | null;
+};
+type RawHomePage = Omit<HomePage, "slideshowSlides"> & { slideshowSlides: RawSlideshowSlide[] };
+
+function resolveSlideshowSlide(raw: RawSlideshowSlide): HomepageSlideshowSlide | null {
+  const landscape: RawSlideImage | null = raw.landscapeUrl ? { url: raw.landscapeUrl, alt: raw.landscapeAlt, width: raw.landscapeWidth, height: raw.landscapeHeight, lqip: raw.landscapeLqip } : null;
+  const portrait: RawSlideImage | null = raw.portraitUrl ? { url: raw.portraitUrl, alt: raw.portraitAlt, width: raw.portraitWidth, height: raw.portraitHeight, lqip: raw.portraitLqip } : null;
+  const fallback: RawSlideImage | null =
+    raw.projectFallback?.type === "image" && raw.projectFallback.url ? raw.projectFallback : null;
+
+  const toMediaAsset = (img: RawSlideImage | null) =>
+    img?.url ? { type: "image" as const, url: img.url, alt: img.alt ?? "", width: img.width, height: img.height, lqip: img.lqip } : null;
+
+  const resolvedLandscape = toMediaAsset(landscape ?? portrait ?? fallback);
+  const resolvedPortrait = toMediaAsset(portrait ?? landscape ?? fallback);
+  if (!resolvedLandscape && !resolvedPortrait) return null;
+
+  return { landscape: resolvedLandscape, portrait: resolvedPortrait };
+}
+
 export const sanityContentRepository: ContentRepository = {
   async getWorkshops() {
     return client.fetch<Workshop[]>(workshopsQuery);
@@ -136,7 +187,15 @@ export const sanityContentRepository: ContentRepository = {
     return client.fetch<SiteSettings>(siteSettingsQuery);
   },
   async getHomePage() {
-    return client.fetch<HomePage>(homePageQuery);
+    const raw = await client.fetch<RawHomePage>(homePageQuery);
+    // GROQ returns null (not []) for an array projection on a document
+    // that has never had this field set — real, hit during this exact
+    // build (`slideshowSlides` doesn't exist yet on the live `homepage`
+    // document). Guard rather than assume.
+    const slideshowSlides = (raw.slideshowSlides ?? [])
+      .map(resolveSlideshowSlide)
+      .filter((s): s is HomepageSlideshowSlide => s !== null);
+    return { ...raw, slideshowSlides };
   },
   async getAboutPage() {
     return client.fetch<AboutPage>(aboutPageQuery);

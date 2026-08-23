@@ -9,6 +9,7 @@ export default defineType({
   type: "document",
   groups: [
     { name: "hero", title: "Hero" },
+    { name: "slideshow", title: "Homepage Slideshow" },
     { name: "whoWeAre", title: "Who We Are" },
     { name: "originals", title: "Ordift Originals" },
     { name: "process", title: "Process" },
@@ -28,6 +29,16 @@ export default defineType({
       group: "hero",
       description:
         "Signature campaign visual shown beside the hero headline. Optional — the branded placeholder shows until this is set.",
+    }),
+
+    defineField({
+      name: "slideshowSlides",
+      title: "Homepage Slideshow Slides",
+      type: "array",
+      group: "slideshow",
+      of: [{ type: "homepageSlideshowSlide" }],
+      description:
+        "Curated homepage opening slideshow. Reorder by dragging. While this is empty (or has no enabled slides), the homepage automatically falls back to the existing published-Portfolio-project slideshow — the live site is never left without a working slideshow.",
     }),
 
     defineField({ name: "whoWeAreEyebrow", title: "Eyebrow", type: "string", group: "whoWeAre" }),

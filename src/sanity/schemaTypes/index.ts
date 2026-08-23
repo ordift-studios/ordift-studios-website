@@ -3,6 +3,7 @@ import type { SchemaTypeDefinition } from "sanity";
 // Objects (reusable field sets, not top-level documents)
 import ctaButton from "./objects/ctaButton";
 import galleryImage from "./objects/galleryImage";
+import homepageSlideshowSlide from "./objects/homepageSlideshowSlide";
 import mediaAsset from "./objects/mediaAsset";
 import seo from "./objects/seo";
 import socialLink from "./objects/socialLink";
@@ -53,6 +54,7 @@ export const schemaTypes: SchemaTypeDefinition[] = [
   // objects
   ctaButton,
   galleryImage,
+  homepageSlideshowSlide,
   mediaAsset,
   seo,
   socialLink,

@@ -341,6 +341,17 @@ export type SiteSettings = {
   defaultSeo: SeoFields;
 };
 
+// One resolved homepage-slideshow slide, already run through the
+// landscape/portrait fallback chain (see getHomePage() in
+// src/lib/content/sanity/repository.ts) — by the time this reaches the
+// frontend, `landscape`/`portrait` are each either a real, ready-to-render
+// image or null (never a half-broken reference). A slide with neither
+// resolved is dropped entirely upstream, never reaches here.
+export type HomepageSlideshowSlide = {
+  landscape: MediaAsset | null;
+  portrait: MediaAsset | null;
+};
+
 export type HomePage = {
   heroEyebrow: string;
   heroHeadline: string;
@@ -348,6 +359,11 @@ export type HomePage = {
   heroPrimaryCta: CtaButton;
   heroSecondaryCta: CtaButton;
   heroImage: MediaAsset;
+  // Curated slides only (already fallback-resolved, already filtered to
+  // enabled). Empty when no admin-curated slides exist yet — the homepage
+  // itself decides whether to fall back to getSlideshowProjects() based
+  // on whether this is empty, not this type.
+  slideshowSlides: HomepageSlideshowSlide[];
   whoWeAreEyebrow: string;
   whoWeAreBody: string;
   originalsEyebrow: string;
