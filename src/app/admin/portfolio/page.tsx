@@ -3,6 +3,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/portal/roles";
 import { canAccessPortfolioAdmin, canCreatePortfolioProjectsNatively } from "@/lib/admin/portfolioPermissions";
+import { canManageHomepageSlideshow } from "@/lib/admin/homepageSlideshowPermissions";
 import {
   getAllPortfolioProjectsAdmin,
   getPortfolioCategoriesAdmin,
@@ -72,6 +73,7 @@ export default async function AdminPortfolioPage({
   const user = await getCurrentUser();
   if (!user || !canAccessPortfolioAdmin(user)) redirect("/admin/overview");
   const canCreateNatively = canCreatePortfolioProjectsNatively(user);
+  const canManageSlideshow = canManageHomepageSlideshow(user);
 
   const { status: statusFilter, q } = await searchParams;
 
@@ -124,6 +126,14 @@ export default async function AdminPortfolioPage({
           </p>
         </div>
         <div className="flex gap-3">
+          {canManageSlideshow && (
+            <Link
+              href="/admin/homepage-slideshow"
+              className="font-sans text-body-small font-semibold px-4 py-2 rounded-md border border-ordift-gold text-ordift-gold-pressed hover:bg-ordift-gold/10"
+            >
+              Homepage Slideshow
+            </Link>
+          )}
           <Link
             href="/admin/portfolio/categories"
             className="font-sans text-body-small font-medium px-4 py-2 rounded-md border border-black/15 text-ordift-ink hover:border-black/30"

@@ -62,6 +62,33 @@ export async function getPublishedPortfolioProjectOptions(): Promise<PortfolioPr
   return client.fetch<PortfolioProjectRefOption[]>(PUBLISHED_PROJECT_OPTIONS_QUERY);
 }
 
+// "Choose from Portfolio" picker data (2026-08-23) — an existing
+// project's hero + gallery images, so an admin can reuse an
+// already-uploaded asset as a slideshow image instead of only ever
+// uploading a fresh file. Fetched lazily, one project at a time (not
+// joined onto the options list above), since a project's full gallery
+// can be large and most projects are never opened in the picker.
+export type PickableProjectImage = { assetId: string; url: string; alt: string | null };
+export type ProjectPickableImages = { hero: PickableProjectImage | null; gallery: PickableProjectImage[] };
+
+const PROJECT_PICKABLE_IMAGES_QUERY = `*[_type == "portfolioProject" && _id == $id][0]{
+  "hero": select(heroMedia.type == "image" => {
+    "assetId": heroMedia.image.asset->_id,
+    "url": heroMedia.image.asset->url,
+    "alt": heroMedia.alt
+  }),
+  "gallery": gallery[defined(image.asset)]{
+    "assetId": image.asset->_id,
+    "url": image.asset->url,
+    alt
+  }
+}`;
+
+export async function getPortfolioProjectImagesForPicker(projectId: string): Promise<ProjectPickableImages> {
+  const result = await client.fetch<ProjectPickableImages | null>(PROJECT_PICKABLE_IMAGES_QUERY, { id: projectId });
+  return result ?? { hero: null, gallery: [] };
+}
+
 export type SlideInput = {
   projectId: string | null;
   landscapeAssetId: string | null;

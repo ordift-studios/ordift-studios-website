@@ -3,7 +3,12 @@
 import { revalidatePath } from "next/cache";
 import { getCurrentUser } from "@/lib/portal/roles";
 import { canManageHomepageSlideshow } from "@/lib/admin/homepageSlideshowPermissions";
-import { saveHomepageSlideshowSlides, type SlideInput } from "@/lib/content/sanity/homepageSlideshowAdmin";
+import {
+  getPortfolioProjectImagesForPicker,
+  saveHomepageSlideshowSlides,
+  type ProjectPickableImages,
+  type SlideInput,
+} from "@/lib/content/sanity/homepageSlideshowAdmin";
 import { logActivity } from "@/lib/admin/activityLog";
 
 async function requireHomepageSlideshowAdmin() {
@@ -47,4 +52,13 @@ export async function saveHomepageSlideshowSlidesAction(homepageId: string, slid
   // revalidation.
   revalidatePath("/");
   revalidatePath("/admin/homepage-slideshow");
+}
+
+// "Choose from Portfolio" picker (2026-08-23) — read-only, but still
+// gated the same as every other export here, matching the existing
+// project reference dropdown's own access level rather than assuming
+// read access is automatically fine just because it's non-mutating.
+export async function getProjectImagesForPickerAction(projectId: string): Promise<ProjectPickableImages> {
+  await requireHomepageSlideshowAdmin();
+  return getPortfolioProjectImagesForPicker(projectId);
 }

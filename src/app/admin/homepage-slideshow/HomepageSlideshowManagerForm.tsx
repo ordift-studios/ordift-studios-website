@@ -2,8 +2,13 @@
 
 import { useState, useTransition } from "react";
 import Image from "next/image";
-import { saveHomepageSlideshowSlidesAction } from "./actions";
-import type { AdminSlideshowSlide, PortfolioProjectRefOption } from "@/lib/content/sanity/homepageSlideshowAdmin";
+import { getProjectImagesForPickerAction, saveHomepageSlideshowSlidesAction } from "./actions";
+import type {
+  AdminSlideshowSlide,
+  PickableProjectImage,
+  PortfolioProjectRefOption,
+  ProjectPickableImages,
+} from "@/lib/content/sanity/homepageSlideshowAdmin";
 
 type SlideDraft = {
   projectId: string | null;
@@ -54,6 +59,23 @@ function moveItem<T>(arr: T[], from: number, to: number): T[] {
   return next;
 }
 
+type Orientation = "landscape" | "portrait";
+
+// One clickable image slot's transient UI state — which slot is open
+// (`${slideIndex}-${orientation}`), which sub-view it's showing, and the
+// in-progress "Choose from Portfolio" selection. Only one slot can be
+// open at a time, matching the requested "tap image -> small choice"
+// interaction rather than a full page-builder-style multi-panel editor.
+type PickerState = {
+  key: string;
+  slideIndex: number;
+  orientation: Orientation;
+  mode: "menu" | "portfolio";
+  pickerProjectId: string;
+  images: ProjectPickableImages | null;
+  loadingImages: boolean;
+};
+
 async function uploadImage(file: File, orientation: "landscape" | "portrait") {
   const formData = new FormData();
   formData.append("file", file);
@@ -78,6 +100,50 @@ export default function HomepageSlideshowManagerForm({
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
   const [isPending, startTransition] = useTransition();
+  const [picker, setPicker] = useState<PickerState | null>(null);
+
+  function openPicker(slideIndex: number, orientation: Orientation) {
+    const slide = slides[slideIndex];
+    setPicker({
+      key: `${slideIndex}-${orientation}`,
+      slideIndex,
+      orientation,
+      mode: "menu",
+      pickerProjectId: slide.projectId ?? "",
+      images: null,
+      loadingImages: false,
+    });
+    setError(null);
+  }
+
+  function closePicker() {
+    setPicker(null);
+  }
+
+  async function loadPickerProjectImages(projectId: string) {
+    if (!projectId) {
+      setPicker((p) => (p ? { ...p, pickerProjectId: projectId, images: null } : p));
+      return;
+    }
+    setPicker((p) => (p ? { ...p, pickerProjectId: projectId, loadingImages: true, images: null } : p));
+    try {
+      const images = await getProjectImagesForPickerAction(projectId);
+      setPicker((p) => (p && p.pickerProjectId === projectId ? { ...p, images, loadingImages: false } : p));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not load that project's images");
+      setPicker((p) => (p ? { ...p, loadingImages: false } : p));
+    }
+  }
+
+  function selectPickedImage(image: PickableProjectImage) {
+    if (!picker) return;
+    const patch =
+      picker.orientation === "landscape"
+        ? { landscapeAssetId: image.assetId, landscapeUrl: image.url, landscapeAlt: image.alt ?? "" }
+        : { portraitAssetId: image.assetId, portraitUrl: image.url, portraitAlt: image.alt ?? "" };
+    updateSlide(picker.slideIndex, patch);
+    closePicker();
+  }
 
   function updateSlide(i: number, patch: Partial<SlideDraft>) {
     setSlides((prev) => prev.map((s, idx) => (idx === i ? { ...s, ...patch } : s)));
@@ -95,6 +161,7 @@ export default function HomepageSlideshowManagerForm({
       } else {
         updateSlide(i, { portraitAssetId: assetId, portraitUrl: url });
       }
+      closePicker();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Upload failed");
     } finally {
@@ -202,36 +269,134 @@ export default function HomepageSlideshowManagerForm({
                 const url = orientation === "landscape" ? slide.landscapeUrl : slide.portraitUrl;
                 const alt = orientation === "landscape" ? slide.landscapeAlt : slide.portraitAlt;
                 const key = `${i}-${orientation}`;
+                const isOpen = picker?.key === key;
+                const boxSizeClass = orientation === "landscape" ? "aspect-video" : "aspect-[3/4] max-w-[180px]";
                 return (
                   <div key={orientation} className="space-y-2">
                     <p className="font-sans font-semibold uppercase tracking-[0.1em] text-caption text-ordift-gold-pressed">
                       {orientation}
                     </p>
-                    <div
-                      className={`relative rounded-lg overflow-hidden bg-ordift-offwhite border border-black/10 ${
-                        orientation === "landscape" ? "aspect-video" : "aspect-[3/4] max-w-[180px]"
+
+                    {/* The whole image/placeholder area is one large,
+                        touch-friendly tap target (no hover dependency) —
+                        tapping it (whether empty or already has an
+                        image, so replacing is just as easy as adding)
+                        opens the Choose from Portfolio / Upload from
+                        Device menu below it. */}
+                    <button
+                      type="button"
+                      onClick={() => (isOpen ? closePicker() : openPicker(i, orientation))}
+                      className={`relative w-full rounded-lg overflow-hidden bg-ordift-offwhite border touch-manipulation ${boxSizeClass} ${
+                        isOpen ? "border-ordift-gold border-2" : "border-black/10 hover:border-black/25"
                       }`}
                     >
                       {url ? (
                         <Image src={url} alt={alt || ""} fill sizes="300px" className="object-cover" />
                       ) : (
-                        <div className="absolute inset-0 flex items-center justify-center text-caption text-ordift-ink-muted/60">
-                          No {orientation} image yet
+                        <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 text-caption text-ordift-ink-muted/70 px-3 text-center">
+                          <span>No {orientation} image yet</span>
+                          <span className="text-ordift-gold-pressed font-semibold">Tap to add</span>
                         </div>
                       )}
-                    </div>
-                    <input
-                      type="file"
-                      accept="image/jpeg,image/png,image/webp,image/gif"
-                      disabled={uploadingKey === key}
-                      onChange={(e) => {
-                        const file = e.target.files?.[0];
-                        if (file) handleUpload(i, orientation, file);
-                        e.target.value = "";
-                      }}
-                      className="text-caption"
-                    />
-                    {uploadingKey === key && <p className="text-caption text-ordift-ink-muted">Uploading…</p>}
+                      {url && !isOpen && (
+                        <div className="absolute inset-x-0 bottom-0 bg-black/50 text-white text-caption text-center py-1">
+                          Tap to replace
+                        </div>
+                      )}
+                    </button>
+
+                    {isOpen && picker && (
+                      <div className="rounded-lg border border-black/15 bg-white p-3 space-y-3">
+                        {picker.mode === "menu" && (
+                          <div className="flex flex-col gap-2">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setPicker((p) => (p ? { ...p, mode: "portfolio" } : p));
+                                if (picker.pickerProjectId) loadPickerProjectImages(picker.pickerProjectId);
+                              }}
+                              className="min-h-11 rounded-md border border-black/15 text-body-small font-sans px-3 hover:border-black/30"
+                            >
+                              Choose from Portfolio
+                            </button>
+                            <label className="min-h-11 rounded-md border border-black/15 text-body-small font-sans px-3 flex items-center justify-center cursor-pointer hover:border-black/30">
+                              {uploadingKey === key ? "Uploading…" : "Upload from Device"}
+                              <input
+                                type="file"
+                                accept="image/jpeg,image/png,image/webp,image/gif"
+                                disabled={uploadingKey === key}
+                                onChange={(e) => {
+                                  const file = e.target.files?.[0];
+                                  if (file) handleUpload(i, orientation, file);
+                                  e.target.value = "";
+                                }}
+                                className="hidden"
+                              />
+                            </label>
+                            <button
+                              type="button"
+                              onClick={closePicker}
+                              className="min-h-9 text-caption text-ordift-ink-muted underline"
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        )}
+
+                        {picker.mode === "portfolio" && (
+                          <div className="space-y-3">
+                            <select
+                              value={picker.pickerProjectId}
+                              onChange={(e) => loadPickerProjectImages(e.target.value)}
+                              className="w-full min-h-10 rounded border border-black/15 px-3 text-body-small"
+                            >
+                              <option value="">— Select a project —</option>
+                              {projectOptions.map((p) => (
+                                <option key={p.id} value={p.id}>
+                                  {p.title}
+                                </option>
+                              ))}
+                            </select>
+
+                            {picker.loadingImages && <p className="text-caption text-ordift-ink-muted">Loading images…</p>}
+
+                            {picker.images && !picker.loadingImages && (
+                              <div className="flex flex-wrap gap-2 max-h-48 overflow-y-auto">
+                                {[...(picker.images.hero ? [picker.images.hero] : []), ...picker.images.gallery].map(
+                                  (img) => (
+                                    <button
+                                      key={img.assetId}
+                                      type="button"
+                                      onClick={() => selectPickedImage(img)}
+                                      className="relative w-20 h-20 rounded overflow-hidden border border-black/10 hover:border-ordift-gold touch-manipulation"
+                                    >
+                                      <Image src={img.url} alt={img.alt ?? ""} fill sizes="80px" className="object-cover" />
+                                    </button>
+                                  ),
+                                )}
+                                {picker.images.hero === null && picker.images.gallery.length === 0 && (
+                                  <p className="text-caption text-ordift-ink-muted">This project has no usable images yet.</p>
+                                )}
+                              </div>
+                            )}
+
+                            <div className="flex gap-3">
+                              <button
+                                type="button"
+                                onClick={() => setPicker((p) => (p ? { ...p, mode: "menu" } : p))}
+                                className="text-caption text-ordift-ink-muted underline"
+                              >
+                                Back
+                              </button>
+                              <button type="button" onClick={closePicker} className="text-caption text-ordift-ink-muted underline">
+                                Cancel
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
                     <input
                       type="text"
                       placeholder={`${orientation === "landscape" ? "Landscape" : "Portrait"} image alt text`}
