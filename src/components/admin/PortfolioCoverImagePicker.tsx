@@ -5,6 +5,7 @@ import Image from "next/image";
 import { getProjectOwnImagesForCoverPickerAction, saveCoverImageAction } from "@/app/admin/portfolio/actions";
 import type { PickableProjectImage, ProjectPickableImages } from "@/lib/content/sanity/homepageSlideshowAdmin";
 import FocalPointEditor from "./FocalPointEditor";
+import { compressImageFile } from "@/lib/media/clientImageCompress";
 
 // Portfolio Cover / Index Image picker (2026-08-23) — a single clickable
 // image slot, same "tap to open Choose from Portfolio / Upload from
@@ -36,14 +37,43 @@ function defaultCoverAlt(projectTitle: string): string {
   return `${projectTitle} — Ordift Studios`;
 }
 
+// Compresses client-side before sending (2026-08-23) — Vercel's
+// Serverless Functions enforce a hard ~4.5MB request body ceiling at
+// the platform level; a raw device photo easily exceeds that and gets
+// rejected before this route's own size check ever runs, producing a
+// confusing raw browser exception instead of a clean error. Same fix,
+// same reasoning as WorkLandingImagesManagerForm.tsx's uploadImage() —
+// see that file's comment for the full root-cause writeup.
 async function uploadImage(file: File) {
-  const formData = new FormData();
-  formData.append("file", file);
-  formData.append("role", "cover_image");
-  const res = await fetch("/api/admin/portfolio/presentation-images/assets", { method: "POST", body: formData });
-  const json = await res.json();
-  if (!res.ok || !json.ok) throw new Error(json.error || "Upload failed");
-  return { assetId: json.assetId as string, url: json.url as string };
+  let formData: FormData;
+  try {
+    const compressed = file.type.startsWith("image/") ? await compressImageFile(file) : file;
+    formData = new FormData();
+    formData.append("file", compressed);
+    formData.append("role", "cover_image");
+  } catch (err) {
+    throw new Error(`[upload:compress] ${err instanceof Error ? err.message : String(err)}`);
+  }
+
+  let res: Response;
+  try {
+    res = await fetch("/api/admin/portfolio/presentation-images/assets", { method: "POST", body: formData });
+  } catch (err) {
+    throw new Error(`[upload:fetch] ${err instanceof Error ? err.message : String(err)}`);
+  }
+
+  let json: { ok: boolean; error?: string; assetId?: string; url?: string };
+  try {
+    json = await res.json();
+  } catch (err) {
+    throw new Error(`[upload:response-parse] status ${res.status} — ${err instanceof Error ? err.message : String(err)}`);
+  }
+
+  if (!res.ok || !json.ok) throw new Error(`[upload:server] ${json.error || `Upload failed (status ${res.status})`}`);
+  if (!json.assetId || !json.url) {
+    throw new Error(`[upload:missing-fields] server response was missing assetId/url`);
+  }
+  return { assetId: json.assetId, url: json.url };
 }
 
 type PendingImage = { assetId: string; url: string; alt: string; focalX: number; focalY: number };

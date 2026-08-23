@@ -63,11 +63,22 @@ export type PhotoGalleryRecipe = {
   fallbackAspect: string;
 };
 
+// Zero-gap collage correction (2026-08-23) — every Photography treatment
+// below now uses gap-0: photographs and gallery blocks sit edge-to-edge
+// against their neighbors, read as one continuous visual sequence,
+// rather than separated by whitespace. Each treatment's own weights/
+// allowTriple/allowAsymmetric/edgeToEdge/alternateOffset/fallbackAspect
+// — its actual layout personality — are untouched; only the inter-image
+// spacing changed. Deliberately not touched: LEGACY_RECIPES (Videography)
+// and DESIGN_GALLERY_RECIPE (Graphic Design) further down, both out of
+// scope, and the outer page margins/padding around the gallery (in
+// PhotographyProjectView.tsx and FlexiblePhotoGallery.tsx's own
+// container), which are page-level rhythm, not inter-image gap.
 export const PHOTO_GALLERY_RECIPES: Record<PhotographyTreatment, PhotoGalleryRecipe> = {
-  // Luxury wedding journal — generous spacing, large emotional moments
-  // mixed with paired portraits/details and occasional editorial triples.
+  // Luxury wedding journal — large emotional moments mixed with paired
+  // portraits/details and occasional editorial triples.
   wedding: {
-    gap: "gap-6 sm:gap-10",
+    gap: "gap-0",
     weights: { full: 3, pair: 4, triple: 2, asymmetric: 2 },
     allowTriple: true,
     allowAsymmetric: true,
@@ -78,7 +89,7 @@ export const PHOTO_GALLERY_RECIPES: Record<PhotographyTreatment, PhotoGalleryRec
   // Subject-first portrait book — statement portraits, diptychs/triptychs,
   // generous negative space, asymmetric editorial placement.
   portrait: {
-    gap: "gap-10 sm:gap-16",
+    gap: "gap-0",
     weights: { full: 4, pair: 3, triple: 1, asymmetric: 3 },
     allowTriple: true,
     allowAsymmetric: true,
@@ -89,7 +100,7 @@ export const PHOTO_GALLERY_RECIPES: Record<PhotographyTreatment, PhotoGalleryRec
   // Editorial fashion spread — dramatic scale changes, full-bleed moments,
   // controlled unconventional groupings rather than loose sequences.
   fashion: {
-    gap: "gap-2 sm:gap-3",
+    gap: "gap-0",
     weights: { full: 4, pair: 3, triple: 1, asymmetric: 3 },
     allowTriple: true,
     allowAsymmetric: true,
@@ -100,7 +111,7 @@ export const PHOTO_GALLERY_RECIPES: Record<PhotographyTreatment, PhotoGalleryRec
   // Documentary energy — denser combinations of atmosphere, portraits,
   // candid moments and details.
   event: {
-    gap: "gap-2 sm:gap-3",
+    gap: "gap-0",
     weights: { full: 2, pair: 3, triple: 4, asymmetric: 1 },
     allowTriple: true,
     allowAsymmetric: true,
@@ -111,7 +122,7 @@ export const PHOTO_GALLERY_RECIPES: Record<PhotographyTreatment, PhotoGalleryRec
   // Clean campaign showcase — structured, generous whitespace, campaign
   // statements mixed with product/detail groupings; least asymmetry.
   commercial: {
-    gap: "gap-8 sm:gap-14",
+    gap: "gap-0",
     weights: { full: 4, pair: 3, triple: 1, asymmetric: 1 },
     allowTriple: true,
     allowAsymmetric: false,
@@ -121,7 +132,7 @@ export const PHOTO_GALLERY_RECIPES: Record<PhotographyTreatment, PhotoGalleryRec
   },
   // Hero dishes, detail/close-up pairs, wider environmental shots.
   food: {
-    gap: "gap-6 sm:gap-10",
+    gap: "gap-0",
     weights: { full: 3, pair: 4, triple: 1, asymmetric: 2 },
     allowTriple: true,
     allowAsymmetric: true,
@@ -131,7 +142,7 @@ export const PHOTO_GALLERY_RECIPES: Record<PhotographyTreatment, PhotoGalleryRec
   },
   // Default balanced treatment for photography without a matched category.
   general: {
-    gap: "gap-4 sm:gap-6",
+    gap: "gap-0",
     weights: { full: 3, pair: 3, triple: 2, asymmetric: 2 },
     allowTriple: true,
     allowAsymmetric: true,

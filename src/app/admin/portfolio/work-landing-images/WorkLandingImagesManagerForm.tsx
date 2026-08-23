@@ -6,6 +6,7 @@ import { getProjectImagesForWorkLandingPickerAction, saveWorkLandingImageAction 
 import type { PickableProjectImage, ProjectPickableImages, PortfolioProjectRefOption } from "@/lib/content/sanity/homepageSlideshowAdmin";
 import type { WorkLandingImageAdmin } from "@/lib/content/sanity/workLandingImagesAdmin";
 import FocalPointEditor from "@/components/admin/FocalPointEditor";
+import { compressImageFile } from "@/lib/media/clientImageCompress";
 
 // Work Landing Images manager (2026-08-23) — one image per discipline
 // for its band on /work (WorkDisciplineBands). Same "tap to open Choose
@@ -52,14 +53,59 @@ function defaultAlt(name: string): string {
   return `${name} — Ordift Studios`;
 }
 
+// Root cause of the device-upload failure (2026-08-23): this route
+// never compressed the file before sending it, unlike the Portfolio
+// native creator wizard, which always has (see
+// src/app/api/admin/portfolio/assets/route.ts's own comment) — Vercel's
+// Serverless Functions enforce a hard ~4.5MB request body ceiling at
+// the platform level, below this route's own MAX_BYTES check and
+// entirely outside this app's control. A raw camera photo (an iPad
+// photo commonly runs 5-10MB) blows past that ceiling; the platform
+// rejects the request before this route's code ever runs, and the
+// non-JSON rejection response is what produced the confusing raw
+// browser exception — Choose from Portfolio never hit this because it
+// uploads nothing, only a reference to an already-existing asset.
+// compressImageFile (already proven by the wizard) resizes/re-encodes
+// client-side to comfortably clear that ceiling before this ever
+// becomes a request body. Each stage below still tags its own errors
+// with where they occurred, as a safety net for any other failure
+// class this doesn't cover.
 async function uploadImage(file: File) {
-  const formData = new FormData();
-  formData.append("file", file);
-  formData.append("role", "work_landing_image");
-  const res = await fetch("/api/admin/portfolio/presentation-images/assets", { method: "POST", body: formData });
-  const json = await res.json();
-  if (!res.ok || !json.ok) throw new Error(json.error || "Upload failed");
-  return { assetId: json.assetId as string, url: json.url as string };
+  let compressed: File;
+  try {
+    compressed = file.type.startsWith("image/") ? await compressImageFile(file) : file;
+  } catch (err) {
+    throw new Error(`[upload:compress] ${err instanceof Error ? err.message : String(err)}`);
+  }
+
+  let formData: FormData;
+  try {
+    formData = new FormData();
+    formData.append("file", compressed);
+    formData.append("role", "work_landing_image");
+  } catch (err) {
+    throw new Error(`[upload:form-data] ${err instanceof Error ? err.message : String(err)}`);
+  }
+
+  let res: Response;
+  try {
+    res = await fetch("/api/admin/portfolio/presentation-images/assets", { method: "POST", body: formData });
+  } catch (err) {
+    throw new Error(`[upload:fetch] ${err instanceof Error ? err.message : String(err)}`);
+  }
+
+  let json: { ok: boolean; error?: string; assetId?: string; url?: string };
+  try {
+    json = await res.json();
+  } catch (err) {
+    throw new Error(`[upload:response-parse] status ${res.status} — ${err instanceof Error ? err.message : String(err)}`);
+  }
+
+  if (!res.ok || !json.ok) throw new Error(`[upload:server] ${json.error || `Upload failed (status ${res.status})`}`);
+  if (!json.assetId || !json.url) {
+    throw new Error(`[upload:missing-fields] server response was missing assetId/url`);
+  }
+  return { assetId: json.assetId, url: json.url };
 }
 
 export default function WorkLandingImagesManagerForm({
