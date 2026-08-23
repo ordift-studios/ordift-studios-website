@@ -2,11 +2,13 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import NavBar from "@/components/NavBar";
 import Footer from "@/components/Footer";
+import Button from "@/components/Button";
 import PortfolioCard from "@/components/portfolio/PortfolioCard";
 import PortfolioHeroSlideshow from "@/components/portfolio/PortfolioHeroSlideshow";
+import WorkDisciplineBands from "@/components/portfolio/WorkDisciplineBands";
 import { contentRepository } from "@/lib/content";
 import { DISCIPLINE_LABEL, getSlideshowProjects, matchesSearch } from "@/lib/content/portfolioHelpers";
-import type { PortfolioDiscipline } from "@/lib/content/types";
+import type { PortfolioDiscipline, PortfolioProject } from "@/lib/content/types";
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://ordiftstudios.com";
 const PAGE_TITLE = "Portfolio — Ordift Studios";
@@ -33,6 +35,27 @@ const DISCIPLINE_ORDER: PortfolioDiscipline[] = [
   "content-creation",
 ];
 
+// One representative real image per discipline for WorkDisciplineBands —
+// deliberately not a new CMS field: `service` has no hero-image field
+// today (confirmed by inspection before building this), and the
+// instruction is to reuse genuine Portfolio imagery already in the
+// system wherever possible rather than invent schema. Prefers a
+// Featured project in that discipline, falls back to the first
+// published project in that discipline, falls back to null (renders
+// the existing branded MediaPlaceholder, same fallback used sitewide).
+function pickDisciplineHeroImage(discipline: PortfolioDiscipline, projects: PortfolioProject[]) {
+  const matching = projects.filter((p) => p.disciplines.includes(discipline) && p.heroMedia.type === "image" && p.heroMedia.url);
+  const chosen = matching.find((p) => p.featured) ?? matching[0];
+  if (!chosen) return null;
+  return {
+    url: chosen.heroMedia.url!,
+    alt: chosen.heroMedia.alt,
+    width: chosen.heroMedia.width,
+    height: chosen.heroMedia.height,
+    lqip: chosen.heroMedia.lqip,
+  };
+}
+
 function buildHref(params: { discipline?: string; category?: string; q?: string }) {
   const search = new URLSearchParams();
   if (params.discipline) search.set("discipline", params.discipline);
@@ -49,11 +72,25 @@ export default async function PortfolioPage({
 }) {
   const { discipline, category: categorySlug, q } = await searchParams;
 
-  const [allProjects, categories] = await Promise.all([
+  const [allProjects, categories, services] = await Promise.all([
     contentRepository.getPortfolioProjects(),
     contentRepository.getPortfolioCategories(),
+    contentRepository.getServices(),
   ]);
   const categoryById = new Map(categories.map((c) => [c.id, c]));
+
+  // All 7 real disciplines (the service list, not the narrower 5-item
+  // DISCIPLINE_ORDER below which only drives the existing filter chips) —
+  // current, approved naming and order (displayOrder), nothing invented.
+  const workDisciplines = [...services]
+    .sort((a, b) => a.displayOrder - b.displayOrder)
+    .map((service) => ({
+      slug: service.slug,
+      name: service.name,
+      heroImage: pickDisciplineHeroImage(service.slug, allProjects),
+      hasProjects: allProjects.some((p) => p.disciplines.includes(service.slug)),
+    }));
+  const activeService = discipline ? services.find((s) => s.slug === discipline) : undefined;
 
   const hasFilters = Boolean(discipline || categorySlug || q);
 
@@ -85,6 +122,12 @@ export default async function PortfolioPage({
       {!hasFilters && slideshowProjects.length > 0 && (
         <PortfolioHeroSlideshow projects={slideshowProjects} />
       )}
+
+      {/* Primary discipline-selection experience (2026-08-23) — replaces
+          the old filter/grid as the page's opening content. The
+          filter/search system below is retained, not removed, just no
+          longer the dominant first thing a visitor sees. */}
+      <WorkDisciplineBands disciplines={workDisciplines} />
 
       <section className="bg-ordift-navy-950 text-white px-4 sm:px-8 py-16 sm:py-20">
         <div className="max-w-6xl mx-auto">
@@ -200,7 +243,23 @@ export default async function PortfolioPage({
           <h2 className="font-serif font-medium text-section-heading lg:text-section-heading-desktop text-ordift-ink mb-6">
             {hasFilters ? "Results" : "All Work"}
           </h2>
-          {filtered.length === 0 ? (
+          {filtered.length === 0 && activeService ? (
+            // Distinguishes "the service isn't available" from "the
+            // service's portfolio showcase isn't populated yet" — the
+            // service itself is real and bookable either way.
+            <div className="max-w-xl">
+              <p className="font-sans font-semibold uppercase tracking-[0.15em] text-caption text-ordift-gold-pressed mb-2">
+                Portfolio Coming Soon
+              </p>
+              <p className="font-sans text-body text-ordift-ink-muted mb-6">
+                {activeService.name} is a service Ordift Studios provides today — we&apos;re still building out this
+                discipline&apos;s portfolio showcase. Get in touch to discuss your project directly.
+              </p>
+              <Button href={`/book?service=${activeService.slug}`} variant="primary">
+                Book {activeService.name}
+              </Button>
+            </div>
+          ) : filtered.length === 0 ? (
             <p className="font-sans text-body text-ordift-ink-muted">
               No projects match these filters yet.
             </p>
