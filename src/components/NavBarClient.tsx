@@ -30,6 +30,29 @@ export default function NavBarClient({
 }) {
   const [open, setOpen] = useState(false);
 
+  // Individual floating chip treatment (2026-08-23) — only used while
+  // `transparent` and only over the closed-state header row (the opened
+  // mobile dropdown already has its own solid backdrop, no chips needed
+  // there). Literal rgba()/hex values throughout, deliberately not a
+  // Tailwind custom-color opacity modifier (`bg-ordift-navy-950/55`) or an
+  // inline `var(--color-*)` reference — both were confirmed live to fail
+  // to render while a CSS transition was active on the same property (see
+  // the nav-background fix above); plain literal color functions don't
+  // hit that issue since nothing about them depends on custom-property
+  // resolution mid-transition.
+  const navItemChipClass = transparent
+    ? "px-4 py-2 rounded-full bg-[rgba(10,14,24,0.4)] hover:bg-[rgba(10,14,24,0.6)] focus-visible:bg-[rgba(10,14,24,0.6)] backdrop-blur-sm transition-colors duration-200"
+    : "";
+  const logoChipClass = transparent
+    ? "px-3 py-2 rounded-xl bg-[rgba(11,18,32,0.55)] backdrop-blur-sm"
+    : "";
+  const hamburgerChipClass = transparent
+    ? "rounded-full bg-[rgba(10,14,24,0.4)] backdrop-blur-sm"
+    : "";
+  const ctaChipClass = transparent
+    ? "!bg-[rgba(191,161,74,0.85)] hover:!bg-[rgba(191,161,74,0.95)] backdrop-blur-sm"
+    : "";
+
   return (
     <nav
       className={`text-white ${transparent ? "absolute top-0 inset-x-0 z-20" : "relative bg-ordift-navy-950"}`}
@@ -55,30 +78,30 @@ export default function NavBarClient({
         />
       )}
       <div className="relative max-w-6xl mx-auto px-4 sm:px-8 py-5 flex items-center justify-between">
-        <Link href="/" aria-label="Ordift Studios home" className="shrink-0">
+        <Link href="/" aria-label="Ordift Studios home" className={`shrink-0 ${logoChipClass}`}>
           <Logo variant="nav" color="white" height={28} priority />
         </Link>
 
-        <div className="hidden md:flex items-center gap-6 font-sans text-nav text-white/80">
+        <div className="hidden md:flex items-center gap-3 font-sans text-nav text-white/80">
           {links.map((link) => (
             <Link
               key={link.href}
               href={link.href}
-              className="hover:text-white transition-colors"
+              className={`hover:text-white transition-colors ${navItemChipClass}`}
             >
               {link.label}
             </Link>
           ))}
           {accountHref ? (
-            <Link href={accountHref} className="hover:text-white transition-colors">
+            <Link href={accountHref} className={`hover:text-white transition-colors ${navItemChipClass}`}>
               My Account
             </Link>
           ) : (
             <>
-              <Link href="/portal/login" className="hover:text-white transition-colors">
+              <Link href="/portal/login" className={`hover:text-white transition-colors ${navItemChipClass}`}>
                 Log in
               </Link>
-              <Link href="/portal/signup" className="hover:text-white transition-colors">
+              <Link href="/portal/signup" className={`hover:text-white transition-colors ${navItemChipClass}`}>
                 Create account
               </Link>
             </>
@@ -86,14 +109,14 @@ export default function NavBarClient({
         </div>
 
         <div className="hidden md:block">
-          <Button href={primaryCta.href} variant="primary">
+          <Button href={primaryCta.href} variant="primary" className={ctaChipClass}>
             {primaryCta.label}
           </Button>
         </div>
 
         <button
           type="button"
-          className="md:hidden min-h-11 min-w-11 flex items-center justify-center"
+          className={`md:hidden min-h-11 min-w-11 flex items-center justify-center ${hamburgerChipClass}`}
           aria-expanded={open}
           aria-controls="mobile-nav"
           aria-label={open ? "Close menu" : "Open menu"}
