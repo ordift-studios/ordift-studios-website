@@ -23,9 +23,13 @@ export const mediaAssetFragment = `{
   "lqip": select(type == "image" => image.asset->metadata.lqip)
 }`;
 
-// GalleryImage { id, url, alt, caption, width, height, lqip } — id comes
-// from the array item's auto-generated _key, not a stored field. Always
-// an image (unlike MediaAsset), so metadata is unconditional.
+// GalleryImage { id, url, alt, caption, width, height, lqip,
+// presentation } — id comes from the array item's auto-generated _key,
+// not a stored field. Always an image (unlike MediaAsset), so metadata
+// is unconditional. `presentation` (2026-08-23) is the optional
+// Photography-gallery layout hint — projected as-is (including null/
+// undefined for images that never had one set), left to the frontend
+// to treat as "automatic".
 export const galleryImageFragment = `{
   "id": _key,
   "url": image.asset->url,
@@ -33,7 +37,8 @@ export const galleryImageFragment = `{
   caption,
   "width": image.asset->metadata.dimensions.width,
   "height": image.asset->metadata.dimensions.height,
-  "lqip": image.asset->metadata.lqip
+  "lqip": image.asset->metadata.lqip,
+  presentation
 }`;
 
 // SeoFields { metaTitle, metaDescription, ogImageUrl, canonicalUrl }

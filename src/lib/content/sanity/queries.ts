@@ -175,7 +175,7 @@ const editImageShape = `{
   "hotspotY": image.hotspot.y
 }`;
 const editGalleryItemShape = `{
-  "key": _key, alt, caption, productionNotes,
+  "key": _key, alt, caption, productionNotes, presentation,
   "assetId": image.asset._ref,
   "url": image.asset->url,
   "hotspotX": image.hotspot.x,

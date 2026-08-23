@@ -63,17 +63,15 @@ export type PhotoGalleryRecipe = {
   fallbackAspect: string;
 };
 
-// Zero-gap collage correction (2026-08-23) — every Photography treatment
-// below now uses gap-0: photographs and gallery blocks sit edge-to-edge
-// against their neighbors, read as one continuous visual sequence,
-// rather than separated by whitespace. Each treatment's own weights/
-// allowTriple/allowAsymmetric/edgeToEdge/alternateOffset/fallbackAspect
-// — its actual layout personality — are untouched; only the inter-image
-// spacing changed. Deliberately not touched: LEGACY_RECIPES (Videography)
-// and DESIGN_GALLERY_RECIPE (Graphic Design) further down, both out of
-// scope, and the outer page margins/padding around the gallery (in
-// PhotographyProjectView.tsx and FlexiblePhotoGallery.tsx's own
-// container), which are page-level rhythm, not inter-image gap.
+// No longer used by Photography itself (2026-08-23) — its gallery now
+// renders through the adaptive justified-row layout
+// (src/lib/content/justifiedGallery.ts, src/components/portfolio/
+// JustifiedPhotoGallery.tsx), which needs no per-treatment recipe.
+// Kept here as-is because FlexiblePhotoGallery.test.ts still exercises
+// buildBlocks (the still-live engine Videography and Graphic Design
+// use) against these six differently-tuned recipes as realistic
+// fixture data — removing them would mean rewriting still-useful,
+// still-passing test coverage for an unrelated, unchanged system.
 export const PHOTO_GALLERY_RECIPES: Record<PhotographyTreatment, PhotoGalleryRecipe> = {
   // Luxury wedding journal — large emotional moments mixed with paired
   // portraits/details and occasional editorial triples.

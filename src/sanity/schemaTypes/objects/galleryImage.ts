@@ -16,5 +16,22 @@ export default defineType({
       description:
         "Internal review context only — never shown on the public site or indexed by search engines. Use it for technical/creative reasoning, client direction, why this image was selected, or usage/licensing caveats.",
     }),
+    defineField({
+      name: "presentation",
+      title: "Presentation (Photography gallery)",
+      type: "string",
+      options: {
+        list: [
+          { title: "Automatic (default)", value: "automatic" },
+          { title: "Featured / Full Bleed", value: "featured" },
+          { title: "Wide", value: "wide" },
+          { title: "Portrait Pair candidate", value: "portrait-pair" },
+          { title: "Standard", value: "standard" },
+        ],
+        layout: "radio",
+      },
+      description:
+        "Optional hint for the Photography project gallery's adaptive justified layout. Leave as Automatic for the layout to decide — most images should stay Automatic. Only affects Photography's own gallery presentation; unused by every other discipline.",
+    }),
   ],
 });

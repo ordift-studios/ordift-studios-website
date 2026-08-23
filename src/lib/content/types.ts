@@ -43,6 +43,13 @@ export type Venue = {
   mapUrl: string | null;
 };
 
+// Photography adaptive justified gallery (2026-08-23) — an optional,
+// admin-set hint on individual gallery images. "automatic" (or unset)
+// means the layout engine decides; every other value is a deliberate
+// override. Only Photography's own gallery reads this — every other
+// discipline's gallery rendering ignores it entirely.
+export type GalleryImagePresentation = "automatic" | "featured" | "wide" | "portrait-pair" | "standard";
+
 export type GalleryImage = {
   id: ID;
   // Null when the array item exists but no asset has been uploaded yet.
@@ -56,6 +63,10 @@ export type GalleryImage = {
   width?: number | null;
   height?: number | null;
   lqip?: string | null;
+  // Optional — absent (or "automatic") for every image until an
+  // Admin/Super Admin deliberately sets one. Optional key so the local
+  // fixture repository's gallery arrays don't need updating.
+  presentation?: GalleryImagePresentation | null;
 };
 
 export type FAQ = {

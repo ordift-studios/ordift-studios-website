@@ -4,11 +4,7 @@ import MediaAsset from "@/components/media/MediaAsset";
 import SocialShare from "@/components/SocialShare";
 import PhotographyGalleryWithLightbox from "./PhotographyGalleryWithLightbox";
 import PortfolioProjectFooterSections from "./PortfolioProjectFooterSections";
-import {
-  PHOTOGRAPHY_TREATMENT_LABEL,
-  PHOTO_GALLERY_RECIPES,
-  resolvePhotographyTreatment,
-} from "@/lib/content/portfolioTreatment";
+import { PHOTOGRAPHY_TREATMENT_LABEL, resolvePhotographyTreatment } from "@/lib/content/portfolioTreatment";
 import type { Category, PortfolioProject, Testimonial, Workshop } from "@/lib/content/types";
 
 // The full page for a Photography project — deliberately NOT the shared
@@ -51,7 +47,6 @@ export default function PhotographyProjectView({
   categoryById,
 }: PhotographyProjectViewProps) {
   const treatment = resolvePhotographyTreatment(categories);
-  const recipe = PHOTO_GALLERY_RECIPES[treatment];
   const label = PHOTOGRAPHY_TREATMENT_LABEL[treatment];
 
   // "Extremely subtle" identifying line only — never a metadata dashboard.
@@ -93,7 +88,7 @@ export default function PhotographyProjectView({
       {/* The gallery carries the story. */}
       {project.gallery.length > 0 && (
         <div className="py-8 sm:py-14">
-          <PhotographyGalleryWithLightbox images={project.gallery} recipe={recipe} />
+          <PhotographyGalleryWithLightbox images={project.gallery} />
         </div>
       )}
 

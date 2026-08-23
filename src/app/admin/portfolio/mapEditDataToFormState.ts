@@ -1,10 +1,15 @@
-import type { FormState } from "./PortfolioProjectForm";
+import type { FormState, GalleryItemPresentation } from "./PortfolioProjectForm";
 
 // Raw shape from portfolioProjectEditQuery — loosely typed on purpose
 // (see getPortfolioProjectForEdit's own comment); this is the one place
 // that shape gets turned into something FormState-compatible.
 type RawImage = { assetId?: string | null; url?: string | null; alt?: string | null; hotspotX?: number | null; hotspotY?: number | null };
-type RawGalleryItem = RawImage & { key: string; caption?: string | null; productionNotes?: string | null };
+type RawGalleryItem = RawImage & {
+  key: string;
+  caption?: string | null;
+  productionNotes?: string | null;
+  presentation?: string | null;
+};
 
 function toImgState(raw?: RawImage | null) {
   return {
@@ -27,6 +32,7 @@ function toGalleryItems(raw?: RawGalleryItem[] | null) {
     alt: g.alt ?? "",
     caption: g.caption ?? "",
     productionNotes: g.productionNotes ?? "",
+    presentation: (g.presentation as GalleryItemPresentation | null) ?? "automatic",
     hotspotX: g.hotspotX ?? 0.5,
     hotspotY: g.hotspotY ?? 0.5,
     uploading: false,

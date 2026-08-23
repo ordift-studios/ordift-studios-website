@@ -36,6 +36,13 @@ type ImgState = {
   error: string | null;
 };
 
+// Photography adaptive justified gallery (2026-08-23) — optional
+// per-image layout hint. "automatic" is the default and does nothing
+// special; every other value only affects Photography's own gallery
+// (src/components/portfolio/JustifiedPhotoGallery.tsx) — every other
+// discipline ignores this field entirely.
+export type GalleryItemPresentation = "automatic" | "featured" | "wide" | "portrait-pair" | "standard";
+
 type GalleryItem = {
   key: string;
   assetId: string | null;
@@ -46,6 +53,7 @@ type GalleryItem = {
   // src/sanity/schemaTypes/objects/galleryImage.ts and the deliberate
   // omission from galleryImageFragment in groqFragments.ts.
   productionNotes: string;
+  presentation: GalleryItemPresentation;
   hotspotX: number;
   hotspotY: number;
   uploading: boolean;
@@ -208,6 +216,7 @@ function galleryField(items: GalleryItem[]) {
       alt: i.alt,
       caption: i.caption || undefined,
       productionNotes: i.productionNotes || undefined,
+      presentation: i.presentation !== "automatic" ? i.presentation : undefined,
       image: {
         _type: "image",
         asset: { _type: "reference", _ref: i.assetId },
@@ -551,7 +560,7 @@ export default function PortfolioProjectForm({
   async function handleGalleryFiles(files: FileList, target: "gallery" | "behindTheScenes") {
     for (const file of Array.from(files)) {
       const key = newKey();
-      const item: GalleryItem = { key, assetId: null, url: null, alt: "", caption: "", productionNotes: "", hotspotX: 0.5, hotspotY: 0.5, uploading: true, progress: 0, error: null };
+      const item: GalleryItem = { key, assetId: null, url: null, alt: "", caption: "", productionNotes: "", presentation: "automatic", hotspotX: 0.5, hotspotY: 0.5, uploading: true, progress: 0, error: null };
       setForm((f) => ({ ...f, [target]: [...f[target], item] }));
       try {
         const compressed = await compressImageFile(file);
@@ -1362,6 +1371,22 @@ function GalleryEditor({
                     rows={2}
                     className="w-full rounded border border-black/15 px-2 py-1 font-sans text-caption"
                   />
+                  <div>
+                    <label className="block font-sans text-caption text-ordift-ink-muted mb-0.5">
+                      Presentation (Photography gallery only)
+                    </label>
+                    <select
+                      value={item.presentation}
+                      onChange={(e) => onUpdateItem(item.key, { presentation: e.target.value as GalleryItemPresentation })}
+                      className="w-full rounded border border-black/15 px-2 py-1 font-sans text-caption"
+                    >
+                      <option value="automatic">Automatic (default)</option>
+                      <option value="featured">Featured / Full Bleed</option>
+                      <option value="wide">Wide</option>
+                      <option value="portrait-pair">Portrait Pair candidate</option>
+                      <option value="standard">Standard</option>
+                    </select>
+                  </div>
                 </div>
               </div>
               <button type="button" onClick={() => onRemove(item.key)} className="font-sans text-caption text-red-700">
