@@ -26,6 +26,7 @@ const NAV_ITEMS: { label: string; href: string; adminOnly?: boolean; superAdminO
   { label: "Users & Roles", href: "/admin/users", adminOnly: true },
   { label: "Meet the Team", href: "/admin/team", superAdminOnly: true },
   { label: "Recruitment", href: "/admin/recruitment", adminOnly: true },
+  { label: "Ordift Pulse", href: "/admin/pulse", adminOnly: true },
   { label: "Titles & Classifications", href: "/admin/lookups", superAdminOnly: true },
   { label: "Feature Flags", href: "/admin/flags", adminOnly: true },
   { label: "Settings", href: "/admin/settings", adminOnly: true },

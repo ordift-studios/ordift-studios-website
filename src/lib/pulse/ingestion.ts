@@ -90,7 +90,11 @@ function slugify(title: string): string {
     .slice(0, 80);
 }
 
-const PLACEHOLDER_TEXT =
+// Exported so the Admin review UI's publish-readiness check (see
+// publishReadiness.ts) can detect "this draft still has its
+// machine-generated placeholder" using the exact same string, rather
+// than a second copy that could drift out of sync.
+export const PLACEHOLDER_TEXT =
   "[Discovered draft — awaiting editorial review. See AI-Generated Summary for the source material. This placeholder must never be published as-is.]";
 
 export type RunDiscoveryResult = {
