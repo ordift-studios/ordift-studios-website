@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import { getCurrentUser, isSuperAdmin } from "@/lib/portal/roles";
 import { getProfileCard } from "@/lib/portal/profileCard";
-import { listOperationalTitles, listGrades } from "@/lib/portal/adminData";
+import { listPositions } from "@/lib/organization/adminData";
 import { listClassifications } from "@/lib/portal/memberNumbers";
 import { updateOwnContactDetailsAction, updateStaffOperationalDetailsAction, reclassifyAccountAction } from "./actions";
 
@@ -35,9 +35,20 @@ export default async function AdminProfilePage({
   const isEditing = edit === "1";
   const canEditOperational = isSuperAdmin(user);
 
-  const [operationalTitles, grades, classifications] = canEditOperational
-    ? await Promise.all([listOperationalTitles(), listGrades(), listClassifications()])
-    : [[], [], []];
+  const [positions, classifications] = canEditOperational
+    ? await Promise.all([listPositions(), listClassifications()])
+    : [[], []];
+
+  // Grouped by Department for the Position select's <optgroup>s — see
+  // Ordift Organizational & Administrative Architecture V1, Phase 2
+  // (2026-08-25). Only active Positions are offered.
+  const positionsByDepartment = new Map<string, typeof positions>();
+  for (const p of positions) {
+    if (!p.active) continue;
+    const list = positionsByDepartment.get(p.departmentName) ?? [];
+    list.push(p);
+    positionsByDepartment.set(p.departmentName, list);
+  }
 
   return (
     <div className="max-w-2xl">
@@ -59,8 +70,9 @@ export default async function AdminProfilePage({
               ["Phone", card.phone ?? "Not set"],
               ["Member Number", card.memberNumber ?? "Not yet assigned"],
               ["Classification", card.classificationName ?? "Not yet assigned"],
-              ["Job Title", card.jobTitle ?? "Not set"],
+              ["Position", card.positionName ?? "Not assigned"],
               ["Department", card.department ?? "Not set"],
+              ["Craft / Job Title", card.jobTitle ?? "Not set"],
               ...(card.canViewGrade
                 ? ([["Grade", card.grade ? `${card.grade.name} (${card.grade.code})` : "Not assigned"]] as [string, string][])
                 : []),
@@ -121,51 +133,40 @@ export default async function AdminProfilePage({
           {canEditOperational && (
             <form action={updateStaffOperationalDetailsAction} className="bg-white rounded-lg border border-ordift-ink/10 p-6 space-y-4">
               <input type="hidden" name="userId" value={card.id} />
-              <h2 className="font-serif font-medium text-card-title text-ordift-ink">Operational Details</h2>
+              <h2 className="font-serif font-medium text-card-title text-ordift-ink">Organizational Assignment</h2>
               <p className="font-sans text-eyebrow text-ordift-ink-muted uppercase tracking-[0.1em]">
                 Super Admin only — admin-managed, not self-service
               </p>
+              <p className="font-sans text-caption text-ordift-ink-muted">
+                Position is the authoritative assignment — Department, Craft, and Grade all resolve automatically from the
+                Position you choose below. There is no independent Grade selector; Grade is never chosen manually.
+              </p>
 
               <label className="block">
-                <span className="font-sans text-body-small text-ordift-ink-muted">Job Title</span>
+                <span className="font-sans text-body-small text-ordift-ink-muted">Position</span>
                 <select
-                  name="operationalTitleId"
-                  defaultValue={card.operationalTitleId ?? ""}
-                  className="mt-1 w-full rounded-md border border-ordift-ink/20 px-3 py-2 font-sans text-body-small bg-white"
-                >
-                  <option value="">Not set</option>
-                  {operationalTitles.map((t) => (
-                    <option key={t.id} value={t.id}>
-                      {t.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-
-              <label className="block">
-                <span className="font-sans text-body-small text-ordift-ink-muted">Department</span>
-                <input
-                  name="department"
-                  defaultValue={card.department ?? ""}
-                  className="mt-1 w-full rounded-md border border-ordift-ink/20 px-3 py-2 font-sans text-body-small"
-                />
-              </label>
-
-              <label className="block">
-                <span className="font-sans text-body-small text-ordift-ink-muted">Grade (internal only — never shown publicly)</span>
-                <select
-                  name="gradeId"
-                  defaultValue={card.gradeId ?? ""}
+                  name="positionId"
+                  defaultValue={card.positionId ?? ""}
                   className="mt-1 w-full rounded-md border border-ordift-ink/20 px-3 py-2 font-sans text-body-small bg-white"
                 >
                   <option value="">Not assigned</option>
-                  {grades.map((g) => (
-                    <option key={g.id} value={g.id}>
-                      {g.name} ({g.grade_code})
-                    </option>
+                  {[...positionsByDepartment.entries()].map(([departmentName, deptPositions]) => (
+                    <optgroup key={departmentName} label={departmentName}>
+                      {deptPositions.map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.name}
+                        </option>
+                      ))}
+                    </optgroup>
                   ))}
                 </select>
               </label>
+
+              {card.canViewGrade && (
+                <p className="font-sans text-caption text-ordift-ink-muted">
+                  Current resolved Grade: <span className="font-medium text-ordift-ink">{card.grade ? `${card.grade.name} (${card.grade.code})` : "Not assigned"}</span> — internal only, never shown publicly. Updates automatically after saving a new Position.
+                </p>
+              )}
 
               <button
                 type="submit"

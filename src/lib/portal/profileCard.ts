@@ -33,6 +33,8 @@ export type ProfileCard = {
   operationalTitleId: string | null;
   jobTitle: string | null;
   department: string | null;
+  positionId: string | null;
+  positionName: string | null;
   canViewGrade: boolean;
   gradeId: string | null;
   grade: { code: string; name: string } | null;
@@ -106,7 +108,9 @@ export async function getProfileCard(user: CurrentUser): Promise<ProfileCard> {
       supabase.from("user_roles").select("roles(slug, name)").eq("user_id", user.id),
       supabase
         .from("staff_details")
-        .select("department, operational_title_id, operational_titles(name), grade_id, grades(grade_code, name)")
+        .select(
+          "department, operational_title_id, operational_titles(name), grade_id, grades(grade_code, name), position_id, positions(name, departments(name))"
+        )
         .eq("id", user.id)
         .maybeSingle(),
       supabase
@@ -136,6 +140,14 @@ export async function getProfileCard(user: CurrentUser): Promise<ProfileCard> {
   const titleRow = staffDetails?.operational_titles as unknown as { name: string } | null;
   const classificationRow = activeMemberNumber?.member_number_classifications as unknown as { name: string } | null;
 
+  // Position is the authoritative organizational assignment (Phase 2,
+  // 2026-08-25) — when set, it resolves both the displayed Position name
+  // and Department (via positions.departments), taking precedence over
+  // the legacy free-text staff_details.department, which is kept only as
+  // a fallback for any account not yet migrated into the new catalogue.
+  const positionRow = staffDetails?.positions as unknown as { name: string; departments: { name: string } | null } | null;
+  const resolvedDepartment = positionRow?.departments?.name ?? staffDetails?.department ?? null;
+
   let lastLoginAt: string | null = null;
   try {
     const admin = createAdminClient();
@@ -161,7 +173,9 @@ export async function getProfileCard(user: CurrentUser): Promise<ProfileCard> {
     roleLabel,
     operationalTitleId: staffDetails?.operational_title_id ?? null,
     jobTitle: titleRow?.name ?? null,
-    department: staffDetails?.department ?? null,
+    department: resolvedDepartment,
+    positionId: staffDetails?.position_id ?? null,
+    positionName: positionRow?.name ?? null,
     canViewGrade,
     gradeId,
     grade,

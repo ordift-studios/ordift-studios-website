@@ -45,31 +45,67 @@ export async function updateOwnContactDetailsAction(formData: FormData): Promise
   redirect(`/admin/profile/${user.id}`);
 }
 
-// Staff Number / Job Title / Department / Grade — operational metadata,
-// Super Admin only (see architecture note in the Admin Profile Quick
-// Card proposal: these are admin-managed facts, not self-service, even
-// when a Super Admin is editing their own card). Uses the service-role
-// client, same precedent as updateCollaboratorDetailsAction in
+// Organizational assignment — Super Admin only, unchanged gate (see
+// architecture note in the Admin Profile Quick Card proposal: these are
+// admin-managed facts, not self-service). Uses the service-role client,
+// same precedent as updateCollaboratorDetailsAction in
 // src/app/admin/users/actions.ts.
+//
+// Ordift Organizational & Administrative Architecture V1, Phase 2
+// (2026-08-25): Position is now the single authoritative input — this
+// action no longer accepts independent department text, operational
+// title, or grade selections. Assigning a Position resolves Department,
+// Craft (operational_title_id), and Grade together, exactly as
+// approved ("Position drives Grade" — Decision 3, and "do not leave the
+// old independent manual Grade selector as the normal workflow").
+// Clearing the Position clears all three together, rather than leaving
+// a stale Department/Craft/Grade attached to no authoritative Position.
+// The legacy free-text staff_details.department/job_title columns are
+// never written by this action — preserved as-is, read only as a
+// fallback for accounts not yet migrated into the new catalogue (see
+// getProfileCard()).
 export async function updateStaffOperationalDetailsAction(formData: FormData): Promise<void> {
   const currentUser = await getCurrentUser();
   if (!currentUser || !isSuperAdmin(currentUser)) return;
 
   const targetUserId = String(formData.get("userId") ?? "");
-  const operationalTitleId = String(formData.get("operationalTitleId") ?? "").trim() || null;
-  const department = String(formData.get("department") ?? "").trim() || null;
-  const gradeId = String(formData.get("gradeId") ?? "").trim() || null;
+  const positionId = String(formData.get("positionId") ?? "").trim() || null;
   if (!targetUserId) return;
 
   const admin = createAdminClient();
+
+  const { data: previous } = await admin
+    .from("staff_details")
+    .select("position_id, grade_id")
+    .eq("id", targetUserId)
+    .maybeSingle();
+
+  let next: { department_id: string | null; position_id: string | null; operational_title_id: string | null; grade_id: string | null };
+  let positionName: string | null = null;
+
+  if (positionId) {
+    const { data: position, error: positionError } = await admin
+      .from("positions")
+      .select("id, name, department_id, operational_title_id, default_grade_id")
+      .eq("id", positionId)
+      .maybeSingle();
+    if (positionError || !position) {
+      console.error("[admin profile] position not found for assignment", positionId, positionError?.message);
+      return;
+    }
+    positionName = position.name;
+    next = {
+      department_id: position.department_id,
+      position_id: position.id,
+      operational_title_id: position.operational_title_id,
+      grade_id: position.default_grade_id,
+    };
+  } else {
+    next = { department_id: null, position_id: null, operational_title_id: null, grade_id: null };
+  }
+
   const { error } = await admin.from("staff_details").upsert(
-    {
-      id: targetUserId,
-      operational_title_id: operationalTitleId,
-      department,
-      grade_id: gradeId,
-      updated_at: new Date().toISOString(),
-    },
+    { id: targetUserId, ...next, updated_at: new Date().toISOString() },
     { onConflict: "id" }
   );
   if (error) {
@@ -77,13 +113,27 @@ export async function updateStaffOperationalDetailsAction(formData: FormData): P
     return;
   }
 
-  await logActivity({
-    actorUserId: currentUser.id,
-    action: "profile.operational_details.change",
-    entityType: "user",
-    entityId: targetUserId,
-    metadata: { operationalTitleId, department, gradeId },
-  });
+  const previousPositionId = previous?.position_id ?? null;
+  if (previousPositionId !== next.position_id) {
+    await logActivity({
+      actorUserId: currentUser.id,
+      action: previousPositionId ? "position.changed" : "position.assigned",
+      entityType: "user",
+      entityId: targetUserId,
+      metadata: { previousPositionId, newPositionId: next.position_id, newPositionName: positionName },
+    });
+
+    const previousGradeId = previous?.grade_id ?? null;
+    if (previousGradeId !== next.grade_id) {
+      await logActivity({
+        actorUserId: currentUser.id,
+        action: "grade.auto_resolved",
+        entityType: "user",
+        entityId: targetUserId,
+        metadata: { previousGradeId, newGradeId: next.grade_id, resolvedFromPositionId: next.position_id },
+      });
+    }
+  }
 
   revalidatePath(`/admin/profile/${targetUserId}`);
   redirect(`/admin/profile/${targetUserId}`);
