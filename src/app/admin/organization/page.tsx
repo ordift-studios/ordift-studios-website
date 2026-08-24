@@ -33,6 +33,15 @@ export default async function AdminOrganizationPage() {
     listRoleOptions(),
   ]);
 
+  // Grouped for display — see Ordift Organizational & Administrative
+  // Architecture V1, Phase 2 (2026-08-25), Section 11.
+  const departmentGroups = new Map<string, typeof positions>();
+  for (const p of positions) {
+    const list = departmentGroups.get(p.departmentName) ?? [];
+    list.push(p);
+    departmentGroups.set(p.departmentName, list);
+  }
+
   return (
     <div>
       <div className="mb-8">
@@ -90,51 +99,44 @@ export default async function AdminOrganizationPage() {
         </form>
       </section>
 
-      <section className="rounded-xl border border-black/10 bg-white p-6 space-y-4">
+      <section className="rounded-xl border border-black/10 bg-white p-6 space-y-6">
         <h2 className="font-serif font-medium text-body text-ordift-ink">Positions</h2>
-        <div className="overflow-x-auto">
-          <table className="w-full text-left">
-            <thead>
-              <tr className="border-b border-ordift-ink/10">
-                <th className="py-2 pr-4 font-sans text-caption uppercase tracking-[0.1em] text-ordift-ink-muted">Position</th>
-                <th className="py-2 pr-4 font-sans text-caption uppercase tracking-[0.1em] text-ordift-ink-muted">Department</th>
-                <th className="py-2 pr-4 font-sans text-caption uppercase tracking-[0.1em] text-ordift-ink-muted">Craft</th>
-                <th className="py-2 pr-4 font-sans text-caption uppercase tracking-[0.1em] text-ordift-ink-muted">Default Grade</th>
-                <th className="py-2 pr-4 font-sans text-caption uppercase tracking-[0.1em] text-ordift-ink-muted">Suggested Role</th>
-                <th className="py-2 pr-4 font-sans text-caption uppercase tracking-[0.1em] text-ordift-ink-muted"></th>
-              </tr>
-            </thead>
-            <tbody>
-              {positions.map((p) => (
-                <tr key={p.id} className="border-b border-ordift-ink/5 last:border-0">
-                  <td className={`py-2 pr-4 font-sans text-body-small ${p.active ? "text-ordift-ink" : "text-ordift-ink-muted line-through"}`}>
-                    {p.name}
-                  </td>
-                  <td className="py-2 pr-4 font-sans text-body-small text-ordift-ink-muted">{p.departmentName}</td>
-                  <td className="py-2 pr-4 font-sans text-body-small text-ordift-ink-muted">{p.operationalTitleName ?? "—"}</td>
-                  <td className="py-2 pr-4 font-sans text-body-small text-ordift-ink-muted">{p.defaultGradeName}</td>
-                  <td className="py-2 pr-4 font-sans text-body-small text-ordift-ink-muted">{p.defaultRoleSlug ?? "—"}</td>
-                  <td className="py-2 pr-4">
-                    <form action={togglePositionAction}>
-                      <input type="hidden" name="id" value={p.id} />
-                      <input type="hidden" name="active" value={String(p.active)} />
-                      <button type="submit" className="font-sans text-caption text-ordift-gold-pressed underline underline-offset-4">
-                        {p.active ? "Deactivate" : "Reactivate"}
-                      </button>
-                    </form>
-                  </td>
-                </tr>
+        <p className="font-sans text-caption text-ordift-ink-muted -mt-4">
+          Grouped by Department. Grade shown here is the Position&rsquo;s catalogue default only, visible because this
+          screen is already Admin/Super-Admin-gated — Grade remains confidential everywhere else (never shown publicly
+          or on any client-facing page).
+        </p>
+
+        {positions.length === 0 && <p className="font-sans text-body-small text-ordift-ink-muted">None yet.</p>}
+
+        {[...departmentGroups.entries()].map(([departmentName, deptPositions]) => (
+          <div key={departmentName}>
+            <h3 className="font-sans font-semibold uppercase tracking-[0.15em] text-caption text-ordift-gold-pressed mb-2">
+              {departmentName}
+            </h3>
+            <ul className="divide-y divide-black/5 rounded-lg border border-black/5">
+              {deptPositions.map((p) => (
+                <li key={p.id} className="flex items-center justify-between gap-4 px-4 py-2.5">
+                  <div>
+                    <span className={`font-sans text-body-small ${p.active ? "text-ordift-ink" : "text-ordift-ink-muted line-through"}`}>
+                      {p.name}
+                    </span>
+                    <p className="font-sans text-caption text-ordift-ink-muted">
+                      Craft: {p.operationalTitleName ?? "—"} · Default Grade: {p.defaultGradeName}
+                    </p>
+                  </div>
+                  <form action={togglePositionAction}>
+                    <input type="hidden" name="id" value={p.id} />
+                    <input type="hidden" name="active" value={String(p.active)} />
+                    <button type="submit" className="font-sans text-caption text-ordift-gold-pressed underline underline-offset-4 whitespace-nowrap">
+                      {p.active ? "Deactivate" : "Reactivate"}
+                    </button>
+                  </form>
+                </li>
               ))}
-              {positions.length === 0 && (
-                <tr>
-                  <td colSpan={6} className="py-3 font-sans text-body-small text-ordift-ink-muted">
-                    None yet.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
+            </ul>
+          </div>
+        ))}
 
         <form action={addPositionAction} className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-4 border-t border-black/5">
           <input
