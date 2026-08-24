@@ -39,10 +39,11 @@ export default function AboutPreview({
   return (
     <section className="bg-white">
       {/* Who We Are — contained, compact title, not a full-viewport band.
-          Top padding tightened considerably (2026-08-24 follow-up) —
-          the goal is the whole section reading as one composed frame,
-          not several loosely stacked pieces; text size is unchanged. */}
-      <div className="px-4 sm:px-8 pt-8 sm:pt-10 pb-6 sm:pb-8">
+          Top padding tightened again (2026-08-24 third follow-up) — the
+          goal is the whole section reading as one composed frame, not
+          several loosely stacked pieces; text size is unchanged
+          throughout this pass, only spacing. */}
+      <div className="px-4 sm:px-8 pt-4 sm:pt-6 pb-6 sm:pb-8">
         <div className="max-w-2xl mx-auto text-center">
           <p className="font-sans font-semibold uppercase tracking-[0.2em] text-eyebrow text-ordift-gold-pressed mb-3">
             {whoWeAreEyebrow}
@@ -61,7 +62,7 @@ export default function AboutPreview({
 
       {/* Our Values — contained, plain (no image by design), same
           label-beside-copy rhythm as the two rows above it. */}
-      <div className="px-4 sm:px-8 py-8 sm:py-10 bg-ordift-offwhite">
+      <div className="px-4 sm:px-8 py-6 sm:py-8 bg-ordift-offwhite">
         <div className="max-w-6xl mx-auto grid grid-cols-1 md:grid-cols-12 gap-3 md:gap-8 items-center">
           <div className="md:col-span-3">
             <p className="font-sans font-semibold uppercase tracking-[0.15em] text-caption text-ordift-gold-pressed">
@@ -90,7 +91,7 @@ export default function AboutPreview({
 
 function Band({ label, copy, image }: { label: string; copy: string; image: BandImage }) {
   return (
-    <div className="relative bg-ordift-navy-950 px-4 sm:px-8 py-8 sm:py-10 overflow-hidden">
+    <div className="relative bg-ordift-navy-950 px-4 sm:px-8 py-6 sm:py-8 overflow-hidden">
       {image && (
         <Image
           src={image.url}

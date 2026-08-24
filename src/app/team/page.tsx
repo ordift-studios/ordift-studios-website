@@ -48,7 +48,7 @@ export default async function TeamPage() {
     <main>
       <NavBar />
 
-      <section className="bg-ordift-navy-950 text-white px-4 sm:px-8 pt-6 sm:pt-8 pb-8 sm:pb-10">
+      <section className="bg-ordift-navy-950 text-white px-4 sm:px-8 pt-6 sm:pt-8 pb-6 sm:pb-8">
         <div className="max-w-6xl mx-auto">
           {/* Centered header, deliberately restrained (2026-08-24 —
               "the portraits should be the hero of this page,
@@ -56,11 +56,12 @@ export default async function TeamPage() {
               approximately 40%"). Smaller heading scale and tighter
               spacing than a typical page header — still premium/
               editorial, just clearly secondary to the carousel below.
-              Position is now correct (2026-08-24 second follow-up) —
-              only the gap below it (before the carousel) grew, so the
-              portrait/bottom row sit a touch lower without moving the
-              intro itself. */}
-          <div className="max-w-2xl mx-auto text-center mb-8 sm:mb-10">
+              Position of the header itself is correct and untouched —
+              only the gap below it keeps growing (2026-08-24 third
+              follow-up) so the whole carousel/bottom-row cluster
+              redistributes downward and the portrait reads as more
+              vertically centered within the section. */}
+          <div className="max-w-2xl mx-auto text-center mb-10 sm:mb-12">
             <p className="font-sans font-semibold uppercase tracking-[0.2em] text-eyebrow text-ordift-gold mb-2">
               {about.teamEyebrow}
             </p>
@@ -85,10 +86,10 @@ export default async function TeamPage() {
               cell balances the CTA's width) rather than flex, so the
               label stays genuinely centered regardless of the CTA's own
               width; stacks on mobile. Anchored closer to the section's
-              own bottom edge (2026-08-24 second follow-up) — smaller
-              gap above it, smaller section bottom padding below it, so
-              it reads as the floor of this composition rather than
-              floating mid-page. */}
+              own bottom edge — smaller section bottom padding below it
+              (tightened again, 2026-08-24 third follow-up) so it reads
+              as the floor of this composition, not floating mid-page,
+              without growing the section's total height. */}
           <div className="mt-10 sm:mt-12 flex flex-col items-center gap-4 sm:grid sm:grid-cols-3 sm:items-center">
             <span aria-hidden="true" className="hidden sm:block" />
             <p className="font-sans text-caption tracking-[0.15em] text-white/25 select-none text-center order-1 sm:order-none">
