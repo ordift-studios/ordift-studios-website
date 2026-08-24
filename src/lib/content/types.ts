@@ -684,6 +684,13 @@ export type PulseArticle = {
   discoveryRunId: string | null;
 };
 
+// Journal V1 presentation (Phase E, 2026-08-24) — see
+// PULSE_INGESTION_FOUNDATION.md. Admin-picked Lead Story reference only;
+// resolved against the merged Stories feed at the page layer.
+export type JournalSettings = {
+  leadStoryId: ID | null;
+};
+
 // Global operational controls for Pulse discovery/publishing (Phase A,
 // 2026-08-24). Nothing reads this yet — see PULSE_INGESTION_FOUNDATION.md.
 export type PulseSettings = {

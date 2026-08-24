@@ -11,6 +11,7 @@ import type {
   LegalPage,
   LegalPageSlug,
   Navigation,
+  JournalSettings,
   PortfolioProject,
   PulseArticle,
   PulseSettings,
@@ -58,6 +59,8 @@ export interface ContentRepository {
   getJournalCategories(): Promise<Category[]>;
   getAuthors(): Promise<Author[]>;
   getAuthorBySlug(slug: string): Promise<Author | null>;
+  // Phase E (2026-08-24) — the admin-picked Lead Story reference only.
+  getJournalSettings(): Promise<JournalSettings>;
 
   // Site-wide content (Version 1.2.6) — all singletons except getServices
   // (repeatable, one per department) and getLegalPage (repeatable, one

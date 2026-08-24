@@ -14,6 +14,7 @@ import author from "./documents/author";
 import instructor from "./documents/instructor";
 import journalCategory from "./documents/journalCategory";
 import journalPost from "./documents/journalPost";
+import journalSettings from "./documents/journalSettings";
 import portfolioCategory from "./documents/portfolioCategory";
 import portfolioCollection from "./documents/portfolioCollection";
 import portfolioProject from "./documents/portfolioProject";
@@ -64,6 +65,7 @@ export const schemaTypes: SchemaTypeDefinition[] = [
   instructor,
   journalCategory,
   journalPost,
+  journalSettings,
   portfolioCategory,
   portfolioCollection,
   portfolioProject,
@@ -111,4 +113,5 @@ export const SINGLETON_TYPES = new Set([
   "footerSettings",
   "announcementBanner",
   "pulseSettings",
+  "journalSettings",
 ]);

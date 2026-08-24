@@ -3,7 +3,12 @@ import Link from "next/link";
 import NavBar from "@/components/NavBar";
 import Footer from "@/components/Footer";
 import JournalPostCard from "@/components/journal/JournalPostCard";
+import LeadStorySection from "@/components/journal/LeadStorySection";
+import FeaturedWorkShowcase from "@/components/journal/FeaturedWorkShowcase";
+import TopicSection from "@/components/journal/TopicSection";
+import CreativeRadarSection from "@/components/journal/CreativeRadarSection";
 import { contentRepository } from "@/lib/content";
+import { JOURNAL_TOPICS } from "@/lib/journal/topicSections";
 import {
   ALL_GROUPINGS,
   GROUPING_LABEL,
@@ -43,6 +48,20 @@ function isStoriesGrouping(value: string | undefined): value is StoriesGrouping 
   return ALL_GROUPINGS.includes(value as StoriesGrouping);
 }
 
+// Journal V1 presentation (Phase E, 2026-08-24 — see
+// PULSE_INGESTION_FOUNDATION.md). Approved hierarchy: Lead Story ->
+// Ordift Originals -> Featured Work -> Topic-led Editorial Areas ->
+// Creative Radar -> Browse/Search. TOPIC (not content origin) is now the
+// primary public axis; origin/trust stays a card-level badge, not a
+// section. Every new section renders nothing when it has no real
+// content — no placeholder/"coming soon" filler anywhere on this page.
+//
+// The previous "Featured Stories" band (item.featured, gated on
+// !hasFilters) is retired here, not because .featured was removed from
+// the schema, but because Topic Sections now surface that same content
+// contextually and Lead Story is the new single deliberate "spotlight"
+// slot — keeping a third overlapping "featured" concept next to Featured
+// Work would only confuse the two.
 export default async function JournalPage({
   searchParams,
 }: {
@@ -51,19 +70,32 @@ export default async function JournalPage({
   const { type: typeParam, category: categorySlug, tag, q } = await searchParams;
   const grouping = isStoriesGrouping(typeParam) ? typeParam : undefined;
 
-  const [home, journalPosts, journalCategories, authors, pulseArticles, pulseCategories, pulseOpportunityTypes, pulseSources] =
-    await Promise.all([
-      contentRepository.getHomePage(),
-      contentRepository.getJournalPosts(),
-      contentRepository.getJournalCategories(),
-      contentRepository.getAuthors(),
-      contentRepository.getPulseArticles(),
-      contentRepository.getPulseCategories(),
-      contentRepository.getPulseOpportunityTypes(),
-      contentRepository.getPulseSources(),
-    ]);
+  const [
+    home,
+    journalPosts,
+    journalCategories,
+    authors,
+    pulseArticles,
+    pulseCategories,
+    pulseOpportunityTypes,
+    pulseSources,
+    portfolioProjects,
+    journalSettings,
+  ] = await Promise.all([
+    contentRepository.getHomePage(),
+    contentRepository.getJournalPosts(),
+    contentRepository.getJournalCategories(),
+    contentRepository.getAuthors(),
+    contentRepository.getPulseArticles(),
+    contentRepository.getPulseCategories(),
+    contentRepository.getPulseOpportunityTypes(),
+    contentRepository.getPulseSources(),
+    contentRepository.getPortfolioProjects(),
+    contentRepository.getJournalSettings(),
+  ]);
 
   const categoryById = new Map([...journalCategories, ...pulseCategories].map((c) => [c.id, c]));
+  const categorySlugById = new Map([...journalCategories, ...pulseCategories].map((c) => [c.id, c.slug]));
   const authorById = new Map(authors.map((a) => [a.id, a]));
   const opportunityTypeById = new Map(pulseOpportunityTypes.map((o) => [o.id, o]));
   const sourceById = new Map(pulseSources.map((s) => [s.id, s]));
@@ -72,6 +104,10 @@ export default async function JournalPage({
     ...journalPosts.map(fromJournalPost),
     ...pulseArticles.map((a) => fromPulseArticle(a, opportunityTypeById, sourceById)),
   ].sort((a, b) => (b.publishedAt ?? "").localeCompare(a.publishedAt ?? ""));
+
+  const leadStory = journalSettings.leadStoryId ? (items.find((i) => i.id === journalSettings.leadStoryId) ?? null) : null;
+  const featuredWork = portfolioProjects.filter((p) => p.featured);
+  const creativeRadarItems = items.filter((item) => item.trustBadge === "official" || item.trustBadge === "community");
 
   const hasFilters = Boolean(grouping || categorySlug || tag || q);
 
@@ -84,36 +120,29 @@ export default async function JournalPage({
     return true;
   });
 
-  const featured = items.filter((item) => item.featured);
   const allTags = Array.from(new Set(items.flatMap((item) => item.tags))).slice(0, 12);
 
   return (
     <main>
       <NavBar />
 
-      <section className="bg-ordift-navy-950 text-white px-4 sm:px-8 py-16 sm:py-20">
-        <div className="max-w-6xl mx-auto">
-          <p className="font-sans font-semibold uppercase tracking-[0.2em] text-eyebrow lg:text-eyebrow-desktop text-ordift-gold mb-4">
-            Stories
-          </p>
-          <h1 className="font-serif font-medium text-page-title sm:text-page-title-tablet lg:text-page-title-desktop max-w-2xl mb-4">
-            We shape stories people remember.
-          </h1>
-          <p className="font-sans text-body text-white/70 max-w-xl">
-            Photography insights, behind-the-scenes, business lessons, faith
-            reflections, curated creative-industry news and opportunities —
-            from the people building Ordift Studios and the wider creative
-            world around it.
-          </p>
-        </div>
-      </section>
+      {leadStory ? (
+        <LeadStorySection item={leadStory} />
+      ) : (
+        <section className="bg-ordift-navy-950 text-white px-4 sm:px-8 py-10 sm:py-12">
+          <div className="max-w-6xl mx-auto">
+            <p className="font-sans font-semibold uppercase tracking-[0.2em] text-eyebrow lg:text-eyebrow-desktop text-ordift-gold mb-3">
+              Stories
+            </p>
+            <h1 className="font-serif font-medium text-section-heading sm:text-section-heading-tablet lg:text-section-heading-desktop max-w-2xl">
+              We shape stories people remember.
+            </h1>
+          </div>
+        </section>
+      )}
 
       {/* Ordift Originals (2026-08-24) — relocated here from the Homepage,
-          same Sanity fields (home.originals*), unchanged data — this is
-          where the studio's own original media/creative projects belong,
-          conceptually adjacent to the existing "Studio Stories" grouping
-          below. No content deleted, no schema changed; only where this
-          teaser is presented moved. */}
+          same Sanity fields (home.originals*), unchanged data. */}
       <section className="bg-ordift-offwhite px-4 sm:px-8 py-14 sm:py-20">
         <div className="max-w-6xl mx-auto">
           <div className="max-w-2xl">
@@ -134,8 +163,26 @@ export default async function JournalPage({
         </div>
       </section>
 
-      <section className="bg-white px-4 sm:px-8 pt-10 sm:pt-12">
+      <FeaturedWorkShowcase projects={featuredWork} />
+
+      {JOURNAL_TOPICS.map((topic) => {
+        const topicItems = items.filter((item) =>
+          item.categoryIds.some((id) => {
+            const slug = categorySlugById.get(id);
+            return slug ? topic.categorySlugs.includes(slug) : false;
+          })
+        );
+        return <TopicSection key={topic.slug} label={topic.label} items={topicItems} categoryById={categoryById} authorById={authorById} />;
+      })}
+
+      <CreativeRadarSection items={creativeRadarItems} categoryById={categoryById} authorById={authorById} />
+
+      {/* Browse/search — the fallback "everything, filterable" surface,
+          below the curated hierarchy above rather than the page's
+          primary structure. */}
+      <section className="bg-white px-4 sm:px-8 pt-10 sm:pt-12 border-t border-black/5">
         <div className="max-w-6xl mx-auto">
+          <p className="font-sans font-semibold uppercase tracking-[0.15em] text-caption text-ordift-ink-muted mb-4">Browse All Stories</p>
           <form action="/journal" method="get" className="flex gap-2 mb-6">
             {grouping && <input type="hidden" name="type" value={grouping} />}
             {categorySlug && <input type="hidden" name="category" value={categorySlug} />}
@@ -231,26 +278,6 @@ export default async function JournalPage({
           )}
         </div>
       </section>
-
-      {!hasFilters && featured.length > 0 && (
-        <section className="bg-white px-4 sm:px-8 py-14 sm:py-16">
-          <div className="max-w-6xl mx-auto">
-            <h2 className="font-serif font-medium text-section-heading lg:text-section-heading-desktop text-ordift-ink mb-6">
-              Featured Stories
-            </h2>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5 sm:gap-6">
-              {featured.map((item) => (
-                <JournalPostCard
-                  key={item.id}
-                  post={item}
-                  categories={item.categoryIds.map((id) => categoryById.get(id)!).filter(Boolean)}
-                  author={item.authorId ? authorById.get(item.authorId) ?? null : null}
-                />
-              ))}
-            </div>
-          </div>
-        </section>
-      )}
 
       <section className="bg-ordift-offwhite px-4 sm:px-8 py-14 sm:py-20">
         <div className="max-w-6xl mx-auto">

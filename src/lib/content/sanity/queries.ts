@@ -423,6 +423,15 @@ export const pulseSourcesQuery = `*[_type == "pulseSource"] | order(name asc) ${
 
 // Singleton — see SINGLETON_TYPES/sanity.config.ts (document id ==
 // type name). Phase A foundation only; nothing reads this yet.
+// Phase E (2026-08-24) — see PULSE_INGESTION_FOUNDATION.md. leadStoryId
+// is resolved against the already-merged StoriesFeedItem list at the
+// page layer (see storiesFeed.ts) rather than re-fetching/re-normalizing
+// journalPost/pulseArticle fields here — the reference can point at
+// either type, and the merge logic to handle that already exists.
+export const journalSettingsQuery = `*[_type == "journalSettings"][0]{
+  "leadStoryId": leadStory._ref
+}`;
+
 export const pulseSettingsQuery = `*[_type == "pulseSettings"][0]{
   "discoveryEnabled": coalesce(discoveryEnabled, false),
   "globalAutoPublishEnabled": coalesce(globalAutoPublishEnabled, false),

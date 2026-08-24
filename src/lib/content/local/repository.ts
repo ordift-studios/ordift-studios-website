@@ -102,6 +102,9 @@ export const localContentRepository: ContentRepository = {
   async getAuthorBySlug(slug) {
     return AUTHORS.find((a) => a.slug === slug) ?? null;
   },
+  async getJournalSettings() {
+    return { leadStoryId: null };
+  },
   async getSiteSettings() {
     return SITE_SETTINGS;
   },

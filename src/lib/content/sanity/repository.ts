@@ -13,6 +13,7 @@ import type {
   JournalPost,
   LegalPage,
   Navigation,
+  JournalSettings,
   PortfolioProject,
   PulseArticle,
   PulseSettings,
@@ -36,6 +37,7 @@ import {
   journalCategoriesQuery,
   journalPostBySlugQuery,
   journalPostsQuery,
+  journalSettingsQuery,
   legalPageQuery,
   navigationQuery,
   portfolioCategoriesQuery,
@@ -184,6 +186,10 @@ export const sanityContentRepository: ContentRepository = {
   },
   async getAuthorBySlug(slug) {
     return client.fetch<Author | null>(authorBySlugQuery, { slug });
+  },
+  async getJournalSettings() {
+    const settings = await client.fetch<JournalSettings | null>(journalSettingsQuery);
+    return settings ?? { leadStoryId: null };
   },
   async getSiteSettings() {
     return client.fetch<SiteSettings>(siteSettingsQuery);
