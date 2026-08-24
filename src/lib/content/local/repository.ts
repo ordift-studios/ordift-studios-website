@@ -21,6 +21,7 @@ import {
   PULSE_CATEGORIES,
   PULSE_OPPORTUNITY_TYPES,
   PULSE_REGIONS,
+  PULSE_SETTINGS,
   PULSE_SOURCES,
 } from "./pulseData";
 import {
@@ -146,5 +147,8 @@ export const localContentRepository: ContentRepository = {
   },
   async getPulseSources() {
     return PULSE_SOURCES;
+  },
+  async getPulseSettings() {
+    return PULSE_SETTINGS;
   },
 };

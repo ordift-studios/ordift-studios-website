@@ -21,6 +21,7 @@ import pulseArticle from "./documents/pulseArticle";
 import pulseCategory from "./documents/pulseCategory";
 import pulseOpportunityType from "./documents/pulseOpportunityType";
 import pulseRegion from "./documents/pulseRegion";
+import pulseSettings from "./documents/pulseSettings";
 import pulseSource from "./documents/pulseSource";
 import sponsor from "./documents/sponsor";
 import tag from "./documents/tag";
@@ -70,6 +71,7 @@ export const schemaTypes: SchemaTypeDefinition[] = [
   pulseCategory,
   pulseOpportunityType,
   pulseRegion,
+  pulseSettings,
   pulseSource,
   sponsor,
   tag,
@@ -108,4 +110,5 @@ export const SINGLETON_TYPES = new Set([
   "navigation",
   "footerSettings",
   "announcementBanner",
+  "pulseSettings",
 ]);

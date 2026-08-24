@@ -15,6 +15,7 @@ import type {
   Navigation,
   PortfolioProject,
   PulseArticle,
+  PulseSettings,
   PulseSource,
   Service,
   SiteSettings,
@@ -46,6 +47,7 @@ import {
   pulseCategoriesQuery,
   pulseOpportunityTypesQuery,
   pulseRegionsQuery,
+  pulseSettingsQuery,
   pulseSourcesQuery,
   serviceBySlugQuery,
   servicesQuery,
@@ -235,5 +237,24 @@ export const sanityContentRepository: ContentRepository = {
   },
   async getPulseSources() {
     return client.fetch<PulseSource[]>(pulseSourcesQuery);
+  },
+  async getPulseSettings() {
+    const settings = await client.fetch<PulseSettings | null>(pulseSettingsQuery);
+    // Falls back to the same conservative defaults as the schema's own
+    // initialValues, in case the singleton document hasn't been created
+    // yet in a given Sanity dataset — nothing currently reads this method.
+    return (
+      settings ?? {
+        discoveryEnabled: false,
+        globalAutoPublishEnabled: false,
+        maxPostsPerDay: 5,
+        minimumRelevanceScore: 50,
+        regionWeight: 20,
+        topicWeight: 30,
+        freshnessWeight: 20,
+        trustWeight: 20,
+        priorityWeight: 10,
+      }
+    );
   },
 };

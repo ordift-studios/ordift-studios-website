@@ -13,6 +13,7 @@ import type {
   Navigation,
   PortfolioProject,
   PulseArticle,
+  PulseSettings,
   PulseSource,
   Service,
   SiteSettings,
@@ -83,4 +84,8 @@ export interface ContentRepository {
   getPulseRegions(): Promise<Category[]>;
   getPulseOpportunityTypes(): Promise<Category[]>;
   getPulseSources(): Promise<PulseSource[]>;
+  // Phase A foundation only (2026-08-24) — global discovery/publishing
+  // controls, unread by any code path yet. See
+  // PULSE_INGESTION_FOUNDATION.md.
+  getPulseSettings(): Promise<PulseSettings>;
 }

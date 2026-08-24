@@ -583,18 +583,45 @@ export type PulseStatus = "draft" | "inReview" | "published" | "archived";
 
 export type PulseSourceType = "rss" | "api" | "press-release" | "partner" | "manual";
 
+// Legal/licensing fact — may Ordift use this source's material the way it
+// intends to? Deliberately independent of PulseEditorialTrustLevel below
+// (2026-08-24 direction — never collapse the two into one field/score).
+// "green" = syndication permitted; "blue" = discovery/linking only, no
+// reproduction; "amber" = permission unclear, always human-reviewed,
+// never auto-published; "red" = do not ingest. See
+// PULSE_INGESTION_FOUNDATION.md.
+export type PulsePermissionClassification = "green" | "blue" | "amber" | "red";
+
+// Editorial/reputation fact — is this source's own journalism reliable?
+// Independent of PulsePermissionClassification: a highly reputable
+// publication can still be Amber/Blue legally, and vice versa.
+export type PulseEditorialTrustLevel = "high" | "standard" | "unverified" | "flagged";
+
 // The trusted-source registry — the data layer's connection point for
 // future ingestion (RSS/API/partner feeds). No fetching or scraping logic
-// exists yet; this is purely the admin-managed allowlist a future
-// ingestion step would read from and attribute against. See
-// PULSE_ARCHITECTURE.md §3.
+// runs yet (Phase A, 2026-08-24, builds the adapter interfaces only — see
+// PULSE_INGESTION_FOUNDATION.md); this is purely the admin-managed
+// allowlist a future ingestion step would read from and attribute
+// against. See PULSE_ARCHITECTURE.md §3.
 export type PulseSource = {
   id: ID;
   name: string;
   sourceType: PulseSourceType;
-  url: string | null;
-  licenseNotes: string | null; // usage-rights/attribution terms agreed with this source, if any
+  url: string | null; // the publisher's main site
+  feedUrl: string | null; // the actual RSS/Atom/API endpoint, if any
+  termsUrl: string | null; // link to the publisher's terms/syndication policy — the evidence behind permissionClassification
+  licenseNotes: string | null; // freeform usage-rights or attribution terms agreed with this source, if any
+  lastPolicyReviewDate: string | null; // ISO date — when a human last actually checked the terms; never set by automation
+  permissionClassification: PulsePermissionClassification;
+  imageUsePermitted: boolean;
+  commercialUsePermitted: boolean;
+  attributionRequirement: string | null;
+  editorialTrustLevel: PulseEditorialTrustLevel;
+  disciplineIds: ID[]; // pulseCategory references this source typically covers
+  geographyIds: ID[]; // pulseRegion references this source's coverage is relevant to
+  editorialPriority: number;
   isActive: boolean;
+  autoPublishEligible: boolean; // schema-enforced: only meaningful when permissionClassification === "green"
 };
 
 export type PulseArticle = {
@@ -650,4 +677,23 @@ export type PulseArticle = {
   // integration exists yet, same convention as JournalPost.
   newsletterExcerpt: string | null;
   seo: SeoFields;
+  // Discovery/dedup foundation (Phase A, 2026-08-24) — written by a future
+  // ingestion step, never by an editor. See PULSE_INGESTION_FOUNDATION.md.
+  possibleDuplicateOfId: ID | null;
+  relevanceScore: number | null;
+  discoveryRunId: string | null;
+};
+
+// Global operational controls for Pulse discovery/publishing (Phase A,
+// 2026-08-24). Nothing reads this yet — see PULSE_INGESTION_FOUNDATION.md.
+export type PulseSettings = {
+  discoveryEnabled: boolean;
+  globalAutoPublishEnabled: boolean;
+  maxPostsPerDay: number;
+  minimumRelevanceScore: number;
+  regionWeight: number;
+  topicWeight: number;
+  freshnessWeight: number;
+  trustWeight: number;
+  priorityWeight: number;
 };

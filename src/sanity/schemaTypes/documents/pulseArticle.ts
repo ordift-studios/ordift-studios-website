@@ -202,6 +202,32 @@ export default defineType({
       description: "Data-readiness only — no newsletter-sending integration exists yet.",
     }),
     defineField({ name: "seo", title: "SEO", type: "seo" }),
+
+    // --- Discovery/dedup foundation (Phase A, 2026-08-24) — written by a
+    // future ingestion step, never by an editor directly. See
+    // PULSE_INGESTION_FOUNDATION.md.
+    defineField({
+      name: "possibleDuplicateOf",
+      title: "Possible Duplicate Of",
+      type: "reference",
+      to: [{ type: "pulseArticle" }],
+      description:
+        "For a future dedup step to set when this item closely matches an existing article (same source URL, or a very similar title within the same time window) — schema-only in Phase A, not yet written or enforced by any code. Never auto-deleted — an editor decides whether to publish this one, the other, or both. Actually excluding a flagged item from the public feed is a later-phase query change, not yet made.",
+    }),
+    defineField({
+      name: "relevanceScore",
+      title: "Relevance Score",
+      type: "number",
+      readOnly: true,
+      description: "System-calculated (region/topic/freshness/trust/priority) — not manually edited. See Pulse Settings for the configurable weights.",
+    }),
+    defineField({
+      name: "discoveryRunId",
+      title: "Discovery Run ID",
+      type: "string",
+      readOnly: true,
+      description: "Ties this draft back to the activity_log entry for the discovery run that created it, if machine-discovered. Blank for manually created articles.",
+    }),
   ],
   preview: {
     select: { title: "title", status: "status", origin: "origin" },

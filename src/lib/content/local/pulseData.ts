@@ -1,4 +1,4 @@
-import type { Category, PulseArticle, PulseSource } from "../types";
+import type { Category, PulseArticle, PulseSettings, PulseSource } from "../types";
 
 // Taxonomy lookups are real category/region/opportunity-type labels (the
 // same list requested for Ordift Pulse), not fabricated facts, so these
@@ -19,12 +19,49 @@ export const PULSE_CATEGORIES: Category[] = [
   { id: "pcat-software", slug: "adobe-editing-software-updates", name: "Adobe & Editing Software Updates", description: "Adobe and other editing-software updates." },
 ];
 
+// Intermediate/regional tiers (West Africa, East Africa, GCC, MENA,
+// Europe) and a few more countries were added 2026-08-24 alongside the
+// geoRegion.ts country→region mapping (see PULSE_INGESTION_FOUNDATION.md
+// §F) — a country resolves to a chain like
+// [country, sub-region, continent, "global"], never just one flat value.
+// "global" is the new canonical top-level fallback slug; "international"
+// is left as-is (unused by any current code) rather than renamed, since
+// this file is a local dev fixture only, never read by the live site.
 export const PULSE_REGIONS: Category[] = [
   { id: "pregion-ghana", slug: "ghana", name: "Ghana", description: "Ghana creative industry." },
+  { id: "pregion-nigeria", slug: "nigeria", name: "Nigeria", description: "Nigeria creative industry." },
+  { id: "pregion-kenya", slug: "kenya", name: "Kenya", description: "Kenya creative industry." },
+  { id: "pregion-south-africa", slug: "south-africa", name: "South Africa", description: "South Africa creative industry." },
+  { id: "pregion-egypt", slug: "egypt", name: "Egypt", description: "Egypt creative industry." },
   { id: "pregion-qatar", slug: "qatar", name: "Qatar", description: "Qatar creative industry." },
+  { id: "pregion-uae", slug: "uae", name: "United Arab Emirates", description: "UAE creative industry." },
+  { id: "pregion-saudi-arabia", slug: "saudi-arabia", name: "Saudi Arabia", description: "Saudi Arabia creative industry." },
+  { id: "pregion-uk", slug: "united-kingdom", name: "United Kingdom", description: "UK creative industry." },
+  { id: "pregion-france", slug: "france", name: "France", description: "France creative industry." },
+  { id: "pregion-germany", slug: "germany", name: "Germany", description: "Germany creative industry." },
+  { id: "pregion-west-africa", slug: "west-africa", name: "West Africa", description: "West African creative industry." },
+  { id: "pregion-east-africa", slug: "east-africa", name: "East Africa", description: "East African creative industry." },
   { id: "pregion-africa", slug: "africa", name: "Africa", description: "African creative industry." },
+  { id: "pregion-gcc", slug: "gcc", name: "GCC", description: "Gulf Cooperation Council creative industry." },
+  { id: "pregion-mena", slug: "mena", name: "MENA", description: "Middle East & North Africa creative industry." },
+  { id: "pregion-europe", slug: "europe", name: "Europe", description: "European creative industry." },
+  { id: "pregion-global", slug: "global", name: "Global", description: "Global creative industry — the fallback region for any visitor/story without a more specific match." },
   { id: "pregion-international", slug: "international", name: "International", description: "International creative industry." },
 ];
+
+// Phase A foundation only — no code reads this yet. Mirrors the schema's
+// own conservative initialValues exactly.
+export const PULSE_SETTINGS: PulseSettings = {
+  discoveryEnabled: false,
+  globalAutoPublishEnabled: false,
+  maxPostsPerDay: 5,
+  minimumRelevanceScore: 50,
+  regionWeight: 20,
+  topicWeight: 30,
+  freshnessWeight: 20,
+  trustWeight: 20,
+  priorityWeight: 10,
+};
 
 export const PULSE_OPPORTUNITY_TYPES: Category[] = [
   { id: "potype-exhibition", slug: "exhibition", name: "Exhibition", description: "Upcoming exhibitions." },
@@ -46,22 +83,44 @@ export const PULSE_OPPORTUNITY_TYPES: Category[] = [
 // would. Used only to exercise the "Official Source" grouping split (see
 // storiesFeed.ts's OFFICIAL_SOURCE_TYPES) locally; never shown in
 // production, which reads from Sanity, not this file.
+const defaultPulseSourceFields = {
+  feedUrl: null as string | null,
+  termsUrl: null as string | null,
+  lastPolicyReviewDate: null as string | null,
+  imageUsePermitted: false,
+  commercialUsePermitted: false,
+  attributionRequirement: null as string | null,
+  editorialTrustLevel: "unverified" as const,
+  disciplineIds: [] as string[],
+  geographyIds: [] as string[],
+  editorialPriority: 0,
+  autoPublishEligible: false,
+};
+
+// isActive: false and permissionClassification: "amber" on both — matches
+// the schema's own safe defaults exactly (2026-08-24 direction: a working
+// feed must never imply permission). Local dev fixtures only; never read
+// by the live site, which reads from Sanity.
 export const PULSE_SOURCES: PulseSource[] = [
   {
+    ...defaultPulseSourceFields,
     id: "psource-sample-official",
     name: "[SAMPLE] Placeholder Official Source",
     sourceType: "press-release",
     url: "https://example.org",
     licenseNotes: "Placeholder for architecture review only — no real source relationship exists.",
-    isActive: true,
+    permissionClassification: "amber",
+    isActive: false,
   },
   {
+    ...defaultPulseSourceFields,
     id: "psource-sample-general",
     name: "[SAMPLE] Placeholder Aggregated Source",
     sourceType: "rss",
     url: "https://example.org",
     licenseNotes: "Placeholder for architecture review only — no real source relationship exists.",
-    isActive: true,
+    permissionClassification: "amber",
+    isActive: false,
   },
 ];
 
@@ -88,6 +147,9 @@ const defaultPulseFields = {
   relatedWorkshopIds: [] as string[],
   newsletterExcerpt: null,
   seo: { metaTitle: null, metaDescription: null, ogImageUrl: null, canonicalUrl: null },
+  possibleDuplicateOfId: null as string | null,
+  relevanceScore: null as number | null,
+  discoveryRunId: null as string | null,
 };
 
 // Six entries, one per Stories grouping / trust badge combination that

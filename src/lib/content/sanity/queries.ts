@@ -404,10 +404,36 @@ export const pulseSourceFragment = `{
   name,
   sourceType,
   url,
+  feedUrl,
+  termsUrl,
   licenseNotes,
-  isActive
+  lastPolicyReviewDate,
+  "permissionClassification": coalesce(permissionClassification, "amber"),
+  "imageUsePermitted": coalesce(imageUsePermitted, false),
+  "commercialUsePermitted": coalesce(commercialUsePermitted, false),
+  attributionRequirement,
+  "editorialTrustLevel": coalesce(editorialTrustLevel, "unverified"),
+  "disciplineIds": disciplines[]._ref,
+  "geographyIds": geography[]._ref,
+  "editorialPriority": coalesce(editorialPriority, 0),
+  "isActive": coalesce(isActive, false),
+  "autoPublishEligible": coalesce(autoPublishEligible, false)
 }`;
 export const pulseSourcesQuery = `*[_type == "pulseSource"] | order(name asc) ${pulseSourceFragment}`;
+
+// Singleton — see SINGLETON_TYPES/sanity.config.ts (document id ==
+// type name). Phase A foundation only; nothing reads this yet.
+export const pulseSettingsQuery = `*[_type == "pulseSettings"][0]{
+  "discoveryEnabled": coalesce(discoveryEnabled, false),
+  "globalAutoPublishEnabled": coalesce(globalAutoPublishEnabled, false),
+  "maxPostsPerDay": coalesce(maxPostsPerDay, 5),
+  "minimumRelevanceScore": coalesce(minimumRelevanceScore, 50),
+  "regionWeight": coalesce(regionWeight, 20),
+  "topicWeight": coalesce(topicWeight, 30),
+  "freshnessWeight": coalesce(freshnessWeight, 20),
+  "trustWeight": coalesce(trustWeight, 20),
+  "priorityWeight": coalesce(priorityWeight, 10)
+}`;
 
 // Same scheduled-publishing gate as Journal (journalVisibilityFilter
 // above), duplicated rather than shared since Pulse's status enum
@@ -453,7 +479,10 @@ export const pulseArticleFragment = `{
   "relatedProjectIds": relatedProjects[]._ref,
   "relatedWorkshopIds": relatedWorkshops[]._ref,
   newsletterExcerpt,
-  ${seoFragment("seo")}
+  ${seoFragment("seo")},
+  "possibleDuplicateOfId": possibleDuplicateOf._ref,
+  relevanceScore,
+  discoveryRunId
 }`;
 
 export const pulseArticlesQuery = `*[_type == "pulseArticle" && ${pulseVisibilityFilter}] | order(coalesce(publishedAt, _createdAt) desc) ${pulseArticleFragment}`;
