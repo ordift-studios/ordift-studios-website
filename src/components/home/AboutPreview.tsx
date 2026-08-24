@@ -91,13 +91,26 @@ export default function AboutPreview({
 function Band({ label, copy, image }: { label: string; copy: string; image: BandImage }) {
   return (
     <div className="relative bg-ordift-navy-950 px-4 sm:px-8 py-8 sm:py-10 overflow-hidden">
+      {/* Background blur (2026-08-24) — presentation-only: a CSS filter
+          applied to this <Image> element alone, never touching the
+          uploaded Sanity/Storage asset itself (still full-resolution
+          and sharp everywhere else it's used, e.g. the Admin picker's
+          own preview). blur-md (12px) is Tailwind's established scale
+          step for "clearly softened, still recognizable" rather than
+          blur-lg+ which starts reading as a flat colour wash. scale-110
+          expands the blurred image slightly beyond the (overflow-hidden)
+          container so the blur's own soft edge is cropped away rather
+          than showing as a faint halo at the frame's boundary — a
+          standard technique for blurred background images. The label/
+          copy text below lives in a separate sibling element and is
+          completely unaffected by this filter. */}
       {image && (
         <Image
           src={image.url}
           alt=""
           fill
           sizes="100vw"
-          className="object-cover"
+          className="object-cover blur-md scale-110"
           style={{ objectPosition: `${image.focalX}% ${image.focalY}%` }}
         />
       )}
