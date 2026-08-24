@@ -4,7 +4,7 @@ import Link from "next/link";
 import { getCurrentUser, isSuperAdmin } from "@/lib/portal/roles";
 import { getPublicProfileForEdit } from "@/lib/team/adminTeamData";
 import PortraitEditor from "./PortraitEditor";
-import { updatePublicProfileAction } from "./actions";
+import PublicProfileForm from "./PublicProfileForm";
 
 export const metadata: Metadata = {
   title: "Public Profile — Ordift Studios Admin",
@@ -59,82 +59,7 @@ export default async function TeamMemberProfilePage({ params }: { params: Promis
           />
         </div>
 
-        <form action={updatePublicProfileAction} className="bg-white rounded-lg border border-ordift-ink/10 p-6 space-y-4">
-          <input type="hidden" name="profileId" value={id} />
-          <h2 className="font-serif font-medium text-card-title text-ordift-ink">Public Profile</h2>
-          <p className="font-sans text-caption text-ordift-ink-muted">
-            Only fields with real content, and only where the specific Meet the Team entry allows them (see Admin →
-            Team), are ever shown publicly. Nothing here appears on the website until this person is also added to
-            Meet the Team.
-          </p>
-
-          <label className="block">
-            <span className="font-sans text-body-small text-ordift-ink-muted">Public Display Name / Nickname *</span>
-            <input
-              name="displayName"
-              defaultValue={data.details.displayName}
-              required
-              placeholder="e.g. Sarah, or a public handle — not necessarily the legal name on file"
-              className="mt-1 w-full rounded-md border border-ordift-ink/20 px-3 py-2 font-sans text-body-small"
-            />
-          </label>
-
-          <label className="block">
-            <span className="font-sans text-body-small text-ordift-ink-muted">Short Public Bio</span>
-            <textarea
-              name="bio"
-              rows={3}
-              defaultValue={data.details.bio ?? ""}
-              className="mt-1 w-full rounded-md border border-ordift-ink/20 px-3 py-2 font-sans text-body-small"
-            />
-          </label>
-
-          <label className="block">
-            <span className="font-sans text-body-small text-ordift-ink-muted">Specialty / Area of Expertise</span>
-            <input
-              name="specialty"
-              defaultValue={data.details.specialty ?? ""}
-              className="mt-1 w-full rounded-md border border-ordift-ink/20 px-3 py-2 font-sans text-body-small"
-            />
-          </label>
-
-          <label className="block">
-            <span className="font-sans text-body-small text-ordift-ink-muted">Social Handle / Public Profile URL</span>
-            <input
-              name="socialHandle"
-              defaultValue={data.details.socialHandle ?? ""}
-              placeholder="@handle or a full URL"
-              className="mt-1 w-full rounded-md border border-ordift-ink/20 px-3 py-2 font-sans text-body-small"
-            />
-          </label>
-
-          <label className="block">
-            <span className="font-sans text-body-small text-ordift-ink-muted">Favorite Quote</span>
-            <textarea
-              name="favoriteQuote"
-              rows={2}
-              defaultValue={data.details.favoriteQuote ?? ""}
-              className="mt-1 w-full rounded-md border border-ordift-ink/20 px-3 py-2 font-sans text-body-small"
-            />
-          </label>
-
-          <label className="block">
-            <span className="font-sans text-body-small text-ordift-ink-muted">Something You May Not Know About Me</span>
-            <textarea
-              name="funFact"
-              rows={2}
-              defaultValue={data.details.funFact ?? ""}
-              className="mt-1 w-full rounded-md border border-ordift-ink/20 px-3 py-2 font-sans text-body-small"
-            />
-          </label>
-
-          <button
-            type="submit"
-            className="rounded-full bg-ordift-navy-950 text-white font-sans text-button font-semibold px-6 py-2.5 hover:bg-ordift-navy-900 transition-colors"
-          >
-            Save Public Profile
-          </button>
-        </form>
+        <PublicProfileForm profileId={id} details={data.details} />
 
         <Link href="/admin/team" className="font-sans text-body-small text-ordift-ink-muted underline underline-offset-4">
           ← Back to Team

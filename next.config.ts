@@ -71,7 +71,16 @@ function enforcingCsp(): { main: string; studio: string } | null {
     // from Next's own inline hydration scripts.
     "script-src": ["'self'", "'unsafe-inline'", TURNSTILE_ORIGIN],
     "style-src": ["'self'", "'unsafe-inline'"],
-    "img-src": ["'self'", "data:", "blob:", SANITY_MEDIA_ORIGIN],
+    // supabaseOrigin (2026-08-24, Meet the Team) — the staff-portraits
+    // Storage bucket serves public portrait images from the Supabase
+    // project origin, same as Sanity's own CDN does for every other
+    // real image on the site. Found live: without this, the browser
+    // itself (not a code bug) silently blocks every portrait <img>/
+    // next/image request — no onLoad/onError signal reaches the
+    // component, which is why the admin preview and the public
+    // carousel both rendered as a permanently blank area rather than a
+    // visible error.
+    "img-src": ["'self'", "data:", "blob:", SANITY_MEDIA_ORIGIN, supabaseOrigin],
     "media-src": ["'self'", SANITY_MEDIA_ORIGIN],
     "font-src": ["'self'"],
     "connect-src": sharedConnectSrc,
