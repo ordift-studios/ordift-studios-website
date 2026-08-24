@@ -56,11 +56,11 @@ function withinWindow(a: string | null, b: string | null, windowDays: number): b
  * match, then fuzzy title similarity above threshold — all constrained to
  * `windowDays` around the candidate's publish date.
  */
-export function findDuplicate(
+export function findDuplicate<T extends DedupCandidate>(
   candidate: DedupCandidate,
-  existing: DedupCandidate[],
+  existing: T[],
   options: { windowDays?: number; similarityThreshold?: number } = {}
-): DedupCandidate | null {
+): T | null {
   const windowDays = options.windowDays ?? DEFAULT_WINDOW_DAYS;
   const similarityThreshold = options.similarityThreshold ?? 0.6;
   const candidateNormalized = normalizeTitle(candidate.title);
