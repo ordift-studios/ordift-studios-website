@@ -22,6 +22,12 @@ import { getSlideshowProjects } from "@/lib/content/portfolioHelpers";
 // Work's underlying `featured` selection mechanism on PortfolioProject
 // is completely untouched — it's just no longer surfaced here; its
 // approved future home remains the Stories/Journal experience.
+//
+// Ordift Originals also moved off the Homepage the same day, onto
+// /journal (Stories) — same home.originals* Sanity fields, unchanged
+// data, just relocated presentation; see src/app/journal/page.tsx.
+// Homepage flow is now: Hero -> AboutPreview -> Departments -> Process
+// -> closing CTA -> Footer.
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://ordiftstudios.com";
 
@@ -56,6 +62,25 @@ export default async function Home() {
   // is never left without a working slideshow, including before any
   // curated slide has been added yet.
   const heroSlideshowProjects = getSlideshowProjects(portfolioProjects);
+  // AboutPreview's Mission/Vision photo bands (2026-08-24) — reuse real,
+  // genuinely published portfolio photography rather than inventing new
+  // imagery. Explicitly excludes anything titled "[SAMPLE] ..." — this
+  // Staging dataset's current portfolio content is entirely QA/sample
+  // placeholder entries (confirmed by direct query), not real client
+  // work, so using any of it here would be presenting fabricated
+  // imagery as genuine Ordift photography. Degrades to no image (a
+  // clean navy band, matching Our Mission's own current fallback) when
+  // no real photography exists yet — see the deployment report for
+  // exactly what's needed to light these bands up with real photos.
+  const realImageProjects = portfolioProjects.filter(
+    (p) => p.heroMedia.type === "image" && p.heroMedia.url && !p.title.startsWith("[SAMPLE]")
+  );
+  const missionImage = realImageProjects[0]?.heroMedia.url
+    ? { url: realImageProjects[0].heroMedia.url, alt: realImageProjects[0].heroMedia.alt }
+    : null;
+  const visionImage = realImageProjects[1]?.heroMedia.url
+    ? { url: realImageProjects[1].heroMedia.url, alt: realImageProjects[1].heroMedia.alt }
+    : null;
 
   return (
     <main>
@@ -75,6 +100,8 @@ export default async function Home() {
         mission={about.mission}
         vision={about.vision}
         valuesStatement="What doesn't bend under deadline pressure"
+        missionImage={missionImage}
+        visionImage={visionImage}
       />
 
       {/* Departments */}
@@ -95,21 +122,6 @@ export default async function Home() {
                 href={`/services/${d.slug}`}
               />
             ))}
-          </div>
-        </div>
-      </section>
-
-      {/* Ordift Originals — landing/teaser only, no unconfirmed titles */}
-      <section className="bg-ordift-navy-950 text-white px-4 sm:px-8 py-14 sm:py-20">
-        <div className="max-w-6xl mx-auto">
-          <div className="max-w-2xl">
-            <p className="font-sans font-semibold uppercase tracking-[0.2em] text-eyebrow text-ordift-gold mb-3">
-              {home.originalsEyebrow}
-            </p>
-            <h2 className="font-serif font-medium text-section-heading sm:text-section-heading-tablet lg:text-section-heading-desktop mb-4">
-              {home.originalsHeadline}
-            </h2>
-            <p className="font-sans text-body text-white/80">{home.originalsBody}</p>
           </div>
         </div>
       </section>

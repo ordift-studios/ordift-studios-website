@@ -48,36 +48,50 @@ export default async function TeamPage() {
     <main>
       <NavBar />
 
-      <section className="bg-ordift-navy-950 text-white px-4 sm:px-8 pt-16 sm:pt-24 pb-16 sm:pb-24">
+      <section className="bg-ordift-navy-950 text-white px-4 sm:px-8 pt-16 sm:pt-20 pb-16 sm:pb-20">
         <div className="max-w-6xl mx-auto">
-          <div className="max-w-2xl mb-12 sm:mb-16">
+          {/* Centered header (2026-08-24 layout correction) — wider intro
+              column than the previous narrow left-aligned block, so the
+              same word count consumes less vertical height, leaving more
+              room below for the portrait carousel. */}
+          <div className="max-w-3xl mx-auto text-center mb-10 sm:mb-12">
             <p className="font-sans font-semibold uppercase tracking-[0.2em] text-eyebrow text-ordift-gold mb-3">
               {about.teamEyebrow}
             </p>
             <h1 className="font-serif font-medium text-page-title sm:text-page-title-tablet lg:text-page-title-desktop mb-6">
               {about.teamHeadline}
             </h1>
-            {introParagraph && <p className="font-sans text-body lg:text-body-desktop text-white/80">{introParagraph}</p>}
+            {introParagraph && (
+              <p className="font-sans text-body lg:text-body-desktop text-white/80 max-w-4xl mx-auto">{introParagraph}</p>
+            )}
           </div>
 
           {teamMembers.length > 0 ? (
-            <div className="relative">
-              <MeetTheTeamSection members={teamMembers} />
-              <p className="hidden sm:block absolute -bottom-2 right-2 font-sans text-caption tracking-[0.15em] text-white/25 select-none">
-                THE MINDS BEHIND THE SCENES
-              </p>
-            </div>
+            <MeetTheTeamSection members={teamMembers} />
           ) : (
-            <p className="font-sans text-body-small text-white/50">Team profiles coming soon.</p>
+            <p className="font-sans text-body-small text-white/50 text-center">Team profiles coming soon.</p>
           )}
 
-          <div className="flex justify-end mt-14 sm:mt-20">
-            <Link
-              href="/book?service=general"
-              className="font-sans text-body-small font-semibold text-white hover:text-ordift-gold transition-colors underline underline-offset-4"
-            >
-              Join Our Team →
-            </Link>
+          {/* Bottom row (2026-08-24) — "The Minds Behind the Scenes" and
+              "Join Our Team" now share one visual row beneath the
+              carousel instead of the label sitting on its own in a
+              corner. Centered label via the 3-column grid (an empty left
+              cell balances the CTA's width) rather than flex, so the
+              label stays genuinely centered regardless of the CTA's own
+              width; stacks on mobile. */}
+          <div className="mt-14 sm:mt-16 flex flex-col items-center gap-4 sm:grid sm:grid-cols-3 sm:items-center">
+            <span aria-hidden="true" className="hidden sm:block" />
+            <p className="font-sans text-caption tracking-[0.15em] text-white/25 select-none text-center order-1 sm:order-none">
+              THE MINDS BEHIND THE SCENES
+            </p>
+            <div className="order-2 sm:order-none sm:justify-self-end">
+              <Link
+                href="/book?service=general"
+                className="font-sans text-body-small font-semibold text-white hover:text-ordift-gold transition-colors underline underline-offset-4"
+              >
+                Join Our Team →
+              </Link>
+            </div>
           </div>
         </div>
       </section>

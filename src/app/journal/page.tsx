@@ -51,8 +51,9 @@ export default async function JournalPage({
   const { type: typeParam, category: categorySlug, tag, q } = await searchParams;
   const grouping = isStoriesGrouping(typeParam) ? typeParam : undefined;
 
-  const [journalPosts, journalCategories, authors, pulseArticles, pulseCategories, pulseOpportunityTypes, pulseSources] =
+  const [home, journalPosts, journalCategories, authors, pulseArticles, pulseCategories, pulseOpportunityTypes, pulseSources] =
     await Promise.all([
+      contentRepository.getHomePage(),
       contentRepository.getJournalPosts(),
       contentRepository.getJournalCategories(),
       contentRepository.getAuthors(),
@@ -104,6 +105,32 @@ export default async function JournalPage({
             from the people building Ordift Studios and the wider creative
             world around it.
           </p>
+        </div>
+      </section>
+
+      {/* Ordift Originals (2026-08-24) — relocated here from the Homepage,
+          same Sanity fields (home.originals*), unchanged data — this is
+          where the studio's own original media/creative projects belong,
+          conceptually adjacent to the existing "Studio Stories" grouping
+          below. No content deleted, no schema changed; only where this
+          teaser is presented moved. */}
+      <section className="bg-ordift-offwhite px-4 sm:px-8 py-14 sm:py-20">
+        <div className="max-w-6xl mx-auto">
+          <div className="max-w-2xl">
+            <p className="font-sans font-semibold uppercase tracking-[0.2em] text-eyebrow text-ordift-gold-pressed mb-3">
+              {home.originalsEyebrow}
+            </p>
+            <h2 className="font-serif font-medium text-section-heading sm:text-section-heading-tablet lg:text-section-heading-desktop text-ordift-ink mb-4">
+              {home.originalsHeadline}
+            </h2>
+            <p className="font-sans text-body text-ordift-ink-muted mb-6">{home.originalsBody}</p>
+            <Link
+              href={buildHref({ type: "studio-stories" })}
+              className="font-sans text-body-small font-semibold text-ordift-gold-pressed underline underline-offset-4"
+            >
+              Explore Studio Stories →
+            </Link>
+          </div>
         </div>
       </section>
 
