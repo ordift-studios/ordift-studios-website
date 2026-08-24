@@ -24,6 +24,7 @@ const NAV_ITEMS: { label: string; href: string; adminOnly?: boolean; superAdminO
   { label: "Content", href: "/admin/content" },
   { label: "Activity", href: "/admin/activity" },
   { label: "Users & Roles", href: "/admin/users", adminOnly: true },
+  { label: "Meet the Team", href: "/admin/team", superAdminOnly: true },
   { label: "Titles & Classifications", href: "/admin/lookups", superAdminOnly: true },
   { label: "Feature Flags", href: "/admin/flags", adminOnly: true },
   { label: "Settings", href: "/admin/settings", adminOnly: true },
