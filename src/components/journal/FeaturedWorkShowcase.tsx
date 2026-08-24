@@ -31,12 +31,20 @@ export default function FeaturedWorkShowcase({ projects }: { projects: Portfolio
   const primaryPoster = posterFor(primary);
 
   return (
-    <section className="bg-ordift-navy-950">
+    // min-h-[100svh] + flex-col (Phase F, 2026-08-25) — the same
+    // viewport-composition principle as EditorialComposition.tsx
+    // (src/components/layout/EditorialComposition.tsx), applied
+    // directly here since this section already has one natural root
+    // element. A single featured project (no secondary row) would
+    // otherwise be short enough to leak the next section's edge into
+    // view; the primary band below grows (flex-1) to absorb any
+    // leftover space instead of leaving a bare gap.
+    <section className="flex flex-col min-h-[100svh] bg-ordift-navy-950">
       <div className="px-4 sm:px-8 pt-10 sm:pt-12">
         <h2 className="font-sans font-semibold uppercase tracking-[0.2em] text-eyebrow text-ordift-gold mb-1 max-w-6xl mx-auto">Featured Work</h2>
       </div>
 
-      <Link href={`/work/${primary.slug}`} className="group relative block w-full h-[60vh] sm:h-[70vh] overflow-hidden mt-4">
+      <Link href={`/work/${primary.slug}`} className="group relative block w-full flex-1 min-h-[60vh] sm:min-h-[70vh] overflow-hidden mt-4">
         {primaryPoster ? (
           <Image
             src={primaryPoster.url}

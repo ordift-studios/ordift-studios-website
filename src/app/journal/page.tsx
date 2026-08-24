@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import NavBar from "@/components/NavBar";
 import Footer from "@/components/Footer";
+import EditorialComposition from "@/components/layout/EditorialComposition";
 import JournalPostCard from "@/components/journal/JournalPostCard";
 import LeadStorySection from "@/components/journal/LeadStorySection";
 import FeaturedWorkShowcase from "@/components/journal/FeaturedWorkShowcase";
@@ -126,42 +127,56 @@ export default async function JournalPage({
     <main>
       <NavBar />
 
-      {leadStory ? (
-        <LeadStorySection item={leadStory} />
-      ) : (
-        <section className="bg-ordift-navy-950 text-white px-4 sm:px-8 py-10 sm:py-12">
+      {/* Composition 1 — Stories/Lead + Ordift Originals (Phase F,
+          2026-08-25). EditorialComposition claims at least one full
+          viewport frame so a short opening (no Lead Story picked yet)
+          never lets the next section's edge peek into this one — see
+          src/components/layout/EditorialComposition.tsx. When a real
+          Lead Story is set, its own ~75-85vh already fills the frame on
+          its own and this wrapper has no visible effect. */}
+      <EditorialComposition>
+        {leadStory ? (
+          <LeadStorySection item={leadStory} />
+        ) : (
+          <section className="bg-ordift-navy-950 text-white px-4 sm:px-8 py-10 sm:py-12">
+            <div className="max-w-6xl mx-auto">
+              <p className="font-sans font-semibold uppercase tracking-[0.2em] text-eyebrow lg:text-eyebrow-desktop text-ordift-gold mb-3">
+                Stories
+              </p>
+              <h1 className="font-serif font-medium text-section-heading sm:text-section-heading-tablet lg:text-section-heading-desktop max-w-2xl">
+                We shape stories people remember.
+              </h1>
+            </div>
+          </section>
+        )}
+
+        {/* Ordift Originals (2026-08-24) — relocated here from the Homepage,
+            same Sanity fields (home.originals*), unchanged data.
+            flex-1 + centered content (2026-08-25, Phase F) — absorbs
+            any leftover space in this composition's frame using its own
+            offwhite background, rather than leaving an uncolored gap
+            above/below when EditorialComposition's min-height wraps
+            short content. */}
+        <section className="flex-1 flex flex-col justify-center bg-ordift-offwhite px-4 sm:px-8 py-14 sm:py-20">
           <div className="max-w-6xl mx-auto">
-            <p className="font-sans font-semibold uppercase tracking-[0.2em] text-eyebrow lg:text-eyebrow-desktop text-ordift-gold mb-3">
-              Stories
-            </p>
-            <h1 className="font-serif font-medium text-section-heading sm:text-section-heading-tablet lg:text-section-heading-desktop max-w-2xl">
-              We shape stories people remember.
-            </h1>
+            <div className="max-w-2xl">
+              <p className="font-sans font-semibold uppercase tracking-[0.2em] text-eyebrow text-ordift-gold-pressed mb-3">
+                {home.originalsEyebrow}
+              </p>
+              <h2 className="font-serif font-medium text-section-heading sm:text-section-heading-tablet lg:text-section-heading-desktop text-ordift-ink mb-4">
+                {home.originalsHeadline}
+              </h2>
+              <p className="font-sans text-body text-ordift-ink-muted mb-6">{home.originalsBody}</p>
+              <Link
+                href={buildHref({ type: "studio-stories" })}
+                className="font-sans text-body-small font-semibold text-ordift-gold-pressed underline underline-offset-4"
+              >
+                Explore Studio Stories →
+              </Link>
+            </div>
           </div>
         </section>
-      )}
-
-      {/* Ordift Originals (2026-08-24) — relocated here from the Homepage,
-          same Sanity fields (home.originals*), unchanged data. */}
-      <section className="bg-ordift-offwhite px-4 sm:px-8 py-14 sm:py-20">
-        <div className="max-w-6xl mx-auto">
-          <div className="max-w-2xl">
-            <p className="font-sans font-semibold uppercase tracking-[0.2em] text-eyebrow text-ordift-gold-pressed mb-3">
-              {home.originalsEyebrow}
-            </p>
-            <h2 className="font-serif font-medium text-section-heading sm:text-section-heading-tablet lg:text-section-heading-desktop text-ordift-ink mb-4">
-              {home.originalsHeadline}
-            </h2>
-            <p className="font-sans text-body text-ordift-ink-muted mb-6">{home.originalsBody}</p>
-            <Link
-              href={buildHref({ type: "studio-stories" })}
-              className="font-sans text-body-small font-semibold text-ordift-gold-pressed underline underline-offset-4"
-            >
-              Explore Studio Stories →
-            </Link>
-          </div>
-        </div>
-      </section>
+      </EditorialComposition>
 
       <FeaturedWorkShowcase projects={featuredWork} />
 
