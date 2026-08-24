@@ -38,8 +38,11 @@ export default function AboutPreview({
 }) {
   return (
     <section className="bg-white">
-      {/* Who We Are — contained, compact title, not a full-viewport band. */}
-      <div className="px-4 sm:px-8 pt-14 sm:pt-20 pb-8 sm:pb-10">
+      {/* Who We Are — contained, compact title, not a full-viewport band.
+          Top padding tightened considerably (2026-08-24 follow-up) —
+          the goal is the whole section reading as one composed frame,
+          not several loosely stacked pieces; text size is unchanged. */}
+      <div className="px-4 sm:px-8 pt-8 sm:pt-10 pb-6 sm:pb-8">
         <div className="max-w-2xl mx-auto text-center">
           <p className="font-sans font-semibold uppercase tracking-[0.2em] text-eyebrow text-ordift-gold-pressed mb-3">
             {whoWeAreEyebrow}
@@ -51,13 +54,14 @@ export default function AboutPreview({
       </div>
 
       {/* Our Mission / Our Vision — full-bleed horizontal rows, height
-          driven by padding + content, never a forced card shape. */}
+          driven by padding + content, never a forced card shape.
+          Padding tightened alongside Who We Are's, same reasoning. */}
       <Band label="Our Mission" copy={mission} image={missionImage} />
       <Band label="Our Vision" copy={vision} image={visionImage} />
 
       {/* Our Values — contained, plain (no image by design), same
           label-beside-copy rhythm as the two rows above it. */}
-      <div className="px-4 sm:px-8 py-10 sm:py-14 bg-ordift-offwhite">
+      <div className="px-4 sm:px-8 py-8 sm:py-10 bg-ordift-offwhite">
         <div className="max-w-6xl mx-auto grid grid-cols-1 md:grid-cols-12 gap-3 md:gap-8 items-center">
           <div className="md:col-span-3">
             <p className="font-sans font-semibold uppercase tracking-[0.15em] text-caption text-ordift-gold-pressed">
@@ -72,7 +76,7 @@ export default function AboutPreview({
 
       {/* Meet the Minds CTA — deliberately restrained on mobile (a
           plain small link), a touch more editorial from sm: up. */}
-      <div className="px-4 sm:px-8 py-6 sm:py-8 flex justify-end">
+      <div className="px-4 sm:px-8 py-4 sm:py-6 flex justify-end">
         <Link
           href="/team"
           className="font-sans text-caption sm:text-body-small font-semibold text-ordift-ink hover:text-ordift-gold-pressed transition-colors underline underline-offset-4"
@@ -86,7 +90,7 @@ export default function AboutPreview({
 
 function Band({ label, copy, image }: { label: string; copy: string; image: BandImage }) {
   return (
-    <div className="relative bg-ordift-navy-950 px-4 sm:px-8 py-10 sm:py-14 overflow-hidden">
+    <div className="relative bg-ordift-navy-950 px-4 sm:px-8 py-8 sm:py-10 overflow-hidden">
       {image && (
         <Image
           src={image.url}
