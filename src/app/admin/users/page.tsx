@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { getCurrentUser, hasRole, isSuperAdmin } from "@/lib/portal/roles";
 import { listUsersWithRoles, listOperationalTitles, listEngagementTypes } from "@/lib/portal/adminData";
 import { listClassifications } from "@/lib/portal/memberNumbers";
+import { listPositions } from "@/lib/organization/adminData";
 import UsersManager from "./UsersManager";
 
 export const metadata: Metadata = {
@@ -19,11 +20,12 @@ export default async function AdminUsersPage() {
   // Enquiries/Bookings views.
   if (!user || (!hasRole(user, "admin") && !isSuperAdmin(user))) redirect("/admin/overview");
 
-  const [result, operationalTitles, engagementTypes, classifications] = await Promise.all([
+  const [result, operationalTitles, engagementTypes, classifications, positions] = await Promise.all([
     listUsersWithRoles(),
     listOperationalTitles(),
     listEngagementTypes(),
     listClassifications(),
+    listPositions(),
   ]);
 
   return (
@@ -58,6 +60,7 @@ export default async function AdminUsersPage() {
           operationalTitles={operationalTitles}
           engagementTypes={engagementTypes}
           classifications={classifications}
+          positions={positions}
         />
       )}
     </div>

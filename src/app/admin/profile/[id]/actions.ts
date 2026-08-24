@@ -3,10 +3,10 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { createAdminClient } from "@/lib/supabase/admin";
 import { getCurrentUser, isSuperAdmin } from "@/lib/portal/roles";
 import { logActivity } from "@/lib/admin/activityLog";
 import { assignClassification } from "@/lib/portal/memberNumbers";
+import { assignStaffPosition } from "@/lib/organization/assignPosition";
 
 // All three actions return void and redirect back to the read-only view
 // on completion — same "plain <form action={...}>, no client wrapper"
@@ -47,9 +47,7 @@ export async function updateOwnContactDetailsAction(formData: FormData): Promise
 
 // Organizational assignment — Super Admin only, unchanged gate (see
 // architecture note in the Admin Profile Quick Card proposal: these are
-// admin-managed facts, not self-service). Uses the service-role client,
-// same precedent as updateCollaboratorDetailsAction in
-// src/app/admin/users/actions.ts.
+// admin-managed facts, not self-service).
 //
 // Ordift Organizational & Administrative Architecture V1, Phase 2
 // (2026-08-25): Position is now the single authoritative input — this
@@ -64,6 +62,13 @@ export async function updateOwnContactDetailsAction(formData: FormData): Promise
 // never written by this action — preserved as-is, read only as a
 // fallback for accounts not yet migrated into the new catalogue (see
 // getProfileCard()).
+//
+// Phase 2.1, Part B (2026-08-25): the actual resolve-and-upsert-and-log
+// logic now lives in assignStaffPosition() (src/lib/organization/assignPosition.ts),
+// shared with assignStaffPositionAction in src/app/admin/users/actions.ts
+// — the proper any-staff-member assignment surface — so the invariant
+// can never drift between the two entry points. This function is now
+// just this route's thin authorization + redirect wrapper.
 export async function updateStaffOperationalDetailsAction(formData: FormData): Promise<void> {
   const currentUser = await getCurrentUser();
   if (!currentUser || !isSuperAdmin(currentUser)) return;
@@ -72,68 +77,8 @@ export async function updateStaffOperationalDetailsAction(formData: FormData): P
   const positionId = String(formData.get("positionId") ?? "").trim() || null;
   if (!targetUserId) return;
 
-  const admin = createAdminClient();
-
-  const { data: previous } = await admin
-    .from("staff_details")
-    .select("position_id, grade_id")
-    .eq("id", targetUserId)
-    .maybeSingle();
-
-  let next: { department_id: string | null; position_id: string | null; operational_title_id: string | null; grade_id: string | null };
-  let positionName: string | null = null;
-
-  if (positionId) {
-    const { data: position, error: positionError } = await admin
-      .from("positions")
-      .select("id, name, department_id, operational_title_id, default_grade_id")
-      .eq("id", positionId)
-      .maybeSingle();
-    if (positionError || !position) {
-      console.error("[admin profile] position not found for assignment", positionId, positionError?.message);
-      return;
-    }
-    positionName = position.name;
-    next = {
-      department_id: position.department_id,
-      position_id: position.id,
-      operational_title_id: position.operational_title_id,
-      grade_id: position.default_grade_id,
-    };
-  } else {
-    next = { department_id: null, position_id: null, operational_title_id: null, grade_id: null };
-  }
-
-  const { error } = await admin.from("staff_details").upsert(
-    { id: targetUserId, ...next, updated_at: new Date().toISOString() },
-    { onConflict: "id" }
-  );
-  if (error) {
-    console.error("[admin profile] failed to update operational details", error.message);
-    return;
-  }
-
-  const previousPositionId = previous?.position_id ?? null;
-  if (previousPositionId !== next.position_id) {
-    await logActivity({
-      actorUserId: currentUser.id,
-      action: previousPositionId ? "position.changed" : "position.assigned",
-      entityType: "user",
-      entityId: targetUserId,
-      metadata: { previousPositionId, newPositionId: next.position_id, newPositionName: positionName },
-    });
-
-    const previousGradeId = previous?.grade_id ?? null;
-    if (previousGradeId !== next.grade_id) {
-      await logActivity({
-        actorUserId: currentUser.id,
-        action: "grade.auto_resolved",
-        entityType: "user",
-        entityId: targetUserId,
-        metadata: { previousGradeId, newGradeId: next.grade_id, resolvedFromPositionId: next.position_id },
-      });
-    }
-  }
+  const result = await assignStaffPosition({ targetUserId, positionId, actorUserId: currentUser.id });
+  if (!result.ok) return;
 
   revalidatePath(`/admin/profile/${targetUserId}`);
   redirect(`/admin/profile/${targetUserId}`);

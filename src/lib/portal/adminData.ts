@@ -21,6 +21,19 @@ export type AdminUserRow = {
   memberNumber: string | null;
   classificationId: string | null;
   classificationName: string | null;
+  // Organizational assignment (Ordift Organizational & Administrative
+  // Architecture V1, Phase 2.1, Part B, 2026-08-25) — Position is the
+  // authoritative source; departmentName/gradeCode/gradeName are
+  // resolved through it (see src/lib/organization/assignPosition.ts),
+  // never set independently. Grade is shown here under the same
+  // visibility rule as everywhere else (Admin/Super Admin only — see
+  // ADMIN_GUIDE.md's Grade policy), which is exactly this page's own
+  // access gate, so no additional per-row check is needed to display it.
+  positionId: string | null;
+  positionName: string | null;
+  departmentName: string | null;
+  gradeCode: string | null;
+  gradeName: string | null;
   // New Booking notification opt-in (notification_preferences,
   // category "new_booking") — only meaningful for a plain `admin`; a
   // Super Admin always receives these regardless of this value (see
@@ -119,7 +132,9 @@ export async function listUsersWithRoles(): Promise<AdminUserListResult> {
       ),
     admin.from("user_roles").select("user_id, role_id"),
     admin.from("roles").select("id, slug"),
-    admin.from("staff_details").select("id, operational_title_id, engagement_type_id"),
+    admin
+      .from("staff_details")
+      .select("id, operational_title_id, engagement_type_id, position_id, positions(name, departments(name), grades(grade_code, name))"),
     admin.from("operational_titles").select("id, name"),
     admin.from("engagement_types").select("id, name"),
     admin.from("member_numbers").select("profile_id, classification_id").eq("status", "active"),
@@ -160,6 +175,11 @@ export async function listUsersWithRoles(): Promise<AdminUserListResult> {
     .map((u) => {
       const profile = profileById.get(u.id);
       const details = staffDetailsById.get(u.id);
+      const positionRow = details?.positions as unknown as {
+        name: string;
+        departments: { name: string } | null;
+        grades: { grade_code: string; name: string } | null;
+      } | null;
       return {
         id: u.id,
         email: u.email,
@@ -186,6 +206,11 @@ export async function listUsersWithRoles(): Promise<AdminUserListResult> {
           const classificationId = activeClassificationByProfileId.get(u.id);
           return classificationId ? (classificationNameById.get(classificationId) ?? null) : null;
         })(),
+        positionId: details?.position_id ?? null,
+        positionName: positionRow?.name ?? null,
+        departmentName: positionRow?.departments?.name ?? null,
+        gradeCode: positionRow?.grades?.grade_code ?? null,
+        gradeName: positionRow?.grades?.name ?? null,
         newBookingAlertsEnabled: newBookingAlertPrefs.get(u.id) ?? false,
       };
     })

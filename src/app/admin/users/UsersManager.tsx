@@ -4,6 +4,7 @@ import { useMemo, useState, useTransition } from "react";
 import type { AdminUserRow, LookupOption } from "@/lib/portal/adminData";
 import type { MemberClassification } from "@/lib/portal/memberNumbers";
 import type { RoleSlug } from "@/lib/portal/roles";
+import type { Position } from "@/lib/organization/types";
 import type { AdminProjectAssignment, AssignmentStatus, ProjectSearchResult } from "@/lib/admin/projectAssignments";
 import type { ActivityLogEntry } from "@/lib/admin/activityLog";
 import {
@@ -13,6 +14,7 @@ import {
   setAccessExpiryAction,
   updateCollaboratorDetailsAction,
   reclassifyUserAction,
+  assignStaffPositionAction,
   assignToProjectAction,
   updateAssignmentStatusAction,
   inviteCollaboratorAction,
@@ -105,12 +107,14 @@ function UserDetail({
   operationalTitles,
   engagementTypes,
   classifications,
+  positions,
 }: {
   user: AdminUserRow;
   currentUserIsSuperAdmin: boolean;
   operationalTitles: LookupOption[];
   engagementTypes: LookupOption[];
   classifications: MemberClassification[];
+  positions: Position[];
 }) {
   const [pending, startTransition] = useTransition();
   const [confirming, setConfirming] = useState<null | { kind: "suspend" | "deactivate" | "reactivate" | "restore" }>(
@@ -122,6 +126,20 @@ function UserDetail({
   const [titleId, setTitleId] = useState(user.operationalTitleId ?? "");
   const [engagementId, setEngagementId] = useState(user.engagementTypeId ?? "");
   const [classificationId, setClassificationId] = useState(user.classificationId ?? "");
+  const [positionId, setPositionId] = useState(user.positionId ?? "");
+
+  // Grouped by Department for the Position select's <optgroup>s, same
+  // pattern as /admin/profile/[id]. Only active Positions are offered.
+  const positionsByDepartment = useMemo(() => {
+    const map = new Map<string, Position[]>();
+    for (const p of positions) {
+      if (!p.active) continue;
+      const list = map.get(p.departmentName) ?? [];
+      list.push(p);
+      map.set(p.departmentName, list);
+    }
+    return map;
+  }, [positions]);
   const [newBookingAlertsEnabled, setNewBookingAlertsEnabled] = useState(user.newBookingAlertsEnabled);
 
   const [assignments, setAssignments] = useState<AdminProjectAssignment[] | null>(null);
@@ -178,6 +196,17 @@ function UserDetail({
     fd.set("engagementTypeId", engagementId);
     startTransition(async () => {
       const result = await updateCollaboratorDetailsAction(fd);
+      if (result.error) setError(result.error);
+    });
+  }
+
+  function savePosition() {
+    setError(null);
+    const fd = new FormData();
+    fd.set("userId", user.id);
+    fd.set("positionId", positionId);
+    startTransition(async () => {
+      const result = await assignStaffPositionAction(fd);
       if (result.error) setError(result.error);
     });
   }
@@ -544,6 +573,56 @@ function UserDetail({
         </section>
       )}
 
+      {/* Organizational Assignment (Position) — Super Admin only. Position
+          is the authoritative source for Department, Craft, and Grade —
+          see src/lib/organization/assignPosition.ts. This is the
+          any-staff-member counterpart to the self-view-only Position
+          assignment on /admin/profile/[id] (Ordift Organizational &
+          Administrative Architecture V1, Phase 2.1, Part B). Leave unset
+          for accounts that are not being brought into the formal org
+          chart — Craft/Engagement Type remain independently editable
+          below for those. */}
+      {currentUserIsSuperAdmin && (
+        <section className="space-y-2">
+          <h3 className="font-sans text-caption font-semibold uppercase tracking-wide text-ordift-ink-muted">
+            Organizational Assignment
+          </h3>
+          <div className="flex flex-wrap items-center gap-2">
+            <select
+              value={positionId}
+              onChange={(e) => setPositionId(e.target.value)}
+              className="min-h-9 rounded-lg border border-black/15 bg-white px-2 font-sans text-body-small"
+            >
+              <option value="">Not assigned</option>
+              {[...positionsByDepartment.entries()].map(([departmentName, deptPositions]) => (
+                <optgroup key={departmentName} label={departmentName}>
+                  {deptPositions.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name}
+                    </option>
+                  ))}
+                </optgroup>
+              ))}
+            </select>
+            <button
+              type="button"
+              onClick={savePosition}
+              disabled={pending}
+              className="font-sans text-body-small text-ordift-gold-pressed underline underline-offset-4 disabled:opacity-50"
+            >
+              Save
+            </button>
+          </div>
+          <p className="font-sans text-caption text-ordift-ink-muted">
+            {user.departmentName ? `Department: ${user.departmentName}` : "No Department (no Position assigned)"}
+            {" · "}
+            {user.gradeName ? `Grade: ${user.gradeName} (${user.gradeCode})` : "No Grade assigned"} — internal only,
+            never shown publicly. Both resolve automatically from the Position above; there is no independent
+            selector for either.
+          </p>
+        </section>
+      )}
+
       {/* Operational title / engagement type */}
       <section className="space-y-2">
         <h3 className="font-sans text-caption font-semibold uppercase tracking-wide text-ordift-ink-muted">
@@ -584,7 +663,9 @@ function UserDetail({
           </button>
         </div>
         <p className="font-sans text-caption text-ordift-ink-muted">
-          Describes the working relationship only — never affects permissions.
+          Describes the working relationship only — never affects permissions. Title is overridden automatically if a
+          Position is assigned above; set it independently here for collaborators (contractors, models, vendors) who
+          are not being given a formal Position.
         </p>
       </section>
 
@@ -931,6 +1012,7 @@ export default function UsersManager({
   operationalTitles,
   engagementTypes,
   classifications,
+  positions,
 }: {
   users: AdminUserRow[];
   currentUserId: string;
@@ -938,6 +1020,7 @@ export default function UsersManager({
   operationalTitles: LookupOption[];
   engagementTypes: LookupOption[];
   classifications: MemberClassification[];
+  positions: Position[];
 }) {
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<"" | AdminUserRow["accessStatus"]>("");
@@ -1053,9 +1136,11 @@ export default function UsersManager({
                   </span>
                 ))}
               </div>
-              {(u.operationalTitleName || u.engagementTypeName) && (
+              {(u.positionName || u.operationalTitleName || u.engagementTypeName) && (
                 <span className="font-sans text-caption text-ordift-ink-muted">
-                  {[u.operationalTitleName, u.engagementTypeName].filter(Boolean).join(" · ")}
+                  {[u.positionName ?? u.operationalTitleName, u.departmentName, u.engagementTypeName]
+                    .filter(Boolean)
+                    .join(" · ")}
                 </span>
               )}
               <span className="ml-auto font-sans text-caption text-ordift-gold-pressed underline underline-offset-4">
@@ -1069,6 +1154,7 @@ export default function UsersManager({
                 operationalTitles={operationalTitles}
                 engagementTypes={engagementTypes}
                 classifications={classifications}
+                positions={positions}
               />
             )}
           </div>

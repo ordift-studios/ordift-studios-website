@@ -26,6 +26,7 @@ import { getActivityForEntity, type ActivityLogEntry } from "@/lib/admin/activit
 import { siteUrl } from "@/lib/shared/env";
 import { assignClassification, assignClassificationBySlug } from "@/lib/portal/memberNumbers";
 import { setNotificationPreference } from "@/lib/notifications/preferences";
+import { assignStaffPosition } from "@/lib/organization/assignPosition";
 
 // ============================================================
 // Read-only data fetchers — thin server-action wrappers so the client
@@ -295,6 +296,41 @@ export async function updateCollaboratorDetailsAction(formData: FormData): Promi
     entityId: userId,
     metadata: { operationalTitleId, engagementTypeId },
   });
+
+  revalidatePath("/admin/users");
+  return {};
+}
+
+// ============================================================
+// Organizational assignment (Position) — Super Admin only, since
+// assigning a Position resolves and writes Department, Craft, and Grade
+// together (see assignStaffPosition() in src/lib/organization/assignPosition.ts).
+// This is the proper any-staff-member integration point Phase 2 flagged
+// as missing: /admin/profile/[id] is self-view only, so a Super Admin
+// could previously only run this resolution on their own account.
+// Deliberately separate from updateCollaboratorDetailsAction above —
+// Operational Title/Engagement Type stay independently editable there
+// for accounts that are never given a formal Position (contractors,
+// models, vendors — explicitly not staff, per the Ordift Organizational
+// & Administrative Architecture V1, Phase 2.1 staff/non-staff separation
+// principle). Assigning a Position here overrides whatever Operational
+// Title was set independently, matching "Position drives Grade"; if the
+// Position is later cleared, Craft/Department/Grade clear with it and
+// the independent Title selector is available again to re-set a craft
+// for someone stepping back out of formal Position tracking.
+// ============================================================
+export async function assignStaffPositionAction(formData: FormData): Promise<{ error?: string }> {
+  const currentUser = await getCurrentUser();
+  if (!currentUser || !isSuperAdmin(currentUser)) {
+    return { error: "Only a Super Admin can change organizational assignment." };
+  }
+
+  const userId = String(formData.get("userId") ?? "");
+  const positionId = String(formData.get("positionId") ?? "").trim() || null;
+  if (!userId) return { error: "Invalid request." };
+
+  const result = await assignStaffPosition({ targetUserId: userId, positionId, actorUserId: currentUser.id });
+  if (!result.ok) return { error: result.error };
 
   revalidatePath("/admin/users");
   return {};
