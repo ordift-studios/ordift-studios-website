@@ -110,8 +110,13 @@ function Band({ label, copy, image }: { label: string; copy: string; image: Band
           alt=""
           fill
           sizes="100vw"
-          className="object-cover blur-md scale-110"
-          style={{ objectPosition: `${image.focalX}% ${image.focalY}%` }}
+          className="object-cover blur-md"
+          // scale via inline style, not a Tailwind transform utility —
+          // found live (2026-08-24) that next/image's own `fill` styles
+          // took precedence over the scale-110 class, leaving it
+          // computing as no-op. An inline transform has higher
+          // specificity and isn't subject to that conflict.
+          style={{ objectPosition: `${image.focalX}% ${image.focalY}%`, transform: "scale(1.1)" }}
         />
       )}
       <div className="absolute inset-0 bg-gradient-to-r from-black/75 via-black/45 to-black/20" />
