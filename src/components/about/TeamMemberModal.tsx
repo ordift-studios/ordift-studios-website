@@ -104,7 +104,11 @@ export default function TeamMemberModal({ member, onClose }: { member: PublicTea
           </div>
 
           <h2 className="font-serif font-medium text-card-title text-ordift-ink">{member.displayName}</h2>
-          {meta && <p className="font-sans text-caption uppercase tracking-[0.1em] text-ordift-ink-muted mt-1">{meta}</p>}
+          {/* Refined metadata (2026-08-24) — same plain, quiet treatment
+              as the social handle below (no uppercase/tracking), so
+              role/department reads as secondary metadata under the
+              name rather than competing with it as a second heading. */}
+          {meta && <p className="font-sans text-caption text-ordift-ink-muted mt-2">{meta}</p>}
 
           {member.bio && (
             <p className="font-sans text-body-small text-ordift-ink mt-5 whitespace-pre-line">{member.bio}</p>

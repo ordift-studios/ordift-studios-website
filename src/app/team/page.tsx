@@ -48,15 +48,17 @@ export default async function TeamPage() {
     <main>
       <NavBar />
 
-      <section className="bg-ordift-navy-950 text-white px-4 sm:px-8 pt-10 sm:pt-14 pb-14 sm:pb-16">
+      <section className="bg-ordift-navy-950 text-white px-4 sm:px-8 pt-6 sm:pt-8 pb-14 sm:pb-16">
         <div className="max-w-6xl mx-auto">
           {/* Centered header, deliberately restrained (2026-08-24 —
               "the portraits should be the hero of this page,
               approximately 60% of the visual attention, the intro
               approximately 40%"). Smaller heading scale and tighter
               spacing than a typical page header — still premium/
-              editorial, just clearly secondary to the carousel below. */}
-          <div className="max-w-2xl mx-auto text-center mb-6 sm:mb-8">
+              editorial, just clearly secondary to the carousel below.
+              Nudged higher again (2026-08-24 follow-up) — reduced top
+              padding and bottom margin, same content/scale otherwise. */}
+          <div className="max-w-2xl mx-auto text-center mb-4 sm:mb-6">
             <p className="font-sans font-semibold uppercase tracking-[0.2em] text-eyebrow text-ordift-gold mb-2">
               {about.teamEyebrow}
             </p>

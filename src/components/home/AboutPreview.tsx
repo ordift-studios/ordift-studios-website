@@ -1,22 +1,22 @@
 import Link from "next/link";
 import Image from "next/image";
 
-// Homepage About Preview (2026-08-24, consolidated per direction) — ONE
-// coherent Homepage chapter, not four separate full-screen sections.
-// Who We Are leads as a compact intro; Our Mission/Our Vision/Our
-// Values follow immediately below as a tight grid of modest, fixed-
-// aspect-ratio panels within the SAME <section>, so the whole
-// composition reads as a single editorial "About preview" as the
-// visitor scrolls past it, matching the reference image's layout
-// hierarchy without literally becoming a sequence of full-height
-// screens. Mission/Vision panels use admin-assigned background
-// photography (Admin -> Portfolio -> Homepage About Visuals) with
-// their own focal point — reused from the existing image-repositioning
-// system, not a new one — and degrade to a clean solid-colour panel
-// when unset; Values stays a plain text panel by design (no background
-// image case in this design). "Meet the Minds Behind the Scenes" sizes
-// down considerably on mobile per direction, rather than sharing the
-// desktop treatment's scale.
+// Homepage About Preview (2026-08-24, revised to horizontal editorial
+// bands per the reference) — ONE Homepage chapter (a single wrapping
+// <section>, not four separate ones), composed as: a contained Who We
+// Are title, then Our Mission/Our Vision as full-bleed horizontal rows
+// (label on one side, copy occupying the larger area beside it,
+// content-driven height rather than a fixed card aspect ratio, so
+// there's no leftover empty space the way the earlier card-grid
+// version had), then a contained plain Our Values row. Mission/Vision
+// use admin-assigned background photography (Admin -> Portfolio ->
+// Homepage About Visuals) with the existing focal-point system,
+// degrading to the approved solid-navy fallback when unset — never
+// auto-selected Portfolio content. Full-bleed only for Mission/Vision
+// (the same edge-to-edge rhythm the reference itself uses for its
+// colour/photo rows); Who We Are and Our Values stay within the
+// page's normal contained width, matching the reference's own plain
+// title/list sections.
 type BandImage = { url: string; alt: string; focalX: number; focalY: number } | null;
 
 export default function AboutPreview({
@@ -37,10 +37,10 @@ export default function AboutPreview({
   visionImage: BandImage;
 }) {
   return (
-    <section className="bg-white px-4 sm:px-8 py-14 sm:py-20">
-      <div className="max-w-6xl mx-auto">
-        {/* Who We Are — compact intro, not a full-viewport title band. */}
-        <div className="max-w-2xl mx-auto text-center mb-8 sm:mb-10">
+    <section className="bg-white">
+      {/* Who We Are — contained, compact title, not a full-viewport band. */}
+      <div className="px-4 sm:px-8 pt-14 sm:pt-20 pb-8 sm:pb-10">
+        <div className="max-w-2xl mx-auto text-center">
           <p className="font-sans font-semibold uppercase tracking-[0.2em] text-eyebrow text-ordift-gold-pressed mb-3">
             {whoWeAreEyebrow}
           </p>
@@ -48,60 +48,66 @@ export default function AboutPreview({
             {whoWeAreBody}
           </p>
         </div>
+      </div>
 
-        {/* Mission / Vision / Values — one tight grid, fixed modest
-            height per panel (not min-h screens), stacking to a single
-            column on mobile without becoming excessively tall. */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
-          <Panel label="Our Mission" copy={mission} image={missionImage} />
-          <Panel label="Our Vision" copy={vision} image={visionImage} />
-          <ValuesPanel copy={valuesStatement} />
-        </div>
+      {/* Our Mission / Our Vision — full-bleed horizontal rows, height
+          driven by padding + content, never a forced card shape. */}
+      <Band label="Our Mission" copy={mission} image={missionImage} />
+      <Band label="Our Vision" copy={vision} image={visionImage} />
 
-        {/* Meet the Minds CTA — deliberately restrained on mobile (a
-            plain small link), a touch more editorial from sm: up. */}
-        <div className="flex justify-end mt-6 sm:mt-8">
-          <Link
-            href="/team"
-            className="font-sans text-caption sm:text-body-small font-semibold text-ordift-ink hover:text-ordift-gold-pressed transition-colors underline underline-offset-4"
-          >
-            Meet the Minds Behind the Scenes →
-          </Link>
+      {/* Our Values — contained, plain (no image by design), same
+          label-beside-copy rhythm as the two rows above it. */}
+      <div className="px-4 sm:px-8 py-10 sm:py-14 bg-ordift-offwhite">
+        <div className="max-w-6xl mx-auto grid grid-cols-1 md:grid-cols-12 gap-3 md:gap-8 items-center">
+          <div className="md:col-span-3">
+            <p className="font-sans font-semibold uppercase tracking-[0.15em] text-caption text-ordift-gold-pressed">
+              Our Values
+            </p>
+          </div>
+          <div className="md:col-span-8 md:col-start-5">
+            <p className="font-serif font-medium text-card-title text-ordift-ink leading-snug">{valuesStatement}</p>
+          </div>
         </div>
+      </div>
+
+      {/* Meet the Minds CTA — deliberately restrained on mobile (a
+          plain small link), a touch more editorial from sm: up. */}
+      <div className="px-4 sm:px-8 py-6 sm:py-8 flex justify-end">
+        <Link
+          href="/team"
+          className="font-sans text-caption sm:text-body-small font-semibold text-ordift-ink hover:text-ordift-gold-pressed transition-colors underline underline-offset-4"
+        >
+          Meet the Minds Behind the Scenes →
+        </Link>
       </div>
     </section>
   );
 }
 
-function Panel({ label, copy, image }: { label: string; copy: string; image: BandImage }) {
+function Band({ label, copy, image }: { label: string; copy: string; image: BandImage }) {
   return (
-    <div className="relative aspect-[4/5] sm:aspect-[3/4] rounded-lg overflow-hidden bg-ordift-navy-950 flex items-end p-5 sm:p-6">
+    <div className="relative bg-ordift-navy-950 px-4 sm:px-8 py-10 sm:py-14 overflow-hidden">
       {image && (
         <Image
           src={image.url}
           alt=""
           fill
-          sizes="(min-width: 640px) 33vw, 100vw"
+          sizes="100vw"
           className="object-cover"
           style={{ objectPosition: `${image.focalX}% ${image.focalY}%` }}
         />
       )}
-      <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-black/25 to-transparent" />
-      <div className="relative">
-        <p className="font-sans font-semibold uppercase tracking-[0.15em] text-caption text-white mb-2">{label}</p>
-        <p className="font-serif font-medium text-body-small sm:text-body text-white leading-snug">{copy}</p>
+      <div className="absolute inset-0 bg-gradient-to-r from-black/75 via-black/45 to-black/20" />
+      <div className="relative max-w-6xl mx-auto grid grid-cols-1 md:grid-cols-12 gap-3 md:gap-8 items-center">
+        <div className="md:col-span-3">
+          <p className="font-sans font-semibold uppercase tracking-[0.15em] text-caption text-white">{label}</p>
+        </div>
+        <div className="md:col-span-8 md:col-start-5">
+          <p className="font-serif font-medium text-card-title sm:text-card-title-desktop text-white leading-snug">
+            {copy}
+          </p>
+        </div>
       </div>
-    </div>
-  );
-}
-
-function ValuesPanel({ copy }: { copy: string }) {
-  return (
-    <div className="aspect-[4/5] sm:aspect-[3/4] rounded-lg bg-ordift-offwhite flex flex-col justify-end p-5 sm:p-6">
-      <p className="font-sans font-semibold uppercase tracking-[0.15em] text-caption text-ordift-gold-pressed mb-2">
-        Our Values
-      </p>
-      <p className="font-serif font-medium text-body-small sm:text-body text-ordift-ink leading-snug">{copy}</p>
     </div>
   );
 }
