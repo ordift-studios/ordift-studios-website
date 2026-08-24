@@ -445,6 +445,12 @@ export type HomePage = {
   slideshowSlides: HomepageSlideshowSlide[];
   whoWeAreEyebrow: string;
   whoWeAreBody: string;
+  // Homepage About Preview background photography (2026-08-24) —
+  // admin-assigned only (Admin -> Portfolio -> Homepage About Visuals),
+  // never auto-populated from Portfolio content. null until an admin
+  // sets one; the public page falls back to a solid-color treatment.
+  aboutMissionImage?: PresentationImage | null;
+  aboutVisionImage?: PresentationImage | null;
   originalsEyebrow: string;
   originalsHeadline: string;
   originalsBody: string;

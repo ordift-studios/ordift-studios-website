@@ -11,6 +11,7 @@ export default defineType({
     { name: "hero", title: "Hero" },
     { name: "slideshow", title: "Homepage Slideshow" },
     { name: "whoWeAre", title: "Who We Are" },
+    { name: "aboutPreviewVisuals", title: "About Preview Visuals" },
     { name: "originals", title: "Ordift Originals" },
     { name: "process", title: "Process" },
     { name: "cta", title: "Closing CTA" },
@@ -43,6 +44,31 @@ export default defineType({
 
     defineField({ name: "whoWeAreEyebrow", title: "Eyebrow", type: "string", group: "whoWeAre" }),
     defineField({ name: "whoWeAreBody", title: "Body", type: "text", rows: 4, group: "whoWeAre" }),
+
+    // Homepage About Preview background photography (2026-08-24) —
+    // deliberately editable only via Admin -> Portfolio -> Homepage
+    // About Visuals (mirrors Work Landing Images/Portfolio Cover Image
+    // exactly), not automatically populated from Portfolio content.
+    // Optional: the public homepage falls back to a clean solid-color
+    // treatment when unset, never a Sample/placeholder image.
+    defineField({
+      name: "aboutMissionImage",
+      title: "Our Mission — Background Image",
+      type: "image",
+      options: { hotspot: true },
+      group: "aboutPreviewVisuals",
+      description: "Optional. Managed from Admin -> Portfolio -> Homepage About Visuals, not here directly.",
+    }),
+    defineField({ name: "aboutMissionImageAlt", title: "Our Mission — Image Alt Text", type: "string", group: "aboutPreviewVisuals" }),
+    defineField({
+      name: "aboutVisionImage",
+      title: "Our Vision — Background Image",
+      type: "image",
+      options: { hotspot: true },
+      group: "aboutPreviewVisuals",
+      description: "Optional. Managed from Admin -> Portfolio -> Homepage About Visuals, not here directly.",
+    }),
+    defineField({ name: "aboutVisionImageAlt", title: "Our Vision — Image Alt Text", type: "string", group: "aboutPreviewVisuals" }),
 
     defineField({ name: "originalsEyebrow", title: "Eyebrow", type: "string", group: "originals" }),
     defineField({ name: "originalsHeadline", title: "Headline", type: "string", group: "originals" }),

@@ -337,6 +337,8 @@ export const homePageQuery = `*[_type == "homepage"][0]{
     }
   },
   whoWeAreEyebrow, whoWeAreBody,
+  ${optionalImageFragment("aboutMissionImage")},
+  ${optionalImageFragment("aboutVisionImage")},
   originalsEyebrow, originalsHeadline, originalsBody,
   process,
   ctaHeadline, ctaBody, ctaPrimary, ctaSecondary,

@@ -48,21 +48,23 @@ export default async function TeamPage() {
     <main>
       <NavBar />
 
-      <section className="bg-ordift-navy-950 text-white px-4 sm:px-8 pt-16 sm:pt-20 pb-16 sm:pb-20">
+      <section className="bg-ordift-navy-950 text-white px-4 sm:px-8 pt-10 sm:pt-14 pb-14 sm:pb-16">
         <div className="max-w-6xl mx-auto">
-          {/* Centered header (2026-08-24 layout correction) — wider intro
-              column than the previous narrow left-aligned block, so the
-              same word count consumes less vertical height, leaving more
-              room below for the portrait carousel. */}
-          <div className="max-w-3xl mx-auto text-center mb-10 sm:mb-12">
-            <p className="font-sans font-semibold uppercase tracking-[0.2em] text-eyebrow text-ordift-gold mb-3">
+          {/* Centered header, deliberately restrained (2026-08-24 —
+              "the portraits should be the hero of this page,
+              approximately 60% of the visual attention, the intro
+              approximately 40%"). Smaller heading scale and tighter
+              spacing than a typical page header — still premium/
+              editorial, just clearly secondary to the carousel below. */}
+          <div className="max-w-2xl mx-auto text-center mb-6 sm:mb-8">
+            <p className="font-sans font-semibold uppercase tracking-[0.2em] text-eyebrow text-ordift-gold mb-2">
               {about.teamEyebrow}
             </p>
-            <h1 className="font-serif font-medium text-page-title sm:text-page-title-tablet lg:text-page-title-desktop mb-6">
+            <h1 className="font-serif font-medium text-section-heading sm:text-section-heading-tablet mb-3">
               {about.teamHeadline}
             </h1>
             {introParagraph && (
-              <p className="font-sans text-body lg:text-body-desktop text-white/80 max-w-4xl mx-auto">{introParagraph}</p>
+              <p className="font-sans text-body-small text-white/70 max-w-3xl mx-auto">{introParagraph}</p>
             )}
           </div>
 
@@ -86,7 +88,7 @@ export default async function TeamPage() {
             </p>
             <div className="order-2 sm:order-none sm:justify-self-end">
               <Link
-                href="/book?service=general"
+                href="/careers"
                 className="font-sans text-body-small font-semibold text-white hover:text-ordift-gold transition-colors underline underline-offset-4"
               >
                 Join Our Team →

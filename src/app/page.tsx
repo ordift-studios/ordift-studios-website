@@ -62,24 +62,28 @@ export default async function Home() {
   // is never left without a working slideshow, including before any
   // curated slide has been added yet.
   const heroSlideshowProjects = getSlideshowProjects(portfolioProjects);
-  // AboutPreview's Mission/Vision photo bands (2026-08-24) — reuse real,
-  // genuinely published portfolio photography rather than inventing new
-  // imagery. Explicitly excludes anything titled "[SAMPLE] ..." — this
-  // Staging dataset's current portfolio content is entirely QA/sample
-  // placeholder entries (confirmed by direct query), not real client
-  // work, so using any of it here would be presenting fabricated
-  // imagery as genuine Ordift photography. Degrades to no image (a
-  // clean navy band, matching Our Mission's own current fallback) when
-  // no real photography exists yet — see the deployment report for
-  // exactly what's needed to light these bands up with real photos.
-  const realImageProjects = portfolioProjects.filter(
-    (p) => p.heroMedia.type === "image" && p.heroMedia.url && !p.title.startsWith("[SAMPLE]")
-  );
-  const missionImage = realImageProjects[0]?.heroMedia.url
-    ? { url: realImageProjects[0].heroMedia.url, alt: realImageProjects[0].heroMedia.alt }
+  // AboutPreview's Mission/Vision photo bands (2026-08-24, revised) —
+  // admin-controlled only (Admin -> Portfolio -> Homepage About
+  // Visuals), never auto-selected from Portfolio content. Reuses the
+  // existing focal-point/hotspot system directly (home.aboutMissionImage/
+  // aboutVisionImage already resolve focalX/focalY via
+  // optionalImageFragment, same as coverImage/workLandingImage) —
+  // degrades to a clean solid-colour panel until an admin assigns one.
+  const missionImage = home.aboutMissionImage
+    ? {
+        url: home.aboutMissionImage.url,
+        alt: home.aboutMissionImage.alt,
+        focalX: home.aboutMissionImage.focalX,
+        focalY: home.aboutMissionImage.focalY,
+      }
     : null;
-  const visionImage = realImageProjects[1]?.heroMedia.url
-    ? { url: realImageProjects[1].heroMedia.url, alt: realImageProjects[1].heroMedia.alt }
+  const visionImage = home.aboutVisionImage
+    ? {
+        url: home.aboutVisionImage.url,
+        alt: home.aboutVisionImage.alt,
+        focalX: home.aboutVisionImage.focalX,
+        focalY: home.aboutVisionImage.focalY,
+      }
     : null;
 
   return (

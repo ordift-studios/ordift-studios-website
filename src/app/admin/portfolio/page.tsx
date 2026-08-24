@@ -144,6 +144,14 @@ export default async function AdminPortfolioPage({
               Work Landing Images
             </Link>
           )}
+          {canManagePresentation && (
+            <Link
+              href="/admin/portfolio/homepage-about-visuals"
+              className="font-sans text-body-small font-semibold px-4 py-2 rounded-md border border-ordift-gold text-ordift-gold-pressed hover:bg-ordift-gold/10"
+            >
+              Homepage About Visuals
+            </Link>
+          )}
           <Link
             href="/admin/portfolio/categories"
             className="font-sans text-body-small font-medium px-4 py-2 rounded-md border border-black/15 text-ordift-ink hover:border-black/30"
