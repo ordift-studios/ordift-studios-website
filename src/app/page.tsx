@@ -3,8 +3,8 @@ import NavBar from "@/components/NavBar";
 import Footer from "@/components/Footer";
 import Button from "@/components/Button";
 import DepartmentCard from "@/components/DepartmentCard";
-import PortfolioCard from "@/components/portfolio/PortfolioCard";
 import PortfolioHeroSlideshow from "@/components/portfolio/PortfolioHeroSlideshow";
+import AboutPreview from "@/components/home/AboutPreview";
 import { contentRepository } from "@/lib/content";
 import { getSlideshowProjects } from "@/lib/content/portfolioHelpers";
 
@@ -12,11 +12,16 @@ import { getSlideshowProjects } from "@/lib/content/portfolioHelpers";
 // intentionally omitted — no approved real testimonials/clients exist yet
 // (empty-state rule, Brand Bible section on CMS guardrails) and Talent's
 // public directory is Phase 1B. Newsletter is omitted until the Tier 1
-// form backend exists. Featured Work came back 2026-08-05 once a real,
-// approved portfolio project existed — see the section below, which
-// follows the exact same "render nothing if empty" rule as /work's own
-// Featured Projects section (src/app/work/page.tsx) rather than a new
-// pattern.
+// form backend exists.
+//
+// Homepage/About/Team restructuring (2026-08-24) — the standalone "Who
+// We Are" band and the Featured Work section (which had returned
+// 2026-08-05 once a real project existed) are both replaced by
+// AboutPreview: one coherent Who We Are -> Mission -> Vision -> Values
+// introduction leading into the new dedicated /team page. Featured
+// Work's underlying `featured` selection mechanism on PortfolioProject
+// is completely untouched — it's just no longer surfaced here; its
+// approved future home remains the Stories/Journal experience.
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://ordiftstudios.com";
 
@@ -32,15 +37,13 @@ export async function generateMetadata(): Promise<Metadata> {
 }
 
 export default async function Home() {
-  const [home, services, portfolioProjects, portfolioCategories] = await Promise.all([
+  const [home, about, services, portfolioProjects] = await Promise.all([
     contentRepository.getHomePage(),
+    contentRepository.getAboutPage(),
     contentRepository.getServices(),
     contentRepository.getPortfolioProjects(),
-    contentRepository.getPortfolioCategories(),
   ]);
   const departments = [...services].sort((a, b) => a.displayOrder - b.displayOrder);
-  const featuredProjects = portfolioProjects.filter((p) => p.featured);
-  const categoryById = new Map(portfolioCategories.map((c) => [c.id, c]));
   // Homepage opening experience — full-screen photographic slideshow.
   // Primary source (2026-08-23): Admin/Super-Admin-curated
   // landscape/portrait slides (home.slideshowSlides — already filtered to
@@ -66,46 +69,13 @@ export default async function Home() {
         <PortfolioHeroSlideshow projects={heroSlideshowProjects} slides={home.slideshowSlides} variant="hero" />
       </div>
 
-      {/* Who We Are */}
-      <section className="bg-white px-4 sm:px-8 py-14 sm:py-20">
-        <div className="max-w-6xl mx-auto">
-          <div className="max-w-3xl">
-            <p className="font-sans font-semibold uppercase tracking-[0.2em] text-eyebrow text-ordift-gold-pressed mb-3">
-              {home.whoWeAreEyebrow}
-            </p>
-            <p className="font-sans text-body lg:text-body-desktop text-ordift-ink-muted">
-              {home.whoWeAreBody}
-            </p>
-          </div>
-        </div>
-      </section>
-
-      {/* Featured Work — renders nothing when no project is marked Featured yet,
-          same empty-state rule as /work's own Featured Projects section. */}
-      {featuredProjects.length > 0 && (
-        <section className="bg-white px-4 sm:px-8 py-14 sm:py-20">
-          <div className="max-w-6xl mx-auto">
-            <p className="font-sans font-semibold uppercase tracking-[0.2em] text-eyebrow text-ordift-gold-pressed mb-3">
-              Featured Work
-            </p>
-            <h2 className="font-serif font-medium text-section-heading sm:text-section-heading-tablet lg:text-section-heading-desktop text-ordift-ink mb-8 sm:mb-10">
-              Recent work
-            </h2>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5 sm:gap-6 mb-8">
-              {featuredProjects.map((project) => (
-                <PortfolioCard
-                  key={project.id}
-                  project={project}
-                  categories={project.categoryIds.map((id) => categoryById.get(id)!).filter(Boolean)}
-                />
-              ))}
-            </div>
-            <Button href="/work" variant="secondary">
-              View All Work
-            </Button>
-          </div>
-        </section>
-      )}
+      <AboutPreview
+        whoWeAreEyebrow={home.whoWeAreEyebrow}
+        whoWeAreBody={home.whoWeAreBody}
+        mission={about.mission}
+        vision={about.vision}
+        valuesStatement="What doesn't bend under deadline pressure"
+      />
 
       {/* Departments */}
       <section className="bg-ordift-offwhite px-4 sm:px-8 py-14 sm:py-20">

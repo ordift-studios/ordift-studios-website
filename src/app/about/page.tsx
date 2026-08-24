@@ -2,9 +2,7 @@ import type { Metadata } from "next";
 import NavBar from "@/components/NavBar";
 import Footer from "@/components/Footer";
 import Button from "@/components/Button";
-import MeetTheTeamSection from "@/components/about/MeetTheTeamSection";
 import { contentRepository } from "@/lib/content";
-import { getPublicTeamMembers } from "@/lib/team/getPublicTeamMembers";
 
 // Copy sourced verbatim from the approved Brand Bible (sections 1, 4, 5, 6
 // — website versions), locked 2026-07-23, migrated into Sanity 2026-07-24
@@ -14,15 +12,19 @@ import { getPublicTeamMembers } from "@/lib/team/getPublicTeamMembers";
 //
 // Editorial redesign (2026-08-24) — same approved Sanity-managed copy
 // throughout (heroEyebrow/heroHeadline/storyEyebrow/storyHeadline/
-// storyBody/mission/vision/values/teamEyebrow/teamHeadline/teamBody/
-// ctaHeadline/ctaBody are byte-for-byte the same fields as before), only
-// the visual presentation changed: an editorial progression (Who We Are
-// -> Our Story -> Mission & Vision -> Values -> Meet the Team -> a
-// closing collaboration transition) instead of a stack of identically-
-// treated bands. The public Founder link that used to close the Team
-// paragraph has been removed here (Founder stays a preserved/deferred
-// feature, per direction — the /about/founder page itself still exists
-// and works, it simply isn't linked to from anywhere public right now).
+// storyBody/mission/vision/values are byte-for-byte the same fields as
+// before), an editorial progression: Who We Are -> Our Story -> Mission
+// & Vision -> Values -> a closing collaboration transition.
+//
+// Team split out (2026-08-24) — Meet the Team now has its own dedicated
+// page (/team, reached via the Homepage's "Meet the Minds Behind the
+// Scenes ->" CTA) rather than living inside this editorial story; this
+// page no longer fetches team members or renders teamEyebrow/
+// teamHeadline/teamBody at all (those Sanity fields are untouched, just
+// no longer read here — see /team/page.tsx for where they moved).
+// storyBody was also rewritten (2026-08-24) to present Ordift's origin
+// as a collective story rather than centering one named individual —
+// see the memory/decision log for the before/after text.
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://ordiftstudios.com";
 
 export async function generateMetadata(): Promise<Metadata> {
@@ -43,7 +45,7 @@ export async function generateMetadata(): Promise<Metadata> {
 }
 
 export default async function AboutPage() {
-  const [about, teamMembers] = await Promise.all([contentRepository.getAboutPage(), getPublicTeamMembers()]);
+  const about = await contentRepository.getAboutPage();
 
   return (
     <main>
@@ -142,40 +144,8 @@ export default async function AboutPage() {
         </div>
       </section>
 
-      {/* Meet the Team — leads with the existing approved studio-wide
-          copy, then the carousel of real, admin-curated profiles (only
-          rendered once at least one exists — see MeetTheTeamSection).
-          "The Minds Behind the Scenes" is an intentionally quiet aside
-          near the transition, not a headline — Meet the Team itself
-          remains the clear functional cue. */}
-      <section id="team" className="bg-ordift-navy-950 text-white px-4 sm:px-8 py-16 sm:py-24">
-        <div className="max-w-6xl mx-auto">
-          <div className="max-w-2xl mb-12 sm:mb-16">
-            <p className="font-sans font-semibold uppercase tracking-[0.2em] text-eyebrow text-ordift-gold mb-3">
-              {about.teamEyebrow}
-            </p>
-            <h2 className="font-serif font-medium text-section-heading sm:text-section-heading-tablet lg:text-section-heading-desktop mb-6">
-              {about.teamHeadline}
-            </h2>
-            <div className="font-sans text-body lg:text-body-desktop text-white/80 space-y-4">
-              {about.teamBody.map((paragraph, i) => (
-                <p key={i}>{paragraph}</p>
-              ))}
-            </div>
-          </div>
-
-          {teamMembers.length > 0 && (
-            <div className="relative">
-              <MeetTheTeamSection members={teamMembers} />
-              <p className="hidden sm:block absolute -bottom-2 right-2 font-sans text-caption tracking-[0.15em] text-white/25 select-none">
-                THE MINDS BEHIND THE SCENES
-              </p>
-            </div>
-          )}
-        </div>
-      </section>
-
-      {/* Closing collaboration transition */}
+      {/* Closing collaboration transition — follows directly from Values;
+          Meet the Team lives on its own page now (see file header). */}
       <section className="bg-white px-4 sm:px-8 py-16 sm:py-24 text-center">
         <div className="max-w-2xl mx-auto">
           <h2 className="font-serif font-medium text-page-title sm:text-page-title-tablet text-ordift-ink mb-4">
