@@ -25,9 +25,9 @@ export default function CreativeRadarSection({
   return (
     <div className="bg-ordift-offwhite px-4 sm:px-8 py-10 sm:py-12">
       <div className="max-w-6xl mx-auto">
-        <p className="font-sans font-semibold uppercase tracking-[0.15em] text-caption text-ordift-ink-muted mb-4">
+        <h2 className="font-sans font-semibold uppercase tracking-[0.15em] text-caption text-ordift-ink-muted mb-4">
           From Around the Creative World
-        </p>
+        </h2>
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
           {items.slice(0, 8).map((item) => (
             <JournalPostCard

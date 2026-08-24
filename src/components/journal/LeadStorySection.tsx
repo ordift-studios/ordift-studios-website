@@ -1,5 +1,6 @@
 import Link from "next/link";
 import Image from "next/image";
+import MediaPlaceholder from "@/components/media/MediaPlaceholder";
 import type { StoriesFeedItem } from "@/lib/content/storiesFeed";
 import { TRUST_BADGE_LABEL } from "@/lib/content/storiesFeed";
 
@@ -12,7 +13,7 @@ export default function LeadStorySection({ item }: { item: StoriesFeedItem | nul
 
   return (
     <Link href={item.href} className="group relative block w-full h-[75vh] sm:h-[85vh] overflow-hidden">
-      {item.heroMedia.url && (
+      {item.heroMedia.url ? (
         <Image
           src={item.heroMedia.url}
           alt=""
@@ -21,6 +22,8 @@ export default function LeadStorySection({ item }: { item: StoriesFeedItem | nul
           sizes="100vw"
           className="object-cover transition-transform duration-700 ease-out group-hover:scale-105 motion-reduce:transition-none motion-reduce:group-hover:scale-100"
         />
+      ) : (
+        <MediaPlaceholder tone="dark" aspectRatio="auto" className="absolute inset-0" />
       )}
       <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-black/10" />
       <div className="relative h-full flex flex-col items-start justify-end px-4 sm:px-8 pb-12 sm:pb-16 max-w-6xl mx-auto">
