@@ -34,6 +34,10 @@ export type EligiblePerson = {
   department: string | null;
   roles: string[];
   avatarUrl: string | null;
+  // Set only if this person already has a Meet the Team Public Profile
+  // filled in before being added to the showcase — identity-fallback
+  // source only (resolveTeamIdentityLabel).
+  masterDisplayName: string | null;
 };
 
 // A row already added to Meet the Team, for the curation manager's own
@@ -52,9 +56,12 @@ export type TeamShowcaseRow = {
   showQuote: boolean;
   showFunFact: boolean;
   // Denormalized read-only context for the manager list — sourced from
-  // profiles/public_profile_details, never written back from here.
+  // profiles/public_profile_details/auth, never written back from here.
   fullName: string | null;
   masterDisplayName: string | null;
+  // Identity-fallback source only (resolveTeamIdentityLabel) — auth
+  // email, not stored on profiles itself; fetched via listUsersWithRoles().
+  email: string | null;
   avatarUrl: string | null;
   avatarFocalX: number;
   avatarFocalY: number;

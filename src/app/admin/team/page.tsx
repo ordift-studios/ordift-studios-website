@@ -3,6 +3,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getCurrentUser, isSuperAdmin } from "@/lib/portal/roles";
 import { listEligiblePeople, listTeamShowcaseEntries } from "@/lib/team/adminTeamData";
+import { resolveTeamIdentityLabel } from "@/lib/team/identityFallback";
 import {
   addToTeamAction,
   removeFromTeamAction,
@@ -66,7 +67,7 @@ export default async function AdminTeamPage() {
 
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 flex-wrap">
-                  <p className="font-serif font-medium text-body text-ordift-ink">{entry.fullName ?? "Unnamed account"}</p>
+                  <p className="font-serif font-medium text-body text-ordift-ink">{resolveTeamIdentityLabel(entry)}</p>
                   <span
                     className={`font-sans text-caption uppercase tracking-[0.1em] px-2 py-0.5 rounded-full ${
                       entry.visible ? "bg-green-100 text-green-800" : "bg-black/5 text-ordift-ink-muted"
@@ -195,7 +196,7 @@ export default async function AdminTeamPage() {
             {availableToAdd.map((person) => (
               <div key={person.id} className="flex items-center justify-between gap-4 px-5 py-3">
                 <div className="min-w-0">
-                  <p className="font-sans text-body-small text-ordift-ink font-medium">{person.fullName ?? "Unnamed account"}</p>
+                  <p className="font-sans text-body-small text-ordift-ink font-medium">{resolveTeamIdentityLabel(person)}</p>
                   <p className="font-sans text-caption text-ordift-ink-muted">
                     {[person.jobTitle, person.department].filter(Boolean).join(" · ") || person.roles.join(", ")}
                   </p>

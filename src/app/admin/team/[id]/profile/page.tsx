@@ -3,6 +3,7 @@ import { redirect, notFound } from "next/navigation";
 import Link from "next/link";
 import { getCurrentUser, isSuperAdmin } from "@/lib/portal/roles";
 import { getPublicProfileForEdit } from "@/lib/team/adminTeamData";
+import { resolveTeamIdentityLabel, resolveTeamRoleLabel } from "@/lib/team/identityFallback";
 import PortraitEditor from "./PortraitEditor";
 import PublicProfileForm from "./PublicProfileForm";
 
@@ -38,11 +39,9 @@ export default async function TeamMemberProfilePage({ params }: { params: Promis
           / Public Profile
         </p>
         <h1 className="font-serif font-medium text-section-heading lg:text-section-heading-desktop text-ordift-ink">
-          {data.fullName ?? "Unnamed account"}
+          {resolveTeamIdentityLabel(data)}
         </h1>
-        <p className="font-sans text-body-small text-ordift-ink-muted mt-2">
-          {[data.jobTitle, data.department].filter(Boolean).join(" · ") || "No job title/department on record"}
-        </p>
+        <p className="font-sans text-body-small text-ordift-ink-muted mt-2">{resolveTeamRoleLabel(data)}</p>
       </div>
 
       <div className="space-y-8">

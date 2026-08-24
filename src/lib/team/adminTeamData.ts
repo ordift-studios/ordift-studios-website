@@ -20,12 +20,14 @@ export async function listEligiblePeople(): Promise<EligiblePerson[]> {
 
   const admin = createAdminClient();
   const ids = eligible.map((u) => u.id);
-  const [{ data: profiles }, { data: staffDetails }] = await Promise.all([
+  const [{ data: profiles }, { data: staffDetails }, { data: details }] = await Promise.all([
     admin.from("profiles").select("id, avatar_url").in("id", ids),
     admin.from("staff_details").select("id, department").in("id", ids),
+    admin.from("public_profile_details").select("id, display_name").in("id", ids),
   ]);
   const avatarById = new Map((profiles ?? []).map((p) => [p.id, p.avatar_url as string | null]));
   const departmentById = new Map((staffDetails ?? []).map((s) => [s.id, s.department as string | null]));
+  const masterDisplayNameById = new Map((details ?? []).map((d) => [d.id, d.display_name as string | null]));
 
   return eligible.map((u) => ({
     id: u.id,
@@ -35,6 +37,7 @@ export async function listEligiblePeople(): Promise<EligiblePerson[]> {
     department: departmentById.get(u.id) ?? null,
     roles: u.roles,
     avatarUrl: avatarById.get(u.id) ?? null,
+    masterDisplayName: masterDisplayNameById.get(u.id) ?? null,
   }));
 }
 
@@ -57,12 +60,14 @@ export async function listTeamShowcaseEntries(): Promise<TeamShowcaseRow[]> {
   if (entries.length === 0) return [];
 
   const ids = entries.map((e) => e.id);
-  const [{ data: profiles }, { data: details }] = await Promise.all([
+  const [{ data: profiles }, { data: details }, usersResult] = await Promise.all([
     admin.from("profiles").select("id, full_name, avatar_url, avatar_focal_x, avatar_focal_y").in("id", ids),
     admin.from("public_profile_details").select("id, display_name").in("id", ids),
+    listUsersWithRoles(),
   ]);
   const profileById = new Map((profiles ?? []).map((p) => [p.id, p]));
   const detailsById = new Map((details ?? []).map((d) => [d.id, d]));
+  const emailById = new Map(usersResult.ok ? usersResult.users.map((u) => [u.id, u.email]) : []);
 
   return entries.map((e): TeamShowcaseRow => {
     const profile = profileById.get(e.id);
@@ -81,6 +86,7 @@ export async function listTeamShowcaseEntries(): Promise<TeamShowcaseRow[]> {
       showFunFact: e.show_fun_fact,
       fullName: profile?.full_name ?? null,
       masterDisplayName: detail?.display_name ?? null,
+      email: emailById.get(e.id) ?? null,
       avatarUrl: profile?.avatar_url ?? null,
       avatarFocalX: profile?.avatar_focal_x ?? 50,
       avatarFocalY: profile?.avatar_focal_y ?? 50,
@@ -97,6 +103,8 @@ export async function listTeamShowcaseEntries(): Promise<TeamShowcaseRow[]> {
 export async function getPublicProfileForEdit(profileId: string): Promise<{
   details: PublicProfileDetails;
   fullName: string | null;
+  masterDisplayName: string | null;
+  email: string | null;
   avatarUrl: string | null;
   avatarFocalX: number;
   avatarFocalY: number;
@@ -112,14 +120,16 @@ export async function getPublicProfileForEdit(profileId: string): Promise<{
     .maybeSingle();
   if (!profile) return null;
 
-  const [{ data: detail }, { data: staff }] = await Promise.all([
+  const [{ data: detail }, { data: staff }, usersResult] = await Promise.all([
     admin
       .from("public_profile_details")
       .select("id, display_name, bio, specialty, social_handle, favorite_quote, fun_fact")
       .eq("id", profileId)
       .maybeSingle(),
     admin.from("staff_details").select("department, operational_title_id").eq("id", profileId).maybeSingle(),
+    listUsersWithRoles(),
   ]);
+  const email = usersResult.ok ? (usersResult.users.find((u) => u.id === profileId)?.email ?? null) : null;
 
   let jobTitle: string | null = null;
   if (staff?.operational_title_id) {
@@ -142,6 +152,8 @@ export async function getPublicProfileForEdit(profileId: string): Promise<{
       funFact: detail?.fun_fact ?? null,
     },
     fullName: profile.full_name,
+    masterDisplayName: detail?.display_name ?? null,
+    email,
     avatarUrl: profile.avatar_url,
     avatarFocalX: profile.avatar_focal_x ?? 50,
     avatarFocalY: profile.avatar_focal_y ?? 50,
