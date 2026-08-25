@@ -19,6 +19,65 @@ export type WorkshopFinancialOverview = {
   instructorObligationsTotalUsd: number;
 };
 
+// Workshop Management V1, Phase C (2026-08-25) — the Workshop Management
+// dashboard's "actionable warnings" (Part 2 of the Phase C spec).
+// Every warning is derived from real rows already written by real
+// events — nothing here is a placeholder or invented figure. Kept as a
+// short, flat label list (not a rich object) since the only two
+// surfaces that consume it (the list page and the per-workshop
+// dashboard) both just render badges.
+export type WorkshopWarning = { key: string; label: string };
+
+export async function getWorkshopOperationalWarnings(
+  workshopId: string,
+  workshop: { capacity: number; requiresPayment: boolean }
+): Promise<WorkshopWarning[]> {
+  const admin = createAdminClient();
+  const warnings: WorkshopWarning[] = [];
+
+  const [{ data: registrations }, { count: ticketTypeCount }, { data: engagements }] = await Promise.all([
+    admin.from("workshop_registrations").select("id, registration_status, payment_status").eq("workshop_id", workshopId),
+    admin.from("ticket_types").select("id", { count: "exact", head: true }).eq("workshop_id", workshopId),
+    admin
+      .from("workshop_instructor_engagements")
+      .select("agreed_compensation_amount, payment_obligation_id")
+      .eq("workshop_id", workshopId),
+  ]);
+
+  const rows = registrations ?? [];
+  const registeredCount = rows.filter((r) => r.registration_status === "Registered").length;
+  const unpaidCount = rows.filter((r) => r.payment_status === "Pending").length;
+
+  if (unpaidCount > 0) {
+    warnings.push({ key: "unpaid", label: `${unpaidCount} unpaid registration${unpaidCount === 1 ? "" : "s"}` });
+  }
+  if (registeredCount >= workshop.capacity) {
+    warnings.push({ key: "at-capacity", label: "At or over overall capacity" });
+  }
+  if (workshop.requiresPayment && (ticketTypeCount ?? 0) === 0) {
+    warnings.push({ key: "no-ticket-types", label: "Requires payment but no ticket types configured" });
+  }
+
+  const incompleteEngagements = (engagements ?? []).filter((e) => e.agreed_compensation_amount != null && !e.payment_obligation_id).length;
+  if (incompleteEngagements > 0) {
+    warnings.push({ key: "engagements-incomplete", label: `${incompleteEngagements} instructor engagement(s) awaiting a payment obligation` });
+  }
+
+  const registrationIds = rows.map((r) => r.id);
+  if (registrationIds.length > 0) {
+    const { count: pendingTravelCount } = await admin
+      .from("workshop_travel_assistance_requests")
+      .select("id", { count: "exact", head: true })
+      .in("registration_id", registrationIds)
+      .eq("status", "requested");
+    if ((pendingTravelCount ?? 0) > 0) {
+      warnings.push({ key: "travel-pending", label: `${pendingTravelCount} pending travel assistance request(s)` });
+    }
+  }
+
+  return warnings;
+}
+
 export async function getWorkshopFinancialOverview(workshopId: string): Promise<WorkshopFinancialOverview> {
   const admin = createAdminClient();
 

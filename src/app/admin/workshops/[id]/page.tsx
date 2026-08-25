@@ -6,7 +6,7 @@ import { authorizeWithSuperAdminOverride, OPERATIONS_CAPABILITIES, FINANCE_CAPAB
 import { getWorkshopByIdAdmin } from "@/lib/content/sanity/workshopAdmin";
 import { listTicketTypesForWorkshop } from "@/lib/workshops/ticketTypes";
 import { listInstructorEngagementsForWorkshop } from "@/lib/workshops/instructorEngagements";
-import { getWorkshopFinancialOverview } from "@/lib/workshops/financialOverview";
+import { getWorkshopFinancialOverview, getWorkshopOperationalWarnings } from "@/lib/workshops/financialOverview";
 import { listUsersWithRoles } from "@/lib/portal/adminData";
 import { createAdminClient } from "@/lib/supabase/admin";
 import {
@@ -15,6 +15,8 @@ import {
   createInstructorEngagementAction,
   linkEngagementPayoutObligationAction,
   approveWorkshopObligationAction,
+  updateTravelAssistanceStatusAction,
+  sendWorkshopNoticeAction,
 } from "../actions";
 
 export const metadata: Metadata = {
@@ -38,19 +40,31 @@ export default async function WorkshopDashboardPage({ params }: { params: Promis
   const workshop = await getWorkshopByIdAdmin(id);
   if (!workshop) notFound();
 
-  const [ticketTypes, engagements, canSeeFinance, canManageEngagements, canManageWorkshop] = await Promise.all([
+  const [ticketTypes, engagements, canSeeFinance, canManageEngagements, canManageWorkshop, warnings] = await Promise.all([
     listTicketTypesForWorkshop(id),
     listInstructorEngagementsForWorkshop(id),
     (async () => (await authorizeWithSuperAdminOverride(user.id, FINANCE_CAPABILITIES.workshopRevenueView)).ok)(),
     (async () => (await authorizeWithSuperAdminOverride(user.id, PEOPLE_CAPABILITIES.workshopEngagementAdminister)).ok)(),
     (async () => (await authorizeWithSuperAdminOverride(user.id, OPERATIONS_CAPABILITIES.workshopAdminister)).ok)(),
+    getWorkshopOperationalWarnings(id, { capacity: workshop.capacity, requiresPayment: workshop.requiresPayment }),
   ]);
   const financialOverview = canSeeFinance ? await getWorkshopFinancialOverview(id) : null;
 
-  // Travel assistance requests for this workshop's registrations.
+  // Registrations + travel assistance requests for this workshop.
   const admin = createAdminClient();
-  const { data: registrationIds } = await admin.from("workshop_registrations").select("id").eq("workshop_id", id);
-  const ids = (registrationIds ?? []).map((r) => r.id);
+  const { data: registrationRows } = await admin
+    .from("workshop_registrations")
+    .select("id, registration_status, payment_status, attendance_status")
+    .eq("workshop_id", id);
+  const rows = registrationRows ?? [];
+  const registrationSummary = {
+    registered: rows.filter((r) => r.registration_status === "Registered").length,
+    waitlisted: rows.filter((r) => r.registration_status === "Waitlisted").length,
+    paid: rows.filter((r) => r.payment_status === "Paid").length,
+    checkedIn: rows.filter((r) => r.attendance_status === "checked_in").length,
+    noShow: rows.filter((r) => r.attendance_status === "no_show").length,
+  };
+  const ids = rows.map((r) => r.id);
   const { data: travelRequests } = ids.length
     ? await admin
         .from("workshop_travel_assistance_requests")
@@ -82,6 +96,35 @@ export default async function WorkshopDashboardPage({ params }: { params: Promis
           </Link>
         </div>
       </div>
+
+      {warnings.length > 0 && (
+        <section className="rounded-xl border border-amber-300 bg-amber-50 p-5">
+          <h2 className="font-serif font-medium text-body text-ordift-ink mb-2">Attention</h2>
+          <ul className="space-y-1">
+            {warnings.map((w) => (
+              <li key={w.key} className="font-sans text-body-small text-amber-900">· {w.label}</li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      <section className="rounded-xl border border-black/10 bg-white p-6">
+        <h2 className="font-serif font-medium text-body text-ordift-ink mb-4">Registrations &amp; Attendance</h2>
+        <div className="grid grid-cols-2 sm:grid-cols-5 gap-4">
+          {[
+            ["Registered", registrationSummary.registered],
+            ["Waitlisted", registrationSummary.waitlisted],
+            ["Paid", registrationSummary.paid],
+            ["Checked In", registrationSummary.checkedIn],
+            ["No Show", registrationSummary.noShow],
+          ].map(([label, value]) => (
+            <div key={label as string}>
+              <p className="font-sans text-caption text-ordift-ink-muted">{label}</p>
+              <p className="font-sans text-card-title text-ordift-ink font-medium">{value}</p>
+            </div>
+          ))}
+        </div>
+      </section>
 
       {financialOverview && (
         <section className="rounded-xl border border-black/10 bg-white p-6">
@@ -205,7 +248,9 @@ export default async function WorkshopDashboardPage({ params }: { params: Promis
 
       <section className="rounded-xl border border-black/10 bg-white p-6">
         <h2 className="font-serif font-medium text-body text-ordift-ink mb-4">Travel / Accommodation / Transport Assistance</h2>
-        <p className="font-sans text-caption text-ordift-ink-muted mb-3">Request capture only — staff arrange fulfilment manually.</p>
+        <p className="font-sans text-caption text-ordift-ink-muted mb-3">
+          Request capture only — staff arrange fulfilment manually. Updating status below emails the registrant a status update.
+        </p>
         <ul className="divide-y divide-black/5 rounded-lg border border-black/5">
           {(travelRequests ?? []).map((t) => (
             <li key={t.id} className="px-4 py-2.5">
@@ -213,11 +258,50 @@ export default async function WorkshopDashboardPage({ params }: { params: Promis
               <p className="font-sans text-caption text-ordift-ink-muted">
                 {t.traveller_count ? `${t.traveller_count} traveller(s)` : ""} {t.arrival_date ? `· Arrives ${t.arrival_date}` : ""} {t.departure_date ? `· Departs ${t.departure_date}` : ""}
               </p>
+              {canManageWorkshop && (
+                <form action={updateTravelAssistanceStatusAction} className="flex items-center gap-2 mt-2">
+                  <input type="hidden" name="requestId" value={t.id} />
+                  <input type="hidden" name="workshopId" value={id} />
+                  <select name="status" defaultValue={t.status} className="rounded-lg border border-black/15 bg-white px-2 py-1 font-sans text-caption">
+                    <option value="requested">Requested</option>
+                    <option value="in_progress">In Progress</option>
+                    <option value="arranged">Arranged</option>
+                    <option value="declined">Declined</option>
+                    <option value="cancelled">Cancelled</option>
+                  </select>
+                  <button type="submit" className="font-sans text-caption text-ordift-gold-pressed underline underline-offset-4">
+                    Update &amp; Notify
+                  </button>
+                </form>
+              )}
             </li>
           ))}
           {(!travelRequests || travelRequests.length === 0) && <li className="px-4 py-3 font-sans text-body-small text-ordift-ink-muted">None yet.</li>}
         </ul>
       </section>
+
+      {canManageWorkshop && (
+        <section className="rounded-xl border border-black/10 bg-white p-6">
+          <h2 className="font-serif font-medium text-body text-ordift-ink mb-2">Notify Registrants</h2>
+          <p className="font-sans text-caption text-ordift-ink-muted mb-3">
+            Sends an email to every currently Registered or Waitlisted attendee for this workshop — e.g. for a
+            cancellation or reschedule. This is a manual, staff-triggered broadcast; nothing here changes the
+            workshop&rsquo;s status automatically.
+          </p>
+          <form action={sendWorkshopNoticeAction} className="space-y-3">
+            <input type="hidden" name="workshopId" value={id} />
+            <select name="noticeType" defaultValue="update" className="rounded-lg border border-black/15 bg-white px-3 py-1.5 font-sans text-body-small">
+              <option value="cancelled">Workshop Cancelled</option>
+              <option value="rescheduled">Workshop Rescheduled</option>
+              <option value="update">General Update</option>
+            </select>
+            <textarea name="message" required rows={3} placeholder="Message to registrants…" className="w-full rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small" />
+            <button type="submit" className="font-sans text-body-small font-semibold px-4 py-2 rounded-md bg-ordift-navy-950 text-white">
+              Send Notice
+            </button>
+          </form>
+        </section>
+      )}
 
       {isSuperAdmin(user) && (
         <p className="font-sans text-caption text-ordift-ink-muted">
