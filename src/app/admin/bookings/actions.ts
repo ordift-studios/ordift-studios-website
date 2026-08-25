@@ -62,6 +62,47 @@ export async function updateBookingStatusAction(formData: FormData): Promise<voi
   revalidatePath("/admin/bookings");
 }
 
+// Workshop Management V1, Phase B, Part 8 (2026-08-25) — check-in.
+// Deliberately kept at the same staff/admin tier as
+// updateBookingStatusAction just above (not narrowed to a Workshop-
+// specific capability) — consistent authorization granularity for two
+// adjacent fields on the same detail page. attendance_status is a
+// SEPARATE column from registration_status (see migration 0047's
+// comment for why) — this never touches registration_status/
+// payment_status.
+const ATTENDANCE_STATUSES = ["checked_in", "no_show", "cancelled"] as const;
+
+export async function updateAttendanceStatusAction(formData: FormData): Promise<void> {
+  const user = await requireStaffOrAdmin();
+
+  const registrationId = String(formData.get("registrationId") ?? "");
+  const attendanceStatusRaw = String(formData.get("attendanceStatus") ?? "");
+  const attendanceStatus = attendanceStatusRaw === "" ? null : attendanceStatusRaw;
+  if (!registrationId) return;
+  if (attendanceStatus !== null && !(ATTENDANCE_STATUSES as readonly string[]).includes(attendanceStatus)) return;
+
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("workshop_registrations")
+    .update({ attendance_status: attendanceStatus })
+    .eq("id", registrationId);
+  if (error) {
+    console.error("[admin] attendance status update failed", error.message);
+    return;
+  }
+
+  await logActivity({
+    actorUserId: user.id,
+    action: "workshop.attendance_status.changed",
+    entityType: "workshop_registration",
+    entityId: registrationId,
+    metadata: { attendanceStatus },
+  });
+
+  revalidatePath(`/admin/bookings/${registrationId}`);
+  revalidatePath("/admin/bookings");
+}
+
 // Workshop registrations have no crm_stage-style pipeline (see
 // src/lib/portal/workspace.ts), so unlike the enquiry equivalent this
 // never touches any other field — just amount_due. Amount is always

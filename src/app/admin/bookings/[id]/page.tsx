@@ -9,7 +9,7 @@ import { getDeliverableCategories, getDeliverablesForEntity } from "@/lib/admin/
 import DeliverablesManager from "@/components/admin/DeliverablesManager";
 import { getProjectRequestsForEntity } from "@/lib/admin/projectRequests";
 import ProjectRequestsManager from "@/components/admin/ProjectRequestsManager";
-import { updateBookingStatusAction, setAmountDueAction } from "../actions";
+import { updateBookingStatusAction, setAmountDueAction, updateAttendanceStatusAction } from "../actions";
 
 function formatUsd(amount: number): string {
   return `$${amount.toFixed(2)}`;
@@ -204,6 +204,34 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
                 className="w-full min-h-11 rounded-full bg-ordift-gold text-ordift-navy-950 font-sans font-semibold text-body-small"
               >
                 Update
+              </button>
+            </form>
+          </div>
+
+          <div className="rounded-xl border border-black/10 bg-white p-6">
+            <p className="font-sans text-caption uppercase tracking-wide text-ordift-ink-muted mb-3">
+              Attendance / Check-in
+            </p>
+            <p className="font-sans text-caption text-ordift-ink-muted mb-3">
+              Separate from Registration status above — this tracks what happened on the day.
+            </p>
+            <form action={updateAttendanceStatusAction} className="space-y-4">
+              <input type="hidden" name="registrationId" value={registration.id} />
+              <select
+                name="attendanceStatus"
+                defaultValue={registration.attendanceStatus ?? ""}
+                className="w-full min-h-11 rounded-lg border border-black/15 bg-white px-3 font-sans text-body-small text-ordift-ink"
+              >
+                <option value="">Not yet determined</option>
+                <option value="checked_in">Checked in</option>
+                <option value="no_show">No-show</option>
+                <option value="cancelled">Cancelled</option>
+              </select>
+              <button
+                type="submit"
+                className="w-full min-h-11 rounded-full border border-ordift-ink/30 text-ordift-ink font-sans font-semibold text-body-small"
+              >
+                Update Attendance
               </button>
             </form>
           </div>

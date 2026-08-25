@@ -20,6 +20,7 @@ const NAV_ITEMS: { label: string; href: string; adminOnly?: boolean; superAdminO
   { label: "Bookings", href: "/admin/bookings" },
   { label: "Payments", href: "/admin/payments" },
   { label: "Portfolio", href: "/admin/portfolio" },
+  { label: "Workshop Management", href: "/admin/workshops" },
   { label: "Reports", href: "/admin/reports" },
   { label: "Content", href: "/admin/content" },
   { label: "Activity", href: "/admin/activity" },

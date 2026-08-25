@@ -182,6 +182,34 @@ export async function hasJurisdictionAuthority(
 }
 
 // ============================================================
+// Auditable Super Admin intervention (Workshop Management V1, Phase B,
+// Part 5, 2026-08-25)
+// ============================================================
+// Shared authorization check: an actor is authorized if they hold the
+// named capability (optionally department-scoped) OR are Super Admin.
+// When Super Admin is the ONLY reason access was granted (they don't
+// actually hold the capability), `actedAsOverride: true` is returned so
+// the caller can record that fact explicitly in activity_log — CHIEF's
+// intervention is never silently recorded as if the normally
+// responsible jurisdiction had acted (Part 5's explicit requirement).
+// This is the one shared place every future capability-gated action
+// should call through, rather than each re-implementing its own
+// Super-Admin-bypass-plus-audit logic.
+export async function authorizeWithSuperAdminOverride(
+  actorUserId: string,
+  capability: string,
+  scopeDepartmentId: string | null = null
+): Promise<{ ok: true; actedAsOverride: boolean } | { ok: false }> {
+  const authorized = await hasAuthority(actorUserId, capability, scopeDepartmentId);
+  if (authorized) return { ok: true, actedAsOverride: false };
+
+  const superAdmin = await isSuperAdminId(actorUserId);
+  if (superAdmin) return { ok: true, actedAsOverride: true };
+
+  return { ok: false };
+}
+
+// ============================================================
 // jurisdiction.resource.verb (Phase 3.3, Part C, 2026-08-25)
 // ============================================================
 // Extends the same free-text `authority` column one level further —
@@ -229,11 +257,18 @@ export const IDENTITY_CAPABILITIES = {
 // exact same string, already wired into assignStaffPosition(). The
 // three additions below are new for this phase, DORMANT (no function
 // checks them yet) — Operations has no other built workflow to gate.
+// workshop.administer added Workshop Management V1, Phase B
+// (2026-08-25) — PRIME's overall workshop operational administration
+// (create/edit workshop content, ticket types, check-in). Deliberately
+// its own capability, not folded into `administer`, so Workshop
+// authority can be granted/revoked independently of general staff
+// Position-assignment authority.
 export const OPERATIONS_CAPABILITIES = {
   administer: "operations.administer", // WIRED — assignStaffPosition() (Phase 3.2)
   coordinate: "operations.coordinate", // DORMANT
   report: "operations.report", // DORMANT
   requestRoute: "operations.request.route", // DORMANT
+  workshopAdminister: "operations.workshop.administer", // WIRED — Workshop Management V1, Phase B
 } as const;
 
 // finance.* — VAULT. Two of these are WIRED this phase
@@ -250,6 +285,11 @@ export const FINANCE_CAPABILITIES = {
   paymentObligationApprove: "finance.payment_obligation.approve", // WIRED — approvePaymentObligation()
   payoutInitiate: "finance.payout.initiate", // DORMANT — no PayoutProvider implementation exists
   payoutReconcile: "finance.payout.reconcile", // DORMANT
+  // Workshop Management V1, Phase B (2026-08-25) — read-only financial
+  // visibility into a workshop's registration revenue/outstanding
+  // amounts. Deliberately separate from paymentObligationApprove — VIEW
+  // is never bundled with a mutation capability.
+  workshopRevenueView: "finance.workshop_revenue.view", // WIRED — Workshop financial overview
 } as const;
 
 // strategy.* — ARCHITECT. Fully DORMANT — no strategic-planning/
@@ -272,6 +312,9 @@ export const PEOPLE_CAPABILITIES = {
   interviewPanelAdminister: "people.interview_panel.administer", // DORMANT
   onboardingAdminister: "people.onboarding.administer", // DORMANT
   report: "people.report", // DORMANT
+  // Workshop Management V1, Phase B (2026-08-25) — instructor/
+  // facilitator engagement coordination for a workshop.
+  workshopEngagementAdminister: "people.workshop_engagement.administer", // WIRED — workshop instructor engagements
 } as const;
 
 // technology.* — GEEK. IDENTITY_CAPABILITIES above (Phase 3.3) are

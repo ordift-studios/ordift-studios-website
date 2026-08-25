@@ -1,12 +1,21 @@
 import { createClient } from "@/lib/supabase/server";
 import type { PortalWorkshopRegistration } from "@/lib/portal/data";
 
-export async function getRegistrationById(id: string): Promise<PortalWorkshopRegistration | null> {
+// Workshop Management V1, Phase B (2026-08-25) — admin-only extension
+// of the shared client-portal type, kept local to this file rather than
+// widening PortalWorkshopRegistration (which several client-facing read
+// paths also construct) just for one admin-only field.
+export type AdminWorkshopRegistration = PortalWorkshopRegistration & {
+  attendanceStatus: string | null;
+  ticketTypeId: string | null;
+};
+
+export async function getRegistrationById(id: string): Promise<AdminWorkshopRegistration | null> {
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("workshop_registrations")
     .select(
-      "id, registration_reference, email, full_name, phone, workshop_slug, workshop_title, registration_status, waiting_list_position, payment_status, amount_due, amount_paid, certificate_issued, certificate_url, registration_date"
+      "id, registration_reference, email, full_name, phone, workshop_slug, workshop_title, registration_status, waiting_list_position, payment_status, amount_due, amount_paid, certificate_issued, certificate_url, registration_date, attendance_status, ticket_type_id"
     )
     .eq("id", id)
     .maybeSingle();
@@ -33,6 +42,8 @@ export async function getRegistrationById(id: string): Promise<PortalWorkshopReg
     certificateIssued: data.certificate_issued,
     certificateUrl: data.certificate_url,
     registrationDate: data.registration_date,
+    attendanceStatus: data.attendance_status,
+    ticketTypeId: data.ticket_type_id,
   };
 }
 

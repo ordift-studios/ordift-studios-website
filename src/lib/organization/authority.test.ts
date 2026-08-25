@@ -85,7 +85,7 @@ describe("six-jurisdiction capability taxonomy — no cross-jurisdiction overlap
     for (const c of Object.values(GOVERNANCE_CAPABILITIES)) expect(c.startsWith("governance.")).toBe(true);
   });
 
-  it("the finance.* compensation/payout/payment-obligation capabilities match the exact strings specified", () => {
+  it("the finance.* compensation/payout/payment-obligation capabilities match the exact strings specified (Phase 3.4), plus Workshop Management's workshopRevenueView (Phase B)", () => {
     expect(FINANCE_CAPABILITIES).toEqual({
       compensationView: "finance.compensation.view",
       compensationManage: "finance.compensation.manage",
@@ -94,6 +94,7 @@ describe("six-jurisdiction capability taxonomy — no cross-jurisdiction overlap
       paymentObligationApprove: "finance.payment_obligation.approve",
       payoutInitiate: "finance.payout.initiate",
       payoutReconcile: "finance.payout.reconcile",
+      workshopRevenueView: "finance.workshop_revenue.view",
     });
   });
 });
