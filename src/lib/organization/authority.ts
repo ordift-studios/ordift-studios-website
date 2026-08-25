@@ -153,7 +153,13 @@ export async function hasAuthority(profileId: string, authority: string, departm
 // Positions. Cross-jurisdiction VIEW-only visibility (e.g. PRIME
 // seeing a Finance dashboard for executive coordination) is its own
 // distinct grant (finance.view), never implied by operations.administer.
-export const JURISDICTIONS = ["operations", "finance", "strategy", "people", "technology"] as const;
+// 'governance' added Phase 3.3, Part A (2026-08-25) — CHANCELLOR's
+// jurisdiction (corporate administration, organizational governance,
+// corporate records/policy/contract/legal-document administration,
+// external-counsel liaison). Explicitly NOT "legal" — CHANCELLOR is the
+// internal governance/legal-administration owner and external-counsel
+// liaison, never represented as providing professional legal advice.
+export const JURISDICTIONS = ["operations", "finance", "strategy", "people", "technology", "governance"] as const;
 export type Jurisdiction = (typeof JURISDICTIONS)[number];
 
 export const AUTHORITY_VERBS = ["view", "create", "edit", "approve", "authorize", "override", "administer"] as const;
@@ -175,6 +181,37 @@ export async function hasJurisdictionAuthority(
   return hasAuthority(profileId, jurisdictionAuthority(jurisdiction, verb), null);
 }
 
+// ============================================================
+// jurisdiction.resource.verb (Phase 3.3, Part C, 2026-08-25)
+// ============================================================
+// Extends the same free-text `authority` column one level further —
+// confirmed safe before use: authority_grants.authority has no DB
+// CHECK/enum, and every consumer (hasAuthority(), isExecutiveAdmin())
+// compares it by exact string equality only, never parses or counts
+// dots. A 3-part jurisdiction.resource.verb string (e.g.
+// "technology.identity.reserve") coexists in the same column as the
+// existing 2-part (operations.administer) and 0-part
+// (executive_admin) values with zero conflict.
+//
+// GEEK/Technology owns the corporate-identity capability set below —
+// this is a functional-jurisdiction fact, not an automatic grant to
+// whoever occupies the CTO Position (Position/Grade/Call Sign still
+// grant zero authority by themselves, per Part K). PULSE/People can
+// REQUEST identity creation (via a department_request); GEEK/
+// Technology fulfills it — a cross-department workflow relationship,
+// never an authority transfer, so GEEK never thereby receives HR/
+// Finance/Strategy/Operations jurisdiction, and PULSE never thereby
+// receives Technology jurisdiction.
+export const IDENTITY_CAPABILITIES = {
+  view: "technology.identity.view",
+  reserve: "technology.identity.reserve",
+  provision: "technology.identity.provision",
+  suspend: "technology.identity.suspend",
+  reactivate: "technology.identity.reactivate",
+  deactivate: "technology.identity.deactivate",
+  manageEmail: "technology.email.manage",
+} as const;
+
 // Super-Admin check by id, for server-side helpers (like
 // assignStaffPosition()) that only ever receive an actorUserId, not a
 // full CurrentUser — src/lib/portal/roles.ts's isSuperAdmin() takes the
@@ -193,13 +230,14 @@ export async function isSuperAdminId(profileId: string): Promise<boolean> {
   return Boolean(data);
 }
 
-// The five leadership Positions no capability short of Super Admin may
-// reassign — CHIEF itself, and all five GR.9 peer executives (a holder
+// The six leadership Positions no capability short of Super Admin may
+// reassign — CHIEF itself, and all six GR.9 peer executives (a holder
 // of operations.administer may perform routine staff Position
 // assignment, per Phase 3.2 Part 8, but must never touch CHIEF's
 // Position, appoint/remove/reassign a GR.9 peer, or — by the same
 // self-protection principle — reassign their own Position). Enforced in
 // assignStaffPosition() (src/lib/organization/assignPosition.ts).
+// CHANCELLOR added Phase 3.3, Part A, on promotion to GR.9.
 export const PROTECTED_LEADERSHIP_POSITION_SLUGS = new Set([
   "founder-ceo",
   "chief-operating-officer-coo",
@@ -207,4 +245,5 @@ export const PROTECTED_LEADERSHIP_POSITION_SLUGS = new Set([
   "chief-strategy-officer",
   "chief-people-hr-officer",
   "chief-technology-officer",
+  "director-executive-administration",
 ]);

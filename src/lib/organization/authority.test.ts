@@ -22,7 +22,7 @@ describe("jurisdictionAuthority", () => {
 });
 
 describe("PROTECTED_LEADERSHIP_POSITION_SLUGS", () => {
-  it("covers exactly CHIEF and all five GR.9 peer executives — no more, no less", () => {
+  it("covers exactly CHIEF and all six GR.9 peer executives — no more, no less", () => {
     expect(PROTECTED_LEADERSHIP_POSITION_SLUGS).toEqual(
       new Set([
         "founder-ceo",
@@ -31,12 +31,12 @@ describe("PROTECTED_LEADERSHIP_POSITION_SLUGS", () => {
         "chief-strategy-officer",
         "chief-people-hr-officer",
         "chief-technology-officer",
+        "director-executive-administration",
       ])
     );
   });
 
-  it("does not protect a Director (GR.8) or any ordinary Position", () => {
-    expect(PROTECTED_LEADERSHIP_POSITION_SLUGS.has("director-executive-administration")).toBe(false);
+  it("does not protect a GR.8 Director or any ordinary Position", () => {
     expect(PROTECTED_LEADERSHIP_POSITION_SLUGS.has("creative-director")).toBe(false);
     expect(PROTECTED_LEADERSHIP_POSITION_SLUGS.has("photographer")).toBe(false);
   });
