@@ -5,10 +5,12 @@ import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/portal/roles";
 import { logActivity } from "@/lib/admin/activityLog";
 import { authorizeWithSuperAdminOverride, OPERATIONS_CAPABILITIES } from "@/lib/organization/authority";
-import { createWorkshopDraft, patchWorkshopCoreFields, type WorkshopCoreFields } from "@/lib/content/sanity/workshopAdmin";
+import { createWorkshopDraft, patchWorkshopCoreFields, getWorkshopByIdAdmin, type WorkshopCoreFields } from "@/lib/content/sanity/workshopAdmin";
 import { createTicketType, setTicketTypeActive } from "@/lib/workshops/ticketTypes";
 import { createInstructorEngagement, linkEngagementToPaymentObligation } from "@/lib/workshops/instructorEngagements";
 import { approvePaymentObligation } from "@/lib/payments/payoutObligations";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { sendTravelAssistanceStatusEmail, sendWorkshopNoticeEmailToRegistration, sendInstructorEngagementApprovedEmail } from "@/lib/workshops/registrationEmail";
 
 // Workshop Management V1, Phase B, Part 13 (2026-08-25). Overall
 // workshop administration (content, ticket types) requires
@@ -192,7 +194,136 @@ export async function approveWorkshopObligationAction(formData: FormData): Promi
   if (!obligationId) return;
 
   const result = await approvePaymentObligation({ obligationId, actorUserId: currentUser.id });
-  if (!result.ok) console.error("[admin workshops] failed to approve obligation", result.error);
+  if (!result.ok) {
+    console.error("[admin workshops] failed to approve obligation", result.error);
+  } else {
+    // Workshop Management V1, Phase C (2026-08-25) — real, sufficient-
+    // data instructor communication: only fires when this obligation is
+    // actually linked to a workshop_instructor_engagement with a real
+    // internal profile (external payees have no account/email captured
+    // in this system, so there's nothing reliable to notify).
+    // Best-effort — a notification failure must never affect the
+    // already-persisted approval above.
+    try {
+      const admin = createAdminClient();
+      const { data: engagement } = await admin
+        .from("workshop_instructor_engagements")
+        .select("profile_id, role, agreed_compensation_amount, agreed_compensation_currency, workshop_id")
+        .eq("payment_obligation_id", obligationId)
+        .maybeSingle();
+      if (engagement?.profile_id && engagement.agreed_compensation_amount) {
+        const { data: userResult } = await admin.auth.admin.getUserById(engagement.profile_id);
+        const { data: profile } = await admin.from("profiles").select("full_name").eq("id", engagement.profile_id).maybeSingle();
+        const workshop = await getWorkshopByIdAdmin(engagement.workshop_id);
+        if (userResult?.user?.email && workshop) {
+          const emailResult = await sendInstructorEngagementApprovedEmail({
+            email: userResult.user.email,
+            recipientName: profile?.full_name ?? "there",
+            workshopTitle: workshop.title,
+            role: engagement.role,
+            amount: Number(engagement.agreed_compensation_amount),
+            currency: engagement.agreed_compensation_currency ?? "USD",
+          });
+          if (!emailResult.ok) console.error("[admin workshops] instructor engagement approved email failed", obligationId, emailResult.error);
+        }
+      }
+    } catch (err) {
+      console.error("[admin workshops] instructor engagement approved email threw", obligationId, err);
+    }
+  }
 
   if (workshopId) revalidatePath(`/admin/workshops/${workshopId}`);
+}
+
+// Workshop Management V1, Phase C (2026-08-25) — closes the "dedicated
+// travel-assistance status email" Phase B deferred item. Real trigger:
+// staff manually updates a genuine, already-submitted assistance
+// request's status. This is the first WRITE action ever built against
+// workshop_travel_assistance_requests.status (Phase B only inserted and
+// displayed it) — statuses match the migration's own documented set
+// exactly: 'requested' | 'in_progress' | 'arranged' | 'declined' | 'cancelled'.
+const TRAVEL_ASSISTANCE_STATUSES = ["requested", "in_progress", "arranged", "declined", "cancelled"] as const;
+
+export async function updateTravelAssistanceStatusAction(formData: FormData): Promise<void> {
+  const { user } = await requireWorkshopAdminister();
+
+  const requestId = String(formData.get("requestId") ?? "");
+  const status = String(formData.get("status") ?? "");
+  const workshopId = String(formData.get("workshopId") ?? "");
+  const internalNotes = String(formData.get("internalNotes") ?? "").trim();
+  if (!requestId || !(TRAVEL_ASSISTANCE_STATUSES as readonly string[]).includes(status)) return;
+
+  const admin = createAdminClient();
+  const { data: request, error } = await admin
+    .from("workshop_travel_assistance_requests")
+    .update({ status, internal_notes: internalNotes || null })
+    .eq("id", requestId)
+    .select("registration_id")
+    .single();
+  if (error || !request) {
+    console.error("[admin workshops] failed to update travel assistance status", error?.message);
+    return;
+  }
+
+  await logActivity({
+    actorUserId: user.id,
+    action: "workshop.travel_assistance.status_updated",
+    entityType: "workshop_registration",
+    entityId: request.registration_id,
+    metadata: { status },
+  });
+
+  const emailResult = await sendTravelAssistanceStatusEmail(request.registration_id, status);
+  if (emailResult && !emailResult.ok) {
+    console.error("[admin workshops] travel assistance status email failed", requestId, emailResult.error);
+  }
+
+  if (workshopId) revalidatePath(`/admin/workshops/${workshopId}`);
+}
+
+// Workshop Management V1, Phase C (2026-08-25) — closes the "workshop
+// cancellation/reschedule communication" deferred item. There is no
+// Sanity webhook wired into this app and workshop.status has no
+// "cancelled" value (coming-soon | open | full | closed | completed —
+// see the schema), so an automatic status-change listener would be
+// fabricated infrastructure, not a real trigger. This is instead an
+// explicit, staff-initiated broadcast — a genuinely real, reliable
+// event — sent only to this workshop's actual active (Registered or
+// Waitlisted) registrations, never a fabricated recipient list.
+export async function sendWorkshopNoticeAction(formData: FormData): Promise<void> {
+  const { user } = await requireWorkshopAdminister();
+
+  const workshopId = String(formData.get("workshopId") ?? "");
+  const noticeType = String(formData.get("noticeType") ?? "update");
+  const message = String(formData.get("message") ?? "").trim();
+  if (!workshopId || !message) return;
+
+  const admin = createAdminClient();
+  const { data: registrations, error } = await admin
+    .from("workshop_registrations")
+    .select("id")
+    .eq("workshop_id", workshopId)
+    .in("registration_status", ["Registered", "Waitlisted"]);
+  if (error) {
+    console.error("[admin workshops] failed to load registrations for notice", error.message);
+    return;
+  }
+
+  let sent = 0;
+  let failed = 0;
+  for (const r of registrations ?? []) {
+    const result = await sendWorkshopNoticeEmailToRegistration(r.id, noticeType, message);
+    if (result?.ok) sent += 1;
+    else failed += 1;
+  }
+
+  await logActivity({
+    actorUserId: user.id,
+    action: "workshop.notice_broadcast",
+    entityType: "workshop",
+    entityId: workshopId,
+    metadata: { noticeType, recipientCount: registrations?.length ?? 0, sent, failed },
+  });
+
+  revalidatePath(`/admin/workshops/${workshopId}`);
 }

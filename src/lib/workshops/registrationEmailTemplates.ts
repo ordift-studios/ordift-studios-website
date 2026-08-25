@@ -143,3 +143,176 @@ function escapeHtml(value: string): string {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
 }
+
+// ============================================================
+// Workshop Management V1, Phase C (2026-08-25) — participant
+// communication lifecycle. Every template below reuses this file's
+// existing wrap()/escapeHtml() and the shared sendEmail() dispatch
+// path (src/lib/shared/email/dispatch.ts) — no second notification
+// system. Each is only sent from a real, already-existing system event
+// (see the calling sites) — never a fabricated schedule/reminder.
+// ============================================================
+
+export function buildPaymentConfirmedEmail(params: {
+  firstName: string;
+  workshopTitle: string;
+  registrationReference: string;
+  amountPaidUsd: number;
+}) {
+  const { firstName, workshopTitle, registrationReference, amountPaidUsd } = params;
+  const subject = `Payment received — ${registrationReference}`;
+  const bodyHtml = `
+    <h1 style="margin:0 0 16px;font-family:${SERIF};font-size:24px;color:${NAVY};font-weight:normal;">
+      Thank you, ${escapeHtml(firstName)}.
+    </h1>
+    <p style="margin:0 0 16px;font-family:${SANS};font-size:15px;line-height:1.6;color:${NAVY};">
+      We've received your payment of <strong>$${amountPaidUsd.toFixed(2)} USD</strong> for
+      <strong>${escapeHtml(workshopTitle)}</strong>. Your registration
+      (<strong>${registrationReference}</strong>) is now confirmed.
+    </p>
+    <p style="margin:0;font-family:${SANS};font-size:14px;line-height:1.6;color:${INK_MUTED};">
+      If anything looks wrong, just reply to this email and mention your reference number.
+    </p>
+  `;
+  return {
+    subject,
+    html: wrap(bodyHtml),
+    text: `Payment received for ${workshopTitle}. Reference: ${registrationReference}. Amount: $${amountPaidUsd.toFixed(2)} USD.`,
+  };
+}
+
+export function buildProjectRequestDecidedEmail(params: {
+  firstName: string;
+  workshopTitle: string;
+  registrationReference: string;
+  requestTypeLabel: string;
+  decision: "approved" | "rejected";
+  staffResponse: string | null;
+}) {
+  const { firstName, workshopTitle, registrationReference, requestTypeLabel, decision, staffResponse } = params;
+  const subject = `${requestTypeLabel} ${decision} — ${registrationReference}`;
+  const decisionLine =
+    decision === "approved"
+      ? `Your ${requestTypeLabel.toLowerCase()} for <strong>${escapeHtml(workshopTitle)}</strong> has been approved.`
+      : `Your ${requestTypeLabel.toLowerCase()} for <strong>${escapeHtml(workshopTitle)}</strong> was not approved.`;
+  const bodyHtml = `
+    <h1 style="margin:0 0 16px;font-family:${SERIF};font-size:24px;color:${NAVY};font-weight:normal;">
+      Hello, ${escapeHtml(firstName)}.
+    </h1>
+    <p style="margin:0 0 16px;font-family:${SANS};font-size:15px;line-height:1.6;color:${NAVY};">
+      ${decisionLine} Reference: <strong>${registrationReference}</strong>.
+    </p>
+    ${
+      staffResponse
+        ? `<p style="margin:0 0 16px;font-family:${SANS};font-size:15px;line-height:1.6;color:${NAVY};">
+             ${escapeHtml(staffResponse)}
+           </p>`
+        : ""
+    }
+    <p style="margin:0;font-family:${SANS};font-size:14px;line-height:1.6;color:${INK_MUTED};">
+      Questions? Just reply to this email and mention your reference number.
+    </p>
+  `;
+  return {
+    subject,
+    html: wrap(bodyHtml),
+    text: `${requestTypeLabel} ${decision} for ${workshopTitle}. Reference: ${registrationReference}.${staffResponse ? ` ${staffResponse}` : ""}`,
+  };
+}
+
+const TRAVEL_ASSISTANCE_STATUS_MESSAGES: Record<string, string> = {
+  in_progress: "Our team is now working on your travel/accommodation assistance request.",
+  arranged: "We've arranged your travel/accommodation assistance — our team will follow up with the details.",
+  declined: "We're unable to assist with this particular travel/accommodation request. Our team will reach out if alternatives are available.",
+  cancelled: "Your travel/accommodation assistance request has been cancelled.",
+};
+
+export function buildTravelAssistanceStatusEmail(params: {
+  firstName: string;
+  workshopTitle: string;
+  registrationReference: string;
+  status: string;
+}) {
+  const { firstName, workshopTitle, registrationReference, status } = params;
+  const statusMessage = TRAVEL_ASSISTANCE_STATUS_MESSAGES[status] ?? `Your travel/accommodation assistance request status is now: ${status}.`;
+  const subject = `Travel assistance update — ${registrationReference}`;
+  const bodyHtml = `
+    <h1 style="margin:0 0 16px;font-family:${SERIF};font-size:24px;color:${NAVY};font-weight:normal;">
+      Hello, ${escapeHtml(firstName)}.
+    </h1>
+    <p style="margin:0 0 16px;font-family:${SANS};font-size:15px;line-height:1.6;color:${NAVY};">
+      An update on the travel/accommodation assistance you requested for
+      <strong>${escapeHtml(workshopTitle)}</strong> (${registrationReference}):
+    </p>
+    <p style="margin:0 0 16px;font-family:${SANS};font-size:15px;line-height:1.6;color:${NAVY};">
+      ${statusMessage}
+    </p>
+    <p style="margin:0;font-family:${SANS};font-size:14px;line-height:1.6;color:${INK_MUTED};">
+      This remains a manually-arranged request — no external booking has been made automatically.
+    </p>
+  `;
+  return { subject, html: wrap(bodyHtml), text: `${statusMessage} (${workshopTitle}, ${registrationReference})` };
+}
+
+const WORKSHOP_NOTICE_LABELS: Record<string, string> = {
+  cancelled: "Workshop cancelled",
+  rescheduled: "Workshop rescheduled",
+  update: "Workshop update",
+};
+
+export function buildWorkshopNoticeEmail(params: {
+  firstName: string;
+  workshopTitle: string;
+  registrationReference: string;
+  noticeType: string;
+  message: string;
+}) {
+  const { firstName, workshopTitle, registrationReference, noticeType, message } = params;
+  const label = WORKSHOP_NOTICE_LABELS[noticeType] ?? "Workshop update";
+  const subject = `${label} — ${escapeHtml(workshopTitle)}`;
+  const bodyHtml = `
+    <h1 style="margin:0 0 16px;font-family:${SERIF};font-size:24px;color:${NAVY};font-weight:normal;">
+      ${label}
+    </h1>
+    <p style="margin:0 0 16px;font-family:${SANS};font-size:15px;line-height:1.6;color:${NAVY};">
+      Hello ${escapeHtml(firstName)}, this concerns your registration
+      (<strong>${registrationReference}</strong>) for <strong>${escapeHtml(workshopTitle)}</strong>.
+    </p>
+    <p style="margin:0 0 16px;font-family:${SANS};font-size:15px;line-height:1.6;color:${NAVY};white-space:pre-line;">
+      ${escapeHtml(message)}
+    </p>
+    <p style="margin:0;font-family:${SANS};font-size:14px;line-height:1.6;color:${INK_MUTED};">
+      Questions? Just reply to this email and mention your reference number.
+    </p>
+  `;
+  return { subject, html: wrap(bodyHtml), text: `${label} — ${workshopTitle} (${registrationReference}): ${message}` };
+}
+
+export function buildInstructorEngagementApprovedEmail(params: {
+  recipientName: string;
+  workshopTitle: string;
+  role: string;
+  amount: number;
+  currency: string;
+}) {
+  const { recipientName, workshopTitle, role, amount, currency } = params;
+  const subject = `Compensation approved — ${workshopTitle}`;
+  const bodyHtml = `
+    <h1 style="margin:0 0 16px;font-family:${SERIF};font-size:24px;color:${NAVY};font-weight:normal;">
+      Hello, ${escapeHtml(recipientName)}.
+    </h1>
+    <p style="margin:0 0 16px;font-family:${SANS};font-size:15px;line-height:1.6;color:${NAVY};">
+      Your engagement as <strong>${escapeHtml(role)}</strong> for <strong>${escapeHtml(workshopTitle)}</strong>
+      has an approved compensation obligation of <strong>${currency} ${amount.toFixed(2)}</strong>.
+    </p>
+    <p style="margin:0;font-family:${SANS};font-size:14px;line-height:1.6;color:${INK_MUTED};">
+      This confirms the internal obligation record only — it does not itself move any money; our team will
+      follow up separately on payment arrangements.
+    </p>
+  `;
+  return {
+    subject,
+    html: wrap(bodyHtml),
+    text: `Compensation approved for ${role} — ${workshopTitle}: ${currency} ${amount.toFixed(2)}.`,
+  };
+}

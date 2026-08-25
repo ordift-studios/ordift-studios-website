@@ -69,5 +69,38 @@ export async function decideProjectRequestAction(formData: FormData): Promise<vo
     metadata: { status },
   });
 
+  // Workshop Management V1, Phase C (2026-08-25) — a real, staff-
+  // triggered decision on a genuine request row is the one reliable
+  // trigger for reschedule/cancellation communication (see
+  // supabase/migrations/0008_project_requests.sql — the seeded
+  // 'reschedule'/'cancellation' request types). Only fires on the
+  // FIRST approve/reject decision (isFirstDecision), matching the
+  // decided_at/decided_by "locked once" semantics above. Never touches
+  // enquiries — same scope as this action's existing entity handling.
+  // Best-effort — a notification failure must never block the decision
+  // itself, which has already been persisted above.
+  if (isFirstDecision && entityType === "workshop_registration" && (status === "approved" || status === "rejected")) {
+    try {
+      const { data: requestType } = await supabase
+        .from("project_requests")
+        .select("request_types(label)")
+        .eq("id", id)
+        .maybeSingle();
+      const requestTypeLabel = (requestType?.request_types as unknown as { label: string } | null)?.label ?? "Request";
+      const { sendProjectRequestDecidedEmail } = await import("@/lib/workshops/registrationEmail");
+      const result = await sendProjectRequestDecidedEmail({
+        registrationId: entityId,
+        requestTypeLabel,
+        decision: status,
+        staffResponse: staffResponse || null,
+      });
+      if (result && !result.ok) {
+        console.error("[admin] project request decided email failed", id, result.error);
+      }
+    } catch (err) {
+      console.error("[admin] project request decided email threw", id, err);
+    }
+  }
+
   revalidatePath(`${entityBasePath(entityType)}/${entityId}`);
 }

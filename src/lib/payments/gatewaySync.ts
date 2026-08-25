@@ -469,8 +469,9 @@ export async function syncEntityPaymentStatus(entityType: string, entityId: stri
   const admin = createAdminClient();
   const table = entityType === "enquiry" ? "enquiries" : "workshop_registrations";
 
-  const { data: entity } = await admin.from(table).select("amount_due").eq("id", entityId).maybeSingle();
+  const { data: entity } = await admin.from(table).select("amount_due, payment_status").eq("id", entityId).maybeSingle();
   if (!entity) return;
+  const previousPaymentStatus = entity.payment_status as string | null;
 
   const { data: completedPayments } = await admin
     .from("payments")
@@ -498,4 +499,25 @@ export async function syncEntityPaymentStatus(entityType: string, entityId: stri
     .eq("id", entityId);
 
   await advanceStageOnFullPayment(admin, entityType, entityId, paymentStatus);
+
+  // Workshop Management V1, Phase C (2026-08-25) — a real, reliable
+  // trigger for the "payment confirmed" notification: this function is
+  // the one place workshop_registrations.payment_status is ever set
+  // from a completed/refunded payment (webhook or reconciliation), so a
+  // genuine Pending/Not Required/Refunded -> Paid transition here IS
+  // the payment-confirmed event, never a separate polled/scheduled
+  // check. Dynamic import avoids a static dependency from the generic
+  // payments layer on workshop-specific email templates. Best-effort —
+  // a notification failure must never affect payment reconciliation.
+  if (entityType === "workshop_registration" && paymentStatus === "Paid" && previousPaymentStatus !== "Paid") {
+    try {
+      const { sendPaymentConfirmedEmail } = await import("@/lib/workshops/registrationEmail");
+      const result = await sendPaymentConfirmedEmail(entityId, totalPaidUsd);
+      if (result && !result.ok) {
+        console.error("[payments] workshop payment-confirmed email failed", entityId, result.error);
+      }
+    } catch (err) {
+      console.error("[payments] workshop payment-confirmed email threw", entityId, err);
+    }
+  }
 }
