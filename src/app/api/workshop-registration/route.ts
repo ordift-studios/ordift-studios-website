@@ -6,9 +6,7 @@ import { generateRecordId } from "@/lib/shared/recordId";
 import { contentRepository } from "@/lib/content";
 import { isRegistrationOpen } from "@/lib/content/workshopHelpers";
 import {
-  countRegisteredForWorkshop,
-  countWaitlistedForWorkshop,
-  decideRegistrationStatus,
+  decideWorkshopPaymentStatus,
   syncRegistrationToSheets,
   type WorkshopRegistrationRecord,
 } from "@/lib/workshops/registrationStorage";
@@ -118,15 +116,15 @@ export async function POST(request: NextRequest) {
   }
 
   // Workshop Management V1, Phase B (2026-08-25) — ticket-type
-  // resolution and reservation. The overall workshop.capacity/waitlist
-  // decision below is completely unchanged (still the existing,
-  // documented read-then-decide logic); ticket-type capacity is a
-  // SEPARATE, ADDITIONAL, atomically-enforced gate (see
-  // reserve_ticket_type_seat() — a single UPDATE...WHERE...RETURNING
-  // that takes a row lock, unlike the workshop-wide check). A sold-out
-  // ticket tier closes only that tier, never triggers the workshop-wide
-  // waitlist. amountDueUsd is resolved here, server-side, from the
-  // ticket's stored price — never trusted from the request body.
+  // resolution and reservation. ticket-type capacity is a SEPARATE,
+  // ADDITIONAL, atomically-enforced gate (reserve_ticket_type_seat() —
+  // a single UPDATE...WHERE...RETURNING row lock) from the overall
+  // workshop-wide capacity decision (also now atomic as of Phase C —
+  // see saveWorkshopRegistrationToSupabase()/migration 0048). A
+  // sold-out ticket tier closes only that tier, never triggers the
+  // workshop-wide waitlist. amountDueUsd is resolved here, server-side,
+  // from the ticket's stored price — never trusted from the request
+  // body.
   let amountDueUsd: number | null = null;
   let reservedTicketTypeId: string | null = null;
   if (data.ticketTypeId) {
@@ -146,15 +144,7 @@ export async function POST(request: NextRequest) {
     reservedTicketTypeId = data.ticketTypeId;
   }
 
-  const [currentRegisteredCount, currentWaitlistedCount] = await Promise.all([
-    countRegisteredForWorkshop(workshop.slug),
-    countWaitlistedForWorkshop(workshop.slug),
-  ]);
-  const { status, waitingListPosition, paymentStatus } = decideRegistrationStatus(
-    workshop,
-    currentRegisteredCount,
-    currentWaitlistedCount
-  );
+  const paymentStatus = decideWorkshopPaymentStatus(workshop);
 
   let registrationReference: string;
   try {
@@ -172,6 +162,11 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  // registrationStatus/waitingListPosition are placeholders here — the
+  // real, race-safe decision is made atomically inside
+  // create_workshop_registration() (supabase/migrations/0048) and
+  // overwritten on `record` immediately below once the save succeeds,
+  // before anything (email, Sheets sync, the response) reads them.
   const record: WorkshopRegistrationRecord = {
     ...data,
     idempotencyKey,
@@ -179,8 +174,8 @@ export async function POST(request: NextRequest) {
     workshopId: workshop.id,
     workshopTitle: workshop.title,
     registrationDate: new Date().toISOString(),
-    registrationStatus: status,
-    waitingListPosition,
+    registrationStatus: "Registered",
+    waitingListPosition: null,
     paymentStatus,
     amountDueUsd,
     environment: isStaging() ? "staging" : "production",
@@ -188,7 +183,7 @@ export async function POST(request: NextRequest) {
 
   // Supabase is the primary, required application database — a failure
   // here fails the whole submission (see src/lib/supabase/primaryWrite.ts).
-  const saveResult = await saveWorkshopRegistrationToSupabase(record);
+  const saveResult = await saveWorkshopRegistrationToSupabase(record, workshop.capacity);
   if (!saveResult.ok) {
     console.error(
       "[workshops] failed to save registration",
@@ -207,6 +202,8 @@ export async function POST(request: NextRequest) {
       { status: 503 }
     );
   }
+  record.registrationStatus = saveResult.registrationStatus;
+  record.waitingListPosition = saveResult.waitingListPosition;
 
   if (idempotencyKey) {
     await storeResult(idempotencyKey, record.registrationReference, "supabase");

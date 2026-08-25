@@ -6,6 +6,10 @@ type AdminClient = ReturnType<typeof createAdminClient>;
 
 export type PrimaryWriteResult = { ok: true; userId: string | null } | { ok: false; error: string };
 
+export type WorkshopRegistrationWriteResult =
+  | { ok: true; userId: string | null; registrationStatus: "Registered" | "Waitlisted"; waitingListPosition: number | null }
+  | { ok: false; error: string };
+
 function supabaseConfigured(): boolean {
   return Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.SUPABASE_SECRET_KEY);
 }
@@ -78,9 +82,18 @@ export async function saveEnquiryToSupabase(
 
 // Same inversion as saveEnquiryToSupabase, plus: on an email match,
 // auto-grants the workshop_participant role.
+// Workshop Management V1, Phase C (2026-08-25) — the registered/
+// waitlisted decision now happens atomically inside
+// create_workshop_registration() (supabase/migrations/0048), not here.
+// capacity is the Sanity workshop.capacity ceiling the RPC decides
+// against; record.registrationStatus/waitingListPosition (still present
+// on WorkshopRegistrationRecord for the pre-Phase-C call sites/types)
+// are ignored on input and overwritten by the RPC's real, race-safe
+// decision on output.
 export async function saveWorkshopRegistrationToSupabase(
-  record: WorkshopRegistrationRecord
-): Promise<PrimaryWriteResult> {
+  record: WorkshopRegistrationRecord,
+  capacity: number
+): Promise<WorkshopRegistrationWriteResult> {
   if (!supabaseConfigured()) {
     console.error("[supabase] cannot save workshop registration — Supabase is not configured");
     return { ok: false, error: "supabase-not-configured" };
@@ -98,42 +111,52 @@ export async function saveWorkshopRegistrationToSupabase(
     // this phase but silently dropped here — now actually persisted.
     const fullName = [record.firstName, record.middleName, record.surname].filter(Boolean).join(" ");
 
-    const { error } = await admin.from("workshop_registrations").insert({
-      user_id: userId,
-      registration_reference: record.registrationReference,
-      email: record.email,
-      full_name: fullName,
-      first_name: record.firstName,
-      middle_name: record.middleName || null,
-      surname: record.surname,
-      phone: record.phone,
-      phone_country_code: record.phoneCountryCode || null,
-      country_of_residence: record.country || null,
-      consent_accepted_at: record.consent ? record.registrationDate : null,
-      ticket_type_id: record.ticketTypeId || null,
-      amount_due: record.amountDueUsd,
-      workshop_id: record.workshopId,
-      workshop_slug: record.workshopSlug,
-      workshop_title: record.workshopTitle,
-      registration_status: record.registrationStatus,
-      waiting_list_position: record.waitingListPosition,
-      payment_status: record.paymentStatus,
-      registration_date: record.registrationDate,
-    });
+    const { data, error } = await admin
+      .rpc("create_workshop_registration", {
+        p_workshop_slug: record.workshopSlug,
+        p_capacity: capacity,
+        p_row: {
+          user_id: userId ?? "",
+          registration_reference: record.registrationReference,
+          email: record.email,
+          full_name: fullName,
+          first_name: record.firstName,
+          middle_name: record.middleName || "",
+          surname: record.surname,
+          phone: record.phone,
+          phone_country_code: record.phoneCountryCode || "",
+          country_of_residence: record.country || "",
+          consent_accepted_at: record.consent ? record.registrationDate : "",
+          ticket_type_id: record.ticketTypeId || "",
+          amount_due: record.amountDueUsd != null ? String(record.amountDueUsd) : "",
+          workshop_id: record.workshopId,
+          workshop_slug: record.workshopSlug,
+          workshop_title: record.workshopTitle,
+          payment_status: record.paymentStatus,
+          registration_date: record.registrationDate,
+        },
+      })
+      .single();
 
-    if (error) {
+    if (error || !data) {
       console.error(
         "[supabase] primary write for workshop registration failed",
         record.registrationReference,
-        error.message
+        error?.message
       );
-      return { ok: false, error: error.message };
+      return { ok: false, error: error?.message ?? "insert-failed" };
     }
 
     if (userId) {
       await grantWorkshopParticipantRole(admin, userId);
     }
-    return { ok: true, userId };
+    const decided = data as { registration_status: "Registered" | "Waitlisted"; waiting_list_position: number | null };
+    return {
+      ok: true,
+      userId,
+      registrationStatus: decided.registration_status,
+      waitingListPosition: decided.waiting_list_position,
+    };
   } catch (err) {
     console.error(
       "[supabase] primary write for workshop registration threw",

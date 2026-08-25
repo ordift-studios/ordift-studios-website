@@ -140,18 +140,16 @@ export async function syncRegistrationToSheets(record: WorkshopRegistrationRecor
   }
 }
 
-export function decideRegistrationStatus(
-  workshop: Workshop,
-  currentRegisteredCount: number,
-  currentWaitlistedCount: number
-): { status: RegistrationStatus; waitingListPosition: number | null; paymentStatus: PaymentStatus } {
-  const status: RegistrationStatus =
-    currentRegisteredCount < workshop.capacity ? "Registered" : "Waitlisted";
-  const waitingListPosition = status === "Waitlisted" ? currentWaitlistedCount + 1 : null;
+// Workshop Management V1, Phase C (2026-08-25) — the registered/
+// waitlisted capacity decision moved into create_workshop_registration()
+// (supabase/migrations/0048), an atomic Postgres function, closing the
+// count-then-insert race this function previously left open (see that
+// migration's own comment). Only the payment-status decision — which
+// never depended on capacity or concurrency — remains here.
+export function decideWorkshopPaymentStatus(workshop: Workshop): PaymentStatus {
   // Manual payment confirmation only — no online payment collection
   // exists yet, so a workshop that requires payment starts every
   // registrant at "Pending" for an administrator to confirm by hand;
   // one that doesn't require payment skips straight to "Not Required".
-  const paymentStatus: PaymentStatus = workshop.requiresPayment ? "Pending" : "Not Required";
-  return { status, waitingListPosition, paymentStatus };
+  return workshop.requiresPayment ? "Pending" : "Not Required";
 }

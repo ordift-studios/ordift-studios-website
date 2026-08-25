@@ -76,7 +76,7 @@ beforeAll(async () => {
     amountDueUsd: null,
     environment: "staging",
   };
-  const workshopWrite = await saveWorkshopRegistrationToSupabase(workshopRecord);
+  const workshopWrite = await saveWorkshopRegistrationToSupabase(workshopRecord, 1000);
   if (!workshopWrite.ok) throw new Error(`failed to write test workshop registration: ${workshopWrite.error}`);
 
   // A real enquiry, for the contractor project-assignment test.
