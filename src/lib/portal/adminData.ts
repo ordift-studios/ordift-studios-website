@@ -1,6 +1,7 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { AccessStatus, RoleSlug } from "@/lib/portal/roles";
 import { getNotificationPreferences } from "@/lib/notifications/preferences";
+import { listPositionReportingChain, resolveManagerInMemory } from "@/lib/organization/reporting";
 
 export type AdminUserRow = {
   id: string;
@@ -128,6 +129,7 @@ export async function listUsersWithRoles(): Promise<AdminUserListResult> {
     { data: engagementTypes },
     { data: activeMemberNumbers },
     { data: classifications },
+    positionReportingChain,
     newBookingAlertPrefs,
   ] = await Promise.all([
     admin
@@ -140,12 +142,13 @@ export async function listUsersWithRoles(): Promise<AdminUserListResult> {
     admin
       .from("staff_details")
       .select(
-        "id, operational_title_id, engagement_type_id, position_id, manager_id, positions(name, call_sign, departments(name), grades(grade_code, name))"
+        "id, operational_title_id, engagement_type_id, position_id, positions(name, call_sign, departments(name), grades(grade_code, name))"
       ),
     admin.from("operational_titles").select("id, name"),
     admin.from("engagement_types").select("id, name"),
     admin.from("member_numbers").select("profile_id, classification_id").eq("status", "active"),
     admin.from("member_number_classifications").select("id, name"),
+    listPositionReportingChain(),
     getNotificationPreferences(
       allAuthUsers.map((u) => u.id),
       "new_booking"
@@ -169,6 +172,17 @@ export async function listUsersWithRoles(): Promise<AdminUserListResult> {
     (activeMemberNumbers ?? []).map((m) => [m.profile_id, m.classification_id as string])
   );
 
+  // Live reporting-chain resolution (Phase 3.1, Part 6) — Position
+  // remains the authoritative source; staff_details.manager_id is no
+  // longer read here at all. See src/lib/organization/reporting.ts.
+  const reportsToByPositionId = new Map(positionReportingChain.map((p) => [p.id, p.reportsToPositionId]));
+  const activeOccupantProfileIdByPositionId = new Map<string, string>();
+  for (const s of staffDetails ?? []) {
+    if (!s.position_id) continue;
+    if (profileById.get(s.id)?.access_status !== "active") continue;
+    activeOccupantProfileIdByPositionId.set(s.position_id, s.id);
+  }
+
   const rolesByUserId = new Map<string, RoleSlug[]>();
   for (const ur of userRoles ?? []) {
     const slug = roleSlugById.get(ur.role_id);
@@ -188,7 +202,12 @@ export async function listUsersWithRoles(): Promise<AdminUserListResult> {
         departments: { name: string } | null;
         grades: { grade_code: string; name: string } | null;
       } | null;
-      const managerName = details?.manager_id ? (profileById.get(details.manager_id)?.full_name ?? null) : null;
+      const resolvedManagerId = resolveManagerInMemory(
+        details?.position_id ?? null,
+        reportsToByPositionId,
+        activeOccupantProfileIdByPositionId
+      );
+      const managerName = resolvedManagerId ? (profileById.get(resolvedManagerId)?.full_name ?? null) : null;
       return {
         id: u.id,
         email: u.email,

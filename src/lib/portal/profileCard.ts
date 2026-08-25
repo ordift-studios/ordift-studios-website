@@ -1,6 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { isSuperAdmin, hasRole, type CurrentUser, type RoleSlug, type AccessStatus } from "@/lib/portal/roles";
+import { resolveCurrentManager } from "@/lib/organization/reporting";
 
 // Backs the Admin Profile Quick Card (src/app/admin/layout.tsx). V1 is
 // self-view only — the logged-in admin viewing their own card — so this
@@ -115,7 +116,7 @@ export async function getProfileCard(user: CurrentUser): Promise<ProfileCard> {
       supabase
         .from("staff_details")
         .select(
-          "department, operational_title_id, operational_titles(name), grade_id, grades(grade_code, name), position_id, positions(name, call_sign, departments(name)), manager_id"
+          "department, operational_title_id, operational_titles(name), grade_id, grades(grade_code, name), position_id, positions(name, call_sign, departments(name))"
         )
         .eq("id", user.id)
         .maybeSingle(),
@@ -158,19 +159,12 @@ export async function getProfileCard(user: CurrentUser): Promise<ProfileCard> {
   } | null;
   const resolvedDepartment = positionRow?.departments?.name ?? staffDetails?.department ?? null;
 
-  // Direct manager (Phase 3, Part C) — a plain follow-up lookup by id,
-  // same low-frequency-single-row pattern as the lastLoginAt call just
-  // below, since we don't know staff_details.manager_id until the
-  // Promise.all above has resolved.
-  let managerName: string | null = null;
-  if (staffDetails?.manager_id) {
-    const { data: managerProfile } = await supabase
-      .from("profiles")
-      .select("full_name")
-      .eq("id", staffDetails.manager_id)
-      .maybeSingle();
-    managerName = managerProfile?.full_name ?? null;
-  }
+  // Direct manager — LIVE resolution through the Position reporting
+  // chain (Phase 3.1, Part 6), not a read of the cached
+  // staff_details.manager_id snapshot — see src/lib/organization/reporting.ts
+  // for why. Correct even if the occupant of the reporting Position has
+  // changed or left since this person's own Position was last assigned.
+  const managerName = (await resolveCurrentManager(staffDetails?.position_id ?? null))?.fullName ?? null;
 
   let lastLoginAt: string | null = null;
   try {

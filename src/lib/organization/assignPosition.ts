@@ -16,14 +16,14 @@ import { logActivity } from "@/lib/admin/activityLog";
 // Grade-write precedent) and for revalidatePath/redirect appropriate to
 // their own route.
 //
-// manager_id resolution is a snapshot taken at assignment time, not a
-// live-computed value: if the person occupying the reports-to Position
-// later changes, everyone who reports to that Position keeps their old
-// manager_id until their own Position is next reassigned/re-saved. See
-// the Phase 3 report's deferred-items section — building automatic
-// cascading re-resolution across the whole org graph was judged out of
-// proportion for this phase; re-saving the affected person's Position
-// (even to the same value) refreshes it.
+// manager_id is written here as a point-in-time audit snapshot only
+// ("who was resolved as manager at the moment this Position was
+// assigned") — Phase 3.1, Part 6 fixed the staleness limitation Phase 3
+// flagged by making every actual DISPLAY of "who is my manager"
+// (getProfileCard, listUsersWithRoles) resolve LIVE through
+// positions.reports_to_position_id instead of reading this column — see
+// src/lib/organization/reporting.ts. This column is kept only as
+// historical record; nothing treats it as current-state truth anymore.
 export type AssignPositionResult = { ok: true } | { ok: false; error: string };
 
 export async function assignStaffPosition(params: {
