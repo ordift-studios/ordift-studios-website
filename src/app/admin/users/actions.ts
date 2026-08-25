@@ -27,6 +27,7 @@ import { siteUrl } from "@/lib/shared/env";
 import { assignClassification, assignClassificationBySlug } from "@/lib/portal/memberNumbers";
 import { setNotificationPreference } from "@/lib/notifications/preferences";
 import { assignStaffPosition } from "@/lib/organization/assignPosition";
+import { hasJurisdictionAuthority } from "@/lib/organization/authority";
 
 // ============================================================
 // Read-only data fetchers — thin server-action wrappers so the client
@@ -319,10 +320,18 @@ export async function updateCollaboratorDetailsAction(formData: FormData): Promi
 // the independent Title selector is available again to re-set a craft
 // for someone stepping back out of formal Position tracking.
 // ============================================================
+// Phase 3.2 (2026-08-25): widened from Super-Admin-only to also allow a
+// holder of the operations.administer capability (PRIME's package) —
+// see src/lib/organization/authority.ts. The real, fine-grained
+// authorization boundary (self-assignment refused, CHIEF and every
+// GR.9 peer executive Position protected) lives inside
+// assignStaffPosition() itself, not here — this is only the
+// coarse "are you allowed to call this at all" gate.
 export async function assignStaffPositionAction(formData: FormData): Promise<{ error?: string }> {
   const currentUser = await getCurrentUser();
-  if (!currentUser || !isSuperAdmin(currentUser)) {
-    return { error: "Only a Super Admin can change organizational assignment." };
+  if (!currentUser) return { error: "Not authenticated." };
+  if (!isSuperAdmin(currentUser) && !(await hasJurisdictionAuthority(currentUser.id, "operations", "administer"))) {
+    return { error: "Not authorized to change organizational assignments." };
   }
 
   const userId = String(formData.get("userId") ?? "");

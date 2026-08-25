@@ -1,5 +1,6 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { logActivity } from "@/lib/admin/activityLog";
+import { isSuperAdminId, hasJurisdictionAuthority, PROTECTED_LEADERSHIP_POSITION_SLUGS } from "@/lib/organization/authority";
 
 // Shared core of Position assignment — the single place that resolves
 // Department + Craft (operational_title_id) + Grade + direct manager
@@ -33,6 +34,42 @@ export async function assignStaffPosition(params: {
 }): Promise<AssignPositionResult> {
   const { targetUserId, positionId, actorUserId } = params;
   const admin = createAdminClient();
+
+  // Authorization — Phase 3.2, Part 8. Super Admin is unrestricted. A
+  // holder of operations.administer (PRIME's capability package, or
+  // anyone else explicitly granted it) may perform routine staff
+  // Position assignment, but never: their own Position, CHIEF's
+  // Position, or any GR.9 peer executive's Position — whether as the
+  // target being assigned INTO one of those, or as an existing holder
+  // of one being moved OUT (moving someone out of a leadership Position
+  // is functionally a removal, reserved for CHIEF). Anyone holding
+  // neither is refused outright — this is the real security boundary;
+  // callers' own gates are a convenience, not a substitute for this.
+  const actorIsSuperAdmin = await isSuperAdminId(actorUserId);
+  if (!actorIsSuperAdmin) {
+    const actorIsOperationsAdmin = await hasJurisdictionAuthority(actorUserId, "operations", "administer");
+    if (!actorIsOperationsAdmin) {
+      return { ok: false, error: "Not authorized to change organizational assignments." };
+    }
+    if (targetUserId === actorUserId) {
+      return { ok: false, error: "You cannot change your own Position assignment." };
+    }
+    if (positionId) {
+      const { data: targetPosition } = await admin.from("positions").select("slug").eq("id", positionId).maybeSingle();
+      if (targetPosition && PROTECTED_LEADERSHIP_POSITION_SLUGS.has(targetPosition.slug)) {
+        return { ok: false, error: "Only a Super Admin can assign a leadership Position." };
+      }
+    }
+    const { data: currentAssignment } = await admin
+      .from("staff_details")
+      .select("position_id, positions(slug)")
+      .eq("id", targetUserId)
+      .maybeSingle();
+    const currentSlug = (currentAssignment?.positions as unknown as { slug: string } | null)?.slug;
+    if (currentSlug && PROTECTED_LEADERSHIP_POSITION_SLUGS.has(currentSlug)) {
+      return { ok: false, error: "Only a Super Admin can change a leadership Position holder's assignment." };
+    }
+  }
 
   const { data: previous } = await admin
     .from("staff_details")

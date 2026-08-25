@@ -137,3 +137,74 @@ export async function hasAuthority(profileId: string, authority: string, departm
     return r.scope_department_id === null || r.scope_department_id === departmentId;
   });
 }
+
+// ============================================================
+// Jurisdiction/verb capability taxonomy (Phase 3.2, 2026-08-25)
+// ============================================================
+// Extends the same free-text `authority` column with a documented
+// naming convention — "<jurisdiction>.<verb>" — rather than a new
+// table or a rigid DB enum (matching activity_log.action's existing
+// unconstrained-string precedent). Each GR.9 executive's functional
+// jurisdiction is peer-scoped: PRIME (Operations) receiving
+// operations.administer never implies anything about finance.*,
+// people.*, technology.*, or strategy.* — those remain VAULT's/PULSE's/
+// GEEK's/ARCHITECT's own jurisdictions, granted (or not) as entirely
+// separate authority_grants rows to whoever actually occupies those
+// Positions. Cross-jurisdiction VIEW-only visibility (e.g. PRIME
+// seeing a Finance dashboard for executive coordination) is its own
+// distinct grant (finance.view), never implied by operations.administer.
+export const JURISDICTIONS = ["operations", "finance", "strategy", "people", "technology"] as const;
+export type Jurisdiction = (typeof JURISDICTIONS)[number];
+
+export const AUTHORITY_VERBS = ["view", "create", "edit", "approve", "authorize", "override", "administer"] as const;
+export type AuthorityVerb = (typeof AUTHORITY_VERBS)[number];
+
+export function jurisdictionAuthority(jurisdiction: Jurisdiction, verb: AuthorityVerb): string {
+  return `${jurisdiction}.${verb}`;
+}
+
+// Convenience wrapper over hasAuthority() for the jurisdiction.verb
+// convention — global (unscoped) only, matching how every GR.9
+// executive capability in this phase is granted (a functional
+// jurisdiction, not a department).
+export async function hasJurisdictionAuthority(
+  profileId: string,
+  jurisdiction: Jurisdiction,
+  verb: AuthorityVerb
+): Promise<boolean> {
+  return hasAuthority(profileId, jurisdictionAuthority(jurisdiction, verb), null);
+}
+
+// Super-Admin check by id, for server-side helpers (like
+// assignStaffPosition()) that only ever receive an actorUserId, not a
+// full CurrentUser — src/lib/portal/roles.ts's isSuperAdmin() takes the
+// already-resolved CurrentUser and can't be reused here without a
+// second session read. Queries the same user_roles/roles tables
+// private.has_role() itself is backed by.
+export async function isSuperAdminId(profileId: string): Promise<boolean> {
+  const admin = createAdminClient();
+  const { data } = await admin
+    .from("user_roles")
+    .select("roles!inner(slug)")
+    .eq("user_id", profileId)
+    .eq("roles.slug", "super_admin")
+    .limit(1)
+    .maybeSingle();
+  return Boolean(data);
+}
+
+// The five leadership Positions no capability short of Super Admin may
+// reassign — CHIEF itself, and all five GR.9 peer executives (a holder
+// of operations.administer may perform routine staff Position
+// assignment, per Phase 3.2 Part 8, but must never touch CHIEF's
+// Position, appoint/remove/reassign a GR.9 peer, or — by the same
+// self-protection principle — reassign their own Position). Enforced in
+// assignStaffPosition() (src/lib/organization/assignPosition.ts).
+export const PROTECTED_LEADERSHIP_POSITION_SLUGS = new Set([
+  "founder-ceo",
+  "chief-operating-officer-coo",
+  "chief-financial-officer",
+  "chief-strategy-officer",
+  "chief-people-hr-officer",
+  "chief-technology-officer",
+]);
