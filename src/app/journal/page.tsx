@@ -133,8 +133,14 @@ export default async function JournalPage({
           never lets the next section's edge peek into this one — see
           src/components/layout/EditorialComposition.tsx. When a real
           Lead Story is set, its own ~75-85vh already fills the frame on
-          its own and this wrapper has no visible effect. */}
-      <EditorialComposition>
+          its own and this wrapper has no visible effect.
+          Closure refinement (2026-08-25) — without a Lead Story, the
+          full-viewport reservation left a large, unjustified empty gap
+          at tablet/mobile heights (nothing to fill it with yet). Only
+          this genuinely-empty state opts out of the minimum height;
+          once a real Lead Story is set, the default composition frame
+          applies exactly as before. */}
+      <EditorialComposition minHeightClassName={leadStory ? "min-h-[100svh]" : ""}>
         {leadStory ? (
           <LeadStorySection item={leadStory} />
         ) : (

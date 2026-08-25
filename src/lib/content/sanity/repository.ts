@@ -46,6 +46,7 @@ import {
   portfolioProjectsQuery,
   pulseArticleBySlugQuery,
   pulseArticlesQuery,
+  pulseArticlesForSitemapQuery,
   pulseCategoriesQuery,
   pulseOpportunityTypesQuery,
   pulseRegionsQuery,
@@ -231,6 +232,9 @@ export const sanityContentRepository: ContentRepository = {
   },
   async getPulseArticleBySlug(slug) {
     return client.fetch<PulseArticle | null>(pulseArticleBySlugQuery, { slug });
+  },
+  async getPulseArticleSlugsForSitemap() {
+    return client.fetch<{ slug: string; lastModified: string | null }[]>(pulseArticlesForSitemapQuery);
   },
   async getPulseCategories() {
     return client.fetch<Category[]>(pulseCategoriesQuery);

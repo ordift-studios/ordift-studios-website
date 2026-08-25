@@ -25,10 +25,19 @@ export default function EditorialComposition({
   children,
   center = false,
   className = "",
+  // Closure refinement (2026-08-25) — overridable, defaulting to the
+  // original 100svh so every existing caller is unaffected. Exists so a
+  // genuinely-empty composition (e.g. /journal with no Lead Story set)
+  // can opt out of claiming a full viewport frame instead of leaving a
+  // large, unjustified gap — see /journal/page.tsx for the one current
+  // use of this override. A composition with real content should always
+  // use the default.
+  minHeightClassName = "min-h-[100svh]",
 }: {
   children: React.ReactNode;
   center?: boolean;
   className?: string;
+  minHeightClassName?: string;
 }) {
-  return <div className={`flex flex-col min-h-[100svh] ${center ? "justify-center" : ""} ${className}`}>{children}</div>;
+  return <div className={`flex flex-col ${minHeightClassName} ${center ? "justify-center" : ""} ${className}`}>{children}</div>;
 }

@@ -12,6 +12,17 @@ export function isPubliclyVisible(article: PulseArticle): boolean {
   return new Date(article.scheduledFor).getTime() <= Date.now();
 }
 
+// Sitemap eligibility (closure refinement, 2026-08-25) — deliberately
+// narrower than isPubliclyVisible above: "archived" is publicly
+// reachable (still renders, dimmed) but not sitemap-eligible, since it's
+// stale content Ordift isn't actively promoting for fresh indexing.
+// Mirrors pulseArticlesForSitemapQuery's Sanity-side filter exactly.
+export function isSitemapEligible(article: PulseArticle): boolean {
+  if (article.status !== "published") return false;
+  if (!article.scheduledFor) return true;
+  return new Date(article.scheduledFor).getTime() <= Date.now();
+}
+
 // Opportunities (grants, competitions, casting calls, etc.) are
 // deadline-driven — this is the one piece of derived logic genuinely
 // specific to contentKind === "opportunity" that a future listing page

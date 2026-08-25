@@ -516,3 +516,14 @@ export const pulseArticleFragment = `{
 
 export const pulseArticlesQuery = `*[_type == "pulseArticle" && ${pulseVisibilityFilter}] | order(coalesce(publishedAt, _createdAt) desc) ${pulseArticleFragment}`;
 export const pulseArticleBySlugQuery = `*[_type == "pulseArticle" && slug.current == $slug && ${pulseVisibilityFilter}][0] ${pulseArticleFragment}`;
+
+// Sitemap eligibility (closure refinement, 2026-08-25) — deliberately
+// NARROWER than pulseVisibilityFilter above: "archived" is publicly
+// reachable (an archived item still renders, dimmed, at /journal/[slug]
+// — see pulseVisibilityFilter's own comment) but is never sitemap-
+// eligible, since it's stale content Ordift is no longer actively
+// promoting for fresh indexing. "draft"/"inReview" were already
+// excluded by definition (neither is "published"). A minimal field
+// selection — the sitemap only needs the slug and a lastModified date.
+const pulseArticleSitemapFilter = `status == "published" && (!defined(scheduledFor) || scheduledFor <= now())`;
+export const pulseArticlesForSitemapQuery = `*[_type == "pulseArticle" && ${pulseArticleSitemapFilter}]{"slug": slug.current, "lastModified": coalesce(publishedAt, _updatedAt)}`;

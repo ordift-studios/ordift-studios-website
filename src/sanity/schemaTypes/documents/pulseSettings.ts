@@ -2,13 +2,22 @@ import { defineField, defineType } from "sanity";
 
 // Singleton (added to SINGLETON_TYPES in schemaTypes/index.ts, same
 // mechanism as homepage/aboutPage/etc — see sanity.config.ts). Global
-// operational controls for Ordift Pulse discovery/publishing, built ahead
-// of the ingestion pipeline itself (Phase A, 2026-08-24 — see
-// PULSE_INGESTION_FOUNDATION.md) so the pipeline has somewhere real to
-// read its configuration from once it exists. Nothing reads this
-// document yet; every switch below defaults to the conservative/off
-// position per explicit direction, and no code path currently acts on
-// any of these values.
+// operational controls for Ordift Pulse discovery/publishing (Phase A,
+// 2026-08-24 — see PULSE_INGESTION_FOUNDATION.md).
+//
+// ACTIVE — genuinely read and enforced by src/lib/pulse/ingestion.ts's
+// discovery orchestrator: discoveryEnabled (checked before any external
+// fetch — a manual discovery run refuses to proceed while this is off)
+// and the five relevance weights (regionWeight/topicWeight/
+// freshnessWeight/trustWeight/priorityWeight).
+//
+// RESERVED/INACTIVE — exist on this document, but no code path reads
+// them yet: globalAutoPublishEnabled, maxPostsPerDay,
+// minimumRelevanceScore. The orchestrator always creates a discovered
+// item with status: "draft" unconditionally, so none of the three could
+// currently affect what gets published even if switched on — see each
+// field's own description below. Every switch still defaults to the
+// conservative/off position per explicit direction.
 export default defineType({
   name: "pulseSettings",
   title: "Pulse Settings",
@@ -24,7 +33,8 @@ export default defineType({
       type: "boolean",
       group: "controls",
       initialValue: false,
-      description: "Master switch for automated discovery. OFF until Phase B/C ingestion actually exists and has been reviewed on Staging.",
+      description:
+        "ACTIVE — the real master switch for manual discovery runs. While OFF, an Admin/Super Admin-triggered discovery run stops safely before any external fetch, for every source, regardless of that source's own settings. Turn ON only once discovery is ready to actually run.",
     }),
     defineField({
       name: "globalAutoPublishEnabled",
@@ -33,7 +43,7 @@ export default defineType({
       group: "controls",
       initialValue: false,
       description:
-        "OFF by default, and must stay OFF for the first live period per explicit direction — every discovered item requires human review regardless of source classification until this is deliberately switched on. Even when on, a source must individually be Green + Auto-Publish Eligible to bypass review.",
+        "RESERVED / NOT YET FUNCTIONAL — no code currently reads this field. Every discovered item requires human review today regardless of this setting or any source's classification; switching this ON right now has no effect. Reserved for a future, explicitly approved auto-publication phase, at which point the intent is: even when on, a source must individually be Green + Auto-Publish Eligible to bypass review.",
     }),
     defineField({
       name: "maxPostsPerDay",

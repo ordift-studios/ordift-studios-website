@@ -28,7 +28,10 @@ function makeSanityMock(overrides: Partial<{ source: unknown; taxonomy: unknown[
     { id: "region-ghana", slug: "ghana" },
   ];
   const existing = overrides.existing ?? [];
-  const settings = overrides.settings ?? { regionWeight: 20, topicWeight: 30, freshnessWeight: 20, trustWeight: 20, priorityWeight: 10 };
+  const settings =
+    "settings" in overrides
+      ? overrides.settings
+      : { discoveryEnabled: true, regionWeight: 20, topicWeight: 30, freshnessWeight: 20, trustWeight: 20, priorityWeight: 10 };
 
   const sanity = {
     fetch: vi.fn(async (query: string) => {
@@ -67,6 +70,21 @@ describe("runDiscoveryForSource", () => {
     const { sanity } = makeSanityMock({ source: { id: "src1", name: "X", sourceType: "rss", feedUrl: "u", url: null, isActive: true, permissionClassification: "red", editorialTrustLevel: "unverified", editorialPriority: 0, disciplineIds: [], geographyIds: [] } });
     const result = await runDiscoveryForSource("src1", sanity, logRun);
     expect(result.refused).toMatch(/Red/);
+    expect(rssFetchMock).not.toHaveBeenCalled();
+  });
+
+  it("refuses to run when Pulse discovery is disabled in settings, without any network call", async () => {
+    const { sanity } = makeSanityMock({ settings: { discoveryEnabled: false, regionWeight: 20, topicWeight: 30, freshnessWeight: 20, trustWeight: 20, priorityWeight: 10 } });
+    const result = await runDiscoveryForSource("src1", sanity, logRun);
+    expect(result.refused).toMatch(/discovery is currently disabled/);
+    expect(rssFetchMock).not.toHaveBeenCalled();
+    expect(logRun).not.toHaveBeenCalled();
+  });
+
+  it("refuses to run when the pulseSettings singleton doesn't exist yet (fails closed)", async () => {
+    const { sanity } = makeSanityMock({ settings: null });
+    const result = await runDiscoveryForSource("src1", sanity, logRun);
+    expect(result.refused).toMatch(/discovery is currently disabled/);
     expect(rssFetchMock).not.toHaveBeenCalled();
   });
 

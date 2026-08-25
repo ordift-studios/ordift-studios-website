@@ -83,12 +83,23 @@ export interface ContentRepository {
   // read-only here; no ingestion logic exists yet.
   getPulseArticles(): Promise<PulseArticle[]>;
   getPulseArticleBySlug(slug: string): Promise<PulseArticle | null>;
+  // Sitemap eligibility only (closure refinement, 2026-08-25) —
+  // narrower than getPulseArticles(): "published" only, never "archived"
+  // (archived stays publicly reachable but isn't sitemap-eligible — see
+  // pulseArticlesForSitemapQuery's own comment). Minimal shape, used
+  // only by src/app/sitemap.ts.
+  getPulseArticleSlugsForSitemap(): Promise<{ slug: string; lastModified: string | null }[]>;
   getPulseCategories(): Promise<Category[]>;
   getPulseRegions(): Promise<Category[]>;
   getPulseOpportunityTypes(): Promise<Category[]>;
   getPulseSources(): Promise<PulseSource[]>;
-  // Phase A foundation only (2026-08-24) — global discovery/publishing
-  // controls, unread by any code path yet. See
-  // PULSE_INGESTION_FOUNDATION.md.
+  // Global discovery/publishing controls. Closure refinement (2026-08-25):
+  // discoveryEnabled and the five relevance weights are genuinely read
+  // and enforced by src/lib/pulse/ingestion.ts's discovery orchestrator
+  // (discoveryEnabled gates every run before any external fetch).
+  // globalAutoPublishEnabled/maxPostsPerDay/minimumRelevanceScore remain
+  // reserved/inactive — not read by any code path — since the
+  // orchestrator always creates status: "draft" unconditionally; see
+  // pulseSettings.ts's own field descriptions for the same distinction.
   getPulseSettings(): Promise<PulseSettings>;
 }

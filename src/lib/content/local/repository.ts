@@ -1,5 +1,5 @@
 import { isPubliclyVisible } from "../journalHelpers";
-import { isPubliclyVisible as isPulseArticlePubliclyVisible } from "../pulseHelpers";
+import { isPubliclyVisible as isPulseArticlePubliclyVisible, isSitemapEligible as isPulseArticleSitemapEligible } from "../pulseHelpers";
 import type { ContentRepository } from "../repository";
 import {
   CATEGORIES,
@@ -138,6 +138,9 @@ export const localContentRepository: ContentRepository = {
   async getPulseArticleBySlug(slug) {
     const article = PULSE_ARTICLES.find((a) => a.slug === slug);
     return article && isPulseArticlePubliclyVisible(article) ? article : null;
+  },
+  async getPulseArticleSlugsForSitemap() {
+    return PULSE_ARTICLES.filter(isPulseArticleSitemapEligible).map((a) => ({ slug: a.slug, lastModified: a.publishedAt }));
   },
   async getPulseCategories() {
     return PULSE_CATEGORIES;

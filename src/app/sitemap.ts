@@ -14,13 +14,19 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "https://ordiftstudios.com";
   const now = new Date();
 
-  const [services, portfolioProjects, journalPosts, workshops, instructors, authors] = await Promise.all([
+  const [services, portfolioProjects, journalPosts, workshops, instructors, authors, pulseArticles] = await Promise.all([
     contentRepository.getServices(),
     contentRepository.getPortfolioProjects(),
     contentRepository.getJournalPosts(),
     contentRepository.getWorkshops(),
     contentRepository.getInstructors(),
     contentRepository.getAuthors(),
+    // Closure refinement (2026-08-25) — published-only (never draft/
+    // inReview/archived; see pulseArticlesForSitemapQuery's own
+    // comment). journalPost and pulseArticle share the /journal/[slug]
+    // route, so entries are deduped against journalPost slugs below
+    // rather than assuming the two document types' slugs never collide.
+    contentRepository.getPulseArticleSlugsForSitemap(),
   ]);
 
   const entries: MetadataRoute.Sitemap = [
@@ -35,6 +41,9 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     ...services.map((s) => ({ url: `${siteUrl}/services/${s.slug}`, lastModified: now })),
     ...portfolioProjects.map((p) => ({ url: `${siteUrl}/work/${p.slug}`, lastModified: now })),
     ...journalPosts.map((j) => ({ url: `${siteUrl}/journal/${j.slug}`, lastModified: now })),
+    ...pulseArticles
+      .filter((a) => !journalPosts.some((j) => j.slug === a.slug)) // avoid a duplicate URL if a slug ever collides
+      .map((a) => ({ url: `${siteUrl}/journal/${a.slug}`, lastModified: a.lastModified ? new Date(a.lastModified) : now })),
     ...workshops.map((w) => ({ url: `${siteUrl}/workshops/${w.slug}`, lastModified: now })),
     ...instructors.map((i) => ({
       url: `${siteUrl}/workshops/instructors/${i.slug}`,

@@ -34,6 +34,13 @@ export default async function AdminPulsePage() {
             Discovered drafts awaiting review. Nothing here is public until an Admin/Super Admin explicitly publishes it — discovery never
             auto-publishes.
           </p>
+          <p className="font-sans text-caption text-ordift-ink-muted mt-2 max-w-2xl">
+            Published Pulse articles appear in{" "}
+            <Link href="/journal" target="_blank" className="underline underline-offset-4">
+              Ordift Stories
+            </Link>{" "}
+            alongside Ordift-original editorial content.
+          </p>
         </div>
         <Link
           href="/admin/pulse/sources"

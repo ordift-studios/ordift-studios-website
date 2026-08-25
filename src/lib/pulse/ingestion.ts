@@ -74,7 +74,17 @@ const TAXONOMY_SLUGS_QUERY = `*[_type in ["pulseCategory", "pulseRegion"]]{"id":
 
 const RECENT_ARTICLES_FOR_DEDUP_QUERY = `*[_type == "pulseArticle" && defined(sourceUrl)] | order(_createdAt desc)[0...200]{"_id": _id, sourceUrl, title, publishedAt}`;
 
-const SETTINGS_QUERY = `*[_type == "pulseSettings"][0]{regionWeight, topicWeight, freshnessWeight, trustWeight, priorityWeight}`;
+// ACTIVE settings (genuinely read and enforced below): discoveryEnabled
+// (the master gate checked before any external fetch — Phase B closure
+// refinement, 2026-08-25) and the five relevance weights. RESERVED/
+// INACTIVE settings (exist on pulseSettings, exposed on
+// contentRepository.getPulseSettings(), but not read by this module or
+// any other code path): globalAutoPublishEnabled, maxPostsPerDay,
+// minimumRelevanceScore — this module always creates status: "draft"
+// unconditionally regardless of any of the three, so there is currently
+// no path by which they could affect what gets published. See
+// pulseSettings.ts's own field descriptions for the same distinction.
+const SETTINGS_QUERY = `*[_type == "pulseSettings"][0]{discoveryEnabled, regionWeight, topicWeight, freshnessWeight, trustWeight, priorityWeight}`;
 
 function selectAdapter(sourceType: string) {
   if (sourceType === "rss") return rssAdapter;
@@ -136,6 +146,23 @@ export async function runDiscoveryForSource(
     return emptyResult(runId, source.id, source.name, "source is Red — ingestion disallowed");
   }
 
+  // Global discovery gate (closure refinement, 2026-08-25) — checked
+  // before any external fetch, exactly like the per-source checks
+  // above. Fetched here (not only later alongside the relevance
+  // weights) specifically so this can run BEFORE adapter.fetch() —
+  // discoveryEnabled === false must stop the run before any outbound
+  // network request, not merely before writing a draft. A missing
+  // pulseSettings singleton (never created in Production) reads as
+  // disabled, matching the schema's own `initialValue: false` — this
+  // fails closed, the same direction every other Pulse default already
+  // takes.
+  const settings = await sanity.fetch<
+    { discoveryEnabled: boolean; regionWeight: number; topicWeight: number; freshnessWeight: number; trustWeight: number; priorityWeight: number } | null
+  >(SETTINGS_QUERY);
+  if (!settings?.discoveryEnabled) {
+    return emptyResult(runId, source.id, source.name, "Pulse discovery is currently disabled in Pulse Settings — turn on Creative Radar Discovery to run this.");
+  }
+
   const adapter = selectAdapter(source.sourceType);
   if (!adapter) {
     return emptyResult(runId, source.id, source.name, `no automated adapter configured for sourceType "${source.sourceType}"`);
@@ -160,17 +187,14 @@ export async function runDiscoveryForSource(
     return { runId, sourceId: source.id, sourceName: source.name, fetched: 0, created: 0, flaggedDuplicate: 0, flaggedForReview: 0, excluded: 0, createdArticleIds: [], errors: [message], refused: null };
   }
 
-  const [taxonomySlugs, existingForDedup, settings] = await Promise.all([
+  const [taxonomySlugs, existingForDedup] = await Promise.all([
     sanity.fetch<{ id: string; slug: string }[]>(TAXONOMY_SLUGS_QUERY),
     sanity.fetch<(DedupCandidate & { _id: string })[]>(RECENT_ARTICLES_FOR_DEDUP_QUERY),
-    sanity.fetch<{ regionWeight: number; topicWeight: number; freshnessWeight: number; trustWeight: number; priorityWeight: number } | null>(
-      SETTINGS_QUERY
-    ),
   ]);
   const slugById = new Map(taxonomySlugs.map((t) => [t.id, t.slug]));
   const disciplineSlugs = source.disciplineIds.map((id) => slugById.get(id)).filter((s): s is string => Boolean(s));
   const geographySlugs = source.geographyIds.map((id) => slugById.get(id)).filter((s): s is string => Boolean(s));
-  const weights = settings ?? { regionWeight: 20, topicWeight: 30, freshnessWeight: 20, trustWeight: 20, priorityWeight: 10 };
+  const weights = settings;
 
   const dedupPool: (DedupCandidate & { _id: string })[] = [...existingForDedup];
 
