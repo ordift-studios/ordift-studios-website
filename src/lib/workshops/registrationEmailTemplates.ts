@@ -1,4 +1,5 @@
 import type { WorkshopRegistrationRecord } from "./registrationStorage";
+import { fullNameOf } from "./registrationStorage";
 
 // Same email-safe font stacks and palette as the enquiry emails
 // (src/lib/enquiry/emailTemplates.ts) — kept as a local copy rather than
@@ -69,7 +70,7 @@ export function buildRegistrationAcknowledgementEmail(record: WorkshopRegistrati
 
   const bodyHtml = `
     <h1 style="margin:0 0 16px;font-family:${SERIF};font-size:24px;color:${NAVY};font-weight:normal;">
-      Thank you, ${escapeHtml(record.fullName.split(" ")[0] || record.fullName)}.
+      Thank you, ${escapeHtml(record.firstName)}.
     </h1>
     <p style="margin:0 0 16px;font-family:${SANS};font-size:15px;line-height:1.6;color:${NAVY};">
       Your registration reference is:
@@ -98,7 +99,7 @@ export function buildRegistrationAdminNotificationEmail(record: WorkshopRegistra
     ["Status", record.registrationStatus],
     ["Waiting-list position", record.waitingListPosition ? String(record.waitingListPosition) : "—"],
     ["Payment status", record.paymentStatus],
-    ["Name", record.fullName],
+    ["Name", fullNameOf(record)],
     ["Email", record.email],
     ["Phone / WhatsApp", record.phone],
     ["Country", record.country || "—"],
@@ -130,7 +131,7 @@ function toPlainText(record: WorkshopRegistrationRecord): string {
     `Reference: ${record.registrationReference}`,
     `Workshop: ${record.workshopTitle}`,
     `Status: ${record.registrationStatus}`,
-    `Name: ${record.fullName}`,
+    `Name: ${fullNameOf(record)}`,
     `Email: ${record.email}`,
   ].join("\n");
 }

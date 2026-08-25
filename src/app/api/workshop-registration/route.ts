@@ -12,6 +12,9 @@ import {
   syncRegistrationToSheets,
   type WorkshopRegistrationRecord,
 } from "@/lib/workshops/registrationStorage";
+import { reserveTicketTypeSeat, releaseTicketTypeSeat } from "@/lib/workshops/ticketTypes";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { logActivityAsSystem } from "@/lib/admin/activityLog";
 import {
   sendRegistrationAcknowledgementEmail,
   sendRegistrationAdminNotificationEmail,
@@ -114,6 +117,35 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  // Workshop Management V1, Phase B (2026-08-25) — ticket-type
+  // resolution and reservation. The overall workshop.capacity/waitlist
+  // decision below is completely unchanged (still the existing,
+  // documented read-then-decide logic); ticket-type capacity is a
+  // SEPARATE, ADDITIONAL, atomically-enforced gate (see
+  // reserve_ticket_type_seat() — a single UPDATE...WHERE...RETURNING
+  // that takes a row lock, unlike the workshop-wide check). A sold-out
+  // ticket tier closes only that tier, never triggers the workshop-wide
+  // waitlist. amountDueUsd is resolved here, server-side, from the
+  // ticket's stored price — never trusted from the request body.
+  let amountDueUsd: number | null = null;
+  let reservedTicketTypeId: string | null = null;
+  if (data.ticketTypeId) {
+    const reservation = await reserveTicketTypeSeat(data.ticketTypeId);
+    if (!reservation.ok) {
+      const messages: Record<string, string> = {
+        "not-found": "That ticket type couldn't be found.",
+        "not-on-sale": "That ticket type isn't currently on sale.",
+        "sold-out": "That ticket type is sold out.",
+      };
+      return NextResponse.json(
+        { ok: false, error: `ticket-${reservation.error}`, message: messages[reservation.error] },
+        { status: 409 }
+      );
+    }
+    amountDueUsd = reservation.ticket.priceUsd;
+    reservedTicketTypeId = data.ticketTypeId;
+  }
+
   const [currentRegisteredCount, currentWaitlistedCount] = await Promise.all([
     countRegisteredForWorkshop(workshop.slug),
     countWaitlistedForWorkshop(workshop.slug),
@@ -129,6 +161,7 @@ export async function POST(request: NextRequest) {
     registrationReference = await generateRecordId("WSH");
   } catch (err) {
     console.error("[workshops] failed to generate record id", err);
+    if (reservedTicketTypeId) await releaseTicketTypeSeat(reservedTicketTypeId);
     return NextResponse.json(
       {
         ok: false,
@@ -149,6 +182,7 @@ export async function POST(request: NextRequest) {
     registrationStatus: status,
     waitingListPosition,
     paymentStatus,
+    amountDueUsd,
     environment: isStaging() ? "staging" : "production",
   };
 
@@ -161,6 +195,9 @@ export async function POST(request: NextRequest) {
       record.registrationReference,
       saveResult.error
     );
+    // Compensating action — a reserved seat must never leak if the
+    // registration itself didn't actually get saved.
+    if (reservedTicketTypeId) await releaseTicketTypeSeat(reservedTicketTypeId);
     return NextResponse.json(
       {
         ok: false,
@@ -173,6 +210,38 @@ export async function POST(request: NextRequest) {
 
   if (idempotencyKey) {
     await storeResult(idempotencyKey, record.registrationReference, "supabase");
+  }
+
+  // Travel/accommodation/transport assistance — REQUEST CAPTURE ONLY.
+  // Best-effort: never fails the registration itself if this write has
+  // a problem, matching the same posture as the Sheets sync below.
+  if (data.assistanceType) {
+    const admin = createAdminClient();
+    const { data: savedRegistration } = await admin
+      .from("workshop_registrations")
+      .select("id")
+      .eq("registration_reference", registrationReference)
+      .maybeSingle();
+    if (savedRegistration) {
+      const { error: assistanceError } = await admin.from("workshop_travel_assistance_requests").insert({
+        registration_id: savedRegistration.id,
+        assistance_type: data.assistanceType,
+        arrival_date: data.arrivalDate || null,
+        departure_date: data.departureDate || null,
+        traveller_count: data.travellerCount ?? null,
+        notes: data.assistanceNotes || null,
+      });
+      if (assistanceError) {
+        console.error("[workshops] failed to save travel assistance request", registrationReference, assistanceError.message);
+      } else {
+        await logActivityAsSystem({
+          action: "workshop.travel_assistance.requested",
+          entityType: "workshop_registration",
+          entityId: savedRegistration.id,
+          metadata: { assistanceType: data.assistanceType },
+        });
+      }
+    }
   }
 
   // Google Sheets is a best-effort secondary copy (see

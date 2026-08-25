@@ -61,7 +61,8 @@ beforeAll(async () => {
   workshopRegistrationReference = await generateRecordId("WSH");
   const workshopRecord: WorkshopRegistrationRecord = {
     workshopSlug: `integration-test-${runId}`,
-    fullName: `Admin Access Test Participant ${runId}`,
+    firstName: "Admin Access Test",
+    surname: `Participant ${runId}`,
     email: participantEmail,
     phone: "+447700900000",
     consent: true,
@@ -72,6 +73,7 @@ beforeAll(async () => {
     registrationStatus: "Registered",
     waitingListPosition: null,
     paymentStatus: "Not Required",
+    amountDueUsd: null,
     environment: "staging",
   };
   const workshopWrite = await saveWorkshopRegistrationToSupabase(workshopRecord);

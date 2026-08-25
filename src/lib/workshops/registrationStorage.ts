@@ -19,7 +19,21 @@ export type WorkshopRegistrationRecord = WorkshopRegistrationInput & {
   waitingListPosition: number | null;
   paymentStatus: PaymentStatus;
   environment: "staging" | "production";
+  // Workshop Management V1, Phase B (2026-08-25) — server-resolved, USD
+  // reference amount from the selected ticket type (never a
+  // client-supplied value). Null when no ticket type was selected or
+  // the workshop has none configured — amount_due then stays exactly as
+  // it always has (unset/null on the registration row).
+  amountDueUsd: number | null;
 };
+
+// Workshop Management V1, Phase B (2026-08-25) — firstName/middleName/
+// surname replaced the single fullName field; this is the one shared
+// place that joins them back into a display string, used by both the
+// Sheets sync row builder below and the email templates.
+export function fullNameOf(record: Pick<WorkshopRegistrationRecord, "firstName" | "middleName" | "surname">): string {
+  return [record.firstName, record.middleName, record.surname].filter(Boolean).join(" ");
+}
 
 // Deliberately separate from the enquiry test log — Workshop
 // Registrations is a structurally distinct dataset, not a variant of
@@ -77,7 +91,7 @@ function toSheetRow(record: WorkshopRegistrationRecord): (string | number)[] {
     "", // Assigned Staff (admin-filled)
     record.workshopTitle,
     record.workshopSlug,
-    record.fullName,
+    fullNameOf(record),
     record.email,
     record.phone,
     record.country ?? "",

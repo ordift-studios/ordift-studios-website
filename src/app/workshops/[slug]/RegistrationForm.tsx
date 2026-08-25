@@ -27,28 +27,58 @@ function fieldAria(fieldId: string, error?: string) {
 }
 
 type FormState = {
-  fullName: string;
+  firstName: string;
+  middleName: string;
+  surname: string;
   email: string;
+  phoneCountryCode: string;
   phone: string;
   country: string;
   experienceLevel: "" | "beginner" | "intermediate" | "advanced" | "all-levels";
+  ticketTypeId: string;
+  assistanceType: "" | "accommodation" | "transport" | "both";
+  arrivalDate: string;
+  departureDate: string;
+  travellerCount: string;
+  assistanceNotes: string;
   consent: boolean;
   website: string;
   turnstileToken: string;
 };
+
+// Workshop Management V1, Phase B (2026-08-25) — ticketTypes prop is
+// empty for a workshop with no configured tiers; the ticket selector
+// simply doesn't render (registration remains exactly as it worked
+// before ticket types existed).
+export type RegistrationTicketOption = { id: string; name: string; priceUsd: number; description: string | null };
 
 // Inlined at build time, same as inside TurnstileWidget itself — lets
 // the submit button require a completed challenge only when Turnstile
 // is actually configured, without a round trip to find out.
 const turnstileRequired = Boolean(process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY);
 
-export default function RegistrationForm({ workshopSlug }: { workshopSlug: string }) {
+export default function RegistrationForm({
+  workshopSlug,
+  ticketTypes = [],
+}: {
+  workshopSlug: string;
+  ticketTypes?: RegistrationTicketOption[];
+}) {
   const [data, setData] = useState<FormState>({
-    fullName: "",
+    firstName: "",
+    middleName: "",
+    surname: "",
     email: "",
+    phoneCountryCode: "",
     phone: "",
     country: "",
     experienceLevel: "",
+    ticketTypeId: ticketTypes.length === 1 ? ticketTypes[0].id : "",
+    assistanceType: "",
+    arrivalDate: "",
+    departureDate: "",
+    travellerCount: "",
+    assistanceNotes: "",
     consent: false,
     website: "",
     turnstileToken: "",
@@ -79,6 +109,8 @@ export default function RegistrationForm({ workshopSlug }: { workshopSlug: strin
     const parsed = workshopRegistrationSchema.safeParse({
       ...data,
       experienceLevel: data.experienceLevel || undefined,
+      assistanceType: data.assistanceType || undefined,
+      travellerCount: data.travellerCount || undefined,
       consent: data.consent || undefined,
       workshopSlug,
       idempotencyKey,
@@ -160,12 +192,27 @@ export default function RegistrationForm({ workshopSlug }: { workshopSlug: strin
         />
       </div>
 
-      <div>
-        <label htmlFor="fullName" className="block font-sans text-body-small font-medium text-ordift-ink mb-2">
-          Full name
-        </label>
-        <input id="fullName" className={inputClasses} value={data.fullName} onChange={(e) => update("fullName", e.target.value)} {...fieldAria("fullName", errors.fullName)} />
-        <FieldError id="fullName-error" message={errors.fullName} />
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-5">
+        <div>
+          <label htmlFor="firstName" className="block font-sans text-body-small font-medium text-ordift-ink mb-2">
+            First name
+          </label>
+          <input id="firstName" className={inputClasses} value={data.firstName} onChange={(e) => update("firstName", e.target.value)} {...fieldAria("firstName", errors.firstName)} />
+          <FieldError id="firstName-error" message={errors.firstName} />
+        </div>
+        <div>
+          <label htmlFor="middleName" className="block font-sans text-body-small font-medium text-ordift-ink mb-2">
+            Middle name <span className="text-ordift-ink-muted font-normal">(optional)</span>
+          </label>
+          <input id="middleName" className={inputClasses} value={data.middleName} onChange={(e) => update("middleName", e.target.value)} />
+        </div>
+        <div>
+          <label htmlFor="surname" className="block font-sans text-body-small font-medium text-ordift-ink mb-2">
+            Surname
+          </label>
+          <input id="surname" className={inputClasses} value={data.surname} onChange={(e) => update("surname", e.target.value)} {...fieldAria("surname", errors.surname)} />
+          <FieldError id="surname-error" message={errors.surname} />
+        </div>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
@@ -180,17 +227,48 @@ export default function RegistrationForm({ workshopSlug }: { workshopSlug: strin
           <label htmlFor="phone" className="block font-sans text-body-small font-medium text-ordift-ink mb-2">
             Phone or WhatsApp number
           </label>
-          <input id="phone" type="tel" className={inputClasses} value={data.phone} onChange={(e) => update("phone", e.target.value)} {...fieldAria("phone", errors.phone)} />
+          <div className="flex gap-2">
+            <input
+              id="phoneCountryCode"
+              placeholder="+974"
+              aria-label="Phone country code"
+              className={`${inputClasses} w-20 shrink-0`}
+              value={data.phoneCountryCode}
+              onChange={(e) => update("phoneCountryCode", e.target.value)}
+            />
+            <input id="phone" type="tel" className={inputClasses} value={data.phone} onChange={(e) => update("phone", e.target.value)} {...fieldAria("phone", errors.phone)} />
+          </div>
           <FieldError id="phone-error" message={errors.phone} />
         </div>
       </div>
 
       <div>
         <label htmlFor="country" className="block font-sans text-body-small font-medium text-ordift-ink mb-2">
-          Country or location <span className="text-ordift-ink-muted font-normal">(optional)</span>
+          Country of residence <span className="text-ordift-ink-muted font-normal">(optional)</span>
         </label>
         <input id="country" className={inputClasses} value={data.country} onChange={(e) => update("country", e.target.value)} />
       </div>
+
+      {ticketTypes.length > 0 && (
+        <div>
+          <label htmlFor="ticketTypeId" className="block font-sans text-body-small font-medium text-ordift-ink mb-2">
+            Registration type
+          </label>
+          <select
+            id="ticketTypeId"
+            className={inputClasses}
+            value={data.ticketTypeId}
+            onChange={(e) => update("ticketTypeId", e.target.value)}
+          >
+            <option value="">Select…</option>
+            {ticketTypes.map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.name} {t.priceUsd > 0 ? `— $${t.priceUsd.toFixed(2)}` : "— Free"}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
 
       <div>
         <label htmlFor="experienceLevel" className="block font-sans text-body-small font-medium text-ordift-ink mb-2">
@@ -208,6 +286,59 @@ export default function RegistrationForm({ workshopSlug }: { workshopSlug: strin
           <option value="advanced">Advanced</option>
           <option value="all-levels">All levels</option>
         </select>
+      </div>
+
+      <div className="rounded-lg border border-black/10 p-4 space-y-3">
+        <p className="font-sans text-body-small font-medium text-ordift-ink">
+          Travel assistance <span className="text-ordift-ink-muted font-normal">(optional — request only, we arrange this manually)</span>
+        </p>
+        <select
+          id="assistanceType"
+          aria-label="Travel assistance type"
+          className={inputClasses}
+          value={data.assistanceType}
+          onChange={(e) => update("assistanceType", e.target.value as FormState["assistanceType"])}
+        >
+          <option value="">No assistance required</option>
+          <option value="accommodation">Accommodation assistance</option>
+          <option value="transport">Airport transfer / local transport assistance</option>
+          <option value="both">Both accommodation and transport assistance</option>
+        </select>
+        {data.assistanceType && (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <input
+              type="date"
+              aria-label="Arrival date"
+              className={inputClasses}
+              value={data.arrivalDate}
+              onChange={(e) => update("arrivalDate", e.target.value)}
+            />
+            <input
+              type="date"
+              aria-label="Departure date"
+              className={inputClasses}
+              value={data.departureDate}
+              onChange={(e) => update("departureDate", e.target.value)}
+            />
+            <input
+              type="number"
+              min={1}
+              placeholder="Number of travellers"
+              aria-label="Number of travellers"
+              className={inputClasses}
+              value={data.travellerCount}
+              onChange={(e) => update("travellerCount", e.target.value)}
+            />
+            <textarea
+              placeholder="Notes / preferences (optional)"
+              aria-label="Travel assistance notes"
+              className={`${inputClasses} sm:col-span-2`}
+              rows={2}
+              value={data.assistanceNotes}
+              onChange={(e) => update("assistanceNotes", e.target.value)}
+            />
+          </div>
+        )}
       </div>
 
       <label className="flex items-start gap-3 cursor-pointer">

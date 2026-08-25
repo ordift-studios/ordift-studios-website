@@ -122,7 +122,8 @@ export async function POST() {
   // 3. Workshop Registration — acknowledgement + admin notification
   const workshopRecord: WorkshopRegistrationRecord = {
     workshopSlug: "qa-verify-workshop",
-    fullName: "QA Verification",
+    firstName: "QA",
+    surname: "Verification",
     email: to,
     phone: "+233000000000",
     country: "Ghana",
@@ -137,6 +138,7 @@ export async function POST() {
     registrationStatus: "Registered",
     waitingListPosition: null,
     paymentStatus: "Not Required",
+    amountDueUsd: null,
     environment: "production",
   };
   {

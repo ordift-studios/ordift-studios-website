@@ -21,6 +21,7 @@ import {
   isMultiDay,
 } from "@/lib/content/workshopHelpers";
 import { visitorFormsOpen } from "@/lib/shared/env";
+import { listTicketTypesForWorkshop } from "@/lib/workshops/ticketTypes";
 import RegistrationForm from "./RegistrationForm";
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://ordiftstudios.com";
@@ -59,6 +60,16 @@ export default async function WorkshopDetailPage({
   const { slug } = await params;
   const workshop = await contentRepository.getWorkshopBySlug(slug);
   if (!workshop) notFound();
+
+  // Workshop Management V1, Phase B (2026-08-25) — empty for a workshop
+  // with no configured ticket types; RegistrationForm's selector simply
+  // doesn't render in that case (registration works exactly as before).
+  const activeTicketTypes = (await listTicketTypesForWorkshop(workshop.id, true)).map((t) => ({
+    id: t.id,
+    name: t.name,
+    priceUsd: t.priceUsd,
+    description: t.description,
+  }));
 
   // TD-034: reflects the CMS `status` unless it's manually "open" but
   // registrationDeadline has passed, in which case it's treated as
@@ -352,7 +363,7 @@ export default async function WorkshopDetailPage({
                     Spaces are limited. If the workshop is full, you&apos;ll be added to a
                     waiting list automatically.
                   </p>
-                  <RegistrationForm workshopSlug={workshop.slug} />
+                  <RegistrationForm workshopSlug={workshop.slug} ticketTypes={activeTicketTypes} />
                 </>
               ) : (
                 <p className="font-sans text-body-small text-ordift-ink-muted">

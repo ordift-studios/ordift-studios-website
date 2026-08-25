@@ -90,12 +90,28 @@ export async function saveWorkshopRegistrationToSupabase(
     const admin = createAdminClient();
     const userId = await findUserIdByEmail(admin, record.email);
 
+    // Workshop Management V1, Phase B (2026-08-25) — full_name is still
+    // computed and written (backward compatible with every existing
+    // reader of that column); first_name/middle_name/surname are now
+    // ALSO captured as their own columns rather than guessed by
+    // splitting. country/consent were validated by the schema before
+    // this phase but silently dropped here — now actually persisted.
+    const fullName = [record.firstName, record.middleName, record.surname].filter(Boolean).join(" ");
+
     const { error } = await admin.from("workshop_registrations").insert({
       user_id: userId,
       registration_reference: record.registrationReference,
       email: record.email,
-      full_name: record.fullName,
+      full_name: fullName,
+      first_name: record.firstName,
+      middle_name: record.middleName || null,
+      surname: record.surname,
       phone: record.phone,
+      phone_country_code: record.phoneCountryCode || null,
+      country_of_residence: record.country || null,
+      consent_accepted_at: record.consent ? record.registrationDate : null,
+      ticket_type_id: record.ticketTypeId || null,
+      amount_due: record.amountDueUsd,
       workshop_id: record.workshopId,
       workshop_slug: record.workshopSlug,
       workshop_title: record.workshopTitle,
