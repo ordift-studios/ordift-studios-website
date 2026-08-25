@@ -16,3 +16,6 @@ export async function detectFileMimeType(buffer: Buffer): Promise<string | null>
   const result = await fileTypeFromBuffer(buffer);
   return result?.mime ?? null;
 }
+
+// (2026-08-25) Comment-only marker — second GitHub -> Vercel automatic
+// Production deployment pipeline verification. No functional change.
