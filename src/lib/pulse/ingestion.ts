@@ -79,13 +79,26 @@ type SourceRecord = {
   geographyIds: string[];
 };
 
+// Controlled Test #2 fix (2026-08-25) — "disciplineIds"/"geographyIds"
+// previously had no coalesce(), unlike every other optional field in
+// this same query. In GROQ, `field[]` on a document where that field
+// was never set at all (not an empty array — genuinely absent)
+// evaluates to `null`, not `[]`. A real Production source
+// (PetaPixel, deliberately created with Disciplines/Geography left
+// blank — no pulseCategory/pulseRegion documents existed yet to link
+// to) hit exactly this: `source.disciplineIds.map(...)` threw
+// `TypeError: Cannot read properties of null (reading 'map')`,
+// confirmed via live Vercel runtime logs. SourceRecord already
+// declares both fields as plain `string[]` below — this restores the
+// query's actual behavior to match that promise, exactly like the
+// three coalesce() calls already directly above it.
 const SOURCE_QUERY = `*[_type == "pulseSource" && _id == $id][0]{
   "id": _id, name, sourceType, feedUrl, url, isActive,
   "permissionClassification": coalesce(permissionClassification, "amber"),
   "editorialTrustLevel": coalesce(editorialTrustLevel, "unverified"),
   "editorialPriority": coalesce(editorialPriority, 0),
-  "disciplineIds": disciplines[]._ref,
-  "geographyIds": geography[]._ref
+  "disciplineIds": coalesce(disciplines[]._ref, []),
+  "geographyIds": coalesce(geography[]._ref, [])
 }`;
 
 const TAXONOMY_SLUGS_QUERY = `*[_type in ["pulseCategory", "pulseRegion"]]{"id": _id, "slug": slug.current}`;
@@ -182,6 +195,15 @@ export async function runDiscoveryForSource(
     return emptyResult(runId, source.id, source.name, "source is Red — ingestion disallowed");
   }
 
+  // Defense-in-depth companion to SOURCE_QUERY's coalesce() fix above —
+  // SourceRecord declares both fields as plain `string[]`, so every
+  // consumer below is entitled to assume that; this is the one place
+  // that guarantee is actually enforced at the JS layer, in case
+  // `source` is ever produced by something other than the now-fixed
+  // query (e.g. a future caller, or a test double).
+  const disciplineIds = source.disciplineIds ?? [];
+  const geographyIds = source.geographyIds ?? [];
+
   // Global discovery gate (closure refinement, 2026-08-25) — checked
   // before any external fetch, exactly like the per-source checks
   // above. Fetched here (not only later alongside the relevance
@@ -237,8 +259,8 @@ export async function runDiscoveryForSource(
     sanity.fetch<(DedupCandidate & { _id: string })[]>(RECENT_ARTICLES_FOR_DEDUP_QUERY),
   ]);
   const slugById = new Map(taxonomySlugs.map((t) => [t.id, t.slug]));
-  const disciplineSlugs = source.disciplineIds.map((id) => slugById.get(id)).filter((s): s is string => Boolean(s));
-  const geographySlugs = source.geographyIds.map((id) => slugById.get(id)).filter((s): s is string => Boolean(s));
+  const disciplineSlugs = disciplineIds.map((id) => slugById.get(id)).filter((s): s is string => Boolean(s));
+  const geographySlugs = geographyIds.map((id) => slugById.get(id)).filter((s): s is string => Boolean(s));
   const weights = settings;
 
   const dedupPool: (DedupCandidate & { _id: string })[] = [...existingForDedup];
@@ -299,8 +321,8 @@ export async function runDiscoveryForSource(
         featured: false,
         excerpt: PLACEHOLDER_TEXT,
         body: PLACEHOLDER_TEXT,
-        categories: source.disciplineIds.map((id) => ({ _type: "reference", _ref: id })),
-        regions: source.geographyIds.map((id) => ({ _type: "reference", _ref: id })),
+        categories: disciplineIds.map((id) => ({ _type: "reference", _ref: id })),
+        regions: geographyIds.map((id) => ({ _type: "reference", _ref: id })),
         tags,
         source: { _type: "reference", _ref: source.id },
         sourceUrl: item.sourceUrl,

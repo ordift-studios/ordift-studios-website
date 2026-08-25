@@ -228,4 +228,43 @@ describe("runDiscoveryForSource", () => {
     const result = await runDiscoveryForSource("src1", sanity, logRun);
     expect(result.created).toBe(1);
   });
+
+  // Controlled Test #2 regression (2026-08-25) — reproduces the actual
+  // Production condition that crashed the real PetaPixel run:
+  // disciplineIds/geographyIds as `null` (a source with Disciplines and
+  // Geography deliberately left blank in Studio), which the unfixed
+  // SOURCE_QUERY returned verbatim as `null` rather than `[]`. Before
+  // the fix, `source.disciplineIds.map(...)` threw
+  // `TypeError: Cannot read properties of null (reading 'map')` —
+  // confirmed via live Vercel runtime logs — before any item was
+  // processed and before any draft was created.
+  it("treats null disciplineIds/geographyIds as empty arrays instead of throwing (Controlled Test #2 regression)", async () => {
+    rssFetchMock.mockResolvedValue([
+      { title: "New Camera Lens Announced", sourceUrl: "https://example.org/1", summary: "A lightweight lens.", imageUrl: null, author: null, publishedAt: "2026-08-20T00:00:00Z" },
+    ]);
+    const { sanity, created } = makeSanityMock({
+      source: {
+        id: "src1",
+        name: "PetaPixel",
+        sourceType: "rss",
+        feedUrl: "https://petapixel.com/feed/",
+        url: "https://petapixel.com",
+        isActive: true,
+        permissionClassification: "amber",
+        editorialTrustLevel: "standard",
+        editorialPriority: 0,
+        disciplineIds: null,
+        geographyIds: null,
+      },
+    });
+
+    const result = await runDiscoveryForSource("src1", sanity, logRun);
+
+    expect(result.refused).toBeNull();
+    expect(result.errors).toHaveLength(0);
+    expect(result.created).toBe(1);
+    expect(created).toHaveLength(1);
+    expect(created[0].categories).toEqual([]);
+    expect(created[0].regions).toEqual([]);
+  });
 });
