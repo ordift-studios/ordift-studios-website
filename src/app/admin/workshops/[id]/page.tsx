@@ -154,7 +154,13 @@ export default async function WorkshopDashboardPage({ params }: { params: Promis
       )}
 
       <section className="rounded-xl border border-black/10 bg-white p-6">
-        <h2 className="font-serif font-medium text-body text-ordift-ink mb-4">Ticket Types</h2>
+        <h2 className="font-serif font-medium text-body text-ordift-ink mb-1">Ticket Types</h2>
+        <p className="font-sans text-caption text-ordift-ink-muted mb-4">
+          Each ticket type&rsquo;s own capacity is an optional, independent cap on that tier only — e.g. Standard 60 +
+          Premium 25 + VIP 15 don&rsquo;t need to sum to the workshop&rsquo;s overall capacity ({workshop.capacity})
+          above, which continues to govern the registered/waitlist decision on its own. Leave a ticket&rsquo;s
+          capacity blank for &ldquo;no tier-specific cap, bounded only by the overall workshop capacity.&rdquo;
+        </p>
         <ul className="divide-y divide-black/5 rounded-lg border border-black/5 mb-4">
           {ticketTypes.map((t) => (
             <li key={t.id} className="flex items-center justify-between px-4 py-2.5">

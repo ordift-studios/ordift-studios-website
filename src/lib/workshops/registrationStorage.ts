@@ -25,6 +25,12 @@ export type WorkshopRegistrationRecord = WorkshopRegistrationInput & {
   // the workshop has none configured — amount_due then stays exactly as
   // it always has (unset/null on the registration row).
   amountDueUsd: number | null;
+  // Closure refinement (2026-08-25) — the Supabase workshop_registrations.id
+  // (uuid), set only after a successful save. Lets the acknowledgement
+  // email link a paying registrant straight into the existing portal
+  // payment workspace via /portal/login?next=... — never a client-
+  // supplied value, always the row this exact save just produced.
+  registrationId: string | null;
 };
 
 // Workshop Management V1, Phase B (2026-08-25) — firstName/middleName/

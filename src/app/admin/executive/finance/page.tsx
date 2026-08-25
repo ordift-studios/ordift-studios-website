@@ -50,7 +50,11 @@ export default async function ExecutiveFinancePage() {
       </div>
 
       <section className="rounded-xl border border-black/10 bg-white p-6">
-        <h2 className="font-serif font-medium text-body text-ordift-ink mb-3">Payment Obligations</h2>
+        <h2 className="font-serif font-medium text-body text-ordift-ink mb-1">Payment Obligations</h2>
+        <p className="font-sans text-caption text-ordift-ink-muted mb-3">
+          A &ldquo;payment obligation&rdquo; is simply an internal record that Ordift owes someone an amount (e.g. an
+          instructor&rsquo;s agreed compensation) — approving one confirms the record only, it never moves money.
+        </p>
         <p className="font-sans text-caption text-ordift-ink-muted mb-3">{pending.length} pending approval · {approved.length} approved (not yet paid — no payout provider connected)</p>
         <ul className="divide-y divide-black/5 rounded-lg border border-black/5">
           {obligations.map((o) => (

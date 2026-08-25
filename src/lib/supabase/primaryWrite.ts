@@ -7,7 +7,18 @@ type AdminClient = ReturnType<typeof createAdminClient>;
 export type PrimaryWriteResult = { ok: true; userId: string | null } | { ok: false; error: string };
 
 export type WorkshopRegistrationWriteResult =
-  | { ok: true; userId: string | null; registrationStatus: "Registered" | "Waitlisted"; waitingListPosition: number | null }
+  | {
+      ok: true;
+      userId: string | null;
+      // The Supabase workshop_registrations.id (uuid) — closure
+      // refinement (2026-08-25), needed to link a paying registrant
+      // straight into the existing portal payment workspace
+      // (/portal/client/projects/workshop/{id}/payments) without
+      // requiring them to search for it.
+      registrationId: string;
+      registrationStatus: "Registered" | "Waitlisted";
+      waitingListPosition: number | null;
+    }
   | { ok: false; error: string };
 
 function supabaseConfigured(): boolean {
@@ -150,10 +161,11 @@ export async function saveWorkshopRegistrationToSupabase(
     if (userId) {
       await grantWorkshopParticipantRole(admin, userId);
     }
-    const decided = data as { registration_status: "Registered" | "Waitlisted"; waiting_list_position: number | null };
+    const decided = data as { id: string; registration_status: "Registered" | "Waitlisted"; waiting_list_position: number | null };
     return {
       ok: true,
       userId,
+      registrationId: decided.id,
       registrationStatus: decided.registration_status,
       waitingListPosition: decided.waiting_list_position,
     };

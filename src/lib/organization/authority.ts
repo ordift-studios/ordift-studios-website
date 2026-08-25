@@ -459,3 +459,59 @@ export async function validateDelegationAuthority(params: {
     requestedScopeDepartmentId: params.requestedScopeDepartmentId,
   });
 }
+
+export type ExecutivePositionOccupancy = { callSign: string; occupied: boolean; occupantName: string | null };
+
+// Closure refinement (2026-08-25) — the Executive Command Center's
+// per-jurisdiction occupied/vacant indicator. Read-only; never creates,
+// modifies, or infers authority — occupancy is a Position/staff_details
+// fact, completely separate from whether CHIEF is currently viewing via
+// Super Admin override. Same "only an active account counts as a real
+// occupant" rule as resolveCurrentManager() (reporting.ts) — a
+// deactivated occupant's Position reads as vacant, not stale-occupied.
+export async function getExecutivePositionOccupancy(
+  callSigns: readonly string[]
+): Promise<Record<string, ExecutivePositionOccupancy>> {
+  const admin = createAdminClient();
+  const result: Record<string, ExecutivePositionOccupancy> = {};
+  for (const callSign of callSigns) result[callSign] = { callSign, occupied: false, occupantName: null };
+
+  const { data: positions, error: positionsError } = await admin
+    .from("positions")
+    .select("id, call_sign")
+    .in("call_sign", callSigns as string[]);
+  if (positionsError || !positions || positions.length === 0) {
+    if (positionsError) console.error("[organization] failed to load executive positions", positionsError.message);
+    return result;
+  }
+
+  const callSignByPositionId = new Map(positions.map((p) => [p.id, p.call_sign as string]));
+  const { data: staffRows, error: staffError } = await admin
+    .from("staff_details")
+    .select("id, position_id")
+    .in("position_id", positions.map((p) => p.id));
+  if (staffError || !staffRows || staffRows.length === 0) {
+    if (staffError) console.error("[organization] failed to load staff_details for executive occupancy", staffError.message);
+    return result;
+  }
+
+  const { data: profiles, error: profilesError } = await admin
+    .from("profiles")
+    .select("id, full_name, access_status")
+    .in("id", staffRows.map((s) => s.id));
+  if (profilesError) {
+    console.error("[organization] failed to load profiles for executive occupancy", profilesError.message);
+    return result;
+  }
+  const profileById = new Map((profiles ?? []).map((p) => [p.id, p]));
+
+  for (const staff of staffRows) {
+    const profile = profileById.get(staff.id);
+    if (!profile || profile.access_status !== "active") continue; // deactivated/missing account — reads as vacant
+    const callSign = callSignByPositionId.get(staff.position_id);
+    if (!callSign) continue;
+    result[callSign] = { callSign, occupied: true, occupantName: profile.full_name };
+  }
+
+  return result;
+}

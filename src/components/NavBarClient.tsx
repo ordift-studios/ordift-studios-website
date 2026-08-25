@@ -73,12 +73,19 @@ export default function NavBarClient({
           className="pointer-events-none absolute inset-x-0 top-0 h-28 bg-gradient-to-b from-black/35 to-transparent"
         />
       )}
+      {/* Closure refinement (2026-08-25) — the full inline nav switches
+          on at `lg:` (1024px), not `md:` (768px): at 768px the logo +
+          6 links + "Log in"/"Create account" + CTA button didn't fit
+          on one line, wrapping "Log in" and the CTA button awkwardly
+          onto two lines. Tablet-width viewports now use the hamburger
+          menu (already correct on mobile) instead — same links, same
+          button, same behavior, just a wider hamburger range. */}
       <div className="relative max-w-6xl mx-auto px-4 sm:px-8 py-5 flex items-center justify-between">
         <Link href="/" aria-label="Ordift Studios home" className="shrink-0">
           <Logo variant="nav" color="white" height={28} priority />
         </Link>
 
-        <div className={`hidden md:flex items-center gap-5 font-sans text-nav text-white/80 ${navGroupStripClass}`}>
+        <div className={`hidden lg:flex items-center gap-5 font-sans text-nav text-white/80 ${navGroupStripClass}`}>
           {links.map((link) => (
             <Link key={link.href} href={link.href} className="hover:text-white transition-colors">
               {link.label}
@@ -100,7 +107,7 @@ export default function NavBarClient({
           )}
         </div>
 
-        <div className="hidden md:block">
+        <div className="hidden lg:block">
           <Button href={primaryCta.href} variant="primary" className={ctaChipClass}>
             {primaryCta.label}
           </Button>
@@ -108,7 +115,7 @@ export default function NavBarClient({
 
         <button
           type="button"
-          className={`md:hidden min-h-11 min-w-11 flex items-center justify-center ${hamburgerChipClass}`}
+          className={`lg:hidden min-h-11 min-w-11 flex items-center justify-center ${hamburgerChipClass}`}
           aria-expanded={open}
           aria-controls="mobile-nav"
           aria-label={open ? "Close menu" : "Open menu"}
@@ -142,7 +149,7 @@ export default function NavBarClient({
           natively, so nothing here is reachable by keyboard while shut. */}
       <div
         id="mobile-nav"
-        className={`md:hidden grid overflow-hidden transition-[grid-template-rows] duration-300 ease-in-out motion-reduce:transition-none ${
+        className={`lg:hidden grid overflow-hidden transition-[grid-template-rows] duration-300 ease-in-out motion-reduce:transition-none ${
           open ? "grid-rows-[1fr]" : "grid-rows-[0fr]"
         }`}
         aria-hidden={!open}

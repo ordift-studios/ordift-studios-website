@@ -52,7 +52,7 @@ export async function getWorkshopOperationalWarnings(
     warnings.push({ key: "unpaid", label: `${unpaidCount} unpaid registration${unpaidCount === 1 ? "" : "s"}` });
   }
   if (registeredCount >= workshop.capacity) {
-    warnings.push({ key: "at-capacity", label: "At or over overall capacity" });
+    warnings.push({ key: "at-capacity", label: `At or over overall capacity (${registeredCount}/${workshop.capacity} registered)` });
   }
   if (workshop.requiresPayment && (ticketTypeCount ?? 0) === 0) {
     warnings.push({ key: "no-ticket-types", label: "Requires payment but no ticket types configured" });

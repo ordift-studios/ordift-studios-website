@@ -35,10 +35,19 @@ export default async function ExecutivePeoplePage() {
         </p>
       </div>
 
-      <Link href="/admin/recruitment" className="block rounded-xl border border-black/10 bg-white p-5 hover:border-black/25 max-w-sm">
-        <p className="font-serif text-card-title text-ordift-ink">Recruitment Applications</p>
-        <p className="font-sans text-caption text-ordift-ink-muted mt-2">Inbound applications, review, status.</p>
-      </Link>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <Link href="/admin/recruitment" className="block rounded-xl border border-black/10 bg-white p-5 hover:border-black/25">
+          <p className="font-serif text-card-title text-ordift-ink">Recruitment Applications</p>
+          <p className="font-sans text-caption text-ordift-ink-muted mt-2">Inbound applications, review, status.</p>
+        </Link>
+        <Link href="/admin/workshops" className="block rounded-xl border border-black/10 bg-white p-5 hover:border-black/25">
+          <p className="font-serif text-card-title text-ordift-ink">Workshop Instructor Engagements</p>
+          <p className="font-sans text-caption text-ordift-ink-muted mt-2">
+            Managed from each workshop&rsquo;s own dashboard — open a workshop, then its Instructor / Facilitator
+            Engagement section.
+          </p>
+        </Link>
+      </div>
 
       <section className="rounded-xl border border-black/10 bg-white p-6">
         <h2 className="font-serif font-medium text-body text-ordift-ink mb-3">Recruitment Requisitions</h2>

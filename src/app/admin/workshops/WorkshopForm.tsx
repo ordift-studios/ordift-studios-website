@@ -13,11 +13,17 @@ const inputClasses = "w-full min-h-10 rounded-lg border border-black/15 bg-white
 export default function WorkshopForm({
   action,
   workshop,
+  internalNotes,
   venues,
   submitLabel,
 }: {
   action: (formData: FormData) => void;
   workshop?: Workshop | null;
+  // Fetched separately from `workshop` on purpose — internalNotes is
+  // deliberately excluded from the shared Workshop type/query (see
+  // queries.ts). Undefined on create (no existing value to load);
+  // string | null on edit.
+  internalNotes?: string | null;
   venues: Venue[];
   submitLabel: string;
 }) {
@@ -114,7 +120,7 @@ export default function WorkshopForm({
       </div>
       <div>
         <label className="block font-sans text-caption text-ordift-ink-muted mb-1">Internal Notes (Studio-only, never public)</label>
-        <textarea name="internalNotes" rows={2} className={inputClasses} />
+        <textarea name="internalNotes" rows={2} defaultValue={internalNotes ?? ""} className={inputClasses} />
       </div>
 
       <p className="font-sans text-caption text-ordift-ink-muted">

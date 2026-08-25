@@ -178,6 +178,7 @@ export async function POST(request: NextRequest) {
     waitingListPosition: null,
     paymentStatus,
     amountDueUsd,
+    registrationId: null,
     environment: isStaging() ? "staging" : "production",
   };
 
@@ -204,6 +205,7 @@ export async function POST(request: NextRequest) {
   }
   record.registrationStatus = saveResult.registrationStatus;
   record.waitingListPosition = saveResult.waitingListPosition;
+  record.registrationId = saveResult.registrationId;
 
   if (idempotencyKey) {
     await storeResult(idempotencyKey, record.registrationReference, "supabase");
@@ -261,5 +263,11 @@ export async function POST(request: NextRequest) {
     registrationReference: record.registrationReference,
     registrationStatus: record.registrationStatus,
     waitingListPosition: record.waitingListPosition,
+    // Closure refinement (2026-08-25) — lets the success screen offer a
+    // real "pay now" route for a Registered + Pending registration,
+    // without exposing anything about account existence (see
+    // RegistrationForm.tsx for how these two are used together).
+    paymentStatus: record.paymentStatus,
+    registrationId: record.registrationId,
   });
 }

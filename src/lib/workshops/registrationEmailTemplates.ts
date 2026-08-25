@@ -1,5 +1,6 @@
 import type { WorkshopRegistrationRecord } from "./registrationStorage";
 import { fullNameOf } from "./registrationStorage";
+import { siteUrl } from "@/lib/shared/env";
 
 // Same email-safe font stacks and palette as the enquiry emails
 // (src/lib/enquiry/emailTemplates.ts) — kept as a local copy rather than
@@ -46,6 +47,41 @@ function wrap(bodyHtml: string): string {
 </html>`;
 }
 
+// Closure refinement (2026-08-25) — reuses the existing portal
+// login/signup `next` redirect (isSafeReturnPath in
+// src/lib/portal/roles.ts) to carry the registrant straight to their
+// pending payment after authentication, exactly as RegistrationForm.tsx's
+// on-screen success state does. Null registrationId (e.g. the QA
+// verify-send route's synthetic record) simply omits the payment
+// section rather than linking to a broken path.
+function paymentActionHtml(record: WorkshopRegistrationRecord): string {
+  if (record.paymentStatus !== "Pending" || !record.registrationId) return "";
+  const nextPath = `/portal/client/projects/workshop/${record.registrationId}/payments`;
+  const nextParam = `?next=${encodeURIComponent(nextPath)}`;
+  const loginUrl = `${siteUrl()}/portal/login${nextParam}`;
+  const signupUrl = `${siteUrl()}/portal/signup${nextParam}`;
+  return `
+    <p style="margin:0 0 12px;font-family:${SANS};font-size:15px;line-height:1.6;color:${NAVY};">
+      Payment is required to complete your registration — you can pay online now:
+    </p>
+    <table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 0 20px;">
+      <tr>
+        <td style="border-radius:999px;background:${GOLD};">
+          <a href="${loginUrl}" style="display:inline-block;padding:10px 20px;font-family:${SANS};font-size:14px;font-weight:bold;color:${NAVY};text-decoration:none;">
+            Already registered — sign in to pay
+          </a>
+        </td>
+        <td style="width:12px;"></td>
+        <td style="border-radius:999px;border:1px solid ${NAVY};">
+          <a href="${signupUrl}" style="display:inline-block;padding:10px 20px;font-family:${SANS};font-size:14px;font-weight:bold;color:${NAVY};text-decoration:none;">
+            New here — create an account
+          </a>
+        </td>
+      </tr>
+    </table>
+  `;
+}
+
 export function buildRegistrationAcknowledgementEmail(record: WorkshopRegistrationRecord) {
   const subject =
     record.registrationStatus === "Waitlisted"
@@ -60,13 +96,10 @@ export function buildRegistrationAcknowledgementEmail(record: WorkshopRegistrati
            we'll email you right away if a space opens up.
          </p>`
       : `<p style="margin:0 0 20px;font-family:${SANS};font-size:15px;line-height:1.6;color:${NAVY};">
-           You're registered for <strong>${record.workshopTitle}</strong>. This
-           confirms your registration only — ${
-             record.paymentStatus === "Pending"
-               ? "your place is finalized once payment is manually confirmed by our team; we'll follow up with payment details."
-               : "no payment is required for this workshop."
-           }
-         </p>`;
+           You're registered for <strong>${record.workshopTitle}</strong>. Your place is confirmed —
+           ${record.paymentStatus === "Pending" ? "payment is still required to complete it." : "no payment is required for this workshop."}
+         </p>
+         ${paymentActionHtml(record)}`;
 
   const bodyHtml = `
     <h1 style="margin:0 0 16px;font-family:${SERIF};font-size:24px;color:${NAVY};font-weight:normal;">
@@ -85,7 +118,17 @@ export function buildRegistrationAcknowledgementEmail(record: WorkshopRegistrati
     </p>
   `;
 
-  return { subject, html: wrap(bodyHtml), text: toPlainText(record) };
+  const paymentTextLines =
+    record.paymentStatus === "Pending" && record.registrationId
+      ? [
+          "",
+          "Payment is required to complete your registration:",
+          `Sign in to pay: ${siteUrl()}/portal/login?next=${encodeURIComponent(`/portal/client/projects/workshop/${record.registrationId}/payments`)}`,
+          `New here — create an account: ${siteUrl()}/portal/signup?next=${encodeURIComponent(`/portal/client/projects/workshop/${record.registrationId}/payments`)}`,
+        ]
+      : [];
+
+  return { subject, html: wrap(bodyHtml), text: [toPlainText(record), ...paymentTextLines].join("\n") };
 }
 
 export function buildRegistrationAdminNotificationEmail(record: WorkshopRegistrationRecord) {

@@ -1,6 +1,13 @@
 import { client } from "@/sanity/lib/client";
 import type { Workshop, Venue, Category } from "../types";
-import { workshopsQuery, workshopBySlugQuery, workshopByIdQuery, venuesQuery, workshopCategoriesQuery } from "./queries";
+import {
+  workshopsQuery,
+  workshopBySlugQuery,
+  workshopByIdQuery,
+  workshopInternalNotesByIdQuery,
+  venuesQuery,
+  workshopCategoriesQuery,
+} from "./queries";
 
 // Workshop Management V1, Phase B, Part 19 (2026-08-25) — admin-only
 // Sanity read/write for the new /admin/workshops surface, following
@@ -27,6 +34,17 @@ export async function getWorkshopBySlugAdmin(slug: string): Promise<Workshop | n
 
 export async function getWorkshopByIdAdmin(id: string): Promise<Workshop | null> {
   return client.fetch<Workshop | null>(workshopByIdQuery, { id });
+}
+
+// Closure refinement (2026-08-25) — the one narrow, explicit read of
+// internalNotes, used only by the Edit Workshop form so a previously-
+// saved value actually loads instead of being silently blanked on
+// every save (the bug this fixes). Deliberately a separate call rather
+// than widening workshopByIdQuery/the Workshop type, which both stay
+// exactly as public-safe as before.
+export async function getWorkshopInternalNotesAdmin(id: string): Promise<string | null> {
+  const result = await client.fetch<{ internalNotes: string | null } | null>(workshopInternalNotesByIdQuery, { id });
+  return result?.internalNotes ?? null;
 }
 
 export async function getVenuesAdmin(): Promise<Venue[]> {

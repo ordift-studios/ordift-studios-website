@@ -2,7 +2,14 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { getCurrentUser, isSuperAdmin } from "@/lib/portal/roles";
-import { isExecutiveAdmin, OPERATIONS_CAPABILITIES, FINANCE_CAPABILITIES, PEOPLE_CAPABILITIES, IDENTITY_CAPABILITIES } from "@/lib/organization/authority";
+import {
+  isExecutiveAdmin,
+  OPERATIONS_CAPABILITIES,
+  FINANCE_CAPABILITIES,
+  PEOPLE_CAPABILITIES,
+  IDENTITY_CAPABILITIES,
+  getExecutivePositionOccupancy,
+} from "@/lib/organization/authority";
 import { listDepartmentRequests } from "@/lib/organization/departmentRequests";
 import { listRecruitmentRequisitions } from "@/lib/recruitment/requisitions";
 import { listCorporateIdentities } from "@/lib/organization/reserveCorporateIdentity";
@@ -31,13 +38,16 @@ export default async function ExecutiveCommandCenterPage() {
   const execAdmin = await isExecutiveAdmin(user.id);
   if (!superAdmin && !execAdmin) redirect("/admin/overview");
 
-  const [departmentRequests, requisitions, identities, obligations, grants, workshops] = await Promise.all([
+  const EXECUTIVE_CALL_SIGNS = ["PRIME", "VAULT", "PULSE", "GEEK", "ARCHITECT", "CHANCELLOR"] as const;
+
+  const [departmentRequests, requisitions, identities, obligations, grants, workshops, occupancy] = await Promise.all([
     listDepartmentRequests(),
     listRecruitmentRequisitions(),
     listCorporateIdentities(),
     listAllPaymentObligations(),
     listAuthorityGrants(),
     getAllWorkshopsAdmin(),
+    getExecutivePositionOccupancy(EXECUTIVE_CALL_SIGNS),
   ]);
 
   const pendingDepartmentRequests = departmentRequests.filter((r) => r.status === "submitted").length;
@@ -111,13 +121,28 @@ export default async function ExecutiveCommandCenterPage() {
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-        {jurisdictions.map((j) => (
-          <Link key={j.key} href={j.href} className="block rounded-xl border border-black/10 bg-white p-5 hover:border-black/25 transition-colors">
-            <p className="font-sans font-semibold uppercase tracking-[0.15em] text-eyebrow text-ordift-gold-pressed">{j.callSign}</p>
-            <p className="font-serif text-card-title text-ordift-ink mt-1">{j.title}</p>
-            <p className="font-sans text-caption text-ordift-ink-muted mt-2">{j.summary}</p>
-          </Link>
-        ))}
+        {jurisdictions.map((j) => {
+          const position = occupancy[j.callSign];
+          return (
+            <Link key={j.key} href={j.href} className="block rounded-xl border border-black/10 bg-white p-5 hover:border-black/25 transition-colors">
+              <div className="flex items-start justify-between gap-2">
+                <p className="font-sans font-semibold uppercase tracking-[0.15em] text-eyebrow text-ordift-gold-pressed">{j.callSign}</p>
+                <span
+                  className={`shrink-0 font-sans text-[10px] font-semibold uppercase tracking-[0.1em] px-2 py-0.5 rounded-full ${
+                    position?.occupied ? "bg-green-50 text-green-800" : "bg-ordift-offwhite text-ordift-ink-muted"
+                  }`}
+                >
+                  {position?.occupied ? "Occupied" : "Vacant"}
+                </span>
+              </div>
+              <p className="font-serif text-card-title text-ordift-ink mt-1">{j.title}</p>
+              {position?.occupied && position.occupantName && (
+                <p className="font-sans text-caption text-ordift-ink-muted mt-0.5">{position.occupantName}</p>
+              )}
+              <p className="font-sans text-caption text-ordift-ink-muted mt-2">{j.summary}</p>
+            </Link>
+          );
+        })}
       </div>
 
       <section className="rounded-xl border border-black/10 bg-white p-6">

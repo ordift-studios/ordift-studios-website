@@ -74,6 +74,7 @@ beforeAll(async () => {
     waitingListPosition: null,
     paymentStatus: "Not Required",
     amountDueUsd: null,
+    registrationId: null,
     environment: "staging",
   };
   const workshopWrite = await saveWorkshopRegistrationToSupabase(workshopRecord, 1000);

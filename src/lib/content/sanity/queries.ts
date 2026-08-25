@@ -53,6 +53,14 @@ export const workshopsQuery = `*[_type == "workshop"] | order(startDate asc) ${w
 export const workshopBySlugQuery = `*[_type == "workshop" && slug.current == $slug][0] ${workshopFragment}`;
 export const workshopByIdQuery = `*[_type == "workshop" && _id == $id][0] ${workshopFragment}`;
 
+// Admin-only, separate from workshopFragment on purpose — internalNotes
+// stays structurally unreachable from every public/shared query and the
+// shared Workshop type; this is the one narrow, explicit exception,
+// used only by the Edit Workshop admin form so a previously-saved value
+// actually loads instead of being silently blanked on every save
+// (closure refinement, 2026-08-25).
+export const workshopInternalNotesByIdQuery = `*[_type == "workshop" && _id == $id][0]{internalNotes}`;
+
 export const instructorFragment = `{
   "id": _id,
   "slug": slug.current,

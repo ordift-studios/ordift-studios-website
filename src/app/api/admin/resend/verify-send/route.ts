@@ -139,6 +139,7 @@ export async function POST() {
     waitingListPosition: null,
     paymentStatus: "Not Required",
     amountDueUsd: null,
+    registrationId: null,
     environment: "production",
   };
   {

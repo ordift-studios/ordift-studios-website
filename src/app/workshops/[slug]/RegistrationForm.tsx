@@ -87,7 +87,14 @@ export default function RegistrationForm({
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState<
     | { status: "idle" }
-    | { status: "success"; reference: string; registrationStatus: string; waitingListPosition: number | null }
+    | {
+        status: "success";
+        reference: string;
+        registrationStatus: string;
+        waitingListPosition: number | null;
+        paymentStatus: string;
+        registrationId: string | null;
+      }
     | { status: "error"; message: string }
   >({ status: "idle" });
   const [idempotencyKey] = useState(() =>
@@ -141,6 +148,8 @@ export default function RegistrationForm({
           reference: json.registrationReference,
           registrationStatus: json.registrationStatus,
           waitingListPosition: json.waitingListPosition,
+          paymentStatus: json.paymentStatus,
+          registrationId: json.registrationId,
         });
       } else if (res.status === 422 && json.fieldErrors) {
         const nextErrors: Record<string, string> = {};
@@ -159,6 +168,20 @@ export default function RegistrationForm({
   }
 
   if (result.status === "success") {
+    // Closure refinement (2026-08-25) — a Registered + Pending
+    // registration can pay online right now through the existing
+    // portal payment workspace (/portal/client/projects/workshop/{id}/payments,
+    // reused as-is, not duplicated). `next` is the existing, generic,
+    // already-tested portal-login/signup redirect param
+    // (isSafeReturnPath in src/lib/portal/roles.ts) — carrying the
+    // participant straight to their pending payment after
+    // authentication, with no new redirect architecture required.
+    const paymentPath =
+      result.registrationStatus === "Registered" && result.paymentStatus === "Pending" && result.registrationId
+        ? `/portal/client/projects/workshop/${result.registrationId}/payments`
+        : null;
+    const nextParam = paymentPath ? `?next=${encodeURIComponent(paymentPath)}` : "";
+
     return (
       <div className="rounded-xl border border-black/10 bg-ordift-offwhite p-6 sm:p-8 text-center">
         <p className="font-sans font-semibold uppercase tracking-[0.2em] text-eyebrow text-ordift-gold-pressed mb-3">
@@ -168,8 +191,26 @@ export default function RegistrationForm({
         <p className="font-sans text-body-small text-ordift-ink-muted">
           {result.registrationStatus === "Waitlisted"
             ? `This workshop is currently full — you're at waiting-list position ${result.waitingListPosition ?? "—"}. We'll email you if a space opens up.`
-            : "A confirmation has been sent to your email. Payment (if required) is confirmed manually — we'll follow up with details."}
+            : paymentPath
+              ? "Your place is confirmed. A confirmation has been sent to your email. Payment is required to complete your registration."
+              : "A confirmation has been sent to your email."}
         </p>
+        {paymentPath && (
+          <div className="mt-5 flex flex-col sm:flex-row gap-3 justify-center">
+            <Link
+              href={`/portal/login${nextParam}`}
+              className="inline-flex items-center justify-center min-h-11 px-5 rounded-full bg-ordift-gold text-ordift-navy-950 font-sans font-semibold text-body-small hover:bg-ordift-gold-hover transition-colors"
+            >
+              Already registered with us — sign in to pay
+            </Link>
+            <Link
+              href={`/portal/signup${nextParam}`}
+              className="inline-flex items-center justify-center min-h-11 px-5 rounded-full border border-ordift-ink/30 text-ordift-ink font-sans font-semibold text-body-small hover:border-ordift-ink/50 transition-colors"
+            >
+              New here — create an account to pay
+            </Link>
+          </div>
+        )}
       </div>
     );
   }

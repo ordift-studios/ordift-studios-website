@@ -345,9 +345,9 @@ export default async function WorkshopDetailPage({
 
             {workshop.requiresPayment && (
               <p className="font-sans text-body-small text-ordift-ink-muted">
-                This workshop requires payment. Pricing and payment instructions will be
-                confirmed with you directly by our team after registration — payment is
-                confirmed manually, not collected online.
+                This workshop requires payment. Once you register, you&apos;ll be able to pay
+                online through your Ordift Studios account — or our team can confirm payment
+                with you directly if you&apos;d prefer.
               </p>
             )}
           </div>
