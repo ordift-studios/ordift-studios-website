@@ -7,6 +7,25 @@ import {
   ORDIFT_STAFF_EMAIL_DOMAIN,
   type CorporateEmailNameInput,
 } from "@/lib/organization/corporateEmail";
+import { isSuperAdminId, hasAuthority, IDENTITY_CAPABILITIES } from "@/lib/organization/authority";
+
+const STATUS_CAPABILITY: Record<string, string> = {
+  suspended: IDENTITY_CAPABILITIES.suspend,
+  active: IDENTITY_CAPABILITIES.reactivate,
+  deactivated: IDENTITY_CAPABILITIES.deactivate,
+  pending_provisioning: IDENTITY_CAPABILITIES.provision,
+  provisioning_failed: IDENTITY_CAPABILITIES.provision,
+};
+
+async function requireIdentityCapabilityOrSuperAdmin(
+  actorUserId: string,
+  capability: string
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  if (await isSuperAdminId(actorUserId)) return { ok: true };
+  const authorized = await hasAuthority(actorUserId, capability, null);
+  if (!authorized) return { ok: false, error: "Only Technology (GEEK) or a Super Admin can do this." };
+  return { ok: true };
+}
 
 // Ordift Organizational & Administrative Architecture V1, Phase 3.3,
 // Parts B/C (2026-08-25) — the persistence layer for corporateEmail.ts's
@@ -74,11 +93,16 @@ export type ReserveCorporateIdentityResult =
 // filter), so a deactivated person's old address can never be handed
 // to someone else, even accidentally — exactly satisfied without any
 // extra "don't reuse" logic needed here.
+// Phase 3.4, Part 7 — the real enforcement point for
+// technology.identity.reserve (GEEK's capability).
 export async function reserveCorporateIdentity(params: {
   profileId: string;
   name: CorporateEmailNameInput;
   reservedBy: string;
 }): Promise<ReserveCorporateIdentityResult> {
+  const authCheck = await requireIdentityCapabilityOrSuperAdmin(params.reservedBy, IDENTITY_CAPABILITIES.reserve);
+  if (!authCheck.ok) return authCheck;
+
   const { profileId, name, reservedBy } = params;
   const admin = createAdminClient();
 
@@ -143,11 +167,18 @@ export async function reserveCorporateIdentity(params: {
 // INTENT and internal queue state; moving to 'active' must only ever
 // happen once a real external mailbox is confirmed to exist, which no
 // code path in this phase can do (see the Phase 3.3 report).
+// Phase 3.4, Part 7 — the real enforcement point for
+// technology.identity.suspend/reactivate/deactivate/provision (GEEK's
+// capability), selected by the target status.
 export async function setCorporateIdentityStatus(params: {
   identityId: string;
   status: string;
   actorUserId: string;
 }): Promise<{ ok: true } | { ok: false; error: string }> {
+  const requiredCapability = STATUS_CAPABILITY[params.status] ?? IDENTITY_CAPABILITIES.manageEmail;
+  const authCheck = await requireIdentityCapabilityOrSuperAdmin(params.actorUserId, requiredCapability);
+  if (!authCheck.ok) return authCheck;
+
   const admin = createAdminClient();
   const { data: previous } = await admin.from("corporate_identities").select("profile_id, status").eq("id", params.identityId).maybeSingle();
   if (!previous) return { ok: false, error: "Identity not found." };

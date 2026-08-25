@@ -1,5 +1,6 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { logActivity } from "@/lib/admin/activityLog";
+import { isSuperAdminId, hasAuthority, FINANCE_CAPABILITIES } from "@/lib/organization/authority";
 
 // Ordift Organizational & Administrative Architecture V1, Phase 3.3,
 // Part G (2026-08-25) — payee payment-instruction foundation, against
@@ -124,6 +125,43 @@ export async function createPaymentInstruction(
   });
 
   return { ok: true, instructionId: data.id };
+}
+
+// Phase 3.4, Part 4 — the real enforcement point for
+// finance.payment_instruction.verify (VAULT's capability). Never logs
+// the identifier itself, only that a verification decision was made.
+export async function verifyPaymentInstruction(params: {
+  instructionId: string;
+  verified: boolean;
+  actorUserId: string;
+}): Promise<{ ok: true } | { ok: false; error: string }> {
+  const isSuperAdmin = await isSuperAdminId(params.actorUserId);
+  if (!isSuperAdmin) {
+    const authorized = await hasAuthority(params.actorUserId, FINANCE_CAPABILITIES.paymentInstructionVerify, null);
+    if (!authorized) return { ok: false, error: "Not authorized to verify payment instructions." };
+  }
+
+  const admin = createAdminClient();
+  const { data: existing } = await admin.from("payment_instructions").select("profile_id").eq("id", params.instructionId).maybeSingle();
+  if (!existing) return { ok: false, error: "Payment instruction not found." };
+
+  const { error } = await admin
+    .from("payment_instructions")
+    .update({ verification_status: params.verified ? "verified" : "rejected" })
+    .eq("id", params.instructionId);
+  if (error) {
+    console.error("[payments] failed to update payment_instruction verification", error.message);
+    return { ok: false, error: "Failed to update." };
+  }
+
+  await logActivity({
+    actorUserId: params.actorUserId,
+    action: params.verified ? "payment_instruction.verified" : "payment_instruction.verification_rejected",
+    entityType: "user",
+    entityId: existing.profile_id,
+  });
+
+  return { ok: true };
 }
 
 export async function setPaymentInstructionActive(params: {

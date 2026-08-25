@@ -2,8 +2,9 @@
 
 import { revalidatePath } from "next/cache";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { getCurrentUser, isSuperAdmin } from "@/lib/portal/roles";
+import { getCurrentUser, isSuperAdmin, isStaffOrAdmin } from "@/lib/portal/roles";
 import { logActivity } from "@/lib/admin/activityLog";
+import { validateDelegationAuthority } from "@/lib/organization/authority";
 
 // Ordift Organizational & Administrative Architecture V1, Phase 3, Parts
 // B and D (2026-08-25). Every write to authority_grants goes through
@@ -11,18 +12,14 @@ import { logActivity } from "@/lib/admin/activityLog";
 // policy at all (service-role only), matching the positions/departments/
 // member_numbers precedent.
 //
-// Deliberate scope decision for this phase: every grant/revoke action
-// here is Super-Admin-only, including creating a time-bound delegation.
-// The spec's Part 6 describes an Executive Admin or Director *using*
-// delegated authority, not necessarily *creating* new delegations
-// themselves — allowing that would need its own privilege-escalation
-// safeguards (e.g. "you may only delegate authority you currently
-// hold") this phase doesn't build. Flagged as a deferred item in the
-// Phase 3 report rather than guessed at.
+// Granting Executive Admin or standing Director-tier (department_admin)
+// authority remains Super-Admin-only, unchanged (grantExecutiveAdminAction/
+// grantDepartmentAuthorityAction below) — those are appointments, not
+// something delegation logic should ever be able to produce.
 async function requireSuperAdmin() {
   const user = await getCurrentUser();
   if (!user || !isSuperAdmin(user)) {
-    throw new Error("Only a Super Admin can manage Executive Admin, Director-tier, or delegated authority.");
+    throw new Error("Only a Super Admin can manage Executive Admin or Director-tier authority.");
   }
   return user;
 }
@@ -96,8 +93,18 @@ export async function grantDepartmentAuthorityAction(formData: FormData): Promis
 // expiry — see 0042's header comment. authority is free text (any
 // specific WorkflowCapability name, e.g. "approve_bank_transfer") so
 // this form doesn't need updating every time that TS union grows.
+// Phase 3.4, Part 12 (2026-08-25): widened from Super-Admin-only.
+// validateDelegationAuthority() is the real boundary — Super Admin
+// passes unconditionally (the ultimate authority); anyone else may
+// only delegate an authority they themselves currently, actively hold,
+// within the same scope they hold it in (never upward, never
+// sideways, never a standing tier). The page rendering this form
+// remains Super-Admin-only-visible for now (no GR.9/Director position
+// is occupied yet), but the enforcement itself is real and independent
+// of that — see authority.test.ts for the invariant proven directly.
 export async function createDelegationAction(formData: FormData): Promise<void> {
-  const currentUser = await requireSuperAdmin();
+  const currentUser = await getCurrentUser();
+  if (!currentUser || !isStaffOrAdmin(currentUser)) return;
 
   const profileId = String(formData.get("profileId") ?? "").trim();
   const authority = String(formData.get("authority") ?? "").trim();
@@ -109,6 +116,16 @@ export async function createDelegationAction(formData: FormData): Promise<void> 
   const expiresAt = new Date(expiresAtRaw);
   if (Number.isNaN(expiresAt.getTime()) || expiresAt.getTime() <= Date.now()) {
     console.error("[admin authority] delegation expiry must be a valid future date", expiresAtRaw);
+    return;
+  }
+
+  const validation = await validateDelegationAuthority({
+    grantorProfileId: currentUser.id,
+    requestedAuthority: authority,
+    requestedScopeDepartmentId: departmentId,
+  });
+  if (!validation.ok) {
+    console.error("[admin authority] delegation refused", validation.error);
     return;
   }
 

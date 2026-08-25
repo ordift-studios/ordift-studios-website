@@ -1,7 +1,14 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { logActivity } from "@/lib/admin/activityLog";
 import { createDepartmentRequest, decideDepartmentRequest } from "@/lib/organization/departmentRequests";
-import type { Jurisdiction } from "@/lib/organization/authority";
+import { isSuperAdminId, hasAuthority, PEOPLE_CAPABILITIES, type Jurisdiction } from "@/lib/organization/authority";
+
+async function requirePeopleAdministerOrSuperAdmin(actorUserId: string): Promise<{ ok: true } | { ok: false; error: string }> {
+  if (await isSuperAdminId(actorUserId)) return { ok: true };
+  const authorized = await hasAuthority(actorUserId, PEOPLE_CAPABILITIES.recruitmentAdminister, null);
+  if (!authorized) return { ok: false, error: "Only People/Recruitment (PULSE) or a Super Admin can do this." };
+  return { ok: true };
+}
 
 // Ordift Organizational & Administrative Architecture V1, Phase 3.3,
 // Part E (2026-08-25) — recruitment requisition + interview panel
@@ -158,12 +165,19 @@ export async function createRecruitmentRequisition(params: CreateRequisitionPara
 // The ONLY path that can approve/reject a requisition — always goes
 // through the underlying department_request's decision fields
 // (People/Recruitment's call, never the requesting department's own).
+// Phase 3.4, Part 6 — the real enforcement point for
+// people.recruitment.administer (PULSE's capability): the requesting
+// department can never approve/reject its own requisition, only
+// People/Recruitment or a Super Admin.
 export async function decideRequisition(params: {
   requisitionId: string;
   decision: "approved" | "rejected";
   decisionNotes?: string | null;
   actorUserId: string;
 }): Promise<{ ok: true } | { ok: false; error: string }> {
+  const authCheck = await requirePeopleAdministerOrSuperAdmin(params.actorUserId);
+  if (!authCheck.ok) return authCheck;
+
   const admin = createAdminClient();
   const { data: requisition } = await admin.from("recruitment_requisitions").select("request_id").eq("id", params.requisitionId).maybeSingle();
   if (!requisition) return { ok: false, error: "Requisition not found." };
@@ -209,6 +223,10 @@ export async function listInterviewPanelsForApplication(applicationId: string): 
   }));
 }
 
+// Phase 3.4, Part 6 — assigning WHO evaluates is the actual
+// separation-of-duties control point (not evaluation submission
+// itself, see submitInterviewEvaluation() below) — PULSE decides the
+// panel composition, or a Super Admin.
 export async function scheduleInterviewPanel(params: {
   applicationId: string;
   scheduledAt?: string | null;
@@ -216,6 +234,9 @@ export async function scheduleInterviewPanel(params: {
   evaluatorAssignments: { profileId: string; role: string }[];
   actorUserId: string;
 }): Promise<{ ok: true; panelId: string } | { ok: false; error: string }> {
+  const authCheck = await requirePeopleAdministerOrSuperAdmin(params.actorUserId);
+  if (!authCheck.ok) return authCheck;
+
   const admin = createAdminClient();
   const { data: panel, error } = await admin
     .from("recruitment_interview_panels")
@@ -257,12 +278,21 @@ export async function scheduleInterviewPanel(params: {
   return { ok: true, panelId: panel.id };
 }
 
+// Self-only: an evaluator may only submit their OWN assigned
+// evaluation — panel composition (who was assigned) is already the
+// separation-of-duties gate, enforced above in scheduleInterviewPanel().
+// A Super Admin may submit/correct on anyone's behalf where necessary.
 export async function submitInterviewEvaluation(params: {
   panelId: string;
   evaluatorId: string;
   assessmentNotes: string;
   recommendation: string;
+  actorUserId: string;
 }): Promise<{ ok: true } | { ok: false; error: string }> {
+  if (params.actorUserId !== params.evaluatorId && !(await isSuperAdminId(params.actorUserId))) {
+    return { ok: false, error: "You can only submit your own evaluation." };
+  }
+
   const admin = createAdminClient();
   const { error } = await admin
     .from("recruitment_interview_evaluations")
@@ -279,7 +309,7 @@ export async function submitInterviewEvaluation(params: {
   }
 
   await logActivity({
-    actorUserId: params.evaluatorId,
+    actorUserId: params.actorUserId,
     action: "recruitment.evaluation.submitted",
     entityType: "recruitment_interview_panel",
     entityId: params.panelId,

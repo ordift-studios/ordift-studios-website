@@ -1,5 +1,6 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { logActivity } from "@/lib/admin/activityLog";
+import { isSuperAdminId, hasAuthority, FINANCE_CAPABILITIES } from "@/lib/organization/authority";
 
 // Ordift Organizational & Administrative Architecture V1, Phase 3.3,
 // Part I (2026-08-25) — payment-obligation/payout foundation, against
@@ -162,10 +163,20 @@ export async function createPaymentObligation(
 // since no PayoutProvider is registered in this phase (see the type
 // above). A real payout can only ever be initiated by a future phase
 // that actually implements and registers a PayoutProvider.
+// Phase 3.4, Part 4 — the real enforcement point for
+// finance.payment_obligation.approve (VAULT's capability). A restricted
+// (non-Super-Admin) caller without that exact global authority is
+// refused outright before anything is read or written.
 export async function approvePaymentObligation(params: {
   obligationId: string;
   actorUserId: string;
 }): Promise<{ ok: true } | { ok: false; error: string }> {
+  const isSuperAdmin = await isSuperAdminId(params.actorUserId);
+  if (!isSuperAdmin) {
+    const authorized = await hasAuthority(params.actorUserId, FINANCE_CAPABILITIES.paymentObligationApprove, null);
+    if (!authorized) return { ok: false, error: "Not authorized to approve payment obligations." };
+  }
+
   const admin = createAdminClient();
   const { data: existing } = await admin.from("payment_obligations").select("status, payee_profile_id, amount, currency").eq("id", params.obligationId).maybeSingle();
   if (!existing) return { ok: false, error: "Payment obligation not found." };

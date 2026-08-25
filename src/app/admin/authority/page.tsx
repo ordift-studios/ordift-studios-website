@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { getCurrentUser, isSuperAdmin } from "@/lib/portal/roles";
 import { listUsersWithRoles } from "@/lib/portal/adminData";
-import { listDepartmentOptions } from "@/lib/organization/adminData";
+import { listDepartmentOptions, listPositions } from "@/lib/organization/adminData";
 import { listAuthorityGrants, isGrantActive } from "@/lib/organization/authority";
 import { grantExecutiveAdminAction, grantDepartmentAuthorityAction, createDelegationAction, revokeAuthorityGrantAction } from "./actions";
 
@@ -22,10 +22,11 @@ export default async function AdminAuthorityPage() {
   const user = await getCurrentUser();
   if (!user || !isSuperAdmin(user)) redirect("/admin/overview");
 
-  const [usersResult, departments, grants] = await Promise.all([
+  const [usersResult, departments, grants, positions] = await Promise.all([
     listUsersWithRoles(),
     listDepartmentOptions(),
     listAuthorityGrants(),
+    listPositions(),
   ]);
   const people = usersResult.ok
     ? usersResult.users.map((u) => ({ id: u.id, label: u.fullName ? `${u.fullName} (${u.email ?? "no email"})` : (u.email ?? u.id) }))
@@ -37,6 +38,34 @@ export default async function AdminAuthorityPage() {
   const executiveAdmins = active.filter((g) => g.authority === "executive_admin");
   const departmentAdmins = active.filter((g) => g.authority === "department_admin");
   const delegations = active.filter((g) => g.authority !== "executive_admin" && g.authority !== "department_admin");
+
+  // Leadership & Jurisdiction overview (Phase 3.4, Part 16) — CHIEF
+  // shown alone and visually distinct (ultimate authority); the six
+  // GR.9 executives shown as an equal-weight peer grid, deliberately
+  // never ranked or ordered by anything other than alphabetical Call
+  // Sign, so no visual hierarchy is implied among them.
+  const occupantByPositionId = new Map(
+    usersResult.ok ? usersResult.users.filter((u) => u.positionId).map((u) => [u.positionId as string, u]) : []
+  );
+  const JURISDICTION_LABELS: Record<string, string> = {
+    "chief-operating-officer-coo": "Operations",
+    "chief-financial-officer": "Finance",
+    "chief-strategy-officer": "Strategy",
+    "chief-people-hr-officer": "People / HR",
+    "chief-technology-officer": "Technology",
+    "director-executive-administration": "Administration / Governance",
+  };
+  const chief = positions.find((p) => p.slug === "founder-ceo") ?? null;
+  const chiefOccupant = chief ? occupantByPositionId.get(chief.id) : undefined;
+  const gr9Peers = positions
+    .filter((p) => p.slug in JURISDICTION_LABELS)
+    .sort((a, b) => (a.callSign ?? "").localeCompare(b.callSign ?? ""));
+  const grantsByProfileId = new Map<string, typeof active>();
+  for (const g of active) {
+    const list = grantsByProfileId.get(g.profileId) ?? [];
+    list.push(g);
+    grantsByProfileId.set(g.profileId, list);
+  }
 
   function GrantRow({ grant }: { grant: (typeof grants)[number] }) {
     return (
@@ -73,6 +102,52 @@ export default async function AdminAuthorityPage() {
           Position, staff/member number, or system role.
         </p>
       </div>
+
+      <section className="mb-8 space-y-4">
+        <h2 className="font-serif font-medium text-body text-ordift-ink">Leadership &amp; Jurisdiction</h2>
+        <p className="font-sans text-caption text-ordift-ink-muted -mt-2 max-w-2xl">
+          CHIEF is the only ultimate authority. The six GR.9 executives below are organizational peers — none is
+          superior to another, and each holds authority only within their own jurisdiction, only if explicitly
+          granted.
+        </p>
+
+        <div className="rounded-xl border-2 border-ordift-gold bg-ordift-navy-950 text-white p-5">
+          <p className="font-sans font-semibold uppercase tracking-[0.2em] text-eyebrow text-ordift-gold">CHIEF · GR.10 · Super Admin</p>
+          <p className="font-serif text-card-title mt-1">{chief?.name ?? "Founder & Group Chief Executive Officer"}</p>
+          <p className="font-sans text-caption text-white/70 mt-1">
+            {chiefOccupant ? (chiefOccupant.fullName ?? chiefOccupant.email ?? "Occupied") : "Vacant"} · Ultimate organizational authority — full visibility, override, and approval across every jurisdiction.
+          </p>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+          {gr9Peers.map((p) => {
+            const occupant = occupantByPositionId.get(p.id);
+            const occupantGrants = occupant ? (grantsByProfileId.get(occupant.id) ?? []) : [];
+            return (
+              <div key={p.id} className="rounded-xl border border-black/10 bg-white p-4">
+                <p className="font-sans font-semibold uppercase tracking-[0.15em] text-eyebrow text-ordift-gold-pressed">
+                  {p.callSign ?? "—"} · GR.9
+                </p>
+                <p className="font-sans text-body-small text-ordift-ink font-medium mt-1">{p.name}</p>
+                <p className="font-sans text-caption text-ordift-ink-muted">{JURISDICTION_LABELS[p.slug]}</p>
+                <p className="font-sans text-caption text-ordift-ink-muted mt-2">
+                  {occupant ? (occupant.fullName ?? occupant.email ?? "Occupied") : "Vacant"}
+                </p>
+                {occupantGrants.length > 0 && (
+                  <ul className="mt-2 space-y-0.5">
+                    {occupantGrants.map((g) => (
+                      <li key={g.id} className="font-sans text-caption text-ordift-ink-muted">
+                        · {g.authority}
+                        {g.expiresAt ? " (delegated)" : " (standing)"}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </section>
 
       <section className="rounded-xl border border-black/10 bg-white p-6 space-y-4 mb-8">
         <h2 className="font-serif font-medium text-body text-ordift-ink">Executive Admin</h2>
@@ -138,7 +213,9 @@ export default async function AdminAuthorityPage() {
         <p className="font-sans text-caption text-ordift-ink-muted -mt-2">
           Scoped, auditable, time-bound authority — for when the designated executive is unavailable and a
           time-sensitive matter needs a decision. Never changes Grade, Position, staff number, or permanent system
-          role, and lapses automatically at the expiry you set.
+          role, and lapses automatically at the expiry you set. A non-Super-Admin grantor may only delegate an
+          authority they themselves currently hold, within the same scope they hold it in — never upward, never
+          sideways, and never the standing tiers themselves.
         </p>
         <ul className="space-y-2">
           {delegations.map((g) => (

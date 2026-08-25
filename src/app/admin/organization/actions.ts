@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getCurrentUser, hasRole, isSuperAdmin } from "@/lib/portal/roles";
 import { logActivity } from "@/lib/admin/activityLog";
+import { hasAuthority } from "@/lib/organization/authority";
 
 // Ordift Organizational & Administrative Architecture V1, Phase 1
 // (2026-08-25). Gated to Admin or Super Admin, matching the RLS policies
@@ -20,6 +21,24 @@ async function requireOrgAdmin() {
   const user = await getCurrentUser();
   if (!user || (!hasRole(user, "admin") && !isSuperAdmin(user))) {
     throw new Error("Only an Admin or Super Admin can manage Departments/Positions.");
+  }
+  return user;
+}
+
+// Phase 3.4, Part 9 — Position-level actions ALSO accept a Director
+// (department_admin holder) scoped to the specific Department a
+// Position belongs to. Deliberately not extended to
+// addDepartmentAction/toggleDepartmentAction above — a Director
+// manages Positions within their own Department, never the Department
+// definition itself, and never another Director's Department (their
+// department_admin grant's scope_department_id simply won't match).
+async function requireOrgAdminOrDepartmentAdmin(departmentId: string) {
+  const user = await getCurrentUser();
+  if (!user) throw new Error("Not authenticated.");
+  if (hasRole(user, "admin") || isSuperAdmin(user)) return user;
+  const authorized = await hasAuthority(user.id, "department_admin", departmentId);
+  if (!authorized) {
+    throw new Error("Only an Admin, Super Admin, or that Department's Director can manage its Positions.");
   }
   return user;
 }
@@ -86,8 +105,6 @@ export async function toggleDepartmentAction(formData: FormData): Promise<void> 
 }
 
 export async function addPositionAction(formData: FormData): Promise<void> {
-  const currentUser = await requireOrgAdmin();
-
   const name = String(formData.get("name") ?? "").trim();
   const departmentId = String(formData.get("departmentId") ?? "").trim();
   const operationalTitleId = String(formData.get("operationalTitleId") ?? "").trim() || null;
@@ -98,6 +115,8 @@ export async function addPositionAction(formData: FormData): Promise<void> {
   const callSign = String(formData.get("callSign") ?? "").trim().toUpperCase() || null;
   const reportsToPositionId = String(formData.get("reportsToPositionId") ?? "").trim() || null;
   if (!name || !departmentId || !defaultGradeId) return;
+
+  const currentUser = await requireOrgAdminOrDepartmentAdmin(departmentId);
 
   const admin = createAdminClient();
   const { data, error } = await admin
@@ -133,13 +152,16 @@ export async function addPositionAction(formData: FormData): Promise<void> {
 }
 
 export async function togglePositionAction(formData: FormData): Promise<void> {
-  const currentUser = await requireOrgAdmin();
-
   const id = String(formData.get("id") ?? "");
   const active = formData.get("active") === "true";
   if (!id) return;
 
   const admin = createAdminClient();
+  const { data: position } = await admin.from("positions").select("department_id").eq("id", id).maybeSingle();
+  if (!position) return;
+
+  const currentUser = await requireOrgAdminOrDepartmentAdmin(position.department_id);
+
   const { error } = await admin.from("positions").update({ active: !active }).eq("id", id);
   if (error) {
     console.error("[organization] failed to toggle position", error.message);
