@@ -1,5 +1,17 @@
 import { describe, expect, it } from "vitest";
-import { jurisdictionAuthority, PROTECTED_LEADERSHIP_POSITION_SLUGS, JURISDICTIONS, AUTHORITY_VERBS } from "@/lib/organization/authority";
+import {
+  jurisdictionAuthority,
+  PROTECTED_LEADERSHIP_POSITION_SLUGS,
+  JURISDICTIONS,
+  AUTHORITY_VERBS,
+  OPERATIONS_CAPABILITIES,
+  FINANCE_CAPABILITIES,
+  STRATEGY_CAPABILITIES,
+  PEOPLE_CAPABILITIES,
+  TECHNOLOGY_CAPABILITIES,
+  GOVERNANCE_CAPABILITIES,
+  IDENTITY_CAPABILITIES,
+} from "@/lib/organization/authority";
 
 // Phase 3.2 — pure-logic coverage for the peer-executive model. The
 // DB-backed checks (hasJurisdictionAuthority, isSuperAdminId, and the
@@ -39,5 +51,49 @@ describe("PROTECTED_LEADERSHIP_POSITION_SLUGS", () => {
   it("does not protect a GR.8 Director or any ordinary Position", () => {
     expect(PROTECTED_LEADERSHIP_POSITION_SLUGS.has("creative-director")).toBe(false);
     expect(PROTECTED_LEADERSHIP_POSITION_SLUGS.has("photographer")).toBe(false);
+  });
+});
+
+// Phase 3.4, Part 17 — "GR.9 peer executives cannot grant themselves
+// another executive's jurisdiction" is proven structurally here: every
+// capability string across all six jurisdiction blocks is globally
+// unique, so no two peer executives' capability sets can ever collide
+// or accidentally imply each other, and every consumer (hasAuthority())
+// matches by exact string equality — holding one jurisdiction's
+// capability can never satisfy a check for a different jurisdiction's.
+describe("six-jurisdiction capability taxonomy — no cross-jurisdiction overlap", () => {
+  it("every capability string across PRIME/VAULT/ARCHITECT/PULSE/GEEK/CHANCELLOR is globally unique", () => {
+    const allCapabilities = [
+      ...Object.values(OPERATIONS_CAPABILITIES),
+      ...Object.values(FINANCE_CAPABILITIES),
+      ...Object.values(STRATEGY_CAPABILITIES),
+      ...Object.values(PEOPLE_CAPABILITIES),
+      ...Object.values(TECHNOLOGY_CAPABILITIES),
+      ...Object.values(IDENTITY_CAPABILITIES),
+      ...Object.values(GOVERNANCE_CAPABILITIES),
+    ];
+    expect(new Set(allCapabilities).size).toBe(allCapabilities.length);
+  });
+
+  it("every capability string is correctly namespaced under its own jurisdiction prefix", () => {
+    for (const c of Object.values(OPERATIONS_CAPABILITIES)) expect(c.startsWith("operations.")).toBe(true);
+    for (const c of Object.values(FINANCE_CAPABILITIES)) expect(c.startsWith("finance.")).toBe(true);
+    for (const c of Object.values(STRATEGY_CAPABILITIES)) expect(c.startsWith("strategy.")).toBe(true);
+    for (const c of Object.values(PEOPLE_CAPABILITIES)) expect(c.startsWith("people.")).toBe(true);
+    for (const c of Object.values(TECHNOLOGY_CAPABILITIES)) expect(c.startsWith("technology.")).toBe(true);
+    for (const c of Object.values(IDENTITY_CAPABILITIES)) expect(c.startsWith("technology.")).toBe(true);
+    for (const c of Object.values(GOVERNANCE_CAPABILITIES)) expect(c.startsWith("governance.")).toBe(true);
+  });
+
+  it("the finance.* compensation/payout/payment-obligation capabilities match the exact strings specified", () => {
+    expect(FINANCE_CAPABILITIES).toEqual({
+      compensationView: "finance.compensation.view",
+      compensationManage: "finance.compensation.manage",
+      paymentInstructionVerify: "finance.payment_instruction.verify",
+      paymentObligationReview: "finance.payment_obligation.review",
+      paymentObligationApprove: "finance.payment_obligation.approve",
+      payoutInitiate: "finance.payout.initiate",
+      payoutReconcile: "finance.payout.reconcile",
+    });
   });
 });

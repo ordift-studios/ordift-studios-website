@@ -212,6 +212,90 @@ export const IDENTITY_CAPABILITIES = {
   manageEmail: "technology.email.manage",
 } as const;
 
+// ============================================================
+// Full six-jurisdiction capability taxonomy (Phase 3.4, 2026-08-25)
+// ============================================================
+// One block per GR.9 peer executive's jurisdiction. Each is designed
+// now, per explicit instruction, even where the corresponding
+// functionality doesn't exist yet — a capability string existing here
+// grants nothing by itself; it only becomes real the moment (a) a real
+// function actually checks for it (see the "WIRED" / "DORMANT" note on
+// each constant below) AND (b) a real authority_grants row exists for
+// a real profile. No capability is activated merely because a Position
+// exists to occupy — see assignStaffPosition()/reserveCorporateIdentity()
+// etc. for the actual enforcement points.
+//
+// operations.administer (PRIME) is unchanged from Phase 3.2 — the
+// exact same string, already wired into assignStaffPosition(). The
+// three additions below are new for this phase, DORMANT (no function
+// checks them yet) — Operations has no other built workflow to gate.
+export const OPERATIONS_CAPABILITIES = {
+  administer: "operations.administer", // WIRED — assignStaffPosition() (Phase 3.2)
+  coordinate: "operations.coordinate", // DORMANT
+  report: "operations.report", // DORMANT
+  requestRoute: "operations.request.route", // DORMANT
+} as const;
+
+// finance.* — VAULT. Two of these are WIRED this phase
+// (payment_obligation.approve into approvePaymentObligation(),
+// payment_instruction.verify into verifyPaymentInstruction()); the
+// rest are DORMANT, exactly matching the explicit instruction that
+// finance.payout.*/compensation.* stay dormant until real payout/
+// compensation functionality exists. Strings are verbatim as specified.
+export const FINANCE_CAPABILITIES = {
+  compensationView: "finance.compensation.view", // DORMANT
+  compensationManage: "finance.compensation.manage", // DORMANT
+  paymentInstructionVerify: "finance.payment_instruction.verify", // WIRED — verifyPaymentInstruction()
+  paymentObligationReview: "finance.payment_obligation.review", // DORMANT
+  paymentObligationApprove: "finance.payment_obligation.approve", // WIRED — approvePaymentObligation()
+  payoutInitiate: "finance.payout.initiate", // DORMANT — no PayoutProvider implementation exists
+  payoutReconcile: "finance.payout.reconcile", // DORMANT
+} as const;
+
+// strategy.* — ARCHITECT. Fully DORMANT — no strategic-planning/
+// initiative table or workflow exists anywhere in this codebase yet;
+// defined now purely as approved taxonomy for a future phase.
+export const STRATEGY_CAPABILITIES = {
+  planningAdminister: "strategy.planning.administer", // DORMANT
+  initiativeManage: "strategy.initiative.manage", // DORMANT
+  report: "strategy.report", // DORMANT
+} as const;
+
+// people.* — PULSE. recruitmentAdminister is WIRED into
+// decideRequisition() and scheduleInterviewPanel() (Phase 3.3's
+// recruitment functions) — the actual "PULSE administers the
+// recruitment process" enforcement point. The rest are DORMANT.
+export const PEOPLE_CAPABILITIES = {
+  recruitmentAdminister: "people.recruitment.administer", // WIRED — decideRequisition(), scheduleInterviewPanel()
+  requisitionReview: "people.requisition.review", // DORMANT
+  applicationReview: "people.application.review", // DORMANT
+  interviewPanelAdminister: "people.interview_panel.administer", // DORMANT
+  onboardingAdminister: "people.onboarding.administer", // DORMANT
+  report: "people.report", // DORMANT
+} as const;
+
+// technology.* — GEEK. IDENTITY_CAPABILITIES above (Phase 3.3) are
+// WIRED this phase into reserveCorporateIdentity()/setCorporateIdentityStatus().
+// technology.system.administer is DORMANT — no general technical-
+// infrastructure/integration-administration surface exists yet.
+export const TECHNOLOGY_CAPABILITIES = {
+  systemAdminister: "technology.system.administer", // DORMANT
+} as const;
+
+// governance.* — CHANCELLOR. Fully DORMANT — no corporate-records/
+// contract/compliance-tracking table or workflow exists anywhere in
+// this codebase yet; defined now purely as approved taxonomy. Never
+// "legal" — CHANCELLOR administers governance workflow and liaises
+// with external counsel, never represented as providing licensed
+// legal advice (see the governance jurisdiction comment above).
+export const GOVERNANCE_CAPABILITIES = {
+  recordsAdminister: "governance.records.administer", // DORMANT
+  policyAdminister: "governance.policy.administer", // DORMANT
+  contractAdminister: "governance.contract.administer", // DORMANT
+  complianceTrack: "governance.compliance.track", // DORMANT
+  externalCounselCoordinate: "governance.external_counsel.coordinate", // DORMANT
+} as const;
+
 // Super-Admin check by id, for server-side helpers (like
 // assignStaffPosition()) that only ever receive an actorUserId, not a
 // full CurrentUser — src/lib/portal/roles.ts's isSuperAdmin() takes the
@@ -247,3 +331,88 @@ export const PROTECTED_LEADERSHIP_POSITION_SLUGS = new Set([
   "chief-technology-officer",
   "director-executive-administration",
 ]);
+
+// ============================================================
+// Delegation self-scoping safeguard (Phase 3.4, Part 12, 2026-08-25)
+// ============================================================
+// Deferred from Phase 3.1-3.3 ("leave delegation creation Super-Admin-
+// only... report the later extension") — implemented now. The
+// invariant: a non-Super-Admin grantor may only delegate an authority
+// they themselves currently hold, and only within the scope (global or
+// a specific department) they hold it in. Super Admin is exempt (the
+// ultimate authority, per Part 2), and remains the only actor who can
+// grant something they don't personally "hold" as a grant row — same
+// as today's grantExecutiveAdminAction/grantDepartmentAuthorityAction.
+//
+// Split into a pure validator (canDelegate, fully unit-testable, no
+// DB) and a thin DB-backed wrapper (validateDelegationAuthority) that
+// fetches the real grantor's active grants and calls it — same
+// pure/impure split already used for corporateEmail.ts vs
+// reserveCorporateIdentity.ts.
+export type GrantorAuthority = { authority: string; scopeDepartmentId: string | null };
+
+export function canDelegate(params: {
+  grantorIsSuperAdmin: boolean;
+  grantorActiveGrants: GrantorAuthority[];
+  requestedAuthority: string;
+  requestedScopeDepartmentId: string | null;
+}): { ok: true } | { ok: false; error: string } {
+  if (params.grantorIsSuperAdmin) return { ok: true };
+
+  // Super Admin itself, and the two standing tiers (executive_admin,
+  // department_admin), can never be delegated by a non-Super-Admin —
+  // those are appointments, not operational capabilities, and stay
+  // exclusively grantExecutiveAdminAction/grantDepartmentAuthorityAction's
+  // domain (both already Super-Admin-only, unchanged).
+  if (STANDING_AUTHORITIES.includes(params.requestedAuthority as StandingAuthority)) {
+    return { ok: false, error: "Standing authority tiers can only be granted by a Super Admin, never delegated." };
+  }
+
+  const held = params.grantorActiveGrants.find((g) => g.authority === params.requestedAuthority);
+  if (!held) {
+    return { ok: false, error: "You cannot delegate an authority you do not currently hold." };
+  }
+
+  // A global grant (scopeDepartmentId null) may delegate globally or
+  // scoped to any single department (narrowing is always safe). A
+  // department-scoped grant may only delegate within that SAME
+  // department — never globally, never to a different department
+  // (never upward/sideways, per explicit instruction).
+  if (held.scopeDepartmentId !== null && held.scopeDepartmentId !== params.requestedScopeDepartmentId) {
+    return { ok: false, error: "You can only delegate this authority within the department you hold it for." };
+  }
+
+  return { ok: true };
+}
+
+export async function validateDelegationAuthority(params: {
+  grantorProfileId: string;
+  requestedAuthority: string;
+  requestedScopeDepartmentId: string | null;
+}): Promise<{ ok: true } | { ok: false; error: string }> {
+  const grantorIsSuperAdmin = await isSuperAdminId(params.grantorProfileId);
+  if (grantorIsSuperAdmin) return { ok: true };
+
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from("authority_grants")
+    .select("authority, scope_department_id, effective_at, expires_at, revoked_at")
+    .eq("profile_id", params.grantorProfileId)
+    .is("revoked_at", null);
+  if (error) {
+    console.error("[organization] failed to load grantor's authority for delegation check", error.message);
+    return { ok: false, error: "Failed to verify your current authority." };
+  }
+
+  const now = Date.now();
+  const activeGrants: GrantorAuthority[] = (data ?? [])
+    .filter((g) => new Date(g.effective_at).getTime() <= now && (!g.expires_at || new Date(g.expires_at).getTime() > now))
+    .map((g) => ({ authority: g.authority, scopeDepartmentId: g.scope_department_id }));
+
+  return canDelegate({
+    grantorIsSuperAdmin: false,
+    grantorActiveGrants: activeGrants,
+    requestedAuthority: params.requestedAuthority,
+    requestedScopeDepartmentId: params.requestedScopeDepartmentId,
+  });
+}
