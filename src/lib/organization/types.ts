@@ -27,6 +27,11 @@ export type Position = {
   defaultGradeId: string;
   defaultGradeName: string;
   defaultRoleSlug: string | null;
+  // Ordift Organizational & Administrative Architecture V1, Phase 3
+  // (2026-08-25) — see supabase/migrations/0042_phase3_callsigns_authority_reporting.sql.
+  callSign: string | null;
+  reportsToPositionId: string | null;
+  reportsToPositionName: string | null;
   active: boolean;
   sortOrder: number;
 };

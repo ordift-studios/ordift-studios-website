@@ -165,7 +165,22 @@ const RECENT_ACTIVITY_LIMIT = 20;
 // written — not a speculative list. A future new action name defaults
 // to staff-visible (fail-open on the *classification*, not on auth)
 // unless explicitly added to one of the two restricted sets below.
-const SUPER_ADMIN_ONLY_ACTIONS = new Set<string>(["role.grant", "role.revoke", "access_status.change", "access_expiry.change"]);
+const SUPER_ADMIN_ONLY_ACTIONS = new Set<string>([
+  "role.grant",
+  "role.revoke",
+  "access_status.change",
+  "access_expiry.change",
+  // Ordift Organizational & Administrative Architecture V1, Phase 3
+  // (2026-08-25) — granting/revoking Executive Admin, Director-tier
+  // department authority, or a delegation is as sensitive as a role
+  // grant/revoke, same tier.
+  "executive_admin.grant",
+  "executive_admin.revoke",
+  "department_admin.grant",
+  "department_admin.revoke",
+  "delegation.create",
+  "delegation.revoke",
+]);
 
 const ADMIN_TIER_ACTIONS = new Set<string>([
   "payment.completed",

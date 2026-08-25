@@ -40,7 +40,7 @@ export async function listPositions(): Promise<Position[]> {
   const { data, error } = await admin
     .from("positions")
     .select(
-      "id, name, slug, description, active, sort_order, default_role_slug, department:departments(name), operational_title:operational_titles(name), grade:grades(grade_code, name), department_id, operational_title_id, default_grade_id"
+      "id, name, slug, description, active, sort_order, default_role_slug, department:departments(name), operational_title:operational_titles(name), grade:grades(grade_code, name), department_id, operational_title_id, default_grade_id, call_sign, reports_to_position_id, reports_to:reports_to_position_id(name)"
     )
     .order("sort_order");
   if (error) {
@@ -51,6 +51,7 @@ export async function listPositions(): Promise<Position[]> {
     const department = p.department as unknown as { name: string } | null;
     const operationalTitle = p.operational_title as unknown as { name: string } | null;
     const grade = p.grade as unknown as { grade_code: string; name: string } | null;
+    const reportsTo = p.reports_to as unknown as { name: string } | null;
     return {
       id: p.id,
       name: p.name,
@@ -63,6 +64,9 @@ export async function listPositions(): Promise<Position[]> {
       defaultGradeId: p.default_grade_id,
       defaultGradeName: grade ? `${grade.grade_code} — ${grade.name}` : "—",
       defaultRoleSlug: p.default_role_slug,
+      callSign: p.call_sign,
+      reportsToPositionId: p.reports_to_position_id,
+      reportsToPositionName: reportsTo?.name ?? null,
       active: p.active,
       sortOrder: p.sort_order,
     };

@@ -616,9 +616,10 @@ function UserDetail({
           <p className="font-sans text-caption text-ordift-ink-muted">
             {user.departmentName ? `Department: ${user.departmentName}` : "No Department (no Position assigned)"}
             {" · "}
-            {user.gradeName ? `Grade: ${user.gradeName} (${user.gradeCode})` : "No Grade assigned"} — internal only,
-            never shown publicly. Both resolve automatically from the Position above; there is no independent
-            selector for either.
+            {user.gradeName ? `Grade: ${user.gradeName} (${user.gradeCode})` : "No Grade assigned"}
+            {user.callSign ? ` · Call Sign: ${user.callSign}` : ""}
+            {user.managerName ? ` · Reports to: ${user.managerName}` : ""} — internal only, never shown publicly.
+            All resolve automatically from the Position above; there is no independent selector for any of them.
           </p>
         </section>
       )}
@@ -1136,9 +1137,9 @@ export default function UsersManager({
                   </span>
                 ))}
               </div>
-              {(u.positionName || u.operationalTitleName || u.engagementTypeName) && (
+              {(u.positionName || u.operationalTitleName || u.engagementTypeName || u.callSign) && (
                 <span className="font-sans text-caption text-ordift-ink-muted">
-                  {[u.positionName ?? u.operationalTitleName, u.departmentName, u.engagementTypeName]
+                  {[u.callSign, u.positionName ?? u.operationalTitleName, u.departmentName, u.engagementTypeName]
                     .filter(Boolean)
                     .join(" · ")}
                 </span>

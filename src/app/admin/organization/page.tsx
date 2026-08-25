@@ -123,6 +123,8 @@ export default async function AdminOrganizationPage() {
                     </span>
                     <p className="font-sans text-caption text-ordift-ink-muted">
                       Craft: {p.operationalTitleName ?? "—"} · Default Grade: {p.defaultGradeName}
+                      {p.callSign ? ` · Call Sign: ${p.callSign}` : ""}
+                      {p.reportsToPositionName ? ` · Reports to: ${p.reportsToPositionName}` : ""}
                     </p>
                   </div>
                   <form action={togglePositionAction}>
@@ -202,6 +204,26 @@ export default async function AdminOrganizationPage() {
             {roleOptions.map((r) => (
               <option key={r.slug} value={r.slug}>
                 {r.name}
+              </option>
+            ))}
+          </select>
+          <input
+            type="text"
+            name="callSign"
+            placeholder="Call Sign (optional, e.g. CHIEF)"
+            aria-label="Leadership call sign (optional)"
+            className="rounded-lg border border-black/15 px-3 py-1.5 font-sans text-body-small uppercase"
+          />
+          <select
+            name="reportsToPositionId"
+            aria-label="Reports to (optional)"
+            defaultValue=""
+            className="rounded-lg border border-black/15 px-3 py-1.5 font-sans text-body-small bg-white"
+          >
+            <option value="">Reports to (optional)…</option>
+            {positions.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name}
               </option>
             ))}
           </select>

@@ -94,6 +94,9 @@ export async function addPositionAction(formData: FormData): Promise<void> {
   const defaultGradeId = String(formData.get("defaultGradeId") ?? "").trim();
   const defaultRoleSlug = String(formData.get("defaultRoleSlug") ?? "").trim() || null;
   const description = String(formData.get("description") ?? "").trim();
+  // Phase 3, Parts A and C (2026-08-25) — both optional.
+  const callSign = String(formData.get("callSign") ?? "").trim().toUpperCase() || null;
+  const reportsToPositionId = String(formData.get("reportsToPositionId") ?? "").trim() || null;
   if (!name || !departmentId || !defaultGradeId) return;
 
   const admin = createAdminClient();
@@ -107,6 +110,8 @@ export async function addPositionAction(formData: FormData): Promise<void> {
       default_grade_id: defaultGradeId,
       default_role_slug: defaultRoleSlug,
       description: description || null,
+      call_sign: callSign,
+      reports_to_position_id: reportsToPositionId,
       sort_order: 500,
     })
     .select("id")

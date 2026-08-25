@@ -35,6 +35,12 @@ export type ProfileCard = {
   department: string | null;
   positionId: string | null;
   positionName: string | null;
+  // Ordift Organizational & Administrative Architecture V1, Phase 3
+  // (2026-08-25) — callSign resolves from the person's current Position
+  // (see supabase/migrations/0042_phase3_callsigns_authority_reporting.sql),
+  // never entered directly. managerName resolves from staff_details.manager_id.
+  callSign: string | null;
+  managerName: string | null;
   canViewGrade: boolean;
   gradeId: string | null;
   grade: { code: string; name: string } | null;
@@ -109,7 +115,7 @@ export async function getProfileCard(user: CurrentUser): Promise<ProfileCard> {
       supabase
         .from("staff_details")
         .select(
-          "department, operational_title_id, operational_titles(name), grade_id, grades(grade_code, name), position_id, positions(name, departments(name))"
+          "department, operational_title_id, operational_titles(name), grade_id, grades(grade_code, name), position_id, positions(name, call_sign, departments(name)), manager_id"
         )
         .eq("id", user.id)
         .maybeSingle(),
@@ -145,8 +151,26 @@ export async function getProfileCard(user: CurrentUser): Promise<ProfileCard> {
   // and Department (via positions.departments), taking precedence over
   // the legacy free-text staff_details.department, which is kept only as
   // a fallback for any account not yet migrated into the new catalogue.
-  const positionRow = staffDetails?.positions as unknown as { name: string; departments: { name: string } | null } | null;
+  const positionRow = staffDetails?.positions as unknown as {
+    name: string;
+    call_sign: string | null;
+    departments: { name: string } | null;
+  } | null;
   const resolvedDepartment = positionRow?.departments?.name ?? staffDetails?.department ?? null;
+
+  // Direct manager (Phase 3, Part C) — a plain follow-up lookup by id,
+  // same low-frequency-single-row pattern as the lastLoginAt call just
+  // below, since we don't know staff_details.manager_id until the
+  // Promise.all above has resolved.
+  let managerName: string | null = null;
+  if (staffDetails?.manager_id) {
+    const { data: managerProfile } = await supabase
+      .from("profiles")
+      .select("full_name")
+      .eq("id", staffDetails.manager_id)
+      .maybeSingle();
+    managerName = managerProfile?.full_name ?? null;
+  }
 
   let lastLoginAt: string | null = null;
   try {
@@ -176,6 +200,8 @@ export async function getProfileCard(user: CurrentUser): Promise<ProfileCard> {
     department: resolvedDepartment,
     positionId: staffDetails?.position_id ?? null,
     positionName: positionRow?.name ?? null,
+    callSign: positionRow?.call_sign ?? null,
+    managerName,
     canViewGrade,
     gradeId,
     grade,

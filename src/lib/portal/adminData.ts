@@ -34,6 +34,11 @@ export type AdminUserRow = {
   departmentName: string | null;
   gradeCode: string | null;
   gradeName: string | null;
+  // Ordift Organizational & Administrative Architecture V1, Phase 3
+  // (2026-08-25) — callSign resolves from the assigned Position;
+  // managerName resolves from staff_details.manager_id.
+  callSign: string | null;
+  managerName: string | null;
   // New Booking notification opt-in (notification_preferences,
   // category "new_booking") — only meaningful for a plain `admin`; a
   // Super Admin always receives these regardless of this value (see
@@ -134,7 +139,9 @@ export async function listUsersWithRoles(): Promise<AdminUserListResult> {
     admin.from("roles").select("id, slug"),
     admin
       .from("staff_details")
-      .select("id, operational_title_id, engagement_type_id, position_id, positions(name, departments(name), grades(grade_code, name))"),
+      .select(
+        "id, operational_title_id, engagement_type_id, position_id, manager_id, positions(name, call_sign, departments(name), grades(grade_code, name))"
+      ),
     admin.from("operational_titles").select("id, name"),
     admin.from("engagement_types").select("id, name"),
     admin.from("member_numbers").select("profile_id, classification_id").eq("status", "active"),
@@ -177,9 +184,11 @@ export async function listUsersWithRoles(): Promise<AdminUserListResult> {
       const details = staffDetailsById.get(u.id);
       const positionRow = details?.positions as unknown as {
         name: string;
+        call_sign: string | null;
         departments: { name: string } | null;
         grades: { grade_code: string; name: string } | null;
       } | null;
+      const managerName = details?.manager_id ? (profileById.get(details.manager_id)?.full_name ?? null) : null;
       return {
         id: u.id,
         email: u.email,
@@ -211,6 +220,8 @@ export async function listUsersWithRoles(): Promise<AdminUserListResult> {
         departmentName: positionRow?.departments?.name ?? null,
         gradeCode: positionRow?.grades?.grade_code ?? null,
         gradeName: positionRow?.grades?.name ?? null,
+        callSign: positionRow?.call_sign ?? null,
+        managerName,
         newBookingAlertsEnabled: newBookingAlertPrefs.get(u.id) ?? false,
       };
     })

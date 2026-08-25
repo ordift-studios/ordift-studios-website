@@ -71,8 +71,10 @@ export default async function AdminProfilePage({
               ["Member Number", card.memberNumber ?? "Not yet assigned"],
               ["Classification", card.classificationName ?? "Not yet assigned"],
               ["Position", card.positionName ?? "Not assigned"],
+              ...(card.callSign ? ([["Call Sign", card.callSign]] as [string, string][]) : []),
               ["Department", card.department ?? "Not set"],
               ["Craft / Job Title", card.jobTitle ?? "Not set"],
+              ["Reports To", card.managerName ?? "Not resolved"],
               ...(card.canViewGrade
                 ? ([["Grade", card.grade ? `${card.grade.name} (${card.grade.code})` : "Not assigned"]] as [string, string][])
                 : []),
