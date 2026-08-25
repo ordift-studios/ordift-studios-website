@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
+import Link from "next/link";
 import { getCurrentUser, isSuperAdmin } from "@/lib/portal/roles";
 import { listUsersWithRoles } from "@/lib/portal/adminData";
 import { listDepartmentOptions, listGradeOptions } from "@/lib/organization/adminData";
@@ -54,7 +55,8 @@ export default async function AdminOperationsPage() {
         <p className="font-sans text-body-small text-ordift-ink-muted mt-2 max-w-2xl">
           Corporate identity, cross-department requests, recruitment requisitions, compensation bands, and payment
           obligations — the Phase 3.3 organizational operating infrastructure. Foundations only: no external mailbox
-          or real payout has ever been created through this page.
+          or real payout has ever been created through this page. For the jurisdiction-framed executive view of this
+          same data, see <Link href="/admin/executive" className="underline underline-offset-4">Executive</Link>.
         </p>
       </div>
 

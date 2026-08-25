@@ -6,6 +6,7 @@ import { signOutAction } from "@/app/portal/login/actions";
 import { getProfileCard } from "@/lib/portal/profileCard";
 import ProfileQuickCard from "@/components/admin/ProfileQuickCard";
 import { PresenceProvider } from "@/components/admin/PresenceProvider";
+import { isExecutiveAdmin } from "@/lib/organization/authority";
 
 // Internal operations console — separate from the customer/partner-facing
 // /portal, but built on the exact same auth/role foundation (Supabase Auth
@@ -14,8 +15,14 @@ import { PresenceProvider } from "@/components/admin/PresenceProvider";
 // reasoning as src/app/portal/(dashboard)/layout.tsx: proxy.ts only does a
 // fast JWT-presence check for /portal/**, not /admin/**, so this layout's
 // getCurrentUser() call is the actual gate here, not just a backstop.
-const NAV_ITEMS: { label: string; href: string; adminOnly?: boolean; superAdminOnly?: boolean }[] = [
+const NAV_ITEMS: { label: string; href: string; adminOnly?: boolean; superAdminOnly?: boolean; executiveOnly?: boolean }[] = [
   { label: "Overview", href: "/admin/overview" },
+  // Ordift Unified Executive Administration Platform (2026-08-25) —
+  // visible to Super Admin or an Executive Admin grant holder only
+  // (executiveOnly, checked asynchronously below, unlike the other
+  // flags). Each jurisdiction sub-page independently re-checks its own
+  // specific capability — this nav entry is not the security boundary.
+  { label: "Executive", href: "/admin/executive", executiveOnly: true },
   { label: "Enquiries", href: "/admin/enquiries" },
   { label: "Bookings", href: "/admin/bookings" },
   { label: "Payments", href: "/admin/payments" },
@@ -65,8 +72,9 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   // holds "super_admin" and never "admin" — hasRole() has no built-in
   // hierarchy, so that has to be spelled out here.
   const isAdmin = hasRole(user, "admin") || isSuper;
+  const isExecutive = isSuper || (await isExecutiveAdmin(user.id));
   const visibleNavItems = NAV_ITEMS.filter(
-    (item) => (!item.adminOnly || isAdmin) && (!item.superAdminOnly || isSuper)
+    (item) => (!item.adminOnly || isAdmin) && (!item.superAdminOnly || isSuper) && (!item.executiveOnly || isExecutive)
   );
   const profileCard = await getProfileCard(user);
   const matchingPortalLinks = PORTAL_LINK_ITEMS.filter((item) => hasRole(user, item.role));
