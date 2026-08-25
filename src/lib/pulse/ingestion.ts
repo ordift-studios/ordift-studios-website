@@ -47,6 +47,24 @@ export type DiscoveryRunLogger = (params: {
   errors: string[];
 }) => Promise<void>;
 
+// Reliability fix (2026-08-25) — fired once, immediately before the
+// risky work begins (the real external fetch and the per-item Sanity
+// writes), separate from DiscoveryRunLogger above (which still only
+// ever fires on a *completed* attempt — either a full pass or a
+// cleanly-caught adapter failure, exactly as before, unchanged). This
+// is deliberately the ONLY thing that can distinguish "a run began and
+// was abruptly cut off" (a started entry with no matching completed
+// entry) from "nothing was ever attempted" (no entries at all) — an
+// abrupt platform-level termination cannot itself write anything after
+// the fact; this entry is written *before* the risky work, not after a
+// failure is detected, which is the only way that distinction can ever
+// be made observable.
+export type DiscoveryRunStartedLogger = (params: {
+  runId: string;
+  sourceId: string;
+  sourceName: string;
+}) => Promise<void>;
+
 type SourceRecord = {
   id: string;
   name: string;
@@ -85,6 +103,20 @@ const RECENT_ARTICLES_FOR_DEDUP_QUERY = `*[_type == "pulseArticle" && defined(so
 // no path by which they could affect what gets published. See
 // pulseSettings.ts's own field descriptions for the same distinction.
 const SETTINGS_QUERY = `*[_type == "pulseSettings"][0]{discoveryEnabled, regionWeight, topicWeight, freshnessWeight, trustWeight, priorityWeight}`;
+
+// Reliability fix (2026-08-25) — bounds one invocation to a small,
+// deterministic number of feed items, each of which costs one real,
+// sequential network round trip to Sanity (create()). Unbounded, a
+// single run's total time scales with however many items the live feed
+// happens to return that day, which is exactly what allowed the first
+// real PetaPixel test to be cut off mid-run with zero drafts created
+// and zero completion log written. Deliberately conservative — start
+// small, verified working, raise later once proven reliable, per
+// explicit direction. RSS feeds are conventionally newest-first, so
+// this also naturally prioritizes the most recent items. Does not
+// affect exclusion/dedup/scoring, which still run exactly as before on
+// whichever items are within the bound.
+const MAX_ITEMS_PER_RUN = 5;
 
 function selectAdapter(sourceType: string) {
   if (sourceType === "rss") return rssAdapter;
@@ -130,7 +162,11 @@ export type RunDiscoveryResult = {
 export async function runDiscoveryForSource(
   sourceId: string,
   sanity: MinimalSanityClient,
-  logRun: DiscoveryRunLogger
+  logRun: DiscoveryRunLogger,
+  // Optional — reliability fix (2026-08-25). Omitted entirely by
+  // existing test call sites, which stay valid unchanged; the real API
+  // route supplies it.
+  logRunStarted?: DiscoveryRunStartedLogger
 ): Promise<RunDiscoveryResult> {
   const runId = crypto.randomUUID();
   const errors: string[] = [];
@@ -166,6 +202,15 @@ export async function runDiscoveryForSource(
   const adapter = selectAdapter(source.sourceType);
   if (!adapter) {
     return emptyResult(runId, source.id, source.name, `no automated adapter configured for sourceType "${source.sourceType}"`);
+  }
+
+  // Every check above can still refuse cleanly and return a normal
+  // result — nothing risky has happened yet. From here on, a real
+  // external fetch and real Sanity writes are about to begin, so this
+  // is the last point at which "a run genuinely started" can be
+  // recorded before anything that could be abruptly cut off.
+  if (logRunStarted) {
+    await logRunStarted({ runId, sourceId: source.id, sourceName: source.name });
   }
 
   let rawItems: RawDiscoveredItem[];
@@ -204,7 +249,13 @@ export async function runDiscoveryForSource(
   let excluded = 0;
   const createdArticleIds: string[] = [];
 
-  for (const item of rawItems) {
+  // Bounded, not the full feed — see MAX_ITEMS_PER_RUN's own comment.
+  // `fetched` below still reports the feed's true total (rawItems.length),
+  // so a result like "fetched: 27, created: 5" honestly shows capping
+  // happened rather than silently under-reporting what the feed had.
+  const boundedItems = rawItems.slice(0, MAX_ITEMS_PER_RUN);
+
+  for (const item of boundedItems) {
     // categorySlugs is deliberately omitted here — exclusionFilter.ts's
     // "trust an assigned category over keyword text" shortcut is meant
     // for a genuine PER-ITEM classification, not a source's blanket

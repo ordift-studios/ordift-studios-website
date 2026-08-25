@@ -175,4 +175,57 @@ describe("runDiscoveryForSource", () => {
     expect(result.errors[0]).toMatch(/feed unreachable/);
     expect(logRun).toHaveBeenCalledWith(expect.objectContaining({ errors: ["feed unreachable"] }));
   });
+
+  it("bounds processing to MAX_ITEMS_PER_RUN even when the feed returns more, while still reporting the true fetched count", async () => {
+    const manyItems = Array.from({ length: 12 }, (_, i) => ({
+      title: `New Camera Lens Announced ${i}`,
+      sourceUrl: `https://example.org/${i}`,
+      summary: "A lightweight lens.",
+      imageUrl: null,
+      author: null,
+      publishedAt: "2026-08-20T00:00:00Z",
+    }));
+    rssFetchMock.mockResolvedValue(manyItems);
+    const { sanity, created } = makeSanityMock();
+    const result = await runDiscoveryForSource("src1", sanity, logRun);
+
+    expect(result.fetched).toBe(12); // true feed total, unbounded
+    expect(result.created).toBe(5); // bounded
+    expect(created).toHaveLength(5);
+  });
+
+  it("logs a 'started' entry before the risky work, distinct from the completion log, when a starter callback is supplied", async () => {
+    rssFetchMock.mockResolvedValue([
+      { title: "New Camera Lens Announced", sourceUrl: "https://example.org/1", summary: "A lightweight lens.", imageUrl: null, author: null, publishedAt: "2026-08-20T00:00:00Z" },
+    ]);
+    const { sanity } = makeSanityMock();
+    const logRunStarted = vi.fn().mockResolvedValue(undefined);
+    const callOrder: string[] = [];
+    logRunStarted.mockImplementation(async () => { callOrder.push("started"); });
+    logRun.mockImplementation(async () => { callOrder.push("completed"); });
+
+    const result = await runDiscoveryForSource("src1", sanity, logRun, logRunStarted);
+
+    expect(logRunStarted).toHaveBeenCalledTimes(1);
+    expect(logRunStarted).toHaveBeenCalledWith({ runId: result.runId, sourceId: "src1", sourceName: "[SAMPLE] Test Source" });
+    expect(logRun).toHaveBeenCalledTimes(1);
+    expect(callOrder).toEqual(["started", "completed"]); // started always precedes completed
+  });
+
+  it("never calls the starter callback when refused before any risky work begins", async () => {
+    const { sanity } = makeSanityMock({ source: { id: "src1", name: "X", sourceType: "rss", feedUrl: "u", url: null, isActive: false, permissionClassification: "amber", editorialTrustLevel: "unverified", editorialPriority: 0, disciplineIds: [], geographyIds: [] } });
+    const logRunStarted = vi.fn().mockResolvedValue(undefined);
+    const result = await runDiscoveryForSource("src1", sanity, logRun, logRunStarted);
+    expect(result.refused).toMatch(/not Active/);
+    expect(logRunStarted).not.toHaveBeenCalled();
+  });
+
+  it("remains fully backward compatible when no starter callback is supplied", async () => {
+    rssFetchMock.mockResolvedValue([
+      { title: "New Camera Lens Announced", sourceUrl: "https://example.org/1", summary: "A lightweight lens.", imageUrl: null, author: null, publishedAt: "2026-08-20T00:00:00Z" },
+    ]);
+    const { sanity } = makeSanityMock();
+    const result = await runDiscoveryForSource("src1", sanity, logRun);
+    expect(result.created).toBe(1);
+  });
 });

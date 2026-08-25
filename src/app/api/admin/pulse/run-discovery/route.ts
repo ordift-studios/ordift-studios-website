@@ -5,6 +5,16 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { client } from "@/sanity/lib/client";
 import { runDiscoveryForSource } from "@/lib/pulse/ingestion";
 
+// Reliability fix (2026-08-25) — a deliberately modest, explicit ceiling,
+// not an attempt to reach this Hobby-plan project's actual platform
+// maximum (currently 300s with Fluid Compute, verified live against
+// Vercel's own account/project settings — see the Phase B closure
+// report for how that was confirmed). MAX_ITEMS_PER_RUN in ingestion.ts
+// already bounds a normal run to a handful of seconds; this exists so a
+// genuinely stuck request (e.g. a hung external fetch) fails fast and
+// predictably instead of silently running for up to 5 minutes.
+export const maxDuration = 30;
+
 // Admin-triggered manual discovery run (Phase B, 2026-08-24 — see
 // PULSE_INGESTION_FOUNDATION.md). Deliberately manual-trigger only, not
 // wired to any scheduled Cron job — Vercel Cron only fires on Production
@@ -34,18 +44,39 @@ export async function POST(request: NextRequest) {
   }
 
   const admin = createAdminClient();
-  const result = await runDiscoveryForSource(sourceId, client, async (summary) => {
-    const { error } = await admin.from("activity_log").insert({
-      actor_user_id: user.id,
-      action: "pulse.discovery_run",
-      entity_type: "pulseSource",
-      entity_id: summary.sourceId,
-      metadata: summary,
-    });
-    if (error) {
-      console.error("[pulse] failed to write activity_log for discovery run", error.message);
+  const result = await runDiscoveryForSource(
+    sourceId,
+    client,
+    async (summary) => {
+      const { error } = await admin.from("activity_log").insert({
+        actor_user_id: user.id,
+        action: "pulse.discovery_run",
+        entity_type: "pulseSource",
+        entity_id: summary.sourceId,
+        metadata: summary,
+      });
+      if (error) {
+        console.error("[pulse] failed to write activity_log for discovery run", error.message);
+      }
+    },
+    // Reliability fix (2026-08-25) — written immediately before the risky
+    // work begins (see ingestion.ts). A "started" row with no matching
+    // "pulse.discovery_run" row for the same runId is itself the evidence
+    // of an abrupt interruption — nothing can write a record any later
+    // than this if the function is killed outright.
+    async (started) => {
+      const { error } = await admin.from("activity_log").insert({
+        actor_user_id: user.id,
+        action: "pulse.discovery_run_started",
+        entity_type: "pulseSource",
+        entity_id: started.sourceId,
+        metadata: started,
+      });
+      if (error) {
+        console.error("[pulse] failed to write activity_log for discovery run start", error.message);
+      }
     }
-  });
+  );
 
   return NextResponse.json({ ok: true, result });
 }
