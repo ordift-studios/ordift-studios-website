@@ -39,6 +39,8 @@ export type Venue = {
   id: ID;
   name: string;
   addressLine: string | null; // null when format is "online"
+  city: string | null; // null when format is "online"
+  country: string | null; // null when format is "online"
   format: WorkshopFormat;
   mapUrl: string | null;
 };
@@ -135,8 +137,18 @@ export type Workshop = {
   instructorIds: ID[];
   venueId: ID | null;
   capacity: number;
+  // Workshop Management V1, Phase B (2026-08-25) — coverImage follows the
+  // same PresentationImage convention as Portfolio's coverImage
+  // (optionalImageFragment), not a new media type. displayCurrency is
+  // informational only — never used to compute the actual amount
+  // charged (that stays USD-referenced via ticket_types.price_usd,
+  // matching payments.reference_amount_usd's existing convention).
+  coverImage: PresentationImage | null;
+  displayCurrency: string | null;
+  timezone: string | null;
   startDate: string | null; // ISO date
   endDate: string | null; // ISO date — supports multi-day workshops (null or equal to startDate for single-day)
+  registrationOpensAt: string | null; // ISO date
   registrationDeadline: string | null; // ISO date
   experienceLevels: ExperienceLevel[];
   requiresPayment: boolean;
@@ -153,6 +165,7 @@ export type Workshop = {
   isOnlineAttendancePossible: boolean; // true if a virtual seat exists alongside/instead of in-person
   hasRecordedSession: boolean; // true if a recording is made available after the fact
   isMembersOnly: boolean;
+  attendeeTerms: string | null; // shown publicly — terms/important information for registrants
   seo: SeoFields;
 };
 

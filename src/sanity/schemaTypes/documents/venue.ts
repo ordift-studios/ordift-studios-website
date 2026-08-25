@@ -7,6 +7,8 @@ export default defineType({
   fields: [
     defineField({ name: "name", title: "Name", type: "string", validation: (r) => r.required() }),
     defineField({ name: "addressLine", title: "Address", type: "string", description: "Leave blank when format is Online." }),
+    defineField({ name: "city", title: "City", type: "string", description: "Leave blank when format is Online." }),
+    defineField({ name: "country", title: "Country", type: "string", description: "Leave blank when format is Online." }),
     defineField({
       name: "format",
       title: "Format",

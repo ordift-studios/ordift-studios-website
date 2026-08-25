@@ -19,8 +19,12 @@ export const workshopFragment = `{
   "instructorIds": instructors[]._ref,
   "venueId": venue._ref,
   capacity,
+  ${optionalImageFragment("coverImage")},
+  displayCurrency,
+  timezone,
   startDate,
   endDate,
+  registrationOpensAt,
   registrationDeadline,
   experienceLevels,
   requiresPayment,
@@ -37,11 +41,17 @@ export const workshopFragment = `{
   isOnlineAttendancePossible,
   hasRecordedSession,
   isMembersOnly,
+  attendeeTerms,
   ${seoFragment("seo")}
 }`;
+// internalNotes deliberately excluded — Studio-only, same discipline as
+// galleryImage.productionNotes (see 0042-era Phase 3 precedent):
+// structurally unreachable from any public query, not just unused by
+// convention.
 
 export const workshopsQuery = `*[_type == "workshop"] | order(startDate asc) ${workshopFragment}`;
 export const workshopBySlugQuery = `*[_type == "workshop" && slug.current == $slug][0] ${workshopFragment}`;
+export const workshopByIdQuery = `*[_type == "workshop" && _id == $id][0] ${workshopFragment}`;
 
 export const instructorFragment = `{
   "id": _id,
@@ -60,6 +70,8 @@ export const venueFragment = `{
   "id": _id,
   name,
   addressLine,
+  city,
+  country,
   format,
   mapUrl
 }`;
