@@ -48,3 +48,6 @@ export function productionSendingEnabled(): boolean {
 export function visitorFormsOpen(): boolean {
   return isStaging() || formsSendingEnabled();
 }
+
+// (2026-08-25) Comment-only marker — GitHub -> Vercel automatic Production
+// deployment pipeline verification. No functional change.
