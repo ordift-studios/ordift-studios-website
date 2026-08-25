@@ -2,6 +2,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import type { AccessStatus, RoleSlug } from "@/lib/portal/roles";
 import { getNotificationPreferences } from "@/lib/notifications/preferences";
 import { listPositionReportingChain, resolveManagerInMemory } from "@/lib/organization/reporting";
+import { formatGradeDisplay } from "@/lib/organization/gradeDisplay";
 
 export type AdminUserRow = {
   id: string;
@@ -237,7 +238,7 @@ export async function listUsersWithRoles(): Promise<AdminUserListResult> {
         positionId: details?.position_id ?? null,
         positionName: positionRow?.name ?? null,
         departmentName: positionRow?.departments?.name ?? null,
-        gradeCode: positionRow?.grades?.grade_code ?? null,
+        gradeCode: positionRow?.grades?.grade_code ? formatGradeDisplay(positionRow.grades.grade_code) : null,
         gradeName: positionRow?.grades?.name ?? null,
         callSign: positionRow?.call_sign ?? null,
         managerName,

@@ -1,4 +1,5 @@
 import { createAdminClient } from "@/lib/supabase/admin";
+import { formatGradeDisplay } from "./gradeDisplay";
 import type {
   Department,
   Position,
@@ -62,7 +63,7 @@ export async function listPositions(): Promise<Position[]> {
       operationalTitleId: p.operational_title_id,
       operationalTitleName: operationalTitle?.name ?? null,
       defaultGradeId: p.default_grade_id,
-      defaultGradeName: grade ? `${grade.grade_code} — ${grade.name}` : "—",
+      defaultGradeName: grade ? `${formatGradeDisplay(grade.grade_code)} — ${grade.name}` : "—",
       defaultRoleSlug: p.default_role_slug,
       callSign: p.call_sign,
       reportsToPositionId: p.reports_to_position_id,
@@ -95,7 +96,7 @@ export async function listGradeOptions(): Promise<GradeOption[]> {
     .eq("active", true)
     .order("rank_order");
   if (error) return [];
-  return (data ?? []).map((g) => ({ id: g.id, code: g.grade_code, name: g.name }));
+  return (data ?? []).map((g) => ({ id: g.id, code: formatGradeDisplay(g.grade_code), name: g.name }));
 }
 
 export async function listRoleOptions(): Promise<RoleOption[]> {

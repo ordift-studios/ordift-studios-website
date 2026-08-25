@@ -2,6 +2,7 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { isSuperAdmin, hasRole, type CurrentUser, type RoleSlug, type AccessStatus } from "@/lib/portal/roles";
 import { resolveCurrentManager } from "@/lib/organization/reporting";
+import { formatGradeDisplay } from "@/lib/organization/gradeDisplay";
 
 // Backs the Admin Profile Quick Card (src/app/admin/layout.tsx). V1 is
 // self-view only — the logged-in admin viewing their own card — so this
@@ -141,7 +142,7 @@ export async function getProfileCard(user: CurrentUser): Promise<ProfileCard> {
   // the second, defense-in-depth layer: even if `grades` came back
   // populated, only return it to the caller when canViewGrade is true.
   const gradeRow = staffDetails?.grades as unknown as { grade_code: string; name: string } | null;
-  const grade = canViewGrade && gradeRow ? { code: gradeRow.grade_code, name: gradeRow.name } : null;
+  const grade = canViewGrade && gradeRow ? { code: formatGradeDisplay(gradeRow.grade_code), name: gradeRow.name } : null;
   const gradeId = canViewGrade ? (staffDetails?.grade_id ?? null) : null;
 
   const titleRow = staffDetails?.operational_titles as unknown as { name: string } | null;
