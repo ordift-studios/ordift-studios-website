@@ -1,4 +1,9 @@
-import { client } from "@/sanity/lib/client";
+// Native-draft architecture (2026-08-27) — admin/editorial code binds
+// explicitly to editorialClient (perspective: "drafts") rather than the
+// bare, apiVersion-dependent-default client. Aliased to `client` so
+// every call site below is unchanged (client/perspective swap only —
+// no query, mutation, or business-logic change).
+import { editorialClient as client } from "@/sanity/lib/client";
 import type { Workshop, Venue, Category } from "../types";
 import {
   workshopsQuery,

@@ -312,6 +312,17 @@ export async function runDiscoveryForSource(
 
     try {
       const doc: Record<string, unknown> = {
+        // Native-draft architecture (2026-08-27) — an explicit
+        // `drafts.` id makes this land in Sanity's own draft namespace
+        // (Layer 1) instead of the published one; without this, an
+        // id-less create() is auto-assigned into the published
+        // namespace regardless of the `status` field below, which is
+        // exactly what left the five Test #3 articles showing Sanity's
+        // native "Published" state under status: "draft". The `sanity`
+        // param here is expected to be editorial/draft-aware (the API
+        // route now passes editorialClient) so this document, and the
+        // dedup query below, are both visible to admin/discovery reads.
+        _id: `drafts.${crypto.randomUUID()}`,
         _type: "pulseArticle",
         title: item.title,
         slug: { _type: "slug", current: `${slugify(item.title)}-${runId.slice(0, 8)}` },

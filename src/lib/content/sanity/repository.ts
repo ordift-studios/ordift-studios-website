@@ -1,4 +1,9 @@
-import { client } from "@/sanity/lib/client";
+// Native-draft architecture (2026-08-27) — this is the single public
+// content-read entry point (every ContentRepository method), so it
+// explicitly binds to publicClient (perspective: "published") rather
+// than the bare, apiVersion-dependent-default client. Aliased to
+// `client` so every call site below is unchanged.
+import { publicClient as client } from "@/sanity/lib/client";
 import type { ContentRepository } from "../repository";
 import type {
   AboutPage,

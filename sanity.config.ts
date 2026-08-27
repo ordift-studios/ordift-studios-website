@@ -49,4 +49,24 @@ export default defineConfig({
   basePath: "/studio",
   plugins: [structureTool({ structure })],
   schema: { types: schemaTypes },
+  // Native-draft architecture (2026-08-27) — Pulse's discovery-created
+  // articles are now genuine Sanity drafts, published only through
+  // Ordift's own controlled Admin Publish action (see
+  // transitionPulseArticle in pulseAdmin.ts), which atomically
+  // coordinates Sanity's draft->published transition with the Ordift
+  // `status` field so the two can never disagree. Studio's ordinary
+  // native Publish button bypasses that coordination entirely — an
+  // editor using it directly would move a pulseArticle into the
+  // published namespace without ever setting status: "published",
+  // which Layer 4's public query filter would still (correctly) hide,
+  // but leaves the document in an inconsistent, confusing state no
+  // human should be able to reach by accident. Removed specifically
+  // for pulseArticle only — every other document type's native Publish
+  // action is untouched.
+  document: {
+    actions: (prevActions, context) =>
+      context.schemaType === "pulseArticle"
+        ? prevActions.filter((action) => action.action !== "publish")
+        : prevActions,
+  },
 });

@@ -115,6 +115,30 @@ describe("runDiscoveryForSource", () => {
     expect(logRun).toHaveBeenCalledWith(expect.objectContaining({ created: 1, fetched: 1 }));
   });
 
+  // Native-draft architecture (2026-08-27) — discovery must never create
+  // directly into Sanity's published namespace; the requested document
+  // must always carry an explicit `drafts.<id>` _id so it lands in the
+  // draft namespace instead (an id-less create() is auto-assigned into
+  // the published namespace regardless of the status field, which is
+  // exactly what left the five Test #3 articles showing Sanity's native
+  // "Published" state under status: "draft"). Inspects the requested
+  // document via the create() mock's call arguments rather than its
+  // return value, since makeSanityMock()'s create() intentionally
+  // overwrites _id with its own mock id on the way out — the assertion
+  // that matters is what ingestion.ts actually requested.
+  it("requests every discovered article as a genuine Sanity draft (drafts.<id>)", async () => {
+    rssFetchMock.mockResolvedValue([
+      { title: "New Camera Lens Announced", sourceUrl: "https://example.org/1", summary: "A lightweight lens.", imageUrl: null, author: null, publishedAt: "2026-08-20T00:00:00Z" },
+    ]);
+    const { sanity } = makeSanityMock();
+    await runDiscoveryForSource("src1", sanity, logRun);
+
+    const createMock = sanity.create as unknown as ReturnType<typeof vi.fn>;
+    expect(createMock).toHaveBeenCalledTimes(1);
+    const requestedDoc = createMock.mock.calls[0][0] as Record<string, unknown>;
+    expect(requestedDoc._id).toEqual(expect.stringMatching(/^drafts\./));
+  });
+
   it("excludes a clearly non-creative item and never creates a draft for it", async () => {
     rssFetchMock.mockResolvedValue([
       { title: "President Announces Cabinet Reshuffle", sourceUrl: "https://example.org/2", summary: "Election result triggers government dispute.", imageUrl: null, author: null, publishedAt: null },

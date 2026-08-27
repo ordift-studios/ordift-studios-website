@@ -1,4 +1,8 @@
-import { client } from "@/sanity/lib/client";
+// Native-draft architecture (2026-08-27) — admin/editorial code binds
+// explicitly to editorialClient (perspective: "drafts") rather than the
+// bare, apiVersion-dependent-default client. Aliased to `client` so
+// every other call site in this file is unchanged.
+import { editorialClient as client } from "@/sanity/lib/client";
 import { getPulsePublishReadiness } from "@/lib/pulse/publishReadiness";
 import type { PulseEditorialTrustLevel, PulsePermissionClassification } from "../types";
 
@@ -115,9 +119,56 @@ export async function transitionPulseArticle(id: string, action: PulseArticleAct
     if (!readiness.ready) {
       return { ok: false, error: readiness.blockers.join(" ") };
     }
+
+    const publishedAt = article.publishedAt ?? new Date().toISOString();
+    const cleanTags = tags.filter((t) => t !== "rejected");
+
+    // Native-draft architecture (2026-08-27) — a genuine Sanity draft
+    // (`drafts.<id>`, produced by discovery under this architecture)
+    // must move to the published namespace and gain
+    // `status: "published"` as one atomic, fail-closed unit: either
+    // both changes land, or neither does. Sanity's Actions API
+    // (`client.action([...])`, verified supported by the installed
+    // @sanity/client) executes an array of actions as a single atomic
+    // operation server-side — there is no partial-success state to
+    // guard against, unlike a sequential patch-then-publish (or
+    // publish-then-patch) would have. If this throws, the article is
+    // left exactly as it was: a genuine draft with status "draft",
+    // invisible to publicClient's perspective:"published" AND excluded
+    // by the status=="published" query filter — both layers intact.
+    //
+    // A pre-existing article with no `drafts.` id (the five Test #3
+    // articles that predate this architecture — deliberately left
+    // unmigrated) has no draft document for Sanity to publish; for
+    // those, publication is still exactly the plain status patch this
+    // function always performed, since Sanity's own document-state
+    // offers them nothing extra to coordinate.
+    const DRAFT_ID_PREFIX = "drafts.";
+    if (id.startsWith(DRAFT_ID_PREFIX)) {
+      const publishedId = id.slice(DRAFT_ID_PREFIX.length);
+      try {
+        await client.action([
+          {
+            actionType: "sanity.action.document.edit",
+            draftId: id,
+            publishedId,
+            patch: { set: { status: "published", publishedAt, tags: cleanTags } },
+          },
+          {
+            actionType: "sanity.action.document.publish",
+            draftId: id,
+            publishedId,
+          },
+        ]);
+      } catch (e) {
+        return { ok: false, error: e instanceof Error ? e.message : "Publish failed." };
+      }
+      return { ok: true };
+    }
+
     await client
       .patch(id)
-      .set({ status: "published", publishedAt: article.publishedAt ?? new Date().toISOString(), tags: tags.filter((t) => t !== "rejected") })
+      .set({ status: "published", publishedAt, tags: cleanTags })
       .commit();
     return { ok: true };
   }

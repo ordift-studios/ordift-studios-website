@@ -49,10 +49,50 @@ function getClient(): SanityClient {
 // property was accessed on — which would be this Proxy, not the real
 // instance, causing "Cannot read private member #i from an object whose
 // class did not declare it" the moment a method touches `this.#...`.
-export const client: SanityClient = new Proxy({} as SanityClient, {
-  get(_target, prop) {
-    const real = getClient();
-    const value = Reflect.get(real, prop, real);
-    return typeof value === "function" ? value.bind(real) : value;
-  },
-});
+//
+// makeLazyClient() generalizes this same deferred-construction Proxy so
+// the explicit-perspective clients below (added for the Pulse
+// native-draft architecture, 2026-08-27) get the identical guarantee:
+// `configure` (a `.withConfig()` call) only ever runs on first actual
+// property access of that specific export, never at module-import time
+// — calling `.withConfig()` eagerly at module scope would force
+// `getClient()` (and its synchronous `projectId` validation) to run on
+// import, reintroducing the exact Vercel build failure this lazy
+// pattern exists to prevent (see the comment above `getClient()`).
+function makeLazyClient(configure?: (base: SanityClient) => SanityClient): SanityClient {
+  let cached: SanityClient | undefined;
+  return new Proxy({} as SanityClient, {
+    get(_target, prop) {
+      if (!cached) {
+        const base = getClient();
+        cached = configure ? configure(base) : base;
+      }
+      const value = Reflect.get(cached, prop, cached);
+      return typeof value === "function" ? value.bind(cached) : value;
+    },
+  });
+}
+
+export const client: SanityClient = makeLazyClient();
+
+// Explicit-perspective clients (Pulse native-draft architecture,
+// 2026-08-27) — deliberately never rely on @sanity/client's
+// apiVersion-dependent default perspective (which changed from `raw` to
+// `published` at API version v2025-02-19) to decide what's safe to
+// expose. Each consumer states its own required perspective outright,
+// so a future apiVersion bump can never silently change Pulse (or any
+// other content type's) draft/published visibility semantics.
+//
+// publicClient — every public-facing read (ContentRepository). Only
+// ever sees genuinely published documents, regardless of apiVersion.
+// This is Layer 1 of Pulse's defense-in-depth; the existing
+// `status == "published"` query filter (Layer 4) stays in force
+// unchanged alongside it — neither layer replaces the other.
+export const publicClient: SanityClient = makeLazyClient((base) => base.withConfig({ perspective: "published" }));
+
+// editorialClient — every admin/editorial read+write and Pulse
+// discovery/dedup read. Sees draft documents (falling back to the
+// published version where no draft exists), so admin review queues,
+// article detail lookups, and discovery's own deduplication pool all
+// correctly see genuine Sanity drafts.
+export const editorialClient: SanityClient = makeLazyClient((base) => base.withConfig({ perspective: "drafts" }));

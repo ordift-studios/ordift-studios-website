@@ -2,7 +2,12 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { getCurrentUser, hasRole, isSuperAdmin } from "@/lib/portal/roles";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { client } from "@/sanity/lib/client";
+// Native-draft architecture (2026-08-27) — discovery writes and its own
+// dedup read must see the draft namespace (both newly-created drafts
+// and previously-discovered ones still awaiting review), so this route
+// hands runDiscoveryForSource the explicit draft-aware client rather
+// than the bare, apiVersion-dependent-default one.
+import { editorialClient } from "@/sanity/lib/client";
 import { runDiscoveryForSource } from "@/lib/pulse/ingestion";
 
 // Reliability fix (2026-08-25) — a deliberately modest, explicit ceiling,
@@ -46,7 +51,7 @@ export async function POST(request: NextRequest) {
   const admin = createAdminClient();
   const result = await runDiscoveryForSource(
     sourceId,
-    client,
+    editorialClient,
     async (summary) => {
       const { error } = await admin.from("activity_log").insert({
         actor_user_id: user.id,
