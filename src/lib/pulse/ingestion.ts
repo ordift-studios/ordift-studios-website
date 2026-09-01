@@ -103,7 +103,19 @@ const SOURCE_QUERY = `*[_type == "pulseSource" && _id == $id][0]{
 
 const TAXONOMY_SLUGS_QUERY = `*[_type in ["pulseCategory", "pulseRegion"]]{"id": _id, "slug": slug.current}`;
 
-const RECENT_ARTICLES_FOR_DEDUP_QUERY = `*[_type == "pulseArticle" && defined(sourceUrl)] | order(_createdAt desc)[0...200]{"_id": _id, sourceUrl, title, publishedAt}`;
+// Draft-reference fix (2026-09-01) — under editorialClient's
+// perspective:"drafts", plain `_id` returns the canonicalized/logical
+// identity (the bare id, even for a document that only exists as a
+// genuine `drafts.<id>`). Using that value to build possibleDuplicateOf
+// below produces a reference to an id that doesn't actually exist,
+// which Sanity's mutation-time reference-integrity check rejects —
+// confirmed live via Controlled Test #5B ("references non-existent
+// document"). `_originalId` is Sanity's own field for exactly this:
+// the literal, actually-stored id of whichever version the perspective
+// resolved to — verified empirically against this dataset to equal
+// `_id` for a published-only document, and the correct `drafts.<id>`
+// for a draft-only one.
+const RECENT_ARTICLES_FOR_DEDUP_QUERY = `*[_type == "pulseArticle" && defined(sourceUrl)] | order(_createdAt desc)[0...200]{"_id": _originalId, sourceUrl, title, publishedAt}`;
 
 // ACTIVE settings (genuinely read and enforced below): discoveryEnabled
 // (the master gate checked before any external fetch — Phase B closure
