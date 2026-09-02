@@ -481,6 +481,18 @@
 
 ---
 
+### TD-050 — `possibleDuplicateOf` reference can go stale once the referenced draft is published
+
+- **Category:** Data
+- **Severity:** Low
+- **What:** A Pulse article's `possibleDuplicateOf._ref` can point at a genuine Sanity draft (`drafts.<id>`). Sanity's publish transition (`sanity.action.document.publish`) deletes that draft id and moves its content to the bare published id — it does not rewrite other documents' reference fields. A `possibleDuplicateOf` reference left pointing at the now-deleted draft id becomes a dangling reference: a GROQ dereference (`->`) of it silently resolves to nothing (no error).
+- **Why accepted:** Not introduced by, or specific to, the `_originalId` correction (`TECHNICAL_DECISION_RECORDS.md` TDR-015) — this is an inherent property of how Sanity references behave generally. Investigated and confirmed to have no currently-active consumer that breaks materially: the one admin UI that dereferences it (`src/app/admin/pulse/[id]/page.tsx`'s "duplicate of" link) degrades gracefully — the flag/link simply disappears once the original is published, which is arguably reasonable (the flagged relationship is stale information by that point anyway). The public-facing field that reads the raw `_ref` (`possibleDuplicateOfId` in `queries.ts`) is confirmed unconsumed anywhere in `src/app`.
+- **Current impact:** None observed or expected today; purely a latent characteristic of the reference model.
+- **Pay-down trigger:** If a future feature is built that depends on `possibleDuplicateOf` remaining resolvable after the referenced article is published (e.g. a permanent "content lineage" record), address then — likely via either resolving-and-snapshotting the title/id at publish time, or accepting the field as review-time-only metadata.
+- **Status:** Open.
+
+---
+
 ## Adding new entries
 
 Any future compromise — a deferred edge case, a "fix properly later" comment, a scope-narrowing decision made under time pressure — gets an entry here at the time it's made, not retroactively. Cross-reference the relevant `TECHNICAL_DECISION_RECORDS.md` ADR if the debt stems from a documented architectural trade-off.
