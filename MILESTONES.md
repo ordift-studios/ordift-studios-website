@@ -3634,6 +3634,24 @@ Following separate explicit authorization, `staging` (`77a7cc0`) was fast-forwar
 
 ---
 
+## Pulse native draft architecture — promoted to Production (2026-09-03)
+
+Following Controlled Tests #4/#5/#5B/#6 (through #6H), a full lifecycle validation (Publish → Reject → Restore → Archive), and a read-only Pre-Promotion Cleanup & Observability Decision Assessment — all performed against the real Staging environment on `staging-native-draft-20260827` — the branch was promoted to Production following separate explicit authorization.
+
+**Why:** Controlled Test #3 revealed that Sanity Studio's own "Published" indicator could be misleading on a document whose app-level `status` field still read "draft" — the two layers weren't both being enforced. `pulseArticle` documents now live as genuine Sanity `drafts.<id>` documents until published, not published-namespace documents distinguished only by a `status` field. `publicClient`/`editorialClient` (`src/sanity/lib/client.ts`) explicitly bind to `perspective: "published"` / `"drafts"`, replacing every content-layer client's reliance on the Sanity SDK's ambiguous apiVersion-dependent default. Publish is now an atomic Sanity Actions API call; Sanity Studio's native Publish action is removed for `pulseArticle`. The existing `status == "published"` public-query filter was kept alongside the new native-draft protection, not replaced by it.
+
+**Promotion:** `staging-native-draft-20260827` (HEAD `c62aa8e`) fast-forward merged into `main` (previous HEAD `35ac583`) — a true fast-forward, no merge commit, history preserved exactly. Six commits promoted, in order: `9607dc0` (native draft architecture), `8e331bd` (TDR-015: `_originalId` fix in the dedup query), `212432a` (TDR-015/TD-050 doc entries), `1202338` (diagnostic instrumentation for `transitionPulseArticleAction`, retained permanently as production observability per an explicit line-by-line safety assessment), `676ff71` (`_originalId` fix in `ARTICLE_DETAIL_QUERY`), `c62aa8e` (canonical-id normalization fix for `transitionPulseArticle`'s initial lookup). The latter three fixes address the same underlying defect class found live during Staging verification: GROQ's `_id` returns the canonicalized form under `perspective:"drafts"` in both output projections *and* query filters — only `_originalId` returns the literal stored id.
+
+**Pre-merge verification:** `tsc --noEmit` clean, `eslint` clean (0 errors), `vitest run` 226/226 passing across 29 files, re-confirmed fresh immediately before the merge. Local `next build` could not be completed end-to-end in this environment — traced precisely to a chain of purely local `.env.local` configuration gaps (Sanity project id/dataset, then Supabase URL, then the Supabase publishable key, each supplied and independently verified), terminating at `SUPABASE_SECRET_KEY`, a genuine server-side secret intentionally never retrieved or handled in chat per this project's standing secret-handling rule. Accepted in its place, by explicit decision: the exact candidate commit `c62aa8e` had already built and deployed successfully on Vercel's real Staging environment (`dpl_FHRL7DDQNGGVbZ5sMawCqgG7mp8T`, target `preview`, status Ready, `staging.ordiftstudios.com`).
+
+**Deployment:** new Production deployment `dpl_os771RBbEVCes8PbKd6AWFZKMXaC` reached Ready, `target: production`, `ordiftstudios.com`/`www.ordiftstudios.com` correctly aliased, created 4 seconds after the push completed, no errors in build logs.
+
+**Post-deployment verification (read-only, no lifecycle mutations repeated against Production):** Homepage, Portfolio (`/work`, real published content rendering via the new `publicClient`), Workshops, Journal/Stories, About, and Team all loaded clean with zero console errors. `/team` specifically confirmed the `SUPABASE_SECRET_KEY`-dependent `getPublicTeamMembers()` path works correctly with real Production configuration — closing out the local-build-secret gap as an environment limitation, not a defect in the promoted code. `/admin/pulse`, visited unauthenticated, correctly redirected to Sign In — no crash, no content leak. No Production data was mutated during any part of this promotion or its verification. No unauthorized Vercel/Sanity/Supabase configuration or environment changes occurred.
+
+**Status:** live in Production. Rollback reference, if ever needed: `35ac583` (the pre-promotion Production baseline), via revert-and-push — no data migration exists in this promotion to unwind. Pulse's operational state is unchanged by this promotion — discovery/auto-publish remain off, `pulseSource.researchPetapixel` remains inactive pending a separate licensing review; this was an integrity/architecture fix, not a decision to resume active Pulse content operations.
+
+---
+
 ## How this roadmap is maintained
 
 - Checkboxes get checked off as work ships and is approved — not before.
