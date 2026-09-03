@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { validateCreatePayeeProfileInput } from "@/app/admin/payables/actions";
-import { mapCreatePayeeProfileError } from "@/lib/payables/payeeProfiles";
+import { validateCreatePayeeProfileInput, mapCreatePayeeProfileError } from "@/lib/payables/payeeProfiles";
 
 // Mutation feedback fix (2026-09-04) — tests for the Add Payee defect
 // investigated on real Production (see the accompanying report). What

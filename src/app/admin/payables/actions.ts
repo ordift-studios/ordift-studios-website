@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/portal/roles";
-import { createPayeeProfile, setPayeeProfileStatus } from "@/lib/payables/payeeProfiles";
+import { createPayeeProfile, setPayeeProfileStatus, validateCreatePayeeProfileInput } from "@/lib/payables/payeeProfiles";
 import { createEngagement, setEngagementStatus, createEngagementPayable } from "@/lib/payables/engagements";
 import { addPayableItem } from "@/lib/payables/payableItems";
 import { addPaymentEvidenceReference, addPaymentEvidenceFile } from "@/lib/payables/paymentEvidence";
@@ -45,16 +45,6 @@ function num(formData: FormData, key: string): number {
 // form mounted with whatever the administrator entered, and displays
 // the returned error text via useActionState.
 export type CreatePayeeProfileState = { ok: boolean; error?: string } | null;
-
-// Pure — checked before any session/database call, both so a common
-// mistake (nothing selected) fails instantly without a round-trip, and
-// so this specific check is directly unit-testable without a request
-// context (getCurrentUser() below needs one; this doesn't).
-export function validateCreatePayeeProfileInput(params: { profileId: string; category: string }): { ok: true } | { ok: false; error: string } {
-  if (!params.profileId) return { ok: false, error: "Select an existing account first." };
-  if (!params.category) return { ok: false, error: "Select a category." };
-  return { ok: true };
-}
 
 export async function createPayeeProfileAction(_prevState: CreatePayeeProfileState, formData: FormData): Promise<CreatePayeeProfileState> {
   const profileId = str(formData, "profileId");

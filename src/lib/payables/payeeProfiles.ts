@@ -8,9 +8,13 @@ import { isSuperAdminId, authorizeWithSuperAdminOverride, FINANCE_CAPABILITIES }
 // migration's inspection summary for why. category is documented,
 // unconstrained text: 'staff' | 'vendor' | 'contractor' | 'freelancer'
 // | 'instructor' | 'talent' | 'consultant' | 'other'.
-
-export const PAYEE_CATEGORIES = ["staff", "vendor", "contractor", "freelancer", "instructor", "talent", "consultant", "other"] as const;
-export type PayeeCategory = (typeof PAYEE_CATEGORIES)[number];
+//
+// PAYEE_CATEGORIES/validateCreatePayeeProfileInput live in
+// payeeProfileShared.ts, not here, and are re-exported below purely
+// for existing call-site convenience — see that file's header for why
+// (this module is server-only; anything a "use client" component needs
+// must come from a module with zero server-only imports).
+export { PAYEE_CATEGORIES, type PayeeCategory, validateCreatePayeeProfileInput } from "./payeeProfileShared";
 
 // Duplicate safeguard (2026-09-04 investigation) — payee_profiles.id
 // IS the profile's own primary key (references public.profiles(id),

@@ -1,7 +1,7 @@
 "use client";
 
 import { useActionState } from "react";
-import { PAYEE_CATEGORIES } from "@/lib/payables/payeeProfiles";
+import { PAYEE_CATEGORIES } from "@/lib/payables/payeeProfileShared";
 import type { LookupOption } from "@/lib/portal/adminData";
 import SubmitButton from "@/components/admin/SubmitButton";
 import { createPayeeProfileAction, type CreatePayeeProfileState } from "../actions";
