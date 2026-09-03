@@ -135,9 +135,25 @@ export async function getPulseArticleDetail(id: string): Promise<PulseArticleDet
 export type PulseArticleAction = "publish" | "reject" | "archive" | "restore";
 
 export async function transitionPulseArticle(id: string, action: PulseArticleAction): Promise<{ ok: boolean; error?: string }> {
+  // Controlled Test #6G fix (2026-09-03) — a query FILTER of the form
+  // `_id == $id` only matches the canonical/bare form under
+  // editorialClient's perspective:"drafts" (verified live against
+  // Staging); `_id == "drafts.<uuid>"` matches nothing, even though
+  // that literal document is exactly what exists. Now that #6F's fix
+  // correctly passes the literal drafts.-prefixed id into this
+  // function, this initial lookup needs the bare form specifically —
+  // confirmed live to resolve correctly either way (draft-only or
+  // published-only) once normalized. Everything below this lookup
+  // (the drafts.-prefix branch check, the Actions API call's draftId,
+  // and the reject/restore/archive .patch(id) calls) intentionally
+  // keeps using the original, unmodified `id` — patch operations and
+  // Actions API calls target a document directly by its literal _id,
+  // not perspective-filtered, so they need the real prefixed form.
+  const DRAFT_ID_PREFIX = "drafts.";
+  const lookupId = id.startsWith(DRAFT_ID_PREFIX) ? id.slice(DRAFT_ID_PREFIX.length) : id;
   const article = await client.fetch<{ tags: string[] | null; publishedAt: string | null; excerpt: string; body: string; title: string; hasHeroMedia: boolean } | null>(
     `*[_type == "pulseArticle" && _id == $id][0]{tags, publishedAt, excerpt, body, title, "hasHeroMedia": defined(heroMedia)}`,
-    { id }
+    { id: lookupId }
   );
   if (!article) return { ok: false, error: "Article not found." };
 
