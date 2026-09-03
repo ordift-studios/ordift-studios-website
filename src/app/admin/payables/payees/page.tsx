@@ -22,6 +22,11 @@ export default async function AdminPayeesPage() {
   const accounts = accountsResult.ok ? accountsResult.users : [];
   const payeeIds = new Set(payees.map((p) => p.id));
   const notYetPayees = accounts.filter((a) => !payeeIds.has(a.id));
+  // Email isn't part of PayeeProfile itself (profiles carries no email
+  // column — only auth.users does, via listUsersWithRoles()'s existing
+  // Admin-API-backed lookup, already fetched above for the "existing
+  // account" picker). Merged here for display only, not persisted.
+  const emailByProfileId = new Map(accounts.map((a) => [a.id, a.email]));
 
   return (
     <div className="space-y-8">
@@ -44,20 +49,31 @@ export default async function AdminPayeesPage() {
       </section>
 
       <section className="rounded-xl border border-black/10 bg-white p-6">
-        <h2 className="font-serif font-medium text-body text-ordift-ink mb-3">Existing Payees</h2>
-        <ul className="divide-y divide-black/5 rounded-lg border border-black/5">
-          {payees.map((p) => (
-            <li key={p.id} className="px-4 py-3">
-              <Link href={`/admin/payables/payees/${p.id}`} className="block hover:opacity-70">
-                <p className="font-sans text-body-small text-ordift-ink">{p.fullName ?? "(no name)"}</p>
-                <p className="font-sans text-caption text-ordift-ink-muted">
-                  {p.category} {p.operationalTitleName ? `· ${p.operationalTitleName}` : ""} · {p.status}
-                </p>
-              </Link>
-            </li>
-          ))}
-          {payees.length === 0 && <li className="px-4 py-3 font-sans text-body-small text-ordift-ink-muted">None yet.</li>}
-        </ul>
+        <h2 className="font-serif font-medium text-body text-ordift-ink mb-3">Existing Payees ({payees.length})</h2>
+        {payees.length === 0 ? (
+          <p className="font-sans text-body-small text-ordift-ink-muted rounded-lg border border-dashed border-black/15 px-4 py-6 text-center">
+            No payees have been onboarded yet — use the form above to classify the first one.
+          </p>
+        ) : (
+          <ul className="divide-y divide-black/5 rounded-lg border border-black/5">
+            {payees.map((p) => (
+              <li key={p.id}>
+                <Link href={`/admin/payables/payees/${p.id}`} className="flex items-center justify-between gap-4 px-4 py-3 hover:bg-black/[0.02]">
+                  <div>
+                    <p className="font-sans text-body-small font-medium text-ordift-ink">{p.fullName ?? "(no name)"}</p>
+                    <p className="font-sans text-caption text-ordift-ink-muted">{emailByProfileId.get(p.id) ?? "no email on file"}</p>
+                    <p className="font-sans text-caption text-ordift-ink-muted mt-1">
+                      {p.category}
+                      {p.operationalTitleName ? ` · ${p.operationalTitleName}` : ""}
+                      {p.companyName ? ` · ${p.companyName}` : ""} · {p.status}
+                    </p>
+                  </div>
+                  <span className="font-sans text-caption text-ordift-ink underline underline-offset-4 shrink-0">View / Manage →</span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        )}
       </section>
     </div>
   );

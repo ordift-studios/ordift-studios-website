@@ -42,7 +42,30 @@ export type PayeeProfile = {
   createdAt: string;
 };
 
-const SELECT = "id, category, operational_title_id, company_name, status, notes, created_at, operational_titles(name), profiles!inner(full_name)";
+// Read-path fix (2026-09-04 investigation) — payee_profiles has TWO
+// foreign keys to profiles (id -> profiles.id, AND created_by ->
+// profiles.id; confirmed via pg_constraint against real Production
+// schema). A PostgREST embed like `profiles!inner(full_name)`, with no
+// constraint specified, is genuinely ambiguous between those two paths
+// — PostgREST refuses to guess and errors ("more than one relationship
+// was found"). That error was being caught and silently turned into an
+// empty array by this function's own error handling — proven live:
+// Sylvia's real payee_profiles row existed the entire time (confirmed
+// directly against Production, and by matching activity_log), while
+// listPayeeProfiles() returned []. A raw SQL join against the same
+// tables/columns returned her correctly, ruling out any data problem.
+//
+// Fixed by never using embed syntax here at all — two plain,
+// unambiguous queries (payee_profiles, then profiles/operational_titles
+// by id list) joined in application code, the same pattern
+// listUsersWithRoles() (src/lib/portal/adminData.ts) already uses.
+// This is immune to any future FK PostgREST might also consider a
+// candidate relationship (e.g. if a third FK to profiles or
+// operational_titles is ever added) — a qualified embed hint
+// (`profiles!payee_profiles_id_fkey(...)`) would have fixed today's
+// specific case but could break again the same way the moment schema
+// changes; a manual join never can.
+const SELECT = "id, category, operational_title_id, company_name, status, notes, created_at";
 
 type RawPayeeProfileRow = {
   id: string;
@@ -52,22 +75,35 @@ type RawPayeeProfileRow = {
   status: string;
   notes: string | null;
   created_at: string;
-  operational_titles: { name: string } | null;
-  profiles: { full_name: string | null } | null;
 };
 
-function mapPayeeProfile(r: RawPayeeProfileRow): PayeeProfile {
-  return {
+async function attachPayeeProfileRelations(admin: ReturnType<typeof createAdminClient>, rows: RawPayeeProfileRow[]): Promise<PayeeProfile[]> {
+  if (rows.length === 0) return [];
+
+  const profileIds = rows.map((r) => r.id);
+  const titleIds = [...new Set(rows.map((r) => r.operational_title_id).filter((id): id is string => Boolean(id)))];
+
+  const [profilesResult, titlesResult] = await Promise.all([
+    admin.from("profiles").select("id, full_name").in("id", profileIds),
+    titleIds.length > 0 ? admin.from("operational_titles").select("id, name").in("id", titleIds) : Promise.resolve({ data: [], error: null }),
+  ]);
+  if (profilesResult.error) console.error("[payables] failed to load profiles for payee_profiles", profilesResult.error.message);
+  if (titlesResult.error) console.error("[payables] failed to load operational_titles for payee_profiles", titlesResult.error.message);
+
+  const nameByProfileId = new Map((profilesResult.data ?? []).map((p) => [p.id, p.full_name as string | null]));
+  const nameByTitleId = new Map((titlesResult.data ?? []).map((t) => [t.id, t.name as string]));
+
+  return rows.map((r) => ({
     id: r.id,
     category: r.category,
     operationalTitleId: r.operational_title_id,
-    operationalTitleName: r.operational_titles?.name ?? null,
+    operationalTitleName: r.operational_title_id ? (nameByTitleId.get(r.operational_title_id) ?? null) : null,
     companyName: r.company_name,
     status: r.status,
     notes: r.notes,
-    fullName: r.profiles?.full_name ?? null,
+    fullName: nameByProfileId.get(r.id) ?? null,
     createdAt: r.created_at,
-  };
+  }));
 }
 
 // Listing is a Finance-tier operation (matches listAllPaymentObligations'
@@ -84,7 +120,7 @@ export async function listPayeeProfiles(actorUserId: string): Promise<PayeeProfi
     console.error("[payables] failed to load payee_profiles", error.message);
     return [];
   }
-  return (data ?? []).map((r) => mapPayeeProfile(r as unknown as RawPayeeProfileRow));
+  return attachPayeeProfileRelations(admin, data ?? []);
 }
 
 export async function getPayeeProfile(payeeProfileId: string): Promise<PayeeProfile | null> {
@@ -94,7 +130,8 @@ export async function getPayeeProfile(payeeProfileId: string): Promise<PayeeProf
     if (error) console.error("[payables] failed to load payee_profile", error.message);
     return null;
   }
-  return mapPayeeProfile(data as unknown as RawPayeeProfileRow);
+  const [attached] = await attachPayeeProfileRelations(admin, [data]);
+  return attached ?? null;
 }
 
 export type CreatePayeeProfileParams = {

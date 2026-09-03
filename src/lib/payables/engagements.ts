@@ -84,8 +84,16 @@ export type Engagement = {
   createdAt: string;
 };
 
+// Read-path fix (2026-09-04) — same bug class found and fixed in
+// payeeProfiles.ts: engagements has TWO foreign keys to profiles
+// (payee_profile_id -> profiles.id, AND created_by -> profiles.id),
+// making an unqualified `profiles(full_name)` embed ambiguous to
+// PostgREST — it would error, and the error handling below would
+// silently return []. Not yet observed in the wild only because no
+// engagement had been created yet at the time this was found; fixed
+// proactively using the same manual-join pattern, for the same reason.
 const SELECT =
-  "id, payee_profile_id, external_payee_name, engagement_type_id, operational_title_id, role_note, entity_type, entity_id, currency, agreed_amount, starts_at, ends_at, due_date, status, notes, payment_obligation_id, created_at, engagement_types(name), operational_titles(name), profiles(full_name)";
+  "id, payee_profile_id, external_payee_name, engagement_type_id, operational_title_id, role_note, entity_type, entity_id, currency, agreed_amount, starts_at, ends_at, due_date, status, notes, payment_obligation_id, created_at";
 
 type RawEngagementRow = {
   id: string;
@@ -105,21 +113,37 @@ type RawEngagementRow = {
   notes: string | null;
   payment_obligation_id: string | null;
   created_at: string;
-  engagement_types: { name: string } | null;
-  operational_titles: { name: string } | null;
-  profiles: { full_name: string | null } | null;
 };
 
-function mapEngagement(r: RawEngagementRow): Engagement {
-  return {
+async function attachEngagementRelations(admin: ReturnType<typeof createAdminClient>, rows: RawEngagementRow[]): Promise<Engagement[]> {
+  if (rows.length === 0) return [];
+
+  const payeeProfileIds = [...new Set(rows.map((r) => r.payee_profile_id).filter((id): id is string => Boolean(id)))];
+  const engagementTypeIds = [...new Set(rows.map((r) => r.engagement_type_id).filter((id): id is string => Boolean(id)))];
+  const operationalTitleIds = [...new Set(rows.map((r) => r.operational_title_id).filter((id): id is string => Boolean(id)))];
+
+  const [profilesResult, engagementTypesResult, operationalTitlesResult] = await Promise.all([
+    payeeProfileIds.length > 0 ? admin.from("profiles").select("id, full_name").in("id", payeeProfileIds) : Promise.resolve({ data: [], error: null }),
+    engagementTypeIds.length > 0 ? admin.from("engagement_types").select("id, name").in("id", engagementTypeIds) : Promise.resolve({ data: [], error: null }),
+    operationalTitleIds.length > 0 ? admin.from("operational_titles").select("id, name").in("id", operationalTitleIds) : Promise.resolve({ data: [], error: null }),
+  ]);
+  if (profilesResult.error) console.error("[payables] failed to load profiles for engagements", profilesResult.error.message);
+  if (engagementTypesResult.error) console.error("[payables] failed to load engagement_types for engagements", engagementTypesResult.error.message);
+  if (operationalTitlesResult.error) console.error("[payables] failed to load operational_titles for engagements", operationalTitlesResult.error.message);
+
+  const nameByProfileId = new Map((profilesResult.data ?? []).map((p) => [p.id, p.full_name as string | null]));
+  const nameByEngagementTypeId = new Map((engagementTypesResult.data ?? []).map((t) => [t.id, t.name as string]));
+  const nameByOperationalTitleId = new Map((operationalTitlesResult.data ?? []).map((t) => [t.id, t.name as string]));
+
+  return rows.map((r) => ({
     id: r.id,
     payeeProfileId: r.payee_profile_id,
     externalPayeeName: r.external_payee_name,
-    payeeName: r.profiles?.full_name ?? r.external_payee_name,
+    payeeName: (r.payee_profile_id ? nameByProfileId.get(r.payee_profile_id) : null) ?? r.external_payee_name,
     engagementTypeId: r.engagement_type_id,
-    engagementTypeName: r.engagement_types?.name ?? null,
+    engagementTypeName: r.engagement_type_id ? (nameByEngagementTypeId.get(r.engagement_type_id) ?? null) : null,
     operationalTitleId: r.operational_title_id,
-    operationalTitleName: r.operational_titles?.name ?? null,
+    operationalTitleName: r.operational_title_id ? (nameByOperationalTitleId.get(r.operational_title_id) ?? null) : null,
     roleNote: r.role_note,
     entityType: r.entity_type,
     entityId: r.entity_id,
@@ -132,7 +156,7 @@ function mapEngagement(r: RawEngagementRow): Engagement {
     notes: r.notes,
     paymentObligationId: r.payment_obligation_id,
     createdAt: r.created_at,
-  };
+  }));
 }
 
 export async function listAllEngagements(actorUserId: string): Promise<Engagement[]> {
@@ -145,7 +169,7 @@ export async function listAllEngagements(actorUserId: string): Promise<Engagemen
     console.error("[payables] failed to load engagements", error.message);
     return [];
   }
-  return (data ?? []).map((r) => mapEngagement(r as unknown as RawEngagementRow));
+  return attachEngagementRelations(admin, data ?? []);
 }
 
 export async function listEngagementsForPayee(payeeProfileId: string): Promise<Engagement[]> {
@@ -155,7 +179,7 @@ export async function listEngagementsForPayee(payeeProfileId: string): Promise<E
     console.error("[payables] failed to load engagements for payee", error.message);
     return [];
   }
-  return (data ?? []).map((r) => mapEngagement(r as unknown as RawEngagementRow));
+  return attachEngagementRelations(admin, data ?? []);
 }
 
 export async function getEngagement(engagementId: string): Promise<Engagement | null> {
@@ -165,7 +189,8 @@ export async function getEngagement(engagementId: string): Promise<Engagement | 
     if (error) console.error("[payables] failed to load engagement", error.message);
     return null;
   }
-  return mapEngagement(data as unknown as RawEngagementRow);
+  const [attached] = await attachEngagementRelations(admin, [data]);
+  return attached ?? null;
 }
 
 export type CreateEngagementParams = {
