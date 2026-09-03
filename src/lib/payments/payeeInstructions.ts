@@ -1,6 +1,31 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { logActivity } from "@/lib/admin/activityLog";
-import { isSuperAdminId, hasAuthority, FINANCE_CAPABILITIES } from "@/lib/organization/authority";
+import { isSuperAdminId, hasAuthority, authorizeWithSuperAdminOverride, FINANCE_CAPABILITIES } from "@/lib/organization/authority";
+import { isOwnPaymentDestination, validatePaymentDestinationInput } from "@/lib/payables/paymentDestinationShared";
+
+// Payment Destination UX (2026-09-04 investigation) — createPaymentInstruction()/
+// updatePaymentInstruction()/setPaymentInstructionActive() had NO
+// authorization check of their own before this fix — reachable only
+// through the admin page today (which does gate access), but a real
+// defense-in-depth gap given every other mutation in this module
+// family checks its own authority independent of the calling page
+// (see verifyPaymentInstruction() below, which already did this
+// correctly). Closed now, and reused as the enforcement point for the
+// new self-service path: an actor may always manage their OWN
+// destination (isOwnPaymentDestination — the payee submitting their
+// own details); anyone else needs finance.payee.administer or Super
+// Admin, same as every other Payables admin mutation.
+async function authorizePaymentInstructionMutation(
+  actorUserId: string,
+  targetProfileId: string
+): Promise<{ ok: true; actedAsSelf: boolean; actedAsSuperAdminOverride: boolean } | { ok: false; error: string }> {
+  if (isOwnPaymentDestination(actorUserId, targetProfileId)) {
+    return { ok: true, actedAsSelf: true, actedAsSuperAdminOverride: false };
+  }
+  const auth = await authorizeWithSuperAdminOverride(actorUserId, FINANCE_CAPABILITIES.payeeAdminister);
+  if (!auth.ok) return { ok: false, error: "Not authorized to manage this payment destination." };
+  return { ok: true, actedAsSelf: false, actedAsSuperAdminOverride: auth.actedAsOverride };
+}
 
 // Ordift Organizational & Administrative Architecture V1, Phase 3.3,
 // Part G (2026-08-25) — payee payment-instruction foundation, against
@@ -89,6 +114,20 @@ export type CreatePaymentInstructionParams = {
 export async function createPaymentInstruction(
   params: CreatePaymentInstructionParams
 ): Promise<{ ok: true; instructionId: string } | { ok: false; error: string }> {
+  const auth = await authorizePaymentInstructionMutation(params.actorUserId, params.profileId);
+  if (!auth.ok) return auth;
+
+  const validation = validatePaymentDestinationInput({
+    method: params.method,
+    country: params.country,
+    currency: params.currency,
+    accountHolderName: params.accountHolderName,
+    institutionName: params.institutionName ?? null,
+    accountIdentifier: params.accountIdentifier ?? null,
+    routingIdentifier: params.routingIdentifier ?? null,
+  });
+  if (!validation.ok) return validation;
+
   const admin = createAdminClient();
 
   if (params.makeDefault) {
@@ -121,7 +160,7 @@ export async function createPaymentInstruction(
     action: "payment_instruction.created",
     entityType: "user",
     entityId: params.profileId,
-    metadata: { method: params.method, institutionName: params.institutionName ?? null, country: params.country },
+    metadata: { method: params.method, institutionName: params.institutionName ?? null, country: params.country, actedAsSelf: auth.actedAsSelf, actedAsSuperAdminOverride: auth.actedAsSuperAdminOverride },
   });
 
   return { ok: true, instructionId: data.id };
@@ -183,6 +222,9 @@ export async function updatePaymentInstruction(params: {
   const { data: existing } = await admin.from("payment_instructions").select("profile_id").eq("id", params.instructionId).maybeSingle();
   if (!existing) return { ok: false, error: "Payment instruction not found." };
 
+  const auth = await authorizePaymentInstructionMutation(params.actorUserId, existing.profile_id);
+  if (!auth.ok) return auth;
+
   const update: Record<string, unknown> = { verification_status: "unverified" };
   if (params.accountHolderName !== undefined) update.account_holder_name = params.accountHolderName;
   if (params.institutionName !== undefined) update.institution_name = params.institutionName;
@@ -214,6 +256,9 @@ export async function setPaymentInstructionActive(params: {
   const admin = createAdminClient();
   const { data: existing } = await admin.from("payment_instructions").select("profile_id").eq("id", params.instructionId).maybeSingle();
   if (!existing) return { ok: false, error: "Payment instruction not found." };
+
+  const auth = await authorizePaymentInstructionMutation(params.actorUserId, existing.profile_id);
+  if (!auth.ok) return auth;
 
   const { error } = await admin.from("payment_instructions").update({ active: params.active }).eq("id", params.instructionId);
   if (error) {

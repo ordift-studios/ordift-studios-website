@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import Logo from "@/components/Logo";
 import { getCurrentUser, hasRole, type RoleSlug } from "@/lib/portal/roles";
+import { getOwnPayeeProfile } from "@/lib/payables/payeeProfiles";
 import { signOutAction } from "../login/actions";
 
 // Defense in depth: proxy.ts already redirects unauthenticated /portal/**
@@ -34,9 +35,16 @@ export default async function PortalDashboardLayout({
   if (!user) redirect("/portal/login");
 
   const matchingNavItems = NAV_ITEMS.filter((item) => hasRole(user, item.role));
-  const visibleNavItems = matchingNavItems.filter(
+  const dedupedNavItems: { label: string; href: string }[] = matchingNavItems.filter(
     (item, index) => matchingNavItems.findIndex((other) => other.href === item.href) === index
   );
+  // Payment Details (2026-09-04) — gated by public.payee_profiles, not
+  // the legacy roles table above: a payee can hold any role (client,
+  // staff, ...) and still be classified as vendor/contractor/
+  // instructor/etc. via payee_profiles, so this can't be expressed as
+  // a NAV_ITEMS role entry the way every other link above is.
+  const isPayee = Boolean(await getOwnPayeeProfile(user.id));
+  const visibleNavItems = isPayee ? [...dedupedNavItems, { label: "Payment Details", href: "/portal/payment-details" }] : dedupedNavItems;
 
   return (
     <div className="min-h-screen flex flex-col">

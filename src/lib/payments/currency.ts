@@ -141,3 +141,23 @@ export async function lockExchangeRate(
     source: "ordift", // admin-controlled — see module doc comment above
   };
 }
+
+export type CurrencyOption = { code: string; name: string };
+
+// Payment Destination UX (2026-09-04) — the currency dropdown for
+// method-aware payment-destination forms (admin and self-service
+// alike). Uses the session-scoped client, not the admin/service-role
+// one: currencies' own RLS ("readable by authenticated") already
+// allows any signed-in user to read this reference-data table, exactly
+// the access level a plain currency picker needs — no elevated
+// privilege required. Reuses public.currencies (0024) directly rather
+// than a second, duplicate currency list.
+export async function listActiveCurrencies(): Promise<CurrencyOption[]> {
+  const supabase = await createClient();
+  const { data, error } = await supabase.from("currencies").select("code, name").eq("is_active", true).order("code");
+  if (error) {
+    console.error("[payments] failed to load currencies", error.message);
+    return [];
+  }
+  return data ?? [];
+}

@@ -7,10 +7,13 @@ import { getPayeeProfile } from "@/lib/payables/payeeProfiles";
 import { listEngagementsForPayee, getValidEngagementTransitions } from "@/lib/payables/engagements";
 import { listPaymentObligationsForPayee } from "@/lib/payments/payoutObligations";
 import { listPaymentInstructionsForProfile } from "@/lib/payments/payeeInstructions";
+import { listActiveCurrencies } from "@/lib/payments/currency";
 import { listEngagementTypes, listOperationalTitles } from "@/lib/portal/adminData";
 import { getActivityForEntity } from "@/lib/admin/activityLog";
+import { PAYMENT_METHOD_LABELS, countryName, type PaymentMethod } from "@/lib/payables/paymentDestinationShared";
 import ConfirmSubmitButton from "@/components/admin/ConfirmSubmitButton";
 import SubmitButton from "@/components/admin/SubmitButton";
+import PaymentDestinationForm from "@/components/payables/PaymentDestinationForm";
 import {
   createPaymentInstructionAction,
   verifyPaymentInstructionAction,
@@ -34,11 +37,12 @@ export default async function AdminPayeeDetailPage({ params }: { params: Promise
   if (!auth.ok) redirect("/admin/payables");
 
   const { id } = await params;
-  const [payee, engagements, payables, instructions, engagementTypes, operationalTitles, history] = await Promise.all([
+  const [payee, engagements, payables, instructions, currencies, engagementTypes, operationalTitles, history] = await Promise.all([
     getPayeeProfile(id),
     listEngagementsForPayee(id),
     listPaymentObligationsForPayee(id),
     listPaymentInstructionsForProfile(id),
+    listActiveCurrencies(),
     listEngagementTypes(),
     listOperationalTitles(),
     getActivityForEntity("user", id),
@@ -79,10 +83,10 @@ export default async function AdminPayeeDetailPage({ params }: { params: Promise
           {instructions.map((i) => (
             <li key={i.id} className="px-4 py-3">
               <p className="font-sans text-body-small text-ordift-ink">
-                {i.method} · {i.institutionName ?? "—"} · {i.accountHolderName} · {i.maskedAccountIdentifier ?? "—"}
+                {PAYMENT_METHOD_LABELS[i.method as PaymentMethod] ?? i.method} · {i.institutionName ?? "—"} · {i.accountHolderName} · {i.maskedAccountIdentifier ?? "—"}
               </p>
               <p className="font-sans text-caption text-ordift-ink-muted mb-2">
-                {i.country} · {i.currency} · {i.verificationStatus} · {i.active ? "active" : "deactivated"} {i.isDefault ? "· default" : ""}
+                {countryName(i.country)} · {i.currency} · {i.verificationStatus} · {i.active ? "active" : "deactivated"} {i.isDefault ? "· default" : ""}
               </p>
               <div className="flex flex-wrap gap-2">
                 <form action={verifyPaymentInstructionAction}>
@@ -120,50 +124,14 @@ export default async function AdminPayeeDetailPage({ params }: { params: Promise
 
         <details className="rounded-lg border border-black/10 p-4">
           <summary className="font-sans text-body-small text-ordift-ink cursor-pointer">Add a payment destination</summary>
-          <form action={createPaymentInstructionAction} className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4">
-            <input type="hidden" name="profileId" value={payee.id} />
-            <label className="flex flex-col gap-1">
-              <span className="font-sans text-caption text-ordift-ink-muted">Method</span>
-              <select name="method" required className="rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small">
-                <option value="bank_account">Bank account</option>
-                <option value="mobile_money">Mobile money</option>
-                <option value="other">Other</option>
-              </select>
-            </label>
-            <label className="flex flex-col gap-1">
-              <span className="font-sans text-caption text-ordift-ink-muted">Country (ISO 3166-1 alpha-2)</span>
-              <input name="country" required maxLength={2} placeholder="GH" className="rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small" />
-            </label>
-            <label className="flex flex-col gap-1">
-              <span className="font-sans text-caption text-ordift-ink-muted">Currency</span>
-              <input name="currency" required placeholder="GHS" className="rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small" />
-            </label>
-            <label className="flex flex-col gap-1">
-              <span className="font-sans text-caption text-ordift-ink-muted">Account holder name</span>
-              <input name="accountHolderName" required className="rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small" />
-            </label>
-            <label className="flex flex-col gap-1">
-              <span className="font-sans text-caption text-ordift-ink-muted">Institution name (optional)</span>
-              <input name="institutionName" className="rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small" />
-            </label>
-            <label className="flex flex-col gap-1">
-              <span className="font-sans text-caption text-ordift-ink-muted">Account identifier</span>
-              <input name="accountIdentifier" className="rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small" />
-            </label>
-            <label className="flex flex-col gap-1">
-              <span className="font-sans text-caption text-ordift-ink-muted">Routing identifier (optional)</span>
-              <input name="routingIdentifier" className="rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small" />
-            </label>
-            <label className="flex items-center gap-2 mt-6">
-              <input type="checkbox" name="makeDefault" />
-              <span className="font-sans text-caption text-ordift-ink-muted">Make default</span>
-            </label>
-            <div className="sm:col-span-2">
-              <SubmitButton pendingLabel="Saving…" className="rounded-lg bg-ordift-ink px-4 py-2 font-sans text-body-small text-white hover:opacity-90">
-                Save Destination
-              </SubmitButton>
-            </div>
-          </form>
+          <div className="mt-4">
+            <PaymentDestinationForm
+              targetProfileId={payee.id}
+              currencies={currencies}
+              createAction={createPaymentInstructionAction}
+              onSuccessMessage="Payment destination saved."
+            />
+          </div>
         </details>
       </section>
 

@@ -83,16 +83,24 @@ export async function setPayeeProfileStatusAction(formData: FormData): Promise<v
   revalidatePath(`/admin/payables/payees/${payeeProfileId}`);
 }
 
-export async function createPaymentInstructionAction(formData: FormData): Promise<void> {
+// Mutation feedback (2026-09-04) — same useActionState pattern as
+// createPayeeProfileAction/AddPayeeForm.tsx: typed return state instead
+// of void, so PaymentDestinationForm.tsx (shared between this admin
+// context and the self-service portal) can show a real success
+// confirmation or an inline error with the entered values preserved,
+// instead of the silent no-op the original Add Payee action had.
+export type PaymentDestinationState = { ok: boolean; error?: string } | null;
+
+export async function createPaymentInstructionAction(_prevState: PaymentDestinationState, formData: FormData): Promise<PaymentDestinationState> {
   const user = await getCurrentUser();
-  if (!user) return;
+  if (!user) return { ok: false, error: "Not signed in." };
 
   const profileId = str(formData, "profileId");
   const method = str(formData, "method");
   const country = str(formData, "country");
   const currency = str(formData, "currency");
   const accountHolderName = str(formData, "accountHolderName");
-  if (!profileId || !method || !country || !currency || !accountHolderName) return;
+  if (!profileId) return { ok: false, error: "Missing account — please reload the page." };
 
   const result = await createPaymentInstruction({
     profileId,
@@ -106,18 +114,20 @@ export async function createPaymentInstructionAction(formData: FormData): Promis
     makeDefault: formData.get("makeDefault") === "on",
     actorUserId: user.id,
   });
-  if (!result.ok) console.error("[admin payables] createPaymentInstruction failed", result.error);
+  if (!result.ok) return { ok: false, error: result.error };
 
   revalidatePath(`/admin/payables/payees/${profileId}`);
+  revalidatePath("/portal/payment-details");
+  return { ok: true };
 }
 
-export async function updatePaymentInstructionAction(formData: FormData): Promise<void> {
+export async function updatePaymentInstructionAction(_prevState: PaymentDestinationState, formData: FormData): Promise<PaymentDestinationState> {
   const user = await getCurrentUser();
-  if (!user) return;
+  if (!user) return { ok: false, error: "Not signed in." };
 
   const instructionId = str(formData, "instructionId");
   const profileId = str(formData, "profileId");
-  if (!instructionId) return;
+  if (!instructionId) return { ok: false, error: "Missing destination — please reload the page." };
 
   const result = await updatePaymentInstruction({
     instructionId,
@@ -127,9 +137,11 @@ export async function updatePaymentInstructionAction(formData: FormData): Promis
     routingIdentifier: optStr(formData, "routingIdentifier"),
     actorUserId: user.id,
   });
-  if (!result.ok) console.error("[admin payables] updatePaymentInstruction failed", result.error);
+  if (!result.ok) return { ok: false, error: result.error };
 
   if (profileId) revalidatePath(`/admin/payables/payees/${profileId}`);
+  revalidatePath("/portal/payment-details");
+  return { ok: true };
 }
 
 export async function verifyPaymentInstructionAction(formData: FormData): Promise<void> {
