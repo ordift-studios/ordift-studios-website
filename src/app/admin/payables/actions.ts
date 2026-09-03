@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/portal/roles";
 import { createPayeeProfile, setPayeeProfileStatus } from "@/lib/payables/payeeProfiles";
 import { createEngagement, setEngagementStatus, createEngagementPayable } from "@/lib/payables/engagements";
@@ -29,13 +30,40 @@ function num(formData: FormData, key: string): number {
   return Number(formData.get(key) ?? 0) || 0;
 }
 
-export async function createPayeeProfileAction(formData: FormData): Promise<void> {
-  const user = await getCurrentUser();
-  if (!user) return;
+// Mutation feedback fix (2026-09-04) — root-caused after a real
+// Production Add Payee submission (which actually succeeded) gave the
+// administrator zero visible signal either way. Previously this was a
+// bare void-returning action with only revalidatePath() — no
+// navigation, no returned state, nothing for the browser to show.
+// Every comparable "create" action elsewhere in this codebase (e.g.
+// createWorkshopAction) redirects to the newly created record's own
+// page on success; this now does the same — redirect() forces a
+// guaranteed fresh render (the new payee genuinely appears in the
+// Payees list on any subsequent visit) and IS the success confirmation
+// (landing on her own detail page is unambiguous). On failure, no
+// redirect happens — the client component (AddPayeeForm.tsx) keeps the
+// form mounted with whatever the administrator entered, and displays
+// the returned error text via useActionState.
+export type CreatePayeeProfileState = { ok: boolean; error?: string } | null;
 
+// Pure — checked before any session/database call, both so a common
+// mistake (nothing selected) fails instantly without a round-trip, and
+// so this specific check is directly unit-testable without a request
+// context (getCurrentUser() below needs one; this doesn't).
+export function validateCreatePayeeProfileInput(params: { profileId: string; category: string }): { ok: true } | { ok: false; error: string } {
+  if (!params.profileId) return { ok: false, error: "Select an existing account first." };
+  if (!params.category) return { ok: false, error: "Select a category." };
+  return { ok: true };
+}
+
+export async function createPayeeProfileAction(_prevState: CreatePayeeProfileState, formData: FormData): Promise<CreatePayeeProfileState> {
   const profileId = str(formData, "profileId");
   const category = str(formData, "category");
-  if (!profileId || !category) return;
+  const inputCheck = validateCreatePayeeProfileInput({ profileId, category });
+  if (!inputCheck.ok) return inputCheck;
+
+  const user = await getCurrentUser();
+  if (!user) return { ok: false, error: "Not signed in." };
 
   const result = await createPayeeProfile({
     profileId,
@@ -45,9 +73,10 @@ export async function createPayeeProfileAction(formData: FormData): Promise<void
     notes: optStr(formData, "notes"),
     actorUserId: user.id,
   });
-  if (!result.ok) console.error("[admin payables] createPayeeProfile failed", result.error);
+  if (!result.ok) return { ok: false, error: result.error };
 
   revalidatePath("/admin/payables/payees");
+  redirect(`/admin/payables/payees/${profileId}`);
 }
 
 export async function setPayeeProfileStatusAction(formData: FormData): Promise<void> {

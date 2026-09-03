@@ -8,6 +8,8 @@ import { getPayeeProfile } from "@/lib/payables/payeeProfiles";
 import { listPayableItems, PAYABLE_ITEM_KINDS } from "@/lib/payables/payableItems";
 import { listPaymentEvidence } from "@/lib/payables/paymentEvidence";
 import { getActivityForEntity } from "@/lib/admin/activityLog";
+import SubmitButton from "@/components/admin/SubmitButton";
+import ConfirmSubmitButton from "@/components/admin/ConfirmSubmitButton";
 import { addPayableItemAction, approvePayableAction, recordManualPaymentAction, addPaymentEvidenceAction } from "../actions";
 
 export const metadata: Metadata = {
@@ -89,9 +91,9 @@ export default async function AdminPayableDetailPage({ params }: { params: Promi
                 <input name="amount" type="number" step="0.01" min="0.01" required className="rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small" />
               </label>
               <div className="flex items-end">
-                <button type="submit" className="rounded-lg bg-ordift-ink px-4 py-2 font-sans text-body-small text-white hover:opacity-90">
+                <SubmitButton pendingLabel="Adding…" className="rounded-lg bg-ordift-ink px-4 py-2 font-sans text-body-small text-white hover:opacity-90">
                   Add Item
-                </button>
+                </SubmitButton>
               </div>
             </form>
           </details>
@@ -105,9 +107,13 @@ export default async function AdminPayableDetailPage({ params }: { params: Promi
           <p className="font-sans text-caption text-ordift-ink-muted mb-3">Approving confirms the record only — it never moves money.</p>
           <form action={approvePayableAction}>
             <input type="hidden" name="obligationId" value={obligation.id} />
-            <button type="submit" className="rounded-lg bg-ordift-ink px-4 py-2 font-sans text-body-small text-white hover:opacity-90">
+            <ConfirmSubmitButton
+              confirmMessage={`Approve this payable (${obligation.currency} ${obligation.amount})? This confirms the record only — it does not move money — and is recorded in the audit trail.`}
+              pendingLabel="Approving…"
+              className="rounded-lg bg-ordift-ink px-4 py-2 font-sans text-body-small text-white hover:opacity-90"
+            >
               Approve
-            </button>
+            </ConfirmSubmitButton>
           </form>
         </section>
       )}
@@ -145,9 +151,13 @@ export default async function AdminPayableDetailPage({ params }: { params: Promi
               <input name="reference" required className="rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small" />
             </label>
             <div className="sm:col-span-2">
-              <button type="submit" className="rounded-lg bg-ordift-ink px-4 py-2 font-sans text-body-small text-white hover:opacity-90">
+              <ConfirmSubmitButton
+                confirmMessage={`Record this payment as made (${obligation.currency} ${obligation.amount})? This marks the payable "paid" and is recorded in the audit trail. This cannot be undone from this screen.`}
+                pendingLabel="Recording…"
+                className="rounded-lg bg-ordift-ink px-4 py-2 font-sans text-body-small text-white hover:opacity-90"
+              >
                 Record Payment
-              </button>
+              </ConfirmSubmitButton>
             </div>
           </form>
         </section>
@@ -193,9 +203,9 @@ export default async function AdminPayableDetailPage({ params }: { params: Promi
               <textarea name="notes" rows={2} className="rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small" />
             </label>
             <div className="sm:col-span-2">
-              <button type="submit" className="rounded-lg bg-ordift-ink px-4 py-2 font-sans text-body-small text-white hover:opacity-90">
+              <SubmitButton pendingLabel="Saving…" className="rounded-lg bg-ordift-ink px-4 py-2 font-sans text-body-small text-white hover:opacity-90">
                 Save Evidence
-              </button>
+              </SubmitButton>
             </div>
           </form>
         </details>

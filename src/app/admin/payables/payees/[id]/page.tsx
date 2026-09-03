@@ -10,6 +10,7 @@ import { listPaymentInstructionsForProfile } from "@/lib/payments/payeeInstructi
 import { listEngagementTypes, listOperationalTitles } from "@/lib/portal/adminData";
 import { getActivityForEntity } from "@/lib/admin/activityLog";
 import ConfirmSubmitButton from "@/components/admin/ConfirmSubmitButton";
+import SubmitButton from "@/components/admin/SubmitButton";
 import {
   createPaymentInstructionAction,
   verifyPaymentInstructionAction,
@@ -61,9 +62,9 @@ export default async function AdminPayeeDetailPage({ params }: { params: Promise
             <option value="inactive">inactive</option>
             <option value="suspended">suspended</option>
           </select>
-          <button type="submit" className="rounded-lg border border-black/15 px-3 py-2 font-sans text-caption hover:border-black/30">
+          <SubmitButton pendingLabel="Updating…" className="rounded-lg border border-black/15 px-3 py-2 font-sans text-caption hover:border-black/30">
             Update Status
-          </button>
+          </SubmitButton>
         </form>
       </div>
 
@@ -88,25 +89,28 @@ export default async function AdminPayeeDetailPage({ params }: { params: Promise
                   <input type="hidden" name="instructionId" value={i.id} />
                   <input type="hidden" name="profileId" value={payee.id} />
                   <input type="hidden" name="verified" value="true" />
-                  <button type="submit" className="rounded border border-black/15 px-2 py-1 font-sans text-caption hover:border-black/30">
+                  <SubmitButton pendingLabel="Verifying…" className="rounded border border-black/15 px-2 py-1 font-sans text-caption hover:border-black/30">
                     Verify
-                  </button>
+                  </SubmitButton>
                 </form>
                 <form action={verifyPaymentInstructionAction}>
                   <input type="hidden" name="instructionId" value={i.id} />
                   <input type="hidden" name="profileId" value={payee.id} />
                   <input type="hidden" name="verified" value="false" />
-                  <button type="submit" className="rounded border border-black/15 px-2 py-1 font-sans text-caption hover:border-black/30">
+                  <SubmitButton pendingLabel="Rejecting…" className="rounded border border-black/15 px-2 py-1 font-sans text-caption hover:border-black/30">
                     Reject
-                  </button>
+                  </SubmitButton>
                 </form>
                 <form action={setPaymentInstructionActiveAction}>
                   <input type="hidden" name="instructionId" value={i.id} />
                   <input type="hidden" name="profileId" value={payee.id} />
                   <input type="hidden" name="active" value={i.active ? "false" : "true"} />
-                  <button type="submit" className="rounded border border-black/15 px-2 py-1 font-sans text-caption hover:border-black/30">
+                  <SubmitButton
+                    pendingLabel={i.active ? "Deactivating…" : "Reactivating…"}
+                    className="rounded border border-black/15 px-2 py-1 font-sans text-caption hover:border-black/30"
+                  >
                     {i.active ? "Deactivate" : "Reactivate"}
-                  </button>
+                  </SubmitButton>
                 </form>
               </div>
             </li>
@@ -155,9 +159,9 @@ export default async function AdminPayeeDetailPage({ params }: { params: Promise
               <span className="font-sans text-caption text-ordift-ink-muted">Make default</span>
             </label>
             <div className="sm:col-span-2">
-              <button type="submit" className="rounded-lg bg-ordift-ink px-4 py-2 font-sans text-body-small text-white hover:opacity-90">
+              <SubmitButton pendingLabel="Saving…" className="rounded-lg bg-ordift-ink px-4 py-2 font-sans text-body-small text-white hover:opacity-90">
                 Save Destination
-              </button>
+              </SubmitButton>
             </div>
           </form>
         </details>
@@ -184,14 +188,15 @@ export default async function AdminPayeeDetailPage({ params }: { params: Promise
                     {t.requiresConfirmation ? (
                       <ConfirmSubmitButton
                         confirmMessage={`${t.label} for this engagement? This changes its status to "${t.to}" and is recorded in the audit trail.`}
+                        pendingLabel="Working…"
                         className="rounded border border-black/15 px-2 py-1 font-sans text-caption hover:border-black/30"
                       >
                         {t.label}
                       </ConfirmSubmitButton>
                     ) : (
-                      <button type="submit" className="rounded border border-black/15 px-2 py-1 font-sans text-caption hover:border-black/30">
+                      <SubmitButton pendingLabel="Working…" className="rounded border border-black/15 px-2 py-1 font-sans text-caption hover:border-black/30">
                         {t.label}
-                      </button>
+                      </SubmitButton>
                     )}
                   </form>
                 ))}
@@ -206,9 +211,9 @@ export default async function AdminPayeeDetailPage({ params }: { params: Promise
                     defaultValue={`${e.operationalTitleName ?? "Engagement"} compensation`}
                     className="rounded border border-black/15 px-2 py-1 font-sans text-caption"
                   />
-                  <button type="submit" className="rounded border border-black/15 px-2 py-1 font-sans text-caption hover:border-black/30">
+                  <SubmitButton pendingLabel="Creating…" className="rounded border border-black/15 px-2 py-1 font-sans text-caption hover:border-black/30">
                     Create Payable
-                  </button>
+                  </SubmitButton>
                 </form>
               )}
               {e.paymentObligationId && (
@@ -268,9 +273,9 @@ export default async function AdminPayeeDetailPage({ params }: { params: Promise
               <textarea name="notes" rows={2} className="rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small" />
             </label>
             <div className="sm:col-span-2">
-              <button type="submit" className="rounded-lg bg-ordift-ink px-4 py-2 font-sans text-body-small text-white hover:opacity-90">
+              <SubmitButton pendingLabel="Creating…" className="rounded-lg bg-ordift-ink px-4 py-2 font-sans text-body-small text-white hover:opacity-90">
                 Create Engagement
-              </button>
+              </SubmitButton>
             </div>
           </form>
         </details>
@@ -310,9 +315,9 @@ export default async function AdminPayeeDetailPage({ params }: { params: Promise
               <input name="currency" required placeholder="GHS" className="rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small" />
             </label>
             <div className="flex items-end">
-              <button type="submit" className="rounded-lg bg-ordift-ink px-4 py-2 font-sans text-body-small text-white hover:opacity-90">
+              <SubmitButton pendingLabel="Creating…" className="rounded-lg bg-ordift-ink px-4 py-2 font-sans text-body-small text-white hover:opacity-90">
                 Create Payable
-              </button>
+              </SubmitButton>
             </div>
           </form>
         </details>

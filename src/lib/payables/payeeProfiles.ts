@@ -12,6 +12,20 @@ import { isSuperAdminId, authorizeWithSuperAdminOverride, FINANCE_CAPABILITIES }
 export const PAYEE_CATEGORIES = ["staff", "vendor", "contractor", "freelancer", "instructor", "talent", "consultant", "other"] as const;
 export type PayeeCategory = (typeof PAYEE_CATEGORIES)[number];
 
+// Duplicate safeguard (2026-09-04 investigation) — payee_profiles.id
+// IS the profile's own primary key (references public.profiles(id),
+// 0049), the same 1:1-by-construction pattern as model_profiles/
+// vendor_profiles/staff_details since 0001. A second attempt to
+// classify the same account is structurally impossible at the database
+// level; Postgres rejects it as a unique-violation (code 23505). This
+// pure mapping is the app-layer translation of that DB-level safeguard
+// into a message an administrator can act on, independent of any UI
+// double-click protection — directly testable without a database.
+export function mapCreatePayeeProfileError(code: string | undefined): string {
+  if (code === "23505") return "This person is already classified as a payee.";
+  return "Failed to create the payee profile.";
+}
+
 export type PayeeProfile = {
   id: string;
   category: string;
@@ -111,7 +125,7 @@ export async function createPayeeProfile(params: CreatePayeeProfileParams): Prom
   });
   if (error) {
     console.error("[payables] failed to create payee_profile", error.message);
-    return { ok: false, error: error.code === "23505" ? "This person is already classified as a payee." : "Failed to create the payee profile." };
+    return { ok: false, error: mapCreatePayeeProfileError(error.code) };
   }
 
   await logActivity({
