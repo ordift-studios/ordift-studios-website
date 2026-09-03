@@ -4,16 +4,18 @@ import Link from "next/link";
 import { getCurrentUser } from "@/lib/portal/roles";
 import { authorizeWithSuperAdminOverride, FINANCE_CAPABILITIES } from "@/lib/organization/authority";
 import { getPayeeProfile } from "@/lib/payables/payeeProfiles";
-import { listEngagementsForPayee } from "@/lib/payables/engagements";
+import { listEngagementsForPayee, getValidEngagementTransitions } from "@/lib/payables/engagements";
 import { listPaymentObligationsForPayee } from "@/lib/payments/payoutObligations";
 import { listPaymentInstructionsForProfile } from "@/lib/payments/payeeInstructions";
 import { listEngagementTypes, listOperationalTitles } from "@/lib/portal/adminData";
 import { getActivityForEntity } from "@/lib/admin/activityLog";
+import ConfirmSubmitButton from "@/components/admin/ConfirmSubmitButton";
 import {
   createPaymentInstructionAction,
   verifyPaymentInstructionAction,
   setPaymentInstructionActiveAction,
   createEngagementAction,
+  setEngagementStatusAction,
   createEngagementPayableAction,
   createStandalonePayableAction,
   setPayeeProfileStatusAction,
@@ -171,8 +173,29 @@ export default async function AdminPayeeDetailPage({ params }: { params: Promise
                 {e.operationalTitleName ?? e.roleNote ?? "Engagement"} {e.engagementTypeName ? `· ${e.engagementTypeName}` : ""}
               </p>
               <p className="font-sans text-caption text-ordift-ink-muted mb-2">
-                {e.status} {e.agreedAmount ? `· ${e.currency} ${e.agreedAmount}` : ""} {e.paymentObligationId ? "· payable linked" : ""}
+                Status: <strong>{e.status}</strong> {e.agreedAmount ? `· ${e.currency} ${e.agreedAmount}` : ""} {e.paymentObligationId ? "· payable linked" : ""}
               </p>
+              <div className="flex flex-wrap gap-2 mb-2">
+                {getValidEngagementTransitions(e.status).map((t) => (
+                  <form key={t.to} action={setEngagementStatusAction}>
+                    <input type="hidden" name="engagementId" value={e.id} />
+                    <input type="hidden" name="payeeProfileId" value={payee.id} />
+                    <input type="hidden" name="status" value={t.to} />
+                    {t.requiresConfirmation ? (
+                      <ConfirmSubmitButton
+                        confirmMessage={`${t.label} for this engagement? This changes its status to "${t.to}" and is recorded in the audit trail.`}
+                        className="rounded border border-black/15 px-2 py-1 font-sans text-caption hover:border-black/30"
+                      >
+                        {t.label}
+                      </ConfirmSubmitButton>
+                    ) : (
+                      <button type="submit" className="rounded border border-black/15 px-2 py-1 font-sans text-caption hover:border-black/30">
+                        {t.label}
+                      </button>
+                    )}
+                  </form>
+                ))}
+              </div>
               {!e.paymentObligationId && e.agreedAmount && (
                 <form action={createEngagementPayableAction} className="flex flex-wrap items-center gap-2">
                   <input type="hidden" name="engagementId" value={e.id} />

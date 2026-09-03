@@ -13,6 +13,54 @@ import { createPaymentObligation } from "@/lib/payments/payoutObligations";
 export const ENGAGEMENT_STATUSES = ["draft", "engagement_active", "work_submitted", "work_approved", "completed", "cancelled", "on_hold"] as const;
 export type EngagementStatus = (typeof ENGAGEMENT_STATUSES)[number];
 
+// Engagement Lifecycle UI (2026-09-03) — the existing status column
+// (unconstrained text, no schema change) gains a real state machine at
+// the application layer, matching how every other status-typed field
+// in this codebase (workflow_statuses.status, payment_obligations.
+// status) is governed: enforced in code, not a DB CHECK/enum. No new
+// status value is introduced — every entry below is one of
+// ENGAGEMENT_STATUSES above, already live since 0049.
+//
+// Pure and directly testable, same pure/impure split already used by
+// canDelegate()/validateDelegationAuthority() in
+// src/lib/organization/authority.ts and
+// validateManualPaymentAgainstObligation() in payoutObligations.ts —
+// this is the actual thing that prevents an arbitrary status jump
+// (e.g. 'draft' straight to 'work_approved', skipping review), which a
+// forged form submission could otherwise attempt even though the UI
+// only ever renders buttons for valid transitions.
+export const ENGAGEMENT_TRANSITIONS: Record<EngagementStatus, { to: EngagementStatus; label: string; requiresConfirmation: boolean }[]> = {
+  draft: [
+    { to: "engagement_active", label: "Activate Engagement", requiresConfirmation: false },
+    { to: "cancelled", label: "Cancel Engagement", requiresConfirmation: true },
+  ],
+  engagement_active: [
+    { to: "work_submitted", label: "Mark Work Submitted", requiresConfirmation: false },
+    { to: "on_hold", label: "Put On Hold", requiresConfirmation: false },
+    { to: "cancelled", label: "Cancel Engagement", requiresConfirmation: true },
+  ],
+  work_submitted: [
+    { to: "work_approved", label: "Approve Work", requiresConfirmation: true },
+    { to: "on_hold", label: "Put On Hold", requiresConfirmation: false },
+    { to: "cancelled", label: "Cancel Engagement", requiresConfirmation: true },
+  ],
+  work_approved: [{ to: "completed", label: "Mark Completed", requiresConfirmation: false }],
+  on_hold: [
+    { to: "engagement_active", label: "Resume Engagement", requiresConfirmation: false },
+    { to: "cancelled", label: "Cancel Engagement", requiresConfirmation: true },
+  ],
+  completed: [],
+  cancelled: [],
+};
+
+export function getValidEngagementTransitions(currentStatus: string): { to: EngagementStatus; label: string; requiresConfirmation: boolean }[] {
+  return ENGAGEMENT_TRANSITIONS[currentStatus as EngagementStatus] ?? [];
+}
+
+export function isValidEngagementTransition(fromStatus: string, toStatus: string): boolean {
+  return getValidEngagementTransitions(fromStatus).some((t) => t.to === toStatus);
+}
+
 export type Engagement = {
   id: string;
   payeeProfileId: string | null;
@@ -186,6 +234,14 @@ export async function createEngagement(params: CreateEngagementParams): Promise<
   return { ok: true, id: data.id };
 }
 
+// Validates against ENGAGEMENT_TRANSITIONS above — the real
+// enforcement point, not merely the UI only rendering valid buttons. A
+// forged form submission requesting an out-of-sequence status (e.g.
+// 'draft' straight to 'work_approved') is refused here regardless of
+// what the client sent, the same defense-in-depth principle this
+// codebase applies everywhere authorization and workflow state
+// intersect (see workflow_statuses' own app-layer-enforced transitions,
+// 0023's header comment).
 export async function setEngagementStatus(params: {
   engagementId: string;
   status: EngagementStatus;
@@ -195,6 +251,12 @@ export async function setEngagementStatus(params: {
   if (!auth.ok) return { ok: false, error: "Not authorized to administer engagements." };
 
   const admin = createAdminClient();
+  const { data: existing } = await admin.from("engagements").select("status").eq("id", params.engagementId).maybeSingle();
+  if (!existing) return { ok: false, error: "Engagement not found." };
+  if (!isValidEngagementTransition(existing.status, params.status)) {
+    return { ok: false, error: `Cannot move from "${existing.status}" to "${params.status}" — not a valid transition.` };
+  }
+
   const { error } = await admin.from("engagements").update({ status: params.status }).eq("id", params.engagementId);
   if (error) {
     console.error("[payables] failed to update engagement status", error.message);
@@ -206,7 +268,7 @@ export async function setEngagementStatus(params: {
     action: "engagement.status_changed",
     entityType: "engagement",
     entityId: params.engagementId,
-    metadata: { status: params.status },
+    metadata: { fromStatus: existing.status, toStatus: params.status, actedAsSuperAdminOverride: auth.actedAsOverride },
   });
 
   return { ok: true };
