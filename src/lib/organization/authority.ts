@@ -290,6 +290,19 @@ export const FINANCE_CAPABILITIES = {
   // amounts. Deliberately separate from paymentObligationApprove — VIEW
   // is never bundled with a mutation capability.
   workshopRevenueView: "finance.workshop_revenue.view", // WIRED — Workshop financial overview
+  // Universal Payables System (2026-09-03) — administering the payee/
+  // engagement/payable record itself (creating a payee profile, a
+  // payment instruction, an engagement, or a payable's line items) is
+  // deliberately its own capability, separate from approving one
+  // (paymentObligationApprove) and separate from recording that one
+  // has actually been paid (paymentObligationRecordPayment below) —
+  // three distinct duties, never bundled, matching this taxonomy's
+  // existing view/mutation separation principle.
+  payeeAdminister: "finance.payee.administer", // WIRED — src/lib/payables/*
+  // Marks an already-approved obligation as paid via a controlled,
+  // auditable manual/external payment record — never a bare status
+  // dropdown edit. See recordManualPayment() in payoutObligations.ts.
+  paymentObligationRecordPayment: "finance.payment_obligation.record_payment", // WIRED — recordManualPayment()
 } as const;
 
 // strategy.* — ARCHITECT. Fully DORMANT — no strategic-planning/

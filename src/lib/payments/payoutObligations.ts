@@ -1,6 +1,6 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { logActivity } from "@/lib/admin/activityLog";
-import { isSuperAdminId, hasAuthority, FINANCE_CAPABILITIES } from "@/lib/organization/authority";
+import { isSuperAdminId, hasAuthority, authorizeWithSuperAdminOverride, FINANCE_CAPABILITIES } from "@/lib/organization/authority";
 
 // Ordift Organizational & Administrative Architecture V1, Phase 3.3,
 // Part I (2026-08-25) — payment-obligation/payout foundation, against
@@ -58,6 +58,16 @@ export async function listPaymentObligationsForPayee(payeeProfileId: string): Pr
     return [];
   }
   return (data ?? []).map(mapObligation);
+}
+
+export async function getPaymentObligation(obligationId: string): Promise<PaymentObligation | null> {
+  const admin = createAdminClient();
+  const { data, error } = await admin.from("payment_obligations").select(SELECT).eq("id", obligationId).maybeSingle();
+  if (error || !data) {
+    if (error) console.error("[payments] failed to load payment_obligation", error.message);
+    return null;
+  }
+  return mapObligation(data);
 }
 
 export async function listAllPaymentObligations(): Promise<PaymentObligation[]> {
@@ -197,6 +207,131 @@ export async function approvePaymentObligation(params: {
     entityType: "user",
     entityId: existing.payee_profile_id,
     metadata: { obligationId: params.obligationId, currency: existing.currency, amount: existing.amount },
+  });
+
+  return { ok: true };
+}
+
+// ============================================================
+// Universal Payables System (2026-09-03) — manual/external payment
+// recording, and the PayoutProvider registry foundation.
+// ============================================================
+
+// Registry, not a hardcoded call — a future real provider registers
+// itself here (e.g. registerPayoutProvider(paystackTransferProvider)),
+// and initiateProviderPayout() below looks it up by name. Nothing
+// registers anything today; the registry starts empty on purpose. This
+// is the "safe foundation" requested — no live transfer/recipient
+// logic, no assumption about any specific provider's account
+// capability, is implemented here.
+const payoutProviderRegistry = new Map<string, PayoutProvider>();
+
+export function registerPayoutProvider(provider: PayoutProvider): void {
+  payoutProviderRegistry.set(provider.name, provider);
+}
+
+// Deliberately NOT called by recordManualPayment() below — a manual
+// payment is recorded by a human, never routed through a
+// PayoutProvider. This function exists only so a future integrated-
+// payout action path has a single, safe place to look up a registered
+// provider; calling it today with any name always fails closed, since
+// the registry is empty.
+export async function initiateProviderPayout(params: {
+  obligationId: string;
+  providerName: string;
+  amount: number;
+  currency: string;
+  destination: unknown;
+}): Promise<{ ok: true; providerReference: string } | { ok: false; error: string }> {
+  const provider = payoutProviderRegistry.get(params.providerName);
+  if (!provider) return { ok: false, error: `No payout provider named "${params.providerName}" is registered.` };
+  const result = await provider.initiateTransfer({
+    obligationId: params.obligationId,
+    amount: params.amount,
+    currency: params.currency,
+    destination: params.destination,
+  });
+  if (!result.ok) return result;
+  return { ok: true, providerReference: result.providerReference };
+}
+
+// The ONLY controlled path from 'approved' to 'paid' when Ordift pays
+// someone outside any integrated provider (bank transfer, mobile
+// money, cash, or any other legitimate external method). A payable
+// never becomes 'paid' by a bare status edit — this function requires
+// the amount, method, date, and a reference, and always writes
+// activity_log. payout_provider is set to the literal string 'manual'
+// so a future report can distinguish manually-recorded payments from
+// a genuine PayoutProvider-executed one at a glance.
+// Pure, directly unit-testable guard — the actual thing that stops a
+// payable becoming 'paid' via the wrong amount, the wrong currency, or
+// a status that isn't 'approved'. Split out from recordManualPayment()
+// below the same way canDelegate()/validateDelegationAuthority() in
+// src/lib/organization/authority.ts separate a pure validator from its
+// DB-backed wrapper — this is the money-safety-critical logic, worth
+// verifying directly rather than only through the (DB-dependent, not
+// locally runnable) async function.
+export function validateManualPaymentAgainstObligation(params: {
+  amount: number;
+  currency: string;
+  reference: string;
+  obligation: { status: string; amount: number; currency: string };
+}): { ok: true } | { ok: false; error: string } {
+  if (params.amount <= 0) return { ok: false, error: "Amount must be greater than zero." };
+  if (!params.reference.trim()) return { ok: false, error: "A payment reference is required." };
+  if (params.obligation.status !== "approved") {
+    return { ok: false, error: `Cannot record payment — current status is "${params.obligation.status}", not "approved".` };
+  }
+  // Guards against recording a payment for the wrong amount/currency by
+  // accident — the obligation's own amount/currency (already
+  // reconciled from its payable_items, if any) is the single source of
+  // truth, never re-derived from the form input alone.
+  if (params.amount !== params.obligation.amount || params.currency !== params.obligation.currency) {
+    return { ok: false, error: `Amount/currency must match the payable exactly (${params.obligation.currency} ${params.obligation.amount}).` };
+  }
+  return { ok: true };
+}
+
+export async function recordManualPayment(params: {
+  obligationId: string;
+  method: string;
+  amount: number;
+  currency: string;
+  paidAt: string;
+  reference: string;
+  actorUserId: string;
+}): Promise<{ ok: true } | { ok: false; error: string }> {
+  const auth = await authorizeWithSuperAdminOverride(params.actorUserId, FINANCE_CAPABILITIES.paymentObligationRecordPayment);
+  if (!auth.ok) return { ok: false, error: "Not authorized to record a payment." };
+
+  const admin = createAdminClient();
+  const { data: existing } = await admin.from("payment_obligations").select("status, payee_profile_id, amount, currency").eq("id", params.obligationId).maybeSingle();
+  if (!existing) return { ok: false, error: "Payment obligation not found." };
+
+  const validation = validateManualPaymentAgainstObligation({ amount: params.amount, currency: params.currency, reference: params.reference, obligation: existing });
+  if (!validation.ok) return validation;
+
+  const { error } = await admin
+    .from("payment_obligations")
+    .update({
+      status: "paid",
+      payout_provider: "manual",
+      payout_reference: `${params.method}:${params.reference}`,
+      payout_initiated_at: params.paidAt,
+      paid_at: params.paidAt,
+    })
+    .eq("id", params.obligationId);
+  if (error) {
+    console.error("[payments] failed to record manual payment", error.message);
+    return { ok: false, error: "Failed to record the payment." };
+  }
+
+  await logActivity({
+    actorUserId: params.actorUserId,
+    action: "payment_obligation.paid_manually",
+    entityType: "user",
+    entityId: existing.payee_profile_id,
+    metadata: { obligationId: params.obligationId, method: params.method, currency: existing.currency, amount: existing.amount, actedAsSuperAdminOverride: auth.actedAsOverride },
   });
 
   return { ok: true };

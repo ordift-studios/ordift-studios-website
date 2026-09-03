@@ -1,0 +1,299 @@
+"use server";
+
+import { revalidatePath } from "next/cache";
+import { getCurrentUser } from "@/lib/portal/roles";
+import { createPayeeProfile, setPayeeProfileStatus } from "@/lib/payables/payeeProfiles";
+import { createEngagement, setEngagementStatus, createEngagementPayable } from "@/lib/payables/engagements";
+import { addPayableItem } from "@/lib/payables/payableItems";
+import { addPaymentEvidenceReference, addPaymentEvidenceFile } from "@/lib/payables/paymentEvidence";
+import { approvePaymentObligation, recordManualPayment, createPaymentObligation } from "@/lib/payments/payoutObligations";
+import { createPaymentInstruction, updatePaymentInstruction, verifyPaymentInstruction, setPaymentInstructionActive } from "@/lib/payments/payeeInstructions";
+
+// Universal Payables System (2026-09-03) — plain FormData server
+// actions, matching the established convention already used by
+// src/app/admin/workshops/actions.ts. Every function below resolves
+// the current user itself (no shared middleware) and delegates all
+// authorization to the underlying lib function
+// (authorizeWithSuperAdminOverride + the relevant FINANCE_CAPABILITIES
+// entry) — this file performs no authorization decision of its own,
+// only "is there a session at all".
+
+function str(formData: FormData, key: string): string {
+  return String(formData.get(key) ?? "").trim();
+}
+function optStr(formData: FormData, key: string): string | null {
+  const v = str(formData, key);
+  return v || null;
+}
+function num(formData: FormData, key: string): number {
+  return Number(formData.get(key) ?? 0) || 0;
+}
+
+export async function createPayeeProfileAction(formData: FormData): Promise<void> {
+  const user = await getCurrentUser();
+  if (!user) return;
+
+  const profileId = str(formData, "profileId");
+  const category = str(formData, "category");
+  if (!profileId || !category) return;
+
+  const result = await createPayeeProfile({
+    profileId,
+    category,
+    operationalTitleId: optStr(formData, "operationalTitleId"),
+    companyName: optStr(formData, "companyName"),
+    notes: optStr(formData, "notes"),
+    actorUserId: user.id,
+  });
+  if (!result.ok) console.error("[admin payables] createPayeeProfile failed", result.error);
+
+  revalidatePath("/admin/payables/payees");
+}
+
+export async function setPayeeProfileStatusAction(formData: FormData): Promise<void> {
+  const user = await getCurrentUser();
+  if (!user) return;
+
+  const payeeProfileId = str(formData, "payeeProfileId");
+  const status = str(formData, "status") as "active" | "inactive" | "suspended";
+  if (!payeeProfileId || !status) return;
+
+  const result = await setPayeeProfileStatus({ payeeProfileId, status, actorUserId: user.id });
+  if (!result.ok) console.error("[admin payables] setPayeeProfileStatus failed", result.error);
+
+  revalidatePath(`/admin/payables/payees/${payeeProfileId}`);
+}
+
+export async function createPaymentInstructionAction(formData: FormData): Promise<void> {
+  const user = await getCurrentUser();
+  if (!user) return;
+
+  const profileId = str(formData, "profileId");
+  const method = str(formData, "method");
+  const country = str(formData, "country");
+  const currency = str(formData, "currency");
+  const accountHolderName = str(formData, "accountHolderName");
+  if (!profileId || !method || !country || !currency || !accountHolderName) return;
+
+  const result = await createPaymentInstruction({
+    profileId,
+    method,
+    country,
+    currency,
+    accountHolderName,
+    institutionName: optStr(formData, "institutionName"),
+    accountIdentifier: optStr(formData, "accountIdentifier"),
+    routingIdentifier: optStr(formData, "routingIdentifier"),
+    makeDefault: formData.get("makeDefault") === "on",
+    actorUserId: user.id,
+  });
+  if (!result.ok) console.error("[admin payables] createPaymentInstruction failed", result.error);
+
+  revalidatePath(`/admin/payables/payees/${profileId}`);
+}
+
+export async function updatePaymentInstructionAction(formData: FormData): Promise<void> {
+  const user = await getCurrentUser();
+  if (!user) return;
+
+  const instructionId = str(formData, "instructionId");
+  const profileId = str(formData, "profileId");
+  if (!instructionId) return;
+
+  const result = await updatePaymentInstruction({
+    instructionId,
+    accountHolderName: optStr(formData, "accountHolderName") ?? undefined,
+    institutionName: optStr(formData, "institutionName"),
+    accountIdentifier: optStr(formData, "accountIdentifier"),
+    routingIdentifier: optStr(formData, "routingIdentifier"),
+    actorUserId: user.id,
+  });
+  if (!result.ok) console.error("[admin payables] updatePaymentInstruction failed", result.error);
+
+  if (profileId) revalidatePath(`/admin/payables/payees/${profileId}`);
+}
+
+export async function verifyPaymentInstructionAction(formData: FormData): Promise<void> {
+  const user = await getCurrentUser();
+  if (!user) return;
+
+  const instructionId = str(formData, "instructionId");
+  const profileId = str(formData, "profileId");
+  const verified = formData.get("verified") === "true";
+  if (!instructionId) return;
+
+  const result = await verifyPaymentInstruction({ instructionId, verified, actorUserId: user.id });
+  if (!result.ok) console.error("[admin payables] verifyPaymentInstruction failed", result.error);
+
+  if (profileId) revalidatePath(`/admin/payables/payees/${profileId}`);
+}
+
+export async function setPaymentInstructionActiveAction(formData: FormData): Promise<void> {
+  const user = await getCurrentUser();
+  if (!user) return;
+
+  const instructionId = str(formData, "instructionId");
+  const profileId = str(formData, "profileId");
+  const active = formData.get("active") === "true";
+  if (!instructionId) return;
+
+  const result = await setPaymentInstructionActive({ instructionId, active, actorUserId: user.id });
+  if (!result.ok) console.error("[admin payables] setPaymentInstructionActive failed", result.error);
+
+  if (profileId) revalidatePath(`/admin/payables/payees/${profileId}`);
+}
+
+export async function createEngagementAction(formData: FormData): Promise<void> {
+  const user = await getCurrentUser();
+  if (!user) return;
+
+  const payeeProfileId = optStr(formData, "payeeProfileId");
+  const externalPayeeName = optStr(formData, "externalPayeeName");
+  if (!payeeProfileId && !externalPayeeName) return;
+
+  const result = await createEngagement({
+    payeeProfileId,
+    externalPayeeName,
+    engagementTypeId: optStr(formData, "engagementTypeId"),
+    operationalTitleId: optStr(formData, "operationalTitleId"),
+    roleNote: optStr(formData, "roleNote"),
+    currency: optStr(formData, "currency"),
+    agreedAmount: formData.get("agreedAmount") ? num(formData, "agreedAmount") : null,
+    startsAt: optStr(formData, "startsAt"),
+    endsAt: optStr(formData, "endsAt"),
+    dueDate: optStr(formData, "dueDate"),
+    notes: optStr(formData, "notes"),
+    actorUserId: user.id,
+  });
+  if (!result.ok) console.error("[admin payables] createEngagement failed", result.error);
+
+  if (payeeProfileId) revalidatePath(`/admin/payables/payees/${payeeProfileId}`);
+  revalidatePath("/admin/payables");
+}
+
+export async function setEngagementStatusAction(formData: FormData): Promise<void> {
+  const user = await getCurrentUser();
+  if (!user) return;
+
+  const engagementId = str(formData, "engagementId");
+  const status = str(formData, "status") as Parameters<typeof setEngagementStatus>[0]["status"];
+  const payeeProfileId = optStr(formData, "payeeProfileId");
+  if (!engagementId || !status) return;
+
+  const result = await setEngagementStatus({ engagementId, status, actorUserId: user.id });
+  if (!result.ok) console.error("[admin payables] setEngagementStatus failed", result.error);
+
+  if (payeeProfileId) revalidatePath(`/admin/payables/payees/${payeeProfileId}`);
+}
+
+export async function createEngagementPayableAction(formData: FormData): Promise<void> {
+  const user = await getCurrentUser();
+  if (!user) return;
+
+  const engagementId = str(formData, "engagementId");
+  const description = str(formData, "description");
+  const payeeProfileId = optStr(formData, "payeeProfileId");
+  if (!engagementId || !description) return;
+
+  const result = await createEngagementPayable({ engagementId, description, actorUserId: user.id });
+  if (!result.ok) console.error("[admin payables] createEngagementPayable failed", result.error);
+
+  if (payeeProfileId) revalidatePath(`/admin/payables/payees/${payeeProfileId}`);
+  revalidatePath("/admin/payables");
+}
+
+// Standalone Payable creation (no linked engagement) — e.g. a one-off
+// payment not tied to a tracked engagement. Reuses createPaymentObligation()
+// directly, exactly as createEngagementPayable() does.
+export async function createStandalonePayableAction(formData: FormData): Promise<void> {
+  const user = await getCurrentUser();
+  if (!user) return;
+
+  const payeeProfileId = str(formData, "payeeProfileId");
+  const description = str(formData, "description");
+  const currency = str(formData, "currency");
+  const amount = num(formData, "amount");
+  if (!payeeProfileId || !description || !currency || amount <= 0) return;
+
+  const result = await createPaymentObligation({
+    payeeProfileId,
+    sourceType: "manual",
+    description,
+    currency,
+    amount,
+    actorUserId: user.id,
+  });
+  if (!result.ok) console.error("[admin payables] createStandalonePayable failed", result.error);
+
+  revalidatePath(`/admin/payables/payees/${payeeProfileId}`);
+  revalidatePath("/admin/payables");
+}
+
+export async function addPayableItemAction(formData: FormData): Promise<void> {
+  const user = await getCurrentUser();
+  if (!user) return;
+
+  const paymentObligationId = str(formData, "paymentObligationId");
+  const kind = str(formData, "kind");
+  const description = str(formData, "description");
+  const amount = num(formData, "amount");
+  if (!paymentObligationId || !kind || !description || amount <= 0) return;
+
+  const result = await addPayableItem({ paymentObligationId, kind, description, amount, actorUserId: user.id });
+  if (!result.ok) console.error("[admin payables] addPayableItem failed", result.error);
+
+  revalidatePath(`/admin/payables/${paymentObligationId}`);
+}
+
+export async function approvePayableAction(formData: FormData): Promise<void> {
+  const user = await getCurrentUser();
+  if (!user) return;
+
+  const obligationId = str(formData, "obligationId");
+  if (!obligationId) return;
+
+  const result = await approvePaymentObligation({ obligationId, actorUserId: user.id });
+  if (!result.ok) console.error("[admin payables] approvePaymentObligation failed", result.error);
+
+  revalidatePath(`/admin/payables/${obligationId}`);
+  revalidatePath("/admin/payables");
+}
+
+export async function recordManualPaymentAction(formData: FormData): Promise<void> {
+  const user = await getCurrentUser();
+  if (!user) return;
+
+  const obligationId = str(formData, "obligationId");
+  const method = str(formData, "method");
+  const amount = num(formData, "amount");
+  const currency = str(formData, "currency");
+  const paidAt = str(formData, "paidAt");
+  const reference = str(formData, "reference");
+  if (!obligationId || !method || amount <= 0 || !currency || !paidAt || !reference) return;
+
+  const result = await recordManualPayment({ obligationId, method, amount, currency, paidAt, reference, actorUserId: user.id });
+  if (!result.ok) console.error("[admin payables] recordManualPayment failed", result.error);
+
+  revalidatePath(`/admin/payables/${obligationId}`);
+  revalidatePath("/admin/payables");
+}
+
+export async function addPaymentEvidenceAction(formData: FormData): Promise<void> {
+  const user = await getCurrentUser();
+  if (!user) return;
+
+  const paymentObligationId = str(formData, "paymentObligationId");
+  const evidenceType = str(formData, "evidenceType");
+  const reference = optStr(formData, "reference");
+  const notes = optStr(formData, "notes");
+  const file = formData.get("file");
+  if (!paymentObligationId || !evidenceType) return;
+
+  const result =
+    file instanceof File && file.size > 0
+      ? await addPaymentEvidenceFile({ paymentObligationId, evidenceType, file, reference, notes, actorUserId: user.id })
+      : await addPaymentEvidenceReference({ paymentObligationId, evidenceType, reference, notes, actorUserId: user.id });
+  if (!result.ok) console.error("[admin payables] addPaymentEvidence failed", result.error);
+
+  revalidatePath(`/admin/payables/${paymentObligationId}`);
+}

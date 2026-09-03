@@ -26,6 +26,11 @@ const NAV_ITEMS: { label: string; href: string; adminOnly?: boolean; superAdminO
   { label: "Enquiries", href: "/admin/enquiries" },
   { label: "Bookings", href: "/admin/bookings" },
   { label: "Payments", href: "/admin/payments" },
+  // Universal Payables System (2026-09-03) — no adminOnly/superAdminOnly
+  // flag here, matching Payments/Workshop Management above: the page
+  // itself gates on finance.payee.administer (or Super Admin), which is
+  // the actual authorization boundary, not this nav-visibility flag.
+  { label: "Payables", href: "/admin/payables" },
   { label: "Portfolio", href: "/admin/portfolio" },
   { label: "Workshop Management", href: "/admin/workshops" },
   { label: "Reports", href: "/admin/reports" },

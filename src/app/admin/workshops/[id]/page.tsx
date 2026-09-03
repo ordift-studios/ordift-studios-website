@@ -333,6 +333,13 @@ async function ObligationsList({ workshopId, engagementIds }: { workshopId: stri
           <div>
             <p className="font-sans text-body-small text-ordift-ink">{o.description}</p>
             <p className="font-sans text-caption text-ordift-ink-muted">{o.currency} {o.amount} · {o.status}</p>
+            {/* Universal Payables System (2026-09-03) — same
+                payment_obligations row, viewable in the generalized
+                module (line items, evidence, payment recording) without
+                leaving this page's own approve action below. */}
+            <Link href={`/admin/payables/${o.id}`} className="font-sans text-caption text-ordift-ink-muted underline underline-offset-4">
+              View in Payables →
+            </Link>
           </div>
           {o.status === "pending_approval" && (
             <form action={approveWorkshopObligationAction}>

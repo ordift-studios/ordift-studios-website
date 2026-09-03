@@ -164,6 +164,48 @@ export async function verifyPaymentInstruction(params: {
   return { ok: true };
 }
 
+// Update — the missing piece of "add / view masked / update / verify /
+// deactivate / replace" (Universal Payables System, 2026-09-03). Any
+// material change (including to account_identifier/routing_identifier)
+// resets verification_status back to 'unverified' — an edited
+// destination has not been re-confirmed, so it must not silently keep
+// a prior 'verified' status. Same never-log-the-identifier discipline
+// as createPaymentInstruction() above.
+export async function updatePaymentInstruction(params: {
+  instructionId: string;
+  accountHolderName?: string;
+  institutionName?: string | null;
+  accountIdentifier?: string | null;
+  routingIdentifier?: string | null;
+  actorUserId: string;
+}): Promise<{ ok: true } | { ok: false; error: string }> {
+  const admin = createAdminClient();
+  const { data: existing } = await admin.from("payment_instructions").select("profile_id").eq("id", params.instructionId).maybeSingle();
+  if (!existing) return { ok: false, error: "Payment instruction not found." };
+
+  const update: Record<string, unknown> = { verification_status: "unverified" };
+  if (params.accountHolderName !== undefined) update.account_holder_name = params.accountHolderName;
+  if (params.institutionName !== undefined) update.institution_name = params.institutionName;
+  if (params.accountIdentifier !== undefined) update.account_identifier = params.accountIdentifier;
+  if (params.routingIdentifier !== undefined) update.routing_identifier = params.routingIdentifier;
+
+  const { error } = await admin.from("payment_instructions").update(update).eq("id", params.instructionId);
+  if (error) {
+    console.error("[payments] failed to update payment_instruction", error.message);
+    return { ok: false, error: "Failed to update." };
+  }
+
+  await logActivity({
+    actorUserId: params.actorUserId,
+    action: "payment_instruction.updated",
+    entityType: "user",
+    entityId: existing.profile_id,
+    metadata: { fieldsChanged: Object.keys(update).filter((k) => k !== "verification_status") },
+  });
+
+  return { ok: true };
+}
+
 export async function setPaymentInstructionActive(params: {
   instructionId: string;
   active: boolean;
