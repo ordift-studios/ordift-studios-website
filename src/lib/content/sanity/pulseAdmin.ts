@@ -38,6 +38,16 @@ export type PulseReviewQueueItem = {
   createdAt: string;
 };
 
+// Deliberately still plain _id, not _originalId — verified live before
+// this change (Controlled Test #6G pre-deploy check): under
+// editorialClient's perspective:"drafts", a query FILTER of the form
+// `_id == $id` only matches when $id is the canonicalized/bare form;
+// `_id == "drafts.<uuid>"` matches nothing (returns null). This field
+// feeds only <Link href={`/admin/pulse/${item.id}`}> in the review
+// queue UI, and ARTICLE_DETAIL_QUERY below filters on that exact URL
+// param via `_id == $id` — so it must stay canonical/bare for
+// navigation to keep resolving. See ARTICLE_DETAIL_QUERY's own comment
+// for where the actual TDR-015-class fix belongs.
 const REVIEW_QUEUE_QUERY = `*[_type == "pulseArticle" && status in ["draft", "inReview"]] | order(_createdAt desc) {
   "id": _id,
   title,
@@ -79,8 +89,27 @@ export type PulseArticleDetail = {
   duplicateOf: { id: string; title: string } | null;
 };
 
+// Controlled Test #6F fix (2026-09-03) — same class of defect as
+// TDR-015. This query is still correctly reached with the canonical
+// (bare) $id (the URL param, sourced from REVIEW_QUEUE_QUERY's
+// still-bare "id" above) — the FILTER `_id == $id` needs that form to
+// match, verified live. The bug was specifically in what this query
+// then handed BACK as the article's own "id": under
+// editorialClient's perspective:"drafts", plain _id in the projection
+// also returns that same canonicalized/bare form, even though the
+// only document that actually exists is drafts.<id>. That bare id then
+// flowed into the hidden form field ArticleActions.tsx submits to
+// transitionPulseArticleAction, so a "Publish" click passed a bare id
+// into transitionPulseArticle(), whose `id.startsWith("drafts.")`
+// branch check evaluated false, falling through to the plain-patch
+// path against a literal document id that doesn't exist (only the
+// drafts.-prefixed one does) — which Sanity correctly rejected as "not
+// found", confirmed live via the #6F diagnostic instrumentation.
+// _originalId is the correct field for this exact purpose (see
+// TECHNICAL_DECISION_RECORDS.md TDR-015) — used here only for the
+// OUTPUT "id" field, not the filter above.
 const ARTICLE_DETAIL_QUERY = `*[_type == "pulseArticle" && _id == $id][0]{
-  "id": _id,
+  "id": _originalId,
   title,
   status,
   origin,
