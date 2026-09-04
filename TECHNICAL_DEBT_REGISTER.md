@@ -491,6 +491,16 @@
 - **Pay-down trigger:** If a future feature is built that depends on `possibleDuplicateOf` remaining resolvable after the referenced article is published (e.g. a permanent "content lineage" record), address then — likely via either resolving-and-snapshotting the title/id at publish time, or accepting the field as review-time-only metadata.
 - **Status:** Open.
 
+### TD-051 — `user_roles` grant/revoke and its `activity_log` audit entry are not written atomically
+
+- **Category:** Data / Audit integrity
+- **Severity:** Low (rare in practice; the failure mode requires the second of two sequential writes to fail, or the mutation to happen outside the normal application code path)
+- **What:** `revokeRoleAction`/`grantRoleAction` (`src/app/admin/users/actions.ts`) perform the `user_roles` INSERT/DELETE and the matching `logActivity()` call as two independent, sequential operations. `logActivity()`'s own documented design is "a failed log write should never block the action it's recording" — meaning a role grant/revoke can succeed while its audit event is silently never written, under ordinary failure conditions (a transient network/DB error on the second call) or when a mutation is ever performed outside the normal application action (as happened for the specific correction that surfaced this — see `TECHNICAL_DECISION_RECORDS.md` TDR-017).
+- **Why accepted (for now):** the smallest safe fix — a Postgres trigger on `user_roles` (INSERT/DELETE) writing the matching `activity_log` row within the same transaction, the same pattern already used for `payable_items`' amount-sync trigger (`0049`) — requires a new migration, its own Pre-Flight Report, and dedicated testing. It was identified but not implemented as part of the task that surfaced it, which was scoped to a single role correction, not a schema change.
+- **Current impact:** one specific, documented gap exists today (TDR-017) — Sylvia Annang-Mensah's `staff`-role-revoke correction (2026-09-04) has no matching `activity_log` row. No other known gaps; this is a systemic possibility, not a confirmed pattern of missed entries elsewhere.
+- **Pay-down trigger:** the next time role-mutation audit integrity is scoped as its own task, or if a second real gap is ever found (suggesting this is happening more than the "rare" severity assumes).
+- **Status:** Open.
+
 ---
 
 ## Adding new entries

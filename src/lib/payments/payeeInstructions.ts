@@ -2,6 +2,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { logActivity } from "@/lib/admin/activityLog";
 import { isSuperAdminId, hasAuthority, authorizeWithSuperAdminOverride, FINANCE_CAPABILITIES } from "@/lib/organization/authority";
 import { isOwnPaymentDestination, validatePaymentDestinationInput } from "@/lib/payables/paymentDestinationShared";
+import { encryptPaymentIdentifierOrNull, decryptPaymentIdentifierOrNull } from "@/lib/payables/paymentIdentifierCrypto";
 
 // Payment Destination UX (2026-09-04 investigation) — createPaymentInstruction()/
 // updatePaymentInstruction()/setPaymentInstructionActive() had NO
@@ -78,20 +79,36 @@ export async function listPaymentInstructionsForProfile(profileId: string): Prom
     console.error("[payments] failed to load payment_instructions", error.message);
     return [];
   }
-  return (data ?? []).map((r) => ({
-    id: r.id,
-    profileId: r.profile_id,
-    method: r.method,
-    country: r.country,
-    currency: r.currency,
-    accountHolderName: r.account_holder_name,
-    institutionName: r.institution_name,
-    maskedAccountIdentifier: maskIdentifier(r.account_identifier),
-    verificationStatus: r.verification_status,
-    isDefault: r.is_default,
-    active: r.active,
-    createdAt: r.created_at,
-  }));
+  return (data ?? []).map((r) => {
+    // Decrypt happens here, server-side only, and the result never
+    // leaves this scope unmasked — maskIdentifier() runs on it in the
+    // same expression, and only the masked string is put on the
+    // returned object. A decryption failure (wrong/missing key,
+    // corrupted or tampered ciphertext) is caught per-row so one bad
+    // row can't break the whole list; logged without ever including
+    // the stored value or the decryption error's own message (which
+    // could theoretically echo fragments of the malformed input).
+    let maskedAccountIdentifier: string | null = null;
+    try {
+      maskedAccountIdentifier = maskIdentifier(decryptPaymentIdentifierOrNull(r.account_identifier));
+    } catch {
+      console.error("[payments] failed to decrypt account_identifier for payment_instruction", r.id);
+    }
+    return {
+      id: r.id,
+      profileId: r.profile_id,
+      method: r.method,
+      country: r.country,
+      currency: r.currency,
+      accountHolderName: r.account_holder_name,
+      institutionName: r.institution_name,
+      maskedAccountIdentifier,
+      verificationStatus: r.verification_status,
+      isDefault: r.is_default,
+      active: r.active,
+      createdAt: r.created_at,
+    };
+  });
 }
 
 export type CreatePaymentInstructionParams = {
@@ -134,6 +151,14 @@ export async function createPaymentInstruction(
     await admin.from("payment_instructions").update({ is_default: false }).eq("profile_id", params.profileId);
   }
 
+  // Encrypted immediately before the write — this is the last point
+  // the plaintext exists as a variable anywhere in this process; the
+  // params.accountIdentifier/routingIdentifier values themselves are
+  // never referenced again below (including in the logActivity() call
+  // further down, which was already never including them).
+  const encryptedAccountIdentifier = encryptPaymentIdentifierOrNull(params.accountIdentifier);
+  const encryptedRoutingIdentifier = encryptPaymentIdentifierOrNull(params.routingIdentifier);
+
   const { data, error } = await admin
     .from("payment_instructions")
     .insert({
@@ -143,8 +168,8 @@ export async function createPaymentInstruction(
       currency: params.currency,
       account_holder_name: params.accountHolderName,
       institution_name: params.institutionName ?? null,
-      account_identifier: params.accountIdentifier ?? null,
-      routing_identifier: params.routingIdentifier ?? null,
+      account_identifier: encryptedAccountIdentifier,
+      routing_identifier: encryptedRoutingIdentifier,
       is_default: params.makeDefault ?? false,
       created_by: params.actorUserId,
     })
@@ -228,8 +253,10 @@ export async function updatePaymentInstruction(params: {
   const update: Record<string, unknown> = { verification_status: "unverified" };
   if (params.accountHolderName !== undefined) update.account_holder_name = params.accountHolderName;
   if (params.institutionName !== undefined) update.institution_name = params.institutionName;
-  if (params.accountIdentifier !== undefined) update.account_identifier = params.accountIdentifier;
-  if (params.routingIdentifier !== undefined) update.routing_identifier = params.routingIdentifier;
+  // Encrypted immediately before assignment into the update payload —
+  // same discipline as createPaymentInstruction() above.
+  if (params.accountIdentifier !== undefined) update.account_identifier = encryptPaymentIdentifierOrNull(params.accountIdentifier);
+  if (params.routingIdentifier !== undefined) update.routing_identifier = encryptPaymentIdentifierOrNull(params.routingIdentifier);
 
   const { error } = await admin.from("payment_instructions").update(update).eq("id", params.instructionId);
   if (error) {
