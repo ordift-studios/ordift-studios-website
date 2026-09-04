@@ -3,14 +3,22 @@ import { redirect, notFound } from "next/navigation";
 import Link from "next/link";
 import { getCurrentUser } from "@/lib/portal/roles";
 import { authorizeWithSuperAdminOverride, FINANCE_CAPABILITIES } from "@/lib/organization/authority";
-import { getPaymentObligation } from "@/lib/payments/payoutObligations";
+import { getPaymentObligation, canCancelPaymentObligation, canReversePaymentObligation } from "@/lib/payments/payoutObligations";
 import { getPayeeProfile } from "@/lib/payables/payeeProfiles";
 import { listPayableItems, PAYABLE_ITEM_KINDS } from "@/lib/payables/payableItems";
 import { listPaymentEvidence } from "@/lib/payables/paymentEvidence";
 import { getActivityForEntity } from "@/lib/admin/activityLog";
 import SubmitButton from "@/components/admin/SubmitButton";
 import ConfirmSubmitButton from "@/components/admin/ConfirmSubmitButton";
-import { addPayableItemAction, approvePayableAction, recordManualPaymentAction, addPaymentEvidenceAction } from "../actions";
+import PayableCorrectionForm from "@/components/payables/PayableCorrectionForm";
+import {
+  addPayableItemAction,
+  approvePayableAction,
+  recordManualPaymentAction,
+  addPaymentEvidenceAction,
+  cancelPaymentObligationAction,
+  reversePaymentObligationAction,
+} from "../actions";
 
 export const metadata: Metadata = {
   title: "Payable — Payables — Ordift Studios Admin",
@@ -160,6 +168,46 @@ export default async function AdminPayableDetailPage({ params }: { params: Promi
               </ConfirmSubmitButton>
             </div>
           </form>
+        </section>
+      )}
+
+      {/* Correction: cancel or reverse — Payable Safety Hardening
+          (2026-09-04), Parts B/D. "pending_approval" offers Cancel only
+          and "paid" offers Reverse only, but "approved" deliberately
+          offers BOTH — an approved-but-unpaid mistake can be corrected
+          either way (a plain Cancel, or a formal Reverse under its own
+          stricter capability) — so both sections can render together at
+          that one status; this is intentional, not a UI bug. */}
+      {canCancelPaymentObligation(obligation.status) && (
+        <section className="rounded-xl border border-red-200 bg-white p-6">
+          <h2 className="font-serif font-medium text-body text-ordift-ink mb-3">Cancel Payable</h2>
+          <PayableCorrectionForm
+            obligationId={obligation.id}
+            amount={obligation.amount}
+            currency={obligation.currency}
+            action={cancelPaymentObligationAction}
+            actionLabel="Cancel"
+            pendingLabel="Cancelling…"
+            description="Voids this payable before payment. It stays in the record permanently as cancelled — nothing is deleted."
+          />
+        </section>
+      )}
+      {canReversePaymentObligation(obligation.status) && (
+        <section className="rounded-xl border border-red-200 bg-white p-6">
+          <h2 className="font-serif font-medium text-body text-ordift-ink mb-3">Reverse Payable</h2>
+          <PayableCorrectionForm
+            obligationId={obligation.id}
+            amount={obligation.amount}
+            currency={obligation.currency}
+            action={reversePaymentObligationAction}
+            actionLabel="Reverse"
+            pendingLabel="Reversing…"
+            description={
+              obligation.status === "paid"
+                ? "This payable was already recorded as paid. Reversing it corrects the record only — it does NOT claw back or move any money. Use this only for a genuine after-the-fact correction."
+                : "Corrects an approved payable that should not proceed. It stays in the record permanently as reversed — nothing is deleted."
+            }
+          />
         </section>
       )}
 

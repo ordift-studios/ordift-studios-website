@@ -1,6 +1,7 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { logActivity } from "@/lib/admin/activityLog";
 import { isSuperAdminId, hasAuthority, authorizeWithSuperAdminOverride, FINANCE_CAPABILITIES } from "@/lib/organization/authority";
+import { isSupportedCurrency } from "@/lib/payments/currency";
 
 // Ordift Organizational & Administrative Architecture V1, Phase 3.3,
 // Part I (2026-08-25) — payment-obligation/payout foundation, against
@@ -127,16 +128,65 @@ export type CreateObligationParams = {
   actorUserId: string;
 };
 
+// Payable Safety Hardening (2026-09-04) — this used to have NO
+// authorization check of its own, relying entirely on whichever caller
+// invoked it (createEngagementPayable() always had checked first;
+// createStandalonePayableAction never did) — the exact class of gap
+// already found and fixed for createPaymentInstruction() earlier. This
+// closes it here too, at the actual mutation boundary, so it's safe
+// regardless of which caller reaches it now or in the future.
+//
 // Only ever creates a 'pending_approval' record — never itself an
 // authorization to pay. No amount here was ever populated by system
 // logic; every obligation traces back to an explicit human-entered
-// description/amount at the call site.
+// description/amount at the call site. Currency is now validated
+// against public.currencies (0024) — a typo'd/unsupported code is
+// rejected before any write.
+//
+// Duplicate/idempotency protection (Phase E readiness review, "no
+// protection on the standalone path" finding): refuses to create a
+// second obligation for the same payee/description/currency/amount
+// within a 30-second window — narrow enough that a genuinely distinct
+// legitimate payable is exceedingly unlikely to coincide with it, wide
+// enough to catch a double-click or a browser retry of the exact same
+// submission. The engagement-linked path (createEngagementPayable())
+// already has stronger, structural protection (one payable per
+// engagement, enforced by the engagement's own payment_obligation_id
+// check) and doesn't need this heuristic on top.
 export async function createPaymentObligation(
   params: CreateObligationParams
 ): Promise<{ ok: true; obligationId: string } | { ok: false; error: string }> {
+  // Amount is checked first, before any DB access (including
+  // authorization) — preserves the existing, deliberate guarantee
+  // (see payoutObligations.test.ts) that an invalid amount is rejected
+  // synchronously-in-spirit, without needing a live Supabase session.
+  // This is a pure precondition, not an authorization decision, so
+  // checking it first leaks nothing an authorization-first ordering
+  // would have protected.
   if (params.amount <= 0) return { ok: false, error: "Amount must be greater than zero." };
 
+  const auth = await authorizeWithSuperAdminOverride(params.actorUserId, FINANCE_CAPABILITIES.payeeAdminister);
+  if (!auth.ok) return { ok: false, error: "Not authorized to create payables." };
+
+  const currencySupported = await isSupportedCurrency(params.currency);
+  if (!currencySupported) return { ok: false, error: `"${params.currency}" is not a supported currency.` };
+
   const admin = createAdminClient();
+
+  const { data: recentDuplicate } = await admin
+    .from("payment_obligations")
+    .select("id")
+    .eq("payee_profile_id", params.payeeProfileId)
+    .eq("description", params.description)
+    .eq("currency", params.currency)
+    .eq("amount", params.amount)
+    .gte("created_at", new Date(Date.now() - 30_000).toISOString())
+    .limit(1)
+    .maybeSingle();
+  if (recentDuplicate) {
+    return { ok: false, error: "A matching payable was just created moments ago — this looks like a duplicate submission. Check the Payables list before retrying." };
+  }
+
   const { data, error } = await admin
     .from("payment_obligations")
     .insert({
@@ -162,7 +212,7 @@ export async function createPaymentObligation(
     action: "payment_obligation.created",
     entityType: "user",
     entityId: params.payeeProfileId,
-    metadata: { obligationId: data.id, sourceType: params.sourceType, currency: params.currency, amount: params.amount },
+    metadata: { obligationId: data.id, sourceType: params.sourceType, currency: params.currency, amount: params.amount, actedAsSuperAdminOverride: auth.actedAsOverride },
   });
 
   return { ok: true, obligationId: data.id };
@@ -332,6 +382,117 @@ export async function recordManualPayment(params: {
     entityType: "user",
     entityId: existing.payee_profile_id,
     metadata: { obligationId: params.obligationId, method: params.method, currency: existing.currency, amount: existing.amount, actedAsSuperAdminOverride: auth.actedAsOverride },
+  });
+
+  return { ok: true };
+}
+
+// ============================================================
+// Payable Safety Hardening (2026-09-04) — the reversibility gap
+// identified in the Phase E readiness review. Neither function below
+// deletes anything, ever — both are auditable state transitions, using
+// status values (cancelled/reversed) already present in the existing
+// vocabulary (0046's own migration comment: "status: pending_approval
+// -> approved -> payout_initiated -> paid | failed | reversed |
+// cancelled"), never DB-enforced, so no schema change was needed to
+// use them. Both reuse the existing failure_reason column for the
+// human-entered reason rather than adding a new one.
+// ============================================================
+
+// Pure, directly testable — the actual state-machine guard, same
+// pure/impure split already used throughout this codebase
+// (isValidEngagementTransition(), validateManualPaymentAgainstObligation()).
+export function canCancelPaymentObligation(status: string): boolean {
+  return status === "pending_approval" || status === "approved";
+}
+
+export function canReversePaymentObligation(status: string): boolean {
+  return status === "approved" || status === "paid";
+}
+
+// Voids a payable that hasn't been paid yet — a mistake caught before
+// or during approval review. Reuses the same authority as approving
+// one: cancelling is the natural negative counterpart of the same
+// review decision, not a separate capability.
+export async function cancelPaymentObligation(params: {
+  obligationId: string;
+  reason: string;
+  actorUserId: string;
+}): Promise<{ ok: true } | { ok: false; error: string }> {
+  const isSuperAdmin = await isSuperAdminId(params.actorUserId);
+  if (!isSuperAdmin) {
+    const authorized = await hasAuthority(params.actorUserId, FINANCE_CAPABILITIES.paymentObligationApprove, null);
+    if (!authorized) return { ok: false, error: "Not authorized to cancel payment obligations." };
+  }
+  if (!params.reason.trim()) return { ok: false, error: "A reason is required to cancel a payable." };
+
+  const admin = createAdminClient();
+  const { data: existing } = await admin.from("payment_obligations").select("status, payee_profile_id").eq("id", params.obligationId).maybeSingle();
+  if (!existing) return { ok: false, error: "Payment obligation not found." };
+  if (!canCancelPaymentObligation(existing.status)) {
+    return { ok: false, error: `Cannot cancel — current status is "${existing.status}".` };
+  }
+
+  const { error } = await admin.from("payment_obligations").update({ status: "cancelled", failure_reason: params.reason }).eq("id", params.obligationId);
+  if (error) {
+    console.error("[payments] failed to cancel payment_obligation", error.message);
+    return { ok: false, error: "Failed to cancel." };
+  }
+
+  await logActivity({
+    actorUserId: params.actorUserId,
+    action: "payment_obligation.cancelled",
+    entityType: "user",
+    entityId: existing.payee_profile_id,
+    metadata: { obligationId: params.obligationId, previousStatus: existing.status, reason: params.reason },
+  });
+
+  return { ok: true };
+}
+
+// Formally reverses an obligation that was approved (or even already
+// recorded as paid) but is now known to be wrong — a genuinely rarer,
+// more serious after-the-fact correction, so it's gated by its own
+// capability (finance.payment_obligation.reverse) rather than reusing
+// approve/record-payment's authority. Reversing a 'paid' obligation
+// only updates Ordift's own bookkeeping status here — it cannot and
+// does not undo any real-world money movement (there is still no
+// integrated payout provider; "paid" only ever means a human manually
+// recorded that a payment was made outside this system). Any actual
+// money recovery is a separate, real-world action this system cannot
+// perform, and this function does not pretend otherwise.
+export async function reversePaymentObligation(params: {
+  obligationId: string;
+  reason: string;
+  actorUserId: string;
+}): Promise<{ ok: true } | { ok: false; error: string }> {
+  const isSuperAdmin = await isSuperAdminId(params.actorUserId);
+  if (!isSuperAdmin) {
+    const authorized = await hasAuthority(params.actorUserId, FINANCE_CAPABILITIES.paymentObligationReverse, null);
+    if (!authorized) return { ok: false, error: "Not authorized to reverse payment obligations." };
+  }
+  if (!params.reason.trim()) return { ok: false, error: "A reason is required to reverse a payable." };
+
+  const admin = createAdminClient();
+  const { data: existing } = await admin.from("payment_obligations").select("status, payee_profile_id").eq("id", params.obligationId).maybeSingle();
+  if (!existing) return { ok: false, error: "Payment obligation not found." };
+  if (!canReversePaymentObligation(existing.status)) {
+    return { ok: false, error: `Cannot reverse — current status is "${existing.status}".` };
+  }
+  const wasAlreadyPaid = existing.status === "paid";
+
+  const { error } = await admin.from("payment_obligations").update({ status: "reversed", failure_reason: params.reason }).eq("id", params.obligationId);
+  if (error) {
+    console.error("[payments] failed to reverse payment_obligation", error.message);
+    return { ok: false, error: "Failed to reverse." };
+  }
+
+  await logActivity({
+    actorUserId: params.actorUserId,
+    action: "payment_obligation.reversed",
+    entityType: "user",
+    entityId: existing.payee_profile_id,
+    metadata: { obligationId: params.obligationId, previousStatus: existing.status, wasAlreadyPaid, reason: params.reason },
   });
 
   return { ok: true };

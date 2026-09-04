@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import type { ExchangeRateSource } from "@/lib/payments/types";
 
 // USD-reference / local-settlement currency model (architecture
@@ -160,4 +161,22 @@ export async function listActiveCurrencies(): Promise<CurrencyOption[]> {
     return [];
   }
   return data ?? [];
+}
+
+// Payable Safety Hardening (2026-09-04) — server-side currency
+// validation for payable/engagement creation, closing the free-text
+// currency risk identified in the Phase E readiness review. Uses the
+// admin client (unlike listActiveCurrencies() above) since this is
+// called from within already-service-role-authorized mutation
+// functions (payoutObligations.ts/engagements.ts), not a plain
+// session-scoped read. Reuses the same public.currencies table (0024)
+// — no new currency list, no schema change.
+export async function isSupportedCurrency(code: string): Promise<boolean> {
+  const admin = createAdminClient();
+  const { data, error } = await admin.from("currencies").select("code").eq("code", code).eq("is_active", true).maybeSingle();
+  if (error) {
+    console.error("[payments] failed to validate currency", error.message);
+    return false;
+  }
+  return Boolean(data);
 }

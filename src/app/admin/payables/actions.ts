@@ -4,10 +4,10 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/portal/roles";
 import { createPayeeProfile, setPayeeProfileStatus, validateCreatePayeeProfileInput } from "@/lib/payables/payeeProfiles";
-import { createEngagement, setEngagementStatus, createEngagementPayable } from "@/lib/payables/engagements";
+import { createEngagement, setEngagementStatus, createEngagementPayable, updateEngagement } from "@/lib/payables/engagements";
 import { addPayableItem } from "@/lib/payables/payableItems";
 import { addPaymentEvidenceReference, addPaymentEvidenceFile } from "@/lib/payables/paymentEvidence";
-import { approvePaymentObligation, recordManualPayment, createPaymentObligation } from "@/lib/payments/payoutObligations";
+import { approvePaymentObligation, recordManualPayment, createPaymentObligation, cancelPaymentObligation, reversePaymentObligation } from "@/lib/payments/payoutObligations";
 import { createPaymentInstruction, updatePaymentInstruction, verifyPaymentInstruction, setPaymentInstructionActive } from "@/lib/payments/payeeInstructions";
 
 // Universal Payables System (2026-09-03) — plain FormData server
@@ -327,4 +327,81 @@ export async function addPaymentEvidenceAction(formData: FormData): Promise<void
   if (!result.ok) console.error("[admin payables] addPaymentEvidence failed", result.error);
 
   revalidatePath(`/admin/payables/${paymentObligationId}`);
+}
+
+// Payable Safety Hardening (2026-09-04), Part B — engagement
+// correction. Uses the useActionState feedback pattern (not a bare
+// void action) because the most likely failure — the engagement
+// already has a linked payable, so the edit is refused — is exactly
+// the kind of server-side rule an administrator needs to actually see,
+// not have silently swallowed into a console.error the way the
+// simpler void actions above do.
+export type UpdateEngagementState = { ok: boolean; error?: string } | null;
+
+export async function updateEngagementAction(_prevState: UpdateEngagementState, formData: FormData): Promise<UpdateEngagementState> {
+  const user = await getCurrentUser();
+  if (!user) return { ok: false, error: "Not signed in." };
+
+  const engagementId = str(formData, "engagementId");
+  const payeeProfileId = optStr(formData, "payeeProfileId");
+  if (!engagementId) return { ok: false, error: "Missing engagement — please reload the page." };
+
+  const result = await updateEngagement({
+    engagementId,
+    engagementTypeId: optStr(formData, "engagementTypeId"),
+    operationalTitleId: optStr(formData, "operationalTitleId"),
+    roleNote: optStr(formData, "roleNote"),
+    currency: optStr(formData, "currency"),
+    agreedAmount: formData.get("agreedAmount") ? num(formData, "agreedAmount") : null,
+    startsAt: optStr(formData, "startsAt"),
+    endsAt: optStr(formData, "endsAt"),
+    dueDate: optStr(formData, "dueDate"),
+    notes: optStr(formData, "notes"),
+    actorUserId: user.id,
+  });
+  if (!result.ok) return { ok: false, error: result.error };
+
+  if (payeeProfileId) revalidatePath(`/admin/payables/payees/${payeeProfileId}`);
+  return { ok: true };
+}
+
+// Payable Safety Hardening (2026-09-04), Parts B/D — payable
+// cancel/reverse. Same useActionState feedback pattern: both actions
+// require a non-empty reason and are only valid from specific
+// statuses (canCancelPaymentObligation/canReversePaymentObligation),
+// so a rejected attempt needs to be visible, not silently logged.
+export type CancelPayableState = { ok: boolean; error?: string } | null;
+
+export async function cancelPaymentObligationAction(_prevState: CancelPayableState, formData: FormData): Promise<CancelPayableState> {
+  const user = await getCurrentUser();
+  if (!user) return { ok: false, error: "Not signed in." };
+
+  const obligationId = str(formData, "obligationId");
+  const reason = str(formData, "reason");
+  if (!obligationId) return { ok: false, error: "Missing payable — please reload the page." };
+  if (!reason) return { ok: false, error: "A reason is required to cancel a payable." };
+
+  const result = await cancelPaymentObligation({ obligationId, reason, actorUserId: user.id });
+  if (!result.ok) return { ok: false, error: result.error };
+
+  revalidatePath(`/admin/payables/${obligationId}`);
+  revalidatePath("/admin/payables");
+  return { ok: true };
+}
+
+export async function reversePaymentObligationAction(_prevState: CancelPayableState, formData: FormData): Promise<CancelPayableState> {
+  const user = await getCurrentUser();
+  if (!user) return { ok: false, error: "Not signed in." };
+
+  const obligationId = str(formData, "obligationId");
+  const reason = str(formData, "reason");
+  if (!obligationId) return { ok: false, error: "Missing payable — please reload the page." };
+  if (!reason) return { ok: false, error: "A reason is required to reverse a payable." };
+
+  const result = await reversePaymentObligation({ obligationId, reason, actorUserId: user.id });
+  if (!result.ok) return { ok: false, error: result.error };
+
+  revalidatePath(`/admin/payables/${obligationId}`);
+  revalidatePath("/admin/payables");
+  return { ok: true };
 }

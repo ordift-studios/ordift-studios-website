@@ -85,7 +85,7 @@ describe("six-jurisdiction capability taxonomy — no cross-jurisdiction overlap
     for (const c of Object.values(GOVERNANCE_CAPABILITIES)) expect(c.startsWith("governance.")).toBe(true);
   });
 
-  it("the finance.* compensation/payout/payment-obligation capabilities match the exact strings specified (Phase 3.4), plus Workshop Management's workshopRevenueView (Phase B) and the Universal Payables System's payeeAdminister/paymentObligationRecordPayment (2026-09-03)", () => {
+  it("the finance.* compensation/payout/payment-obligation capabilities match the exact strings specified (Phase 3.4), plus Workshop Management's workshopRevenueView (Phase B), the Universal Payables System's payeeAdminister/paymentObligationRecordPayment (2026-09-03), and Payable Safety Hardening's paymentObligationReverse (2026-09-04)", () => {
     expect(FINANCE_CAPABILITIES).toEqual({
       compensationView: "finance.compensation.view",
       compensationManage: "finance.compensation.manage",
@@ -97,6 +97,7 @@ describe("six-jurisdiction capability taxonomy — no cross-jurisdiction overlap
       workshopRevenueView: "finance.workshop_revenue.view",
       payeeAdminister: "finance.payee.administer",
       paymentObligationRecordPayment: "finance.payment_obligation.record_payment",
+      paymentObligationReverse: "finance.payment_obligation.reverse",
     });
   });
 });

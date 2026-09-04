@@ -4,7 +4,7 @@ import { getCurrentUser } from "@/lib/portal/roles";
 import { getOwnPayeeProfile } from "@/lib/payables/payeeProfiles";
 import { listPaymentInstructionsForProfile } from "@/lib/payments/payeeInstructions";
 import { listActiveCurrencies } from "@/lib/payments/currency";
-import { countryName } from "@/lib/payables/paymentDestinationShared";
+import { countryName, verificationStatusLabel } from "@/lib/payables/paymentDestinationShared";
 import PaymentDestinationForm from "@/components/payables/PaymentDestinationForm";
 import SubmitButton from "@/components/admin/SubmitButton";
 import { createOwnPaymentInstructionAction, deactivateOwnPaymentInstructionAction } from "./actions";
@@ -68,7 +68,7 @@ export default async function PaymentDetailsPage() {
                   {i.institutionName ?? "—"} · {i.accountHolderName} · {i.maskedAccountIdentifier ?? "—"}
                 </p>
                 <p className="font-sans text-caption text-ordift-ink-muted mb-2">
-                  {countryName(i.country)} · {i.currency} · {i.verificationStatus} · {i.active ? "active" : "deactivated"}{" "}
+                  {countryName(i.country)} · {i.currency} · {verificationStatusLabel(i.verificationStatus)} · {i.active ? "active" : "deactivated"}{" "}
                   {i.isDefault ? "· default" : ""}
                 </p>
                 {i.active && (

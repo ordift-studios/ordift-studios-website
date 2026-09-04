@@ -129,6 +129,25 @@ export function validatePaymentDestinationInput(input: PaymentDestinationInput):
   return { ok: true };
 }
 
+// Payable Safety Hardening (2026-09-04), Part I — display-only wording
+// clarification. "Verified" on its own reads to a first-time viewer as
+// "the bank/mobile-money provider confirmed this account is real,"
+// which is NOT what this status means (confirmed during Phase D: no
+// external provider API is ever called anywhere near this path). The
+// underlying stored value (payment_instructions.verification_status:
+// "unverified" | "verified" | "rejected") and every activity_log
+// action name that references it are completely unchanged — this map
+// only controls what label renders in the UI.
+export const VERIFICATION_STATUS_LABELS: Record<string, string> = {
+  unverified: "Not Yet Reviewed",
+  verified: "Admin Verified",
+  rejected: "Verification Rejected",
+};
+
+export function verificationStatusLabel(status: string): string {
+  return VERIFICATION_STATUS_LABELS[status] ?? status;
+}
+
 // Self-service ownership boundary — pure, directly unit-testable. The
 // one fact every payment-instruction mutation's authorization check
 // ultimately reduces to for the self-service path: an actor may always

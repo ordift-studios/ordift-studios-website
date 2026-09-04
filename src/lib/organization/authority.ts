@@ -303,6 +303,14 @@ export const FINANCE_CAPABILITIES = {
   // auditable manual/external payment record — never a bare status
   // dropdown edit. See recordManualPayment() in payoutObligations.ts.
   paymentObligationRecordPayment: "finance.payment_obligation.record_payment", // WIRED — recordManualPayment()
+  // Payable Safety Hardening (2026-09-04) — cancelling a payable while
+  // pending_approval/approved reuses paymentObligationApprove (the
+  // natural negative counterpart of the same review decision).
+  // Reversing one that's already approved/paid is a separately
+  // permissioned, rarer, more serious after-the-fact correction — its
+  // own capability, same separation-of-duties principle as
+  // paymentObligationRecordPayment being distinct from approve.
+  paymentObligationReverse: "finance.payment_obligation.reverse", // WIRED — reversePaymentObligation()
 } as const;
 
 // strategy.* — ARCHITECT. Fully DORMANT — no strategic-planning/

@@ -2,6 +2,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { logActivity } from "@/lib/admin/activityLog";
 import { authorizeWithSuperAdminOverride, FINANCE_CAPABILITIES } from "@/lib/organization/authority";
 import { createPaymentObligation } from "@/lib/payments/payoutObligations";
+import { isSupportedCurrency } from "@/lib/payments/currency";
 
 // Universal Payables System (2026-09-03), Part B — against
 // public.engagements (0049_universal_payables.sql). Generalizes the
@@ -216,6 +217,18 @@ export async function createEngagement(params: CreateEngagementParams): Promise<
   if (!params.payeeProfileId && !params.externalPayeeName) {
     return { ok: false, error: "Provide either an internal payee or an external payee name." };
   }
+  // Payable Safety Hardening (2026-09-04) — an engagement's currency
+  // flows straight into any payable created from it
+  // (createEngagementPayable() below passes it through unchanged), so
+  // validating it here closes the free-text currency risk at its
+  // actual source, not just at the payable-creation boundary.
+  if (params.currency) {
+    const currencySupported = await isSupportedCurrency(params.currency);
+    if (!currencySupported) return { ok: false, error: `"${params.currency}" is not a supported currency.` };
+  }
+  if (params.agreedAmount !== undefined && params.agreedAmount !== null && params.agreedAmount <= 0) {
+    return { ok: false, error: "Agreed amount must be greater than zero." };
+  }
 
   const admin = createAdminClient();
   const { data, error } = await admin
@@ -257,6 +270,82 @@ export async function createEngagement(params: CreateEngagementParams): Promise<
   });
 
   return { ok: true, id: data.id };
+}
+
+// Payable Safety Hardening (2026-09-04), Part B — engagement
+// correction, locked once a payable has been linked. Deliberately a
+// full lock rather than a partial "financial fields only" lock: once
+// payment_obligation_id is set, this refuses ANY edit, not just
+// amount/currency — simpler, and avoids any appearance of a
+// convenient after-the-fact rewrite of the record a real financial
+// obligation was based on. Correcting an engagement whose payable
+// already exists means creating a new engagement instead, an
+// intentional, auditable trail rather than a silent edit.
+export type UpdateEngagementParams = {
+  engagementId: string;
+  engagementTypeId?: string | null;
+  operationalTitleId?: string | null;
+  roleNote?: string | null;
+  currency?: string | null;
+  agreedAmount?: number | null;
+  startsAt?: string | null;
+  endsAt?: string | null;
+  dueDate?: string | null;
+  notes?: string | null;
+  actorUserId: string;
+};
+
+export async function updateEngagement(params: UpdateEngagementParams): Promise<{ ok: true } | { ok: false; error: string }> {
+  const auth = await authorizeWithSuperAdminOverride(params.actorUserId, FINANCE_CAPABILITIES.payeeAdminister);
+  if (!auth.ok) return { ok: false, error: "Not authorized to administer engagements." };
+
+  const admin = createAdminClient();
+  const { data: existing } = await admin.from("engagements").select("payment_obligation_id").eq("id", params.engagementId).maybeSingle();
+  if (!existing) return { ok: false, error: "Engagement not found." };
+  if (existing.payment_obligation_id) {
+    return { ok: false, error: "This engagement already has a linked payable — its terms can no longer be edited. Create a new engagement if a correction is needed." };
+  }
+
+  if (params.currency) {
+    const currencySupported = await isSupportedCurrency(params.currency);
+    if (!currencySupported) return { ok: false, error: `"${params.currency}" is not a supported currency.` };
+  }
+  if (params.agreedAmount !== undefined && params.agreedAmount !== null && params.agreedAmount <= 0) {
+    return { ok: false, error: "Agreed amount must be greater than zero." };
+  }
+
+  const update: Record<string, unknown> = {};
+  if (params.engagementTypeId !== undefined) update.engagement_type_id = params.engagementTypeId;
+  if (params.operationalTitleId !== undefined) update.operational_title_id = params.operationalTitleId;
+  if (params.roleNote !== undefined) update.role_note = params.roleNote;
+  if (params.currency !== undefined) update.currency = params.currency;
+  if (params.agreedAmount !== undefined) update.agreed_amount = params.agreedAmount;
+  if (params.startsAt !== undefined) update.starts_at = params.startsAt;
+  if (params.endsAt !== undefined) update.ends_at = params.endsAt;
+  if (params.dueDate !== undefined) update.due_date = params.dueDate;
+  if (params.notes !== undefined) update.notes = params.notes;
+  if (Object.keys(update).length === 0) return { ok: true };
+
+  const { error } = await admin.from("engagements").update(update).eq("id", params.engagementId);
+  if (error) {
+    console.error("[payables] failed to update engagement", error.message);
+    return { ok: false, error: "Failed to update." };
+  }
+
+  await logActivity({
+    actorUserId: params.actorUserId,
+    action: "engagement.updated",
+    entityType: "engagement",
+    entityId: params.engagementId,
+    metadata: {
+      fieldsChanged: Object.keys(update),
+      newAgreedAmount: update.agreed_amount ?? undefined,
+      newCurrency: update.currency ?? undefined,
+      actedAsSuperAdminOverride: auth.actedAsOverride,
+    },
+  });
+
+  return { ok: true };
 }
 
 // Validates against ENGAGEMENT_TRANSITIONS above — the real

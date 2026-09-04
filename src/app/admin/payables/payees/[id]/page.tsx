@@ -10,10 +10,12 @@ import { listPaymentInstructionsForProfile } from "@/lib/payments/payeeInstructi
 import { listActiveCurrencies } from "@/lib/payments/currency";
 import { listEngagementTypes, listOperationalTitles } from "@/lib/portal/adminData";
 import { getActivityForEntity } from "@/lib/admin/activityLog";
-import { PAYMENT_METHOD_LABELS, countryName, type PaymentMethod } from "@/lib/payables/paymentDestinationShared";
+import { PAYMENT_METHOD_LABELS, countryName, verificationStatusLabel, type PaymentMethod } from "@/lib/payables/paymentDestinationShared";
 import ConfirmSubmitButton from "@/components/admin/ConfirmSubmitButton";
 import SubmitButton from "@/components/admin/SubmitButton";
 import PaymentDestinationForm from "@/components/payables/PaymentDestinationForm";
+import EditEngagementForm from "@/components/payables/EditEngagementForm";
+import StandalonePayableForm from "@/components/payables/StandalonePayableForm";
 import {
   createPaymentInstructionAction,
   verifyPaymentInstructionAction,
@@ -23,6 +25,7 @@ import {
   createEngagementPayableAction,
   createStandalonePayableAction,
   setPayeeProfileStatusAction,
+  updateEngagementAction,
 } from "../../actions";
 
 export const metadata: Metadata = {
@@ -86,7 +89,7 @@ export default async function AdminPayeeDetailPage({ params }: { params: Promise
                 {PAYMENT_METHOD_LABELS[i.method as PaymentMethod] ?? i.method} · {i.institutionName ?? "—"} · {i.accountHolderName} · {i.maskedAccountIdentifier ?? "—"}
               </p>
               <p className="font-sans text-caption text-ordift-ink-muted mb-2">
-                {countryName(i.country)} · {i.currency} · {i.verificationStatus} · {i.active ? "active" : "deactivated"} {i.isDefault ? "· default" : ""}
+                {countryName(i.country)} · {i.currency} · {verificationStatusLabel(i.verificationStatus)} · {i.active ? "active" : "deactivated"} {i.isDefault ? "· default" : ""}
               </p>
               <div className="flex flex-wrap gap-2">
                 <form action={verifyPaymentInstructionAction}>
@@ -179,15 +182,47 @@ export default async function AdminPayeeDetailPage({ params }: { params: Promise
                     defaultValue={`${e.operationalTitleName ?? "Engagement"} compensation`}
                     className="rounded border border-black/15 px-2 py-1 font-sans text-caption"
                   />
-                  <SubmitButton pendingLabel="Creating…" className="rounded border border-black/15 px-2 py-1 font-sans text-caption hover:border-black/30">
+                  <ConfirmSubmitButton
+                    confirmMessage={`Create a payable for ${e.currency ?? ""} ${e.agreedAmount}? This is a real financial obligation and will be sent for approval.`}
+                    pendingLabel="Creating…"
+                    className="rounded border border-black/15 px-2 py-1 font-sans text-caption hover:border-black/30"
+                  >
                     Create Payable
-                  </SubmitButton>
+                  </ConfirmSubmitButton>
                 </form>
               )}
               {e.paymentObligationId && (
                 <Link href={`/admin/payables/${e.paymentObligationId}`} className="font-sans text-caption underline text-ordift-ink">
                   View payable →
                 </Link>
+              )}
+              {/* Payable Safety Hardening (2026-09-04), Part B — editing is only
+                  ever offered before a payable is linked; updateEngagement()
+                  itself refuses the edit server-side once paymentObligationId
+                  is set, so this is the honest UI reflection of that lock. */}
+              {!e.paymentObligationId && (
+                <details className="mt-2">
+                  <summary className="font-sans text-caption text-ordift-ink-muted cursor-pointer">Edit engagement</summary>
+                  <div className="mt-3">
+                    <EditEngagementForm
+                      engagement={{
+                        id: e.id,
+                        engagementTypeId: e.engagementTypeId,
+                        operationalTitleId: e.operationalTitleId,
+                        roleNote: e.roleNote,
+                        currency: e.currency,
+                        agreedAmount: e.agreedAmount,
+                        dueDate: e.dueDate,
+                        notes: e.notes,
+                        payeeProfileId: payee.id,
+                      }}
+                      currencies={currencies}
+                      engagementTypes={engagementTypes}
+                      operationalTitles={operationalTitles}
+                      updateAction={updateEngagementAction}
+                    />
+                  </div>
+                </details>
               )}
             </li>
           ))}
@@ -230,7 +265,14 @@ export default async function AdminPayeeDetailPage({ params }: { params: Promise
             </label>
             <label className="flex flex-col gap-1">
               <span className="font-sans text-caption text-ordift-ink-muted">Currency</span>
-              <input name="currency" placeholder="GHS" className="rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small" />
+              <select name="currency" defaultValue="" className="rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small">
+                <option value="">—</option>
+                {currencies.map((c) => (
+                  <option key={c.code} value={c.code}>
+                    {c.name} ({c.code})
+                  </option>
+                ))}
+              </select>
             </label>
             <label className="flex flex-col gap-1">
               <span className="font-sans text-caption text-ordift-ink-muted">Due date (optional)</span>
@@ -268,26 +310,7 @@ export default async function AdminPayeeDetailPage({ params }: { params: Promise
 
         <details className="rounded-lg border border-black/10 p-4">
           <summary className="font-sans text-body-small text-ordift-ink cursor-pointer">Create a standalone payable</summary>
-          <form action={createStandalonePayableAction} className="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-4">
-            <input type="hidden" name="payeeProfileId" value={payee.id} />
-            <label className="flex flex-col gap-1 sm:col-span-3">
-              <span className="font-sans text-caption text-ordift-ink-muted">Description</span>
-              <input name="description" required className="rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small" />
-            </label>
-            <label className="flex flex-col gap-1">
-              <span className="font-sans text-caption text-ordift-ink-muted">Amount</span>
-              <input name="amount" type="number" step="0.01" min="0.01" required className="rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small" />
-            </label>
-            <label className="flex flex-col gap-1">
-              <span className="font-sans text-caption text-ordift-ink-muted">Currency</span>
-              <input name="currency" required placeholder="GHS" className="rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small" />
-            </label>
-            <div className="flex items-end">
-              <SubmitButton pendingLabel="Creating…" className="rounded-lg bg-ordift-ink px-4 py-2 font-sans text-body-small text-white hover:opacity-90">
-                Create Payable
-              </SubmitButton>
-            </div>
-          </form>
+          <StandalonePayableForm payeeProfileId={payee.id} currencies={currencies} createAction={createStandalonePayableAction} />
         </details>
       </section>
 
