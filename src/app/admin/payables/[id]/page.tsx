@@ -7,13 +7,16 @@ import { getPaymentObligation, canCancelPaymentObligation, canReversePaymentObli
 import { getPayeeProfile } from "@/lib/payables/payeeProfiles";
 import { listPayableItems, PAYABLE_ITEM_KINDS } from "@/lib/payables/payableItems";
 import { listPaymentEvidence } from "@/lib/payables/paymentEvidence";
+import { listPaymentInstructionsForProfile } from "@/lib/payments/payeeInstructions";
 import { getActivityForEntity } from "@/lib/admin/activityLog";
 import SubmitButton from "@/components/admin/SubmitButton";
 import ConfirmSubmitButton from "@/components/admin/ConfirmSubmitButton";
 import PayableCorrectionForm from "@/components/payables/PayableCorrectionForm";
+import PaymentDestinationSelector from "@/components/payables/PaymentDestinationSelector";
 import {
   addPayableItemAction,
   approvePayableAction,
+  selectPayableDestinationAction,
   recordManualPaymentAction,
   addPaymentEvidenceAction,
   cancelPaymentObligationAction,
@@ -35,12 +38,33 @@ export default async function AdminPayableDetailPage({ params }: { params: Promi
   const obligation = await getPaymentObligation(id);
   if (!obligation) notFound();
 
-  const [payee, items, evidence, history] = await Promise.all([
+  const [payee, items, evidence, history, destinations] = await Promise.all([
     getPayeeProfile(obligation.payeeProfileId),
     listPayableItems(id),
     listPaymentEvidence(id),
     getActivityForEntity("payment_obligation", id),
+    listPaymentInstructionsForProfile(obligation.payeeProfileId),
   ]);
+
+  // Phase G.4A — the exact set the selector may offer: active AND
+  // verified. Never surfaces an inactive or not-yet-verified
+  // destination as a choice, and never includes a full/decrypted
+  // identifier — listPaymentInstructionsForProfile() already returns
+  // only the masked representation.
+  const eligibleDestinations = destinations
+    .filter((d) => d.active && d.verificationStatus === "verified")
+    .map((d) => ({ id: d.id, method: d.method, institutionName: d.institutionName, accountHolderName: d.accountHolderName, maskedIdentifier: d.maskedAccountIdentifier }));
+
+  const currentDestinationSelection =
+    obligation.destinationSelectedAt && obligation.destinationMethod && obligation.destinationVerificationStatusAtSelection
+      ? {
+          method: obligation.destinationMethod,
+          institutionName: obligation.destinationInstitutionName,
+          accountHolderName: obligation.destinationAccountHolderName ?? "",
+          maskedIdentifier: obligation.destinationMaskedIdentifier,
+          verificationStatusAtSelection: obligation.destinationVerificationStatusAtSelection,
+        }
+      : null;
 
   return (
     <div className="space-y-8">
@@ -126,8 +150,25 @@ export default async function AdminPayableDetailPage({ params }: { params: Promi
         </section>
       )}
 
-      {/* Record payment */}
+      {/* Payment Destination — Phase G.4A (2026-09-04). Required
+          checkpoint between Approve and Record Payment: which of the
+          payee's verified destinations this payable is actually being
+          paid to must be explicitly selected and immutably recorded
+          before Record Payment becomes available. */}
       {obligation.status === "approved" && (
+        <section className="rounded-xl border border-black/10 bg-white p-6">
+          <h2 className="font-serif font-medium text-body text-ordift-ink mb-3">Payment Destination</h2>
+          <PaymentDestinationSelector
+            obligationId={obligation.id}
+            currentSelection={currentDestinationSelection}
+            availableDestinations={eligibleDestinations}
+            selectAction={selectPayableDestinationAction}
+          />
+        </section>
+      )}
+
+      {/* Record payment */}
+      {obligation.status === "approved" && obligation.destinationSelectedAt && (
         <section className="rounded-xl border border-black/10 bg-white p-6">
           <h2 className="font-serif font-medium text-body text-ordift-ink mb-3">Record Payment</h2>
           <p className="font-sans text-caption text-ordift-ink-muted mb-3">

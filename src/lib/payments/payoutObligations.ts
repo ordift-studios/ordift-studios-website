@@ -2,6 +2,8 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { logActivity } from "@/lib/admin/activityLog";
 import { isSuperAdminId, hasAuthority, authorizeWithSuperAdminOverride, FINANCE_CAPABILITIES } from "@/lib/organization/authority";
 import { isSupportedCurrency } from "@/lib/payments/currency";
+import { maskIdentifier } from "@/lib/payments/payeeInstructions";
+import { decryptPaymentIdentifierOrNull } from "@/lib/payables/paymentIdentifierCrypto";
 
 // Ordift Organizational & Administrative Architecture V1, Phase 3.3,
 // Part I (2026-08-25) — payment-obligation/payout foundation, against
@@ -46,10 +48,23 @@ export type PaymentObligation = {
   payoutReference: string | null;
   paidAt: string | null;
   createdAt: string;
+  // Phase G.4A (2026-09-04) — immutable destination-selection
+  // provenance. destinationSelectedAt is the field the UI gates
+  // Record Payment on (non-null = a destination has been explicitly
+  // selected); the rest is what actually gets displayed once selected.
+  // Never the decrypted/encrypted identifier — masked only, captured
+  // once at selection time and never re-derived from the live row.
+  destinationMethod: string | null;
+  destinationInstitutionName: string | null;
+  destinationAccountHolderName: string | null;
+  destinationMaskedIdentifier: string | null;
+  destinationVerificationStatusAtSelection: string | null;
+  destinationSelectedAt: string | null;
+  destinationSelectedBy: string | null;
 };
 
 const SELECT =
-  "id, payee_profile_id, payment_instruction_id, source_type, source_reference, description, currency, amount, status, approved_by, approved_at, payout_provider, payout_reference, paid_at, created_at";
+  "id, payee_profile_id, payment_instruction_id, source_type, source_reference, description, currency, amount, status, approved_by, approved_at, payout_provider, payout_reference, paid_at, created_at, destination_method, destination_institution_name, destination_account_holder_name, destination_masked_identifier, destination_verification_status_at_selection, destination_selected_at, destination_selected_by";
 
 export async function listPaymentObligationsForPayee(payeeProfileId: string): Promise<PaymentObligation[]> {
   const admin = createAdminClient();
@@ -97,6 +112,13 @@ function mapObligation(r: {
   payout_reference: string | null;
   paid_at: string | null;
   created_at: string;
+  destination_method: string | null;
+  destination_institution_name: string | null;
+  destination_account_holder_name: string | null;
+  destination_masked_identifier: string | null;
+  destination_verification_status_at_selection: string | null;
+  destination_selected_at: string | null;
+  destination_selected_by: string | null;
 }): PaymentObligation {
   return {
     id: r.id,
@@ -114,6 +136,13 @@ function mapObligation(r: {
     payoutReference: r.payout_reference,
     paidAt: r.paid_at,
     createdAt: r.created_at,
+    destinationMethod: r.destination_method,
+    destinationInstitutionName: r.destination_institution_name,
+    destinationAccountHolderName: r.destination_account_holder_name,
+    destinationMaskedIdentifier: r.destination_masked_identifier,
+    destinationVerificationStatusAtSelection: r.destination_verification_status_at_selection,
+    destinationSelectedAt: r.destination_selected_at,
+    destinationSelectedBy: r.destination_selected_by,
   };
 }
 
@@ -209,10 +238,20 @@ export async function createPaymentObligation(
 
   await logActivity({
     actorUserId: params.actorUserId,
+    // Phase G.4A (2026-09-04) — canonical entity going forward: this
+    // event is about the payable, not the payee, and the payable
+    // detail page's own Audit Trail queries entityType
+    // "payment_obligation" — the mismatch was traced live during Phase
+    // G.3 (the page always showed "No activity yet" despite this event
+    // existing, correctly, under entityType "user"). Prospective fix
+    // only — the historical rows already logged under "user" for
+    // Sylvia's real payable are deliberately left as-is; they remain
+    // fully visible on her own payee page and are a separately
+    // authorized reclassification if ever done.
     action: "payment_obligation.created",
-    entityType: "user",
-    entityId: params.payeeProfileId,
-    metadata: { obligationId: data.id, sourceType: params.sourceType, currency: params.currency, amount: params.amount, actedAsSuperAdminOverride: auth.actedAsOverride },
+    entityType: "payment_obligation",
+    entityId: data.id,
+    metadata: { payeeProfileId: params.payeeProfileId, sourceType: params.sourceType, currency: params.currency, amount: params.amount, actedAsSuperAdminOverride: auth.actedAsOverride },
   });
 
   return { ok: true, obligationId: data.id };
@@ -253,10 +292,136 @@ export async function approvePaymentObligation(params: {
 
   await logActivity({
     actorUserId: params.actorUserId,
+    // Phase G.4A — canonical entity going forward, see the matching
+    // comment on payment_obligation.created above.
     action: "payment_obligation.approved",
-    entityType: "user",
-    entityId: existing.payee_profile_id,
-    metadata: { obligationId: params.obligationId, currency: existing.currency, amount: existing.amount },
+    entityType: "payment_obligation",
+    entityId: params.obligationId,
+    metadata: { payeeProfileId: existing.payee_profile_id, currency: existing.currency, amount: existing.amount },
+  });
+
+  return { ok: true };
+}
+
+// ============================================================
+// Phase G.4A (2026-09-04) — payment-destination binding. Closes the
+// gap traced in the Phase G.4 design report: payment_instruction_id
+// existed since migration 0046 but was never written by any code
+// path, so a payable could reach 'paid' with zero record of which
+// verified destination it was actually paid to — and even if it had
+// been wired to the live payment_instructions row, that row is edited
+// in place (updatePaymentInstruction() does an UPDATE, never inserts
+// a new row), so a bare FK would silently misrepresent history the
+// moment a payee's destination is later edited. This function
+// captures an immutable snapshot at the moment of selection —
+// separate typed columns (migration 0050), not JSONB, matching this
+// same table's own existing convention (payout_provider/
+// payout_reference are already plain columns) and payment_instructions
+// itself, which already proves a flat typed shape handles every
+// destination type without needing schema flexibility.
+// ============================================================
+
+// Pure, directly testable — the one fact both selectPayableDestination()
+// (at selection time) and recordManualPayment() (re-checked live, at
+// the moment payment is actually recorded) reduce to: a destination is
+// only usable for a given payable if it genuinely belongs to that
+// payable's payee, and is currently active and verified. Shared so the
+// two enforcement points can never quietly drift apart.
+export function isEligibleDestinationForPayable(params: {
+  instructionProfileId: string;
+  obligationPayeeProfileId: string;
+  active: boolean;
+  verificationStatus: string;
+}): boolean {
+  return params.instructionProfileId === params.obligationPayeeProfileId && params.active && params.verificationStatus === "verified";
+}
+
+export async function selectPayableDestination(params: {
+  obligationId: string;
+  instructionId: string;
+  actorUserId: string;
+}): Promise<{ ok: true } | { ok: false; error: string }> {
+  const isSuperAdmin = await isSuperAdminId(params.actorUserId);
+  if (!isSuperAdmin) {
+    const authorized = await hasAuthority(params.actorUserId, FINANCE_CAPABILITIES.paymentObligationApprove, null);
+    if (!authorized) return { ok: false, error: "Not authorized to select a payment destination." };
+  }
+
+  const admin = createAdminClient();
+  const { data: existing } = await admin.from("payment_obligations").select("status, payee_profile_id").eq("id", params.obligationId).maybeSingle();
+  if (!existing) return { ok: false, error: "Payment obligation not found." };
+  // Also the enforcement point for "permanently prohibit selection
+  // once paid" — paid/cancelled/reversed are all simply not
+  // "approved", so this one check covers every terminal state without
+  // needing a separate guard.
+  if (existing.status !== "approved") {
+    return { ok: false, error: `Cannot select a payment destination — current status is "${existing.status}", not "approved".` };
+  }
+
+  const { data: instruction } = await admin
+    .from("payment_instructions")
+    .select("profile_id, method, institution_name, account_holder_name, account_identifier, verification_status, active")
+    .eq("id", params.instructionId)
+    .maybeSingle();
+  if (!instruction) return { ok: false, error: "Payment destination not found." };
+  if (
+    !isEligibleDestinationForPayable({
+      instructionProfileId: instruction.profile_id,
+      obligationPayeeProfileId: existing.payee_profile_id,
+      active: instruction.active,
+      verificationStatus: instruction.verification_status,
+    })
+  ) {
+    if (instruction.profile_id !== existing.payee_profile_id) return { ok: false, error: "This destination does not belong to this payable's payee." };
+    if (!instruction.active) return { ok: false, error: "This destination is not active." };
+    return { ok: false, error: "This destination is not verified." };
+  }
+
+  // Decrypt happens here, server-side only, and the result never
+  // leaves this scope unmasked — same discipline as
+  // listPaymentInstructionsForProfile() in payeeInstructions.ts. Only
+  // the masked string is ever written to payment_obligations.
+  let maskedIdentifier: string | null = null;
+  try {
+    maskedIdentifier = maskIdentifier(decryptPaymentIdentifierOrNull(instruction.account_identifier));
+  } catch {
+    console.error("[payments] failed to decrypt account_identifier while selecting a payable destination", params.instructionId);
+    return { ok: false, error: "Failed to read the destination's details. Try again." };
+  }
+
+  // A single UPDATE statement — atomically replaces any previous
+  // selection/snapshot together, never a partial overwrite.
+  const { error } = await admin
+    .from("payment_obligations")
+    .update({
+      payment_instruction_id: params.instructionId,
+      destination_method: instruction.method,
+      destination_institution_name: instruction.institution_name,
+      destination_account_holder_name: instruction.account_holder_name,
+      destination_masked_identifier: maskedIdentifier,
+      destination_verification_status_at_selection: instruction.verification_status,
+      destination_selected_at: new Date().toISOString(),
+      destination_selected_by: params.actorUserId,
+    })
+    .eq("id", params.obligationId);
+  if (error) {
+    console.error("[payments] failed to select payable destination", error.message);
+    return { ok: false, error: "Failed to select the destination." };
+  }
+
+  await logActivity({
+    actorUserId: params.actorUserId,
+    action: "payment_obligation.destination_selected",
+    entityType: "payment_obligation",
+    entityId: params.obligationId,
+    metadata: {
+      payeeProfileId: existing.payee_profile_id,
+      instructionId: params.instructionId,
+      method: instruction.method,
+      institutionName: instruction.institution_name,
+      maskedIdentifier,
+      verificationStatusAtSelection: instruction.verification_status,
+    },
   });
 
   return { ok: true };
@@ -355,11 +520,45 @@ export async function recordManualPayment(params: {
   if (!auth.ok) return { ok: false, error: "Not authorized to record a payment." };
 
   const admin = createAdminClient();
-  const { data: existing } = await admin.from("payment_obligations").select("status, payee_profile_id, amount, currency").eq("id", params.obligationId).maybeSingle();
+  const { data: existing } = await admin
+    .from("payment_obligations")
+    .select("status, payee_profile_id, amount, currency, payment_instruction_id")
+    .eq("id", params.obligationId)
+    .maybeSingle();
   if (!existing) return { ok: false, error: "Payment obligation not found." };
 
   const validation = validateManualPaymentAgainstObligation({ amount: params.amount, currency: params.currency, reference: params.reference, obligation: existing });
   if (!validation.ok) return validation;
+
+  // Phase G.4A (2026-09-04) — hard precondition: a destination must be
+  // selected, and its LIVE state re-validated right here, at the
+  // moment payment is actually recorded — not merely trusted from
+  // whenever it was selected. A destination could have been
+  // deactivated or lost verification in the time between selection and
+  // this click. This rejects cleanly, without touching any financial
+  // state, if either check fails.
+  if (!existing.payment_instruction_id) {
+    return { ok: false, error: "Select a payment destination for this payable before recording payment." };
+  }
+  const { data: liveInstruction } = await admin
+    .from("payment_instructions")
+    .select("profile_id, active, verification_status")
+    .eq("id", existing.payment_instruction_id)
+    .maybeSingle();
+  if (
+    !liveInstruction ||
+    !isEligibleDestinationForPayable({
+      instructionProfileId: liveInstruction.profile_id,
+      obligationPayeeProfileId: existing.payee_profile_id,
+      active: liveInstruction.active,
+      verificationStatus: liveInstruction.verification_status,
+    })
+  ) {
+    return {
+      ok: false,
+      error: "The selected payment destination is no longer valid (inactive, unverified, or reassigned) — select a valid destination before recording payment.",
+    };
+  }
 
   const { error } = await admin
     .from("payment_obligations")
@@ -378,10 +577,12 @@ export async function recordManualPayment(params: {
 
   await logActivity({
     actorUserId: params.actorUserId,
+    // Phase G.4A — canonical entity going forward, see the matching
+    // comment on payment_obligation.created above.
     action: "payment_obligation.paid_manually",
-    entityType: "user",
-    entityId: existing.payee_profile_id,
-    metadata: { obligationId: params.obligationId, method: params.method, currency: existing.currency, amount: existing.amount, actedAsSuperAdminOverride: auth.actedAsOverride },
+    entityType: "payment_obligation",
+    entityId: params.obligationId,
+    metadata: { payeeProfileId: existing.payee_profile_id, method: params.method, currency: existing.currency, amount: existing.amount, actedAsSuperAdminOverride: auth.actedAsOverride },
   });
 
   return { ok: true };
@@ -441,10 +642,12 @@ export async function cancelPaymentObligation(params: {
 
   await logActivity({
     actorUserId: params.actorUserId,
+    // Phase G.4A — canonical entity going forward, see the matching
+    // comment on payment_obligation.created above.
     action: "payment_obligation.cancelled",
-    entityType: "user",
-    entityId: existing.payee_profile_id,
-    metadata: { obligationId: params.obligationId, previousStatus: existing.status, reason: params.reason },
+    entityType: "payment_obligation",
+    entityId: params.obligationId,
+    metadata: { payeeProfileId: existing.payee_profile_id, previousStatus: existing.status, reason: params.reason },
   });
 
   return { ok: true };
@@ -489,10 +692,12 @@ export async function reversePaymentObligation(params: {
 
   await logActivity({
     actorUserId: params.actorUserId,
+    // Phase G.4A — canonical entity going forward, see the matching
+    // comment on payment_obligation.created above.
     action: "payment_obligation.reversed",
-    entityType: "user",
-    entityId: existing.payee_profile_id,
-    metadata: { obligationId: params.obligationId, previousStatus: existing.status, wasAlreadyPaid, reason: params.reason },
+    entityType: "payment_obligation",
+    entityId: params.obligationId,
+    metadata: { payeeProfileId: existing.payee_profile_id, previousStatus: existing.status, wasAlreadyPaid, reason: params.reason },
   });
 
   return { ok: true };

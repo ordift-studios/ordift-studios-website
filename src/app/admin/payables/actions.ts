@@ -7,7 +7,14 @@ import { createPayeeProfile, setPayeeProfileStatus, validateCreatePayeeProfileIn
 import { createEngagement, setEngagementStatus, createEngagementPayable, updateEngagement } from "@/lib/payables/engagements";
 import { addPayableItem } from "@/lib/payables/payableItems";
 import { addPaymentEvidenceReference, addPaymentEvidenceFile } from "@/lib/payables/paymentEvidence";
-import { approvePaymentObligation, recordManualPayment, createPaymentObligation, cancelPaymentObligation, reversePaymentObligation } from "@/lib/payments/payoutObligations";
+import {
+  approvePaymentObligation,
+  recordManualPayment,
+  createPaymentObligation,
+  cancelPaymentObligation,
+  reversePaymentObligation,
+  selectPayableDestination,
+} from "@/lib/payments/payoutObligations";
 import { createPaymentInstruction, updatePaymentInstruction, verifyPaymentInstruction, setPaymentInstructionActive } from "@/lib/payments/payeeInstructions";
 
 // Universal Payables System (2026-09-03) — plain FormData server
@@ -298,6 +305,28 @@ export async function approvePayableAction(formData: FormData): Promise<void> {
 
   revalidatePath(`/admin/payables/${obligationId}`);
   revalidatePath("/admin/payables");
+}
+
+// Phase G.4A (2026-09-04) — useActionState feedback, matching the
+// established pattern for financial mutations whose rejection reasons
+// (destination not verified, not active, doesn't belong to this
+// payee, payable no longer approved) need to actually reach the
+// administrator.
+export type SelectDestinationState = { ok: boolean; error?: string } | null;
+
+export async function selectPayableDestinationAction(_prevState: SelectDestinationState, formData: FormData): Promise<SelectDestinationState> {
+  const user = await getCurrentUser();
+  if (!user) return { ok: false, error: "Not signed in." };
+
+  const obligationId = str(formData, "obligationId");
+  const instructionId = str(formData, "instructionId");
+  if (!obligationId || !instructionId) return { ok: false, error: "Select a destination." };
+
+  const result = await selectPayableDestination({ obligationId, instructionId, actorUserId: user.id });
+  if (!result.ok) return { ok: false, error: result.error };
+
+  revalidatePath(`/admin/payables/${obligationId}`);
+  return { ok: true };
 }
 
 export async function recordManualPaymentAction(formData: FormData): Promise<void> {

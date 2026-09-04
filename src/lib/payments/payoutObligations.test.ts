@@ -4,6 +4,7 @@ import {
   validateManualPaymentAgainstObligation,
   canCancelPaymentObligation,
   canReversePaymentObligation,
+  isEligibleDestinationForPayable,
 } from "@/lib/payments/payoutObligations";
 
 // Phase 3.3, Part M, Test J — payment obligation creation does not
@@ -177,5 +178,32 @@ describe("cancel/reverse overlap is confined to 'approved', by design", () => {
       expect(canCancelPaymentObligation(status)).toBe(false);
       expect(canReversePaymentObligation(status)).toBe(false);
     }
+  });
+});
+
+// Phase G.4A (2026-09-04) — the one fact both selectPayableDestination()
+// (at selection time) and recordManualPayment() (re-checked live) rely
+// on. DB-dependent parts of both call sites aren't locally testable
+// without a live Supabase session (same established limitation
+// throughout this suite) — this pure guard is the part that's both
+// safety-critical and directly verifiable.
+describe("isEligibleDestinationForPayable", () => {
+  const base = { instructionProfileId: "payee-1", obligationPayeeProfileId: "payee-1", active: true, verificationStatus: "verified" };
+
+  it("accepts an active, verified destination belonging to the payable's own payee", () => {
+    expect(isEligibleDestinationForPayable(base)).toBe(true);
+  });
+
+  it("rejects a destination belonging to a different payee — even if active and verified", () => {
+    expect(isEligibleDestinationForPayable({ ...base, instructionProfileId: "someone-else" })).toBe(false);
+  });
+
+  it("rejects an inactive destination", () => {
+    expect(isEligibleDestinationForPayable({ ...base, active: false })).toBe(false);
+  });
+
+  it("rejects a destination that isn't verified (unverified or rejected)", () => {
+    expect(isEligibleDestinationForPayable({ ...base, verificationStatus: "unverified" })).toBe(false);
+    expect(isEligibleDestinationForPayable({ ...base, verificationStatus: "rejected" })).toBe(false);
   });
 });
