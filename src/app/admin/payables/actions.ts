@@ -8,6 +8,13 @@ import { createEngagement, setEngagementStatus, createEngagementPayable, updateE
 import { addPayableItem } from "@/lib/payables/payableItems";
 import { addPaymentEvidenceReference, addPaymentEvidenceFile } from "@/lib/payables/paymentEvidence";
 import {
+  requestProjectFileUploadAuthorization,
+  recordUploadedProjectFile,
+  confirmProjectFilesBackup,
+  setProjectFileRetain,
+  purgeEligibleProjectFiles,
+} from "@/lib/payables/projectFiles";
+import {
   approvePaymentObligation,
   recordManualPayment,
   createPaymentObligation,
@@ -443,4 +450,65 @@ export async function reversePaymentObligationAction(_prevState: CancelPayableSt
   revalidatePath(`/admin/payables/${obligationId}`);
   revalidatePath("/admin/payables");
   return { ok: true };
+}
+
+// ============================================================
+// Phase H.1/H.2 (2026-09-04) — media/backup/purge admin actions.
+// ============================================================
+
+export async function requestStaffFileUploadAuthorizationAction(params: { engagementId: string; fileKind: string; originalFilename: string }) {
+  const user = await getCurrentUser();
+  if (!user) return { ok: false as const, error: "Not signed in." };
+  return requestProjectFileUploadAuthorization({ ...params, actorUserId: user.id });
+}
+
+export async function recordStaffUploadedFileAction(params: {
+  engagementId: string;
+  fileKind: string;
+  storagePath: string;
+  originalFilename: string;
+  mimeType: string | null;
+  sizeBytes: number | null;
+}) {
+  const user = await getCurrentUser();
+  if (!user) return { ok: false as const, error: "Not signed in." };
+  const result = await recordUploadedProjectFile({ ...params, actorUserId: user.id });
+  if (result.ok) revalidatePath(`/admin/payables/engagements/${params.engagementId}/media`);
+  return result;
+}
+
+export async function confirmProjectFileBackupAction(formData: FormData): Promise<void> {
+  const user = await getCurrentUser();
+  if (!user) return;
+  const fileId = str(formData, "fileId");
+  const engagementId = str(formData, "engagementId");
+  if (!fileId) return;
+  const result = await confirmProjectFilesBackup({ fileIds: [fileId], actorUserId: user.id });
+  if (!result.ok) console.error("[admin payables] confirmProjectFilesBackup failed", result.error);
+  if (engagementId) revalidatePath(`/admin/payables/engagements/${engagementId}/media`);
+}
+
+export async function setProjectFileRetainAction(formData: FormData): Promise<void> {
+  const user = await getCurrentUser();
+  if (!user) return;
+  const fileId = str(formData, "fileId");
+  const engagementId = str(formData, "engagementId");
+  const retain = formData.get("retain") === "true";
+  if (!fileId) return;
+  const result = await setProjectFileRetain({ fileId, retain, actorUserId: user.id });
+  if (!result.ok) console.error("[admin payables] setProjectFileRetain failed", result.error);
+  if (engagementId) revalidatePath(`/admin/payables/engagements/${engagementId}/media`);
+}
+
+// Manual trigger only — no pg_cron/Vercel Cron infrastructure exists
+// yet in this project (confirmed directly against Production before
+// this phase); unattended scheduling is a deliberate NEXT item, not
+// silently introduced here. Idempotent — safe to click more than once.
+export async function runProjectFilePurgeAction(): Promise<{ ok: boolean; message: string }> {
+  const user = await getCurrentUser();
+  if (!user) return { ok: false, message: "Not signed in." };
+  const result = await purgeEligibleProjectFiles({ actorUserId: user.id });
+  if (!result.ok) return { ok: false, message: result.error };
+  revalidatePath("/admin/payables");
+  return { ok: true, message: `Purged ${result.purgedCount} file(s), ${result.failedCount} failed, ${(result.releasedBytes / (1024 * 1024)).toFixed(1)} MB released.` };
 }

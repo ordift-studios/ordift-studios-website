@@ -4,6 +4,7 @@ import Link from "next/link";
 import { getCurrentUser } from "@/lib/portal/roles";
 import { authorizeWithSuperAdminOverride, FINANCE_CAPABILITIES } from "@/lib/organization/authority";
 import { listAllPaymentObligations } from "@/lib/payments/payoutObligations";
+import RunCleanupButton from "@/components/payables/RunCleanupButton";
 
 export const metadata: Metadata = {
   title: "Payables — Ordift Studios Admin",
@@ -54,9 +55,12 @@ export default async function AdminPayablesPage({ searchParams }: { searchParams
             {auth.actedAsOverride && " Viewing via Super Admin override — this capability is currently unoccupied."}
           </p>
         </div>
-        <Link href="/admin/payables/payees" className="rounded-lg border border-black/10 bg-white px-4 py-2 font-sans text-body-small text-ordift-ink hover:border-black/25">
-          Payees &amp; Onboarding →
-        </Link>
+        <div className="flex flex-col items-end gap-3">
+          <Link href="/admin/payables/payees" className="rounded-lg border border-black/10 bg-white px-4 py-2 font-sans text-body-small text-ordift-ink hover:border-black/25">
+            Payees &amp; Onboarding →
+          </Link>
+          <RunCleanupButton />
+        </div>
       </div>
 
       <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3">

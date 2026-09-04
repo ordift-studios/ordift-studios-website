@@ -3,6 +3,7 @@ import { logActivity } from "@/lib/admin/activityLog";
 import { authorizeWithSuperAdminOverride, FINANCE_CAPABILITIES } from "@/lib/organization/authority";
 import { createPaymentObligation } from "@/lib/payments/payoutObligations";
 import { isSupportedCurrency } from "@/lib/payments/currency";
+import { sendEngagementNotification } from "@/lib/notifications/engagementNotification";
 
 // Universal Payables System (2026-09-03), Part B — against
 // public.engagements (0049_universal_payables.sql). Generalizes the
@@ -295,6 +296,13 @@ export async function createEngagement(params: CreateEngagementParams): Promise<
     },
   });
 
+  // Phase H.1/H.2 (2026-09-04) — fire-and-forget, only when there's a
+  // real portal recipient to notify (an external payee, not an
+  // external-payee-name-only engagement with no account at all).
+  if (params.payeeProfileId) {
+    await sendEngagementNotification({ engagementId: data.id, event: "assignment_created" });
+  }
+
   return { ok: true, id: data.id };
 }
 
@@ -424,6 +432,10 @@ export async function setEngagementStatus(params: {
     entityId: params.engagementId,
     metadata: { fromStatus: existing.status, toStatus: params.status, actedAsSuperAdminOverride: auth.actedAsOverride },
   });
+
+  if (params.status === "work_approved") {
+    await sendEngagementNotification({ engagementId: params.engagementId, event: "work_approved" });
+  }
 
   return { ok: true };
 }

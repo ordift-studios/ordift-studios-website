@@ -4,6 +4,7 @@ import { isSuperAdminId, hasAuthority, authorizeWithSuperAdminOverride, FINANCE_
 import { isSupportedCurrency } from "@/lib/payments/currency";
 import { maskIdentifier } from "@/lib/payments/payeeInstructions";
 import { decryptPaymentIdentifierOrNull } from "@/lib/payables/paymentIdentifierCrypto";
+import { sendEngagementNotification } from "@/lib/notifications/engagementNotification";
 
 // Ordift Organizational & Administrative Architecture V1, Phase 3.3,
 // Part I (2026-08-25) — payment-obligation/payout foundation, against
@@ -30,6 +31,24 @@ export type PayoutProvider = {
     ok: true;
     providerReference: string;
   } | { ok: false; error: string }>;
+};
+
+// Phase H.1/H.2 (2026-09-04) — shared friendly-status wording for
+// external-facing surfaces (the portal Compensation module). Mirrors
+// the admin Payables index page's own local STATUS_LABELS exactly, so
+// the two never drift into showing a contractor and a staff member
+// different words for the same status. Display-only — the underlying
+// stored `status` values are completely unchanged.
+export const PAYABLE_STATUS_LABELS: Record<string, string> = {
+  pending_approval: "Pending Approval",
+  approved: "Approved",
+  payout_initiated: "Processing",
+  paid: "Paid",
+  failed: "Failed",
+  on_hold: "On Hold",
+  disputed: "Disputed",
+  cancelled: "Cancelled",
+  reversed: "Reversed",
 };
 
 export type PaymentObligation = {
@@ -522,7 +541,7 @@ export async function recordManualPayment(params: {
   const admin = createAdminClient();
   const { data: existing } = await admin
     .from("payment_obligations")
-    .select("status, payee_profile_id, amount, currency, payment_instruction_id")
+    .select("status, payee_profile_id, amount, currency, payment_instruction_id, source_type, source_reference")
     .eq("id", params.obligationId)
     .maybeSingle();
   if (!existing) return { ok: false, error: "Payment obligation not found." };
@@ -584,6 +603,10 @@ export async function recordManualPayment(params: {
     entityId: params.obligationId,
     metadata: { payeeProfileId: existing.payee_profile_id, method: params.method, currency: existing.currency, amount: existing.amount, actedAsSuperAdminOverride: auth.actedAsOverride },
   });
+
+  if (existing.source_type === "engagement" && existing.source_reference) {
+    await sendEngagementNotification({ engagementId: existing.source_reference, event: "payment_completed" });
+  }
 
   return { ok: true };
 }

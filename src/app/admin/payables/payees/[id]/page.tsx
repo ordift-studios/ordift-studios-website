@@ -196,7 +196,10 @@ export default async function AdminPayeeDetailPage({ params }: { params: Promise
                 <Link href={`/admin/payables/${e.paymentObligationId}`} className="font-sans text-caption underline text-ordift-ink">
                   View payable →
                 </Link>
-              )}
+              )}{" "}
+              <Link href={`/admin/payables/engagements/${e.id}/media`} className="font-sans text-caption underline text-ordift-ink">
+                Manage files →
+              </Link>
               {/* Payable Safety Hardening (2026-09-04), Part B — editing is only
                   ever offered before a payable is linked; updateEngagement()
                   itself refuses the edit server-side once paymentObligationId
