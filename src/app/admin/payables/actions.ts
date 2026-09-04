@@ -174,13 +174,22 @@ export async function setPaymentInstructionActiveAction(formData: FormData): Pro
   if (profileId) revalidatePath(`/admin/payables/payees/${profileId}`);
 }
 
-export async function createEngagementAction(formData: FormData): Promise<void> {
+// Phase F.1 (2026-09-04) — converted from a void action to the
+// useActionState feedback pattern. The immediate reason: the new
+// "select a currency for the agreed amount" validation (Part D) needs
+// to actually reach the administrator, not be swallowed into a
+// console.error the way the original void action did — which is
+// exactly how Sylvia's real engagement ended up with a null currency
+// unnoticed in the first place.
+export type CreateEngagementState = { ok: boolean; error?: string } | null;
+
+export async function createEngagementAction(_prevState: CreateEngagementState, formData: FormData): Promise<CreateEngagementState> {
   const user = await getCurrentUser();
-  if (!user) return;
+  if (!user) return { ok: false, error: "Not signed in." };
 
   const payeeProfileId = optStr(formData, "payeeProfileId");
   const externalPayeeName = optStr(formData, "externalPayeeName");
-  if (!payeeProfileId && !externalPayeeName) return;
+  if (!payeeProfileId && !externalPayeeName) return { ok: false, error: "Provide either an internal payee or an external payee name." };
 
   const result = await createEngagement({
     payeeProfileId,
@@ -196,10 +205,11 @@ export async function createEngagementAction(formData: FormData): Promise<void> 
     notes: optStr(formData, "notes"),
     actorUserId: user.id,
   });
-  if (!result.ok) console.error("[admin payables] createEngagement failed", result.error);
+  if (!result.ok) return { ok: false, error: result.error };
 
   if (payeeProfileId) revalidatePath(`/admin/payables/payees/${payeeProfileId}`);
   revalidatePath("/admin/payables");
+  return { ok: true };
 }
 
 export async function setEngagementStatusAction(formData: FormData): Promise<void> {

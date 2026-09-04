@@ -62,6 +62,19 @@ export function isValidEngagementTransition(fromStatus: string, toStatus: string
   return getValidEngagementTransitions(fromStatus).some((t) => t.to === toStatus);
 }
 
+// Phase F.1 (2026-09-04), Part D — pure, directly testable. An agreed
+// amount with no currency is an incomplete, ambiguous financial term —
+// exactly the state Sylvia's first real engagement ended up in, when
+// the currency <select> was left at its blank default. No amount
+// agreed yet is fine (currency is irrelevant until there's a number to
+// attach it to); an amount with a currency is fine; an amount with no
+// currency is rejected. Shared by createEngagement() and
+// updateEngagement() so the rule can never drift between the two.
+export function isCompleteFinancialTerms(agreedAmount: number | null | undefined, currency: string | null | undefined): boolean {
+  if (!agreedAmount) return true;
+  return Boolean(currency);
+}
+
 export type Engagement = {
   id: string;
   payeeProfileId: string | null;
@@ -212,11 +225,27 @@ export type CreateEngagementParams = {
 };
 
 export async function createEngagement(params: CreateEngagementParams): Promise<{ ok: true; id: string } | { ok: false; error: string }> {
-  const auth = await authorizeWithSuperAdminOverride(params.actorUserId, FINANCE_CAPABILITIES.payeeAdminister);
-  if (!auth.ok) return { ok: false, error: "Not authorized to administer engagements." };
+  // Pure preconditions first, before any DB access (including
+  // authorization) — same ordering principle established in
+  // createPaymentObligation() (payoutObligations.ts): these are input-
+  // shape checks, not authorization decisions, so checking them first
+  // costs nothing and keeps them directly unit-testable without a live
+  // Supabase session.
   if (!params.payeeProfileId && !params.externalPayeeName) {
     return { ok: false, error: "Provide either an internal payee or an external payee name." };
   }
+  if (params.agreedAmount !== undefined && params.agreedAmount !== null && params.agreedAmount <= 0) {
+    return { ok: false, error: "Agreed amount must be greater than zero." };
+  }
+  // Phase F.1 (2026-09-04), Part D — closes the exact gap Sylvia's
+  // first real engagement fell into: an agreed amount saved with
+  // currency left null. See isCompleteFinancialTerms() above.
+  if (!isCompleteFinancialTerms(params.agreedAmount, params.currency)) {
+    return { ok: false, error: "Select a currency for the agreed amount." };
+  }
+
+  const auth = await authorizeWithSuperAdminOverride(params.actorUserId, FINANCE_CAPABILITIES.payeeAdminister);
+  if (!auth.ok) return { ok: false, error: "Not authorized to administer engagements." };
   // Payable Safety Hardening (2026-09-04) — an engagement's currency
   // flows straight into any payable created from it
   // (createEngagementPayable() below passes it through unchanged), so
@@ -225,9 +254,6 @@ export async function createEngagement(params: CreateEngagementParams): Promise<
   if (params.currency) {
     const currencySupported = await isSupportedCurrency(params.currency);
     if (!currencySupported) return { ok: false, error: `"${params.currency}" is not a supported currency.` };
-  }
-  if (params.agreedAmount !== undefined && params.agreedAmount !== null && params.agreedAmount <= 0) {
-    return { ok: false, error: "Agreed amount must be greater than zero." };
   }
 
   const admin = createAdminClient();
@@ -300,7 +326,11 @@ export async function updateEngagement(params: UpdateEngagementParams): Promise<
   if (!auth.ok) return { ok: false, error: "Not authorized to administer engagements." };
 
   const admin = createAdminClient();
-  const { data: existing } = await admin.from("engagements").select("payment_obligation_id").eq("id", params.engagementId).maybeSingle();
+  const { data: existing } = await admin
+    .from("engagements")
+    .select("payment_obligation_id, agreed_amount, currency")
+    .eq("id", params.engagementId)
+    .maybeSingle();
   if (!existing) return { ok: false, error: "Engagement not found." };
   if (existing.payment_obligation_id) {
     return { ok: false, error: "This engagement already has a linked payable — its terms can no longer be edited. Create a new engagement if a correction is needed." };
@@ -312,6 +342,16 @@ export async function updateEngagement(params: UpdateEngagementParams): Promise<
   }
   if (params.agreedAmount !== undefined && params.agreedAmount !== null && params.agreedAmount <= 0) {
     return { ok: false, error: "Agreed amount must be greater than zero." };
+  }
+  // Phase F.1 (2026-09-04), Part D — this is a partial update, so the
+  // check runs against the RESULTING state (whichever of amount/
+  // currency this call is actually changing, combined with whatever
+  // the existing row already had for the field not being changed) —
+  // not just the fields present in this one call.
+  const resultingAmount = params.agreedAmount !== undefined ? params.agreedAmount : existing.agreed_amount;
+  const resultingCurrency = params.currency !== undefined ? params.currency : existing.currency;
+  if (!isCompleteFinancialTerms(resultingAmount, resultingCurrency)) {
+    return { ok: false, error: "Select a currency for the agreed amount." };
   }
 
   const update: Record<string, unknown> = {};

@@ -1,5 +1,4 @@
 import { createClient } from "@/lib/supabase/server";
-import { createAdminClient } from "@/lib/supabase/admin";
 import type { ExchangeRateSource } from "@/lib/payments/types";
 
 // USD-reference / local-settlement currency model (architecture
@@ -165,15 +164,36 @@ export async function listActiveCurrencies(): Promise<CurrencyOption[]> {
 
 // Payable Safety Hardening (2026-09-04) — server-side currency
 // validation for payable/engagement creation, closing the free-text
-// currency risk identified in the Phase E readiness review. Uses the
-// admin client (unlike listActiveCurrencies() above) since this is
-// called from within already-service-role-authorized mutation
-// functions (payoutObligations.ts/engagements.ts), not a plain
-// session-scoped read. Reuses the same public.currencies table (0024)
-// — no new currency list, no schema change.
+// currency risk identified in the Phase E readiness review. Reuses the
+// same public.currencies table (0024) — no new currency list, no
+// schema change.
+//
+// Phase F.1 (2026-09-04) — deliberately uses the SESSION-scoped
+// client, the same one listActiveCurrencies() above already uses, NOT
+// createAdminClient(). This was originally written against the admin
+// client on the (undocumented, wrong) assumption that it carries "the
+// same privilege level" as the classic service_role — traced live
+// against Production after a real rejection of a genuine, active
+// currency ("GHS") and confirmed via Vercel logs to be a hard Postgres
+// "permission denied for table currencies" error: migration 0024 never
+// granted SELECT on this table to service_role (unlike every other
+// table this codebase's admin client reads), so createAdminClient()
+// can never read it, for any currency, regardless of code/case/value.
+// currencies is public, non-sensitive reference data that any
+// authenticated user already has real read access to via its own RLS
+// policy ("readable by authenticated") — the exact access
+// listActiveCurrencies() already relies on to populate this same
+// dropdown — so validating against the session client is not a
+// weaker check, it's the SAME check the UI's own option list is built
+// from, which is what actually guarantees the two can never disagree
+// again. Every call site (createEngagement, updateEngagement,
+// createPaymentObligation) is only ever reached from within a live,
+// already-authenticated Server Action request, so a session is always
+// present. See the Phase F.1 report for the full trace, including why
+// a service_role GRANT migration was considered and not applied.
 export async function isSupportedCurrency(code: string): Promise<boolean> {
-  const admin = createAdminClient();
-  const { data, error } = await admin.from("currencies").select("code").eq("code", code).eq("is_active", true).maybeSingle();
+  const supabase = await createClient();
+  const { data, error } = await supabase.from("currencies").select("code").eq("code", code).eq("is_active", true).maybeSingle();
   if (error) {
     console.error("[payments] failed to validate currency", error.message);
     return false;

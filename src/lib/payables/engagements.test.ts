@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { getValidEngagementTransitions, isValidEngagementTransition, ENGAGEMENT_STATUSES } from "@/lib/payables/engagements";
+import { getValidEngagementTransitions, isValidEngagementTransition, ENGAGEMENT_STATUSES, isCompleteFinancialTerms } from "@/lib/payables/engagements";
 
 // Engagement Lifecycle UI (2026-09-03) — this is the real authorization
 // boundary for a status transition (setEngagementStatus() calls
@@ -58,5 +58,30 @@ describe("engagement lifecycle transitions", () => {
         expect(ENGAGEMENT_STATUSES).toContain(transition.to);
       }
     }
+  });
+});
+
+// Phase F.1 (2026-09-04), Part D — the actual precondition that
+// createEngagement()/updateEngagement() run before any DB access
+// (createEngagement()) or against the resulting post-update state
+// (updateEngagement()). This is the direct regression test for the
+// exact gap Sylvia's real first engagement fell into: an agreed amount
+// saved with currency left null via the currency <select>'s blank
+// default. Pure, no DB required.
+describe("isCompleteFinancialTerms", () => {
+  it("no agreed amount at all is always complete — currency is irrelevant until there's a number to attach it to", () => {
+    expect(isCompleteFinancialTerms(null, null)).toBe(true);
+    expect(isCompleteFinancialTerms(undefined, undefined)).toBe(true);
+    expect(isCompleteFinancialTerms(0, null)).toBe(true);
+  });
+
+  it("an agreed amount with a currency is complete", () => {
+    expect(isCompleteFinancialTerms(10, "GHS")).toBe(true);
+  });
+
+  it("an agreed amount with no currency is rejected — this is exactly Sylvia's real bug", () => {
+    expect(isCompleteFinancialTerms(10, null)).toBe(false);
+    expect(isCompleteFinancialTerms(10, undefined)).toBe(false);
+    expect(isCompleteFinancialTerms(10, "")).toBe(false);
   });
 });
