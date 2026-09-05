@@ -251,37 +251,30 @@ Per major subsystem (Supabase, Sanity, Vercel, Redis rate-limiting, Google Sheet
 
 ---
 
-## Version 1.1 — Internal Organization Module
+## Version 1.1 — Internal Organization Module *(implemented, unadopted)*
 
-**Vision:** give Ordift Studios a real internal-HR foundation — departments, positions, reporting lines, and organizational seniority — without touching or complicating the permission system that already works. This is about *who reports to whom and how the organization is structured*, not about *what anyone is allowed to do in the system*.
+**Status (corrected 2026-09-05, Phase J.1 — this entry previously read "planned, priority 1st" and was materially wrong):** ✅ **Built** — schema, backend functions, and real Admin UI all exist (migrations `0017`, `0037`, `0038`, `0039`, `0042`, `0046`; `src/lib/organization/*`; `admin/organization`, `admin/authority`, `admin/executive/{finance,governance,operations,people,strategy,technology}`, `admin/recruitment`). ⚠️ **Zero real-world adoption** — verified directly against Production (read-only row counts, 2026-09-05): `authority_grants` **0 rows**, `staff_details` rows with `position_id`/`department_id`/`manager_id` set **0 of 3**, `recruitment_requisitions` **0**, `staff_onboarding` **0**, `grade_compensation_bands` **0**, `department_requests` **0**. Only the Grade catalogue and the 44-row Position/Department catalogue are populated (configuration, not usage), plus exactly one real Grade assignment (the founder's own account → G10, Founder/CEO). This module is not "planned" and not "in progress" — it is **fully wired and sitting idle**, a materially different state than either label implies.
 
-**Objectives:**
-- Model the organization's actual shape (departments, positions, reporting structure) inside the platform instead of only in people's heads or an external spreadsheet.
-- Introduce the **Grade** system specified in this session (see `ADMIN_GUIDE.md` §9.1 for the full spec) as a fourth, strictly independent axis alongside Role, Position, and Engagement Type.
-- Build the HR foundation that Version 1.2 (Skills) and Version 2.0 (Talent) will both extend.
+**Vision (unchanged, still accurate):** give Ordift Studios a real internal-HR foundation — departments, positions, reporting lines, and organizational seniority — without touching or complicating the permission system that already works.
 
-**Features:**
-- **Organization Grades** — 10-tier seniority hierarchy (Intern/Trainee → Founder/CEO), managed via a dedicated Admin-only Grade Management module (create/rename/reorder/archive/assign, block-delete-if-assigned).
-- **Departments** — a lookup table grouping people organizationally (e.g. Photography, Post-Production, Operations), independent of Role.
-- **Positions** — formalizes the existing `operational_titles` lookup (already built in migration 0009) into a richer Position concept if needed, or extends it directly — to be decided at implementation time based on how much richer "Position" needs to be versus the existing Title field.
-- **Reporting Structure** — a manager/reports-to relationship per person, for org-chart and future approval-workflow use (e.g. leave approval in Version 3.0).
-- **Engagement Types** — already built (migration 0009); this version just formally documents it as one of the four independent axes rather than adding new schema.
-- **Employee Profiles** — an internal-facing profile view per staff/collaborator combining Position, Department, Grade, Engagement Type, and reporting line in one place (admin-only, per the Grade visibility policy).
-- **Internal hierarchy / HR foundations** — the org-chart view this data enables.
+**Verified feature-by-feature (Phase J.1 truth table — see that phase's report for full detail):**
+- **Organization Grades** — ✅ built exactly as specified: `grades` table, G1-G10, RLS admin/super-admin read + super-admin-only write, names formally aligned to the approved model in migration `0038` (G10 Founder/CEO, G9 C-Suite/Executive Leadership, G8 Directors/Department Heads — matches the intended architecture precisely). One real assignment exists (founder → G10).
+- **Departments** — ✅ built and seeded: 4 real departments (Executive & Administration; Creative & Production; Client, Marketing & Commercial; Talent & Model Management). Zero staff assigned to any of them yet.
+- **Positions** — ✅ built and seeded: a 39-position approved catalogue (now 44 rows), each mapped to a department + default Grade + (where a craft correspondence exists) an `operational_titles` row. Zero staff occupy any Position, including the founder's own "Founder & CEO" Position row.
+- **Reporting Structure** — ✅ built (migration `0042`): a structural `positions.reports_to_position_id` chain (independent of who occupies a position) plus a resolved `staff_details.manager_id`, with real, complete default reporting chains seeded for all 4 departments. `assignStaffPosition()` (`src/lib/organization/assignPosition.ts`) is wired to real Admin UI (`admin/profile/[id]`, `admin/users`) and would auto-resolve `manager_id` the first time it's ever used — it never has been.
+- **Executive hierarchy / delegation** — ✅ built (migration `0042`): a unified `authority_grants` table (`executive_admin`, `department_admin`, time-bound delegation) plus a `jurisdiction.verb` capability taxonomy (`operations`/`finance`/`strategy`/`people`/`technology`/`governance` × `view`/`create`/`edit`/`approve`/`authorize`/`override`/`administer`), deliberately never auto-inherited from Role/Grade/Position. **Zero grants exist** — every privileged Payables/organizational action performed anywhere in this codebase's history has run via the pre-existing Super Admin *role* override, never via a genuinely held `authority_grants` capability.
+- **Employee Profiles** (J.0's open question) — **there is no single canonical "Employee Profile" screen.** What exists instead, spread across real pages: the Admin Profile Quick Card (Grade + staff number), `admin/organization` (department/position assignment), `admin/authority` (grants), and `admin/executive/people`. Functionally reachable, never visually unified. Not a blocking gap — see Phase J.1 report §2 for why this shouldn't become a new parallel identity table.
+- **Corporate identity, recruitment requisitions (with interview panels/evaluations), department-request workflow** — ✅ built, real UI (`admin/operations`, `admin/executive/*`), zero real usage.
+- **Staff onboarding** — ✅ schema + a real function module (`src/lib/organization/onboarding.ts`), but **not wired to any Admin UI action** — the one genuinely disconnected (not merely unused) piece. See `TECHNICAL_DEBT_REGISTER.md` TD-056.
+- **Compensation bands** — ✅ schema only, zero rows, explicitly designed to never itself authorize a payment.
 
-**The four independent concepts (hard constraint, not a suggestion):** Role, Position, Grade, and Engagement Type must never become coupled to each other or to permissions. Permissions remain exclusively controlled by Role. Grade is confidential internal metadata — see the full Grade Visibility Policy already documented in `ADMIN_GUIDE.md` §9.1 (never on staff IDs, name tags, email signatures, business cards, client pages, public profiles, or contracts unless explicitly required).
+**Architectural separation — verified, not assumed:** Grade, Position, Role, Department, and the new Authority/delegation layer are confirmed structurally independent by direct code/migration reading — no FK or code path lets a Position or Grade change silently alter `user_roles`/permissions, and `authority_grants` is never auto-inherited from `executive_admin` status into any other specific capability. This hard constraint has held up under real verification, not just under its own stated intent.
 
-**Dependencies:** migration 0009's `operational_titles`/`engagement_types` pattern (direct precedent to follow); no dependency on any other planned version.
+**Relationship to the External Workforce/Universal Payables system:** verified zero FK coupling in either direction between `grades`/`departments`/`positions`/`staff_details` and `payee_profiles`/`engagements`/`payment_obligations`/`payment_instructions` (the latter two tables were *originally created* in this same Organizational Architecture, migration `0046`, then generalized — not duplicated — by the Universal Payables system, migration `0049`, to also serve external `engagements`). An external contractor's lifecycle (Sylvia's validated case) touches none of the employee-org tables, confirmed by direct schema inspection.
 
-**Estimated complexity:** Medium. New schema (grades, departments, reporting_line) follows an already-proven additive-lookup-table pattern; the main effort is the Admin UI (reorderable Grade Management screen, org-chart-style view) rather than the data model itself.
+**Release criteria (unchanged from original):** all axes independently verified changeable without affecting permissions (confirmed ✅); Grade never renders outside an Admin/Super Admin-gated view (confirmed ✅ by RLS + UI); a real regression pass showing zero access-behavior change (not independently re-verified this phase, no reason to believe it regressed).
 
-**Risks:** the primary risk is *scope leakage* — Grade or Department fields being read by permission checks "just this once." Mitigate by keeping every new table's RLS/read policies separate from `private.has_role()` entirely, and by code review explicitly checking that no new column here is ever referenced in an `if` gating access.
-
-**Release criteria:** all four axes (Role, Position, Grade, Engagement Type) independently verified changeable without affecting a user's actual permissions; Grade never renders outside an authenticated Admin/Super Admin-gated view; staging regression pass covering every existing role's login/access behavior shows zero change.
-
-**Priority:** High — this is the necessary foundation for Version 1.2 and Version 2.0, and was explicitly requested as the next milestone after v1.0.
-
-**Suggested implementation order:** 1st (immediately after v1.0 closes).
+**Priority:** not "build" — this module doesn't need building. It needs a decision: either put it to real use for Ordift's actual ~3-5 person team (a small, low-risk activation, not a build), or explicitly leave it dormant until team size actually warrants it. See `TECHNICAL_DEBT_REGISTER.md` and Phase J.1's report for the full recommendation.
 
 ---
 

@@ -306,6 +306,7 @@
 - **Why not fixed now:** out of scope for the Audit Identity Standard change itself, which was about *where* identity resolves from (member_number via existing FKs), not about migrating the underlying department/title data model — that's a separate, pre-existing piece of debt this work only surfaced by consuming the field, not one it created.
 - **Pay-down trigger:** if/when `operational_title_id` (or a dedicated department lookup table) becomes the actual source of truth for department/function, update `resolveActorIdentities()`'s single query to match — every audit display downstream picks it up automatically, no other file changes needed.
 - **Status:** Open, low priority.
+- **Update (2026-09-05, Phase J.1):** a real, structured `departments` table now exists (migration `0037`) and is a better eventual source than either the legacy free-text column or `operational_title_id`. Confirmed directly against Production: all 3 real `staff_details` rows have `staff_details.department` (the legacy field this entry describes) still `null` today, so this display gap is currently latent (blank, not wrong) rather than actively misleading — but the pay-down trigger should now point at `staff_details.department_id` (the new structured FK), not `operational_title_id`.
 
 ### TD-029 — No functional Portfolio workflow exists for `contractor`-role accounts, despite permission-layer scaffolding suggesting one does
 
@@ -500,6 +501,7 @@
 - **Current impact:** one specific, documented gap exists today (TDR-017) — Sylvia Annang-Mensah's `staff`-role-revoke correction (2026-09-04) has no matching `activity_log` row. No other known gaps; this is a systemic possibility, not a confirmed pattern of missed entries elsewhere.
 - **Pay-down trigger:** the next time role-mutation audit integrity is scoped as its own task, or if a second real gap is ever found (suggesting this is happening more than the "rare" severity assumes).
 - **Status:** Open.
+- **Update (2026-09-05, Phase J.1):** the identical pattern exists in `src/app/admin/authority/actions.ts` — every `authority_grants` insert (grant executive_admin/department_admin/delegation) and its revoke path perform the write and the matching `logActivity()` call as two independent, sequential operations, same non-atomic risk as `user_roles`. Not a second TD entry — the eventual fix (a same-transaction Postgres trigger) is the same shape and should cover both tables in one pass. Currently zero real-world exposure: `authority_grants` has 0 rows in Production (confirmed directly, Phase J.1) — no grant has ever been made, so no gap has had the chance to occur here yet.
 
 ### TD-052 — `/admin/activity` sensitivity tiering never reviewed the Universal Payables/External Workforce action types (found and fixed 2026-09-05, Phase I.1)
 
@@ -539,6 +541,26 @@
 - **Why accepted:** the underlying mutation itself is correct and fully verified — this affects only the audit trail's descriptive precision, not any financial or authorization outcome.
 - **Current impact:** none functionally; a careful reader of `/admin/activity`'s metadata for one of these events could be told a field "changed" when its value was actually resubmitted unchanged.
 - **Pay-down trigger:** the next time this exact audit-logging call site is touched for an unrelated reason, or if audit-trail precision is ever scoped as its own task.
+- **Status:** Open, low priority.
+
+### TD-056 — `staff_onboarding` has real schema and a real function module, but is never called from any Admin UI action
+
+- **Category:** Data / Incomplete Feature
+- **Severity:** Low (nothing depends on it; genuinely unused, not broken)
+- **What:** found during Phase J.1's Internal Organization system verification. `public.staff_onboarding` (migration `0046`) and `src/lib/organization/onboarding.ts` both exist as real, non-trivial code — but grepping every caller of the onboarding module across `src/app` found none. Every sibling piece of the same Organizational Architecture (corporate identity, recruitment requisitions, department requests, position assignment) is wired into a real Admin UI page (`admin/operations`, `admin/executive/*`, `admin/organization`); onboarding is the one exception. Confirmed 0 rows in Production.
+- **Why accepted:** built as part of the same 2026-08-25 phase as everything else in this system, evidently before the corresponding UI action was written, and no one has come back to finish wiring it — not a design decision, an incomplete thread.
+- **Current impact:** none — no staff onboarding has ever been tracked through this system (there's no one to onboard yet at Ordift's current team size).
+- **Pay-down trigger:** the first time Ordift actually onboards a new internal employee through this architecture (see `PRODUCT_ROADMAP.md`'s Version 1.1 entry) — at that point either finish wiring the existing module to a real action, or confirm a simpler manual process is sufficient at current scale and mark this intentionally deferred instead.
+- **Status:** Open, low priority.
+
+### TD-057 — `payment_instructions`/`payment_obligations` RLS is "own row or Super Admin only" — a plain `admin`-tier session-client read returns nothing
+
+- **Category:** Access Management / Architecture Clarity
+- **Severity:** Low (not a live bug — every current admin-tier consumer already goes through the service-role client — but a real sharp edge for future development)
+- **What:** found during Phase J.1's authorization review, verifying `payment_instructions`/`payment_obligations` (migration `0046`, extended by `0049`-`0052`). Their only RLS SELECT policy is "own row, or Super Admin" — there is no `admin`-tier read policy at all, unlike most other tables in this codebase's Payables/Workforce surface. This is not currently a problem because every admin-tier Payables function (`listAllPaymentObligations`, `recordManualPayment`, etc.) correctly uses `createAdminClient()` (service-role, bypasses RLS) gated by an app-level `finance.payee.administer` capability check — but if a future feature ever tried reading either table via the ordinary session client for an admin-tier (non-super-admin) view, it would silently return zero rows rather than erroring, which is easy to misread as "no data" instead of "wrong access path."
+- **Why accepted:** this was a deliberate design choice in the original migration (highly sensitive payee banking/compensation data, narrow by default) — not an oversight. Recording it here purely so a future developer hitting the silent-empty-result symptom has somewhere to look.
+- **Current impact:** none today.
+- **Pay-down trigger:** if a genuine admin-tier (non-super-admin) UI need for direct session-client reads on either table ever arises — at that point, add a scoped `admin`-tier RLS policy explicitly, rather than routing around it with the service-role client as a habit.
 - **Status:** Open, low priority.
 
 ---
