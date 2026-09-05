@@ -579,7 +579,21 @@ export async function recordManualPayment(params: {
     };
   }
 
-  const { error } = await admin
+  // TD-053 (2026-09-05) — the earlier validateManualPaymentAgainstObligation()
+  // check above only proves the obligation was 'approved' at READ time;
+  // without a write-time guard, two concurrent Record Payment
+  // submissions (or a slow double-click) could both pass that check
+  // before either commits, and Postgres would happily apply the second
+  // UPDATE right after the first, silently re-recording an already-paid
+  // obligation. `.eq("status","approved")` makes the UPDATE itself
+  // conditional on the row STILL being 'approved' at write time —
+  // Postgres serializes concurrent UPDATEs on the same row via its row
+  // lock, so a second/racing request re-evaluates this WHERE clause
+  // only after the first has already committed status='paid', at which
+  // point it matches zero rows and is a safe, clean no-op. Same atomic
+  // idempotency pattern already proven in this codebase for
+  // setProjectFileRetain() and promoteProjectFileToFinalApproved().
+  const { data: updated, error } = await admin
     .from("payment_obligations")
     .update({
       status: "paid",
@@ -588,10 +602,19 @@ export async function recordManualPayment(params: {
       payout_initiated_at: params.paidAt,
       paid_at: params.paidAt,
     })
-    .eq("id", params.obligationId);
+    .eq("id", params.obligationId)
+    .eq("status", "approved")
+    .select("id");
   if (error) {
     console.error("[payments] failed to record manual payment", error.message);
     return { ok: false, error: "Failed to record the payment." };
+  }
+  if (!updated || updated.length === 0) {
+    // Lost the race (or the obligation moved out of 'approved' between
+    // the read above and this write) — no field was changed, no
+    // duplicate payment state was created, and nothing below this point
+    // runs: no audit event, no notification, no external call.
+    return { ok: false, error: `Cannot record payment — this payable is no longer "approved" (it may already have been recorded, or its status changed).` };
   }
 
   await logActivity({

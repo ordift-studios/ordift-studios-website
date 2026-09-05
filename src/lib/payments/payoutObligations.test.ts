@@ -112,6 +112,57 @@ describe("validateManualPaymentAgainstObligation", () => {
   });
 });
 
+// TD-053 (2026-09-05) — recordManualPayment()'s UPDATE is now guarded
+// by .eq("status","approved") in addition to .eq("id", obligationId),
+// the same atomic idempotency pattern already proven for
+// setProjectFileRetain()/promoteProjectFileToFinalApproved(). This is
+// the read-time half of that guard — the same pure validator above
+// already rejects a non-'approved' obligation, which is exactly what a
+// second/repeated Record Payment attempt sees once the first
+// successful call has moved status to 'paid'. Restated here explicitly
+// against TD-053's own required scenarios so the connection is
+// unambiguous, not left implicit in the pre-existing tests above.
+//
+// What ISN'T covered here, and why: a genuinely concurrent double-
+// submission (two requests racing before either commits) needs a real
+// Postgres row lock to prove — not reproducible at this project's
+// unit-test tier without a live Supabase session, the same established
+// limitation as every other DB-dependent guard in this suite (Retain,
+// Final Approval, Confirm Backup). The atomic .eq("status","approved")
+// guard on the UPDATE itself (not this pure pre-check) is what actually
+// closes that race; it's covered by direct code reading in the Phase
+// I.2 report, not a unit test.
+describe("TD-053 — an obligation no longer 'approved' cannot be recorded as paid", () => {
+  it("a pending_approval obligation cannot be recorded as paid", () => {
+    expect(
+      validateManualPaymentAgainstObligation({
+        amount: 10,
+        currency: "GHS",
+        reference: "REF",
+        obligation: { status: "pending_approval", amount: 10, currency: "GHS" },
+      }).ok
+    ).toBe(false);
+  });
+
+  it("a repeated Record Payment attempt after the first successful transition (status now 'paid') cannot succeed", () => {
+    // Simulates exactly the state a second submission would observe
+    // after a first call already committed status: 'paid'.
+    const result = validateManualPaymentAgainstObligation({
+      amount: 10,
+      currency: "GHS",
+      reference: "REF",
+      obligation: { status: "paid", amount: 10, currency: "GHS" },
+    });
+    expect(result).toEqual({ ok: false, error: 'Cannot record payment — current status is "paid", not "approved".' });
+  });
+
+  it("a cancelled or reversed obligation cannot be recorded as paid", () => {
+    for (const status of ["cancelled", "reversed"]) {
+      expect(validateManualPaymentAgainstObligation({ amount: 10, currency: "GHS", reference: "REF", obligation: { status, amount: 10, currency: "GHS" } }).ok).toBe(false);
+    }
+  });
+});
+
 // Payable Safety Hardening (2026-09-04), Parts B/D/J — pure state-
 // machine guards for cancel/reverse, same directly-testable-without-a-
 // live-DB tier as validateManualPaymentAgainstObligation and
