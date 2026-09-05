@@ -339,34 +339,75 @@ export async function confirmProjectFilesBackup(params: {
   return { ok: true, confirmedCount: data?.length ?? 0 };
 }
 
+// Pure mirror of the atomic `.eq("retain", !params.retain)` guard in
+// setProjectFileRetain() below — documents and verifies, in isolation,
+// the exact boolean condition that guard runs as a single SQL WHERE
+// clause against the live row (not computed here and passed to the
+// database, which would reopen exactly the check-then-write race this
+// exists to close). True concurrent-request behavior needs a live
+// Postgres row lock and isn't verifiable at this unit-test tier — same
+// established limitation as every other DB-dependent guard in this
+// suite (see payoutObligations.test.ts).
+export function isRetainTransition(currentRetain: boolean, requestedRetain: boolean): boolean {
+  return currentRetain !== requestedRetain;
+}
+
+// Hardened 2026-09-05 after a real Production double-submission (the
+// Retain button had no pending-disable guard, unlike ConfirmSubmitButton
+// — 4 identical retain:true events were logged for one intended click).
+// The end DATA state was already correct either way (this is a "set to
+// X" update, not a toggle/increment), but the audit trail should record
+// one event per actual state transition, not one per request. Guarded
+// by a single UPDATE ... WHERE retain = <opposite of requested> —
+// RETURNING tells us whether a real flip happened. This is atomic and
+// concurrency-safe: Postgres serializes concurrent UPDATEs on the same
+// row via its row lock, so a second request racing the first re-evaluates
+// this WHERE clause only after the first commits — by then retain
+// already equals the requested value, the WHERE no longer matches, 0
+// rows come back, and no duplicate event is logged. Same idiom already
+// used by confirmProjectFilesBackup()'s .eq("lifecycle_state","active")
+// and purgeEligibleProjectFiles()'s re-check-on-write guard.
+//
+// Scope note: this guard keys off the `retain` boolean only, matching
+// every real caller today (the UI never sets a custom retainUntil — it
+// always passes null). A future caller changing only retainUntil while
+// leaving retain unchanged would not be treated as a transition by this
+// guard; no such caller exists yet, and this stays a boolean toggle
+// control, not a date-picker.
 export async function setProjectFileRetain(params: {
   fileId: string;
   retain: boolean;
   retainUntil?: string | null;
   actorUserId: string;
-}): Promise<{ ok: true } | { ok: false; error: string }> {
+}): Promise<{ ok: true; transitioned: boolean } | { ok: false; error: string }> {
   const auth = await authorizeWithSuperAdminOverride(params.actorUserId, FINANCE_CAPABILITIES.payeeAdminister);
   if (!auth.ok) return { ok: false, error: "Not authorized to change file retention." };
 
   const admin = createAdminClient();
-  const { error } = await admin
+  const retainUntil = params.retainUntil ?? null;
+  const { data, error } = await admin
     .from("project_files")
-    .update({ retain: params.retain, retain_until: params.retainUntil ?? null })
-    .eq("id", params.fileId);
+    .update({ retain: params.retain, retain_until: retainUntil })
+    .eq("id", params.fileId)
+    .eq("retain", !params.retain) // only matches a row whose persisted state actually differs — a real transition
+    .select("id");
   if (error) {
     console.error("[payables] failed to set project file retain flag", error.message);
     return { ok: false, error: "Failed to update retention." };
   }
 
-  await logActivity({
-    actorUserId: params.actorUserId,
-    action: "project_file.retain_set",
-    entityType: "user",
-    entityId: params.actorUserId,
-    metadata: { fileId: params.fileId, retain: params.retain, retainUntil: params.retainUntil ?? null },
-  });
+  const transitioned = (data?.length ?? 0) > 0;
+  if (transitioned) {
+    await logActivity({
+      actorUserId: params.actorUserId,
+      action: "project_file.retain_set",
+      entityType: "user",
+      entityId: params.actorUserId,
+      metadata: { fileId: params.fileId, retain: params.retain, retainUntil },
+    });
+  }
 
-  return { ok: true };
+  return { ok: true, transitioned };
 }
 
 // The purge job itself. Deliberately NOT scheduled by this migration/

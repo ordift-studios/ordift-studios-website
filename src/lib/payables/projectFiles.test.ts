@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isProjectFilePurgeEligible, deriveProjectFileDisplayState } from "@/lib/payables/projectFiles";
+import { isProjectFilePurgeEligible, deriveProjectFileDisplayState, isRetainTransition } from "@/lib/payables/projectFiles";
 
 // Phase H.1/H.2 (2026-09-04) — the actual gate that decides whether a
 // file may ever be deleted (Section 17 of the spec). This is the
@@ -89,5 +89,30 @@ describe("deriveProjectFileDisplayState", () => {
 
   it("a final_approved file always shows as retained, even before the engagement completes", () => {
     expect(deriveProjectFileDisplayState({ lifecycleState: "active", engagementStatus: "work_approved", fileKind: "final_approved" })).toBe("Retained (Final Deliverable)");
+  });
+});
+
+// Phase H.4A (2026-09-05) — a real Production double-submission (no
+// pending-disable guard on the Retain button) logged 4 identical
+// retain:true activity events for one intended click. The persisted
+// DATA was already correct either way (setProjectFileRetain "sets to
+// X", it doesn't toggle), but the audit trail should record one event
+// per actual state transition. This is the pure predicate the guard's
+// SQL WHERE clause mirrors — see isRetainTransition()'s own comment.
+describe("isRetainTransition", () => {
+  it("false -> true is a real transition", () => {
+    expect(isRetainTransition(false, true)).toBe(true);
+  });
+
+  it("true -> false is a real transition", () => {
+    expect(isRetainTransition(true, false)).toBe(true);
+  });
+
+  it("true -> true (a repeat Retain request) is not a transition", () => {
+    expect(isRetainTransition(true, true)).toBe(false);
+  });
+
+  it("false -> false (a repeat Remove Retain request) is not a transition", () => {
+    expect(isRetainTransition(false, false)).toBe(false);
   });
 });

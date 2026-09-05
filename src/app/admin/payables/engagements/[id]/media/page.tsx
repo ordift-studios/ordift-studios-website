@@ -8,6 +8,7 @@ import { getPayeeProfile } from "@/lib/payables/payeeProfiles";
 import { listProjectFilesForEngagement, deriveProjectFileDisplayState, PROJECT_FILE_KINDS } from "@/lib/payables/projectFiles";
 import MediaFileUploader from "@/components/payables/MediaFileUploader";
 import ConfirmSubmitButton from "@/components/admin/ConfirmSubmitButton";
+import SubmitButton from "@/components/admin/SubmitButton";
 import {
   requestStaffFileUploadAuthorizationAction,
   recordStaffUploadedFileAction,
@@ -98,9 +99,12 @@ export default async function EngagementMediaPage({ params }: { params: Promise<
                   <input type="hidden" name="fileId" value={f.id} />
                   <input type="hidden" name="engagementId" value={id} />
                   <input type="hidden" name="retain" value={f.retain ? "false" : "true"} />
-                  <button type="submit" className="rounded border border-black/15 px-2 py-1 font-sans text-caption hover:border-black/30">
+                  <SubmitButton
+                    pendingLabel={f.retain ? "Removing Retain…" : "Retaining…"}
+                    className="rounded border border-black/15 px-2 py-1 font-sans text-caption hover:border-black/30"
+                  >
                     {f.retain ? "Remove Retain" : "Retain"}
-                  </button>
+                  </SubmitButton>
                 </form>
               </div>
             </li>
