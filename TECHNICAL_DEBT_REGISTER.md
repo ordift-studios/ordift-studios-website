@@ -501,6 +501,46 @@
 - **Pay-down trigger:** the next time role-mutation audit integrity is scoped as its own task, or if a second real gap is ever found (suggesting this is happening more than the "rare" severity assumes).
 - **Status:** Open.
 
+### TD-052 — `/admin/activity` sensitivity tiering never reviewed the Universal Payables/External Workforce action types (found and fixed 2026-09-05, Phase I.1)
+
+- **Category:** Access Management / Least Privilege
+- **Severity:** Medium (found and fixed same-phase — logged for the historical record)
+- **What:** found during the Phase I.0 roadmap reconciliation. TD-035's `/admin/activity` sensitivity tiering (`SUPER_ADMIN_ONLY_ACTIONS`/`ADMIN_TIER_ACTIONS` in `src/lib/admin/activityLog.ts`) is a hardcoded exact-string allowlist, last updated 2026-08-25. Every action type introduced by the Universal Payables/External Workforce/Media Lifecycle system (migrations `0049`-`0052`) — `payee_profile.created`, `payee_profile.status_changed`, `engagement.created`/`updated`/`status_changed`, `payment_obligation.*`, `payment_instruction.created`/`updated`, `payable_item.added`, `payment_evidence.added` — was verified, by direct grep of every `logActivity()` call site, to be present in neither tier. Under the deployed tiering, any plain `staff` account could see payee classification changes, agreed compensation amounts, and payable/destination lifecycle events in the unfiltered global feed.
+- **Why this happened:** the tiering allowlist is deliberately not automatic (a future new action name defaults to staff-visible unless explicitly added) — a correct design choice that requires every phase introducing new action types to remember to revisit this one file, which Phases E-H.2 did not.
+- **Current impact:** none — fixed same-phase. `payee_profile.created`/`payee_profile.status_changed`/`payee.classification_corrected` added to `SUPER_ADMIN_ONLY_ACTIONS` (personnel/classification-sensitive, same class as `role.grant`/`role.revoke`); every `payment_obligation.*`/`payment_instruction.*`/`payable_item.added`/`payment_evidence.added`/`engagement.*` action added to `ADMIN_TIER_ACTIONS` (financial-sensitive, same class as `payment.*`). `project_file.uploaded`/`backup_confirmed`/`retain_set`/`promoted_final_approved`/`purge_run` were explicitly reviewed and left staff-visible — media-lifecycle operations carry no payment amount or personnel-classification data, the same "operational activity genuinely useful for staff" default TD-035 already applies elsewhere. The classification logic was extracted into a pure, exported `getExcludedActionsForViewerTier()` and covered by 27 new unit tests (`activityLog.test.ts`) — every new action type's tier asserted individually, plus a regression check that pre-existing classifications (`role.grant`, `payment.completed`, etc.) are unchanged.
+- **Pay-down trigger:** N/A — resolved. Worth remembering as a pattern: any future phase introducing new `logActivity()` action types should treat this file as a checklist item, not an afterthought.
+- **Status:** Resolved (2026-09-05, Phase I.1).
+
+### TD-053 — `recordManualPayment()`'s UPDATE lacks a status-transition guard
+
+- **Category:** Data / Correctness
+- **Severity:** Low (unexploited; requires a genuine concurrent double-submission to manifest)
+- **What:** found during Phase G.4B's read-only verification of Sylvia's real manual payment, re-confirmed still present during the Phase I.0 roadmap review. `recordManualPayment()` (`src/lib/payments/payoutObligations.ts`) guards its `payment_obligations` UPDATE only by `.eq("id", params.obligationId)` — no `.eq("status", "approved")` guard, unlike the same-codebase pattern already used for `confirmProjectFilesBackup()`, `setProjectFileRetain()`, and `promoteProjectFileToFinalApproved()` (all guard their UPDATE by the exact prior state, making a duplicate/concurrent call a safe no-op).
+- **Why accepted (for now):** manual payment recording is low-volume (one real case exists in Production, Sylvia's GHS 10) and requires a real concurrent double-submission (not merely a slow double-click, since there's no client-side pending-disable gap here either) to actually manifest — genuinely low probability today.
+- **Current impact:** none observed; purely a latent gap.
+- **Pay-down trigger:** before any future payout-provider/automated-payment-execution architecture is built (this exact discipline will be load-bearing at that point, not optional); or if manual-payment volume grows enough that concurrent submission becomes plausible.
+- **Status:** Open.
+
+### TD-054 — `service_role` has no *explicit* grant on `currencies`/`bank_accounts`/`payment_country_config`
+
+- **Category:** Data / Access Management
+- **Severity:** Low (likely inert — `service_role` bypasses RLS at the Postgres role level by Supabase's own design, independent of these explicit grants)
+- **What:** found during Phase F.1, re-confirmed still present during the Phase I.0 roadmap review. Migration `0024_payments_foundation.sql` grants `select`/`insert`/`update`/`delete` on `currencies`/`bank_accounts`/`payment_country_config` to `authenticated` only — `service_role` (used by every admin-client Payables function, including all of Universal Payables) is never explicitly listed.
+- **Why accepted:** `service_role` in Supabase carries `BYPASSRLS` and effectively superuser-equivalent access for API purposes independent of explicit table grants, so this is very likely already inert in practice — flagged for clarity/completeness rather than as a confirmed live gap.
+- **Current impact:** none observed — every admin-client read/write against these tables (currency validation, engagement currency fields) has worked correctly throughout Phases F-H.8.
+- **Pay-down trigger:** low priority; worth an explicit `grant ... to service_role` addition purely for documentation clarity the next time this migration file's area is touched for an unrelated reason — not worth a dedicated migration on its own.
+- **Status:** Open, low priority.
+
+### TD-055 — Payable-mutation audit metadata's `fieldsChanged` cosmetically over-reports which fields actually changed
+
+- **Category:** Data / Audit integrity
+- **Severity:** Low (cosmetic — the actual mutation is correct; only the audit metadata's field-diff list is imprecise)
+- **What:** found during Phase G.4A. Certain payable-mutation `logActivity()` calls compute `metadata.fieldsChanged` by comparing the full submitted-field set against the prior row rather than a precise before/after diff, so an update that only genuinely changed one field can log `fieldsChanged` as including fields whose value didn't actually change.
+- **Why accepted:** the underlying mutation itself is correct and fully verified — this affects only the audit trail's descriptive precision, not any financial or authorization outcome.
+- **Current impact:** none functionally; a careful reader of `/admin/activity`'s metadata for one of these events could be told a field "changed" when its value was actually resubmitted unchanged.
+- **Pay-down trigger:** the next time this exact audit-logging call site is touched for an unrelated reason, or if audit-trail precision is ever scoped as its own task.
+- **Status:** Open, low priority.
+
 ---
 
 ## Adding new entries

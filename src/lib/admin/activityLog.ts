@@ -165,7 +165,7 @@ const RECENT_ACTIVITY_LIMIT = 20;
 // written — not a speculative list. A future new action name defaults
 // to staff-visible (fail-open on the *classification*, not on auth)
 // unless explicitly added to one of the two restricted sets below.
-const SUPER_ADMIN_ONLY_ACTIONS = new Set<string>([
+export const SUPER_ADMIN_ONLY_ACTIONS = new Set<string>([
   "role.grant",
   "role.revoke",
   "access_status.change",
@@ -180,9 +180,22 @@ const SUPER_ADMIN_ONLY_ACTIONS = new Set<string>([
   "department_admin.revoke",
   "delegation.create",
   "delegation.revoke",
+  // Phase I.1 (2026-09-05) — External Workforce / Universal Payables
+  // audit-tiering reconciliation. A payee's classification (contractor
+  // vs. true vendor, active vs. inactive) is a personnel/organizational
+  // decision about a real external person, the same sensitivity class
+  // as a role grant/revoke — not itself a payment amount, but who
+  // someone *is* to the organization, which is exactly what the
+  // super-admin tier above already protects. `payee.classification_corrected`
+  // is not emitted by any current code path (it was a one-off manual
+  // correction, Phase H.3) — included so a future similar correction
+  // is already classified correctly without needing this file revisited.
+  "payee_profile.created",
+  "payee_profile.status_changed",
+  "payee.classification_corrected",
 ]);
 
-const ADMIN_TIER_ACTIONS = new Set<string>([
+export const ADMIN_TIER_ACTIONS = new Set<string>([
   "payment.completed",
   "payment.failed",
   "payment.amount_mismatch",
@@ -195,19 +208,67 @@ const ADMIN_TIER_ACTIONS = new Set<string>([
   "payment.bank_transfer_rejected",
   "enquiry.amount_due_set",
   "booking.amount_due_set",
+  // Phase I.1 (2026-09-05) — External Workforce / Universal Payables
+  // audit-tiering reconciliation (closes the gap found during the
+  // Phase I.0 roadmap review: these action types existed since Phases
+  // E-H.2 but were never added to either tier, so plain staff could see
+  // them in the unfiltered /admin/activity feed). Every payable/payment-
+  // obligation/payment-instruction/payable-item/payment-evidence event
+  // below carries or directly reveals compensation figures or banking-
+  // adjacent destination detail — same sensitivity class as the
+  // pre-existing payment.* entries above. Engagement lifecycle events
+  // are included too: engagement.created/updated carry agreed_amount +
+  // currency, and engagement.status_changed reveals work/compensation
+  // progression for a specific external payee.
+  "payment_obligation.created",
+  "payment_obligation.approved",
+  "payment_obligation.destination_selected",
+  "payment_obligation.paid_manually",
+  "payment_obligation.cancelled",
+  "payment_obligation.reversed",
+  "payment_instruction.created",
+  "payment_instruction.updated",
+  "payable_item.added",
+  "payment_evidence.added",
+  "engagement.created",
+  "engagement.updated",
+  "engagement.status_changed",
 ]);
+
+// Deliberately reviewed and left staff-visible (Phase I.1, 2026-09-05)
+// — project_file.uploaded/backup_confirmed/retain_set/
+// promoted_final_approved/purge_run carry no payment amount or
+// personnel-classification data; they describe media-lifecycle
+// operations (who uploaded/backed up/retained/approved/purged a file),
+// which is the same "operational activity genuinely useful for staff"
+// category TD-035 already treats as the default, non-restricted tier.
+// Not added to either Set above — recorded here so a future reviewer
+// finds a decision, not a silent omission.
 
 function isAdminTierViewer(user: Awaited<ReturnType<typeof getCurrentUser>>): boolean {
   return hasRole(user, "admin") || isSuperAdmin(user);
+}
+
+// Pure — extracted (Phase I.1) so the actual classification logic is
+// directly unit-testable without a live Supabase session. Reuses the
+// exact same two Sets getRecentActivity() filters against, so a test
+// asserting behavior here is asserting the real production
+// classification, not a re-typed copy of it.
+export function getExcludedActionsForViewerTier(viewer: { isSuperAdmin: boolean; isAdminTier: boolean }): string[] {
+  const excluded: string[] = [];
+  if (!viewer.isSuperAdmin) excluded.push(...SUPER_ADMIN_ONLY_ACTIONS);
+  if (!viewer.isAdminTier) excluded.push(...ADMIN_TIER_ACTIONS);
+  return excluded;
 }
 
 export async function getRecentActivity(limit = RECENT_ACTIVITY_LIMIT): Promise<ActivityLogEntry[]> {
   const supabase = await createClient();
   const viewer = await getCurrentUser();
 
-  const excludedActions: string[] = [];
-  if (!isSuperAdmin(viewer)) excludedActions.push(...SUPER_ADMIN_ONLY_ACTIONS);
-  if (!isAdminTierViewer(viewer)) excludedActions.push(...ADMIN_TIER_ACTIONS);
+  const excludedActions = getExcludedActionsForViewerTier({
+    isSuperAdmin: isSuperAdmin(viewer),
+    isAdminTier: isAdminTierViewer(viewer),
+  });
 
   let query = supabase
     .from("activity_log")
