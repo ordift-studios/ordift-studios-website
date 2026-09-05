@@ -55,6 +55,19 @@ describe("modulesForRelationship", () => {
     const modules = modulesForRelationship("unclassified");
     expect(Object.values(modules).every((v) => v === false)).toBe(true);
   });
+
+  // Phase K.1 (2026-09-05) — this exact mapping is now a real
+  // server-side authorization boundary, not only a UI-hiding decision:
+  // the shared engagement detail page and the two project-file upload
+  // functions (src/lib/payables/projectFiles.ts's ownerHasFilesModule())
+  // both gate on modulesForRelationship(...).files directly. Restated
+  // explicitly here so a future change to this mapping is understood to
+  // affect real authorization, not just which section renders.
+  it("vendor and model get Feedback/compensation/paymentDetails but never Files — the exact set the shared engagement detail page and file-upload authorization both depend on", () => {
+    expect(modulesForRelationship("vendor")).toEqual({ myWork: true, files: false, feedback: true, compensation: true, paymentDetails: true });
+    expect(modulesForRelationship("model")).toEqual({ myWork: true, files: false, feedback: false, compensation: true, paymentDetails: true });
+    expect(modulesForRelationship("contractor")).toEqual({ myWork: true, files: true, feedback: true, compensation: true, paymentDetails: true });
+  });
 });
 
 describe("isInstructorEngagement", () => {

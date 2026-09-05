@@ -4,6 +4,7 @@ import Link from "next/link";
 import { getCurrentUser, hasRole } from "@/lib/portal/roles";
 import { getMyActiveAssignments } from "@/lib/portal/collaboratorData";
 import { listMyEngagements, listMyWorkshopInstructorEngagements, groupEngagementsByLifecycle } from "@/lib/portal/engagementPortalData";
+import ExternalWorkforceEngagements from "@/components/portal/ExternalWorkforceEngagements";
 
 export const metadata: Metadata = {
   title: "My Projects — Ordift Studios Portal",
@@ -38,83 +39,15 @@ export default async function CollaboratorPortalPage() {
         </h1>
       </div>
 
-      {/* Universal Payables engagements — Phase H.1/H.2 */}
-      <section>
-        <h2 className="font-serif font-medium text-body text-ordift-ink mb-4">Engagements</h2>
-        {activeEngagements.length === 0 ? (
-          <div className="bg-white border border-black/10 rounded-2xl p-8">
-            <p className="font-sans text-body-small text-ordift-ink-muted">
-              You don&apos;t have any active engagements yet. Ordift Studios will assign one when there&apos;s work for you.
-            </p>
-          </div>
-        ) : (
-          <ul className="space-y-3">
-            {activeEngagements.map((e) => (
-              <li key={e.id}>
-                <Link
-                  href={`/portal/collaborator/engagement/${e.id}`}
-                  className="block bg-white border border-black/10 rounded-2xl p-6 hover:border-ordift-gold transition-colors"
-                >
-                  <p className="font-sans text-body-small text-ordift-ink font-medium">
-                    {e.operationalTitleName ?? "Engagement"} {e.engagementTypeName ? `· ${e.engagementTypeName}` : ""}
-                  </p>
-                  <p className="font-sans text-caption text-ordift-ink-muted mt-1">
-                    Status: {e.status} {e.agreedAmount ? `· ${e.currency ?? ""} ${e.agreedAmount}` : ""}
-                    {e.dueDate ? ` · Due ${new Date(e.dueDate).toLocaleDateString()}` : ""}
-                  </p>
-                </Link>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
-
-      {/* Phase H.7 — completed work stays reachable as history rather than
-          disappearing; kept separate from cancelled, since a delivered
-          engagement isn't equivalent history to one that was called off. */}
-      {completedEngagements.length > 0 && (
-        <section>
-          <h2 className="font-serif font-medium text-body text-ordift-ink mb-4">Completed</h2>
-          <ul className="space-y-3">
-            {completedEngagements.map((e) => (
-              <li key={e.id}>
-                <Link
-                  href={`/portal/collaborator/engagement/${e.id}`}
-                  className="block bg-white border border-black/10 rounded-2xl p-6 hover:border-ordift-gold transition-colors"
-                >
-                  <p className="font-sans text-body-small text-ordift-ink font-medium">
-                    {e.operationalTitleName ?? "Engagement"} {e.engagementTypeName ? `· ${e.engagementTypeName}` : ""}
-                  </p>
-                  <p className="font-sans text-caption text-ordift-ink-muted mt-1">
-                    Status: Completed {e.agreedAmount ? `· ${e.currency ?? ""} ${e.agreedAmount}` : ""}
-                  </p>
-                </Link>
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
-
-      {cancelledEngagements.length > 0 && (
-        <section>
-          <h2 className="font-serif font-medium text-body text-ordift-ink mb-4">Cancelled</h2>
-          <ul className="space-y-3">
-            {cancelledEngagements.map((e) => (
-              <li key={e.id}>
-                <Link
-                  href={`/portal/collaborator/engagement/${e.id}`}
-                  className="block bg-white border border-black/10 rounded-2xl p-6 hover:border-ordift-gold transition-colors"
-                >
-                  <p className="font-sans text-body-small text-ordift-ink font-medium">
-                    {e.operationalTitleName ?? "Engagement"} {e.engagementTypeName ? `· ${e.engagementTypeName}` : ""}
-                  </p>
-                  <p className="font-sans text-caption text-ordift-ink-muted mt-1">Status: Cancelled</p>
-                </Link>
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
+      {/* Universal Payables engagements — Phase H.1/H.2, generalized into
+          a shared component in Phase K.1 (see ExternalWorkforceEngagements) */}
+      <ExternalWorkforceEngagements
+        engagementBasePath="/portal/collaborator/engagement"
+        active={activeEngagements}
+        completed={completedEngagements}
+        cancelled={cancelledEngagements}
+        emptyActiveMessage="You don't have any active engagements yet. Ordift Studios will assign one when there's work for you."
+      />
 
       {/* Workshop instructor engagements — Section 5, minimum additive
           read-safe integration; only rendered when at least one exists. */}

@@ -2,6 +2,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { logActivity } from "@/lib/admin/activityLog";
 import { authorizeWithSuperAdminOverride, FINANCE_CAPABILITIES } from "@/lib/organization/authority";
 import { isTerminalEngagementStatus } from "@/lib/payables/engagements";
+import { classifyExternalRelationship, modulesForRelationship } from "@/lib/portal/externalWorkforce";
 
 // Phase H.1/H.2 (2026-09-04) — direct-to-Supabase-Storage media
 // architecture for external-workforce engagements, and the backup/
@@ -73,6 +74,34 @@ async function resolveActorAccess(
   return { ok: true, isContractor: false, payeeProfileId: engagement.payee_profile_id, engagementStatus: engagement.status };
 }
 
+// Phase K.1 (2026-09-05) — server-side enforcement that a self-upload
+// workflow is only ever reachable by a relationship whose modules
+// actually include Files (modulesForRelationship().files), not merely
+// by owning the engagement. Before this, resolveActorAccess() granted
+// `isContractor: true` (and therefore self-upload) to ANY account that
+// owned the engagement, regardless of whether that account was
+// actually classified contractor, vendor, or model — the portal UI
+// correctly hid the Files section for vendor/model, but nothing
+// stopped a direct call to the upload actions from succeeding anyway.
+// Deliberately scoped to the two WRITE functions below, not
+// listMyProjectFiles()/getProjectFileDownloadUrl() — a vendor/model
+// engagement can still legitimately have staff-uploaded files (e.g. a
+// final deliverable attached for record-keeping) that the owner should
+// still be able to see/download; only the self-service *upload*
+// workflow is relationship-gated.
+async function ownerHasFilesModule(profileId: string): Promise<boolean> {
+  const admin = createAdminClient();
+  const [{ data: payeeProfile }, { data: roleRows }] = await Promise.all([
+    admin.from("payee_profiles").select("category").eq("id", profileId).maybeSingle(),
+    admin.from("user_roles").select("roles(slug)").eq("user_id", profileId),
+  ]);
+  const roles = (roleRows ?? [])
+    .map((r) => (r.roles as unknown as { slug: string } | null)?.slug)
+    .filter((slug): slug is string => Boolean(slug));
+  const relationship = classifyExternalRelationship({ roles, payeeCategory: payeeProfile?.category ?? null });
+  return modulesForRelationship(relationship).files;
+}
+
 // Step 1 of the direct-upload flow: browser asks Ordift for permission
 // before ever touching Storage. Returns a short-lived, single-use
 // signed upload URL/token — the browser then PUTs the file bytes
@@ -89,6 +118,9 @@ export async function requestProjectFileUploadAuthorization(params: {
 
   const access = await resolveActorAccess(params.engagementId, params.actorUserId);
   if (!access.ok) return access;
+  if (access.isContractor && !(await ownerHasFilesModule(params.actorUserId))) {
+    return { ok: false, error: "File uploads are not available for this relationship type." };
+  }
   if (access.isContractor && isTerminalEngagementStatus(access.engagementStatus)) {
     return { ok: false, error: "This engagement is closed — new files can no longer be uploaded." };
   }
@@ -134,6 +166,9 @@ export async function recordUploadedProjectFile(params: {
 
   const access = await resolveActorAccess(params.engagementId, params.actorUserId);
   if (!access.ok) return access;
+  if (access.isContractor && !(await ownerHasFilesModule(params.actorUserId))) {
+    return { ok: false, error: "File uploads are not available for this relationship type." };
+  }
   if (access.isContractor && isTerminalEngagementStatus(access.engagementStatus)) {
     return { ok: false, error: "This engagement is closed — new files can no longer be recorded." };
   }

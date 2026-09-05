@@ -45,6 +45,24 @@ export type PortalModules = {
 // the vendor relationship regardless of role, since "true vendor" is a
 // commercial classification independent of which role happened to be
 // granted at invite time.
+// Constraint discovered/documented explicitly (Phase K.1, 2026-09-05):
+// this always resolves to exactly ONE relationship, by design and by
+// what the schema can represent — payee_profiles.id is a 1:1 PK
+// against profiles.id, so a real person can hold exactly one
+// payee_profiles.category at a time (never "vendor AND contractor
+// simultaneously" via two rows). `roles` (user_roles) IS a genuine
+// many-to-many table, though — an account could technically hold both
+// the `vendor` and `contractor` roles at once. If that ever happens,
+// this function's precedence order (vendor category, then vendor role,
+// then model role, then contractor role) means only ONE relationship's
+// modules ever render — real contractor engagements would not
+// disappear from the data (engagements.payee_profile_id references
+// profiles directly, independent of category), but they would not
+// surface in this account's portal experience until deliberately
+// reconciled to a single primary relationship. This is a real,
+// current limitation, not an edge case this function silently handles —
+// flagging it here rather than leaving a future reader to assume
+// multi-relationship display already works.
 export function classifyExternalRelationship(params: {
   roles: string[];
   payeeCategory: string | null;

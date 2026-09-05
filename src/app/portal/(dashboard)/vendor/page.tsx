@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 import { getCurrentUser } from "@/lib/portal/roles";
 import { createClient } from "@/lib/supabase/server";
-import { listMyEngagements } from "@/lib/portal/engagementPortalData";
+import { listMyEngagements, groupEngagementsByLifecycle } from "@/lib/portal/engagementPortalData";
+import ExternalWorkforceEngagements from "@/components/portal/ExternalWorkforceEngagements";
 
 export const metadata: Metadata = {
   title: "Vendor — Ordift Studios Portal",
@@ -15,17 +15,21 @@ const STATUS_LABELS: Record<string, string> = {
   inactive: "Inactive",
 };
 
-// Phase H.1/H.2 (2026-09-04) — replaces the prior placeholder-only
-// page with the real, shared engagement/compensation surface (same
+// Phase H.1/H.2 (2026-09-04) — replaced the prior placeholder-only page
+// with the real, shared engagement/compensation surface (same
 // listMyEngagements() the collaborator dashboard uses — engagement
-// ownership, not role, is what scopes this data). Deliberately no
-// Files module here (Section 6: "Do not expose contractor-specific
-// creative workflow modules unless the vendor engagement actually
-// needs them") — a true company-level vendor's engagements link
-// through to the same shared detail page, which still only shows
-// Files if the vendor's own account happens to also be the
-// engagement's payee and files exist; nothing here manufactures a
-// vendor-specific upload workflow.
+// ownership, not role, is what scopes this data).
+//
+// Phase K.1 (2026-09-05) — brought up to the same depth as the
+// contractor dashboard using the same shared component and grouping
+// function (ExternalWorkforceEngagements/groupEngagementsByLifecycle),
+// not a re-implementation: Vendor now gets Completed/Cancelled history
+// too, for free. Files remains correctly absent — not because this
+// page omits a section, but because modulesForRelationship("vendor")
+// itself says files: false, and the shared engagement detail page
+// (Phase K.1) now actually consults that before rendering Files/
+// Feedback, instead of rendering them unconditionally for any owner as
+// it did before this phase.
 export default async function VendorPortalPage() {
   const user = await getCurrentUser();
   const supabase = await createClient();
@@ -33,7 +37,7 @@ export default async function VendorPortalPage() {
     user ? supabase.from("vendor_profiles").select("company_name, status").eq("id", user.id).maybeSingle() : Promise.resolve({ data: null }),
     user ? listMyEngagements(user.id) : Promise.resolve([]),
   ]);
-  const activeEngagements = engagements.filter((e) => !["completed", "cancelled"].includes(e.status));
+  const { active: activeEngagements, completed: completedEngagements, cancelled: cancelledEngagements } = groupEngagementsByLifecycle(engagements);
 
   return (
     <div className="space-y-10">
@@ -49,34 +53,13 @@ export default async function VendorPortalPage() {
         </p>
       </div>
 
-      <section>
-        <h2 className="font-serif font-medium text-body text-ordift-ink mb-4">Engagements</h2>
-        {activeEngagements.length === 0 ? (
-          <div className="bg-white border border-black/10 rounded-2xl p-8">
-            <p className="font-sans text-body-small text-ordift-ink-muted">
-              No active engagements yet. Ordift Studios will coordinate directly with you when there&apos;s work to assign.
-            </p>
-          </div>
-        ) : (
-          <ul className="space-y-3">
-            {activeEngagements.map((e) => (
-              <li key={e.id}>
-                <Link
-                  href={`/portal/collaborator/engagement/${e.id}`}
-                  className="block bg-white border border-black/10 rounded-2xl p-6 hover:border-ordift-gold transition-colors"
-                >
-                  <p className="font-sans text-body-small text-ordift-ink font-medium">
-                    {e.operationalTitleName ?? "Engagement"} {e.engagementTypeName ? `· ${e.engagementTypeName}` : ""}
-                  </p>
-                  <p className="font-sans text-caption text-ordift-ink-muted mt-1">
-                    Status: {e.status} {e.agreedAmount ? `· ${e.currency ?? ""} ${e.agreedAmount}` : ""}
-                  </p>
-                </Link>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
+      <ExternalWorkforceEngagements
+        engagementBasePath="/portal/collaborator/engagement"
+        active={activeEngagements}
+        completed={completedEngagements}
+        cancelled={cancelledEngagements}
+        emptyActiveMessage="No active engagements yet. Ordift Studios will coordinate directly with you when there's work to assign."
+      />
     </div>
   );
 }

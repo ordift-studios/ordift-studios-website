@@ -6,6 +6,7 @@ import { listMyProjectFiles, deriveProjectFileDisplayState } from "@/lib/payable
 import { isTerminalEngagementStatus } from "@/lib/payables/engagements";
 import { PAYABLE_STATUS_LABELS } from "@/lib/payments/payoutObligations";
 import { isInstructorEngagement } from "@/lib/portal/externalWorkforce";
+import { getMyPortalModules } from "@/lib/portal/portalModules";
 import MediaFileUploader from "@/components/payables/MediaFileUploader";
 import EngagementFileList from "@/components/portal/EngagementFileList";
 import { postEngagementUpdateAction, requestFileUploadAuthorizationAction, recordUploadedFileAction } from "../../actions";
@@ -21,6 +22,19 @@ export const metadata: Metadata = {
 // engagements.payee_profile_id, not a role check). Brief/due date/
 // compensation/status are all already-RLS-readable data this page is
 // the first thing to actually render.
+//
+// Phase K.1 (2026-09-05) — this page previously rendered Files and
+// Feedback unconditionally for whoever owned the engagement, contrary
+// to what modulesForRelationship() already declared (files: false for
+// vendor/model). Ownership was always correctly enforced (getMyEngagement/
+// listMyProjectFiles never leaked another person's data) — the gap was
+// that a real vendor or model account could see a Files/Feedback
+// section modulesForRelationship() says shouldn't exist for them at
+// all. Fixed by actually consulting getMyPortalModules() here, the
+// same classification every index page (collaborator/vendor/model)
+// resolves for itself — a module now renders only when the viewer's
+// real relationship supports it, never merely because the page has the
+// data available to render.
 export default async function CollaboratorEngagementPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const user = await getCurrentUser();
@@ -29,10 +43,11 @@ export default async function CollaboratorEngagementPage({ params }: { params: P
   const engagement = await getMyEngagement(id, user.id);
   if (!engagement) notFound();
 
-  const [payable, updates, filesResult] = await Promise.all([
+  const [payable, updates, filesResult, { modules }] = await Promise.all([
     engagement.paymentObligationId ? getMyPayableStatus(engagement.paymentObligationId) : Promise.resolve(null),
     getEngagementUpdates(id),
     listMyProjectFiles(id, user.id),
+    getMyPortalModules(user.id, user.roles),
   ]);
   const files = filesResult.ok ? filesResult.files : [];
   const instructor = isInstructorEngagement(engagement.operationalTitleName);
@@ -77,6 +92,7 @@ export default async function CollaboratorEngagementPage({ params }: { params: P
         )}
       </section>
 
+      {modules.files && (
       <section className="bg-white border border-black/10 rounded-2xl p-6 space-y-4">
         <h2 className="font-serif font-medium text-body text-ordift-ink">Files</h2>
         <EngagementFileList
@@ -104,7 +120,9 @@ export default async function CollaboratorEngagementPage({ params }: { params: P
           />
         )}
       </section>
+      )}
 
+      {modules.feedback && (
       <section className="bg-white border border-black/10 rounded-2xl p-6 space-y-5">
         <h2 className="font-serif font-medium text-body text-ordift-ink">Feedback</h2>
         {closed ? (
@@ -150,6 +168,7 @@ export default async function CollaboratorEngagementPage({ params }: { params: P
           </ul>
         )}
       </section>
+      )}
     </div>
   );
 }
