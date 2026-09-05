@@ -1,5 +1,6 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { logActivity } from "@/lib/admin/activityLog";
+import { isSuperAdminId, hasJurisdictionAuthority } from "@/lib/organization/authority";
 
 // Ordift Organizational & Administrative Architecture V1, Phase 3.3,
 // Part F (2026-08-25) — staff onboarding PROCESS tracker, against
@@ -50,6 +51,31 @@ function mapOnboarding(r: {
 
 const SELECT = "id, profile_id, recruitment_application_id, corporate_identity_id, start_date, status, policies_accepted_at, completed_at, created_at";
 
+// Phase J.2 (2026-09-05) — startStaffOnboarding()/completeStaffOnboarding()
+// had NO authorization check of their own before this phase (a real
+// gap found while verifying this module ahead of wiring it into the
+// Admin Portal — J.1 only confirmed the backend existed, not that it
+// was safe to expose). Matches assignStaffPosition()'s exact boundary
+// exactly, for consistency: Super Admin unrestricted, or a holder of
+// the operations.administer capability (PRIME's package) — the same
+// tier already trusted with routine organizational assignment. No new
+// authorization concept introduced.
+async function canManageOnboarding(actorUserId: string): Promise<boolean> {
+  if (await isSuperAdminId(actorUserId)) return true;
+  return hasJurisdictionAuthority(actorUserId, "operations", "administer");
+}
+
+// Pure — maps a Postgres error code to a specific, honest message.
+// staff_onboarding has a unique(profile_id) constraint (migration 0046),
+// so a second "start" attempt for the same person fails with 23505, not
+// silently creating a duplicate row — this turns that into a clear
+// "already started" message instead of a generic failure. Exported for
+// direct unit testing.
+export function describeOnboardingStartError(code: string | null | undefined): string {
+  if (code === "23505") return "This person's onboarding has already been started.";
+  return "Failed to start onboarding.";
+}
+
 export async function listStaffOnboarding(): Promise<StaffOnboarding[]> {
   const admin = createAdminClient();
   const { data, error } = await admin.from("staff_onboarding").select(SELECT).order("created_at", { ascending: false });
@@ -66,6 +92,10 @@ export async function startStaffOnboarding(params: {
   startDate?: string | null;
   actorUserId: string;
 }): Promise<{ ok: true; onboardingId: string } | { ok: false; error: string }> {
+  if (!(await canManageOnboarding(params.actorUserId))) {
+    return { ok: false, error: "Not authorized to onboard staff." };
+  }
+
   const admin = createAdminClient();
   const { data, error } = await admin
     .from("staff_onboarding")
@@ -79,7 +109,7 @@ export async function startStaffOnboarding(params: {
     .single();
   if (error || !data) {
     console.error("[organization] failed to start staff_onboarding", error?.message);
-    return { ok: false, error: "Failed to start onboarding — a record for this person may already exist." };
+    return { ok: false, error: describeOnboardingStartError(error?.code) };
   }
 
   await logActivity({
@@ -96,17 +126,31 @@ export async function completeStaffOnboarding(params: {
   onboardingId: string;
   actorUserId: string;
 }): Promise<{ ok: true } | { ok: false; error: string }> {
+  if (!(await canManageOnboarding(params.actorUserId))) {
+    return { ok: false, error: "Not authorized to complete staff onboarding." };
+  }
+
   const admin = createAdminClient();
   const { data: existing } = await admin.from("staff_onboarding").select("profile_id").eq("id", params.onboardingId).maybeSingle();
   if (!existing) return { ok: false, error: "Onboarding record not found." };
 
-  const { error } = await admin
+  // Atomic idempotency guard (Phase J.2, same pattern already proven for
+  // setProjectFileRetain()/promoteProjectFileToFinalApproved()/
+  // recordManualPayment()) — only a row still 'in_progress' transitions;
+  // a repeated "Complete" click (or two admins clicking at once) matches
+  // zero rows on every call after the first and logs nothing extra.
+  const { data: updated, error } = await admin
     .from("staff_onboarding")
     .update({ status: "completed", completed_at: new Date().toISOString() })
-    .eq("id", params.onboardingId);
+    .eq("id", params.onboardingId)
+    .eq("status", "in_progress")
+    .select("id");
   if (error) {
     console.error("[organization] failed to complete staff_onboarding", error.message);
     return { ok: false, error: "Failed to complete onboarding." };
+  }
+  if (!updated || updated.length === 0) {
+    return { ok: false, error: "This onboarding has already been completed." };
   }
 
   await logActivity({

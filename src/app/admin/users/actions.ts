@@ -28,6 +28,7 @@ import { assignClassification, assignClassificationBySlug } from "@/lib/portal/m
 import { setNotificationPreference } from "@/lib/notifications/preferences";
 import { assignStaffPosition } from "@/lib/organization/assignPosition";
 import { hasJurisdictionAuthority } from "@/lib/organization/authority";
+import { startStaffOnboarding, completeStaffOnboarding } from "@/lib/organization/onboarding";
 
 // ============================================================
 // Read-only data fetchers — thin server-action wrappers so the client
@@ -339,6 +340,50 @@ export async function assignStaffPositionAction(formData: FormData): Promise<{ e
   if (!userId) return { error: "Invalid request." };
 
   const result = await assignStaffPosition({ targetUserId: userId, positionId, actorUserId: currentUser.id });
+  if (!result.ok) return { error: result.error };
+
+  revalidatePath("/admin/users");
+  return {};
+}
+
+// ============================================================
+// Staff Onboarding (Phase J.2, 2026-09-05) — TD-056: staff_onboarding
+// (public.staff_onboarding, src/lib/organization/onboarding.ts) had
+// real schema and backend but no Admin UI action anywhere. Same
+// coarse authorization gate as assignStaffPositionAction above (Super
+// Admin or operations.administer) — the real, fine-grained boundary
+// lives inside startStaffOnboarding()/completeStaffOnboarding()
+// themselves (hardened this same phase — they had no authorization
+// check of their own before now), not here.
+// ============================================================
+export async function startStaffOnboardingAction(formData: FormData): Promise<{ error?: string }> {
+  const currentUser = await getCurrentUser();
+  if (!currentUser) return { error: "Not authenticated." };
+  if (!isSuperAdmin(currentUser) && !(await hasJurisdictionAuthority(currentUser.id, "operations", "administer"))) {
+    return { error: "Not authorized to onboard staff." };
+  }
+
+  const userId = String(formData.get("userId") ?? "");
+  if (!userId) return { error: "Invalid request." };
+
+  const result = await startStaffOnboarding({ profileId: userId, actorUserId: currentUser.id });
+  if (!result.ok) return { error: result.error };
+
+  revalidatePath("/admin/users");
+  return {};
+}
+
+export async function completeStaffOnboardingAction(formData: FormData): Promise<{ error?: string }> {
+  const currentUser = await getCurrentUser();
+  if (!currentUser) return { error: "Not authenticated." };
+  if (!isSuperAdmin(currentUser) && !(await hasJurisdictionAuthority(currentUser.id, "operations", "administer"))) {
+    return { error: "Not authorized to complete staff onboarding." };
+  }
+
+  const onboardingId = String(formData.get("onboardingId") ?? "");
+  if (!onboardingId) return { error: "Invalid request." };
+
+  const result = await completeStaffOnboarding({ onboardingId, actorUserId: currentUser.id });
   if (!result.ok) return { error: result.error };
 
   revalidatePath("/admin/users");

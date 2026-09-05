@@ -41,6 +41,13 @@ export type AdminUserRow = {
   // managerName resolves from staff_details.manager_id.
   callSign: string | null;
   managerName: string | null;
+  // Phase J.2 (2026-09-05) — staff-onboarding process status
+  // (public.staff_onboarding.status) and a plain-language summary of
+  // any standing authority_grants this account holds. Both read-only
+  // projections of existing tables, not new state.
+  onboardingId: string | null;
+  onboardingStatus: string | null;
+  authoritySummary: string | null;
   // New Booking notification opt-in (notification_preferences,
   // category "new_booking") — only meaningful for a plain `admin`; a
   // Super Admin always receives these regardless of this value (see
@@ -130,6 +137,8 @@ export async function listUsersWithRoles(): Promise<AdminUserListResult> {
     { data: engagementTypes },
     { data: activeMemberNumbers },
     { data: classifications },
+    { data: staffOnboarding },
+    { data: authorityGrants },
     positionReportingChain,
     newBookingAlertPrefs,
   ] = await Promise.all([
@@ -149,6 +158,11 @@ export async function listUsersWithRoles(): Promise<AdminUserListResult> {
     admin.from("engagement_types").select("id, name"),
     admin.from("member_numbers").select("profile_id, classification_id").eq("status", "active"),
     admin.from("member_number_classifications").select("id, name"),
+    admin.from("staff_onboarding").select("id, profile_id, status"),
+    admin
+      .from("authority_grants")
+      .select("profile_id, authority, scope_department_id, effective_at, expires_at, revoked_at, departments(name)")
+      .is("revoked_at", null),
     listPositionReportingChain(),
     getNotificationPreferences(
       allAuthUsers.map((u) => u.id),
@@ -172,6 +186,29 @@ export async function listUsersWithRoles(): Promise<AdminUserListResult> {
   const activeClassificationByProfileId = new Map(
     (activeMemberNumbers ?? []).map((m) => [m.profile_id, m.classification_id as string])
   );
+  const onboardingStatusByProfileId = new Map((staffOnboarding ?? []).map((o) => [o.profile_id, o.status as string]));
+  const onboardingIdByProfileId = new Map((staffOnboarding ?? []).map((o) => [o.profile_id, o.id as string]));
+
+  // Phase J.2 — the same "effective, not expired, not revoked" window
+  // hasAuthority() checks (src/lib/organization/authority.ts), applied
+  // in-memory here purely for display (never for an authorization
+  // decision — every real gate still calls hasAuthority()/
+  // isSuperAdminId() directly, server-side, at the point of action).
+  const now = Date.now();
+  const authoritySummaryByProfileId = new Map<string, string>();
+  for (const grant of authorityGrants ?? []) {
+    if (new Date(grant.effective_at).getTime() > now) continue;
+    if (grant.expires_at && new Date(grant.expires_at).getTime() <= now) continue;
+    const department = grant.departments as unknown as { name: string } | null;
+    const label =
+      grant.authority === "executive_admin"
+        ? "Executive Admin"
+        : grant.authority === "department_admin"
+          ? `Department Admin — ${department?.name ?? "—"}`
+          : `Delegated: ${grant.authority}`;
+    const existing = authoritySummaryByProfileId.get(grant.profile_id);
+    authoritySummaryByProfileId.set(grant.profile_id, existing ? `${existing}, ${label}` : label);
+  }
 
   // Live reporting-chain resolution (Phase 3.1, Part 6) — Position
   // remains the authoritative source; staff_details.manager_id is no
@@ -242,6 +279,9 @@ export async function listUsersWithRoles(): Promise<AdminUserListResult> {
         gradeName: positionRow?.grades?.name ?? null,
         callSign: positionRow?.call_sign ?? null,
         managerName,
+        onboardingId: onboardingIdByProfileId.get(u.id) ?? null,
+        onboardingStatus: onboardingStatusByProfileId.get(u.id) ?? null,
+        authoritySummary: authoritySummaryByProfileId.get(u.id) ?? null,
         newBookingAlertsEnabled: newBookingAlertPrefs.get(u.id) ?? false,
       };
     })

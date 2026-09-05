@@ -15,6 +15,8 @@ import {
   updateCollaboratorDetailsAction,
   reclassifyUserAction,
   assignStaffPositionAction,
+  startStaffOnboardingAction,
+  completeStaffOnboardingAction,
   assignToProjectAction,
   updateAssignmentStatusAction,
   inviteCollaboratorAction,
@@ -207,6 +209,27 @@ function UserDetail({
     fd.set("positionId", positionId);
     startTransition(async () => {
       const result = await assignStaffPositionAction(fd);
+      if (result.error) setError(result.error);
+    });
+  }
+
+  function startOnboarding() {
+    setError(null);
+    const fd = new FormData();
+    fd.set("userId", user.id);
+    startTransition(async () => {
+      const result = await startStaffOnboardingAction(fd);
+      if (result.error) setError(result.error);
+    });
+  }
+
+  function completeOnboarding() {
+    if (!user.onboardingId) return;
+    setError(null);
+    const fd = new FormData();
+    fd.set("onboardingId", user.onboardingId);
+    startTransition(async () => {
+      const result = await completeStaffOnboardingAction(fd);
       if (result.error) setError(result.error);
     });
   }
@@ -618,8 +641,58 @@ function UserDetail({
             {" · "}
             {user.gradeName ? `Grade: ${user.gradeName} (${user.gradeCode})` : "No Grade assigned"}
             {user.callSign ? ` · Call Sign: ${user.callSign}` : ""}
-            {user.managerName ? ` · Reports to: ${user.managerName}` : ""} — internal only, never shown publicly.
-            All resolve automatically from the Position above; there is no independent selector for any of them.
+            {user.managerName ? ` · Reports to: ${user.managerName}` : ""}
+            {" · "}
+            {user.authoritySummary ? `Authority: ${user.authoritySummary}` : "No standing authority grant"} — internal
+            only, never shown publicly. All resolve automatically from the Position above; there is no independent
+            selector for any of them.
+          </p>
+        </section>
+      )}
+
+      {/* Staff Onboarding (Phase J.2, 2026-09-05, TD-056) — tracks the
+          PROCESS only (public.staff_onboarding); Department/Position/
+          Grade/Manager are established via the Organizational Assignment
+          section above, not here — see src/lib/organization/onboarding.ts.
+          Same visibility gate as Organizational Assignment for now (the
+          UI shows this to Super Admin only today; the server actions
+          themselves also accept an operations.administer holder, same
+          precedent as assignStaffPositionAction). */}
+      {currentUserIsSuperAdmin && (
+        <section className="space-y-2">
+          <h3 className="font-sans text-caption font-semibold uppercase tracking-wide text-ordift-ink-muted">Staff Onboarding</h3>
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="font-sans text-body-small text-ordift-ink">
+              {user.onboardingStatus === "completed"
+                ? "Completed"
+                : user.onboardingStatus === "in_progress"
+                  ? "In Progress"
+                  : "Not started"}
+            </span>
+            {!user.onboardingStatus && (
+              <button
+                type="button"
+                onClick={startOnboarding}
+                disabled={pending}
+                className="font-sans text-body-small text-ordift-gold-pressed underline underline-offset-4 disabled:opacity-50"
+              >
+                Start Onboarding
+              </button>
+            )}
+            {user.onboardingStatus === "in_progress" && (
+              <button
+                type="button"
+                onClick={completeOnboarding}
+                disabled={pending}
+                className="font-sans text-body-small text-ordift-gold-pressed underline underline-offset-4 disabled:opacity-50"
+              >
+                Mark Onboarding Complete
+              </button>
+            )}
+          </div>
+          <p className="font-sans text-caption text-ordift-ink-muted">
+            Tracks the onboarding process only — assign Department/Position/Grade above, and set up a payment
+            destination via Payables → Payees if this person will be paid through Ordift.
           </p>
         </section>
       )}
