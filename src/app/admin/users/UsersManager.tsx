@@ -213,7 +213,23 @@ function UserDetail({
     });
   }
 
+  // Phase K.2B (2026-09-06) — found via a real accidental click (see
+  // TECHNICAL_DEBT_REGISTER.md): nothing previously distinguished "this
+  // account already has an external-workforce relationship" before
+  // offering Internal Staff Onboarding, so a Super Admin exploring the
+  // page could start it on an existing Contractor/Vendor/Model account
+  // without meaning to. Not a prohibition — a former contractor
+  // genuinely can become a real employee later — just makes the
+  // transition explicit rather than a single unguarded click.
+  const hasExternalWorkforceRelationship = user.roles.some((r) => r === "contractor" || r === "vendor" || r === "model");
+
   function startOnboarding() {
+    if (hasExternalWorkforceRelationship) {
+      const confirmed = window.confirm(
+        "This account currently has an external-workforce relationship (Contractor/Vendor/Model). Starting Internal Staff Onboarding begins a SEPARATE internal-employment process — it does not replace or delete their existing external-workforce history (engagements, payables, files remain exactly as they are). Continue?"
+      );
+      if (!confirmed) return;
+    }
     setError(null);
     const fd = new FormData();
     fd.set("userId", user.id);
@@ -637,7 +653,7 @@ function UserDetail({
             </button>
           </div>
           <p className="font-sans text-caption text-ordift-ink-muted">
-            {user.departmentName ? `Department: ${user.departmentName}` : "No Department (no Position assigned)"}
+            {user.departmentName ? `Department: ${user.departmentName}` : "No organizational Department assigned yet — this is a normal, optional state."}
             {" · "}
             {user.gradeName ? `Grade: ${user.gradeName} (${user.gradeCode})` : "No Grade assigned"}
             {user.callSign ? ` · Call Sign: ${user.callSign}` : ""}
@@ -647,20 +663,42 @@ function UserDetail({
             only, never shown publicly. All resolve automatically from the Position above; there is no independent
             selector for any of them.
           </p>
+          {/* Phase K.2B — the Founder's own account (Position genuinely
+              unassigned for weeks despite being a real, active founding
+              member) showed how easily "no Position" reads as an error
+              needing correction. It isn't — Position/Department/Grade are
+              purely organizational and never affect login/access. */}
+          <p className="font-sans text-caption text-ordift-ink-muted">
+            Organizational Position/Department/Grade are separate from system access — assigning or leaving this
+            unset never changes this account&apos;s login role or permissions (those are controlled only by Role,
+            above).
+          </p>
         </section>
       )}
 
-      {/* Staff Onboarding (Phase J.2, 2026-09-05, TD-056) — tracks the
-          PROCESS only (public.staff_onboarding); Department/Position/
-          Grade/Manager are established via the Organizational Assignment
-          section above, not here — see src/lib/organization/onboarding.ts.
-          Same visibility gate as Organizational Assignment for now (the
-          UI shows this to Super Admin only today; the server actions
-          themselves also accept an operations.administer holder, same
-          precedent as assignStaffPositionAction). */}
+      {/* Internal Staff Onboarding (Phase J.2, 2026-09-05, TD-056; renamed
+          and given an external-relationship guard in Phase K.2B after a
+          real accidental click on an existing Contractor account — see
+          TECHNICAL_DEBT_REGISTER.md). Tracks the PROCESS only
+          (public.staff_onboarding); Department/Position/Grade/Manager are
+          established via the Organizational Assignment section above, not
+          here — see src/lib/organization/onboarding.ts. Same visibility
+          gate as Organizational Assignment for now (the UI shows this to
+          Super Admin only today; the server actions themselves also
+          accept an operations.administer holder, same precedent as
+          assignStaffPositionAction). */}
       {currentUserIsSuperAdmin && (
         <section className="space-y-2">
-          <h3 className="font-sans text-caption font-semibold uppercase tracking-wide text-ordift-ink-muted">Staff Onboarding</h3>
+          <h3 className="font-sans text-caption font-semibold uppercase tracking-wide text-ordift-ink-muted">
+            Internal Staff Onboarding
+          </h3>
+          {hasExternalWorkforceRelationship && !user.onboardingStatus && (
+            <p className="font-sans text-caption text-amber-700 bg-amber-50 border border-amber-200 rounded px-3 py-2">
+              This account currently has an external-workforce relationship (Contractor/Vendor/Model). Starting
+              Internal Staff Onboarding begins a separate internal-employment process — it does not replace or
+              delete their existing external-workforce history.
+            </p>
+          )}
           <div className="flex flex-wrap items-center gap-2">
             <span className="font-sans text-body-small text-ordift-ink">
               {user.onboardingStatus === "completed"
@@ -676,7 +714,7 @@ function UserDetail({
                 disabled={pending}
                 className="font-sans text-body-small text-ordift-gold-pressed underline underline-offset-4 disabled:opacity-50"
               >
-                Start Onboarding
+                Start Internal Staff Onboarding
               </button>
             )}
             {user.onboardingStatus === "in_progress" && (
@@ -691,8 +729,8 @@ function UserDetail({
             )}
           </div>
           <p className="font-sans text-caption text-ordift-ink-muted">
-            Tracks the onboarding process only — assign Department/Position/Grade above, and set up a payment
-            destination via Payables → Payees if this person will be paid through Ordift.
+            Tracks the internal-employment onboarding process only — assign Department/Position/Grade above, and set
+            up a payment destination via Payables → Payees if this person will be paid through Ordift.
           </p>
         </section>
       )}

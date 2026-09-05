@@ -563,6 +563,26 @@
 - **Pay-down trigger:** if a genuine admin-tier (non-super-admin) UI need for direct session-client reads on either table ever arises — at that point, add a scoped `admin`-tier RLS policy explicitly, rather than routing around it with the service-role client as a habit.
 - **Status:** Open, low priority.
 
+### TD-058 — Permanent Staff member-number sequence started at 3 instead of 1; corrected for the Founder (found and fixed 2026-09-06, Phase K.2B)
+
+- **Category:** Data / Audit integrity
+- **Severity:** Low (found, fixed, and verified same-phase — logged for the historical record, and because it's the kind of thing a future reader would otherwise have to re-investigate from scratch)
+- **What:** while correcting the Founder & CEO account's organizational identity, found that `record_sequences` (migration 0013, backing `next_record_sequence()`) held `last_value: 2` for key `member:permanent_staff` (business-slug-namespaced per `src/lib/portal/memberNumbers.ts`) even though `public.member_numbers` had **zero** rows under the "Permanent Staff" classification before this phase — meaning the counter had been incremented twice at some earlier point without either call ever producing a real, permanent `member_numbers` row. Exhaustively verified via `member_numbers` (all statuses, all classifications) and `activity_log` (every `member_number.assign` event ever recorded): neither "0001" nor "0002" under this classification was ever issued, reserved, archived, or referenced anywhere. The classification's own `starting_number` config is `1` (not the cause) — the two missing increments predate this investigation and their exact origin (most likely an incomplete/failed test of the mechanism during the 2026-08-25 Organizational Architecture build, before it was ever exercised for a real person) could not be conclusively determined from data alone, and didn't need to be — what mattered was proving no real identity was ever attached to either number.
+- **Why accepted (as resolved):** correcting a genuinely-never-issued number to the intended canonical value is not the same as rewriting real history — no real `member_numbers` row, `activity_log` event, or reference of any kind to 0001/0002 was altered or removed (none existed to alter). The founder's real first assignment (`0003`, `activity_log` id `0b7c4c4e-...`) is preserved unaltered as historical record; a new `member_number.founding_correction` event documents the correction itself.
+- **Current impact:** none — the Founder & CEO account (the true first Permanent Staff member) now correctly holds `0001`; the `record_sequences` counter was reset (`last_value: 1`) so the next genuine Permanent Staff hire receives `0002`, without a fake record being created to prove it. Every other classification's sequence (Client: 2, Contractor: 1) was independently confirmed unchanged.
+- **Pay-down trigger:** N/A — resolved. Worth remembering as a pattern: `record_sequences` counters are separate from `member_numbers` rows — a counter can advance without a corresponding permanent record surviving, so "the counter says N" is not proof "N real records exist."
+- **Status:** Resolved (2026-09-06, Phase K.2B).
+
+### TD-059 — Internal Staff Onboarding UX gave no warning when the target account already had an external-workforce relationship (found and fixed 2026-09-06, Phase K.2B)
+
+- **Category:** UX / Access Management
+- **Severity:** Low (no data was ever at risk — `startStaffOnboarding()` only ever inserts one `staff_onboarding` row, confirmed in Phase J.2 — but a real accidental click on a real contractor account is exactly the kind of thing worth a guard)
+- **What:** found via a real incident — a Super Admin accidentally clicked "Start Onboarding" on an existing external contractor's account while exploring `/admin/users`. Nothing on that screen distinguished "this account already has a Contractor/Vendor/Model relationship" before offering the action, and the section was labeled generically ("Staff Onboarding") rather than making clear it starts a separate internal-employment track. Separately, the adjacent Organizational Assignment section's "No Department (no Position assigned)" copy read as an error needing correction rather than a normal, optional state — which led the same Super Admin to manually (and correctly, as it turned out) assign their own long-standing account to the Founder & CEO position, but only because the UI implied something was wrong.
+- **Why accepted (as resolved):** both fixes are copy/confirmation-only — no authorization logic changed, no coupling introduced between Position/Department and `user_roles` (confirmed: the new warning only *reads* `user.roles` to decide whether to show a note, never writes anything). The external-contractor-to-employee transition remains fully possible, per explicit instruction — it's now deliberate (a specific confirm-dialog warning) rather than a single unguarded click.
+- **Current impact:** none — `/admin/users`' Internal Staff Onboarding section now warns explicitly when the target account holds an external-workforce role, and the Organizational Assignment section explicitly states that Position/Department/Grade never affect login/access.
+- **Pay-down trigger:** N/A — resolved.
+- **Status:** Resolved (2026-09-06, Phase K.2B).
+
 ---
 
 ## Adding new entries
