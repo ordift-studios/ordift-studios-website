@@ -63,6 +63,41 @@ export function isValidEngagementTransition(fromStatus: string, toStatus: string
   return getValidEngagementTransitions(fromStatus).some((t) => t.to === toStatus);
 }
 
+// Phase H.7 (2026-09-05) — shared by the completion guard below and by
+// the contractor-side upload/feedback locks in projectFiles.ts and
+// portal actions.ts. `completed`/`cancelled` are the same two statuses
+// isProjectFilePurgeEligible() already treats as terminal — this just
+// gives that same fact a name so it isn't re-typed as a string array in
+// four different places.
+export function isTerminalEngagementStatus(status: string): boolean {
+  return status === "completed" || status === "cancelled";
+}
+
+// Phase H.7 — completion safety guard (H.6's CAUTION finding). The
+// schema has no reliable flag for "this engagement type expects a media
+// deliverable" (operational_titles/engagement_types are plain lookup
+// tables — see the H.7 investigation), so this deliberately does NOT
+// try to guess from the operational title. Instead it looks at what
+// actually happened: if a contractor never uploaded a deliverable/
+// revision candidate for this engagement, there's nothing to require
+// (a pure consulting/service engagement with no media component is
+// unaffected). If one WAS uploaded, at least one non-purged
+// final_approved file must exist before completion is allowed — this
+// is the only thing that stops a real approved deliverable from ever
+// silently sitting as plain "deliverable" (permanently purge-eligible
+// after the grace period) past the point the engagement is considered
+// done. Mirrors FINAL_APPROVABLE_SOURCE_KINDS in projectFiles.ts — kept
+// as a separate literal here rather than importing it, since
+// projectFiles.ts already imports from this module and importing the
+// other way would create a cycle.
+const CANDIDATE_DELIVERABLE_FILE_KINDS = ["deliverable", "revision"];
+
+export function canCompleteEngagementGivenFiles(files: { fileKind: string; purgedAt: string | null }[]): boolean {
+  const hasCandidateOutput = files.some((f) => CANDIDATE_DELIVERABLE_FILE_KINDS.includes(f.fileKind));
+  if (!hasCandidateOutput) return true;
+  return files.some((f) => f.fileKind === "final_approved" && !f.purgedAt);
+}
+
 // Phase F.1 (2026-09-04), Part D — pure, directly testable. An agreed
 // amount with no currency is an incomplete, ambiguous financial term —
 // exactly the state Sylvia's first real engagement ended up in, when
@@ -419,6 +454,17 @@ export async function setEngagementStatus(params: {
     return { ok: false, error: `Cannot move from "${existing.status}" to "${params.status}" — not a valid transition.` };
   }
 
+  if (params.status === "completed") {
+    const { data: files } = await admin.from("project_files").select("file_kind, purged_at").eq("engagement_id", params.engagementId);
+    const eligible = canCompleteEngagementGivenFiles((files ?? []).map((f) => ({ fileKind: f.file_kind, purgedAt: f.purged_at })));
+    if (!eligible) {
+      return {
+        ok: false,
+        error: "This engagement has an uploaded deliverable that has not yet been marked Final Approved. Mark the correct file as Final Approved before completing.",
+      };
+    }
+  }
+
   const { error } = await admin.from("engagements").update({ status: params.status }).eq("id", params.engagementId);
   if (error) {
     console.error("[payables] failed to update engagement status", error.message);
@@ -435,6 +481,9 @@ export async function setEngagementStatus(params: {
 
   if (params.status === "work_approved") {
     await sendEngagementNotification({ engagementId: params.engagementId, event: "work_approved" });
+  }
+  if (params.status === "completed") {
+    await sendEngagementNotification({ engagementId: params.engagementId, event: "engagement_completed" });
   }
 
   return { ok: true };

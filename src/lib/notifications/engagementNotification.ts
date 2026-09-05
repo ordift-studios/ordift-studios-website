@@ -14,7 +14,7 @@ import { siteUrl } from "@/lib/shared/env";
 // this codebase's one, real, production-proven email pipeline. No new
 // provider, no SMS, no WhatsApp.
 
-export type EngagementNotificationEvent = "assignment_created" | "work_approved" | "payment_completed" | "backup_required" | "feedback_posted";
+export type EngagementNotificationEvent = "assignment_created" | "work_approved" | "payment_completed" | "backup_required" | "feedback_posted" | "engagement_completed";
 
 const EVENT_COPY: Record<EngagementNotificationEvent, { subject: string; heading: string; body: string }> = {
   assignment_created: {
@@ -42,9 +42,21 @@ const EVENT_COPY: Record<EngagementNotificationEvent, { subject: string; heading
     heading: "New feedback on your assignment",
     body: "Ordift Studios has posted an update on your assignment. Sign in to your portal to read it.",
   },
+  // Phase H.7 — a plain, contractor-facing "this is done" notice.
+  // Deliberately says nothing about payment status, media backup, or
+  // cleanup — those are internal lifecycle mechanics, not part of what
+  // a contractor needs to be told here.
+  engagement_completed: {
+    subject: "Engagement Completed — Ordift Studios",
+    heading: "Your engagement has been marked completed",
+    body: "Ordift Studios has marked this engagement as completed. Thank you for your work — sign in to your portal to review it.",
+  },
 };
 
-function buildEmail(event: EngagementNotificationEvent, engagementId: string): { subject: string; html: string; text: string } {
+// Exported for testing — same convention as buildNewBookingNotificationEmail
+// (newBookingNotification.test.ts): a pure render function, directly
+// testable without a live Supabase session or Resend call.
+export function buildEmail(event: EngagementNotificationEvent, engagementId: string): { subject: string; html: string; text: string } {
   const copy = EVENT_COPY[event];
   const portalUrl = `${siteUrl()}/portal/collaborator/engagement/${engagementId}`;
   const html = wrap(

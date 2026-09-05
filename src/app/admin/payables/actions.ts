@@ -13,6 +13,7 @@ import {
   confirmProjectFilesBackup,
   setProjectFileRetain,
   purgeEligibleProjectFiles,
+  promoteProjectFileToFinalApproved,
 } from "@/lib/payables/projectFiles";
 import {
   approvePaymentObligation,
@@ -497,6 +498,17 @@ export async function setProjectFileRetainAction(formData: FormData): Promise<vo
   if (!fileId) return;
   const result = await setProjectFileRetain({ fileId, retain, actorUserId: user.id });
   if (!result.ok) console.error("[admin payables] setProjectFileRetain failed", result.error);
+  if (engagementId) revalidatePath(`/admin/payables/engagements/${engagementId}/media`);
+}
+
+export async function promoteProjectFileToFinalApprovedAction(formData: FormData): Promise<void> {
+  const user = await getCurrentUser();
+  if (!user) return;
+  const fileId = str(formData, "fileId");
+  const engagementId = str(formData, "engagementId");
+  if (!fileId) return;
+  const result = await promoteProjectFileToFinalApproved({ fileId, actorUserId: user.id });
+  if (!result.ok) console.error("[admin payables] promoteProjectFileToFinalApproved failed", result.error);
   if (engagementId) revalidatePath(`/admin/payables/engagements/${engagementId}/media`);
 }
 

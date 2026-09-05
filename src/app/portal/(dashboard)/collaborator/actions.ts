@@ -4,6 +4,8 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentUser, hasRole } from "@/lib/portal/roles";
 import { isProjectKind } from "@/lib/portal/collaboratorData";
+import { getMyEngagement } from "@/lib/portal/engagementPortalData";
+import { isTerminalEngagementStatus } from "@/lib/payables/engagements";
 import {
   requestProjectFileUploadAuthorization,
   recordUploadedProjectFile,
@@ -64,6 +66,15 @@ export async function postEngagementUpdateAction(formData: FormData): Promise<{ 
   const note = String(formData.get("note") ?? "").trim();
   const linkUrl = String(formData.get("linkUrl") ?? "").trim();
   if (!engagementId || !note) return { error: "Enter an update before posting." };
+
+  // Phase H.7 — a completed/cancelled engagement is closed to new
+  // updates, matching the same terminal-status lock applied to file
+  // uploads. getMyEngagement() is already ownership-scoped, so this
+  // also confirms the caller actually owns this engagement before the
+  // insert is even attempted.
+  const engagement = await getMyEngagement(engagementId, user.id);
+  if (!engagement) return { error: "Couldn't post — you may no longer be assigned to this engagement." };
+  if (isTerminalEngagementStatus(engagement.status)) return { error: "This engagement is closed — no new updates can be posted." };
 
   const supabase = await createClient();
   const { error } = await supabase.from("project_updates").insert({

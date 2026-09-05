@@ -5,7 +5,7 @@ import { getCurrentUser } from "@/lib/portal/roles";
 import { authorizeWithSuperAdminOverride, FINANCE_CAPABILITIES } from "@/lib/organization/authority";
 import { getEngagement } from "@/lib/payables/engagements";
 import { getPayeeProfile } from "@/lib/payables/payeeProfiles";
-import { listProjectFilesForEngagement, deriveProjectFileDisplayState, PROJECT_FILE_KINDS } from "@/lib/payables/projectFiles";
+import { listProjectFilesForEngagement, deriveProjectFileDisplayState, canPromoteFileKindToFinalApproved, PROJECT_FILE_KINDS } from "@/lib/payables/projectFiles";
 import MediaFileUploader from "@/components/payables/MediaFileUploader";
 import ConfirmSubmitButton from "@/components/admin/ConfirmSubmitButton";
 import SubmitButton from "@/components/admin/SubmitButton";
@@ -14,6 +14,7 @@ import {
   recordStaffUploadedFileAction,
   confirmProjectFileBackupAction,
   setProjectFileRetainAction,
+  promoteProjectFileToFinalApprovedAction,
 } from "../../../actions";
 
 export const metadata: Metadata = {
@@ -22,6 +23,21 @@ export const metadata: Metadata = {
 };
 
 const STAFF_FILE_KIND_OPTIONS = PROJECT_FILE_KINDS.map((k) => ({ value: k, label: k.replace(/_/g, " ") }));
+
+// Phase H.7 — plain labels for the admin file list, matching the
+// portal's own FILE_KIND_LABELS (EngagementFileList.tsx) so the two
+// surfaces read consistently even though they're separate components.
+const FILE_KIND_LABELS: Record<string, string> = {
+  source_raw: "Source (RAW)",
+  source_reference: "Reference",
+  intermediate: "Intermediate",
+  working: "Working file",
+  deliverable: "Deliverable",
+  final_approved: "Final Approved",
+  revision: "Revision",
+  archive_reference: "Archive reference",
+  other: "Other",
+};
 
 // Phase H.1/H.2 (2026-09-04) — internal staff media/backup/retention
 // panel for one engagement. Staff can upload any file_kind (source
@@ -75,10 +91,16 @@ export default async function EngagementMediaPage({ params }: { params: Promise<
                   {f.originalFilename} {f.version > 1 && <span className="text-ordift-ink-muted">v{f.version}</span>}
                 </p>
                 <p className="font-sans text-caption text-ordift-ink-muted">
-                  {f.fileKind} · {f.sizeBytes ? `${(f.sizeBytes / (1024 * 1024)).toFixed(1)} MB` : "—"} ·{" "}
+                  {FILE_KIND_LABELS[f.fileKind] ?? f.fileKind} · {f.sizeBytes ? `${(f.sizeBytes / (1024 * 1024)).toFixed(1)} MB` : "—"} ·{" "}
                   {deriveProjectFileDisplayState({ lifecycleState: f.lifecycleState, engagementStatus: engagement.status, fileKind: f.fileKind })}
-                  {f.retain && " · Retained"}
-                  {f.purgeScheduledAt && !f.purgedAt && ` · Purge scheduled ${new Date(f.purgeScheduledAt).toLocaleDateString()}`}
+                  {f.retain && f.fileKind !== "final_approved" && " · Retained"}
+                  {/* No scheduler exists — this is only ever the earliest date the file WOULD qualify for
+                      cleanup if every other condition is also met by then, not a scheduled deletion. Never
+                      shown for a file that's unconditionally protected (final_approved or retained), since
+                      showing a future date there would misleadingly suggest it's still on a deletion path. */}
+                  {f.purgeScheduledAt && !f.purgedAt && !f.retain && f.fileKind !== "final_approved" && (
+                    <> · Eligible for cleanup from {new Date(f.purgeScheduledAt).toLocaleDateString()}</>
+                  )}
                 </p>
               </div>
               <div className="flex flex-wrap gap-2">
@@ -92,6 +114,19 @@ export default async function EngagementMediaPage({ params }: { params: Promise<
                       className="rounded border border-black/15 px-2 py-1 font-sans text-caption hover:border-black/30"
                     >
                       Confirm Backup
+                    </ConfirmSubmitButton>
+                  </form>
+                )}
+                {canPromoteFileKindToFinalApproved(f.fileKind) && !f.purgedAt && (
+                  <form action={promoteProjectFileToFinalApprovedAction}>
+                    <input type="hidden" name="fileId" value={f.id} />
+                    <input type="hidden" name="engagementId" value={id} />
+                    <ConfirmSubmitButton
+                      confirmMessage="Mark this as the final approved deliverable? This is the authoritative retained version — it will be permanently exempt from media cleanup regardless of backup/retention state."
+                      pendingLabel="Approving…"
+                      className="rounded border border-black/15 px-2 py-1 font-sans text-caption hover:border-black/30"
+                    >
+                      Mark Final Approved
                     </ConfirmSubmitButton>
                   </form>
                 )}

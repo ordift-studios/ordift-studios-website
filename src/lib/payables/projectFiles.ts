@@ -1,6 +1,7 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { logActivity } from "@/lib/admin/activityLog";
 import { authorizeWithSuperAdminOverride, FINANCE_CAPABILITIES } from "@/lib/organization/authority";
+import { isTerminalEngagementStatus } from "@/lib/payables/engagements";
 
 // Phase H.1/H.2 (2026-09-04) — direct-to-Supabase-Storage media
 // architecture for external-workforce engagements, and the backup/
@@ -32,6 +33,22 @@ export type ProjectFileKind = (typeof PROJECT_FILE_KINDS)[number];
 // reaching the database).
 const CONTRACTOR_UPLOADABLE_KINDS: ProjectFileKind[] = ["deliverable", "revision"];
 
+// Phase H.7 (2026-09-05) — which kinds may legitimately become the
+// authoritative final deliverable. Deliberately NOT every value
+// PROJECT_FILE_KINDS permits: source/intermediate/working/reference/
+// archive material was never delivered as output, so promoting it to
+// "the final approved deliverable" would be nonsensical regardless of
+// what the enum allows. Only something that was actually delivered
+// (a deliverable, or a later revision of one) is eligible. Mirrored as
+// a plain literal in engagements.ts's canCompleteEngagementGivenFiles()
+// — that module can't import this one without a cycle (this file
+// already imports isTerminalEngagementStatus from there).
+export const FINAL_APPROVABLE_SOURCE_KINDS: ProjectFileKind[] = ["deliverable", "revision"];
+
+export function canPromoteFileKindToFinalApproved(fileKind: string): boolean {
+  return (FINAL_APPROVABLE_SOURCE_KINDS as string[]).includes(fileKind);
+}
+
 function sanitizeFilename(name: string): string {
   return name.replace(/[^a-zA-Z0-9._-]/g, "_").slice(-180);
 }
@@ -39,18 +56,21 @@ function sanitizeFilename(name: string): string {
 async function resolveActorAccess(
   engagementId: string,
   actorUserId: string
-): Promise<{ ok: true; isContractor: boolean; payeeProfileId: string } | { ok: false; error: string }> {
+): Promise<
+  | { ok: true; isContractor: boolean; payeeProfileId: string; engagementStatus: string }
+  | { ok: false; error: string }
+> {
   const admin = createAdminClient();
-  const { data: engagement } = await admin.from("engagements").select("payee_profile_id").eq("id", engagementId).maybeSingle();
+  const { data: engagement } = await admin.from("engagements").select("payee_profile_id, status").eq("id", engagementId).maybeSingle();
   if (!engagement) return { ok: false, error: "Engagement not found." };
 
   if (engagement.payee_profile_id === actorUserId) {
-    return { ok: true, isContractor: true, payeeProfileId: engagement.payee_profile_id };
+    return { ok: true, isContractor: true, payeeProfileId: engagement.payee_profile_id, engagementStatus: engagement.status };
   }
 
   const auth = await authorizeWithSuperAdminOverride(actorUserId, FINANCE_CAPABILITIES.payeeAdminister);
   if (!auth.ok) return { ok: false, error: "Not authorized to manage files for this engagement." };
-  return { ok: true, isContractor: false, payeeProfileId: engagement.payee_profile_id };
+  return { ok: true, isContractor: false, payeeProfileId: engagement.payee_profile_id, engagementStatus: engagement.status };
 }
 
 // Step 1 of the direct-upload flow: browser asks Ordift for permission
@@ -69,6 +89,9 @@ export async function requestProjectFileUploadAuthorization(params: {
 
   const access = await resolveActorAccess(params.engagementId, params.actorUserId);
   if (!access.ok) return access;
+  if (access.isContractor && isTerminalEngagementStatus(access.engagementStatus)) {
+    return { ok: false, error: "This engagement is closed — new files can no longer be uploaded." };
+  }
   if (access.isContractor && !CONTRACTOR_UPLOADABLE_KINDS.includes(params.fileKind as ProjectFileKind)) {
     return { ok: false, error: "Only deliverable/revision files may be uploaded here — source and reference material is added by Ordift staff." };
   }
@@ -111,6 +134,9 @@ export async function recordUploadedProjectFile(params: {
 
   const access = await resolveActorAccess(params.engagementId, params.actorUserId);
   if (!access.ok) return access;
+  if (access.isContractor && isTerminalEngagementStatus(access.engagementStatus)) {
+    return { ok: false, error: "This engagement is closed — new files can no longer be recorded." };
+  }
   if (access.isContractor && !CONTRACTOR_UPLOADABLE_KINDS.includes(params.fileKind as ProjectFileKind)) {
     return { ok: false, error: "Only deliverable/revision files may be recorded here." };
   }
@@ -408,6 +434,67 @@ export async function setProjectFileRetain(params: {
   }
 
   return { ok: true, transitioned };
+}
+
+// Phase H.7 (2026-09-05) — explicit staff/admin promotion of an
+// accepted deliverable to the authoritative final one. This is the fix
+// for the H.6 CAUTION finding: `final_approved` was already the one
+// file_kind isProjectFilePurgeEligible() unconditionally exempts, but
+// nothing in this codebase could ever get an uploaded file INTO that
+// state except a staff member choosing it at upload time (contractors
+// can never upload as final_approved — CONTRACTOR_UPLOADABLE_KINDS only
+// allows deliverable/revision). This makes final approval an explicit,
+// reviewable, after-the-fact staff action instead of requiring someone
+// to have guessed correctly at upload time.
+//
+// Same atomic idempotency pattern as setProjectFileRetain() above: the
+// UPDATE's WHERE clause (.in(FINAL_APPROVABLE_SOURCE_KINDS)) only
+// matches a row that hasn't already been promoted, so a duplicate/rapid
+// resubmission (or two staff clicking at once) matches 0 rows on every
+// call after the first and logs nothing extra — Postgres's row lock
+// serializes concurrent UPDATEs on the same row, so the second request
+// only evaluates this WHERE clause after the first has already
+// committed. No Storage operation, no new row, no version bump — only
+// the file_kind column changes on the existing row.
+export async function promoteProjectFileToFinalApproved(params: {
+  fileId: string;
+  actorUserId: string;
+}): Promise<{ ok: true; promoted: boolean } | { ok: false; error: string }> {
+  const auth = await authorizeWithSuperAdminOverride(params.actorUserId, FINANCE_CAPABILITIES.payeeAdminister);
+  if (!auth.ok) return { ok: false, error: "Not authorized to approve a final deliverable." };
+
+  const admin = createAdminClient();
+  const { data: file } = await admin.from("project_files").select("file_kind, purged_at").eq("id", params.fileId).maybeSingle();
+  if (!file) return { ok: false, error: "File not found." };
+  if (file.file_kind === "final_approved") return { ok: true, promoted: false };
+  if (file.purged_at) return { ok: false, error: "This file has already been purged and can no longer be approved." };
+  if (!canPromoteFileKindToFinalApproved(file.file_kind)) {
+    return { ok: false, error: "Only a Deliverable or Revision file can be marked as the final approved deliverable." };
+  }
+
+  const { data, error } = await admin
+    .from("project_files")
+    .update({ file_kind: "final_approved" })
+    .eq("id", params.fileId)
+    .in("file_kind", FINAL_APPROVABLE_SOURCE_KINDS)
+    .is("purged_at", null)
+    .select("id, engagement_id");
+  if (error) {
+    console.error("[payables] failed to promote project file to final_approved", error.message);
+    return { ok: false, error: "Failed to mark this file as the final approved deliverable." };
+  }
+
+  const promoted = (data?.length ?? 0) > 0;
+  if (promoted) {
+    await logActivity({
+      actorUserId: params.actorUserId,
+      action: "project_file.promoted_final_approved",
+      entityType: "engagement",
+      entityId: data![0].engagement_id,
+      metadata: { fileId: params.fileId },
+    });
+  }
+  return { ok: true, promoted };
 }
 
 // The purge job itself. Deliberately NOT scheduled by this migration/

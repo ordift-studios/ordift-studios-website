@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { getValidEngagementTransitions, isValidEngagementTransition, ENGAGEMENT_STATUSES, isCompleteFinancialTerms } from "@/lib/payables/engagements";
+import {
+  getValidEngagementTransitions,
+  isValidEngagementTransition,
+  ENGAGEMENT_STATUSES,
+  isCompleteFinancialTerms,
+  isTerminalEngagementStatus,
+  canCompleteEngagementGivenFiles,
+} from "@/lib/payables/engagements";
 
 // Engagement Lifecycle UI (2026-09-03) — this is the real authorization
 // boundary for a status transition (setEngagementStatus() calls
@@ -83,5 +90,65 @@ describe("isCompleteFinancialTerms", () => {
     expect(isCompleteFinancialTerms(10, null)).toBe(false);
     expect(isCompleteFinancialTerms(10, undefined)).toBe(false);
     expect(isCompleteFinancialTerms(10, "")).toBe(false);
+  });
+});
+
+describe("isTerminalEngagementStatus", () => {
+  it("completed and cancelled are terminal", () => {
+    expect(isTerminalEngagementStatus("completed")).toBe(true);
+    expect(isTerminalEngagementStatus("cancelled")).toBe(true);
+  });
+
+  it("every non-terminal status is not terminal", () => {
+    for (const status of ["draft", "engagement_active", "work_submitted", "work_approved", "on_hold"]) {
+      expect(isTerminalEngagementStatus(status)).toBe(false);
+    }
+  });
+});
+
+// Phase H.7 (2026-09-05) — the completion safety guard for the real
+// H.6 CAUTION finding: an engagement could be marked completed while
+// its actual approved deliverable still sat as plain "deliverable"
+// (permanently purge-eligible after the grace period, since only
+// file_kind === "final_approved" is exempt). Deliberately derived from
+// what files actually exist for the engagement, not from operational
+// title/engagement type — no schema field reliably says "this
+// engagement type expects a media deliverable" (checked directly:
+// operational_titles/engagement_types are plain id/slug/name/active
+// lookup tables), so guessing from the title would be exactly the
+// brittle rule this was told not to invent.
+describe("canCompleteEngagementGivenFiles", () => {
+  it("an engagement with no files at all can complete — nothing to require", () => {
+    expect(canCompleteEngagementGivenFiles([])).toBe(true);
+  });
+
+  it("an engagement with only source/reference material (no deliverable ever uploaded) can complete", () => {
+    expect(canCompleteEngagementGivenFiles([{ fileKind: "source_raw", purgedAt: null }])).toBe(true);
+  });
+
+  it("a deliverable exists but nothing has been marked final_approved — cannot complete", () => {
+    expect(canCompleteEngagementGivenFiles([{ fileKind: "deliverable", purgedAt: null }])).toBe(false);
+  });
+
+  it("a revision (not just a plain deliverable) also counts as a candidate requiring final approval", () => {
+    expect(canCompleteEngagementGivenFiles([{ fileKind: "revision", purgedAt: null }])).toBe(false);
+  });
+
+  it("a deliverable exists AND a non-purged final_approved file exists — can complete", () => {
+    expect(
+      canCompleteEngagementGivenFiles([
+        { fileKind: "deliverable", purgedAt: null },
+        { fileKind: "final_approved", purgedAt: null },
+      ])
+    ).toBe(true);
+  });
+
+  it("a final_approved file exists but it has already been purged — cannot complete (the real one is gone)", () => {
+    expect(
+      canCompleteEngagementGivenFiles([
+        { fileKind: "deliverable", purgedAt: null },
+        { fileKind: "final_approved", purgedAt: "2026-01-01T00:00:00Z" },
+      ])
+    ).toBe(false);
   });
 });

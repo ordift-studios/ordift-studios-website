@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isProjectFilePurgeEligible, deriveProjectFileDisplayState, isRetainTransition } from "@/lib/payables/projectFiles";
+import { isProjectFilePurgeEligible, deriveProjectFileDisplayState, isRetainTransition, canPromoteFileKindToFinalApproved } from "@/lib/payables/projectFiles";
 
 // Phase H.1/H.2 (2026-09-04) — the actual gate that decides whether a
 // file may ever be deleted (Section 17 of the spec). This is the
@@ -67,6 +67,55 @@ describe("isProjectFilePurgeEligible", () => {
     expect(isProjectFilePurgeEligible({ ...baseEligible, backupConfirmedAt: "2026-09-12T00:00:00Z", gracePeriodDays: 10 })).toBe(false);
     // exactly at the boundary — 10 days later — should already qualify
     expect(isProjectFilePurgeEligible({ ...baseEligible, backupConfirmedAt: "2026-09-05T00:00:00Z", gracePeriodDays: 10 })).toBe(true);
+  });
+
+  // Phase H.7 (2026-09-05) — explicit invariant checks requested after
+  // the H.6 CAUTION finding and the Final Approval fix. These are the
+  // same fileKind === "final_approved" first-check as the "Even if
+  // literally every other condition also says delete me" case above,
+  // restated against the exact scenarios that matter for this phase:
+  // engagement actually reaching completed/cancelled, the grace period
+  // having actually elapsed, and retain explicitly being false (so the
+  // Retain flag cannot be credited for the protection — final_approved
+  // alone must be sufficient).
+  it("final_approved is never purge-eligible once the engagement reaches completed, even with the grace period elapsed and retain=false", () => {
+    expect(isProjectFilePurgeEligible({ ...baseEligible, fileKind: "final_approved", engagementStatus: "completed", retain: false })).toBe(false);
+  });
+
+  it("final_approved is never purge-eligible once the engagement reaches cancelled, even with the grace period elapsed and retain=false", () => {
+    expect(isProjectFilePurgeEligible({ ...baseEligible, fileKind: "final_approved", engagementStatus: "cancelled", retain: false })).toBe(false);
+  });
+
+  it("Run Media Cleanup's own gate is this same function — final_approved is skipped unconditionally there too, by construction", () => {
+    // purgeEligibleProjectFiles() has no separate final_approved check of its own — it calls
+    // exactly this function per candidate row, so the two invariants above ARE the cleanup-skip guarantee.
+    expect(isProjectFilePurgeEligible({ ...baseEligible, fileKind: "final_approved" })).toBe(false);
+  });
+});
+
+// Phase H.7 (2026-09-05) — which existing file kinds may legitimately
+// become the authoritative final deliverable. Only something that was
+// actually delivered as output (deliverable, or a later revision of
+// one) qualifies — promoting source/intermediate/working/reference/
+// archive material would be nonsensical even though PROJECT_FILE_KINDS
+// permits those values to exist.
+describe("canPromoteFileKindToFinalApproved", () => {
+  it("a plain deliverable can be promoted", () => {
+    expect(canPromoteFileKindToFinalApproved("deliverable")).toBe(true);
+  });
+
+  it("a revision can be promoted", () => {
+    expect(canPromoteFileKindToFinalApproved("revision")).toBe(true);
+  });
+
+  it("source, intermediate, working, reference, and archive material cannot be promoted", () => {
+    for (const kind of ["source_raw", "source_reference", "intermediate", "working", "archive_reference", "other"]) {
+      expect(canPromoteFileKindToFinalApproved(kind)).toBe(false);
+    }
+  });
+
+  it("a file already final_approved is not itself a valid promotion source — this is a one-way transition", () => {
+    expect(canPromoteFileKindToFinalApproved("final_approved")).toBe(false);
   });
 });
 

@@ -65,6 +65,29 @@ function mapMyEngagement(r: RawMyEngagementRow): MyEngagement {
   };
 }
 
+// Phase H.7 (2026-09-05) — H.6 found that a completed engagement simply
+// disappeared from the contractor's list (only ever filtered to
+// non-terminal statuses) while remaining reachable by direct link. Pure
+// projection, no DB — the actual data comes from listMyEngagements()
+// above; this only decides how to group what's already been fetched.
+// `cancelled` is kept in its own bucket rather than folded into
+// `completed` — an engagement that was called off is not equivalent
+// history to one that was actually delivered, and presenting them
+// identically would misrepresent what happened.
+export type EngagementLifecycleGroups = {
+  active: MyEngagement[];
+  completed: MyEngagement[];
+  cancelled: MyEngagement[];
+};
+
+export function groupEngagementsByLifecycle(engagements: MyEngagement[]): EngagementLifecycleGroups {
+  return {
+    active: engagements.filter((e) => e.status !== "completed" && e.status !== "cancelled"),
+    completed: engagements.filter((e) => e.status === "completed"),
+    cancelled: engagements.filter((e) => e.status === "cancelled"),
+  };
+}
+
 export async function listMyEngagements(userId: string): Promise<MyEngagement[]> {
   const supabase = await createClient();
   const { data, error } = await supabase

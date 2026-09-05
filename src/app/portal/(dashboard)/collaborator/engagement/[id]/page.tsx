@@ -3,6 +3,7 @@ import { notFound, redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/portal/roles";
 import { getMyEngagement, getMyPayableStatus, getEngagementUpdates } from "@/lib/portal/engagementPortalData";
 import { listMyProjectFiles, deriveProjectFileDisplayState } from "@/lib/payables/projectFiles";
+import { isTerminalEngagementStatus } from "@/lib/payables/engagements";
 import { PAYABLE_STATUS_LABELS } from "@/lib/payments/payoutObligations";
 import { isInstructorEngagement } from "@/lib/portal/externalWorkforce";
 import MediaFileUploader from "@/components/payables/MediaFileUploader";
@@ -35,6 +36,7 @@ export default async function CollaboratorEngagementPage({ params }: { params: P
   ]);
   const files = filesResult.ok ? filesResult.files : [];
   const instructor = isInstructorEngagement(engagement.operationalTitleName);
+  const closed = isTerminalEngagementStatus(engagement.status);
 
   async function submitUpdate(formData: FormData) {
     "use server";
@@ -88,19 +90,26 @@ export default async function CollaboratorEngagementPage({ params }: { params: P
             displayState: deriveProjectFileDisplayState({ lifecycleState: f.lifecycleState, engagementStatus: engagement.status, fileKind: f.fileKind }),
           }))}
         />
-        <MediaFileUploader
-          engagementId={id}
-          fileKindOptions={[
-            { value: "deliverable", label: "Deliverable" },
-            { value: "revision", label: "Revision" },
-          ]}
-          requestUpload={requestFileUploadAuthorizationAction}
-          recordUpload={recordUploadedFileAction}
-        />
+        {closed ? (
+          <p className="font-sans text-caption text-ordift-ink-muted">This engagement is closed — no new files can be added. Files above remain available.</p>
+        ) : (
+          <MediaFileUploader
+            engagementId={id}
+            fileKindOptions={[
+              { value: "deliverable", label: "Deliverable" },
+              { value: "revision", label: "Revision" },
+            ]}
+            requestUpload={requestFileUploadAuthorizationAction}
+            recordUpload={recordUploadedFileAction}
+          />
+        )}
       </section>
 
       <section className="bg-white border border-black/10 rounded-2xl p-6 space-y-5">
         <h2 className="font-serif font-medium text-body text-ordift-ink">Feedback</h2>
+        {closed ? (
+          <p className="font-sans text-caption text-ordift-ink-muted">This engagement is closed — no new updates can be posted.</p>
+        ) : (
         <form action={submitUpdate} className="space-y-2 border-b border-black/5 pb-5">
           <input type="hidden" name="engagementId" value={id} />
           <textarea
@@ -120,6 +129,7 @@ export default async function CollaboratorEngagementPage({ params }: { params: P
             Post Update
           </button>
         </form>
+        )}
         {updates.length === 0 ? (
           <p className="font-sans text-body-small text-ordift-ink-muted">No updates yet.</p>
         ) : (

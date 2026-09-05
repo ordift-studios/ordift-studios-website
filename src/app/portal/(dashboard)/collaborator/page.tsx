@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import { getCurrentUser, hasRole } from "@/lib/portal/roles";
 import { getMyActiveAssignments } from "@/lib/portal/collaboratorData";
-import { listMyEngagements, listMyWorkshopInstructorEngagements } from "@/lib/portal/engagementPortalData";
+import { listMyEngagements, listMyWorkshopInstructorEngagements, groupEngagementsByLifecycle } from "@/lib/portal/engagementPortalData";
 
 export const metadata: Metadata = {
   title: "My Projects — Ordift Studios Portal",
@@ -25,7 +25,7 @@ export default async function CollaboratorPortalPage() {
     listMyEngagements(user.id),
     listMyWorkshopInstructorEngagements(user.id),
   ]);
-  const activeEngagements = engagements.filter((e) => !["completed", "cancelled"].includes(e.status));
+  const { active: activeEngagements, completed: completedEngagements, cancelled: cancelledEngagements } = groupEngagementsByLifecycle(engagements);
 
   return (
     <div className="space-y-10">
@@ -68,6 +68,53 @@ export default async function CollaboratorPortalPage() {
           </ul>
         )}
       </section>
+
+      {/* Phase H.7 — completed work stays reachable as history rather than
+          disappearing; kept separate from cancelled, since a delivered
+          engagement isn't equivalent history to one that was called off. */}
+      {completedEngagements.length > 0 && (
+        <section>
+          <h2 className="font-serif font-medium text-body text-ordift-ink mb-4">Completed</h2>
+          <ul className="space-y-3">
+            {completedEngagements.map((e) => (
+              <li key={e.id}>
+                <Link
+                  href={`/portal/collaborator/engagement/${e.id}`}
+                  className="block bg-white border border-black/10 rounded-2xl p-6 hover:border-ordift-gold transition-colors"
+                >
+                  <p className="font-sans text-body-small text-ordift-ink font-medium">
+                    {e.operationalTitleName ?? "Engagement"} {e.engagementTypeName ? `· ${e.engagementTypeName}` : ""}
+                  </p>
+                  <p className="font-sans text-caption text-ordift-ink-muted mt-1">
+                    Status: Completed {e.agreedAmount ? `· ${e.currency ?? ""} ${e.agreedAmount}` : ""}
+                  </p>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      {cancelledEngagements.length > 0 && (
+        <section>
+          <h2 className="font-serif font-medium text-body text-ordift-ink mb-4">Cancelled</h2>
+          <ul className="space-y-3">
+            {cancelledEngagements.map((e) => (
+              <li key={e.id}>
+                <Link
+                  href={`/portal/collaborator/engagement/${e.id}`}
+                  className="block bg-white border border-black/10 rounded-2xl p-6 hover:border-ordift-gold transition-colors"
+                >
+                  <p className="font-sans text-body-small text-ordift-ink font-medium">
+                    {e.operationalTitleName ?? "Engagement"} {e.engagementTypeName ? `· ${e.engagementTypeName}` : ""}
+                  </p>
+                  <p className="font-sans text-caption text-ordift-ink-muted mt-1">Status: Cancelled</p>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       {/* Workshop instructor engagements — Section 5, minimum additive
           read-safe integration; only rendered when at least one exists. */}
