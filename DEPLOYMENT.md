@@ -2,6 +2,8 @@
 
 **Status correction (2026-08-10, Production Readiness Reconciliation):** the line below ("not yet deployed anywhere") and most of this document's checklist describe the platform's *pre-launch build-out* state (2026-07-24) — genuinely historical at this point, not current. The platform has been deployed to Production for weeks: staging and production are separate Supabase projects (item 10 below, then marked "not yet done," has been done), Production is live behind `LAUNCH_HOLDING_PAGE` with real infrastructure, and migrations well past `0003` are in play (see `PRODUCTION_READINESS_RECONCILIATION.md` for the current, authoritative migration/environment state). This document is kept as-is rather than rewritten — the CORS setup commands, the deployment-hang fix, the first-admin-bootstrap SQL, and the holding-page removal procedure (still the exact, current procedure) all remain genuinely useful reference material. Read it as **operational reference**, not as a live status report; for current state, see `PRODUCTION_READINESS_RECONCILIATION.md`, `LAUNCH_CHECKLIST.md`, and `PAYSTACK_PRODUCTION_HANDOVER.md`.
 
+**Status correction (2026-09-06, Documentation Reconciliation) — "Production is live behind `LAUNCH_HOLDING_PAGE`" above is no longer accurate.** Confirmed via direct, live, unauthenticated checks against `ordiftstudios.com` today: the public site is reachable — `/`, `/work`, `/journal`, `/workshops`, `/book`, and `/legal/privacy` all render the real site, not `/coming-soon`. **This is a confirmed intentional business decision**, not a discrepancy: Ordift Studios' public website is intentionally live and accessible while continued system development, operational expansion, and content population proceed. The exact date/time this took effect, and whether it happened via the procedure below or another path, could not be reconstructed from documentation or git history — flagged in `GOVERNANCE_HANDOVER_LOG.md` as a real process gap (a launch of this significance should have been dated in `MILESTONES.md` per this document's own step 7 below, and wasn't). The `/coming-soon` mechanism and the `LAUNCH_HOLDING_PAGE` env var remain in the codebase, unchanged, as available infrastructure — they are simply not the current gating state. Authoritative on live/not-live status going forward: `ORDIFT_STUDIOS_MASTER_ROADMAP.md`. **Last reconciled against Production:** 2026-09-06.
+
 Original status line, preserved for historical accuracy: **not yet deployed anywhere** — this documents how to deploy once
 you're ready, and captures the real operational requirements discovered
 while connecting Sanity and Supabase (2026-07-24). Both CMS (Sanity) and
@@ -263,18 +265,15 @@ V1.3:
   confirmed via direct re-query); listed here only so the full
   pre-launch list stays in one place.
 
-## Removing the launch holding page (final go-live step)
+## Removing the launch holding page (final go-live step) — ALREADY DONE, kept as reference
 
-`LAUNCH_HOLDING_PAGE=true` is currently set in Production, rewriting
+**Update (2026-09-06):** this step has already happened — the public site is confirmed live today (see the status correction above). `LAUNCH_HOLDING_PAGE` is not currently gating public traffic. This section is kept below as reference for the mechanism itself (e.g. if the holding page is ever deliberately re-enabled for a future maintenance window or a different purpose), not as a pending task.
+
+`LAUNCH_HOLDING_PAGE=true`, when set, rewrites
 every public route to `/coming-soon` (see `src/proxy.ts` and
 `.env.example` for the mechanism). `/studio`, `/admin`, `/portal`, and
 `/api` stay reachable throughout, so this has never blocked any of the
-verification work in this project's history. This is the **last
-step** of the actual launch — do not remove it until every other item
-in `OPERATIONS_MANUAL.md`'s Business Launch Checklist is genuinely
-complete, since removing it makes the real site (including its current
-`[SAMPLE]`-labeled workshop content, if not yet replaced) visible to
-the public immediately.
+verification work in this project's history.
 
 **Procedure — zero downtime, takes effect on the next request after
 the env var change propagates (typically under a minute, no redeploy

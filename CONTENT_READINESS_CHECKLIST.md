@@ -12,6 +12,16 @@ A page-by-page audit of what's real vs. placeholder, done as part of final pre-l
 
 **Correction (2026-08-10, Production Readiness Reconciliation): Portfolio is no longer 100% sample.** One real project ("Sampson & Sadia Wedding") has been published live via the native Admin Portal editor since 2026-08-05, with a full Website Presentation Review (`MILESTONES.md`, same date) fixing homepage/gallery/SEO issues found while reviewing it live. The Portfolio section below still describes the original 5-sample-entry state and has not been re-audited field-by-field against current content this pass — treat it as a description of what the sample entries still need if kept, not as "Portfolio is still all placeholder." Workshops remains unverified this pass — treat that section as still accurate.
 
+**Correction (2026-09-06, Documentation Reconciliation) — re-verified live against `ordiftstudios.com`, the real Production public site, which is now confirmed intentionally live (see `ORDIFT_STUDIOS_MASTER_ROADMAP.md`).** This supersedes the 2026-08-10 note above for Journal and Workshops:
+
+- **Portfolio:** Photography now has **4 real published projects** (real client names/years — "Baby Christening," "Community Dialogue & Networking," "Pre-Birthday Session," "Destination White Wedding"). The **other 6 departments** (Videography, Graphic Design, Branding & Creative Strategy, Content Creation, Talent Management, Production Services) each show a clean "PORTFOLIO COMING SOON" state on their department page — genuinely no content yet, not a bug, not `[SAMPLE]` fakes. The per-field checklist below is still the right guide for adding real projects to those 6 departments.
+- **Journal:** the `[SAMPLE]`-prefixed entries described below are **no longer live** — the public `/journal` page shows a clean, honest empty state ("Stories from Ordift Studios are on the way. In the meantime, get in touch directly") plus exactly one real featured item. Whether the old sample entries were unpublished, deleted, or simply excluded from this query was not determined this pass — worth a quick Studio check if it matters which. The remaining real work is still the same: write and publish real articles.
+- **Workshops:** same pattern — no `[SAMPLE]` entries visible live; a clean "Workshops from Ordift Studios are being planned. In the meantime, get in touch directly" empty state instead. Check `[[project_ordift_workshop_phase_b_deferred]]`'s 5 deferred items before adding real workshop content, if that phase's gaps are still relevant.
+
+**None of this required a schema or code change** — it's a content-population task, same as it always was; only the current *state* changed, not what's needed to finish it.
+
+**Last reconciled against Production:** 2026-09-06. Authoritative on whether the public site itself is live: `ORDIFT_STUDIOS_MASTER_ROADMAP.md`.
+
 The following content types were, as of the original 2026-07-30 audit, explicitly labeled `[SAMPLE]` in their own copy. This isn't a defect — it's how the platform was built and verified — but sample content should not be visible to real visitors at launch.
 
 ### Workshops (4 sample entries)
@@ -92,7 +102,7 @@ There is **no structured "price" field** on Workshops, Portfolio, or Journal —
 
 ## After content is real
 
-- [ ] Confirm `/work`, `/journal`, and `/workshops` no longer show any `[SAMPLE]` entries
+- [x] Confirm `/work`, `/journal`, and `/workshops` no longer show any `[SAMPLE]` entries — confirmed live 2026-09-06 (see correction above); the remaining work is populating real content, not removing fake content
 - [ ] Confirm each content type's interactive behavior (workshop countdown/capacity/waitlist, portfolio filtering, journal category filtering) still works correctly with real data
 - [ ] Confirm SEO metadata renders correctly (view page source or a social-share preview tool) for at least one real item of each type
 - [ ] Either unpublish the sample entries in Sanity, or delete them, once real content replaces them — don't leave both live simultaneously

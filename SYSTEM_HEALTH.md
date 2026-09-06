@@ -8,6 +8,8 @@
 
 **Superseded for Production-readiness purposes (2026-08-10):** this document remains the standing platform-health snapshot for ongoing use, but for the specific question of "is this platform ready to promote to Production," `PRODUCTION_READINESS_RECONCILIATION.md` is now the authoritative, more rigorous answer — it re-verified every claim below against actual current-state evidence (not just cited a source document) and produced a formal GO/CONDITIONAL GO/NO-GO verdict. Consult that document first for any Production-promotion decision; this one for day-to-day "what's the current state of X" questions.
 
+**Staleness notice (2026-09-06, Documentation Reconciliation):** every row below is dated 2026-08-10 or earlier and has not been refreshed since, despite three-plus weeks of substantial subsequent Production work (Paystack go-live, CRM automation, Universal Payables, Organizational Architecture, External Workforce Portal, Admin Overview). This pass corrects only the "Release readiness" row below, per its specific documentation-reconciliation scope — the other 13 rows (test count, TD count, dependency risks, etc.) were **not** independently re-verified this pass and should be treated as historical unless re-checked. Authoritative on current live/not-live status: `ORDIFT_STUDIOS_MASTER_ROADMAP.md`. **Last reconciled against Production (this row only):** 2026-09-06.
+
 ---
 
 ## Status at a glance (2026-08-10)
@@ -25,7 +27,7 @@
 | Dependency risks | 🟡 4 open, all low-severity/cosmetic | 2026-07-30 | `DEPENDENCY_WATCHLIST.md`, DW-001 through DW-004 |
 | Open technical debt | 🟡 ~18 open of 32 total entries | 2026-08-10 | `TECHNICAL_DEBT_REGISTER.md` — see breakdown below |
 | Scalability posture | 🟢 Green, no near-term risk | 2026-08-10 | `TECHNOLOGY_COST_REGISTER.md`'s Scalability Assessment section |
-| Release readiness (public launch) | 🟡 Pre-launch, business decision pending | 2026-07-30 | `LAUNCH_CHECKLIST.md` — `LAUNCH_HOLDING_PAGE` still on |
+| Release readiness (public launch) | 🟢 Live — intentional, confirmed business decision | 2026-09-06 | Public site confirmed live via direct check against `ordiftstudios.com`; you confirmed this is intentional (site stays live while development/content population continues). See `ORDIFT_STUDIOS_MASTER_ROADMAP.md`, authoritative on this fact. |
 
 🟢 Green = no known blocking gap · 🟡 Yellow = known, tracked, non-blocking gap · 🔴 Red = known gap with a real (if currently low-impact) exposure
 
@@ -96,9 +98,9 @@ None of the five throughput-relevant subsystems (Supabase, Sanity, Vercel, Redis
 
 ## 11. Release readiness
 
-**Owning document:** `LAUNCH_CHECKLIST.md` (the canonical Before Launch / Launch Day / After Launch runbook — not duplicated here).
+**Owning document for the launch procedure/checklist itself:** `LAUNCH_CHECKLIST.md`. **Authoritative on whether the public site is currently live:** `ORDIFT_STUDIOS_MASTER_ROADMAP.md`.
 
-As of `LAUNCH_CHECKLIST.md`'s last update (2026-07-30), `LAUNCH_HOLDING_PAGE` remains on — deliberate, not an oversight. Nearly every Technical checklist item is complete; the remaining Before-Launch gate is content readiness, a business decision, not an engineering one. Substantial platform work has continued since that date (Portfolio Management System, Payments architecture, Workstreams C through J) — none of it has been a launch blocker, but this document's own date means a fresh pass against the current state is worth doing at actual launch-decision time rather than trusting this snapshot alone.
+**Update (2026-09-06, Documentation Reconciliation):** the public site is confirmed live — `LAUNCH_HOLDING_PAGE` is not gating it, and you have confirmed this is intentional: Ordift Studios' public website is meant to stay live and accessible while development, operational expansion, and content population continue. This is no longer a "business decision pending" item. Genuinely still open, now as ongoing content/business work rather than a pre-launch gate: real content for 6 of 7 portfolio departments, Journal, Workshops; contact-details, social-links, pricing, and final-branding confirmations — see `CONTENT_READINESS_CHECKLIST.md` and `LAUNCH_CHECKLIST.md`, both reconciled the same day. Substantial platform work has continued since 2026-07-30 (Portfolio Management System, Payments/Paystack go-live, CRM automation, Organizational Architecture, Universal Payables, External Workforce Portal, Admin Overview) — none of it reversed this decision or reintroduced the holding page.
 
 ---
 

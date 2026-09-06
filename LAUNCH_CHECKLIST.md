@@ -6,6 +6,14 @@ The single canonical checklist for going from "platform is technically ready" to
 
 **Correction (2026-08-10, Production Readiness Reconciliation):** two Content items below are stale and corrected in place rather than left contradicting current reality — see the checkboxes themselves for detail. `LAUNCH_HOLDING_PAGE` is still on as of this correction; nothing here implies otherwise. For the full current-state picture (migrations, Sentry, Paystack, security, technical debt), see `PRODUCTION_READINESS_RECONCILIATION.md`.
 
+**Correction (2026-09-06, Documentation Reconciliation) — the public site is now live; this document's own framing above is historical.** Confirmed by direct, unauthenticated live checks against `ordiftstudios.com` (root, `/work`, `/journal`, `/workshops`, `/book`, `/legal/privacy`): none rewrite to `/coming-soon`. `LAUNCH_HOLDING_PAGE` is not currently gating the public site. **You have confirmed this is an intentional business decision, not a discrepancy to fix:** Ordift Studios' public website is intentionally live and accessible while continued system development, operational expansion, and content population proceed. The `/coming-soon` mechanism and `LAUNCH_HOLDING_PAGE` remain available as infrastructure (unchanged in code) but are not the intended current gating state.
+
+This changes how to read everything below: the "Launch Day" section is now a **historical record of the planned procedure**, not a pending runbook — the exact mechanics of how/when the holding page stopped gating traffic were not captured in real time and can't be reconstructed from this environment (a genuine gap — see `GOVERNANCE_HANDOVER_LOG.md`'s new entry). The "Before Launch" checklist below is **not a gate that was formally cleared item-by-item** before this happened; several Content and Business items remain genuinely open today, now on a *live* site rather than a pre-launch one. Treat unchecked items below as the **current, real content/business backlog**, not pre-launch blockers.
+
+**Authoritative current status:** `ORDIFT_STUDIOS_MASTER_ROADMAP.md` is the single place that states whether the public site is live — this document should never be read as contradicting it. This document's own remaining value is the Content/Business checklist and the After Launch operational cadence below, both still genuinely relevant.
+
+**Last reconciled against Production:** 2026-09-06.
+
 ---
 
 ## Before Launch
@@ -14,7 +22,7 @@ The single canonical checklist for going from "platform is technically ready" to
 - [x] All environment variables present and correct in Production (`vercel env ls production` against `.env.example`)
 - [x] Domain connected, resolving, SSL active (`ordiftstudios.com`)
 - [x] Email delivery verified end-to-end — `verify-send` diagnostic re-run 2026-07-30 post-`FORMS_SENDING_ENABLED`, all 7 real sends `"mode": "sent"`
-- [ ] CAPTCHA live with real Turnstile credentials — done 2026-07-30; enforcement re-confirmed 2026-07-30 (missing-token requests correctly rejected `403`); one gap remains: a real-widget success-path completion, deferred until Launch Day since the holding page blocks reaching the public forms today
+- [x] CAPTCHA live with real Turnstile credentials — done 2026-07-30; enforcement re-confirmed 2026-07-30; the real-widget success-path completion once deferred here has since happened repeatedly against the live public site (most recently a genuine end-to-end login verified 2026-09-06, Phase K.2C — see `TECHNICAL_DEBT_REGISTER.md`; that same investigation also found Turnstile's own documented intermittent "600*" retryable failure family, unrelated to this checklist item)
 - [x] Redis rate limiting verified healthy — re-confirmed live 2026-07-30 post-deploy (blocks after rapid repeated requests)
 - [x] Supabase production schema fully migrated and verified
 - [x] Vercel deployment healthy, security headers present
@@ -32,7 +40,7 @@ Full detail and current status on each item: `OPERATIONS_MANUAL.md` §7, `FINAL_
 ### Content
 - [x] Homepage, About, Services, Founder, Client Portal — confirmed real and launch-ready via full business audit 2026-07-30 (`BUSINESS_LAUNCH_AUDIT.md`)
 - [x] **Legal documentation — STALE, corrected 2026-08-10.** This item as originally written (superseded by `ORDIFT_STUDIOS_LEGAL_SUITE_v1.md`, "nothing publishes until you return with approved wording") is no longer accurate. The Public Website Legal Suite v1.0 (Privacy Policy, Cookie Policy, Website Terms, Booking Terms — `OS-LGL-001` through `-004`) was approved and published live 2026-08-04 (commit `2f914c7`); all four carry `status: "approved"` in `src/lib/legal/registry.ts`. An Enterprise Legal Library (ESA/MSA and similar) remains planned but paused — not a Before-Launch blocker, a separate future initiative.
-- [~] Portfolio, Journal, Workshops — **partially stale, corrected 2026-08-10.** Portfolio is no longer 100% sample: one real project ("Sampson & Sadia Wedding") has been published live via the native Admin Portal editor since 2026-08-05. Journal and Workshops remain sample content as originally stated — `CONTENT_READINESS_CHECKLIST.md` itself has not been re-verified this pass; treat its Workshops/Journal sections as still accurate but its Portfolio section as superseded by the above.
+- [~] Portfolio, Journal, Workshops — **re-verified live 2026-09-06 against the real public site (`ordiftstudios.com`), superseding the 2026-08-10 correction below.** Portfolio: Photography now shows 4 real published projects (real client names/years, e.g. "Destination White Wedding — Sampson & Sadia · 2021"); the other 6 departments (Videography, Graphic Design, Branding & Creative Strategy, Content Creation, Talent Management, Production Services) each show an honest "PORTFOLIO COMING SOON" state — real content still genuinely missing there, not a bug. Journal and Workshops no longer show fake `[SAMPLE]`-prefixed rows at all (that specific defect is resolved) — both now show a clean, honest empty state ("Stories/Workshops... are on the way"); Journal has exactly one real featured item. See `CONTENT_READINESS_CHECKLIST.md` (also reconciled 2026-09-06) for the full field-by-field detail. *(Historical: the 2026-08-10 note below, superseded, is kept for the record rather than deleted.)* 2026-08-10 correction: "Portfolio is no longer 100% sample: one real project ('Sampson & Sadia Wedding') has been published live via the native Admin Portal editor since 2026-08-05. Journal and Workshops remain sample content as originally stated."
 - [ ] Every department page's "Featured Work" section shows unlabeled placeholder cards, cascading from the Portfolio gap above — resolves automatically once Portfolio content is real
 - [ ] Pricing information accurate wherever shown
 - [ ] Contact details — `ordift.ghana@gmail.com` and a UK (+44) WhatsApp number are confirmed live on production; confirm these are the intended public values
@@ -46,9 +54,9 @@ Full detail and current status on each item: `OPERATIONS_MANUAL.md` §7, `FINAL_
 
 ---
 
-## Launch Day
+## Launch Day *(historical — planned procedure; the site is now live, see the 2026-09-06 correction above)*
 
-This is the exact, already-tested procedure in `DEPLOYMENT.md`'s "Removing the launch holding page" section — summarized here as a same-day runbook:
+This was written as the exact, planned procedure — see `DEPLOYMENT.md`'s "Removing the launch holding page" section for the mechanical steps. The public site is confirmed live as of 2026-09-06 (and possibly earlier — the exact date/time this took effect was not captured and could not be reconstructed from documentation or git history during the 2026-09-06 audit). Kept below as the documented intent, not a claim that every step was executed exactly as written:
 
 1. Confirm every Before Launch item above is genuinely checked — this step is effectively irreversible once real visitors start interacting with the live site.
 2. In Vercel → Project Settings → Environment Variables, remove `LAUNCH_HOLDING_PAGE` from Production (or set it to `false`).
@@ -77,4 +85,4 @@ This is the exact, already-tested procedure in `DEPLOYMENT.md`'s "Removing the l
 
 ---
 
-*Cross-references: `DEPLOYMENT.md` (holding-page procedure detail), `OPERATIONS_MANUAL.md` (day-to-day + Business Launch Checklist this doc summarizes), `DISASTER_RECOVERY.md` (backup procedure), `CONTENT_READINESS_CHECKLIST.md` (Portfolio/Journal/Workshops fields), `FINAL_GO_LIVE_REPORT.md` (last full readiness audit).*
+*Cross-references: `ORDIFT_STUDIOS_MASTER_ROADMAP.md` (authoritative on whether the public site is live — read that first), `DEPLOYMENT.md` (holding-page procedure detail), `OPERATIONS_MANUAL.md` (day-to-day + Business Launch Checklist this doc summarizes), `DISASTER_RECOVERY.md` (backup procedure), `CONTENT_READINESS_CHECKLIST.md` (Portfolio/Journal/Workshops fields), `PRODUCTION_READINESS_CHECKLIST.md` (authoritative on the current technical hardening backlog), `FINAL_GO_LIVE_REPORT.md` (historical, last full pre-launch readiness audit), `TECHNICAL_DECISION_RECORDS.md` TDR (2026-09-06 "develop-in-public" decision).*
