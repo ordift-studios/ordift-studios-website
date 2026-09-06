@@ -1,6 +1,7 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { authorizeWithSuperAdminOverride, FINANCE_CAPABILITIES } from "@/lib/organization/authority";
 import { logActivity } from "@/lib/admin/activityLog";
+import { applyDiscount, isDiscountCurrentlyValid } from "./discountMath";
 
 // Ordift Pricing Engine V1 (2026-09-06) — discount codes and audited
 // manual discounts. No discount code is seeded by migration 0053 (no
@@ -10,6 +11,16 @@ import { logActivity } from "@/lib/admin/activityLog";
 // createAdminClient) rather than inventing a parallel authorization
 // mechanism — same pattern as every Payables function in this
 // codebase.
+//
+// The pure arithmetic/validity logic lives in discountMath.ts (zero
+// imports) and is re-exported below — this file itself must never be
+// imported from a Client Component, since it pulls in
+// createAdminClient/logActivity's session-client (next/headers)
+// dependency chain, which cannot be bundled for the browser.
+// ManualDiscountForm.tsx's live preview imports directly from
+// discountMath.ts instead, never from here.
+
+export { applyDiscount, isDiscountCurrentlyValid };
 
 export type DiscountCode = {
   id: string;
@@ -22,29 +33,6 @@ export type DiscountCode = {
   maxUses: number | null;
   maxUsesPerClient: number | null;
 };
-
-// Pure — the actual arithmetic, directly unit-testable. Never mutates
-// anything; the caller decides whether/how to record the result.
-export function applyDiscount(originalAmountUsd: number, discount: { discountType: "percentage" | "fixed"; value: number }): { discountAmountUsd: number; finalAmountUsd: number } {
-  const discountAmountUsd =
-    discount.discountType === "percentage"
-      ? Math.round(originalAmountUsd * (discount.value / 100) * 100) / 100
-      : Math.min(discount.value, originalAmountUsd);
-  const finalAmountUsd = Math.round((originalAmountUsd - discountAmountUsd) * 100) / 100;
-  return { discountAmountUsd, finalAmountUsd };
-}
-
-// Pure eligibility check — validity window and active flag only. Usage
-// caps (max_uses/max_uses_per_client) require a live count against
-// discount_redemptions and are checked separately in
-// redeemDiscountCode() below, not here, since counting genuinely needs
-// a database read.
-export function isDiscountCurrentlyValid(discount: { active: boolean; validFrom: string; validTo: string | null }, now: Date = new Date()): { ok: true } | { ok: false; error: string } {
-  if (!discount.active) return { ok: false, error: "This discount is not currently active." };
-  if (new Date(discount.validFrom).getTime() > now.getTime()) return { ok: false, error: "This discount is not yet valid." };
-  if (discount.validTo && new Date(discount.validTo).getTime() <= now.getTime()) return { ok: false, error: "This discount has expired." };
-  return { ok: true };
-}
 
 export async function recordManualDiscount(params: {
   originalAmountUsd: number;

@@ -218,10 +218,25 @@ export async function createPersonalSessionRateVersion(params: {
   signatureRetouchedImages: number;
   professionallyEditedImages: number;
   actorUserId: string;
-}): Promise<{ ok: true } | { ok: false; error: string }> {
+}): Promise<{ ok: true; unchanged?: boolean } | { ok: false; error: string }> {
   const auth = await authorizeWithSuperAdminOverride(params.actorUserId, FINANCE_CAPABILITIES.pricingAdminister);
   if (!auth.ok) return { ok: false, error: "Not authorized to manage pricing." };
   if (params.priceUsd <= 0) return { ok: false, error: "Price must be greater than zero." };
+
+  // Admin UX Refinement (2026-09-06) — skip creating a new version when
+  // nothing actually changed from the currently active rate, so
+  // re-submitting an edit form without touching a field doesn't create
+  // a duplicate, otherwise-identical row in the version history.
+  const currentRates = await getActivePersonalSessionRates(params.marketSlug);
+  const currentRate = currentRates.find((r) => r.durationHours === params.durationHours);
+  if (
+    currentRate &&
+    currentRate.priceUsd === params.priceUsd &&
+    currentRate.signatureRetouchedImages === params.signatureRetouchedImages &&
+    currentRate.professionallyEditedImages === params.professionallyEditedImages
+  ) {
+    return { ok: true, unchanged: true };
+  }
 
   const admin = createAdminClient();
   const { data: market } = await admin.from("pricing_markets").select("id").eq("slug", params.marketSlug).maybeSingle();
@@ -278,10 +293,18 @@ export async function createSubjectCategoryMultiplierVersion(params: {
   subjectCategorySlug: string;
   priceMultiplier: number;
   actorUserId: string;
-}): Promise<{ ok: true } | { ok: false; error: string }> {
+}): Promise<{ ok: true; unchanged?: boolean } | { ok: false; error: string }> {
   const auth = await authorizeWithSuperAdminOverride(params.actorUserId, FINANCE_CAPABILITIES.pricingAdminister);
   if (!auth.ok) return { ok: false, error: "Not authorized to manage pricing." };
   if (params.priceMultiplier <= 0) return { ok: false, error: "Multiplier must be greater than zero." };
+
+  // Admin UX Refinement (2026-09-06) — skip a no-op version, same
+  // reasoning as createPersonalSessionRateVersion() above.
+  const currentCategories = await listAllSubjectCategories();
+  const currentCategory = currentCategories.find((c) => c.slug === params.subjectCategorySlug);
+  if (currentCategory && currentCategory.priceMultiplier === params.priceMultiplier) {
+    return { ok: true, unchanged: true };
+  }
 
   const admin = createAdminClient();
   const { data: category } = await admin.from("subject_categories").select("id").eq("slug", params.subjectCategorySlug).maybeSingle();
@@ -312,10 +335,17 @@ export async function createAdditionalRetouchRateVersion(params: {
   marketSlug: string;
   pricePerImageUsd: number;
   actorUserId: string;
-}): Promise<{ ok: true } | { ok: false; error: string }> {
+}): Promise<{ ok: true; unchanged?: boolean } | { ok: false; error: string }> {
   const auth = await authorizeWithSuperAdminOverride(params.actorUserId, FINANCE_CAPABILITIES.pricingAdminister);
   if (!auth.ok) return { ok: false, error: "Not authorized to manage pricing." };
   if (params.pricePerImageUsd <= 0) return { ok: false, error: "Rate must be greater than zero." };
+
+  // Admin UX Refinement (2026-09-06) — skip a no-op version, same
+  // reasoning as createPersonalSessionRateVersion() above.
+  const currentRate = await getActiveAdditionalRetouchRate(params.marketSlug);
+  if (currentRate !== null && currentRate === params.pricePerImageUsd) {
+    return { ok: true, unchanged: true };
+  }
 
   const admin = createAdminClient();
   const { data: market } = await admin.from("pricing_markets").select("id").eq("slug", params.marketSlug).maybeSingle();
