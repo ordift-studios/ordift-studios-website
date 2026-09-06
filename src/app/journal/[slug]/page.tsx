@@ -23,6 +23,16 @@ import Avatar from "@/components/media/Avatar";
 // new and entirely separate, so existing Stories pages carry zero
 // behavior change.
 
+// Tier 1 Hardening, Batch B (2026-09-06) — this route is prerendered
+// (generateStaticParams below), so a Sanity edit to an existing article
+// would otherwise not appear until the next deploy. 1 hour balances
+// showing real edits same-day against Ordift's current low publishing
+// frequency, without adding webhook/on-demand-revalidation
+// infrastructure. dynamicParams is left at its default (true) — a
+// brand-new slug not in the list below still resolves on-demand at
+// request time, no redeploy required either way.
+export const revalidate = 3600;
+
 export async function generateStaticParams() {
   const [posts, articles] = await Promise.all([
     contentRepository.getJournalPosts(),

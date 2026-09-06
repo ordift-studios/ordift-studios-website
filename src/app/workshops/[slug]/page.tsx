@@ -26,6 +26,14 @@ import RegistrationForm from "./RegistrationForm";
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://ordiftstudios.com";
 
+// Tier 1 Hardening, Batch B (2026-09-06) — see
+// journal/[slug]/page.tsx's matching comment for the full reasoning.
+// Capacity/waitlist correctness is unaffected: RegistrationForm's own
+// submit action re-checks live capacity server-side at submission time
+// — this cached shell only affects the informational page content
+// (description, agenda, etc.), never the actual registration decision.
+export const revalidate = 3600;
+
 export async function generateStaticParams() {
   const workshops = await contentRepository.getWorkshops();
   return workshops.map((workshop) => ({ slug: workshop.slug }));

@@ -8,6 +8,11 @@ import { contentRepository } from "@/lib/content";
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://ordiftstudios.com";
 
+// Tier 1 Hardening, Batch B (2026-09-06) — see journal/[slug]/page.tsx's
+// matching comment for the full reasoning; same 1-hour interval, same
+// dynamicParams default (true, new instructor slugs resolve on-demand).
+export const revalidate = 3600;
+
 export async function generateStaticParams() {
   const instructors = await contentRepository.getInstructors();
   return instructors.map((instructor) => ({ slug: instructor.slug }));
