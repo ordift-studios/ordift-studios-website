@@ -633,6 +633,16 @@
 - **Pay-down trigger:** implement now, following the exact proven `recordManualPayment()` pattern — approved for immediate hardening as part of the same 2026-09-06 Payables reconciliation phase that closed TD-053 out.
 - **Status:** Open — scheduled for immediate implementation (Step 2 of this same phase).
 
+### TD-065 — No contract/e-signature architecture exists for the future Enquiry → Quote → Contract → Signature → Booking lifecycle (recorded 2026-09-06, Pricing Engine V1)
+
+- **Category:** Data / Incomplete Feature (future requirement, not a defect)
+- **Severity:** Low (nothing depends on it yet; genuinely not built, not broken)
+- **What:** while building Pricing Engine V1, searched exhaustively for any existing contract/e-signature system in this codebase — none exists. Every real Ordift client job is intended to eventually carry an appropriate contract/signature step (Personal Portrait Agreement, Wedding/Event Agreement, Commercial Production Agreement, Model/Talent Release, RAW/Source File Release, Usage/Licensing Agreement), sitting between quote acceptance and booking-fee payment. No schema or workflow for any of this was created as part of this phase, per explicit instruction not to fabricate a contract system or legal wording — this entry is the recorded requirement, not an implementation.
+- **Why accepted:** building speculative contract/e-signature schema without real legal wording, a chosen e-signature approach, or an actual current need would be exactly the kind of invented, unapproved architecture this whole engagement has consistently avoided.
+- **Current impact:** none — bookings currently proceed without a formal signed contract step, same as before this phase.
+- **Pay-down trigger:** the first time a real contract/signature workflow is genuinely needed — at that point, scope it as its own phase (likely needing a business decision on e-signature provider/approach, plus real legal wording from you or counsel, not fabricated here).
+- **Status:** Open — recorded as an architectural/business requirement, not scheduled.
+
 ---
 
 ## Adding new entries

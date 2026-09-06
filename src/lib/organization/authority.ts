@@ -311,6 +311,15 @@ export const FINANCE_CAPABILITIES = {
   // own capability, same separation-of-duties principle as
   // paymentObligationRecordPayment being distinct from approve.
   paymentObligationReverse: "finance.payment_obligation.reverse", // WIRED — reversePaymentObligation()
+  // Pricing Engine V1 (2026-09-06) — administering market rates,
+  // duration tiers, subject-category supplements, and discount
+  // codes/manual discounts. Deliberately one capability covering the
+  // whole pricing-administration surface (not split further) — unlike
+  // Payables' three-way approve/record/reverse separation, there is no
+  // equivalent "someone else checks the other person's pricing change"
+  // duty being modeled here yet; that split can be added later if a
+  // real need for it arises.
+  pricingAdminister: "finance.pricing.administer", // WIRED — src/lib/pricing/*
 } as const;
 
 // strategy.* — ARCHITECT. Fully DORMANT — no strategic-planning/

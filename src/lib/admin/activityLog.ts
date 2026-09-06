@@ -233,6 +233,15 @@ export const ADMIN_TIER_ACTIONS = new Set<string>([
   "engagement.created",
   "engagement.updated",
   "engagement.status_changed",
+  // Pricing Engine V1 (2026-09-06) — market rates and discount codes
+  // are pricing/business-sensitive the same way an exchange-rate
+  // change is (TD-052's own lesson: a new financial action type
+  // defaults to staff-visible unless explicitly tiered here — applying
+  // that lesson proactively rather than repeating the gap).
+  "pricing.personal_session_rate.created",
+  "pricing.market.active_changed",
+  "pricing.discount_code.created",
+  "pricing.discount_code.active_changed",
 ]);
 
 // Deliberately reviewed and left staff-visible (Phase I.1, 2026-09-05)

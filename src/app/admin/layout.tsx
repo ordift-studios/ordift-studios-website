@@ -31,6 +31,7 @@ const NAV_ITEMS: { label: string; href: string; adminOnly?: boolean; superAdminO
   // itself gates on finance.payee.administer (or Super Admin), which is
   // the actual authorization boundary, not this nav-visibility flag.
   { label: "Payables", href: "/admin/payables" },
+  { label: "Pricing", href: "/admin/pricing" },
   { label: "Portfolio", href: "/admin/portfolio" },
   { label: "Workshop Management", href: "/admin/workshops" },
   { label: "Reports", href: "/admin/reports" },

@@ -89,6 +89,12 @@ const ACTION_LABELS: Record<string, string> = {
   "delegation.revoke": "Revoked a delegation",
   "project_assignment.assigned": "Assigned a project",
   "project_assignment.status_change": "Changed project assignment status",
+
+  // Pricing Engine V1 (2026-09-06)
+  "pricing.personal_session_rate.created": "Updated a personal session rate",
+  "pricing.market.active_changed": "Changed a pricing market's active state",
+  "pricing.discount_code.created": "Created a discount code",
+  "pricing.discount_code.active_changed": "Changed a discount code's active state",
 };
 
 // Graceful fallback for any action type not (yet) in ACTION_LABELS — pure
