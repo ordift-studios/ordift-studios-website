@@ -113,9 +113,18 @@ export async function proxy(request: NextRequest) {
   // default (unset env var) — nothing changes until this is explicitly
   // turned on in production.
   const HOLDING_PAGE_ALLOWLIST = ["/coming-soon", "/studio", "/admin", "/portal", "/api", "/robots.txt", "/sitemap.xml"];
+  // Tier 1 Hardening (2026-09-06) — boundary-safe match, not a bare
+  // startsWith. The old check would have let a hypothetical future
+  // top-level route sharing a prefix with an allowlisted entry (e.g.
+  // /apiary, /administrators, /studios) silently bypass the holding
+  // page instead of being gated by it. No such route exists today, and
+  // LAUNCH_HOLDING_PAGE is currently off (dormant) — this is a
+  // correctness fix for whenever the mechanism is next actually used,
+  // not a response to any current exposure.
+  const matchesAllowlistedPath = (pathname: string, entry: string) => pathname === entry || pathname.startsWith(`${entry}/`);
   if (
     process.env.LAUNCH_HOLDING_PAGE === "true" &&
-    !HOLDING_PAGE_ALLOWLIST.some((path) => request.nextUrl.pathname.startsWith(path))
+    !HOLDING_PAGE_ALLOWLIST.some((path) => matchesAllowlistedPath(request.nextUrl.pathname, path))
   ) {
     // Admin preview bypass (2026-08-06): an authenticated staff/admin/
     // super_admin session lets the real site through instead of

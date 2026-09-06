@@ -12,6 +12,17 @@ const SECURITY_HEADERS = [
   { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
   // Disables browser features this site never uses.
   { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=()" },
+  // Tier 1 Hardening (2026-09-06). Conservative initial rollout — 1 day,
+  // not the eventual 2-year/preload target — deliberately chosen so a
+  // mistake is self-correcting within 24 hours rather than committing
+  // real visitors' browsers to HTTPS-only for years on the first try.
+  // includeSubDomains verified safe immediately before this change:
+  // `vercel domains inspect ordiftstudios.com` confirms exactly three
+  // subdomains (apex, www, staging), all on this same Vercel project,
+  // all Vercel-managed HTTPS — no plain-HTTP subdomain exists. No
+  // `preload` — that's a separate, much less reversible future decision,
+  // not part of this batch.
+  { key: "Strict-Transport-Security", value: "max-age=86400; includeSubDomains" },
 ];
 
 // TD-004 CSP (see PRODUCTION_READINESS_RECONCILIATION.md §16.4).
@@ -132,6 +143,9 @@ function enforcingCsp(): { main: string; studio: string } | null {
 }
 
 const nextConfig: NextConfig = {
+  // Tier 1 Hardening (2026-09-06) — minor info-disclosure hygiene; stops
+  // Next.js from sending the X-Powered-By: Next.js response header.
+  poweredByHeader: false,
   async headers() {
     const csp = enforcingCsp();
     const mainHeaders = csp
