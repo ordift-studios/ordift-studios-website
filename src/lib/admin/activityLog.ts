@@ -246,6 +246,12 @@ export const ADMIN_TIER_ACTIONS = new Set<string>([
   "pricing.subject_category_multiplier.created",
   "pricing.additional_retouch_rate.created",
   "pricing.manual_discount.applied",
+  // Corporate & Headshots Pricing V1 (2026-09-06)
+  "pricing.corporate_headshot_rate.created",
+  "pricing.corporate_team_tier_rate.created",
+  "pricing.corporate_minimum_booking.created",
+  "pricing.corporate_retouch_rate.created",
+  "pricing.corporate_priority_delivery.created",
 ]);
 
 // Deliberately reviewed and left staff-visible (Phase I.1, 2026-09-05)

@@ -100,6 +100,13 @@ const ACTION_LABELS: Record<string, string> = {
   "pricing.subject_category_multiplier.created": "Updated a subject/group price multiplier",
   "pricing.additional_retouch_rate.created": "Updated an additional retouch rate",
   "pricing.manual_discount.applied": "Applied a manual discount",
+
+  // Corporate & Headshots Pricing V1 (2026-09-06)
+  "pricing.corporate_headshot_rate.created": "Updated a Corporate Headshots rate",
+  "pricing.corporate_team_tier_rate.created": "Updated a Team Headshots tier rate",
+  "pricing.corporate_minimum_booking.created": "Updated a Corporate minimum booking amount",
+  "pricing.corporate_retouch_rate.created": "Updated a Corporate additional retouch rate",
+  "pricing.corporate_priority_delivery.created": "Updated the Corporate Priority Delivery percentage",
 };
 
 // Graceful fallback for any action type not (yet) in ACTION_LABELS — pure

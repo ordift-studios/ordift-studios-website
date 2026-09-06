@@ -9,6 +9,13 @@ import {
   createAdditionalRetouchRateVersion,
 } from "@/lib/pricing/personalSessionPricing";
 import { createDiscountCode, setDiscountCodeActive, recordManualDiscount } from "@/lib/pricing/discounts";
+import {
+  createCorporateHeadshotRateVersion,
+  createCorporateTeamTierRateVersion,
+  createCorporateMinimumBookingVersion,
+  createCorporateRetouchRateVersion,
+  createCorporatePriorityDeliveryVersion,
+} from "@/lib/pricing/corporateHeadshotPricing";
 
 // Ordift Pricing Engine V1 (2026-09-06) — thin Server Action wrappers.
 // All real authorization/validation/audit logic lives in
@@ -151,6 +158,94 @@ export async function applyManualDiscountAction(formData: FormData): Promise<voi
     reason,
   });
   if (!result.ok) console.error("[admin] failed to apply manual discount", result.error);
+
+  revalidatePath("/admin/pricing");
+}
+
+// Corporate & Headshots Pricing V1 (2026-09-06) — thin wrappers, same
+// shape as every action above: read the session, hand off to the lib
+// function (which performs authorization + unchanged-value-skip +
+// append-only versioning + activity logging), then revalidate.
+
+export async function createCorporateHeadshotRateVersionAction(formData: FormData): Promise<void> {
+  const user = await getCurrentUser();
+  if (!user) return;
+
+  const marketSlug = String(formData.get("marketSlug") ?? "");
+  const productSlug = String(formData.get("productSlug") ?? "");
+  const priceUsd = Number(formData.get("priceUsd"));
+  const signatureRetouchedImages = Number(formData.get("signatureRetouchedImages"));
+  if (!marketSlug || (productSlug !== "individual_headshot" && productSlug !== "executive_portrait") || !Number.isFinite(priceUsd)) return;
+
+  const result = await createCorporateHeadshotRateVersion({
+    marketSlug,
+    productSlug,
+    priceUsd,
+    signatureRetouchedImages,
+    actorUserId: user.id,
+  });
+  if (!result.ok) console.error("[admin] failed to create corporate headshot rate version", result.error);
+
+  revalidatePath("/admin/pricing");
+}
+
+export async function createCorporateTeamTierRateVersionAction(formData: FormData): Promise<void> {
+  const user = await getCurrentUser();
+  if (!user) return;
+
+  const marketSlug = String(formData.get("marketSlug") ?? "");
+  const tierSlug = String(formData.get("tierSlug") ?? "");
+  const pricePerPersonUsd = Number(formData.get("pricePerPersonUsd"));
+  if (!marketSlug || !["2-5", "6-10", "11-25", "26-50"].includes(tierSlug) || !Number.isFinite(pricePerPersonUsd)) return;
+
+  const result = await createCorporateTeamTierRateVersion({
+    marketSlug,
+    tierSlug: tierSlug as "2-5" | "6-10" | "11-25" | "26-50",
+    pricePerPersonUsd,
+    actorUserId: user.id,
+  });
+  if (!result.ok) console.error("[admin] failed to create corporate team tier rate version", result.error);
+
+  revalidatePath("/admin/pricing");
+}
+
+export async function createCorporateMinimumBookingVersionAction(formData: FormData): Promise<void> {
+  const user = await getCurrentUser();
+  if (!user) return;
+
+  const marketSlug = String(formData.get("marketSlug") ?? "");
+  const minimumAmountUsd = Number(formData.get("minimumAmountUsd"));
+  if (!marketSlug || !Number.isFinite(minimumAmountUsd)) return;
+
+  const result = await createCorporateMinimumBookingVersion({ marketSlug, minimumAmountUsd, actorUserId: user.id });
+  if (!result.ok) console.error("[admin] failed to create corporate minimum booking version", result.error);
+
+  revalidatePath("/admin/pricing");
+}
+
+export async function createCorporateRetouchRateVersionAction(formData: FormData): Promise<void> {
+  const user = await getCurrentUser();
+  if (!user) return;
+
+  const marketSlug = String(formData.get("marketSlug") ?? "");
+  const pricePerImageUsd = Number(formData.get("pricePerImageUsd"));
+  if (!marketSlug || !Number.isFinite(pricePerImageUsd)) return;
+
+  const result = await createCorporateRetouchRateVersion({ marketSlug, pricePerImageUsd, actorUserId: user.id });
+  if (!result.ok) console.error("[admin] failed to create corporate retouch rate version", result.error);
+
+  revalidatePath("/admin/pricing");
+}
+
+export async function createCorporatePriorityDeliveryVersionAction(formData: FormData): Promise<void> {
+  const user = await getCurrentUser();
+  if (!user) return;
+
+  const multiplierPercentage = Number(formData.get("multiplierPercentage"));
+  if (!Number.isFinite(multiplierPercentage)) return;
+
+  const result = await createCorporatePriorityDeliveryVersion({ multiplierPercentage, actorUserId: user.id });
+  if (!result.ok) console.error("[admin] failed to create corporate priority delivery version", result.error);
 
   revalidatePath("/admin/pricing");
 }

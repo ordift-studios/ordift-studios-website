@@ -11,6 +11,13 @@ import {
 } from "@/lib/pricing/personalSessionPricing";
 import { listAllDiscountCodesForAdmin } from "@/lib/pricing/discounts";
 import {
+  getActiveCorporateHeadshotRates,
+  getActiveCorporateTeamTierRates,
+  getActiveCorporateMinimumBooking,
+  getActiveCorporateRetouchRate,
+  getActiveCorporatePriorityDeliveryPercentage,
+} from "@/lib/pricing/corporateHeadshotPricing";
+import {
   createPersonalSessionRateVersionAction,
   setPricingMarketActiveAction,
   createDiscountCodeAction,
@@ -18,6 +25,11 @@ import {
   createSubjectCategoryMultiplierVersionAction,
   createAdditionalRetouchRateVersionAction,
   applyManualDiscountAction,
+  createCorporateHeadshotRateVersionAction,
+  createCorporateTeamTierRateVersionAction,
+  createCorporateMinimumBookingVersionAction,
+  createCorporateRetouchRateVersionAction,
+  createCorporatePriorityDeliveryVersionAction,
 } from "./actions";
 import ManualDiscountForm from "./ManualDiscountForm";
 
@@ -32,8 +44,23 @@ const TABS = [
   { key: "personal-sessions", label: "Personal Sessions" },
   { key: "subjects", label: "Subjects / Groups" },
   { key: "addons", label: "Add-Ons" },
+  { key: "corporate", label: "Corporate & Headshots" },
   { key: "discounts", label: "Discounts" },
   { key: "markets", label: "Markets / Overrides" },
+] as const;
+
+const CORPORATE_SUBS = [
+  { key: "individual", label: "Individual" },
+  { key: "executive", label: "Executive" },
+  { key: "team", label: "Team Volume" },
+  { key: "addons", label: "Add-Ons" },
+] as const;
+
+const TEAM_TIERS = [
+  { slug: "2-5", label: "2–5 people" },
+  { slug: "6-10", label: "6–10 people" },
+  { slug: "11-25", label: "11–25 people" },
+  { slug: "26-50", label: "26–50 people" },
 ] as const;
 
 function TabNav({ active }: { active: string }) {
@@ -52,13 +79,29 @@ function TabNav({ active }: { active: string }) {
   );
 }
 
-function MarketPills({ tab, markets, active }: { tab: string; markets: { slug: string; name: string }[]; active: string }) {
+function CorporateSubNav({ active, market }: { active: string; market?: string }) {
+  return (
+    <div className="flex flex-wrap gap-2">
+      {CORPORATE_SUBS.map((s) => (
+        <Link
+          key={s.key}
+          href={`/admin/pricing?tab=corporate&corpSub=${s.key}${market ? `&market=${market}` : ""}`}
+          className={`rounded-lg px-3 py-1.5 font-sans text-caption ${active === s.key ? "bg-ordift-ink text-white" : "border border-black/15 text-ordift-ink-muted"}`}
+        >
+          {s.label}
+        </Link>
+      ))}
+    </div>
+  );
+}
+
+function MarketPills({ tab, markets, active, extraQuery }: { tab: string; markets: { slug: string; name: string }[]; active: string; extraQuery?: string }) {
   return (
     <div className="flex flex-wrap gap-2">
       {markets.map((m) => (
         <Link
           key={m.slug}
-          href={`/admin/pricing?tab=${tab}&market=${m.slug}`}
+          href={`/admin/pricing?tab=${tab}${extraQuery ?? ""}&market=${m.slug}`}
           className={`rounded-full border px-4 py-1.5 font-sans text-caption ${active === m.slug ? "border-ordift-gold-pressed bg-ordift-gold-pressed/10 text-ordift-ink" : "border-black/15 text-ordift-ink-muted"}`}
         >
           {m.name}
@@ -73,14 +116,15 @@ function MarketPills({ tab, markets, active }: { tab: string; markets: { slug: s
 // requirement changed from V1/V1.1. Reorganized into a compact, tabbed
 // reference-first workspace. Every figure shown still traces to a real,
 // versioned database row — nothing hard-coded here.
-export default async function AdminPricingPage({ searchParams }: { searchParams: Promise<{ tab?: string; market?: string }> }) {
+export default async function AdminPricingPage({ searchParams }: { searchParams: Promise<{ tab?: string; corpSub?: string; market?: string }> }) {
   const user = await getCurrentUser();
   if (!user) redirect("/admin/overview");
   const auth = await authorizeWithSuperAdminOverride(user.id, FINANCE_CAPABILITIES.pricingAdminister);
   if (!auth.ok) redirect("/admin/overview");
 
-  const { tab: tabParam, market: marketParam } = await searchParams;
+  const { tab: tabParam, corpSub: corpSubParam, market: marketParam } = await searchParams;
   const tab = TABS.some((t) => t.key === tabParam) ? tabParam! : "personal-sessions";
+  const corpSub = CORPORATE_SUBS.some((s) => s.key === corpSubParam) ? corpSubParam! : "individual";
 
   const markets = await listAllPricingMarketsForAdmin();
   const activeMarkets = markets.filter((m) => m.active);
@@ -92,6 +136,17 @@ export default async function AdminPricingPage({ searchParams }: { searchParams:
     listAllDiscountCodesForAdmin(user.id),
     selectedMarket ? getActiveAdditionalRetouchRate(selectedMarket.slug) : Promise.resolve(null),
   ]);
+
+  const [corporateHeadshotRates, corporateTeamTierRates, corporateMinimumBooking, corporateRetouchRate, corporatePriorityDeliveryPercentage] =
+    tab === "corporate" && selectedMarket
+      ? await Promise.all([
+          getActiveCorporateHeadshotRates(selectedMarket.slug),
+          getActiveCorporateTeamTierRates(selectedMarket.slug),
+          getActiveCorporateMinimumBooking(selectedMarket.slug),
+          getActiveCorporateRetouchRate(selectedMarket.slug),
+          getActiveCorporatePriorityDeliveryPercentage(),
+        ])
+      : [[], [], null, null, null];
 
   return (
     <div className="space-y-8">
@@ -208,6 +263,143 @@ export default async function AdminPricingPage({ searchParams }: { searchParams:
               </form>
             </details>
           </section>
+        </div>
+      )}
+
+      {tab === "corporate" && selectedMarket && (
+        <div className="space-y-6">
+          <CorporateSubNav active={corpSub} market={selectedMarket.slug} />
+          <MarketPills tab="corporate" extraQuery={`&corpSub=${corpSub}`} markets={activeMarkets} active={selectedMarket.slug} />
+
+          {(corpSub === "individual" || corpSub === "executive") && (
+            <section className="rounded-xl border border-black/10 bg-white p-6 space-y-4">
+              {(() => {
+                const productSlug = corpSub === "individual" ? "individual_headshot" : "executive_portrait";
+                const productLabel = corpSub === "individual" ? "Professional Headshot – Individual" : "Executive Portrait";
+                const rate = corporateHeadshotRates.find((r) => r.productSlug === productSlug);
+                return (
+                  <>
+                    <h2 className="font-serif font-medium text-body text-ordift-ink">{selectedMarket.name} — {productLabel}</h2>
+                    <div className="flex items-baseline justify-between font-sans text-body-small text-ordift-ink">
+                      <span>Current rate</span>
+                      <span>{rate ? `$${rate.priceUsd.toFixed(2)}` : "— not set —"}</span>
+                    </div>
+                    <div className="flex items-baseline justify-between font-sans text-body-small text-ordift-ink">
+                      <span>Signature Retouched Images included</span>
+                      <span>{rate?.signatureRetouchedImages ?? "—"}</span>
+                    </div>
+                    <p className="font-sans text-caption text-ordift-ink-muted">
+                      {corpSub === "individual" ? "~20–30 min session, 1 look/setup." : "~45–60 min session, up to 2 looks."} High-res + web-ready delivery, private selection workflow where supported.
+                    </p>
+
+                    <details className="rounded-lg border border-black/10 px-4 py-2">
+                      <summary className="cursor-pointer font-sans text-body-small text-ordift-ink select-none">Edit rate</summary>
+                      <form action={createCorporateHeadshotRateVersionAction} className="grid grid-cols-1 sm:grid-cols-4 gap-3 mt-3">
+                        <input type="hidden" name="marketSlug" value={selectedMarket.slug} />
+                        <input type="hidden" name="productSlug" value={productSlug} />
+                        <input name="priceUsd" type="number" step="0.01" min="0.01" required defaultValue={rate?.priceUsd} placeholder="Price USD" className="rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small" />
+                        <input name="signatureRetouchedImages" type="number" min="0" required defaultValue={rate?.signatureRetouchedImages} placeholder="Signature Retouched Images" className="rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small" />
+                        <button type="submit" className="rounded-lg bg-ordift-ink text-white px-4 py-2 font-sans text-body-small">Save new version</button>
+                      </form>
+                    </details>
+                  </>
+                );
+              })()}
+            </section>
+          )}
+
+          {corpSub === "team" && (
+            <section className="rounded-xl border border-black/10 bg-white p-6 space-y-4">
+              <h2 className="font-serif font-medium text-body text-ordift-ink">{selectedMarket.name} — Team Headshots</h2>
+              <p className="font-sans text-caption text-ordift-ink-muted">Per-person rate by team size. 1 Signature Retouched Image per photographed employee. 51+ employees is always a Custom Corporate Proposal — never auto-priced here.</p>
+              <div className="overflow-x-auto">
+                <table className="w-full text-left">
+                  <thead>
+                    <tr className="font-sans text-caption uppercase tracking-wide text-ordift-ink-muted">
+                      <th className="pb-2">Tier</th>
+                      <th className="pb-2">Rate per person</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-black/5">
+                    {TEAM_TIERS.map((t) => {
+                      const tierRate = corporateTeamTierRates.find((r) => r.tierSlug === t.slug);
+                      return (
+                        <tr key={t.slug} className="font-sans text-body-small text-ordift-ink">
+                          <td className="py-2">{t.label}</td>
+                          <td className="py-2">{tierRate ? `$${tierRate.pricePerPersonUsd.toFixed(2)}` : "— not set —"}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="flex items-baseline justify-between font-sans text-body-small text-ordift-ink pt-2 border-t border-black/5">
+                <span>Minimum corporate team booking</span>
+                <span>{corporateMinimumBooking != null ? `$${corporateMinimumBooking.toFixed(2)}` : "— not set —"}</span>
+              </div>
+              <p className="font-sans text-caption text-ordift-ink-muted">Applied when numberOfPeople × per-person rate falls below this amount — the final price is always the greater of the two.</p>
+
+              <div className="space-y-2 pt-2 border-t border-black/5">
+                <p className="font-sans text-caption text-ordift-ink-muted">Edit a tier or the minimum — current values are prefilled. Saving always creates a new version.</p>
+                {TEAM_TIERS.map((t) => {
+                  const tierRate = corporateTeamTierRates.find((r) => r.tierSlug === t.slug);
+                  return (
+                    <details key={t.slug} className="rounded-lg border border-black/10 px-4 py-2">
+                      <summary className="cursor-pointer font-sans text-body-small text-ordift-ink select-none">Edit {t.label} rate</summary>
+                      <form action={createCorporateTeamTierRateVersionAction} className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3">
+                        <input type="hidden" name="marketSlug" value={selectedMarket.slug} />
+                        <input type="hidden" name="tierSlug" value={t.slug} />
+                        <input name="pricePerPersonUsd" type="number" step="0.01" min="0.01" required defaultValue={tierRate?.pricePerPersonUsd} placeholder="Price per person USD" className="rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small" />
+                        <button type="submit" className="rounded-lg bg-ordift-ink text-white px-4 py-2 font-sans text-body-small">Save new version</button>
+                      </form>
+                    </details>
+                  );
+                })}
+                <details className="rounded-lg border border-black/10 px-4 py-2">
+                  <summary className="cursor-pointer font-sans text-body-small text-ordift-ink select-none">Edit minimum booking</summary>
+                  <form action={createCorporateMinimumBookingVersionAction} className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3">
+                    <input type="hidden" name="marketSlug" value={selectedMarket.slug} />
+                    <input name="minimumAmountUsd" type="number" step="0.01" min="0.01" required defaultValue={corporateMinimumBooking ?? undefined} placeholder="Minimum USD" className="rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small" />
+                    <button type="submit" className="rounded-lg bg-ordift-ink text-white px-4 py-2 font-sans text-body-small">Save new version</button>
+                  </form>
+                </details>
+              </div>
+            </section>
+          )}
+
+          {corpSub === "addons" && (
+            <div className="space-y-6">
+              <section className="rounded-xl border border-black/10 bg-white p-6 space-y-4">
+                <h2 className="font-serif font-medium text-body text-ordift-ink">{selectedMarket.name} — Additional Signature Retouch Rate</h2>
+                <p className="font-sans text-caption text-ordift-ink-muted">Corporate-specific rate — a separate line item from the Personal Portrait retouch price, by design.</p>
+                <p className="font-sans text-body text-ordift-ink">{corporateRetouchRate != null ? `$${corporateRetouchRate.toFixed(2)} each` : "Not set"}</p>
+
+                <details className="rounded-lg border border-black/10 px-4 py-2">
+                  <summary className="cursor-pointer font-sans text-body-small text-ordift-ink select-none">Edit rate</summary>
+                  <form action={createCorporateRetouchRateVersionAction} className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3">
+                    <input type="hidden" name="marketSlug" value={selectedMarket.slug} />
+                    <input name="pricePerImageUsd" type="number" step="0.01" min="0.01" required defaultValue={corporateRetouchRate ?? undefined} placeholder="Price per image USD" className="rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small" />
+                    <button type="submit" className="rounded-lg bg-ordift-ink text-white px-4 py-2 font-sans text-body-small">Save new version</button>
+                  </form>
+                </details>
+              </section>
+
+              <section className="rounded-xl border border-black/10 bg-white p-6 space-y-4">
+                <h2 className="font-serif font-medium text-body text-ordift-ink">Priority Delivery</h2>
+                <p className="font-sans text-caption text-ordift-ink-muted">Global — not market-specific. Accelerated delivery the client must deliberately request; never applied automatically. Locked at 35% of the eligible corporate subtotal (base + additional retouch) per approved policy.</p>
+                <p className="font-sans text-body text-ordift-ink">{corporatePriorityDeliveryPercentage != null ? `+${corporatePriorityDeliveryPercentage}%` : "Not set"}</p>
+
+                <details className="rounded-lg border border-black/10 px-4 py-2">
+                  <summary className="cursor-pointer font-sans text-body-small text-ordift-ink select-none">Edit percentage</summary>
+                  <form action={createCorporatePriorityDeliveryVersionAction} className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3">
+                    <input name="multiplierPercentage" type="number" step="0.01" min="0.01" required defaultValue={corporatePriorityDeliveryPercentage ?? undefined} placeholder="Percentage, e.g. 35" className="rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small" />
+                    <button type="submit" className="rounded-lg bg-ordift-ink text-white px-4 py-2 font-sans text-body-small">Save new version</button>
+                  </form>
+                </details>
+              </section>
+            </div>
+          )}
         </div>
       )}
 
