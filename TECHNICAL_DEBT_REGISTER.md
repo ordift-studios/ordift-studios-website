@@ -583,6 +583,16 @@
 - **Pay-down trigger:** N/A — resolved.
 - **Status:** Resolved (2026-09-06, Phase K.2B).
 
+### TD-060 — Admin Overview's pure display-logic helpers are untested (Phase K.3, 2026-09-06)
+
+- **Category:** Testing
+- **Severity:** Low (both helpers are pure, deterministic string/date functions with no DB dependency — the risk is a silent regression slipping through, not a live defect; the full build/typecheck/lint/test suite passed clean when they were added and again when they were extended)
+- **What:** two pure, directly-testable functions were added to the Admin Overview command-centre work without a matching Vitest unit test: `humanizeAction()`/`humanizeEntityType()` (`src/app/admin/overview/page.tsx` and `src/lib/admin/overview.ts` — the fallback that turns an unmapped `activity_log.action`/`entity_type` string into a readable label) and the overdue/due-soon date-window classification inline in `getPayablesNeedsAttention()` (`src/lib/admin/overview.ts`). This mirrors a pre-existing gap in the same file — `getOverviewStats()` had no dedicated test before this phase either — not a new pattern, but also not fixed here.
+- **Why accepted:** the phase's own testing requirement was full-suite/`tsc`/`eslint`/`next build`, all of which passed; extracting-and-unit-testing every pure helper touched was judged out of scope for a phase whose mandate was "verify, don't extend," per explicit instruction not to open a new implementation pass for it.
+- **Current impact:** none currently — both functions are simple enough that a build-time type error or an obviously-wrong render would likely surface any regression quickly; there's just no automated proof of their exact boundary behavior (e.g. an action string with no `.`, an entity_type with mixed casing, an engagement due exactly at the 7-day boundary).
+- **Pay-down trigger:** the next time `src/lib/admin/overview.ts` or the Overview page's activity-labelling logic is touched — extract `humanizeAction`/`humanizeEntityType` into an exported, directly-importable location and add a small Vitest suite alongside the date-window logic (already isolated enough to test with a fixed `now`).
+- **Status:** Open.
+
 ---
 
 ## Adding new entries
