@@ -520,8 +520,8 @@
 - **What:** found during Phase G.4B's read-only verification of Sylvia's real manual payment, re-confirmed still present during the Phase I.0 roadmap review. `recordManualPayment()` (`src/lib/payments/payoutObligations.ts`) guards its `payment_obligations` UPDATE only by `.eq("id", params.obligationId)` — no `.eq("status", "approved")` guard, unlike the same-codebase pattern already used for `confirmProjectFilesBackup()`, `setProjectFileRetain()`, and `promoteProjectFileToFinalApproved()` (all guard their UPDATE by the exact prior state, making a duplicate/concurrent call a safe no-op).
 - **Why accepted (for now):** manual payment recording is low-volume (one real case exists in Production, Sylvia's GHS 10) and requires a real concurrent double-submission (not merely a slow double-click, since there's no client-side pending-disable gap here either) to actually manifest — genuinely low probability today.
 - **Current impact:** none observed; purely a latent gap.
-- **Pay-down trigger:** before any future payout-provider/automated-payment-execution architecture is built (this exact discipline will be load-bearing at that point, not optional); or if manual-payment volume grows enough that concurrent submission becomes plausible.
-- **Status:** Open.
+- **Pay-down trigger:** N/A — resolved.
+- **Status:** ✅ **Resolved (2026-09-05).** Re-verified directly against the current `recordManualPayment()` implementation (2026-09-06, TD-057 investigation): the `payment_obligations` UPDATE now carries `.eq("status", "approved")` alongside `.eq("id", ...)`, with a dated comment explaining exactly the atomic, concurrency-safe design this entry called for — the same pattern already proven for `setProjectFileRetain()`/`promoteProjectFileToFinalApproved()`. A zero-row update result is treated as a clean, safe no-op with a clear rejection message. This entry had gone stale (still described the guard as missing after it was actually added) — corrected here rather than left contradicting the real code, per this project's own documentation-accuracy discipline. See TD-064 for the same fix, not yet applied to `approvePaymentObligation()`.
 
 ### TD-054 — `service_role` has no *explicit* grant on `currencies`/`bank_accounts`/`payment_country_config`
 
@@ -561,7 +561,7 @@
 - **Why accepted:** this was a deliberate design choice in the original migration (highly sensitive payee banking/compensation data, narrow by default) — not an oversight. Recording it here purely so a future developer hitting the silent-empty-result symptom has somewhere to look.
 - **Current impact:** none today.
 - **Pay-down trigger:** if a genuine admin-tier (non-super-admin) UI need for direct session-client reads on either table ever arises — at that point, add a scoped `admin`-tier RLS policy explicitly, rather than routing around it with the service-role client as a habit.
-- **Status:** Open, low priority.
+- **Status:** Open, low priority. **Reframed 2026-09-06 (TD-057 investigation) — the RLS gap described above remains correctly diagnosed as latent/inert, not a current defect; RLS itself is intentional and should not be weakened.** The investigation surfaced a distinct, more consequential fact this entry did not originally capture: `authorizeWithSuperAdminOverride()` — the gate every Payables function and the `/admin/payables` page itself use — checks a real `authority_grants` row before falling back to Super Admin, and `authority_grants` has **zero rows in Production**. In practice, today, **only the Super Admin has ever been able to pass any Payables authorization check** — the "ordinary Admin/finance-authorized staff" tier the architecture supports has never been provisioned, not because of a bug, but because no one has issued a grant yet. **This is a real-world verification checkpoint, not a defect to fix by manufacturing a Production Authority Grant or by weakening RLS/the authorization gate.** It should close naturally the first time a real finance-capable Authority Grant is genuinely issued to a non-Super-Admin — at that point, confirm end-to-end that person can actually use `/admin/payables` as intended.
 
 ### TD-058 — Permanent Staff member-number sequence started at 3 instead of 1; corrected for the Founder (found and fixed 2026-09-06, Phase K.2B)
 
@@ -612,6 +612,26 @@
 - **Current impact:** none — worst case if this checkpoint were somehow wrong is a real content edit takes up to 1 hour to appear, which is still strictly better than the pre-Batch-B state (a full redeploy required).
 - **Pay-down trigger:** the next time a real Journal article or Workshop is published or edited in Sanity — confirm it appears on the live page within the chosen 1-hour window without a redeploy, and that a brand-new slug resolves immediately. Update this entry to Resolved once observed.
 - **Status:** Open (verification checkpoint, not a known defect).
+
+### TD-063 — `/admin/payables` nav link is shown to every staff/admin account but silently redirects any non-Super-Admin away (found 2026-09-06, TD-057 investigation)
+
+- **Category:** UX / Access Management
+- **Severity:** Low (no security exposure — the redirect is the correct, safe outcome; the only issue is the confusing experience getting there)
+- **What:** `src/app/admin/layout.tsx`'s nav config has no `adminOnly`/`superAdminOnly` flag on the "Payables" item, so it's visible to any `staff`/`admin`/`super_admin` account. But `/admin/payables/page.tsx` itself calls `authorizeWithSuperAdminOverride(user.id, FINANCE_CAPABILITIES.payeeAdminister)` and `redirect("/admin/overview")`s on failure. Given TD-057's reframed finding (zero real Authority Grants provisioned today), any authenticated non-Super-Admin who clicks "Payables" is bounced straight back to Overview with no explanation — a real, if minor, live UX inconsistency, not merely a theoretical one.
+- **Why accepted (not fixed now):** explicitly deferred — recorded as backlog per instruction, not implemented in the same phase as the TD-057/TD-053 investigation.
+- **Current impact:** low — only affects an account that isn't Super Admin and happens to click the link; no data or security consequence either way.
+- **Pay-down trigger:** whenever the Admin nav is next revisited (a separate, already-known future C-priority item — see the ~30-item nav density note elsewhere in this project's history) — either hide the link for a viewer who doesn't hold the capability, or replace the silent redirect with a clear "you don't currently hold this capability" message.
+- **Status:** Open, low priority.
+
+### TD-064 — `approvePaymentObligation()`'s UPDATE lacks the same atomic status-transition guard TD-053 added to `recordManualPayment()` (found 2026-09-06, TD-057/TD-053 investigation)
+
+- **Category:** Data / Correctness
+- **Severity:** Low (same shape and same low-probability-today profile as the original TD-053 finding — requires a genuine concurrent double-approval to manifest)
+- **What:** `approvePaymentObligation()` (`src/lib/payments/payoutObligations.ts`) has a read-time check (`existing.status !== "pending_approval"` → reject) but its UPDATE guards only by `.eq("id", params.obligationId)` — no `.eq("status", "pending_approval")` at write time. This is the identical race shape TD-053 (now resolved) already fixed for `recordManualPayment()`, just not yet applied to this sibling function: two concurrent approval attempts on the same obligation could both pass the read-time check before either commits.
+- **Why accepted (for now):** same reasoning as the original TD-053 — approval is low-volume, and a genuine concurrent double-submission (not a slow double-click) is required to manifest.
+- **Current impact:** none observed; purely a latent gap, same class as TD-053 before its fix.
+- **Pay-down trigger:** implement now, following the exact proven `recordManualPayment()` pattern — approved for immediate hardening as part of the same 2026-09-06 Payables reconciliation phase that closed TD-053 out.
+- **Status:** Open — scheduled for immediate implementation (Step 2 of this same phase).
 
 ---
 
