@@ -593,6 +593,26 @@
 - **Pay-down trigger:** the next time `src/lib/admin/overview.ts` or the Overview page's activity-labelling logic is touched — extract `humanizeAction`/`humanizeEntityType` into an exported, directly-importable location and add a small Vitest suite alongside the date-window logic (already isolated enough to test with a fixed `now`).
 - **Status:** Open.
 
+### TD-061 — A nonexistent `/journal/[slug]` returns HTTP 500 instead of 404 (found 2026-09-06, Tier 1 Hardening verification)
+
+- **Category:** Correctness / error handling
+- **Severity:** Low (a real 404-worthy request should read as "not found," not "server error," but no evidence found of data exposure, crash cascade, or any impact beyond the wrong status code and error page)
+- **What:** while verifying Batch B's revalidation change, requesting a guessed, nonexistent slug under `/journal/[slug]` (e.g. `/journal/destination-white-wedding`) returned HTTP 500, not the expected `notFound()` → 404. Reproduced identically against the pre-Batch-B deployment, confirming this predates and is unrelated to the Tier 1 Hardening work — an existing gap in the route's journalPost/pulseArticle dual-lookup logic (`src/app/journal/[slug]/page.tsx`), not introduced by `export const revalidate`.
+- **Why accepted (not fixed here):** out of scope for the Tier 1 Hardening authorization, which was explicitly read-only-investigation-then-narrowly-scoped-implementation for the seven named items; this is a distinct, unrelated defect discovered incidentally during verification, and the instruction was to report rather than fix it under this phase.
+- **Current impact:** low — no legitimate real user path currently constructs an arbitrary Journal slug (the only known route to a Journal detail page is via a real link from the `/journal` list or an author page); this would matter more if the site were ever crawled aggressively or someone probed slugs directly.
+- **Pay-down trigger:** next time `src/app/journal/[slug]/page.tsx` is touched — trace exactly which lookup (journalPost vs. pulseArticle) throws for a genuinely unmatched slug instead of falling through to `notFound()`, and fix that one path.
+- **Status:** Open.
+
+### TD-062 — ISR real-content verification checkpoint: confirm ID-062 revalidation actually refreshes a genuine published item (Tier 1 Hardening, Batch B, 2026-09-06)
+
+- **Category:** Testing / Operational verification
+- **Severity:** Low (the underlying mechanism — `export const revalidate = 3600` on the four SSG route segments, `dynamicParams` confirmed not restricted — was fully code-and-build verified; only the live, real-content behavioral confirmation is outstanding, because no genuinely published individual Journal or Workshop detail item currently exists to test against)
+- **What:** Batch B added time-based revalidation to `/journal/[slug]`, `/journal/authors/[slug]`, `/workshops/[slug]`, `/workshops/instructors/[slug]` so a Sanity edit to an existing item appears within 1 hour without a redeploy, and a brand-new slug resolves on-demand immediately. Both behaviors are standard, well-established Next.js platform guarantees for this configuration and were verified at the code/build/deploy level — but Journal and Workshops are both currently in their honest-empty content state (`CONTENT_READINESS_CHECKLIST.md`), so there was no real item to actually publish/edit and observe refreshing live.
+- **Why accepted:** fabricating a test article to exercise this would mean writing to Sanity Production content specifically to manufacture a test case — explicitly out of scope and not something this phase (or the audit before it) authorized. The correct, honest path is to exercise this naturally the first time real content is published, not to force it artificially.
+- **Current impact:** none — worst case if this checkpoint were somehow wrong is a real content edit takes up to 1 hour to appear, which is still strictly better than the pre-Batch-B state (a full redeploy required).
+- **Pay-down trigger:** the next time a real Journal article or Workshop is published or edited in Sanity — confirm it appears on the live page within the chosen 1-hour window without a redeploy, and that a brand-new slug resolves immediately. Update this entry to Resolved once observed.
+- **Status:** Open (verification checkpoint, not a known defect).
+
 ---
 
 ## Adding new entries

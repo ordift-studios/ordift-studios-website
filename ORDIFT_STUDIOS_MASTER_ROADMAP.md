@@ -22,7 +22,18 @@ Since 2026-07-30, in addition to the hardening work already listed below, substa
 - **Content population** — real projects for 6 of 7 Portfolio departments (only Photography has real content), real Journal articles, real Workshops (`CONTENT_READINESS_CHECKLIST.md`, reconciled 2026-09-06)
 - **Business/content confirmations** — contact email/WhatsApp (currently a personal Gmail + UK number), social links (currently empty), pricing display accuracy, final branding, Founder photo (`LAUNCH_CHECKLIST.md`, reconciled 2026-09-06)
 - **Operational proof, not more engineering** — TD-046 (automatic refund path built, awaiting one genuine real-world refund to prove it) and the Organizational Architecture/Staff Onboarding module (fully built, zero real onboarding/authority-grant/requisition rows in Production as of 2026-09-05) both need real-world use, not further code
-- **Technical hardening backlog** — see `TECHNICAL_DEBT_REGISTER.md` for the itemized list (HSTS, ISR/on-demand revalidation, `/studio` noindex, `X-Powered-By`, dead-code cleanup, Turnstile fail-open design, holding-page allowlist boundary matching) — all low-risk, none launch-blocking, since there is no longer a "launch" gate to block
+- **Tier 1 Technical Hardening — CLOSED (2026-09-06).** All seven items implemented across three independently deployed and verified batches (commits `b53ae8a`, `52cb80a`, `0fbb782`):
+  | Item | Status |
+  |---|---|
+  | `/studio` noindex | ✅ PASS |
+  | `X-Powered-By` removal | ✅ PASS |
+  | HSTS (`max-age=86400; includeSubDomains`) | ✅ PASS |
+  | Dead-code cleanup (`content/local/repository.ts`, `pulseData.ts`) | ✅ PASS |
+  | Holding-page allowlist boundary fix | ✅ PASS |
+  | Turnstile configuration hardening | ✅ PASS — including a real human Production login, post-deploy, in a clean Chrome Incognito session |
+  | ISR / on-demand revalidation (4 SSG routes, 1-hour interval) | ✅ Implementation PASS; real-content behavioral verification **pending** — tracked as `TECHNICAL_DEBT_REGISTER.md` TD-062, to be exercised the first time a genuine Journal/Workshop item is published |
+
+  One unrelated, pre-existing defect was found incidentally during verification (a nonexistent `/journal/[slug]` returns HTTP 500 instead of 404) — not caused by this phase, not fixed under this authorization, tracked as `TECHNICAL_DEBT_REGISTER.md` TD-061.
 - The Version 1.1 (Internal Organization/Grade) freeze mentioned below has, in substance, already been superseded — that work (Organizational Architecture) has shipped. Treat the "Version 1.1 stays frozen" line immediately below as historical.
 
 ---
