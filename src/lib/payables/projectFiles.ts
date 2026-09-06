@@ -267,6 +267,61 @@ function mapProjectFile(r: Record<string, unknown>): ProjectFile {
 // separate admin (admin-client) vs portal (session-client, RLS-scoped)
 // read functions, even where logically similar. See
 // engagementPortalData.ts for the portal-side self-read equivalent.
+// Phase K.3 (2026-09-06) — cross-engagement view for the Admin Overview
+// "Needs Attention" layer. Self-guarded, matching listAllEngagements()'s
+// established convention (unlike listProjectFilesForEngagement() above,
+// which trusts its caller) — returns [] rather than throwing/leaking
+// for an unauthorized viewer, since this is now called from a shared
+// page every staff/admin account can reach. The condition mirrors
+// deriveProjectFileDisplayState()'s existing "Backup Required" case
+// exactly (lifecycle_state active + a terminal engagement status) —
+// no new lifecycle state invented, just aggregated across engagements
+// instead of computed one at a time.
+export type ProjectFileAwaitingBackup = {
+  id: string;
+  engagementId: string;
+  originalFilename: string;
+  fileKind: string;
+  payeeName: string | null;
+};
+
+export async function listProjectFilesAwaitingBackup(actorUserId: string): Promise<ProjectFileAwaitingBackup[]> {
+  const auth = await authorizeWithSuperAdminOverride(actorUserId, FINANCE_CAPABILITIES.payeeAdminister);
+  if (!auth.ok) return [];
+
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from("project_files")
+    .select("id, engagement_id, original_filename, file_kind, lifecycle_state, engagements(status, payee_profile_id)")
+    .eq("lifecycle_state", "active")
+    .neq("file_kind", "final_approved");
+  if (error) {
+    console.error("[payables] failed to load project_files awaiting backup", error.message);
+    return [];
+  }
+
+  const rows = (data ?? []).filter((r) => {
+    const engagement = r.engagements as unknown as { status: string; payee_profile_id: string | null } | null;
+    return engagement && ["completed", "cancelled"].includes(engagement.status);
+  });
+  if (rows.length === 0) return [];
+
+  const payeeIds = [...new Set(rows.map((r) => (r.engagements as unknown as { payee_profile_id: string | null }).payee_profile_id).filter((id): id is string => Boolean(id)))];
+  const { data: profiles } = payeeIds.length > 0 ? await admin.from("profiles").select("id, full_name").in("id", payeeIds) : { data: [] as { id: string; full_name: string | null }[] };
+  const nameByProfileId = new Map((profiles ?? []).map((p) => [p.id, p.full_name]));
+
+  return rows.map((r) => {
+    const engagement = r.engagements as unknown as { payee_profile_id: string | null };
+    return {
+      id: r.id,
+      engagementId: r.engagement_id,
+      originalFilename: r.original_filename,
+      fileKind: r.file_kind,
+      payeeName: engagement.payee_profile_id ? (nameByProfileId.get(engagement.payee_profile_id) ?? null) : null,
+    };
+  });
+}
+
 export async function listProjectFilesForEngagement(engagementId: string): Promise<ProjectFile[]> {
   const admin = createAdminClient();
   const { data, error } = await admin.from("project_files").select(FILE_SELECT).eq("engagement_id", engagementId).order("uploaded_at", { ascending: false });
