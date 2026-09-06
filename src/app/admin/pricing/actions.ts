@@ -18,6 +18,18 @@ import {
   type CorporatePriorityDeliveryScopeSlug,
 } from "@/lib/pricing/corporateHeadshotPricing";
 import {
+  createCommercialCreativeFeeRateVersion,
+  createCommercialCatalogueBaseRateVersion,
+  createCommercialCatalogueMinimumVersion,
+  createCommercialPostProductionRateVersion,
+  createCommercialPercentageVersion,
+  createCommercialLicensingFactorVersion,
+  createCommercialReviewThresholdVersion,
+  type CommercialServiceMode,
+  type CommercialScopeSlug,
+  type CommercialPostProductionItemSlug,
+} from "@/lib/pricing/commercialPricing";
+import {
   createWeddingEventTierRateVersion,
   createWeddingEventPriorityDeliveryVersion,
   createWeddingEventAddonRateVersion,
@@ -334,6 +346,119 @@ export async function createWeddingEventPercentageRateVersionAction(formData: Fo
 
   const result = await createWeddingEventPercentageRateVersion({ percentageSlug: percentageSlug as PercentageSlug, percentage, actorUserId: user.id });
   if (!result.ok) console.error("[admin] failed to create wedding/event percentage rate version", result.error);
+
+  revalidatePath("/admin/pricing");
+}
+
+// ============================================================
+// Commercial & Advertising Pricing V1 (2026-09-07)
+// ============================================================
+
+export async function createCommercialCreativeFeeRateVersionAction(formData: FormData): Promise<void> {
+  const user = await getCurrentUser();
+  if (!user) return;
+
+  const marketSlug = String(formData.get("marketSlug") ?? "");
+  const serviceMode = String(formData.get("serviceMode") ?? "");
+  const scopeSlug = String(formData.get("scopeSlug") ?? "");
+  const priceUsd = Number(formData.get("priceUsd"));
+  if (!marketSlug || !serviceMode || !scopeSlug || !Number.isFinite(priceUsd)) return;
+
+  const result = await createCommercialCreativeFeeRateVersion({
+    marketSlug,
+    serviceMode: serviceMode as CommercialServiceMode,
+    scopeSlug: scopeSlug as CommercialScopeSlug,
+    priceUsd,
+    actorUserId: user.id,
+  });
+  if (!result.ok) console.error("[admin] failed to create commercial creative fee rate version", result.error);
+
+  revalidatePath("/admin/pricing");
+}
+
+export async function createCommercialCatalogueBaseRateVersionAction(formData: FormData): Promise<void> {
+  const user = await getCurrentUser();
+  if (!user) return;
+
+  const marketSlug = String(formData.get("marketSlug") ?? "");
+  const priceUsd = Number(formData.get("priceUsd"));
+  if (!marketSlug || !Number.isFinite(priceUsd)) return;
+
+  const result = await createCommercialCatalogueBaseRateVersion({ marketSlug, priceUsd, actorUserId: user.id });
+  if (!result.ok) console.error("[admin] failed to create commercial catalogue base rate version", result.error);
+
+  revalidatePath("/admin/pricing");
+}
+
+export async function createCommercialCatalogueMinimumVersionAction(formData: FormData): Promise<void> {
+  const user = await getCurrentUser();
+  if (!user) return;
+
+  const marketSlug = String(formData.get("marketSlug") ?? "");
+  const minimumUsd = Number(formData.get("minimumUsd"));
+  if (!marketSlug || !Number.isFinite(minimumUsd)) return;
+
+  const result = await createCommercialCatalogueMinimumVersion({ marketSlug, minimumUsd, actorUserId: user.id });
+  if (!result.ok) console.error("[admin] failed to create commercial catalogue minimum version", result.error);
+
+  revalidatePath("/admin/pricing");
+}
+
+export async function createCommercialPostProductionRateVersionAction(formData: FormData): Promise<void> {
+  const user = await getCurrentUser();
+  if (!user) return;
+
+  const itemSlug = String(formData.get("itemSlug") ?? "");
+  const priceUsd = Number(formData.get("priceUsd"));
+  const isFromPrice = formData.get("isFromPrice") === "true";
+  if (!itemSlug || !Number.isFinite(priceUsd)) return;
+
+  const result = await createCommercialPostProductionRateVersion({ itemSlug: itemSlug as CommercialPostProductionItemSlug, priceUsd, isFromPrice, actorUserId: user.id });
+  if (!result.ok) console.error("[admin] failed to create commercial post-production rate version", result.error);
+
+  revalidatePath("/admin/pricing");
+}
+
+export async function createCommercialPercentageVersionAction(formData: FormData): Promise<void> {
+  const user = await getCurrentUser();
+  if (!user) return;
+
+  const percentageSlug = String(formData.get("percentageSlug") ?? "");
+  const percentage = Number(formData.get("percentage"));
+  if ((percentageSlug !== "priority_postproduction" && percentageSlug !== "licensing_floor") || !Number.isFinite(percentage)) return;
+
+  const result = await createCommercialPercentageVersion({ percentageSlug, percentage, actorUserId: user.id });
+  if (!result.ok) console.error("[admin] failed to create commercial percentage version", result.error);
+
+  revalidatePath("/admin/pricing");
+}
+
+export async function createCommercialLicensingFactorVersionAction(formData: FormData): Promise<void> {
+  const user = await getCurrentUser();
+  if (!user) return;
+
+  const factorType = String(formData.get("factorType") ?? "");
+  const factorSlug = String(formData.get("factorSlug") ?? "");
+  const factorValue = Number(formData.get("factorValue"));
+  if (!["usage", "duration", "territory", "exclusivity"].includes(factorType) || !factorSlug || !Number.isFinite(factorValue)) return;
+
+  const result = await createCommercialLicensingFactorVersion({ factorType: factorType as "usage" | "duration" | "territory" | "exclusivity", factorSlug, factorValue, actorUserId: user.id });
+  if (!result.ok) console.error("[admin] failed to create commercial licensing factor version", result.error);
+
+  revalidatePath("/admin/pricing");
+}
+
+export async function createCommercialReviewThresholdVersionAction(formData: FormData): Promise<void> {
+  const user = await getCurrentUser();
+  if (!user) return;
+
+  const marketSlug = String(formData.get("marketSlug") ?? "");
+  const reviewUsd = Number(formData.get("reviewUsd"));
+  const mandatoryUsd = Number(formData.get("mandatoryUsd"));
+  if (!marketSlug || !Number.isFinite(reviewUsd) || !Number.isFinite(mandatoryUsd)) return;
+
+  const result = await createCommercialReviewThresholdVersion({ marketSlug, reviewUsd, mandatoryUsd, actorUserId: user.id });
+  if (!result.ok) console.error("[admin] failed to create commercial review threshold version", result.error);
 
   revalidatePath("/admin/pricing");
 }

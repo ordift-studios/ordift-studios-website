@@ -24,13 +24,31 @@ import {
   type AddonSlug,
   type PercentageSlug,
 } from "@/lib/pricing/weddingEventPricing";
+import {
+  getActiveCreativeFeeRates,
+  getActiveCatalogueBaseRate,
+  getActiveCatalogueMinimum,
+  getActiveCatalogueVolumeFactors,
+  getActiveCatalogueComplexityFactors,
+  getActivePostProductionRates,
+  getActiveCommercialPercentages,
+  getActiveLicensingFactors,
+  getActiveReviewThreshold,
+  type CommercialCreativeFeeRate,
+  type CommercialCatalogueVolumeFactor,
+  type CommercialCatalogueComplexityFactor,
+  type CommercialPostProductionRate,
+  type CommercialLicensingFactors,
+  type CommercialReviewThreshold,
+} from "@/lib/pricing/commercialPricing";
 import PersonalSessionEstimator from "./PersonalSessionEstimator";
 import CorporateHeadshotEstimator from "./CorporateHeadshotEstimator";
 import WeddingEventEstimator from "./WeddingEventEstimator";
+import CommercialEstimator from "./CommercialEstimator";
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://ordiftstudios.com";
 const TITLE = "Pricing — Ordift Studios";
-const DESCRIPTION = "Build your session and see an estimate for Ordift Studios' Personal Portrait, Corporate & Headshots, or Weddings & Events photography and film, based on where your shoot takes place.";
+const DESCRIPTION = "Build your session and see an estimate for Ordift Studios' Personal Portrait, Corporate & Headshots, Weddings & Events, or Commercial & Advertising photography and film, based on where your shoot takes place.";
 
 export const metadata: Metadata = {
   title: TITLE,
@@ -43,6 +61,7 @@ const FAMILIES = [
   { key: "personal", label: "Personal Portrait" },
   { key: "corporate", label: "Corporate & Headshots" },
   { key: "wedding_event", label: "Weddings & Events" },
+  { key: "commercial", label: "Commercial / Advertising" },
 ] as const;
 
 // Ordift Pricing Engine (2026-09-06) — public entry point. Server-
@@ -58,7 +77,8 @@ const FAMILIES = [
 // switch itself.
 export default async function PricingPage({ searchParams }: { searchParams: Promise<{ family?: string }> }) {
   const { family: familyParam } = await searchParams;
-  const family = familyParam === "corporate" ? "corporate" : familyParam === "wedding_event" ? "wedding_event" : "personal";
+  const family =
+    familyParam === "corporate" ? "corporate" : familyParam === "wedding_event" ? "wedding_event" : familyParam === "commercial" ? "commercial" : "personal";
 
   const markets = await listActivePricingMarkets();
 
@@ -124,6 +144,36 @@ export default async function PricingPage({ searchParams }: { searchParams: Prom
         })()
       : null;
 
+  const commercialData =
+    family === "commercial"
+      ? await (async () => {
+          const [creativeFeeEntries, catalogueBaseEntries, catalogueMinimumEntries, volumeFactors, complexityFactors, postProductionRates, percentages, licensingFactors, reviewThresholdEntries] =
+            await Promise.all([
+              Promise.all(markets.map(async (m) => [m.slug, await getActiveCreativeFeeRates(m.slug)] as const)),
+              Promise.all(markets.map(async (m) => [m.slug, await getActiveCatalogueBaseRate(m.slug)] as const)),
+              Promise.all(markets.map(async (m) => [m.slug, await getActiveCatalogueMinimum(m.slug)] as const)),
+              getActiveCatalogueVolumeFactors(),
+              getActiveCatalogueComplexityFactors(),
+              getActivePostProductionRates(),
+              getActiveCommercialPercentages(),
+              getActiveLicensingFactors(),
+              Promise.all(markets.map(async (m) => [m.slug, await getActiveReviewThreshold(m.slug)] as const)),
+            ]);
+          return {
+            creativeFeeRatesByMarket: Object.fromEntries(creativeFeeEntries) as Record<string, CommercialCreativeFeeRate[]>,
+            catalogueBaseRateByMarket: Object.fromEntries(catalogueBaseEntries) as Record<string, number | null>,
+            catalogueMinimumByMarket: Object.fromEntries(catalogueMinimumEntries) as Record<string, number | null>,
+            volumeFactors: volumeFactors as CommercialCatalogueVolumeFactor[],
+            complexityFactors: complexityFactors as CommercialCatalogueComplexityFactor[],
+            postProductionRates: postProductionRates as CommercialPostProductionRate[],
+            priorityPercentage: percentages.priority_postproduction ?? null,
+            licensingFloorPercentage: percentages.licensing_floor ?? null,
+            licensingFactors: licensingFactors as CommercialLicensingFactors,
+            reviewThresholdByMarket: Object.fromEntries(reviewThresholdEntries) as Record<string, CommercialReviewThreshold | null>,
+          };
+        })()
+      : null;
+
   return (
     <main>
       <NavBar />
@@ -169,7 +219,7 @@ export default async function PricingPage({ searchParams }: { searchParams: Prom
               retouchRateByMarket={corporateData.retouchRateByMarket}
               priorityDeliveryPercentageByScope={corporateData.priorityDeliveryPercentageByScope}
             />
-          ) : weddingEventData ? (
+          ) : family === "wedding_event" && weddingEventData ? (
             <WeddingEventEstimator
               markets={markets}
               weddingTierRatesByMarket={weddingEventData.weddingTierRatesByMarket}
@@ -181,9 +231,23 @@ export default async function PricingPage({ searchParams }: { searchParams: Prom
               addonRatesByMarket={weddingEventData.addonRatesByMarket}
               percentageRates={weddingEventData.percentageRates}
             />
+          ) : commercialData ? (
+            <CommercialEstimator
+              markets={markets}
+              creativeFeeRatesByMarket={commercialData.creativeFeeRatesByMarket}
+              catalogueBaseRateByMarket={commercialData.catalogueBaseRateByMarket}
+              catalogueMinimumByMarket={commercialData.catalogueMinimumByMarket}
+              volumeFactors={commercialData.volumeFactors}
+              complexityFactors={commercialData.complexityFactors}
+              postProductionRates={commercialData.postProductionRates}
+              priorityPercentage={commercialData.priorityPercentage}
+              licensingFloorPercentage={commercialData.licensingFloorPercentage}
+              licensingFactors={commercialData.licensingFactors}
+              reviewThresholdByMarket={commercialData.reviewThresholdByMarket}
+            />
           ) : null}
           <p className="font-sans text-caption text-ordift-ink-muted mt-6 text-center">
-            Commercial/advertising work is proposal-based — <a href="/book?service=general" className="underline">start an enquiry</a> and we&rsquo;ll put together the right quote for your project.
+            Graphic Design, Content Creation, Branding &amp; Strategy and Production Services work is proposal-based — <a href="/book?service=general" className="underline">start an enquiry</a> and we&rsquo;ll put together the right quote for your project.
           </p>
         </div>
       </section>

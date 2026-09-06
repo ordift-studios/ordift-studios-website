@@ -29,6 +29,19 @@ import {
   type PercentageSlug,
 } from "@/lib/pricing/weddingEventPricing";
 import {
+  getActiveCreativeFeeRates,
+  getActiveCatalogueBaseRate,
+  getActiveCatalogueMinimum,
+  getActiveCatalogueVolumeFactors,
+  getActiveCatalogueComplexityFactors,
+  getActivePostProductionRates,
+  getActiveCommercialPercentages,
+  getActiveLicensingFactors,
+  getActiveReviewThreshold,
+  type CommercialServiceMode,
+  type CommercialPostProductionItemSlug,
+} from "@/lib/pricing/commercialPricing";
+import {
   createPersonalSessionRateVersionAction,
   setPricingMarketActiveAction,
   createDiscountCodeAction,
@@ -45,6 +58,13 @@ import {
   createWeddingEventPriorityDeliveryVersionAction,
   createWeddingEventAddonRateVersionAction,
   createWeddingEventPercentageRateVersionAction,
+  createCommercialCreativeFeeRateVersionAction,
+  createCommercialCatalogueBaseRateVersionAction,
+  createCommercialCatalogueMinimumVersionAction,
+  createCommercialPostProductionRateVersionAction,
+  createCommercialPercentageVersionAction,
+  createCommercialLicensingFactorVersionAction,
+  createCommercialReviewThresholdVersionAction,
 } from "./actions";
 import ManualDiscountForm from "./ManualDiscountForm";
 
@@ -61,9 +81,90 @@ const TABS = [
   { key: "addons", label: "Add-Ons" },
   { key: "corporate", label: "Corporate & Headshots" },
   { key: "wedding_event", label: "Weddings & Events" },
+  { key: "commercial", label: "Commercial / Advertising" },
   { key: "discounts", label: "Discounts" },
   { key: "markets", label: "Markets / Overrides" },
 ] as const;
+
+const COMMERCIAL_SUBS = [
+  { key: "creative_fees", label: "Creative Fees" },
+  { key: "catalogue", label: "Product / E-Commerce" },
+  { key: "postproduction", label: "Post-Production" },
+  { key: "licensing", label: "Licensing" },
+  { key: "review", label: "Review Rules" },
+] as const;
+
+const COMMERCIAL_SCOPE_OPTIONS = [
+  { slug: "focused", label: "Focused (≤4h)" },
+  { slug: "full_day", label: "Full Day (≤8h)" },
+  { slug: "extended", label: "Extended (≤12h)" },
+] as const;
+
+const COMMERCIAL_POSTPRODUCTION_ITEMS: { slug: CommercialPostProductionItemSlug; label: string }[] = [
+  { slug: "additional_finished_image", label: "Additional Finished Image" },
+  { slug: "advanced_retouch", label: "Advanced Retouch" },
+  { slug: "high_end_retouch", label: "High-End Beauty / Product Retouch" },
+  { slug: "creative_composite", label: "Creative Composite" },
+  { slug: "cutdown_15s", label: "Additional 15-sec Cutdown" },
+  { slug: "cutdown_30s", label: "Additional 30-sec Cutdown" },
+  { slug: "alternate_edit_60s", label: "Additional 60-sec Alternate Edit" },
+  { slug: "vertical_adaptation", label: "Vertical / Social Adaptation" },
+  { slug: "aspect_ratio_adaptation", label: "Aspect-Ratio Adaptation Only" },
+  { slug: "caption_master", label: "Subtitle / Caption Master" },
+  { slug: "motion_graphics_basic", label: "Basic Motion Graphics Package" },
+  { slug: "revision_round", label: "Additional Revision Round" },
+];
+
+const COMMERCIAL_LICENSING_GROUPS: { factorType: "usage" | "duration" | "territory" | "exclusivity"; title: string; items: { slug: string; label: string }[] }[] = [
+  {
+    factorType: "usage",
+    title: "Usage",
+    items: [
+      { slug: "internal_trade_presentation", label: "Internal / Trade / Presentation" },
+      { slug: "website_organic_social", label: "Website + Organic Social" },
+      { slug: "pr_editorial_earned_media", label: "PR / Editorial / Earned Media" },
+      { slug: "paid_digital_advertising", label: "Paid Digital Advertising" },
+      { slug: "print_advertising", label: "Print Advertising" },
+      { slug: "paid_digital_print_campaign", label: "Paid Digital + Print Campaign" },
+      { slug: "packaging_pos", label: "Packaging / POS" },
+      { slug: "ooh_billboard", label: "OOH / Billboard" },
+      { slug: "broadcast_streaming_advertising", label: "Broadcast / Streaming Advertising" },
+      { slug: "integrated_multimedia_campaign", label: "Integrated Multi-Media Campaign" },
+    ],
+  },
+  {
+    factorType: "duration",
+    title: "Duration (Perpetual has no row — always Custom Proposal)",
+    items: [
+      { slug: "3_months", label: "3 months" },
+      { slug: "6_months", label: "6 months" },
+      { slug: "12_months", label: "12 months" },
+      { slug: "24_months", label: "24 months" },
+      { slug: "36_months", label: "36 months" },
+      { slug: "5_years", label: "5 years" },
+    ],
+  },
+  {
+    factorType: "territory",
+    title: "Territory (independent of production market)",
+    items: [
+      { slug: "local_city", label: "Local / City" },
+      { slug: "national", label: "National" },
+      { slug: "regional_multicountry", label: "Regional / Multi-country" },
+      { slug: "international", label: "International" },
+      { slug: "worldwide", label: "Worldwide" },
+    ],
+  },
+  {
+    factorType: "exclusivity",
+    title: "Exclusivity",
+    items: [
+      { slug: "non_exclusive", label: "Non-exclusive" },
+      { slug: "category_exclusive", label: "Category-exclusive" },
+      { slug: "full_exclusive", label: "Full-exclusive (subject to Custom safeguards)" },
+    ],
+  },
+];
 
 const CORPORATE_SUBS = [
   { key: "individual", label: "Individual" },
@@ -236,6 +337,38 @@ function ModePills({ weSub, market, active }: { weSub: string; market: string; a
   );
 }
 
+function CommercialSubNav({ active, market }: { active: string; market?: string }) {
+  return (
+    <div className="flex flex-wrap gap-2">
+      {COMMERCIAL_SUBS.map((s) => (
+        <Link
+          key={s.key}
+          href={`/admin/pricing?tab=commercial&commSub=${s.key}${market ? `&market=${market}` : ""}`}
+          className={`rounded-lg px-3 py-1.5 font-sans text-caption ${active === s.key ? "bg-ordift-ink text-white" : "border border-black/15 text-ordift-ink-muted"}`}
+        >
+          {s.label}
+        </Link>
+      ))}
+    </div>
+  );
+}
+
+function CommercialModePills({ market, active }: { market: string; active: CommercialServiceMode }) {
+  return (
+    <div className="flex flex-wrap gap-2">
+      {SERVICE_MODES.map((m) => (
+        <Link
+          key={m.slug}
+          href={`/admin/pricing?tab=commercial&commSub=creative_fees&market=${market}&mode=${m.slug}`}
+          className={`rounded-full border px-4 py-1.5 font-sans text-caption ${active === m.slug ? "border-ordift-gold-pressed bg-ordift-gold-pressed/10 text-ordift-ink" : "border-black/15 text-ordift-ink-muted"}`}
+        >
+          {m.label}
+        </Link>
+      ))}
+    </div>
+  );
+}
+
 function MarketPills({ tab, markets, active, extraQuery }: { tab: string; markets: { slug: string; name: string }[]; active: string; extraQuery?: string }) {
   return (
     <div className="flex flex-wrap gap-2">
@@ -257,16 +390,21 @@ function MarketPills({ tab, markets, active, extraQuery }: { tab: string; market
 // requirement changed from V1/V1.1. Reorganized into a compact, tabbed
 // reference-first workspace. Every figure shown still traces to a real,
 // versioned database row — nothing hard-coded here.
-export default async function AdminPricingPage({ searchParams }: { searchParams: Promise<{ tab?: string; corpSub?: string; weSub?: string; market?: string; mode?: string }> }) {
+export default async function AdminPricingPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ tab?: string; corpSub?: string; weSub?: string; commSub?: string; market?: string; mode?: string }>;
+}) {
   const user = await getCurrentUser();
   if (!user) redirect("/admin/overview");
   const auth = await authorizeWithSuperAdminOverride(user.id, FINANCE_CAPABILITIES.pricingAdminister);
   if (!auth.ok) redirect("/admin/overview");
 
-  const { tab: tabParam, corpSub: corpSubParam, weSub: weSubParam, market: marketParam, mode: modeParam } = await searchParams;
+  const { tab: tabParam, corpSub: corpSubParam, weSub: weSubParam, commSub: commSubParam, market: marketParam, mode: modeParam } = await searchParams;
   const tab = TABS.some((t) => t.key === tabParam) ? tabParam! : "personal-sessions";
   const corpSub = CORPORATE_SUBS.some((s) => s.key === corpSubParam) ? corpSubParam! : "individual";
   const weSub = WEDDING_EVENT_SUBS.some((s) => s.key === weSubParam) ? weSubParam! : "wedding";
+  const commSub = COMMERCIAL_SUBS.some((s) => s.key === commSubParam) ? commSubParam! : "creative_fees";
   const mode: ServiceMode = SERVICE_MODES.some((m) => m.slug === modeParam) ? (modeParam as ServiceMode) : "photography_film";
 
   const markets = await listAllPricingMarketsForAdmin();
@@ -304,6 +442,31 @@ export default async function AdminPricingPage({ searchParams }: { searchParams:
           getPercentageRates(),
         ])
       : [[], [], [], [], [], [], {} as Partial<Record<AddonSlug, number>>, {} as Partial<Record<PercentageSlug, number>>];
+
+  const [
+    commercialCreativeFeeRates,
+    commercialCatalogueBaseRate,
+    commercialCatalogueMinimum,
+    commercialVolumeFactors,
+    commercialComplexityFactors,
+    commercialPostProductionRates,
+    commercialPercentages,
+    commercialLicensingFactors,
+    commercialReviewThreshold,
+  ] =
+    tab === "commercial" && selectedMarket
+      ? await Promise.all([
+          getActiveCreativeFeeRates(selectedMarket.slug),
+          getActiveCatalogueBaseRate(selectedMarket.slug),
+          getActiveCatalogueMinimum(selectedMarket.slug),
+          getActiveCatalogueVolumeFactors(),
+          getActiveCatalogueComplexityFactors(),
+          getActivePostProductionRates(),
+          getActiveCommercialPercentages(),
+          getActiveLicensingFactors(),
+          getActiveReviewThreshold(selectedMarket.slug),
+        ])
+      : [[], null, null, [], [], [], {} as Partial<Record<"priority_postproduction" | "licensing_floor", number>>, { usage: {}, duration: {}, territory: {}, exclusivity: {} }, null];
 
   return (
     <div className="space-y-8">
@@ -720,6 +883,244 @@ export default async function AdminPricingPage({ searchParams }: { searchParams:
                     </li>
                   ))}
                 </ul>
+              </section>
+            </div>
+          )}
+        </div>
+      )}
+
+      {tab === "commercial" && selectedMarket && (
+        <div className="space-y-6">
+          <CommercialSubNav active={commSub} market={selectedMarket.slug} />
+
+          {commSub === "creative_fees" && (
+            <div className="space-y-6">
+              <MarketPills tab="commercial" extraQuery={`&commSub=creative_fees&mode=${mode}`} markets={activeMarkets} active={selectedMarket.slug} />
+              <CommercialModePills market={selectedMarket.slug} active={mode as CommercialServiceMode} />
+
+              <section className="rounded-xl border border-black/10 bg-white p-6 space-y-4">
+                <h2 className="font-serif font-medium text-body text-ordift-ink">{selectedMarket.name} — {SERVICE_MODES.find((m) => m.slug === mode)?.label}</h2>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left">
+                    <thead>
+                      <tr className="font-sans text-caption uppercase tracking-wide text-ordift-ink-muted">
+                        <th className="pb-2">Production scope</th>
+                        <th className="pb-2">Creative fee</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-black/5">
+                      {COMMERCIAL_SCOPE_OPTIONS.map((s) => {
+                        const rate = commercialCreativeFeeRates.find((r) => r.serviceMode === mode && r.scopeSlug === s.slug);
+                        return (
+                          <tr key={s.slug} className="font-sans text-body-small text-ordift-ink">
+                            <td className="py-2">{s.label}</td>
+                            <td className="py-2">{rate ? `$${rate.priceUsd.toFixed(2)}` : "— not set —"}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+
+                <div className="space-y-2 pt-2 border-t border-black/5">
+                  <p className="font-sans text-caption text-ordift-ink-muted">This is Ordift&rsquo;s creative/production leadership fee only — it excludes supplier-dependent production expenses and any commercial usage rights. Edit a scope — current value is prefilled.</p>
+                  {COMMERCIAL_SCOPE_OPTIONS.map((s) => {
+                    const rate = commercialCreativeFeeRates.find((r) => r.serviceMode === mode && r.scopeSlug === s.slug);
+                    return (
+                      <details key={s.slug} className="rounded-lg border border-black/10 px-4 py-2">
+                        <summary className="cursor-pointer font-sans text-body-small text-ordift-ink select-none">Edit {s.label} rate</summary>
+                        <form action={createCommercialCreativeFeeRateVersionAction} className="grid grid-cols-1 sm:grid-cols-4 gap-3 mt-3">
+                          <input type="hidden" name="marketSlug" value={selectedMarket.slug} />
+                          <input type="hidden" name="serviceMode" value={mode} />
+                          <input type="hidden" name="scopeSlug" value={s.slug} />
+                          <input name="priceUsd" type="number" step="0.01" min="0.01" required defaultValue={rate?.priceUsd} placeholder="Price USD" className="rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small" />
+                          <button type="submit" className="rounded-lg bg-ordift-ink text-white px-4 py-2 font-sans text-body-small">Save new version</button>
+                        </form>
+                      </details>
+                    );
+                  })}
+                </div>
+              </section>
+            </div>
+          )}
+
+          {commSub === "catalogue" && (
+            <div className="space-y-6">
+              <MarketPills tab="commercial" extraQuery="&commSub=catalogue" markets={activeMarkets} active={selectedMarket.slug} />
+
+              <section className="rounded-xl border border-black/10 bg-white p-6 space-y-4">
+                <h2 className="font-serif font-medium text-body text-ordift-ink">{selectedMarket.name} — Catalogue Base Rate &amp; Minimum</h2>
+                <p className="font-sans text-caption text-ordift-ink-muted">Per finished image, 1–10 image tier. catalogueSubtotal = quantity × base rate × complexity factor × volume factor, then MAX against the minimum.</p>
+                <div className="flex items-baseline justify-between font-sans text-body-small text-ordift-ink">
+                  <span>Base rate per image</span>
+                  <span>{commercialCatalogueBaseRate != null ? `$${commercialCatalogueBaseRate.toFixed(2)}` : "— not set —"}</span>
+                </div>
+                <div className="flex items-baseline justify-between font-sans text-body-small text-ordift-ink">
+                  <span>Minimum booking</span>
+                  <span>{commercialCatalogueMinimum != null ? `$${commercialCatalogueMinimum.toFixed(2)}` : "— not set —"}</span>
+                </div>
+
+                <details className="rounded-lg border border-black/10 px-4 py-2">
+                  <summary className="cursor-pointer font-sans text-body-small text-ordift-ink select-none">Edit base rate</summary>
+                  <form action={createCommercialCatalogueBaseRateVersionAction} className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3">
+                    <input type="hidden" name="marketSlug" value={selectedMarket.slug} />
+                    <input name="priceUsd" type="number" step="0.01" min="0.01" required defaultValue={commercialCatalogueBaseRate ?? undefined} placeholder="Price per image USD" className="rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small" />
+                    <button type="submit" className="rounded-lg bg-ordift-ink text-white px-4 py-2 font-sans text-body-small">Save new version</button>
+                  </form>
+                </details>
+                <details className="rounded-lg border border-black/10 px-4 py-2">
+                  <summary className="cursor-pointer font-sans text-body-small text-ordift-ink select-none">Edit minimum booking</summary>
+                  <form action={createCommercialCatalogueMinimumVersionAction} className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3">
+                    <input type="hidden" name="marketSlug" value={selectedMarket.slug} />
+                    <input name="minimumUsd" type="number" step="0.01" min="0.01" required defaultValue={commercialCatalogueMinimum ?? undefined} placeholder="Minimum USD" className="rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small" />
+                    <button type="submit" className="rounded-lg bg-ordift-ink text-white px-4 py-2 font-sans text-body-small">Save new version</button>
+                  </form>
+                </details>
+              </section>
+
+              <section className="rounded-xl border border-black/10 bg-white p-6 space-y-4">
+                <h2 className="font-serif font-medium text-body text-ordift-ink">Volume Factors (Global)</h2>
+                <p className="font-sans text-caption text-ordift-ink-muted">Not market-specific. 101+ images has no row by design — always a Custom Volume Proposal.</p>
+                <ul className="divide-y divide-black/5">
+                  {commercialVolumeFactors.map((v) => (
+                    <li key={v.tierSlug} className="py-2.5">
+                      <div className="flex items-baseline justify-between font-sans text-body-small text-ordift-ink">
+                        <span>{v.tierSlug} images</span>
+                        <span>{v.factor.toFixed(2)}×</span>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+                <p className="font-sans text-caption text-ordift-ink-muted">Volume tier boundaries are structural (1-10/11-25/26-50/51-100) — only the factor value is edited here, via direct database access if a correction is ever needed. No public edit form is exposed for tier boundaries in V1.</p>
+              </section>
+
+              <section className="rounded-xl border border-black/10 bg-white p-6 space-y-4">
+                <h2 className="font-serif font-medium text-body text-ordift-ink">Complexity Factors (Global)</h2>
+                <p className="font-sans text-caption text-ordift-ink-muted">Styled/Creative Product is not a valid catalogue complexity — it always routes to normal Commercial Production.</p>
+                <ul className="divide-y divide-black/5">
+                  {commercialComplexityFactors.map((c) => (
+                    <li key={c.complexity} className="py-2.5">
+                      <div className="flex items-baseline justify-between font-sans text-body-small text-ordift-ink">
+                        <span className="capitalize">{c.complexity}</span>
+                        <span>{c.factor.toFixed(2)}×</span>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            </div>
+          )}
+
+          {commSub === "postproduction" && (
+            <section className="rounded-xl border border-black/10 bg-white p-6 space-y-4">
+              <h2 className="font-serif font-medium text-body text-ordift-ink">Post-Production Reference Rates (Global)</h2>
+              <p className="font-sans text-caption text-ordift-ink-muted">Not market-specific — the approved spec gives single global figures. Advanced Motion Graphics/VFX has no row and always routes to Custom Proposal. Commercial Priority (+35%) applies only to this subtotal.</p>
+              <ul className="divide-y divide-black/5">
+                {COMMERCIAL_POSTPRODUCTION_ITEMS.map((item) => {
+                  const rate = commercialPostProductionRates.find((r) => r.itemSlug === item.slug);
+                  return (
+                    <li key={item.slug} className="py-2.5">
+                      <div className="flex items-baseline justify-between font-sans text-body-small text-ordift-ink">
+                        <span>{item.label}</span>
+                        <span>{rate ? `${rate.isFromPrice ? "from " : ""}$${rate.priceUsd.toFixed(2)}` : "— not set —"}</span>
+                      </div>
+                      <details className="mt-2 rounded-lg border border-black/10 px-4 py-2">
+                        <summary className="cursor-pointer font-sans text-caption text-ordift-ink select-none">Edit</summary>
+                        <form action={createCommercialPostProductionRateVersionAction} className="grid grid-cols-1 sm:grid-cols-4 gap-3 mt-3">
+                          <input type="hidden" name="itemSlug" value={item.slug} />
+                          <input name="priceUsd" type="number" step="0.01" min="0.01" required defaultValue={rate?.priceUsd} placeholder="Price USD" className="rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small" />
+                          <label className="flex items-center gap-2 font-sans text-caption text-ordift-ink-muted">
+                            <input type="checkbox" name="isFromPrice" value="true" defaultChecked={rate?.isFromPrice} className="w-4 h-4" />
+                            &ldquo;From&rdquo; indicative minimum only
+                          </label>
+                          <button type="submit" className="rounded-lg bg-ordift-ink text-white px-4 py-2 font-sans text-body-small">Save new version</button>
+                        </form>
+                      </details>
+                    </li>
+                  );
+                })}
+              </ul>
+            </section>
+          )}
+
+          {commSub === "licensing" && (
+            <div className="space-y-6">
+              {COMMERCIAL_LICENSING_GROUPS.map((group) => (
+                <section key={group.factorType} className="rounded-xl border border-black/10 bg-white p-6 space-y-4">
+                  <h2 className="font-serif font-medium text-body text-ordift-ink">{group.title}</h2>
+                  <ul className="divide-y divide-black/5">
+                    {group.items.map((item) => {
+                      const value = (commercialLicensingFactors[group.factorType] as Record<string, number>)[item.slug];
+                      return (
+                        <li key={item.slug} className="py-2.5">
+                          <div className="flex items-baseline justify-between font-sans text-body-small text-ordift-ink">
+                            <span>{item.label}</span>
+                            <span>{value != null ? `${value.toFixed(2)}×` : "— not set —"}</span>
+                          </div>
+                          <details className="mt-2 rounded-lg border border-black/10 px-4 py-2">
+                            <summary className="cursor-pointer font-sans text-caption text-ordift-ink select-none">Edit</summary>
+                            <form action={createCommercialLicensingFactorVersionAction} className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3">
+                              <input type="hidden" name="factorType" value={group.factorType} />
+                              <input type="hidden" name="factorSlug" value={item.slug} />
+                              <input name="factorValue" type="number" step="0.01" min="0.01" required defaultValue={value ?? undefined} placeholder="Factor" className="rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small" />
+                              <button type="submit" className="rounded-lg bg-ordift-ink text-white px-4 py-2 font-sans text-body-small">Save new version</button>
+                            </form>
+                          </details>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </section>
+              ))}
+
+              <section className="rounded-xl border border-black/10 bg-white p-6 space-y-4">
+                <h2 className="font-serif font-medium text-body text-ordift-ink">Formula Percentages (Global)</h2>
+                <ul className="divide-y divide-black/5">
+                  {(["priority_postproduction", "licensing_floor"] as const).map((slug) => (
+                    <li key={slug} className="py-2.5">
+                      <div className="flex items-baseline justify-between font-sans text-body-small text-ordift-ink">
+                        <span>{slug === "priority_postproduction" ? "Commercial Priority Post-Production" : "Licensing Floor (% of Creative Fee)"}</span>
+                        <span>{commercialPercentages[slug] != null ? `${commercialPercentages[slug]}%` : "Not set"}</span>
+                      </div>
+                      <details className="mt-2 rounded-lg border border-black/10 px-4 py-2">
+                        <summary className="cursor-pointer font-sans text-caption text-ordift-ink select-none">Edit</summary>
+                        <form action={createCommercialPercentageVersionAction} className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3">
+                          <input type="hidden" name="percentageSlug" value={slug} />
+                          <input name="percentage" type="number" step="0.01" min="0.01" required defaultValue={commercialPercentages[slug] ?? undefined} placeholder="Percentage" className="rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small" />
+                          <button type="submit" className="rounded-lg bg-ordift-ink text-white px-4 py-2 font-sans text-body-small">Save new version</button>
+                        </form>
+                      </details>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            </div>
+          )}
+
+          {commSub === "review" && (
+            <div className="space-y-6">
+              <MarketPills tab="commercial" extraQuery="&commSub=review" markets={activeMarkets} active={selectedMarket.slug} />
+              <section className="rounded-xl border border-black/10 bg-white p-6 space-y-4">
+                <h2 className="font-serif font-medium text-body text-ordift-ink">{selectedMarket.name} — Review Thresholds</h2>
+                <p className="font-sans text-caption text-ordift-ink-muted">Below Review: normal indicative estimate. At/above Review but below Mandatory: &ldquo;Subject to Commercial Review&rdquo;. At/above Mandatory: &ldquo;Custom Commercial Proposal Required&rdquo;. Always-Custom conditions override these thresholds regardless of dollar total.</p>
+                <div className="flex items-baseline justify-between font-sans text-body-small text-ordift-ink">
+                  <span>Review threshold</span>
+                  <span>{commercialReviewThreshold ? `$${commercialReviewThreshold.reviewUsd.toFixed(2)}` : "— not set —"}</span>
+                </div>
+                <div className="flex items-baseline justify-between font-sans text-body-small text-ordift-ink">
+                  <span>Mandatory Proposal threshold</span>
+                  <span>{commercialReviewThreshold ? `$${commercialReviewThreshold.mandatoryUsd.toFixed(2)}` : "— not set —"}</span>
+                </div>
+
+                <details className="rounded-lg border border-black/10 px-4 py-2">
+                  <summary className="cursor-pointer font-sans text-body-small text-ordift-ink select-none">Edit thresholds</summary>
+                  <form action={createCommercialReviewThresholdVersionAction} className="grid grid-cols-1 sm:grid-cols-4 gap-3 mt-3">
+                    <input type="hidden" name="marketSlug" value={selectedMarket.slug} />
+                    <input name="reviewUsd" type="number" step="0.01" min="0.01" required defaultValue={commercialReviewThreshold?.reviewUsd} placeholder="Review threshold USD" className="rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small" />
+                    <input name="mandatoryUsd" type="number" step="0.01" min="0.01" required defaultValue={commercialReviewThreshold?.mandatoryUsd} placeholder="Mandatory threshold USD" className="rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small" />
+                    <button type="submit" className="rounded-lg bg-ordift-ink text-white px-4 py-2 font-sans text-body-small">Save new version</button>
+                  </form>
+                </details>
               </section>
             </div>
           )}

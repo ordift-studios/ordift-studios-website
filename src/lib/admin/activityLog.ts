@@ -257,6 +257,14 @@ export const ADMIN_TIER_ACTIONS = new Set<string>([
   "pricing.wedding_event_priority_delivery.created",
   "pricing.wedding_event_addon_rate.created",
   "pricing.wedding_event_percentage_rate.created",
+  // Commercial & Advertising Pricing V1 (2026-09-07)
+  "pricing.commercial_creative_fee_rate.created",
+  "pricing.commercial_catalogue_base_rate.created",
+  "pricing.commercial_catalogue_minimum.created",
+  "pricing.commercial_postproduction_rate.created",
+  "pricing.commercial_percentage.created",
+  "pricing.commercial_licensing_factor.created",
+  "pricing.commercial_review_threshold.created",
 ]);
 
 // Deliberately reviewed and left staff-visible (Phase I.1, 2026-09-05)

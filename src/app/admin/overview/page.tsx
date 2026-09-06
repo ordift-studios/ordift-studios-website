@@ -113,6 +113,15 @@ const ACTION_LABELS: Record<string, string> = {
   "pricing.wedding_event_priority_delivery.created": "Updated a Wedding/Event Priority Delivery percentage",
   "pricing.wedding_event_addon_rate.created": "Updated a Wedding/Event add-on rate",
   "pricing.wedding_event_percentage_rate.created": "Updated a Wedding/Event formula percentage",
+
+  // Commercial & Advertising Pricing V1 (2026-09-07)
+  "pricing.commercial_creative_fee_rate.created": "Updated a Commercial creative fee rate",
+  "pricing.commercial_catalogue_base_rate.created": "Updated a Commercial catalogue base rate",
+  "pricing.commercial_catalogue_minimum.created": "Updated a Commercial catalogue minimum",
+  "pricing.commercial_postproduction_rate.created": "Updated a Commercial post-production rate",
+  "pricing.commercial_percentage.created": "Updated a Commercial formula percentage",
+  "pricing.commercial_licensing_factor.created": "Updated a Commercial licensing factor",
+  "pricing.commercial_review_threshold.created": "Updated a Commercial review threshold",
 };
 
 // Graceful fallback for any action type not (yet) in ACTION_LABELS — pure
