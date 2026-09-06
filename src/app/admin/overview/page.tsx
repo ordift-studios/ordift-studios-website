@@ -1,8 +1,12 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { getCurrentUser } from "@/lib/portal/roles";
-import { getOverviewStats, getGeneralNeedsAttention, getPayablesNeedsAttention } from "@/lib/admin/overview";
-import { getRecentActivity } from "@/lib/admin/activityLog";
+import {
+  getOverviewStats,
+  getGeneralNeedsAttention,
+  getPayablesNeedsAttention,
+  getRecentActivityForOverview,
+} from "@/lib/admin/overview";
 import ActiveUsersPanel from "@/components/admin/ActiveUsersPanel";
 
 export const metadata: Metadata = {
@@ -138,7 +142,7 @@ export default async function AdminOverviewPage() {
 
   const [stats, activity, general, payables] = await Promise.all([
     getOverviewStats(),
-    getRecentActivity(),
+    getRecentActivityForOverview(),
     getGeneralNeedsAttention(),
     user ? getPayablesNeedsAttention(user.id) : Promise.resolve(null),
   ]);
@@ -350,10 +354,10 @@ export default async function AdminOverviewPage() {
                 <div>
                   <p className="font-sans text-body-small text-ordift-ink">
                     {labelForAction(entry.action)}
-                    {entry.actorUserId ? ` — ${entry.actorLabel}` : ""}
+                    {entry.entityLabel ? ` — ${entry.entityLabel}` : ""}
                   </p>
-                  {entry.entityId && (
-                    <p className="font-sans text-caption text-ordift-ink-muted">{entry.entityId}</p>
+                  {entry.actorName && (
+                    <p className="font-sans text-caption text-ordift-ink-muted">{entry.actorName}</p>
                   )}
                 </div>
                 <p className="font-sans text-caption text-ordift-ink-muted whitespace-nowrap">

@@ -1,10 +1,26 @@
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { contentRepository } from "@/lib/content";
 import { getAllEnquiries, getAllWorkshopRegistrations } from "@/lib/portal/data";
 import { authorizeWithSuperAdminOverride, FINANCE_CAPABILITIES } from "@/lib/organization/authority";
-import { listAllPaymentObligations, PAYABLE_STATUS_LABELS } from "@/lib/payments/payoutObligations";
-import { listAllEngagements, isTerminalEngagementStatus, type Engagement } from "@/lib/payables/engagements";
+import {
+  listAllPaymentObligations,
+  getPaymentObligation,
+  PAYABLE_STATUS_LABELS,
+} from "@/lib/payments/payoutObligations";
+import {
+  listAllEngagements,
+  getEngagement,
+  isTerminalEngagementStatus,
+  type Engagement,
+} from "@/lib/payables/engagements";
 import { listProjectFilesAwaitingBackup, type ProjectFileAwaitingBackup } from "@/lib/payables/projectFiles";
+import {
+  getRecentActivity,
+  SUPER_ADMIN_ONLY_ACTIONS,
+  ADMIN_TIER_ACTIONS,
+  type ActivityLogEntry,
+} from "@/lib/admin/activityLog";
 
 export type OverviewStats = {
   newEnquiriesThisWeek: number;
@@ -169,4 +185,131 @@ export async function getPayablesNeedsAttention(actorUserId: string): Promise<Pa
     dueSoonEngagements,
     filesAwaitingBackup,
   };
+}
+
+// Follow-up correction (2026-09-06) — Recent Activity was showing a raw
+// activity_log.entity_id (a UUID) as a second line under every row, and
+// no resolved business-object name at all. This resolves entity_id into
+// a human-readable label for display, WITHOUT touching activity_log,
+// ActivityLogEntry, or any other consumer of getRecentActivity() —
+// display-only, additive, Overview-local.
+//
+// Authorization reasoning (why this can't leak beyond what the current
+// viewer already sees): a row for a given `action` can only be present
+// in `entries` at all if getRecentActivity()'s own
+// getExcludedActionsForViewerTier() already let it through for the
+// CURRENT viewer — i.e. the viewer is already confirmed Admin-tier (for
+// ADMIN_TIER_ACTIONS) or Super-Admin (for SUPER_ADMIN_ONLY_ACTIONS).
+// Resolving a payee/engagement name only for rows whose action is in
+// one of those two existing Sets is therefore not a new authorization
+// decision — it's the same one already made, reused. Every other action
+// (e.g. the staff-visible-by-default project_file.* lifecycle events)
+// gets ONLY a neutral, non-identifying label by entity_type — never a
+// resolved person/engagement name — so this can never hand a lower-tier
+// viewer identity or financial context the existing tiering didn't
+// already clear them for.
+const NEUTRAL_ENTITY_LABELS: Record<string, string> = {
+  engagement: "Engagement",
+  payment_obligation: "Payment obligation",
+  project_file: "File",
+  user: "Account",
+};
+
+function humanizeEntityType(entityType: string): string {
+  return entityType
+    .split(/[_-]/)
+    .filter(Boolean)
+    .map((word) => word[0].toUpperCase() + word.slice(1))
+    .join(" ");
+}
+
+function neutralEntityLabel(entityType: string | null): string | null {
+  if (!entityType) return null;
+  return NEUTRAL_ENTITY_LABELS[entityType] ?? humanizeEntityType(entityType);
+}
+
+export type ActivityFeedEntry = {
+  id: string;
+  action: string;
+  actorName: string | null;
+  entityLabel: string | null;
+  createdAt: string;
+};
+
+function metadataPayeeId(entry: ActivityLogEntry): string | null {
+  const value = (entry.metadata as { payeeProfileId?: unknown }).payeeProfileId;
+  return typeof value === "string" ? value : null;
+}
+
+export async function getRecentActivityForOverview(limit?: number): Promise<ActivityFeedEntry[]> {
+  const entries = await getRecentActivity(limit);
+  if (entries.length === 0) return [];
+
+  const resolvableActions = new Set<string>([...SUPER_ADMIN_ONLY_ACTIONS, ...ADMIN_TIER_ACTIONS]);
+
+  const engagementIds = new Set<string>();
+  const obligationIds = new Set<string>();
+  const directProfileIds = new Set<string>(); // entityType "user": entity_id IS a profile id for every resolvable action that uses it (verified per action below)
+
+  for (const e of entries) {
+    if (!resolvableActions.has(e.action) || !e.entityId) continue;
+    if (e.entityType === "engagement") engagementIds.add(e.entityId);
+    else if (e.entityType === "payment_obligation") obligationIds.add(e.entityId);
+    else if (e.entityType === "user") directProfileIds.add(e.entityId);
+    const metaId = metadataPayeeId(e);
+    if (metaId) directProfileIds.add(metaId);
+  }
+
+  // Reuses the existing single-record lookups (getEngagement,
+  // getPaymentObligation) rather than duplicating their queries — both
+  // already resolve exactly the fields needed here.
+  const [engagementPairs, obligationPairs] = await Promise.all([
+    Promise.all([...engagementIds].map(async (id) => [id, await getEngagement(id)] as const)),
+    Promise.all([...obligationIds].map(async (id) => [id, await getPaymentObligation(id)] as const)),
+  ]);
+  const engagementById = new Map(engagementPairs.filter(([, v]) => v !== null) as [string, Engagement][]);
+  const obligationById = new Map(
+    obligationPairs.filter(([, v]) => v !== null) as [string, Awaited<ReturnType<typeof getPaymentObligation>>][]
+  );
+
+  const profileIdsNeedingNames = new Set(directProfileIds);
+  for (const eng of engagementById.values()) if (eng.payeeProfileId) profileIdsNeedingNames.add(eng.payeeProfileId);
+  for (const ob of obligationById.values()) if (ob?.payeeProfileId) profileIdsNeedingNames.add(ob.payeeProfileId);
+
+  let nameByProfileId = new Map<string, string | null>();
+  if (profileIdsNeedingNames.size > 0) {
+    const admin = createAdminClient();
+    const { data, error } = await admin.from("profiles").select("id, full_name").in("id", [...profileIdsNeedingNames]);
+    if (error) console.error("[admin] overview: failed to resolve names for activity feed", error.message);
+    nameByProfileId = new Map((data ?? []).map((p) => [p.id, p.full_name as string | null]));
+  }
+
+  return entries.map((e) => {
+    let entityLabel = neutralEntityLabel(e.entityType);
+
+    if (resolvableActions.has(e.action) && e.entityId) {
+      const metaId = metadataPayeeId(e);
+      if (e.entityType === "engagement") {
+        const eng = engagementById.get(e.entityId);
+        const payeeName = eng?.payeeProfileId ? nameByProfileId.get(eng.payeeProfileId) : null;
+        entityLabel = eng?.operationalTitleName ?? payeeName ?? entityLabel;
+      } else if (e.entityType === "payment_obligation") {
+        const ob = obligationById.get(e.entityId);
+        const payeeName = ob?.payeeProfileId ? nameByProfileId.get(ob.payeeProfileId) : null;
+        entityLabel = payeeName ?? entityLabel;
+      } else if (e.entityType === "user") {
+        entityLabel = nameByProfileId.get(e.entityId) ?? entityLabel;
+      } else if (metaId) {
+        entityLabel = nameByProfileId.get(metaId) ?? entityLabel;
+      }
+    }
+
+    return {
+      id: e.id,
+      action: e.action,
+      actorName: e.actorName,
+      entityLabel,
+      createdAt: e.createdAt,
+    };
+  });
 }
