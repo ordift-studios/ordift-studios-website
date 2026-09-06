@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   createPaymentObligation,
   validateManualPaymentAgainstObligation,
+  validateApprovalTransition,
   canCancelPaymentObligation,
   canReversePaymentObligation,
   isEligibleDestinationForPayable,
@@ -159,6 +160,44 @@ describe("TD-053 — an obligation no longer 'approved' cannot be recorded as pa
   it("a cancelled or reversed obligation cannot be recorded as paid", () => {
     for (const status of ["cancelled", "reversed"]) {
       expect(validateManualPaymentAgainstObligation({ amount: 10, currency: "GHS", reference: "REF", obligation: { status, amount: 10, currency: "GHS" } }).ok).toBe(false);
+    }
+  });
+});
+
+// TD-064 (2026-09-06) — approvePaymentObligation()'s UPDATE is now
+// guarded by .eq("status","pending_approval") in addition to
+// .eq("id", obligationId), the same atomic idempotency pattern TD-053
+// already proved for recordManualPayment(). validateApprovalTransition()
+// is the read-time half of that guard, extracted into its own pure
+// function specifically so it's directly unit-testable — mirroring
+// validateManualPaymentAgainstObligation's existing pure/impure split
+// above.
+//
+// What ISN'T covered here, and why (same established, explained
+// limitation as TD-053's own test block above): a genuinely concurrent
+// double-approval (two requests racing before either commits) needs a
+// real Postgres row lock to prove, not reproducible at this project's
+// unit-test tier without a live Supabase session. The atomic
+// .eq("status","pending_approval") guard on the UPDATE itself (not this
+// pure pre-check) is what actually closes that race, and is what
+// guarantees a lost-race attempt updates zero rows and never reaches
+// the logActivity() call below it — verified by direct code reading
+// (the early `return` on updated.length === 0 happens strictly before
+// logActivity() in source order), not a unit test, for the same reason
+// TD-053's own write-time guard wasn't.
+describe("validateApprovalTransition (TD-064)", () => {
+  it("accepts a pending_approval obligation — the only valid starting state", () => {
+    expect(validateApprovalTransition("pending_approval")).toEqual({ ok: true });
+  });
+
+  it("rejects an obligation that has already been approved — a repeated/racing approval attempt sees exactly this state", () => {
+    const result = validateApprovalTransition("approved");
+    expect(result).toEqual({ ok: false, error: 'Cannot approve — current status is "approved".' });
+  });
+
+  it("rejects an obligation that is already paid, cancelled, or reversed", () => {
+    for (const status of ["paid", "cancelled", "reversed"]) {
+      expect(validateApprovalTransition(status).ok).toBe(false);
     }
   });
 });

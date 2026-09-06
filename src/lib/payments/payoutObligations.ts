@@ -276,6 +276,23 @@ export async function createPaymentObligation(
   return { ok: true, obligationId: data.id };
 }
 
+// TD-064 (2026-09-06) — extracted from approvePaymentObligation() so
+// the read-time transition rule is directly unit-testable without a
+// live Supabase session, matching validateManualPaymentAgainstObligation's
+// existing pure/impure split. This function decides WHETHER a status is
+// eligible to be approved; it does not touch the database — the caller
+// still separately re-checks the same condition atomically at write
+// time (see the .eq("status","pending_approval") guard below), which is
+// the part that actually closes the concurrent-approval race and is not
+// unit-testable at this tier (same established, explained limitation as
+// TD-053's own write-time guard — see payoutObligations.test.ts).
+export function validateApprovalTransition(status: string): { ok: true } | { ok: false; error: string } {
+  if (status !== "pending_approval") {
+    return { ok: false, error: `Cannot approve — current status is "${status}".` };
+  }
+  return { ok: true };
+}
+
 // Approval only — moves 'pending_approval' -> 'approved'. Still no
 // money movement: payout_provider/payout_reference remain untouched,
 // since no PayoutProvider is registered in this phase (see the type
@@ -298,15 +315,39 @@ export async function approvePaymentObligation(params: {
   const admin = createAdminClient();
   const { data: existing } = await admin.from("payment_obligations").select("status, payee_profile_id, amount, currency").eq("id", params.obligationId).maybeSingle();
   if (!existing) return { ok: false, error: "Payment obligation not found." };
-  if (existing.status !== "pending_approval") return { ok: false, error: `Cannot approve — current status is "${existing.status}".` };
+  const transitionCheck = validateApprovalTransition(existing.status);
+  if (!transitionCheck.ok) return transitionCheck;
 
-  const { error } = await admin
+  // TD-064 (2026-09-06) — same atomic idempotency pattern TD-053 already
+  // proved for recordManualPayment() (and, before that, for
+  // setProjectFileRetain()/promoteProjectFileToFinalApproved()): the
+  // read-time check above only proves the obligation was
+  // 'pending_approval' at READ time. Without a write-time guard, two
+  // concurrent approval attempts (or a slow double-click) could both
+  // pass that check before either commits. `.eq("status",
+  // "pending_approval")` makes the UPDATE itself conditional on the row
+  // STILL being 'pending_approval' at write time — Postgres serializes
+  // concurrent UPDATEs on the same row via its row lock, so a
+  // second/racing request re-evaluates this WHERE clause only after the
+  // first has already committed status='approved', at which point it
+  // matches zero rows and is a safe, clean no-op — never touching an
+  // obligation that's already approved, paid, cancelled, or reversed.
+  const { data: updated, error } = await admin
     .from("payment_obligations")
     .update({ status: "approved", approved_by: params.actorUserId, approved_at: new Date().toISOString() })
-    .eq("id", params.obligationId);
+    .eq("id", params.obligationId)
+    .eq("status", "pending_approval")
+    .select("id");
   if (error) {
     console.error("[payments] failed to approve payment_obligation", error.message);
     return { ok: false, error: "Failed to approve." };
+  }
+  if (!updated || updated.length === 0) {
+    // Lost the race (or the obligation moved out of 'pending_approval'
+    // between the read above and this write) — no field was changed, no
+    // duplicate approval was recorded, and nothing below this point
+    // runs: no audit event, no notification.
+    return { ok: false, error: `Cannot approve — this payable is no longer "pending approval" (it may already have been approved, or its status changed).` };
   }
 
   await logActivity({
