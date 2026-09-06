@@ -84,6 +84,21 @@ export async function recordManualDiscount(params: {
     console.error("[pricing] failed to record manual discount", error.message);
     return { ok: false, error: "Failed to record the discount." };
   }
+
+  // V1.1 — the discount_redemptions row above is the primary audit
+  // record (original/discount/final amounts, actor, reason, timestamp,
+  // per the exact business requirement); this activity_log entry makes
+  // the same event visible in the existing Admin Overview Recent
+  // Activity feed and admin/activity, matching every other financial
+  // mutation in this codebase.
+  await logActivity({
+    actorUserId: params.actorUserId,
+    action: "pricing.manual_discount.applied",
+    entityType: params.referenceType,
+    entityId: params.referenceId ?? undefined,
+    metadata: { originalAmountUsd: params.originalAmountUsd, discountType: params.discountType, value: params.value, discountAmountUsd, finalAmountUsd, reason: params.reason },
+  });
+
   return { ok: true, finalAmountUsd };
 }
 

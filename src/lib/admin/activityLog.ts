@@ -242,6 +242,10 @@ export const ADMIN_TIER_ACTIONS = new Set<string>([
   "pricing.market.active_changed",
   "pricing.discount_code.created",
   "pricing.discount_code.active_changed",
+  // Pricing Engine V1.1 (2026-09-06)
+  "pricing.subject_category_multiplier.created",
+  "pricing.additional_retouch_rate.created",
+  "pricing.manual_discount.applied",
 ]);
 
 // Deliberately reviewed and left staff-visible (Phase I.1, 2026-09-05)

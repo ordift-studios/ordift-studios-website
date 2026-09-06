@@ -3,8 +3,8 @@ import { authorizeWithSuperAdminOverride, FINANCE_CAPABILITIES } from "@/lib/org
 import { logActivity } from "@/lib/admin/activityLog";
 import { calculatePersonalSessionEstimate, type PricingMarket, type PersonalSessionRate, type SubjectCategory, type SessionEstimateResult } from "./personalSessionEstimate";
 
-// Ordift Pricing Engine V1 (2026-09-06) — Personal Portrait session
-// pricing: server-only DB-reading/writing functions. The pure
+// Ordift Pricing Engine V1 / V1.1 (2026-09-06) — Personal Portrait
+// session pricing: server-only DB-reading/writing functions. The pure
 // calculation logic and shared types live in personalSessionEstimate.ts
 // (zero imports of any kind) and are re-exported below — this file
 // itself must never be imported from a Client Component, since it pulls
@@ -14,13 +14,14 @@ import { calculatePersonalSessionEstimate, type PricingMarket, type PersonalSess
 // instead, never from here.
 //
 // Reads use the admin/service-role client deliberately: pricing
-// markets/rates/subject-category reference data must be visible on the
-// public site to anonymous visitors, matching the established pattern
-// for other public content (e.g. contentRepository's Sanity-backed
-// functions) — RLS on these tables is staff-only (see migration 0053)
-// because the *write* path is admin-only, not because reads should be
-// gated; the public-facing functions below explicitly filter to
-// active=true rows only and never expose an unapproved/null price.
+// markets/rates/subject-category/retouch-rate reference data must be
+// visible on the public site to anonymous visitors, matching the
+// established pattern for other public content (e.g.
+// contentRepository's Sanity-backed functions) — RLS on these tables is
+// staff-only (see migrations 0053/0054) because the *write* path is
+// admin-only, not because reads should be gated; the public-facing
+// functions below explicitly filter to active=true rows only and never
+// expose an unapproved/null price.
 
 export type { PricingMarket, PersonalSessionRate, SubjectCategory, SessionEstimateResult };
 export { calculatePersonalSessionEstimate };
@@ -99,26 +100,77 @@ export async function getActivePersonalSessionRates(marketSlug: string): Promise
   return rates.sort((a, b) => a.durationHours - b.durationHours);
 }
 
+// V1.1 — every subject category, each carrying its CURRENT active
+// price_multiplier (most recent effective row from
+// subject_category_multiplier_rates, same "most recent effective_from
+// wins" read pattern as personal_session_rates above). A category with
+// no active multiplier row (e.g. large_group) reads as
+// priceMultiplier: null, which calculatePersonalSessionEstimate()
+// always treats as custom-quote-required.
 export async function listAllSubjectCategories(): Promise<SubjectCategory[]> {
   const admin = createAdminClient();
-  const { data, error } = await admin
-    .from("subject_categories")
-    .select("id, slug, name, min_subjects, max_subjects, supplement_usd, active, requires_custom_quote")
-    .order("min_subjects");
-  if (error) {
-    console.error("[pricing] failed to load subject categories", error.message);
+  const [{ data: categories, error: categoriesError }, { data: multiplierRows, error: multiplierError }] = await Promise.all([
+    admin.from("subject_categories").select("id, slug, name, min_subjects, max_subjects, active, requires_custom_quote").order("min_subjects"),
+    admin
+      .from("subject_category_multiplier_rates")
+      .select("subject_category_id, price_multiplier, effective_from")
+      .eq("active", true)
+      .lte("effective_from", new Date().toISOString())
+      .or(`effective_to.is.null,effective_to.gt.${new Date().toISOString()}`)
+      .order("effective_from", { ascending: false }),
+  ]);
+  if (categoriesError) {
+    console.error("[pricing] failed to load subject categories", categoriesError.message);
     return [];
   }
-  return (data ?? []).map((c) => ({
+  if (multiplierError) {
+    console.error("[pricing] failed to load subject category multiplier rates", multiplierError.message);
+  }
+
+  const currentMultiplierByCategoryId = new Map<string, number>();
+  for (const row of multiplierRows ?? []) {
+    if (!currentMultiplierByCategoryId.has(row.subject_category_id)) {
+      currentMultiplierByCategoryId.set(row.subject_category_id, Number(row.price_multiplier));
+    }
+  }
+
+  return (categories ?? []).map((c) => ({
     id: c.id,
     slug: c.slug,
     name: c.name,
     minSubjects: c.min_subjects,
     maxSubjects: c.max_subjects,
-    supplementUsd: c.supplement_usd === null ? null : Number(c.supplement_usd),
+    priceMultiplier: currentMultiplierByCategoryId.get(c.id) ?? null,
     active: c.active,
     requiresCustomQuote: c.requires_custom_quote,
   }));
+}
+
+// V1.1 — current active additional-Signature-Retouched-Image per-image
+// rate for a market, or null if none is published yet (never a guessed
+// value). Does not apply to Professionally Edited Images — no such
+// pricing exists anywhere in this schema.
+export async function getActiveAdditionalRetouchRate(marketSlug: string): Promise<number | null> {
+  const admin = createAdminClient();
+  const { data: market } = await admin.from("pricing_markets").select("id").eq("slug", marketSlug).eq("active", true).maybeSingle();
+  if (!market) return null;
+
+  const now = new Date().toISOString();
+  const { data, error } = await admin
+    .from("additional_retouch_rates")
+    .select("price_per_image_usd, effective_from")
+    .eq("market_id", market.id)
+    .eq("active", true)
+    .lte("effective_from", now)
+    .or(`effective_to.is.null,effective_to.gt.${now}`)
+    .order("effective_from", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) {
+    console.error("[pricing] failed to load additional retouch rate", error.message);
+    return null;
+  }
+  return data ? Number(data.price_per_image_usd) : null;
 }
 
 // Full orchestration — the one function a page/action actually calls.
@@ -128,16 +180,24 @@ export async function estimatePersonalSession(params: {
   marketSlug: string;
   durationHours: number;
   subjectCategorySlug: string;
+  additionalRetouchImages?: number;
 }): Promise<SessionEstimateResult> {
-  const [rates, subjectCategories] = await Promise.all([
+  const [rates, subjectCategories, additionalRetouchRatePerImage] = await Promise.all([
     getActivePersonalSessionRates(params.marketSlug),
     listAllSubjectCategories(),
+    getActiveAdditionalRetouchRate(params.marketSlug),
   ]);
   if (rates.length === 0) {
     return { ok: false, requiresCustomQuote: true, reason: "Pricing for this location isn't published yet — request a custom quote." };
   }
   const subjectCategory = subjectCategories.find((c) => c.slug === params.subjectCategorySlug) ?? null;
-  return calculatePersonalSessionEstimate({ rates, durationHours: params.durationHours, subjectCategory });
+  return calculatePersonalSessionEstimate({
+    rates,
+    durationHours: params.durationHours,
+    subjectCategory,
+    additionalRetouchImages: params.additionalRetouchImages,
+    additionalRetouchRatePerImage,
+  });
 }
 
 // ============================================================
@@ -208,6 +268,75 @@ export async function setPricingMarketActive(params: { marketSlug: string; activ
     entityType: "pricing_market",
     entityId: data[0].id,
     metadata: { marketSlug: params.marketSlug, active: params.active },
+  });
+  return { ok: true };
+}
+
+// V1.1 — same append-only versioning pattern as
+// createPersonalSessionRateVersion() above.
+export async function createSubjectCategoryMultiplierVersion(params: {
+  subjectCategorySlug: string;
+  priceMultiplier: number;
+  actorUserId: string;
+}): Promise<{ ok: true } | { ok: false; error: string }> {
+  const auth = await authorizeWithSuperAdminOverride(params.actorUserId, FINANCE_CAPABILITIES.pricingAdminister);
+  if (!auth.ok) return { ok: false, error: "Not authorized to manage pricing." };
+  if (params.priceMultiplier <= 0) return { ok: false, error: "Multiplier must be greater than zero." };
+
+  const admin = createAdminClient();
+  const { data: category } = await admin.from("subject_categories").select("id").eq("slug", params.subjectCategorySlug).maybeSingle();
+  if (!category) return { ok: false, error: "Unknown subject category." };
+
+  const { error } = await admin.from("subject_category_multiplier_rates").insert({
+    subject_category_id: category.id,
+    price_multiplier: params.priceMultiplier,
+    created_by: params.actorUserId,
+  });
+  if (error) {
+    console.error("[pricing] failed to create subject category multiplier version", error.message);
+    return { ok: false, error: "Failed to save the new multiplier." };
+  }
+
+  await logActivity({
+    actorUserId: params.actorUserId,
+    action: "pricing.subject_category_multiplier.created",
+    entityType: "subject_category",
+    entityId: category.id,
+    metadata: { priceMultiplier: params.priceMultiplier },
+  });
+  return { ok: true };
+}
+
+// V1.1 — same append-only versioning pattern.
+export async function createAdditionalRetouchRateVersion(params: {
+  marketSlug: string;
+  pricePerImageUsd: number;
+  actorUserId: string;
+}): Promise<{ ok: true } | { ok: false; error: string }> {
+  const auth = await authorizeWithSuperAdminOverride(params.actorUserId, FINANCE_CAPABILITIES.pricingAdminister);
+  if (!auth.ok) return { ok: false, error: "Not authorized to manage pricing." };
+  if (params.pricePerImageUsd <= 0) return { ok: false, error: "Rate must be greater than zero." };
+
+  const admin = createAdminClient();
+  const { data: market } = await admin.from("pricing_markets").select("id").eq("slug", params.marketSlug).maybeSingle();
+  if (!market) return { ok: false, error: "Unknown pricing market." };
+
+  const { error } = await admin.from("additional_retouch_rates").insert({
+    market_id: market.id,
+    price_per_image_usd: params.pricePerImageUsd,
+    created_by: params.actorUserId,
+  });
+  if (error) {
+    console.error("[pricing] failed to create additional retouch rate version", error.message);
+    return { ok: false, error: "Failed to save the new rate." };
+  }
+
+  await logActivity({
+    actorUserId: params.actorUserId,
+    action: "pricing.additional_retouch_rate.created",
+    entityType: "pricing_market",
+    entityId: market.id,
+    metadata: { pricePerImageUsd: params.pricePerImageUsd },
   });
   return { ok: true };
 }

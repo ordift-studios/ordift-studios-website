@@ -4,32 +4,43 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import { calculatePersonalSessionEstimate, type PersonalSessionRate, type SubjectCategory, type PricingMarket } from "@/lib/pricing/personalSessionEstimate";
 
-// Ordift Pricing Engine V1 (2026-09-06) — client-side estimator. All
-// data (markets/rates/subject categories) is fetched server-side and
-// passed in as props; this component only runs the existing PURE
-// calculatePersonalSessionEstimate() logic against the visitor's own
-// explicit selections. No IP/geolocation/nationality signal of any
-// kind is read here — the "where will this take place" market choice
-// is a plain, deliberate dropdown, nothing pre-selected from the
-// visitor's browser/location.
+// Ordift Pricing Engine V1 / V1.1 (2026-09-06) — client-side estimator.
+// All data (markets/rates/subject categories/retouch rates) is fetched
+// server-side and passed in as props; this component only runs the
+// existing PURE calculatePersonalSessionEstimate() logic against the
+// visitor's own explicit selections. No IP/geolocation/nationality
+// signal of any kind is read here — the "where will this take place"
+// market choice is a plain, deliberate dropdown, nothing pre-selected
+// from the visitor's browser/location.
 export default function PersonalSessionEstimator({
   markets,
   ratesByMarket,
   subjectCategories,
+  retouchRateByMarket,
 }: {
   markets: PricingMarket[];
   ratesByMarket: Record<string, PersonalSessionRate[]>;
   subjectCategories: SubjectCategory[];
+  retouchRateByMarket: Record<string, number | null>;
 }) {
   const [marketSlug, setMarketSlug] = useState(markets[0]?.slug ?? "");
   const [durationHours, setDurationHours] = useState(1);
   const [subjectSlug, setSubjectSlug] = useState(subjectCategories.find((c) => c.active)?.slug ?? "");
+  const [additionalRetouchImages, setAdditionalRetouchImages] = useState(0);
 
   const estimate = useMemo(() => {
     const rates = ratesByMarket[marketSlug] ?? [];
     const subjectCategory = subjectCategories.find((c) => c.slug === subjectSlug) ?? null;
-    return calculatePersonalSessionEstimate({ rates, durationHours, subjectCategory });
-  }, [marketSlug, durationHours, subjectSlug, ratesByMarket, subjectCategories]);
+    return calculatePersonalSessionEstimate({
+      rates,
+      durationHours,
+      subjectCategory,
+      additionalRetouchImages,
+      additionalRetouchRatePerImage: retouchRateByMarket[marketSlug] ?? null,
+    });
+  }, [marketSlug, durationHours, subjectSlug, additionalRetouchImages, ratesByMarket, subjectCategories, retouchRateByMarket]);
+
+  const retouchRate = retouchRateByMarket[marketSlug] ?? null;
 
   return (
     <div className="rounded-2xl border border-black/10 bg-white p-6 sm:p-8 space-y-6">
@@ -76,13 +87,59 @@ export default function PersonalSessionEstimator({
             <option key={c.slug} value={c.slug}>{c.name}</option>
           ))}
         </select>
+        {subjectSlug === "limited_guest_appearance" && (
+          <p className="font-sans text-caption text-ordift-ink-muted mt-1">
+            One guest may join for a small portion of the session and a few shared photographs. If your guest needs their own full coverage, choose Couple or Family / Small Group instead.
+          </p>
+        )}
+      </div>
+
+      <div>
+        <label className="block font-sans text-body-small font-medium text-ordift-ink mb-2">Additional Signature Retouched Images</label>
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={() => setAdditionalRetouchImages((n) => Math.max(0, n - 1))}
+            className="w-9 h-9 rounded-lg border border-black/15 font-sans text-body text-ordift-ink"
+            aria-label="Decrease additional retouched images"
+          >
+            −
+          </button>
+          <span className="font-sans text-body text-ordift-ink w-8 text-center">{additionalRetouchImages}</span>
+          <button
+            type="button"
+            onClick={() => setAdditionalRetouchImages((n) => n + 1)}
+            className="w-9 h-9 rounded-lg border border-black/15 font-sans text-body text-ordift-ink"
+            aria-label="Increase additional retouched images"
+          >
+            +
+          </button>
+          {retouchRate !== null && (
+            <span className="font-sans text-caption text-ordift-ink-muted">${retouchRate.toFixed(0)} each</span>
+          )}
+        </div>
       </div>
 
       <div className="rounded-xl bg-ordift-offwhite p-6">
         {estimate.ok ? (
           <>
-            <p className="font-serif font-medium text-section-heading text-ordift-ink">From ${estimate.priceUsd.toFixed(0)} USD</p>
-            <p className="font-sans text-body-small text-ordift-ink-muted mt-2">
+            <div className="flex items-baseline justify-between">
+              <span className="font-sans text-body-small text-ordift-ink-muted">Session</span>
+              <span className="font-sans text-body text-ordift-ink">${estimate.sessionPriceUsd.toFixed(2)}</span>
+            </div>
+            {estimate.additionalRetouchImages > 0 && (
+              <div className="flex items-baseline justify-between mt-1">
+                <span className="font-sans text-body-small text-ordift-ink-muted">
+                  Additional retouch × {estimate.additionalRetouchImages}
+                </span>
+                <span className="font-sans text-body text-ordift-ink">${estimate.additionalRetouchAmountUsd.toFixed(2)}</span>
+              </div>
+            )}
+            <div className="flex items-baseline justify-between mt-3 pt-3 border-t border-black/10">
+              <span className="font-serif font-medium text-body text-ordift-ink">Total</span>
+              <span className="font-serif font-medium text-section-heading text-ordift-ink">${estimate.totalPriceUsd.toFixed(0)} USD</span>
+            </div>
+            <p className="font-sans text-body-small text-ordift-ink-muted mt-3">
               Includes {estimate.signatureRetouchedImages} Signature Retouched Images and {estimate.professionallyEditedImages} Professionally Edited Images.
             </p>
           </>

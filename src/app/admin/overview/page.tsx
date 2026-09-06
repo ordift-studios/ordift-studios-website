@@ -95,6 +95,11 @@ const ACTION_LABELS: Record<string, string> = {
   "pricing.market.active_changed": "Changed a pricing market's active state",
   "pricing.discount_code.created": "Created a discount code",
   "pricing.discount_code.active_changed": "Changed a discount code's active state",
+
+  // Pricing Engine V1.1 (2026-09-06)
+  "pricing.subject_category_multiplier.created": "Updated a subject/group price multiplier",
+  "pricing.additional_retouch_rate.created": "Updated an additional retouch rate",
+  "pricing.manual_discount.applied": "Applied a manual discount",
 };
 
 // Graceful fallback for any action type not (yet) in ACTION_LABELS — pure

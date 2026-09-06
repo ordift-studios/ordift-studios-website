@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import NavBar from "@/components/NavBar";
 import Footer from "@/components/Footer";
-import { listActivePricingMarkets, getActivePersonalSessionRates, listAllSubjectCategories, type PersonalSessionRate } from "@/lib/pricing/personalSessionPricing";
+import { listActivePricingMarkets, getActivePersonalSessionRates, listAllSubjectCategories, getActiveAdditionalRetouchRate, type PersonalSessionRate } from "@/lib/pricing/personalSessionPricing";
 import PersonalSessionEstimator from "./PersonalSessionEstimator";
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://ordiftstudios.com";
@@ -26,11 +26,13 @@ export const metadata: Metadata = {
 // queries Supabase directly.
 export default async function PricingPage() {
   const markets = await listActivePricingMarkets();
-  const [ratesByMarketEntries, subjectCategories] = await Promise.all([
+  const [ratesByMarketEntries, subjectCategories, retouchRateEntries] = await Promise.all([
     Promise.all(markets.map(async (m) => [m.slug, await getActivePersonalSessionRates(m.slug)] as const)),
     listAllSubjectCategories(),
+    Promise.all(markets.map(async (m) => [m.slug, await getActiveAdditionalRetouchRate(m.slug)] as const)),
   ]);
   const ratesByMarket: Record<string, PersonalSessionRate[]> = Object.fromEntries(ratesByMarketEntries);
+  const retouchRateByMarket: Record<string, number | null> = Object.fromEntries(retouchRateEntries);
 
   return (
     <main>
@@ -55,7 +57,7 @@ export default async function PricingPage() {
               </p>
             </div>
           ) : (
-            <PersonalSessionEstimator markets={markets} ratesByMarket={ratesByMarket} subjectCategories={subjectCategories} />
+            <PersonalSessionEstimator markets={markets} ratesByMarket={ratesByMarket} subjectCategories={subjectCategories} retouchRateByMarket={retouchRateByMarket} />
           )}
           <p className="font-sans text-caption text-ordift-ink-muted mt-6 text-center">
             Weddings, corporate, and commercial work are proposal-based — <a href="/book?service=general" className="underline">start an enquiry</a> and we&rsquo;ll put together the right quote for your project.
