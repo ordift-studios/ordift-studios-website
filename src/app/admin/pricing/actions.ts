@@ -15,7 +15,18 @@ import {
   createCorporateMinimumBookingVersion,
   createCorporateRetouchRateVersion,
   createCorporatePriorityDeliveryVersion,
+  type CorporatePriorityDeliveryScopeSlug,
 } from "@/lib/pricing/corporateHeadshotPricing";
+import {
+  createWeddingEventTierRateVersion,
+  createWeddingEventPriorityDeliveryVersion,
+  createWeddingEventAddonRateVersion,
+  createWeddingEventPercentageRateVersion,
+  type WeddingEventCategory,
+  type ServiceMode,
+  type AddonSlug,
+  type PercentageSlug,
+} from "@/lib/pricing/weddingEventPricing";
 
 // Ordift Pricing Engine V1 (2026-09-06) — thin Server Action wrappers.
 // All real authorization/validation/audit logic lives in
@@ -237,15 +248,92 @@ export async function createCorporateRetouchRateVersionAction(formData: FormData
   revalidatePath("/admin/pricing");
 }
 
+const CORPORATE_PRIORITY_SCOPES: CorporatePriorityDeliveryScopeSlug[] = ["individual_headshot", "executive_portrait", "team_2_5", "team_6_10", "team_11_25", "team_26_50"];
+
+// Corporate Priority Delivery correction (2026-09-06): now takes an
+// explicit scopeSlug — the percentage varies by product/team-tier.
 export async function createCorporatePriorityDeliveryVersionAction(formData: FormData): Promise<void> {
   const user = await getCurrentUser();
   if (!user) return;
 
+  const scopeSlug = String(formData.get("scopeSlug") ?? "");
   const multiplierPercentage = Number(formData.get("multiplierPercentage"));
-  if (!Number.isFinite(multiplierPercentage)) return;
+  if (!CORPORATE_PRIORITY_SCOPES.includes(scopeSlug as CorporatePriorityDeliveryScopeSlug) || !Number.isFinite(multiplierPercentage)) return;
 
-  const result = await createCorporatePriorityDeliveryVersion({ multiplierPercentage, actorUserId: user.id });
+  const result = await createCorporatePriorityDeliveryVersion({ scopeSlug: scopeSlug as CorporatePriorityDeliveryScopeSlug, multiplierPercentage, actorUserId: user.id });
   if (!result.ok) console.error("[admin] failed to create corporate priority delivery version", result.error);
+
+  revalidatePath("/admin/pricing");
+}
+
+// ============================================================
+// Weddings & Events Pricing V1 (2026-09-06)
+// ============================================================
+
+export async function createWeddingEventTierRateVersionAction(formData: FormData): Promise<void> {
+  const user = await getCurrentUser();
+  if (!user) return;
+
+  const marketSlug = String(formData.get("marketSlug") ?? "");
+  const category = String(formData.get("category") ?? "");
+  const serviceMode = String(formData.get("serviceMode") ?? "");
+  const tierSlug = String(formData.get("tierSlug") ?? "");
+  const priceUsd = Number(formData.get("priceUsd"));
+  if (!marketSlug || (category !== "wedding" && category !== "event") || !tierSlug || !Number.isFinite(priceUsd)) return;
+
+  const result = await createWeddingEventTierRateVersion({
+    marketSlug,
+    category: category as WeddingEventCategory,
+    serviceMode: serviceMode as ServiceMode,
+    tierSlug,
+    priceUsd,
+    actorUserId: user.id,
+  });
+  if (!result.ok) console.error("[admin] failed to create wedding/event tier rate version", result.error);
+
+  revalidatePath("/admin/pricing");
+}
+
+export async function createWeddingEventPriorityDeliveryVersionAction(formData: FormData): Promise<void> {
+  const user = await getCurrentUser();
+  if (!user) return;
+
+  const category = String(formData.get("category") ?? "");
+  const tierSlug = String(formData.get("tierSlug") ?? "");
+  const multiplierPercentage = Number(formData.get("multiplierPercentage"));
+  if ((category !== "wedding" && category !== "event") || !tierSlug || !Number.isFinite(multiplierPercentage)) return;
+
+  const result = await createWeddingEventPriorityDeliveryVersion({ category: category as WeddingEventCategory, tierSlug, multiplierPercentage, actorUserId: user.id });
+  if (!result.ok) console.error("[admin] failed to create wedding/event priority delivery version", result.error);
+
+  revalidatePath("/admin/pricing");
+}
+
+export async function createWeddingEventAddonRateVersionAction(formData: FormData): Promise<void> {
+  const user = await getCurrentUser();
+  if (!user) return;
+
+  const marketSlug = String(formData.get("marketSlug") ?? "");
+  const addonSlug = String(formData.get("addonSlug") ?? "");
+  const priceUsd = Number(formData.get("priceUsd"));
+  if (!marketSlug || !addonSlug || !Number.isFinite(priceUsd)) return;
+
+  const result = await createWeddingEventAddonRateVersion({ marketSlug, addonSlug: addonSlug as AddonSlug, priceUsd, actorUserId: user.id });
+  if (!result.ok) console.error("[admin] failed to create wedding/event addon rate version", result.error);
+
+  revalidatePath("/admin/pricing");
+}
+
+export async function createWeddingEventPercentageRateVersionAction(formData: FormData): Promise<void> {
+  const user = await getCurrentUser();
+  if (!user) return;
+
+  const percentageSlug = String(formData.get("percentageSlug") ?? "");
+  const percentage = Number(formData.get("percentage"));
+  if (!percentageSlug || !Number.isFinite(percentage)) return;
+
+  const result = await createWeddingEventPercentageRateVersion({ percentageSlug: percentageSlug as PercentageSlug, percentage, actorUserId: user.id });
+  if (!result.ok) console.error("[admin] failed to create wedding/event percentage rate version", result.error);
 
   revalidatePath("/admin/pricing");
 }

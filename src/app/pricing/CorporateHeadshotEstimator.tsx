@@ -4,9 +4,11 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import {
   calculateCorporateEstimate,
+  resolveCorporatePriorityDeliveryScope,
   type CorporateProductSlug,
   type CorporateHeadshotRate,
   type CorporateTeamTierRate,
+  type CorporatePriorityDeliveryScopeSlug,
 } from "@/lib/pricing/corporateHeadshotEstimate";
 
 const PRODUCTS: { slug: CorporateProductSlug; label: string }[] = [
@@ -25,14 +27,14 @@ export default function CorporateHeadshotEstimator({
   teamTierRatesByMarket,
   minimumBookingByMarket,
   retouchRateByMarket,
-  priorityDeliveryPercentage,
+  priorityDeliveryPercentageByScope,
 }: {
   markets: { id: string; slug: string; name: string }[];
   headshotRatesByMarket: Record<string, CorporateHeadshotRate[]>;
   teamTierRatesByMarket: Record<string, CorporateTeamTierRate[]>;
   minimumBookingByMarket: Record<string, number | null>;
   retouchRateByMarket: Record<string, number | null>;
-  priorityDeliveryPercentage: number | null;
+  priorityDeliveryPercentageByScope: Partial<Record<CorporatePriorityDeliveryScopeSlug, number>>;
 }) {
   const [marketSlug, setMarketSlug] = useState(markets[0]?.slug ?? "");
   const [product, setProduct] = useState<CorporateProductSlug>("individual_headshot");
@@ -40,11 +42,19 @@ export default function CorporateHeadshotEstimator({
   const [additionalRetouchImages, setAdditionalRetouchImages] = useState(0);
   const [priorityDeliveryRequested, setPriorityDeliveryRequested] = useState(false);
 
+  const teamTierRates = useMemo(() => teamTierRatesByMarket[marketSlug] ?? [], [teamTierRatesByMarket, marketSlug]);
+  // Corporate Priority Delivery correction (2026-09-06): the percentage
+  // now depends on the selected product/team-tier, not a single global
+  // figure — resolveCorporatePriorityDeliveryScope() is the same helper
+  // the server module uses, so the mapping can never drift.
+  const priorityScope = resolveCorporatePriorityDeliveryScope(product, teamTierRates, product === "team_headshots" ? numberOfPeople : undefined);
+  const priorityDeliveryPercentage = priorityScope ? priorityDeliveryPercentageByScope[priorityScope] ?? null : null;
+
   const estimate = useMemo(() => {
     return calculateCorporateEstimate({
       product,
       headshotRates: headshotRatesByMarket[marketSlug] ?? [],
-      teamTierRates: teamTierRatesByMarket[marketSlug] ?? [],
+      teamTierRates,
       minimumBookingUsd: minimumBookingByMarket[marketSlug] ?? null,
       numberOfPeople: product === "team_headshots" ? numberOfPeople : undefined,
       additionalRetouchImages,
@@ -52,7 +62,7 @@ export default function CorporateHeadshotEstimator({
       priorityDeliveryRequested,
       priorityDeliveryPercentage,
     });
-  }, [marketSlug, product, numberOfPeople, additionalRetouchImages, priorityDeliveryRequested, headshotRatesByMarket, teamTierRatesByMarket, minimumBookingByMarket, retouchRateByMarket, priorityDeliveryPercentage]);
+  }, [marketSlug, product, numberOfPeople, additionalRetouchImages, priorityDeliveryRequested, headshotRatesByMarket, teamTierRates, minimumBookingByMarket, retouchRateByMarket, priorityDeliveryPercentage]);
 
   const retouchRate = retouchRateByMarket[marketSlug] ?? null;
 

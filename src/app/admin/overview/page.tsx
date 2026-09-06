@@ -106,7 +106,13 @@ const ACTION_LABELS: Record<string, string> = {
   "pricing.corporate_team_tier_rate.created": "Updated a Team Headshots tier rate",
   "pricing.corporate_minimum_booking.created": "Updated a Corporate minimum booking amount",
   "pricing.corporate_retouch_rate.created": "Updated a Corporate additional retouch rate",
-  "pricing.corporate_priority_delivery.created": "Updated the Corporate Priority Delivery percentage",
+  "pricing.corporate_priority_delivery.created": "Updated a Corporate Priority Delivery percentage",
+
+  // Weddings & Events Pricing V1 (2026-09-06)
+  "pricing.wedding_event_tier_rate.created": "Updated a Wedding/Event collection rate",
+  "pricing.wedding_event_priority_delivery.created": "Updated a Wedding/Event Priority Delivery percentage",
+  "pricing.wedding_event_addon_rate.created": "Updated a Wedding/Event add-on rate",
+  "pricing.wedding_event_percentage_rate.created": "Updated a Wedding/Event formula percentage",
 };
 
 // Graceful fallback for any action type not (yet) in ACTION_LABELS — pure

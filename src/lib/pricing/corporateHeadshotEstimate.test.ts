@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { calculateCorporateEstimate, type CorporateHeadshotRate, type CorporateTeamTierRate } from "./corporateHeadshotEstimate";
+import { calculateCorporateEstimate, resolveCorporatePriorityDeliveryScope, type CorporateHeadshotRate, type CorporateTeamTierRate } from "./corporateHeadshotEstimate";
 
 // Ordift Corporate & Headshots Pricing V1 (2026-09-06) —
 // calculateCorporateEstimate() is pure (takes already-fetched rates
@@ -401,5 +401,116 @@ describe("calculateCorporateEstimate — missing/unpublished rates never silentl
       minimumBookingUsd: null,
     });
     expect(result.ok).toBe(false);
+  });
+});
+
+// ============================================================
+// Corporate Priority Delivery correction (2026-09-06, approved) —
+// resolveCorporatePriorityDeliveryScope() maps a product/team-tier to
+// the scope key whose percentage now applies (replacing the prior
+// single global +35%). This does not change calculateCorporateEstimate's
+// own base-rate/team-rate/minimum-booking/retouch-rate formulas at all
+// — see the "existing Corporate base prices unchanged" regression
+// tests below.
+// ============================================================
+describe("resolveCorporatePriorityDeliveryScope — Corporate Priority Delivery correction", () => {
+  it("Individual Headshot resolves to individual_headshot", () => {
+    expect(resolveCorporatePriorityDeliveryScope("individual_headshot", [])).toBe("individual_headshot");
+  });
+  it("Executive Portrait resolves to executive_portrait", () => {
+    expect(resolveCorporatePriorityDeliveryScope("executive_portrait", [])).toBe("executive_portrait");
+  });
+  it("Team 2-5 resolves to team_2_5", () => {
+    expect(resolveCorporatePriorityDeliveryScope("team_headshots", TEAM_TIER_RATES.ghana, 3)).toBe("team_2_5");
+  });
+  it("Team 6-10 resolves to team_6_10", () => {
+    expect(resolveCorporatePriorityDeliveryScope("team_headshots", TEAM_TIER_RATES.ghana, 8)).toBe("team_6_10");
+  });
+  it("Team 11-25 resolves to team_11_25", () => {
+    expect(resolveCorporatePriorityDeliveryScope("team_headshots", TEAM_TIER_RATES.ghana, 15)).toBe("team_11_25");
+  });
+  it("Team 26-50 resolves to team_26_50", () => {
+    expect(resolveCorporatePriorityDeliveryScope("team_headshots", TEAM_TIER_RATES.ghana, 40)).toBe("team_26_50");
+  });
+  it("an unmatched team size (e.g. 51+) resolves to null rather than guessing a scope", () => {
+    expect(resolveCorporatePriorityDeliveryScope("team_headshots", TEAM_TIER_RATES.ghana, 60)).toBeNull();
+  });
+});
+
+describe("Corporate Priority Delivery correction — approved percentages, applied via calculateCorporateEstimate", () => {
+  const CORRECTED_PERCENTAGES: Record<string, number> = {
+    individual_headshot: 40,
+    executive_portrait: 40,
+    team_2_5: 40,
+    team_6_10: 40,
+    team_11_25: 40,
+    team_26_50: 30,
+  };
+
+  it("Individual Headshot: +40%", () => {
+    const result = calculateCorporateEstimate({ product: "individual_headshot", headshotRates: HEADSHOT_RATES.ghana, teamTierRates: [], minimumBookingUsd: null, priorityDeliveryRequested: true, priorityDeliveryPercentage: CORRECTED_PERCENTAGES.individual_headshot });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.priorityDeliveryPercentage).toBe(40);
+    expect(result.priorityDeliveryAmountUsd).toBe(Math.round(100 * 0.4 * 100) / 100);
+  });
+  it("Executive Portrait: +40%", () => {
+    const result = calculateCorporateEstimate({ product: "executive_portrait", headshotRates: HEADSHOT_RATES.ghana, teamTierRates: [], minimumBookingUsd: null, priorityDeliveryRequested: true, priorityDeliveryPercentage: CORRECTED_PERCENTAGES.executive_portrait });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.priorityDeliveryPercentage).toBe(40);
+    expect(result.priorityDeliveryAmountUsd).toBe(Math.round(200 * 0.4 * 100) / 100);
+  });
+  it("Team 2-5: +40%", () => {
+    const result = calculateCorporateEstimate({ product: "team_headshots", numberOfPeople: 3, ...baseParams("ghana"), priorityDeliveryRequested: true, priorityDeliveryPercentage: CORRECTED_PERCENTAGES.team_2_5 });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.priorityDeliveryPercentage).toBe(40);
+  });
+  it("Team 6-10: +40%", () => {
+    const result = calculateCorporateEstimate({ product: "team_headshots", numberOfPeople: 8, ...baseParams("ghana"), priorityDeliveryRequested: true, priorityDeliveryPercentage: CORRECTED_PERCENTAGES.team_6_10 });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.priorityDeliveryPercentage).toBe(40);
+  });
+  it("Team 11-25: +40%", () => {
+    const result = calculateCorporateEstimate({ product: "team_headshots", numberOfPeople: 15, ...baseParams("ghana"), priorityDeliveryRequested: true, priorityDeliveryPercentage: CORRECTED_PERCENTAGES.team_11_25 });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.priorityDeliveryPercentage).toBe(40);
+  });
+  it("Team 26-50: +30% (the one tier that differs from the rest)", () => {
+    const result = calculateCorporateEstimate({ product: "team_headshots", numberOfPeople: 40, ...baseParams("ghana"), priorityDeliveryRequested: true, priorityDeliveryPercentage: CORRECTED_PERCENTAGES.team_26_50 });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.priorityDeliveryPercentage).toBe(30);
+  });
+  it("51+ remains a Custom Corporate Proposal — the correction changes no custom-quote routing", () => {
+    const result = calculateCorporateEstimate({ product: "team_headshots", numberOfPeople: 55, ...baseParams("ghana") });
+    expect(result.ok).toBe(false);
+  });
+});
+
+describe("Corporate Priority Delivery correction — existing Corporate base prices unchanged", () => {
+  it("all six Individual Headshot rates are unchanged by the correction", () => {
+    const expected: Record<string, number> = { ghana: 100, qatar: 175, uk: 225, north_america: 250, asia_pacific: 200, other_international: 200 };
+    for (const market of MARKETS) {
+      const result = calculateCorporateEstimate({ product: "individual_headshot", ...baseParams(market) });
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.basePriceUsd).toBe(expected[market]);
+    }
+  });
+  it("all Team tier per-person rates are unchanged by the correction", () => {
+    const result = calculateCorporateEstimate({ product: "team_headshots", numberOfPeople: 3, ...baseParams("ghana") });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.teamSubtotalUsd).toBe(225); // 3 x $75, unchanged Ghana 2-5 rate
+  });
+  it("minimum booking and retouch rates are unchanged by the correction", () => {
+    const result = calculateCorporateEstimate({ product: "individual_headshot", additionalRetouchImages: 2, ...baseParams("ghana") });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.additionalRetouchAmountUsd).toBe(30); // 2 x $15, unchanged Ghana rate
   });
 });

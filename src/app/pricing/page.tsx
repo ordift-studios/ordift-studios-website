@@ -8,16 +8,29 @@ import {
   getActiveCorporateTeamTierRates,
   getActiveCorporateMinimumBooking,
   getActiveCorporateRetouchRate,
-  getActiveCorporatePriorityDeliveryPercentage,
+  getAllActiveCorporatePriorityDeliveryPercentages,
   type CorporateHeadshotRate,
   type CorporateTeamTierRate,
 } from "@/lib/pricing/corporateHeadshotPricing";
+import {
+  getActiveTierRates,
+  getTierDeliverables,
+  getPriorityDeliveryRates,
+  getAddonRates,
+  getPercentageRates,
+  type WeddingEventTierRate,
+  type WeddingEventTierDeliverable,
+  type WeddingEventPriorityDeliveryRate,
+  type AddonSlug,
+  type PercentageSlug,
+} from "@/lib/pricing/weddingEventPricing";
 import PersonalSessionEstimator from "./PersonalSessionEstimator";
 import CorporateHeadshotEstimator from "./CorporateHeadshotEstimator";
+import WeddingEventEstimator from "./WeddingEventEstimator";
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://ordiftstudios.com";
 const TITLE = "Pricing — Ordift Studios";
-const DESCRIPTION = "Build your session and see an estimate for Ordift Studios' Personal Portrait or Corporate & Headshots photography, based on where your shoot takes place.";
+const DESCRIPTION = "Build your session and see an estimate for Ordift Studios' Personal Portrait, Corporate & Headshots, or Weddings & Events photography and film, based on where your shoot takes place.";
 
 export const metadata: Metadata = {
   title: TITLE,
@@ -29,6 +42,7 @@ export const metadata: Metadata = {
 const FAMILIES = [
   { key: "personal", label: "Personal Portrait" },
   { key: "corporate", label: "Corporate & Headshots" },
+  { key: "wedding_event", label: "Weddings & Events" },
 ] as const;
 
 // Ordift Pricing Engine (2026-09-06) — public entry point. Server-
@@ -44,7 +58,7 @@ const FAMILIES = [
 // switch itself.
 export default async function PricingPage({ searchParams }: { searchParams: Promise<{ family?: string }> }) {
   const { family: familyParam } = await searchParams;
-  const family = familyParam === "corporate" ? "corporate" : "personal";
+  const family = familyParam === "corporate" ? "corporate" : familyParam === "wedding_event" ? "wedding_event" : "personal";
 
   const markets = await listActivePricingMarkets();
 
@@ -67,19 +81,45 @@ export default async function PricingPage({ searchParams }: { searchParams: Prom
   const corporateData =
     family === "corporate"
       ? await (async () => {
-          const [headshotEntries, teamTierEntries, minimumEntries, retouchEntries, priorityDeliveryPercentage] = await Promise.all([
+          const [headshotEntries, teamTierEntries, minimumEntries, retouchEntries, priorityDeliveryPercentageByScope] = await Promise.all([
             Promise.all(markets.map(async (m) => [m.slug, await getActiveCorporateHeadshotRates(m.slug)] as const)),
             Promise.all(markets.map(async (m) => [m.slug, await getActiveCorporateTeamTierRates(m.slug)] as const)),
             Promise.all(markets.map(async (m) => [m.slug, await getActiveCorporateMinimumBooking(m.slug)] as const)),
             Promise.all(markets.map(async (m) => [m.slug, await getActiveCorporateRetouchRate(m.slug)] as const)),
-            getActiveCorporatePriorityDeliveryPercentage(),
+            getAllActiveCorporatePriorityDeliveryPercentages(),
           ]);
           return {
             headshotRatesByMarket: Object.fromEntries(headshotEntries) as Record<string, CorporateHeadshotRate[]>,
             teamTierRatesByMarket: Object.fromEntries(teamTierEntries) as Record<string, CorporateTeamTierRate[]>,
             minimumBookingByMarket: Object.fromEntries(minimumEntries) as Record<string, number | null>,
             retouchRateByMarket: Object.fromEntries(retouchEntries) as Record<string, number | null>,
-            priorityDeliveryPercentage,
+            priorityDeliveryPercentageByScope,
+          };
+        })()
+      : null;
+
+  const weddingEventData =
+    family === "wedding_event"
+      ? await (async () => {
+          const [weddingTierEntries, eventTierEntries, weddingDeliverables, eventDeliverables, weddingPriorityRates, eventPriorityRates, addonEntries, percentageRates] = await Promise.all([
+            Promise.all(markets.map(async (m) => [m.slug, await getActiveTierRates("wedding", m.slug)] as const)),
+            Promise.all(markets.map(async (m) => [m.slug, await getActiveTierRates("event", m.slug)] as const)),
+            getTierDeliverables("wedding"),
+            getTierDeliverables("event"),
+            getPriorityDeliveryRates("wedding"),
+            getPriorityDeliveryRates("event"),
+            Promise.all(markets.map(async (m) => [m.slug, await getAddonRates(m.slug)] as const)),
+            getPercentageRates(),
+          ]);
+          return {
+            weddingTierRatesByMarket: Object.fromEntries(weddingTierEntries) as Record<string, WeddingEventTierRate[]>,
+            eventTierRatesByMarket: Object.fromEntries(eventTierEntries) as Record<string, WeddingEventTierRate[]>,
+            weddingDeliverables: weddingDeliverables as WeddingEventTierDeliverable[],
+            eventDeliverables: eventDeliverables as WeddingEventTierDeliverable[],
+            weddingPriorityRates: weddingPriorityRates as WeddingEventPriorityDeliveryRate[],
+            eventPriorityRates: eventPriorityRates as WeddingEventPriorityDeliveryRate[],
+            addonRatesByMarket: Object.fromEntries(addonEntries) as Record<string, Partial<Record<AddonSlug, number>>>,
+            percentageRates: percentageRates as Partial<Record<PercentageSlug, number>>,
           };
         })()
       : null;
@@ -120,18 +160,30 @@ export default async function PricingPage({ searchParams }: { searchParams: Prom
             </div>
           ) : family === "personal" && personalData ? (
             <PersonalSessionEstimator markets={markets} ratesByMarket={personalData.ratesByMarket} subjectCategories={personalData.subjectCategories} retouchRateByMarket={personalData.retouchRateByMarket} />
-          ) : corporateData ? (
+          ) : family === "corporate" && corporateData ? (
             <CorporateHeadshotEstimator
               markets={markets}
               headshotRatesByMarket={corporateData.headshotRatesByMarket}
               teamTierRatesByMarket={corporateData.teamTierRatesByMarket}
               minimumBookingByMarket={corporateData.minimumBookingByMarket}
               retouchRateByMarket={corporateData.retouchRateByMarket}
-              priorityDeliveryPercentage={corporateData.priorityDeliveryPercentage}
+              priorityDeliveryPercentageByScope={corporateData.priorityDeliveryPercentageByScope}
+            />
+          ) : weddingEventData ? (
+            <WeddingEventEstimator
+              markets={markets}
+              weddingTierRatesByMarket={weddingEventData.weddingTierRatesByMarket}
+              eventTierRatesByMarket={weddingEventData.eventTierRatesByMarket}
+              weddingDeliverables={weddingEventData.weddingDeliverables}
+              eventDeliverables={weddingEventData.eventDeliverables}
+              weddingPriorityRates={weddingEventData.weddingPriorityRates}
+              eventPriorityRates={weddingEventData.eventPriorityRates}
+              addonRatesByMarket={weddingEventData.addonRatesByMarket}
+              percentageRates={weddingEventData.percentageRates}
             />
           ) : null}
           <p className="font-sans text-caption text-ordift-ink-muted mt-6 text-center">
-            Weddings and commercial/advertising work are proposal-based — <a href="/book?service=general" className="underline">start an enquiry</a> and we&rsquo;ll put together the right quote for your project.
+            Commercial/advertising work is proposal-based — <a href="/book?service=general" className="underline">start an enquiry</a> and we&rsquo;ll put together the right quote for your project.
           </p>
         </div>
       </section>

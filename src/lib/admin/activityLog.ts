@@ -252,6 +252,11 @@ export const ADMIN_TIER_ACTIONS = new Set<string>([
   "pricing.corporate_minimum_booking.created",
   "pricing.corporate_retouch_rate.created",
   "pricing.corporate_priority_delivery.created",
+  // Weddings & Events Pricing V1 (2026-09-06)
+  "pricing.wedding_event_tier_rate.created",
+  "pricing.wedding_event_priority_delivery.created",
+  "pricing.wedding_event_addon_rate.created",
+  "pricing.wedding_event_percentage_rate.created",
 ]);
 
 // Deliberately reviewed and left staff-visible (Phase I.1, 2026-09-05)

@@ -15,8 +15,19 @@ import {
   getActiveCorporateTeamTierRates,
   getActiveCorporateMinimumBooking,
   getActiveCorporateRetouchRate,
-  getActiveCorporatePriorityDeliveryPercentage,
+  getAllActiveCorporatePriorityDeliveryPercentages,
+  type CorporatePriorityDeliveryScopeSlug,
 } from "@/lib/pricing/corporateHeadshotPricing";
+import {
+  getActiveTierRates,
+  getTierDeliverables,
+  getPriorityDeliveryRates,
+  getAddonRates,
+  getPercentageRates,
+  type ServiceMode,
+  type AddonSlug,
+  type PercentageSlug,
+} from "@/lib/pricing/weddingEventPricing";
 import {
   createPersonalSessionRateVersionAction,
   setPricingMarketActiveAction,
@@ -30,6 +41,10 @@ import {
   createCorporateMinimumBookingVersionAction,
   createCorporateRetouchRateVersionAction,
   createCorporatePriorityDeliveryVersionAction,
+  createWeddingEventTierRateVersionAction,
+  createWeddingEventPriorityDeliveryVersionAction,
+  createWeddingEventAddonRateVersionAction,
+  createWeddingEventPercentageRateVersionAction,
 } from "./actions";
 import ManualDiscountForm from "./ManualDiscountForm";
 
@@ -45,6 +60,7 @@ const TABS = [
   { key: "subjects", label: "Subjects / Groups" },
   { key: "addons", label: "Add-Ons" },
   { key: "corporate", label: "Corporate & Headshots" },
+  { key: "wedding_event", label: "Weddings & Events" },
   { key: "discounts", label: "Discounts" },
   { key: "markets", label: "Markets / Overrides" },
 ] as const;
@@ -62,6 +78,99 @@ const TEAM_TIERS = [
   { slug: "11-25", label: "11–25 people" },
   { slug: "26-50", label: "26–50 people" },
 ] as const;
+
+const CORPORATE_PRIORITY_SCOPES: { slug: CorporatePriorityDeliveryScopeSlug; label: string }[] = [
+  { slug: "individual_headshot", label: "Individual Headshot" },
+  { slug: "executive_portrait", label: "Executive Portrait" },
+  { slug: "team_2_5", label: "Team 2–5" },
+  { slug: "team_6_10", label: "Team 6–10" },
+  { slug: "team_11_25", label: "Team 11–25" },
+  { slug: "team_26_50", label: "Team 26–50" },
+];
+
+const WEDDING_EVENT_SUBS = [
+  { key: "wedding", label: "Wedding Celebrations" },
+  { key: "event", label: "Events" },
+  { key: "addons", label: "Add-Ons" },
+] as const;
+
+const SERVICE_MODES: { slug: ServiceMode; label: string }[] = [
+  { slug: "photography", label: "Photography" },
+  { slug: "film", label: "Film" },
+  { slug: "photography_film", label: "Photography + Film" },
+];
+
+const WEDDING_TIER_OPTIONS = [
+  { slug: "chapter", label: "The Chapter" },
+  { slug: "narrative", label: "The Narrative" },
+  { slug: "chronicle", label: "The Chronicle" },
+  { slug: "archive", label: "The Archive" },
+] as const;
+
+const EVENT_TIER_OPTIONS = [
+  { slug: "focused", label: "Focused" },
+  { slug: "half_day", label: "Half Day" },
+  { slug: "full_day", label: "Full Day" },
+  { slug: "extended", label: "Extended" },
+] as const;
+
+const WEDDING_EVENT_PERCENTAGE_OPTIONS: { slug: PercentageSlug; label: string }[] = [
+  { slug: "corporate_organisational_scope", label: "Corporate/Organisational Event Scope" },
+  { slug: "documentary_recording", label: "Full Event / Documentary Recording" },
+  { slug: "raw_photo_guidance", label: "RAW Photo Guidance" },
+  { slug: "raw_video_guidance", label: "RAW Video Guidance" },
+];
+
+const ADDON_GROUPS: { title: string; items: { slug: AddonSlug; label: string }[] }[] = [
+  {
+    title: "Additional Coverage & Crew",
+    items: [
+      { slug: "additional_photo_hour", label: "Additional Photography Hour" },
+      { slug: "additional_film_hour", label: "Additional Film Hour" },
+      { slug: "additional_photofilm_hour", label: "Additional Photography + Film Hour" },
+      { slug: "additional_photographer_day", label: "Additional Photographer / event day" },
+      { slug: "additional_filmmaker_day", label: "Additional Filmmaker / event day" },
+    ],
+  },
+  { title: "Wedding-Only", items: [{ slug: "pre_wedding_session", label: "Pre-Wedding Session" }] },
+  {
+    title: "Drone & Same-Day Content",
+    items: [
+      { slug: "drone", label: "Drone Coverage" },
+      { slug: "same_day_photo_pack", label: "Same-Day Photo Social Pack" },
+      { slug: "same_day_highlight_film", label: "Same-Day Highlight Film" },
+    ],
+  },
+  {
+    title: "Documentary & RAW Guidance Minimums",
+    items: [
+      { slug: "documentary_recording_minimum", label: "Full Event/Documentary Recording — Minimum" },
+      { slug: "raw_photo_guidance_minimum", label: "RAW Photo Guidance — Minimum" },
+      { slug: "raw_video_guidance_minimum", label: "RAW Video Guidance — Minimum" },
+    ],
+  },
+  {
+    title: "Livestreaming",
+    items: [
+      { slug: "livestream_single_basic", label: "Single-Stream Basic" },
+      { slug: "livestream_multicam_standard", label: "Multi-Camera Standard" },
+    ],
+  },
+  {
+    title: "Albums, Frames & Presentation",
+    items: [
+      { slug: "keepsake_album", label: "Keepsake Album" },
+      { slug: "signature_album", label: "Signature Album" },
+      { slug: "archive_album", label: "Archive Album" },
+      { slug: "companion_album", label: "Parent / Companion Album" },
+      { slug: "frame_small", label: "Small / Desk Frame" },
+      { slug: "frame_medium", label: "Medium Frame" },
+      { slug: "frame_large", label: "Large Frame" },
+      { slug: "frame_statement", label: "Statement Frame" },
+      { slug: "presentation_drive", label: "Presentation Drive" },
+    ],
+  },
+];
 
 function TabNav({ active }: { active: string }) {
   return (
@@ -95,6 +204,38 @@ function CorporateSubNav({ active, market }: { active: string; market?: string }
   );
 }
 
+function WeddingEventSubNav({ active, market }: { active: string; market?: string }) {
+  return (
+    <div className="flex flex-wrap gap-2">
+      {WEDDING_EVENT_SUBS.map((s) => (
+        <Link
+          key={s.key}
+          href={`/admin/pricing?tab=wedding_event&weSub=${s.key}${market ? `&market=${market}` : ""}`}
+          className={`rounded-lg px-3 py-1.5 font-sans text-caption ${active === s.key ? "bg-ordift-ink text-white" : "border border-black/15 text-ordift-ink-muted"}`}
+        >
+          {s.label}
+        </Link>
+      ))}
+    </div>
+  );
+}
+
+function ModePills({ weSub, market, active }: { weSub: string; market: string; active: ServiceMode }) {
+  return (
+    <div className="flex flex-wrap gap-2">
+      {SERVICE_MODES.map((m) => (
+        <Link
+          key={m.slug}
+          href={`/admin/pricing?tab=wedding_event&weSub=${weSub}&market=${market}&mode=${m.slug}`}
+          className={`rounded-full border px-4 py-1.5 font-sans text-caption ${active === m.slug ? "border-ordift-gold-pressed bg-ordift-gold-pressed/10 text-ordift-ink" : "border-black/15 text-ordift-ink-muted"}`}
+        >
+          {m.label}
+        </Link>
+      ))}
+    </div>
+  );
+}
+
 function MarketPills({ tab, markets, active, extraQuery }: { tab: string; markets: { slug: string; name: string }[]; active: string; extraQuery?: string }) {
   return (
     <div className="flex flex-wrap gap-2">
@@ -116,15 +257,17 @@ function MarketPills({ tab, markets, active, extraQuery }: { tab: string; market
 // requirement changed from V1/V1.1. Reorganized into a compact, tabbed
 // reference-first workspace. Every figure shown still traces to a real,
 // versioned database row — nothing hard-coded here.
-export default async function AdminPricingPage({ searchParams }: { searchParams: Promise<{ tab?: string; corpSub?: string; market?: string }> }) {
+export default async function AdminPricingPage({ searchParams }: { searchParams: Promise<{ tab?: string; corpSub?: string; weSub?: string; market?: string; mode?: string }> }) {
   const user = await getCurrentUser();
   if (!user) redirect("/admin/overview");
   const auth = await authorizeWithSuperAdminOverride(user.id, FINANCE_CAPABILITIES.pricingAdminister);
   if (!auth.ok) redirect("/admin/overview");
 
-  const { tab: tabParam, corpSub: corpSubParam, market: marketParam } = await searchParams;
+  const { tab: tabParam, corpSub: corpSubParam, weSub: weSubParam, market: marketParam, mode: modeParam } = await searchParams;
   const tab = TABS.some((t) => t.key === tabParam) ? tabParam! : "personal-sessions";
   const corpSub = CORPORATE_SUBS.some((s) => s.key === corpSubParam) ? corpSubParam! : "individual";
+  const weSub = WEDDING_EVENT_SUBS.some((s) => s.key === weSubParam) ? weSubParam! : "wedding";
+  const mode: ServiceMode = SERVICE_MODES.some((m) => m.slug === modeParam) ? (modeParam as ServiceMode) : "photography_film";
 
   const markets = await listAllPricingMarketsForAdmin();
   const activeMarkets = markets.filter((m) => m.active);
@@ -137,16 +280,30 @@ export default async function AdminPricingPage({ searchParams }: { searchParams:
     selectedMarket ? getActiveAdditionalRetouchRate(selectedMarket.slug) : Promise.resolve(null),
   ]);
 
-  const [corporateHeadshotRates, corporateTeamTierRates, corporateMinimumBooking, corporateRetouchRate, corporatePriorityDeliveryPercentage] =
+  const [corporateHeadshotRates, corporateTeamTierRates, corporateMinimumBooking, corporateRetouchRate, corporatePriorityDeliveryPercentages] =
     tab === "corporate" && selectedMarket
       ? await Promise.all([
           getActiveCorporateHeadshotRates(selectedMarket.slug),
           getActiveCorporateTeamTierRates(selectedMarket.slug),
           getActiveCorporateMinimumBooking(selectedMarket.slug),
           getActiveCorporateRetouchRate(selectedMarket.slug),
-          getActiveCorporatePriorityDeliveryPercentage(),
+          getAllActiveCorporatePriorityDeliveryPercentages(),
         ])
-      : [[], [], null, null, null];
+      : [[], [], null, null, {} as Partial<Record<CorporatePriorityDeliveryScopeSlug, number>>];
+
+  const [weddingTierRates, eventTierRates, weddingDeliverables, eventDeliverables, weddingPriorityRates, eventPriorityRates, weddingEventAddonRates, weddingEventPercentageRates] =
+    tab === "wedding_event" && selectedMarket
+      ? await Promise.all([
+          getActiveTierRates("wedding", selectedMarket.slug),
+          getActiveTierRates("event", selectedMarket.slug),
+          getTierDeliverables("wedding"),
+          getTierDeliverables("event"),
+          getPriorityDeliveryRates("wedding"),
+          getPriorityDeliveryRates("event"),
+          getAddonRates(selectedMarket.slug),
+          getPercentageRates(),
+        ])
+      : [[], [], [], [], [], [], {} as Partial<Record<AddonSlug, number>>, {} as Partial<Record<PercentageSlug, number>>];
 
   return (
     <div className="space-y-8">
@@ -387,16 +544,182 @@ export default async function AdminPricingPage({ searchParams }: { searchParams:
 
               <section className="rounded-xl border border-black/10 bg-white p-6 space-y-4">
                 <h2 className="font-serif font-medium text-body text-ordift-ink">Priority Delivery</h2>
-                <p className="font-sans text-caption text-ordift-ink-muted">Global — not market-specific. Accelerated delivery the client must deliberately request; never applied automatically. Locked at 35% of the eligible corporate subtotal (base + additional retouch) per approved policy.</p>
-                <p className="font-sans text-body text-ordift-ink">{corporatePriorityDeliveryPercentage != null ? `+${corporatePriorityDeliveryPercentage}%` : "Not set"}</p>
+                <p className="font-sans text-caption text-ordift-ink-muted">
+                  Global — not market-specific. Accelerated delivery the client must deliberately request; never applied automatically. Approved correction (2026-09-06): the percentage now varies by product/team-tier rather than a single global figure.
+                </p>
+                <ul className="divide-y divide-black/5">
+                  {CORPORATE_PRIORITY_SCOPES.map((s) => (
+                    <li key={s.slug} className="py-2.5">
+                      <div className="flex items-baseline justify-between font-sans text-body-small text-ordift-ink">
+                        <span>{s.label}</span>
+                        <span>{corporatePriorityDeliveryPercentages[s.slug] != null ? `+${corporatePriorityDeliveryPercentages[s.slug]}%` : "Not set"}</span>
+                      </div>
+                      <details className="mt-2 rounded-lg border border-black/10 px-4 py-2">
+                        <summary className="cursor-pointer font-sans text-caption text-ordift-ink select-none">Edit</summary>
+                        <form action={createCorporatePriorityDeliveryVersionAction} className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3">
+                          <input type="hidden" name="scopeSlug" value={s.slug} />
+                          <input name="multiplierPercentage" type="number" step="0.01" min="0.01" required defaultValue={corporatePriorityDeliveryPercentages[s.slug] ?? undefined} placeholder="Percentage" className="rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small" />
+                          <button type="submit" className="rounded-lg bg-ordift-ink text-white px-4 py-2 font-sans text-body-small">Save new version</button>
+                        </form>
+                      </details>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            </div>
+          )}
+        </div>
+      )}
 
-                <details className="rounded-lg border border-black/10 px-4 py-2">
-                  <summary className="cursor-pointer font-sans text-body-small text-ordift-ink select-none">Edit percentage</summary>
-                  <form action={createCorporatePriorityDeliveryVersionAction} className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3">
-                    <input name="multiplierPercentage" type="number" step="0.01" min="0.01" required defaultValue={corporatePriorityDeliveryPercentage ?? undefined} placeholder="Percentage, e.g. 35" className="rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small" />
-                    <button type="submit" className="rounded-lg bg-ordift-ink text-white px-4 py-2 font-sans text-body-small">Save new version</button>
-                  </form>
-                </details>
+      {tab === "wedding_event" && selectedMarket && (
+        <div className="space-y-6">
+          <WeddingEventSubNav active={weSub} market={selectedMarket.slug} />
+
+          {(weSub === "wedding" || weSub === "event") && (
+            <div className="space-y-6">
+              <MarketPills tab="wedding_event" extraQuery={`&weSub=${weSub}&mode=${mode}`} markets={activeMarkets} active={selectedMarket.slug} />
+              <ModePills weSub={weSub} market={selectedMarket.slug} active={mode} />
+
+              {(() => {
+                const category = weSub as "wedding" | "event";
+                const tierOptions = category === "wedding" ? WEDDING_TIER_OPTIONS : EVENT_TIER_OPTIONS;
+                const tierRates = category === "wedding" ? weddingTierRates : eventTierRates;
+                const deliverables = category === "wedding" ? weddingDeliverables : eventDeliverables;
+                const priorityRates = category === "wedding" ? weddingPriorityRates : eventPriorityRates;
+                return (
+                  <>
+                    <section className="rounded-xl border border-black/10 bg-white p-6 space-y-4">
+                      <h2 className="font-serif font-medium text-body text-ordift-ink">{selectedMarket.name} — {SERVICE_MODES.find((m) => m.slug === mode)?.label}</h2>
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-left">
+                          <thead>
+                            <tr className="font-sans text-caption uppercase tracking-wide text-ordift-ink-muted">
+                              <th className="pb-2">{category === "wedding" ? "Collection" : "Coverage level"}</th>
+                              <th className="pb-2">Rate</th>
+                              <th className="pb-2">Deliverables</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-black/5">
+                            {tierOptions.map((t) => {
+                              const rate = tierRates.find((r) => r.serviceMode === mode && r.tierSlug === t.slug);
+                              const deliverable = deliverables.find((d) => d.tierSlug === t.slug);
+                              return (
+                                <tr key={t.slug} className="font-sans text-body-small text-ordift-ink align-top">
+                                  <td className="py-2">{t.label}</td>
+                                  <td className="py-2">{rate ? `$${rate.priceUsd.toFixed(2)}` : "— not set —"}</td>
+                                  <td className="py-2 text-caption text-ordift-ink-muted">
+                                    {deliverable ? `${deliverable.eventDays}d · ${deliverable.coverageHours}h · ${deliverable.photographers}P/${deliverable.filmmakers}F · ${deliverable.professionallyEditedImagesMin}+ edited · ${deliverable.signatureRetouchedImages} retouched${deliverable.highlightFilmMinMinutes != null ? ` · ${deliverable.highlightFilmMinMinutes}-${deliverable.highlightFilmMaxMinutes}min film` : ""}${deliverable.includesDocumentary ? " · documentary included" : ""}` : "—"}
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+
+                      <div className="space-y-2 pt-2 border-t border-black/5">
+                        <p className="font-sans text-caption text-ordift-ink-muted">Edit a rate — current value is prefilled. Saving always creates a new version for this market/service/tier.</p>
+                        {tierOptions.map((t) => {
+                          const rate = tierRates.find((r) => r.serviceMode === mode && r.tierSlug === t.slug);
+                          return (
+                            <details key={t.slug} className="rounded-lg border border-black/10 px-4 py-2">
+                              <summary className="cursor-pointer font-sans text-body-small text-ordift-ink select-none">Edit {t.label} rate</summary>
+                              <form action={createWeddingEventTierRateVersionAction} className="grid grid-cols-1 sm:grid-cols-4 gap-3 mt-3">
+                                <input type="hidden" name="marketSlug" value={selectedMarket.slug} />
+                                <input type="hidden" name="category" value={category} />
+                                <input type="hidden" name="serviceMode" value={mode} />
+                                <input type="hidden" name="tierSlug" value={t.slug} />
+                                <input name="priceUsd" type="number" step="0.01" min="0.01" required defaultValue={rate?.priceUsd} placeholder="Price USD" className="rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small" />
+                                <button type="submit" className="rounded-lg bg-ordift-ink text-white px-4 py-2 font-sans text-body-small">Save new version</button>
+                              </form>
+                            </details>
+                          );
+                        })}
+                      </div>
+                    </section>
+
+                    <section className="rounded-xl border border-black/10 bg-white p-6 space-y-4">
+                      <h2 className="font-serif font-medium text-body text-ordift-ink">Priority Delivery — {category === "wedding" ? "Wedding" : "Event"}</h2>
+                      <p className="font-sans text-caption text-ordift-ink-muted">Global — not market-specific. Never applied automatically; the client must deliberately request it.</p>
+                      <ul className="divide-y divide-black/5">
+                        {tierOptions.map((t) => {
+                          const priority = priorityRates.find((r) => r.tierSlug === t.slug);
+                          return (
+                            <li key={t.slug} className="py-2.5">
+                              <div className="flex items-baseline justify-between font-sans text-body-small text-ordift-ink">
+                                <span>{t.label}</span>
+                                <span>{priority ? `+${priority.multiplierPercentage}%` : "Not set"}</span>
+                              </div>
+                              <details className="mt-2 rounded-lg border border-black/10 px-4 py-2">
+                                <summary className="cursor-pointer font-sans text-caption text-ordift-ink select-none">Edit</summary>
+                                <form action={createWeddingEventPriorityDeliveryVersionAction} className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3">
+                                  <input type="hidden" name="category" value={category} />
+                                  <input type="hidden" name="tierSlug" value={t.slug} />
+                                  <input name="multiplierPercentage" type="number" step="0.01" min="0.01" required defaultValue={priority?.multiplierPercentage} placeholder="Percentage" className="rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small" />
+                                  <button type="submit" className="rounded-lg bg-ordift-ink text-white px-4 py-2 font-sans text-body-small">Save new version</button>
+                                </form>
+                              </details>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    </section>
+                  </>
+                );
+              })()}
+            </div>
+          )}
+
+          {weSub === "addons" && (
+            <div className="space-y-6">
+              <MarketPills tab="wedding_event" extraQuery="&weSub=addons" markets={activeMarkets} active={selectedMarket.slug} />
+
+              {ADDON_GROUPS.map((group) => (
+                <section key={group.title} className="rounded-xl border border-black/10 bg-white p-6 space-y-4">
+                  <h2 className="font-serif font-medium text-body text-ordift-ink">{selectedMarket.name} — {group.title}</h2>
+                  <ul className="divide-y divide-black/5">
+                    {group.items.map((item) => (
+                      <li key={item.slug} className="py-2.5">
+                        <div className="flex items-baseline justify-between font-sans text-body-small text-ordift-ink">
+                          <span>{item.label}</span>
+                          <span>{weddingEventAddonRates[item.slug] != null ? `$${weddingEventAddonRates[item.slug]!.toFixed(2)}` : "— not set —"}</span>
+                        </div>
+                        <details className="mt-2 rounded-lg border border-black/10 px-4 py-2">
+                          <summary className="cursor-pointer font-sans text-caption text-ordift-ink select-none">Edit</summary>
+                          <form action={createWeddingEventAddonRateVersionAction} className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3">
+                            <input type="hidden" name="marketSlug" value={selectedMarket.slug} />
+                            <input type="hidden" name="addonSlug" value={item.slug} />
+                            <input name="priceUsd" type="number" step="0.01" min="0.01" required defaultValue={weddingEventAddonRates[item.slug] ?? undefined} placeholder="Price USD" className="rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small" />
+                            <button type="submit" className="rounded-lg bg-ordift-ink text-white px-4 py-2 font-sans text-body-small">Save new version</button>
+                          </form>
+                        </details>
+                      </li>
+                    ))}
+                  </ul>
+                </section>
+              ))}
+
+              <section className="rounded-xl border border-black/10 bg-white p-6 space-y-4">
+                <h2 className="font-serif font-medium text-body text-ordift-ink">Formula Percentages (Global)</h2>
+                <p className="font-sans text-caption text-ordift-ink-muted">Not market-specific. Corporate/Organisational Scope is applied only when explicitly requested for an Event — never merely because a company is the client.</p>
+                <ul className="divide-y divide-black/5">
+                  {WEDDING_EVENT_PERCENTAGE_OPTIONS.map((p) => (
+                    <li key={p.slug} className="py-2.5">
+                      <div className="flex items-baseline justify-between font-sans text-body-small text-ordift-ink">
+                        <span>{p.label}</span>
+                        <span>{weddingEventPercentageRates[p.slug] != null ? `${weddingEventPercentageRates[p.slug]}%` : "Not set"}</span>
+                      </div>
+                      <details className="mt-2 rounded-lg border border-black/10 px-4 py-2">
+                        <summary className="cursor-pointer font-sans text-caption text-ordift-ink select-none">Edit</summary>
+                        <form action={createWeddingEventPercentageRateVersionAction} className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3">
+                          <input type="hidden" name="percentageSlug" value={p.slug} />
+                          <input name="percentage" type="number" step="0.01" min="0.01" required defaultValue={weddingEventPercentageRates[p.slug] ?? undefined} placeholder="Percentage" className="rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small" />
+                          <button type="submit" className="rounded-lg bg-ordift-ink text-white px-4 py-2 font-sans text-body-small">Save new version</button>
+                        </form>
+                      </details>
+                    </li>
+                  ))}
+                </ul>
               </section>
             </div>
           )}

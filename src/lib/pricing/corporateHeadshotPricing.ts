@@ -3,10 +3,12 @@ import { authorizeWithSuperAdminOverride, FINANCE_CAPABILITIES } from "@/lib/org
 import { logActivity } from "@/lib/admin/activityLog";
 import {
   calculateCorporateEstimate,
+  resolveCorporatePriorityDeliveryScope,
   type CorporateProductSlug,
   type CorporateHeadshotRate,
   type CorporateTeamTierRate,
   type CorporateEstimateResult,
+  type CorporatePriorityDeliveryScopeSlug,
 } from "./corporateHeadshotEstimate";
 
 // Ordift Corporate & Headshots Pricing V1 (2026-09-06) — server-only
@@ -25,8 +27,10 @@ import {
 // staff-only because the write path is admin-only, not because reads
 // should be gated.
 
-export type { CorporateProductSlug, CorporateHeadshotRate, CorporateTeamTierRate, CorporateEstimateResult };
-export { calculateCorporateEstimate };
+export type { CorporateProductSlug, CorporateHeadshotRate, CorporateTeamTierRate, CorporateEstimateResult, CorporatePriorityDeliveryScopeSlug };
+export { calculateCorporateEstimate, resolveCorporatePriorityDeliveryScope };
+
+const PRIORITY_DELIVERY_SCOPES: CorporatePriorityDeliveryScopeSlug[] = ["individual_headshot", "executive_portrait", "team_2_5", "team_6_10", "team_11_25", "team_26_50"];
 
 type CorporateTeamTierSlug = "2-5" | "6-10" | "11-25" | "26-50";
 
@@ -150,13 +154,18 @@ export async function getActiveCorporateRetouchRate(marketSlug: string): Promise
   return data ? Number(data.price_per_image_usd) : null;
 }
 
-// Global, not market-scoped — see migration 0055's comment.
-export async function getActiveCorporatePriorityDeliveryPercentage(): Promise<number | null> {
+// Global (not market-scoped), but scoped by product/team-tier since the
+// 2026-09-06 correction (see migration 0056) — Individual/Executive/
+// each Team tier can each carry their own percentage. The pre-
+// correction global row (scope_slug is null, from migration 0055) is
+// deliberately never read here — see that row's own comment.
+export async function getActiveCorporatePriorityDeliveryPercentage(scopeSlug: CorporatePriorityDeliveryScopeSlug): Promise<number | null> {
   const admin = createAdminClient();
   const now = new Date().toISOString();
   const { data, error } = await admin
     .from("corporate_priority_delivery_rates")
     .select("multiplier_percentage, effective_from")
+    .eq("scope_slug", scopeSlug)
     .eq("active", true)
     .lte("effective_from", now)
     .or(`effective_to.is.null,effective_to.gt.${now}`)
@@ -170,6 +179,19 @@ export async function getActiveCorporatePriorityDeliveryPercentage(): Promise<nu
   return data ? Number(data.multiplier_percentage) : null;
 }
 
+// Convenience: every scope's current percentage at once, keyed by
+// scope slug — used by the public estimator (which needs to react to
+// the product/team-size the visitor picks without a round-trip) and by
+// the Admin reference view.
+export async function getAllActiveCorporatePriorityDeliveryPercentages(): Promise<Partial<Record<CorporatePriorityDeliveryScopeSlug, number>>> {
+  const results = await Promise.all(PRIORITY_DELIVERY_SCOPES.map(async (scope) => [scope, await getActiveCorporatePriorityDeliveryPercentage(scope)] as const));
+  const map: Partial<Record<CorporatePriorityDeliveryScopeSlug, number>> = {};
+  for (const [scope, percentage] of results) {
+    if (percentage !== null) map[scope] = percentage;
+  }
+  return map;
+}
+
 // Full orchestration — the one function a page/action actually calls.
 // marketSlug must come from an explicit user selection, never derived
 // from the request itself.
@@ -180,13 +202,14 @@ export async function estimateCorporateSession(params: {
   additionalRetouchImages?: number;
   priorityDeliveryRequested?: boolean;
 }): Promise<CorporateEstimateResult> {
-  const [headshotRates, teamTierRates, minimumBookingUsd, retouchRate, priorityPercentage] = await Promise.all([
+  const [headshotRates, teamTierRates, minimumBookingUsd, retouchRate] = await Promise.all([
     getActiveCorporateHeadshotRates(params.marketSlug),
     getActiveCorporateTeamTierRates(params.marketSlug),
     getActiveCorporateMinimumBooking(params.marketSlug),
     getActiveCorporateRetouchRate(params.marketSlug),
-    getActiveCorporatePriorityDeliveryPercentage(),
   ]);
+  const priorityScope = resolveCorporatePriorityDeliveryScope(params.product, teamTierRates, params.numberOfPeople);
+  const priorityPercentage = priorityScope ? await getActiveCorporatePriorityDeliveryPercentage(priorityScope) : null;
   return calculateCorporateEstimate({
     product: params.product,
     headshotRates,
@@ -368,20 +391,23 @@ export async function createCorporateRetouchRateVersion(params: {
 }
 
 export async function createCorporatePriorityDeliveryVersion(params: {
+  scopeSlug: CorporatePriorityDeliveryScopeSlug;
   multiplierPercentage: number;
   actorUserId: string;
 }): Promise<{ ok: true; unchanged?: boolean } | { ok: false; error: string }> {
   const auth = await authorizeWithSuperAdminOverride(params.actorUserId, FINANCE_CAPABILITIES.pricingAdminister);
   if (!auth.ok) return { ok: false, error: "Not authorized to manage pricing." };
+  if (!PRIORITY_DELIVERY_SCOPES.includes(params.scopeSlug)) return { ok: false, error: "Unknown Priority Delivery scope." };
   if (params.multiplierPercentage <= 0) return { ok: false, error: "Percentage must be greater than zero." };
 
-  const current = await getActiveCorporatePriorityDeliveryPercentage();
+  const current = await getActiveCorporatePriorityDeliveryPercentage(params.scopeSlug);
   if (current !== null && current === params.multiplierPercentage) {
     return { ok: true, unchanged: true };
   }
 
   const admin = createAdminClient();
   const { error } = await admin.from("corporate_priority_delivery_rates").insert({
+    scope_slug: params.scopeSlug,
     multiplier_percentage: params.multiplierPercentage,
     created_by: params.actorUserId,
   });
@@ -394,7 +420,7 @@ export async function createCorporatePriorityDeliveryVersion(params: {
     actorUserId: params.actorUserId,
     action: "pricing.corporate_priority_delivery.created",
     entityType: "pricing_market",
-    metadata: { multiplierPercentage: params.multiplierPercentage },
+    metadata: { scopeSlug: params.scopeSlug, multiplierPercentage: params.multiplierPercentage },
   });
   return { ok: true };
 }
