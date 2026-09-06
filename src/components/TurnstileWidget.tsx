@@ -53,7 +53,18 @@ export default function TurnstileWidget({ onVerify, onExpire, resetSignal }: Pro
   const errorName = `__turnstileError_${suffix}`;
 
   useEffect(() => {
-    window[verifyName] = (token: string) => onVerify?.(token);
+    // K.2C (2026-09-06) — a genuine success must clear any stale error
+    // state. Cloudflare's own error family for this widget (600*,
+    // "generic challenge failure — bot behavior detected") is
+    // documented as retryable: Turnstile can fail once and still
+    // succeed on a subsequent attempt without the page ever reloading.
+    // Before this, a token arriving after an earlier error-callback
+    // still left the red "Verification failed" text visible under a
+    // now-green, successful widget.
+    window[verifyName] = (token: string) => {
+      setErroredToLoad(false);
+      onVerify?.(token);
+    };
     window[expireName] = () => onExpire?.();
     window[errorName] = () => setErroredToLoad(true);
     return () => {
@@ -93,9 +104,28 @@ export default function TurnstileWidget({ onVerify, onExpire, resetSignal }: Pro
         data-error-callback={errorName}
       />
       {erroredToLoad && (
-        <p className="mt-2 font-sans text-caption text-red-700" role="alert">
-          Verification failed to load. Please refresh the page and try again.
-        </p>
+        <div className="mt-2" role="alert">
+          <p className="font-sans text-caption text-red-700">
+            Verification didn&rsquo;t complete. This is usually temporary.
+          </p>
+          <button
+            type="button"
+            onClick={() => {
+              // K.2C (2026-09-06) — same window.turnstile.reset() call the
+              // resetSignal effect above already uses, just user-triggered
+              // instead of state-triggered. Requests a fresh, genuine
+              // challenge in place — never skips or weakens verification —
+              // so a documented-retryable Cloudflare-side failure (see the
+              // verifyName comment) doesn't strand a real visitor behind a
+              // full manual page reload.
+              window.turnstile?.reset(containerId);
+              setErroredToLoad(false);
+            }}
+            className="mt-1 font-sans text-caption font-medium text-ordift-gold-pressed underline underline-offset-4"
+          >
+            Try again
+          </button>
+        </div>
       )}
     </>
   );
