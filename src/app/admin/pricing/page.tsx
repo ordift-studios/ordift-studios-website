@@ -75,13 +75,19 @@ export const metadata: Metadata = {
 
 const DURATIONS = [1, 2, 3, 4] as const;
 
+// Ordift Admin Pricing navigation order (2026-09-07) — the four
+// implemented pricing/service families appear together first, in the
+// order they were built, followed by supporting/shared controls.
+// Navigation/display order only: every tab key, and every value/
+// calculation behind it, is unchanged. This is NOT the deferred
+// final all-family Admin Pricing redesign.
 const TABS = [
   { key: "personal-sessions", label: "Personal Sessions" },
-  { key: "subjects", label: "Subjects / Groups" },
-  { key: "addons", label: "Add-Ons" },
   { key: "corporate", label: "Corporate & Headshots" },
   { key: "wedding_event", label: "Weddings & Events" },
   { key: "commercial", label: "Commercial / Advertising" },
+  { key: "subjects", label: "Subjects / Groups" },
+  { key: "addons", label: "Add-Ons" },
   { key: "discounts", label: "Discounts" },
   { key: "markets", label: "Markets / Overrides" },
 ] as const;

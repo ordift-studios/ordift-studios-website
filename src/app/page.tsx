@@ -125,6 +125,7 @@ export default async function Home() {
                 description={d.summaryDescription}
                 href={`/services/${d.slug}`}
                 slug={d.slug}
+                image={d.workLandingImage}
               />
             ))}
           </div>

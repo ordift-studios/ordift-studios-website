@@ -3,8 +3,7 @@ import { notFound } from "next/navigation";
 import NavBar from "@/components/NavBar";
 import Footer from "@/components/Footer";
 import Button from "@/components/Button";
-import MediaPlaceholder from "@/components/media/MediaPlaceholder";
-import { getDepartmentIcon } from "@/components/media/DepartmentIcon";
+import DepartmentMediaFrame from "@/components/media/DepartmentMediaFrame";
 import PortfolioCard from "@/components/portfolio/PortfolioCard";
 import { contentRepository } from "@/lib/content";
 
@@ -101,11 +100,13 @@ export default async function ServiceDetailPage({
               {service.heroBody}
             </p>
           </div>
-          <MediaPlaceholder
+          <DepartmentMediaFrame
+            slug={service.slug}
+            name={service.name}
+            image={service.workLandingImage}
             aspectRatio="4/5"
-            tone="dark"
-            label={`${service.name} — Sample Work`}
-            icon={getDepartmentIcon(service.slug) ?? undefined}
+            sizes="(min-width: 1024px) 40vw, 90vw"
+            priority
             className="rounded-2xl w-full max-w-sm mx-auto lg:max-w-none"
           />
         </div>
@@ -151,7 +152,7 @@ export default async function ServiceDetailPage({
                     />
                   ))
                 : [0, 1, 2].map((i) => (
-                    <MediaPlaceholder key={i} aspectRatio="4/3" tone="light" label={service.name} icon={getDepartmentIcon(service.slug) ?? undefined} className="rounded-xl" />
+                    <DepartmentMediaFrame key={i} slug={service.slug} name={service.name} aspectRatio="4/3" sizes="(min-width: 1024px) 33vw, 100vw" className="rounded-xl" />
                   ))}
             </div>
           </div>
