@@ -49,6 +49,14 @@ import {
   type GraphicDesignDeliverableSlug,
 } from "@/lib/pricing/graphicDesignPricing";
 import {
+  getActivePackageRates,
+  getActiveRetainerRates,
+  getActiveAddonRates as getActiveContentCreationAddonRates,
+  getActivePercentageRates as getActiveContentCreationPercentageRates,
+  type ContentCreationPackageSlug,
+  type ContentCreationRetainerSlug,
+} from "@/lib/pricing/contentCreationPricing";
+import {
   createPersonalSessionRateVersionAction,
   setPricingMarketActiveAction,
   createDiscountCodeAction,
@@ -76,6 +84,10 @@ import {
   createGraphicDesignComplexityFactorVersionAction,
   createGraphicDesignAddonRateVersionAction,
   createGraphicDesignPercentageVersionAction,
+  createContentCreationPackageRateVersionAction,
+  createContentCreationRetainerRateVersionAction,
+  createContentCreationAddonRateVersionAction,
+  createContentCreationPercentageVersionAction,
 } from "./actions";
 import ManualDiscountForm from "./ManualDiscountForm";
 
@@ -98,6 +110,7 @@ const TABS = [
   { key: "wedding_event", label: "Weddings & Events" },
   { key: "commercial", label: "Commercial / Advertising" },
   { key: "graphic_design", label: "Graphic Design" },
+  { key: "content_creation", label: "Content Creation" },
   { key: "subjects", label: "Subjects / Groups" },
   { key: "addons", label: "Add-Ons" },
   { key: "discounts", label: "Discounts" },
@@ -132,6 +145,43 @@ const GRAPHIC_DESIGN_PERCENTAGE_OPTIONS = [
   { slug: "urgent", label: "Urgent Turnaround (<48h)" },
   { slug: "additional_revision", label: "Additional Revision Round" },
   { slug: "editable_source_file", label: "Editable Source File" },
+] as const;
+
+const CONTENT_CREATION_SUBS = [
+  { key: "packages", label: "Packages" },
+  { key: "retainers", label: "Retainers" },
+  { key: "addons", label: "Add-Ons" },
+] as const;
+
+const CONTENT_CREATION_PACKAGE_OPTIONS: { slug: ContentCreationPackageSlug; label: string }[] = [
+  { slug: "short_form_single", label: "Single Short-Form Video" },
+  { slug: "short_form_pack_3", label: "3 Short-Form Videos" },
+  { slug: "short_form_pack_5", label: "5 Short-Form Videos" },
+  { slug: "content_day_half", label: "Half Content Day — up to 4h" },
+  { slug: "content_day_full", label: "Full Content Day — up to 8h" },
+  { slug: "event_content_4h", label: "Event Social Coverage — up to 4h" },
+  { slug: "personal_brand_2h", label: "Personal Brand Session — up to 2h" },
+];
+
+const CONTENT_CREATION_RETAINER_OPTIONS: { slug: ContentCreationRetainerSlug; label: string }[] = [
+  { slug: "retainer_essential", label: "Essential — 1 Half Content Day / month" },
+  { slug: "retainer_growth", label: "Growth — 1 Full Content Day / month" },
+  { slug: "retainer_momentum", label: "Momentum — 2 Full Content Days / month" },
+];
+
+const CONTENT_CREATION_ADDON_OPTIONS = [
+  { slug: "additional_short_form_video", label: "Additional Short-Form Video" },
+  { slug: "additional_10_edited_photos", label: "Additional 10 Edited Social Photos" },
+  { slug: "additional_content_capture_hour", label: "Additional Content-Capture Hour" },
+  { slug: "same_next_day_edit_per_video", label: "Same/Next-Day Social Edit — Per Video" },
+  { slug: "additional_aspect_ratio_adaptation", label: "Additional Aspect-Ratio / Platform Adaptation" },
+  { slug: "captioned_subtitled_master", label: "Captioned / Subtitled Master" },
+  { slug: "additional_revision_minimum", label: "Additional Revision — Minimum" },
+] as const;
+
+const CONTENT_CREATION_PERCENTAGE_OPTIONS = [
+  { slug: "priority", label: "Priority Post-Production" },
+  { slug: "additional_revision", label: "Additional Revision Round" },
 ] as const;
 
 const COMMERCIAL_SUBS = [
@@ -417,6 +467,22 @@ function GraphicDesignSubNav({ active, market }: { active: string; market?: stri
   );
 }
 
+function ContentCreationSubNav({ active, market }: { active: string; market?: string }) {
+  return (
+    <div className="flex flex-wrap gap-2">
+      {CONTENT_CREATION_SUBS.map((s) => (
+        <Link
+          key={s.key}
+          href={`/admin/pricing?tab=content_creation&ccSub=${s.key}${market ? `&market=${market}` : ""}`}
+          className={`rounded-lg px-3 py-1.5 font-sans text-caption ${active === s.key ? "bg-ordift-ink text-white" : "border border-black/15 text-ordift-ink-muted"}`}
+        >
+          {s.label}
+        </Link>
+      ))}
+    </div>
+  );
+}
+
 function CommercialModePills({ market, active }: { market: string; active: CommercialServiceMode }) {
   return (
     <div className="flex flex-wrap gap-2">
@@ -457,19 +523,20 @@ function MarketPills({ tab, markets, active, extraQuery }: { tab: string; market
 export default async function AdminPricingPage({
   searchParams,
 }: {
-  searchParams: Promise<{ tab?: string; corpSub?: string; weSub?: string; commSub?: string; gdSub?: string; market?: string; mode?: string }>;
+  searchParams: Promise<{ tab?: string; corpSub?: string; weSub?: string; commSub?: string; gdSub?: string; ccSub?: string; market?: string; mode?: string }>;
 }) {
   const user = await getCurrentUser();
   if (!user) redirect("/admin/overview");
   const auth = await authorizeWithSuperAdminOverride(user.id, FINANCE_CAPABILITIES.pricingAdminister);
   if (!auth.ok) redirect("/admin/overview");
 
-  const { tab: tabParam, corpSub: corpSubParam, weSub: weSubParam, commSub: commSubParam, gdSub: gdSubParam, market: marketParam, mode: modeParam } = await searchParams;
+  const { tab: tabParam, corpSub: corpSubParam, weSub: weSubParam, commSub: commSubParam, gdSub: gdSubParam, ccSub: ccSubParam, market: marketParam, mode: modeParam } = await searchParams;
   const tab = TABS.some((t) => t.key === tabParam) ? tabParam! : "personal-sessions";
   const corpSub = CORPORATE_SUBS.some((s) => s.key === corpSubParam) ? corpSubParam! : "individual";
   const weSub = WEDDING_EVENT_SUBS.some((s) => s.key === weSubParam) ? weSubParam! : "wedding";
   const commSub = COMMERCIAL_SUBS.some((s) => s.key === commSubParam) ? commSubParam! : "creative_fees";
   const gdSub = GRAPHIC_DESIGN_SUBS.some((s) => s.key === gdSubParam) ? gdSubParam! : "deliverables";
+  const ccSub = CONTENT_CREATION_SUBS.some((s) => s.key === ccSubParam) ? ccSubParam! : "packages";
   const mode: ServiceMode = SERVICE_MODES.some((m) => m.slug === modeParam) ? (modeParam as ServiceMode) : "photography_film";
 
   const markets = await listAllPricingMarketsForAdmin();
@@ -540,6 +607,16 @@ export default async function AdminPricingPage({
           getActiveComplexityFactors(),
           getActiveGraphicDesignAddonRates(selectedMarket.slug),
           getActiveGraphicDesignPercentageRates(),
+        ])
+      : [[], [], {} as Partial<Record<string, number>>, {} as Partial<Record<string, number>>];
+
+  const [contentCreationPackageRates, contentCreationRetainerRates, contentCreationAddonRates, contentCreationPercentages] =
+    tab === "content_creation" && selectedMarket
+      ? await Promise.all([
+          getActivePackageRates(selectedMarket.slug),
+          getActiveRetainerRates(selectedMarket.slug),
+          getActiveContentCreationAddonRates(selectedMarket.slug),
+          getActiveContentCreationPercentageRates(),
         ])
       : [[], [], {} as Partial<Record<string, number>>, {} as Partial<Record<string, number>>];
 
@@ -1309,6 +1386,133 @@ export default async function AdminPricingPage({
                         <details className="mt-2 rounded-lg border border-black/10 px-4 py-2">
                           <summary className="cursor-pointer font-sans text-caption text-ordift-ink select-none">Edit</summary>
                           <form action={createGraphicDesignPercentageVersionAction} className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3">
+                            <input type="hidden" name="percentageSlug" value={p.slug} />
+                            <input name="percentage" type="number" step="0.01" min="0.01" required defaultValue={value ?? undefined} placeholder="Percentage" className="rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small" />
+                            <button type="submit" className="rounded-lg bg-ordift-ink text-white px-4 py-2 font-sans text-body-small">Save new version</button>
+                          </form>
+                        </details>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </section>
+            </div>
+          )}
+        </div>
+      )}
+
+      {tab === "content_creation" && selectedMarket && (
+        <div className="space-y-6">
+          <ContentCreationSubNav active={ccSub} market={selectedMarket.slug} />
+
+          {ccSub === "packages" && (
+            <div className="space-y-6">
+              <MarketPills tab="content_creation" extraQuery="&ccSub=packages" markets={activeMarkets} active={selectedMarket.slug} />
+              <section className="rounded-xl border border-black/10 bg-white p-6 space-y-4">
+                <h2 className="font-serif font-medium text-body text-ordift-ink">{selectedMarket.name} — Package Rates</h2>
+                <p className="font-sans text-caption text-ordift-ink-muted">Every rate below is a flat, deliberately non-multiplicative package price. Mixed Social Content and Product/Food Social Content reuse these same rows; Custom Content Production has no automatic rate by design.</p>
+                <ul className="divide-y divide-black/5">
+                  {CONTENT_CREATION_PACKAGE_OPTIONS.map((d) => {
+                    const rate = contentCreationPackageRates.find((r) => r.packageSlug === d.slug);
+                    return (
+                      <li key={d.slug} className="py-2.5">
+                        <div className="flex items-baseline justify-between font-sans text-body-small text-ordift-ink">
+                          <span>{d.label}</span>
+                          <span>{rate ? `$${rate.priceUsd.toFixed(2)}` : "— not set —"}</span>
+                        </div>
+                        <details className="mt-2 rounded-lg border border-black/10 px-4 py-2">
+                          <summary className="cursor-pointer font-sans text-caption text-ordift-ink select-none">Edit</summary>
+                          <form action={createContentCreationPackageRateVersionAction} className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3">
+                            <input type="hidden" name="marketSlug" value={selectedMarket.slug} />
+                            <input type="hidden" name="packageSlug" value={d.slug} />
+                            <input name="priceUsd" type="number" step="0.01" min="0.01" required defaultValue={rate?.priceUsd} placeholder="Price USD" className="rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small" />
+                            <button type="submit" className="rounded-lg bg-ordift-ink text-white px-4 py-2 font-sans text-body-small">Save new version</button>
+                          </form>
+                        </details>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </section>
+            </div>
+          )}
+
+          {ccSub === "retainers" && (
+            <div className="space-y-6">
+              <MarketPills tab="content_creation" extraQuery="&ccSub=retainers" markets={activeMarkets} active={selectedMarket.slug} />
+              <section className="rounded-xl border border-black/10 bg-white p-6 space-y-4">
+                <h2 className="font-serif font-medium text-body text-ordift-ink">{selectedMarket.name} — Retainer Rates (Monthly)</h2>
+                <p className="font-sans text-caption text-ordift-ink-muted">Content Production retainers only — not Social Media Management. Already-discounted flat monthly figures; no add-ons or automatic bundle discount compose on top of these in this phase.</p>
+                <ul className="divide-y divide-black/5">
+                  {CONTENT_CREATION_RETAINER_OPTIONS.map((r) => {
+                    const rate = contentCreationRetainerRates.find((row) => row.retainerSlug === r.slug);
+                    return (
+                      <li key={r.slug} className="py-2.5">
+                        <div className="flex items-baseline justify-between font-sans text-body-small text-ordift-ink">
+                          <span>{r.label}</span>
+                          <span>{rate ? `$${rate.priceUsd.toFixed(2)} / month` : "— not set —"}</span>
+                        </div>
+                        <details className="mt-2 rounded-lg border border-black/10 px-4 py-2">
+                          <summary className="cursor-pointer font-sans text-caption text-ordift-ink select-none">Edit</summary>
+                          <form action={createContentCreationRetainerRateVersionAction} className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3">
+                            <input type="hidden" name="marketSlug" value={selectedMarket.slug} />
+                            <input type="hidden" name="retainerSlug" value={r.slug} />
+                            <input name="priceUsd" type="number" step="0.01" min="0.01" required defaultValue={rate?.priceUsd} placeholder="Price USD" className="rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small" />
+                            <button type="submit" className="rounded-lg bg-ordift-ink text-white px-4 py-2 font-sans text-body-small">Save new version</button>
+                          </form>
+                        </details>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </section>
+            </div>
+          )}
+
+          {ccSub === "addons" && (
+            <div className="space-y-6">
+              <MarketPills tab="content_creation" extraQuery="&ccSub=addons" markets={activeMarkets} active={selectedMarket.slug} />
+              <section className="rounded-xl border border-black/10 bg-white p-6 space-y-4">
+                <h2 className="font-serif font-medium text-body text-ordift-ink">{selectedMarket.name} — Add-On Rates</h2>
+                <ul className="divide-y divide-black/5">
+                  {CONTENT_CREATION_ADDON_OPTIONS.map((item) => {
+                    const rate = contentCreationAddonRates[item.slug];
+                    return (
+                      <li key={item.slug} className="py-2.5">
+                        <div className="flex items-baseline justify-between font-sans text-body-small text-ordift-ink">
+                          <span>{item.label}</span>
+                          <span>{rate != null ? `$${rate.toFixed(2)}` : "— not set —"}</span>
+                        </div>
+                        <details className="mt-2 rounded-lg border border-black/10 px-4 py-2">
+                          <summary className="cursor-pointer font-sans text-caption text-ordift-ink select-none">Edit</summary>
+                          <form action={createContentCreationAddonRateVersionAction} className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3">
+                            <input type="hidden" name="marketSlug" value={selectedMarket.slug} />
+                            <input type="hidden" name="addonSlug" value={item.slug} />
+                            <input name="priceUsd" type="number" step="0.01" min="0.01" required defaultValue={rate ?? undefined} placeholder="Price USD" className="rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small" />
+                            <button type="submit" className="rounded-lg bg-ordift-ink text-white px-4 py-2 font-sans text-body-small">Save new version</button>
+                          </form>
+                        </details>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </section>
+
+              <section className="rounded-xl border border-black/10 bg-white p-6 space-y-4">
+                <h2 className="font-serif font-medium text-body text-ordift-ink">Formula Percentages (Global)</h2>
+                <p className="font-sans text-caption text-ordift-ink-muted">No &ldquo;urgent&rdquo; percentage exists for Content Creation by design — Same/Next-Day Social Edit is a flat per-video add-on above, and Exceptional emergency turnaround always requires Custom Confirmation.</p>
+                <ul className="divide-y divide-black/5">
+                  {CONTENT_CREATION_PERCENTAGE_OPTIONS.map((p) => {
+                    const value = contentCreationPercentages[p.slug];
+                    return (
+                      <li key={p.slug} className="py-2.5">
+                        <div className="flex items-baseline justify-between font-sans text-body-small text-ordift-ink">
+                          <span>{p.label}</span>
+                          <span>{value != null ? `${value}%` : "Not set"}</span>
+                        </div>
+                        <details className="mt-2 rounded-lg border border-black/10 px-4 py-2">
+                          <summary className="cursor-pointer font-sans text-caption text-ordift-ink select-none">Edit</summary>
+                          <form action={createContentCreationPercentageVersionAction} className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3">
                             <input type="hidden" name="percentageSlug" value={p.slug} />
                             <input name="percentage" type="number" step="0.01" min="0.01" required defaultValue={value ?? undefined} placeholder="Percentage" className="rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small" />
                             <button type="submit" className="rounded-lg bg-ordift-ink text-white px-4 py-2 font-sans text-body-small">Save new version</button>

@@ -57,3 +57,40 @@ describe("recommendationHref", () => {
     expect(recommendationHref(departmentRec)).toBe(`/services/${departmentRec.destination.slug}`);
   });
 });
+
+// Content Creation Pricing V1 (2026-09-07) — second phase to register
+// entries in this same foundation.
+describe("getRecommendationsFor — content_creation", () => {
+  it("returns Content Creation's approved recommendations", () => {
+    const recs = getRecommendationsFor("content_creation");
+    expect(recs.length).toBeGreaterThan(0);
+    expect(recs.every((r) => r.fromFamily === "content_creation")).toBe(true);
+  });
+
+  it("caps recommendations at a small, restrained number (never a wall of upsells)", () => {
+    const recs = getRecommendationsFor("content_creation");
+    expect(recs.length).toBeLessThanOrEqual(3);
+  });
+
+  it("21. no recommendation entry carries a price field of any kind — cross-service recommendations never alter the originating price", () => {
+    const recs = getRecommendationsFor("content_creation");
+    for (const r of recs) {
+      expect(r).not.toHaveProperty("priceUsd");
+      expect(r).not.toHaveProperty("amountUsd");
+      expect(r).not.toHaveProperty("discountPercentage");
+    }
+  });
+
+  it("22. discountEligible is never set to true for any current entry — no automatic discount is created by a recommendation", () => {
+    const recs = getRecommendationsFor("content_creation");
+    for (const r of recs) {
+      expect(r.discountEligible).not.toBe(true);
+    }
+  });
+
+  it("does not alter or shrink graphic_design's own registry (independent registration)", () => {
+    const gdRecs = getRecommendationsFor("graphic_design");
+    expect(gdRecs.length).toBeGreaterThan(0);
+    expect(gdRecs.every((r) => r.fromFamily === "graphic_design")).toBe(true);
+  });
+});

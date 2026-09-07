@@ -20,6 +20,16 @@ import {
   type GraphicDesignPercentageSlug,
 } from "@/lib/pricing/graphicDesignPricing";
 import {
+  createContentCreationPackageRateVersion,
+  createContentCreationRetainerRateVersion,
+  createContentCreationAddonRateVersion,
+  createContentCreationPercentageVersion,
+  type ContentCreationPackageSlug,
+  type ContentCreationRetainerSlug,
+  type ContentCreationAddonSlug,
+  type ContentCreationPercentageSlug,
+} from "@/lib/pricing/contentCreationPricing";
+import {
   createCorporateHeadshotRateVersion,
   createCorporateTeamTierRateVersion,
   createCorporateMinimumBookingVersion,
@@ -531,6 +541,69 @@ export async function createGraphicDesignPercentageVersionAction(formData: FormD
 
   const result = await createGraphicDesignPercentageVersion({ percentageSlug: percentageSlug as GraphicDesignPercentageSlug, percentage, actorUserId: user.id });
   if (!result.ok) console.error("[admin] failed to create graphic design percentage version", result.error);
+
+  revalidatePath("/admin/pricing");
+}
+
+// ============================================================
+// Content Creation Pricing V1 (2026-09-07)
+// ============================================================
+
+export async function createContentCreationPackageRateVersionAction(formData: FormData): Promise<void> {
+  const user = await getCurrentUser();
+  if (!user) return;
+
+  const marketSlug = String(formData.get("marketSlug") ?? "");
+  const packageSlug = String(formData.get("packageSlug") ?? "");
+  const priceUsd = Number(formData.get("priceUsd"));
+  if (!marketSlug || !packageSlug || !Number.isFinite(priceUsd)) return;
+
+  const result = await createContentCreationPackageRateVersion({ marketSlug, packageSlug: packageSlug as ContentCreationPackageSlug, priceUsd, actorUserId: user.id });
+  if (!result.ok) console.error("[admin] failed to create content creation package rate version", result.error);
+
+  revalidatePath("/admin/pricing");
+}
+
+export async function createContentCreationRetainerRateVersionAction(formData: FormData): Promise<void> {
+  const user = await getCurrentUser();
+  if (!user) return;
+
+  const marketSlug = String(formData.get("marketSlug") ?? "");
+  const retainerSlug = String(formData.get("retainerSlug") ?? "");
+  const priceUsd = Number(formData.get("priceUsd"));
+  if (!marketSlug || !retainerSlug || !Number.isFinite(priceUsd)) return;
+
+  const result = await createContentCreationRetainerRateVersion({ marketSlug, retainerSlug: retainerSlug as ContentCreationRetainerSlug, priceUsd, actorUserId: user.id });
+  if (!result.ok) console.error("[admin] failed to create content creation retainer rate version", result.error);
+
+  revalidatePath("/admin/pricing");
+}
+
+export async function createContentCreationAddonRateVersionAction(formData: FormData): Promise<void> {
+  const user = await getCurrentUser();
+  if (!user) return;
+
+  const marketSlug = String(formData.get("marketSlug") ?? "");
+  const addonSlug = String(formData.get("addonSlug") ?? "");
+  const priceUsd = Number(formData.get("priceUsd"));
+  if (!marketSlug || !addonSlug || !Number.isFinite(priceUsd)) return;
+
+  const result = await createContentCreationAddonRateVersion({ marketSlug, addonSlug: addonSlug as ContentCreationAddonSlug, priceUsd, actorUserId: user.id });
+  if (!result.ok) console.error("[admin] failed to create content creation addon rate version", result.error);
+
+  revalidatePath("/admin/pricing");
+}
+
+export async function createContentCreationPercentageVersionAction(formData: FormData): Promise<void> {
+  const user = await getCurrentUser();
+  if (!user) return;
+
+  const percentageSlug = String(formData.get("percentageSlug") ?? "");
+  const percentage = Number(formData.get("percentage"));
+  if (!percentageSlug || !Number.isFinite(percentage)) return;
+
+  const result = await createContentCreationPercentageVersion({ percentageSlug: percentageSlug as ContentCreationPercentageSlug, percentage, actorUserId: user.id });
+  if (!result.ok) console.error("[admin] failed to create content creation percentage version", result.error);
 
   revalidatePath("/admin/pricing");
 }

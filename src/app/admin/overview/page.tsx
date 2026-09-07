@@ -128,6 +128,12 @@ const ACTION_LABELS: Record<string, string> = {
   "pricing.graphic_design_complexity_factor.created": "Updated a Graphic Design complexity factor",
   "pricing.graphic_design_addon_rate.created": "Updated a Graphic Design add-on rate",
   "pricing.graphic_design_percentage.created": "Updated a Graphic Design formula percentage",
+
+  // Content Creation Pricing V1 (2026-09-07)
+  "pricing.content_creation_package_rate.created": "Updated a Content Creation package rate",
+  "pricing.content_creation_retainer_rate.created": "Updated a Content Creation retainer rate",
+  "pricing.content_creation_addon_rate.created": "Updated a Content Creation add-on rate",
+  "pricing.content_creation_percentage.created": "Updated a Content Creation formula percentage",
 };
 
 // Graceful fallback for any action type not (yet) in ACTION_LABELS — pure

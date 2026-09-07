@@ -14,12 +14,10 @@
 //     restrained by design: getRecommendationsFor() caps what it
 //     returns (see MAX_RECOMMENDATIONS below) so a consuming page can
 //     never accidentally render a wall of upsells.
-//   - This registry currently only has entries for graphic_design (the
-//     family being implemented this phase), per the explicitly approved
-//     examples. Branding & Creative Strategy, Talent Management,
-//     Photography, and Weddings/Events are documented above each as
-//     "may later recommend" in the authorization — entries for those
-//     are intentionally NOT added yet; adding them later is exactly
+//   - This registry has entries for graphic_design (added 2026-09-07)
+//     and content_creation (added 2026-09-07, same date, second
+//     phase). Every other family is still "may later recommend" per
+//     its own authorization; adding entries for those later is exactly
 //     "register a new array entry", never new page-specific logic.
 //
 // CROSS-SERVICE DISCOUNTS — DOCUMENTED EXTENSION POINT, NOT BUILT:
@@ -92,6 +90,51 @@ const REGISTRY: CrossServiceRecommendation[] = [
   },
   {
     fromFamily: "graphic_design",
+    destination: { kind: "department", slug: "production" },
+    label: "Need production support?",
+    description: "Production Services can coordinate location, casting, and production logistics around this project.",
+  },
+
+  // Content Creation V1 (2026-09-07) — order matters: the first
+  // MAX_RECOMMENDATIONS entries below are what actually renders.
+  {
+    fromFamily: "content_creation",
+    destination: { kind: "pricing_family", family: "personal" },
+    label: "Need traditional photography too?",
+    description: "Personal Portrait covers formal portraiture and headshots beyond social-first content.",
+  },
+  {
+    fromFamily: "content_creation",
+    destination: { kind: "department", slug: "videography" },
+    label: "Planning something longer-form?",
+    description: "Videography covers narrative film, brand film, documentary and other long-form production beyond short-form social content.",
+  },
+  {
+    fromFamily: "content_creation",
+    destination: { kind: "pricing_family", family: "commercial" },
+    label: "Need paid advertising usage rights?",
+    description: "If this content will run as paid advertising, Commercial / Advertising covers the usage licensing.",
+  },
+  {
+    fromFamily: "content_creation",
+    destination: { kind: "pricing_family", family: "graphic_design" },
+    label: "Need matching static design?",
+    description: "Graphic Design covers flyers, social graphics, presentations and print alongside your content production.",
+  },
+  {
+    fromFamily: "content_creation",
+    destination: { kind: "department", slug: "branding" },
+    label: "Building a full brand system?",
+    description: "Branding & Creative Strategy covers identity systems and creative direction beyond ongoing content.",
+  },
+  {
+    fromFamily: "content_creation",
+    destination: { kind: "department", slug: "talent-management" },
+    label: "Need on-camera talent?",
+    description: "Talent Management can help source presenters, models or creators for your content.",
+  },
+  {
+    fromFamily: "content_creation",
     destination: { kind: "department", slug: "production" },
     label: "Need production support?",
     description: "Production Services can coordinate location, casting, and production logistics around this project.",

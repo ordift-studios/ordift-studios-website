@@ -270,6 +270,11 @@ export const ADMIN_TIER_ACTIONS = new Set<string>([
   "pricing.graphic_design_complexity_factor.created",
   "pricing.graphic_design_addon_rate.created",
   "pricing.graphic_design_percentage.created",
+  // Content Creation Pricing V1 (2026-09-07)
+  "pricing.content_creation_package_rate.created",
+  "pricing.content_creation_retainer_rate.created",
+  "pricing.content_creation_addon_rate.created",
+  "pricing.content_creation_percentage.created",
 ]);
 
 // Deliberately reviewed and left staff-visible (Phase I.1, 2026-09-05)

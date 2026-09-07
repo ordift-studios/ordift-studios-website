@@ -14,6 +14,8 @@ describe("encodePricingHandoff / decodePricingHandoff — round-trip", () => {
     { family: "wedding_event", pathway: "photography", summaryTitle: "Wedding Celebrations — The Narrative", summaryLines: ["Market: UK / Western Europe", "Service: Photography + Film", "Total: $3,400.00"] },
     { family: "wedding_event", pathway: "videography", summaryTitle: "Events — Full Day (Film)", summaryLines: ["Market: Ghana / West Africa", "Total: $700.00"] },
     { family: "commercial", pathway: "photography", summaryTitle: "Commercial / Advertising", summaryLines: ["Market: North America", "Estimated Commercial Investment: $30,325.00", "Custom Commercial Proposal Required"] },
+    { family: "graphic_design", pathway: "graphic-design", summaryTitle: "Graphic Design — Brochure / Company Profile", summaryLines: ["Market: Ghana / West Africa", "Estimated Total: $280.00"] },
+    { family: "content_creation", pathway: "content-creation", summaryTitle: "Content Creation — Half Content Day", summaryLines: ["Market: Ghana / West Africa", "Estimated Total: $450.00"] },
   ];
 
   for (const handoff of cases) {
@@ -73,5 +75,7 @@ describe("pricingHandoffFamilyLabel", () => {
     expect(pricingHandoffFamilyLabel("corporate")).toBe("Corporate & Headshots");
     expect(pricingHandoffFamilyLabel("wedding_event")).toBe("Weddings & Events");
     expect(pricingHandoffFamilyLabel("commercial")).toBe("Commercial / Advertising");
+    expect(pricingHandoffFamilyLabel("graphic_design")).toBe("Graphic Design");
+    expect(pricingHandoffFamilyLabel("content_creation")).toBe("Content Creation");
   });
 });
