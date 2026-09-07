@@ -120,3 +120,20 @@ export function pickAvailableLocalPart(
 export function formatCorporateEmail(localPart: string): string {
   return `${localPart}@${ORDIFT_STAFF_EMAIL_DOMAIN}`;
 }
+
+// Work-email request/approval diff trail (2026-09-07) — pure validation
+// for a PERSON-requested alternative local part (see
+// requestCorporateIdentityLocalPart() in reserveCorporateIdentity.ts).
+// Only syntax is validated here — no spaces, lowercase, allowed
+// characters only. Whether the requested local part is genuinely
+// name-derived (vs. an arbitrary nickname/brand-style mailbox requiring
+// a documented exception approval) is a judgment call for the human
+// approver, not something this function decides.
+export function normalizeRequestedLocalPart(input: string): { ok: true; value: string } | { ok: false; error: string } {
+  const normalized = input.trim().toLowerCase().replace(/\s+/g, "");
+  if (normalized.length === 0) return { ok: false, error: "A local part is required." };
+  if (!/^[a-z0-9._-]+$/.test(normalized)) {
+    return { ok: false, error: "The requested local part may only contain letters, numbers, dots, hyphens, and underscores — no spaces." };
+  }
+  return { ok: true, value: normalized };
+}

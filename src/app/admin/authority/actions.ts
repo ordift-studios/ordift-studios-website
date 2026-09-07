@@ -5,6 +5,9 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { getCurrentUser, isSuperAdmin, isStaffOrAdmin } from "@/lib/portal/roles";
 import { logActivity } from "@/lib/admin/activityLog";
 import { validateDelegationAuthority } from "@/lib/organization/authority";
+import { grantStandingFinancialAuthorityLevel } from "@/lib/organization/financialAuthorityGrants";
+import type { FinancialAuthorityLevel } from "@/lib/organization/financialAuthority";
+import { createActingAssignment, endActingAssignmentEarly } from "@/lib/organization/actingAssignments";
 
 // Ordift Organizational & Administrative Architecture V1, Phase 3, Parts
 // B and D (2026-08-25). Every write to authority_grants goes through
@@ -190,6 +193,82 @@ export async function revokeAuthorityGrantAction(formData: FormData): Promise<vo
     entityId: grant.profile_id,
     metadata: { grantId, authority: grant.authority, reason },
   });
+
+  revalidatePath("/admin/authority");
+}
+
+// Organizational Structure, Authority Grants, Onboarding & Work Email
+// V1 (2026-09-07) — standing Financial Authority Level grant.
+// Super-Admin-only, same tier as Executive Admin/Director-tier
+// appointment (grantStandingFinancialAuthorityLevel() itself enforces
+// this independently). A TIME-BOUND delegation of one specific level
+// (e.g. "hold Level 3 for the next 14 days") already works through the
+// existing generic Temporary Delegation form above — its `authority`
+// field is free text, so typing "financial_authority_level_3" there is
+// delegated through the exact same self-scoping safeguard as any other
+// capability, with zero new code needed for that case.
+export async function grantFinancialAuthorityLevelAction(formData: FormData): Promise<void> {
+  const currentUser = await requireSuperAdmin();
+
+  const profileId = String(formData.get("profileId") ?? "").trim();
+  const levelRaw = String(formData.get("level") ?? "").trim();
+  const departmentId = String(formData.get("departmentId") ?? "").trim() || null;
+  const reason = String(formData.get("reason") ?? "").trim() || null;
+  const level = Number(levelRaw) as FinancialAuthorityLevel;
+  if (!profileId || Number.isNaN(level) || level < 0 || level > 5) return;
+
+  const result = await grantStandingFinancialAuthorityLevel({
+    profileId,
+    level,
+    scopeDepartmentId: departmentId,
+    reason,
+    grantedBy: currentUser.id,
+  });
+  if (!result.ok) console.error("[admin authority] failed to grant financial authority level", result.error);
+
+  revalidatePath("/admin/authority");
+}
+
+// Acting Assignments — same staff/admin tier as ordinary organizational
+// assignment (createActingAssignment() itself independently requires
+// Super Admin or the people.administer/operations.administer
+// jurisdiction authority), never Super-Admin-only at the page/action
+// layer, matching Delegation's boundary above.
+export async function createActingAssignmentAction(formData: FormData): Promise<void> {
+  const currentUser = await getCurrentUser();
+  if (!currentUser || !isStaffOrAdmin(currentUser)) return;
+
+  const profileId = String(formData.get("profileId") ?? "").trim();
+  const actingTitle = String(formData.get("actingTitle") ?? "").trim();
+  const startDate = String(formData.get("startDate") ?? "").trim();
+  const endDate = String(formData.get("endDate") ?? "").trim();
+  const reason = String(formData.get("reason") ?? "").trim();
+  const departmentId = String(formData.get("departmentId") ?? "").trim() || null;
+  if (!profileId || !actingTitle || !startDate || !endDate || !reason) return;
+
+  const result = await createActingAssignment({
+    profileId,
+    actingTitle,
+    scopeDepartmentId: departmentId,
+    startDate,
+    endDate,
+    reason,
+    approvedBy: currentUser.id,
+  });
+  if (!result.ok) console.error("[admin authority] failed to create acting assignment", result.error);
+
+  revalidatePath("/admin/authority");
+}
+
+export async function endActingAssignmentEarlyAction(formData: FormData): Promise<void> {
+  const currentUser = await getCurrentUser();
+  if (!currentUser || !isStaffOrAdmin(currentUser)) return;
+
+  const assignmentId = String(formData.get("assignmentId") ?? "").trim();
+  if (!assignmentId) return;
+
+  const result = await endActingAssignmentEarly({ assignmentId, actorUserId: currentUser.id });
+  if (!result.ok) console.error("[admin authority] failed to end acting assignment early", result.error);
 
   revalidatePath("/admin/authority");
 }

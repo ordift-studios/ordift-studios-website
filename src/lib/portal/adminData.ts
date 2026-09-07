@@ -48,6 +48,13 @@ export type AdminUserRow = {
   onboardingId: string | null;
   onboardingStatus: string | null;
   authoritySummary: string | null;
+  // Organizational Structure & Authority Grants V1 (2026-09-07) —
+  // Employment/engagement STATUS (Pre-Start/Active/Probation/Leave/
+  // Suspended/Notice Period/Exited), deliberately independent of
+  // accessStatus above (Account/System access) and of
+  // engagementTypeName (contractual classification). Null = not yet
+  // classified — never fabricated for an existing person.
+  employmentStatus: string | null;
   // New Booking notification opt-in (notification_preferences,
   // category "new_booking") — only meaningful for a plain `admin`; a
   // Super Admin always receives these regardless of this value (see
@@ -152,7 +159,7 @@ export async function listUsersWithRoles(): Promise<AdminUserListResult> {
     admin
       .from("staff_details")
       .select(
-        "id, operational_title_id, engagement_type_id, position_id, positions(name, call_sign, departments(name), grades(grade_code, name))"
+        "id, operational_title_id, engagement_type_id, position_id, employment_status, positions(name, call_sign, departments(name), grades(grade_code, name))"
       ),
     admin.from("operational_titles").select("id, name"),
     admin.from("engagement_types").select("id, name"),
@@ -282,6 +289,7 @@ export async function listUsersWithRoles(): Promise<AdminUserListResult> {
         onboardingId: onboardingIdByProfileId.get(u.id) ?? null,
         onboardingStatus: onboardingStatusByProfileId.get(u.id) ?? null,
         authoritySummary: authoritySummaryByProfileId.get(u.id) ?? null,
+        employmentStatus: details?.employment_status ?? null,
         newBookingAlertsEnabled: newBookingAlertPrefs.get(u.id) ?? false,
       };
     })

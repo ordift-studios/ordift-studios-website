@@ -177,6 +177,17 @@ const ACTION_LABELS: Record<string, string> = {
   "partnerships.referral_commission.payment_blocked": "Blocked a referral commission from being submitted to Payables",
   "partnerships.referral_commission.payables_submission_failed": "A referral commission's Payables submission failed",
   "partnerships.referral_commission.approved_for_payment": "Approved a referral commission for payment (submitted to Payables)",
+
+  // Organizational Structure, Authority Grants, Onboarding & Work Email V1 (2026-09-07)
+  "financial_authority_level.grant": "Granted a standing Financial Authority Level",
+  "acting_assignment.created": "Created a temporary acting assignment",
+  "acting_assignment.ended_early": "Ended an acting assignment early",
+  "background_screening.recorded": "Recorded a background screening decision",
+  "corporate_identity.local_part_requested": "Requested an alternative work-email local part",
+  "corporate_identity.local_part_approved": "Approved a work-email local part request",
+  "break_glass.invoked": "Invoked Super Admin emergency (break-glass) access",
+  "staff_details.employment_status_changed": "Changed a person's employment status",
+  "profiles.access_status_changed": "Changed a person's account/system access status",
 };
 
 // Graceful fallback for any action type not (yet) in ACTION_LABELS — pure

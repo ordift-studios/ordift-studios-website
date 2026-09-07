@@ -4,10 +4,12 @@ import {
   generateCorporateEmailCandidates,
   pickAvailableLocalPart,
   formatCorporateEmail,
+  normalizeRequestedLocalPart,
   ORDIFT_STAFF_EMAIL_DOMAIN,
   type CorporateEmailNameInput,
 } from "@/lib/organization/corporateEmail";
 import { isSuperAdminId, hasAuthority, IDENTITY_CAPABILITIES } from "@/lib/organization/authority";
+import { createDepartmentRequest, decideDepartmentRequest } from "@/lib/organization/departmentRequests";
 
 const STATUS_CAPABILITY: Record<string, string> = {
   suspended: IDENTITY_CAPABILITIES.suspend,
@@ -201,6 +203,129 @@ export async function setCorporateIdentityStatus(params: {
     entityType: "user",
     entityId: previous.profile_id,
     metadata: { previousStatus: previous.status, newStatus: params.status },
+  });
+
+  return { ok: true };
+}
+
+// ============================================================
+// Work-email request/approval diff trail (2026-09-07)
+// ============================================================
+// The reserve act above already IS the approval act (only Technology/
+// GEEK or Super Admin can call it). These two functions add the
+// explicit "requester proposed X, approver approved Y, here is the
+// difference" trail for the case where the PERSON asks for a specific
+// alternative local part before the system-generated one is finalized.
+// Reuses the existing generic department_requests workflow
+// (request_type = 'work_email_alternative_request') rather than a new
+// table — the request itself carries zero authority; only
+// approveCorporateIdentityLocalPart() below can actually change the
+// reserved address, and it re-runs the exact same uniqueness check as
+// the original reservation.
+export async function requestCorporateIdentityLocalPart(params: {
+  profileId: string;
+  requestedLocalPart: string;
+  requestedBy: string;
+}): Promise<{ ok: true; requestId: string } | { ok: false; error: string }> {
+  const validation = normalizeRequestedLocalPart(params.requestedLocalPart);
+  if (!validation.ok) return validation;
+  const normalized = validation.value;
+
+  const result = await createDepartmentRequest({
+    requestType: "work_email_alternative_request",
+    title: `Work email alternative request: ${normalized}@${ORDIFT_STAFF_EMAIL_DOMAIN}`,
+    description: "Requested local part must still be based on the names genuinely submitted in onboarding — final selection requires Technology/GEEK or Super Admin approval.",
+    payload: { profileId: params.profileId, requestedLocalPart: normalized },
+    requestedBy: params.requestedBy,
+  });
+  if (!result.ok) return result;
+
+  await logActivity({
+    actorUserId: params.requestedBy,
+    action: "corporate_identity.local_part_requested",
+    entityType: "user",
+    entityId: params.profileId,
+    metadata: { requestedLocalPart: normalized, requestId: result.requestId },
+  });
+
+  return { ok: true, requestId: result.requestId };
+}
+
+// Diff-tracked approval: records both the requested and the actually-
+// approved local part (they may differ — an admin can approve a
+// different, still name-derived candidate instead, e.g. because the
+// requested one collided). Never silently modifies the address without
+// this being visible: requested_local_part/approved_by/approved_at/
+// approval_reason are all persisted on the corporate_identities row.
+export async function approveCorporateIdentityLocalPart(params: {
+  identityId: string;
+  requestId?: string | null;
+  requestedLocalPart: string;
+  approvedLocalPart: string;
+  approvalReason?: string | null;
+  actorUserId: string;
+}): Promise<{ ok: true } | { ok: false; error: string }> {
+  const authCheck = await requireIdentityCapabilityOrSuperAdmin(params.actorUserId, IDENTITY_CAPABILITIES.manageEmail);
+  if (!authCheck.ok) return authCheck;
+
+  const approvedLocalPart = params.approvedLocalPart.trim().toLowerCase();
+  const admin = createAdminClient();
+
+  const { data: existing } = await admin
+    .from("corporate_identities")
+    .select("id, profile_id, local_part, domain")
+    .eq("id", params.identityId)
+    .maybeSingle();
+  if (!existing) return { ok: false, error: "Identity not found." };
+
+  if (approvedLocalPart !== existing.local_part) {
+    const { data: takenRows, error: takenError } = await admin
+      .from("corporate_identities")
+      .select("id")
+      .eq("domain", existing.domain)
+      .eq("local_part", approvedLocalPart)
+      .neq("id", params.identityId);
+    if (takenError) {
+      console.error("[organization] failed to check local part uniqueness", takenError.message);
+      return { ok: false, error: "Failed to verify the address is available." };
+    }
+    if (takenRows && takenRows.length > 0) {
+      return { ok: false, error: `${approvedLocalPart}@${existing.domain} is already reserved by another person.` };
+    }
+  }
+
+  const { error } = await admin
+    .from("corporate_identities")
+    .update({
+      local_part: approvedLocalPart,
+      requested_local_part: params.requestedLocalPart,
+      approved_by: params.actorUserId,
+      approved_at: new Date().toISOString(),
+      approval_reason: params.approvalReason ?? null,
+    })
+    .eq("id", params.identityId);
+  if (error) {
+    console.error("[organization] failed to approve corporate identity local part", error.message);
+    return { ok: false, error: "Failed to record the approval." };
+  }
+
+  if (params.requestId) {
+    await decideDepartmentRequest({
+      requestId: params.requestId,
+      decision: "approved",
+      decisionNotes: approvedLocalPart !== params.requestedLocalPart
+        ? `Approved as ${approvedLocalPart} instead of requested ${params.requestedLocalPart}.`
+        : "Approved as requested.",
+      actorUserId: params.actorUserId,
+    });
+  }
+
+  await logActivity({
+    actorUserId: params.actorUserId,
+    action: "corporate_identity.local_part_approved",
+    entityType: "user",
+    entityId: existing.profile_id,
+    metadata: { requestedLocalPart: params.requestedLocalPart, approvedLocalPart, changed: approvedLocalPart !== params.requestedLocalPart },
   });
 
   return { ok: true };

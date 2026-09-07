@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { requiresGovernedChangeRecord, computeBudgetDifference, isClientFacingOrLaterStatus, isApprovedOrLaterStatus, PRODUCTION_BUDGET_STATUS_ORDER } from "./budgetMath";
+import { requiresGovernedChangeRecord, computeBudgetDifference, computeCumulativeVariationPercent, isClientFacingOrLaterStatus, isApprovedOrLaterStatus, PRODUCTION_BUDGET_STATUS_ORDER } from "./budgetMath";
 
 // Ordift Production Services — Budget Versioning (2026-09-07) —
 // requiresGovernedChangeRecord() is the pure decision inside
@@ -93,5 +93,21 @@ describe("25 / 27 — append-only guarantee (documented, verified by code readin
     // refuses to proceed without a non-empty changeReason — proving the
     // gate exists structurally, not just as a comment.
     expect(requiresGovernedChangeRecord("client_approved", 1000, 1200)).toBe(true);
+  });
+});
+
+describe("computeCumulativeVariationPercent — Part 14 (cumulative, not per-change)", () => {
+  it("computes the percentage change from the original approved baseline", () => {
+    expect(computeCumulativeVariationPercent(1000, 1180)).toBeCloseTo(18, 5);
+  });
+  it("two 9% changes cumulate to 18% against the ORIGINAL baseline, not 9% each", () => {
+    const afterFirstChange = 1000 * 1.09;
+    const afterSecondChange = afterFirstChange * 1.09; // each individual step is 9%
+    expect(computeCumulativeVariationPercent(1000, afterSecondChange)).toBeGreaterThan(17);
+  });
+  it("a zero/null baseline never divides by zero — treated as maximally material", () => {
+    expect(computeCumulativeVariationPercent(0, 500)).toBe(100);
+    expect(computeCumulativeVariationPercent(null, 500)).toBe(100);
+    expect(computeCumulativeVariationPercent(0, 0)).toBe(0);
   });
 });

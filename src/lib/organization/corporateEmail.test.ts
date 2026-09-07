@@ -3,6 +3,7 @@ import {
   generateCorporateEmailCandidates,
   pickAvailableLocalPart,
   formatCorporateEmail,
+  normalizeRequestedLocalPart,
   ORDIFT_STAFF_EMAIL_DOMAIN,
 } from "@/lib/organization/corporateEmail";
 
@@ -123,5 +124,20 @@ describe("generation never depends on organizational fields", () => {
     const a = generateCorporateEmailCandidates({ firstName: "Michael", surname: "Dadson" });
     const b = generateCorporateEmailCandidates({ firstName: "Michael", surname: "Dadson" });
     expect(a).toEqual(b);
+  });
+});
+
+describe("normalizeRequestedLocalPart — Part 57 (person-requested alternative)", () => {
+  it("lowercases and strips spaces", () => {
+    expect(normalizeRequestedLocalPart(" Kyeboah ")).toEqual({ ok: true, value: "kyeboah" });
+  });
+  it("rejects an empty request", () => {
+    expect(normalizeRequestedLocalPart("   ").ok).toBe(false);
+  });
+  it("rejects disallowed characters (never allows spaces internally either)", () => {
+    expect(normalizeRequestedLocalPart("king kofi!").ok).toBe(false);
+  });
+  it("allows dots/hyphens/underscores", () => {
+    expect(normalizeRequestedLocalPart("kofi.yeboah")).toEqual({ ok: true, value: "kofi.yeboah" });
   });
 });

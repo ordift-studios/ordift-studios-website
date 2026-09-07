@@ -42,3 +42,19 @@ export function requiresGovernedChangeRecord(previousStatus: ProductionBudgetSta
 export function computeBudgetDifference(previousAmountUsd: number, newAmountUsd: number): number {
   return Math.round((newAmountUsd - previousAmountUsd) * 100) / 100;
 }
+
+// Organizational Structure & Authority Grants V1 (2026-09-07), Part 14
+// — the CUMULATIVE variation from the original client-approved baseline,
+// never an isolated single change (so repeated small changes cannot
+// avoid escalation by staying under 10% each time individually — see
+// productionBudgets.ts, which passes the FIRST client_approved-or-later
+// version's total as baselineUsd, not the immediately-previous version).
+// A null/zero baseline can't meaningfully express a percentage — treated
+// as 100% (maximally material) rather than dividing by zero or hiding
+// the variation.
+export function computeCumulativeVariationPercent(baselineUsd: number | null, currentUsd: number | null): number {
+  const baseline = baselineUsd ?? 0;
+  const current = currentUsd ?? 0;
+  if (baseline <= 0) return current === 0 ? 0 : 100;
+  return ((current - baseline) / baseline) * 100;
+}

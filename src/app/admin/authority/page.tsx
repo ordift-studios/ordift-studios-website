@@ -4,7 +4,17 @@ import { getCurrentUser, isSuperAdmin } from "@/lib/portal/roles";
 import { listUsersWithRoles } from "@/lib/portal/adminData";
 import { listDepartmentOptions, listPositions } from "@/lib/organization/adminData";
 import { listAuthorityGrants, isGrantActive } from "@/lib/organization/authority";
-import { grantExecutiveAdminAction, grantDepartmentAuthorityAction, createDelegationAction, revokeAuthorityGrantAction } from "./actions";
+import { parseFinancialAuthorityLevelAuthority, FINANCIAL_AUTHORITY_LEVEL_LABELS, FINANCIAL_AUTHORITY_LEVELS } from "@/lib/organization/financialAuthority";
+import { listActingAssignments, isActingAssignmentActive } from "@/lib/organization/actingAssignments";
+import {
+  grantExecutiveAdminAction,
+  grantDepartmentAuthorityAction,
+  createDelegationAction,
+  revokeAuthorityGrantAction,
+  grantFinancialAuthorityLevelAction,
+  createActingAssignmentAction,
+  endActingAssignmentEarlyAction,
+} from "./actions";
 
 export const metadata: Metadata = {
   title: "Authority — Ordift Studios Admin",
@@ -22,11 +32,12 @@ export default async function AdminAuthorityPage() {
   const user = await getCurrentUser();
   if (!user || !isSuperAdmin(user)) redirect("/admin/overview");
 
-  const [usersResult, departments, grants, positions] = await Promise.all([
+  const [usersResult, departments, grants, positions, actingAssignments] = await Promise.all([
     listUsersWithRoles(),
     listDepartmentOptions(),
     listAuthorityGrants(),
     listPositions(),
+    listActingAssignments(),
   ]);
   const people = usersResult.ok
     ? usersResult.users.map((u) => ({ id: u.id, label: u.fullName ? `${u.fullName} (${u.email ?? "no email"})` : (u.email ?? u.id) }))
@@ -37,7 +48,15 @@ export default async function AdminAuthorityPage() {
   const history = grants.filter((g) => !isGrantActive(g));
   const executiveAdmins = active.filter((g) => g.authority === "executive_admin");
   const departmentAdmins = active.filter((g) => g.authority === "department_admin");
-  const delegations = active.filter((g) => g.authority !== "executive_admin" && g.authority !== "department_admin");
+  // Financial Authority Level grants are authority_grants rows too (see
+  // src/lib/organization/financialAuthorityGrants.ts) — shown in their
+  // own section rather than lumped into generic Temporary Delegation,
+  // for clarity, even though the underlying table/mechanism is
+  // identical.
+  const financialAuthorityGrants = active.filter((g) => parseFinancialAuthorityLevelAuthority(g.authority) !== null);
+  const delegations = active.filter(
+    (g) => g.authority !== "executive_admin" && g.authority !== "department_admin" && parseFinancialAuthorityLevelAuthority(g.authority) === null
+  );
 
   // Leadership & Jurisdiction overview (Phase 3.4, Part 16) — CHIEF
   // shown alone and visually distinct (ultimate authority); the six
@@ -241,6 +260,104 @@ export default async function AdminAuthorityPage() {
           <input type="text" name="reason" placeholder="Reason (required)" required className="rounded-lg border border-black/15 px-3 py-1.5 font-sans text-body-small sm:col-span-2" />
           <button type="submit" className="sm:col-span-2 justify-self-start font-sans text-body-small font-semibold px-4 py-2 rounded-md bg-ordift-gold text-ordift-navy-950">
             Create Delegation
+          </button>
+        </form>
+      </section>
+
+      <section className="rounded-xl border border-black/10 bg-white p-6 space-y-4 mb-8">
+        <h2 className="font-serif font-medium text-body text-ordift-ink">Financial Authority Level</h2>
+        <p className="font-sans text-caption text-ordift-ink-muted -mt-2 max-w-2xl">
+          Standing (permanent) grant only — Super-Admin appointment, same tier as Executive Admin/Director-tier above.
+          A time-bound loan of one specific level (e.g. &ldquo;hold Level 3 for 14 days&rdquo;) uses the Temporary
+          Delegation form above instead, typing e.g. <code>financial_authority_level_3</code> as the authority. Never
+          implied by Grade, Position, or capability — this is the only source of truth for what a person may
+          financially approve.
+        </p>
+        <ul className="space-y-2">
+          {financialAuthorityGrants.map((g) => (
+            <GrantRow key={g.id} grant={g} />
+          ))}
+          {financialAuthorityGrants.length === 0 && <p className="font-sans text-body-small text-ordift-ink-muted">None currently active.</p>}
+        </ul>
+        <form action={grantFinancialAuthorityLevelAction} className="flex flex-wrap items-end gap-2 pt-2 border-t border-black/5">
+          <select name="profileId" required defaultValue="" className="min-h-9 rounded-lg border border-black/15 bg-white px-2 font-sans text-body-small">
+            <option value="" disabled>Choose a person…</option>
+            {people.map((p) => (
+              <option key={p.id} value={p.id}>{p.label}</option>
+            ))}
+          </select>
+          <select name="level" required defaultValue="" className="min-h-9 rounded-lg border border-black/15 bg-white px-2 font-sans text-body-small">
+            <option value="" disabled>Choose a level…</option>
+            {FINANCIAL_AUTHORITY_LEVELS.map((l) => (
+              <option key={l} value={l}>{FINANCIAL_AUTHORITY_LEVEL_LABELS[l]}</option>
+            ))}
+          </select>
+          <select name="departmentId" defaultValue="" className="min-h-9 rounded-lg border border-black/15 bg-white px-2 font-sans text-body-small">
+            <option value="">Scope: entire business</option>
+            {departments.map((d) => (
+              <option key={d.id} value={d.id}>{d.name}</option>
+            ))}
+          </select>
+          <input type="text" name="reason" placeholder="Reason (optional)" className="min-w-56 rounded-lg border border-black/15 px-3 py-1.5 font-sans text-body-small" />
+          <button type="submit" className="font-sans text-body-small font-semibold px-4 py-1.5 rounded-md bg-ordift-navy-950 text-white">
+            Grant Financial Authority Level
+          </button>
+        </form>
+      </section>
+
+      <section className="rounded-xl border border-black/10 bg-white p-6 space-y-4 mb-8">
+        <h2 className="font-serif font-medium text-body text-ordift-ink">Acting Assignments</h2>
+        <p className="font-sans text-caption text-ordift-ink-muted -mt-2 max-w-2xl">
+          Temporary — e.g. a Production Manager (substantive Grade unchanged) holding &ldquo;Acting Head of
+          Production&rdquo; for a defined period. Never changes anyone&rsquo;s permanent Grade or Position. Any real
+          temporary capability/Financial Authority Level that comes with the assignment is granted separately, above,
+          with a matching expiry date.
+        </p>
+        <ul className="space-y-2">
+          {actingAssignments.map((a) => {
+            const isActive = isActingAssignmentActive(a);
+            return (
+              <li key={a.id} className="flex items-center justify-between gap-3 rounded-lg border border-black/10 bg-white px-4 py-3">
+                <div>
+                  <p className="font-sans text-body-small text-ordift-ink font-medium">
+                    {peopleById.get(a.profileId) ?? a.profileId} — {a.actingTitle}
+                  </p>
+                  <p className="font-sans text-caption text-ordift-ink-muted">
+                    {a.startDate} → {a.endDate} · {isActive ? "active" : a.endedEarlyAt ? "ended early" : "not active"} · {a.reason}
+                  </p>
+                </div>
+                {isActive && (
+                  <form action={endActingAssignmentEarlyAction}>
+                    <input type="hidden" name="assignmentId" value={a.id} />
+                    <button type="submit" className="font-sans text-caption text-ordift-gold-pressed underline underline-offset-4 whitespace-nowrap">
+                      End Early
+                    </button>
+                  </form>
+                )}
+              </li>
+            );
+          })}
+          {actingAssignments.length === 0 && <p className="font-sans text-body-small text-ordift-ink-muted">None currently recorded.</p>}
+        </ul>
+        <form action={createActingAssignmentAction} className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-4 border-t border-black/5">
+          <select name="profileId" required defaultValue="" className="rounded-lg border border-black/15 bg-white px-2 py-1.5 font-sans text-body-small">
+            <option value="" disabled>Person…</option>
+            {people.map((p) => (
+              <option key={p.id} value={p.id}>{p.label}</option>
+            ))}
+          </select>
+          <input type="text" name="actingTitle" placeholder="Acting title (e.g. Acting Head of Production)" required className="rounded-lg border border-black/15 px-3 py-1.5 font-sans text-body-small" />
+          <input type="date" name="startDate" required className="rounded-lg border border-black/15 px-3 py-1.5 font-sans text-body-small" />
+          <input type="date" name="endDate" required className="rounded-lg border border-black/15 px-3 py-1.5 font-sans text-body-small" />
+          <select name="departmentId" defaultValue="" className="rounded-lg border border-black/15 bg-white px-2 py-1.5 font-sans text-body-small">
+            <option value="">Scope: entire business (no department limit)</option>
+            {departments.map((d) => (
+              <option key={d.id} value={d.id}>{d.name}</option>
+            ))}
+          </select>
+          <input type="text" name="reason" placeholder="Reason (required)" required className="rounded-lg border border-black/15 px-3 py-1.5 font-sans text-body-small sm:col-span-2" />
+          <button type="submit" className="sm:col-span-2 justify-self-start font-sans text-body-small font-semibold px-4 py-2 rounded-md bg-ordift-gold text-ordift-navy-950">
+            Create Acting Assignment
           </button>
         </form>
       </section>

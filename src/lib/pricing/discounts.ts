@@ -1,5 +1,7 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { authorizeWithSuperAdminOverride, FINANCE_CAPABILITIES } from "@/lib/organization/authority";
+import { authorizeFinancialLevel } from "@/lib/organization/financialAuthorityGrants";
+import { resolveDiscountAuthorityLevel, FINANCIAL_AUTHORITY_LEVEL_LABELS } from "@/lib/organization/financialAuthority";
 import { logActivity } from "@/lib/admin/activityLog";
 import { applyDiscount, isDiscountCurrentlyValid, decideDiscountDeletionOutcome } from "./discountMath";
 
@@ -219,9 +221,34 @@ export async function setDiscountCodeActive(params: { discountCodeId: string; ac
   // freely reactivatable). Never let a plain Activate toggle silently
   // resurrect it.
   if (params.active) {
-    const { data: existing } = await admin.from("discount_codes").select("archived_at").eq("id", params.discountCodeId).maybeSingle();
+    const { data: existing } = await admin
+      .from("discount_codes")
+      .select("archived_at, discount_type, value")
+      .eq("id", params.discountCodeId)
+      .maybeSingle();
     if (existing?.archived_at) {
       return { ok: false, error: "This discount was archived (retired) because it has redemption history and can no longer be reused — create a new code instead if you want to run this promotion again." };
+    }
+
+    // Organizational Structure & Authority Grants V1 (2026-09-07), Part
+    // 15 — activating (going live) a PERCENTAGE discount additionally
+    // requires the applicable Financial Authority Level, layered over
+    // (never instead of) the existing pricingAdminister capability
+    // check above — both are required, matching the explicit "Financial
+    // Level alone grants no unrelated capability, Pricing Admin
+    // capability alone grants no arbitrary discount authority" rule.
+    // Super Admin still passes via authorizeFinancialLevel()'s own
+    // override, so today's small-team operation is unaffected until
+    // real Financial Authority Level grants exist for anyone else.
+    if (existing?.discount_type === "percentage") {
+      const requiredLevel = resolveDiscountAuthorityLevel(existing.value);
+      const levelAuth = await authorizeFinancialLevel(params.actorUserId, requiredLevel);
+      if (!levelAuth.ok) {
+        return {
+          ok: false,
+          error: `Activating a ${existing.value}% discount requires at least ${FINANCIAL_AUTHORITY_LEVEL_LABELS[requiredLevel]}.`,
+        };
+      }
     }
   }
 

@@ -1,7 +1,9 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { authorizeWithSuperAdminOverride, OPERATIONS_CAPABILITIES } from "@/lib/organization/authority";
+import { authorizeFinancialLevel } from "@/lib/organization/financialAuthorityGrants";
+import { resolveRoutineLevelForAmount, resolveProductionBudgetVariationLevel, FINANCIAL_AUTHORITY_LEVEL_LABELS } from "@/lib/organization/financialAuthority";
 import { logActivity } from "@/lib/admin/activityLog";
-import { requiresGovernedChangeRecord, computeBudgetDifference, type ProductionBudgetStatus } from "./budgetMath";
+import { requiresGovernedChangeRecord, computeBudgetDifference, computeCumulativeVariationPercent, isApprovedOrLaterStatus, type ProductionBudgetStatus } from "./budgetMath";
 
 // Ordift Production Services — Production Budget Versioning
 // (2026-09-07) — production_budgets is APPEND-ONLY: a budget change is
@@ -209,19 +211,46 @@ export async function createBudgetVersion(params: {
   totalUsd: number | null;
   notes?: string | null;
   changeReason?: string; // required when the prior version is client_approved/committed/actual_final and the total materially changes
+  materialScopeChange?: boolean;
+  relatedCommitmentReference?: string | null;
   actorUserId: string;
-}): Promise<{ ok: true; id: string; changeRecorded: boolean } | { ok: false; error: string; requiresChangeReason?: boolean }> {
+}): Promise<{
+  ok: true; id: string; changeRecorded: boolean
+} | {
+  ok: false; error: string; requiresChangeReason?: boolean; requiredFinancialAuthorityLevel?: number
+}> {
   const auth = await authorize(params.actorUserId);
   if (!auth.ok) return { ok: false, error: "Not authorized to manage production budgets." };
 
   const previous = await getLatestBudgetForReference(params.actorUserId, params.referenceType, params.referenceId);
 
   let changeRecorded = false;
+  let cumulativeVariationPercent = 0;
   if (previous && requiresGovernedChangeRecord(previous.status, previous.totalUsd, params.totalUsd)) {
     if (!params.changeReason?.trim()) {
       return { ok: false, error: "This budget was already client-approved (or later) — a reason is required to change the total, recorded as a governed change/variation.", requiresChangeReason: true };
     }
     changeRecorded = true;
+
+    // Organizational Structure & Authority Grants V1 (2026-09-07), Part
+    // 14 — evaluated against the CUMULATIVE variation from the original
+    // client-approved-or-later baseline (the earliest such version in
+    // this reference's history), never the isolated previous-to-new
+    // delta, so repeated small changes cannot dodge escalation.
+    const history = await listBudgetHistoryForReference(params.actorUserId, params.referenceType, params.referenceId);
+    const baseline = [...history].reverse().find((b) => isApprovedOrLaterStatus(b.status));
+    cumulativeVariationPercent = computeCumulativeVariationPercent(baseline?.totalUsd ?? previous.totalUsd, params.totalUsd);
+
+    const rawDifferenceLevel = resolveRoutineLevelForAmount(Math.abs(computeBudgetDifference(previous.totalUsd ?? 0, params.totalUsd ?? 0)));
+    const requiredLevel = resolveProductionBudgetVariationLevel(cumulativeVariationPercent, rawDifferenceLevel, params.materialScopeChange ?? false);
+    const levelAuth = await authorizeFinancialLevel(params.actorUserId, requiredLevel);
+    if (!levelAuth.ok) {
+      return {
+        ok: false,
+        error: `This ${cumulativeVariationPercent.toFixed(1)}% cumulative budget variation requires at least ${FINANCIAL_AUTHORITY_LEVEL_LABELS[requiredLevel]}.`,
+        requiredFinancialAuthorityLevel: requiredLevel,
+      };
+    }
   }
 
   const admin = createAdminClient();
@@ -259,6 +288,7 @@ export async function createBudgetVersion(params: {
       affected_lines: params.lineItems,
       actor_user_id: params.actorUserId,
       client_approval_status: "pending",
+      related_commitment_reference: params.relatedCommitmentReference ?? null,
     });
     if (changeError) console.error("[production] failed to record budget change/variation", changeError.message);
   }
@@ -268,7 +298,7 @@ export async function createBudgetVersion(params: {
     action: "production.budget_version.created",
     entityType: "production_budget",
     entityId: data.id,
-    metadata: { referenceType: params.referenceType, referenceId: params.referenceId, status: params.status, totalUsd: params.totalUsd, supersedesId: previous?.id ?? null, changeRecorded },
+    metadata: { referenceType: params.referenceType, referenceId: params.referenceId, status: params.status, totalUsd: params.totalUsd, supersedesId: previous?.id ?? null, changeRecorded, cumulativeVariationPercent: changeRecorded ? cumulativeVariationPercent : undefined },
   });
   return { ok: true, id: data.id, changeRecorded };
 }

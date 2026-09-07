@@ -173,7 +173,7 @@ export async function updateAccessStatusAction(formData: FormData): Promise<{ er
   const userId = String(formData.get("userId") ?? "");
   const newStatus = String(formData.get("status") ?? "");
   const reason = String(formData.get("reason") ?? "").trim() || null;
-  if (!userId || !["active", "suspended", "deactivated"].includes(newStatus)) {
+  if (!userId || !["invited", "active", "restricted", "suspended", "deactivated"].includes(newStatus)) {
     return { error: "Invalid request." };
   }
 
@@ -214,8 +214,14 @@ export async function updateAccessStatusAction(formData: FormData): Promise<{ er
     return { error: "Failed to update access status." };
   }
 
+  // Only suspended/deactivated ban at the Auth layer — 'invited' must
+  // still be able to accept their invite and set a password, and
+  // 'restricted' relies on private.has_role()'s existing access_status
+  // = 'active' check to block role-based data access without a full
+  // login ban (see AccessStatus's doc comment in src/lib/portal/roles.ts).
+  const shouldBan = newStatus === "suspended" || newStatus === "deactivated";
   const { error: authError } = await admin.auth.admin.updateUserById(userId, {
-    ban_duration: newStatus === "active" ? "none" : AUTH_BAN_DURATION,
+    ban_duration: shouldBan ? AUTH_BAN_DURATION : "none",
   });
   if (authError) {
     // Not fatal to the RLS-level enforcement (private.has_role() already

@@ -17,7 +17,20 @@ export const ROLE_SLUGS = [
 
 export type RoleSlug = (typeof ROLE_SLUGS)[number];
 
-export type AccessStatus = "active" | "suspended" | "deactivated";
+// 'invited'/'restricted' added (Organizational Structure & Authority
+// Grants V1, 2026-09-07) — see migration 0065's widened
+// profiles_access_status_check. private.has_role()/is_staff_or_admin()
+// etc. (0009/0020/0023/0051) still gate strictly on access_status =
+// 'active', so today both new values behave, at the RLS layer, like
+// 'suspended' for role-based data access (no partial/narrowed access
+// yet) — 'restricted' genuinely narrowing access below full role
+// access while still allowing SOME access is a future RLS refinement,
+// not claimed as done here. What IS new: 'invited'/'restricted' are
+// distinguishable, trackable states, and (see updateAccessStatusAction)
+// neither triggers the Supabase Auth-level ban that 'suspended'/
+// 'deactivated' do — an invited person must still be able to accept
+// their invite and set a password.
+export type AccessStatus = "invited" | "active" | "restricted" | "suspended" | "deactivated";
 
 // Not self-service — granting these requires an existing admin, done
 // from the Admin Platform (src/app/admin/users). Self-signup always

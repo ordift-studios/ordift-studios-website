@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState, useTransition } from "react";
+import Link from "next/link";
 import type { AdminUserRow, LookupOption } from "@/lib/portal/adminData";
 import type { MemberClassification } from "@/lib/portal/memberNumbers";
 import type { RoleSlug } from "@/lib/portal/roles";
@@ -50,12 +51,16 @@ const ASSIGNMENT_STATUS_LABELS: Record<AssignmentStatus, string> = {
 
 function StatusBadge({ status }: { status: AdminUserRow["accessStatus"] }) {
   const styles: Record<AdminUserRow["accessStatus"], string> = {
+    invited: "bg-blue-100 text-blue-800",
     active: "bg-green-100 text-green-800",
+    restricted: "bg-amber-100 text-amber-800",
     suspended: "bg-amber-100 text-amber-800",
     deactivated: "bg-red-100 text-red-800",
   };
   const labels: Record<AdminUserRow["accessStatus"], string> = {
+    invited: "Invited",
     active: "Active",
+    restricted: "Restricted",
     suspended: "Suspended",
     deactivated: "Deactivated",
   };
@@ -1171,7 +1176,9 @@ export default function UsersManager({
           className="rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small"
         >
           <option value="">Any status</option>
+          <option value="invited">Invited</option>
           <option value="active">Active</option>
+          <option value="restricted">Restricted</option>
           <option value="suspended">Suspended</option>
           <option value="deactivated">Deactivated</option>
         </select>
@@ -1235,6 +1242,19 @@ export default function UsersManager({
                   {u.email ?? "—"}
                   {u.memberNumber ? ` · ${u.memberNumber}` : ""}
                 </p>
+                {/* Organizational Structure & Authority Grants V1
+                    (2026-09-07) — Person Detail View (Grade/Position/
+                    Department/Financial Authority/Acting Assignments/
+                    Employment Status/Background Screening/Work Email),
+                    additive to this existing screen, not a replacement
+                    for it. */}
+                <Link
+                  href={`/admin/organization/people/${u.id}`}
+                  onClick={(e) => e.stopPropagation()}
+                  className="font-sans text-caption text-ordift-gold-pressed underline underline-offset-4"
+                >
+                  Full Profile →
+                </Link>
               </div>
               <StatusBadge status={u.accessStatus} />
               <span className="font-sans text-caption text-ordift-ink-muted">
