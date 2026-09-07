@@ -2,13 +2,13 @@
 
 import { revalidatePath } from "next/cache";
 import { getCurrentUser } from "@/lib/portal/roles";
-import { createOpportunity, setOpportunityStatus, type PartnershipOpportunityStatus, type PartnershipDecisionOutcome } from "@/lib/partnerships/opportunities";
+import { createOpportunity, setOpportunityStatus, setOpportunityPayeeProfile, type PartnershipOpportunityStatus, type PartnershipDecisionOutcome } from "@/lib/partnerships/opportunities";
 import { createValueAssessment, approveConcessionAssessment, rejectValueAssessment } from "@/lib/partnerships/valueAssessments";
 import type { PartnershipValueClass } from "@/lib/partnerships/valueClasses";
 import { createStrategicAssessment } from "@/lib/partnerships/strategicAssessments";
 import { createAgreementVersion, type PartnershipAgreementStatus } from "@/lib/partnerships/agreements";
 import { createReferralTerms, approveReferralTerms, createReferralLead, disputeReferralLead } from "@/lib/partnerships/referrals";
-import { recordCommissionEvent, setCommissionEventStatus, type CommissionEventStatus } from "@/lib/partnerships/referralCommissions";
+import { recordCommissionEvent, setCommissionEventStatus, approveReferralCommissionForPayment } from "@/lib/partnerships/referralCommissions";
 import { createOutcomeReview, type WouldCollaborateAgain } from "@/lib/partnerships/outcomeReviews";
 import type { ReferralDurationPreset } from "@/lib/partnerships/referralMath";
 
@@ -297,13 +297,18 @@ export async function recordCommissionEventAction(formData: FormData): Promise<v
   revalidatePath("/admin/partnerships/referrals");
 }
 
+// Only ever moves a commission between "calculated" and "earned" — see
+// setCommissionEventStatus()'s own doc comment. "approved_for_payment"
+// is reachable ONLY through approveReferralCommissionForPaymentAction
+// below; "paid" is never set by any action at all (it is read live
+// from the linked payment_obligations row).
 export async function setCommissionEventStatusAction(formData: FormData): Promise<void> {
   const user = await getCurrentUser();
   if (!user) return;
 
   const eventId = String(formData.get("eventId") ?? "");
-  const status = String(formData.get("status") ?? "") as CommissionEventStatus;
-  if (!eventId || !status) return;
+  const status = String(formData.get("status") ?? "");
+  if (!eventId || (status !== "calculated" && status !== "earned")) return;
 
   const result = await setCommissionEventStatus({ eventId, status, actorUserId: user.id });
   if (!result.ok) console.error("[admin] failed to update commission event status", result.error);
@@ -356,4 +361,38 @@ export async function convertToPaidProposalAction(formData: FormData): Promise<v
   if (!result.ok) console.error("[admin] failed to convert opportunity to paid proposal", result.error);
 
   revalidatePath(`/admin/partnerships/opportunities/${opportunityId}`);
+}
+
+// Referral Payable Bridge (2026-09-07) — links (or clears) the
+// opportunity's counterpart to an existing payee profile. Never
+// creates a payee itself.
+export async function setOpportunityPayeeProfileAction(formData: FormData): Promise<void> {
+  const user = await getCurrentUser();
+  if (!user) return;
+
+  const opportunityId = String(formData.get("opportunityId") ?? "");
+  if (!opportunityId) return;
+
+  const payeeProfileId = (formData.get("payeeProfileId") as string) || null;
+  const result = await setOpportunityPayeeProfile({ opportunityId, payeeProfileId, actorUserId: user.id });
+  if (!result.ok) console.error("[admin] failed to set opportunity payee profile", result.error);
+
+  revalidatePath(`/admin/partnerships/opportunities/${opportunityId}`);
+  revalidatePath("/admin/partnerships/referrals");
+}
+
+// The ONLY path from an Earned referral commission into the existing
+// Payables/payment_obligations architecture — see
+// approveReferralCommissionForPayment()'s own extensive doc comment
+// in referralCommissions.ts for the full revalidation/idempotency/
+// concurrency guarantee. Returns the result so the client component
+// calling this directly (ApproveForPaymentButton) can show the exact
+// blocking reason inline rather than only logging it server-side.
+export async function approveReferralCommissionForPaymentAction(eventId: string, description: string): Promise<{ ok: true; obligationId: string; alreadyExisted: boolean } | { ok: false; error: string; reason?: string }> {
+  const user = await getCurrentUser();
+  if (!user) return { ok: false, error: "Not signed in." };
+
+  const result = await approveReferralCommissionForPayment({ eventId, description, actorUserId: user.id });
+  revalidatePath("/admin/partnerships/referrals");
+  return result;
 }

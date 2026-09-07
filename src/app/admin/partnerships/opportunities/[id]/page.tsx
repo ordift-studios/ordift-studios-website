@@ -9,6 +9,7 @@ import { getLatestStrategicAssessment } from "@/lib/partnerships/strategicAssess
 import { listAgreementHistory } from "@/lib/partnerships/agreements";
 import { getLatestReferralTerms } from "@/lib/partnerships/referrals";
 import { listOutcomeReviews } from "@/lib/partnerships/outcomeReviews";
+import { listPayeeProfiles } from "@/lib/payables/payeeProfiles";
 import { getRecommendationsFor, recommendationHref } from "@/lib/services/crossServiceRecommendations";
 import ConfirmSubmitButton from "@/components/admin/ConfirmSubmitButton";
 import { statusLabel, STATUS_OPTIONS } from "../page";
@@ -19,6 +20,7 @@ import {
   createReferralTermsAction,
   createOutcomeReviewAction,
   convertToPaidProposalAction,
+  setOpportunityPayeeProfileAction,
 } from "../../actions";
 import ValueAssessmentForm from "./ValueAssessmentForm";
 import ConcessionApprovalControls from "./ConcessionApprovalControls";
@@ -47,17 +49,19 @@ export default async function PartnershipOpportunityDetailPage({ params }: { par
   const opportunity = await getOpportunityById(user.id, id);
   if (!opportunity) notFound();
 
-  const [types, assessmentHistory, strategicAssessment, agreementHistory, referralTerms, outcomeReviews] = await Promise.all([
+  const [types, assessmentHistory, strategicAssessment, agreementHistory, referralTerms, outcomeReviews, payees] = await Promise.all([
     listPartnershipTypes(),
     listValueAssessmentHistory(user.id, id),
     getLatestStrategicAssessment(user.id, id),
     listAgreementHistory(user.id, id),
     getLatestReferralTerms(user.id, id),
     listOutcomeReviews(user.id, id),
+    listPayeeProfiles(user.id),
   ]);
   const partnershipType = types.find((t) => t.id === opportunity.partnershipTypeId);
   const latestAssessment = assessmentHistory[0] ?? null;
   const latestAgreement = agreementHistory[0] ?? null;
+  const linkedPayee = opportunity.payeeProfileId ? payees.find((p) => p.id === opportunity.payeeProfileId) : undefined;
   const recommendations = getRecommendationsFor("partnerships");
 
   return (
@@ -68,6 +72,34 @@ export default async function PartnershipOpportunityDetailPage({ params }: { par
         <p className="font-sans text-body-small text-ordift-ink-muted mt-1">{partnershipType?.label ?? "Unknown type"} · <strong>{statusLabel(opportunity.status)}</strong>{opportunity.decisionOutcome ? ` · Decision: ${opportunity.decisionOutcome}` : ""}</p>
         {opportunity.summary && <p className="font-sans text-body-small text-ordift-ink mt-2">{opportunity.summary}</p>}
       </div>
+
+      <section className="rounded-xl border border-black/10 bg-white p-6 space-y-4">
+        <h2 className="font-serif font-medium text-body text-ordift-ink">Payment Setup</h2>
+        <p className="font-sans text-caption text-ordift-ink-muted">
+          Required only if this partner will be paid (e.g. a referral commission). Linking here never creates a
+          payee, verifies payment details, or creates a payable — it only records which existing payee profile the
+          Referral Payable Bridge should use before submitting a commission to Payables.
+        </p>
+        {linkedPayee ? (
+          <p className="font-sans text-body-small text-green-800">Linked to {linkedPayee.fullName ?? linkedPayee.companyName ?? linkedPayee.id}.</p>
+        ) : (
+          <p className="font-sans text-body-small text-amber-800">Not linked — a referral commission for this partner cannot be approved for payment until this is set.</p>
+        )}
+        <form action={setOpportunityPayeeProfileAction} className="flex flex-wrap gap-2">
+          <input type="hidden" name="opportunityId" value={opportunity.id} />
+          {payees.length > 0 ? (
+            <select name="payeeProfileId" defaultValue={opportunity.payeeProfileId ?? ""} className="rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small">
+              <option value="">Not linked</option>
+              {payees.map((p) => (
+                <option key={p.id} value={p.id}>{p.fullName ?? p.companyName ?? p.id} · {p.category}</option>
+              ))}
+            </select>
+          ) : (
+            <input name="payeeProfileId" defaultValue={opportunity.payeeProfileId ?? ""} placeholder="Existing payee profile ID (create one under Payables → Payees first)" className="rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small w-full sm:w-auto" />
+          )}
+          <button type="submit" className="rounded-lg bg-ordift-ink text-white px-4 py-2 font-sans text-body-small">Save</button>
+        </form>
+      </section>
 
       <section className="rounded-xl border border-black/10 bg-white p-6 space-y-4">
         <h2 className="font-serif font-medium text-body text-ordift-ink">Lifecycle Stage</h2>

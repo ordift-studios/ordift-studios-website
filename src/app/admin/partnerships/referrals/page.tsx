@@ -6,7 +6,9 @@ import { authorizeWithSuperAdminOverride, STRATEGY_CAPABILITIES } from "@/lib/or
 import { listReferralsForAdmin, listLeadsForReferral } from "@/lib/partnerships/referrals";
 import { listCommissionEventsForLead } from "@/lib/partnerships/referralCommissions";
 import { getOpportunityById } from "@/lib/partnerships/opportunities";
+import { getPaymentObligation, PAYABLE_STATUS_LABELS } from "@/lib/payments/payoutObligations";
 import PartnershipsSubNav from "../PartnershipsSubNav";
+import ApproveForPaymentButton from "./ApproveForPaymentButton";
 import {
   approveReferralTermsAction,
   createReferralLeadAction,
@@ -30,7 +32,18 @@ export default async function PartnershipReferralsPage() {
   const referralDetails = await Promise.all(
     referrals.map(async (r) => {
       const [opportunity, leads] = await Promise.all([getOpportunityById(user.id, r.opportunityId), listLeadsForReferral(user.id, r.id)]);
-      const leadsWithEvents = await Promise.all(leads.map(async (lead) => ({ lead, events: await listCommissionEventsForLead(user.id, lead.id) })));
+      const leadsWithEvents = await Promise.all(
+        leads.map(async (lead) => {
+          const events = await listCommissionEventsForLead(user.id, lead.id);
+          // For any event already submitted to Payables, read the LIVE
+          // status from the linked payment_obligations row — Finance's
+          // own source of truth, never a second status stored here.
+          const eventsWithObligation = await Promise.all(
+            events.map(async (event) => ({ event, obligation: event.paymentObligationId ? await getPaymentObligation(event.paymentObligationId) : null }))
+          );
+          return { lead, eventsWithObligation };
+        })
+      );
       return { referral: r, opportunity, leadsWithEvents };
     })
   );
@@ -63,6 +76,9 @@ export default async function PartnershipReferralsPage() {
                   {opportunity ? <Link href={`/admin/partnerships/opportunities/${opportunity.id}`} className="underline underline-offset-4">{opportunity.counterpartName}</Link> : "Unknown opportunity"}
                 </h2>
                 <p className="font-sans text-caption text-ordift-ink-muted">{referral.commissionPercentage}% commission · {referral.durationPreset} · {referral.attributionWindowDays}-day attribution window · approval: {referral.approvalStatus}{referral.requiresFounderApproval ? " (Founder/Super Admin required)" : ""}</p>
+                <p className="font-sans text-caption mt-1">
+                  Payee/payment setup: {opportunity?.payeeProfileId ? <span className="text-green-800">linked</span> : <span className="text-amber-800">not linked — set on the <Link href={`/admin/partnerships/opportunities/${opportunity?.id ?? ""}`} className="underline underline-offset-4">Opportunity</Link> before any commission can be approved for payment</span>}
+                </p>
               </div>
               {referral.approvalStatus === "pending" && (
                 <form action={approveReferralTermsAction}>
@@ -103,7 +119,7 @@ export default async function PartnershipReferralsPage() {
 
             {leadsWithEvents.length > 0 && (
               <div className="space-y-3">
-                {leadsWithEvents.map(({ lead, events }) => (
+                {leadsWithEvents.map(({ lead, eventsWithObligation }) => (
                   <div key={lead.id} className="rounded-lg border border-black/10 p-4 space-y-2">
                     <div className="flex items-center justify-between">
                       <p className="font-sans text-body-small text-ordift-ink font-medium">{lead.prospectName}</p>
@@ -113,22 +129,41 @@ export default async function PartnershipReferralsPage() {
                     {lead.attributionExpiresAt && <p className="font-sans text-caption text-ordift-ink-muted">Attribution expires {new Date(lead.attributionExpiresAt).toLocaleDateString()}</p>}
                     {lead.disputeNotes && <p className="font-sans text-caption text-red-700">Dispute: {lead.disputeNotes}</p>}
 
-                    {events.length > 0 && (
-                      <ul className="divide-y divide-black/5">
-                        {events.map((e) => (
-                          <li key={e.id} className="py-1.5 flex items-center justify-between font-sans text-caption text-ordift-ink">
-                            <span>Eligible ${e.eligibleCollectedRevenue.toFixed(2)} × {e.commissionPercentage}% = ${e.commissionEarnedAmount.toFixed(2)} — {e.status}</span>
-                            {e.status !== "paid" && (
-                              <form action={setCommissionEventStatusAction} className="inline">
-                                <input type="hidden" name="eventId" value={e.id} />
-                                <input type="hidden" name="status" value={e.status === "calculated" ? "earned" : e.status === "earned" ? "approved_for_payment" : "paid"} />
-                                <button type="submit" className="text-ordift-gold-pressed underline underline-offset-4">
-                                  Mark {e.status === "calculated" ? "Earned" : e.status === "earned" ? "Approved for Payment" : "Paid"}
-                                </button>
-                              </form>
-                            )}
-                          </li>
-                        ))}
+                    {eventsWithObligation.length > 0 && (
+                      <ul className="space-y-2">
+                        {eventsWithObligation.map(({ event: e, obligation }) => {
+                          // Contextual action per spec Part L. "Paid" is
+                          // derived live from the linked payment_obligations
+                          // row's own status — never a second truth here.
+                          const isPaid = obligation?.status === "paid";
+                          return (
+                            <li key={e.id} className="py-1.5 flex flex-wrap items-center justify-between gap-2 font-sans text-caption text-ordift-ink border-t border-black/5 pt-2 first:border-t-0 first:pt-0">
+                              <span>Rate {e.commissionPercentage}% · Eligible ${e.eligibleCollectedRevenue.toFixed(2)} · Earned ${e.commissionEarnedAmount.toFixed(2)} — {e.status}</span>
+                              {e.status === "calculated" && (
+                                <form action={setCommissionEventStatusAction} className="inline">
+                                  <input type="hidden" name="eventId" value={e.id} />
+                                  <input type="hidden" name="status" value="earned" />
+                                  <button type="submit" className="text-ordift-gold-pressed underline underline-offset-4">Mark Earned</button>
+                                </form>
+                              )}
+                              {e.status === "earned" && !e.paymentObligationId && (
+                                opportunity?.payeeProfileId ? (
+                                  <ApproveForPaymentButton eventId={e.id} counterpartName={opportunity?.counterpartName ?? "this partner"} amount={e.commissionEarnedAmount} currency={e.currency} />
+                                ) : (
+                                  <span className="text-amber-800">Payment Setup Required</span>
+                                )
+                              )}
+                              {e.paymentObligationId && !isPaid && (
+                                <Link href={`/admin/payables/${e.paymentObligationId}`} className="text-ordift-gold-pressed underline underline-offset-4">
+                                  View Payable {obligation ? `(${PAYABLE_STATUS_LABELS[obligation.status] ?? obligation.status})` : ""}
+                                </Link>
+                              )}
+                              {isPaid && (
+                                <Link href={`/admin/payables/${e.paymentObligationId}`} className="text-green-800 underline underline-offset-4">Paid — View Payment Record</Link>
+                              )}
+                            </li>
+                          );
+                        })}
                       </ul>
                     )}
 

@@ -28,6 +28,12 @@ export type PartnershipOpportunity = {
   referenceId: string | null;
   summary: string | null;
   notes: string | null;
+  // Referral Payable Bridge (2026-09-07) — optional link to an
+  // existing payee profile for this opportunity's counterpart, used
+  // only by approveReferralCommissionForPayment() (referralCommissions.ts)
+  // to confirm a real payment destination exists before a referral
+  // commission may be submitted to Payables. Never auto-created here.
+  payeeProfileId: string | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -60,6 +66,7 @@ function mapOpportunityRow(o: {
   reference_id: string | null;
   summary: string | null;
   notes: string | null;
+  payee_profile_id: string | null;
   created_at: string;
   updated_at: string;
 }): PartnershipOpportunity {
@@ -77,12 +84,13 @@ function mapOpportunityRow(o: {
     referenceId: o.reference_id,
     summary: o.summary,
     notes: o.notes,
+    payeeProfileId: o.payee_profile_id,
     createdAt: o.created_at,
     updatedAt: o.updated_at,
   };
 }
 
-const OPPORTUNITY_SELECT = "id, partnership_type_id, status, decision_outcome, counterpart_name, counterpart_organisation, counterpart_contact_email, counterpart_contact_phone, pricing_markets(slug), reference_type, reference_id, summary, notes, created_at, updated_at";
+const OPPORTUNITY_SELECT = "id, partnership_type_id, status, decision_outcome, counterpart_name, counterpart_organisation, counterpart_contact_email, counterpart_contact_phone, pricing_markets(slug), reference_type, reference_id, summary, notes, payee_profile_id, created_at, updated_at";
 
 export async function listOpportunitiesForAdmin(actorUserId: string, filters?: { status?: PartnershipOpportunityStatus }): Promise<PartnershipOpportunity[]> {
   const auth = await authorize(actorUserId);
@@ -193,4 +201,25 @@ export async function setOpportunityStatus(params: { opportunityId: string; stat
 
 export async function isPartnershipSuperAdmin(actorUserId: string): Promise<boolean> {
   return isSuperAdminId(actorUserId);
+}
+
+// Referral Payable Bridge (2026-09-07) — links (or clears) this
+// opportunity's counterpart to an existing payee profile. This is
+// ONLY a reference: it never creates a payee, verifies payment
+// details, or creates a payable — it just records which existing
+// payee profile approveReferralCommissionForPayment() (referralCommissions.ts)
+// should check for before allowing a referral commission to be
+// submitted to Payables.
+export async function setOpportunityPayeeProfile(params: { opportunityId: string; payeeProfileId: string | null; actorUserId: string }): Promise<{ ok: true } | { ok: false; error: string }> {
+  const auth = await authorize(params.actorUserId);
+  if (!auth.ok) return { ok: false, error: "Not authorized to manage partnership opportunities." };
+
+  const admin = createAdminClient();
+  const { error } = await admin.from("partnership_opportunities").update({ payee_profile_id: params.payeeProfileId, updated_at: new Date().toISOString() }).eq("id", params.opportunityId);
+  if (error) {
+    console.error("[partnerships] failed to set opportunity payee profile", error.message);
+    return { ok: false, error: "Failed to update the payee link." };
+  }
+  await logActivity({ actorUserId: params.actorUserId, action: "partnerships.opportunity.payee_linked", entityType: "partnership_opportunity", entityId: params.opportunityId, metadata: { payeeProfileId: params.payeeProfileId } });
+  return { ok: true };
 }

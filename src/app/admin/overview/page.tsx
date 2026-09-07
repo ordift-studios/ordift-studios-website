@@ -171,6 +171,12 @@ const ACTION_LABELS: Record<string, string> = {
   "partnerships.referral_commission.calculated": "Calculated a partnership referral commission",
   "partnerships.referral_commission.status_changed": "Changed a partnership referral commission's status",
   "partnerships.outcome_review.created": "Recorded a partnership outcome review",
+
+  // Referral Payable Bridge (2026-09-07)
+  "partnerships.opportunity.payee_linked": "Linked a partnership opportunity to a payee profile",
+  "partnerships.referral_commission.payment_blocked": "Blocked a referral commission from being submitted to Payables",
+  "partnerships.referral_commission.payables_submission_failed": "A referral commission's Payables submission failed",
+  "partnerships.referral_commission.approved_for_payment": "Approved a referral commission for payment (submitted to Payables)",
 };
 
 // Graceful fallback for any action type not (yet) in ACTION_LABELS — pure

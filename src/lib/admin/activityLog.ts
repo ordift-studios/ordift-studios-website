@@ -308,6 +308,11 @@ export const ADMIN_TIER_ACTIONS = new Set<string>([
   "partnerships.referral_commission.calculated",
   "partnerships.referral_commission.status_changed",
   "partnerships.outcome_review.created",
+  // Referral Payable Bridge (2026-09-07)
+  "partnerships.opportunity.payee_linked",
+  "partnerships.referral_commission.payment_blocked",
+  "partnerships.referral_commission.payables_submission_failed",
+  "partnerships.referral_commission.approved_for_payment",
 ]);
 
 // Deliberately reviewed and left staff-visible (Phase I.1, 2026-09-05)
