@@ -390,6 +390,22 @@ export const PEOPLE_CAPABILITIES = {
 // infrastructure/integration-administration surface exists yet.
 export const TECHNOLOGY_CAPABILITIES = {
   systemAdminister: "technology.system.administer", // DORMANT
+  // External/independent Security Reviewer capability (2026-09-07) —
+  // added as a REUSABLE, canonical entry in this taxonomy because a
+  // narrow, mostly-read, time-boxed security-review capability is a
+  // structurally sound addition regardless of any one person, not
+  // because a specific reviewer needs it right now. DORMANT — this
+  // constant existing here grants nothing by itself; no real
+  // authority_grants row exists for it, and none is created by this
+  // commit. A future time-bound grant (via the existing
+  // authority_grants.expires_at delegation mechanism, exactly like
+  // Financial Authority Level or any other capability) is a separate,
+  // explicit decision for whenever a real security-review engagement
+  // is authorized. Deliberately read-oriented in intent — a reviewer's
+  // actual mutation authority, if ever needed, would be its own
+  // separate, more narrowly-scoped future capability, never implied by
+  // this one.
+  securityReview: "technology.security_review.read", // DORMANT — framework only, no grant issued
 } as const;
 
 // governance.* — CHANCELLOR. Fully DORMANT — no corporate-records/

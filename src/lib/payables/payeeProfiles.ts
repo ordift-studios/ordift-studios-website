@@ -206,6 +206,53 @@ export async function setPayeeProfileStatus(params: {
   return { ok: true };
 }
 
+// Organizational Structure & Authority Grants V1 closure (2026-09-07)
+// — a deliberate, one-field, name-only correction to an existing
+// payee_profiles row's business/company name. Distinct from
+// setPayeeProfileStatus above only in which single column it touches —
+// same authorization, same audit shape. Never touches id (the FK to
+// profiles(id) — see this file's header comment on why that pairing is
+// permanent by construction), category, notes, or any payment-related
+// table; payment_obligations/payment_instructions/engagements all
+// reference payeeProfileId, never the company_name text, so correcting
+// a spelling here cannot alter any financial record, payment
+// destination, or historical payable.
+export async function correctPayeeProfileCompanyName(params: {
+  payeeProfileId: string;
+  correctedCompanyName: string;
+  actorUserId: string;
+}): Promise<{ ok: true; previousCompanyName: string | null } | { ok: false; error: string }> {
+  const auth = await authorizeWithSuperAdminOverride(params.actorUserId, FINANCE_CAPABILITIES.payeeAdminister);
+  if (!auth.ok) return { ok: false, error: "Not authorized to administer payees." };
+
+  const admin = createAdminClient();
+  const { data: existing, error: fetchError } = await admin
+    .from("payee_profiles")
+    .select("id, company_name")
+    .eq("id", params.payeeProfileId)
+    .maybeSingle();
+  if (fetchError || !existing) return { ok: false, error: "Payee profile not found." };
+
+  const { error } = await admin
+    .from("payee_profiles")
+    .update({ company_name: params.correctedCompanyName })
+    .eq("id", params.payeeProfileId);
+  if (error) {
+    console.error("[payables] failed to correct payee_profile company name", error.message);
+    return { ok: false, error: "Failed to correct the company name." };
+  }
+
+  await logActivity({
+    actorUserId: params.actorUserId,
+    action: "payee_profile.company_name_corrected",
+    entityType: "user",
+    entityId: params.payeeProfileId,
+    metadata: { previousCompanyName: existing.company_name, correctedCompanyName: params.correctedCompanyName },
+  });
+
+  return { ok: true, previousCompanyName: existing.company_name };
+}
+
 // Used by the payee-facing self-view (portal) — no capability check
 // beyond "this is literally your own row", so it stays a plain
 // isSuperAdminId-free helper distinct from the admin-tier functions

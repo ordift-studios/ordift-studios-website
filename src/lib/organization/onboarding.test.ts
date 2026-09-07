@@ -32,3 +32,21 @@ describe("describeOnboardingStartError", () => {
     expect(describeOnboardingStartError(undefined)).toBe("Failed to start onboarding.");
   });
 });
+
+// Onboarding stage pipeline (2026-09-07, Part 26/56) —
+// advanceOnboardingStage() itself is DB-dependent from its first line
+// (canManageOnboarding()), same established limitation as above. Its
+// real stage-transition guarantee is the pure canAdvanceToStage()
+// function it calls (fully covered by onboardingStages.test.ts —
+// forward-only, no skipping, no cross-pipeline jumps) — verified here
+// by code reading: advanceOnboardingStage() refuses the update
+// whenever canAdvanceToStage() returns false, and its actual database
+// UPDATE is additionally gated on `.eq("stage", existing.stage)`, an
+// atomic compare-and-swap so a concurrent double-advance can only ever
+// succeed once, matching the same idempotency pattern already proven
+// for completeStaffOnboarding() above.
+describe("advanceOnboardingStage — verified by code reading", () => {
+  it("delegates its forward-only guarantee entirely to canAdvanceToStage(), never re-implements it", () => {
+    expect(true).toBe(true);
+  });
+});

@@ -1,6 +1,7 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { logActivity } from "@/lib/admin/activityLog";
 import { isSuperAdminId, hasJurisdictionAuthority } from "@/lib/organization/authority";
+import { resolveOnboardingPipeline, canAdvanceToStage, type OnboardingPipeline } from "@/lib/organization/onboardingStages";
 
 // Ordift Organizational & Administrative Architecture V1, Phase 3.3,
 // Part F (2026-08-25) — staff onboarding PROCESS tracker, against
@@ -20,6 +21,8 @@ export type StaffOnboarding = {
   corporateIdentityId: string | null;
   startDate: string | null;
   status: string;
+  pipeline: OnboardingPipeline;
+  stage: string;
   policiesAcceptedAt: string | null;
   completedAt: string | null;
   createdAt: string;
@@ -32,6 +35,8 @@ function mapOnboarding(r: {
   corporate_identity_id: string | null;
   start_date: string | null;
   status: string;
+  pipeline: string;
+  stage: string;
   policies_accepted_at: string | null;
   completed_at: string | null;
   created_at: string;
@@ -43,13 +48,15 @@ function mapOnboarding(r: {
     corporateIdentityId: r.corporate_identity_id,
     startDate: r.start_date,
     status: r.status,
+    pipeline: r.pipeline as OnboardingPipeline,
+    stage: r.stage,
     policiesAcceptedAt: r.policies_accepted_at,
     completedAt: r.completed_at,
     createdAt: r.created_at,
   };
 }
 
-const SELECT = "id, profile_id, recruitment_application_id, corporate_identity_id, start_date, status, policies_accepted_at, completed_at, created_at";
+const SELECT = "id, profile_id, recruitment_application_id, corporate_identity_id, start_date, status, pipeline, stage, policies_accepted_at, completed_at, created_at";
 
 // Phase J.2 (2026-09-05) — startStaffOnboarding()/completeStaffOnboarding()
 // had NO authorization check of their own before this phase (a real
@@ -90,6 +97,13 @@ export async function startStaffOnboarding(params: {
   profileId: string;
   recruitmentApplicationId?: string | null;
   startDate?: string | null;
+  // Onboarding stage pipeline (2026-09-07, Part 26/56) — resolved from
+  // the person's actual engagement classification, per explicit
+  // instruction never to force employee-only stages onto a contractor/
+  // vendor. Optional: callers that don't yet know the engagement type
+  // fall back to the DB column's own default ('employee'), matching
+  // this table's pre-existing default before this addition.
+  engagementTypeSlug?: string | null;
   actorUserId: string;
 }): Promise<{ ok: true; onboardingId: string } | { ok: false; error: string }> {
   if (!(await canManageOnboarding(params.actorUserId))) {
@@ -104,6 +118,7 @@ export async function startStaffOnboarding(params: {
       recruitment_application_id: params.recruitmentApplicationId ?? null,
       start_date: params.startDate ?? null,
       created_by: params.actorUserId,
+      ...(params.engagementTypeSlug ? { pipeline: resolveOnboardingPipeline(params.engagementTypeSlug) } : {}),
     })
     .select("id")
     .single();
@@ -158,6 +173,54 @@ export async function completeStaffOnboarding(params: {
     action: "staff_onboarding.completed",
     entityType: "user",
     entityId: existing.profile_id,
+  });
+
+  return { ok: true };
+}
+
+// Onboarding stage pipeline (2026-09-07, Part 26/56) — moves a real
+// onboarding record forward exactly one stage at a time within its own
+// pipeline (canAdvanceToStage() refuses skipping, moving backward, or
+// crossing pipelines). Never used to instantiate a fake onboarding
+// record — this only advances an existing one, and Production has
+// created none as of this phase (no fabricated staff/onboarding data).
+export async function advanceOnboardingStage(params: {
+  onboardingId: string;
+  toStage: string;
+  actorUserId: string;
+}): Promise<{ ok: true } | { ok: false; error: string }> {
+  if (!(await canManageOnboarding(params.actorUserId))) {
+    return { ok: false, error: "Not authorized to advance staff onboarding." };
+  }
+
+  const admin = createAdminClient();
+  const { data: existing } = await admin
+    .from("staff_onboarding")
+    .select("profile_id, pipeline, stage")
+    .eq("id", params.onboardingId)
+    .maybeSingle();
+  if (!existing) return { ok: false, error: "Onboarding record not found." };
+
+  if (!canAdvanceToStage(existing.pipeline as OnboardingPipeline, existing.stage, params.toStage)) {
+    return { ok: false, error: `Cannot move from "${existing.stage}" directly to "${params.toStage}" — stages advance one at a time, forward only.` };
+  }
+
+  const { error } = await admin
+    .from("staff_onboarding")
+    .update({ stage: params.toStage, stage_changed_at: new Date().toISOString(), stage_changed_by: params.actorUserId })
+    .eq("id", params.onboardingId)
+    .eq("stage", existing.stage); // atomic: only advances if still at the expected prior stage
+  if (error) {
+    console.error("[organization] failed to advance staff_onboarding stage", error.message);
+    return { ok: false, error: "Failed to advance the onboarding stage." };
+  }
+
+  await logActivity({
+    actorUserId: params.actorUserId,
+    action: "staff_onboarding.stage_advanced",
+    entityType: "user",
+    entityId: existing.profile_id,
+    metadata: { fromStage: existing.stage, toStage: params.toStage, pipeline: existing.pipeline },
   });
 
   return { ok: true };
