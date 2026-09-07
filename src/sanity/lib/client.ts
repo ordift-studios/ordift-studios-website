@@ -1,4 +1,22 @@
-import { createClient, type SanityClient } from "next-sanity";
+// Function-bundle size fix (2026-09-07) — imports createClient/
+// SanityClient from @sanity/client directly instead of next-sanity's
+// root barrel. Confirmed by reading next-sanity/dist/index.js itself:
+// that barrel does `import { createClient, ... } from "@sanity/client"`
+// then re-exports it completely unmodified (no wrapping, no Next.js-
+// specific behavior added) — but it ALSO does
+// `import { createDataAttribute } from "@sanity/visual-editing/..."`
+// and `export * from "@portabletext/react"` at the top of that same
+// file, so importing anything from that barrel drags both of those
+// (and their own dependency trees) into every function that transitively
+// imports this file — which, via the root layout's
+// contentRepository.getSiteSettings() call, is every route in the app.
+// next-sanity was used ONLY for createClient/SanityClient here (grep-
+// confirmed: this was the only file in the codebase importing from
+// "next-sanity" at all) — @sanity/client provides both, byte-identical,
+// so this is a same-behavior import-source change only. next-sanity
+// itself is untouched/still installed for any future Studio/visual-
+// editing/live-preview use — this does not remove it from the project.
+import { createClient, type SanityClient } from "@sanity/client";
 
 // Not usable until NEXT_PUBLIC_SANITY_PROJECT_ID is set (see
 // CMS_MIGRATION.md "Finishing the connection").

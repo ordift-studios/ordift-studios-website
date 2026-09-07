@@ -21,6 +21,7 @@
     "legal:publish:booking": "tsx scripts/exportLegalDocumentJson.ts booking scripts/legal-export/os-lgl-004.json && python3 scripts/generateLegalPublication.py scripts/legal-export/os-lgl-004.json public/legal/publications/booking"
   },
   "dependencies": {
+    "@sanity/client": "^7.24.0",
     "@sanity/image-url": "^2.1.1",
     "@sentry/nextjs": "^10.69.0",
     "@supabase/ssr": "^0.12.3",
