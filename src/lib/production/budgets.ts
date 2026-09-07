@@ -94,6 +94,72 @@ function mapBudgetRow(b: {
   };
 }
 
+export async function getBudgetById(actorUserId: string, budgetId: string): Promise<ProductionBudget | null> {
+  const auth = await authorize(actorUserId);
+  if (!auth.ok) return null;
+
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from("production_budgets")
+    .select("id, reference_type, reference_id, status, line_items, contingency_enabled, contingency_percentage, contingency_amount_usd, total_usd, supersedes_id, notes, created_at")
+    .eq("id", budgetId)
+    .maybeSingle();
+  if (error || !data) {
+    if (error) console.error("[production] failed to load production budget", error.message);
+    return null;
+  }
+  return mapBudgetRow(data);
+}
+
+// Admin-facing global list — most-recent version across every
+// engagement, for the Production Operations Overview/Budgets landing
+// page. Deliberately shows every version (not de-duplicated to "latest
+// per reference") so Admin can see recent activity, not just current
+// state — the [id] detail page is where the full per-reference version
+// chain (via listBudgetHistoryForReference) is inspected.
+export async function listRecentBudgetVersions(actorUserId: string, limit: number = 50): Promise<ProductionBudget[]> {
+  const auth = await authorize(actorUserId);
+  if (!auth.ok) return [];
+
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from("production_budgets")
+    .select("id, reference_type, reference_id, status, line_items, contingency_enabled, contingency_percentage, contingency_amount_usd, total_usd, supersedes_id, notes, created_at")
+    .order("created_at", { ascending: false })
+    .limit(limit);
+  if (error) {
+    console.error("[production] failed to load recent production budgets", error.message);
+    return [];
+  }
+  return (data ?? []).map(mapBudgetRow);
+}
+
+export async function listRecentBudgetChanges(actorUserId: string, limit: number = 50): Promise<ProductionBudgetChange[]> {
+  const auth = await authorize(actorUserId);
+  if (!auth.ok) return [];
+
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from("production_budget_changes")
+    .select("id, budget_id, reason, previous_amount_usd, new_amount_usd, difference_usd, client_approval_status, created_at")
+    .order("created_at", { ascending: false })
+    .limit(limit);
+  if (error) {
+    console.error("[production] failed to load recent production budget changes", error.message);
+    return [];
+  }
+  return (data ?? []).map((c) => ({
+    id: c.id,
+    budgetId: c.budget_id,
+    reason: c.reason,
+    previousAmountUsd: Number(c.previous_amount_usd),
+    newAmountUsd: Number(c.new_amount_usd),
+    differenceUsd: Number(c.difference_usd),
+    clientApprovalStatus: c.client_approval_status,
+    createdAt: c.created_at,
+  }));
+}
+
 export async function getLatestBudgetForReference(actorUserId: string, referenceType: string, referenceId: string): Promise<ProductionBudget | null> {
   const auth = await authorize(actorUserId);
   if (!auth.ok) return null;

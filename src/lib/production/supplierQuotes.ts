@@ -1,6 +1,7 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { authorizeWithSuperAdminOverride, OPERATIONS_CAPABILITIES } from "@/lib/organization/authority";
 import { logActivity } from "@/lib/admin/activityLog";
+import { computeQuoteTotal } from "./quoteMath";
 
 // Ordift Production Services — Supplier Quotes (2026-09-07) — a
 // supplier's priced offer for a specific production engagement.
@@ -92,6 +93,90 @@ export async function listQuotesForReference(actorUserId: string, referenceType:
   }));
 }
 
+function mapQuoteRow(q: {
+  id: string;
+  supplier_id: string;
+  reference_type: string;
+  reference_id: string;
+  description: string;
+  original_currency_code: string;
+  supplier_subtotal: number;
+  tax_amount: number | null;
+  quote_total: number;
+  valid_until: string | null;
+  deposit_required: boolean;
+  deposit_amount: number | null;
+  deposit_percentage: number | null;
+  cancellation_terms: string | null;
+  source_reference: string | null;
+  status: string;
+  internal_notes: string | null;
+  created_at: string;
+}): ProductionSupplierQuote {
+  return {
+    id: q.id,
+    supplierId: q.supplier_id,
+    referenceType: q.reference_type,
+    referenceId: q.reference_id,
+    description: q.description,
+    originalCurrencyCode: q.original_currency_code,
+    supplierSubtotal: Number(q.supplier_subtotal),
+    taxAmount: q.tax_amount === null ? null : Number(q.tax_amount),
+    quoteTotal: Number(q.quote_total),
+    validUntil: q.valid_until,
+    depositRequired: q.deposit_required,
+    depositAmount: q.deposit_amount === null ? null : Number(q.deposit_amount),
+    depositPercentage: q.deposit_percentage === null ? null : Number(q.deposit_percentage),
+    cancellationTerms: q.cancellation_terms,
+    sourceReference: q.source_reference,
+    status: q.status as ProductionSupplierQuoteStatus,
+    internalNotes: q.internal_notes,
+    createdAt: q.created_at,
+  };
+}
+
+export async function getSupplierQuoteById(actorUserId: string, quoteId: string): Promise<ProductionSupplierQuote | null> {
+  const auth = await authorize(actorUserId);
+  if (!auth.ok) return null;
+
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from("production_supplier_quotes")
+    .select("id, supplier_id, reference_type, reference_id, description, original_currency_code, supplier_subtotal, tax_amount, quote_total, valid_until, deposit_required, deposit_amount, deposit_percentage, cancellation_terms, source_reference, status, internal_notes, created_at")
+    .eq("id", quoteId)
+    .maybeSingle();
+  if (error || !data) {
+    if (error) console.error("[production] failed to load supplier quote", error.message);
+    return null;
+  }
+  return mapQuoteRow(data);
+}
+
+// Admin-facing global list — Production Services' own listQuotesForReference()
+// is scoped to one engagement; this is the "browse everything" view the
+// Production Operations Admin UI needs, with optional status/supplier
+// filters. Ordered most-recent-first, same convention as every other
+// admin list in this codebase.
+export async function listAllSupplierQuotes(actorUserId: string, filters?: { status?: ProductionSupplierQuoteStatus; supplierId?: string }): Promise<ProductionSupplierQuote[]> {
+  const auth = await authorize(actorUserId);
+  if (!auth.ok) return [];
+
+  const admin = createAdminClient();
+  let query = admin
+    .from("production_supplier_quotes")
+    .select("id, supplier_id, reference_type, reference_id, description, original_currency_code, supplier_subtotal, tax_amount, quote_total, valid_until, deposit_required, deposit_amount, deposit_percentage, cancellation_terms, source_reference, status, internal_notes, created_at")
+    .order("created_at", { ascending: false });
+  if (filters?.status) query = query.eq("status", filters.status);
+  if (filters?.supplierId) query = query.eq("supplier_id", filters.supplierId);
+
+  const { data, error } = await query;
+  if (error) {
+    console.error("[production] failed to load all supplier quotes", error.message);
+    return [];
+  }
+  return (data ?? []).map(mapQuoteRow);
+}
+
 export async function createSupplierQuote(params: {
   supplierId: string;
   referenceType: string;
@@ -114,7 +199,7 @@ export async function createSupplierQuote(params: {
   if (!params.description.trim()) return { ok: false, error: "A description is required." };
   if (params.supplierSubtotal <= 0) return { ok: false, error: "Supplier subtotal must be greater than zero." };
 
-  const quoteTotal = Math.round((params.supplierSubtotal + (params.taxAmount ?? 0)) * 100) / 100;
+  const quoteTotal = computeQuoteTotal(params.supplierSubtotal, params.taxAmount);
 
   const admin = createAdminClient();
   const { data, error } = await admin

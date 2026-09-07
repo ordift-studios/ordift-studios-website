@@ -107,6 +107,7 @@ import {
 } from "./actions";
 import ManualDiscountForm from "./ManualDiscountForm";
 import DeleteDiscountButton from "./DeleteDiscountButton";
+import { TABS, TAB_GROUPS } from "./tabsConfig";
 
 export const metadata: Metadata = {
   title: "Pricing — Ordift Studios Admin",
@@ -121,20 +122,14 @@ const DURATIONS = [1, 2, 3, 4] as const;
 // Navigation/display order only: every tab key, and every value/
 // calculation behind it, is unchanged. This is NOT the deferred
 // final all-family Admin Pricing redesign.
-const TABS = [
-  { key: "personal-sessions", label: "Personal Sessions" },
-  { key: "corporate", label: "Corporate & Headshots" },
-  { key: "wedding_event", label: "Weddings & Events" },
-  { key: "commercial", label: "Commercial / Advertising" },
-  { key: "graphic_design", label: "Graphic Design" },
-  { key: "content_creation", label: "Content Creation" },
-  { key: "branding", label: "Branding & Creative Strategy" },
-  { key: "production_services", label: "Production Services" },
-  { key: "subjects", label: "Subjects / Groups" },
-  { key: "addons", label: "Add-Ons" },
-  { key: "discounts", label: "Discounts" },
-  { key: "markets", label: "Markets / Overrides" },
-] as const;
+// Final Admin Pricing navigation consolidation (2026-09-07) — now that
+// all eight pricing/service engines exist, the tab list is split into
+// two visually grouped, restrained sections (SERVICE PRICING / SHARED
+// CONFIGURATION) purely for navigation clarity. This is presentation
+// only: route keys, calculator behavior, and query-param/deep-link
+// behavior are all unchanged. TABS/TAB_GROUPS live in tabsConfig.ts
+// (pure, zero-import) so the exact order is directly unit-tested —
+// see tabsConfig.test.ts.
 
 const GRAPHIC_DESIGN_SUBS = [
   { key: "deliverables", label: "Deliverables" },
@@ -433,17 +428,31 @@ const ADDON_GROUPS: { title: string; items: { slug: AddonSlug; label: string }[]
   },
 ];
 
+// Responsive treatment (2026-09-07) — twelve top-level tabs no longer
+// fit comfortably as a single wrapped row on iPad/mobile. Each group's
+// row now scrolls horizontally on narrow viewports (no wrapping/
+// truncation, same treatment as ProductionSubNav) while staying a
+// normal wrapped row at desktop width — restrained visual grouping via
+// a small uppercase section label, direct access to every tab
+// preserved throughout.
 function TabNav({ active }: { active: string }) {
   return (
-    <div className="flex flex-wrap gap-2 border-b border-black/10 pb-3">
-      {TABS.map((t) => (
-        <Link
-          key={t.key}
-          href={`/admin/pricing?tab=${t.key}`}
-          className={`rounded-lg px-4 py-2 font-sans text-body-small ${active === t.key ? "bg-ordift-ink text-white" : "text-ordift-ink-muted hover:text-ordift-ink"}`}
-        >
-          {t.label}
-        </Link>
+    <div className="space-y-3 border-b border-black/10 pb-3">
+      {TAB_GROUPS.map((group) => (
+        <div key={group.title}>
+          <p className="font-sans text-caption font-semibold uppercase tracking-wide text-ordift-ink-muted mb-1.5">{group.title}</p>
+          <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1 sm:flex-wrap sm:overflow-visible">
+            {TABS.filter((t) => group.keys.includes(t.key)).map((t) => (
+              <Link
+                key={t.key}
+                href={`/admin/pricing?tab=${t.key}`}
+                className={`shrink-0 whitespace-nowrap rounded-lg px-4 py-2 font-sans text-body-small ${active === t.key ? "bg-ordift-ink text-white" : "text-ordift-ink-muted hover:text-ordift-ink"}`}
+              >
+                {t.label}
+              </Link>
+            ))}
+          </div>
+        </div>
       ))}
     </div>
   );

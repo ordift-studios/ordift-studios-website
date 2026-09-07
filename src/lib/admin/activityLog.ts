@@ -287,6 +287,7 @@ export const ADMIN_TIER_ACTIONS = new Set<string>([
   "pricing.production_percentage.created",
   "production.supplier.created",
   "production.supplier.active_changed",
+  "production.supplier.updated",
   "production.supplier_quote.created",
   "production.supplier_quote.status_changed",
   "production.budget_version.created",

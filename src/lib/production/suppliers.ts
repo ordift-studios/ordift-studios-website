@@ -174,6 +174,115 @@ export async function createSupplier(params: {
   return { ok: true, id: data.id };
 }
 
+export async function getSupplierById(actorUserId: string, supplierId: string): Promise<ProductionSupplier | null> {
+  const auth = await authorize(actorUserId);
+  if (!auth.ok) return null;
+
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from("production_suppliers")
+    .select(
+      "id, supplier_name, supplier_type, market_id, pricing_markets(slug), location_notes, contact_name, contact_email, contact_phone, currency_code, indicative_rate, rate_unit, last_verified_at, capabilities, availability_notes, internal_notes, supporting_reference, payment_terms, payee_profile_id, active, created_at"
+    )
+    .eq("id", supplierId)
+    .maybeSingle();
+  if (error || !data) {
+    if (error) console.error("[production] failed to load supplier", error.message);
+    return null;
+  }
+  return {
+    id: data.id,
+    supplierName: data.supplier_name,
+    supplierType: data.supplier_type,
+    marketSlug: (data.pricing_markets as unknown as { slug: string } | null)?.slug ?? null,
+    locationNotes: data.location_notes,
+    contactName: data.contact_name,
+    contactEmail: data.contact_email,
+    contactPhone: data.contact_phone,
+    currencyCode: data.currency_code,
+    indicativeRate: data.indicative_rate === null ? null : Number(data.indicative_rate),
+    rateUnit: data.rate_unit,
+    lastVerifiedAt: data.last_verified_at,
+    capabilities: data.capabilities,
+    availabilityNotes: data.availability_notes,
+    internalNotes: data.internal_notes,
+    supportingReference: data.supporting_reference,
+    paymentTerms: data.payment_terms,
+    payeeProfileId: data.payee_profile_id,
+    active: data.active,
+    createdAt: data.created_at,
+  };
+}
+
+// Editing ALLOWABLE supplier details (2026-09-07, Production Operations
+// Admin UI) — every field here is safe to change after creation
+// (contact/reference/notes/capability data). supplier_name and
+// supplier_type are intentionally excluded from this update path in
+// V1 (changing a supplier's fundamental identity/category after
+// quotes/budgets reference it by name is a bigger decision than a
+// routine edit) — create a new supplier record instead if the
+// underlying entity is genuinely different. last_verified_at is set
+// here explicitly (an Admin marking the record as freshly checked),
+// never auto-touched by unrelated edits.
+export async function updateSupplier(params: {
+  supplierId: string;
+  marketSlug?: string | null;
+  locationNotes?: string | null;
+  contactName?: string | null;
+  contactEmail?: string | null;
+  contactPhone?: string | null;
+  currencyCode?: string | null;
+  indicativeRate?: number | null;
+  rateUnit?: string | null;
+  capabilities?: string[] | null;
+  availabilityNotes?: string | null;
+  internalNotes?: string | null;
+  supportingReference?: string | null;
+  paymentTerms?: string | null;
+  payeeProfileId?: string | null;
+  markVerifiedNow?: boolean;
+  actorUserId: string;
+}): Promise<{ ok: true } | { ok: false; error: string }> {
+  const auth = await authorize(params.actorUserId);
+  if (!auth.ok) return { ok: false, error: "Not authorized to manage the supplier directory." };
+
+  const admin = createAdminClient();
+  let marketId: string | null | undefined = undefined;
+  if (params.marketSlug !== undefined) {
+    if (params.marketSlug === null) {
+      marketId = null;
+    } else {
+      const { data } = await admin.from("pricing_markets").select("id").eq("slug", params.marketSlug).maybeSingle();
+      marketId = data?.id ?? null;
+    }
+  }
+
+  const update: Record<string, unknown> = { updated_at: new Date().toISOString() };
+  if (marketId !== undefined) update.market_id = marketId;
+  if (params.locationNotes !== undefined) update.location_notes = params.locationNotes;
+  if (params.contactName !== undefined) update.contact_name = params.contactName;
+  if (params.contactEmail !== undefined) update.contact_email = params.contactEmail;
+  if (params.contactPhone !== undefined) update.contact_phone = params.contactPhone;
+  if (params.currencyCode !== undefined) update.currency_code = params.currencyCode;
+  if (params.indicativeRate !== undefined) update.indicative_rate = params.indicativeRate;
+  if (params.rateUnit !== undefined) update.rate_unit = params.rateUnit;
+  if (params.capabilities !== undefined) update.capabilities = params.capabilities;
+  if (params.availabilityNotes !== undefined) update.availability_notes = params.availabilityNotes;
+  if (params.internalNotes !== undefined) update.internal_notes = params.internalNotes;
+  if (params.supportingReference !== undefined) update.supporting_reference = params.supportingReference;
+  if (params.paymentTerms !== undefined) update.payment_terms = params.paymentTerms;
+  if (params.payeeProfileId !== undefined) update.payee_profile_id = params.payeeProfileId;
+  if (params.markVerifiedNow) update.last_verified_at = new Date().toISOString();
+
+  const { error } = await admin.from("production_suppliers").update(update).eq("id", params.supplierId);
+  if (error) {
+    console.error("[production] failed to update supplier", error.message);
+    return { ok: false, error: "Failed to update the supplier record." };
+  }
+  await logActivity({ actorUserId: params.actorUserId, action: "production.supplier.updated", entityType: "production_supplier", entityId: params.supplierId, metadata: { fieldsChanged: Object.keys(update).filter((k) => k !== "updated_at") } });
+  return { ok: true };
+}
+
 export async function setSupplierActive(params: { supplierId: string; active: boolean; actorUserId: string }): Promise<{ ok: true } | { ok: false; error: string }> {
   const auth = await authorize(params.actorUserId);
   if (!auth.ok) return { ok: false, error: "Not authorized to manage the supplier directory." };

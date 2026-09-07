@@ -149,6 +149,7 @@ const ACTION_LABELS: Record<string, string> = {
   "pricing.production_percentage.created": "Updated a Production Services formula percentage",
   "production.supplier.created": "Added a production supplier",
   "production.supplier.active_changed": "Changed a production supplier's active state",
+  "production.supplier.updated": "Updated a production supplier's details",
   "production.supplier_quote.created": "Recorded a production supplier quote",
   "production.supplier_quote.status_changed": "Changed a production supplier quote's status",
   "production.budget_version.created": "Created a new production budget version",

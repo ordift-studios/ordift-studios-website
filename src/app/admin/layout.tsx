@@ -32,6 +32,11 @@ const NAV_ITEMS: { label: string; href: string; adminOnly?: boolean; superAdminO
   // the actual authorization boundary, not this nav-visibility flag.
   { label: "Payables", href: "/admin/payables" },
   { label: "Pricing", href: "/admin/pricing" },
+  // Production Operations Admin (2026-09-07) — no adminOnly/
+  // superAdminOnly flag, same reasoning as Payables/Pricing above: the
+  // page itself gates on operations.coordinate (or Super Admin), which
+  // is the real authorization boundary, not this nav-visibility flag.
+  { label: "Production Operations", href: "/admin/production" },
   { label: "Portfolio", href: "/admin/portfolio" },
   { label: "Workshop Management", href: "/admin/workshops" },
   { label: "Reports", href: "/admin/reports" },
