@@ -1,9 +1,9 @@
 import type { Metadata } from "next";
 import { redirect, notFound } from "next/navigation";
 import Link from "next/link";
-import { getCurrentUser, hasRole, isSuperAdmin } from "@/lib/portal/roles";
+import { getCurrentUser, isSuperAdmin } from "@/lib/portal/roles";
+import { authorizeWithSuperAdminOverride, PEOPLE_CAPABILITIES, listAuthorityGrants, isGrantActive } from "@/lib/organization/authority";
 import { listUsersWithRoles } from "@/lib/portal/adminData";
-import { listAuthorityGrants, isGrantActive } from "@/lib/organization/authority";
 import { getPersonFinancialAuthorityLevel } from "@/lib/organization/financialAuthorityGrants";
 import { FINANCIAL_AUTHORITY_LEVEL_LABELS } from "@/lib/organization/financialAuthority";
 import { listActingAssignments, isActingAssignmentActive } from "@/lib/organization/actingAssignments";
@@ -39,7 +39,14 @@ const EMPLOYMENT_STATUS_LABELS: Record<string, string> = {
 export default async function PersonDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const currentUser = await getCurrentUser();
-  if (!currentUser || !(hasRole(currentUser, "admin") || isSuperAdmin(currentUser))) redirect("/admin/overview");
+  // Security narrowing (2026-09-07) — matches /admin/users' own
+  // capability-based gate exactly (this page surfaces/edits the same
+  // workforce data — Access Status, Employment Status — so leaving it
+  // reachable by a plain admin while /admin/users is narrowed would
+  // just reopen the same gap through a side door).
+  if (!currentUser) redirect("/admin/overview");
+  const workforceAuth = await authorizeWithSuperAdminOverride(currentUser.id, PEOPLE_CAPABILITIES.workforceAdminister);
+  if (!workforceAuth.ok) redirect("/admin/overview");
   const isSuper = isSuperAdmin(currentUser);
 
   const [usersResult, grants, actingAssignments, identities] = await Promise.all([

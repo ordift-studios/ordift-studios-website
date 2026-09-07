@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
-import { getCurrentUser, hasRole, isSuperAdmin } from "@/lib/portal/roles";
+import { getCurrentUser, isSuperAdmin } from "@/lib/portal/roles";
+import { authorizeWithSuperAdminOverride, PEOPLE_CAPABILITIES } from "@/lib/organization/authority";
 import { listUsersWithRoles, listOperationalTitles, listEngagementTypes } from "@/lib/portal/adminData";
 import { listClassifications } from "@/lib/portal/memberNumbers";
 import { listPositions } from "@/lib/organization/adminData";
@@ -14,11 +15,24 @@ export const metadata: Metadata = {
 export default async function AdminUsersPage() {
   const user = await getCurrentUser();
   // Mandatory, not defense-in-depth: the /admin layout only requires
-  // staff-or-admin; admin-only pages must guard themselves. Also
-  // listUsersWithRoles() reads via the service-role client (bypasses
-  // RLS), so there's no database-level backstop the way there is on the
-  // Enquiries/Bookings views.
-  if (!user || (!hasRole(user, "admin") && !isSuperAdmin(user))) redirect("/admin/overview");
+  // staff-or-admin; this page must guard itself. Also listUsersWithRoles()
+  // reads via the service-role client (bypasses RLS), so there's no
+  // database-level backstop the way there is on the Enquiries/Bookings
+  // views.
+  //
+  // Security narrowing (2026-09-07) — this used to accept any plain
+  // `admin` role holder. The general staff/workforce roster is now
+  // restricted to Super Admin OR a holder of the dormant
+  // people.workforce.administer capability (see authority.ts) — the
+  // same capability-based architecture as every other Admin Platform
+  // module, never a hardcoded person/email. Zero authority_grants rows
+  // exist in Production today, so this is Super-Admin-only in
+  // practice; a future genuinely-authorized HR/workforce administrator
+  // can be granted exactly this capability via /admin/authority
+  // without being made Super Admin.
+  if (!user) redirect("/admin/overview");
+  const auth = await authorizeWithSuperAdminOverride(user.id, PEOPLE_CAPABILITIES.workforceAdminister);
+  if (!auth.ok) redirect("/admin/overview");
 
   const [result, operationalTitles, engagementTypes, classifications, positions] = await Promise.all([
     listUsersWithRoles(),

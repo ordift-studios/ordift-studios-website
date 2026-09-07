@@ -4,7 +4,6 @@ import { revalidatePath } from "next/cache";
 import { createAdminClient } from "@/lib/supabase/admin";
 import {
   getCurrentUser,
-  hasRole,
   isSuperAdmin,
   ADMIN_GRANTED_ONLY_ROLES,
   SUPER_ADMIN_ONLY_ROLES,
@@ -27,7 +26,7 @@ import { siteUrl } from "@/lib/shared/env";
 import { assignClassification, assignClassificationBySlug } from "@/lib/portal/memberNumbers";
 import { setNotificationPreference } from "@/lib/notifications/preferences";
 import { assignStaffPosition } from "@/lib/organization/assignPosition";
-import { hasJurisdictionAuthority } from "@/lib/organization/authority";
+import { hasJurisdictionAuthority, authorizeWithSuperAdminOverride, PEOPLE_CAPABILITIES } from "@/lib/organization/authority";
 import { startStaffOnboarding, completeStaffOnboarding } from "@/lib/organization/onboarding";
 
 // ============================================================
@@ -51,11 +50,20 @@ export async function getAccessHistoryForUserAction(userId: string): Promise<Act
   return getActivityForEntity("user", userId);
 }
 
+// /admin/users security narrowing (2026-09-07) — this used to accept
+// any plain `admin` role holder. Now requires Super Admin OR the
+// dormant people.workforce.administer capability (see authority.ts) —
+// reusing the exact same capability-based authorization architecture
+// as every other Admin Platform module, not a hardcoded person/email.
+// Zero authority_grants rows exist in Production today, so this is
+// currently Super-Admin-only in practice; a future genuinely-
+// authorized HR/workforce administrator can be granted this specific
+// capability via /admin/authority without becoming Super Admin.
 async function requireAdmin() {
   const user = await getCurrentUser();
-  if (!user || (!hasRole(user, "admin") && !isSuperAdmin(user))) {
-    throw new Error("Not authorized.");
-  }
+  if (!user) throw new Error("Not authorized.");
+  const auth = await authorizeWithSuperAdminOverride(user.id, PEOPLE_CAPABILITIES.workforceAdminister);
+  if (!auth.ok) throw new Error("Not authorized — the workforce/staff-management area is restricted to the Founder/Super Admin (or a specifically granted workforce administrator).");
   return user;
 }
 

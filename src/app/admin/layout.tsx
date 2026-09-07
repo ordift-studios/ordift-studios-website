@@ -6,7 +6,7 @@ import { signOutAction } from "@/app/portal/login/actions";
 import { getProfileCard } from "@/lib/portal/profileCard";
 import ProfileQuickCard from "@/components/admin/ProfileQuickCard";
 import { PresenceProvider } from "@/components/admin/PresenceProvider";
-import { isExecutiveAdmin } from "@/lib/organization/authority";
+import { isExecutiveAdmin, hasAuthority, PEOPLE_CAPABILITIES } from "@/lib/organization/authority";
 
 // Internal operations console — separate from the customer/partner-facing
 // /portal, but built on the exact same auth/role foundation (Supabase Auth
@@ -15,7 +15,7 @@ import { isExecutiveAdmin } from "@/lib/organization/authority";
 // reasoning as src/app/portal/(dashboard)/layout.tsx: proxy.ts only does a
 // fast JWT-presence check for /portal/**, not /admin/**, so this layout's
 // getCurrentUser() call is the actual gate here, not just a backstop.
-type NavItem = { label: string; href: string; adminOnly?: boolean; superAdminOnly?: boolean; executiveOnly?: boolean };
+type NavItem = { label: string; href: string; adminOnly?: boolean; superAdminOnly?: boolean; executiveOnly?: boolean; workforceAdminOnly?: boolean };
 type NavGroup = { label: string; items: NavItem[] };
 
 // Admin Workspace Reorganization (2026-09-07) — business-workspace
@@ -72,7 +72,14 @@ const NAV_GROUPS: NavGroup[] = [
   {
     label: "People & Organization",
     items: [
-      { label: "Users & Roles", href: "/admin/users", adminOnly: true },
+      // Security narrowing (2026-09-07) — the page itself now requires
+      // Super Admin or the dormant people.workforce.administer
+      // capability (see authority.ts). workforceAdminOnly mirrors that
+      // exactly (checked asynchronously below, same pattern as
+      // executiveOnly) so a future genuinely-granted, non-Super-Admin
+      // workforce administrator still SEES this link — the page's own
+      // check remains the real boundary regardless, not this flag.
+      { label: "Users & Roles", href: "/admin/users", workforceAdminOnly: true },
       { label: "Meet the Team", href: "/admin/team", superAdminOnly: true },
       { label: "Recruitment", href: "/admin/recruitment", adminOnly: true },
       { label: "Organization", href: "/admin/organization", adminOnly: true },
@@ -145,8 +152,15 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   // hierarchy, so that has to be spelled out here.
   const isAdmin = hasRole(user, "admin") || isSuper;
   const isExecutive = isSuper || (await isExecutiveAdmin(user.id));
+  // Security narrowing (2026-09-07) — same async-capability-check
+  // pattern as isExecutive above, for the new people.workforce.administer
+  // capability (see authority.ts / src/app/admin/users/actions.ts).
+  const isWorkforceAdmin = isSuper || (await hasAuthority(user.id, PEOPLE_CAPABILITIES.workforceAdminister, null));
   const itemVisible = (item: NavItem) =>
-    (!item.adminOnly || isAdmin) && (!item.superAdminOnly || isSuper) && (!item.executiveOnly || isExecutive);
+    (!item.adminOnly || isAdmin) &&
+    (!item.superAdminOnly || isSuper) &&
+    (!item.executiveOnly || isExecutive) &&
+    (!item.workforceAdminOnly || isWorkforceAdmin);
   // Role-aware navigation (Part 39/58): each group renders ONLY the
   // items this viewer can see, and a group with zero visible items is
   // dropped entirely rather than showing an empty heading. This is

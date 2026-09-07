@@ -367,6 +367,21 @@ export const PEOPLE_CAPABILITIES = {
   // Workshop Management V1, Phase B (2026-08-25) — instructor/
   // facilitator engagement coordination for a workshop.
   workshopEngagementAdminister: "people.workshop_engagement.administer", // WIRED — workshop instructor engagements
+  // /admin/users security narrowing (2026-09-07) — the general staff/
+  // workforce roster surface (role grants/revocations, access-status
+  // changes, project assignment, collaborator/client invites) was
+  // reachable by any plain `admin` role holder, not just Super Admin.
+  // Deliberately its own capability rather than overloading
+  // onboardingAdminister (too narrow — this page is broader than
+  // onboarding) or requisitionReview/applicationReview (recruitment-
+  // specific) — a future genuinely-authorized HR/workforce
+  // administrator can be granted exactly this, scoped, without being
+  // made Super Admin. DORMANT until a real authority_grants row exists
+  // for it — Super Admin remains the only actor who can pass today
+  // (confirmed zero authority_grants rows exist in Production), which
+  // is the intended effect of "temporarily narrow to Founder/Super
+  // Admin only."
+  workforceAdminister: "people.workforce.administer", // DORMANT — see requireWorkforceAdmin() in src/app/admin/users/actions.ts
 } as const;
 
 // technology.* — GEEK. IDENTITY_CAPABILITIES above (Phase 3.3) are

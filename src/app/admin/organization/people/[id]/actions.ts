@@ -2,7 +2,8 @@
 
 import { revalidatePath } from "next/cache";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { getCurrentUser, hasRole, isSuperAdmin } from "@/lib/portal/roles";
+import { getCurrentUser } from "@/lib/portal/roles";
+import { authorizeWithSuperAdminOverride, PEOPLE_CAPABILITIES } from "@/lib/organization/authority";
 import { logActivity } from "@/lib/admin/activityLog";
 import { recordBackgroundScreening } from "@/lib/organization/backgroundScreening";
 import { BACKGROUND_SCREENING_CATEGORIES, BACKGROUND_SCREENING_STATUSES } from "@/lib/organization/backgroundScreening";
@@ -16,11 +17,16 @@ import { updateAccessStatusAction } from "@/app/admin/users/actions";
 // not duplicated here).
 const EMPLOYMENT_STATUSES = ["pre_start", "active", "probation", "leave", "suspended", "notice_period", "exited"] as const;
 
+// Security narrowing (2026-09-07) — same people.workforce.administer
+// capability as /admin/users' own requireAdmin() (see
+// src/app/admin/users/actions.ts) — this file edits the same
+// Employment/Access Status workforce data, so it gets the identical
+// boundary rather than a looser side door.
 async function requireAdmin() {
   const user = await getCurrentUser();
-  if (!user || !(hasRole(user, "admin") || isSuperAdmin(user))) {
-    throw new Error("Not authorized.");
-  }
+  if (!user) throw new Error("Not authorized.");
+  const auth = await authorizeWithSuperAdminOverride(user.id, PEOPLE_CAPABILITIES.workforceAdminister);
+  if (!auth.ok) throw new Error("Not authorized.");
   return user;
 }
 
