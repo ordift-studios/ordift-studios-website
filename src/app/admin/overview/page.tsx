@@ -154,6 +154,23 @@ const ACTION_LABELS: Record<string, string> = {
   "production.supplier_quote.status_changed": "Changed a production supplier quote's status",
   "production.budget_version.created": "Created a new production budget version",
   "production.budget_change.approval_status_changed": "Changed a production budget change's client-approval status",
+
+  // Partnerships & Collaborations V1 (2026-09-07)
+  "partnerships.opportunity.created": "Created a partnership opportunity",
+  "partnerships.opportunity.status_changed": "Changed a partnership opportunity's status",
+  "partnerships.value_assessment.created": "Recorded a partnership value assessment",
+  "partnerships.value_assessment.class_b_exceeds_threshold": "Flagged a Class B value assessment above the 50%-of-NCV threshold",
+  "partnerships.concession.approved": "Approved a partnership concession",
+  "partnerships.concession.rejected": "Rejected a partnership concession",
+  "partnerships.strategic_assessment.created": "Recorded a partnership strategic score",
+  "partnerships.agreement.created": "Created/amended a partnership agreement",
+  "partnerships.referral.rate_set": "Set partnership referral commission terms",
+  "partnerships.referral.approved": "Approved partnership referral terms",
+  "partnerships.referral_lead.created": "Recorded a partnership referral lead",
+  "partnerships.referral_lead.disputed": "Disputed a partnership referral lead",
+  "partnerships.referral_commission.calculated": "Calculated a partnership referral commission",
+  "partnerships.referral_commission.status_changed": "Changed a partnership referral commission's status",
+  "partnerships.outcome_review.created": "Recorded a partnership outcome review",
 };
 
 // Graceful fallback for any action type not (yet) in ACTION_LABELS — pure

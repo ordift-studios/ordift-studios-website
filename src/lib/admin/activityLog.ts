@@ -292,6 +292,22 @@ export const ADMIN_TIER_ACTIONS = new Set<string>([
   "production.supplier_quote.status_changed",
   "production.budget_version.created",
   "production.budget_change.approval_status_changed",
+  // Partnerships & Collaborations V1 (2026-09-07)
+  "partnerships.opportunity.created",
+  "partnerships.opportunity.status_changed",
+  "partnerships.value_assessment.created",
+  "partnerships.value_assessment.class_b_exceeds_threshold",
+  "partnerships.concession.approved",
+  "partnerships.concession.rejected",
+  "partnerships.strategic_assessment.created",
+  "partnerships.agreement.created",
+  "partnerships.referral.rate_set",
+  "partnerships.referral.approved",
+  "partnerships.referral_lead.created",
+  "partnerships.referral_lead.disputed",
+  "partnerships.referral_commission.calculated",
+  "partnerships.referral_commission.status_changed",
+  "partnerships.outcome_review.created",
 ]);
 
 // Deliberately reviewed and left staff-visible (Phase I.1, 2026-09-05)

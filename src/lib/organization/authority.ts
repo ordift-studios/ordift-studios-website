@@ -322,13 +322,35 @@ export const FINANCE_CAPABILITIES = {
   pricingAdminister: "finance.pricing.administer", // WIRED — src/lib/pricing/*
 } as const;
 
-// strategy.* — ARCHITECT. Fully DORMANT — no strategic-planning/
-// initiative table or workflow exists anywhere in this codebase yet;
-// defined now purely as approved taxonomy for a future phase.
+// strategy.* — ARCHITECT. planningAdminister/initiativeManage/report
+// remain DORMANT — no general strategic-planning/initiative table
+// exists yet. Partnerships & Collaborations V1 (2026-09-07) is the
+// first real ARCHITECT workflow: a partnership opportunity is
+// inherently a strategic-relationship decision, so its capabilities
+// are added to this existing jurisdiction rather than inventing a new
+// one. partnershipOpportunityAdminister/partnershipReferralAdminister
+// are WIRED (day-to-day opportunity/referral record-keeping).
+// partnershipConcessionApprove* map to the LOWER THREE concession
+// approval bands only (0-15% / >15-30% / >30-50%) — deliberately
+// DORMANT until the real organization assigns them via an Authority
+// Grant, per the explicit instruction not to manufacture grants merely
+// to make tests pass; Super Admin override remains the working path
+// today. The upper two bands (>50-75%, >75-100%) have NO capability at
+// all — the spec is explicit that those require "Founder/Super Admin
+// approval only", so resolveConcessionApprovalRequirement() (see
+// src/lib/partnerships/valueEconomics.ts) routes them straight to an
+// isSuperAdminId() check with no capability escape valve, never a
+// capability string a future Authority Grant could unlock.
 export const STRATEGY_CAPABILITIES = {
   planningAdminister: "strategy.planning.administer", // DORMANT
   initiativeManage: "strategy.initiative.manage", // DORMANT
   report: "strategy.report", // DORMANT
+  partnershipOpportunityAdminister: "strategy.partnership_opportunity.administer", // WIRED — src/lib/partnerships/*
+  partnershipConcessionApproveNormal: "strategy.partnership_concession.approve_normal", // DORMANT — 0-15% band
+  partnershipConcessionApprovePreferred: "strategy.partnership_concession.approve_preferred", // DORMANT — >15-30% band
+  partnershipConcessionApproveStrategic: "strategy.partnership_concession.approve_strategic", // DORMANT — >30-50% band
+  partnershipReferralAdminister: "strategy.partnership_referral.administer", // WIRED — src/lib/partnerships/referrals.ts
+  partnershipRightsExclusivityReview: "strategy.partnership_rights_exclusivity.review", // DORMANT — >30-day exclusivity / commercial usage review
 } as const;
 
 // people.* — PULSE. recruitmentAdminister is WIRED into

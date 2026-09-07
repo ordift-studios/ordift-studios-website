@@ -50,7 +50,8 @@ export type CrossServiceFamily =
   | "content_creation"
   | "talent_management"
   | "photography"
-  | "production_services";
+  | "production_services"
+  | "partnerships";
 
 export type CrossServiceRecommendation = {
   fromFamily: CrossServiceFamily;
@@ -229,6 +230,49 @@ const REGISTRY: CrossServiceRecommendation[] = [
     destination: { kind: "department", slug: "talent-management" },
     label: "Need talent for this production?",
     description: "Talent Management can help source presenters, models or creators.",
+  },
+
+  // Partnerships & Collaborations V1 (2026-09-07) — a partnership
+  // opportunity may reference/recommend an existing service family to
+  // establish scope or Normal Commercial Value; it never automatically
+  // discounts that family or duplicates its calculator. Order matters:
+  // the first MAX_RECOMMENDATIONS entries below are what actually
+  // renders.
+  {
+    fromFamily: "partnerships",
+    destination: { kind: "pricing_family", family: "commercial" },
+    label: "Does this need commercial usage licensing?",
+    description: "Commercial / Advertising covers paid-usage licensing that a collaboration's default rights don't include.",
+  },
+  {
+    fromFamily: "partnerships",
+    destination: { kind: "department", slug: "content-creation" },
+    label: "Is this ongoing content, not a one-off?",
+    description: "Content Creation covers recurring, platform-ready design and short-form video.",
+  },
+  {
+    fromFamily: "partnerships",
+    destination: { kind: "department", slug: "production" },
+    label: "Does this need crew, equipment, or location coordination?",
+    description: "Production Operations coordinates the resources this collaboration requires.",
+  },
+  {
+    fromFamily: "partnerships",
+    destination: { kind: "pricing_family", family: "graphic_design" },
+    label: "Need design work as part of this collaboration?",
+    description: "Graphic Design covers flyers, social graphics, and print for the partnership.",
+  },
+  {
+    fromFamily: "partnerships",
+    destination: { kind: "pricing_family", family: "branding" },
+    label: "Is this part of a brand identity project?",
+    description: "Branding & Creative Strategy covers identity systems and creative direction.",
+  },
+  {
+    fromFamily: "partnerships",
+    destination: { kind: "department", slug: "talent-management" },
+    label: "Does this involve a creator or talent?",
+    description: "Talent Management can help source or coordinate presenters, models or creators.",
   },
 ];
 
