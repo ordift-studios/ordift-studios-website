@@ -14,11 +14,12 @@
 //     restrained by design: getRecommendationsFor() caps what it
 //     returns (see MAX_RECOMMENDATIONS below) so a consuming page can
 //     never accidentally render a wall of upsells.
-//   - This registry has entries for graphic_design (added 2026-09-07)
-//     and content_creation (added 2026-09-07, same date, second
-//     phase). Every other family is still "may later recommend" per
-//     its own authorization; adding entries for those later is exactly
-//     "register a new array entry", never new page-specific logic.
+//   - This registry has entries for graphic_design, content_creation,
+//     and branding (all added 2026-09-07, across three separate
+//     authorized phases). Every other family is still "may later
+//     recommend" per its own authorization; adding entries for those
+//     later is exactly "register a new array entry", never new
+//     page-specific logic.
 //
 // CROSS-SERVICE DISCOUNTS — DOCUMENTED EXTENSION POINT, NOT BUILT:
 //   `discountEligible` below is reserved for a future phase and is
@@ -138,6 +139,51 @@ const REGISTRY: CrossServiceRecommendation[] = [
     destination: { kind: "department", slug: "production" },
     label: "Need production support?",
     description: "Production Services can coordinate location, casting, and production logistics around this project.",
+  },
+
+  // Branding & Creative Strategy V1 (2026-09-07) — order matters: the
+  // first MAX_RECOMMENDATIONS entries below are what actually renders.
+  {
+    fromFamily: "branding",
+    destination: { kind: "pricing_family", family: "graphic_design" },
+    label: "Need collateral built from this identity?",
+    description: "Graphic Design covers business cards, brochures, social templates, and other applications once the identity is approved.",
+  },
+  {
+    fromFamily: "branding",
+    destination: { kind: "pricing_family", family: "personal" },
+    label: "Need original photography for the brand?",
+    description: "Photography covers imagery to bring the new identity to life.",
+  },
+  {
+    fromFamily: "branding",
+    destination: { kind: "department", slug: "content-creation" },
+    label: "Need ongoing content in the new identity?",
+    description: "Content Creation covers recurring, platform-ready design and short-form video once the identity is set.",
+  },
+  {
+    fromFamily: "branding",
+    destination: { kind: "pricing_family", family: "commercial" },
+    label: "Launching with a campaign?",
+    description: "Commercial / Advertising covers campaign production and paid-usage licensing.",
+  },
+  {
+    fromFamily: "branding",
+    destination: { kind: "department", slug: "production" },
+    label: "Need production support?",
+    description: "Production Services can coordinate location, casting, and production logistics for a brand launch.",
+  },
+  {
+    fromFamily: "branding",
+    destination: { kind: "department", slug: "talent-management" },
+    label: "Need on-camera talent for launch content?",
+    description: "Talent Management can help source presenters, models or creators for brand launch content.",
+  },
+  {
+    fromFamily: "branding",
+    destination: { kind: "department", slug: "videography" },
+    label: "Need a brand film?",
+    description: "Videography covers brand film and other long-form production to introduce the new identity.",
   },
 ];
 

@@ -275,6 +275,13 @@ export const ADMIN_TIER_ACTIONS = new Set<string>([
   "pricing.content_creation_retainer_rate.created",
   "pricing.content_creation_addon_rate.created",
   "pricing.content_creation_percentage.created",
+  // Discount Lifecycle Refinement (2026-09-07)
+  "pricing.discount_code.deleted",
+  "pricing.discount_code.archived",
+  // Branding & Creative Strategy Pricing V1 (2026-09-07)
+  "pricing.branding_tier_rate.created",
+  "pricing.branding_revision_minimum.created",
+  "pricing.branding_percentage.created",
 ]);
 
 // Deliberately reviewed and left staff-visible (Phase I.1, 2026-09-05)

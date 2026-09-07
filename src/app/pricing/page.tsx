@@ -61,16 +61,24 @@ import {
   type ContentCreationAddonSlug,
   type ContentCreationPercentageSlug,
 } from "@/lib/pricing/contentCreationPricing";
+import {
+  getActiveTierRates as getActiveBrandingTierRates,
+  getActiveRevisionMinimum as getActiveBrandingRevisionMinimum,
+  getActivePercentageRates as getActiveBrandingPercentageRates,
+  type BrandingTierRate,
+  type BrandingPercentageSlug,
+} from "@/lib/pricing/brandingPricing";
 import PersonalSessionEstimator from "./PersonalSessionEstimator";
 import CorporateHeadshotEstimator from "./CorporateHeadshotEstimator";
 import WeddingEventEstimator from "./WeddingEventEstimator";
 import CommercialEstimator from "./CommercialEstimator";
 import GraphicDesignEstimator from "./GraphicDesignEstimator";
 import ContentCreationEstimator from "./ContentCreationEstimator";
+import BrandingEstimator from "./BrandingEstimator";
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://ordiftstudios.com";
 const TITLE = "Pricing — Ordift Studios";
-const DESCRIPTION = "Build your session and see an estimate for Ordift Studios' Personal Portrait, Corporate & Headshots, Weddings & Events, Commercial & Advertising, Graphic Design, or Content Creation work, based on where your project takes place.";
+const DESCRIPTION = "Build your session and see an estimate for Ordift Studios' Personal Portrait, Corporate & Headshots, Weddings & Events, Commercial & Advertising, Graphic Design, Content Creation, or Branding & Creative Strategy work, based on where your project takes place.";
 
 export const metadata: Metadata = {
   title: TITLE,
@@ -86,6 +94,7 @@ const FAMILIES = [
   { key: "commercial", label: "Commercial / Advertising" },
   { key: "graphic_design", label: "Graphic Design" },
   { key: "content_creation", label: "Content Creation" },
+  { key: "branding", label: "Branding & Creative Strategy" },
 ] as const;
 
 // Ordift Pricing Engine (2026-09-06) — public entry point. Server-
@@ -112,7 +121,9 @@ export default async function PricingPage({ searchParams }: { searchParams: Prom
             ? "graphic_design"
             : familyParam === "content_creation"
               ? "content_creation"
-              : "personal";
+              : familyParam === "branding"
+                ? "branding"
+                : "personal";
 
   const markets = await listActivePricingMarkets();
 
@@ -244,6 +255,22 @@ export default async function PricingPage({ searchParams }: { searchParams: Prom
         })()
       : null;
 
+  const brandingData =
+    family === "branding"
+      ? await (async () => {
+          const [tierEntries, revisionMinimumEntries, percentages] = await Promise.all([
+            Promise.all(markets.map(async (m) => [m.slug, await getActiveBrandingTierRates(m.slug)] as const)),
+            Promise.all(markets.map(async (m) => [m.slug, await getActiveBrandingRevisionMinimum(m.slug)] as const)),
+            getActiveBrandingPercentageRates(),
+          ]);
+          return {
+            tierRatesByMarket: Object.fromEntries(tierEntries) as Record<string, BrandingTierRate[]>,
+            revisionMinimumByMarket: Object.fromEntries(revisionMinimumEntries) as Record<string, number | null>,
+            percentages: percentages as Partial<Record<BrandingPercentageSlug, number>>,
+          };
+        })()
+      : null;
+
   return (
     <main>
       <NavBar />
@@ -323,7 +350,7 @@ export default async function PricingPage({ searchParams }: { searchParams: Prom
               addonRatesByMarket={graphicDesignData.addonRatesByMarket}
               percentages={graphicDesignData.percentages}
             />
-          ) : contentCreationData ? (
+          ) : family === "content_creation" && contentCreationData ? (
             <ContentCreationEstimator
               markets={markets}
               packageRatesByMarket={contentCreationData.packageRatesByMarket}
@@ -331,9 +358,16 @@ export default async function PricingPage({ searchParams }: { searchParams: Prom
               addonRatesByMarket={contentCreationData.addonRatesByMarket}
               percentages={contentCreationData.percentages}
             />
+          ) : brandingData ? (
+            <BrandingEstimator
+              markets={markets}
+              tierRatesByMarket={brandingData.tierRatesByMarket}
+              revisionMinimumByMarket={brandingData.revisionMinimumByMarket}
+              percentages={brandingData.percentages}
+            />
           ) : null}
           <p className="font-sans text-caption text-ordift-ink-muted mt-6 text-center">
-            Branding &amp; Strategy and Production Services work is proposal-based — <a href="/book?service=general" className="underline">start an enquiry</a> and we&rsquo;ll put together the right quote for your project.
+            Production Services work is proposal-based — <a href="/book?service=general" className="underline">start an enquiry</a> and we&rsquo;ll put together the right quote for your project.
           </p>
         </div>
       </section>

@@ -134,6 +134,15 @@ const ACTION_LABELS: Record<string, string> = {
   "pricing.content_creation_retainer_rate.created": "Updated a Content Creation retainer rate",
   "pricing.content_creation_addon_rate.created": "Updated a Content Creation add-on rate",
   "pricing.content_creation_percentage.created": "Updated a Content Creation formula percentage",
+
+  // Discount Lifecycle Refinement (2026-09-07)
+  "pricing.discount_code.deleted": "Permanently deleted an unused discount code",
+  "pricing.discount_code.archived": "Archived/retired a discount code with redemption history",
+
+  // Branding & Creative Strategy Pricing V1 (2026-09-07)
+  "pricing.branding_tier_rate.created": "Updated a Branding service-level rate",
+  "pricing.branding_revision_minimum.created": "Updated a Branding revision minimum",
+  "pricing.branding_percentage.created": "Updated a Branding formula percentage",
 };
 
 // Graceful fallback for any action type not (yet) in ACTION_LABELS — pure

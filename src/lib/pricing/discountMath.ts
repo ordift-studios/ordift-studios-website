@@ -26,3 +26,23 @@ export function isDiscountCurrentlyValid(discount: { active: boolean; validFrom:
   if (discount.validTo && new Date(discount.validTo).getTime() <= now.getTime()) return { ok: false, error: "This discount has expired." };
   return { ok: true };
 }
+
+// Discount Lifecycle Refinement (2026-09-07) — the pure decision at the
+// heart of "delete vs. archive": a discount code with zero historical
+// redemptions carries no financial/audit history to protect, so a
+// genuine permanent delete is safe. Any redemption at all (even one)
+// means deleting the row would orphan discount_redemptions.discount_code_id
+// or (given that FK has no ON DELETE clause, i.e. NO ACTION) simply fail
+// outright — either way, physically deleting is never attempted; the
+// code is retired into the archived state instead, which is reversible
+// only in the sense that Admin can always see it, never in the sense
+// that it can be reactivated (see setDiscountCodeActive's guard).
+// discount_codes is only ever referenced by discount_redemptions.discount_code_id
+// in this schema (no direct FK from bookings/enquiries/quotes/payments —
+// those relate to a redemption via discount_redemptions.reference_type/
+// reference_id, the same polymorphic pattern as payment_obligations),
+// so a redemption count of zero is the complete, sufficient dependency
+// check for this schema.
+export function decideDiscountDeletionOutcome(redemptionCount: number): "delete" | "archive" {
+  return redemptionCount > 0 ? "archive" : "delete";
+}

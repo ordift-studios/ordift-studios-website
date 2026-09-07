@@ -8,7 +8,7 @@ import {
   createSubjectCategoryMultiplierVersion,
   createAdditionalRetouchRateVersion,
 } from "@/lib/pricing/personalSessionPricing";
-import { createDiscountCode, setDiscountCodeActive, recordManualDiscount } from "@/lib/pricing/discounts";
+import { createDiscountCode, setDiscountCodeActive, recordManualDiscount, deleteDiscountCode, type DeleteDiscountCodeResult } from "@/lib/pricing/discounts";
 import {
   createGraphicDesignDeliverableRateVersion,
   createGraphicDesignComplexityFactorVersion,
@@ -29,6 +29,13 @@ import {
   type ContentCreationAddonSlug,
   type ContentCreationPercentageSlug,
 } from "@/lib/pricing/contentCreationPricing";
+import {
+  createBrandingTierRateVersion,
+  createBrandingRevisionMinimumVersion,
+  createBrandingPercentageVersion,
+  type BrandingTierSlug,
+  type BrandingPercentageSlug,
+} from "@/lib/pricing/brandingPricing";
 import {
   createCorporateHeadshotRateVersion,
   createCorporateTeamTierRateVersion,
@@ -142,6 +149,67 @@ export async function setDiscountCodeActiveAction(formData: FormData): Promise<v
   if (!result.ok) console.error("[admin] failed to update discount code", result.error);
 
   revalidatePath("/admin/pricing");
+}
+
+// Discount Lifecycle Refinement (2026-09-07) — called directly from
+// DeleteDiscountButton.tsx's client-side type-to-confirm flow (same
+// established pattern as deletePortfolioProjectAction), not a plain
+// <form action>, so the caller can distinguish "deleted" from
+// "archived instead" and show the right message.
+// ============================================================
+// Branding & Creative Strategy Pricing V1 (2026-09-07)
+// ============================================================
+
+export async function createBrandingTierRateVersionAction(formData: FormData): Promise<void> {
+  const user = await getCurrentUser();
+  if (!user) return;
+
+  const marketSlug = String(formData.get("marketSlug") ?? "");
+  const tierSlug = String(formData.get("tierSlug") ?? "");
+  const priceUsd = Number(formData.get("priceUsd"));
+  if (!marketSlug || !tierSlug || !Number.isFinite(priceUsd)) return;
+
+  const result = await createBrandingTierRateVersion({ marketSlug, tierSlug: tierSlug as BrandingTierSlug, priceUsd, actorUserId: user.id });
+  if (!result.ok) console.error("[admin] failed to create branding tier rate version", result.error);
+
+  revalidatePath("/admin/pricing");
+}
+
+export async function createBrandingRevisionMinimumVersionAction(formData: FormData): Promise<void> {
+  const user = await getCurrentUser();
+  if (!user) return;
+
+  const marketSlug = String(formData.get("marketSlug") ?? "");
+  const minimumUsd = Number(formData.get("minimumUsd"));
+  if (!marketSlug || !Number.isFinite(minimumUsd)) return;
+
+  const result = await createBrandingRevisionMinimumVersion({ marketSlug, minimumUsd, actorUserId: user.id });
+  if (!result.ok) console.error("[admin] failed to create branding revision minimum version", result.error);
+
+  revalidatePath("/admin/pricing");
+}
+
+export async function createBrandingPercentageVersionAction(formData: FormData): Promise<void> {
+  const user = await getCurrentUser();
+  if (!user) return;
+
+  const percentageSlug = String(formData.get("percentageSlug") ?? "");
+  const percentage = Number(formData.get("percentage"));
+  if (!percentageSlug || !Number.isFinite(percentage)) return;
+
+  const result = await createBrandingPercentageVersion({ percentageSlug: percentageSlug as BrandingPercentageSlug, percentage, actorUserId: user.id });
+  if (!result.ok) console.error("[admin] failed to create branding percentage version", result.error);
+
+  revalidatePath("/admin/pricing");
+}
+
+export async function deleteDiscountCodeAction(discountCodeId: string): Promise<DeleteDiscountCodeResult> {
+  const user = await getCurrentUser();
+  if (!user) return { ok: false, error: "Not signed in." };
+
+  const result = await deleteDiscountCode({ discountCodeId, actorUserId: user.id });
+  revalidatePath("/admin/pricing");
+  return result;
 }
 
 // Pricing Engine V1.1 (2026-09-06)

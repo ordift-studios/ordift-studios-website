@@ -1,7 +1,7 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { authorizeWithSuperAdminOverride, FINANCE_CAPABILITIES } from "@/lib/organization/authority";
 import { logActivity } from "@/lib/admin/activityLog";
-import { applyDiscount, isDiscountCurrentlyValid } from "./discountMath";
+import { applyDiscount, isDiscountCurrentlyValid, decideDiscountDeletionOutcome } from "./discountMath";
 
 // Ordift Pricing Engine V1 (2026-09-06) — discount codes and audited
 // manual discounts. No discount code is seeded by migration 0053 (no
@@ -20,7 +20,7 @@ import { applyDiscount, isDiscountCurrentlyValid } from "./discountMath";
 // ManualDiscountForm.tsx's live preview imports directly from
 // discountMath.ts instead, never from here.
 
-export { applyDiscount, isDiscountCurrentlyValid };
+export { applyDiscount, isDiscountCurrentlyValid, decideDiscountDeletionOutcome };
 
 export type DiscountCode = {
   id: string;
@@ -32,7 +32,15 @@ export type DiscountCode = {
   active: boolean;
   maxUses: number | null;
   maxUsesPerClient: number | null;
+  // Discount Lifecycle Refinement (2026-09-07)
+  archivedAt: string | null; // set only when a Delete attempt found protected redemption history — retired, not reactivatable
+  redemptionCount: number; // live count against discount_redemptions — what a Delete attempt would find
 };
+
+export type DeleteDiscountCodeResult =
+  | { ok: true; outcome: "deleted" }
+  | { ok: true; outcome: "archived"; redemptionCount: number }
+  | { ok: false; error: string };
 
 export async function recordManualDiscount(params: {
   originalAmountUsd: number;
@@ -101,13 +109,34 @@ export async function listAllDiscountCodesForAdmin(actorUserId: string): Promise
   const admin = createAdminClient();
   const { data, error } = await admin
     .from("discount_codes")
-    .select("id, code, discount_type, value, valid_from, valid_to, active, max_uses, max_uses_per_client")
+    .select("id, code, discount_type, value, valid_from, valid_to, active, max_uses, max_uses_per_client, archived_at")
     .order("created_at", { ascending: false });
   if (error) {
     console.error("[pricing] failed to load discount codes", error.message);
     return [];
   }
-  return (data ?? []).map((d) => ({
+  const codes = data ?? [];
+  if (codes.length === 0) return [];
+
+  // Discount Lifecycle Refinement (2026-09-07) — the Admin list shows
+  // each code's live redemption count up front, so the Founder/Admin
+  // sees WHY permanent deletion will or won't be available before ever
+  // clicking Delete, per the explicit "Admin UX should clearly
+  // communicate why permanent deletion is unavailable" requirement.
+  const { data: redemptionRows, error: redemptionError } = await admin
+    .from("discount_redemptions")
+    .select("discount_code_id")
+    .in("discount_code_id", codes.map((d) => d.id));
+  if (redemptionError) {
+    console.error("[pricing] failed to load discount redemption counts", redemptionError.message);
+  }
+  const redemptionCounts = new Map<string, number>();
+  for (const row of redemptionRows ?? []) {
+    if (!row.discount_code_id) continue;
+    redemptionCounts.set(row.discount_code_id, (redemptionCounts.get(row.discount_code_id) ?? 0) + 1);
+  }
+
+  return codes.map((d) => ({
     id: d.id,
     code: d.code,
     discountType: d.discount_type,
@@ -117,6 +146,8 @@ export async function listAllDiscountCodesForAdmin(actorUserId: string): Promise
     active: d.active,
     maxUses: d.max_uses,
     maxUsesPerClient: d.max_uses_per_client,
+    archivedAt: d.archived_at,
+    redemptionCount: redemptionCounts.get(d.id) ?? 0,
   }));
 }
 
@@ -180,6 +211,20 @@ export async function setDiscountCodeActive(params: { discountCodeId: string; ac
   if (!auth.ok) return { ok: false, error: "Not authorized to manage pricing." };
 
   const admin = createAdminClient();
+
+  // Discount Lifecycle Refinement (2026-09-07) — an archived code was
+  // retired specifically because it has protected redemption history
+  // AND the Founder no longer wants it — that is a deliberately
+  // different, one-way state from a plain Deactivate (which stays
+  // freely reactivatable). Never let a plain Activate toggle silently
+  // resurrect it.
+  if (params.active) {
+    const { data: existing } = await admin.from("discount_codes").select("archived_at").eq("id", params.discountCodeId).maybeSingle();
+    if (existing?.archived_at) {
+      return { ok: false, error: "This discount was archived (retired) because it has redemption history and can no longer be reused — create a new code instead if you want to run this promotion again." };
+    }
+  }
+
   const { error } = await admin.from("discount_codes").update({ active: params.active }).eq("id", params.discountCodeId);
   if (error) {
     console.error("[pricing] failed to update discount code active state", error.message);
@@ -194,4 +239,68 @@ export async function setDiscountCodeActive(params: { discountCodeId: string; ac
     metadata: { active: params.active },
   });
   return { ok: true };
+}
+
+// Discount Lifecycle Refinement (2026-09-07) — DEACTIVATE (above,
+// setDiscountCodeActive) is temporary and reversible: a discount that
+// may be reused later (a seasonal promotion, say). DELETE is for a
+// configuration the Founder genuinely no longer wants — but it must
+// never destroy financial/audit history. The single dependency check
+// this schema needs is a redemption count (discount_codes is only ever
+// referenced by discount_redemptions.discount_code_id — see
+// decideDiscountDeletionOutcome's doc comment): zero means a real,
+// permanent DELETE is safe; any redemption means the row is retired
+// into the archived state instead (active forced false, archived_at
+// set), which Admin can still see and which the audit trail keeps
+// pointing at, but which can never be reactivated (see the guard in
+// setDiscountCodeActive above) or re-deleted.
+export async function deleteDiscountCode(params: { discountCodeId: string; actorUserId: string }): Promise<DeleteDiscountCodeResult> {
+  const auth = await authorizeWithSuperAdminOverride(params.actorUserId, FINANCE_CAPABILITIES.pricingAdminister);
+  if (!auth.ok) return { ok: false, error: "Not authorized to manage pricing." };
+
+  const admin = createAdminClient();
+  const { data: code, error: fetchError } = await admin.from("discount_codes").select("id, code, archived_at").eq("id", params.discountCodeId).maybeSingle();
+  if (fetchError || !code) return { ok: false, error: "Discount code not found." };
+  if (code.archived_at) return { ok: false, error: "This discount is already archived — there is nothing further to delete." };
+
+  const { count, error: countError } = await admin
+    .from("discount_redemptions")
+    .select("id", { count: "exact", head: true })
+    .eq("discount_code_id", params.discountCodeId);
+  if (countError) {
+    console.error("[pricing] failed to count discount redemptions before delete", countError.message);
+    return { ok: false, error: "Could not verify redemption history — try again." };
+  }
+  const redemptionCount = count ?? 0;
+  const outcome = decideDiscountDeletionOutcome(redemptionCount);
+
+  if (outcome === "delete") {
+    const { error: deleteError } = await admin.from("discount_codes").delete().eq("id", params.discountCodeId);
+    if (deleteError) {
+      // Defense in depth: a redemption could theoretically be recorded
+      // between the count check above and this delete. The FK on
+      // discount_redemptions.discount_code_id has no ON DELETE clause
+      // (NO ACTION), so Postgres itself refuses the delete rather than
+      // orphaning/cascading — fall back to archiving instead of
+      // surfacing a raw DB error.
+      console.error("[pricing] delete failed, falling back to archive", deleteError.message);
+      const { error: archiveError } = await admin.from("discount_codes").update({ active: false, archived_at: new Date().toISOString() }).eq("id", params.discountCodeId);
+      if (archiveError) {
+        console.error("[pricing] fallback archive also failed", archiveError.message);
+        return { ok: false, error: "Failed to delete or archive the discount code." };
+      }
+      await logActivity({ actorUserId: params.actorUserId, action: "pricing.discount_code.archived", entityType: "discount_code", entityId: params.discountCodeId, metadata: { code: code.code, reason: "delete attempted but a redemption appeared concurrently" } });
+      return { ok: true, outcome: "archived", redemptionCount: 1 };
+    }
+    await logActivity({ actorUserId: params.actorUserId, action: "pricing.discount_code.deleted", entityType: "discount_code", entityId: params.discountCodeId, metadata: { code: code.code, redemptionCount: 0 } });
+    return { ok: true, outcome: "deleted" };
+  }
+
+  const { error: archiveError } = await admin.from("discount_codes").update({ active: false, archived_at: new Date().toISOString() }).eq("id", params.discountCodeId);
+  if (archiveError) {
+    console.error("[pricing] failed to archive discount code", archiveError.message);
+    return { ok: false, error: "Failed to archive the discount code." };
+  }
+  await logActivity({ actorUserId: params.actorUserId, action: "pricing.discount_code.archived", entityType: "discount_code", entityId: params.discountCodeId, metadata: { code: code.code, redemptionCount } });
+  return { ok: true, outcome: "archived", redemptionCount };
 }

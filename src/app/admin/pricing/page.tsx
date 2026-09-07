@@ -57,6 +57,12 @@ import {
   type ContentCreationRetainerSlug,
 } from "@/lib/pricing/contentCreationPricing";
 import {
+  getActiveTierRates as getActiveBrandingTierRates,
+  getActiveRevisionMinimum as getActiveBrandingRevisionMinimum,
+  getActivePercentageRates as getActiveBrandingPercentageRates,
+  type BrandingTierSlug,
+} from "@/lib/pricing/brandingPricing";
+import {
   createPersonalSessionRateVersionAction,
   setPricingMarketActiveAction,
   createDiscountCodeAction,
@@ -88,8 +94,12 @@ import {
   createContentCreationRetainerRateVersionAction,
   createContentCreationAddonRateVersionAction,
   createContentCreationPercentageVersionAction,
+  createBrandingTierRateVersionAction,
+  createBrandingRevisionMinimumVersionAction,
+  createBrandingPercentageVersionAction,
 } from "./actions";
 import ManualDiscountForm from "./ManualDiscountForm";
+import DeleteDiscountButton from "./DeleteDiscountButton";
 
 export const metadata: Metadata = {
   title: "Pricing — Ordift Studios Admin",
@@ -111,6 +121,7 @@ const TABS = [
   { key: "commercial", label: "Commercial / Advertising" },
   { key: "graphic_design", label: "Graphic Design" },
   { key: "content_creation", label: "Content Creation" },
+  { key: "branding", label: "Branding & Creative Strategy" },
   { key: "subjects", label: "Subjects / Groups" },
   { key: "addons", label: "Add-Ons" },
   { key: "discounts", label: "Discounts" },
@@ -181,6 +192,25 @@ const CONTENT_CREATION_ADDON_OPTIONS = [
 
 const CONTENT_CREATION_PERCENTAGE_OPTIONS = [
   { slug: "priority", label: "Priority Post-Production" },
+  { slug: "additional_revision", label: "Additional Revision Round" },
+] as const;
+
+const BRANDING_SUBS = [
+  { key: "tiers", label: "Service Levels" },
+  { key: "formulas", label: "Revisions & Formulas" },
+] as const;
+
+const BRANDING_TIER_OPTIONS: { slug: BrandingTierSlug; label: string }[] = [
+  { slug: "logo_development", label: "Logo Development" },
+  { slug: "brand_foundations", label: "Brand Foundations / Strategy" },
+  { slug: "essential_identity", label: "Essential Identity" },
+  { slug: "complete_identity", label: "Complete Identity System" },
+  { slug: "strategy_complete_identity", label: "Strategy + Complete Identity" },
+  { slug: "strategic_rebrand", label: "Strategic Rebrand" },
+];
+
+const BRANDING_PERCENTAGE_OPTIONS = [
+  { slug: "priority", label: "Priority Scheduling" },
   { slug: "additional_revision", label: "Additional Revision Round" },
 ] as const;
 
@@ -483,6 +513,22 @@ function ContentCreationSubNav({ active, market }: { active: string; market?: st
   );
 }
 
+function BrandingSubNav({ active, market }: { active: string; market?: string }) {
+  return (
+    <div className="flex flex-wrap gap-2">
+      {BRANDING_SUBS.map((s) => (
+        <Link
+          key={s.key}
+          href={`/admin/pricing?tab=branding&brSub=${s.key}${market ? `&market=${market}` : ""}`}
+          className={`rounded-lg px-3 py-1.5 font-sans text-caption ${active === s.key ? "bg-ordift-ink text-white" : "border border-black/15 text-ordift-ink-muted"}`}
+        >
+          {s.label}
+        </Link>
+      ))}
+    </div>
+  );
+}
+
 function CommercialModePills({ market, active }: { market: string; active: CommercialServiceMode }) {
   return (
     <div className="flex flex-wrap gap-2">
@@ -523,20 +569,21 @@ function MarketPills({ tab, markets, active, extraQuery }: { tab: string; market
 export default async function AdminPricingPage({
   searchParams,
 }: {
-  searchParams: Promise<{ tab?: string; corpSub?: string; weSub?: string; commSub?: string; gdSub?: string; ccSub?: string; market?: string; mode?: string }>;
+  searchParams: Promise<{ tab?: string; corpSub?: string; weSub?: string; commSub?: string; gdSub?: string; ccSub?: string; brSub?: string; market?: string; mode?: string }>;
 }) {
   const user = await getCurrentUser();
   if (!user) redirect("/admin/overview");
   const auth = await authorizeWithSuperAdminOverride(user.id, FINANCE_CAPABILITIES.pricingAdminister);
   if (!auth.ok) redirect("/admin/overview");
 
-  const { tab: tabParam, corpSub: corpSubParam, weSub: weSubParam, commSub: commSubParam, gdSub: gdSubParam, ccSub: ccSubParam, market: marketParam, mode: modeParam } = await searchParams;
+  const { tab: tabParam, corpSub: corpSubParam, weSub: weSubParam, commSub: commSubParam, gdSub: gdSubParam, ccSub: ccSubParam, brSub: brSubParam, market: marketParam, mode: modeParam } = await searchParams;
   const tab = TABS.some((t) => t.key === tabParam) ? tabParam! : "personal-sessions";
   const corpSub = CORPORATE_SUBS.some((s) => s.key === corpSubParam) ? corpSubParam! : "individual";
   const weSub = WEDDING_EVENT_SUBS.some((s) => s.key === weSubParam) ? weSubParam! : "wedding";
   const commSub = COMMERCIAL_SUBS.some((s) => s.key === commSubParam) ? commSubParam! : "creative_fees";
   const gdSub = GRAPHIC_DESIGN_SUBS.some((s) => s.key === gdSubParam) ? gdSubParam! : "deliverables";
   const ccSub = CONTENT_CREATION_SUBS.some((s) => s.key === ccSubParam) ? ccSubParam! : "packages";
+  const brSub = BRANDING_SUBS.some((s) => s.key === brSubParam) ? brSubParam! : "tiers";
   const mode: ServiceMode = SERVICE_MODES.some((m) => m.slug === modeParam) ? (modeParam as ServiceMode) : "photography_film";
 
   const markets = await listAllPricingMarketsForAdmin();
@@ -619,6 +666,15 @@ export default async function AdminPricingPage({
           getActiveContentCreationPercentageRates(),
         ])
       : [[], [], {} as Partial<Record<string, number>>, {} as Partial<Record<string, number>>];
+
+  const [brandingTierRates, brandingRevisionMinimum, brandingPercentages] =
+    tab === "branding" && selectedMarket
+      ? await Promise.all([
+          getActiveBrandingTierRates(selectedMarket.slug),
+          getActiveBrandingRevisionMinimum(selectedMarket.slug),
+          getActiveBrandingPercentageRates(),
+        ])
+      : [[], null, {} as Partial<Record<string, number>>];
 
   return (
     <div className="space-y-8">
@@ -1528,27 +1584,126 @@ export default async function AdminPricingPage({
         </div>
       )}
 
+      {tab === "branding" && selectedMarket && (
+        <div className="space-y-6">
+          <BrandingSubNav active={brSub} market={selectedMarket.slug} />
+
+          {brSub === "tiers" && (
+            <div className="space-y-6">
+              <MarketPills tab="branding" extraQuery="&brSub=tiers" markets={activeMarkets} active={selectedMarket.slug} />
+              <section className="rounded-xl border border-black/10 bg-white p-6 space-y-4">
+                <h2 className="font-serif font-medium text-body text-ordift-ink">{selectedMarket.name} — Service Level Rates</h2>
+                <p className="font-sans text-caption text-ordift-ink-muted">Strategy + Complete Identity is its own approved package rate — never Brand Foundations&rsquo; rate plus Complete Identity&rsquo;s rate added together. Custom / Enterprise Brand Programme has no automatic rate by design.</p>
+                <ul className="divide-y divide-black/5">
+                  {BRANDING_TIER_OPTIONS.map((t) => {
+                    const rate = brandingTierRates.find((r) => r.tierSlug === t.slug);
+                    return (
+                      <li key={t.slug} className="py-2.5">
+                        <div className="flex items-baseline justify-between font-sans text-body-small text-ordift-ink">
+                          <span>{t.label}</span>
+                          <span>{rate ? `$${rate.priceUsd.toFixed(2)}` : "— not set —"}</span>
+                        </div>
+                        <details className="mt-2 rounded-lg border border-black/10 px-4 py-2">
+                          <summary className="cursor-pointer font-sans text-caption text-ordift-ink select-none">Edit</summary>
+                          <form action={createBrandingTierRateVersionAction} className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3">
+                            <input type="hidden" name="marketSlug" value={selectedMarket.slug} />
+                            <input type="hidden" name="tierSlug" value={t.slug} />
+                            <input name="priceUsd" type="number" step="0.01" min="0.01" required defaultValue={rate?.priceUsd} placeholder="Price USD" className="rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small" />
+                            <button type="submit" className="rounded-lg bg-ordift-ink text-white px-4 py-2 font-sans text-body-small">Save new version</button>
+                          </form>
+                        </details>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </section>
+            </div>
+          )}
+
+          {brSub === "formulas" && (
+            <div className="space-y-6">
+              <MarketPills tab="branding" extraQuery="&brSub=formulas" markets={activeMarkets} active={selectedMarket.slug} />
+              <section className="rounded-xl border border-black/10 bg-white p-6 space-y-4">
+                <h2 className="font-serif font-medium text-body text-ordift-ink">{selectedMarket.name} — Additional Revision Minimum</h2>
+                <div className="flex items-baseline justify-between font-sans text-body-small text-ordift-ink">
+                  <span>Minimum per additional revision round</span>
+                  <span>{brandingRevisionMinimum != null ? `$${brandingRevisionMinimum.toFixed(2)}` : "— not set —"}</span>
+                </div>
+                <details className="mt-2 rounded-lg border border-black/10 px-4 py-2">
+                  <summary className="cursor-pointer font-sans text-caption text-ordift-ink select-none">Edit</summary>
+                  <form action={createBrandingRevisionMinimumVersionAction} className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3">
+                    <input type="hidden" name="marketSlug" value={selectedMarket.slug} />
+                    <input name="minimumUsd" type="number" step="0.01" min="0.01" required defaultValue={brandingRevisionMinimum ?? undefined} placeholder="Minimum USD" className="rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small" />
+                    <button type="submit" className="rounded-lg bg-ordift-ink text-white px-4 py-2 font-sans text-body-small">Save new version</button>
+                  </form>
+                </details>
+              </section>
+
+              <section className="rounded-xl border border-black/10 bg-white p-6 space-y-4">
+                <h2 className="font-serif font-medium text-body text-ordift-ink">Formula Percentages (Global)</h2>
+                <p className="font-sans text-caption text-ordift-ink-muted">No &ldquo;urgent&rdquo; percentage exists for Branding by design — an extremely compressed/unsafe timeline always requires Custom Confirmation, and Ordift does not offer same-day Branding.</p>
+                <ul className="divide-y divide-black/5">
+                  {BRANDING_PERCENTAGE_OPTIONS.map((p) => {
+                    const value = brandingPercentages[p.slug];
+                    return (
+                      <li key={p.slug} className="py-2.5">
+                        <div className="flex items-baseline justify-between font-sans text-body-small text-ordift-ink">
+                          <span>{p.label}</span>
+                          <span>{value != null ? `${value}%` : "Not set"}</span>
+                        </div>
+                        <details className="mt-2 rounded-lg border border-black/10 px-4 py-2">
+                          <summary className="cursor-pointer font-sans text-caption text-ordift-ink select-none">Edit</summary>
+                          <form action={createBrandingPercentageVersionAction} className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3">
+                            <input type="hidden" name="percentageSlug" value={p.slug} />
+                            <input name="percentage" type="number" step="0.01" min="0.01" required defaultValue={value ?? undefined} placeholder="Percentage" className="rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small" />
+                            <button type="submit" className="rounded-lg bg-ordift-ink text-white px-4 py-2 font-sans text-body-small">Save new version</button>
+                          </form>
+                        </details>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </section>
+            </div>
+          )}
+        </div>
+      )}
+
       {tab === "discounts" && (
         <div className="space-y-6">
           <section className="rounded-xl border border-black/10 bg-white p-6 space-y-4">
             <h2 className="font-serif font-medium text-body text-ordift-ink">Promotional Discount Codes</h2>
-            <p className="font-sans text-caption text-ordift-ink-muted">Reusable, client-facing codes — a configured percentage off, with a reason/campaign note. Created inactive by default; activate deliberately when ready.</p>
+            <p className="font-sans text-caption text-ordift-ink-muted">
+              Reusable, client-facing codes — a configured percentage off, with a reason/campaign note. Created inactive by default; activate deliberately when ready. <strong>Deactivate</strong> is temporary — a code may be reused/reactivated later (a seasonal promotion, say). <strong>Delete</strong> is for a configuration genuinely no longer wanted, but a code with any redemption history is archived/retired instead of physically deleted, so financial/audit history is never destroyed.
+            </p>
             {discountCodes.length === 0 ? (
               <p className="font-sans text-body-small text-ordift-ink-muted">None created yet.</p>
             ) : (
               <ul className="divide-y divide-black/5">
                 {discountCodes.map((d) => (
-                  <li key={d.id} className="flex items-center justify-between py-2.5">
-                    <span className={`font-sans text-body-small ${d.active ? "text-ordift-ink" : "text-ordift-ink-muted line-through"}`}>
-                      {d.code} — {d.value}% off
-                    </span>
-                    <form action={setDiscountCodeActiveAction}>
-                      <input type="hidden" name="discountCodeId" value={d.id} />
-                      <input type="hidden" name="active" value={String(d.active)} />
-                      <button type="submit" className="font-sans text-caption text-ordift-gold-pressed underline underline-offset-4">
-                        {d.active ? "Deactivate" : "Activate"}
-                      </button>
-                    </form>
+                  <li key={d.id} className="py-2.5 space-y-1">
+                    <div className="flex items-center justify-between">
+                      <span className={`font-sans text-body-small ${d.archivedAt ? "text-ordift-ink-muted line-through" : d.active ? "text-ordift-ink" : "text-ordift-ink-muted line-through"}`}>
+                        {d.code} — {d.value}% off {d.archivedAt && <span className="text-caption">(archived — redemption history protected)</span>}
+                      </span>
+                      {!d.archivedAt && (
+                        <div className="flex items-center gap-3">
+                          <form action={setDiscountCodeActiveAction}>
+                            <input type="hidden" name="discountCodeId" value={d.id} />
+                            <input type="hidden" name="active" value={String(d.active)} />
+                            <button type="submit" className="font-sans text-caption text-ordift-gold-pressed underline underline-offset-4">
+                              {d.active ? "Deactivate" : "Activate"}
+                            </button>
+                          </form>
+                          <DeleteDiscountButton id={d.id} code={d.code} redemptionCount={d.redemptionCount} />
+                        </div>
+                      )}
+                    </div>
+                    <p className="font-sans text-caption text-ordift-ink-muted">
+                      {d.archivedAt
+                        ? `Retired ${new Date(d.archivedAt).toLocaleDateString()} — ${d.redemptionCount} redemption${d.redemptionCount === 1 ? "" : "s"} on record, cannot be reactivated or permanently deleted.`
+                        : `Redeemed ${d.redemptionCount} time${d.redemptionCount === 1 ? "" : "s"}${d.redemptionCount > 0 ? " — permanent deletion is unavailable; Delete will archive/retire it instead." : " — eligible for permanent deletion."}`}
+                    </p>
                   </li>
                 ))}
               </ul>

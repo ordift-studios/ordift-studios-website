@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { applyDiscount, isDiscountCurrentlyValid } from "./discounts";
+import { applyDiscount, isDiscountCurrentlyValid, decideDiscountDeletionOutcome } from "./discounts";
 
 // Ordift Pricing Engine V1 (2026-09-06) — applyDiscount()/
 // isDiscountCurrentlyValid() are pure and directly unit-tested here.
@@ -67,6 +67,31 @@ describe("isDiscountCurrentlyValid", () => {
 
   it("rejects an expired discount", () => {
     expect(isDiscountCurrentlyValid({ active: true, validFrom: "2026-01-01T00:00:00Z", validTo: "2026-06-01T00:00:00Z" }, now).ok).toBe(false);
+  });
+});
+
+// Discount Lifecycle Refinement (2026-09-07) — decideDiscountDeletionOutcome()
+// is the pure decision inside deleteDiscountCode(): zero redemptions =>
+// a real, permanent delete is safe; any redemption at all => archive/
+// retire instead, never a physical delete, so financial/audit history
+// is never destroyed. deleteDiscountCode() itself, like
+// recordManualDiscount(), is DB-dependent from its first line
+// (authorizeWithSuperAdminOverride() constructs a real Supabase admin
+// client before any check can run) — same established limitation
+// documented at the top of this file. "27. Unauthorized user cannot
+// delete" is verified by direct code reading: deleteDiscountCode()'s
+// very first statement is the authorizeWithSuperAdminOverride() check,
+// and it returns { ok: false, error: "Not authorized..." } before any
+// row is read, counted, or written whenever that check fails.
+describe("decideDiscountDeletionOutcome", () => {
+  it("25 / 31. deletes when there are zero redemptions — nothing historical to protect, so a real delete never cascades into financial/business data (there's nothing to cascade into)", () => {
+    expect(decideDiscountDeletionOutcome(0)).toBe("delete");
+  });
+
+  it("28. archives (never destructively deletes) when there is any redemption history at all", () => {
+    expect(decideDiscountDeletionOutcome(1)).toBe("archive");
+    expect(decideDiscountDeletionOutcome(2)).toBe("archive");
+    expect(decideDiscountDeletionOutcome(500)).toBe("archive");
   });
 });
 
