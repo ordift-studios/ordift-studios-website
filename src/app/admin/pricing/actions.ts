@@ -37,6 +37,12 @@ import {
   type BrandingPercentageSlug,
 } from "@/lib/pricing/brandingPricing";
 import {
+  createRateVersion as createProductionRateVersion,
+  createPercentageVersion as createProductionPercentageVersion,
+  type ProductionServicesRateSlug,
+  type ProductionServicesPercentageSlug,
+} from "@/lib/pricing/productionServicesPricing";
+import {
   createCorporateHeadshotRateVersion,
   createCorporateTeamTierRateVersion,
   createCorporateMinimumBookingVersion,
@@ -199,6 +205,39 @@ export async function createBrandingPercentageVersionAction(formData: FormData):
 
   const result = await createBrandingPercentageVersion({ percentageSlug: percentageSlug as BrandingPercentageSlug, percentage, actorUserId: user.id });
   if (!result.ok) console.error("[admin] failed to create branding percentage version", result.error);
+
+  revalidatePath("/admin/pricing");
+}
+
+// ============================================================
+// Production Services Pricing V1 (2026-09-07)
+// ============================================================
+
+export async function createProductionRateVersionAction(formData: FormData): Promise<void> {
+  const user = await getCurrentUser();
+  if (!user) return;
+
+  const marketSlug = String(formData.get("marketSlug") ?? "");
+  const rateSlug = String(formData.get("rateSlug") ?? "");
+  const priceUsd = Number(formData.get("priceUsd"));
+  if (!marketSlug || !rateSlug || !Number.isFinite(priceUsd)) return;
+
+  const result = await createProductionRateVersion({ marketSlug, rateSlug: rateSlug as ProductionServicesRateSlug, priceUsd, actorUserId: user.id });
+  if (!result.ok) console.error("[admin] failed to create production services rate version", result.error);
+
+  revalidatePath("/admin/pricing");
+}
+
+export async function createProductionPercentageVersionAction(formData: FormData): Promise<void> {
+  const user = await getCurrentUser();
+  if (!user) return;
+
+  const percentageSlug = String(formData.get("percentageSlug") ?? "");
+  const percentage = Number(formData.get("percentage"));
+  if (!percentageSlug || !Number.isFinite(percentage)) return;
+
+  const result = await createProductionPercentageVersion({ percentageSlug: percentageSlug as ProductionServicesPercentageSlug, percentage, actorUserId: user.id });
+  if (!result.ok) console.error("[admin] failed to create production services percentage version", result.error);
 
   revalidatePath("/admin/pricing");
 }

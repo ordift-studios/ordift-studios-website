@@ -63,6 +63,11 @@ import {
   type BrandingTierSlug,
 } from "@/lib/pricing/brandingPricing";
 import {
+  getActiveRates as getActiveProductionRates,
+  getActivePercentageRates as getActiveProductionPercentageRates,
+  type ProductionServicesRateSlug,
+} from "@/lib/pricing/productionServicesPricing";
+import {
   createPersonalSessionRateVersionAction,
   setPricingMarketActiveAction,
   createDiscountCodeAction,
@@ -97,6 +102,8 @@ import {
   createBrandingTierRateVersionAction,
   createBrandingRevisionMinimumVersionAction,
   createBrandingPercentageVersionAction,
+  createProductionRateVersionAction,
+  createProductionPercentageVersionAction,
 } from "./actions";
 import ManualDiscountForm from "./ManualDiscountForm";
 import DeleteDiscountButton from "./DeleteDiscountButton";
@@ -122,6 +129,7 @@ const TABS = [
   { key: "graphic_design", label: "Graphic Design" },
   { key: "content_creation", label: "Content Creation" },
   { key: "branding", label: "Branding & Creative Strategy" },
+  { key: "production_services", label: "Production Services" },
   { key: "subjects", label: "Subjects / Groups" },
   { key: "addons", label: "Add-Ons" },
   { key: "discounts", label: "Discounts" },
@@ -212,6 +220,30 @@ const BRANDING_TIER_OPTIONS: { slug: BrandingTierSlug; label: string }[] = [
 const BRANDING_PERCENTAGE_OPTIONS = [
   { slug: "priority", label: "Priority Scheduling" },
   { slug: "additional_revision", label: "Additional Revision Round" },
+] as const;
+
+const PRODUCTION_SUBS = [
+  { key: "management", label: "Management & Planning" },
+  { key: "coordination", label: "Standalone Coordination" },
+] as const;
+
+const PRODUCTION_MANAGEMENT_RATE_OPTIONS: { slug: ProductionServicesRateSlug; label: string }[] = [
+  { slug: "management_minimum", label: "Production Management — Market Minimum" },
+  { slug: "half_day_planning", label: "Half-Day Planning" },
+  { slug: "full_day_planning", label: "Full-Day Planning" },
+];
+
+const PRODUCTION_COORDINATION_RATE_OPTIONS: { slug: ProductionServicesRateSlug; label: string }[] = [
+  { slug: "location_coordination", label: "Location / Studio Coordination — Per Confirmed Location" },
+  { slug: "equipment_coordination_minimum", label: "Equipment Coordination — Market Minimum" },
+  { slug: "crew_coordination_minimum", label: "Crew Coordination — Market Minimum" },
+];
+
+const PRODUCTION_PERCENTAGE_OPTIONS = [
+  { slug: "management_fee", label: "Production Management Fee" },
+  { slug: "management_overtime", label: "Ordift Management Overtime" },
+  { slug: "equipment_coordination", label: "Standalone Equipment Coordination" },
+  { slug: "crew_coordination", label: "Standalone Crew Coordination" },
 ] as const;
 
 const COMMERCIAL_SUBS = [
@@ -529,6 +561,22 @@ function BrandingSubNav({ active, market }: { active: string; market?: string })
   );
 }
 
+function ProductionSubNav({ active, market }: { active: string; market?: string }) {
+  return (
+    <div className="flex flex-wrap gap-2">
+      {PRODUCTION_SUBS.map((s) => (
+        <Link
+          key={s.key}
+          href={`/admin/pricing?tab=production_services&prSub=${s.key}${market ? `&market=${market}` : ""}`}
+          className={`rounded-lg px-3 py-1.5 font-sans text-caption ${active === s.key ? "bg-ordift-ink text-white" : "border border-black/15 text-ordift-ink-muted"}`}
+        >
+          {s.label}
+        </Link>
+      ))}
+    </div>
+  );
+}
+
 function CommercialModePills({ market, active }: { market: string; active: CommercialServiceMode }) {
   return (
     <div className="flex flex-wrap gap-2">
@@ -569,14 +617,14 @@ function MarketPills({ tab, markets, active, extraQuery }: { tab: string; market
 export default async function AdminPricingPage({
   searchParams,
 }: {
-  searchParams: Promise<{ tab?: string; corpSub?: string; weSub?: string; commSub?: string; gdSub?: string; ccSub?: string; brSub?: string; market?: string; mode?: string }>;
+  searchParams: Promise<{ tab?: string; corpSub?: string; weSub?: string; commSub?: string; gdSub?: string; ccSub?: string; brSub?: string; prSub?: string; market?: string; mode?: string }>;
 }) {
   const user = await getCurrentUser();
   if (!user) redirect("/admin/overview");
   const auth = await authorizeWithSuperAdminOverride(user.id, FINANCE_CAPABILITIES.pricingAdminister);
   if (!auth.ok) redirect("/admin/overview");
 
-  const { tab: tabParam, corpSub: corpSubParam, weSub: weSubParam, commSub: commSubParam, gdSub: gdSubParam, ccSub: ccSubParam, brSub: brSubParam, market: marketParam, mode: modeParam } = await searchParams;
+  const { tab: tabParam, corpSub: corpSubParam, weSub: weSubParam, commSub: commSubParam, gdSub: gdSubParam, ccSub: ccSubParam, brSub: brSubParam, prSub: prSubParam, market: marketParam, mode: modeParam } = await searchParams;
   const tab = TABS.some((t) => t.key === tabParam) ? tabParam! : "personal-sessions";
   const corpSub = CORPORATE_SUBS.some((s) => s.key === corpSubParam) ? corpSubParam! : "individual";
   const weSub = WEDDING_EVENT_SUBS.some((s) => s.key === weSubParam) ? weSubParam! : "wedding";
@@ -584,6 +632,7 @@ export default async function AdminPricingPage({
   const gdSub = GRAPHIC_DESIGN_SUBS.some((s) => s.key === gdSubParam) ? gdSubParam! : "deliverables";
   const ccSub = CONTENT_CREATION_SUBS.some((s) => s.key === ccSubParam) ? ccSubParam! : "packages";
   const brSub = BRANDING_SUBS.some((s) => s.key === brSubParam) ? brSubParam! : "tiers";
+  const prSub = PRODUCTION_SUBS.some((s) => s.key === prSubParam) ? prSubParam! : "management";
   const mode: ServiceMode = SERVICE_MODES.some((m) => m.slug === modeParam) ? (modeParam as ServiceMode) : "photography_film";
 
   const markets = await listAllPricingMarketsForAdmin();
@@ -675,6 +724,11 @@ export default async function AdminPricingPage({
           getActiveBrandingPercentageRates(),
         ])
       : [[], null, {} as Partial<Record<string, number>>];
+
+  const [productionRates, productionPercentages] =
+    tab === "production_services" && selectedMarket
+      ? await Promise.all([getActiveProductionRates(selectedMarket.slug), getActiveProductionPercentageRates()])
+      : [[], {} as Partial<Record<string, number>>];
 
   return (
     <div className="space-y-8">
@@ -1656,6 +1710,104 @@ export default async function AdminPricingPage({
                           <form action={createBrandingPercentageVersionAction} className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3">
                             <input type="hidden" name="percentageSlug" value={p.slug} />
                             <input name="percentage" type="number" step="0.01" min="0.01" required defaultValue={value ?? undefined} placeholder="Percentage" className="rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small" />
+                            <button type="submit" className="rounded-lg bg-ordift-ink text-white px-4 py-2 font-sans text-body-small">Save new version</button>
+                          </form>
+                        </details>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </section>
+            </div>
+          )}
+        </div>
+      )}
+
+      {tab === "production_services" && selectedMarket && (
+        <div className="space-y-6">
+          <ProductionSubNav active={prSub} market={selectedMarket.slug} />
+          <p className="font-sans text-caption text-ordift-ink-muted">
+            External supplier/procurement records (the supplier directory, supplier quotes, and production budget versions) are a governed internal data layer under Operations Coordinate authorization — not shown here, since these rate cards are Ordift&rsquo;s own fee/formula figures only, the same surface every other pricing family exposes.
+          </p>
+
+          {prSub === "management" && (
+            <div className="space-y-6">
+              <MarketPills tab="production_services" extraQuery="&prSub=management" markets={activeMarkets} active={selectedMarket.slug} />
+              <section className="rounded-xl border border-black/10 bg-white p-6 space-y-4">
+                <h2 className="font-serif font-medium text-body text-ordift-ink">{selectedMarket.name} — Management &amp; Planning Rates</h2>
+                <p className="font-sans text-caption text-ordift-ink-muted">Production Management Fee = MAX(market minimum, eligible managed external cost × 15%). Planning fees are flat Ordift labour fees — external expenses remain separate.</p>
+                <ul className="divide-y divide-black/5">
+                  {PRODUCTION_MANAGEMENT_RATE_OPTIONS.map((r) => {
+                    const rate = productionRates.find((row) => row.rateSlug === r.slug);
+                    return (
+                      <li key={r.slug} className="py-2.5">
+                        <div className="flex items-baseline justify-between font-sans text-body-small text-ordift-ink">
+                          <span>{r.label}</span>
+                          <span>{rate ? `$${rate.priceUsd.toFixed(2)}` : "— not set —"}</span>
+                        </div>
+                        <details className="mt-2 rounded-lg border border-black/10 px-4 py-2">
+                          <summary className="cursor-pointer font-sans text-caption text-ordift-ink select-none">Edit</summary>
+                          <form action={createProductionRateVersionAction} className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3">
+                            <input type="hidden" name="marketSlug" value={selectedMarket.slug} />
+                            <input type="hidden" name="rateSlug" value={r.slug} />
+                            <input name="priceUsd" type="number" step="0.01" min="0.01" required defaultValue={rate?.priceUsd} placeholder="Price USD" className="rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small" />
+                            <button type="submit" className="rounded-lg bg-ordift-ink text-white px-4 py-2 font-sans text-body-small">Save new version</button>
+                          </form>
+                        </details>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </section>
+
+              <section className="rounded-xl border border-black/10 bg-white p-6 space-y-4">
+                <h2 className="font-serif font-medium text-body text-ordift-ink">Formula Percentages (Global)</h2>
+                <ul className="divide-y divide-black/5">
+                  {PRODUCTION_PERCENTAGE_OPTIONS.map((p) => {
+                    const value = productionPercentages[p.slug];
+                    return (
+                      <li key={p.slug} className="py-2.5">
+                        <div className="flex items-baseline justify-between font-sans text-body-small text-ordift-ink">
+                          <span>{p.label}</span>
+                          <span>{value != null ? `${value}%` : "Not set"}</span>
+                        </div>
+                        <details className="mt-2 rounded-lg border border-black/10 px-4 py-2">
+                          <summary className="cursor-pointer font-sans text-caption text-ordift-ink select-none">Edit</summary>
+                          <form action={createProductionPercentageVersionAction} className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3">
+                            <input type="hidden" name="percentageSlug" value={p.slug} />
+                            <input name="percentage" type="number" step="0.01" min="0.01" required defaultValue={value ?? undefined} placeholder="Percentage" className="rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small" />
+                            <button type="submit" className="rounded-lg bg-ordift-ink text-white px-4 py-2 font-sans text-body-small">Save new version</button>
+                          </form>
+                        </details>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </section>
+            </div>
+          )}
+
+          {prSub === "coordination" && (
+            <div className="space-y-6">
+              <MarketPills tab="production_services" extraQuery="&prSub=coordination" markets={activeMarkets} active={selectedMarket.slug} />
+              <section className="rounded-xl border border-black/10 bg-white p-6 space-y-4">
+                <h2 className="font-serif font-medium text-body text-ordift-ink">{selectedMarket.name} — Standalone Coordination Rates</h2>
+                <p className="font-sans text-caption text-ordift-ink-muted">These apply only when Ordift is engaged for isolated sourcing/coordination outside a Full Production Management scope — never stacked on the same underlying cost as the Production Management fee.</p>
+                <ul className="divide-y divide-black/5">
+                  {PRODUCTION_COORDINATION_RATE_OPTIONS.map((r) => {
+                    const rate = productionRates.find((row) => row.rateSlug === r.slug);
+                    return (
+                      <li key={r.slug} className="py-2.5">
+                        <div className="flex items-baseline justify-between font-sans text-body-small text-ordift-ink">
+                          <span>{r.label}</span>
+                          <span>{rate ? `$${rate.priceUsd.toFixed(2)}` : "— not set —"}</span>
+                        </div>
+                        <details className="mt-2 rounded-lg border border-black/10 px-4 py-2">
+                          <summary className="cursor-pointer font-sans text-caption text-ordift-ink select-none">Edit</summary>
+                          <form action={createProductionRateVersionAction} className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3">
+                            <input type="hidden" name="marketSlug" value={selectedMarket.slug} />
+                            <input type="hidden" name="rateSlug" value={r.slug} />
+                            <input name="priceUsd" type="number" step="0.01" min="0.01" required defaultValue={rate?.priceUsd} placeholder="Price USD" className="rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small" />
                             <button type="submit" className="rounded-lg bg-ordift-ink text-white px-4 py-2 font-sans text-body-small">Save new version</button>
                           </form>
                         </details>

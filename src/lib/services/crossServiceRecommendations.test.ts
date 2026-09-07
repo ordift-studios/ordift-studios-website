@@ -20,7 +20,7 @@ describe("getRecommendationsFor", () => {
 
   it("returns an empty list for a family with no registered recommendations yet", () => {
     expect(getRecommendationsFor("talent_management")).toEqual([]);
-    expect(getRecommendationsFor("production_services")).toEqual([]);
+    expect(getRecommendationsFor("wedding_event")).toEqual([]);
   });
 
   it("15. no recommendation entry carries a price field of any kind — cross-service recommendations never alter the originating price", () => {
@@ -124,4 +124,20 @@ describe("getRecommendationsFor — branding", () => {
     expect(getRecommendationsFor("content_creation").every((r) => r.fromFamily === "content_creation")).toBe(true);
     expect(getRecommendationsFor("graphic_design").every((r) => r.fromFamily === "graphic_design")).toBe(true);
   });
+});
+
+// Production Services V1 (2026-09-07) — fourth phase to register
+// entries in this same foundation.
+describe("getRecommendationsFor — production_services", () => {
+  it("37. returns Production Services' approved recommendations, capped, price-free, and never a discount", () => {
+    const recs = getRecommendationsFor("production_services");
+    expect(recs.length).toBeGreaterThan(0);
+    expect(recs.length).toBeLessThanOrEqual(3);
+    expect(recs.every((r) => r.fromFamily === "production_services")).toBe(true);
+    for (const r of recs) {
+      expect(r).not.toHaveProperty("priceUsd");
+      expect(r.discountEligible).not.toBe(true);
+    }
+  });
+
 });

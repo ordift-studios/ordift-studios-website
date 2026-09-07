@@ -143,6 +143,16 @@ const ACTION_LABELS: Record<string, string> = {
   "pricing.branding_tier_rate.created": "Updated a Branding service-level rate",
   "pricing.branding_revision_minimum.created": "Updated a Branding revision minimum",
   "pricing.branding_percentage.created": "Updated a Branding formula percentage",
+
+  // Production Services Pricing V1 (2026-09-07)
+  "pricing.production_market_rate.created": "Updated a Production Services rate",
+  "pricing.production_percentage.created": "Updated a Production Services formula percentage",
+  "production.supplier.created": "Added a production supplier",
+  "production.supplier.active_changed": "Changed a production supplier's active state",
+  "production.supplier_quote.created": "Recorded a production supplier quote",
+  "production.supplier_quote.status_changed": "Changed a production supplier quote's status",
+  "production.budget_version.created": "Created a new production budget version",
+  "production.budget_change.approval_status_changed": "Changed a production budget change's client-approval status",
 };
 
 // Graceful fallback for any action type not (yet) in ACTION_LABELS — pure

@@ -17,6 +17,7 @@ describe("encodePricingHandoff / decodePricingHandoff — round-trip", () => {
     { family: "graphic_design", pathway: "graphic-design", summaryTitle: "Graphic Design — Brochure / Company Profile", summaryLines: ["Market: Ghana / West Africa", "Estimated Total: $280.00"] },
     { family: "content_creation", pathway: "content-creation", summaryTitle: "Content Creation — Half Content Day", summaryLines: ["Market: Ghana / West Africa", "Estimated Total: $450.00"] },
     { family: "branding", pathway: "branding", summaryTitle: "Branding & Creative Strategy — Essential Identity", summaryLines: ["Market: UK / Western Europe", "Estimated Total: $2,500.00"] },
+    { family: "production_services", pathway: "production", summaryTitle: "Production Services — Full Production Management", summaryLines: ["Market: Ghana / West Africa", "Ordift Fee (indicative): $150.00", "External supplier/production costs remain To Be Quoted."] },
   ];
 
   for (const handoff of cases) {
@@ -79,5 +80,6 @@ describe("pricingHandoffFamilyLabel", () => {
     expect(pricingHandoffFamilyLabel("graphic_design")).toBe("Graphic Design");
     expect(pricingHandoffFamilyLabel("content_creation")).toBe("Content Creation");
     expect(pricingHandoffFamilyLabel("branding")).toBe("Branding & Creative Strategy");
+    expect(pricingHandoffFamilyLabel("production_services")).toBe("Production Services");
   });
 });

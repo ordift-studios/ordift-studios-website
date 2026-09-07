@@ -15,11 +15,11 @@
 //     returns (see MAX_RECOMMENDATIONS below) so a consuming page can
 //     never accidentally render a wall of upsells.
 //   - This registry has entries for graphic_design, content_creation,
-//     and branding (all added 2026-09-07, across three separate
-//     authorized phases). Every other family is still "may later
-//     recommend" per its own authorization; adding entries for those
-//     later is exactly "register a new array entry", never new
-//     page-specific logic.
+//     branding, and production_services (all added 2026-09-07, across
+//     four separate authorized phases). Every other family is still
+//     "may later recommend" per its own authorization; adding entries
+//     for those later is exactly "register a new array entry", never
+//     new page-specific logic.
 //
 // CROSS-SERVICE DISCOUNTS — DOCUMENTED EXTENSION POINT, NOT BUILT:
 //   `discountEligible` below is reserved for a future phase and is
@@ -184,6 +184,51 @@ const REGISTRY: CrossServiceRecommendation[] = [
     destination: { kind: "department", slug: "videography" },
     label: "Need a brand film?",
     description: "Videography covers brand film and other long-form production to introduce the new identity.",
+  },
+
+  // Production Services V1 (2026-09-07) — order matters: the first
+  // MAX_RECOMMENDATIONS entries below are what actually renders.
+  {
+    fromFamily: "production_services",
+    destination: { kind: "department", slug: "photography" },
+    label: "Need the photography itself?",
+    description: "Photography covers the creative capture this production supports.",
+  },
+  {
+    fromFamily: "production_services",
+    destination: { kind: "department", slug: "videography" },
+    label: "Need the film itself?",
+    description: "Videography covers the creative capture this production supports.",
+  },
+  {
+    fromFamily: "production_services",
+    destination: { kind: "pricing_family", family: "commercial" },
+    label: "Is this for a paid advertising campaign?",
+    description: "Commercial / Advertising covers campaign production and usage licensing.",
+  },
+  {
+    fromFamily: "production_services",
+    destination: { kind: "department", slug: "content-creation" },
+    label: "Is this for social/content production?",
+    description: "Content Creation covers social-first video and photography.",
+  },
+  {
+    fromFamily: "production_services",
+    destination: { kind: "pricing_family", family: "graphic_design" },
+    label: "Need supporting design work?",
+    description: "Graphic Design covers flyers, social graphics, and print alongside your production.",
+  },
+  {
+    fromFamily: "production_services",
+    destination: { kind: "pricing_family", family: "branding" },
+    label: "Is this part of a new brand launch?",
+    description: "Branding & Creative Strategy covers identity and creative direction behind a launch.",
+  },
+  {
+    fromFamily: "production_services",
+    destination: { kind: "department", slug: "talent-management" },
+    label: "Need talent for this production?",
+    description: "Talent Management can help source presenters, models or creators.",
   },
 ];
 

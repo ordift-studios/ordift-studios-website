@@ -68,6 +68,12 @@ import {
   type BrandingTierRate,
   type BrandingPercentageSlug,
 } from "@/lib/pricing/brandingPricing";
+import {
+  getActiveRates as getActiveProductionRates,
+  getActivePercentageRates as getActiveProductionPercentageRates,
+  type ProductionServicesRate,
+  type ProductionServicesPercentageSlug,
+} from "@/lib/pricing/productionServicesPricing";
 import PersonalSessionEstimator from "./PersonalSessionEstimator";
 import CorporateHeadshotEstimator from "./CorporateHeadshotEstimator";
 import WeddingEventEstimator from "./WeddingEventEstimator";
@@ -75,10 +81,11 @@ import CommercialEstimator from "./CommercialEstimator";
 import GraphicDesignEstimator from "./GraphicDesignEstimator";
 import ContentCreationEstimator from "./ContentCreationEstimator";
 import BrandingEstimator from "./BrandingEstimator";
+import ProductionServicesEstimator from "./ProductionServicesEstimator";
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://ordiftstudios.com";
 const TITLE = "Pricing — Ordift Studios";
-const DESCRIPTION = "Build your session and see an estimate for Ordift Studios' Personal Portrait, Corporate & Headshots, Weddings & Events, Commercial & Advertising, Graphic Design, Content Creation, or Branding & Creative Strategy work, based on where your project takes place.";
+const DESCRIPTION = "Build your session and see an estimate for Ordift Studios' Personal Portrait, Corporate & Headshots, Weddings & Events, Commercial & Advertising, Graphic Design, Content Creation, Branding & Creative Strategy, or Production Services work, based on where your project takes place.";
 
 export const metadata: Metadata = {
   title: TITLE,
@@ -95,6 +102,7 @@ const FAMILIES = [
   { key: "graphic_design", label: "Graphic Design" },
   { key: "content_creation", label: "Content Creation" },
   { key: "branding", label: "Branding & Creative Strategy" },
+  { key: "production_services", label: "Production Services" },
 ] as const;
 
 // Ordift Pricing Engine (2026-09-06) — public entry point. Server-
@@ -123,7 +131,9 @@ export default async function PricingPage({ searchParams }: { searchParams: Prom
               ? "content_creation"
               : familyParam === "branding"
                 ? "branding"
-                : "personal";
+                : familyParam === "production_services"
+                  ? "production_services"
+                  : "personal";
 
   const markets = await listActivePricingMarkets();
 
@@ -271,6 +281,20 @@ export default async function PricingPage({ searchParams }: { searchParams: Prom
         })()
       : null;
 
+  const productionServicesData =
+    family === "production_services"
+      ? await (async () => {
+          const [rateEntries, percentages] = await Promise.all([
+            Promise.all(markets.map(async (m) => [m.slug, await getActiveProductionRates(m.slug)] as const)),
+            getActiveProductionPercentageRates(),
+          ]);
+          return {
+            ratesByMarket: Object.fromEntries(rateEntries) as Record<string, ProductionServicesRate[]>,
+            percentages: percentages as Partial<Record<ProductionServicesPercentageSlug, number>>,
+          };
+        })()
+      : null;
+
   return (
     <main>
       <NavBar />
@@ -358,17 +382,16 @@ export default async function PricingPage({ searchParams }: { searchParams: Prom
               addonRatesByMarket={contentCreationData.addonRatesByMarket}
               percentages={contentCreationData.percentages}
             />
-          ) : brandingData ? (
+          ) : family === "branding" && brandingData ? (
             <BrandingEstimator
               markets={markets}
               tierRatesByMarket={brandingData.tierRatesByMarket}
               revisionMinimumByMarket={brandingData.revisionMinimumByMarket}
               percentages={brandingData.percentages}
             />
+          ) : productionServicesData ? (
+            <ProductionServicesEstimator markets={markets} ratesByMarket={productionServicesData.ratesByMarket} percentages={productionServicesData.percentages} />
           ) : null}
-          <p className="font-sans text-caption text-ordift-ink-muted mt-6 text-center">
-            Production Services work is proposal-based — <a href="/book?service=general" className="underline">start an enquiry</a> and we&rsquo;ll put together the right quote for your project.
-          </p>
         </div>
       </section>
 

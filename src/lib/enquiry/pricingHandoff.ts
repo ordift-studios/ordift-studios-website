@@ -16,7 +16,7 @@
 
 import { isPathwayValue, type PathwayValue } from "./pathways";
 
-export type PricingHandoffFamily = "personal" | "corporate" | "wedding_event" | "commercial" | "graphic_design" | "content_creation" | "branding";
+export type PricingHandoffFamily = "personal" | "corporate" | "wedding_event" | "commercial" | "graphic_design" | "content_creation" | "branding" | "production_services";
 
 export type PricingHandoff = {
   family: PricingHandoffFamily;
@@ -28,7 +28,7 @@ export type PricingHandoff = {
 const MAX_ENCODED_LENGTH = 2000;
 
 function isPricingHandoffFamily(value: unknown): value is PricingHandoffFamily {
-  return value === "personal" || value === "corporate" || value === "wedding_event" || value === "commercial" || value === "graphic_design" || value === "content_creation" || value === "branding";
+  return value === "personal" || value === "corporate" || value === "wedding_event" || value === "commercial" || value === "graphic_design" || value === "content_creation" || value === "branding" || value === "production_services";
 }
 
 function sanitizeLines(lines: unknown): string[] {
@@ -111,5 +111,7 @@ export function pricingHandoffFamilyLabel(family: PricingHandoffFamily): string 
       return "Content Creation";
     case "branding":
       return "Branding & Creative Strategy";
+    case "production_services":
+      return "Production Services";
   }
 }

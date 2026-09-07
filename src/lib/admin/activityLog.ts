@@ -282,6 +282,15 @@ export const ADMIN_TIER_ACTIONS = new Set<string>([
   "pricing.branding_tier_rate.created",
   "pricing.branding_revision_minimum.created",
   "pricing.branding_percentage.created",
+  // Production Services Pricing V1 (2026-09-07)
+  "pricing.production_market_rate.created",
+  "pricing.production_percentage.created",
+  "production.supplier.created",
+  "production.supplier.active_changed",
+  "production.supplier_quote.created",
+  "production.supplier_quote.status_changed",
+  "production.budget_version.created",
+  "production.budget_change.approval_status_changed",
 ]);
 
 // Deliberately reviewed and left staff-visible (Phase I.1, 2026-09-05)
