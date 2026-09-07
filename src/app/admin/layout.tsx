@@ -6,6 +6,7 @@ import { signOutAction } from "@/app/portal/login/actions";
 import { getProfileCard } from "@/lib/portal/profileCard";
 import ProfileQuickCard from "@/components/admin/ProfileQuickCard";
 import { PresenceProvider } from "@/components/admin/PresenceProvider";
+import AdminNavDropdown from "@/components/admin/AdminNavDropdown";
 import { isExecutiveAdmin, hasAuthority, PEOPLE_CAPABILITIES } from "@/lib/organization/authority";
 
 // Internal operations console — separate from the customer/partner-facing
@@ -205,14 +206,23 @@ export default async function AdminLayout({ children }: { children: React.ReactN
         </div>
         <div className="max-w-6xl mx-auto px-4 sm:px-8 flex gap-1 border-t border-white/10 overflow-x-auto">
           {/* Admin Workspace Reorganization (2026-09-07) — hierarchical/
-              expandable grouping (Part 38) over the same flat route list,
-              using native <details>/<summary> so it works with zero
-              client-side JS, keeps every existing deep link exactly as
-              it was, and stays close to the site's familiar look rather
-              than an unfamiliar redesign. A group with exactly one
-              visible item renders as a single direct link (no dropdown
-              needed) — most groups have more than one, but this keeps
-              a lean group from feeling like unnecessary extra clicking. */}
+              expandable grouping (Part 38) over the same flat route list.
+              Submenu dropdown fix (2026-09-07): this container is
+              deliberately overflow-x-auto (so the group bar itself can
+              scroll on narrow viewports) — but per the CSS Overflow
+              spec, giving overflow-x any value but `visible` forces
+              overflow-y to compute to `auto` too, silently turning this
+              row into a vertically-clipping/scrollable box as well. A
+              same-parent absolutely-positioned submenu was getting
+              clipped by that accidental box (the reported iPad defect:
+              only reachable by touch-scrolling the sliver of clipped
+              space). AdminNavDropdown renders its menu through a portal
+              into document.body instead — completely outside this
+              container's clipping/stacking context — which is the only
+              correct fix for a clipping-container bug (no z-index value
+              on a child fixes a clip on its ancestor). A group with
+              exactly one visible item still renders as a single direct
+              link — no dropdown, no clipping risk, unaffected either way. */}
           {visibleNavGroups.map((group) =>
             group.items.length === 1 ? (
               <Link
@@ -223,22 +233,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
                 {group.label}
               </Link>
             ) : (
-              <details key={group.label} className="group relative py-3">
-                <summary className="font-sans text-body-small text-white/70 hover:text-white px-2 whitespace-nowrap cursor-pointer list-none marker:content-none">
-                  {group.label} <span className="text-white/40 group-open:rotate-180 inline-block transition-transform">▾</span>
-                </summary>
-                <div className="absolute left-0 top-full z-20 mt-1 min-w-[14rem] rounded-lg border border-black/10 bg-white shadow-lg py-1.5">
-                  {group.items.map((item) => (
-                    <Link
-                      key={item.href}
-                      href={item.href}
-                      className="block font-sans text-body-small text-ordift-ink hover:bg-ordift-offwhite px-4 py-2 whitespace-nowrap"
-                    >
-                      {item.label}
-                    </Link>
-                  ))}
-                </div>
-              </details>
+              <AdminNavDropdown key={group.label} label={group.label} items={group.items} />
             )
           )}
         </div>
