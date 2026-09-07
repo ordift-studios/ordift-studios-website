@@ -39,9 +39,26 @@ function sanitizeLines(lines: unknown): string[] {
     .slice(0, 20);
 }
 
-// Base64 via btoa/atob — both are available globally in the browser and
-// in the Next.js server runtime (Node 18+). encodeURIComponent/
-// decodeURIComponent around them handles non-Latin1 characters safely.
+// Base64url (RFC 4648 §5) via btoa/atob — both are available globally
+// in the browser and in the Next.js server runtime (Node 18+). Standard
+// base64's `+`, `/` and `=` are NOT safe to place directly in a URL
+// query string value (`+` in particular is read back as a literal
+// space by some query-string parsers) — base64url swaps `+`/`/` for
+// `-`/`_` and strips `=` padding (restored on decode from the string's
+// length) so the token round-trips through a plain, unencoded href
+// with no separate encodeURIComponent() step required at the call
+// site. encodeURIComponent/decodeURIComponent around the JSON itself
+// still handles non-Latin1 characters safely.
+function toBase64Url(base64: string): string {
+  return base64.replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+function fromBase64Url(base64url: string): string {
+  const base64 = base64url.replace(/-/g, "+").replace(/_/g, "/");
+  const padding = base64.length % 4 === 0 ? "" : "=".repeat(4 - (base64.length % 4));
+  return base64 + padding;
+}
+
 export function encodePricingHandoff(handoff: PricingHandoff): string {
   try {
     const json = JSON.stringify({
@@ -50,7 +67,7 @@ export function encodePricingHandoff(handoff: PricingHandoff): string {
       summaryTitle: handoff.summaryTitle.slice(0, 200),
       summaryLines: sanitizeLines(handoff.summaryLines),
     });
-    const encoded = btoa(encodeURIComponent(json));
+    const encoded = toBase64Url(btoa(encodeURIComponent(json)));
     return encoded.length <= MAX_ENCODED_LENGTH ? encoded : "";
   } catch {
     return "";
@@ -60,7 +77,7 @@ export function encodePricingHandoff(handoff: PricingHandoff): string {
 export function decodePricingHandoff(raw: string | undefined | null): PricingHandoff | null {
   if (!raw || raw.length > MAX_ENCODED_LENGTH) return null;
   try {
-    const json = decodeURIComponent(atob(raw));
+    const json = decodeURIComponent(atob(fromBase64Url(raw)));
     const parsed: unknown = JSON.parse(json);
     if (typeof parsed !== "object" || parsed === null) return null;
     const obj = parsed as Record<string, unknown>;
