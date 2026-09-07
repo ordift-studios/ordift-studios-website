@@ -20,6 +20,7 @@ import {
   type CommercialLicensingFactors,
   type CommercialReviewThreshold,
 } from "@/lib/pricing/commercialEstimate";
+import { encodePricingHandoff } from "@/lib/enquiry/pricingHandoff";
 
 type ProjectType = "product_ecommerce" | "food_beverage" | "fashion_beauty" | "brand_lifestyle" | "advertising_campaign" | "custom_commercial";
 type CatalogueMode = "clean" | "premium" | "styled" | null;
@@ -197,6 +198,52 @@ export default function CommercialEstimator({
   ]);
 
   const stateCopy = REVIEW_STATE_COPY[estimate.reviewState];
+
+  // Film-only bookings route to the Videography pathway; Photography
+  // and combined Photography+Film both route to Photography (there is
+  // no combined pathway value, and a Photo+Film commercial production
+  // is led the same way a photography booking is). Catalogue estimates
+  // are always photography.
+  const bookingHref = useMemo(() => {
+    const marketName = markets.find((m) => m.slug === marketSlug)?.name ?? marketSlug;
+    const projectTypeLabel = PROJECT_TYPES.find((p) => p.slug === projectType)?.label ?? projectType;
+    const pathway = !isCatalogue && serviceMode === "film" ? "videography" : "photography";
+    if (isCatalogue) {
+      if (estimate.catalogueFeeUsd == null) return "/book?service=photography";
+      const encoded = encodePricingHandoff({
+        family: "commercial",
+        pathway: "photography",
+        summaryTitle: `Commercial / Advertising — ${catalogueMode === "premium" ? "Premium Product" : "Clean Catalogue"}`,
+        summaryLines: [
+          `Market: ${marketName}`,
+          `Catalogue: ${catalogueMode === "premium" ? "Premium Product" : "Clean Catalogue"}`,
+          `Quantity: ${quantity} images`,
+          `Estimated Total: $${estimate.estimatedTotalUsd.toFixed(2)}`,
+        ],
+      });
+      return encoded ? `/book?service=photography&pricing=${encoded}` : "/book?service=photography";
+    }
+    if (estimate.reviewState === "custom_proposal_required" && estimate.creativeFeeUsd == null) {
+      return `/book?service=${pathway}`;
+    }
+    const modeLabel = SERVICE_MODES.find((m) => m.slug === serviceMode)?.label ?? serviceMode;
+    const scopeLabel = SCOPES.find((s) => s.slug === scopeSlug)?.label ?? scopeSlug;
+    const encoded = encodePricingHandoff({
+      family: "commercial",
+      pathway,
+      summaryTitle: `Commercial / Advertising — ${projectTypeLabel}`,
+      summaryLines: [
+        `Market: ${marketName}`,
+        `Project type: ${projectTypeLabel}`,
+        `Service: ${modeLabel}`,
+        `Production scope: ${scopeLabel}`,
+        `Estimated Commercial Investment: $${estimate.estimatedTotalUsd.toFixed(2)}`,
+        ...(estimate.reviewState === "commercial_review" ? ["Subject to Commercial Review"] : []),
+        ...(estimate.reviewState === "custom_proposal_required" ? ["Custom Commercial Proposal Required"] : []),
+      ],
+    });
+    return encoded ? `/book?service=${pathway}&pricing=${encoded}` : `/book?service=${pathway}`;
+  }, [estimate, markets, marketSlug, projectType, isCatalogue, catalogueMode, quantity, serviceMode, scopeSlug]);
 
   return (
     <div className="rounded-2xl border border-black/10 bg-white p-6 sm:p-8 space-y-6">
@@ -387,7 +434,7 @@ export default function CommercialEstimator({
         </p>
       </div>
 
-      <Link href="/book?service=general" className="block text-center rounded-lg bg-ordift-ink text-white px-6 py-3 font-sans text-body-small hover:opacity-90 transition-opacity">
+      <Link href={bookingHref} className="block text-center rounded-lg bg-ordift-ink text-white px-6 py-3 font-sans text-body-small hover:opacity-90 transition-opacity">
         {estimate.reviewState === "custom_proposal_required" ? "Request a Custom Proposal" : "Start Your Enquiry"}
       </Link>
     </div>

@@ -13,7 +13,7 @@ export const JOURNAL_CATEGORIES: Category[] = [
   { id: "jcat-business", slug: "business-insights", name: "Business Insights", description: "Running a creative practice." },
   { id: "jcat-faith", slug: "faith-leadership", name: "Faith & Leadership", description: "Faith and leadership reflections." },
   { id: "jcat-travel", slug: "travel", name: "Travel", description: "Location and travel-shoot stories." },
-  { id: "jcat-workshop-recaps", slug: "workshop-recaps", name: "Workshop Recaps", description: "Recaps of past Ordift Academy workshops." },
+  { id: "jcat-workshop-recaps", slug: "workshop-recaps", name: "Workshop Recaps", description: "Recaps of past OS Academy workshops." },
   { id: "jcat-client-stories", slug: "client-stories", name: "Client Stories", description: "Stories from client collaborations." },
   { id: "jcat-case-studies", slug: "case-studies", name: "Case Studies", description: "In-depth project breakdowns." },
   { id: "jcat-announcements", slug: "announcements", name: "Announcements", description: "Studio announcements." },

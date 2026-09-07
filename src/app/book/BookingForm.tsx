@@ -6,8 +6,29 @@ import { z } from "zod";
 import { PATHWAYS, pathwayLabel } from "@/lib/enquiry/pathways";
 import { BUDGET_RANGES, budgetRangeLabel } from "@/lib/enquiry/budgetRanges";
 import { enquirySchema, STEP_FIELDS, type EnquiryInput } from "@/lib/enquiry/schema";
+import { pricingHandoffFamilyLabel, type PricingHandoff } from "@/lib/enquiry/pricingHandoff";
 import Button from "@/components/Button";
 import TurnstileWidget from "@/components/TurnstileWidget";
+
+// Booking Journey Refinement (2026-09-07) — routes a visitor who picks
+// Photography or Videography (with no configured pricing context
+// already carried in) into the relevant pricing/configuration
+// experience BEFORE generic contact/date intake, per the approved
+// principle: service selection -> configuration/pricing -> scope
+// summary -> contact information -> enquiry continuation. A visitor who
+// genuinely wants the freeform path (a service the pricing engines
+// don't cover yet) can always continue past this without configuring.
+const PHOTOGRAPHY_ROUTES = [
+  { family: "personal", label: "Personal Portrait" },
+  { family: "corporate", label: "Corporate & Headshots" },
+  { family: "wedding_event", label: "Weddings & Events" },
+  { family: "commercial", label: "Commercial / Advertising" },
+] as const;
+
+const VIDEOGRAPHY_ROUTES = [
+  { family: "wedding_event", label: "Weddings & Events (Film)" },
+  { family: "commercial", label: "Commercial / Advertising (Film)" },
+] as const;
 
 const STEP_LABELS = [
   "Choose a service",
@@ -84,6 +105,7 @@ const inputClasses =
 export default function BookingForm({
   initialService,
   initialEmail,
+  pricingContext,
 }: {
   initialService?: string;
   // 2026-08-19 — convenience prefill only, from the logged-in account's
@@ -93,11 +115,32 @@ export default function BookingForm({
   // derives user_id from the authenticated session server-side,
   // independent of whatever ends up in this field.
   initialEmail?: string | null;
+  // Booking Journey Refinement (2026-09-07) — a configured pricing-
+  // family scope carried in from /pricing (see pricingHandoff.ts).
+  // Descriptive only: prefills the service/project fields and skips the
+  // now-redundant "choose a service" step, but is never treated as an
+  // authoritative price — Ordift still reviews and quotes every
+  // enquiry normally.
+  pricingContext?: PricingHandoff | null;
 }) {
-  const [step, setStep] = useState(1);
+  const hasPricingContext = Boolean(pricingContext);
+  // "router" shows the Photography/Videography configuration-first
+  // interstitial instead of the numbered steps; "form" is the normal
+  // step-based flow. Arriving with a pricing context already answers
+  // "what are you building", so the router never applies there.
+  const [phase, setPhase] = useState<"router" | "form">("form");
+  const [step, setStep] = useState(hasPricingContext ? 2 : 1);
   const [data, setData] = useState<FormState>({
     ...initialState,
-    service: initialService && PATHWAYS.some((p) => p.value === initialService) ? initialService : "",
+    service: pricingContext
+      ? pricingContext.pathway
+      : initialService && PATHWAYS.some((p) => p.value === initialService)
+        ? initialService
+        : "",
+    projectType: pricingContext ? pricingContext.summaryTitle : "",
+    description: pricingContext
+      ? `Configured via ${pricingHandoffFamilyLabel(pricingContext.family)} pricing:\n${pricingContext.summaryLines.map((l) => `- ${l}`).join("\n")}\n\nAdditional detail:\n`
+      : "",
     email: initialEmail ?? "",
     // Generated once per form session — lets the server recognize a
     // retried submission and avoid creating a duplicate enquiry.
@@ -150,11 +193,32 @@ export default function BookingForm({
   }
 
   function next() {
-    if (validateStep(step)) setStep((s) => Math.min(5, s + 1));
+    if (!validateStep(step)) return;
+    // Leaving step 1 with Photography/Videography selected and no
+    // pricing context already carried in — route into the relevant
+    // configuration/pricing experience first, per the approved
+    // principle (service selection -> configuration -> summary ->
+    // contact -> continuation), rather than straight into generic
+    // project-detail intake.
+    if (step === 1 && !hasPricingContext && (data.service === "photography" || data.service === "videography")) {
+      setPhase("router");
+      return;
+    }
+    setStep((s) => Math.min(5, s + 1));
   }
   function back() {
     setErrors({});
-    setStep((s) => Math.max(1, s - 1));
+    if (phase === "router") {
+      setPhase("form");
+      return;
+    }
+    // A carried-in pricing context already answered step 1 — there's
+    // nothing to go back to below step 2.
+    setStep((s) => Math.max(hasPricingContext ? 2 : 1, s - 1));
+  }
+  function continueWithoutConfiguring() {
+    setPhase("form");
+    setStep(2);
   }
 
   async function handleSubmit() {
@@ -267,7 +331,57 @@ export default function BookingForm({
         />
       </div>
 
-      {step === 1 && (
+      {pricingContext && phase === "form" && step >= 2 && (
+        <div className="mb-8 rounded-xl border border-ordift-gold-pressed/30 bg-ordift-gold-pressed/5 px-5 py-4">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <p className="font-sans font-semibold uppercase tracking-[0.15em] text-caption text-ordift-gold-pressed mb-1">
+                Configured scope — {pricingHandoffFamilyLabel(pricingContext.family)}
+              </p>
+              <p className="font-sans text-body-small text-ordift-ink">{pricingContext.summaryTitle}</p>
+            </div>
+            <Link href="/pricing" className="font-sans text-caption text-ordift-ink-muted underline underline-offset-4 whitespace-nowrap">
+              Change configuration
+            </Link>
+          </div>
+          <ul className="mt-2 space-y-0.5">
+            {pricingContext.summaryLines.map((line, i) => (
+              <li key={i} className="font-sans text-caption text-ordift-ink-muted">{line}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {phase === "router" && (
+        <div>
+          <h2 className="font-serif font-medium text-section-heading text-ordift-ink mb-2">
+            Let&rsquo;s build your {data.service === "photography" ? "photography" : "videography"} scope.
+          </h2>
+          <p className="font-sans text-body-small text-ordift-ink-muted mb-6">
+            Configure your session and see pricing before you tell us who you are — pick whichever fits, and your configuration carries straight into this enquiry.
+          </p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {(data.service === "photography" ? PHOTOGRAPHY_ROUTES : VIDEOGRAPHY_ROUTES).map((r) => (
+              <Link
+                key={r.family}
+                href={`/pricing?family=${r.family}`}
+                className="text-left px-5 py-4 rounded-lg border border-black/15 font-sans text-body text-ordift-ink hover:border-black/30 transition-colors"
+              >
+                {r.label}
+              </Link>
+            ))}
+          </div>
+          <button
+            type="button"
+            onClick={continueWithoutConfiguring}
+            className="mt-6 font-sans text-body-small text-ordift-gold-pressed underline underline-offset-4"
+          >
+            Continue without configuring — I&rsquo;ll describe it in the form
+          </button>
+        </div>
+      )}
+
+      {phase === "form" && step === 1 && (
         <div>
           <h2 className="font-serif font-medium text-section-heading text-ordift-ink mb-6">
             What can we help you with?
@@ -484,19 +598,19 @@ export default function BookingForm({
       {/* Nav buttons */}
       <div className="flex items-center justify-between mt-10">
         <div>
-          {step > 1 && (
+          {(phase === "router" || step > (hasPricingContext ? 2 : 1)) && (
             <Button variant="secondary" onClick={back}>
               Back
             </Button>
           )}
         </div>
         <div>
-          {step < 5 && (
+          {phase === "form" && step < 5 && (
             <Button variant="primary" onClick={next}>
               Continue
             </Button>
           )}
-          {step === 5 && (
+          {phase === "form" && step === 5 && (
             <Button
               variant="primary"
               onClick={handleSubmit}

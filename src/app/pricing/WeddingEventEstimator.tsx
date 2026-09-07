@@ -17,6 +17,7 @@ import {
   type WeddingEventTierDeliverable,
   type WeddingEventPriorityDeliveryRate,
 } from "@/lib/pricing/weddingEventEstimate";
+import { encodePricingHandoff } from "@/lib/enquiry/pricingHandoff";
 
 type Category = "wedding" | "event";
 
@@ -156,6 +157,32 @@ export default function WeddingEventEstimator({
 
   const deliverable = estimate.ok ? estimate.deliverables : null;
   const tierOptions = category === "wedding" ? WEDDING_TIERS : EVENT_TIERS;
+
+  // Film-only bookings route to the Videography pathway; Photography
+  // and combined Photography+Film both route to Photography, since
+  // there's no combined pathway value and a Photo+Film production is
+  // led the same way a photography booking is.
+  const bookingHref = useMemo(() => {
+    if (!estimate.ok) return "/book?service=general";
+    const marketName = markets.find((m) => m.slug === marketSlug)?.name ?? marketSlug;
+    const tierLabel = tierOptions.find((t) => t.slug === (category === "wedding" ? weddingTier : eventTier))?.label ?? "";
+    const modeLabel = SERVICE_MODES.find((m) => m.slug === serviceMode)?.label ?? serviceMode;
+    const pathway = serviceMode === "film" ? "videography" : "photography";
+    const encoded = encodePricingHandoff({
+      family: "wedding_event",
+      pathway,
+      summaryTitle: `${category === "wedding" ? "Wedding Celebrations" : "Events"} — ${tierLabel}`,
+      summaryLines: [
+        `Market: ${marketName}`,
+        `Service: ${modeLabel}`,
+        `${category === "wedding" ? "Collection" : "Coverage level"}: ${tierLabel}`,
+        ...(estimate.priorityDeliveryRequested ? [`Priority Delivery requested (+${estimate.priorityDeliveryPercentage}%)`] : []),
+        ...(estimate.corporateScopeApplied ? ["Corporate/Organisational Scope requested"] : []),
+        `Estimated Total: $${estimate.totalPriceUsd.toFixed(2)}`,
+      ],
+    });
+    return encoded ? `/book?service=${pathway}&pricing=${encoded}` : "/book?service=general";
+  }, [estimate, markets, marketSlug, category, weddingTier, eventTier, serviceMode, tierOptions]);
 
   return (
     <div className="rounded-2xl border border-black/10 bg-white p-6 sm:p-8 space-y-6">
@@ -361,7 +388,7 @@ export default function WeddingEventEstimator({
         </p>
       </div>
 
-      <Link href="/book?service=general" className="block text-center rounded-lg bg-ordift-ink text-white px-6 py-3 font-sans text-body-small hover:opacity-90 transition-opacity">
+      <Link href={bookingHref} className="block text-center rounded-lg bg-ordift-ink text-white px-6 py-3 font-sans text-body-small hover:opacity-90 transition-opacity">
         {estimate.ok ? "Start Your Enquiry" : "Request a Custom Proposal"}
       </Link>
     </div>

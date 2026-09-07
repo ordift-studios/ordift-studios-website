@@ -26,7 +26,7 @@ export default async function WorkshopParticipantPortalPage() {
       <div className="flex flex-wrap items-end justify-between gap-4 mb-8">
         <div>
           <p className="font-sans font-semibold uppercase tracking-[0.2em] text-eyebrow text-ordift-gold-pressed mb-2">
-            Ordift Academy
+            OS Academy
           </p>
           <h1 className="font-serif font-medium text-section-heading lg:text-section-heading-desktop text-ordift-ink">
             My Workshops

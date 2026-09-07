@@ -22,6 +22,8 @@ export type MediaPlaceholderProps = {
   style?: React.CSSProperties;
   /** Scales the monogram + glow down for small tiles (gallery thumbnails, avatars) where the full-size mark would overwhelm the space. */
   compact?: boolean;
+  /** Department icon fallback system (2026-09-07, see DepartmentIcon.tsx) — replaces the Ordift monogram with a coherent department-specific line icon (camera, cinema camera, etc.) when provided. Omit to keep the default monogram treatment used everywhere else (Home hero, homepage department grid, etc.). */
+  icon?: React.ReactNode;
 };
 
 export default function MediaPlaceholder({
@@ -32,6 +34,7 @@ export default function MediaPlaceholder({
   className = "",
   style,
   compact = false,
+  icon,
 }: MediaPlaceholderProps) {
   const isDark = tone === "dark";
 
@@ -60,12 +63,21 @@ export default function MediaPlaceholder({
         aria-hidden="true"
       />
       <div className={`relative flex flex-col items-center text-center ${compact ? "gap-1.5 px-2" : "gap-3 px-4"}`}>
-        <Logo
-          variant="icon"
-          color={isDark ? "white" : "black"}
-          height={compact ? 16 : 28}
-          className="opacity-30"
-        />
+        {icon ? (
+          <div
+            className={`${compact ? "w-4 h-4" : "w-7 h-7"} ${isDark ? "text-white/30" : "text-ordift-ink/25"}`}
+            aria-hidden="true"
+          >
+            {icon}
+          </div>
+        ) : (
+          <Logo
+            variant="icon"
+            color={isDark ? "white" : "black"}
+            height={compact ? 16 : 28}
+            className="opacity-30"
+          />
+        )}
         {label && (
           <p
             className={`font-sans font-semibold uppercase tracking-[0.2em] ${compact ? "text-[10px]" : "text-caption"} ${

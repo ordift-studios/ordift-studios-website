@@ -4,6 +4,7 @@ import NavBar from "@/components/NavBar";
 import Footer from "@/components/Footer";
 import Button from "@/components/Button";
 import MediaPlaceholder from "@/components/media/MediaPlaceholder";
+import { getDepartmentIcon } from "@/components/media/DepartmentIcon";
 import PortfolioCard from "@/components/portfolio/PortfolioCard";
 import { contentRepository } from "@/lib/content";
 
@@ -104,6 +105,7 @@ export default async function ServiceDetailPage({
             aspectRatio="4/5"
             tone="dark"
             label={`${service.name} — Sample Work`}
+            icon={getDepartmentIcon(service.slug) ?? undefined}
             className="rounded-2xl w-full max-w-sm mx-auto lg:max-w-none"
           />
         </div>
@@ -149,7 +151,7 @@ export default async function ServiceDetailPage({
                     />
                   ))
                 : [0, 1, 2].map((i) => (
-                    <MediaPlaceholder key={i} aspectRatio="4/3" tone="light" label={service.name} className="rounded-xl" />
+                    <MediaPlaceholder key={i} aspectRatio="4/3" tone="light" label={service.name} icon={getDepartmentIcon(service.slug) ?? undefined} className="rounded-xl" />
                   ))}
             </div>
           </div>

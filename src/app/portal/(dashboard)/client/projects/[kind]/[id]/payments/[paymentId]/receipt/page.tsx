@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { contentRepository } from "@/lib/content";
+import { resolvePublicContactEmail } from "@/lib/content/contactChannels";
 import { getCurrentUser } from "@/lib/portal/roles";
 import { getWorkspaceOverview, getWorkspacePaymentById, isProjectKind } from "@/lib/portal/workspace";
 import PrintReceiptButton from "./PrintReceiptButton";
@@ -74,7 +75,7 @@ export default async function PaymentReceiptPage({
         <div className="flex items-start justify-between border-b border-black/10 pb-6 mb-6">
           <div>
             <p className="font-serif font-medium text-2xl text-ordift-ink">{siteSettings.siteName}</p>
-            <p className="font-sans text-body-small text-ordift-ink-muted mt-1">{siteSettings.contactEmail}</p>
+            <p className="font-sans text-body-small text-ordift-ink-muted mt-1">{resolvePublicContactEmail(siteSettings.contactEmail)}</p>
           </div>
           <div className="text-right">
             <p className="font-sans text-caption uppercase tracking-wide text-ordift-ink-muted">Receipt</p>

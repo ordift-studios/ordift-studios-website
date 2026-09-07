@@ -56,7 +56,7 @@ export default async function WorkshopsPage({
       <section className="bg-ordift-navy-950 text-white px-4 sm:px-8 py-16 sm:py-20">
         <div className="max-w-6xl mx-auto">
           <p className="font-sans font-semibold uppercase tracking-[0.2em] text-eyebrow lg:text-eyebrow-desktop text-ordift-gold mb-4">
-            Ordift Academy · Workshops
+            OS Academy · Workshops
           </p>
           <h1 className="font-serif font-medium text-page-title sm:text-page-title-tablet lg:text-page-title-desktop max-w-2xl mb-4">
             Learn directly from the studio.

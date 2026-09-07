@@ -7,6 +7,8 @@ import { contentRepository } from "@/lib/content";
 import { whatsAppLink, formattedWhatsAppNumber } from "@/lib/whatsapp";
 import { visitorFormsOpen } from "@/lib/shared/env";
 import { getCurrentUser } from "@/lib/portal/roles";
+import { resolvePublicContactEmail } from "@/lib/content/contactChannels";
+import { decodePricingHandoff } from "@/lib/enquiry/pricingHandoff";
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://ordiftstudios.com";
 
@@ -27,13 +29,18 @@ export const metadata: Metadata = {
 export default async function BookPage({
   searchParams,
 }: {
-  searchParams: Promise<{ service?: string }>;
+  searchParams: Promise<{ service?: string; pricing?: string }>;
 }) {
-  const [{ service }, siteSettings, user] = await Promise.all([
+  const [{ service, pricing }, siteSettings, user] = await Promise.all([
     searchParams,
     contentRepository.getSiteSettings(),
     getCurrentUser(),
   ]);
+  const publicContactEmail = resolvePublicContactEmail(siteSettings.contactEmail);
+  // Decoded server-side and passed down as plain data — never trusted
+  // as an authoritative price, purely a descriptive prefill (see
+  // pricingHandoff.ts's own doc comment).
+  const pricingContext = decodePricingHandoff(pricing);
 
   return (
     <main>
@@ -71,7 +78,7 @@ export default async function BookPage({
                 </p>
               </div>
             )}
-            <BookingForm initialService={service} initialEmail={user?.email} />
+            <BookingForm initialService={service} initialEmail={user?.email} pricingContext={pricingContext} />
           </>
         ) : (
           <div className="max-w-2xl mx-auto text-center">
@@ -90,10 +97,10 @@ export default async function BookPage({
         <p className="font-sans text-body-small text-ordift-ink-muted">
           Prefer to reach us directly?{" "}
           <a
-            href={`mailto:${siteSettings.contactEmail}`}
+            href={`mailto:${publicContactEmail}`}
             className="text-ordift-gold-pressed underline underline-offset-4"
           >
-            {siteSettings.contactEmail}
+            {publicContactEmail}
           </a>{" "}
           or{" "}
           <a

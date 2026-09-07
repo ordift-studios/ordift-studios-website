@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { calculatePersonalSessionEstimate, type PersonalSessionRate, type SubjectCategory, type PricingMarket } from "@/lib/pricing/personalSessionEstimate";
+import { encodePricingHandoff } from "@/lib/enquiry/pricingHandoff";
 
 // Ordift Pricing Engine V1 / V1.1 (2026-09-06) — client-side estimator.
 // All data (markets/rates/subject categories/retouch rates) is fetched
@@ -27,6 +28,12 @@ export default function PersonalSessionEstimator({
   const [durationHours, setDurationHours] = useState(1);
   const [subjectSlug, setSubjectSlug] = useState(subjectCategories.find((c) => c.active)?.slug ?? "");
   const [additionalRetouchImages, setAdditionalRetouchImages] = useState(0);
+  // Planning/scope input only (2026-09-07) — communicates intended
+  // outfit/look count so Ordift can plan the session; deliberately NOT
+  // passed into calculatePersonalSessionEstimate() and has zero effect
+  // on price or deliverable entitlement. See the approved Personal
+  // Portrait pricing matrix, which this must never alter.
+  const [numberOfOutfits, setNumberOfOutfits] = useState(1);
 
   const estimate = useMemo(() => {
     const rates = ratesByMarket[marketSlug] ?? [];
@@ -39,6 +46,26 @@ export default function PersonalSessionEstimator({
       additionalRetouchRatePerImage: retouchRateByMarket[marketSlug] ?? null,
     });
   }, [marketSlug, durationHours, subjectSlug, additionalRetouchImages, ratesByMarket, subjectCategories, retouchRateByMarket]);
+
+  const bookingHref = useMemo(() => {
+    if (!estimate.ok) return "/book?service=photography";
+    const marketName = markets.find((m) => m.slug === marketSlug)?.name ?? marketSlug;
+    const subjectName = subjectCategories.find((c) => c.slug === subjectSlug)?.name ?? subjectSlug;
+    const encoded = encodePricingHandoff({
+      family: "personal",
+      pathway: "photography",
+      summaryTitle: `Personal Portrait — ${durationHours}h, ${subjectName}`,
+      summaryLines: [
+        `Market: ${marketName}`,
+        `Session length: ${durationHours}h`,
+        `Subject: ${subjectName}`,
+        `Outfits/looks: ${numberOfOutfits}`,
+        ...(estimate.additionalRetouchImages > 0 ? [`Additional retouch: ${estimate.additionalRetouchImages}`] : []),
+        `Total: $${estimate.totalPriceUsd.toFixed(2)}`,
+      ],
+    });
+    return encoded ? `/book?service=photography&pricing=${encoded}` : "/book?service=photography";
+  }, [estimate, markets, marketSlug, subjectCategories, subjectSlug, durationHours, numberOfOutfits]);
 
   const retouchRate = retouchRateByMarket[marketSlug] ?? null;
 
@@ -92,6 +119,32 @@ export default function PersonalSessionEstimator({
             One guest may join for a small portion of the session and a few shared photographs. If your guest needs their own full coverage, choose Couple or Family / Small Group instead.
           </p>
         )}
+      </div>
+
+      <div>
+        <label className="block font-sans text-body-small font-medium text-ordift-ink mb-2">How many outfits or looks?</label>
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={() => setNumberOfOutfits((n) => Math.max(1, n - 1))}
+            className="w-9 h-9 rounded-lg border border-black/15 font-sans text-body text-ordift-ink"
+            aria-label="Decrease number of outfits or looks"
+          >
+            −
+          </button>
+          <span className="font-sans text-body text-ordift-ink w-8 text-center">{numberOfOutfits}</span>
+          <button
+            type="button"
+            onClick={() => setNumberOfOutfits((n) => n + 1)}
+            className="w-9 h-9 rounded-lg border border-black/15 font-sans text-body text-ordift-ink"
+            aria-label="Increase number of outfits or looks"
+          >
+            +
+          </button>
+        </div>
+        <p className="font-sans text-caption text-ordift-ink-muted mt-1">
+          For planning only — helps Ordift prepare for your session. This doesn&rsquo;t change the price shown below.
+        </p>
       </div>
 
       <div>
@@ -152,7 +205,7 @@ export default function PersonalSessionEstimator({
       </div>
 
       <Link
-        href={`/book?service=photography`}
+        href={bookingHref}
         className="block text-center rounded-lg bg-ordift-ink text-white px-6 py-3 font-sans text-body-small hover:opacity-90 transition-opacity"
       >
         {estimate.ok ? "Start Your Booking" : "Request a Custom Quote"}

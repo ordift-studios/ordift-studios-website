@@ -4,6 +4,7 @@ import Link from "next/link";
 import { getCurrentUser, hasRole, isSuperAdmin } from "@/lib/portal/roles";
 import { contentRepository } from "@/lib/content";
 import { legalPagesApproved, formsSendingEnabled, isStaging } from "@/lib/shared/env";
+import { PRIMARY_PUBLIC_CONTACT_EMAIL, resolvePublicContactEmail } from "@/lib/content/contactChannels";
 
 export const metadata: Metadata = {
   title: "Settings — Ordift Studios Admin",
@@ -90,6 +91,12 @@ export default async function AdminSettingsPage() {
           Contact Email
         </p>
         <p className="font-sans text-body-small text-ordift-ink">{siteSettings.contactEmail}</p>
+        {resolvePublicContactEmail(siteSettings.contactEmail) !== siteSettings.contactEmail && (
+          <p className="font-sans text-caption text-red-700">
+            This is an internal/legacy address, not one of the approved public mailboxes — the website shows{" "}
+            {PRIMARY_PUBLIC_CONTACT_EMAIL} publicly instead. Update this field in Studio so the source of truth matches.
+          </p>
+        )}
         <Link
           href="/studio/structure/siteSettings"
           target="_blank"

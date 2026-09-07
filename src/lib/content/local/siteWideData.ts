@@ -15,12 +15,16 @@ import type {
   Service,
   SiteSettings,
 } from "../types";
+import { PRIMARY_PUBLIC_CONTACT_EMAIL } from "../contactChannels";
 
 export const SITE_SETTINGS: SiteSettings = {
   siteName: "Ordift Studios",
   tagline: "A multidisciplinary creative house.",
   logoUrl: null,
-  contactEmail: process.env.NEXT_PUBLIC_CONTACT_EMAIL || "ordift.ghana@gmail.com",
+  // Corrected 2026-09-07 — ordift.ghana@gmail.com is internal/legacy/
+  // recovery only and must never be the public default. See
+  // src/lib/content/contactChannels.ts.
+  contactEmail: process.env.NEXT_PUBLIC_CONTACT_EMAIL || PRIMARY_PUBLIC_CONTACT_EMAIL,
   whatsappNumber: process.env.NEXT_PUBLIC_WHATSAPP_NUMBER || "447777371023",
   socialLinks: [],
   defaultSeo: {

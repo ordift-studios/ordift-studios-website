@@ -10,6 +10,7 @@ import {
   type CorporateTeamTierRate,
   type CorporatePriorityDeliveryScopeSlug,
 } from "@/lib/pricing/corporateHeadshotEstimate";
+import { encodePricingHandoff } from "@/lib/enquiry/pricingHandoff";
 
 const PRODUCTS: { slug: CorporateProductSlug; label: string }[] = [
   { slug: "individual_headshot", label: "Professional Headshot" },
@@ -65,6 +66,26 @@ export default function CorporateHeadshotEstimator({
   }, [marketSlug, product, numberOfPeople, additionalRetouchImages, priorityDeliveryRequested, headshotRatesByMarket, teamTierRates, minimumBookingByMarket, retouchRateByMarket, priorityDeliveryPercentage]);
 
   const retouchRate = retouchRateByMarket[marketSlug] ?? null;
+
+  const bookingHref = useMemo(() => {
+    if (!estimate.ok) return "/book?service=photography";
+    const marketName = markets.find((m) => m.slug === marketSlug)?.name ?? marketSlug;
+    const productLabel = PRODUCTS.find((p) => p.slug === product)?.label ?? product;
+    const encoded = encodePricingHandoff({
+      family: "corporate",
+      pathway: "photography",
+      summaryTitle: `Corporate & Headshots — ${productLabel}`,
+      summaryLines: [
+        `Market: ${marketName}`,
+        `Service: ${productLabel}`,
+        ...(product === "team_headshots" ? [`Team size: ${numberOfPeople}`] : []),
+        ...(estimate.additionalRetouchImages > 0 ? [`Additional retouch: ${estimate.additionalRetouchImages}`] : []),
+        ...(estimate.priorityDeliveryRequested ? [`Priority Delivery requested (+${estimate.priorityDeliveryPercentage}%)`] : []),
+        `Total: $${estimate.totalPriceUsd.toFixed(2)}`,
+      ],
+    });
+    return encoded ? `/book?service=photography&pricing=${encoded}` : "/book?service=photography";
+  }, [estimate, markets, marketSlug, product, numberOfPeople]);
 
   return (
     <div className="rounded-2xl border border-black/10 bg-white p-6 sm:p-8 space-y-6">
@@ -164,7 +185,7 @@ export default function CorporateHeadshotEstimator({
         </p>
       </div>
 
-      <Link href="/book?service=general" className="block text-center rounded-lg bg-ordift-ink text-white px-6 py-3 font-sans text-body-small hover:opacity-90 transition-opacity">
+      <Link href={bookingHref} className="block text-center rounded-lg bg-ordift-ink text-white px-6 py-3 font-sans text-body-small hover:opacity-90 transition-opacity">
         {estimate.ok ? "Start Your Enquiry" : "Request a Custom Proposal"}
       </Link>
     </div>
