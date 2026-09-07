@@ -265,6 +265,11 @@ export const ADMIN_TIER_ACTIONS = new Set<string>([
   "pricing.commercial_percentage.created",
   "pricing.commercial_licensing_factor.created",
   "pricing.commercial_review_threshold.created",
+  // Graphic Design Pricing V1 (2026-09-07)
+  "pricing.graphic_design_deliverable_rate.created",
+  "pricing.graphic_design_complexity_factor.created",
+  "pricing.graphic_design_addon_rate.created",
+  "pricing.graphic_design_percentage.created",
 ]);
 
 // Deliberately reviewed and left staff-visible (Phase I.1, 2026-09-05)

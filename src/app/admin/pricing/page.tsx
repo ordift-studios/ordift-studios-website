@@ -42,6 +42,13 @@ import {
   type CommercialPostProductionItemSlug,
 } from "@/lib/pricing/commercialPricing";
 import {
+  getActiveDeliverableRates,
+  getActiveComplexityFactors,
+  getActiveAddonRates as getActiveGraphicDesignAddonRates,
+  getActivePercentageRates as getActiveGraphicDesignPercentageRates,
+  type GraphicDesignDeliverableSlug,
+} from "@/lib/pricing/graphicDesignPricing";
+import {
   createPersonalSessionRateVersionAction,
   setPricingMarketActiveAction,
   createDiscountCodeAction,
@@ -65,6 +72,10 @@ import {
   createCommercialPercentageVersionAction,
   createCommercialLicensingFactorVersionAction,
   createCommercialReviewThresholdVersionAction,
+  createGraphicDesignDeliverableRateVersionAction,
+  createGraphicDesignComplexityFactorVersionAction,
+  createGraphicDesignAddonRateVersionAction,
+  createGraphicDesignPercentageVersionAction,
 } from "./actions";
 import ManualDiscountForm from "./ManualDiscountForm";
 
@@ -86,10 +97,41 @@ const TABS = [
   { key: "corporate", label: "Corporate & Headshots" },
   { key: "wedding_event", label: "Weddings & Events" },
   { key: "commercial", label: "Commercial / Advertising" },
+  { key: "graphic_design", label: "Graphic Design" },
   { key: "subjects", label: "Subjects / Groups" },
   { key: "addons", label: "Add-Ons" },
   { key: "discounts", label: "Discounts" },
   { key: "markets", label: "Markets / Overrides" },
+] as const;
+
+const GRAPHIC_DESIGN_SUBS = [
+  { key: "deliverables", label: "Deliverables" },
+  { key: "complexity", label: "Complexity" },
+  { key: "addons", label: "Add-Ons" },
+] as const;
+
+const GRAPHIC_DESIGN_DELIVERABLE_OPTIONS: { slug: GraphicDesignDeliverableSlug; label: string }[] = [
+  { slug: "flyer_poster", label: "Flyer / Poster" },
+  { slug: "digital_ad", label: "Digital Ad / Promotional Artwork" },
+  { slug: "social_single", label: "Social Media — Single Design" },
+  { slug: "social_set_5", label: "Social Media Set — 5 Designs" },
+  { slug: "social_set_10", label: "Social Media Set — 10 Designs" },
+  { slug: "presentation", label: "Presentation — Up to 10 Slides" },
+  { slug: "brochure", label: "Brochure / Company Profile — Up to 8 Pages" },
+];
+
+const GRAPHIC_DESIGN_ADDON_OPTIONS = [
+  { slug: "additional_brochure_page", label: "Additional Brochure Page" },
+  { slug: "additional_presentation_slide", label: "Additional Presentation Slide" },
+  { slug: "additional_revision_minimum", label: "Additional Revision — Minimum" },
+  { slug: "editable_source_file_minimum", label: "Editable Source File — Minimum" },
+] as const;
+
+const GRAPHIC_DESIGN_PERCENTAGE_OPTIONS = [
+  { slug: "priority", label: "Priority Turnaround" },
+  { slug: "urgent", label: "Urgent Turnaround (<48h)" },
+  { slug: "additional_revision", label: "Additional Revision Round" },
+  { slug: "editable_source_file", label: "Editable Source File" },
 ] as const;
 
 const COMMERCIAL_SUBS = [
@@ -359,6 +401,22 @@ function CommercialSubNav({ active, market }: { active: string; market?: string 
   );
 }
 
+function GraphicDesignSubNav({ active, market }: { active: string; market?: string }) {
+  return (
+    <div className="flex flex-wrap gap-2">
+      {GRAPHIC_DESIGN_SUBS.map((s) => (
+        <Link
+          key={s.key}
+          href={`/admin/pricing?tab=graphic_design&gdSub=${s.key}${market ? `&market=${market}` : ""}`}
+          className={`rounded-lg px-3 py-1.5 font-sans text-caption ${active === s.key ? "bg-ordift-ink text-white" : "border border-black/15 text-ordift-ink-muted"}`}
+        >
+          {s.label}
+        </Link>
+      ))}
+    </div>
+  );
+}
+
 function CommercialModePills({ market, active }: { market: string; active: CommercialServiceMode }) {
   return (
     <div className="flex flex-wrap gap-2">
@@ -399,18 +457,19 @@ function MarketPills({ tab, markets, active, extraQuery }: { tab: string; market
 export default async function AdminPricingPage({
   searchParams,
 }: {
-  searchParams: Promise<{ tab?: string; corpSub?: string; weSub?: string; commSub?: string; market?: string; mode?: string }>;
+  searchParams: Promise<{ tab?: string; corpSub?: string; weSub?: string; commSub?: string; gdSub?: string; market?: string; mode?: string }>;
 }) {
   const user = await getCurrentUser();
   if (!user) redirect("/admin/overview");
   const auth = await authorizeWithSuperAdminOverride(user.id, FINANCE_CAPABILITIES.pricingAdminister);
   if (!auth.ok) redirect("/admin/overview");
 
-  const { tab: tabParam, corpSub: corpSubParam, weSub: weSubParam, commSub: commSubParam, market: marketParam, mode: modeParam } = await searchParams;
+  const { tab: tabParam, corpSub: corpSubParam, weSub: weSubParam, commSub: commSubParam, gdSub: gdSubParam, market: marketParam, mode: modeParam } = await searchParams;
   const tab = TABS.some((t) => t.key === tabParam) ? tabParam! : "personal-sessions";
   const corpSub = CORPORATE_SUBS.some((s) => s.key === corpSubParam) ? corpSubParam! : "individual";
   const weSub = WEDDING_EVENT_SUBS.some((s) => s.key === weSubParam) ? weSubParam! : "wedding";
   const commSub = COMMERCIAL_SUBS.some((s) => s.key === commSubParam) ? commSubParam! : "creative_fees";
+  const gdSub = GRAPHIC_DESIGN_SUBS.some((s) => s.key === gdSubParam) ? gdSubParam! : "deliverables";
   const mode: ServiceMode = SERVICE_MODES.some((m) => m.slug === modeParam) ? (modeParam as ServiceMode) : "photography_film";
 
   const markets = await listAllPricingMarketsForAdmin();
@@ -473,6 +532,16 @@ export default async function AdminPricingPage({
           getActiveReviewThreshold(selectedMarket.slug),
         ])
       : [[], null, null, [], [], [], {} as Partial<Record<"priority_postproduction" | "licensing_floor", number>>, { usage: {}, duration: {}, territory: {}, exclusivity: {} }, null];
+
+  const [graphicDesignDeliverableRates, graphicDesignComplexityFactors, graphicDesignAddonRates, graphicDesignPercentages] =
+    tab === "graphic_design" && selectedMarket
+      ? await Promise.all([
+          getActiveDeliverableRates(selectedMarket.slug),
+          getActiveComplexityFactors(),
+          getActiveGraphicDesignAddonRates(selectedMarket.slug),
+          getActiveGraphicDesignPercentageRates(),
+        ])
+      : [[], [], {} as Partial<Record<string, number>>, {} as Partial<Record<string, number>>];
 
   return (
     <div className="space-y-8">
@@ -1127,6 +1196,128 @@ export default async function AdminPricingPage({
                     <button type="submit" className="rounded-lg bg-ordift-ink text-white px-4 py-2 font-sans text-body-small">Save new version</button>
                   </form>
                 </details>
+              </section>
+            </div>
+          )}
+        </div>
+      )}
+
+      {tab === "graphic_design" && selectedMarket && (
+        <div className="space-y-6">
+          <GraphicDesignSubNav active={gdSub} market={selectedMarket.slug} />
+
+          {gdSub === "deliverables" && (
+            <div className="space-y-6">
+              <MarketPills tab="graphic_design" extraQuery="&gdSub=deliverables" markets={activeMarkets} active={selectedMarket.slug} />
+              <section className="rounded-xl border border-black/10 bg-white p-6 space-y-4">
+                <h2 className="font-serif font-medium text-body text-ordift-ink">{selectedMarket.name} — Deliverable Rates</h2>
+                <p className="font-sans text-caption text-ordift-ink-muted">Brochure includes up to 8 pages; Presentation includes up to 10 slides — additional units are priced under Add-Ons, not a new row per count. Packaging and Custom / Complex Design have no automatic rate by design.</p>
+                <ul className="divide-y divide-black/5">
+                  {GRAPHIC_DESIGN_DELIVERABLE_OPTIONS.map((d) => {
+                    const rate = graphicDesignDeliverableRates.find((r) => r.deliverableSlug === d.slug);
+                    return (
+                      <li key={d.slug} className="py-2.5">
+                        <div className="flex items-baseline justify-between font-sans text-body-small text-ordift-ink">
+                          <span>{d.label}</span>
+                          <span>{rate ? `$${rate.priceUsd.toFixed(2)}` : "— not set —"}</span>
+                        </div>
+                        <details className="mt-2 rounded-lg border border-black/10 px-4 py-2">
+                          <summary className="cursor-pointer font-sans text-caption text-ordift-ink select-none">Edit</summary>
+                          <form action={createGraphicDesignDeliverableRateVersionAction} className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3">
+                            <input type="hidden" name="marketSlug" value={selectedMarket.slug} />
+                            <input type="hidden" name="deliverableSlug" value={d.slug} />
+                            <input name="priceUsd" type="number" step="0.01" min="0.01" required defaultValue={rate?.priceUsd} placeholder="Price USD" className="rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small" />
+                            <button type="submit" className="rounded-lg bg-ordift-ink text-white px-4 py-2 font-sans text-body-small">Save new version</button>
+                          </form>
+                        </details>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </section>
+            </div>
+          )}
+
+          {gdSub === "complexity" && (
+            <section className="rounded-xl border border-black/10 bg-white p-6 space-y-4">
+              <h2 className="font-serif font-medium text-body text-ordift-ink">Complexity Factors (Global)</h2>
+              <p className="font-sans text-caption text-ordift-ink-muted">Not market-specific. Bespoke/Art-Directed always also flags Creative Review in the public calculator, regardless of this factor.</p>
+              <ul className="divide-y divide-black/5">
+                {(["standard", "enhanced", "bespoke"] as const).map((c) => {
+                  const factor = graphicDesignComplexityFactors.find((f) => f.complexity === c);
+                  return (
+                    <li key={c} className="py-2.5">
+                      <div className="flex items-baseline justify-between font-sans text-body-small text-ordift-ink">
+                        <span className="capitalize">{c}</span>
+                        <span>{factor ? `${factor.factor.toFixed(2)}×` : "— not set —"}</span>
+                      </div>
+                      <details className="mt-2 rounded-lg border border-black/10 px-4 py-2">
+                        <summary className="cursor-pointer font-sans text-caption text-ordift-ink select-none">Edit</summary>
+                        <form action={createGraphicDesignComplexityFactorVersionAction} className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3">
+                          <input type="hidden" name="complexity" value={c} />
+                          <input name="factor" type="number" step="0.01" min="0.01" required defaultValue={factor?.factor} placeholder="Factor" className="rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small" />
+                          <button type="submit" className="rounded-lg bg-ordift-ink text-white px-4 py-2 font-sans text-body-small">Save new version</button>
+                        </form>
+                      </details>
+                    </li>
+                  );
+                })}
+              </ul>
+            </section>
+          )}
+
+          {gdSub === "addons" && (
+            <div className="space-y-6">
+              <MarketPills tab="graphic_design" extraQuery="&gdSub=addons" markets={activeMarkets} active={selectedMarket.slug} />
+              <section className="rounded-xl border border-black/10 bg-white p-6 space-y-4">
+                <h2 className="font-serif font-medium text-body text-ordift-ink">{selectedMarket.name} — Add-On Rates</h2>
+                <ul className="divide-y divide-black/5">
+                  {GRAPHIC_DESIGN_ADDON_OPTIONS.map((item) => {
+                    const rate = graphicDesignAddonRates[item.slug];
+                    return (
+                      <li key={item.slug} className="py-2.5">
+                        <div className="flex items-baseline justify-between font-sans text-body-small text-ordift-ink">
+                          <span>{item.label}</span>
+                          <span>{rate != null ? `$${rate.toFixed(2)}` : "— not set —"}</span>
+                        </div>
+                        <details className="mt-2 rounded-lg border border-black/10 px-4 py-2">
+                          <summary className="cursor-pointer font-sans text-caption text-ordift-ink select-none">Edit</summary>
+                          <form action={createGraphicDesignAddonRateVersionAction} className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3">
+                            <input type="hidden" name="marketSlug" value={selectedMarket.slug} />
+                            <input type="hidden" name="addonSlug" value={item.slug} />
+                            <input name="priceUsd" type="number" step="0.01" min="0.01" required defaultValue={rate ?? undefined} placeholder="Price USD" className="rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small" />
+                            <button type="submit" className="rounded-lg bg-ordift-ink text-white px-4 py-2 font-sans text-body-small">Save new version</button>
+                          </form>
+                        </details>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </section>
+
+              <section className="rounded-xl border border-black/10 bg-white p-6 space-y-4">
+                <h2 className="font-serif font-medium text-body text-ordift-ink">Formula Percentages (Global)</h2>
+                <ul className="divide-y divide-black/5">
+                  {GRAPHIC_DESIGN_PERCENTAGE_OPTIONS.map((p) => {
+                    const value = graphicDesignPercentages[p.slug];
+                    return (
+                      <li key={p.slug} className="py-2.5">
+                        <div className="flex items-baseline justify-between font-sans text-body-small text-ordift-ink">
+                          <span>{p.label}</span>
+                          <span>{value != null ? `${value}%` : "Not set"}</span>
+                        </div>
+                        <details className="mt-2 rounded-lg border border-black/10 px-4 py-2">
+                          <summary className="cursor-pointer font-sans text-caption text-ordift-ink select-none">Edit</summary>
+                          <form action={createGraphicDesignPercentageVersionAction} className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3">
+                            <input type="hidden" name="percentageSlug" value={p.slug} />
+                            <input name="percentage" type="number" step="0.01" min="0.01" required defaultValue={value ?? undefined} placeholder="Percentage" className="rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small" />
+                            <button type="submit" className="rounded-lg bg-ordift-ink text-white px-4 py-2 font-sans text-body-small">Save new version</button>
+                          </form>
+                        </details>
+                      </li>
+                    );
+                  })}
+                </ul>
               </section>
             </div>
           )}

@@ -11,6 +11,19 @@ import DepartmentFallbackArt from "./DepartmentFallbackArt";
 // on /work (see WorkDisciplineBands.tsx). The moment an Admin sets a
 // real Work Landing Image for a department, it appears here too with
 // no code change.
+//
+// Presentation preference override (2026-09-07) — a deliberate,
+// code-level configuration, NOT a CMS field: Photography and
+// Videography currently have real Work Landing Images uploaded, but
+// the approved direction for these department card/hero surfaces is
+// the same premium conceptual artwork family used by the other five
+// departments. This is a presentation choice only — it never deletes,
+// hides, or alters the real image data (still fully intact and used
+// elsewhere, e.g. /work), and is trivially reversible by removing a
+// slug from FORCE_CONCEPTUAL_ART below. It does not reverse the
+// real-image-first architecture for any other department.
+const FORCE_CONCEPTUAL_ART: ReadonlySet<string> = new Set(["photography", "videography"]);
+
 export type DepartmentPresentationImage = {
   url: string;
   alt: string;
@@ -39,23 +52,25 @@ export default function DepartmentMediaFrame({
   sizes?: string;
   priority?: boolean;
 }) {
+  const useRealImage = Boolean(image?.url) && !FORCE_CONCEPTUAL_ART.has(slug);
+
   return (
     <div
       role="img"
-      aria-label={image?.url ? image.alt : `${name} — imagery coming soon`}
+      aria-label={useRealImage ? image!.alt : `${name} — imagery coming soon`}
       className={`relative overflow-hidden ${className}`}
       style={{ aspectRatio }}
     >
-      {image?.url ? (
+      {useRealImage ? (
         <Image
-          src={image.url}
-          alt={image.alt}
+          src={image!.url}
+          alt={image!.alt}
           fill
           sizes={sizes}
-          placeholder={image.lqip ? "blur" : "empty"}
-          blurDataURL={image.lqip ?? undefined}
+          placeholder={image!.lqip ? "blur" : "empty"}
+          blurDataURL={image!.lqip ?? undefined}
           className="object-cover"
-          style={{ objectPosition: `${image.focalX ?? 50}% ${image.focalY ?? 50}%` }}
+          style={{ objectPosition: `${image!.focalX ?? 50}% ${image!.focalY ?? 50}%` }}
           priority={priority}
         />
       ) : (

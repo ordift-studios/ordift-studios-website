@@ -10,6 +10,16 @@ import {
 } from "@/lib/pricing/personalSessionPricing";
 import { createDiscountCode, setDiscountCodeActive, recordManualDiscount } from "@/lib/pricing/discounts";
 import {
+  createGraphicDesignDeliverableRateVersion,
+  createGraphicDesignComplexityFactorVersion,
+  createGraphicDesignAddonRateVersion,
+  createGraphicDesignPercentageVersion,
+  type GraphicDesignDeliverableSlug,
+  type GraphicDesignComplexity,
+  type GraphicDesignAddonSlug,
+  type GraphicDesignPercentageSlug,
+} from "@/lib/pricing/graphicDesignPricing";
+import {
   createCorporateHeadshotRateVersion,
   createCorporateTeamTierRateVersion,
   createCorporateMinimumBookingVersion,
@@ -459,6 +469,68 @@ export async function createCommercialReviewThresholdVersionAction(formData: For
 
   const result = await createCommercialReviewThresholdVersion({ marketSlug, reviewUsd, mandatoryUsd, actorUserId: user.id });
   if (!result.ok) console.error("[admin] failed to create commercial review threshold version", result.error);
+
+  revalidatePath("/admin/pricing");
+}
+
+// ============================================================
+// Graphic Design Pricing V1 (2026-09-07)
+// ============================================================
+
+export async function createGraphicDesignDeliverableRateVersionAction(formData: FormData): Promise<void> {
+  const user = await getCurrentUser();
+  if (!user) return;
+
+  const marketSlug = String(formData.get("marketSlug") ?? "");
+  const deliverableSlug = String(formData.get("deliverableSlug") ?? "");
+  const priceUsd = Number(formData.get("priceUsd"));
+  if (!marketSlug || !deliverableSlug || !Number.isFinite(priceUsd)) return;
+
+  const result = await createGraphicDesignDeliverableRateVersion({ marketSlug, deliverableSlug: deliverableSlug as GraphicDesignDeliverableSlug, priceUsd, actorUserId: user.id });
+  if (!result.ok) console.error("[admin] failed to create graphic design deliverable rate version", result.error);
+
+  revalidatePath("/admin/pricing");
+}
+
+export async function createGraphicDesignComplexityFactorVersionAction(formData: FormData): Promise<void> {
+  const user = await getCurrentUser();
+  if (!user) return;
+
+  const complexity = String(formData.get("complexity") ?? "");
+  const factor = Number(formData.get("factor"));
+  if ((complexity !== "standard" && complexity !== "enhanced" && complexity !== "bespoke") || !Number.isFinite(factor)) return;
+
+  const result = await createGraphicDesignComplexityFactorVersion({ complexity: complexity as GraphicDesignComplexity, factor, actorUserId: user.id });
+  if (!result.ok) console.error("[admin] failed to create graphic design complexity factor version", result.error);
+
+  revalidatePath("/admin/pricing");
+}
+
+export async function createGraphicDesignAddonRateVersionAction(formData: FormData): Promise<void> {
+  const user = await getCurrentUser();
+  if (!user) return;
+
+  const marketSlug = String(formData.get("marketSlug") ?? "");
+  const addonSlug = String(formData.get("addonSlug") ?? "");
+  const priceUsd = Number(formData.get("priceUsd"));
+  if (!marketSlug || !addonSlug || !Number.isFinite(priceUsd)) return;
+
+  const result = await createGraphicDesignAddonRateVersion({ marketSlug, addonSlug: addonSlug as GraphicDesignAddonSlug, priceUsd, actorUserId: user.id });
+  if (!result.ok) console.error("[admin] failed to create graphic design addon rate version", result.error);
+
+  revalidatePath("/admin/pricing");
+}
+
+export async function createGraphicDesignPercentageVersionAction(formData: FormData): Promise<void> {
+  const user = await getCurrentUser();
+  if (!user) return;
+
+  const percentageSlug = String(formData.get("percentageSlug") ?? "");
+  const percentage = Number(formData.get("percentage"));
+  if (!percentageSlug || !Number.isFinite(percentage)) return;
+
+  const result = await createGraphicDesignPercentageVersion({ percentageSlug: percentageSlug as GraphicDesignPercentageSlug, percentage, actorUserId: user.id });
+  if (!result.ok) console.error("[admin] failed to create graphic design percentage version", result.error);
 
   revalidatePath("/admin/pricing");
 }

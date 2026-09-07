@@ -122,6 +122,12 @@ const ACTION_LABELS: Record<string, string> = {
   "pricing.commercial_percentage.created": "Updated a Commercial formula percentage",
   "pricing.commercial_licensing_factor.created": "Updated a Commercial licensing factor",
   "pricing.commercial_review_threshold.created": "Updated a Commercial review threshold",
+
+  // Graphic Design Pricing V1 (2026-09-07)
+  "pricing.graphic_design_deliverable_rate.created": "Updated a Graphic Design deliverable rate",
+  "pricing.graphic_design_complexity_factor.created": "Updated a Graphic Design complexity factor",
+  "pricing.graphic_design_addon_rate.created": "Updated a Graphic Design add-on rate",
+  "pricing.graphic_design_percentage.created": "Updated a Graphic Design formula percentage",
 };
 
 // Graceful fallback for any action type not (yet) in ACTION_LABELS — pure
