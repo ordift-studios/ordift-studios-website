@@ -48,6 +48,10 @@ function SharedDefs() {
         <stop offset="0%" stopColor="#caa24a" stopOpacity="0.35" />
         <stop offset="100%" stopColor="#caa24a" stopOpacity="0" />
       </radialGradient>
+      <pattern id="df-clapper-stripes" width="7" height="7" patternTransform="rotate(45)" patternUnits="userSpaceOnUse">
+        <rect width="7" height="7" fill="#0a0d18" />
+        <rect width="3.5" height="7" fill="url(#df-metal)" />
+      </pattern>
       <linearGradient id="df-metal" x1="0" y1="0" x2="1" y2="1">
         <stop offset="0%" stopColor="#e8d9ae" />
         <stop offset="45%" stopColor="#b8944f" />
@@ -171,16 +175,23 @@ function TalentManagementArt() {
 function ProductionServicesArt() {
   return (
     <g>
-      {/* Clapperboard */}
-      <rect x="26" y="48" width="40" height="28" rx="2" fill="none" stroke="url(#df-metal-soft)" strokeWidth="2.2" />
-      <g stroke="url(#df-metal)" strokeWidth="4">
-        <line x1="27" y1="46" x2="65" y2="46" transform="skewX(-20)" opacity="0.9" />
-      </g>
-      <rect x="26" y="40" width="40" height="8" rx="2" fill="url(#df-metal-soft)" transform="skewX(-20)" opacity="0.9" />
-      {/* Light stand */}
-      <line x1="76" y1="34" x2="76" y2="80" stroke="url(#df-metal-soft)" strokeWidth="1.6" opacity="0.7" />
-      <path d="M68 34 L84 34 L80 24 L72 24 Z" fill="url(#df-metal)" opacity="0.85" />
-      <line x1="68" y1="80" x2="84" y2="80" stroke="url(#df-metal-soft)" strokeWidth="1.6" opacity="0.7" />
+      {/* Clapperboard — board body + hinged, open striped clapper bar */}
+      <rect x="22" y="52" width="40" height="26" rx="2" fill="none" stroke="url(#df-metal-soft)" strokeWidth="2.2" />
+      <rect
+        x="22"
+        y="41"
+        width="40"
+        height="9"
+        rx="1.5"
+        fill="url(#df-clapper-stripes)"
+        stroke="url(#df-metal-soft)"
+        strokeWidth="0.8"
+        transform="rotate(-13 22 45.5)"
+      />
+      {/* Light stand + softbox */}
+      <line x1="78" y1="38" x2="78" y2="80" stroke="url(#df-metal-soft)" strokeWidth="1.6" opacity="0.75" />
+      <rect x="68" y="24" width="20" height="15" rx="2" fill="url(#df-metal)" opacity="0.85" />
+      <line x1="70" y1="80" x2="86" y2="80" stroke="url(#df-metal-soft)" strokeWidth="1.6" opacity="0.75" />
     </g>
   );
 }
