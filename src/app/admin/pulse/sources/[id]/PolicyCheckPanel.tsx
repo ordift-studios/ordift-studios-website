@@ -1,7 +1,7 @@
 "use client";
 
 import { useActionState } from "react";
-import { checkPulseSourcePolicyAction, type CheckPolicyState } from "../actions";
+import { checkPulseSourcePolicyAction, adoptPulseSourcePolicyCandidateAction, type CheckPolicyState, type AdoptPolicyCandidateState } from "../actions";
 import type { PulseSourceAdminDetail } from "@/lib/content/sanity/pulseAdmin";
 import { POLICY_CHECK_RECOMMENDATION_LABEL, POLICY_CHECK_DISCLAIMER, POLICY_CHECK_CATEGORY_LABEL } from "@/lib/pulse/adminLabels";
 
@@ -16,6 +16,13 @@ import { POLICY_CHECK_RECOMMENDATION_LABEL, POLICY_CHECK_DISCLAIMER, POLICY_CHEC
 // already carries from a previous check.
 export function PolicyCheckPanel({ source }: { source: PulseSourceAdminDetail }) {
   const [state, formAction, pending] = useActionState<CheckPolicyState, FormData>(checkPulseSourcePolicyAction, null);
+  // Official-Domain Policy Discovery Fallback (2026-09-08) — its own,
+  // separate useActionState/form so adopting a candidate can never be
+  // confused with (or accidentally trigger) re-running Check Policy
+  // itself, and so a rejected adoption (re-validated independently by
+  // adoptPulseSourcePolicyCandidate at submit time) shows its own error
+  // without disturbing the evidence display above it.
+  const [adoptState, adoptFormAction, adoptPending] = useActionState<AdoptPolicyCandidateState, FormData>(adoptPulseSourcePolicyCandidateAction, null);
 
   // Prefer the freshest action result once one exists; otherwise fall
   // back to whatever was already persisted on the source (so a page
@@ -85,6 +92,25 @@ export function PolicyCheckPanel({ source }: { source: PulseSourceAdminDetail })
                     {POLICY_CHECK_CATEGORY_LABEL[item.category] ?? item.category}
                   </span>
                   <span className="block font-sans text-body-small text-ordift-ink mt-0.5">{item.snippet}</span>
+                  {item.url && (
+                    <div className="mt-2 flex flex-wrap items-center gap-3">
+                      <a href={item.url} target="_blank" rel="noopener noreferrer" className="font-sans text-caption text-ordift-gold-pressed underline underline-offset-4">
+                        View candidate page
+                      </a>
+                      <form action={adoptFormAction}>
+                        <input type="hidden" name="sourceId" value={source.id} />
+                        <input type="hidden" name="candidateUrl" value={item.url} />
+                        <button
+                          type="submit"
+                          disabled={adoptPending}
+                          aria-busy={adoptPending}
+                          className="min-h-8 px-3 rounded-md border border-ordift-ink/20 font-sans text-caption font-semibold text-ordift-ink hover:border-ordift-ink/40 disabled:opacity-60"
+                        >
+                          {adoptPending ? "Saving…" : "Use this policy URL"}
+                        </button>
+                      </form>
+                    </div>
+                  )}
                 </li>
               ))}
             </ul>
@@ -95,6 +121,13 @@ export function PolicyCheckPanel({ source }: { source: PulseSourceAdminDetail })
           )}
         </div>
       )}
+
+      {adoptState?.ok === true && (
+        <p className="font-sans text-body-small text-green-700">
+          Policy/Rights URL updated. Click Check Policy again to evaluate the newly adopted page.
+        </p>
+      )}
+      {adoptState?.ok === false && <p className="font-sans text-body-small text-red-700">{adoptState.error}</p>}
     </div>
   );
 }

@@ -282,6 +282,14 @@ export default defineType({
           fields: [
             { name: "category", type: "string" },
             { name: "snippet", type: "text" },
+            // Official-Domain Policy Discovery Fallback (2026-09-08) —
+            // optional, backward-compatible: only set for category
+            // "fallback-candidate" evidence, where it carries the
+            // discovered same-official-domain candidate URL an Admin
+            // can choose to adopt. Every existing evidence item (and
+            // every other category going forward) simply omits it — no
+            // backfill needed, no existing evidence rendering breaks.
+            { name: "url", title: "Candidate URL (if applicable)", type: "url" },
           ],
         },
       ],

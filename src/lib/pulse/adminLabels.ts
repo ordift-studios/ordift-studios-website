@@ -47,4 +47,5 @@ export const POLICY_CHECK_CATEGORY_LABEL: Record<string, string> = {
   "fetch-error": "Couldn't check",
   "safety-block": "Blocked for safety",
   "unsupported-content": "Unsupported content",
+  "fallback-candidate": "Possible official policy page",
 };

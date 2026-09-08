@@ -24,7 +24,14 @@ export type PolicyEvidenceCategory =
   | "website-general"
   | "fetch-error"
   | "safety-block"
-  | "unsupported-content";
+  | "unsupported-content"
+  // Official-Domain Policy Discovery Fallback (2026-09-08) — an item in
+  // this category always carries `url`: a same-official-domain page
+  // found on the source's own homepage whose link text/path suggests a
+  // policy/legal/press page. Never itself a recommendation signal —
+  // evaluatePolicyText() never produces this category; only the
+  // fallback path in checkPulseSourcePolicy() does.
+  | "fallback-candidate";
 
 export type PolicyEvidenceItem = {
   category: PolicyEvidenceCategory;
@@ -32,6 +39,13 @@ export type PolicyEvidenceItem = {
   // context to see WHY it matched — never a reproduction of the policy
   // page, never a substantial excerpt of copyrighted text.
   snippet: string;
+  // Official-Domain Policy Discovery Fallback (2026-09-08) — set ONLY
+  // for category "fallback-candidate": the exact same-official-domain
+  // URL the Admin can choose to adopt via "Use this policy URL".
+  // Undefined for every other category, including on every pre-existing
+  // evidence item (backward compatible — see the schema change note in
+  // pulseSource.ts).
+  url?: string;
 };
 
 export type PolicyEvaluation = {
@@ -257,5 +271,220 @@ export function buildPolicyCheckPatch(input: PolicyCheckPatchInput): Record<stri
     policyCheckRecommendation: input.recommendation,
     policyCheckEvidence: input.evidence,
     policyCheckTrustSuggestion: input.trustSuggestion,
+  };
+}
+
+// =========================================================================
+// Official-Domain Policy Discovery Fallback (2026-09-08)
+// =========================================================================
+// Runs ONLY when the Admin-saved Policy/Rights URL itself couldn't be
+// evaluated (404/timeout/unreachable/unsupported content — see
+// checkPulseSourcePolicy()'s fallback branch). Fetches nothing on its
+// own — this module only ever PARSES html a caller already fetched
+// (the source's own homepage, via the same safeFetchText() used for
+// termsUrl) and extracts same-official-domain <a href> candidates whose
+// link text/path suggests a policy/legal/press page. Never a search
+// engine, never a crawl, never a second hop — exactly one page's
+// existing links, filtered and matched.
+//
+// No HTML-parsing dependency exists anywhere in this project's declared
+// package.json (confirmed by inspection immediately before writing
+// this — the only DOM/HTML parser packages present in node_modules at
+// all, node-html-parser/jsdom/parse5, are undeclared TRANSITIVE
+// dependencies of `sanity`'s own CLI tooling and of `vitest`, not
+// available or appropriate for production app code to import). This is
+// therefore a narrowly-scoped, defensive regex-based anchor extractor —
+// not a general HTML parser — used for exactly one job: pull literal
+// href/text pairs out of one already-fetched, already-safety-checked
+// page.
+
+// Grouped, multi-word-friendly keyword vocabulary — matched as
+// substrings against (link text + URL path) lowercased, never against
+// a single ambiguous token in isolation the way ASSET_CONTEXT_TERMS
+// above deliberately also avoids. These are EXAMPLES per the approved
+// direction, not an assumption that any one of them exists on every
+// site.
+const LEGAL_TERMS_KEYWORDS = [
+  "terms of use",
+  "terms & conditions",
+  "terms and conditions",
+  "terms",
+  "legal",
+  "copyright",
+  "content usage",
+  "content use",
+  "image usage",
+  "image use",
+  "intellectual property",
+  "licensing",
+  "license",
+  "brand guidelines",
+  "site policy",
+  "usage policy",
+  "usage guidelines",
+];
+const PRESS_NEWSROOM_KEYWORDS = ["newsroom", "press kit", "press materials", "press release", "media kit", "press"];
+
+export type PolicyCandidateLink = {
+  url: string;
+  title: string; // anchor text (or, if empty, the URL itself), bounded
+  matchedTerm: string;
+  category: "legal-terms" | "press-newsroom";
+};
+
+// Deliberately bounded and simple — a linear scan capped at ANCHOR_SCAN_LIMIT
+// anchors, using a non-greedy match on `[^>]*` (bounded, no nested
+// quantifier blowup) for attributes and on the anchor body up to the
+// next `</a>`. Combined with safeFetchText()'s existing ~300KB response
+// cap, this is not exploitable for catastrophic backtracking at any
+// realistic policy-homepage size. Any exception during parsing is
+// caught by the caller (extractPolicyCandidateLinks) and produces zero
+// candidates rather than propagating — a parser failure must never
+// crash the check or invent a URL.
+const ANCHOR_REGEX = /<a\s+[^>]*?href\s*=\s*(["'])(.*?)\1[^>]*>([\s\S]*?)<\/a>/gi;
+const ANCHOR_SCAN_LIMIT = 500;
+const MAX_HREF_LENGTH = 2000; // defensive bound against pathological attribute values
+
+function extractAnchors(html: string): { href: string; text: string }[] {
+  const anchors: { href: string; text: string }[] = [];
+  const regex = new RegExp(ANCHOR_REGEX.source, ANCHOR_REGEX.flags);
+  let match: RegExpExecArray | null;
+  while ((match = regex.exec(html)) !== null) {
+    const href = match[2];
+    if (typeof href === "string" && href.length <= MAX_HREF_LENGTH) {
+      anchors.push({ href, text: stripHtml(match[3] ?? "") });
+    }
+    if (anchors.length >= ANCHOR_SCAN_LIMIT) break;
+    // A zero-length match would otherwise spin the loop forever; never
+    // actually possible with this pattern (href is required), but
+    // guarded anyway rather than trusted.
+    if (match.index === regex.lastIndex) regex.lastIndex++;
+  }
+  return anchors;
+}
+
+// Only literal http(s) URLs may become a candidate — every other
+// scheme (javascript:, data:, mailto:, tel:, ftp:, file:, ...) is
+// rejected by this allowlist-of-one-thing check, not a maintained
+// blocklist. A malformed href (new URL() throws) never becomes a
+// candidate. Credentials/userinfo in the URL (`user:pass@host`) are
+// rejected outright. A pure in-page fragment ("#section") is skipped
+// before resolution — it can never itself be a different, useful page.
+function resolveCandidateUrl(href: string, baseUrl: string): URL | null {
+  const trimmed = href.trim();
+  if (!trimmed || trimmed.startsWith("#")) return null;
+  let resolved: URL;
+  try {
+    resolved = new URL(trimmed, baseUrl);
+  } catch {
+    return null;
+  }
+  if (resolved.protocol !== "http:" && resolved.protocol !== "https:") return null;
+  if (resolved.username || resolved.password) return null;
+  resolved.hash = ""; // fragment-only differences must not produce duplicate candidates
+  return resolved;
+}
+
+function normalizeHostname(hostname: string): string {
+  return hostname.trim().toLowerCase().replace(/\.$/, "");
+}
+
+function hostLabels(hostname: string): string[] {
+  return normalizeHostname(hostname).split(".").filter(Boolean);
+}
+
+// Rigorous, label-boundary-safe comparison — deliberately NOT
+// `hostname.endsWith(officialDomain)` or even
+// `hostname.endsWith("." + officialDomain)` as a bare string operation
+// (both can be reasoned about correctly, but the explicit direction was
+// to avoid naive suffix string matching entirely). This splits both
+// hostnames into their real DNS labels and requires the official
+// domain's labels to be an EXACT trailing subsequence of the
+// candidate's labels — "evilnikon.com" (labels [evilnikon, com]) can
+// never match official domain "nikon.com" (labels [nikon, com])
+// because the label "evilnikon" is never equal to "nikon", regardless
+// of the substring relationship between the two raw strings.
+export function isSameOrSubdomain(candidateHostname: string, officialDomain: string): boolean {
+  const candidateLabels = hostLabels(candidateHostname);
+  const officialLabels = hostLabels(officialDomain);
+  if (officialLabels.length === 0 || candidateLabels.length < officialLabels.length) return false;
+  const tail = candidateLabels.slice(candidateLabels.length - officialLabels.length);
+  return tail.join(".") === officialLabels.join(".");
+}
+
+// Derives the trust-anchor domain from the Admin-entered Website field
+// — the ONE piece of official-domain trust this whole fallback is
+// built on (never re-derived from anything a candidate page itself
+// claims). Strips a single leading "www." label — a narrow, common
+// convention, not a general public-suffix heuristic — so "nikon.com",
+// "www.nikon.com", and a genuine subdomain like "press.nikon.com" are
+// all correctly recognized as the same official domain family, without
+// guessing at multi-part TLD structure.
+export function deriveOfficialDomain(sourceUrl: string): string | null {
+  let parsed: URL;
+  try {
+    parsed = new URL(sourceUrl);
+  } catch {
+    return null;
+  }
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return null;
+  const hostname = normalizeHostname(parsed.hostname);
+  return hostname.startsWith("www.") ? hostname.slice(4) : hostname;
+}
+
+// Pure — the only entry point into this module. `html` and `baseUrl`
+// are the ALREADY-FETCHED, already-safety-checked homepage response
+// (see checkPulseSourcePolicy()) — this function never performs any
+// I/O of its own. Never throws: a parsing failure on malformed/unusual
+// HTML produces an empty candidate list, which the caller treats
+// exactly like "no candidate found" (inconclusive), never an error
+// that could be mistaken for a signal.
+export function extractPolicyCandidateLinks(html: string, baseUrl: string, officialDomain: string, maxCandidates = 3): PolicyCandidateLink[] {
+  let anchors: { href: string; text: string }[];
+  try {
+    anchors = extractAnchors(html);
+  } catch {
+    return [];
+  }
+
+  const seen = new Set<string>();
+  const candidates: PolicyCandidateLink[] = [];
+
+  for (const anchor of anchors) {
+    const resolved = resolveCandidateUrl(anchor.href, baseUrl);
+    if (!resolved) continue;
+    if (!isSameOrSubdomain(resolved.hostname, officialDomain)) continue;
+
+    const haystack = `${anchor.text} ${resolved.pathname}`.toLowerCase();
+    const legalMatch = LEGAL_TERMS_KEYWORDS.find((kw) => haystack.includes(kw));
+    const pressMatch = !legalMatch ? PRESS_NEWSROOM_KEYWORDS.find((kw) => haystack.includes(kw)) : undefined;
+    const matchedTerm = legalMatch ?? pressMatch;
+    if (!matchedTerm) continue;
+
+    const canonical = resolved.toString();
+    if (seen.has(canonical)) continue;
+    seen.add(canonical);
+
+    candidates.push({
+      url: canonical,
+      title: (anchor.text.trim() || canonical).slice(0, 120),
+      matchedTerm,
+      category: legalMatch ? "legal-terms" : "press-newsroom",
+    });
+    if (candidates.length >= maxCandidates) break;
+  }
+
+  return candidates;
+}
+
+// Pure — turns a PolicyCandidateLink into the exact evidence-item shape
+// stored/rendered, so the "why it was considered a candidate" is always
+// preserved alongside the URL (2026-09-08 direction, item 12).
+export function buildFallbackCandidateEvidence(candidate: PolicyCandidateLink): PolicyEvidenceItem {
+  const categoryLabel = candidate.category === "press-newsroom" ? "press/newsroom" : "legal/terms";
+  return {
+    category: "fallback-candidate",
+    snippet: `${candidate.title} — matched "${candidate.matchedTerm}" (${categoryLabel}) in a link on the official homepage.`,
+    url: candidate.url,
   };
 }

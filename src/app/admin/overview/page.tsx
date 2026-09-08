@@ -223,6 +223,7 @@ const ACTION_LABELS: Record<string, string> = {
   "pulse.source_updated": "Updated a Pulse source's configuration",
   "pulse.source_created": "Added a new Pulse source",
   "pulse.source_policy_checked": "Checked a Pulse source's policy page",
+  "pulse.source_policy_url_adopted": "Adopted a discovered Policy/Rights URL for a Pulse source",
   "pulse.discovery_run": "Ran Pulse discovery for a source",
   "pulse.discovery_run_started": "Started a Pulse discovery run",
   "pulse.hero_media_uploaded": "Uploaded a Pulse hero media image",

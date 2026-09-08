@@ -737,7 +737,7 @@ export type PulseSource = {
   policyCheckedAt: string | null;
   policyCheckedUrl: string | null; // preserved even if termsUrl is later edited — never retroactively relabeled
   policyCheckRecommendation: "candidate-green" | "candidate-red" | "inconclusive" | null;
-  policyCheckEvidence: { category: string; snippet: string }[];
+  policyCheckEvidence: { category: string; snippet: string; url?: string }[];
   policyCheckTrustSuggestion: string | null; // non-binding; editorialTrustLevel above always requires an explicit human choice
 };
 

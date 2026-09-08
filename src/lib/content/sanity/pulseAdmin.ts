@@ -10,10 +10,15 @@ import {
   evaluatePolicyText,
   buildPolicyCheckTrustSuggestion,
   buildPolicyCheckPatch,
+  deriveOfficialDomain,
+  extractPolicyCandidateLinks,
+  buildFallbackCandidateEvidence,
+  isSameOrSubdomain,
   type PulsePolicyCheckRecommendation,
   type PolicyEvidenceItem,
 } from "@/lib/pulse/policyEvidence";
 import { safeFetchText } from "@/lib/pulse/policyCheckFetch";
+import { isSafeFetchTarget } from "@/lib/pulse/urlSafety";
 
 // Admin-only Sanity read/write for the Ordift Pulse review interface
 // (Phase D, 2026-08-24 — see PULSE_INGESTION_FOUNDATION.md). Same
@@ -365,7 +370,7 @@ const SOURCE_DETAIL_QUERY = `*[_type == "pulseSource" && _id == $id][0]{
   policyCheckedAt,
   policyCheckedUrl,
   policyCheckRecommendation,
-  "policyCheckEvidence": coalesce(policyCheckEvidence[]{category, snippet}, []),
+  "policyCheckEvidence": coalesce(policyCheckEvidence[]{category, snippet, url}, []),
   policyCheckTrustSuggestion
 }`;
 
@@ -499,7 +504,53 @@ export type PolicyCheckSanityClient = {
   patch(id: string): { set(fields: Record<string, unknown>): { commit(): Promise<unknown> } };
 };
 
-const POLICY_CHECK_SOURCE_QUERY = `*[_type == "pulseSource" && _id == $id][0]{termsUrl, sourceClassification}`;
+const POLICY_CHECK_SOURCE_QUERY = `*[_type == "pulseSource" && _id == $id][0]{termsUrl, sourceClassification, url}`;
+
+// Official-Domain Policy Discovery Fallback (2026-09-08) — attempted
+// ONLY when the saved Policy/Rights URL itself couldn't be evaluated.
+// Fetches exactly one extra page (the source's own Admin-entered
+// Website, via the identical safety-guarded fetchPolicyText used for
+// termsUrl) and looks for same-official-domain candidate links on it.
+// NEVER produces candidate-green/candidate-red on its own — even a
+// found candidate is still just unevaluated evidence, never itself a
+// classification — so the caller always keeps recommendation
+// "inconclusive" whenever this path runs at all, regardless of what
+// (if anything) is found. Returns evidence items only; never touches
+// termsUrl — see adoptPulseSourcePolicyCandidate() below for the
+// separate, explicit-Admin-only write path.
+async function runOfficialDomainFallback(
+  websiteUrl: string | null,
+  primaryFailureReason: string,
+  fetchPolicyText: (url: string) => Promise<Awaited<ReturnType<typeof safeFetchText>>>
+): Promise<PolicyEvidenceItem[]> {
+  const primaryFailureEvidence: PolicyEvidenceItem = {
+    category: "fetch-error",
+    snippet: `Could not evaluate the saved policy page — ${primaryFailureReason}.`,
+  };
+
+  if (!websiteUrl) return [primaryFailureEvidence];
+
+  const officialDomain = deriveOfficialDomain(websiteUrl);
+  if (!officialDomain) return [primaryFailureEvidence];
+
+  const homepageResult = await fetchPolicyText(websiteUrl);
+  if (!homepageResult.ok) {
+    return [
+      primaryFailureEvidence,
+      { category: "fetch-error", snippet: `Also could not check the official homepage for a fallback candidate — ${homepageResult.reason}.` },
+    ];
+  }
+
+  const candidates = extractPolicyCandidateLinks(homepageResult.text, websiteUrl, officialDomain);
+  if (candidates.length === 0) {
+    return [
+      primaryFailureEvidence,
+      { category: "website-general", snippet: "No candidate Terms/Legal/Copyright/Press page could be found on the official homepage." },
+    ];
+  }
+
+  return [primaryFailureEvidence, ...candidates.map(buildFallbackCandidateEvidence)];
+}
 
 export async function checkPulseSourcePolicy(
   id: string,
@@ -512,7 +563,7 @@ export async function checkPulseSourcePolicy(
   // THE MOMENT of this specific check, so a later edit to termsUrl can
   // never retroactively relabel earlier evidence, and this check can
   // never be tricked into recording a URL it didn't actually fetch.
-  const source = await sanity.fetch<{ termsUrl: string | null; sourceClassification: "official_primary" | "editorial_discovery" | null } | null>(
+  const source = await sanity.fetch<{ termsUrl: string | null; sourceClassification: "official_primary" | "editorial_discovery" | null; url: string | null } | null>(
     POLICY_CHECK_SOURCE_QUERY,
     { id }
   );
@@ -530,11 +581,12 @@ export async function checkPulseSourcePolicy(
     // unsafe (SSRF-blocked) destination, are all treated the same way —
     // inconclusive, never a silent skip and never a nudge toward
     // Green. The specific reason is preserved as evidence so the Admin
-    // can see exactly what happened (e.g. "HTTP 404", "timeout",
-    // "unsafe destination — hostname resolves to a private/reserved
-    // address").
+    // can see exactly what happened. The official-domain fallback (if
+    // the source has a Website configured) runs here and can ADD
+    // candidate evidence, but can never change the recommendation away
+    // from inconclusive.
     recommendation = "inconclusive";
-    evidence = [{ category: "fetch-error", snippet: `Could not evaluate the policy page — ${fetchResult.reason}.` }];
+    evidence = await runOfficialDomainFallback(source.url, fetchResult.reason, fetchPolicyText);
   } else {
     const evaluation = evaluatePolicyText(fetchResult.text);
     recommendation = evaluation.recommendation;
@@ -549,4 +601,56 @@ export async function checkPulseSourcePolicy(
     .commit();
 
   return { ok: true, recommendation, evidence, checkedAt, checkedUrl, trustSuggestion };
+}
+
+// --- Rights Intelligence: "Use this policy URL" (adopt a fallback
+// candidate) (2026-09-08) -------------------------------------------
+// The ONLY code path that can change termsUrl as a result of the Check
+// Policy workflow — and even this one only ever runs on an explicit,
+// separate Admin action (never automatically from checkPulseSourcePolicy
+// itself). Structurally isolated: this function's only possible write
+// is `.set({ termsUrl })` — a single-key object literal, not built from
+// buildPolicyCheckPatch() and sharing none of its fields — so it cannot
+// touch policyChecked*/evidence, and (like checkPulseSourcePolicy) it
+// cannot touch permissionClassification/isActive/imageUsePermitted/
+// commercialUsePermitted/autoPublishEligible/editorialTrustLevel/
+// attributionRequirement/lastPolicyReviewDate.
+//
+// Never trusts that a candidate is still safe merely because it was
+// previously displayed to the Admin (candidates are evaluated once, at
+// discovery time, against whatever the homepage looked like then) —
+// re-validates the FULL safety chain (syntax, SSRF/DNS, credentials,
+// same-official-domain) again, independently, right before writing.
+export async function adoptPulseSourcePolicyCandidate(
+  id: string,
+  candidateUrl: string,
+  sanity: PolicyCheckSanityClient = client,
+  // Injectable purely for deterministic, DNS-free tests (same
+  // established pattern as checkPulseSourcePolicy's `fetchPolicyText`
+  // param) — every real call site omits this and gets the real
+  // isSafeFetchTarget(), which performs an actual DNS lookup.
+  checkSafety: (url: string) => ReturnType<typeof isSafeFetchTarget> = isSafeFetchTarget
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const source = await sanity.fetch<{ url: string | null } | null>(`*[_type == "pulseSource" && _id == $id][0]{url}`, { id });
+  if (!source) return { ok: false, error: "Source not found." };
+  if (!source.url) return { ok: false, error: "This source has no Website configured to validate the candidate against." };
+
+  const officialDomain = deriveOfficialDomain(source.url);
+  if (!officialDomain) return { ok: false, error: "This source's Website isn't a valid URL — fix it before adopting a candidate." };
+
+  let parsed: URL;
+  try {
+    parsed = new URL(candidateUrl);
+  } catch {
+    return { ok: false, error: "Malformed candidate URL." };
+  }
+  if (parsed.username || parsed.password) return { ok: false, error: "Rejected — the candidate URL contains credentials." };
+  if (!isSameOrSubdomain(parsed.hostname, officialDomain)) {
+    return { ok: false, error: "Rejected — this URL is outside the source's official domain." };
+  }
+  const safety = await checkSafety(candidateUrl);
+  if (!safety.safe) return { ok: false, error: `Rejected — ${safety.reason}.` };
+
+  await sanity.patch(id).set({ termsUrl: candidateUrl }).commit();
+  return { ok: true };
 }

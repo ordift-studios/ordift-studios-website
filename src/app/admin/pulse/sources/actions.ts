@@ -2,7 +2,13 @@
 
 import { revalidatePath } from "next/cache";
 import { getCurrentUser, hasRole, isSuperAdmin } from "@/lib/portal/roles";
-import { updatePulseSourceAdmin, createPulseSourceAdmin, checkPulseSourcePolicy, type PulsePolicyCheckResult } from "@/lib/content/sanity/pulseAdmin";
+import {
+  updatePulseSourceAdmin,
+  createPulseSourceAdmin,
+  checkPulseSourcePolicy,
+  adoptPulseSourcePolicyCandidate,
+  type PulsePolicyCheckResult,
+} from "@/lib/content/sanity/pulseAdmin";
 import { redirect } from "next/navigation";
 import { logActivity } from "@/lib/admin/activityLog";
 import { editorialClient } from "@/sanity/lib/client";
@@ -179,6 +185,42 @@ export async function checkPulseSourcePolicyAction(_prevState: CheckPolicyState,
 
     revalidatePath(`/admin/pulse/sources/${sourceId}`);
     return { ok: true, result };
+  } catch {
+    return { ok: false, error: "You are not authorized to do this." };
+  }
+}
+
+// Official-Domain Policy Discovery Fallback, "Use this policy URL"
+// (2026-09-08) — the ONE explicit Admin action that can change
+// termsUrl as a result of Check Policy. Structurally separate from
+// checkPulseSourcePolicyAction above: this calls
+// adoptPulseSourcePolicyCandidate(), which independently re-validates
+// the candidate's safety/domain boundary at adoption time rather than
+// trusting that it was already validated when displayed, and whose
+// only possible write is termsUrl itself. Same admin gate as every
+// other Source Manager action.
+export type AdoptPolicyCandidateState = { ok: boolean; error?: string } | null;
+
+export async function adoptPulseSourcePolicyCandidateAction(_prevState: AdoptPolicyCandidateState, formData: FormData): Promise<AdoptPolicyCandidateState> {
+  try {
+    const user = await requirePulseAdmin();
+    const sourceId = String(formData.get("sourceId") ?? "");
+    const candidateUrl = String(formData.get("candidateUrl") ?? "");
+    if (!sourceId || !candidateUrl) return { ok: false, error: "Invalid request." };
+
+    const result = await adoptPulseSourcePolicyCandidate(sourceId, candidateUrl);
+    if (!result.ok) return { ok: false, error: result.error };
+
+    await logActivity({
+      actorUserId: user.id,
+      action: "pulse.source_policy_url_adopted",
+      entityType: "pulseSource",
+      entityId: sourceId,
+      metadata: { candidateUrl },
+    });
+
+    revalidatePath(`/admin/pulse/sources/${sourceId}`);
+    return { ok: true };
   } catch {
     return { ok: false, error: "You are not authorized to do this." };
   }

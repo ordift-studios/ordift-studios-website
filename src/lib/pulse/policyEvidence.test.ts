@@ -5,6 +5,10 @@ import {
   buildPolicyCheckTrustSuggestion,
   POLICY_CHECK_WRITE_FIELDS,
   PULSE_SOURCE_DECISION_FIELDS,
+  isSameOrSubdomain,
+  deriveOfficialDomain,
+  extractPolicyCandidateLinks,
+  buildFallbackCandidateEvidence,
 } from "./policyEvidence";
 
 // Rights Intelligence, "Check Policy" (2026-09-08) — A/B/C/D/E matrix
@@ -181,5 +185,188 @@ describe("Evidence quality — category distinctions and bounded snippets", () =
     ].join(" ");
     const result = evaluatePolicyText(text);
     expect(result.evidence.length).toBeLessThanOrEqual(5);
+  });
+});
+
+// =========================================================================
+// Official-Domain Policy Discovery Fallback (2026-09-08)
+// =========================================================================
+
+describe("isSameOrSubdomain — label-boundary-safe domain comparison", () => {
+  it("accepts the exact official domain", () => {
+    expect(isSameOrSubdomain("nikon.com", "nikon.com")).toBe(true);
+  });
+  it("accepts www. and a genuine subdomain", () => {
+    expect(isSameOrSubdomain("www.nikon.com", "nikon.com")).toBe(true);
+    expect(isSameOrSubdomain("press.nikon.com", "nikon.com")).toBe(true);
+    expect(isSameOrSubdomain("a.b.press.nikon.com", "nikon.com")).toBe(true);
+  });
+  it("is case-insensitive", () => {
+    expect(isSameOrSubdomain("WWW.NIKON.COM", "nikon.com")).toBe(true);
+  });
+  it("rejects a domain that merely CONTAINS the official domain as a substring — the exact naive-suffix-matching bug this was designed to avoid", () => {
+    expect(isSameOrSubdomain("evilnikon.com", "nikon.com")).toBe(false);
+    expect(isSameOrSubdomain("notnikon.com", "nikon.com")).toBe(false);
+  });
+  it("rejects a domain that merely ENDS with the official domain's characters without a real label boundary", () => {
+    expect(isSameOrSubdomain("nikon.com.evil.com", "nikon.com")).toBe(false);
+  });
+  it("rejects an entirely unrelated domain", () => {
+    expect(isSameOrSubdomain("petapixel.com", "nikon.com")).toBe(false);
+    expect(isSameOrSubdomain("facebook.com", "nikon.com")).toBe(false);
+  });
+  it("rejects a bare TLD/empty official domain rather than matching everything", () => {
+    expect(isSameOrSubdomain("anything.com", "")).toBe(false);
+  });
+});
+
+describe("deriveOfficialDomain", () => {
+  it("strips a leading www. label", () => {
+    expect(deriveOfficialDomain("https://www.nikon.com")).toBe("nikon.com");
+  });
+  it("leaves a bare domain unchanged", () => {
+    expect(deriveOfficialDomain("https://nikon.com")).toBe("nikon.com");
+  });
+  it("leaves a genuine non-www subdomain unchanged (never strips more than the one leading www. label)", () => {
+    expect(deriveOfficialDomain("https://shop.nikon.com")).toBe("shop.nikon.com");
+  });
+  it("returns null for a malformed URL", () => {
+    expect(deriveOfficialDomain("not a url")).toBeNull();
+  });
+  it("returns null for a non-http(s) scheme", () => {
+    expect(deriveOfficialDomain("ftp://nikon.com")).toBeNull();
+  });
+});
+
+describe("extractPolicyCandidateLinks — discovery matrix", () => {
+  const BASE = "https://www.nikon.com/";
+  const DOMAIN = "nikon.com";
+
+  it("E: finds a same-official-domain candidate matching a legal/terms keyword", () => {
+    const html = `<html><body><nav><a href="/company/terms-of-use">Terms of Use</a></nav></body></html>`;
+    const candidates = extractPolicyCandidateLinks(html, BASE, DOMAIN);
+    expect(candidates).toHaveLength(1);
+    expect(candidates[0].url).toBe("https://www.nikon.com/company/terms-of-use");
+    expect(candidates[0].category).toBe("legal-terms");
+  });
+
+  it("finds a press/newsroom candidate as a distinct category from legal/terms", () => {
+    const html = `<a href="/newsroom">Newsroom</a>`;
+    const candidates = extractPolicyCandidateLinks(html, BASE, DOMAIN);
+    expect(candidates).toHaveLength(1);
+    expect(candidates[0].category).toBe("press-newsroom");
+  });
+
+  it("resolves a relative href against the fetched homepage URL", () => {
+    const html = `<a href="legal/copyright">Copyright</a>`;
+    const candidates = extractPolicyCandidateLinks(html, BASE, DOMAIN);
+    expect(candidates[0].url).toBe("https://www.nikon.com/legal/copyright");
+  });
+
+  it("F: rejects a candidate that would leave the official trust boundary, even with a matching keyword", () => {
+    const html = `<a href="https://totallydifferent.com/terms-of-use">Terms of Use (off-site)</a>`;
+    const candidates = extractPolicyCandidateLinks(html, BASE, DOMAIN);
+    expect(candidates).toHaveLength(0);
+  });
+
+  it("F: rejects a lookalike domain that merely contains the official domain as a substring", () => {
+    const html = `<a href="https://nikon.com.evil.com/terms">Terms</a>`;
+    const candidates = extractPolicyCandidateLinks(html, BASE, DOMAIN);
+    expect(candidates).toHaveLength(0);
+  });
+
+  it("does not surface a same-domain link that matches no keyword at all", () => {
+    const html = `<a href="/products/cameras">Cameras</a>`;
+    const candidates = extractPolicyCandidateLinks(html, BASE, DOMAIN);
+    expect(candidates).toHaveLength(0);
+  });
+
+  it("J: rejects javascript:, data:, mailto:, and tel: targets even if their link text matches a keyword", () => {
+    const html = [
+      `<a href="javascript:alert('terms')">Terms</a>`,
+      `<a href="data:text/html,terms">Terms</a>`,
+      `<a href="mailto:legal@nikon.com">Legal</a>`,
+      `<a href="tel:+18005551234">Legal Hotline</a>`,
+    ].join("");
+    const candidates = extractPolicyCandidateLinks(html, BASE, DOMAIN);
+    expect(candidates).toHaveLength(0);
+  });
+
+  it("rejects a URL carrying credentials/userinfo", () => {
+    const html = `<a href="https://user:pass@nikon.com/legal">Legal</a>`;
+    const candidates = extractPolicyCandidateLinks(html, BASE, DOMAIN);
+    expect(candidates).toHaveLength(0);
+  });
+
+  it("rejects a pure in-page fragment", () => {
+    const html = `<a href="#legal-section">Legal</a>`;
+    const candidates = extractPolicyCandidateLinks(html, BASE, DOMAIN);
+    expect(candidates).toHaveLength(0);
+  });
+
+  it("bounds the candidate count even when many keyword-matching links exist", () => {
+    const html = Array.from({ length: 20 }, (_, i) => `<a href="/legal-${i}">Legal Page ${i}</a>`).join("");
+    const candidates = extractPolicyCandidateLinks(html, BASE, DOMAIN);
+    expect(candidates.length).toBeLessThanOrEqual(3);
+  });
+
+  it("dedupes two links that resolve to the identical URL (e.g. differing only by fragment)", () => {
+    const html = `<a href="/legal#top">Legal</a><a href="/legal">Legal (again)</a>`;
+    const candidates = extractPolicyCandidateLinks(html, BASE, DOMAIN);
+    expect(candidates).toHaveLength(1);
+  });
+
+  describe("malformed / unusual HTML — must fail safe, never invent a URL, never throw", () => {
+    it("unterminated tag soup produces no candidates rather than throwing", () => {
+      const html = `<a href="/legal" >Legal<div><a href=broken`;
+      expect(() => extractPolicyCandidateLinks(html, BASE, DOMAIN)).not.toThrow();
+    });
+
+    it("a href attribute with no value / empty string never becomes a candidate", () => {
+      const html = `<a href="">Legal</a><a href>Legal 2</a>`;
+      const candidates = extractPolicyCandidateLinks(html, BASE, DOMAIN);
+      expect(candidates).toHaveLength(0);
+    });
+
+    it("deeply nested/garbled markup around a legitimate link still only extracts the literal href present, never a fabricated one", () => {
+      const html = `<div><span><a href="/legal/copyright"><b><i>Copyright</i></b></a></span></div>`;
+      const candidates = extractPolicyCandidateLinks(html, BASE, DOMAIN);
+      expect(candidates).toHaveLength(1);
+      expect(candidates[0].url).toBe("https://www.nikon.com/legal/copyright");
+    });
+
+    it("a huge run of non-anchor markup does not hang or crash (bounded, linear scan)", () => {
+      const html = "<div>".repeat(5000) + `<a href="/legal">Legal</a>` + "</div>".repeat(5000);
+      const start = Date.now();
+      const candidates = extractPolicyCandidateLinks(html, BASE, DOMAIN);
+      expect(Date.now() - start).toBeLessThan(2000);
+      expect(candidates).toHaveLength(1);
+    });
+
+    it("completely empty or non-HTML input produces no candidates", () => {
+      expect(extractPolicyCandidateLinks("", BASE, DOMAIN)).toEqual([]);
+      expect(extractPolicyCandidateLinks("plain text, no markup at all", BASE, DOMAIN)).toEqual([]);
+    });
+
+    it("a null-byte or control-character-laced href never crashes the parser and is safely handled by URL resolution", () => {
+      const html = `<a href="/legal\x00/copyright">Copyright</a>`;
+      expect(() => extractPolicyCandidateLinks(html, BASE, DOMAIN)).not.toThrow();
+    });
+  });
+});
+
+describe("buildFallbackCandidateEvidence", () => {
+  it("preserves the URL, the matched term, and the category as the 'why' evidence", () => {
+    const item = buildFallbackCandidateEvidence({
+      url: "https://www.nikon.com/company/terms-of-use",
+      title: "Terms of Use",
+      matchedTerm: "terms of use",
+      category: "legal-terms",
+    });
+    expect(item.category).toBe("fallback-candidate");
+    expect(item.url).toBe("https://www.nikon.com/company/terms-of-use");
+    expect(item.snippet).toContain("Terms of Use");
+    expect(item.snippet).toContain("terms of use");
+    expect(item.snippet.length).toBeLessThan(300); // bounded, never a page reproduction
   });
 });

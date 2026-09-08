@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { checkPulseSourcePolicy, type PolicyCheckSanityClient } from "./pulseAdmin";
+import { checkPulseSourcePolicy, adoptPulseSourcePolicyCandidate, type PolicyCheckSanityClient } from "./pulseAdmin";
 import { PULSE_SOURCE_DECISION_FIELDS } from "@/lib/pulse/policyEvidence";
 
 // Rights Intelligence, "Check Policy" (2026-09-08) — real, executable
@@ -14,9 +14,9 @@ import { PULSE_SOURCE_DECISION_FIELDS } from "@/lib/pulse/policyEvidence";
 // decision field) gets a real, structural test on the actual write
 // path, not just a documented claim.
 
-type MockSourceDoc = { termsUrl: string | null; sourceClassification: "official_primary" | "editorial_discovery" | null } | null;
+type MockSourceDoc = { termsUrl: string | null; sourceClassification: "official_primary" | "editorial_discovery" | null; url?: string | null } | null;
 
-function makeMockSanity(source: MockSourceDoc = { termsUrl: "https://example.com/terms", sourceClassification: "official_primary" }) {
+function makeMockSanity(source: MockSourceDoc = { termsUrl: "https://example.com/terms", sourceClassification: "official_primary", url: "https://www.example.com" }) {
   const patched: { id: string; fields: Record<string, unknown> }[] = [];
   const sanity: PolicyCheckSanityClient = {
     fetch: vi.fn(async () => source) as unknown as PolicyCheckSanityClient["fetch"],
@@ -160,9 +160,280 @@ describe("checkPulseSourcePolicy — URL provenance", () => {
   });
 
   it("the fetcher is always called with exactly the freshly-read termsUrl, never a different or stale URL", async () => {
-    const { sanity } = makeMockSanity({ termsUrl: "https://www.nikon.com/terms", sourceClassification: "official_primary" });
+    const { sanity } = makeMockSanity({ termsUrl: "https://www.nikon.com/terms", sourceClassification: "official_primary", url: "https://www.nikon.com" });
     const fetchPolicyText = vi.fn(async (url: string) => ({ ok: true as const, text: `checked ${url}`, contentType: "text/html" }));
     await checkPulseSourcePolicy("nikon", sanity, fetchPolicyText);
     expect(fetchPolicyText).toHaveBeenCalledWith("https://www.nikon.com/terms");
+  });
+});
+
+// =========================================================================
+// Official-Domain Policy Discovery Fallback (2026-09-08) — D/E/F/G/I/J
+// through the real checkPulseSourcePolicy() integration path.
+// =========================================================================
+describe("checkPulseSourcePolicy — official-domain fallback", () => {
+  it("D: saved URL 404s, Website is configured, homepage yields a candidate — recommendation stays inconclusive, evidence carries the candidate, termsUrl is NOT written", async () => {
+    const { sanity, patched } = makeMockSanity({ termsUrl: "https://www.nikon.com/terms", sourceClassification: "official_primary", url: "https://www.nikon.com" });
+    const fetchPolicyText = vi.fn(async (url: string) => {
+      if (url === "https://www.nikon.com/terms") return { ok: false as const, reason: "HTTP 404" };
+      if (url === "https://www.nikon.com") return { ok: true as const, text: `<a href="/company/terms-of-use">Terms of Use</a>`, contentType: "text/html" };
+      throw new Error(`unexpected url ${url}`);
+    });
+    const result = await checkPulseSourcePolicy("nikon", sanity, fetchPolicyText);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.recommendation).toBe("inconclusive");
+      const candidate = result.evidence.find((e) => e.category === "fallback-candidate");
+      expect(candidate?.url).toBe("https://www.nikon.com/company/terms-of-use");
+    }
+    // termsUrl must never appear in the patch at all — only adoption can write it.
+    expect(Object.prototype.hasOwnProperty.call(patched[0].fields, "termsUrl")).toBe(false);
+  });
+
+  it("2 (never writes termsUrl): the fallback path's patch keys are exactly the five evidence fields, same as the non-fallback path", async () => {
+    const { sanity, patched } = makeMockSanity({ termsUrl: "https://www.nikon.com/terms", sourceClassification: "official_primary", url: "https://www.nikon.com" });
+    const fetchPolicyText = vi.fn(async (url: string) =>
+      url === "https://www.nikon.com/terms" ? { ok: false as const, reason: "HTTP 404" } : { ok: false as const, reason: "HTTP 404" }
+    );
+    await checkPulseSourcePolicy("nikon", sanity, fetchPolicyText);
+    expect(Object.keys(patched[0].fields).sort()).toEqual(
+      ["policyCheckedAt", "policyCheckedUrl", "policyCheckEvidence", "policyCheckRecommendation", "policyCheckTrustSuggestion"].sort()
+    );
+  });
+
+  it("2b: no fallback is attempted (and fetchPolicyText is called exactly once) when the source has no Website configured", async () => {
+    const { sanity } = makeMockSanity({ termsUrl: "https://www.nikon.com/terms", sourceClassification: "official_primary", url: null });
+    const fetchPolicyText = vi.fn(async () => ({ ok: false as const, reason: "HTTP 404" }));
+    const result = await checkPulseSourcePolicy("nikon", sanity, fetchPolicyText);
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.recommendation).toBe("inconclusive");
+    expect(fetchPolicyText).toHaveBeenCalledTimes(1);
+  });
+
+  it("F/J: a candidate the homepage links to off the official domain never appears in evidence at all, end-to-end", async () => {
+    const { sanity } = makeMockSanity({ termsUrl: "https://www.nikon.com/terms", sourceClassification: "official_primary", url: "https://www.nikon.com" });
+    const fetchPolicyText = vi.fn(async (url: string) => {
+      if (url === "https://www.nikon.com/terms") return { ok: false as const, reason: "HTTP 404" };
+      return {
+        ok: true as const,
+        text: `<a href="https://totallydifferent.com/terms">Terms (off-site)</a><a href="https://nikon.com.evil.com/terms">Terms (lookalike)</a>`,
+        contentType: "text/html",
+      };
+    });
+    const result = await checkPulseSourcePolicy("nikon", sanity, fetchPolicyText);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.evidence.some((e) => e.category === "fallback-candidate")).toBe(false);
+      // fetchPolicyText must never be called a third time for either
+      // rejected candidate — only the saved URL and the one homepage.
+    }
+    expect(fetchPolicyText).toHaveBeenCalledTimes(2);
+  });
+
+  it("G: a press/newsroom candidate and a legal/terms candidate are tagged distinctly, never collapsed into one signal", async () => {
+    const { sanity } = makeMockSanity({ termsUrl: "https://www.nikon.com/terms", sourceClassification: "official_primary", url: "https://www.nikon.com" });
+    const fetchPolicyText = vi.fn(async (url: string) => {
+      if (url === "https://www.nikon.com/terms") return { ok: false as const, reason: "HTTP 404" };
+      return {
+        ok: true as const,
+        text: `<a href="/newsroom">Newsroom</a><a href="/legal/copyright">Copyright</a>`,
+        contentType: "text/html",
+      };
+    });
+    const result = await checkPulseSourcePolicy("nikon", sanity, fetchPolicyText);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      const candidates = result.evidence.filter((e) => e.category === "fallback-candidate");
+      expect(candidates.some((c) => c.snippet.includes("press/newsroom"))).toBe(true);
+      expect(candidates.some((c) => c.snippet.includes("legal/terms"))).toBe(true);
+    }
+  });
+
+  it("I: homepage fetch ALSO times out/5xx — still inconclusive, both failures recorded as evidence, never a candidate", async () => {
+    const { sanity } = makeMockSanity({ termsUrl: "https://www.nikon.com/terms", sourceClassification: "official_primary", url: "https://www.nikon.com" });
+    const fetchPolicyText = vi.fn(async (url: string) =>
+      url === "https://www.nikon.com/terms" ? { ok: false as const, reason: "HTTP 404" } : { ok: false as const, reason: "timeout" }
+    );
+    const result = await checkPulseSourcePolicy("nikon", sanity, fetchPolicyText);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.recommendation).toBe("inconclusive");
+      expect(result.evidence.every((e) => e.category !== "fallback-candidate")).toBe(true);
+      expect(result.evidence.some((e) => e.snippet.includes("timeout"))).toBe(true);
+    }
+  });
+
+  it("no candidate on the homepage at all — inconclusive, evidence says so, never invents one", async () => {
+    const { sanity } = makeMockSanity({ termsUrl: "https://www.nikon.com/terms", sourceClassification: "official_primary", url: "https://www.nikon.com" });
+    const fetchPolicyText = vi.fn(async (url: string) =>
+      url === "https://www.nikon.com/terms" ? { ok: false as const, reason: "HTTP 404" } : { ok: true as const, text: `<a href="/products">Cameras</a>`, contentType: "text/html" }
+    );
+    const result = await checkPulseSourcePolicy("nikon", sanity, fetchPolicyText);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.recommendation).toBe("inconclusive");
+      expect(result.evidence.some((e) => e.category === "fallback-candidate")).toBe(false);
+    }
+  });
+});
+
+// =========================================================================
+// adoptPulseSourcePolicyCandidate — "Use this policy URL"
+// =========================================================================
+describe("adoptPulseSourcePolicyCandidate — structural isolation and independent re-validation", () => {
+  function makeAdoptSanity(source: { url: string | null } | null = { url: "https://www.nikon.com" }) {
+    const patched: { id: string; fields: Record<string, unknown> }[] = [];
+    const sanity: PolicyCheckSanityClient = {
+      fetch: vi.fn(async () => source) as unknown as PolicyCheckSanityClient["fetch"],
+      patch: (id: string) => ({
+        set: (fields: Record<string, unknown>) => ({
+          commit: async () => {
+            patched.push({ id, fields });
+            return {};
+          },
+        }),
+      }),
+    };
+    return { sanity, patched };
+  }
+
+  // A stub `checkSafety` is injected for every success-path test below —
+  // deliberately never relying on real DNS resolution for determinism
+  // (same reasoning as urlSafety.test.ts/policyCheckFetch.test.ts).
+  // Every failure-path test below is rejected BEFORE the safety check
+  // even runs (malformed/off-domain/credentials), so those correctly
+  // use the real default and need no stub — except the literal-IP SSRF
+  // case, which is deterministic without DNS by construction (see
+  // urlSafety.ts) and so also uses the real default on purpose, as a
+  // genuine end-to-end proof the real guard is actually wired in.
+  const alwaysSafe = async () => ({ safe: true as const });
+
+  it("1/2: a successful adoption's patch contains ONLY termsUrl — no other key, including none of the eight decision fields", async () => {
+    const { sanity, patched } = makeAdoptSanity();
+    const result = await adoptPulseSourcePolicyCandidate("nikon", "https://www.nikon.com/company/terms-of-use", sanity, alwaysSafe);
+    expect(result.ok).toBe(true);
+    expect(patched).toHaveLength(1);
+    expect(Object.keys(patched[0].fields)).toEqual(["termsUrl"]);
+    for (const decisionField of PULSE_SOURCE_DECISION_FIELDS) {
+      expect(Object.prototype.hasOwnProperty.call(patched[0].fields, decisionField)).toBe(false);
+    }
+    expect(patched[0].fields.termsUrl).toBe("https://www.nikon.com/company/terms-of-use");
+  });
+
+  it("4: rejects an off-official-domain candidate even though nothing about it claims to have been 'previously shown' — re-validated independently, not trusted from display state", async () => {
+    const { sanity, patched } = makeAdoptSanity();
+    const result = await adoptPulseSourcePolicyCandidate("nikon", "https://totallydifferent.com/terms", sanity);
+    expect(result.ok).toBe(false);
+    expect(patched).toHaveLength(0);
+  });
+
+  it("4: rejects a lookalike domain that merely contains the official domain as a substring", async () => {
+    const { sanity, patched } = makeAdoptSanity();
+    const result = await adoptPulseSourcePolicyCandidate("nikon", "https://nikon.com.evil.com/terms", sanity);
+    expect(result.ok).toBe(false);
+    expect(patched).toHaveLength(0);
+  });
+
+  it("4: rejects a candidate URL resolving to a private/reserved address (SSRF guard re-run at adoption time, not skipped)", async () => {
+    const { sanity, patched } = makeAdoptSanity({ url: "https://www.example.com" });
+    const result = await adoptPulseSourcePolicyCandidate("src1", "http://169.254.169.254/terms", sanity);
+    expect(result.ok).toBe(false);
+    expect(patched).toHaveLength(0);
+  });
+
+  it("4: rejects a candidate URL carrying credentials", async () => {
+    const { sanity, patched } = makeAdoptSanity();
+    const result = await adoptPulseSourcePolicyCandidate("nikon", "https://user:pass@www.nikon.com/terms", sanity);
+    expect(result.ok).toBe(false);
+    expect(patched).toHaveLength(0);
+  });
+
+  it("rejects a malformed candidate URL", async () => {
+    const { sanity, patched } = makeAdoptSanity();
+    const result = await adoptPulseSourcePolicyCandidate("nikon", "not a url", sanity);
+    expect(result.ok).toBe(false);
+    expect(patched).toHaveLength(0);
+  });
+
+  it("rejects adoption when the source has no Website configured to validate the candidate against", async () => {
+    const { sanity, patched } = makeAdoptSanity({ url: null });
+    const result = await adoptPulseSourcePolicyCandidate("nikon", "https://www.nikon.com/terms", sanity);
+    expect(result.ok).toBe(false);
+    expect(patched).toHaveLength(0);
+  });
+
+  it("rejects adoption for a nonexistent source", async () => {
+    const { sanity, patched } = makeAdoptSanity(null);
+    const result = await adoptPulseSourcePolicyCandidate("missing", "https://www.nikon.com/terms", sanity);
+    expect(result.ok).toBe(false);
+    expect(patched).toHaveLength(0);
+  });
+
+  it("accepts a genuine subdomain of the official domain (e.g. a press.nikon.com newsroom page)", async () => {
+    const { sanity, patched } = makeAdoptSanity({ url: "https://www.nikon.com" });
+    const result = await adoptPulseSourcePolicyCandidate("nikon", "https://press.nikon.com/legal", sanity, alwaysSafe);
+    expect(result.ok).toBe(true);
+    expect(patched[0].fields.termsUrl).toBe("https://press.nikon.com/legal");
+  });
+});
+
+// =========================================================================
+// 5: re-checking after adoption gathers FRESH evidence — discovery
+// itself is never silently treated as a successful classification.
+// =========================================================================
+describe("Check Policy + Adopt Policy Candidate — end-to-end freshness", () => {
+  it("adopting a candidate never itself evaluates it — a subsequent Check Policy call performs its own real fetch/evaluation, distinct from the discovery evidence", async () => {
+    let currentTermsUrl = "https://www.nikon.com/terms";
+    const checkPatched: { fields: Record<string, unknown> }[] = [];
+    const checkSanity: PolicyCheckSanityClient = {
+      fetch: vi.fn(async () => ({ termsUrl: currentTermsUrl, sourceClassification: "official_primary" as const, url: "https://www.nikon.com" })) as unknown as PolicyCheckSanityClient["fetch"],
+      patch: () => ({
+        set: (fields: Record<string, unknown>) => ({
+          commit: async () => {
+            checkPatched.push({ fields });
+            return {};
+          },
+        }),
+      }),
+    };
+    const fetchPolicyText = vi.fn(async (url: string) => {
+      if (url === "https://www.nikon.com/terms") return { ok: false as const, reason: "HTTP 404" };
+      if (url === "https://www.nikon.com") return { ok: true as const, text: `<a href="/company/terms-of-use">Terms of Use</a>`, contentType: "text/html" };
+      if (url === "https://www.nikon.com/company/terms-of-use") {
+        return { ok: true as const, text: "All rights reserved. Photographs may not be reproduced without prior written consent.", contentType: "text/html" };
+      }
+      throw new Error(`unexpected url ${url}`);
+    });
+
+    // First check: saved URL 404s, fallback discovers a candidate. Still inconclusive.
+    const first = await checkPulseSourcePolicy("nikon", checkSanity, fetchPolicyText);
+    expect(first.ok && first.recommendation).toBe("inconclusive");
+
+    // Admin adopts the candidate (separate write path, separate sanity mock for isolation).
+    const { sanity: adoptSanity, patched: adoptPatched } = (() => {
+      const patched: { fields: Record<string, unknown> }[] = [];
+      const sanity: PolicyCheckSanityClient = {
+        fetch: vi.fn(async () => ({ url: "https://www.nikon.com" })) as unknown as PolicyCheckSanityClient["fetch"],
+        patch: () => ({ set: (fields: Record<string, unknown>) => ({ commit: async () => { patched.push({ fields }); return {}; } }) }),
+      };
+      return { sanity, patched };
+    })();
+    const adoptResult = await adoptPulseSourcePolicyCandidate("nikon", "https://www.nikon.com/company/terms-of-use", adoptSanity, async () => ({ safe: true as const }));
+    expect(adoptResult.ok).toBe(true);
+    // Adoption's own patch is termsUrl-only — never writes a recommendation, never treats discovery as a classification.
+    expect(Object.keys(adoptPatched[0].fields)).toEqual(["termsUrl"]);
+    currentTermsUrl = "https://www.nikon.com/company/terms-of-use"; // simulates the just-written termsUrl being read back
+
+    // Second, separate Check Policy call: must perform its OWN real
+    // fetch/evaluation of the newly-adopted URL, not reuse the
+    // discovery-time evidence from the first check.
+    const second = await checkPulseSourcePolicy("nikon", checkSanity, fetchPolicyText);
+    expect(second.ok).toBe(true);
+    if (second.ok) {
+      expect(second.checkedUrl).toBe("https://www.nikon.com/company/terms-of-use");
+      expect(second.recommendation).toBe("candidate-red"); // a REAL evaluation of the adopted page's own text, not the discovery evidence
+      expect(second.evidence.every((e) => e.category !== "fallback-candidate")).toBe(true);
+    }
+    expect(fetchPolicyText).toHaveBeenCalledWith("https://www.nikon.com/company/terms-of-use");
   });
 });
