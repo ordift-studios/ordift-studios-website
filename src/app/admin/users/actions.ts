@@ -1,5 +1,6 @@
 "use server";
 
+import { randomBytes } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { createAdminClient } from "@/lib/supabase/admin";
 import {
@@ -130,6 +131,64 @@ export async function grantRoleAction(_prevState: GrantRoleState, formData: Form
 
   revalidatePath("/admin/users");
   return { ok: true };
+}
+
+// Admin-set temporary password (2026-09-09) — account-recovery unblock
+// for an existing user, using the SAME Supabase Admin SDK method
+// already called elsewhere in this exact file (updateAccessStatusAction
+// above uses admin.auth.admin.updateUserById() for ban_duration) — this
+// call sets `password` instead. Not a new auth mechanism: it's the
+// standard, documented Supabase Admin API, already present and used in
+// this codebase, applied to a field it already supports.
+//
+// The password is generated fresh, server-side, with Node's
+// crypto.randomBytes (never Math.random(), never hardcoded) —
+// returned to the caller exactly once in this function's own return
+// value. It is never written to console, never included in the
+// activity-log metadata, and this function holds no reference to it
+// after returning. The existing account (id, email, profile, and every
+// role already granted) is completely untouched — this only ever
+// updates the Auth-layer credential.
+function generateTemporaryPassword(): string {
+  const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%^&*-_";
+  const bytes = randomBytes(24);
+  let password = "";
+  for (let i = 0; i < bytes.length; i++) password += alphabet[bytes[i] % alphabet.length];
+  return password;
+}
+
+export type SetTemporaryPasswordState = { ok: boolean; error?: string; temporaryPassword?: string } | null;
+
+export async function setTemporaryPasswordAction(_prevState: SetTemporaryPasswordState, formData: FormData): Promise<SetTemporaryPasswordState> {
+  let currentUser: Awaited<ReturnType<typeof requireAdmin>>;
+  try {
+    currentUser = await requireAdmin();
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Not authorized." };
+  }
+
+  const userId = String(formData.get("userId") ?? "");
+  if (!userId) return { ok: false, error: "Missing user." };
+
+  const admin = createAdminClient();
+  const temporaryPassword = generateTemporaryPassword();
+  const { error } = await admin.auth.admin.updateUserById(userId, { password: temporaryPassword });
+  if (error) {
+    console.error("[admin] failed to set temporary password", error.message);
+    return { ok: false, error: "Failed to set a temporary password." };
+  }
+
+  // Deliberately no password value anywhere in the log — the audit
+  // trail records THAT this happened and who did it, never the
+  // credential itself.
+  await logActivity({
+    actorUserId: currentUser.id,
+    action: "user.temporary_password_set",
+    entityType: "user",
+    entityId: userId,
+  });
+
+  return { ok: true, temporaryPassword };
 }
 
 export async function revokeRoleAction(formData: FormData): Promise<void> {

@@ -11,6 +11,8 @@ import type { ActivityLogEntry } from "@/lib/admin/activityLog";
 import {
   grantRoleAction,
   type GrantRoleState,
+  setTemporaryPasswordAction,
+  type SetTemporaryPasswordState,
   revokeRoleAction,
   updateAccessStatusAction,
   setAccessExpiryAction,
@@ -132,6 +134,10 @@ function UserDetail({
   // never be confused with or interfered by any other action's state.
   // Same pattern as Talent's "Add Category" fix (AddCategoryForm.tsx).
   const [grantState, grantFormAction, grantPending] = useActionState<GrantRoleState, FormData>(grantRoleAction, null);
+  // Admin-set temporary password (2026-09-09) — its own isolated
+  // useActionState, same reasoning as Grant Role above: never share
+  // pending/result state with an unrelated action in this component.
+  const [tempPasswordState, tempPasswordFormAction, tempPasswordPending] = useActionState<SetTemporaryPasswordState, FormData>(setTemporaryPasswordAction, null);
   const [confirming, setConfirming] = useState<null | { kind: "suspend" | "deactivate" | "reactivate" | "restore" }>(
     null
   );
@@ -521,6 +527,37 @@ function UserDetail({
           <p className="font-sans text-caption text-ordift-ink-muted">
             Only a Super Admin can grant, revoke, suspend, or deactivate Admin/Super Admin accounts.
           </p>
+        )}
+      </section>
+
+      {/* Account Recovery — admin-set temporary password (2026-09-09) */}
+      <section className="space-y-2">
+        <h3 className="font-sans text-caption font-semibold uppercase tracking-wide text-ordift-ink-muted">Account Recovery</h3>
+        <p className="font-sans text-caption text-ordift-ink-muted">
+          Sets a new, randomly-generated password directly on this account — for unblocking sign-in when the self-service email flow isn&apos;t available. Shown
+          once below; it is never stored or logged. Ask the account holder to sign in and change it immediately.
+        </p>
+        <form action={tempPasswordFormAction}>
+          <input type="hidden" name="userId" value={user.id} />
+          <button
+            type="submit"
+            disabled={tempPasswordPending}
+            aria-busy={tempPasswordPending}
+            className="font-sans text-body-small text-ordift-gold-pressed underline underline-offset-4 disabled:opacity-60"
+          >
+            {tempPasswordPending ? "Setting…" : "Set Temporary Password"}
+          </button>
+        </form>
+        {!tempPasswordPending && tempPasswordState?.ok === true && tempPasswordState.temporaryPassword && (
+          <div className="rounded-lg border border-green-200 bg-green-50 px-4 py-3 space-y-1">
+            <p className="font-sans text-caption text-green-800">
+              Temporary password set — shown once, copy it now:
+            </p>
+            <p className="font-mono text-body-small text-ordift-ink select-all break-all">{tempPasswordState.temporaryPassword}</p>
+          </div>
+        )}
+        {!tempPasswordPending && tempPasswordState?.ok === false && (
+          <p className="font-sans text-caption text-red-700">{tempPasswordState.error}</p>
         )}
       </section>
 

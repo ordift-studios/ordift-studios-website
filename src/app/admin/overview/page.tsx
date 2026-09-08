@@ -35,6 +35,7 @@ function formatDate(iso: string): string {
 // the single source of truth for this feed's human-readable text.
 const ACTION_LABELS: Record<string, string> = {
   "role.grant": "Granted a role",
+  "user.temporary_password_set": "Set a temporary password for account recovery",
   "role.revoke": "Revoked a role",
   "enquiry.stage_change": "Changed enquiry stage",
   "enquiry.note_added": "Added an enquiry note",
