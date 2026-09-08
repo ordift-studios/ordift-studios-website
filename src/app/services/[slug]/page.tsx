@@ -58,6 +58,9 @@ export default async function ServiceDetailPage({
   // to back whenever Featured Work renders (every non-isComingSoon
   // service).
   const showFeaturedWork = !service.isComingSoon;
+  // Public Discovery Integration Polish (2026-09-08) — see the hero and
+  // CTA sections below for what this narrowly overrides.
+  const isTalentManagement = service.slug === "talent-management";
   const [allProjects, categories] = showFeaturedWork
     ? await Promise.all([contentRepository.getPortfolioProjects(), contentRepository.getPortfolioCategories()])
     : [[], []];
@@ -99,6 +102,20 @@ export default async function ServiceDetailPage({
             <p className="font-sans text-body lg:text-body-desktop text-white/80 max-w-2xl">
               {service.heroBody}
             </p>
+            {/* Public Discovery Integration Polish (2026-09-08) —
+                narrow, slug-scoped addition: the Talent Management
+                service page had no path into the new /talent ("Our
+                Roster") route besides typing the URL directly. Reuses
+                Button's existing primary variant unchanged — the only
+                one of the three existing variants actually visible on
+                this dark hero (secondary's ink-colored border/text and
+                dark's navy fill both assume a light section behind
+                them). */}
+            {isTalentManagement && (
+              <Button href="/talent" variant="primary" className="mt-6">
+                View Our Roster
+              </Button>
+            )}
           </div>
           <DepartmentMediaFrame
             slug={service.slug}
@@ -183,26 +200,50 @@ export default async function ServiceDetailPage({
         className={`px-4 sm:px-8 py-14 sm:py-20 text-center ${ctaBg === "white" ? "bg-white" : "bg-ordift-offwhite"}`}
       >
         <div className="max-w-2xl mx-auto">
-          {service.ctaEyebrow && (
-            <p className="font-sans font-semibold uppercase tracking-[0.2em] text-eyebrow text-ordift-gold-pressed mb-3">
-              {service.ctaEyebrow}
-            </p>
+          {/* Public Discovery Integration Polish (2026-09-08) — the CTA
+              copy below is CMS content (service.cta*), unchanged for
+              every other service. For talent-management specifically,
+              that content was still the pre-launch "Coming Soon —
+              the talent directory and booking system are on the way"
+              messaging, now inaccurate since Our Roster is live —
+              overridden here at the code level (narrow, slug-scoped,
+              reviewable/revertible) rather than mutating the Sanity
+              document, so this integration ships as a normal,
+              deployable code change. */}
+          {isTalentManagement ? (
+            <p className="font-sans font-semibold uppercase tracking-[0.2em] text-eyebrow text-ordift-gold-pressed mb-3">Talent</p>
+          ) : (
+            service.ctaEyebrow && (
+              <p className="font-sans font-semibold uppercase tracking-[0.2em] text-eyebrow text-ordift-gold-pressed mb-3">
+                {service.ctaEyebrow}
+              </p>
+            )
           )}
           <h2 className="font-serif font-medium text-page-title sm:text-page-title-tablet text-ordift-ink mb-4">
-            {service.ctaHeadline}
+            {isTalentManagement ? "Explore Our Roster." : service.ctaHeadline}
           </h2>
-          <p className="font-sans text-body text-ordift-ink-muted mb-8">{service.ctaBody}</p>
+          <p className="font-sans text-body text-ordift-ink-muted mb-8">
+            {isTalentManagement
+              ? "Ordift's represented talent can now be viewed publicly on Our Roster. The full casting and booking workflow is still being built — for a specific booking or casting request, get in touch directly."
+              : service.ctaBody}
+          </p>
           <div className="flex flex-wrap gap-3 justify-center">
             <Button
-              href={service.isComingSoon ? "/book?service=general" : `/book?service=${service.slug}`}
+              href={isTalentManagement ? "/talent" : service.isComingSoon ? "/book?service=general" : `/book?service=${service.slug}`}
               variant="primary"
             >
-              {service.ctaPrimaryLabel}
+              {isTalentManagement ? "Explore Our Roster" : service.ctaPrimaryLabel}
             </Button>
-            {service.ctaSecondaryLabel && (
-              <Button href={`/book?service=${service.slug}`} variant="secondary">
-                {service.ctaSecondaryLabel}
+            {isTalentManagement ? (
+              <Button href="/book?service=general" variant="secondary">
+                Get in Touch
               </Button>
+            ) : (
+              service.ctaSecondaryLabel && (
+                <Button href={`/book?service=${service.slug}`} variant="secondary">
+                  {service.ctaSecondaryLabel}
+                </Button>
+              )
             )}
           </div>
         </div>
