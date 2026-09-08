@@ -104,6 +104,13 @@ const NAV_GROUPS: NavGroup[] = [
     items: [{ label: "Legal & Governance", href: "/admin/legal", adminOnly: true }],
   },
   {
+    // TALENT-SYS-1 Foundation (2026-09-08). Business-line-inactive —
+    // this nav entry only surfaces the read-only governance view, not
+    // a live/public Talent Management product.
+    label: "Talent Management",
+    items: [{ label: "Talent Management", href: "/admin/talent", adminOnly: true }],
+  },
+  {
     label: "OS Academy",
     items: [{ label: "Workshop Management", href: "/admin/workshops" }],
   },

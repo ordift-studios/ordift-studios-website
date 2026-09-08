@@ -434,7 +434,23 @@ export const GOVERNANCE_CAPABILITIES = {
   // Super Admin retains ultimate signing authority via the existing
   // authorizeWithSuperAdminOverride() pattern regardless of whether
   // this capability has ever been granted to anyone.
-  signingAuthority: "governance.signing_authority", // DORMANT — no consuming code yet (future signature engine)
+  signingAuthority: "governance.signing_authority", // DORMANT — the Signature Engine (src/lib/legal/signatureEngine.ts, Phase F, 2026-09-08) now exists but deliberately does not consume this capability; contractAdminister remains the real gate for admin-initiated signature actions
+} as const;
+
+// talent.* — Talent Management foundation (TALENT-SYS-1, 2026-09-08).
+// Every capability here is DORMANT — framework only, zero
+// authority_grants rows issued, Super Admin remains the only actor who
+// can pass (via authorizeWithSuperAdminOverride()). Talent Management
+// itself is a business-line-inactive foundation (no public launch, no
+// real talent onboarded) — these capabilities exist so a later,
+// separately-authorized business-line activation has real governance
+// scaffolding to grant against, not a placeholder.
+export const TALENT_CAPABILITIES = {
+  profileAdminister: "talent.profile.administer", // DORMANT
+  representationAdminister: "talent.representation.administer", // DORMANT
+  commercialTermsAdminister: "talent.commercial_terms.administer", // DORMANT — no default commission/rate is ever set by this capability or any code it gates
+  opportunityAdminister: "talent.opportunity.administer", // DORMANT — internal casting/opportunity records only, never a public listing
+  mediaAdminister: "talent.media.administer", // DORMANT
 } as const;
 
 // Super-Admin check by id, for server-side helpers (like

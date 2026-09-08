@@ -15,6 +15,14 @@ const STATUS_LABELS: Record<string, string> = {
   inactive: "Inactive",
 };
 
+// TALENT-SYS-1 Foundation (2026-09-08).
+const REPRESENTATION_LABELS: Record<string, string> = {
+  unrepresented: "Not currently represented",
+  exclusive: "Exclusive representation",
+  non_exclusive: "Non-exclusive representation",
+  lapsed: "Representation lapsed",
+};
+
 // Phase H.1/H.2 (2026-09-04) — Section 7: replaced the placeholder-only
 // page with a real shared surface (bookings/compensation via the same
 // engagement data every other relationship reads). Talent Management's
@@ -31,7 +39,7 @@ export default async function ModelPortalPage() {
   const user = await getCurrentUser();
   const supabase = await createClient();
   const [{ data: profile }, engagements] = await Promise.all([
-    user ? supabase.from("model_profiles").select("status").eq("id", user.id).maybeSingle() : Promise.resolve({ data: null }),
+    user ? supabase.from("model_profiles").select("status, representation_status").eq("id", user.id).maybeSingle() : Promise.resolve({ data: null }),
     user ? listMyEngagements(user.id) : Promise.resolve([]),
   ]);
   const { active: activeEngagements, completed: completedEngagements, cancelled: cancelledEngagements } = groupEngagementsByLifecycle(engagements);
@@ -48,6 +56,11 @@ export default async function ModelPortalPage() {
         <p className="font-sans text-body-small text-ordift-ink-muted mt-2">
           {profile ? STATUS_LABELS[profile.status] ?? profile.status : "Not yet set up"}
         </p>
+        {profile ? (
+          <p className="font-sans text-body-small text-ordift-ink-muted mt-1">
+            {REPRESENTATION_LABELS[profile.representation_status] ?? profile.representation_status}
+          </p>
+        ) : null}
       </div>
 
       <ExternalWorkforceEngagements

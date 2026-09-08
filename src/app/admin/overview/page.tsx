@@ -201,6 +201,16 @@ const ACTION_LABELS: Record<string, string> = {
   "legal.signature_signatory.link_generated": "Generated a signatory access link",
   "legal.signature_signatory.revoked": "Revoked a signatory's access",
   "legal.release.granted": "Granted a rights/release category on an agreement",
+
+  // TALENT-SYS-1 Foundation (2026-09-08)
+  "talent.representation.status_changed": "Changed a talent's representation status",
+  "talent.category.created": "Created a talent category",
+  "talent.category.assigned": "Assigned a talent category to a profile",
+  "talent.category.removed": "Removed a talent category from a profile",
+  "talent.commercial_terms.set": "Set a talent's commercial/commission terms",
+  "talent.opportunity.created": "Created a talent opportunity",
+  "talent.opportunity.status_changed": "Changed a talent opportunity's status",
+  "talent.media.recorded": "Recorded a talent media asset",
 };
 
 // Graceful fallback for any action type not (yet) in ACTION_LABELS — pure
