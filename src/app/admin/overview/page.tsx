@@ -188,6 +188,10 @@ const ACTION_LABELS: Record<string, string> = {
   "break_glass.invoked": "Invoked Super Admin emergency (break-glass) access",
   "staff_details.employment_status_changed": "Changed a person's employment status",
   "profiles.access_status_changed": "Changed a person's account/system access status",
+
+  // Ordift Studios Legal Suite — LEGAL-SYS-1 (2026-09-08)
+  "legal.master_version.status_changed": "Changed a legal document master version's lifecycle status",
+  "legal.master_release.ingested": "Ingested a controlled Legal Suite Official Master release",
 };
 
 // Graceful fallback for any action type not (yet) in ACTION_LABELS — pure

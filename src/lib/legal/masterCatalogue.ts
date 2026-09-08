@@ -104,3 +104,20 @@ export function requiresBusinessLineActivation(code: string): boolean {
 export function isSeparatelyControlledRelease(code: string): boolean {
   return code === RAW_LICENCE_CODE;
 }
+
+// Phase D.1 (2026-09-08) — a master's real Official Master source
+// artifacts (DOCX + PDF, both hash-recorded) have been ingested only
+// when BOTH paths and BOTH hashes are present. Never true merely
+// because a master row and an "approved" placeholder version exist —
+// that reflects counsel approval only, not that real content has
+// actually been imported.
+export type IngestedArtifactSummary = {
+  masterDocxStoragePath: string | null;
+  masterDocxSha256: string | null;
+  masterPdfStoragePath: string | null;
+  masterPdfSha256: string | null;
+};
+
+export function isOfficialMasterContentIngested(artifact: IngestedArtifactSummary): boolean {
+  return Boolean(artifact.masterDocxStoragePath && artifact.masterDocxSha256 && artifact.masterPdfStoragePath && artifact.masterPdfSha256);
+}

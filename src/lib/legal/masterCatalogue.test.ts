@@ -6,6 +6,7 @@ import {
   isValidTemplateLifecycleTransition,
   requiresBusinessLineActivation,
   isSeparatelyControlledRelease,
+  isOfficialMasterContentIngested,
 } from "./masterCatalogue";
 
 // Ordift Studios Legal Suite — LEGAL-SYS-1, Phase D-0 (2026-09-08).
@@ -107,6 +108,22 @@ describe("isValidTemplateLifecycleTransition — Part 5", () => {
   });
   it("refuses moving backward from approved to draft", () => {
     expect(isValidTemplateLifecycleTransition("approved", "draft")).toBe(false);
+  });
+});
+
+describe("isOfficialMasterContentIngested — Phase D.1", () => {
+  it("false when nothing has been ingested", () => {
+    expect(isOfficialMasterContentIngested({ masterDocxStoragePath: null, masterDocxSha256: null, masterPdfStoragePath: null, masterPdfSha256: null })).toBe(false);
+  });
+  it("false when only the DOCX side is present (partial ingestion never counts as complete)", () => {
+    expect(
+      isOfficialMasterContentIngested({ masterDocxStoragePath: "x", masterDocxSha256: "abc", masterPdfStoragePath: null, masterPdfSha256: null })
+    ).toBe(false);
+  });
+  it("true only when both DOCX and PDF path+hash are all present", () => {
+    expect(
+      isOfficialMasterContentIngested({ masterDocxStoragePath: "x", masterDocxSha256: "abc", masterPdfStoragePath: "y", masterPdfSha256: "def" })
+    ).toBe(true);
   });
 });
 
