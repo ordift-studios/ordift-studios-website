@@ -19,6 +19,7 @@ import type {
   Service,
   SiteSettings,
   Sponsor,
+  TalentProfile,
   Testimonial,
   Venue,
   Workshop,
@@ -50,6 +51,12 @@ export interface ContentRepository {
   getPortfolioProjectBySlug(slug: string): Promise<PortfolioProject | null>;
   getPortfolioCategories(): Promise<Category[]>;
   getPortfolioCollections(): Promise<Collection[]>;
+
+  // Talent (TALENT-SYS-2B) — published profiles only, same precedent as
+  // Portfolio above. The private half of a talent's record (Supabase)
+  // is read through src/lib/talent/*, never through this interface.
+  getTalentProfiles(): Promise<TalentProfile[]>;
+  getTalentProfileBySlug(slug: string): Promise<TalentProfile | null>;
 
   // Journal — public methods return only posts that are both published
   // and past their scheduled publish date (see JournalPost.scheduledFor).

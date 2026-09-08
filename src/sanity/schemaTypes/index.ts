@@ -7,6 +7,7 @@ import homepageSlideshowSlide from "./objects/homepageSlideshowSlide";
 import mediaAsset from "./objects/mediaAsset";
 import seo from "./objects/seo";
 import socialLink from "./objects/socialLink";
+import talentGalleryImage from "./objects/talentGalleryImage";
 
 // Documents — Workshops, Portfolio, Stories ecosystem (mirror the
 // existing ContentRepository domain model 1:1; see CMS_MIGRATION.md)
@@ -26,6 +27,7 @@ import pulseSettings from "./documents/pulseSettings";
 import pulseSource from "./documents/pulseSource";
 import sponsor from "./documents/sponsor";
 import tag from "./documents/tag";
+import talentProfile from "./documents/talentProfile";
 import testimonial from "./documents/testimonial";
 import venue from "./documents/venue";
 import workshop from "./documents/workshop";
@@ -60,6 +62,7 @@ export const schemaTypes: SchemaTypeDefinition[] = [
   mediaAsset,
   seo,
   socialLink,
+  talentGalleryImage,
   // connected documents
   author,
   instructor,
@@ -77,6 +80,7 @@ export const schemaTypes: SchemaTypeDefinition[] = [
   pulseSource,
   sponsor,
   tag,
+  talentProfile,
   testimonial,
   venue,
   workshop,

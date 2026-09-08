@@ -6,6 +6,7 @@ import {
   optionalImageFragment,
   requiredMediaAssetFragment,
   seoFragment,
+  talentGalleryImageFragment,
 } from "./groqFragments";
 
 export const workshopFragment = `{
@@ -265,6 +266,28 @@ export const portfolioCollectionFragment = `{
   isOrdered
 }`;
 export const portfolioCollectionsQuery = `*[_type == "portfolioCollection"] ${portfolioCollectionFragment}`;
+
+// Talent (TALENT-SYS-2B, Phase 1, 2026-09-08) — same "published only,
+// no preview mode" visibility rule as Portfolio.
+const talentVisibilityFilter = `status == "published"`;
+
+export const talentProfileFragment = `{
+  "id": _id,
+  profileId,
+  "slug": slug.current,
+  name,
+  category,
+  location,
+  availabilityNote,
+  ${optionalImageFragment("heroImage")},
+  introduction,
+  "gallery": coalesce(gallery[]${talentGalleryImageFragment} | order(displayOrder asc), []),
+  reelEmbedUrl,
+  developmentStage
+}`;
+
+export const talentProfilesQuery = `*[_type == "talentProfile" && ${talentVisibilityFilter}] | order(_createdAt desc) ${talentProfileFragment}`;
+export const talentProfileBySlugQuery = `*[_type == "talentProfile" && slug.current == $slug && ${talentVisibilityFilter}][0] ${talentProfileFragment}`;
 
 export const authorFragment = `{
   "id": _id,

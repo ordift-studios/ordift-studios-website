@@ -26,6 +26,7 @@ import type {
   Service,
   SiteSettings,
   Sponsor,
+  TalentProfile,
   Testimonial,
   Venue,
   Workshop,
@@ -49,6 +50,8 @@ import {
   portfolioCollectionsQuery,
   portfolioProjectBySlugQuery,
   portfolioProjectsQuery,
+  talentProfileBySlugQuery,
+  talentProfilesQuery,
   pulseArticleBySlugQuery,
   pulseArticlesQuery,
   pulseArticlesForSitemapQuery,
@@ -177,6 +180,12 @@ export const sanityContentRepository: ContentRepository = {
   },
   async getPortfolioCollections() {
     return client.fetch<Collection[]>(portfolioCollectionsQuery);
+  },
+  async getTalentProfiles() {
+    return client.fetch<TalentProfile[]>(talentProfilesQuery);
+  },
+  async getTalentProfileBySlug(slug) {
+    return client.fetch<TalentProfile | null>(talentProfileBySlugQuery, { slug });
   },
   async getJournalPosts() {
     return client.fetch<JournalPost[]>(journalPostsQuery);

@@ -359,6 +359,38 @@ export type PortfolioProject = {
   seo: SeoFields;
 };
 
+// --- Talent (TALENT-SYS-2B, Phase 1, 2026-09-08) ---
+// The PUBLIC half of a represented talent's record only. The private
+// half (representation status, commercial terms, measurements,
+// Digitals, agreements) lives in Supabase — never duplicated here.
+// profileId links the two by plain string id, no FK, the same way
+// every other piece of Sanity content already relates to nothing in
+// Postgres. Both list/detail methods return published profiles only,
+// same precedent as getPortfolioProjects()/getPortfolioProjectBySlug()
+// — there is no authenticated preview mode yet.
+export type TalentGalleryImage = GalleryImage & {
+  photographerCredit: string | null;
+  projectCredit: string | null;
+  displayOrder: number | null;
+};
+
+export type TalentDevelopmentStage = "new_faces" | "established";
+
+export type TalentProfile = {
+  id: ID;
+  profileId: string;
+  slug: string;
+  name: string;
+  category: string | null;
+  location: string | null;
+  availabilityNote: string | null;
+  heroImage: PresentationImage | null;
+  introduction: string | null;
+  gallery: TalentGalleryImage[];
+  reelEmbedUrl: string | null;
+  developmentStage: TalentDevelopmentStage;
+};
+
 // --- Journal (Version 1.1) ---
 // Branded on-page as "Stories" per your 2026-07-23 recommendation — same
 // route (/journal) and roadmap naming for continuity, different label in

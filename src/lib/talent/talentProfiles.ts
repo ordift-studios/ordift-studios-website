@@ -2,6 +2,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { logActivity } from "@/lib/admin/activityLog";
 import { authorizeWithSuperAdminOverride, TALENT_CAPABILITIES } from "@/lib/organization/authority";
 import { isValidRepresentationTransition, type RepresentationStatus } from "./talentRepresentation";
+import { isValidPublicationTransition, type TalentPublicationStatus } from "./talentPublicationLifecycle";
 
 // Ordift Studios — TALENT-SYS-1, Foundation (2026-09-08). DB-backed
 // representation-state and category-assignment layer. Gated by the
@@ -54,6 +55,49 @@ export async function setRepresentationStatus(params: {
   await logActivity({
     actorUserId: params.actorUserId,
     action: "talent.representation.status_changed",
+    entityType: "model_profile",
+    entityId: params.profileId,
+    metadata: { fromStatus, toStatus: params.toStatus },
+  });
+
+  return { ok: true };
+}
+
+// TALENT-SYS-2B, Phase 1 (2026-09-08). Atomic compare-and-swap, same
+// pattern as setRepresentationStatus() above. Creating a talent record
+// never publishes it — only this function, called deliberately, can
+// ever move a profile to "published", the one status the public
+// roster/profile query is allowed to read.
+export async function setPublicationStatus(params: {
+  profileId: string;
+  toStatus: TalentPublicationStatus;
+  actorUserId: string;
+}): Promise<{ ok: true } | { ok: false; error: string }> {
+  const auth = await requireProfileAdminister(params.actorUserId);
+  if (!auth.ok) return auth;
+
+  const admin = createAdminClient();
+  const { data: existing } = await admin.from("model_profiles").select("id, publication_status").eq("id", params.profileId).maybeSingle();
+  if (!existing) return { ok: false, error: "No model profile exists for this person yet." };
+
+  const fromStatus = existing.publication_status as TalentPublicationStatus;
+  if (!isValidPublicationTransition(fromStatus, params.toStatus)) {
+    return { ok: false, error: `Cannot move publication status from "${fromStatus}" to "${params.toStatus}".` };
+  }
+
+  const { error } = await admin
+    .from("model_profiles")
+    .update({ publication_status: params.toStatus, publication_status_changed_at: new Date().toISOString(), publication_status_changed_by: params.actorUserId })
+    .eq("id", params.profileId)
+    .eq("publication_status", fromStatus);
+  if (error) {
+    console.error("[talent] failed to transition publication status", error.message);
+    return { ok: false, error: "Failed to update publication status." };
+  }
+
+  await logActivity({
+    actorUserId: params.actorUserId,
+    action: "talent.publication.status_changed",
     entityType: "model_profile",
     entityId: params.profileId,
     metadata: { fromStatus, toStatus: params.toStatus },

@@ -59,6 +59,23 @@ export const galleryImageFragment = `{
   assetRole
 }`;
 
+// TalentGalleryImage — GalleryImage plus the credit fields the Talent
+// Portfolio gallery needs that the shared galleryImage object doesn't
+// carry (TALENT-SYS-2B, Phase 1, 2026-09-08).
+export const talentGalleryImageFragment = `{
+  "id": _key,
+  "url": image.asset->url,
+  alt,
+  caption,
+  "width": image.asset->metadata.dimensions.width,
+  "height": image.asset->metadata.dimensions.height,
+  "lqip": image.asset->metadata.lqip,
+  presentation,
+  photographerCredit,
+  projectCredit,
+  displayOrder
+}`;
+
 // SeoFields { metaTitle, metaDescription, ogImageUrl, canonicalUrl }
 const seoShape = `{
   metaTitle,
