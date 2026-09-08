@@ -306,6 +306,25 @@ export default async function JournalPostPage({
   const showSourceLink = (article.origin === "curated" || article.origin === "community") && Boolean(article.sourceUrl);
   const sourcePublisherName = sourceById.get(article.sourceId ?? "")?.name ?? article.sourceAttribution?.replace(/^via\s+/i, "") ?? null;
 
+  // Original vs. Curated Publishing Model, Part D (2026-09-08) — a
+  // curated item with no editor-chosen hero renders as an intentional
+  // discovery brief (source CTA moved near the top, no full-bleed hero
+  // gap) rather than a conventional article missing its photo.
+  //
+  // Deliberately scoped to origin === "curated" ONLY, not "community" —
+  // see publishReadiness.ts's own matching comment. `showSourceLink`
+  // above groups curated+community together for the (pre-existing,
+  // unchanged) source-URL requirement, but that grouping must not be
+  // read as "community always means curated external": a community
+  // submission may later represent original community-authored work
+  // with its own ownership/licensing/media rules, and the hero-media
+  // requirement for it stays exactly what it already was — required —
+  // until a deliberate future decision says otherwise. Extending the
+  // brief treatment to community now, just because it happens to share
+  // the sourceUrl rule today, would quietly bake in an assumption
+  // nothing in this task asked for.
+  const isCuratedDiscoveryBrief = article.origin === "curated" && !article.heroMedia.url;
+
   const jsonLd = {
     "@context": "https://schema.org",
     "@type": "Article",
@@ -359,28 +378,23 @@ export default async function JournalPostPage({
         </div>
       </section>
 
-      <MediaAsset media={article.heroMedia} aspectRatio="21/9" sizes="100vw" priority />
+      {/* Original vs. Curated Publishing Model, Part D (2026-09-08) —
+          the full-bleed hero is skipped entirely for a curated
+          discovery brief rather than falling through to
+          MediaAsset's generic placeholder, which would read as a
+          missing photo rather than a deliberate choice. */}
+      {!isCuratedDiscoveryBrief && <MediaAsset media={article.heroMedia} aspectRatio="21/9" sizes="100vw" priority />}
 
-      <section className="bg-white px-4 sm:px-8 py-14 sm:py-20">
+      <section className={`bg-white px-4 sm:px-8 ${isCuratedDiscoveryBrief ? "pt-10 sm:pt-12" : "pt-14 sm:pt-20"} pb-14 sm:pb-20`}>
         <div className="max-w-3xl mx-auto">
+          {/* Prominent placement for a discovery brief — the source IS
+              the point of the page when there's no Ordift hero/article
+              to anchor it, so the CTA leads rather than trails. */}
+          {isCuratedDiscoveryBrief && showSourceLink && <SourceLinkCard sourcePublisherName={sourcePublisherName} sourceUrl={article.sourceUrl!} />}
+
           <p className="font-sans text-body text-ordift-ink whitespace-pre-line mb-6">{article.body}</p>
 
-          {showSourceLink && (
-            <div className="rounded-lg border border-black/10 px-5 py-4 mb-10 flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <p className="font-sans text-caption font-semibold uppercase tracking-[0.15em] text-ordift-ink-muted mb-1">Source</p>
-                <p className="font-sans text-body-small text-ordift-ink">{sourcePublisherName ?? "Original publisher"}</p>
-              </div>
-              <a
-                href={article.sourceUrl!}
-                target="_blank"
-                rel="noopener noreferrer nofollow"
-                className="inline-flex items-center min-h-11 px-5 rounded-full border border-black/15 font-sans text-body-small font-semibold text-ordift-ink hover:border-black/30"
-              >
-                Read Original Article →
-              </a>
-            </div>
-          )}
+          {!isCuratedDiscoveryBrief && showSourceLink && <SourceLinkCard sourcePublisherName={sourcePublisherName} sourceUrl={article.sourceUrl!} />}
 
           {article.contentKind === "opportunity" && (
             <div className="rounded-lg border border-black/10 p-5 mb-10 grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -525,5 +539,31 @@ export default async function JournalPostPage({
 
       <Footer />
     </main>
+  );
+}
+
+// Original vs. Curated Publishing Model, Part D (2026-09-08) — extracted
+// so the identical card can render in either position (prominent, near
+// the top, for a curated discovery brief; trailing, after the body, for
+// a curated item that has a hero) without duplicating the markup.
+// sourceUrl is required (not optional) — every call site already checks
+// showSourceLink (origin curated/community AND a real sourceUrl) before
+// rendering this at all.
+function SourceLinkCard({ sourcePublisherName, sourceUrl }: { sourcePublisherName: string | null; sourceUrl: string }) {
+  return (
+    <div className="rounded-lg border border-black/10 px-5 py-4 mb-10 flex flex-wrap items-center justify-between gap-3">
+      <div>
+        <p className="font-sans text-caption font-semibold uppercase tracking-[0.15em] text-ordift-ink-muted mb-1">Source</p>
+        <p className="font-sans text-body-small text-ordift-ink">{sourcePublisherName ?? "Original publisher"}</p>
+      </div>
+      <a
+        href={sourceUrl}
+        target="_blank"
+        rel="noopener noreferrer nofollow"
+        className="inline-flex items-center min-h-11 px-5 rounded-full border border-black/15 font-sans text-body-small font-semibold text-ordift-ink hover:border-black/30"
+      >
+        Read Original Article →
+      </a>
+    </div>
   );
 }

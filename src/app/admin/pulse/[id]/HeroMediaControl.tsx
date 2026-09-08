@@ -40,7 +40,13 @@ function uploadHeroImage(file: File): Promise<{ assetId: string; url: string }> 
   });
 }
 
-export default function HeroMediaControl({ articleId, heroMedia }: { articleId: string; heroMedia: MediaAsset | null }) {
+export default function HeroMediaControl({ articleId, heroMedia, origin }: { articleId: string; heroMedia: MediaAsset | null; origin: string }) {
+  // Original vs. Curated Publishing Model, Part D (2026-09-08) —
+  // mirrors publishReadiness.ts's own isCuratedExternalDiscovery()
+  // exactly (origin === "curated" only, not "community" — see that
+  // file's comment for why) so this messaging never drifts out of sync
+  // with the actual readiness rule it's describing.
+  const heroOptional = origin === "curated";
   const [mode, setMode] = useState<"image" | "embed">("image");
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
@@ -92,7 +98,11 @@ export default function HeroMediaControl({ articleId, heroMedia }: { articleId: 
           </div>
         </div>
       ) : (
-        <p className="font-sans text-body-small text-ordift-ink-muted italic">Not set — required before this article can be published.</p>
+        <p className="font-sans text-body-small text-ordift-ink-muted italic">
+          {heroOptional
+            ? "Not set — optional for curated discovery content. Without one, this publishes as a discovery brief (title, context, and a prominent link to the original article) rather than a conventional article page."
+            : "Not set — required before this article can be published."}
+        </p>
       )}
 
       <div className="border-t border-black/10 pt-4">

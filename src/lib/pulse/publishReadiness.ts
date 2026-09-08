@@ -49,6 +49,27 @@ function isValidHttpUrl(value: string): boolean {
 
 const EXTERNAL_ORIGINS = new Set(["curated", "community"]);
 
+// Original vs. Curated Publishing Model, Part D (2026-09-08) — hero
+// media becomes OPTIONAL for exactly one origin: "curated". Ordift-
+// original ("editorial") content keeps the unconditional requirement
+// unchanged, and so does "community" — deliberately NOT grouped with
+// "curated" here, even though EXTERNAL_ORIGINS above groups them
+// together for the (pre-existing, unchanged) source-URL requirement.
+// That's a real, intentional split, not an inconsistency: "curated" is
+// definitionally sourced from the vetted pulseSource registry (an
+// external publisher's own reporting/photography Ordift is pointing
+// to, never reproducing) — a missing hero there is expected and safe
+// to render as a discovery brief instead. "community" carries no such
+// guarantee today, and per explicit direction this phase must not
+// quietly assume "community" always means "curated external" — a
+// community submission may later represent original community-
+// authored work with its own ownership/media rules, so its hero-media
+// requirement stays exactly what it already was (required) until a
+// deliberate future decision says otherwise.
+function isCuratedExternalDiscovery(origin: string): boolean {
+  return origin === "curated";
+}
+
 export function getPulsePublishReadiness(input: PulsePublishReadinessInput): PulsePublishReadiness {
   const blockers: string[] = [];
 
@@ -59,7 +80,7 @@ export function getPulsePublishReadiness(input: PulsePublishReadinessInput): Pul
   if (input.body === PLACEHOLDER_TEXT) {
     blockers.push("Body is still the machine-generated placeholder — write real Ordift-authored copy before publishing.");
   }
-  if (!input.hasHeroMedia) {
+  if (!input.hasHeroMedia && !isCuratedExternalDiscovery(input.origin)) {
     blockers.push("No Hero Media set — add an Ordift-appropriate image before publishing (never the source's own photograph unless its licence explicitly permits reuse).");
   }
   if (EXTERNAL_ORIGINS.has(input.origin)) {

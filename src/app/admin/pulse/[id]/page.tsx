@@ -69,7 +69,7 @@ export default async function AdminPulseArticlePage({ params }: { params: Promis
 
       <div className="mb-6 bg-white rounded-lg border border-ordift-ink/10 p-5">
         <p className="font-sans font-semibold uppercase tracking-[0.1em] text-caption text-ordift-ink-muted mb-3">Hero Media</p>
-        <HeroMediaControl articleId={article.id} heroMedia={article.heroMedia} />
+        <HeroMediaControl articleId={article.id} heroMedia={article.heroMedia} origin={article.origin} />
       </div>
 
       <dl className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-8 bg-white rounded-lg border border-ordift-ink/10 p-5">
