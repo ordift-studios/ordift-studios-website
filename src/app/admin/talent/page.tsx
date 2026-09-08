@@ -10,7 +10,7 @@ import {
   listTalentMediaAssetsForAdmin,
 } from "@/lib/talent/talentOverview";
 import { listTalentCategories } from "@/lib/talent/talentProfiles";
-import { createTalentCategoryAction } from "./actions";
+import { AddCategoryForm } from "./AddCategoryForm";
 
 export const metadata: Metadata = {
   title: "Talent Management — Ordift Studios Admin",
@@ -158,15 +158,7 @@ export default async function AdminTalentManagementPage() {
             ))}
           </div>
         )}
-        <form action={createTalentCategoryAction} className="flex items-end gap-3 pt-2">
-          <label className="block">
-            <span className="font-sans text-caption font-semibold uppercase tracking-wide text-ordift-ink-muted block mb-1">New category name</span>
-            <input name="name" type="text" required className="rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small text-ordift-ink" />
-          </label>
-          <button type="submit" className="rounded-lg border border-black/15 px-4 py-2 font-sans text-caption font-semibold text-ordift-ink">
-            Add category
-          </button>
-        </form>
+        <AddCategoryForm />
       </SectionCard>
 
       <SectionCard title="Commercial Terms" description="Configurable commission/fee structures. No default rate is ever set — every value reflects a real negotiated term.">

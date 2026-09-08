@@ -78,19 +78,31 @@ export async function setTalentMeasurementsAction(formData: FormData): Promise<v
   revalidatePath(`/admin/talent/${profileId}`);
 }
 
-export async function createTalentCategoryAction(formData: FormData): Promise<void> {
+// Category-add button feedback (2026-09-09) — signature changed from a
+// plain (formData) => Promise<void> to the (prevState, formData) =>
+// Promise<State> shape useActionState requires, so AddCategoryForm.tsx
+// can show pending/success/error state. createTalentCategory() itself
+// (talentProfiles.ts) — including its authorization check and the
+// actual insert — is completely unchanged; this only wires its
+// existing return value through to the client instead of swallowing it
+// after a console.error.
+export type CreateTalentCategoryState = { ok: boolean; error?: string } | null;
+
+export async function createTalentCategoryAction(_prevState: CreateTalentCategoryState, formData: FormData): Promise<CreateTalentCategoryState> {
   const user = await getCurrentUser();
-  if (!user) throw new Error("Not signed in.");
+  if (!user) return { ok: false, error: "Not signed in." };
   const name = String(formData.get("name") ?? "").trim();
-  if (!name) return;
+  if (!name) return { ok: false, error: "Category name is required." };
   const slug = name
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "_")
     .replace(/^_+|_+$/g, "");
 
   const result = await createTalentCategory({ slug, name, actorUserId: user.id });
-  if (!result.ok) console.error("[admin] failed to create talent category", result.error);
+  if (!result.ok) return { ok: false, error: result.error };
+
   revalidatePath("/admin/talent");
+  return { ok: true };
 }
 
 export async function assignTalentCategoryAction(formData: FormData): Promise<void> {
