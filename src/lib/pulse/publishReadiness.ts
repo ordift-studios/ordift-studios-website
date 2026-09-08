@@ -47,7 +47,14 @@ function isValidHttpUrl(value: string): boolean {
   }
 }
 
-const EXTERNAL_ORIGINS = new Set(["curated", "community"]);
+// Official/Primary Source Discovery (2026-09-08) — "official" joins
+// the sourceUrl requirement: an Ordift-written draft grounded in a
+// verified official announcement must still preserve/validate the
+// link to that announcement, same as curated content does. It does
+// NOT join isCuratedExternalDiscovery() below — hero media stays
+// required for "official", matching its full-editorial-requirement
+// status (see that function's own comment).
+const EXTERNAL_ORIGINS = new Set(["curated", "community", "official"]);
 
 // Original vs. Curated Publishing Model, Part D (2026-09-08) — hero
 // media becomes OPTIONAL for exactly one origin: "curated". Ordift-

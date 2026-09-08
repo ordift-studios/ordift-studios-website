@@ -58,3 +58,47 @@ describe("isWithinFreshnessWindow", () => {
     expect(isWithinFreshnessWindow({ publishedAt: tenDaysAgo, sourceType: "some-future-type", now })).toBe(true);
   });
 });
+
+// Official/Primary Source Discovery, Part M (2026-09-08) — per-source
+// freshnessWindowDaysOverride. Motivating case: a slower-moving official
+// newsroom (e.g. an RSS feed that only posts every couple of weeks) that
+// still publishes genuinely relevant material a little less often than
+// the 7-day RSS default assumes.
+describe("getFreshnessWindowDays — per-source override", () => {
+  it("a positive override takes priority over the sourceType default", () => {
+    expect(getFreshnessWindowDays("rss", 21)).toBe(21);
+  });
+
+  it("a null override falls through to the ordinary sourceType default", () => {
+    expect(getFreshnessWindowDays("rss", null)).toBe(FRESHNESS_WINDOW_DAYS_BY_SOURCE_TYPE.rss);
+  });
+
+  it("an undefined override falls through to the ordinary sourceType default — the pre-existing two-arg call sites are unaffected", () => {
+    expect(getFreshnessWindowDays("rss", undefined)).toBe(FRESHNESS_WINDOW_DAYS_BY_SOURCE_TYPE.rss);
+  });
+
+  it("a zero or negative override is never trusted (a misconfiguration must not silently exclude everything) — falls through to the sourceType default", () => {
+    expect(getFreshnessWindowDays("rss", 0)).toBe(FRESHNESS_WINDOW_DAYS_BY_SOURCE_TYPE.rss);
+    expect(getFreshnessWindowDays("rss", -5)).toBe(FRESHNESS_WINDOW_DAYS_BY_SOURCE_TYPE.rss);
+  });
+});
+
+describe("isWithinFreshnessWindow — per-source override", () => {
+  const now = new Date("2026-09-08T12:00:00.000Z");
+
+  it("an RSS item 14 days old is excluded under the plain 7-day default but included once its source has a 21-day override", () => {
+    const fourteenDaysAgo = new Date(now.getTime() - 14 * 86400000).toISOString();
+    expect(isWithinFreshnessWindow({ publishedAt: fourteenDaysAgo, sourceType: "rss", now })).toBe(false);
+    expect(isWithinFreshnessWindow({ publishedAt: fourteenDaysAgo, sourceType: "rss", freshnessWindowDaysOverride: 21, now })).toBe(true);
+  });
+
+  it("an item still older than even the override is excluded", () => {
+    const thirtyDaysAgo = new Date(now.getTime() - 30 * 86400000).toISOString();
+    expect(isWithinFreshnessWindow({ publishedAt: thirtyDaysAgo, sourceType: "rss", freshnessWindowDaysOverride: 21, now })).toBe(false);
+  });
+
+  it("a source with no override configured behaves exactly as before this feature existed", () => {
+    const eightDaysAgo = new Date(now.getTime() - 8 * 86400000).toISOString();
+    expect(isWithinFreshnessWindow({ publishedAt: eightDaysAgo, sourceType: "rss", now })).toBe(false);
+  });
+});

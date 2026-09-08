@@ -632,7 +632,18 @@ export type PulseContentKind = "article" | "opportunity";
 // submission flow, if built later, would add fields, not change this.
 // See PulseArticle.body's own note on why curated/community content is
 // always a written summary, never a raw reproduction of the source.
-export type PulseOrigin = "editorial" | "curated" | "community";
+// "official" (Official/Primary Source Discovery, 2026-09-08) — an
+// independently Ordift-written draft grounded in a verified official
+// announcement (a manufacturer/brand's own newsroom), NOT a raw
+// reproduction of the announcement. Distinct from "editorial" (no
+// external source at all) and "curated" (a discovery brief pointing
+// outward, hero optional) — this keeps the full editorial requirements
+// of "editorial" (real body, hero media required, human review) while
+// still carrying real source/attribution fields like "curated" does.
+// Routed automatically from PulseSource.sourceClassification ===
+// "official_primary" — an editor never has to remember this per
+// article (ingestion.ts).
+export type PulseOrigin = "editorial" | "curated" | "community" | "official";
 
 // No "scheduled" status value — scheduling is a separate `scheduledFor`
 // field, exactly like JournalPost, so the same proven visibility-gate
@@ -649,15 +660,38 @@ export type PulseSourceType = "rss" | "api" | "press-release" | "partner" | "man
 // intends to? Deliberately independent of PulseEditorialTrustLevel below
 // (2026-08-24 direction — never collapse the two into one field/score).
 // "green" = syndication permitted; "blue" = discovery/linking only, no
-// reproduction; "amber" = permission unclear, always human-reviewed,
-// never auto-published; "red" = do not ingest. See
-// PULSE_INGESTION_FOUNDATION.md.
-export type PulsePermissionClassification = "green" | "blue" | "amber" | "red";
+// reproduction; "amber" = some reuse appears possible but conditions/
+// restrictions/attribution requirements exist, or the policy is
+// ambiguous — a REAL review outcome, not a placeholder; "red" = the
+// identified terms appear to prohibit or materially conflict with the
+// intended reuse, do not ingest; "unknown" (Rights Intelligence,
+// 2026-09-08) = no reliable policy was found, could not be interpreted
+// confidently, or the status has not yet been reviewed at all — the
+// correct default for a source nobody has looked at yet, distinct from
+// "amber" (which means someone DID look and found it ambiguous). These
+// are editorial risk indicators, never legal determinations — the
+// Admin UI must say so. See PULSE_INGESTION_FOUNDATION.md.
+export type PulsePermissionClassification = "green" | "blue" | "amber" | "red" | "unknown";
 
 // Editorial/reputation fact — is this source's own journalism reliable?
 // Independent of PulsePermissionClassification: a highly reputable
 // publication can still be Amber/Blue legally, and vice versa.
 export type PulseEditorialTrustLevel = "high" | "standard" | "unverified" | "flagged";
+
+// Official/Primary Source Discovery (2026-09-08) — the source-level
+// decision an admin makes ONCE per source, so an editor never has to
+// remember it per article. "official_primary" = a manufacturer/brand's
+// own newsroom (Canon, Sony, Adobe, ...) — discovery routes into
+// PulseArticle.origin "official" (an independently Ordift-written
+// draft, full editorial requirements). "editorial_discovery" = a
+// third-party publication (PetaPixel, ...) reporting ON the industry —
+// routes into origin "curated" (a discovery brief, hero optional),
+// exactly the existing/unchanged behaviour. Defaults to
+// "editorial_discovery" for every existing source (see the coalesce()
+// in ingestion.ts's SOURCE_QUERY) — the one already live today
+// (PetaPixel) keeps behaving exactly as it does now with zero action
+// required.
+export type PulseSourceClassification = "official_primary" | "editorial_discovery";
 
 // The trusted-source registry — the data layer's connection point for
 // future ingestion (RSS/API/partner feeds). No fetching or scraping logic
@@ -684,6 +718,13 @@ export type PulseSource = {
   editorialPriority: number;
   isActive: boolean;
   autoPublishEligible: boolean; // schema-enforced: only meaningful when permissionClassification === "green"
+  sourceClassification: PulseSourceClassification;
+  // Official/Primary Source Discovery, Part M (2026-09-08) — an
+  // optional per-source override of freshnessPolicy.ts's sourceType-
+  // keyed default window. Null (the default) means "use the sourceType
+  // default, unchanged" — this is additive, not a replacement of the
+  // existing freshness architecture.
+  freshnessWindowDaysOverride: number | null;
 };
 
 export type PulseArticle = {

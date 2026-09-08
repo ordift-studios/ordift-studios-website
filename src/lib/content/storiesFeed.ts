@@ -121,6 +121,12 @@ function getPulseGrouping(
     return isEvent ? "upcoming-events" : "opportunities";
   }
   if (article.origin === "editorial") return "editorial";
+  // Official/Primary Source Discovery (2026-09-08) — an Ordift-written
+  // draft grounded in a brand's own announcement is exactly what
+  // "Industry Updates" already means, unconditionally (not gated by
+  // OFFICIAL_SOURCE_TYPES below, which is a narrower sourceType-based
+  // signal for curated content specifically).
+  if (article.origin === "official") return "industry-updates";
   if (article.origin === "curated") {
     const source = article.sourceId ? sourceById.get(article.sourceId) : null;
     if (source && OFFICIAL_SOURCE_TYPES.has(source.sourceType)) return "industry-updates";
@@ -130,7 +136,15 @@ function getPulseGrouping(
 
 function getPulseTrustBadge(article: PulseArticle): TrustBadge {
   if (article.status === "archived") return "archived";
-  if (article.origin === "editorial") return "verified";
+  // Official/Primary Source Discovery (2026-09-08) — origin "official"
+  // deliberately gets "verified" ("Verified by Ordift Studios"), the
+  // SAME badge as "editorial", not the TrustBadge literally named
+  // "official" (which already means something different: "Official
+  // Source" for curated content sourced from the vetted registry).
+  // Both "editorial" and "official" are genuinely Ordift-written —
+  // the only difference is whether a real external announcement
+  // grounds the piece, which the Source panel/CTA already show.
+  if (article.origin === "editorial" || article.origin === "official") return "verified";
   if (article.origin === "community") return "community";
   return "official"; // curated — sourced from the vetted pulseSource registry
 }

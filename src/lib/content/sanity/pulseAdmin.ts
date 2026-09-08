@@ -5,7 +5,7 @@
 import { editorialClient as client } from "@/sanity/lib/client";
 import { getPulsePublishReadiness } from "@/lib/pulse/publishReadiness";
 import { mediaAssetFragment } from "./groqFragments";
-import type { PulseEditorialTrustLevel, PulsePermissionClassification, MediaAsset } from "../types";
+import type { PulseEditorialTrustLevel, PulsePermissionClassification, PulseSourceClassification, MediaAsset } from "../types";
 
 // Admin-only Sanity read/write for the Ordift Pulse review interface
 // (Phase D, 2026-08-24 — see PULSE_INGESTION_FOUNDATION.md). Same
@@ -54,7 +54,7 @@ const REVIEW_QUEUE_QUERY = `*[_type == "pulseArticle" && status in ["draft", "in
   title,
   status,
   "sourceName": source->name,
-  "sourcePermission": coalesce(source->permissionClassification, "amber"),
+  "sourcePermission": coalesce(source->permissionClassification, "unknown"),
   "sourceTrust": coalesce(source->editorialTrustLevel, "unverified"),
   "categoryNames": categories[]->name,
   "regionNames": regions[]->name,
@@ -132,7 +132,7 @@ const ARTICLE_DETAIL_QUERY = `*[_type == "pulseArticle" && _id == $id][0]{
   tags,
   "categoryNames": categories[]->name,
   "regionNames": regions[]->name,
-  "source": source->{"id": _id, name, "permissionClassification": coalesce(permissionClassification, "amber"), "editorialTrustLevel": coalesce(editorialTrustLevel, "unverified"), "imageUsePermitted": coalesce(imageUsePermitted, false)},
+  "source": source->{"id": _id, name, "permissionClassification": coalesce(permissionClassification, "unknown"), "editorialTrustLevel": coalesce(editorialTrustLevel, "unverified"), "imageUsePermitted": coalesce(imageUsePermitted, false)},
   "duplicateOf": possibleDuplicateOf->{"id": _id, title}
 }`;
 
@@ -301,15 +301,18 @@ export type PulseSourceAdminRow = {
   editorialTrustLevel: PulseEditorialTrustLevel;
   autoPublishEligible: boolean;
   lastPolicyReviewDate: string | null;
+  // Official/Primary Source Discovery (2026-09-08).
+  sourceClassification: PulseSourceClassification;
 };
 
 const SOURCES_ADMIN_QUERY = `*[_type == "pulseSource"] | order(name asc) {
   "id": _id, name, sourceType,
   "isActive": coalesce(isActive, false),
-  "permissionClassification": coalesce(permissionClassification, "amber"),
+  "permissionClassification": coalesce(permissionClassification, "unknown"),
   "editorialTrustLevel": coalesce(editorialTrustLevel, "unverified"),
   "autoPublishEligible": coalesce(autoPublishEligible, false),
-  lastPolicyReviewDate
+  lastPolicyReviewDate,
+  "sourceClassification": coalesce(sourceClassification, "editorial_discovery")
 }`;
 
 export async function getPulseSourcesAdmin(): Promise<PulseSourceAdminRow[]> {
@@ -325,18 +328,22 @@ export type PulseSourceAdminDetail = PulseSourceAdminRow & {
   commercialUsePermitted: boolean;
   attributionRequirement: string | null;
   editorialPriority: number;
+  // Rights Intelligence / Freshness (2026-09-08).
+  freshnessWindowDaysOverride: number | null;
 };
 
 const SOURCE_DETAIL_QUERY = `*[_type == "pulseSource" && _id == $id][0]{
   "id": _id, name, sourceType, url, feedUrl, termsUrl, licenseNotes, lastPolicyReviewDate,
   "isActive": coalesce(isActive, false),
-  "permissionClassification": coalesce(permissionClassification, "amber"),
+  "permissionClassification": coalesce(permissionClassification, "unknown"),
   "imageUsePermitted": coalesce(imageUsePermitted, false),
   "commercialUsePermitted": coalesce(commercialUsePermitted, false),
   attributionRequirement,
   "editorialTrustLevel": coalesce(editorialTrustLevel, "unverified"),
   "editorialPriority": coalesce(editorialPriority, 0),
-  "autoPublishEligible": coalesce(autoPublishEligible, false)
+  "autoPublishEligible": coalesce(autoPublishEligible, false),
+  "sourceClassification": coalesce(sourceClassification, "editorial_discovery"),
+  freshnessWindowDaysOverride
 }`;
 
 export async function getPulseSourceAdminDetail(id: string): Promise<PulseSourceAdminDetail | null> {
@@ -352,6 +359,10 @@ export type PulseSourceUpdateFields = {
   autoPublishEligible: boolean;
   attributionRequirement: string | null;
   lastPolicyReviewDate: string | null;
+  sourceClassification: PulseSourceClassification;
+  termsUrl: string | null;
+  licenseNotes: string | null;
+  freshnessWindowDaysOverride: number | null;
 };
 
 // App-layer enforcement of the same rule the Studio schema's own
@@ -362,6 +373,9 @@ export type PulseSourceUpdateFields = {
 export async function updatePulseSourceAdmin(id: string, fields: PulseSourceUpdateFields): Promise<{ ok: boolean; error?: string }> {
   if (fields.autoPublishEligible && fields.permissionClassification !== "green") {
     return { ok: false, error: "Auto-Publish Eligible can only be enabled for a Green (Syndication Permitted) source." };
+  }
+  if (fields.freshnessWindowDaysOverride !== null && fields.freshnessWindowDaysOverride <= 0) {
+    return { ok: false, error: "Freshness Window Override must be a positive number of days, or left blank." };
   }
   await client
     .patch(id)
@@ -374,7 +388,57 @@ export async function updatePulseSourceAdmin(id: string, fields: PulseSourceUpda
       autoPublishEligible: fields.autoPublishEligible,
       attributionRequirement: fields.attributionRequirement,
       lastPolicyReviewDate: fields.lastPolicyReviewDate,
+      sourceClassification: fields.sourceClassification,
+      termsUrl: fields.termsUrl,
+      licenseNotes: fields.licenseNotes,
+      freshnessWindowDaysOverride: fields.freshnessWindowDaysOverride,
     })
     .commit();
   return { ok: true };
+}
+
+// Manual Source Addition, Part N (2026-09-08) — "I should NOT need
+// Claude/code changes each time Ordift decides to monitor another
+// company." Reuses the exact same document shape/defaults every
+// existing source already has (matches pulseSource.ts's own
+// initialValues: isActive false, permissionClassification "unknown",
+// sourceClassification "editorial_discovery", editorialTrustLevel
+// "unverified") — an admin only ever gets a genuinely new, inactive,
+// unreviewed source this way, never a pre-activated one. No fetching,
+// scraping, or discovery happens as a side effect of creating this
+// document — see /admin/pulse/sources/page.tsx's own note that
+// activating a source only makes it ELIGIBLE for a discovery run, it
+// never runs one.
+export type PulseSourceCreateFields = {
+  name: string;
+  sourceType: string;
+  url: string | null;
+  feedUrl: string | null;
+  termsUrl: string | null;
+  sourceClassification: PulseSourceClassification;
+};
+
+export async function createPulseSourceAdmin(fields: PulseSourceCreateFields): Promise<{ ok: true; id: string } | { ok: false; error: string }> {
+  if (!fields.name.trim()) return { ok: false, error: "Name is required." };
+  try {
+    const doc = await client.create({
+      _type: "pulseSource",
+      name: fields.name.trim(),
+      sourceType: fields.sourceType,
+      url: fields.url,
+      feedUrl: fields.feedUrl,
+      termsUrl: fields.termsUrl,
+      sourceClassification: fields.sourceClassification,
+      isActive: false,
+      permissionClassification: "unknown",
+      editorialTrustLevel: "unverified",
+      autoPublishEligible: false,
+      imageUsePermitted: false,
+      commercialUsePermitted: false,
+      editorialPriority: 0,
+    });
+    return { ok: true, id: doc._id };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Failed to create the source." };
+  }
 }

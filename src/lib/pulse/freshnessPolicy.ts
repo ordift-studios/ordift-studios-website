@@ -24,16 +24,25 @@ export const FRESHNESS_WINDOW_DAYS_BY_SOURCE_TYPE: Readonly<Record<string, numbe
 
 export const DEFAULT_FRESHNESS_WINDOW_DAYS = 14;
 
-export function getFreshnessWindowDays(sourceType: string): number {
+// Official/Primary Source Discovery, Part M (2026-09-08) — an optional
+// per-source override (PulseSource.freshnessWindowDaysOverride) takes
+// priority over the sourceType default when a real positive number is
+// supplied; otherwise falls through to the exact same sourceType-keyed
+// lookup as before. A slower-moving official newsroom that still
+// publishes genuinely relevant material a little less often is the
+// motivating case — this does not change the default for any source
+// that hasn't been explicitly configured.
+export function getFreshnessWindowDays(sourceType: string, overrideDays?: number | null): number {
+  if (typeof overrideDays === "number" && overrideDays > 0) return overrideDays;
   return FRESHNESS_WINDOW_DAYS_BY_SOURCE_TYPE[sourceType] ?? DEFAULT_FRESHNESS_WINDOW_DAYS;
 }
 
-export function isWithinFreshnessWindow(params: { publishedAt: string | null; sourceType: string; now?: Date }): boolean {
+export function isWithinFreshnessWindow(params: { publishedAt: string | null; sourceType: string; freshnessWindowDaysOverride?: number | null; now?: Date }): boolean {
   if (!params.publishedAt) return true; // unknown date never excludes on its own
   const publishedDate = new Date(params.publishedAt);
   if (Number.isNaN(publishedDate.getTime())) return true; // unparseable date never excludes — a formatting quirk isn't a staleness signal
   const now = params.now ?? new Date();
   const ageDays = (now.getTime() - publishedDate.getTime()) / (1000 * 60 * 60 * 24);
   if (ageDays < 0) return true; // a source-clock-skew "future" date is not "stale" — let scoring/review handle it, never silently exclude
-  return ageDays <= getFreshnessWindowDays(params.sourceType);
+  return ageDays <= getFreshnessWindowDays(params.sourceType, params.freshnessWindowDaysOverride);
 }

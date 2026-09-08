@@ -3,13 +3,20 @@
 import { useActionState, useState } from "react";
 import { updatePulseSourceAction, type UpdateSourceState } from "../actions";
 import type { PulseSourceAdminDetail } from "@/lib/content/sanity/pulseAdmin";
-import type { PulseEditorialTrustLevel, PulsePermissionClassification } from "@/lib/content/types";
+import type { PulseEditorialTrustLevel, PulsePermissionClassification, PulseSourceClassification } from "@/lib/content/types";
+import { RIGHTS_STATUS_DISCLAIMER } from "@/lib/pulse/adminLabels";
 
 const PERMISSION_OPTIONS: { value: PulsePermissionClassification; label: string }[] = [
+  { value: "unknown", label: "Unknown — Not Yet Reviewed" },
   { value: "amber", label: "Amber — Permission Unclear" },
   { value: "blue", label: "Blue — Discovery/Linking Only" },
   { value: "green", label: "Green — Syndication Permitted" },
   { value: "red", label: "Red — Disallowed" },
+];
+
+const CLASSIFICATION_OPTIONS: { value: PulseSourceClassification; label: string }[] = [
+  { value: "editorial_discovery", label: "Editorial / Discovery — third-party publication" },
+  { value: "official_primary", label: "Official / Primary — the brand's own newsroom" },
 ];
 
 const TRUST_OPTIONS: { value: PulseEditorialTrustLevel; label: string }[] = [
@@ -41,7 +48,27 @@ export function SourceEditForm({ source }: { source: PulseSourceAdminDetail }) {
       </label>
 
       <div>
+        <label className="block font-sans text-caption uppercase tracking-[0.1em] text-ordift-ink-muted mb-1">Source Classification</label>
+        <select
+          name="sourceClassification"
+          defaultValue={source.sourceClassification}
+          disabled={pending}
+          className="w-full min-h-10 rounded-md border border-black/15 px-3 font-sans text-body-small bg-white"
+        >
+          {CLASSIFICATION_OPTIONS.map((o) => (
+            <option key={o.value} value={o.value}>
+              {o.label}
+            </option>
+          ))}
+        </select>
+        <p className="mt-1 font-sans text-caption text-ordift-ink-muted">
+          Decides how every discovered draft from this source is routed — Official/Primary becomes an independently Ordift-written article; Editorial/Discovery becomes a curated discovery brief. Set once here, never per article.
+        </p>
+      </div>
+
+      <div>
         <label className="block font-sans text-caption uppercase tracking-[0.1em] text-ordift-ink-muted mb-1">Permission Classification</label>
+        <p className="mb-1 font-sans text-caption italic text-ordift-ink-muted">{RIGHTS_STATUS_DISCLAIMER}</p>
         <select
           name="permissionClassification"
           value={permission}
@@ -113,6 +140,44 @@ export function SourceEditForm({ source }: { source: PulseSourceAdminDetail }) {
           type="date"
           name="lastPolicyReviewDate"
           defaultValue={source.lastPolicyReviewDate ?? ""}
+          disabled={pending}
+          className="min-h-10 rounded-md border border-black/15 px-3 font-sans text-body-small bg-white"
+        />
+      </div>
+
+      <div>
+        <label className="block font-sans text-caption uppercase tracking-[0.1em] text-ordift-ink-muted mb-1">Policy / Rights URL</label>
+        <input
+          type="url"
+          name="termsUrl"
+          defaultValue={source.termsUrl ?? ""}
+          placeholder="https://…/terms or /press/media-usage"
+          disabled={pending}
+          className="w-full min-h-10 rounded-md border border-black/15 px-3 font-sans text-body-small bg-white"
+        />
+        <p className="mt-1 font-sans text-caption text-ordift-ink-muted">The specific copyright/terms/press-usage page this classification is based on — the evidence, not a copy of it.</p>
+      </div>
+
+      <div>
+        <label className="block font-sans text-caption uppercase tracking-[0.1em] text-ordift-ink-muted mb-1">Rights Summary / Notes</label>
+        <textarea
+          name="licenseNotes"
+          defaultValue={source.licenseNotes ?? ""}
+          disabled={pending}
+          rows={3}
+          placeholder="A short, factual summary in your own words — never a long quote from the source's policy."
+          className="w-full rounded-md border border-black/15 px-3 py-2 font-sans text-body-small bg-white"
+        />
+      </div>
+
+      <div>
+        <label className="block font-sans text-caption uppercase tracking-[0.1em] text-ordift-ink-muted mb-1">Freshness Window Override (days)</label>
+        <input
+          type="number"
+          min={1}
+          name="freshnessWindowDaysOverride"
+          defaultValue={source.freshnessWindowDaysOverride ?? ""}
+          placeholder="Leave blank to use the source-type default"
           disabled={pending}
           className="min-h-10 rounded-md border border-black/15 px-3 font-sans text-body-small bg-white"
         />

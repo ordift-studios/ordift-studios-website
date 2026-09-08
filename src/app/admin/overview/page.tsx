@@ -221,6 +221,7 @@ const ACTION_LABELS: Record<string, string> = {
   "pulse.article_archive": "Archived a Pulse article",
   "pulse.article_restore": "Restored a Pulse article",
   "pulse.source_updated": "Updated a Pulse source's configuration",
+  "pulse.source_created": "Added a new Pulse source",
   "pulse.discovery_run": "Ran Pulse discovery for a source",
   "pulse.discovery_run_started": "Started a Pulse discovery run",
   "pulse.hero_media_uploaded": "Uploaded a Pulse hero media image",

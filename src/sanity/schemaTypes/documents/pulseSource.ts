@@ -28,6 +28,22 @@ export default defineType({
   fields: [
     defineField({ name: "name", title: "Name", type: "string", group: "basics", validation: (r) => r.required() }),
     defineField({
+      name: "sourceClassification",
+      title: "Source Classification",
+      type: "string",
+      group: "basics",
+      options: {
+        list: [
+          { title: "Official / Primary — the brand's own newsroom (e.g. Canon, Sony, Adobe)", value: "official_primary" },
+          { title: "Editorial / Discovery — third-party industry publication (e.g. PetaPixel)", value: "editorial_discovery" },
+        ],
+      },
+      initialValue: "editorial_discovery",
+      validation: (r) => r.required(),
+      description:
+        "Decides how a discovered draft from this source is routed — Official/Primary becomes an independently Ordift-written article (origin \"official\"); Editorial/Discovery becomes a curated discovery brief (origin \"curated\", unchanged from today). Set once per source, not per article.",
+    }),
+    defineField({
       name: "sourceType",
       title: "Source Type",
       type: "string",
@@ -78,12 +94,13 @@ export default defineType({
           { title: "Blue — Discovery/Linking Only", value: "blue" },
           { title: "Amber — Permission Unclear", value: "amber" },
           { title: "Red — Disallowed", value: "red" },
+          { title: "Unknown — Not Yet Reviewed", value: "unknown" },
         ],
       },
-      initialValue: "amber",
+      initialValue: "unknown",
       validation: (r) => r.required(),
       description:
-        'Do not assume permission merely because a feed exists or the publisher is reputable. Default every new source to Amber until someone has actually read the Terms/Policy URL above and can justify Green or Blue. Green = the source\'s own published terms explicitly allow the way Ordift intends to use the material. Blue = feed/API metadata may be used for discovery, but articles/images must not be reproduced — summary + "read at source" link only. Red = do not ingest at all.',
+        'These are editorial RISK INDICATORS, not legal determinations — a human review (ideally counsel, for anything commercially significant) remains authoritative. Do not assume permission merely because a feed exists or the publisher is reputable. Every genuinely new source starts Unknown — nobody has read its terms yet. Amber means someone DID review it and found real conditions/ambiguity; do not use Amber as a stand-in for "not reviewed." Green = the source\'s own published terms explicitly allow the way Ordift intends to use the material. Blue = feed/API metadata may be used for discovery, but articles/images must not be reproduced — summary + "read at source" link only. Red = do not ingest at all. Unknown/Amber/Red never delete or deactivate a source, and never block article-DISCOVERY on their own — Red is the one classification that blocks ingestion entirely; Amber/Unknown only ever affect whether IMAGE reuse is offered (see External Image Use Permitted below), never whether the source can be discovered from at all.',
     }),
     defineField({
       name: "imageUsePermitted",
@@ -167,6 +184,15 @@ export default defineType({
       group: "editorial",
       initialValue: 0,
       description: "Manual weighting an admin can raise for a source Ordift particularly trusts/values — one input to the relevance score, not a publishing decision by itself.",
+    }),
+    defineField({
+      name: "freshnessWindowDaysOverride",
+      title: "Freshness Window Override (days)",
+      type: "number",
+      group: "editorial",
+      validation: (r) => r.integer().positive(),
+      description:
+        "Optional. Leave blank to use the sourceType default (RSS 7 days, API/Press Release 14, Partner 30, Manual 90 — see freshnessPolicy.ts). Set a number to override just this source — e.g. a slower-moving official newsroom that still publishes genuinely relevant material a little less frequently.",
     }),
 
     // --- Auto-Publish ---

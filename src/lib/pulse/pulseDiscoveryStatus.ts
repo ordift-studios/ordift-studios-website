@@ -75,3 +75,90 @@ export async function getLastPulseDiscoveryRun(): Promise<LastPulseDiscoveryRun 
     errorCount,
   };
 }
+
+// Official/Primary Source Discovery, Part K (2026-09-08) — the same
+// interruption-aware logic as getLastPulseDiscoveryRun() above, scoped
+// to one source (activity_log.entity_id is the sourceId for every
+// pulse.discovery_run/pulse.discovery_run_started row — see the cron
+// route and runPulseDiscoveryAction, both of which pass
+// entityId: summary.sourceId/started.sourceId) — for the Source
+// Manager table's "Last successful discovery" column.
+export async function getLastDiscoveryRunForSource(sourceId: string): Promise<LastPulseDiscoveryRun | null> {
+  const admin = createAdminClient();
+
+  const [{ data: started }, { data: completed }] = await Promise.all([
+    admin.from("activity_log").select("created_at, entity_id, metadata").eq("action", "pulse.discovery_run_started").eq("entity_id", sourceId).order("created_at", { ascending: false }).limit(1),
+    admin.from("activity_log").select("created_at, entity_id, metadata").eq("action", "pulse.discovery_run").eq("entity_id", sourceId).order("created_at", { ascending: false }).limit(1),
+  ]);
+
+  const latestStarted = (started as StartedRow[] | null)?.[0] ?? null;
+  const latestCompleted = (completed as CompletedRow[] | null)?.[0] ?? null;
+  if (!latestStarted && !latestCompleted) return null;
+
+  const startedIsMostRecentAndUnmatched =
+    latestStarted && (!latestCompleted || new Date(latestStarted.created_at).getTime() > new Date(latestCompleted.created_at).getTime()) && latestStarted.metadata?.runId !== latestCompleted?.metadata?.runId;
+
+  if (startedIsMostRecentAndUnmatched && latestStarted) {
+    return { status: "interrupted", occurredAt: latestStarted.created_at, trigger: (latestStarted.metadata?.trigger as "cron" | "manual" | undefined) ?? "unknown", sourceName: latestStarted.metadata?.sourceName ?? "Unknown source", created: 0, fetched: 0, errorCount: 0 };
+  }
+  if (!latestCompleted) return null;
+
+  const errorCount = latestCompleted.metadata?.errors?.length ?? 0;
+  return {
+    status: errorCount > 0 ? "completed_with_errors" : "successful",
+    occurredAt: latestCompleted.created_at,
+    trigger: (latestCompleted.metadata?.trigger as "cron" | "manual" | undefined) ?? "unknown",
+    sourceName: latestCompleted.metadata?.sourceName ?? "Unknown source",
+    created: latestCompleted.metadata?.created ?? 0,
+    fetched: latestCompleted.metadata?.fetched ?? 0,
+    errorCount,
+  };
+}
+
+// Bulk variant for the Source Manager LIST page — one query pair for
+// every source's rows, not N+1 round trips.
+export async function getLastDiscoveryRunBySourceId(sourceIds: string[]): Promise<Map<string, LastPulseDiscoveryRun>> {
+  if (sourceIds.length === 0) return new Map();
+  const admin = createAdminClient();
+
+  const [{ data: started }, { data: completed }] = await Promise.all([
+    admin.from("activity_log").select("created_at, entity_id, metadata").eq("action", "pulse.discovery_run_started").in("entity_id", sourceIds).order("created_at", { ascending: true }),
+    admin.from("activity_log").select("created_at, entity_id, metadata").eq("action", "pulse.discovery_run").in("entity_id", sourceIds).order("created_at", { ascending: true }),
+  ]);
+
+  // ascending order + a plain Map overwrite keeps only the LATEST row
+  // per sourceId, per list, without a second sort — same idea as
+  // "last write wins."
+  const latestStartedBySource = new Map<string, StartedRow>();
+  for (const row of (started as StartedRow[] | null) ?? []) latestStartedBySource.set(row.entity_id, row);
+  const latestCompletedBySource = new Map<string, CompletedRow>();
+  for (const row of (completed as CompletedRow[] | null) ?? []) latestCompletedBySource.set(row.entity_id, row);
+
+  const result = new Map<string, LastPulseDiscoveryRun>();
+  for (const sourceId of sourceIds) {
+    const latestStarted = latestStartedBySource.get(sourceId) ?? null;
+    const latestCompleted = latestCompletedBySource.get(sourceId) ?? null;
+    if (!latestStarted && !latestCompleted) continue;
+
+    const startedIsMostRecentAndUnmatched =
+      latestStarted && (!latestCompleted || new Date(latestStarted.created_at).getTime() > new Date(latestCompleted.created_at).getTime()) && latestStarted.metadata?.runId !== latestCompleted?.metadata?.runId;
+
+    if (startedIsMostRecentAndUnmatched && latestStarted) {
+      result.set(sourceId, { status: "interrupted", occurredAt: latestStarted.created_at, trigger: (latestStarted.metadata?.trigger as "cron" | "manual" | undefined) ?? "unknown", sourceName: latestStarted.metadata?.sourceName ?? "Unknown source", created: 0, fetched: 0, errorCount: 0 });
+      continue;
+    }
+    if (!latestCompleted) continue;
+
+    const errorCount = latestCompleted.metadata?.errors?.length ?? 0;
+    result.set(sourceId, {
+      status: errorCount > 0 ? "completed_with_errors" : "successful",
+      occurredAt: latestCompleted.created_at,
+      trigger: (latestCompleted.metadata?.trigger as "cron" | "manual" | undefined) ?? "unknown",
+      sourceName: latestCompleted.metadata?.sourceName ?? "Unknown source",
+      created: latestCompleted.metadata?.created ?? 0,
+      fetched: latestCompleted.metadata?.fetched ?? 0,
+      errorCount,
+    });
+  }
+  return result;
+}

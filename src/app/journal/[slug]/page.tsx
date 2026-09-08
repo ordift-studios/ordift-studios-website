@@ -303,8 +303,14 @@ export default async function JournalPostPage({
   // sourceAttribution (stripping a leading "via " so the SOURCE label
   // never reads "SOURCE via X") for a community submission with no
   // registered source.
-  const showSourceLink = (article.origin === "curated" || article.origin === "community") && Boolean(article.sourceUrl);
+  // Official/Primary Source Discovery (2026-09-08) — "official" joins
+  // the source-link display (it carries a real sourceUrl, same as
+  // curated/community).
+  const showSourceLink = (article.origin === "curated" || article.origin === "community" || article.origin === "official") && Boolean(article.sourceUrl);
   const sourcePublisherName = sourceById.get(article.sourceId ?? "")?.name ?? article.sourceAttribution?.replace(/^via\s+/i, "") ?? null;
+  // Context-aware CTA wording by origin — "official" reads as a real
+  // announcement being confirmed, not "reporting" being pointed at.
+  const sourceCtaLabel = article.origin === "official" ? "View Official Announcement →" : article.origin === "community" ? "Visit Source →" : "Read Original Article →";
 
   // Original vs. Curated Publishing Model, Part D (2026-09-08) — a
   // curated item with no editor-chosen hero renders as an intentional
@@ -390,11 +396,11 @@ export default async function JournalPostPage({
           {/* Prominent placement for a discovery brief — the source IS
               the point of the page when there's no Ordift hero/article
               to anchor it, so the CTA leads rather than trails. */}
-          {isCuratedDiscoveryBrief && showSourceLink && <SourceLinkCard sourcePublisherName={sourcePublisherName} sourceUrl={article.sourceUrl!} />}
+          {isCuratedDiscoveryBrief && showSourceLink && <SourceLinkCard sourcePublisherName={sourcePublisherName} sourceUrl={article.sourceUrl!} ctaLabel={sourceCtaLabel} />}
 
           <p className="font-sans text-body text-ordift-ink whitespace-pre-line mb-6">{article.body}</p>
 
-          {!isCuratedDiscoveryBrief && showSourceLink && <SourceLinkCard sourcePublisherName={sourcePublisherName} sourceUrl={article.sourceUrl!} />}
+          {!isCuratedDiscoveryBrief && showSourceLink && <SourceLinkCard sourcePublisherName={sourcePublisherName} sourceUrl={article.sourceUrl!} ctaLabel={sourceCtaLabel} />}
 
           {article.contentKind === "opportunity" && (
             <div className="rounded-lg border border-black/10 p-5 mb-10 grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -547,9 +553,12 @@ export default async function JournalPostPage({
 // the top, for a curated discovery brief; trailing, after the body, for
 // a curated item that has a hero) without duplicating the markup.
 // sourceUrl is required (not optional) — every call site already checks
-// showSourceLink (origin curated/community AND a real sourceUrl) before
-// rendering this at all.
-function SourceLinkCard({ sourcePublisherName, sourceUrl }: { sourcePublisherName: string | null; sourceUrl: string }) {
+// showSourceLink (origin curated/community/official AND a real
+// sourceUrl) before rendering this at all. ctaLabel is context-aware by
+// origin (Official/Primary Source Discovery, 2026-09-08) — computed
+// once by the caller (sourceCtaLabel) so this component stays a plain
+// renderer, not a second place origin-based wording decisions live.
+function SourceLinkCard({ sourcePublisherName, sourceUrl, ctaLabel }: { sourcePublisherName: string | null; sourceUrl: string; ctaLabel: string }) {
   return (
     <div className="rounded-lg border border-black/10 px-5 py-4 mb-10 flex flex-wrap items-center justify-between gap-3">
       <div>
@@ -562,7 +571,7 @@ function SourceLinkCard({ sourcePublisherName, sourceUrl }: { sourcePublisherNam
         rel="noopener noreferrer nofollow"
         className="inline-flex items-center min-h-11 px-5 rounded-full border border-black/15 font-sans text-body-small font-semibold text-ordift-ink hover:border-black/30"
       >
-        Read Original Article →
+        {ctaLabel}
       </a>
     </div>
   );

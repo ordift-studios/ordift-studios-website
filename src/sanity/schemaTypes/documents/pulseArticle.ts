@@ -41,12 +41,15 @@ export default defineType({
       options: {
         list: [
           { title: "Editorial (Ordift-authored)", value: "editorial" },
+          { title: "Official / Primary (Ordift-written, grounded in an official announcement)", value: "official" },
           { title: "Curated (from a trusted source)", value: "curated" },
           { title: "Community Submitted", value: "community" },
         ],
       },
       initialValue: "editorial",
       validation: (r) => r.required(),
+      description:
+        '"Official" (2026-09-08) sits between Editorial and Curated: it carries the full editorial requirements Editorial has (real body, hero media required) but, like Curated, also carries a real source reference/URL/attribution to the official announcement it\'s grounded in. Routed automatically from the discovered PulseSource\'s Source Classification — an editor should not need to set this by hand for a machine-discovered draft.',
     }),
     defineField({
       name: "status",
@@ -64,8 +67,8 @@ export default defineType({
       title: "Author",
       type: "reference",
       to: [{ type: "author" }],
-      hidden: ({ document }) => document?.origin !== "editorial",
-      description: "Set only for editorial (Ordift-authored) pieces — reuses the same Author list as Stories.",
+      hidden: ({ document }) => document?.origin !== "editorial" && document?.origin !== "official",
+      description: "Set for editorial and official/primary pieces (both are Ordift-authored) — reuses the same Author list as Stories. Optional for official/primary — the piece is still attributed to Ordift even with no individual byline set.",
     }),
     defineField({
       name: "categories",
@@ -101,22 +104,22 @@ export default defineType({
       title: "Source",
       type: "reference",
       to: [{ type: "pulseSource" }],
-      hidden: ({ document }) => document?.origin !== "curated",
-      description: "The registered trusted-source entry — curated content only. Community submissions use Source URL/Attribution below instead, since they aren't necessarily from a registered source.",
+      hidden: ({ document }) => document?.origin !== "curated" && document?.origin !== "official",
+      description: "The registered trusted-source entry — curated and official/primary content only. Community submissions use Source URL/Attribution below instead, since they aren't necessarily from a registered source.",
     }),
     defineField({
       name: "sourceUrl",
       title: "Source URL",
       type: "url",
-      hidden: ({ document }) => document?.origin !== "curated" && document?.origin !== "community",
-      description: 'The original article\'s canonical link (or, for a community submission, the link being shared) — always shown as a "read more at the source" link, never hidden.',
+      hidden: ({ document }) => document?.origin !== "curated" && document?.origin !== "community" && document?.origin !== "official",
+      description: 'The original article\'s (or official announcement\'s) canonical link — always shown as a public "Read Original Article" / "View Official Announcement" link, never hidden.',
     }),
     defineField({
       name: "sourceAttribution",
       title: "Source Attribution",
       type: "string",
-      hidden: ({ document }) => document?.origin !== "curated" && document?.origin !== "community",
-      description: 'e.g. "via Vogue Business", or "Submitted by @handle" for a community item.',
+      hidden: ({ document }) => document?.origin !== "curated" && document?.origin !== "community" && document?.origin !== "official",
+      description: 'e.g. "via Vogue Business", or "Submitted by @handle" for a community item, or "Canon" for an official announcement.',
     }),
     defineField({
       name: "aiSummary",

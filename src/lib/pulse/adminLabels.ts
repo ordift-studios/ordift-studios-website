@@ -9,7 +9,14 @@ export const PERMISSION_LABEL: Record<PulsePermissionClassification, string> = {
   blue: "Blue — Discovery/Linking Only",
   amber: "Amber — Permission Unclear",
   red: "Red — Disallowed",
+  unknown: "Unknown — Not Yet Reviewed",
 };
+
+// Rights Intelligence (2026-09-08) — these are editorial RISK
+// INDICATORS the Admin UI must present as such, never as a legal
+// determination. Any component rendering PERMISSION_LABEL should
+// surface this caption near it at least once per page.
+export const RIGHTS_STATUS_DISCLAIMER = "Editorial risk indicator, not a legal determination.";
 
 export const TRUST_LABEL: Record<PulseEditorialTrustLevel, string> = {
   high: "High",

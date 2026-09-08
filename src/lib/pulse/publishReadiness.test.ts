@@ -91,6 +91,25 @@ describe("getPulsePublishReadiness", () => {
       const result = getPulsePublishReadiness({ ...readyCopy, hasHeroMedia: true, origin: "curated", sourceUrl: "https://petapixel.com/2026/09/08/some-story/" });
       expect(result.ready).toBe(true);
     });
+
+    // Official/Primary Source Discovery (2026-09-08) — "official" gets
+    // full-editorial hero treatment (same as "editorial"), deliberately
+    // NOT the curated hero-optional exception, even though it shares
+    // curated's sourceUrl requirement (see EXTERNAL_ORIGINS vs.
+    // isCuratedExternalDiscovery() in publishReadiness.ts).
+    it("5. official + no hero => NOT publish-ready — official drafts keep the full editorial hero requirement, unlike curated", () => {
+      const result = getPulsePublishReadiness({ ...readyCopy, hasHeroMedia: false, origin: "official", sourceUrl: "https://www.nikon.com/news/2026/some-announcement" });
+      expect(result.ready).toBe(false);
+      expect(result.blockers).toContain(
+        "No Hero Media set — add an Ordift-appropriate image before publishing (never the source's own photograph unless its licence explicitly permits reuse)."
+      );
+    });
+
+    it("6. official + hero + valid source URL (+ other requirements satisfied) => publish-ready", () => {
+      const result = getPulsePublishReadiness({ ...readyCopy, hasHeroMedia: true, origin: "official", sourceUrl: "https://www.nikon.com/news/2026/some-announcement" });
+      expect(result.ready).toBe(true);
+      expect(result.blockers).toHaveLength(0);
+    });
   });
 
   // Adaptive Discovery Remediation, Part 8/9 (2026-09-08) — original
@@ -130,6 +149,26 @@ describe("getPulsePublishReadiness", () => {
       const result = getPulsePublishReadiness({ ...readyBase, origin: "editorial", sourceUrl: null });
       expect(result.ready).toBe(true);
       expect(result.blockers).toHaveLength(0);
+    });
+
+    // Official/Primary Source Discovery (2026-09-08) — an Ordift-written
+    // draft grounded in a verified official announcement still needs a
+    // real, valid link to that announcement, same as curated content.
+    it("blocks official content with no source URL at all — same rule as curated", () => {
+      const result = getPulsePublishReadiness({ ...readyBase, origin: "official", sourceUrl: null });
+      expect(result.ready).toBe(false);
+      expect(result.blockers.some((b) => b.includes("No original source URL set"))).toBe(true);
+    });
+
+    it("blocks official content with a malformed source URL rather than rendering a broken public link", () => {
+      const result = getPulsePublishReadiness({ ...readyBase, origin: "official", sourceUrl: "not a url at all" });
+      expect(result.ready).toBe(false);
+      expect(result.blockers.some((b) => b.includes("isn't a valid web address"))).toBe(true);
+    });
+
+    it("allows official content with a well-formed http(s) source URL", () => {
+      const result = getPulsePublishReadiness({ ...readyBase, origin: "official", sourceUrl: "https://www.apple.com/newsroom/2026/09/some-announcement/" });
+      expect(result.ready).toBe(true);
     });
   });
 });

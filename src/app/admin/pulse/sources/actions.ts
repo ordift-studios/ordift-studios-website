@@ -2,11 +2,12 @@
 
 import { revalidatePath } from "next/cache";
 import { getCurrentUser, hasRole, isSuperAdmin } from "@/lib/portal/roles";
-import { updatePulseSourceAdmin } from "@/lib/content/sanity/pulseAdmin";
+import { updatePulseSourceAdmin, createPulseSourceAdmin } from "@/lib/content/sanity/pulseAdmin";
+import { redirect } from "next/navigation";
 import { logActivity } from "@/lib/admin/activityLog";
 import { editorialClient } from "@/sanity/lib/client";
 import { runDiscoveryForSource, type RunDiscoveryResult } from "@/lib/pulse/ingestion";
-import type { PulseEditorialTrustLevel, PulsePermissionClassification } from "@/lib/content/types";
+import type { PulseEditorialTrustLevel, PulsePermissionClassification, PulseSourceClassification } from "@/lib/content/types";
 
 async function requirePulseAdmin() {
   const user = await getCurrentUser();
@@ -26,16 +27,27 @@ export async function updatePulseSourceAction(_prevState: UpdateSourceState, for
 
     const attributionRequirement = String(formData.get("attributionRequirement") ?? "").trim();
     const lastPolicyReviewDate = String(formData.get("lastPolicyReviewDate") ?? "").trim();
+    const termsUrl = String(formData.get("termsUrl") ?? "").trim();
+    const licenseNotes = String(formData.get("licenseNotes") ?? "").trim();
+    const freshnessWindowDaysOverrideRaw = String(formData.get("freshnessWindowDaysOverride") ?? "").trim();
+    const freshnessWindowDaysOverride = freshnessWindowDaysOverrideRaw ? Number(freshnessWindowDaysOverrideRaw) : null;
+    if (freshnessWindowDaysOverrideRaw && (!Number.isFinite(freshnessWindowDaysOverride) || freshnessWindowDaysOverride === null)) {
+      return { ok: false, error: "Freshness Window Override must be a number." };
+    }
 
     const result = await updatePulseSourceAdmin(sourceId, {
       isActive: formData.get("isActive") === "on",
-      permissionClassification: String(formData.get("permissionClassification") ?? "amber") as PulsePermissionClassification,
+      permissionClassification: String(formData.get("permissionClassification") ?? "unknown") as PulsePermissionClassification,
       editorialTrustLevel: String(formData.get("editorialTrustLevel") ?? "unverified") as PulseEditorialTrustLevel,
       imageUsePermitted: formData.get("imageUsePermitted") === "on",
       commercialUsePermitted: formData.get("commercialUsePermitted") === "on",
       autoPublishEligible: formData.get("autoPublishEligible") === "on",
       attributionRequirement: attributionRequirement || null,
       lastPolicyReviewDate: lastPolicyReviewDate || null,
+      sourceClassification: String(formData.get("sourceClassification") ?? "editorial_discovery") as PulseSourceClassification,
+      termsUrl: termsUrl || null,
+      licenseNotes: licenseNotes || null,
+      freshnessWindowDaysOverride,
     });
     if (!result.ok) return { ok: false, error: result.error };
 
@@ -107,4 +119,34 @@ export async function runPulseDiscoveryAction(_prevState: RunDiscoveryState, for
   } catch {
     return { ok: false, error: "You are not authorized to do this." };
   }
+}
+
+// Manual Source Addition, Part N (2026-09-08).
+export type CreateSourceState = { ok: boolean; error?: string } | null;
+
+export async function createPulseSourceAction(_prevState: CreateSourceState, formData: FormData): Promise<CreateSourceState> {
+  const user = await requirePulseAdmin().catch(() => null);
+  if (!user) return { ok: false, error: "You are not authorized to do this." };
+
+  const name = String(formData.get("name") ?? "").trim();
+  const sourceType = String(formData.get("sourceType") ?? "manual");
+  const url = String(formData.get("url") ?? "").trim();
+  const feedUrl = String(formData.get("feedUrl") ?? "").trim();
+  const termsUrl = String(formData.get("termsUrl") ?? "").trim();
+  const sourceClassification = String(formData.get("sourceClassification") ?? "editorial_discovery") as PulseSourceClassification;
+
+  const result = await createPulseSourceAdmin({
+    name,
+    sourceType,
+    url: url || null,
+    feedUrl: feedUrl || null,
+    termsUrl: termsUrl || null,
+    sourceClassification,
+  });
+  if (!result.ok) return { ok: false, error: result.error };
+
+  await logActivity({ actorUserId: user.id, action: "pulse.source_created", entityType: "pulseSource", entityId: result.id, metadata: { name, sourceType } });
+
+  revalidatePath("/admin/pulse/sources");
+  redirect(`/admin/pulse/sources/${result.id}`);
 }

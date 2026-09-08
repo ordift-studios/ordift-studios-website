@@ -2,6 +2,7 @@ import { classifyForExclusion } from "./exclusionFilter";
 import { findDuplicate, type DedupCandidate } from "./dedup";
 import { computeRelevanceScore } from "./relevanceScoring";
 import { isWithinFreshnessWindow } from "./freshnessPolicy";
+import { resolveDraftOrigin, type PulseSourceClassification } from "./sourceClassification";
 import { manualAdapter } from "./sourceAdapters/manualAdapter";
 import { rssAdapter } from "./sourceAdapters/rssAdapter";
 import type { RawDiscoveredItem } from "./sourceAdapters/types";
@@ -84,11 +85,14 @@ type SourceRecord = {
   feedUrl: string | null;
   url: string | null;
   isActive: boolean;
-  permissionClassification: "green" | "blue" | "amber" | "red";
+  permissionClassification: "green" | "blue" | "amber" | "red" | "unknown";
   editorialTrustLevel: "high" | "standard" | "unverified" | "flagged";
   editorialPriority: number;
   disciplineIds: string[];
   geographyIds: string[];
+  // Official/Primary Source Discovery (2026-09-08).
+  sourceClassification: PulseSourceClassification;
+  freshnessWindowDaysOverride: number | null;
 };
 
 // Controlled Test #2 fix (2026-08-25) — "disciplineIds"/"geographyIds"
@@ -106,11 +110,13 @@ type SourceRecord = {
 // three coalesce() calls already directly above it.
 const SOURCE_QUERY = `*[_type == "pulseSource" && _id == $id][0]{
   "id": _id, name, sourceType, feedUrl, url, isActive,
-  "permissionClassification": coalesce(permissionClassification, "amber"),
+  "permissionClassification": coalesce(permissionClassification, "unknown"),
   "editorialTrustLevel": coalesce(editorialTrustLevel, "unverified"),
   "editorialPriority": coalesce(editorialPriority, 0),
   "disciplineIds": coalesce(disciplines[]._ref, []),
-  "geographyIds": coalesce(geography[]._ref, [])
+  "geographyIds": coalesce(geography[]._ref, []),
+  "sourceClassification": coalesce(sourceClassification, "editorial_discovery"),
+  freshnessWindowDaysOverride
 }`;
 
 const TAXONOMY_SLUGS_QUERY = `*[_type in ["pulseCategory", "pulseRegion"]]{"id": _id, "slug": slug.current}`;
@@ -343,7 +349,7 @@ export async function runDiscoveryForSource(
     // off-topic item is off-topic regardless of age) and before dedup/
     // scoring (a stale item never needs either). A missing/unparseable
     // date never excludes on its own — see the function's own doc.
-    if (!isWithinFreshnessWindow({ publishedAt: item.publishedAt, sourceType: source.sourceType, now })) {
+    if (!isWithinFreshnessWindow({ publishedAt: item.publishedAt, sourceType: source.sourceType, freshnessWindowDaysOverride: source.freshnessWindowDaysOverride, now })) {
       staleExcluded += 1;
       continue;
     }
@@ -382,7 +388,14 @@ export async function runDiscoveryForSource(
         title: item.title,
         slug: { _type: "slug", current: `${slugify(item.title)}-${runId.slice(0, 8)}` },
         contentKind: "article",
-        origin: "curated",
+        // Official/Primary Source Discovery (2026-09-08) — routed from
+        // the source's own sourceClassification, never hand-set per
+        // article. "official" still requires a real, human-written
+        // body before publish (unchanged full editorial requirement —
+        // see publishReadiness.ts) — this only decides which origin
+        // value (and therefore which public presentation/requirements)
+        // the draft gets, never that it's ready to publish.
+        origin: resolveDraftOrigin(source.sourceClassification),
         status: "draft",
         featured: false,
         excerpt: PLACEHOLDER_TEXT,
