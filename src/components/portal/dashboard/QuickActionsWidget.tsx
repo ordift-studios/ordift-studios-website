@@ -12,6 +12,8 @@ export default function QuickActionsWidget({ deliverablesHref }: { deliverablesH
     { label: "View Projects", href: "#active-projects", disabled: false },
     { label: "View Deliverables", href: deliverablesHref ?? "#", disabled: !deliverablesHref },
     { label: "View Bookings", href: "/portal/workshops", disabled: false },
+    // Ordift Studios Legal Suite — LEGAL-SYS-1, Phase H (2026-09-08).
+    { label: "My Agreements", href: "/portal/client/legal", disabled: false },
     { label: "Request Reschedule", href: "#", disabled: true },
     { label: "Edit Profile", href: "#", disabled: true },
   ];

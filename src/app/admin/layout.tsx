@@ -97,6 +97,13 @@ const NAV_GROUPS: NavGroup[] = [
     ],
   },
   {
+    // Ordift Studios Legal Suite — LEGAL-SYS-1, Phase H (2026-09-08).
+    // adminOnly mirrors the page's own hasRole("admin")/isSuperAdmin()
+    // gate exactly — the page's own check remains the real boundary.
+    label: "Legal & Governance",
+    items: [{ label: "Legal & Governance", href: "/admin/legal", adminOnly: true }],
+  },
+  {
     label: "OS Academy",
     items: [{ label: "Workshop Management", href: "/admin/workshops" }],
   },

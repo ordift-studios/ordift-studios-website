@@ -397,6 +397,31 @@ export async function getRecentActivityByType(
   return enrichWithActorIdentity(data ?? []);
 }
 
+const PREFIX_ACTIVITY_LIMIT = 50;
+
+// Ordift Studios Legal Suite — LEGAL-SYS-1, Phase H (2026-09-08). The
+// Legal & Governance Audit Trail spans several entity_type values
+// (agreement/signature_request/signature_signatory/legal_document_
+// version) — a single action-prefix filter ("legal.") is the simpler,
+// correct query rather than unioning several getRecentActivityByType()
+// calls together.
+export async function getRecentActivityByActionPrefix(prefix: string, limit = PREFIX_ACTIVITY_LIMIT): Promise<ActivityLogEntry[]> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("activity_log")
+    .select("id, actor_user_id, action, entity_type, entity_id, metadata, created_at")
+    .like("action", `${prefix}%`)
+    .order("created_at", { ascending: false })
+    .limit(limit);
+
+  if (error) {
+    console.error("[admin] failed to load activity_log by action prefix", error.message);
+    return [];
+  }
+
+  return enrichWithActorIdentity(data ?? []);
+}
+
 const ENTITY_ACTIVITY_LIMIT = 50;
 
 // Access-change history for a single user (Users & Roles detail panel) —

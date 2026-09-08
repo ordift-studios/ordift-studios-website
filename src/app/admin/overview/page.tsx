@@ -192,6 +192,15 @@ const ACTION_LABELS: Record<string, string> = {
   // Ordift Studios Legal Suite — LEGAL-SYS-1 (2026-09-08)
   "legal.master_version.status_changed": "Changed a legal document master version's lifecycle status",
   "legal.master_release.ingested": "Ingested a controlled Legal Suite Official Master release",
+  "legal.agreement.draft_created": "Created a draft legal agreement",
+  "legal.agreement.status_changed": "Changed an agreement's lifecycle status",
+  "legal.agreement.snapshot_attached": "Attached a commercial/legal snapshot to an agreement",
+  "legal.agreement.amendment_created": "Recorded an amendment to an issued agreement",
+  "legal.agreement.issued_document_hash_recorded": "Recorded the issued-document hash for an agreement",
+  "legal.signature_request.created": "Created a signature request",
+  "legal.signature_signatory.link_generated": "Generated a signatory access link",
+  "legal.signature_signatory.revoked": "Revoked a signatory's access",
+  "legal.release.granted": "Granted a rights/release category on an agreement",
 };
 
 // Graceful fallback for any action type not (yet) in ACTION_LABELS — pure

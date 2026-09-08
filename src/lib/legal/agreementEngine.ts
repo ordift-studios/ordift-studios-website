@@ -200,6 +200,54 @@ export async function attachAgreementSnapshot(params: {
   return { ok: true, snapshotId: data.id };
 }
 
+// Records the SHA-256 of the exact issued artifact (Phase F's
+// traceability chain: ISSUED ARTIFACT -> SHA-256). Set-once by design:
+// refuses if a hash is already recorded, rather than silently
+// overwriting what a signature process may already be bound to.
+export async function recordIssuedDocumentHash(params: {
+  agreementId: string;
+  documentSha256: string;
+  actorUserId: string;
+}): Promise<{ ok: true } | { ok: false; error: string }> {
+  const auth = await requireContractAdminister(params.actorUserId);
+  if (!auth.ok) return auth;
+
+  if (!/^[0-9a-f]{64}$/i.test(params.documentSha256)) {
+    return { ok: false, error: "documentSha256 must be a well-formed SHA-256 hex digest." };
+  }
+
+  const admin = createAdminClient();
+  const { data: existing } = await admin.from("agreements").select("id, issued_document_sha256").eq("id", params.agreementId).maybeSingle();
+  if (!existing) return { ok: false, error: "Agreement not found." };
+  if (existing.issued_document_sha256) {
+    return { ok: false, error: "An issued-document hash is already recorded for this agreement and cannot be overwritten." };
+  }
+
+  const { error } = await admin
+    .from("agreements")
+    .update({
+      issued_document_sha256: params.documentSha256,
+      issued_document_recorded_at: new Date().toISOString(),
+      issued_document_recorded_by: params.actorUserId,
+    })
+    .eq("id", params.agreementId)
+    .is("issued_document_sha256", null);
+  if (error) {
+    console.error("[legal] failed to record issued document hash", error.message);
+    return { ok: false, error: "Failed to record the issued document hash." };
+  }
+
+  await logActivity({
+    actorUserId: params.actorUserId,
+    action: "legal.agreement.issued_document_hash_recorded",
+    entityType: "agreement",
+    entityId: params.agreementId,
+    metadata: { documentSha256: params.documentSha256 },
+  });
+
+  return { ok: true };
+}
+
 // Append-only amendment — never edits the original agreement row.
 // amendment_number is resolved as (current max + 1) for this
 // agreement, matching the append-only sequential pattern already used
