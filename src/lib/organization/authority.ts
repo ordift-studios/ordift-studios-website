@@ -408,18 +408,33 @@ export const TECHNOLOGY_CAPABILITIES = {
   securityReview: "technology.security_review.read", // DORMANT — framework only, no grant issued
 } as const;
 
-// governance.* — CHANCELLOR. Fully DORMANT — no corporate-records/
-// contract/compliance-tracking table or workflow exists anywhere in
-// this codebase yet; defined now purely as approved taxonomy. Never
-// "legal" — CHANCELLOR administers governance workflow and liaises
-// with external counsel, never represented as providing licensed
-// legal advice (see the governance jurisdiction comment above).
+// governance.* — CHANCELLOR. Never "legal" — CHANCELLOR administers
+// governance workflow and liaises with external counsel, never
+// represented as providing licensed legal advice (see the governance
+// jurisdiction comment above).
+// contractAdminister is WIRED as of LEGAL-SYS-1 Phase D-0 (2026-09-08)
+// — the real enforcement point for legal_document_masters/versions
+// lifecycle transitions (src/lib/legal/masterRegistry.ts). Zero real
+// authority_grants rows exist for it in Production; Super Admin remains
+// the only actor who can pass today, exactly like every other
+// newly-wired capability this engagement has added.
 export const GOVERNANCE_CAPABILITIES = {
   recordsAdminister: "governance.records.administer", // DORMANT
   policyAdminister: "governance.policy.administer", // DORMANT
-  contractAdminister: "governance.contract.administer", // DORMANT
+  contractAdminister: "governance.contract.administer", // WIRED — src/lib/legal/masterRegistry.ts
   complianceTrack: "governance.compliance.track", // DORMANT
   externalCounselCoordinate: "governance.external_counsel.coordinate", // DORMANT
+  // Signing Authority (LEGAL-SYS-1, Part 16, 2026-09-08) — deliberately
+  // its own capability, separate from contractAdminister: administering
+  // the legal template/master registry (creating, versioning, retiring
+  // masters) is NOT the same duty as being authorized to actually SIGN
+  // an agreement on Ordift's behalf. DORMANT — no signature/agreement
+  // engine exists yet to consult it (that is a later phase), and no
+  // real authority_grants row for it is created by this phase. Founder/
+  // Super Admin retains ultimate signing authority via the existing
+  // authorizeWithSuperAdminOverride() pattern regardless of whether
+  // this capability has ever been granted to anyone.
+  signingAuthority: "governance.signing_authority", // DORMANT — no consuming code yet (future signature engine)
 } as const;
 
 // Super-Admin check by id, for server-side helpers (like

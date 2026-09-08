@@ -3,7 +3,8 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import { getCurrentUser, hasRole, isSuperAdmin } from "@/lib/portal/roles";
 import { contentRepository } from "@/lib/content";
-import { legalPagesApproved, formsSendingEnabled, isStaging } from "@/lib/shared/env";
+import { formsSendingEnabled, isStaging } from "@/lib/shared/env";
+import { getLegalSuiteSettingsStatus } from "@/lib/legal/masterRegistry";
 import { PRIMARY_PUBLIC_CONTACT_EMAIL, resolvePublicContactEmail } from "@/lib/content/contactChannels";
 
 export const metadata: Metadata = {
@@ -28,6 +29,7 @@ export default async function AdminSettingsPage() {
   if (!user || (!hasRole(user, "admin") && !isSuperAdmin(user))) redirect("/admin/overview");
 
   const siteSettings = await contentRepository.getSiteSettings();
+  const legalSuiteStatus = await getLegalSuiteSettingsStatus();
 
   return (
     <div className="space-y-10">
@@ -46,15 +48,41 @@ export default async function AdminSettingsPage() {
       <section className="rounded-xl border border-black/10 bg-white p-6 space-y-5">
         <h2 className="font-serif font-medium text-body text-ordift-ink">Legal &amp; Forms</h2>
 
+        {/* Ordift Studios Legal Suite — LEGAL-SYS-1, Phase D-0
+            (2026-09-08). Replaces the previous single "Legal Pages
+            Approved" badge (a vestigial LEGAL_PAGES_APPROVED env var
+            that did not actually gate the live /legal/[slug] pages —
+            see the Discovery Report) with two genuinely separate,
+            database-derived truths. Neither is a hand-set toggle —
+            both are computed from public.legal_document_masters/
+            legal_document_versions by getLegalSuiteSettingsStatus(). */}
         <div className="flex items-center justify-between gap-4">
           <div>
-            <p className="font-sans text-body-small text-ordift-ink font-medium">Legal Pages Approved</p>
+            <p className="font-sans text-body-small text-ordift-ink font-medium">Legal Masters</p>
             <p className="font-sans text-caption text-ordift-ink-muted">
-              Gates whether legal page content is published. Changed via Vercel env var + deploy —
-              deliberately not instant.
+              Whether all 21 canonical Ordift Studios legal documents have Legal Counsel approval on record.
+              Derived from the legal document master registry — never a manual toggle.
             </p>
           </div>
-          <StatusPill ok={legalPagesApproved()} label={legalPagesApproved() ? "Approved" : "Not Approved"} />
+          <StatusPill
+            ok={legalSuiteStatus.legalMastersStatus === "approved"}
+            label={legalSuiteStatus.legalMastersStatus === "approved" ? "Approved" : "Incomplete"}
+          />
+        </div>
+
+        <div className="flex items-center justify-between gap-4">
+          <div>
+            <p className="font-sans text-body-small text-ordift-ink font-medium">Public Legal Pages</p>
+            <p className="font-sans text-caption text-ordift-ink-muted">
+              Whether Website Terms, Privacy Notice, and Cookie Notice are genuinely live with a real
+              effective date and public URL — separate from Legal Masters approval above. Counsel approval
+              of new Official Master text does not, by itself, activate a public replacement.
+            </p>
+          </div>
+          <StatusPill
+            ok={legalSuiteStatus.publicLegalPagesStatus === "active"}
+            label={legalSuiteStatus.publicLegalPagesStatus === "active" ? "Active" : "Pending Activation"}
+          />
         </div>
 
         <div className="flex items-center justify-between gap-4">
