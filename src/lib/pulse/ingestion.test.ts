@@ -99,7 +99,9 @@ describe("runDiscoveryForSource", () => {
       { title: "New Camera Lens Announced", sourceUrl: "https://example.org/1", summary: "A lightweight lens.", imageUrl: "https://example.org/1.jpg", author: "Jane", publishedAt: "2026-08-20T00:00:00Z" },
     ]);
     const { sanity, created } = makeSanityMock();
-    const result = await runDiscoveryForSource("src1", sanity, logRun);
+    // now pinned near the fixture's publishedAt — not exercising the
+    // Freshness Window Gate here.
+    const result = await runDiscoveryForSource("src1", sanity, logRun, undefined, new Date("2026-08-20T12:00:00.000Z"));
 
     expect(result.refused).toBeNull();
     expect(result.created).toBe(1);
@@ -131,7 +133,9 @@ describe("runDiscoveryForSource", () => {
       { title: "New Camera Lens Announced", sourceUrl: "https://example.org/1", summary: "A lightweight lens.", imageUrl: null, author: null, publishedAt: "2026-08-20T00:00:00Z" },
     ]);
     const { sanity } = makeSanityMock();
-    await runDiscoveryForSource("src1", sanity, logRun);
+    // now pinned near the fixture's publishedAt — not exercising the
+    // Freshness Window Gate here.
+    await runDiscoveryForSource("src1", sanity, logRun, undefined, new Date("2026-08-20T12:00:00.000Z"));
 
     const createMock = sanity.create as unknown as ReturnType<typeof vi.fn>;
     expect(createMock).toHaveBeenCalledTimes(1);
@@ -148,6 +152,34 @@ describe("runDiscoveryForSource", () => {
     expect(result.excluded).toBe(1);
     expect(result.created).toBe(0);
     expect(created).toHaveLength(0);
+  });
+
+  // Adaptive Discovery Remediation (2026-09-08) — the Freshness Window
+  // Gate integration. freshnessPolicy.test.ts covers the pure logic
+  // exhaustively; these confirm it's actually wired into the
+  // orchestrator's item loop and its own count is reported honestly.
+  it("excludes a stale item as staleExcluded, separate from topical exclusion, and never creates a draft for it", async () => {
+    rssFetchMock.mockResolvedValue([
+      { title: "New Camera Lens Announced", sourceUrl: "https://example.org/1", summary: "A lightweight lens.", imageUrl: null, author: null, publishedAt: "2026-01-01T00:00:00Z" },
+    ]);
+    const { sanity, created } = makeSanityMock();
+    const result = await runDiscoveryForSource("src1", sanity, logRun, undefined, new Date("2026-08-20T12:00:00.000Z"));
+    expect(result.staleExcluded).toBe(1);
+    expect(result.excluded).toBe(0);
+    expect(result.created).toBe(0);
+    expect(created).toHaveLength(0);
+    expect(logRun).toHaveBeenCalledWith(expect.objectContaining({ staleExcluded: 1, created: 0 }));
+  });
+
+  it("still creates a draft for a genuinely recent item under the same gate", async () => {
+    rssFetchMock.mockResolvedValue([
+      { title: "New Camera Lens Announced", sourceUrl: "https://example.org/1", summary: "A lightweight lens.", imageUrl: null, author: null, publishedAt: "2026-08-19T00:00:00Z" },
+    ]);
+    const { sanity, created } = makeSanityMock();
+    const result = await runDiscoveryForSource("src1", sanity, logRun, undefined, new Date("2026-08-20T12:00:00.000Z"));
+    expect(result.staleExcluded).toBe(0);
+    expect(result.created).toBe(1);
+    expect(created).toHaveLength(1);
   });
 
   it("flags an ambiguous item for review instead of discarding it", async () => {
@@ -168,7 +200,9 @@ describe("runDiscoveryForSource", () => {
     const { sanity, created } = makeSanityMock({
       existing: [{ _id: "existing-1", sourceUrl: "https://a.example/existing", title: "Paris Fashion Week 2026 Recap", publishedAt: "2026-08-19T00:00:00Z" }],
     });
-    const result = await runDiscoveryForSource("src1", sanity, logRun);
+    // now pinned near the fixture's publishedAt — this test exercises
+    // dedup, not the Freshness Window Gate (see freshnessPolicy.test.ts).
+    const result = await runDiscoveryForSource("src1", sanity, logRun, undefined, new Date("2026-08-20T12:00:00.000Z"));
     expect(result.created).toBe(1);
     expect(result.flaggedDuplicate).toBe(1);
     expect(created[0].possibleDuplicateOf).toEqual({ _type: "reference", _ref: "existing-1" });
@@ -211,7 +245,9 @@ describe("runDiscoveryForSource", () => {
     }));
     rssFetchMock.mockResolvedValue(manyItems);
     const { sanity, created } = makeSanityMock();
-    const result = await runDiscoveryForSource("src1", sanity, logRun);
+    // now pinned near the fixtures' publishedAt — this test exercises
+    // MAX_ITEMS_PER_RUN bounding, not the Freshness Window Gate.
+    const result = await runDiscoveryForSource("src1", sanity, logRun, undefined, new Date("2026-08-20T12:00:00.000Z"));
 
     expect(result.fetched).toBe(12); // true feed total, unbounded
     expect(result.created).toBe(5); // bounded
@@ -249,7 +285,9 @@ describe("runDiscoveryForSource", () => {
       { title: "New Camera Lens Announced", sourceUrl: "https://example.org/1", summary: "A lightweight lens.", imageUrl: null, author: null, publishedAt: "2026-08-20T00:00:00Z" },
     ]);
     const { sanity } = makeSanityMock();
-    const result = await runDiscoveryForSource("src1", sanity, logRun);
+    // now pinned near the fixture's publishedAt — not exercising the
+    // Freshness Window Gate here.
+    const result = await runDiscoveryForSource("src1", sanity, logRun, undefined, new Date("2026-08-20T12:00:00.000Z"));
     expect(result.created).toBe(1);
   });
 
@@ -282,7 +320,10 @@ describe("runDiscoveryForSource", () => {
       },
     });
 
-    const result = await runDiscoveryForSource("src1", sanity, logRun);
+    // now pinned near the fixture's publishedAt — this test exercises the
+    // null-disciplineIds/geographyIds regression, not the Freshness
+    // Window Gate.
+    const result = await runDiscoveryForSource("src1", sanity, logRun, undefined, new Date("2026-08-20T12:00:00.000Z"));
 
     expect(result.refused).toBeNull();
     expect(result.errors).toHaveLength(0);

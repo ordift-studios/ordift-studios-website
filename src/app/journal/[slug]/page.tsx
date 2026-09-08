@@ -295,7 +295,16 @@ export default async function JournalPostPage({
   const item = fromPulseArticle(article, opportunityTypeById, sourceById);
 
   const shareUrl = article.seo.canonicalUrl ?? `${siteUrl}/journal/${article.slug}`;
-  const showSourceLink = (article.origin === "curated" || article.origin === "community") && article.sourceUrl;
+  // Adaptive Discovery Remediation, Part 8 (2026-09-08) — the original-
+  // source bridge to the publisher's own coverage, required reading for
+  // Part 8's own explicit principle: Pulse curates and points outward,
+  // it never stands in for the original reporting/photography. Prefers
+  // the registered pulseSource's real name; falls back to
+  // sourceAttribution (stripping a leading "via " so the SOURCE label
+  // never reads "SOURCE via X") for a community submission with no
+  // registered source.
+  const showSourceLink = (article.origin === "curated" || article.origin === "community") && Boolean(article.sourceUrl);
+  const sourcePublisherName = sourceById.get(article.sourceId ?? "")?.name ?? article.sourceAttribution?.replace(/^via\s+/i, "") ?? null;
 
   const jsonLd = {
     "@context": "https://schema.org",
@@ -357,14 +366,20 @@ export default async function JournalPostPage({
           <p className="font-sans text-body text-ordift-ink whitespace-pre-line mb-6">{article.body}</p>
 
           {showSourceLink && (
-            <a
-              href={article.sourceUrl!}
-              target="_blank"
-              rel="noopener noreferrer nofollow"
-              className="inline-flex items-center min-h-11 px-5 rounded-full border border-black/15 font-sans text-body-small text-ordift-ink hover:border-black/30 mb-10"
-            >
-              {article.sourceAttribution ? `Read more — ${article.sourceAttribution}` : "Read more at the source"} →
-            </a>
+            <div className="rounded-lg border border-black/10 px-5 py-4 mb-10 flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <p className="font-sans text-caption font-semibold uppercase tracking-[0.15em] text-ordift-ink-muted mb-1">Source</p>
+                <p className="font-sans text-body-small text-ordift-ink">{sourcePublisherName ?? "Original publisher"}</p>
+              </div>
+              <a
+                href={article.sourceUrl!}
+                target="_blank"
+                rel="noopener noreferrer nofollow"
+                className="inline-flex items-center min-h-11 px-5 rounded-full border border-black/15 font-sans text-body-small font-semibold text-ordift-ink hover:border-black/30"
+              >
+                Read Original Article →
+              </a>
+            </div>
           )}
 
           {article.contentKind === "opportunity" && (

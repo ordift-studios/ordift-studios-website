@@ -211,6 +211,21 @@ const ACTION_LABELS: Record<string, string> = {
   "talent.opportunity.created": "Created a talent opportunity",
   "talent.opportunity.status_changed": "Changed a talent opportunity's status",
   "talent.media.recorded": "Recorded a talent media asset",
+
+  // Ordift Pulse (housekeeping fix, Adaptive Discovery Remediation,
+  // 2026-09-08) — every real pulse.* action string in use, some
+  // pre-existing and previously missing from this map, plus the new
+  // hero-media/discovery-status ones added this phase.
+  "pulse.article_publish": "Published a Pulse article",
+  "pulse.article_reject": "Rejected a Pulse article",
+  "pulse.article_archive": "Archived a Pulse article",
+  "pulse.article_restore": "Restored a Pulse article",
+  "pulse.source_updated": "Updated a Pulse source's configuration",
+  "pulse.discovery_run": "Ran Pulse discovery for a source",
+  "pulse.discovery_run_started": "Started a Pulse discovery run",
+  "pulse.hero_media_uploaded": "Uploaded a Pulse hero media image",
+  "pulse.hero_media_set": "Set a Pulse article's hero media",
+  "pulse.hero_media_cleared": "Cleared a Pulse article's hero media",
 };
 
 // Graceful fallback for any action type not (yet) in ACTION_LABELS — pure

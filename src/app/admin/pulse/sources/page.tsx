@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { getCurrentUser, hasRole, isSuperAdmin } from "@/lib/portal/roles";
 import { getPulseSourcesAdmin } from "@/lib/content/sanity/pulseAdmin";
 import { PERMISSION_LABEL, TRUST_LABEL } from "@/lib/pulse/adminLabels";
+import RunDiscoveryButton from "./RunDiscoveryButton";
 
 export const metadata: Metadata = { title: "Pulse Sources — Ordift Studios Admin", robots: { index: false, follow: false } };
 
@@ -38,6 +39,7 @@ export default async function AdminPulseSourcesPage() {
               <th className="px-5 py-3 font-sans text-caption uppercase tracking-[0.1em] text-ordift-ink-muted">Permission</th>
               <th className="px-5 py-3 font-sans text-caption uppercase tracking-[0.1em] text-ordift-ink-muted">Auto-Publish</th>
               <th className="px-5 py-3 font-sans text-caption uppercase tracking-[0.1em] text-ordift-ink-muted">Last Policy Review</th>
+              <th className="px-5 py-3 font-sans text-caption uppercase tracking-[0.1em] text-ordift-ink-muted">Discovery</th>
             </tr>
           </thead>
           <tbody>
@@ -56,6 +58,9 @@ export default async function AdminPulseSourcesPage() {
                 <td className="px-5 py-3 font-sans text-caption text-ordift-ink-muted">{PERMISSION_LABEL[s.permissionClassification]}</td>
                 <td className="px-5 py-3 font-sans text-caption text-ordift-ink-muted">{s.autoPublishEligible ? "Eligible" : "No"}</td>
                 <td className="px-5 py-3 font-sans text-caption text-ordift-ink-muted">{s.lastPolicyReviewDate ?? "Never"}</td>
+                <td className="px-5 py-3">
+                  {s.isActive ? <RunDiscoveryButton sourceId={s.id} /> : <span className="font-sans text-caption text-ordift-ink-muted">Inactive</span>}
+                </td>
               </tr>
             ))}
           </tbody>

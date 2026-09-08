@@ -1,6 +1,7 @@
 import { classifyForExclusion } from "./exclusionFilter";
 import { findDuplicate, type DedupCandidate } from "./dedup";
 import { computeRelevanceScore } from "./relevanceScoring";
+import { isWithinFreshnessWindow } from "./freshnessPolicy";
 import { manualAdapter } from "./sourceAdapters/manualAdapter";
 import { rssAdapter } from "./sourceAdapters/rssAdapter";
 import type { RawDiscoveredItem } from "./sourceAdapters/types";
@@ -11,8 +12,18 @@ import type { RawDiscoveredItem } from "./sourceAdapters/types";
 //
 //   Active Approved Source -> Fetch -> Permission Gate -> Dedup ->
 //   Creative Relevance Filter -> Political/General-News Exclusion ->
-//   Topic Classification -> Region Classification -> Quality/Trust Score
-//   -> Draft pulseArticle -> (human) Review/Publish -> Journal
+//   Freshness Window Gate -> Topic Classification -> Region
+//   Classification -> Quality/Trust Score -> Draft pulseArticle ->
+//   (human) Review/Publish -> Journal
+//
+// Freshness Window Gate (Adaptive Discovery Remediation, 2026-09-08) —
+// a hard per-sourceType cutoff (freshnessPolicy.ts), applied once here
+// at discovery time, deliberately separate from relevanceScoring.ts's
+// freshnessScore() (a soft ranking signal, unchanged). An item outside
+// its source-type's window is excluded (never drafted) the same way a
+// classifyForExclusion() "exclude" is — reported separately as
+// `staleExcluded` so a run summary never hides why a fetched item
+// didn't become a draft.
 //
 // Hard rules enforced here, not just documented:
 //   - status is ALWAYS "draft" — this module never writes "inReview" or
@@ -44,6 +55,7 @@ export type DiscoveryRunLogger = (params: {
   flaggedDuplicate: number;
   flaggedForReview: number;
   excluded: number;
+  staleExcluded: number;
   errors: string[];
 }) => Promise<void>;
 
@@ -102,6 +114,20 @@ const SOURCE_QUERY = `*[_type == "pulseSource" && _id == $id][0]{
 }`;
 
 const TAXONOMY_SLUGS_QUERY = `*[_type in ["pulseCategory", "pulseRegion"]]{"id": _id, "slug": slug.current}`;
+
+// Adaptive Discovery Remediation (2026-09-08) — the recurring-discovery
+// entry point (the cron route) needs "every active source", not one
+// specific id. isActive/permissionClassification are still re-checked
+// per source inside runDiscoveryForSource() itself (defense in depth —
+// this list is never trusted as the sole gate), so a source that's
+// deactivated between this query and its own run is still refused
+// correctly.
+const ACTIVE_SOURCE_IDS_QUERY = `*[_type == "pulseSource" && isActive == true]{"id": _id}`;
+
+export async function listActiveSourceIds(sanity: MinimalSanityClient): Promise<string[]> {
+  const rows = await sanity.fetch<{ id: string }[]>(ACTIVE_SOURCE_IDS_QUERY);
+  return rows.map((r) => r.id);
+}
 
 // Draft-reference fix (2026-09-01) — under editorialClient's
 // perspective:"drafts", plain `_id` returns the canonicalized/logical
@@ -173,6 +199,7 @@ export type RunDiscoveryResult = {
   flaggedDuplicate: number;
   flaggedForReview: number;
   excluded: number;
+  staleExcluded: number;
   createdArticleIds: string[];
   errors: string[];
   refused: string | null; // set (and nothing else attempted) when the source itself blocks the run
@@ -191,7 +218,11 @@ export async function runDiscoveryForSource(
   // Optional — reliability fix (2026-08-25). Omitted entirely by
   // existing test call sites, which stay valid unchanged; the real API
   // route supplies it.
-  logRunStarted?: DiscoveryRunStartedLogger
+  logRunStarted?: DiscoveryRunStartedLogger,
+  // Optional — Adaptive Discovery Remediation (2026-09-08). Injectable
+  // purely for deterministic tests of the Freshness Window Gate; every
+  // real call site omits it and gets the real current time.
+  now?: Date
 ): Promise<RunDiscoveryResult> {
   const runId = crypto.randomUUID();
   const errors: string[] = [];
@@ -261,9 +292,10 @@ export async function runDiscoveryForSource(
       flaggedDuplicate: 0,
       flaggedForReview: 0,
       excluded: 0,
+      staleExcluded: 0,
       errors: [message],
     });
-    return { runId, sourceId: source.id, sourceName: source.name, fetched: 0, created: 0, flaggedDuplicate: 0, flaggedForReview: 0, excluded: 0, createdArticleIds: [], errors: [message], refused: null };
+    return { runId, sourceId: source.id, sourceName: source.name, fetched: 0, created: 0, flaggedDuplicate: 0, flaggedForReview: 0, excluded: 0, staleExcluded: 0, createdArticleIds: [], errors: [message], refused: null };
   }
 
   const [taxonomySlugs, existingForDedup] = await Promise.all([
@@ -281,6 +313,7 @@ export async function runDiscoveryForSource(
   let flaggedDuplicate = 0;
   let flaggedForReview = 0;
   let excluded = 0;
+  let staleExcluded = 0;
   const createdArticleIds: string[] = [];
 
   // Bounded, not the full feed — see MAX_ITEMS_PER_RUN's own comment.
@@ -302,6 +335,16 @@ export async function runDiscoveryForSource(
     const exclusion = classifyForExclusion({ title: item.title, excerpt: item.summary ?? "" });
     if (exclusion === "exclude") {
       excluded += 1;
+      continue;
+    }
+
+    // Freshness Window Gate (Adaptive Discovery Remediation, 2026-09-08)
+    // — see freshnessPolicy.ts. Checked after topical exclusion (an
+    // off-topic item is off-topic regardless of age) and before dedup/
+    // scoring (a stale item never needs either). A missing/unparseable
+    // date never excludes on its own — see the function's own doc.
+    if (!isWithinFreshnessWindow({ publishedAt: item.publishedAt, sourceType: source.sourceType, now })) {
+      staleExcluded += 1;
       continue;
     }
 
@@ -377,6 +420,7 @@ export async function runDiscoveryForSource(
     flaggedDuplicate,
     flaggedForReview,
     excluded,
+    staleExcluded,
     errors,
   });
 
@@ -389,6 +433,7 @@ export async function runDiscoveryForSource(
     flaggedDuplicate,
     flaggedForReview,
     excluded,
+    staleExcluded,
     createdArticleIds,
     errors,
     refused: null,
@@ -405,6 +450,7 @@ function emptyResult(runId: string, sourceId: string, sourceName: string, reason
     flaggedDuplicate: 0,
     flaggedForReview: 0,
     excluded: 0,
+    staleExcluded: 0,
     createdArticleIds: [],
     errors: [],
     refused: reason,

@@ -6,6 +6,7 @@ import { getPulseArticleDetail } from "@/lib/content/sanity/pulseAdmin";
 import { getPulsePublishReadiness } from "@/lib/pulse/publishReadiness";
 import { PERMISSION_LABEL, TRUST_LABEL } from "@/lib/pulse/adminLabels";
 import { ArticleActions } from "./ArticleActions";
+import HeroMediaControl from "./HeroMediaControl";
 
 export const metadata: Metadata = { title: "Pulse Article — Ordift Studios Admin", robots: { index: false, follow: false } };
 
@@ -22,6 +23,8 @@ export default async function AdminPulseArticlePage({ params }: { params: Promis
     excerpt: article.excerpt,
     body: article.body,
     hasHeroMedia: article.hasHeroMedia,
+    origin: article.origin,
+    sourceUrl: article.sourceUrl,
   });
   const isRejected = article.tags.includes("rejected");
 
@@ -64,6 +67,11 @@ export default async function AdminPulseArticlePage({ params }: { params: Promis
         <ArticleActions articleId={article.id} status={article.status} isRejected={isRejected} />
       </div>
 
+      <div className="mb-6 bg-white rounded-lg border border-ordift-ink/10 p-5">
+        <p className="font-sans font-semibold uppercase tracking-[0.1em] text-caption text-ordift-ink-muted mb-3">Hero Media</p>
+        <HeroMediaControl articleId={article.id} heroMedia={article.heroMedia} />
+      </div>
+
       <dl className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-8 bg-white rounded-lg border border-ordift-ink/10 p-5">
         <Field label="Source">{article.source?.name ?? "—"}</Field>
         <Field label="Source Trust">{article.source ? TRUST_LABEL[article.source.editorialTrustLevel] : "—"}</Field>
@@ -72,7 +80,6 @@ export default async function AdminPulseArticlePage({ params }: { params: Promis
         <Field label="Topic">{article.categoryNames.join(", ") || "—"}</Field>
         <Field label="Region">{article.regionNames.join(", ") || "—"}</Field>
         <Field label="Relevance Score">{article.relevanceScore?.toFixed(1) ?? "—"}</Field>
-        <Field label="Hero Media">{article.hasHeroMedia ? "Set" : "Not set"}</Field>
         <Field label="Duplicate Of">
           {article.duplicateOf ? (
             <Link href={`/admin/pulse/${article.duplicateOf.id}`} className="text-ordift-gold-pressed underline underline-offset-4">

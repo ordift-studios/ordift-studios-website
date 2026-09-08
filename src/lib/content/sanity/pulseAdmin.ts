@@ -4,7 +4,8 @@
 // every other call site in this file is unchanged.
 import { editorialClient as client } from "@/sanity/lib/client";
 import { getPulsePublishReadiness } from "@/lib/pulse/publishReadiness";
-import type { PulseEditorialTrustLevel, PulsePermissionClassification } from "../types";
+import { mediaAssetFragment } from "./groqFragments";
+import type { PulseEditorialTrustLevel, PulsePermissionClassification, MediaAsset } from "../types";
 
 // Admin-only Sanity read/write for the Ordift Pulse review interface
 // (Phase D, 2026-08-24 — see PULSE_INGESTION_FOUNDATION.md). Same
@@ -78,6 +79,12 @@ export type PulseArticleDetail = {
   body: string;
   aiSummary: string | null;
   hasHeroMedia: boolean;
+  // Adaptive Discovery Remediation, Part 6 (2026-09-08) — the full
+  // asset (not just the boolean) so the Admin review screen can
+  // actually preview it, not merely report "Set". Null whenever
+  // hasHeroMedia is false — the two are always consistent since both
+  // come from the same `heroMedia` field.
+  heroMedia: MediaAsset | null;
   sourceUrl: string | null;
   sourceAttribution: string | null;
   publishedAt: string | null;
@@ -117,6 +124,7 @@ const ARTICLE_DETAIL_QUERY = `*[_type == "pulseArticle" && _id == $id][0]{
   body,
   aiSummary,
   "hasHeroMedia": defined(heroMedia),
+  "heroMedia": select(defined(heroMedia) => heroMedia${mediaAssetFragment}, null),
   sourceUrl,
   sourceAttribution,
   publishedAt,
@@ -151,16 +159,22 @@ export async function transitionPulseArticle(id: string, action: PulseArticleAct
   // not perspective-filtered, so they need the real prefixed form.
   const DRAFT_ID_PREFIX = "drafts.";
   const lookupId = id.startsWith(DRAFT_ID_PREFIX) ? id.slice(DRAFT_ID_PREFIX.length) : id;
-  const article = await client.fetch<{ tags: string[] | null; publishedAt: string | null; excerpt: string; body: string; title: string; hasHeroMedia: boolean } | null>(
-    `*[_type == "pulseArticle" && _id == $id][0]{tags, publishedAt, excerpt, body, title, "hasHeroMedia": defined(heroMedia)}`,
-    { id: lookupId }
-  );
+  const article = await client.fetch<
+    { tags: string[] | null; publishedAt: string | null; excerpt: string; body: string; title: string; hasHeroMedia: boolean; origin: string; sourceUrl: string | null } | null
+  >(`*[_type == "pulseArticle" && _id == $id][0]{tags, publishedAt, excerpt, body, title, "hasHeroMedia": defined(heroMedia), origin, sourceUrl}`, { id: lookupId });
   if (!article) return { ok: false, error: "Article not found." };
 
   const tags = article.tags ?? [];
 
   if (action === "publish") {
-    const readiness = getPulsePublishReadiness({ title: article.title, excerpt: article.excerpt, body: article.body, hasHeroMedia: article.hasHeroMedia });
+    const readiness = getPulsePublishReadiness({
+      title: article.title,
+      excerpt: article.excerpt,
+      body: article.body,
+      hasHeroMedia: article.hasHeroMedia,
+      origin: article.origin,
+      sourceUrl: article.sourceUrl,
+    });
     if (!readiness.ready) {
       return { ok: false, error: readiness.blockers.join(" ") };
     }
@@ -240,6 +254,40 @@ export async function transitionPulseArticle(id: string, action: PulseArticleAct
   }
 
   return { ok: false, error: "Unknown action." };
+}
+
+// Adaptive Discovery Remediation, Part 6 (2026-09-08) — completes the
+// Admin hero-media workflow. A plain .patch(id).set(...).commit() —
+// the exact same pattern reject/restore/archive above already use —
+// works correctly whether `id` names a genuine draft (`drafts.<id>`)
+// or a legacy pre-migration published article, with no branching
+// needed (unlike publish's Actions-API path, which specifically
+// coordinates a draft->published namespace move; setting a field on
+// an existing document, draft or published, needs no such
+// coordination). Never touches status/tags/any other field.
+export async function setPulseArticleHeroMedia(
+  id: string,
+  heroMedia: { type: "image"; assetId: string; alt: string } | { type: "embed"; url: string; alt: string }
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const doc =
+    heroMedia.type === "image"
+      ? { _type: "mediaAsset", type: "image", alt: heroMedia.alt, image: { _type: "image", asset: { _type: "reference", _ref: heroMedia.assetId } } }
+      : { _type: "mediaAsset", type: "embed", alt: heroMedia.alt, url: heroMedia.url };
+  try {
+    await client.patch(id).set({ heroMedia: doc }).commit();
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Failed to set hero media." };
+  }
+}
+
+export async function clearPulseArticleHeroMedia(id: string): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await client.patch(id).unset(["heroMedia"]).commit();
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Failed to clear hero media." };
+  }
 }
 
 // --- Source management ---

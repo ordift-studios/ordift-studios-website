@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { getCurrentUser, hasRole, isSuperAdmin } from "@/lib/portal/roles";
 import { getPulseReviewQueue } from "@/lib/content/sanity/pulseAdmin";
 import { PERMISSION_LABEL, TRUST_LABEL } from "@/lib/pulse/adminLabels";
+import { getLastPulseDiscoveryRun, type LastPulseDiscoveryRun } from "@/lib/pulse/pulseDiscoveryStatus";
 
 export const metadata: Metadata = {
   title: "Ordift Pulse — Ordift Studios Admin",
@@ -20,7 +21,7 @@ export default async function AdminPulsePage() {
   const user = await getCurrentUser();
   if (!user || (!hasRole(user, "admin") && !isSuperAdmin(user))) redirect("/admin/overview");
 
-  const queue = await getPulseReviewQueue();
+  const [queue, lastRun] = await Promise.all([getPulseReviewQueue(), getLastPulseDiscoveryRun()]);
   const incoming = queue.filter((item) => !item.isRejected);
   const rejected = queue.filter((item) => item.isRejected);
 
@@ -50,8 +51,69 @@ export default async function AdminPulsePage() {
         </Link>
       </div>
 
+      <DiscoveryStatus lastRun={lastRun} />
+
       <QueueTable title={`Incoming (${incoming.length})`} items={incoming} />
       {rejected.length > 0 && <QueueTable title={`Rejected (${rejected.length})`} items={rejected} className="mt-10" />}
+    </div>
+  );
+}
+
+const STATUS_LABEL: Record<LastPulseDiscoveryRun["status"], string> = {
+  successful: "Successful",
+  completed_with_errors: "Completed with errors",
+  interrupted: "Interrupted — did not finish",
+};
+
+const STATUS_COLOR: Record<LastPulseDiscoveryRun["status"], string> = {
+  successful: "text-green-700",
+  completed_with_errors: "text-amber-700",
+  interrupted: "text-red-700",
+};
+
+const TRIGGER_LABEL: Record<LastPulseDiscoveryRun["trigger"], string> = {
+  cron: "automatic",
+  manual: "manual",
+  unknown: "—",
+};
+
+// Adaptive Discovery Remediation, Part 4 (2026-09-08) — "the Founder
+// should not need database access to know whether Pulse is alive."
+// Deliberately restrained: no charts, no infrastructure-monitoring
+// styling — a few plain facts, built entirely from the activity_log
+// rows discovery already writes (pulseDiscoveryStatus.ts). The cadence
+// line states the CONFIGURED schedule (a real, knowable fact — see
+// vercel.json) rather than computing/guessing an actual next
+// invocation time, which Vercel does not expose to the app.
+function DiscoveryStatus({ lastRun }: { lastRun: LastPulseDiscoveryRun | null }) {
+  return (
+    <div className="mb-10 bg-white rounded-lg border border-ordift-ink/10 p-5 flex flex-wrap items-center gap-x-8 gap-y-2">
+      <div>
+        <p className="font-sans text-caption uppercase tracking-[0.1em] text-ordift-ink-muted mb-1">Automatic Discovery</p>
+        <p className="font-sans text-body-small text-ordift-ink">Runs daily at 03:00 UTC</p>
+      </div>
+      <div>
+        <p className="font-sans text-caption uppercase tracking-[0.1em] text-ordift-ink-muted mb-1">Last Discovery</p>
+        {lastRun ? (
+          <p className="font-sans text-body-small text-ordift-ink">
+            {new Date(lastRun.occurredAt).toLocaleString("en-GB", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })}
+            {" · "}
+            <span className={STATUS_COLOR[lastRun.status]}>{STATUS_LABEL[lastRun.status]}</span>
+            {" · "}
+            {TRIGGER_LABEL[lastRun.trigger]}
+          </p>
+        ) : (
+          <p className="font-sans text-body-small text-ordift-ink-muted italic">No discovery run has ever completed.</p>
+        )}
+      </div>
+      {lastRun && lastRun.status !== "interrupted" && (
+        <div>
+          <p className="font-sans text-caption uppercase tracking-[0.1em] text-ordift-ink-muted mb-1">New Drafts</p>
+          <p className="font-sans text-body-small text-ordift-ink">
+            {lastRun.created} of {lastRun.fetched} checked{lastRun.errorCount > 0 ? ` · ${lastRun.errorCount} error${lastRun.errorCount === 1 ? "" : "s"}` : ""}
+          </p>
+        </div>
+      )}
     </div>
   );
 }

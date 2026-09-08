@@ -58,7 +58,11 @@ export async function POST(request: NextRequest) {
         action: "pulse.discovery_run",
         entity_type: "pulseSource",
         entity_id: summary.sourceId,
-        metadata: summary,
+        // Adaptive Discovery Remediation (2026-09-08) — `trigger`
+        // distinguishes this admin-initiated run from the new cron
+        // route's runs in the Discovery Status UI; purely additive
+        // metadata, no behavior change.
+        metadata: { ...summary, trigger: "manual" },
       });
       if (error) {
         console.error("[pulse] failed to write activity_log for discovery run", error.message);

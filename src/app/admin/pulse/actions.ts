@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { getCurrentUser, hasRole, isSuperAdmin } from "@/lib/portal/roles";
-import { transitionPulseArticle, type PulseArticleAction } from "@/lib/content/sanity/pulseAdmin";
+import { transitionPulseArticle, setPulseArticleHeroMedia, clearPulseArticleHeroMedia, type PulseArticleAction } from "@/lib/content/sanity/pulseAdmin";
 import { logActivity } from "@/lib/admin/activityLog";
 
 // Controlled Test #6E diagnostic instrumentation (2026-09-03) — added
@@ -74,6 +74,75 @@ export async function transitionPulseArticleAction(_prevState: TransitionState, 
   } catch (e) {
     const message = e instanceof Error ? `${e.name}: ${e.message}` : String(e);
     console.error(`[pulse.transition ${correlationId}] caught exception: ${message}`);
+    return { ok: false, error: "You are not authorized to do this." };
+  }
+}
+
+// Adaptive Discovery Remediation, Part 6 (2026-09-08) — the missing
+// hero-media editorial control. Both actions patch ONLY the heroMedia
+// field (setPulseArticleHeroMedia()/clearPulseArticleHeroMedia() in
+// pulseAdmin.ts) — never status, tags, or anything publish-readiness
+// also checks, so setting/clearing hero media can never itself change
+// whether an article is published.
+async function requirePulseAdminSimple() {
+  const user = await getCurrentUser();
+  if (!user || (!hasRole(user, "admin") && !isSuperAdmin(user))) {
+    throw new Error("Not authorized.");
+  }
+  return user;
+}
+
+export type HeroMediaState = { ok: boolean; error?: string } | null;
+
+export async function setPulseArticleHeroMediaAction(_prevState: HeroMediaState, formData: FormData): Promise<HeroMediaState> {
+  try {
+    const user = await requirePulseAdminSimple();
+    const articleId = String(formData.get("articleId") ?? "");
+    const mediaType = String(formData.get("mediaType") ?? "");
+    const alt = String(formData.get("alt") ?? "").trim();
+    if (!articleId || !alt) return { ok: false, error: "Alt text is required." };
+
+    let result: { ok: true } | { ok: false; error: string };
+    if (mediaType === "image") {
+      const assetId = String(formData.get("assetId") ?? "");
+      if (!assetId) return { ok: false, error: "No uploaded image to attach — upload one first." };
+      result = await setPulseArticleHeroMedia(articleId, { type: "image", assetId, alt });
+    } else if (mediaType === "embed") {
+      const url = String(formData.get("embedUrl") ?? "").trim();
+      if (!url) return { ok: false, error: "Embed URL is required." };
+      try {
+        new URL(url);
+      } catch {
+        return { ok: false, error: "That embed URL doesn't look valid." };
+      }
+      result = await setPulseArticleHeroMedia(articleId, { type: "embed", url, alt });
+    } else {
+      return { ok: false, error: "Invalid request." };
+    }
+
+    if (!result.ok) return { ok: false, error: result.error };
+
+    await logActivity({ actorUserId: user.id, action: "pulse.hero_media_set", entityType: "pulseArticle", entityId: articleId, metadata: { mediaType } });
+    revalidatePath(`/admin/pulse/${articleId}`);
+    return { ok: true };
+  } catch {
+    return { ok: false, error: "You are not authorized to do this." };
+  }
+}
+
+export async function clearPulseArticleHeroMediaAction(_prevState: HeroMediaState, formData: FormData): Promise<HeroMediaState> {
+  try {
+    const user = await requirePulseAdminSimple();
+    const articleId = String(formData.get("articleId") ?? "");
+    if (!articleId) return { ok: false, error: "Invalid request." };
+
+    const result = await clearPulseArticleHeroMedia(articleId);
+    if (!result.ok) return { ok: false, error: result.error };
+
+    await logActivity({ actorUserId: user.id, action: "pulse.hero_media_cleared", entityType: "pulseArticle", entityId: articleId });
+    revalidatePath(`/admin/pulse/${articleId}`);
+    return { ok: true };
+  } catch {
     return { ok: false, error: "You are not authorized to do this." };
   }
 }
