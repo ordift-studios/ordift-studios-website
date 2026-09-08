@@ -3,6 +3,7 @@ import Link from "next/link";
 import NavBar from "@/components/NavBar";
 import Footer from "@/components/Footer";
 import TalentRosterCard from "@/components/talent/TalentRosterCard";
+import TalentShortlistTray from "@/components/talent/TalentShortlistTray";
 import { contentRepository } from "@/lib/content";
 
 // Ordift Talent — TALENT-SYS-2B, Phase 3 (2026-09-08). "Our Roster" —
@@ -89,6 +90,7 @@ export default async function TalentRosterPage({ searchParams }: { searchParams:
       </section>
 
       <Footer />
+      <TalentShortlistTray />
     </main>
   );
 }

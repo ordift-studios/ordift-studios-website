@@ -7,6 +7,8 @@ import ResponsiveImage from "@/components/media/ResponsiveImage";
 import JustifiedPhotoGallery from "@/components/portfolio/JustifiedPhotoGallery";
 import VideoPlayer from "@/components/portfolio/VideoPlayer";
 import TalentProfileTabs from "@/components/talent/TalentProfileTabs";
+import TalentShortlistButton from "@/components/talent/TalentShortlistButton";
+import TalentShortlistTray from "@/components/talent/TalentShortlistTray";
 import { contentRepository } from "@/lib/content";
 
 // Ordift Talent — TALENT-SYS-2B, Phase 4 (2026-09-08). Individual
@@ -85,9 +87,7 @@ export default async function TalentProfilePage({ params }: { params: Promise<{ 
               <Button href={`/book?talent=${encodeURIComponent(talent.name)}`} variant="primary">
                 Request Booking
               </Button>
-              <Button href="/book" variant="secondary">
-                Shortlist
-              </Button>
+              <TalentShortlistButton slug={talent.slug} />
             </div>
           </div>
         </div>
@@ -146,6 +146,7 @@ export default async function TalentProfilePage({ params }: { params: Promise<{ 
       </section>
 
       <Footer />
+      <TalentShortlistTray />
     </main>
   );
 }
