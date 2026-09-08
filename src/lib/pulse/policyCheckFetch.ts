@@ -10,7 +10,23 @@
 // image, a binary download) is refused rather than parsed.
 import { isSafeFetchTarget } from "./urlSafety";
 
-export type PolicyFetchResult = { ok: true; text: string; contentType: string } | { ok: false; reason: string };
+export type PolicyFetchResult =
+  | {
+      ok: true;
+      text: string;
+      contentType: string;
+      // One-Hop Official-Policy Gateway Resolution (2026-09-08) — the
+      // URL actually reached after following every redirect hop, which
+      // can differ from the URL passed in. Callers that need to trust a
+      // fetched page's OWN links as "official" (the fallback-discovery
+      // path) must verify this — not the originally-requested URL —
+      // is still within the official-domain trust boundary, since a
+      // redirect can otherwise silently move the response off-domain
+      // while every individual hop still passes the (domain-agnostic)
+      // SSRF safety check.
+      finalUrl: string;
+    }
+  | { ok: false; reason: string };
 
 export const POLICY_FETCH_TIMEOUT_MS = 10_000;
 export const POLICY_FETCH_MAX_BYTES = 300_000; // ~300KB — far more than any real terms page's relevant text, well short of "the full page" as a concern
@@ -87,7 +103,7 @@ export async function safeFetchText(
       }
     }
     const text = Buffer.concat(chunks.map((c) => Buffer.from(c))).toString("utf-8");
-    return { ok: true, text, contentType };
+    return { ok: true, text, contentType, finalUrl: currentUrl };
   }
 
   return { ok: false, reason: "too many redirects" };

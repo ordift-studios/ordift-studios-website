@@ -13,7 +13,10 @@ import {
   deriveOfficialDomain,
   extractPolicyCandidateLinks,
   buildFallbackCandidateEvidence,
+  buildSubstantiveCandidateEvidence,
   isSameOrSubdomain,
+  isWithinOfficialDomain,
+  type PolicyCandidateLink,
   type PulsePolicyCheckRecommendation,
   type PolicyEvidenceItem,
 } from "@/lib/pulse/policyEvidence";
@@ -506,20 +509,46 @@ export type PolicyCheckSanityClient = {
 
 const POLICY_CHECK_SOURCE_QUERY = `*[_type == "pulseSource" && _id == $id][0]{termsUrl, sourceClassification, url}`;
 
-// Official-Domain Policy Discovery Fallback (2026-09-08) — attempted
-// ONLY when the saved Policy/Rights URL itself couldn't be evaluated.
-// Fetches exactly one extra page (the source's own Admin-entered
-// Website, via the identical safety-guarded fetchPolicyText used for
-// termsUrl) and looks for same-official-domain candidate links on it.
-// NEVER produces candidate-green/candidate-red on its own — even a
-// found candidate is still just unevaluated evidence, never itself a
-// classification — so the caller always keeps recommendation
-// "inconclusive" whenever this path runs at all, regardless of what
-// (if anything) is found. Returns evidence items only; never touches
+// Canonicalizes a URL for exclusion-set comparison only (never for
+// domain-trust decisions) — strips the fragment the same way
+// resolveCandidateUrl() already does internally, so a deeper candidate
+// that merely points back at a URL already seen this run (homepage,
+// gateway, or the originally-failed termsUrl) is never presented as if
+// it were newly discovered. Falls back to the raw string on a malformed
+// URL — never throws.
+function canonicalizeForExclusion(url: string): string {
+  try {
+    const u = new URL(url);
+    u.hash = "";
+    return u.toString();
+  } catch {
+    return url;
+  }
+}
+
+// Official-Domain Policy Discovery Fallback + One-Hop Gateway
+// Resolution (2026-09-08) — attempted ONLY when the saved Policy/Rights
+// URL itself couldn't be evaluated. Never produces candidate-green/
+// candidate-red on its own — even a found candidate (at either hop) is
+// still just unevaluated evidence, never itself a classification — so
+// the caller always keeps recommendation "inconclusive" whenever this
+// path runs at all. Returns evidence items only; never touches
 // termsUrl — see adoptPulseSourcePolicyCandidate() below for the
 // separate, explicit-Admin-only write path.
+//
+// Exactly THREE fetches maximum ever happen for one Check Policy call:
+// (1) the saved termsUrl (in checkPulseSourcePolicy, before this
+// function is even called), (2) the source's own homepage, and (3) at
+// most one gateway candidate found on that homepage. A same-domain link
+// discovered ON the gateway page (the "substantive candidate") is only
+// ever extracted from already-fetched HTML and presented — its content
+// is NEVER fetched during this pass. That is what makes "at most one
+// additional hop, then stop" a structural guarantee rather than a
+// convention: there is no code path in this function that can issue a
+// fourth fetch, regardless of what a gateway page links to.
 async function runOfficialDomainFallback(
   websiteUrl: string | null,
+  checkedUrl: string,
   primaryFailureReason: string,
   fetchPolicyText: (url: string) => Promise<Awaited<ReturnType<typeof safeFetchText>>>
 ): Promise<PolicyEvidenceItem[]> {
@@ -533,6 +562,7 @@ async function runOfficialDomainFallback(
   const officialDomain = deriveOfficialDomain(websiteUrl);
   if (!officialDomain) return [primaryFailureEvidence];
 
+  // Fetch #2 — the source's own homepage.
   const homepageResult = await fetchPolicyText(websiteUrl);
   if (!homepageResult.ok) {
     return [
@@ -540,16 +570,69 @@ async function runOfficialDomainFallback(
       { category: "fetch-error", snippet: `Also could not check the official homepage for a fallback candidate — ${homepageResult.reason}.` },
     ];
   }
+  // A redirect can silently move a "same-domain" request off-domain —
+  // safeFetchText's own SSRF guard has no concept of "official domain"
+  // (that's a PulseSource-specific boundary, not a generic safety
+  // rule), so it happily follows a redirect to any other PUBLIC
+  // address. This is the domain-specific check on top of that.
+  if (!isWithinOfficialDomain(homepageResult.finalUrl, officialDomain)) {
+    return [primaryFailureEvidence, { category: "safety-block", snippet: "The official homepage redirected outside the source's official domain — fallback discovery stopped." }];
+  }
 
-  const candidates = extractPolicyCandidateLinks(homepageResult.text, websiteUrl, officialDomain);
-  if (candidates.length === 0) {
+  const firstHopCandidates = extractPolicyCandidateLinks(homepageResult.text, homepageResult.finalUrl, officialDomain);
+  if (firstHopCandidates.length === 0) {
     return [
       primaryFailureEvidence,
       { category: "website-general", snippet: "No candidate Terms/Legal/Copyright/Press page could be found on the official homepage." },
     ];
   }
 
-  return [primaryFailureEvidence, ...candidates.map(buildFallbackCandidateEvidence)];
+  const evidence: PolicyEvidenceItem[] = [primaryFailureEvidence];
+  const [topCandidate, ...restCandidates] = firstHopCandidates;
+
+  // One additional hop — from the single best (first) first-hop
+  // candidate ONLY, never from every candidate found, and never
+  // recursively. This is the entire scope of "one hop deeper."
+  let exploredDeeper = false;
+  const gatewayFetch = await fetchPolicyText(topCandidate.url); // fetch #3 — the only one that can ever happen here
+  if (gatewayFetch.ok && isWithinOfficialDomain(gatewayFetch.finalUrl, officialDomain)) {
+    const gatewayEvaluation = evaluatePolicyText(gatewayFetch.text);
+    if (!gatewayEvaluation.hasSignal) {
+      // Looks like a gateway/index page (no policy language of its
+      // own) — look for exactly one further same-domain policy link on
+      // it, excluding anything already seen this run so a page that
+      // merely links back to the homepage/itself/the original failed
+      // termsUrl is never presented as a "new" discovery.
+      const excluded = new Set(
+        [websiteUrl, homepageResult.finalUrl, topCandidate.url, gatewayFetch.finalUrl, checkedUrl].map(canonicalizeForExclusion)
+      );
+      const deeperCandidates: PolicyCandidateLink[] = extractPolicyCandidateLinks(gatewayFetch.text, gatewayFetch.finalUrl, officialDomain, 1).filter(
+        (c) => !excluded.has(canonicalizeForExclusion(c.url))
+      );
+      if (deeperCandidates.length > 0) {
+        evidence.push({
+          category: "fallback-candidate",
+          snippet: `${topCandidate.title} — matched "${topCandidate.matchedTerm}" in a link on the official homepage; this page looks like a gateway/index, not the substantive policy text itself.`,
+          url: topCandidate.url,
+        });
+        evidence.push(buildSubstantiveCandidateEvidence(deeperCandidates[0], topCandidate));
+        exploredDeeper = true;
+      }
+    }
+  }
+
+  if (!exploredDeeper) {
+    // Either the top candidate already looks substantive on its own,
+    // the gateway hop couldn't be verified (fetch failure or an
+    // off-domain redirect), or nothing further was found on it — fall
+    // back to presenting it exactly as a plain, unverified same-domain
+    // candidate link, same as before this feature existed.
+    evidence.push(buildFallbackCandidateEvidence(topCandidate));
+  }
+
+  for (const c of restCandidates) evidence.push(buildFallbackCandidateEvidence(c));
+
+  return evidence;
 }
 
 export async function checkPulseSourcePolicy(
@@ -586,7 +669,7 @@ export async function checkPulseSourcePolicy(
     // candidate evidence, but can never change the recommendation away
     // from inconclusive.
     recommendation = "inconclusive";
-    evidence = await runOfficialDomainFallback(source.url, fetchResult.reason, fetchPolicyText);
+    evidence = await runOfficialDomainFallback(source.url, checkedUrl, fetchResult.reason, fetchPolicyText);
   } else {
     const evaluation = evaluatePolicyText(fetchResult.text);
     recommendation = evaluation.recommendation;

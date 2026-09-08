@@ -9,6 +9,8 @@ import {
   deriveOfficialDomain,
   extractPolicyCandidateLinks,
   buildFallbackCandidateEvidence,
+  buildSubstantiveCandidateEvidence,
+  isWithinOfficialDomain,
 } from "./policyEvidence";
 
 // Rights Intelligence, "Check Policy" (2026-09-08) — A/B/C/D/E matrix
@@ -368,5 +370,133 @@ describe("buildFallbackCandidateEvidence", () => {
     expect(item.snippet).toContain("Terms of Use");
     expect(item.snippet).toContain("terms of use");
     expect(item.snippet.length).toBeLessThan(300); // bounded, never a page reproduction
+  });
+});
+
+// =========================================================================
+// Restrictive-language evaluator improvement — the two generalized
+// families added after the real Nikon investigation (2026-09-08).
+// =========================================================================
+describe("evaluatePolicyText — generalized 'prohibited from using' family", () => {
+  it("matches a generic prohibition on a reuse action, not just Nikon's exact wording", () => {
+    const result = evaluatePolicyText("Visitors are prohibited from using any content on this site without consent.");
+    expect(result.recommendation).toBe("candidate-red");
+    expect(result.evidence.some((e) => /prohibited from using/i.test(e.snippet))).toBe(true);
+  });
+  it("also matches the reproducing/copying/distributing/publishing/modifying/downloading verb variants", () => {
+    for (const verb of ["reproducing", "copying", "distributing", "publishing", "modifying", "downloading", "redistributing"]) {
+      const result = evaluatePolicyText(`Users are prohibited from ${verb} materials from this site.`);
+      expect(result.recommendation).toBe("candidate-red");
+    }
+  });
+  it("does not fire on an unrelated use of 'prohibited' and 'using' in a different, non-matching construction", () => {
+    const result = evaluatePolicyText("Smoking is prohibited. Please avoid using open flames near the building entrance.");
+    expect(result.evidence.some((e) => /prohibited from using/i.test(e.snippet))).toBe(false);
+  });
+});
+
+describe("evaluatePolicyText — generalized 'need to obtain permission' family", () => {
+  it("matches 'need to obtain ... permission', not hard-coded to Nikon's exact phrase", () => {
+    const result = evaluatePolicyText("If you want to use any of our photographs, you need to obtain our prior written permission.");
+    expect(result.recommendation).toBe("candidate-red");
+    expect(result.evidence.some((e) => /need.{0,10}obtain.{0,60}permission/i.test(e.snippet))).toBe(true);
+  });
+  it("matches 'required to obtain consent' and 'must obtain approval' variants — generalized modal, not anchored to 'written'", () => {
+    expect(evaluatePolicyText("Third parties are required to obtain our consent before reproducing any images.").recommendation).toBe("candidate-red");
+    expect(evaluatePolicyText("You must obtain approval from the company before republishing any material.").recommendation).toBe("candidate-red");
+  });
+  it("matches 'needs to obtain authorization' (plural/singular verb agreement variants)", () => {
+    expect(evaluatePolicyText("Each user needs to obtain authorization before downloading assets.").recommendation).toBe("candidate-red");
+  });
+});
+
+describe("evaluatePolicyText — real-world Nikon-like restrictive wording (regression, non-hard-coded)", () => {
+  it("Nikon-like wording produces candidate-red with the decisive evidence surfaced, not only the weak generic copyright line", () => {
+    const text =
+      "All materials on 'Website' are protected by copyright laws and belong to 'Company' or owners of individual rights. " +
+      "You are prohibited from using any material (including duplication, modification, uploading, presentation, transmission, distribution, licensing, sales and publication) " +
+      "except for non-commercial and personal purposes. If you want to use any materials on 'Website', you need to obtain 'Company's' prior written permission.";
+    const result = evaluatePolicyText(text);
+    expect(result.recommendation).toBe("candidate-red");
+    expect(result.evidence.some((e) => /prohibited from using/i.test(e.snippet))).toBe(true);
+    expect(result.evidence.some((e) => /need.{0,10}obtain.{0,60}permission/i.test(e.snippet))).toBe(true);
+    // The generic "protected by copyright" line may still appear, but
+    // it must not be the ONLY evidence — the decisive sentences above
+    // must also be present.
+    expect(result.evidence.length).toBeGreaterThan(1);
+  });
+
+  it("an ordinary bare copyright notice alone (no prohibition/permission language) still correctly yields candidate-red via the pre-existing pattern, without the new patterns over-firing", () => {
+    const result = evaluatePolicyText("© 2026 Example Corporation. All rights reserved.");
+    expect(result.recommendation).toBe("candidate-red");
+    expect(result.evidence.some((e) => /prohibited from using/i.test(e.snippet))).toBe(false);
+    expect(result.evidence.some((e) => /need.{0,10}obtain/i.test(e.snippet))).toBe(false);
+  });
+
+  it("permissive fixtures are entirely unaffected by the two new restrictive patterns", () => {
+    const result = evaluatePolicyText("Press materials may be used by media for editorial purposes without prior written permission.");
+    expect(result.recommendation).toBe("candidate-green");
+  });
+
+  it("ambiguous/conflicting fixtures still resolve to inconclusive, never candidate-green, with the new patterns in play", () => {
+    const text =
+      "Press materials may be used by media for editorial purposes without prior written permission. " +
+      "However, you are prohibited from using any photograph without our prior written consent.";
+    const result = evaluatePolicyText(text);
+    expect(result.recommendation).toBe("inconclusive");
+  });
+});
+
+// =========================================================================
+// hasSignal — used by the One-Hop Gateway Resolution to decide whether a
+// fetched candidate page looks substantive or gateway-like.
+// =========================================================================
+describe("evaluatePolicyText — hasSignal", () => {
+  it("is true for a clear restrictive result", () => {
+    expect(evaluatePolicyText("All rights reserved.").hasSignal).toBe(true);
+  });
+  it("is true for a clear permissive result", () => {
+    expect(evaluatePolicyText("Press materials may be used by media for editorial purposes without prior written permission.").hasSignal).toBe(true);
+  });
+  it("is true for the conflicting-signals case — a real (if inconclusive) signal, not 'nothing found'", () => {
+    const text =
+      "Press materials may be used by media for editorial purposes without prior written permission. " +
+      "However, all photographs may not be reproduced without prior written consent.";
+    expect(evaluatePolicyText(text).hasSignal).toBe(true);
+  });
+  it("is false only for genuinely gateway-like/no-signal text", () => {
+    expect(evaluatePolicyText("Welcome to our website. Contact us with any questions.").hasSignal).toBe(false);
+    expect(evaluatePolicyText("For terms and conditions, refer to our Terms and Conditions of Use page.").hasSignal).toBe(false);
+  });
+});
+
+// =========================================================================
+// isWithinOfficialDomain — redirect-escape guard for the gateway hop.
+// =========================================================================
+describe("isWithinOfficialDomain", () => {
+  it("accepts a URL on the exact official domain or a genuine subdomain", () => {
+    expect(isWithinOfficialDomain("https://www.nikon.com/usage/", "nikon.com")).toBe(true);
+    expect(isWithinOfficialDomain("https://press.nikon.com/legal", "nikon.com")).toBe(true);
+  });
+  it("rejects a URL that redirected outside the official domain, including lookalikes", () => {
+    expect(isWithinOfficialDomain("https://attacker-controlled.example/", "nikon.com")).toBe(false);
+    expect(isWithinOfficialDomain("https://nikon.com.evil.com/", "nikon.com")).toBe(false);
+  });
+  it("returns false, never throws, for a malformed URL", () => {
+    expect(isWithinOfficialDomain("not a url", "nikon.com")).toBe(false);
+  });
+});
+
+describe("buildSubstantiveCandidateEvidence", () => {
+  it("preserves the deeper candidate's URL and names the gateway page it was found on, distinctly from a plain fallback-candidate", () => {
+    const item = buildSubstantiveCandidateEvidence(
+      { url: "https://www.nikon.com/usage/group-info/", title: "Terms and Conditions of Use", matchedTerm: "terms and conditions", category: "legal-terms" },
+      { title: "Terms of Use" }
+    );
+    expect(item.category).toBe("fallback-candidate-substantive");
+    expect(item.url).toBe("https://www.nikon.com/usage/group-info/");
+    expect(item.snippet).toContain("Terms and Conditions of Use");
+    expect(item.snippet).toContain("Terms of Use"); // names the gateway page it was found via
+    expect(item.snippet.length).toBeLessThan(400); // bounded
   });
 });

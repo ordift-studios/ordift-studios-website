@@ -31,7 +31,18 @@ export type PolicyEvidenceCategory =
   // policy/legal/press page. Never itself a recommendation signal —
   // evaluatePolicyText() never produces this category; only the
   // fallback path in checkPulseSourcePolicy() does.
-  | "fallback-candidate";
+  | "fallback-candidate"
+  // One-Hop Official-Policy Gateway Resolution (2026-09-08) — the
+  // discovered page turned out to look like a gateway/index page (no
+  // permissive/restrictive language of its own), and exactly one
+  // further same-domain link matching the policy vocabulary was found
+  // ON that gateway page. Always carries `url`. Kept visually/
+  // semantically distinct from plain "fallback-candidate" so the UI can
+  // show "discovered gateway policy page" vs. "possible SUBSTANTIVE
+  // official policy page" as two different things — neither is ever
+  // presented as permission or approval, both require the same explicit
+  // "Use this policy URL" Admin action before termsUrl can change.
+  | "fallback-candidate-substantive";
 
 export type PolicyEvidenceItem = {
   category: PolicyEvidenceCategory;
@@ -51,6 +62,16 @@ export type PolicyEvidenceItem = {
 export type PolicyEvaluation = {
   recommendation: PulsePolicyCheckRecommendation;
   evidence: PolicyEvidenceItem[];
+  // One-Hop Official-Policy Gateway Resolution (2026-09-08) — true iff
+  // any real permissive or restrictive language was found at all
+  // (including the conflicting-signals case, which is still real
+  // signal, just an inconclusive one). False only for the "nothing
+  // found" placeholder result. Used by runOfficialDomainFallback()
+  // (pulseAdmin.ts) to decide whether a fetched candidate page is
+  // itself substantive or looks like a navigation/gateway page worth
+  // looking one link further from — never used to change `recommendation`
+  // itself, which stays governed by the rules above exactly as before.
+  hasSignal: boolean;
 };
 
 const MAX_EVIDENCE_ITEMS = 5;
@@ -119,6 +140,27 @@ const RESTRICTIVE_PHRASES: RegExp[] = [
   /no licen[cs]e is granted/i,
   /unauthorized use is prohibited/i,
   /protected by copyright/i,
+  // Nikon investigation, 2026-09-08 (real-world gap found: "you are
+  // prohibited from using any material ... except for non-commercial
+  // and personal purposes" matched none of the patterns above at all —
+  // only the much weaker "protected by copyright" line did). Both new
+  // patterns below are generalized verb/permission families, not
+  // hard-coded to Nikon's exact wording — they match the same
+  // grammatical construction on any policy page phrased this way.
+  //
+  // Verb-based "prohibited from doing X" family — a direct prohibition
+  // on a reuse action, independent of any "without ... consent" clause
+  // in the same sentence (unlike the negative-modal pattern above,
+  // which specifically needs that clause).
+  /prohibited from (using|reproducing|copying|distributing|publishing|modifying|downloading|redistributing)/i,
+  // "need/needs/required/must (to) obtain ... permission/consent/
+  // approval/authorization" — generalized permission-required family.
+  // Deliberately NOT anchored to "written" or "prior" (Nikon's own
+  // phrasing is "prior written permission", but other real policies
+  // just say "permission" or "consent" without those qualifiers) — the
+  // decisive fact is that permission must be OBTAINED at all, not the
+  // exact adjectives describing it.
+  /(need|needs|required|must)\s+(to\s+)?obtain\b[^.]{0,60}(permission|consent|approval|authorization)/i,
 ];
 
 function stripHtml(raw: string): string {
@@ -196,17 +238,18 @@ export function evaluatePolicyText(rawText: string): PolicyEvaluation {
   // recommendation is ALWAYS inconclusive — never candidate-green, even
   // if permissive evidence looks strong.
   if (hasPermissive && hasRestrictive) {
-    return { recommendation: "inconclusive", evidence: dedupeEvidence([...permissiveEvidence, ...restrictiveEvidence]) };
+    return { recommendation: "inconclusive", evidence: dedupeEvidence([...permissiveEvidence, ...restrictiveEvidence]), hasSignal: true };
   }
   if (hasPermissive) {
-    return { recommendation: "candidate-green", evidence: dedupeEvidence(permissiveEvidence) };
+    return { recommendation: "candidate-green", evidence: dedupeEvidence(permissiveEvidence), hasSignal: true };
   }
   if (hasRestrictive) {
-    return { recommendation: "candidate-red", evidence: dedupeEvidence(restrictiveEvidence) };
+    return { recommendation: "candidate-red", evidence: dedupeEvidence(restrictiveEvidence), hasSignal: true };
   }
   return {
     recommendation: "inconclusive",
     evidence: [{ category: "website-general", snippet: "No clear permissive or restrictive language about media/press assets was found on the checked page." }],
+    hasSignal: false,
   };
 }
 
@@ -487,4 +530,32 @@ export function buildFallbackCandidateEvidence(candidate: PolicyCandidateLink): 
     snippet: `${candidate.title} — matched "${candidate.matchedTerm}" (${categoryLabel}) in a link on the official homepage.`,
     url: candidate.url,
   };
+}
+
+// One-Hop Official-Policy Gateway Resolution (2026-09-08) — same shape
+// as buildFallbackCandidateEvidence but explicitly names the gateway
+// page the deeper candidate was found on, so the "why" is traceable
+// through both hops without ever implying this is a decision. Pure —
+// no I/O.
+export function buildSubstantiveCandidateEvidence(candidate: PolicyCandidateLink, viaGateway: { title: string }): PolicyEvidenceItem {
+  const categoryLabel = candidate.category === "press-newsroom" ? "press/newsroom" : "legal/terms";
+  return {
+    category: "fallback-candidate-substantive",
+    snippet: `${candidate.title} — matched "${candidate.matchedTerm}" (${categoryLabel}) in a link found on "${viaGateway.title}", which itself looked like a navigation/gateway page rather than the policy text.`,
+    url: candidate.url,
+  };
+}
+
+// Pure — used to verify a fetched page's FINAL url (after any
+// redirects safeFetchText followed) is still within the source's
+// official-domain trust boundary, before trusting its links as
+// "official." A redirect that escapes the boundary must never be
+// treated as if it were still the official site. Returns false (never
+// throws) for a malformed url.
+export function isWithinOfficialDomain(url: string, officialDomain: string): boolean {
+  try {
+    return isSameOrSubdomain(new URL(url).hostname, officialDomain);
+  } catch {
+    return false;
+  }
 }
