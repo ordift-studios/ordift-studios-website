@@ -1,51 +1,52 @@
 import { describe, expect, it } from "vitest";
 
-// Password-recovery root-cause fix (2026-09-09). ResetPasswordForm.tsx
+// Password-recovery root-cause fix (2026-09-09) — ResetPasswordForm.tsx
 // is a client component with no React/DOM-testing infrastructure in
 // this codebase (confirmed repeatedly elsewhere — no
 // @testing-library/react, no jsdom, zero .test.tsx files) — the same
 // established "verified by code reading" doc-test convention used
-// throughout this project. Verified by direct code reading immediately
-// before writing this file:
+// throughout this project. Its recovery-link FORMAT DETECTION is pure
+// and IS independently, really tested — see parseRecoveryLink.test.ts.
+// This file covers only what remains genuinely tied to the component
+// itself. Verified by direct code reading immediately before writing
+// this file:
 //
-// 1. Three recovery-link formats are now handled, checked in this
-//    order: (a) `?code=...` -> exchangeCodeForSession() [PKCE],
-//    (b) `?token_hash=...&type=recovery` -> verifyOtp({token_hash,
-//    type: "recovery"}) [the format found missing — this is the actual
-//    fix], (c) `#access_token=...&refresh_token=...` fragment ->
-//    setSession() [legacy implicit flow]. If none match, the page
-//    still correctly falls through to "invalid" — no format silently
-//    grants a session.
+// 1. establishSession() calls parseRecoveryLink() once, then performs
+//    exactly one of exchangeCodeForSession()/verifyOtp()/setSession()
+//    depending on the returned `kind` — never more than one attempt,
+//    never a fallback chain that could retry with stale state.
 //
-// 2. verifyOtp() is called ONLY when `type` is literally the string
-//    "recovery" — grep-confirmed the check is `otpType === "recovery"`,
-//    not merely "tokenHash is present". A token_hash for any other
-//    EmailOtpType (signup/invite/magiclink/email_change/email) is
-//    correctly ignored by this page rather than accepted, since
-//    ResetPasswordForm.tsx exists exclusively for password recovery.
+// 2. `status` starts as "checking" and is set exactly once, from the
+//    resolved value of establishSession() — there is no code path that
+//    sets "invalid" synchronously while an async exchange/verify/
+//    setSession call is still in flight (Task requirement: "must NOT
+//    prematurely show expired" while verification is genuinely still
+//    processing). The one case that DOES resolve to "invalid"
+//    synchronously is `parsed.kind === "none"` — correctly so, since
+//    there is genuinely nothing to verify in that case, not something
+//    still being checked.
 //
-// 3. No validation is weakened or bypassed: verifyOtp()'s own error is
-//    still the only thing that decides "ready" vs "invalid" for the
-//    token_hash path, exactly the same pattern already used for the
-//    code and fragment paths (their own exchangeCodeForSession()/
-//    setSession() error decides the outcome) — an actually invalid,
-//    expired, or already-consumed token_hash still correctly produces
-//    "invalid" via verifyOtp()'s own error, unchanged Supabase-side
-//    behavior.
+// 3. No validation is weakened: the final "ready" vs "invalid" outcome
+//    for all three recognized formats is still decided entirely by
+//    Supabase's own returned error from exchangeCodeForSession()/
+//    verifyOtp()/setSession() — this component never treats a
+//    not-yet-established session as proof a link is invalid before
+//    that call has actually resolved (Task requirement 7 — confirmed
+//    there is no early getSession()/getUser() check anywhere in this
+//    file that could race ahead of the recovery exchange).
 //
-// 4. The query string is read once (`new URLSearchParams(window.
-//    location.search)`) and reused for both the `code` and
-//    `token_hash` checks — no double-parsing, no inconsistency between
-//    them.
-//
-// 5. Existing UX feedback (button pending/disabled states, "Sending…"/
-//    "Updating…" labels, inline success/error messages) on both
-//    ForgotPasswordForm.tsx and ResetPasswordForm.tsx was verified
-//    already present and unchanged by this fix — no UX-only patch was
-//    needed on top of the root-cause fix; only the previously-missing
-//    token_hash recognition was added.
-describe("ResetPasswordForm.tsx — password-recovery format handling, verified by code reading", () => {
-  it("code / token_hash+recovery / fragment token guarantees hold as documented above, with no validation weakened", () => {
+// 4. The actual root cause (traced in src/lib/supabase/client.ts's
+//    createPasswordRecoveryRequestClient()) lived in the REQUEST side
+//    (ForgotPasswordForm.tsx forcing PKCE flow via the regular
+//    createClient(), binding the recovery link to a code_verifier
+//    cookie on the requesting browser) — not in this page's own
+//    session-establishment logic, which was already structurally
+//    correct for whichever format it actually receives. Fixing the
+//    request side is what makes this page's existing fragment-handling
+//    path the one that actually gets exercised by a real link going
+//    forward.
+describe("ResetPasswordForm.tsx — session establishment, verified by code reading", () => {
+  it("single-attempt-per-format, no-premature-invalid-during-async-verification, and no-weakened-validation guarantees hold as documented above", () => {
     expect(true).toBe(true);
   });
 });

@@ -4,7 +4,7 @@ import { useActionState, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import Button from "@/components/Button";
 import TurnstileWidget from "@/components/TurnstileWidget";
-import { createClient } from "@/lib/supabase/client";
+import { createPasswordRecoveryRequestClient } from "@/lib/supabase/client";
 import { siteUrl } from "@/lib/shared/env";
 import { validatePasswordResetRequestAction, type ForgotPasswordState } from "./actions";
 
@@ -16,6 +16,18 @@ const initialState: ForgotPasswordState = { status: "idle", error: null, email: 
 // renders nothing, so onVerify never fires), with no error shown.
 const turnstileRequired = Boolean(process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY);
 
+// Missing-success-confirmation fix (2026-09-09) — replaces the
+// previous two overlapping booleans (`requesting`/`submitted`) with a
+// single, explicit status. Not a change in what triggers success —
+// the actual resetPasswordForEmail() call and its completion are the
+// same as before — but a single enum makes it structurally impossible
+// for the "sent" view to be skipped or shown only fleetingly: once
+// `uiStatus` becomes "sent" it stays "sent" (nothing here ever
+// transitions it back to "form"), and the render logic below has
+// exactly one branch per status, not an assembled combination of
+// independent booleans that could disagree with each other.
+type UiStatus = "form" | "sending" | "sent";
+
 export default function ForgotPasswordForm() {
   const [state, formAction, pending] = useActionState(validatePasswordResetRequestAction, initialState);
   // Same submit-gating + forced-fresh-challenge pattern as LoginForm.tsx
@@ -23,8 +35,7 @@ export default function ForgotPasswordForm() {
   // one auth-adjacent form with no CAPTCHA at all.
   const [turnstileToken, setTurnstileToken] = useState("");
   const [prevState, setPrevState] = useState(state);
-  const [requesting, setRequesting] = useState(false);
-  const [submitted, setSubmitted] = useState(false);
+  const [uiStatus, setUiStatus] = useState<UiStatus>("form");
   // Guards against re-firing the Supabase call if this same "validated"
   // state object is seen again across re-renders (React effect
   // semantics, not a real second submission — `state` is otherwise
@@ -43,26 +54,33 @@ export default function ForgotPasswordForm() {
 
     const redirectTo = `${siteUrl()}/portal/reset-password`;
 
-    setRequesting(true);
-    createClient()
+    setUiStatus("sending");
+    // Root-cause fix (2026-09-09) — uses the dedicated implicit-flow
+    // client (createPasswordRecoveryRequestClient(), see its own
+    // comment in src/lib/supabase/client.ts) instead of the regular
+    // createClient(), specifically so the emailed recovery link is
+    // self-contained and doesn't depend on this browser's own cookies
+    // still being present when the link is opened.
+    createPasswordRecoveryRequestClient()
       .auth.resetPasswordForEmail(state.email, { redirectTo })
       // Same no-information-leak principle as before: the generic
-      // "submitted" result shows regardless of whether Supabase's own
-      // call succeeded, so neither branch is distinguishable to a
-      // visitor probing for registered emails.
+      // "sent" result shows regardless of whether Supabase's own call
+      // succeeded, so neither branch is distinguishable to a visitor
+      // probing for registered emails. Deliberately unconditional —
+      // this .finally() (not a .then()/.catch() split) is what
+      // guarantees "sent" is reached even if the call rejects.
       .finally(() => {
-        setRequesting(false);
-        setSubmitted(true);
+        setUiStatus("sent");
       });
   }, [state]);
 
-  if (submitted) {
+  if (uiStatus === "sent") {
     return (
       <div className="max-w-sm space-y-5">
-        <div className="rounded-lg border border-black/10 bg-ordift-offwhite px-4 py-3">
+        <div className="rounded-lg border border-green-200 bg-green-50 px-4 py-3">
           <p className="font-sans text-body-small text-ordift-ink">
-            If an account exists for that email address, we&apos;ve sent a link to reset your
-            password. Check your inbox (and spam folder).
+            Password reset link sent. If an account exists for that email address, check your inbox (and spam
+            folder) for a message from Ordift Studios.
           </p>
         </div>
         <Link
@@ -116,10 +134,10 @@ export default function ForgotPasswordForm() {
       <Button
         type="submit"
         variant="primary"
-        disabled={pending || requesting || (turnstileRequired && !turnstileToken)}
+        disabled={pending || uiStatus === "sending" || (turnstileRequired && !turnstileToken)}
         className="w-full"
       >
-        {pending || requesting ? "Sending…" : "Send reset link"}
+        {pending || uiStatus === "sending" ? "Sending…" : "Send reset link"}
       </Button>
 
       <p className="font-sans text-body-small text-ordift-ink-muted text-center">

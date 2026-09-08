@@ -5,41 +5,25 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import Button from "@/components/Button";
 import { createClient } from "@/lib/supabase/client";
+import { parseRecoveryLink } from "./parseRecoveryLink";
 
-// createBrowserClient (@supabase/ssr) defaults to the PKCE flow, so the
-// live recovery link redirects here with a `?code=...` query parameter,
-// redeemed via exchangeCodeForSession(). The legacy implicit-flow shape
-// (`#access_token=...&refresh_token=...` in the URL *fragment*, never
-// sent to the server) is kept as a fallback for compatibility rather
-// than assumed — confirmed via code audit (2026-08-15) that this
-// project's Supabase clients never override the default flowType.
-//
-// Root-cause fix (2026-09-09) — real Production failure: a freshly
-// issued, immediately-clicked recovery link consistently landed here
-// with NEITHER a `?code=` nor a `#access_token=` fragment present, so
-// the page always fell straight to "invalid" — not a flaky/expiry
-// issue (ruled out: same result on a brand-new link, opened at once).
-// Supabase's documented, currently-recommended recovery-link shape for
-// a project's OWN "Reset Password" email template is a THIRD format
-// this codebase never handled at all: `?token_hash=...&type=recovery`,
-// verified via `supabase.auth.verifyOtp({ token_hash, type })` rather
-// than exchanged/set as a session directly — confirmed by grep that
-// verifyOtp()/token_hash were never called anywhere in this codebase's
-// auth flows before this fix. A 100%-reproducible, immediate failure
-// (not an intermittent one) is exactly the signature of a format the
-// client never recognized, rather than a timing race or a scanned/
-// pre-consumed link — this is the most likely root cause, and this
-// fix adds the missing, officially-supported path rather than papering
-// over the symptom. This does NOT change what makes a link valid —
-// verifyOtp() still fails exactly as it should on a genuinely invalid,
-// expired, or already-used token; it only means a VALID token_hash now
-// actually gets recognized instead of being silently ignored.
-//
-// Separately, and NOT fixable by any code change: if Supabase's
-// "Redirect URLs" allowlist (Dashboard -> Authentication -> URL
-// Configuration) doesn't include this exact Production origin, Supabase
-// itself refuses the redirect regardless of format — that must be
-// checked directly in the Dashboard.
+// Password-recovery root-cause fix (2026-09-09) — real Production
+// failure, traced directly through @supabase/auth-js's own source
+// rather than assumed: the actual cause lives in
+// src/lib/supabase/client.ts's createPasswordRecoveryRequestClient()
+// (see its own extensive comment) — the PKCE flow forced on the
+// regular browser client makes resetPasswordForEmail() bind the
+// recovery link to a code_verifier stored in the REQUESTING browser's
+// own cookies, which the email link then needs again to redeem —
+// something a genuine password-recovery flow can never guarantee,
+// since the link is opened via email, often on a different browser or
+// device entirely. Fixing the REQUEST side (using implicit flow there
+// instead) means this page's already-correct fragment-handling path is
+// what actually gets exercised for a real link going forward. The
+// `code`/`token_hash` paths remain as fallbacks — reading the actual
+// format is delegated to the pure, independently-tested
+// parseRecoveryLink() (see its own file and tests) rather than parsed
+// inline here.
 type Status = "checking" | "ready" | "invalid";
 
 export default function ResetPasswordForm() {
@@ -51,46 +35,32 @@ export default function ResetPasswordForm() {
   useEffect(() => {
     async function establishSession(): Promise<Status> {
       const supabase = createClient();
-      const query = new URLSearchParams(window.location.search);
+      const parsed = parseRecoveryLink(window.location.search, window.location.hash);
 
-      const code = query.get("code");
-      if (code) {
-        const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
-        // Clear the code out of the URL now that it's been redeemed —
-        // no reason to leave it sitting in history.
-        window.history.replaceState(null, "", window.location.pathname);
-        return exchangeError ? "invalid" : "ready";
+      let sessionError: { message: string } | null;
+      switch (parsed.kind) {
+        case "code": {
+          ({ error: sessionError } = await supabase.auth.exchangeCodeForSession(parsed.code));
+          break;
+        }
+        case "token_hash": {
+          ({ error: sessionError } = await supabase.auth.verifyOtp({ token_hash: parsed.tokenHash, type: "recovery" }));
+          break;
+        }
+        case "fragment": {
+          ({ error: sessionError } = await supabase.auth.setSession({ access_token: parsed.accessToken, refresh_token: parsed.refreshToken }));
+          break;
+        }
+        case "none":
+          // Genuinely nothing to try — never a premature "invalid"
+          // while a real check is still in flight, since no async call
+          // was ever started in this branch.
+          return "invalid";
       }
 
-      // Root-cause fix (2026-09-09) — the format actually observed
-      // failing in Production: `?token_hash=...&type=recovery`,
-      // verified via verifyOtp() rather than exchanged as a code or set
-      // as a session directly. Only "recovery" is accepted here — this
-      // page is exclusively for password recovery, never signup/invite/
-      // magiclink/email-change confirmation, even though EmailOtpType
-      // covers those too.
-      const tokenHash = query.get("token_hash");
-      const otpType = query.get("type");
-      if (tokenHash && otpType === "recovery") {
-        const { error: verifyError } = await supabase.auth.verifyOtp({ token_hash: tokenHash, type: "recovery" });
-        window.history.replaceState(null, "", window.location.pathname);
-        return verifyError ? "invalid" : "ready";
-      }
-
-      const hash = new URLSearchParams(window.location.hash.slice(1));
-      const accessToken = hash.get("access_token");
-      const refreshToken = hash.get("refresh_token");
-
-      if (!accessToken || !refreshToken) {
-        return "invalid";
-      }
-
-      const { error: sessionError } = await supabase.auth.setSession({
-        access_token: accessToken,
-        refresh_token: refreshToken,
-      });
-      // Clear the tokens out of the URL now that the session is
-      // established — no reason to leave them sitting in history.
+      // Clear whatever recovery data was in the URL now that it's been
+      // consumed (or definitively failed) — no reason to leave it
+      // sitting in history either way.
       window.history.replaceState(null, "", window.location.pathname);
       return sessionError ? "invalid" : "ready";
     }
@@ -133,7 +103,7 @@ export default function ResetPasswordForm() {
   }
 
   if (status === "checking") {
-    return <p className="font-sans text-body-small text-ordift-ink-muted">Checking your link…</p>;
+    return <p className="font-sans text-body-small text-ordift-ink-muted">Verifying reset link…</p>;
   }
 
   if (status === "invalid") {
