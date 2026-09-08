@@ -725,6 +725,20 @@ export type PulseSource = {
   // default, unchanged" — this is additive, not a replacement of the
   // existing freshness architecture.
   freshnessWindowDaysOverride: number | null;
+  // Rights Intelligence "Check Policy" evidence (2026-09-08) — set only
+  // by checkPulseSourcePolicy() (src/lib/content/sanity/pulseAdmin.ts),
+  // never by a human edit. Evidence/recommendation ASSISTANCE only —
+  // none of these fields is itself a rights decision, and none is read
+  // by any code that governs discovery, publishing, or image reuse.
+  // Types deliberately live in src/lib/pulse/policyEvidence.ts (this
+  // file has zero imports by design, same as every other pure Pulse
+  // module) rather than being redeclared here — import from there at
+  // any call site that needs them.
+  policyCheckedAt: string | null;
+  policyCheckedUrl: string | null; // preserved even if termsUrl is later edited — never retroactively relabeled
+  policyCheckRecommendation: "candidate-green" | "candidate-red" | "inconclusive" | null;
+  policyCheckEvidence: { category: string; snippet: string }[];
+  policyCheckTrustSuggestion: string | null; // non-binding; editorialTrustLevel above always requires an explicit human choice
 };
 
 export type PulseArticle = {

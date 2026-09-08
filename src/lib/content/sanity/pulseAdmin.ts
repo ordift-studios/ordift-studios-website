@@ -6,6 +6,14 @@ import { editorialClient as client } from "@/sanity/lib/client";
 import { getPulsePublishReadiness } from "@/lib/pulse/publishReadiness";
 import { mediaAssetFragment } from "./groqFragments";
 import type { PulseEditorialTrustLevel, PulsePermissionClassification, PulseSourceClassification, MediaAsset } from "../types";
+import {
+  evaluatePolicyText,
+  buildPolicyCheckTrustSuggestion,
+  buildPolicyCheckPatch,
+  type PulsePolicyCheckRecommendation,
+  type PolicyEvidenceItem,
+} from "@/lib/pulse/policyEvidence";
+import { safeFetchText } from "@/lib/pulse/policyCheckFetch";
 
 // Admin-only Sanity read/write for the Ordift Pulse review interface
 // (Phase D, 2026-08-24 — see PULSE_INGESTION_FOUNDATION.md). Same
@@ -330,6 +338,16 @@ export type PulseSourceAdminDetail = PulseSourceAdminRow & {
   editorialPriority: number;
   // Rights Intelligence / Freshness (2026-09-08).
   freshnessWindowDaysOverride: number | null;
+  // Rights-Intelligence "Check Policy" evidence (2026-09-08) —
+  // read-only, machine-set-only fields. Never editable from
+  // SourceEditForm.tsx; only checkPulseSourcePolicy() below ever writes
+  // them. See policyEvidence.ts for the full non-binding-evidence
+  // design rationale.
+  policyCheckedAt: string | null;
+  policyCheckedUrl: string | null;
+  policyCheckRecommendation: PulsePolicyCheckRecommendation | null;
+  policyCheckEvidence: PolicyEvidenceItem[];
+  policyCheckTrustSuggestion: string | null;
 };
 
 const SOURCE_DETAIL_QUERY = `*[_type == "pulseSource" && _id == $id][0]{
@@ -343,7 +361,12 @@ const SOURCE_DETAIL_QUERY = `*[_type == "pulseSource" && _id == $id][0]{
   "editorialPriority": coalesce(editorialPriority, 0),
   "autoPublishEligible": coalesce(autoPublishEligible, false),
   "sourceClassification": coalesce(sourceClassification, "editorial_discovery"),
-  freshnessWindowDaysOverride
+  freshnessWindowDaysOverride,
+  policyCheckedAt,
+  policyCheckedUrl,
+  policyCheckRecommendation,
+  "policyCheckEvidence": coalesce(policyCheckEvidence[]{category, snippet}, []),
+  policyCheckTrustSuggestion
 }`;
 
 export async function getPulseSourceAdminDetail(id: string): Promise<PulseSourceAdminDetail | null> {
@@ -441,4 +464,89 @@ export async function createPulseSourceAdmin(fields: PulseSourceCreateFields): P
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Failed to create the source." };
   }
+}
+
+// --- Rights Intelligence: "Check Policy" (2026-09-08) -------------------
+// Evidence/recommendation assistance ONLY — see policyEvidence.ts's own
+// header comment and PULSE_SOURCE_DECISION_FIELDS for the full design
+// rationale. This function NEVER writes permissionClassification,
+// isActive, imageUsePermitted, commercialUsePermitted,
+// autoPublishEligible, editorialTrustLevel, attributionRequirement, or
+// lastPolicyReviewDate — it can't, structurally: the only object it
+// ever passes to .set() is buildPolicyCheckPatch()'s return value,
+// whose fixed key set is POLICY_CHECK_WRITE_FIELDS (asserted against
+// PULSE_SOURCE_DECISION_FIELDS by a real, non-doc test — see
+// policyEvidence.test.ts).
+//
+// `sanity` and `fetchPolicyText` are injectable (same established
+// pattern as runDiscoveryForSource()'s `sanity`/`now` params in
+// ingestion.ts) purely for deterministic, network-free tests — every
+// real call site (checkPulseSourcePolicyAction) omits both and gets the
+// real editorialClient + safeFetchText().
+export type PulsePolicyCheckResult =
+  | {
+      ok: true;
+      recommendation: PulsePolicyCheckRecommendation;
+      evidence: PolicyEvidenceItem[];
+      checkedAt: string;
+      checkedUrl: string;
+      trustSuggestion: string | null;
+    }
+  | { ok: false; error: string };
+
+export type PolicyCheckSanityClient = {
+  fetch<T>(query: string, params?: Record<string, unknown>): Promise<T>;
+  patch(id: string): { set(fields: Record<string, unknown>): { commit(): Promise<unknown> } };
+};
+
+const POLICY_CHECK_SOURCE_QUERY = `*[_type == "pulseSource" && _id == $id][0]{termsUrl, sourceClassification}`;
+
+export async function checkPulseSourcePolicy(
+  id: string,
+  sanity: PolicyCheckSanityClient = client,
+  fetchPolicyText: (url: string) => Promise<Awaited<ReturnType<typeof safeFetchText>>> = safeFetchText
+): Promise<PulsePolicyCheckResult> {
+  // Re-read termsUrl fresh from Sanity on every call, never accepted as
+  // a caller-supplied parameter — this is what guarantees provenance:
+  // policyCheckedUrl always reflects whatever termsUrl genuinely was AT
+  // THE MOMENT of this specific check, so a later edit to termsUrl can
+  // never retroactively relabel earlier evidence, and this check can
+  // never be tricked into recording a URL it didn't actually fetch.
+  const source = await sanity.fetch<{ termsUrl: string | null; sourceClassification: "official_primary" | "editorial_discovery" | null } | null>(
+    POLICY_CHECK_SOURCE_QUERY,
+    { id }
+  );
+  if (!source) return { ok: false, error: "Source not found." };
+  if (!source.termsUrl) return { ok: false, error: "No Policy/Rights URL is configured — add one and Save before checking." };
+
+  const checkedUrl = source.termsUrl;
+  const checkedAt = new Date().toISOString();
+  const fetchResult = await fetchPolicyText(checkedUrl);
+
+  let recommendation: PulsePolicyCheckRecommendation;
+  let evidence: PolicyEvidenceItem[];
+  if (!fetchResult.ok) {
+    // Missing/inaccessible/timeout/403/404/unsupported content, and an
+    // unsafe (SSRF-blocked) destination, are all treated the same way —
+    // inconclusive, never a silent skip and never a nudge toward
+    // Green. The specific reason is preserved as evidence so the Admin
+    // can see exactly what happened (e.g. "HTTP 404", "timeout",
+    // "unsafe destination — hostname resolves to a private/reserved
+    // address").
+    recommendation = "inconclusive";
+    evidence = [{ category: "fetch-error", snippet: `Could not evaluate the policy page — ${fetchResult.reason}.` }];
+  } else {
+    const evaluation = evaluatePolicyText(fetchResult.text);
+    recommendation = evaluation.recommendation;
+    evidence = evaluation.evidence;
+  }
+
+  const trustSuggestion = buildPolicyCheckTrustSuggestion(source.sourceClassification);
+
+  await sanity
+    .patch(id)
+    .set(buildPolicyCheckPatch({ checkedAt, checkedUrl, recommendation, evidence, trustSuggestion }))
+    .commit();
+
+  return { ok: true, recommendation, evidence, checkedAt, checkedUrl, trustSuggestion };
 }

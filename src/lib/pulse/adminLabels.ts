@@ -24,3 +24,27 @@ export const TRUST_LABEL: Record<PulseEditorialTrustLevel, string> = {
   unverified: "Unverified",
   flagged: "Flagged",
 };
+
+// Rights Intelligence "Check Policy" (2026-09-08) — deliberately never
+// the words Green/Amber/Red, so this can never be mistaken for the
+// actual Permission Classification it's only ever a non-binding
+// suggestion toward. See policyEvidence.ts.
+export const POLICY_CHECK_RECOMMENDATION_LABEL: Record<"candidate-green" | "candidate-red" | "inconclusive", string> = {
+  "candidate-green": "Candidate for Green — clear, contextual permissive language found",
+  "candidate-red": "Candidate for Red — restrictive language found",
+  inconclusive: "Inconclusive — no clear signal, signals conflict, or the page couldn't be checked",
+};
+
+export const POLICY_CHECK_DISCLAIMER =
+  "A non-binding editorial risk signal based on the page checked below — not a legal determination and not the Permission Classification itself. Choose and Save Permission Classification above yourself.";
+
+export const POLICY_CHECK_CATEGORY_LABEL: Record<string, string> = {
+  "press-materials": "Press materials",
+  photographs: "Photographs",
+  trademarks: "Trademarks",
+  "third-party": "Third-party content",
+  "website-general": "General website text",
+  "fetch-error": "Couldn't check",
+  "safety-block": "Blocked for safety",
+  "unsupported-content": "Unsupported content",
+};

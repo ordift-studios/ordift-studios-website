@@ -24,6 +24,7 @@ export default defineType({
     { name: "permission", title: "Permission & Licensing" },
     { name: "editorial", title: "Editorial" },
     { name: "autoPublish", title: "Auto-Publish" },
+    { name: "policyCheck", title: "Policy Check Evidence" },
   ],
   fields: [
     defineField({ name: "name", title: "Name", type: "string", group: "basics", validation: (r) => r.required() }),
@@ -221,6 +222,80 @@ export default defineType({
         }),
       description:
         "OFF by default, and only meaningful for Green sources. Even when eligible here, the global Auto-Publish switch (Pulse Settings) must also be on for anything to publish without human review — see PULSE_INGESTION_FOUNDATION.md.",
+    }),
+
+    // --- Policy Check Evidence (Rights Intelligence, 2026-09-08) ---
+    // Every field below is set ONLY by checkPulseSourcePolicy()
+    // (pulseAdmin.ts), triggered by the Admin's "Check Policy" action —
+    // never by a human typing into Studio, which is why each is marked
+    // readOnly here. This is evidence/recommendation ASSISTANCE only:
+    // none of these fields is itself a rights decision, and none of
+    // them is ever read by ingestion.ts or any other code that governs
+    // discovery, publishing, or image reuse — only Permission
+    // Classification, Editorial Trust Level, and the other fields above
+    // (all still 100% human-set) govern actual behaviour. See
+    // policyEvidence.ts for the full design rationale.
+    defineField({
+      name: "policyCheckedAt",
+      title: "Policy Last Checked At",
+      type: "datetime",
+      group: "policyCheck",
+      readOnly: true,
+      description:
+        "Set automatically by the \"Check Policy\" action — never by a human edit. Deliberately distinct from Last Policy Review Date above, which only changes when a human actually completes a review; a machine check must never be mistaken for that.",
+    }),
+    defineField({
+      name: "policyCheckedUrl",
+      title: "URL Actually Checked",
+      type: "url",
+      group: "policyCheck",
+      readOnly: true,
+      description:
+        "The exact Policy/Rights URL that produced the evidence below, preserved even if Policy/Rights URL above is edited afterward — so this evidence can never appear to have come from a URL it wasn't actually fetched from.",
+    }),
+    defineField({
+      name: "policyCheckRecommendation",
+      title: "Automated Recommendation",
+      type: "string",
+      group: "policyCheck",
+      readOnly: true,
+      options: {
+        list: [
+          { title: "Candidate for Green — clear, contextual permissive language found", value: "candidate-green" },
+          { title: "Candidate for Red — restrictive language found", value: "candidate-red" },
+          { title: "Inconclusive — no clear signal, signals conflict, or the page couldn't be checked", value: "inconclusive" },
+        ],
+      },
+      description:
+        "A non-binding editorial risk signal, not a legal determination and NOT the Permission Classification itself — a human must still explicitly choose Permission Classification above and Save. Deliberately never labelled Green/Amber/Red so it can't be mistaken for the real classification.",
+    }),
+    defineField({
+      name: "policyCheckEvidence",
+      title: "Evidence",
+      type: "array",
+      group: "policyCheck",
+      readOnly: true,
+      of: [
+        {
+          type: "object",
+          name: "policyCheckEvidenceItem",
+          fields: [
+            { name: "category", type: "string" },
+            { name: "snippet", type: "text" },
+          ],
+        },
+      ],
+      description:
+        "Short, bounded factual snippets the automated check found, each with just enough surrounding context to see why it matched — never a reproduction of the full policy page or a substantial excerpt of its text.",
+    }),
+    defineField({
+      name: "policyCheckTrustSuggestion",
+      title: "Trust Suggestion (Automated, Non-Binding)",
+      type: "text",
+      group: "policyCheck",
+      readOnly: true,
+      description:
+        "A non-binding suggestion only, e.g. describing an Official/Primary source's role — Editorial Trust Level above always requires an explicit human choice; official-domain ownership must never be read as automatically \"High\" trust.",
     }),
   ],
   preview: {

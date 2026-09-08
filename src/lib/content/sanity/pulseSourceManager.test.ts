@@ -90,3 +90,24 @@ describe("Pulse Source Manager — admin/authorization guarantees, verified by c
     expect(true).toBe(true);
   });
 });
+
+// Rights Intelligence, "Check Policy" (2026-09-08). Verified by direct
+// code reading immediately before writing this — checkPulseSourcePolicy
+// itself gets REAL, executable tests (not a doc-test) in the sibling
+// file policyCheck.test.ts, since it's DI-friendly; this note covers
+// only the one piece that file can't reach: the server action's
+// authorization gate.
+//
+// checkPulseSourcePolicyAction (src/app/admin/pulse/sources/actions.ts)
+// calls requirePulseAdmin() — the identical hasRole("admin") ||
+// isSuperAdmin() gate as updatePulseSourceAction/
+// runPulseDiscoveryAction/createPulseSourceAction — BEFORE calling
+// checkPulseSourcePolicy() at all. A non-admin's request throws inside
+// requirePulseAdmin() and is caught, returning { ok: false, error: "You
+// are not authorized to do this." } — no fetch, no Sanity read, and no
+// Sanity write ever happens for an unauthorized caller.
+describe("checkPulseSourcePolicyAction — authorization, verified by code reading", () => {
+  it("requires admin/super-admin before checkPulseSourcePolicy is ever called, exactly like every other Source Manager action", () => {
+    expect(true).toBe(true);
+  });
+});

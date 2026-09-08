@@ -4,6 +4,7 @@ import { redirect, notFound } from "next/navigation";
 import { getCurrentUser, hasRole, isSuperAdmin } from "@/lib/portal/roles";
 import { getPulseSourceAdminDetail } from "@/lib/content/sanity/pulseAdmin";
 import { SourceEditForm } from "./SourceEditForm";
+import { PolicyCheckPanel } from "./PolicyCheckPanel";
 
 export const metadata: Metadata = { title: "Pulse Source — Ordift Studios Admin", robots: { index: false, follow: false } };
 
@@ -44,7 +45,10 @@ export default async function AdminPulseSourceDetailPage({ params }: { params: P
         {source.licenseNotes && <p className="font-sans text-body-small text-ordift-ink-muted mt-3 max-w-xl">{source.licenseNotes}</p>}
       </div>
 
-      <SourceEditForm source={source} />
+      <div className="space-y-6">
+        <PolicyCheckPanel source={source} />
+        <SourceEditForm source={source} />
+      </div>
     </div>
   );
 }

@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { getCurrentUser, hasRole, isSuperAdmin } from "@/lib/portal/roles";
-import { updatePulseSourceAdmin, createPulseSourceAdmin } from "@/lib/content/sanity/pulseAdmin";
+import { updatePulseSourceAdmin, createPulseSourceAdmin, checkPulseSourcePolicy, type PulsePolicyCheckResult } from "@/lib/content/sanity/pulseAdmin";
 import { redirect } from "next/navigation";
 import { logActivity } from "@/lib/admin/activityLog";
 import { editorialClient } from "@/sanity/lib/client";
@@ -149,4 +149,37 @@ export async function createPulseSourceAction(_prevState: CreateSourceState, for
 
   revalidatePath("/admin/pulse/sources");
   redirect(`/admin/pulse/sources/${result.id}`);
+}
+
+// Rights Intelligence, "Check Policy" (2026-09-08) — the one-shot
+// evidence/recommendation action. Same admin gate as every other Source
+// Manager action; checkPulseSourcePolicy() itself is what guarantees
+// this can never write permissionClassification/isActive/
+// imageUsePermitted/commercialUsePermitted/autoPublishEligible/
+// editorialTrustLevel/attributionRequirement/lastPolicyReviewDate — see
+// its own comment and policyEvidence.test.ts.
+export type CheckPolicyState = { ok: boolean; error?: string; result?: PulsePolicyCheckResult } | null;
+
+export async function checkPulseSourcePolicyAction(_prevState: CheckPolicyState, formData: FormData): Promise<CheckPolicyState> {
+  try {
+    const user = await requirePulseAdmin();
+    const sourceId = String(formData.get("sourceId") ?? "");
+    if (!sourceId) return { ok: false, error: "Invalid request." };
+
+    const result = await checkPulseSourcePolicy(sourceId);
+    if (!result.ok) return { ok: false, error: result.error, result };
+
+    await logActivity({
+      actorUserId: user.id,
+      action: "pulse.source_policy_checked",
+      entityType: "pulseSource",
+      entityId: sourceId,
+      metadata: { recommendation: result.recommendation, checkedUrl: result.checkedUrl },
+    });
+
+    revalidatePath(`/admin/pulse/sources/${sourceId}`);
+    return { ok: true, result };
+  } catch {
+    return { ok: false, error: "You are not authorized to do this." };
+  }
 }
