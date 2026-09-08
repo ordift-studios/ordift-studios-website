@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { getCurrentUser, hasRole, isSuperAdmin } from "@/lib/portal/roles";
+import { authorizeWithSuperAdminOverride, TALENT_CAPABILITIES } from "@/lib/organization/authority";
 import {
   getTalentOverviewCounts,
   listTalentProfiles,
@@ -77,6 +78,18 @@ export default async function AdminTalentManagementPage() {
   const user = await getCurrentUser();
   if (!user || (!hasRole(user, "admin") && !isSuperAdmin(user))) redirect("/admin/overview");
 
+  // "Add Talent" button visibility (2026-09-09) — reflects REAL
+  // authorization through the existing talent.profile.administer
+  // capability (Super Admin override, zero grants created here), not
+  // just the page's own generic admin-role gate above. This is a
+  // read-only check — authorizeWithSuperAdminOverride() never creates
+  // an authority_grants row; it only ever reads. The server action
+  // behind the button (createTalentProfileAction ->
+  // createTalentProfile()) re-checks this independently regardless of
+  // whether the button was shown, so hiding it here is UX only, never
+  // the real boundary.
+  const canAdministerTalent = (await authorizeWithSuperAdminOverride(user.id, TALENT_CAPABILITIES.profileAdminister)).ok;
+
   const [counts, profiles, opportunities, commercialTerms, mediaAssets, categories] = await Promise.all([
     getTalentOverviewCounts(),
     listTalentProfiles(),
@@ -88,13 +101,23 @@ export default async function AdminTalentManagementPage() {
 
   return (
     <div className="space-y-10">
-      <div>
-        <p className="font-sans font-semibold uppercase tracking-[0.2em] text-eyebrow text-ordift-gold-pressed mb-2">Admin</p>
-        <h1 className="font-serif font-medium text-section-heading lg:text-section-heading-desktop text-ordift-ink">Talent Management</h1>
-        <p className="font-sans text-body-small text-ordift-ink-muted mt-2 max-w-2xl">
-          A business-line-inactive foundation — read-only governance view over talent profiles, representation, commercial terms, opportunities, and media.
-          No public listing exists; nothing here has been activated as a live business line.
-        </p>
+      <div className="flex items-start justify-between gap-4 flex-wrap">
+        <div>
+          <p className="font-sans font-semibold uppercase tracking-[0.2em] text-eyebrow text-ordift-gold-pressed mb-2">Admin</p>
+          <h1 className="font-serif font-medium text-section-heading lg:text-section-heading-desktop text-ordift-ink">Talent Management</h1>
+          <p className="font-sans text-body-small text-ordift-ink-muted mt-2 max-w-2xl">
+            A business-line-inactive foundation — read-only governance view over talent profiles, representation, commercial terms, opportunities, and media.
+            No public listing exists; nothing here has been activated as a live business line.
+          </p>
+        </div>
+        {canAdministerTalent && (
+          <Link
+            href="/admin/talent/new"
+            className="inline-flex items-center min-h-10 px-4 rounded-md bg-ordift-navy-950 text-white font-sans text-body-small font-semibold hover:bg-ordift-navy-900"
+          >
+            + Add Talent
+          </Link>
+        )}
       </div>
 
       <SectionCard title="Overview">

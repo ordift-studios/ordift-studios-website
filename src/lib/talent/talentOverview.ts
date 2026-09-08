@@ -51,6 +51,30 @@ export async function listTalentProfiles(): Promise<TalentProfileRow[]> {
   return (data ?? []).map(mapTalentProfileRow);
 }
 
+// Admin onboarding, "Add Talent" (2026-09-09) — candidates for
+// createTalentProfile() (talentProfiles.ts): a profile already holding
+// the existing `model` account role (granted separately, via the
+// existing Users & Roles area — this module never grants roles itself)
+// that doesn't yet have a model_profiles row. Read-only, no auth gate
+// here either, same precedent as listTalentProfiles() above.
+export type TalentOnboardingCandidate = { profileId: string; name: string | null; memberNumber: string | null };
+
+export async function listTalentOnboardingCandidates(): Promise<TalentOnboardingCandidate[]> {
+  const admin = createAdminClient();
+  const [{ data: modelProfiles, error: modelRoleError }, { data: existing, error: existingError }] = await Promise.all([
+    admin.from("profiles").select("id, full_name, member_number, user_roles!inner(roles!inner(slug))").eq("user_roles.roles.slug", "model"),
+    admin.from("model_profiles").select("id"),
+  ]);
+  if (modelRoleError || existingError) {
+    console.error("[talent] failed to list onboarding candidates", modelRoleError?.message ?? existingError?.message);
+    return [];
+  }
+  const alreadyOnboarded = new Set((existing ?? []).map((r) => r.id as string));
+  return (modelProfiles ?? [])
+    .filter((r) => !alreadyOnboarded.has(r.id as string))
+    .map((r) => ({ profileId: r.id as string, name: (r.full_name as string | null) ?? null, memberNumber: (r.member_number as string | null) ?? null }));
+}
+
 export type TalentOpportunityRow = { id: string; title: string; status: string; categoryName: string | null; createdAt: string };
 
 export async function listTalentOpportunitiesForAdmin(limit = 50): Promise<TalentOpportunityRow[]> {

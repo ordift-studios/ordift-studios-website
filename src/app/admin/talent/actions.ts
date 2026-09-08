@@ -1,8 +1,9 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/portal/roles";
-import { setRepresentationStatus, setPublicationStatus, createTalentCategory, assignTalentCategory, removeTalentCategory } from "@/lib/talent/talentProfiles";
+import { setRepresentationStatus, setPublicationStatus, createTalentCategory, assignTalentCategory, removeTalentCategory, createTalentProfile } from "@/lib/talent/talentProfiles";
 import { setTalentMeasurements } from "@/lib/talent/talentMeasurementsEngine";
 import type { RepresentationStatus } from "@/lib/talent/talentRepresentation";
 import type { TalentPublicationStatus } from "@/lib/talent/talentPublicationLifecycle";
@@ -127,4 +128,31 @@ export async function removeTalentCategoryAction(formData: FormData): Promise<vo
   const result = await removeTalentCategory({ profileId, categoryId, actorUserId: user.id });
   if (!result.ok) console.error("[admin] failed to remove talent category", result.error);
   revalidatePath(`/admin/talent/${profileId}`);
+}
+
+// Admin onboarding, "Add Talent" (2026-09-09) — same useActionState
+// pending/success/error shape as checkPulseSourcePolicyAction/
+// createTalentCategoryAction (AddCategoryForm.tsx), reused rather than
+// invented fresh. Real authorization lives in createTalentProfile()
+// itself (requireProfileAdminister — talent.profile.administer, with
+// the existing Super Admin override) — this action never bypasses
+// that; a not-signed-in caller is refused before even reaching it.
+export type CreateTalentProfileState = { ok: boolean; error?: string } | null;
+
+export async function createTalentProfileAction(_prevState: CreateTalentProfileState, formData: FormData): Promise<CreateTalentProfileState> {
+  const user = await getCurrentUser();
+  if (!user) return { ok: false, error: "Not signed in." };
+
+  const profileId = String(formData.get("profileId") ?? "");
+  if (!profileId) return { ok: false, error: "Select a person to onboard." };
+  const categoryId = String(formData.get("categoryId") ?? "").trim() || null;
+  const representationStatusRaw = String(formData.get("representationStatus") ?? "").trim();
+  const representationStatus = representationStatusRaw ? (representationStatusRaw as RepresentationStatus) : null;
+
+  const result = await createTalentProfile({ profileId, categoryId, representationStatus, actorUserId: user.id });
+  if (!result.ok) return { ok: false, error: result.error };
+
+  revalidatePath("/admin/talent");
+  revalidatePath(`/admin/talent/${profileId}`);
+  redirect(`/admin/talent/${profileId}`);
 }

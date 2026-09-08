@@ -106,6 +106,75 @@ export async function setPublicationStatus(params: {
   return { ok: true };
 }
 
+// Admin onboarding, "Add Talent" (2026-09-09) — the one genuinely
+// missing write path: nothing before this could ever create a
+// model_profiles row at all, only transition an EXISTING one. Gated by
+// the same requireProfileAdminister() (talent.profile.administer, with
+// the existing Super Admin override) every other write in this file
+// already uses — no new capability, no new grant.
+//
+// Deliberately creates ONLY the model_profiles row (id, and — since
+// every other column already carries a safe schema default:
+// status='pending', representation_status='unrepresented',
+// publication_status='draft' — nothing else needs to be set for the
+// record to be valid and non-public). The public Sanity talentProfile
+// document remains a separate, later, Studio-authored step (see
+// /admin/talent/[id]/page.tsx's own note: "The public portfolio itself
+// ... is edited and separately published in Sanity Studio") — this
+// function does not touch Sanity at all, preserving that existing,
+// deliberate boundary rather than building a second write path across
+// it.
+export async function createTalentProfile(params: {
+  profileId: string;
+  categoryId: string | null;
+  representationStatus: RepresentationStatus | null;
+  actorUserId: string;
+}): Promise<{ ok: true } | { ok: false; error: string }> {
+  const auth = await requireProfileAdminister(params.actorUserId);
+  if (!auth.ok) return auth;
+
+  const admin = createAdminClient();
+
+  const { data: existing } = await admin.from("model_profiles").select("id").eq("id", params.profileId).maybeSingle();
+  if (existing) return { ok: false, error: "This person already has a talent profile." };
+
+  // The account-role gate (must already hold the `model` role, granted
+  // separately via the existing Users & Roles area) — this function
+  // never grants a role itself, only the model_profiles extension.
+  const { data: roleRow } = await admin.from("user_roles").select("roles!inner(slug)").eq("user_id", params.profileId).eq("roles.slug", "model").maybeSingle();
+  if (!roleRow) return { ok: false, error: "This person doesn't hold the Model role yet — grant it via Users & Roles first." };
+
+  const insertFields: Record<string, unknown> = { id: params.profileId };
+  if (params.representationStatus) {
+    insertFields.representation_status = params.representationStatus;
+    insertFields.representation_status_changed_at = new Date().toISOString();
+    insertFields.representation_status_changed_by = params.actorUserId;
+  }
+  // publication_status is never set here — always the schema default
+  // 'draft', so a newly onboarded talent can never be public by virtue
+  // of being created.
+
+  const { error } = await admin.from("model_profiles").insert(insertFields);
+  if (error) {
+    console.error("[talent] failed to create talent profile", error.message);
+    return { ok: false, error: "Failed to create the talent profile." };
+  }
+
+  if (params.categoryId) {
+    const assignResult = await assignTalentCategory({ profileId: params.profileId, categoryId: params.categoryId, actorUserId: params.actorUserId });
+    if (!assignResult.ok) console.error("[talent] talent profile created but initial category assignment failed", assignResult.error);
+  }
+
+  await logActivity({
+    actorUserId: params.actorUserId,
+    action: "talent.profile.created",
+    entityType: "model_profile",
+    entityId: params.profileId,
+    metadata: { categoryId: params.categoryId, representationStatus: params.representationStatus },
+  });
+  return { ok: true };
+}
+
 export type TalentCategory = { id: string; slug: string; name: string; active: boolean; sortOrder: number };
 
 export async function listTalentCategories(): Promise<TalentCategory[]> {

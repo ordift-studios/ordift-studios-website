@@ -203,6 +203,7 @@ const ACTION_LABELS: Record<string, string> = {
   "legal.release.granted": "Granted a rights/release category on an agreement",
 
   // TALENT-SYS-1 Foundation (2026-09-08)
+  "talent.profile.created": "Onboarded a new talent profile",
   "talent.representation.status_changed": "Changed a talent's representation status",
   "talent.category.created": "Created a talent category",
   "talent.category.assigned": "Assigned a talent category to a profile",
