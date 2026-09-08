@@ -67,6 +67,24 @@ export default defineType({
       description: "An external embed URL (e.g. Vimeo/YouTube), matching the existing Ordift precedent of embed-only video — native video upload is out of scope for this phase.",
     }),
     defineField({
+      name: "publicInfo",
+      title: "Public Info (Casting Facts)",
+      type: "object",
+      description:
+        "Deliberately published casting facts for the public Info tab — Part 12 of the design brief. A separate, admin-curated copy from the private talent_measurements table in Supabase (Talent Management), which stays the operational working record an agent updates day to day. Nothing here is synced automatically — publishing a fact here is a deliberate editorial choice, same principle as Portfolio Studio's \"approval never equals automatic publication.\" Leave any field blank to show nothing for it.",
+      fields: [
+        defineField({ name: "heightCm", title: "Height (cm)", type: "number" }),
+        defineField({ name: "bustCm", title: "Bust / Chest (cm)", type: "number" }),
+        defineField({ name: "waistCm", title: "Waist (cm)", type: "number" }),
+        defineField({ name: "hipCm", title: "Hip (cm)", type: "number" }),
+        defineField({ name: "shoeEu", title: "Shoe (EU)", type: "number" }),
+        defineField({ name: "hairColor", title: "Hair", type: "string" }),
+        defineField({ name: "eyeColor", title: "Eyes", type: "string" }),
+        defineField({ name: "languages", title: "Languages", type: "array", of: [{ type: "string" }] }),
+        defineField({ name: "travelReady", title: "Travel Ready", type: "boolean" }),
+      ],
+    }),
+    defineField({
       name: "developmentStage",
       title: "Development Stage",
       type: "string",

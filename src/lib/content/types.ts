@@ -376,6 +376,22 @@ export type TalentGalleryImage = GalleryImage & {
 
 export type TalentDevelopmentStage = "new_faces" | "established";
 
+// Deliberately published casting facts (Part 12) — a separate,
+// admin-curated copy from the private talent_measurements table in
+// Supabase. Every field is independently optional; publishing one is
+// a deliberate editorial choice, never automatic.
+export type TalentPublicInfo = {
+  heightCm: number | null;
+  bustCm: number | null;
+  waistCm: number | null;
+  hipCm: number | null;
+  shoeEu: number | null;
+  hairColor: string | null;
+  eyeColor: string | null;
+  languages: string[];
+  travelReady: boolean | null;
+};
+
 export type TalentProfile = {
   id: ID;
   profileId: string;
@@ -388,6 +404,7 @@ export type TalentProfile = {
   introduction: string | null;
   gallery: TalentGalleryImage[];
   reelEmbedUrl: string | null;
+  publicInfo: TalentPublicInfo;
   developmentStage: TalentDevelopmentStage;
 };
 

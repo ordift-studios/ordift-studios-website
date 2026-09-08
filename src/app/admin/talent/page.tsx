@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
+import Link from "next/link";
 import { getCurrentUser, hasRole, isSuperAdmin } from "@/lib/portal/roles";
 import {
   getTalentOverviewCounts,
@@ -8,6 +9,8 @@ import {
   listTalentCommercialTermsForAdmin,
   listTalentMediaAssetsForAdmin,
 } from "@/lib/talent/talentOverview";
+import { listTalentCategories } from "@/lib/talent/talentProfiles";
+import { createTalentCategoryAction } from "./actions";
 
 export const metadata: Metadata = {
   title: "Talent Management — Ordift Studios Admin",
@@ -74,12 +77,13 @@ export default async function AdminTalentManagementPage() {
   const user = await getCurrentUser();
   if (!user || (!hasRole(user, "admin") && !isSuperAdmin(user))) redirect("/admin/overview");
 
-  const [counts, profiles, opportunities, commercialTerms, mediaAssets] = await Promise.all([
+  const [counts, profiles, opportunities, commercialTerms, mediaAssets, categories] = await Promise.all([
     getTalentOverviewCounts(),
     listTalentProfiles(),
     listTalentOpportunitiesForAdmin(),
     listTalentCommercialTermsForAdmin(),
     listTalentMediaAssetsForAdmin(),
+    listTalentCategories(),
   ]);
 
   return (
@@ -127,10 +131,42 @@ export default async function AdminTalentManagementPage() {
           <EmptyState label="No talent profiles exist yet." />
         ) : (
           <Table
-            headers={["Member", "Account Status", "Representation", "Categories"]}
-            rows={profiles.map((p) => [p.memberNumber ?? p.name ?? p.profileId, <Pill key="s">{p.status}</Pill>, <Pill key="r">{p.representationStatus}</Pill>, p.categories.length ? p.categories.join(", ") : "—"])}
+            headers={["Member", "Account Status", "Representation", "Publication", "Categories"]}
+            rows={profiles.map((p) => [
+              <Link key="n" href={`/admin/talent/${p.profileId}`} className="font-semibold underline">
+                {p.memberNumber ?? p.name ?? p.profileId}
+              </Link>,
+              <Pill key="s">{p.status}</Pill>,
+              <Pill key="r">{p.representationStatus}</Pill>,
+              <Pill key="p">{p.publicationStatus}</Pill>,
+              p.categories.length ? p.categories.join(", ") : "—",
+            ])}
           />
         )}
+      </SectionCard>
+
+      <SectionCard
+        title="Categories"
+        description="An extensible, admin-configurable classification list — never hard-coded (Women/Men/Fashion/Commercial/Editorial/Creators/New Faces are examples an admin may add, not a fixed taxonomy)."
+      >
+        {categories.length === 0 ? (
+          <EmptyState label="No talent categories exist yet." />
+        ) : (
+          <div className="flex flex-wrap gap-2">
+            {categories.map((c) => (
+              <Pill key={c.id}>{c.name}</Pill>
+            ))}
+          </div>
+        )}
+        <form action={createTalentCategoryAction} className="flex items-end gap-3 pt-2">
+          <label className="block">
+            <span className="font-sans text-caption font-semibold uppercase tracking-wide text-ordift-ink-muted block mb-1">New category name</span>
+            <input name="name" type="text" required className="rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small text-ordift-ink" />
+          </label>
+          <button type="submit" className="rounded-lg border border-black/15 px-4 py-2 font-sans text-caption font-semibold text-ordift-ink">
+            Add category
+          </button>
+        </form>
       </SectionCard>
 
       <SectionCard title="Commercial Terms" description="Configurable commission/fee structures. No default rate is ever set — every value reflects a real negotiated term.">

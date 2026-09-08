@@ -13,31 +13,42 @@ export type TalentProfileRow = {
   memberNumber: string | null;
   status: string;
   representationStatus: string;
+  publicationStatus: string;
   categories: string[];
 };
 
+const TALENT_PROFILE_LIST_SELECT =
+  "id, status, representation_status, publication_status, profiles(full_name, member_number), talent_profile_categories(talent_categories(id, name))";
+
+function mapTalentProfileRow(row: {
+  id: string;
+  status: string;
+  representation_status: string;
+  publication_status: string;
+  profiles: unknown;
+  talent_profile_categories: unknown;
+}): TalentProfileRow {
+  const profile = row.profiles as unknown as { full_name: string | null; member_number: string | null } | null;
+  const categoryLinks = (row.talent_profile_categories as unknown as { talent_categories: { id: string; name: string } | null }[] | null) ?? [];
+  return {
+    profileId: row.id,
+    name: profile?.full_name ?? null,
+    memberNumber: profile?.member_number ?? null,
+    status: row.status,
+    representationStatus: row.representation_status,
+    publicationStatus: row.publication_status,
+    categories: categoryLinks.map((c) => c.talent_categories?.name).filter((n): n is string => Boolean(n)),
+  };
+}
+
 export async function listTalentProfiles(): Promise<TalentProfileRow[]> {
   const admin = createAdminClient();
-  const { data, error } = await admin
-    .from("model_profiles")
-    .select("id, status, representation_status, profiles(full_name, member_number), talent_profile_categories(talent_categories(name))")
-    .order("created_at", { ascending: false });
+  const { data, error } = await admin.from("model_profiles").select(TALENT_PROFILE_LIST_SELECT).order("created_at", { ascending: false });
   if (error) {
     console.error("[talent] failed to list talent profiles", error.message);
     return [];
   }
-  return (data ?? []).map((row) => {
-    const profile = row.profiles as unknown as { full_name: string | null; member_number: string | null } | null;
-    const categoryLinks = (row.talent_profile_categories as unknown as { talent_categories: { name: string } | null }[] | null) ?? [];
-    return {
-      profileId: row.id,
-      name: profile?.full_name ?? null,
-      memberNumber: profile?.member_number ?? null,
-      status: row.status,
-      representationStatus: row.representation_status,
-      categories: categoryLinks.map((c) => c.talent_categories?.name).filter((n): n is string => Boolean(n)),
-    };
-  });
+  return (data ?? []).map(mapTalentProfileRow);
 }
 
 export type TalentOpportunityRow = { id: string; title: string; status: string; categoryName: string | null; createdAt: string };
@@ -110,4 +121,22 @@ export async function getTalentOverviewCounts(): Promise<TalentOverviewCounts> {
     commercialTermsSetCount: termsCount ?? 0,
     mediaAssetsCount: mediaCount ?? 0,
   };
+}
+
+// TALENT-SYS-2B, Phase 2 (2026-09-08) — single-profile detail read for
+// the per-talent admin management page (/admin/talent/[id]).
+export type TalentProfileDetail = TalentProfileRow & {
+  assignedCategoryIds: string[];
+};
+
+export async function getTalentProfileDetailForAdmin(profileId: string): Promise<TalentProfileDetail | null> {
+  const admin = createAdminClient();
+  const { data, error } = await admin.from("model_profiles").select(TALENT_PROFILE_LIST_SELECT).eq("id", profileId).maybeSingle();
+  if (error || !data) {
+    if (error) console.error("[talent] failed to load talent profile detail", error.message);
+    return null;
+  }
+  const base = mapTalentProfileRow(data);
+  const categoryLinks = (data.talent_profile_categories as unknown as { talent_categories: { id: string; name: string } | null }[] | null) ?? [];
+  return { ...base, assignedCategoryIds: categoryLinks.map((c) => c.talent_categories?.id).filter((id): id is string => Boolean(id)) };
 }

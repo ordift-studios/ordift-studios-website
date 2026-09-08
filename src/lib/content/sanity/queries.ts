@@ -283,6 +283,9 @@ export const talentProfileFragment = `{
   introduction,
   "gallery": coalesce(gallery[]${talentGalleryImageFragment} | order(displayOrder asc), []),
   reelEmbedUrl,
+  "publicInfo": coalesce(publicInfo{
+    heightCm, bustCm, waistCm, hipCm, shoeEu, hairColor, eyeColor, "languages": coalesce(languages, []), travelReady
+  }, {"heightCm": null, "bustCm": null, "waistCm": null, "hipCm": null, "shoeEu": null, "hairColor": null, "eyeColor": null, "languages": [], "travelReady": null}),
   developmentStage
 }`;
 
