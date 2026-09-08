@@ -75,41 +75,61 @@ function requiresSuperAdmin(role: RoleSlug): boolean {
   return (SUPER_ADMIN_ONLY_ROLES as string[]).includes(role);
 }
 
-export async function grantRoleAction(formData: FormData): Promise<void> {
-  const currentUser = await requireAdmin();
+// Grant Role button feedback (2026-09-09) — signature changed from a
+// plain (formData) => Promise<void> to the (prevState, formData) =>
+// Promise<State> shape useActionState requires, so the form can show
+// pending/success/error state, same fix already applied to Talent's
+// "Add Category" button (AddCategoryForm.tsx). Every existing check
+// and side effect below — requireAdmin(), the grantable-role
+// allowlist, the Admin/Super-Admin-only gate for high-risk roles, the
+// user_roles upsert, and the role.grant activity log — is completely
+// unchanged; this only reports the outcome to the caller instead of
+// resolving silently either way.
+export type GrantRoleState = { ok: boolean; error?: string } | null;
+
+export async function grantRoleAction(_prevState: GrantRoleState, formData: FormData): Promise<GrantRoleState> {
+  let currentUser: Awaited<ReturnType<typeof requireAdmin>>;
+  try {
+    currentUser = await requireAdmin();
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Not authorized." };
+  }
 
   const userId = String(formData.get("userId") ?? "");
   const roleSlug = String(formData.get("role") ?? "");
-  if (!userId || !isGrantableRole(roleSlug)) return;
+  if (!userId || !isGrantableRole(roleSlug)) return { ok: false, error: "Select a role to grant." };
 
   // Admin and Super Admin are the two highest-risk grants — reserved for
   // Super Admins specifically, so an ordinary Admin can build out the
   // team (staff/contractor/model/vendor) but can't create more admins.
   if (requiresSuperAdmin(roleSlug) && !isSuperAdmin(currentUser)) {
     console.warn("[admin] non-super-admin attempted to grant", roleSlug);
-    return;
+    return { ok: false, error: "Only a Super Admin can grant this role." };
   }
 
   const admin = createAdminClient();
   const { data: role } = await admin.from("roles").select("id").eq("slug", roleSlug).single();
-  if (!role) return;
+  if (!role) return { ok: false, error: "Unknown role." };
 
   const { error } = await admin
     .from("user_roles")
     .upsert({ user_id: userId, role_id: role.id }, { onConflict: "user_id,role_id", ignoreDuplicates: true });
   if (error) {
     console.error("[admin] grant role failed", error.message);
-  } else {
-    await logActivity({
-      actorUserId: currentUser.id,
-      action: "role.grant",
-      entityType: "user",
-      entityId: userId,
-      metadata: { role: roleSlug },
-    });
+    revalidatePath("/admin/users");
+    return { ok: false, error: "Failed to grant the role." };
   }
 
+  await logActivity({
+    actorUserId: currentUser.id,
+    action: "role.grant",
+    entityType: "user",
+    entityId: userId,
+    metadata: { role: roleSlug },
+  });
+
   revalidatePath("/admin/users");
+  return { ok: true };
 }
 
 export async function revokeRoleAction(formData: FormData): Promise<void> {

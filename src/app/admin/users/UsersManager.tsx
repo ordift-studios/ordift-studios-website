@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useActionState, useMemo, useState, useTransition } from "react";
 import Link from "next/link";
 import type { AdminUserRow, LookupOption } from "@/lib/portal/adminData";
 import type { MemberClassification } from "@/lib/portal/memberNumbers";
@@ -10,6 +10,7 @@ import type { AdminProjectAssignment, AssignmentStatus, ProjectSearchResult } fr
 import type { ActivityLogEntry } from "@/lib/admin/activityLog";
 import {
   grantRoleAction,
+  type GrantRoleState,
   revokeRoleAction,
   updateAccessStatusAction,
   setAccessExpiryAction,
@@ -124,6 +125,13 @@ function UserDetail({
   positions: Position[];
 }) {
   const [pending, startTransition] = useTransition();
+  // Grant Role button feedback (2026-09-09) — its own dedicated
+  // useActionState, separate from the generic `pending`/`error` state
+  // above (which several unrelated actions in this component share via
+  // startTransition), so Grant's own pending/success/error display can
+  // never be confused with or interfered by any other action's state.
+  // Same pattern as Talent's "Add Category" fix (AddCategoryForm.tsx).
+  const [grantState, grantFormAction, grantPending] = useActionState<GrantRoleState, FormData>(grantRoleAction, null);
   const [confirming, setConfirming] = useState<null | { kind: "suspend" | "deactivate" | "reactivate" | "restore" }>(
     null
   );
@@ -478,9 +486,15 @@ function UserDetail({
             );
           })}
         </div>
-        <form action={grantRoleAction} className="flex items-center gap-2 pt-1">
+        <form action={grantFormAction} className="flex items-center gap-2 pt-1 flex-wrap">
           <input type="hidden" name="userId" value={user.id} />
-          <select name="role" defaultValue="" required className="min-h-9 rounded-lg border border-black/15 bg-white px-2 font-sans text-body-small">
+          <select
+            name="role"
+            defaultValue=""
+            required
+            disabled={grantPending}
+            className="min-h-9 rounded-lg border border-black/15 bg-white px-2 font-sans text-body-small disabled:opacity-60"
+          >
             <option value="" disabled>
               Grant role…
             </option>
@@ -492,9 +506,16 @@ function UserDetail({
                 </option>
               ))}
           </select>
-          <button type="submit" className="font-sans text-body-small text-ordift-gold-pressed underline underline-offset-4">
-            Grant
+          <button
+            type="submit"
+            disabled={grantPending}
+            aria-busy={grantPending}
+            className="font-sans text-body-small text-ordift-gold-pressed underline underline-offset-4 disabled:opacity-60"
+          >
+            {grantPending ? "Granting…" : "Grant"}
           </button>
+          {!grantPending && grantState?.ok === true && <span className="font-sans text-caption text-green-700">Role granted</span>}
+          {!grantPending && grantState?.ok === false && <span className="font-sans text-caption text-red-700">{grantState.error}</span>}
         </form>
         {!currentUserIsSuperAdmin && (
           <p className="font-sans text-caption text-ordift-ink-muted">
