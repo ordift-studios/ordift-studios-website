@@ -17,8 +17,17 @@ export type TalentProfileRow = {
   categories: string[];
 };
 
+// FK-disambiguation fix (2026-09-09) — `model_profiles` has three FKs
+// to `profiles` (`id` — the record's own owner — plus the two
+// `*_status_changed_by` audit FKs added by the TALENT-SYS migrations
+// on 2026-09-08), so this embed was equally ambiguous — confirmed via
+// Production runtime logs: "Could not embed because more than one
+// relationship was found for 'model_profiles' and 'profiles'". The
+// `!model_profiles_id_fkey` hint pins it to the owner relationship,
+// the only one this query ever intended — no change to which fields
+// are selected or how they're mapped.
 const TALENT_PROFILE_LIST_SELECT =
-  "id, status, representation_status, publication_status, profiles(full_name, member_number), talent_profile_categories(talent_categories(id, name))";
+  "id, status, representation_status, publication_status, profiles!model_profiles_id_fkey(full_name, member_number), talent_profile_categories(talent_categories(id, name))";
 
 function mapTalentProfileRow(row: {
   id: string;
@@ -62,7 +71,22 @@ export type TalentOnboardingCandidate = { profileId: string; name: string | null
 export async function listTalentOnboardingCandidates(): Promise<TalentOnboardingCandidate[]> {
   const admin = createAdminClient();
   const [{ data: modelProfiles, error: modelRoleError }, { data: existing, error: existingError }] = await Promise.all([
-    admin.from("profiles").select("id, full_name, member_number, user_roles!inner(roles!inner(slug))").eq("user_roles.roles.slug", "model"),
+    // FK-disambiguation fix (2026-09-09) — `user_roles` has two FKs to
+    // `profiles` (`user_id` — membership — and `granted_by` — who
+    // granted it, since migration 0001), so PostgREST can't auto-pick
+    // one for this embed and was failing on every request with
+    // "Could not embed because more than one relationship was found
+    // for 'profiles' and 'user_roles'" (confirmed via Production
+    // runtime logs) — silently swallowed into an empty candidate list
+    // by the catch below, indistinguishable in the UI from "genuinely
+    // no one is eligible". The `!user_roles_user_id_fkey` hint pins
+    // the embed to the membership relationship, the only one this
+    // query ever intended. No change to the filter/eligibility logic
+    // itself — `user_id` is exactly the FK this query always meant.
+    admin
+      .from("profiles")
+      .select("id, full_name, member_number, user_roles!user_roles_user_id_fkey!inner(roles!inner(slug))")
+      .eq("user_roles.roles.slug", "model"),
     admin.from("model_profiles").select("id"),
   ]);
   if (modelRoleError || existingError) {
