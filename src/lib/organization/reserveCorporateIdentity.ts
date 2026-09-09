@@ -273,10 +273,31 @@ export async function approveCorporateIdentityLocalPart(params: {
 
   const { data: existing } = await admin
     .from("corporate_identities")
-    .select("id, profile_id, local_part, domain")
+    .select("id, profile_id, local_part, domain, status")
     .eq("id", params.identityId)
     .maybeSingle();
   if (!existing) return { ok: false, error: "Identity not found." };
+
+  // Reserved-only guard (2026-09-10) — the address of a corporate
+  // identity may only ever be corrected while it is still in the
+  // initial 'reserved' (never-provisioned) state. No external
+  // mailbox-provisioning integration exists anywhere in this codebase
+  // today (see setCorporateIdentityStatus's own comment above — no
+  // code path can move a row to 'active' from a real confirmed
+  // mailbox), so this is a forward-looking safeguard, not a reaction
+  // to any real provisioned row existing yet: once a status other than
+  // 'reserved' is ever reached (pending_provisioning/provisioning_failed/
+  // active/suspended/deactivated), the address is no longer a simple
+  // typo-fix candidate — a controlled mailbox/alias migration is the
+  // correct path instead. Applies to every caller of this function,
+  // not just the direct Super-Admin correction UI — the request/
+  // approval diff-trail workflow (above) should not bypass this either.
+  if (existing.status !== "reserved") {
+    return {
+      ok: false,
+      error: `This corporate identity is "${existing.status}", not "reserved" — its address can no longer be corrected through this workflow. A provisioned or externally-bound identity requires a controlled mailbox/alias migration, not a direct correction.`,
+    };
+  }
 
   if (approvedLocalPart !== existing.local_part) {
     const { data: takenRows, error: takenError } = await admin

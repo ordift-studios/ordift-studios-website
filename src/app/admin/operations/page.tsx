@@ -11,6 +11,7 @@ import { listGradeCompensationBands } from "@/lib/organization/gradeCompensation
 import { listAllPaymentObligations } from "@/lib/payments/payoutObligations";
 import { JURISDICTIONS } from "@/lib/organization/authority";
 import { reserveCorporateIdentityAction, createDepartmentRequestAction, createRecruitmentRequisitionAction } from "./actions";
+import { CorporateIdentityCorrection } from "./CorporateIdentityCorrection";
 
 export const metadata: Metadata = {
   title: "Operations — Ordift Studios Admin",
@@ -68,11 +69,17 @@ export default async function AdminOperationsPage() {
         </p>
         <ul className="divide-y divide-black/5 rounded-lg border border-black/5">
           {identities.map((i) => (
-            <li key={i.id} className="flex items-center justify-between px-4 py-2.5">
-              <span className="font-sans text-body-small text-ordift-ink">{i.email}</span>
-              <span className="font-sans text-caption text-ordift-ink-muted">
-                {peopleById.get(i.profileId) ?? i.profileId} · {i.status}
-              </span>
+            <li key={i.id} className="flex items-center justify-between gap-4 px-4 py-2.5">
+              <div>
+                <p className="font-sans text-body-small text-ordift-ink">{i.email}</p>
+                <p className="font-sans text-caption text-ordift-ink-muted">
+                  {peopleById.get(i.profileId) ?? i.profileId} · {i.status}
+                </p>
+              </div>
+              <CorporateIdentityCorrection
+                identity={{ id: i.id, email: i.email, localPart: i.localPart, domain: i.domain, status: i.status }}
+                personLabel={peopleById.get(i.profileId) ?? i.profileId}
+              />
             </li>
           ))}
           {identities.length === 0 && <li className="px-4 py-3 font-sans text-body-small text-ordift-ink-muted">None reserved yet.</li>}

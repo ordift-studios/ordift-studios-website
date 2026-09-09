@@ -2,7 +2,8 @@
 
 import { revalidatePath } from "next/cache";
 import { getCurrentUser, isSuperAdmin } from "@/lib/portal/roles";
-import { reserveCorporateIdentity } from "@/lib/organization/reserveCorporateIdentity";
+import { reserveCorporateIdentity, approveCorporateIdentityLocalPart } from "@/lib/organization/reserveCorporateIdentity";
+import { normalizeRequestedLocalPart } from "@/lib/organization/corporateEmail";
 import { createDepartmentRequest } from "@/lib/organization/departmentRequests";
 import { createRecruitmentRequisition } from "@/lib/recruitment/requisitions";
 import type { Jurisdiction } from "@/lib/organization/authority";
@@ -47,6 +48,47 @@ export async function reserveCorporateIdentityAction(formData: FormData): Promis
   }
 
   revalidatePath("/admin/operations");
+}
+
+// Founder/Super-Admin direct typo-correction capability (2026-09-10) —
+// narrow, on purpose: this is for fixing a genuine data-entry mistake
+// on a still-unprovisioned reservation (e.g. "mbadjectives" instead of
+// "mbadjei"), not a general identity-management tool. Reuses the
+// existing approveCorporateIdentityLocalPart() mutation/audit logic
+// wholesale rather than duplicating it — that function's own
+// reserved-only guard (added alongside this action) is what actually
+// enforces "only while reserved/unprovisioned"; this action's own job
+// is Super-Admin gating (via the same requireSuperAdmin() every other
+// action on this page already uses — no parallel permission system)
+// and translating a plain typed address into the request/approval
+// diff-trail shape that function expects, with a fixed, honest
+// approvalReason rather than a free-text one, so every correction made
+// through this specific flow is identifiable as such in the audit
+// trail.
+export async function correctCorporateIdentityLocalPartAction(params: {
+  identityId: string;
+  currentLocalPart: string;
+  newLocalPart: string;
+}): Promise<{ ok: true } | { ok: false; error: string }> {
+  const currentUser = await requireSuperAdmin();
+
+  const validation = normalizeRequestedLocalPart(params.newLocalPart);
+  if (!validation.ok) return { ok: false, error: validation.error };
+
+  if (validation.value === params.currentLocalPart) {
+    return { ok: false, error: "The new address is the same as the current one." };
+  }
+
+  const result = await approveCorporateIdentityLocalPart({
+    identityId: params.identityId,
+    requestedLocalPart: params.currentLocalPart,
+    approvedLocalPart: validation.value,
+    approvalReason: "Founder/Super Admin correction — data-entry typo fixed on an unprovisioned reservation.",
+    actorUserId: currentUser.id,
+  });
+
+  revalidatePath("/admin/operations");
+  return result;
 }
 
 export async function createDepartmentRequestAction(formData: FormData): Promise<void> {
