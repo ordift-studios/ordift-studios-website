@@ -201,9 +201,19 @@ export default async function AdminTalentManagementPage() {
         ) : (
           <Table
             headers={["Title", "Category", "Status", "Created"]}
-            rows={opportunities.map((o) => [o.title, o.categoryName ?? "—", <Pill key="s">{o.status}</Pill>, new Date(o.createdAt).toLocaleDateString()])}
+            rows={opportunities.map((o) => [
+              <Link key="t" href={`/admin/talent/opportunities/${o.id}`} className="font-semibold underline">
+                {o.title}
+              </Link>,
+              o.categoryName ?? "—",
+              <Pill key="s">{o.status}</Pill>,
+              new Date(o.createdAt).toLocaleDateString(),
+            ])}
           />
         )}
+        <Link href="/admin/talent/opportunities" className="font-sans text-caption text-ordift-ink-muted underline hover:text-ordift-ink">
+          Manage Opportunities →
+        </Link>
       </SectionCard>
 
       <SectionCard title="Media" description="Private references into the talent-media Storage bucket. No upload interface exists yet in this phase.">

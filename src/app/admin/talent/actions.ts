@@ -7,8 +7,12 @@ import { setRepresentationStatus, setPublicationStatus, createTalentCategory, as
 import { setTalentMeasurements } from "@/lib/talent/talentMeasurementsEngine";
 import { setCommercialTerms } from "@/lib/talent/talentCommercialTermsEngine";
 import { isValidCommissionType } from "@/lib/talent/talentCommercialTerms";
+import { createOpportunity, transitionOpportunityStatus } from "@/lib/talent/talentOpportunitiesEngine";
+import { addCandidateToOpportunity, transitionCandidateStatus } from "@/lib/talent/talentOpportunityCandidatesEngine";
+import { isValidCandidacyStatus } from "@/lib/talent/talentCandidacyLifecycle";
 import type { RepresentationStatus } from "@/lib/talent/talentRepresentation";
 import type { TalentPublicationStatus } from "@/lib/talent/talentPublicationLifecycle";
+import type { TalentOpportunityStatus } from "@/lib/talent/talentOpportunityLifecycle";
 
 // Ordift Talent — TALENT-SYS-2B, Phase 2 (2026-09-08). Plain
 // server-action forms, same shape/precedent as
@@ -224,5 +228,93 @@ export async function setCommercialTermsAction(_prevState: SetCommercialTermsSta
   if (!result.ok) return { ok: false, error: result.error };
 
   revalidatePath(`/admin/talent/${profileId}`);
+  return { ok: true };
+}
+
+// ============================================================
+// Opportunities Admin (2026-09-09) — same useActionState pending/
+// success/error shape as every action above, applied from the start.
+// Business logic — opportunity-status transitions, candidacy creation/
+// transitions, authorization (requireOpportunityAdminister, the same
+// existing talent.opportunity.administer capability), duplicate
+// protection, and audit logging — lives entirely in
+// talentOpportunitiesEngine.ts/talentOpportunityCandidatesEngine.ts,
+// unchanged; these wrappers only parse form input and report back.
+// ============================================================
+
+export type CreateOpportunityState = { ok: boolean; error?: string } | null;
+
+export async function createOpportunityAction(_prevState: CreateOpportunityState, formData: FormData): Promise<CreateOpportunityState> {
+  const user = await getCurrentUser();
+  if (!user) return { ok: false, error: "Not signed in." };
+
+  const title = String(formData.get("title") ?? "").trim();
+  if (!title) return { ok: false, error: "Title is required." };
+  const description = String(formData.get("description") ?? "").trim() || null;
+  const categoryId = String(formData.get("categoryId") ?? "").trim() || null;
+
+  const result = await createOpportunity({ title, description, categoryId, actorUserId: user.id });
+  if (!result.ok) return { ok: false, error: result.error };
+
+  revalidatePath("/admin/talent/opportunities");
+  revalidatePath("/admin/talent");
+  redirect(`/admin/talent/opportunities/${result.opportunityId}`);
+}
+
+export type TransitionOpportunityStatusState = { ok: boolean; error?: string } | null;
+
+export async function transitionOpportunityStatusAction(_prevState: TransitionOpportunityStatusState, formData: FormData): Promise<TransitionOpportunityStatusState> {
+  const user = await getCurrentUser();
+  if (!user) return { ok: false, error: "Not signed in." };
+
+  const opportunityId = String(formData.get("opportunityId") ?? "");
+  const toStatus = String(formData.get("toStatus") ?? "") as TalentOpportunityStatus;
+  if (!opportunityId || !toStatus) return { ok: false, error: "Select a status." };
+
+  const result = await transitionOpportunityStatus({ opportunityId, toStatus, actorUserId: user.id });
+  if (!result.ok) return { ok: false, error: result.error };
+
+  revalidatePath(`/admin/talent/opportunities/${opportunityId}`);
+  revalidatePath("/admin/talent/opportunities");
+  revalidatePath("/admin/talent");
+  return { ok: true };
+}
+
+export type AddCandidateState = { ok: boolean; error?: string } | null;
+
+export async function addCandidateToOpportunityAction(_prevState: AddCandidateState, formData: FormData): Promise<AddCandidateState> {
+  const user = await getCurrentUser();
+  if (!user) return { ok: false, error: "Not signed in." };
+
+  const opportunityId = String(formData.get("opportunityId") ?? "");
+  const profileId = String(formData.get("profileId") ?? "");
+  if (!opportunityId || !profileId) return { ok: false, error: "Select a talent to add." };
+
+  const result = await addCandidateToOpportunity({ opportunityId, profileId, actorUserId: user.id });
+  if (!result.ok) return { ok: false, error: result.error };
+
+  revalidatePath(`/admin/talent/opportunities/${opportunityId}`);
+  revalidatePath(`/admin/talent/${profileId}`);
+  return { ok: true };
+}
+
+export type TransitionCandidateStatusState = { ok: boolean; error?: string } | null;
+
+export async function transitionCandidateStatusAction(_prevState: TransitionCandidateStatusState, formData: FormData): Promise<TransitionCandidateStatusState> {
+  const user = await getCurrentUser();
+  if (!user) return { ok: false, error: "Not signed in." };
+
+  const candidacyId = String(formData.get("candidacyId") ?? "");
+  const opportunityId = String(formData.get("opportunityId") ?? "");
+  const profileId = String(formData.get("profileId") ?? "");
+  const toStatusRaw = String(formData.get("toStatus") ?? "");
+  if (!candidacyId) return { ok: false, error: "Missing candidacy." };
+  if (!isValidCandidacyStatus(toStatusRaw)) return { ok: false, error: "Select a valid status." };
+
+  const result = await transitionCandidateStatus({ candidacyId, toStatus: toStatusRaw, actorUserId: user.id });
+  if (!result.ok) return { ok: false, error: result.error };
+
+  if (opportunityId) revalidatePath(`/admin/talent/opportunities/${opportunityId}`);
+  if (profileId) revalidatePath(`/admin/talent/${profileId}`);
   return { ok: true };
 }

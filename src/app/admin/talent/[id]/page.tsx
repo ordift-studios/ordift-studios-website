@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { redirect, notFound } from "next/navigation";
 import Link from "next/link";
 import { getCurrentUser, hasRole, isSuperAdmin } from "@/lib/portal/roles";
-import { getTalentProfileDetailForAdmin, getCommercialTermsForProfile } from "@/lib/talent/talentOverview";
+import { getTalentProfileDetailForAdmin, getCommercialTermsForProfile, listCandidaciesForProfile } from "@/lib/talent/talentOverview";
 import { getTalentMeasurements } from "@/lib/talent/talentMeasurementsEngine";
 import { listTalentCategories } from "@/lib/talent/talentProfiles";
 import { REPRESENTATION_STATUSES } from "@/lib/talent/talentRepresentation";
@@ -42,11 +42,12 @@ export default async function AdminTalentProfileDetailPage({ params }: { params:
   if (!user || (!hasRole(user, "admin") && !isSuperAdmin(user))) redirect("/admin/overview");
 
   const { id } = await params;
-  const [detail, measurements, categories, commercialTerms] = await Promise.all([
+  const [detail, measurements, categories, commercialTerms, candidacies] = await Promise.all([
     getTalentProfileDetailForAdmin(id),
     getTalentMeasurements(id),
     listTalentCategories(),
     getCommercialTermsForProfile(id),
+    listCandidaciesForProfile(id),
   ]);
   if (!detail) notFound();
 
@@ -192,6 +193,28 @@ export default async function AdminTalentProfileDetailPage({ params }: { params:
             </button>
           </div>
         </form>
+      </section>
+
+      <section className="rounded-xl border border-black/10 bg-white p-6 space-y-4">
+        <h2 className="font-serif font-medium text-body text-ordift-ink">Opportunities</h2>
+        <p className="font-sans text-body-small text-ordift-ink-muted">
+          This talent&apos;s candidacy history across internal casting opportunities. Read-only here — manage status from
+          each opportunity&apos;s own page.
+        </p>
+        {candidacies.length === 0 ? (
+          <p className="font-sans text-body-small text-ordift-ink-muted italic">Not currently a candidate for any opportunity.</p>
+        ) : (
+          <div className="flex flex-col gap-2">
+            {candidacies.map((c) => (
+              <div key={c.candidacyId} className="flex items-center justify-between gap-3 rounded-lg bg-black/5 px-4 py-2">
+                <Link href={`/admin/talent/opportunities/${c.opportunityId}`} className="font-sans text-body-small underline text-ordift-ink">
+                  {c.opportunityTitle}
+                </Link>
+                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full font-sans text-caption font-semibold bg-white text-ordift-ink">{c.status}</span>
+              </div>
+            ))}
+          </div>
+        )}
       </section>
     </div>
   );

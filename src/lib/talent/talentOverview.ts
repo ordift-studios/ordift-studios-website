@@ -272,3 +272,131 @@ export async function getTalentProfileDetailForAdmin(profileId: string): Promise
   const base = mapTalentProfileRow(data, categories);
   return { ...base, assignedCategoryIds: categories.map((c) => c.id) };
 }
+
+// ============================================================
+// Opportunity Candidacy Admin UI (2026-09-09) — read layer over
+// talent_opportunities and the new talent_opportunity_candidates
+// (migration 0075).
+// ============================================================
+
+export type TalentOpportunityDetail = {
+  id: string;
+  title: string;
+  description: string | null;
+  categoryId: string | null;
+  categoryName: string | null;
+  status: string;
+  createdAt: string;
+};
+
+// talent_opportunities has exactly one FK to talent_categories
+// (category_id) — no ambiguity, no hint needed here (unlike the
+// model_profiles/profiles embeds elsewhere in this file).
+export async function getOpportunityDetailForAdmin(opportunityId: string): Promise<TalentOpportunityDetail | null> {
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from("talent_opportunities")
+    .select("id, title, description, category_id, status, created_at, talent_categories(name)")
+    .eq("id", opportunityId)
+    .maybeSingle();
+  if (error || !data) {
+    if (error) console.error("[talent] failed to load opportunity detail", error.message);
+    return null;
+  }
+  return {
+    id: data.id,
+    title: data.title,
+    description: data.description,
+    categoryId: data.category_id,
+    categoryName: (data.talent_categories as unknown as { name: string } | null)?.name ?? null,
+    status: data.status,
+    createdAt: data.created_at,
+  };
+}
+
+export type TalentOpportunityCandidateRow = { candidacyId: string; profileId: string; name: string | null; memberNumber: string | null; status: string; createdAt: string };
+
+// FK-disambiguation reminder applied from the start this time (2026-09-09)
+// — talent_opportunity_candidates has exactly one FK to model_profiles
+// (profile_id), so that outer embed needs no hint, but model_profiles
+// itself still has three FKs to profiles (id, representation_status_changed_by,
+// publication_status_changed_by — see talentOverview.ts's own
+// TALENT_PROFILE_SELECT comment for the original incident), so the
+// NESTED profiles embed inside model_profiles still needs
+// !model_profiles_id_fkey to avoid reproducing that exact
+// "Could not embed because more than one relationship was found" error.
+export async function listCandidatesForOpportunity(opportunityId: string): Promise<TalentOpportunityCandidateRow[]> {
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from("talent_opportunity_candidates")
+    .select("id, profile_id, status, created_at, model_profiles(profiles!model_profiles_id_fkey(full_name, member_number))")
+    .eq("opportunity_id", opportunityId)
+    .order("created_at", { ascending: true });
+  if (error) {
+    console.error("[talent] failed to list opportunity candidates", error.message);
+    return [];
+  }
+  return (data ?? []).map((row) => {
+    const modelProfile = row.model_profiles as unknown as { profiles: { full_name: string | null; member_number: string | null } | null } | null;
+    return {
+      candidacyId: row.id,
+      profileId: row.profile_id,
+      name: modelProfile?.profiles?.full_name ?? null,
+      memberNumber: modelProfile?.profiles?.member_number ?? null,
+      status: row.status,
+      createdAt: row.created_at,
+    };
+  });
+}
+
+export type TalentProfileCandidacyRow = { candidacyId: string; opportunityId: string; opportunityTitle: string; status: string; createdAt: string };
+
+// talent_opportunity_candidates has exactly one FK to talent_opportunities
+// (opportunity_id) — no ambiguity, no hint needed.
+export async function listCandidaciesForProfile(profileId: string): Promise<TalentProfileCandidacyRow[]> {
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from("talent_opportunity_candidates")
+    .select("id, opportunity_id, status, created_at, talent_opportunities(title)")
+    .eq("profile_id", profileId)
+    .order("created_at", { ascending: false });
+  if (error) {
+    console.error("[talent] failed to list candidacies for profile", error.message);
+    return [];
+  }
+  return (data ?? []).map((row) => ({
+    candidacyId: row.id,
+    opportunityId: row.opportunity_id,
+    opportunityTitle: (row.talent_opportunities as unknown as { title: string } | null)?.title ?? "—",
+    status: row.status,
+    createdAt: row.created_at,
+  }));
+}
+
+export type TalentCandidateOption = { profileId: string; name: string | null; memberNumber: string | null };
+
+// Same "fetch separately, combine with a Set" pattern as
+// listTalentOnboardingCandidates() above — every existing talent minus
+// whoever is already a candidate for THIS specific opportunity, so the
+// Add Candidate form only ever offers people not already added
+// (duplicate protection's primary layer; the DB unique constraint,
+// surfaced via addCandidateToOpportunity()'s 23505 handling, is the
+// backstop).
+export async function listAvailableCandidatesForOpportunity(opportunityId: string): Promise<TalentCandidateOption[]> {
+  const admin = createAdminClient();
+  const [{ data: allProfiles, error: profilesError }, { data: existing, error: existingError }] = await Promise.all([
+    admin.from("model_profiles").select("id, profiles!model_profiles_id_fkey(full_name, member_number)"),
+    admin.from("talent_opportunity_candidates").select("profile_id").eq("opportunity_id", opportunityId),
+  ]);
+  if (profilesError || existingError) {
+    console.error("[talent] failed to list available opportunity candidates", profilesError?.message ?? existingError?.message);
+    return [];
+  }
+  const alreadyCandidates = new Set((existing ?? []).map((r) => r.profile_id as string));
+  return (allProfiles ?? [])
+    .filter((r) => !alreadyCandidates.has(r.id as string))
+    .map((r) => {
+      const profile = r.profiles as unknown as { full_name: string | null; member_number: string | null } | null;
+      return { profileId: r.id as string, name: profile?.full_name ?? null, memberNumber: profile?.member_number ?? null };
+    });
+}
