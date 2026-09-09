@@ -11,9 +11,9 @@ import {
   setRepresentationStatusAction,
   setPublicationStatusAction,
   setTalentMeasurementsAction,
-  assignTalentCategoryAction,
   removeTalentCategoryAction,
 } from "../actions";
+import { AssignCategoryForm } from "./AssignCategoryForm";
 
 export const metadata: Metadata = { title: "Talent Profile — Ordift Studios Admin", robots: { index: false, follow: false } };
 
@@ -124,21 +124,7 @@ export default async function AdminTalentProfileDetailPage({ params }: { params:
           <p className="font-sans text-body-small text-ordift-ink-muted italic">No categories assigned yet.</p>
         )}
         {unassignedCategories.length > 0 ? (
-          <form action={assignTalentCategoryAction} className="flex items-end gap-3 flex-wrap pt-2 border-t border-black/10">
-            <input type="hidden" name="profileId" value={detail.profileId} />
-            <Field label="Assign category">
-              <select name="categoryId" className={inputClass}>
-                {unassignedCategories.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                  </option>
-                ))}
-              </select>
-            </Field>
-            <button type="submit" className="rounded-lg border border-black/15 px-4 py-2 font-sans text-caption font-semibold text-ordift-ink">
-              Assign
-            </button>
-          </form>
+          <AssignCategoryForm profileId={detail.profileId} categories={unassignedCategories} />
         ) : categories.length === 0 ? (
           <p className="font-sans text-body-small text-ordift-ink-muted italic">
             No talent categories exist yet — add one from the <Link href="/admin/talent" className="underline">Talent Management</Link> overview.

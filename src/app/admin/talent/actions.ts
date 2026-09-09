@@ -106,16 +106,33 @@ export async function createTalentCategoryAction(_prevState: CreateTalentCategor
   return { ok: true };
 }
 
-export async function assignTalentCategoryAction(formData: FormData): Promise<void> {
+// Assign-category button feedback (2026-09-09) — same useActionState
+// pending/success/error shape as createTalentCategoryAction/
+// createTalentProfileAction (AddCategoryForm.tsx/NewTalentForm.tsx),
+// reused rather than invented fresh: the form previously bound
+// directly to this action with no client wrapper, so a click gave no
+// pending state and, on failure, no feedback at all (only a
+// server-side console.error — a real, if unlikely, silent-failure gap
+// this also closes). assignTalentCategory()'s own logic —
+// authorization (requireProfileAdminister -> Super Admin override),
+// the talent_profile_categories insert, its duplicate protection (DB
+// unique constraint + the caller only ever offering unassigned
+// categories), and the activity log — is completely unchanged; this
+// only changes what gets reported back to the caller.
+export type AssignCategoryState = { ok: boolean; error?: string } | null;
+
+export async function assignTalentCategoryAction(_prevState: AssignCategoryState, formData: FormData): Promise<AssignCategoryState> {
   const user = await getCurrentUser();
-  if (!user) throw new Error("Not signed in.");
+  if (!user) return { ok: false, error: "Not signed in." };
   const profileId = String(formData.get("profileId") ?? "");
   const categoryId = String(formData.get("categoryId") ?? "");
-  if (!profileId || !categoryId) return;
+  if (!profileId || !categoryId) return { ok: false, error: "Select a category to assign." };
 
   const result = await assignTalentCategory({ profileId, categoryId, actorUserId: user.id });
-  if (!result.ok) console.error("[admin] failed to assign talent category", result.error);
+  if (!result.ok) return { ok: false, error: result.error };
+
   revalidatePath(`/admin/talent/${profileId}`);
+  return { ok: true };
 }
 
 export async function removeTalentCategoryAction(formData: FormData): Promise<void> {
