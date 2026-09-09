@@ -240,7 +240,7 @@ export default async function AdminTalentProfileDetailPage({ params }: { params:
           Private talent-reference media only — never public. This is separate from the public Portfolio; nothing here is
           published anywhere on the site.
         </p>
-        <TalentMediaGallery assets={mediaGalleryItems} />
+        <TalentMediaGallery profileId={detail.profileId} assets={mediaGalleryItems} />
         <TalentMediaUpload profileId={detail.profileId} />
       </section>
     </div>

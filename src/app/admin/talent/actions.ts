@@ -10,7 +10,7 @@ import { isValidCommissionType } from "@/lib/talent/talentCommercialTerms";
 import { createOpportunity, transitionOpportunityStatus } from "@/lib/talent/talentOpportunitiesEngine";
 import { addCandidateToOpportunity, transitionCandidateStatus } from "@/lib/talent/talentOpportunityCandidatesEngine";
 import { isValidCandidacyStatus } from "@/lib/talent/talentCandidacyLifecycle";
-import { requestTalentMediaUploadAuthorization, recordTalentMediaAsset } from "@/lib/talent/talentMediaEngine";
+import { requestTalentMediaUploadAuthorization, recordTalentMediaAsset, removeTalentMediaAsset, replaceTalentMediaAsset } from "@/lib/talent/talentMediaEngine";
 import type { RepresentationStatus } from "@/lib/talent/talentRepresentation";
 import type { TalentPublicationStatus } from "@/lib/talent/talentPublicationLifecycle";
 import type { TalentOpportunityStatus } from "@/lib/talent/talentOpportunityLifecycle";
@@ -359,6 +359,55 @@ export async function recordTalentMediaAssetAction(params: {
   if (!params.profileId || !params.storagePath || !params.mediaType) return { ok: false, error: "Missing upload details." };
 
   const result = await recordTalentMediaAsset({ profileId: params.profileId, storagePath: params.storagePath, mediaType: params.mediaType, caption: params.caption, actorUserId: user.id });
+  if (!result.ok) return { ok: false, error: result.error };
+
+  revalidatePath(`/admin/talent/${params.profileId}`);
+  return { ok: true };
+}
+
+// Remove + Replace milestone (2026-09-09) — same plain-async-action
+// shape as the two above, for the same reason: the client-side flow
+// around each (a confirmation step for Remove; a real upload that must
+// complete before Replace's own server call for Replace) isn't a
+// single form submission. Business logic — ownership checks, the
+// Storage-object-first-then-record ordering, and audit logging — lives
+// entirely in removeTalentMediaAsset()/replaceTalentMediaAsset(),
+// unchanged by these wrappers.
+export type RemoveTalentMediaAssetResult = { ok: true } | { ok: false; error: string };
+
+export async function removeTalentMediaAssetAction(params: { assetId: string; profileId: string }): Promise<RemoveTalentMediaAssetResult> {
+  const user = await getCurrentUser();
+  if (!user) return { ok: false, error: "Not signed in." };
+  if (!params.assetId || !params.profileId) return { ok: false, error: "Missing media asset." };
+
+  const result = await removeTalentMediaAsset({ assetId: params.assetId, profileId: params.profileId, actorUserId: user.id });
+  if (!result.ok) return { ok: false, error: result.error };
+
+  revalidatePath(`/admin/talent/${params.profileId}`);
+  return { ok: true };
+}
+
+export type ReplaceTalentMediaAssetResult = { ok: true } | { ok: false; error: string };
+
+export async function replaceTalentMediaAssetAction(params: {
+  assetId: string;
+  profileId: string;
+  newStoragePath: string;
+  mediaType: string;
+  caption: string | null;
+}): Promise<ReplaceTalentMediaAssetResult> {
+  const user = await getCurrentUser();
+  if (!user) return { ok: false, error: "Not signed in." };
+  if (!params.assetId || !params.profileId || !params.newStoragePath || !params.mediaType) return { ok: false, error: "Missing replacement details." };
+
+  const result = await replaceTalentMediaAsset({
+    assetId: params.assetId,
+    profileId: params.profileId,
+    newStoragePath: params.newStoragePath,
+    mediaType: params.mediaType,
+    caption: params.caption,
+    actorUserId: user.id,
+  });
   if (!result.ok) return { ok: false, error: result.error };
 
   revalidatePath(`/admin/talent/${params.profileId}`);

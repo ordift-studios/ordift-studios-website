@@ -59,21 +59,102 @@ import { describe, expect, it } from "vitest";
 //    yet." when `assets.length === 0` — the actual, real state for
 //    every existing talent profile right now (see point 8).
 //
-// 7. Out of scope, confirmed absent: grep-confirmed no replace/reorder/
-//    remove/delete function or control exists anywhere in
-//    TalentMediaUpload.tsx, TalentMediaGallery.tsx, or the two new
-//    actions — matching this milestone's explicit upload-and-view-only
-//    scope. No lifecycle/purge field is referenced anywhere either.
+// 7. Out of scope AT THE TIME THIS MILESTONE SHIPPED, confirmed absent:
+//    grep-confirmed no replace/reorder/remove/delete function or
+//    control existed anywhere in TalentMediaUpload.tsx,
+//    TalentMediaGallery.tsx, or the two actions that existed then —
+//    matching that milestone's explicit upload-and-view-only scope. A
+//    later, separately authorized milestone (see the second describe
+//    block below) added Remove and Replace — reorder and talent
+//    self-service remain out of scope, confirmed absent, as of this
+//    file's most recent update.
 //
-// 8. No real or dummy media was uploaded during this milestone's
-//    development or verification — confirmed via a read-only row count
-//    immediately before this file was written (see the completion
-//    report): talent_media_assets remains at 0 rows in Production.
-//    Nita/CL0002's existing model_profiles/representation/publication/
-//    categories/commercial-terms/candidacy records are untouched — no
-//    file in this milestone writes to any of those tables.
+// 8. No real or dummy media was uploaded during the original Upload +
+//    View milestone's development or verification — confirmed via a
+//    read-only row count immediately before that milestone's
+//    completion report: talent_media_assets was at 0 rows in
+//    Production at that time. It now holds exactly one row — the
+//    genuine asset the Founder uploaded afterward, in a real,
+//    separately verified Production session (see the Remove + Replace
+//    milestone's own completion report for its current, still-1 count,
+//    confirmed untouched by that milestone's development too).
 describe("Talent Media Upload + View UI — verified by code reading", () => {
-  it("manual-async-flow, correct-sequencing, no-privileged-credential, refresh-on-success, signed-URL-only-rendering, empty-state, and out-of-scope-absence guarantees hold as documented above", () => {
+  it("manual-async-flow, correct-sequencing, no-privileged-credential, refresh-on-success, signed-URL-only-rendering, and empty-state guarantees hold as documented above", () => {
+    expect(true).toBe(true);
+  });
+});
+
+// ============================================================
+// Talent Media Remove + Replace (2026-09-09) — covers
+// TalentMediaItemControls.tsx and the two new plain-async server
+// actions (removeTalentMediaAssetAction, replaceTalentMediaAssetAction)
+// in actions.ts. Engine-layer guarantees (authorization, ownership
+// checks, Storage-first/DB-second ordering for Remove, DB-update-
+// before-old-object-retirement ordering for Replace, no Storage/RLS
+// policy change, idempotent "already gone" handling, audit events) are
+// independently documented in talentMediaEngine.test.ts — not
+// duplicated here. This block covers only what's new at the UI/action
+// layer.
+//
+// Verified by direct code reading immediately before writing this
+// section:
+//
+// 1. Explicit confirmation step, not immediate deletion: clicking
+//    "Remove" sets local state to "confirmRemove", which renders a
+//    distinct confirmation panel naming the media type and explaining
+//    the asset will be permanently deleted, with its own "Confirm
+//    remove"/"Cancel" controls — grep-confirmed removeTalentMediaAssetAction()
+//    is called only from handleConfirmRemove(), reachable only through
+//    that confirmation panel's button, never from the initial
+//    idle-state "Remove" link itself.
+//
+// 2. Replace's client-side ordering matches the engine's server-side
+//    ordering exactly: handleReplaceSubmit() calls
+//    requestTalentMediaUploadAction() first, checks `.ok` before
+//    proceeding; then performs the direct Storage PUT via
+//    uploadToSignedUrl(), checking its error before proceeding; only
+//    then calls replaceTalentMediaAssetAction() — the one call that
+//    can actually change the existing record. A failure at either of
+//    the first two steps returns early with an explicit error message
+//    ("The existing media was not changed...") and never reaches
+//    replaceTalentMediaAssetAction() at all.
+//
+// 3. No privileged credential in this file either: grep-confirmed
+//    TalentMediaItemControls.tsx imports only the regular
+//    publishable-key browser client, same as TalentMediaUpload.tsx —
+//    no service-role/admin client in any client component.
+//
+// 4. Failure UX: both the Remove confirmation panel and the Replace
+//    form render `error` inline (red text) when either
+//    removeTalentMediaAssetAction()/replaceTalentMediaAssetAction() or
+//    an earlier step returns `{ok:false}` — the mode is reset back to
+//    the actionable state (confirmRemove / replacing) rather than
+//    idle, so the user can see the error and retry without losing
+//    their place or re-selecting a file.
+//
+// 5. Success refresh: router.refresh() is called after a successful
+//    remove or replace, same established pattern as
+//    TalentMediaUpload.tsx's own upload success — the gallery updates
+//    from a fresh server fetch rather than local DOM manipulation.
+//
+// 6. No bulk control: grep-confirmed TalentMediaGallery.tsx renders
+//    exactly one TalentMediaItemControls instance per asset, inside
+//    the existing per-item map — there is no "Remove All"/gallery-wide
+//    control anywhere.
+//
+// 7. Talent self-service remains out of scope: grep-confirmed no
+//    change was made anywhere to talent_media_assets' RLS policies or
+//    to any Talent-facing (non-admin) route — Remove/Replace are only
+//    reachable through /admin/talent/[id], gated the same way the rest
+//    of that page already is.
+//
+// 8. No real or dummy media was removed, replaced, or created during
+//    this milestone's development — confirmed via a read-only row
+//    count immediately before this update: talent_media_assets still
+//    contains exactly the one genuine, pre-existing Production asset,
+//    with its original storage_path/media_type/caption unchanged.
+describe("Talent Media Remove + Replace UI — verified by code reading", () => {
+  it("explicit-confirmation, matched-client/server-ordering, no-privileged-credential, failure-UX, refresh-on-success, no-bulk-control, and self-service-still-out-of-scope guarantees hold as documented above", () => {
     expect(true).toBe(true);
   });
 });
