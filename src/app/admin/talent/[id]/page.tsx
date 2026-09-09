@@ -2,8 +2,9 @@ import type { Metadata } from "next";
 import { redirect, notFound } from "next/navigation";
 import Link from "next/link";
 import { getCurrentUser, hasRole, isSuperAdmin } from "@/lib/portal/roles";
-import { getTalentProfileDetailForAdmin, getCommercialTermsForProfile, listCandidaciesForProfile } from "@/lib/talent/talentOverview";
+import { getTalentProfileDetailForAdmin, getCommercialTermsForProfile, listCandidaciesForProfile, listTalentMediaAssetsForProfile } from "@/lib/talent/talentOverview";
 import { getTalentMeasurements } from "@/lib/talent/talentMeasurementsEngine";
+import { getTalentMediaDownloadUrl } from "@/lib/talent/talentMediaEngine";
 import { listTalentCategories } from "@/lib/talent/talentProfiles";
 import { REPRESENTATION_STATUSES } from "@/lib/talent/talentRepresentation";
 import { TALENT_PUBLICATION_STATUSES } from "@/lib/talent/talentPublicationLifecycle";
@@ -15,6 +16,8 @@ import {
 } from "../actions";
 import { AssignCategoryForm } from "./AssignCategoryForm";
 import { CommercialTermsForm } from "./CommercialTermsForm";
+import { TalentMediaGallery, type TalentMediaGalleryItem } from "./TalentMediaGallery";
+import { TalentMediaUpload } from "./TalentMediaUpload";
 
 export const metadata: Metadata = { title: "Talent Profile — Ordift Studios Admin", robots: { index: false, follow: false } };
 
@@ -42,14 +45,28 @@ export default async function AdminTalentProfileDetailPage({ params }: { params:
   if (!user || (!hasRole(user, "admin") && !isSuperAdmin(user))) redirect("/admin/overview");
 
   const { id } = await params;
-  const [detail, measurements, categories, commercialTerms, candidacies] = await Promise.all([
+  const [detail, measurements, categories, commercialTerms, candidacies, mediaAssets] = await Promise.all([
     getTalentProfileDetailForAdmin(id),
     getTalentMeasurements(id),
     listTalentCategories(),
     getCommercialTermsForProfile(id),
     listCandidaciesForProfile(id),
+    listTalentMediaAssetsForProfile(id),
   ]);
   if (!detail) notFound();
+
+  // Signed view URLs resolved server-side, one per asset, short-lived
+  // (5 minutes) — never a raw bucket/path handed to the browser. An
+  // asset whose signed URL fails to generate is simply omitted here
+  // rather than falling back to anything unauthorized.
+  const mediaGalleryItems = (
+    await Promise.all(
+      mediaAssets.map(async (asset): Promise<TalentMediaGalleryItem | null> => {
+        const result = await getTalentMediaDownloadUrl(asset.id, user.id);
+        return result.ok ? { id: asset.id, mediaType: asset.mediaType, caption: asset.caption, viewUrl: result.url } : null;
+      })
+    )
+  ).filter((item): item is TalentMediaGalleryItem => item !== null);
 
   const assignedCategoryIds = new Set(detail.assignedCategoryIds);
   const unassignedCategories = categories.filter((c) => !assignedCategoryIds.has(c.id));
@@ -215,6 +232,16 @@ export default async function AdminTalentProfileDetailPage({ params }: { params:
             ))}
           </div>
         )}
+      </section>
+
+      <section className="rounded-xl border border-black/10 bg-white p-6 space-y-4">
+        <h2 className="font-serif font-medium text-body text-ordift-ink">Media</h2>
+        <p className="font-sans text-body-small text-ordift-ink-muted">
+          Private talent-reference media only — never public. This is separate from the public Portfolio; nothing here is
+          published anywhere on the site.
+        </p>
+        <TalentMediaGallery assets={mediaGalleryItems} />
+        <TalentMediaUpload profileId={detail.profileId} />
       </section>
     </div>
   );

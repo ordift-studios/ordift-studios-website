@@ -226,6 +226,28 @@ export async function listTalentMediaAssetsForAdmin(limit = 50): Promise<TalentM
   return (data ?? []).map((row) => ({ id: row.id, profileId: row.profile_id, mediaType: row.media_type, storagePath: row.storage_path, caption: row.caption, uploadedAt: row.uploaded_at }));
 }
 
+// Founder/Admin Talent Media Upload + View milestone (2026-09-09) —
+// per-profile read for the new Media section on /admin/talent/[id].
+// Deliberately a plain, unembedded select filtered by profile_id — the
+// caller already knows which profile it's asking about (it's the page
+// showing that one profile), so there is no name/member-number to
+// resolve via an embed here at all, sidestepping the known
+// model_profiles/profiles PostgREST ambiguity entirely rather than
+// working around it.
+export async function listTalentMediaAssetsForProfile(profileId: string): Promise<TalentMediaAssetRow[]> {
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from("talent_media_assets")
+    .select("id, profile_id, media_type, storage_path, caption, uploaded_at")
+    .eq("profile_id", profileId)
+    .order("uploaded_at", { ascending: false });
+  if (error) {
+    console.error("[talent] failed to list talent media assets for profile", error.message);
+    return [];
+  }
+  return (data ?? []).map((row) => ({ id: row.id, profileId: row.profile_id, mediaType: row.media_type, storagePath: row.storage_path, caption: row.caption, uploadedAt: row.uploaded_at }));
+}
+
 export type TalentOverviewCounts = { totalProfiles: number; representedCount: number; categoriesCount: number; opportunitiesOpen: number; commercialTermsSetCount: number; mediaAssetsCount: number };
 
 export async function getTalentOverviewCounts(): Promise<TalentOverviewCounts> {

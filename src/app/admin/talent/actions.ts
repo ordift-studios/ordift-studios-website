@@ -10,6 +10,7 @@ import { isValidCommissionType } from "@/lib/talent/talentCommercialTerms";
 import { createOpportunity, transitionOpportunityStatus } from "@/lib/talent/talentOpportunitiesEngine";
 import { addCandidateToOpportunity, transitionCandidateStatus } from "@/lib/talent/talentOpportunityCandidatesEngine";
 import { isValidCandidacyStatus } from "@/lib/talent/talentCandidacyLifecycle";
+import { requestTalentMediaUploadAuthorization, recordTalentMediaAsset } from "@/lib/talent/talentMediaEngine";
 import type { RepresentationStatus } from "@/lib/talent/talentRepresentation";
 import type { TalentPublicationStatus } from "@/lib/talent/talentPublicationLifecycle";
 import type { TalentOpportunityStatus } from "@/lib/talent/talentOpportunityLifecycle";
@@ -316,5 +317,50 @@ export async function transitionCandidateStatusAction(_prevState: TransitionCand
 
   if (opportunityId) revalidatePath(`/admin/talent/opportunities/${opportunityId}`);
   if (profileId) revalidatePath(`/admin/talent/${profileId}`);
+  return { ok: true };
+}
+
+// ============================================================
+// Talent Media Upload + View (2026-09-09) — plain async Server
+// Actions, NOT the useActionState {ok,error} <form>-bound shape used
+// everywhere else in this file. Deliberately different: a direct-to-
+// Storage upload needs a real step to happen in the BROWSER (PUTting
+// bytes straight to Supabase Storage) BETWEEN these two server calls —
+// something a single form submission can't express. The calling
+// client component (TalentMediaUpload.tsx) calls each of these
+// directly as plain async functions, not via a form's `action` prop.
+// Business logic — authorization (requireMediaAdminister, the
+// existing talent.media.administer capability), the signed-URL
+// issuance itself, the storage-path ownership check, media-type
+// validation, and the activity log — lives entirely in
+// talentMediaEngine.ts, unchanged by this wrapper.
+// ============================================================
+
+export type RequestTalentMediaUploadResult = { ok: true; signedUrl: string; token: string; path: string } | { ok: false; error: string };
+
+export async function requestTalentMediaUploadAction(params: { profileId: string; originalFilename: string }): Promise<RequestTalentMediaUploadResult> {
+  const user = await getCurrentUser();
+  if (!user) return { ok: false, error: "Not signed in." };
+  if (!params.profileId || !params.originalFilename) return { ok: false, error: "Missing file." };
+
+  return requestTalentMediaUploadAuthorization({ profileId: params.profileId, originalFilename: params.originalFilename, actorUserId: user.id });
+}
+
+export type RecordTalentMediaAssetResult = { ok: true } | { ok: false; error: string };
+
+export async function recordTalentMediaAssetAction(params: {
+  profileId: string;
+  storagePath: string;
+  mediaType: string;
+  caption?: string | null;
+}): Promise<RecordTalentMediaAssetResult> {
+  const user = await getCurrentUser();
+  if (!user) return { ok: false, error: "Not signed in." };
+  if (!params.profileId || !params.storagePath || !params.mediaType) return { ok: false, error: "Missing upload details." };
+
+  const result = await recordTalentMediaAsset({ profileId: params.profileId, storagePath: params.storagePath, mediaType: params.mediaType, caption: params.caption, actorUserId: user.id });
+  if (!result.ok) return { ok: false, error: result.error };
+
+  revalidatePath(`/admin/talent/${params.profileId}`);
   return { ok: true };
 }
