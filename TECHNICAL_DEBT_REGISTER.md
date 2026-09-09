@@ -660,6 +660,18 @@
 
 ---
 
+### TD-067 — Pulse discovery completion metadata reports successful `created` counts with no corresponding Sanity documents found (found 2026-09-09, root cause unknown)
+
+- **Category:** Data / Correctness
+- **Severity:** Medium — no evidence yet of real data loss (the run summary is unverified, not confirmed-then-lost), but a discovery-run's own completion count cannot currently be trusted as proof that a document was actually persisted, which undermines the operational-proof standard this project applies to every other system.
+- **What:** the first-ever automatic Vercel Cron execution of `/api/cron/pulse-discovery` (2026-09-09 03:47:59–03:48:05 UTC) logged a clean completion — `activity_log`, `pulse.discovery_run`, `metadata: {created: 5, errors: [], fetched: 20, flaggedDuplicate: 3, ...}` — and a subsequent human-triggered manual run the same day (16:54:28–16:54:32 UTC) logged `created: 4, errors: []` against the same source. Direct, read-only inspection of the Production Sanity dataset (`ixbvr1n8`/`production`), both `perspective=raw` and unfiltered by date, found **no `pulseArticle` document created after 2026-08-26** — none of the reported 9 "created" items (5 + 4) exist, published or draft. The 5 documents from the original 2026-08-25/26 manual test runs remain present and accounted for (one of them was later genuinely published by a human on 2026-09-09, unrelated to this discrepancy — see `TECHNICAL_DECISION_RECORDS.md`/session record on the PetaPixel activation-state reconciliation). No `activity_log` deletion event of any kind was found for either run's window.
+- **Why not fixed now:** root cause is genuinely unknown as of this entry — found incidentally during an unrelated Pulse Cron operational-proof verification, not during a change to the discovery code itself. Per this project's standing discipline, this is being registered and investigated read-only before any code is touched, not patched speculatively.
+- **Current impact:** unknown/unconfirmed. No evidence either way that real content was lost (the "created" count may not represent genuinely-completed persistence at all — see the investigation below) versus documents having been created and later removed by an unidentified path. Discovery itself does not appear broken in a user-visible way (no errors were logged, and the existing 5 pre-existing drafts still render/behave normally), but the completion metadata's reliability as proof-of-persistence is now in question platform-wide for this code path.
+- **Pay-down trigger:** the read-only investigation section of this entry (added same day) narrows the cause; a controlled, explicitly-authorized write test may be required to fully resolve it if the read-only evidence is inconclusive — not performed as part of this entry.
+- **Status:** Open — root cause under active read-only investigation as of 2026-09-09; explicitly not resolved by this entry alone.
+
+---
+
 ## Adding new entries
 
 Any future compromise — a deferred edge case, a "fix properly later" comment, a scope-narrowing decision made under time pressure — gets an entry here at the time it's made, not retroactively. Cross-reference the relevant `TECHNICAL_DECISION_RECORDS.md` ADR if the debt stems from a documented architectural trade-off.
