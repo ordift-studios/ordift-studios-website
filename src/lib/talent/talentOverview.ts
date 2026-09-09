@@ -26,19 +26,66 @@ export type TalentProfileRow = {
 // `!model_profiles_id_fkey` hint pins it to the owner relationship,
 // the only one this query ever intended — no change to which fields
 // are selected or how they're mapped.
-const TALENT_PROFILE_LIST_SELECT =
-  "id, status, representation_status, publication_status, profiles!model_profiles_id_fkey(full_name, member_number), talent_profile_categories(talent_categories(id, name))";
+//
+// talent_profile_categories is deliberately NOT embedded here (see
+// fetchCategoryLinksByProfileId below) — there is no FK PostgREST can
+// use: talent_profile_categories.profile_id references profiles(id),
+// never model_profiles(id) (confirmed by direct schema inspection).
+// model_profiles.id and profiles.id share the same value — model_profiles
+// itself FKs to profiles — but that's value equivalence, not a schema
+// relationship between model_profiles and talent_profile_categories.
+// Trying to embed it here always failed once the profiles-embed
+// ambiguity above stopped masking it: "Could not find a relationship
+// between 'model_profiles' and 'talent_profile_categories' in the
+// schema cache" (confirmed via Production runtime logs).
+const TALENT_PROFILE_SELECT =
+  "id, status, representation_status, publication_status, profiles!model_profiles_id_fkey(full_name, member_number)";
 
-function mapTalentProfileRow(row: {
-  id: string;
-  status: string;
-  representation_status: string;
-  publication_status: string;
-  profiles: unknown;
-  talent_profile_categories: unknown;
-}): TalentProfileRow {
+type CategoryLink = { id: string; name: string };
+
+// Fetched as its own query and joined in application code by
+// profile_id/id (2026-09-09 fix) — the same "fetch separately, combine
+// with a Set/Map" pattern already used for `alreadyOnboarded` in
+// listTalentOnboardingCandidates() below, applied here because no FK
+// path exists to embed through (see TALENT_PROFILE_SELECT's comment).
+// talent_profile_categories -> talent_categories IS a real, valid,
+// unambiguous FK (confirmed by schema inspection) — only the
+// model_profiles side was ever the problem. `profileId` narrows to one
+// profile for getTalentProfileDetailForAdmin(); omitted, it loads
+// every link at once for listTalentProfiles()'s roster pass.
+async function fetchCategoryLinksByProfileId(
+  admin: ReturnType<typeof createAdminClient>,
+  profileId?: string
+): Promise<Map<string, CategoryLink[]>> {
+  const base = admin.from("talent_profile_categories").select("profile_id, talent_categories(id, name)");
+  const { data, error } = await (profileId ? base.eq("profile_id", profileId) : base);
+  if (error) {
+    console.error("[talent] failed to load talent category links", error.message);
+    return new Map();
+  }
+  const map = new Map<string, CategoryLink[]>();
+  for (const row of data ?? []) {
+    const category = row.talent_categories as unknown as CategoryLink | null;
+    if (!category) continue;
+    const key = row.profile_id as string;
+    const list = map.get(key) ?? [];
+    list.push(category);
+    map.set(key, list);
+  }
+  return map;
+}
+
+function mapTalentProfileRow(
+  row: {
+    id: string;
+    status: string;
+    representation_status: string;
+    publication_status: string;
+    profiles: unknown;
+  },
+  categories: CategoryLink[]
+): TalentProfileRow {
   const profile = row.profiles as unknown as { full_name: string | null; member_number: string | null } | null;
-  const categoryLinks = (row.talent_profile_categories as unknown as { talent_categories: { id: string; name: string } | null }[] | null) ?? [];
   return {
     profileId: row.id,
     name: profile?.full_name ?? null,
@@ -46,18 +93,21 @@ function mapTalentProfileRow(row: {
     status: row.status,
     representationStatus: row.representation_status,
     publicationStatus: row.publication_status,
-    categories: categoryLinks.map((c) => c.talent_categories?.name).filter((n): n is string => Boolean(n)),
+    categories: categories.map((c) => c.name),
   };
 }
 
 export async function listTalentProfiles(): Promise<TalentProfileRow[]> {
   const admin = createAdminClient();
-  const { data, error } = await admin.from("model_profiles").select(TALENT_PROFILE_LIST_SELECT).order("created_at", { ascending: false });
+  const [{ data, error }, categoryLinksByProfileId] = await Promise.all([
+    admin.from("model_profiles").select(TALENT_PROFILE_SELECT).order("created_at", { ascending: false }),
+    fetchCategoryLinksByProfileId(admin),
+  ]);
   if (error) {
     console.error("[talent] failed to list talent profiles", error.message);
     return [];
   }
-  return (data ?? []).map(mapTalentProfileRow);
+  return (data ?? []).map((row) => mapTalentProfileRow(row, categoryLinksByProfileId.get(row.id) ?? []));
 }
 
 // Admin onboarding, "Add Talent" (2026-09-09) — candidates for
@@ -179,12 +229,15 @@ export type TalentProfileDetail = TalentProfileRow & {
 
 export async function getTalentProfileDetailForAdmin(profileId: string): Promise<TalentProfileDetail | null> {
   const admin = createAdminClient();
-  const { data, error } = await admin.from("model_profiles").select(TALENT_PROFILE_LIST_SELECT).eq("id", profileId).maybeSingle();
+  const [{ data, error }, categoryLinksByProfileId] = await Promise.all([
+    admin.from("model_profiles").select(TALENT_PROFILE_SELECT).eq("id", profileId).maybeSingle(),
+    fetchCategoryLinksByProfileId(admin, profileId),
+  ]);
   if (error || !data) {
     if (error) console.error("[talent] failed to load talent profile detail", error.message);
     return null;
   }
-  const base = mapTalentProfileRow(data);
-  const categoryLinks = (data.talent_profile_categories as unknown as { talent_categories: { id: string; name: string } | null }[] | null) ?? [];
-  return { ...base, assignedCategoryIds: categoryLinks.map((c) => c.talent_categories?.id).filter((id): id is string => Boolean(id)) };
+  const categories = categoryLinksByProfileId.get(profileId) ?? [];
+  const base = mapTalentProfileRow(data, categories);
+  return { ...base, assignedCategoryIds: categories.map((c) => c.id) };
 }
