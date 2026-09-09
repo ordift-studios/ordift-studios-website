@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { requestTalentMediaUploadAction, recordTalentMediaAssetAction } from "../actions";
 import { createClient } from "@/lib/supabase/client";
 import { TALENT_MEDIA_TYPES } from "@/lib/talent/talentMediaCatalogue";
+import { validateTalentMediaFile, describeTalentMediaUploadError } from "@/lib/talent/talentMediaUploadValidation";
 
 const TALENT_MEDIA_BUCKET = "talent-media";
 
@@ -44,6 +45,17 @@ export function TalentMediaUpload({ profileId }: { profileId: string }) {
       return;
     }
 
+    // Checked before ever requesting signed-upload authorization —
+    // matches the existing talent-media bucket's own 25MB/MIME-type
+    // configuration exactly (not a new or changed limit), so an
+    // out-of-bounds file gets an immediate, specific message instead
+    // of a wasted round trip.
+    const fileValidation = validateTalentMediaFile(file);
+    if (!fileValidation.ok) {
+      setError(fileValidation.error);
+      return;
+    }
+
     setUploading(true);
 
     const authorization = await requestTalentMediaUploadAction({ profileId, originalFilename: file.name });
@@ -58,7 +70,15 @@ export function TalentMediaUpload({ profileId }: { profileId: string }) {
       .from(TALENT_MEDIA_BUCKET)
       .uploadToSignedUrl(authorization.path, authorization.token, file, { contentType: file.type });
     if (uploadError) {
-      setError("Upload failed. Please try again.");
+      // Safe fields only (message/status/statusCode) — never the
+      // signed URL, token, or raw Storage path, none of which
+      // uploadError itself carries either (confirmed by reading
+      // @supabase/storage-js's own StorageError type before writing
+      // this). Logged to the browser console only — this failure
+      // happens directly between the browser and Supabase Storage, so
+      // there is no server-side round trip to log it from instead.
+      console.error("[talent] upload to storage failed", { message: uploadError.message, status: uploadError.status, statusCode: uploadError.statusCode });
+      setError(describeTalentMediaUploadError({ message: uploadError.message, status: uploadError.status, statusCode: uploadError.statusCode }, "upload"));
       setUploading(false);
       return;
     }

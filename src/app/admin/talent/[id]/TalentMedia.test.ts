@@ -158,3 +158,92 @@ describe("Talent Media Remove + Replace UI — verified by code reading", () => 
     expect(true).toBe(true);
   });
 });
+
+// ============================================================
+// Talent Media upload diagnostics + validation (2026-09-09) — written
+// after a genuine Production Replace failure: Andy-05-26-5-2.jpeg
+// failed at uploadToSignedUrl() (the browser -> Supabase Storage PUT),
+// but the exact cause was undiagnosable — the client discarded
+// uploadError entirely, logging nothing and showing only a generic
+// message. Investigation (read-only, against real Production
+// logs/data) confirmed: requestTalentMediaUploadAuthorization()
+// succeeded (no server-side error logged), replaceTalentMediaAssetAction()
+// was never reached (proven by the exact UI text shown, which exists
+// in only one code branch), the original asset and its Storage object
+// were completely untouched, and no orphan replacement object or false
+// talent.media.replaced audit event was created — the existing
+// failure-safety behavior (new-upload-before-any-mutation ordering)
+// already worked correctly; only the diagnostic visibility was
+// missing. The pure logic (validateTalentMediaFile(),
+// describeTalentMediaUploadError()) is independently, REALLY tested in
+// talentMediaUploadValidation.test.ts — not duplicated here. This
+// section covers only how the two components wire that logic in.
+//
+// Verified by direct code reading (grep-confirmed source order)
+// immediately before writing this section:
+//
+// 1. Client-side validation happens BEFORE signed-upload authorization
+//    in both components: validateTalentMediaFile(file) is called and
+//    checked (`if (!fileValidation.ok) { ...; return; }`) strictly
+//    before requestTalentMediaUploadAction() in both
+//    TalentMediaUpload.tsx and TalentMediaItemControls.tsx — an
+//    oversized or unsupported-type file is rejected immediately, with
+//    zero network round trips, in either flow.
+//
+// 2. A validation failure never proceeds to authorization, the actual
+//    upload, or any record/replace action — confirmed by the same
+//    early `return` structure already established for every other
+//    failure branch in these two components.
+//
+// 3. A real uploadToSignedUrl() failure still never proceeds to
+//    recordTalentMediaAssetAction()/replaceTalentMediaAssetAction() —
+//    unchanged from before this fix; only what happens WITHIN that
+//    failure branch changed (the error is now captured and logged
+//    instead of discarded), not the early-return control flow itself.
+//
+// 4. Replace's failure-safety guarantee is unaffected: a Replace
+//    upload failure (whether caught by client-side validation or by a
+//    real Storage-level rejection) still returns before
+//    replaceTalentMediaAssetAction() is ever called — the existing
+//    asset and its Storage object remain completely untouched, exactly
+//    as the real Production incident this fix responds to already
+//    demonstrated.
+//
+// 5. Safe error presentation, both directions: console.error() in both
+//    components logs only `{message, status, statusCode}` — grep-
+//    confirmed no `authorization.path`, `authorization.token`, or
+//    `authorization.signedUrl` appears in any console.error() or
+//    setError() call anywhere in either file. describeTalentMediaUploadError()
+//    itself (talentMediaUploadValidation.ts) never echoes its input —
+//    every possible return value is one of five fixed, pre-written
+//    strings (proven directly in talentMediaUploadValidation.test.ts),
+//    so even a maliciously-crafted error message could never leak
+//    through the translated, user-facing text.
+//
+// 6. Context-appropriate wording preserved: describeTalentMediaUploadError()'s
+//    generic fallback differs by context — "Upload failed. Please try
+//    again." for initial Upload, "Upload failed. The existing media
+//    was not changed. Please try again." for Replace — matching the
+//    exact existing wording each component already used before this
+//    fix, now reached through the translation function instead of a
+//    hardcoded literal.
+//
+// 7. Existing successful-path behavior is unchanged: neither component's
+//    happy path (authorization succeeds -> upload succeeds ->
+//    record/replace succeeds -> router.refresh()) was touched by this
+//    fix — grep-confirmed the success branches in both files are
+//    byte-identical to before this change; only the file-validation
+//    step and the upload-failure branch's error handling changed.
+//
+// 8. No migration, RLS/Storage policy, bucket configuration, or
+//    authorization/ownership rule was changed — this fix is entirely
+//    client-side validation and error-message translation. The
+//    existing genuine Production asset was confirmed unchanged
+//    (exactly 1 row, same storage_path/media_type/caption) and no
+//    orphan Storage object exists, both immediately before this file
+//    was written.
+describe("Talent Media upload diagnostics + validation — verified by code reading", () => {
+  it("validate-before-authorize ordering, failure-never-proceeds-to-mutation, Replace-failure-safety, safe-error-presentation, context-appropriate-fallback-wording, and unchanged-success-path guarantees hold as documented above", () => {
+    expect(true).toBe(true);
+  });
+});

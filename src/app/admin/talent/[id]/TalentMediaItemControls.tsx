@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { requestTalentMediaUploadAction, replaceTalentMediaAssetAction, removeTalentMediaAssetAction } from "../actions";
 import { createClient } from "@/lib/supabase/client";
 import { TALENT_MEDIA_TYPES } from "@/lib/talent/talentMediaCatalogue";
+import { validateTalentMediaFile, describeTalentMediaUploadError } from "@/lib/talent/talentMediaUploadValidation";
 
 const TALENT_MEDIA_BUCKET = "talent-media";
 
@@ -62,6 +63,18 @@ export function TalentMediaItemControls({
       return;
     }
 
+    // Checked before ever requesting signed-upload authorization,
+    // same as TalentMediaUpload.tsx — matches the existing
+    // talent-media bucket's own 25MB/MIME-type configuration exactly
+    // (not a new or changed limit). The original asset is untouched
+    // either way — nothing irreversible has happened yet at this
+    // point regardless.
+    const fileValidation = validateTalentMediaFile(file);
+    if (!fileValidation.ok) {
+      setError(fileValidation.error);
+      return;
+    }
+
     setMode("uploading");
 
     // Steps A-D (select Replace, pick file, existing bucket
@@ -85,7 +98,12 @@ export function TalentMediaItemControls({
       .from(TALENT_MEDIA_BUCKET)
       .uploadToSignedUrl(authorization.path, authorization.token, file, { contentType: file.type });
     if (uploadError) {
-      setError("Upload failed. The existing media was not changed. Please try again.");
+      // Safe fields only — see TalentMediaUpload.tsx's identical
+      // comment for why (message/status/statusCode never carry the
+      // signed URL/token/path, and this failure has no server round
+      // trip to log from instead).
+      console.error("[talent] replacement upload to storage failed", { message: uploadError.message, status: uploadError.status, statusCode: uploadError.statusCode });
+      setError(describeTalentMediaUploadError({ message: uploadError.message, status: uploadError.status, statusCode: uploadError.statusCode }, "replace"));
       setMode("replacing");
       return;
     }
