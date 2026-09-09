@@ -46,6 +46,14 @@ export type CorporateIdentity = {
   provider: string | null;
   externalMailboxId: string | null;
   reservedAt: string;
+  // Google Workspace Corporate Email, Milestone 1B (2026-09-10) —
+  // added purely so the provisioning Admin UI can show current
+  // lifecycle state without a second read; unused by any pre-existing
+  // caller of this type.
+  provisioningType: string | null;
+  provisioningRequestedAt: string | null;
+  provisionedAt: string | null;
+  provisioningFailureReason: string | null;
 };
 
 function mapIdentity(row: {
@@ -58,6 +66,10 @@ function mapIdentity(row: {
   provider: string | null;
   external_mailbox_id: string | null;
   reserved_at: string;
+  provisioning_type?: string | null;
+  provisioning_requested_at?: string | null;
+  provisioned_at?: string | null;
+  provisioning_failure_reason?: string | null;
 }): CorporateIdentity {
   return {
     id: row.id,
@@ -69,6 +81,10 @@ function mapIdentity(row: {
     provider: row.provider,
     externalMailboxId: row.external_mailbox_id,
     reservedAt: row.reserved_at,
+    provisioningType: row.provisioning_type ?? null,
+    provisioningRequestedAt: row.provisioning_requested_at ?? null,
+    provisionedAt: row.provisioned_at ?? null,
+    provisioningFailureReason: row.provisioning_failure_reason ?? null,
   };
 }
 
@@ -76,7 +92,9 @@ export async function listCorporateIdentities(): Promise<CorporateIdentity[]> {
   const admin = createAdminClient();
   const { data, error } = await admin
     .from("corporate_identities")
-    .select("id, profile_id, email, local_part, domain, status, provider, external_mailbox_id, reserved_at")
+    .select(
+      "id, profile_id, email, local_part, domain, status, provider, external_mailbox_id, reserved_at, provisioning_type, provisioning_requested_at, provisioned_at, provisioning_failure_reason"
+    )
     .order("reserved_at", { ascending: false });
   if (error) {
     console.error("[organization] failed to load corporate_identities", error.message);

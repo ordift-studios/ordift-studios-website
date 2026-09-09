@@ -12,6 +12,7 @@ import { listAllPaymentObligations } from "@/lib/payments/payoutObligations";
 import { JURISDICTIONS } from "@/lib/organization/authority";
 import { reserveCorporateIdentityAction, createDepartmentRequestAction, createRecruitmentRequisitionAction } from "./actions";
 import { CorporateIdentityCorrection } from "./CorporateIdentityCorrection";
+import { CorporateIdentityProvisioning } from "./CorporateIdentityProvisioning";
 
 export const metadata: Metadata = {
   title: "Operations — Ordift Studios Admin",
@@ -64,8 +65,9 @@ export default async function AdminOperationsPage() {
       <section className="rounded-xl border border-black/10 bg-white p-6 space-y-4">
         <h2 className="font-serif font-medium text-body text-ordift-ink">Corporate Identities</h2>
         <p className="font-sans text-caption text-ordift-ink-muted -mt-2">
-          Reserved internally only — no external Google Workspace/Microsoft 365 mailbox integration exists yet, so
-          status never advances past what this page itself sets.
+          Reserved internally only. A provisioning request/attempt can now be exercised end-to-end against an internal
+          <strong> mock provider only</strong> (Milestone 1B, 2026-09-10) — no real Google Workspace/Microsoft 365
+          mailbox integration exists yet, so &ldquo;active&rdquo; here never means a real external mailbox exists.
         </p>
         <ul className="divide-y divide-black/5 rounded-lg border border-black/5">
           {identities.map((i) => (
@@ -74,12 +76,29 @@ export default async function AdminOperationsPage() {
                 <p className="font-sans text-body-small text-ordift-ink">{i.email}</p>
                 <p className="font-sans text-caption text-ordift-ink-muted">
                   {peopleById.get(i.profileId) ?? i.profileId} · {i.status}
+                  {i.provisioningType && ` · ${i.provisioningType}`}
                 </p>
               </div>
-              <CorporateIdentityCorrection
-                identity={{ id: i.id, email: i.email, localPart: i.localPart, domain: i.domain, status: i.status }}
-                personLabel={peopleById.get(i.profileId) ?? i.profileId}
-              />
+              <div className="flex items-start gap-3">
+                <CorporateIdentityCorrection
+                  identity={{ id: i.id, email: i.email, localPart: i.localPart, domain: i.domain, status: i.status }}
+                  personLabel={peopleById.get(i.profileId) ?? i.profileId}
+                />
+                <CorporateIdentityProvisioning
+                  identity={{
+                    id: i.id,
+                    email: i.email,
+                    status: i.status,
+                    provider: i.provider,
+                    externalMailboxId: i.externalMailboxId,
+                    provisioningType: i.provisioningType,
+                    provisioningRequestedAt: i.provisioningRequestedAt,
+                    provisionedAt: i.provisionedAt,
+                    provisioningFailureReason: i.provisioningFailureReason,
+                  }}
+                  personLabel={peopleById.get(i.profileId) ?? i.profileId}
+                />
+              </div>
             </li>
           ))}
           {identities.length === 0 && <li className="px-4 py-3 font-sans text-body-small text-ordift-ink-muted">None reserved yet.</li>}

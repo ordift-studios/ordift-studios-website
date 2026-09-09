@@ -7,6 +7,8 @@ import { normalizeRequestedLocalPart } from "@/lib/organization/corporateEmail";
 import { createDepartmentRequest } from "@/lib/organization/departmentRequests";
 import { createRecruitmentRequisition } from "@/lib/recruitment/requisitions";
 import type { Jurisdiction } from "@/lib/organization/authority";
+import { requestCorporateIdentityProvisioning, provisionCorporateIdentity } from "@/lib/organization/corporateProvisioning";
+import { mockProvisioningProvider } from "@/lib/organization/provisioningProvider";
 
 // Ordift Organizational & Administrative Architecture V1, Phase 3.3
 // (2026-08-25). Super-Admin-only, matching this whole foundation's
@@ -87,6 +89,38 @@ export async function correctCorporateIdentityLocalPartAction(params: {
     actorUserId: currentUser.id,
   });
 
+  revalidatePath("/admin/operations");
+  return result;
+}
+
+// Google Workspace Corporate Email, Milestone 1B (2026-09-10) — the
+// internal provisioning foundation, MOCK PROVIDER ONLY. Both actions
+// below require Super Admin twice over: requireSuperAdmin() here
+// (matching every other action on this page) and, independently,
+// isSuperAdminId() inside corporateProvisioning.ts itself — the same
+// defense-in-depth already used for correctCorporateIdentityLocalPartAction
+// above. `mockProvisioningProvider` is imported directly and passed in
+// explicitly — this file has no code path that could pass a different,
+// real provider, and no real provider implementation exists anywhere
+// in this codebase yet.
+export async function requestCorporateIdentityProvisioningAction(params: { identityId: string }): Promise<{ ok: true } | { ok: false; error: string }> {
+  const currentUser = await requireSuperAdmin();
+  const result = await requestCorporateIdentityProvisioning({
+    identityId: params.identityId,
+    provisioningType: "licensed_mailbox",
+    actorUserId: currentUser.id,
+  });
+  revalidatePath("/admin/operations");
+  return result;
+}
+
+export async function provisionCorporateIdentityMockAction(params: { identityId: string }): Promise<{ ok: true; externalId: string } | { ok: false; error: string }> {
+  const currentUser = await requireSuperAdmin();
+  const result = await provisionCorporateIdentity({
+    identityId: params.identityId,
+    provider: mockProvisioningProvider,
+    actorUserId: currentUser.id,
+  });
   revalidatePath("/admin/operations");
   return result;
 }
