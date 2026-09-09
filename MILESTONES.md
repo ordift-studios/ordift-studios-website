@@ -3652,8 +3652,75 @@ Following Controlled Tests #4/#5/#5B/#6 (through #6H), a full lifecycle validati
 
 ---
 
+## Pricing Engine V1 (2026-09-06/07)
+
+13 commits, migrations `0053`–`0063`: market-based service pricing across Personal Portrait (subject/group multipliers, all 6 markets, additional retouch pricing), Corporate & Headshots, Weddings & Events (with a Corporate Priority Delivery correction), Commercial/Advertising, Graphic Design (with a cross-service recommendation foundation and a Photography/Videography visual override), Content Creation, Branding & Creative Strategy (with a Discount Lifecycle refinement), Production Services (suppliers/quotes/budgets/budget changes), and Partnerships/Collaborations, plus a booking-journey pricing handoff (fixed to base64url after an initial raw-base64 encoding broke in Production, `85073d3`) and a consolidated Admin Pricing navigation (`2d62025`).
+
+**Status:** ✅ Implemented and deployed (`main`, final commit `2d62025`, 1217/1217 tests passing). **Not previously recorded here** — backfilled 2026-09-09 as part of a documentation reconciliation; see `TECHNICAL_DEBT_REGISTER.md` TD-066. Real-world use (a genuine client quote/booking flowing through the calculator) not independently confirmed.
+
+---
+
+## Partnerships → Referral Payable Bridge (2026-09-07)
+
+Migration `0064` (`8a4b836`) links the Partnerships/Collaborations schema (migration `0063`, same batch as Pricing Engine V1 above) into the existing Universal Payables obligation/payment pipeline — a referral commission is a `payment_obligation`, not a second ledger. 1329/1329 tests passing.
+
+**Status:** ✅ Implemented and deployed. No real referral, payable, or payment has been created through it (confirmed in the commit's own record); Sylvia Annang-Mensah's historical payable and `WLCMBCK` were both left untouched. Migration `0063`'s `partnership_referral_leads` table collects a referred prospect's name/email — flagged to `GOVERNANCE_HANDOVER_LOG.md` (new personal-data collection about a non-platform-user third party). **Not previously recorded here** — backfilled 2026-09-09; see TD-066.
+
+---
+
+## Organizational Structure V1 continuation (2026-09-07)
+
+Migrations `0065`–`0066` (`f8d502e`, `d3c82a8`): Financial Authority Levels 0–5 (implemented as `authority_grants` rows, reusing the existing grant/expiry/revoke/delegation/audit machinery rather than a parallel system), Acting Assignments, Background Screening (Super-Admin-only structured status, never raw sensitive documents), Employment Status (distinct from Access Status), a corporate-identity request/approval diff trail, and a 9-group role-aware admin nav reorganization. The migration's own inspection summary confirms Grade/Departments/Positions/reporting lines/Authority Grants/corporate identity/staff onboarding/recruitment requisitions/payment instructions were reused, not rebuilt or duplicated. 1379/1379 tests passing (34 new for the financial-authority pure module alone).
+
+**Status:** ✅ Implemented and deployed. Carries the identical zero-real-world-adoption caveat as the base Organizational Architecture (`PRODUCT_ROADMAP.md` Version 1.1) — no Financial Authority Level grant, Acting Assignment, or Background Screening record independently confirmed to exist in Production. Background Screening/Employment Status flagged to `GOVERNANCE_HANDOVER_LOG.md` as new sensitive-staff-data surfaces. **Not previously recorded here** — backfilled 2026-09-09; see TD-066.
+
+---
+
+## LEGAL-SYS-1 — Legal Suite Technical Infrastructure, Phases A–H (2026-09-08)
+
+Migrations `0067`–`0071` (`e344519`, `d7a4ae7`, `f086f27`): canonical numbering/master registry → controlled Official Master ingestion + Agreement Engine → Signature Engine (token-hashed external-signatory access, consent-before-signature ordering enforced at both the state machine and an atomic database compare-and-swap, append-only evidence, a MASTER→VERSION→AGREEMENT→ISSUED ARTIFACT→SHA-256→SIGNATURE EVENTS→EXECUTED ARTIFACT traceability chain) + Releases/Rights (Model/Talent, Property/Location, RAW releases; AI/synthetic-rights categories default to NOT GRANTED) + Admin (`/admin/legal`) and Client Portal (`/portal/client/legal`) UI. 1515/1515 tests passing.
+
+**Status:** ✅ Implemented and deployed. **Zero real-world use, by explicit design** — migration `0070`'s own comment: "No real agreement has been sent and no real signature request exists after this migration." Not wired to Talent's Contracts/Documents requirement. Founder-confirmed 2026-09-09 as authorized existing work — explicitly not blanket authorization for expansion. **Not previously recorded here** — backfilled 2026-09-09; see TD-066 and `TECHNICAL_DEBT_REGISTER.md` TD-065's correction.
+
+---
+
+## Talent Management: TALENT-SYS-1 foundation + Phases 1–5 (2026-09-08)
+
+`af8a8a5` ("TALENT-SYS-1: Talent Management foundation (business-line-inactive)"), `d336391` (Phase 1: data model + Sanity schema + ContentRepository), `d65489d` (Phases 2–4: admin management + Our Roster + profiles), `af8c72d` (Phase 5: Shortlist/Compare foundation), `4c6abf2` (service-page discovery integration) — migrations `0072`–`0073`, all shipped within a single day (12:12 → 15:40). **Corrects an earlier misstatement in this project's own session record, which placed this work in "August 2026" — the git-confirmed date is 2026-09-08.**
+
+**Status:** ✅ Implemented and deployed — public Talent directory (`/talent/[slug]`), Our Roster, Shortlist/Compare (`/talent/shortlist`), admin management, profiles. The foundation commit self-labels **"business-line-inactive"**; current activation state not independently re-confirmed by this reconciliation. **Not previously recorded here** — backfilled 2026-09-09; see TD-066. See `PRODUCT_ROADMAP.md` Version 2.0 for the corrected status of the system as a whole, including this session's later Commercial Terms/Opportunities/Media work and the still-open Contracts/Documents secure-storage gate (Decision Gate E.2).
+
+---
+
+## Ordift Pulse: Rights Intelligence, Official-Source Discovery, Source Manager (2026-09-08)
+
+Six commits (`9d6abca` recurring discovery + hero media workflow, `7964aa5` Original vs. Curated Publishing Model, `9f2c341` official-source discovery/rights intelligence/Source Manager, `1747b60` "Check Policy" evidence workflow, `5861a50` Official-Domain Policy Discovery Fallback, `7b80fdb` restrictive-language coverage), plus a redeploy (`e27008c`) to pick up a newly-configured Production `CRON_SECRET`.
+
+**A real Vercel Cron now exists:** `vercel.json` declares `/api/cron/pulse-discovery` on a daily 3am schedule, handled by `src/app/api/cron/pulse-discovery/route.ts`. **Founder-confirmed 2026-09-09 as intentional** — Ordift Pulse was designed to support recurring official-source discovery rather than staying permanently manual-only. This corrects a standing claim in `PRODUCT_ROADMAP.md`'s Universal Payables section that no Vercel Cron exists in this project (that statement was true when written and describes an unrelated media-lifecycle system; it is no longer true platform-wide).
+
+**Status:** ✅ Implemented and deployed. **Configured, not confirmed operationally executed** — whether the cron has successfully invoked in Production has not been independently verified as part of this reconciliation; no invocation was triggered to check. **Not previously recorded here** — backfilled 2026-09-09; see TD-066.
+
+---
+
+## Talent Management: Commercial Terms, Opportunities Admin, Media Upload/Remove/Replace (2026-09-09)
+
+Built and Production-verified this session, following the Talent foundation above: Commercial Terms Admin UI (`7439427`), an Opportunities/Candidates pipeline (`866099c`, `e60ce09`) with a PostgREST relationship-ambiguity fix along the way (`594494a`, `42615b6`), and Talent Media Upload/View (`1dad897`) then Remove/Replace (`14071db`) with upload validation + diagnostic error handling (`e2c993a`).
+
+**Status:** ✅ **Production-verified**, not merely implemented — a real Founder file-upload attempt against Talent Media Replace genuinely failed in Production; the failure was diagnosed from safe error fields (never assumed to be a file-size cause without evidence), a validation/diagnostics fix shipped, and the Founder's retry succeeded, independently confirmed read-only afterward. The temporary test asset was subsequently removed by the Founder; Talent Media is treated as closed and Production-verified as of this session.
+
+---
+
+## Journal prerender crash + TD-061 closure (2026-09-09)
+
+A real Production deployment failure (unrelated to the Talent Media work being deployed alongside it) was root-caused across two rounds: a first fix (`12cfd73`, `journalPostFragment`) was legitimate but insufficient — the redeploy failed again with an identical error digest; a second, empirically-verified fix (`b016144`, `pulseArticleFragment`), found by querying live Sanity directly via `curl` rather than static code reading alone, actually resolved it. Both wrapped bare `field[]._ref` GROQ projections in `coalesce(..., [])`, since GROQ returns `null` (not `[]`) for an unset optional array-reference field.
+
+**Status:** ✅ **Production-verified.** This fix also incidentally resolved the long-open `TECHNICAL_DEBT_REGISTER.md` TD-061 (nonexistent `/journal/[slug]` returning HTTP 500 instead of 404) — re-verified directly against Production (`90eddd2`): the cited slug and two independently-chosen nonexistent slugs all now return a clean HTTP 404. See `src/app/journal/[slug]/page.test.ts` for the regression-guard doc-test.
+
+---
+
 ## How this roadmap is maintained
 
 - Checkboxes get checked off as work ships and is approved — not before.
 - Each version is a checkpoint: per your standing approval-gate expectation, I'll present what's built for a version before moving to the next one, the same way the V1.0 checkpoint just worked.
 - If scope shifts mid-version, add a dated note here rather than silently rewriting the list, so the history of what changed and why stays legible.
+- **Documentation discipline (adopted 2026-09-09, after a ~3-day gap where ~20 commits/13 migrations shipped with no entry here — see `TECHNICAL_DEBT_REGISTER.md` TD-066):** no phase/milestone is administratively closed until this file carries its completion/status entry and every authoritative living document materially affected by that work reflects the resulting state — normally in the same commit or the immediately following documentation commit. This does **not** apply to every migration or bugfix — only when a change creates or materially changes a product capability, changes milestone status, changes an architectural/security/financial/legal decision, changes a documented dependency or gate, or makes an authoritative statement materially stale. Pure implementation-detail commits don't need an artificial entry here.

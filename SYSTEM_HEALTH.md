@@ -10,6 +10,8 @@
 
 **Staleness notice (2026-09-06, Documentation Reconciliation):** every row below is dated 2026-08-10 or earlier and has not been refreshed since, despite three-plus weeks of substantial subsequent Production work (Paystack go-live, CRM automation, Universal Payables, Organizational Architecture, External Workforce Portal, Admin Overview). This pass corrects only the "Release readiness" row below, per its specific documentation-reconciliation scope — the other 13 rows (test count, TD count, dependency risks, etc.) were **not** independently re-verified this pass and should be treated as historical unless re-checked. Authoritative on current live/not-live status: `ORDIFT_STUDIOS_MASTER_ROADMAP.md`. **Last reconciled against Production (this row only):** 2026-09-06.
 
+**Staleness notice, continued (2026-09-09, Documentation Reconciliation):** the same limitation persists — a further burst of Production work (Pricing Engine V1, Organizational Structure V1 continuation, Partnerships → Referral Payable Bridge, `LEGAL-SYS-1`, Talent Management) shipped 2026-09-06 → 09-08 with no trace here either, now corrected in `ORDIFT_STUDIOS_MASTER_ROADMAP.md`, `PRODUCT_ROADMAP.md`, and `MILESTONES.md` (see `TECHNICAL_DEBT_REGISTER.md` TD-066). This pass corrects only the "Open technical debt" row below (count only, per this document's own narrow-reconciliation convention) — the remaining rows are unchanged and should still be treated as historical unless independently re-checked.
+
 ---
 
 ## Status at a glance (2026-08-10)
@@ -25,7 +27,7 @@
 | Backup | 🟡 Manual, working, unrehearsed restore | 2026-08-10 | `DISASTER_RECOVERY.md` — weekly manual `pg_dump`, restore-into-scratch-project never rehearsed |
 | Security review | 🟢 Green | 2026-08-10 | `WORKSTREAM_I_SECURITY_REREVIEW.md` — 9 findings, 8 fixed + deployed to staging, 1 tracked as debt |
 | Dependency risks | 🟡 4 open, all low-severity/cosmetic | 2026-07-30 | `DEPENDENCY_WATCHLIST.md`, DW-001 through DW-004 |
-| Open technical debt | 🟡 ~18 open of 32 total entries | 2026-08-10 | `TECHNICAL_DEBT_REGISTER.md` — see breakdown below |
+| Open technical debt | 🟡 29 open of 57 total entries | 2026-09-09 (count only; see staleness notice above) | `TECHNICAL_DEBT_REGISTER.md` — see breakdown below |
 | Scalability posture | 🟢 Green, no near-term risk | 2026-08-10 | `TECHNOLOGY_COST_REGISTER.md`'s Scalability Assessment section |
 | Release readiness (public launch) | 🟢 Live — intentional, confirmed business decision | 2026-09-06 | Public site confirmed live via direct check against `ordiftstudios.com`; you confirmed this is intentional (site stays live while development/content population continues). See `ORDIFT_STUDIOS_MASTER_ROADMAP.md`, authoritative on this fact. |
 
