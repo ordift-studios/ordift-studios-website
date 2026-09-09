@@ -321,7 +321,7 @@ export const journalPostFragment = `{
   featured,
   format,
   "authorId": author._ref,
-  "categoryIds": categories[]._ref,
+  "categoryIds": coalesce(categories[]._ref, []),
   tags,
   ${requiredMediaAssetFragment("heroImage", "heroImage")},
   videoUrl,
@@ -329,9 +329,9 @@ export const journalPostFragment = `{
   body,
   publishedAt,
   scheduledFor,
-  "relatedPostIds": relatedPosts[]._ref,
-  "relatedProjectIds": relatedProjects[]._ref,
-  "relatedWorkshopIds": relatedWorkshops[]._ref,
+  "relatedPostIds": coalesce(relatedPosts[]._ref, []),
+  "relatedProjectIds": coalesce(relatedProjects[]._ref, []),
+  "relatedWorkshopIds": coalesce(relatedWorkshops[]._ref, []),
   newsletterExcerpt,
   ${seoFragment("seo")}
 }`;
