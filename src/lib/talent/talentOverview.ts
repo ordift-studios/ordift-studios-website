@@ -183,6 +183,37 @@ export async function listTalentCommercialTermsForAdmin(): Promise<TalentCommerc
   return (data ?? []).map((row) => ({ profileId: row.profile_id, commissionType: row.commission_type, commissionValue: row.commission_value, currency: row.currency, setAt: row.set_at }));
 }
 
+// Commercial Terms Admin UI (2026-09-09) — single-profile read for
+// /admin/talent/[id]'s new Commercial Terms section, the same
+// per-profile pattern getTalentProfileDetailForAdmin() already uses.
+// notes is included here (unlike the cross-talent listTalentCommercialTermsForAdmin()
+// above, which is deliberately narrower for the aggregate overview
+// table) since the per-profile detail view is the one place notes are
+// actually shown. commissionValue is returned as-is (Postgres numeric
+// arrives as a string) — no rounding/formatting decision made here.
+export type TalentCommercialTermsDetail = {
+  commissionType: string;
+  commissionValue: string | null;
+  currency: string | null;
+  notes: string | null;
+  setAt: string | null;
+};
+
+export async function getCommercialTermsForProfile(profileId: string): Promise<TalentCommercialTermsDetail | null> {
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from("talent_commercial_terms")
+    .select("commission_type, commission_value, currency, notes, set_at")
+    .eq("profile_id", profileId)
+    .maybeSingle();
+  if (error) {
+    console.error("[talent] failed to load commercial terms for profile", error.message);
+    return null;
+  }
+  if (!data) return null;
+  return { commissionType: data.commission_type, commissionValue: data.commission_value, currency: data.currency, notes: data.notes, setAt: data.set_at };
+}
+
 export type TalentMediaAssetRow = { id: string; profileId: string; mediaType: string; storagePath: string; caption: string | null; uploadedAt: string };
 
 export async function listTalentMediaAssetsForAdmin(limit = 50): Promise<TalentMediaAssetRow[]> {

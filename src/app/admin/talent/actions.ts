@@ -5,6 +5,8 @@ import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/portal/roles";
 import { setRepresentationStatus, setPublicationStatus, createTalentCategory, assignTalentCategory, removeTalentCategory, createTalentProfile } from "@/lib/talent/talentProfiles";
 import { setTalentMeasurements } from "@/lib/talent/talentMeasurementsEngine";
+import { setCommercialTerms } from "@/lib/talent/talentCommercialTermsEngine";
+import { isValidCommissionType } from "@/lib/talent/talentCommercialTerms";
 import type { RepresentationStatus } from "@/lib/talent/talentRepresentation";
 import type { TalentPublicationStatus } from "@/lib/talent/talentPublicationLifecycle";
 
@@ -172,4 +174,55 @@ export async function createTalentProfileAction(_prevState: CreateTalentProfileS
   revalidatePath("/admin/talent");
   revalidatePath(`/admin/talent/${profileId}`);
   redirect(`/admin/talent/${profileId}`);
+}
+
+// Commercial Terms Admin UI (2026-09-09) — same useActionState
+// pending/success/error shape as assignTalentCategoryAction/
+// createTalentProfileAction, applied from the start here (not
+// retrofitted after the fact, learning from the earlier Assign
+// Category gap). Business logic — commission-type/value validation,
+// the "never a default commission value" guarantee, currency
+// requirement for flat_fee, percentage capping, authorization
+// (requireCommercialTermsAdminister), the talent_commercial_terms
+// upsert, and the activity log — all live entirely in
+// setCommercialTerms()/validateCommercialTerms() (talentCommercialTermsEngine.ts/
+// talentCommercialTerms.ts), completely unchanged. This wrapper only
+// parses form strings into that function's existing typed params and
+// reports back what it returns — no business rule is duplicated or
+// reimplemented here.
+export type SetCommercialTermsState = { ok: boolean; error?: string } | null;
+
+export async function setCommercialTermsAction(_prevState: SetCommercialTermsState, formData: FormData): Promise<SetCommercialTermsState> {
+  const user = await getCurrentUser();
+  if (!user) return { ok: false, error: "Not signed in." };
+
+  const profileId = String(formData.get("profileId") ?? "");
+  if (!profileId) return { ok: false, error: "Missing talent profile." };
+
+  const commissionType = String(formData.get("commissionType") ?? "");
+  if (!isValidCommissionType(commissionType)) return { ok: false, error: "Select a commission type." };
+
+  // Disabled fields are never included in submitted FormData — the
+  // form disables commissionValue/currency whenever "none" is
+  // selected, so this naturally arrives as null for "none" without
+  // any special-casing here. Where a value IS submitted, it's parsed,
+  // never defaulted — validateCommercialTerms() (inside
+  // setCommercialTerms()) is the sole authority on whether it's
+  // actually required/valid for the chosen type.
+  const commissionValueRaw = String(formData.get("commissionValue") ?? "").trim();
+  let commissionValue: number | null = null;
+  if (commissionValueRaw) {
+    const parsed = Number(commissionValueRaw);
+    if (Number.isNaN(parsed)) return { ok: false, error: "Commission value must be a number." };
+    commissionValue = parsed;
+  }
+
+  const currency = String(formData.get("currency") ?? "").trim() || null;
+  const notes = String(formData.get("notes") ?? "").trim() || null;
+
+  const result = await setCommercialTerms({ profileId, commissionType, commissionValue, currency, notes, actorUserId: user.id });
+  if (!result.ok) return { ok: false, error: result.error };
+
+  revalidatePath(`/admin/talent/${profileId}`);
+  return { ok: true };
 }

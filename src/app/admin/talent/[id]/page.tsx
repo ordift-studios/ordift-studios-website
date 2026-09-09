@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { redirect, notFound } from "next/navigation";
 import Link from "next/link";
 import { getCurrentUser, hasRole, isSuperAdmin } from "@/lib/portal/roles";
-import { getTalentProfileDetailForAdmin } from "@/lib/talent/talentOverview";
+import { getTalentProfileDetailForAdmin, getCommercialTermsForProfile } from "@/lib/talent/talentOverview";
 import { getTalentMeasurements } from "@/lib/talent/talentMeasurementsEngine";
 import { listTalentCategories } from "@/lib/talent/talentProfiles";
 import { REPRESENTATION_STATUSES } from "@/lib/talent/talentRepresentation";
@@ -14,6 +14,7 @@ import {
   removeTalentCategoryAction,
 } from "../actions";
 import { AssignCategoryForm } from "./AssignCategoryForm";
+import { CommercialTermsForm } from "./CommercialTermsForm";
 
 export const metadata: Metadata = { title: "Talent Profile — Ordift Studios Admin", robots: { index: false, follow: false } };
 
@@ -41,7 +42,12 @@ export default async function AdminTalentProfileDetailPage({ params }: { params:
   if (!user || (!hasRole(user, "admin") && !isSuperAdmin(user))) redirect("/admin/overview");
 
   const { id } = await params;
-  const [detail, measurements, categories] = await Promise.all([getTalentProfileDetailForAdmin(id), getTalentMeasurements(id), listTalentCategories()]);
+  const [detail, measurements, categories, commercialTerms] = await Promise.all([
+    getTalentProfileDetailForAdmin(id),
+    getTalentMeasurements(id),
+    listTalentCategories(),
+    getCommercialTermsForProfile(id),
+  ]);
   if (!detail) notFound();
 
   const assignedCategoryIds = new Set(detail.assignedCategoryIds);
@@ -130,6 +136,36 @@ export default async function AdminTalentProfileDetailPage({ params }: { params:
             No talent categories exist yet — add one from the <Link href="/admin/talent" className="underline">Talent Management</Link> overview.
           </p>
         ) : null}
+      </section>
+
+      <section className="rounded-xl border border-black/10 bg-white p-6 space-y-4">
+        <h2 className="font-serif font-medium text-body text-ordift-ink">Commercial terms</h2>
+        <p className="font-sans text-body-small text-ordift-ink-muted">
+          Standing commission/fee terms only — never a default value, and entirely separate from Payables. Setting terms here has no
+          effect on representation, publication, or any booking/payment record.
+        </p>
+        {commercialTerms ? (
+          <div className="rounded-lg bg-black/5 px-4 py-3 space-y-1">
+            <p className="font-sans text-body-small text-ordift-ink">
+              <span className="font-semibold capitalize">{commercialTerms.commissionType.replace("_", " ")}</span>
+              {commercialTerms.commissionValue !== null && (
+                <>
+                  {" — "}
+                  {commercialTerms.commissionValue}
+                  {commercialTerms.commissionType === "percentage" ? "%" : ""}
+                  {commercialTerms.currency ? ` ${commercialTerms.currency}` : ""}
+                </>
+              )}
+            </p>
+            {commercialTerms.notes && <p className="font-sans text-caption text-ordift-ink-muted">{commercialTerms.notes}</p>}
+            {commercialTerms.setAt && (
+              <p className="font-sans text-caption text-ordift-ink-muted">Set {new Date(commercialTerms.setAt).toLocaleDateString()}</p>
+            )}
+          </div>
+        ) : (
+          <p className="font-sans text-body-small text-ordift-ink-muted italic">No commercial terms set yet.</p>
+        )}
+        <CommercialTermsForm profileId={detail.profileId} current={commercialTerms} />
       </section>
 
       <section className="rounded-xl border border-black/10 bg-white p-6 space-y-4">
