@@ -1,6 +1,6 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { logActivity } from "@/lib/admin/activityLog";
-import { isSuperAdminId, hasJurisdictionAuthority, PROTECTED_LEADERSHIP_POSITION_SLUGS } from "@/lib/organization/authority";
+import { isSuperAdminId, isStaffId, hasJurisdictionAuthority, PROTECTED_LEADERSHIP_POSITION_SLUGS } from "@/lib/organization/authority";
 
 // Shared core of Position assignment — the single place that resolves
 // Department + Craft (operational_title_id) + Grade + direct manager
@@ -69,6 +69,20 @@ export async function assignStaffPosition(params: {
     if (currentSlug && PROTECTED_LEADERSHIP_POSITION_SLUGS.has(currentSlug)) {
       return { ok: false, error: "Only a Super Admin can change a leadership Position holder's assignment." };
     }
+  }
+
+  // Staff-role integrity guard (E.5 Stage 2C/2D, 2026-09-11) — a
+  // target-eligibility check, applied regardless of who the actor is
+  // (Super Admin included), not an actor-privilege check. Only gates
+  // actually ASSIGNING a Position (positionId truthy) — clearing one
+  // (positionId null) is never blocked, since there's nothing to
+  // protect against there. Never grants, revokes, or infers a role;
+  // only refuses the write if the target doesn't already, genuinely
+  // hold `staff`. A contractor/vendor/model/client account is never
+  // silently converted to staff by this check, nor by anything else in
+  // this function — it simply cannot receive a formal Position at all.
+  if (positionId && !(await isStaffId(targetUserId))) {
+    return { ok: false, error: "A formal organizational Position can only be assigned to an account that holds the staff role." };
   }
 
   const { data: previous } = await admin

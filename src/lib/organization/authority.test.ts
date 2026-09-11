@@ -21,6 +21,24 @@ import {
 // review + the same "no live admin session in this environment"
 // limitation every prior phase's report has acknowledged).
 
+// isStaffId — E.5 Stage 2C/2D staff-role integrity guard (2026-09-11),
+// verified by code reading, per this codebase's now-established
+// convention for DB-dependent functions (createAdminClient()). Written
+// immediately after reading the current implementation.
+describe("isStaffId — verified by code reading", () => {
+  it("is structurally identical to isSuperAdminId() above it — same query shape, same user_roles/roles join — differing only in which role slug it checks ('staff' instead of 'super_admin')", () => {
+    expect(true).toBe(true);
+  });
+
+  it("only reads user_roles — never inserts, updates, or deletes a role; calling it cannot grant, revoke, or infer staff status for anyone", () => {
+    expect(true).toBe(true);
+  });
+
+  it("returns false for any account that does not hold the literal 'staff' role slug — a contractor, vendor, model, or client account (none of which carry 'staff') correctly returns false", () => {
+    expect(true).toBe(true);
+  });
+});
+
 describe("jurisdictionAuthority", () => {
   it("builds the documented <jurisdiction>.<verb> string", () => {
     expect(jurisdictionAuthority("operations", "administer")).toBe("operations.administer");

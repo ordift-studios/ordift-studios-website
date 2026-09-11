@@ -675,6 +675,19 @@
 
 ---
 
+### TD-068 — Permanent Position/Department/Grade reassignment does not preserve structured career history (found 2026-09-11, E.5 real-world validation)
+
+- **Category:** Data / Incomplete Feature
+- **Severity:** Medium (no real movement has ever happened in Production yet — one person has ever held a Position — so nothing has actually been lost; the gap is real and will matter the first time a genuine promotion/transfer occurs)
+- **What:** `assignStaffPosition()` (`src/lib/organization/assignPosition.ts`) is a plain UPSERT — it overwrites `staff_details.department_id`/`position_id`/`operational_title_id`/`grade_id`/`manager_id` in place, with no dedicated history table anywhere in the schema (confirmed by an exhaustive search — no `position_history`/`promotion_history`/`career_history`/`assignment_history` table exists). Its own `activity_log` trail is materially incomplete: the function's `previous` read only fetches `position_id`/`grade_id`/`manager_id` — it never reads the prior `department_id` or `operational_title_id` at all, so those two fields' changes are completely invisible to the audit trail, not merely unlogged. No `reason`, no `approved_by` distinct from the generic actor, no `effective_at` distinct from "when the button was clicked," and nothing computes or stores *what kind* of movement occurred (promotion vs. lateral transfer vs. reassignment to a lower grade). By contrast, `acting_assignments` (migration `0065`) already models exactly this shape correctly — `reason`, `approved_by`, `start_date`/`end_date` — but only for *temporary* assignments; it deliberately never touches the permanent Position/Grade.
+- **Why accepted:** found incidentally during Decision Gate E.5's real-world validation, before any real movement had occurred to actually lose data for. Building the full history system now, for a one-person organization with zero real movements, would be solving a problem that doesn't exist yet at the expense of validating the (correctly-designed) foundation that does exist today.
+- **Current impact:** none yet — no real Production career movement has ever happened. Becomes real the first time someone is promoted, transferred, or reassigned to a lower grade.
+- **Pay-down trigger:** before the organizational architecture is considered mature for a larger workforce, and in any case before Mishael Adjei's own anticipated future move into Creative & Production (explicitly discussed during E.5, not implemented) — that move should not be the one that first exposes this gap.
+- **Required shape for the eventual fix** (not implemented here): support for same-department promotion, interdepartmental promotion, lateral transfer, same-grade Position change, transfer/reassignment to a lower grade (never auto-labeled a promotion), and repeated future movements — each recording previous *and* destination Position/Department/Grade/Operational Title/Manager, a movement classification, `effective_at`, `reason`, `approved_by`, as an immutable historical record. `acting_assignments` stays a separate, deliberately-distinct mechanism for temporary assignments — this entry is only about the permanent-Position path.
+- **Status:** Open — registered as a controlled Sequence 1 follow-up, not scheduled for implementation as part of E.5 itself.
+
+---
+
 ## Adding new entries
 
 Any future compromise — a deferred edge case, a "fix properly later" comment, a scope-narrowing decision made under time pressure — gets an entry here at the time it's made, not retroactively. Cross-reference the relevant `TECHNICAL_DECISION_RECORDS.md` ADR if the debt stems from a documented architectural trade-off.

@@ -471,6 +471,26 @@ export async function isSuperAdminId(profileId: string): Promise<boolean> {
   return Boolean(data);
 }
 
+// Staff-role integrity guard (E.5 Stage 2C/2D, 2026-09-11) — same
+// shape as isSuperAdminId() above, deliberately: a permanent staff
+// organizational Position must only ever be assignable to an account
+// that genuinely holds the `staff` system role. Before this, nothing
+// checked that — assignStaffPosition() relied entirely on Super Admin
+// judgment. This is a target-eligibility check, not an actor-privilege
+// check: it applies to every caller, Super Admin included, and it
+// never grants, revokes, or infers a role — it only reads user_roles.
+export async function isStaffId(profileId: string): Promise<boolean> {
+  const admin = createAdminClient();
+  const { data } = await admin
+    .from("user_roles")
+    .select("roles!inner(slug)")
+    .eq("user_id", profileId)
+    .eq("roles.slug", "staff")
+    .limit(1)
+    .maybeSingle();
+  return Boolean(data);
+}
+
 // The six leadership Positions no capability short of Super Admin may
 // reassign — CHIEF itself, and all six GR.9 peer executives (a holder
 // of operations.administer may perform routine staff Position
