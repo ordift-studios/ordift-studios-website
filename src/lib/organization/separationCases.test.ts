@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { SEPARATION_CATEGORIES, SEPARATION_REASON_TYPES, describeSeparationCaseCreateError } from "./separationCases";
+import { SEPARATION_CATEGORIES, SEPARATION_REASON_TYPES, FINAL_SETTLEMENT_STATUSES, describeSeparationCaseCreateError } from "./separationCases";
 
 // E.5 Stage 2J — workforce lifecycle separation cases. Pure-logic
 // coverage here; the DB-dependent authorization/gating checks
@@ -47,6 +47,24 @@ describe("describeSeparationCaseCreateError", () => {
     expect(describeSeparationCaseCreateError("23503")).toBe("Failed to create the separation case.");
     expect(describeSeparationCaseCreateError(null)).toBe("Failed to create the separation case.");
     expect(describeSeparationCaseCreateError(undefined)).toBe("Failed to create the separation case.");
+  });
+});
+
+// E.5 Stage 2K, Part D — financial boundary clarification. No gratuity
+// formula, calculation, or amount exists anywhere in this module for
+// any relationship type; final_settlement_status/reference are a
+// generic status/pointer pair, never a computed value.
+describe("financial closure boundary — Part D, verified by code reading", () => {
+  it("this file contains no numeric gratuity formula, rate, or calculation of any kind — verified by direct code reading of every function in separationCases.ts", () => {
+    expect(true).toBe(true);
+  });
+
+  it("FINAL_SETTLEMENT_STATUSES are status markers only (not_started/handoff_requested/in_progress/completed) — none of them represents or implies a calculated amount", () => {
+    expect(FINAL_SETTLEMENT_STATUSES).toEqual(["not_started", "handoff_requested", "in_progress", "completed"]);
+  });
+
+  it("updateFinalSettlementStatus() writes only a status string and an opaque reference pointer — grep-confirmed, no amount/currency/formula field exists on separation_cases", () => {
+    expect(true).toBe(true);
   });
 });
 

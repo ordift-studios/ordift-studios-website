@@ -33,6 +33,29 @@ export type SeparationCaseStatus = (typeof SEPARATION_CASE_STATUSES)[number];
 export const NOTICE_POLICY_SOURCES = ["contract", "company_policy", "statutory_override", "unresolved"] as const;
 export type NoticePolicySource = (typeof NOTICE_POLICY_SOURCES)[number];
 
+// Financial closure boundary (E.5 Stage 2K, Part D, clarified —
+// no schema/migration change, this field's meaning was always this
+// narrow, but is made explicit here to remove future ambiguity).
+// final_settlement_status/final_settlement_reference are a generic
+// STATUS/POINTER pair used by every relationship type's clearance —
+// but what they point TO is fundamentally different per relationship
+// and must stay that way:
+//   - Staff/Employee -> a future formal Final Settlement process
+//     (salary to final working date, eligible allowances, lawful
+//     deductions, leave-related settlement, Ordift Service Gratuity/
+//     Long-Service Benefit where applicable) — none of this is
+//     calculated or implemented here; this column only marks that a
+//     handoff to that future process has occurred.
+//   - Vendor/Supplier -> outstanding purchase/order/invoice obligations.
+//   - Contractor -> outstanding contractual compensation/obligations.
+//   - Instructor -> workshop/facilitator compensation.
+//   - Model/Talent -> applicable talent/engagement compensation.
+//   - Collaborator/other external contributor -> applicable engagement terms.
+// Clearance may check whether financial obligations are resolved
+// (existing Payables system, untouched) — it must NEVER calculate or
+// imply an employee gratuity/final-settlement amount for a non-staff
+// relationship. No formula or calculation exists anywhere in this
+// module for any relationship type.
 export const FINAL_SETTLEMENT_STATUSES = ["not_started", "handoff_requested", "in_progress", "completed"] as const;
 export type FinalSettlementStatus = (typeof FINAL_SETTLEMENT_STATUSES)[number];
 

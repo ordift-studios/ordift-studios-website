@@ -54,6 +54,19 @@ export type RequirementTemplate = {
   // a derived result. Returning null means "no live opinion — fall
   // back to a persisted row, or pending."
   derive?: (profileId: string) => Promise<RequirementStatus | null>;
+  // TD-071, B1 (E.5 Stage 2K) — an agreement/document requirement may
+  // need digital execution, physical-original execution, both, or
+  // neither; the REQUIREMENT DEFINITION decides which, never assumed.
+  // When either flag is set, a manual "satisfied"/"pending" status is
+  // no longer trusted as-is — see applyConfiguredEvidenceStatus():
+  // this requirement's effective status is instead computed from the
+  // row's own digitalExecutionStatus/physicalOriginalReceived fields,
+  // so a requirement can only genuinely read "satisfied" once its
+  // actually-configured evidence exists. "waived"/"not_applicable"
+  // remain valid manual overrides regardless (a real human decision
+  // that a requirement doesn't apply), never silently bypassed.
+  requiresDigitalExecution?: boolean;
+  requiresPhysicalExecution?: boolean;
 };
 
 export type OnboardingRequirementRow = {
@@ -81,21 +94,61 @@ export type OnboardingRequirementRow = {
 // merged with whatever state actually exists (persisted row, derived
 // result, or the "pending" default), so callers never need to reason
 // about the three sources separately.
-export type ResolvedRequirement = RequirementTemplate & {
+//
+// Deliberately Omit<..., "derive"> — this type crosses the Server
+// Component -> Client Component boundary as a page prop (the
+// Onboarding Workspace), and a plain JS function (a catalog template's
+// `derive`) cannot be serialized across that boundary. React throws
+// "Functions cannot be passed directly to Client Components" at
+// render time — which Next.js returns as an HTTP 200 with a broken RSC
+// payload, not a clean error page, which is exactly what produced the
+// Founder's "loads/spins forever" symptom in Production (E.5 Stage 2K,
+// found via Vercel runtime logs, not speculation). `isDerived` carries
+// the one boolean bit of that information the UI actually needs.
+export type ResolvedRequirement = Omit<RequirementTemplate, "derive"> & {
   status: RequirementStatus;
   row: OnboardingRequirementRow | null;
+  isDerived: boolean;
 };
 
+// Pure — the one place that strips `derive` before a resolved
+// requirement is ever allowed to cross into a Client Component prop.
+// Reused as-is by separationRequirements.ts (E.5 Stage 2K) for the
+// identical reason. Directly unit-tested (onboardingRequirements.test.ts)
+// specifically to prove the Production defect this fixes can't recur:
+// the returned object must never carry a `derive` key.
+export function toClientSafeResolvedRequirement<T extends RequirementTemplate, R>(
+  template: T,
+  status: RequirementStatus,
+  row: R
+): Omit<T, "derive"> & { status: RequirementStatus; row: R; isDerived: boolean } {
+  const { derive, ...rest } = template;
+  return { ...rest, status, row, isDerived: Boolean(derive) } as Omit<T, "derive"> & { status: RequirementStatus; row: R; isDerived: boolean };
+}
+
+// TD-071, B2 fix (E.5 Stage 2K, 2026-09-12) — the original version of
+// this function checked whether ANY ONE screening category qualified
+// (`.limit(1).maybeSingle()`), so a single cleared category (e.g.
+// `education`) could satisfy this requirement even while other
+// recorded categories for the same profile were `pending`,
+// `review_required`, or `adverse_information_identified`. Fixed to
+// fail closed: every category actually recorded for this profile must
+// qualify, and at least one must exist — a single non-qualifying
+// recorded category, or no screening at all, now correctly leaves this
+// requirement unsatisfied. This still doesn't decide WHICH categories
+// are mandatory for a given role/jurisdiction — that remains a real
+// future policy decision (see TD-071's own note) — it only ensures
+// that whatever has genuinely been checked must have genuinely passed,
+// never that one lucky category papers over others. Background
+// Screening itself remains the untouched source of truth — this
+// function only reads it, exactly as before.
 async function deriveFromBackgroundScreening(profileId: string): Promise<RequirementStatus | null> {
   const admin = createAdminClient();
-  const { data } = await admin
-    .from("background_screenings")
-    .select("status")
-    .eq("profile_id", profileId)
-    .in("status", ["clear", "management_approved_following_review"])
-    .limit(1)
-    .maybeSingle();
-  return data ? "satisfied" : null;
+  const { data, error } = await admin.from("background_screenings").select("status").eq("profile_id", profileId);
+  if (error || !data || data.length === 0) return null;
+  const QUALIFYING_STATUSES = new Set(["clear", "management_approved_following_review"]);
+  const everyRecordedCategoryQualifies = data.every((row) => QUALIFYING_STATUSES.has(row.status));
+  return everyRecordedCategoryQualifies ? "satisfied" : null;
 }
 
 async function deriveFromCorporateIdentityReserved(profileId: string): Promise<RequirementStatus | null> {
@@ -135,6 +188,15 @@ export const EMPLOYEE_ONBOARDING_REQUIREMENT_CATALOG: readonly RequirementTempla
     label: "Employment Agreement executed",
     required: true,
     responsibleRole: "super_admin",
+    // TD-071, B1 — digital execution is the configured baseline for
+    // this starter catalog; physical-original execution is fully
+    // supported (row-level fields, UI, satisfaction rule) but not
+    // turned on by default — requiring it is a real business-policy
+    // decision this pass doesn't have authorization to make. Flip this
+    // to `true` once that decision is made; nothing else needs to
+    // change for it to take effect.
+    requiresDigitalExecution: true,
+    requiresPhysicalExecution: false,
   },
   {
     requirementKey: "policies_acknowledged",
@@ -240,6 +302,33 @@ export function computeUnsatisfiedRequired(
   });
 }
 
+// Pure — TD-071, B1 fix (E.5 Stage 2K). A requirement whose DEFINITION
+// configures digital and/or physical execution (requiresDigitalExecution/
+// requiresPhysicalExecution) can no longer be marked "satisfied" merely
+// by a manually-chosen status — its effective status is recomputed here
+// from the row's own evidence fields, so "final requirement satisfaction
+// only when the configured required components are satisfied" (the
+// authorizing instruction's own words) is enforced structurally, not by
+// admin discipline. "waived"/"not_applicable" are real human decisions
+// and always pass through unchanged — this never overrides a deliberate
+// exemption, only a bare "satisfied"/"pending" claim.
+export function applyConfiguredEvidenceStatus(
+  catalog: readonly RequirementTemplate[],
+  rowsByKey: ReadonlyMap<string, OnboardingRequirementRow>
+): Map<string, OnboardingRequirementRow> {
+  const result = new Map(rowsByKey);
+  for (const template of catalog) {
+    if (!template.requiresDigitalExecution && !template.requiresPhysicalExecution) continue;
+    const row = result.get(template.requirementKey);
+    if (!row) continue;
+    if (row.status === "waived" || row.status === "not_applicable") continue;
+    const digitalOk = !template.requiresDigitalExecution || row.digitalExecutionStatus === "completed";
+    const physicalOk = !template.requiresPhysicalExecution || row.physicalOriginalReceived === true;
+    result.set(template.requirementKey, { ...row, status: digitalOk && physicalOk ? "satisfied" : "pending" });
+  }
+  return result;
+}
+
 async function fetchRowsByKey(onboardingId: string): Promise<Map<string, OnboardingRequirementRow>> {
   const admin = createAdminClient();
   const { data, error } = await admin.from("onboarding_requirements").select(SELECT).eq("onboarding_id", onboardingId);
@@ -270,14 +359,15 @@ export async function listResolvedRequirements(params: {
   pipeline: OnboardingPipeline;
 }): Promise<ResolvedRequirement[]> {
   const catalog = catalogForPipeline(params.pipeline);
-  const [rowsByKey, derivedByKey] = await Promise.all([
+  const [rawRowsByKey, derivedByKey] = await Promise.all([
     fetchRowsByKey(params.onboardingId),
     fetchDerivedByKey(catalog, params.profileId),
   ]);
+  const rowsByKey = applyConfiguredEvidenceStatus(catalog, rawRowsByKey);
   return catalog.map((template) => {
     const row = rowsByKey.get(template.requirementKey) ?? null;
     const status: RequirementStatus = row?.status ?? derivedByKey.get(template.requirementKey) ?? "pending";
-    return { ...template, status, row };
+    return toClientSafeResolvedRequirement(template, status, row);
   });
 }
 
@@ -289,11 +379,11 @@ export async function getUnsatisfiedRequiredRequirements(params: {
   pipeline: OnboardingPipeline;
 }): Promise<RequirementTemplate[]> {
   const catalog = catalogForPipeline(params.pipeline);
-  const [rowsByKey, derivedByKey] = await Promise.all([
+  const [rawRowsByKey, derivedByKey] = await Promise.all([
     fetchRowsByKey(params.onboardingId),
     fetchDerivedByKey(catalog, params.profileId),
   ]);
-  return computeUnsatisfiedRequired(catalog, rowsByKey, derivedByKey);
+  return computeUnsatisfiedRequired(catalog, applyConfiguredEvidenceStatus(catalog, rawRowsByKey), derivedByKey);
 }
 
 // Used by stage-advance gating (Part J) — only requirements that gate
@@ -306,11 +396,11 @@ export async function getUnsatisfiedRequiredForStage(params: {
   stage: string;
 }): Promise<RequirementTemplate[]> {
   const catalog = catalogForPipeline(params.pipeline);
-  const [rowsByKey, derivedByKey] = await Promise.all([
+  const [rawRowsByKey, derivedByKey] = await Promise.all([
     fetchRowsByKey(params.onboardingId),
     fetchDerivedByKey(catalog, params.profileId),
   ]);
-  return computeUnsatisfiedRequired(catalog, rowsByKey, derivedByKey, params.stage);
+  return computeUnsatisfiedRequired(catalog, applyConfiguredEvidenceStatus(catalog, rawRowsByKey), derivedByKey, params.stage);
 }
 
 // Same coarse authorization boundary as every other onboarding action
@@ -355,7 +445,36 @@ export async function updateOnboardingRequirement(params: {
 
   const admin = createAdminClient();
   const now = new Date().toISOString();
-  const isTerminalStatus = params.status === "satisfied" || params.status === "waived" || params.status === "not_applicable";
+
+  const { data: existing } = await admin
+    .from("onboarding_requirements")
+    .select("id, digital_execution_status, physical_original_received")
+    .eq("onboarding_id", params.onboardingId)
+    .eq("requirement_key", params.requirementKey)
+    .maybeSingle();
+
+  // TD-071, B1 fail-closed enforcement (E.5 Stage 2K) — this is the
+  // authoritative write path, so the same rule applied for display
+  // (applyConfiguredEvidenceStatus()) is re-applied here against
+  // whatever is ACTUALLY submitted/on record, never trusting a
+  // client-submitted "satisfied" at face value for a requirement whose
+  // definition configures digital/physical execution. A manual
+  // "waived"/"not_applicable" is a real human decision and is never
+  // overridden.
+  let effectiveStatus = params.status;
+  if (
+    (template.requiresDigitalExecution || template.requiresPhysicalExecution) &&
+    params.status !== "waived" &&
+    params.status !== "not_applicable"
+  ) {
+    const effectiveDigitalStatus = params.digitalExecutionStatus !== undefined ? params.digitalExecutionStatus : (existing?.digital_execution_status ?? null);
+    const effectivePhysicalReceived = params.physicalOriginalReceived !== undefined ? params.physicalOriginalReceived : (existing?.physical_original_received ?? false);
+    const digitalOk = !template.requiresDigitalExecution || effectiveDigitalStatus === "completed";
+    const physicalOk = !template.requiresPhysicalExecution || effectivePhysicalReceived === true;
+    effectiveStatus = digitalOk && physicalOk ? "satisfied" : "pending";
+  }
+
+  const isTerminalStatus = effectiveStatus === "satisfied" || effectiveStatus === "waived" || effectiveStatus === "not_applicable";
 
   const row: Record<string, unknown> = {
     onboarding_id: params.onboardingId,
@@ -364,7 +483,7 @@ export async function updateOnboardingRequirement(params: {
     stage: template.stage,
     required: template.required,
     responsible_role: template.responsibleRole ?? null,
-    status: params.status,
+    status: effectiveStatus,
     updated_at: now,
   };
   if (params.digitalExecutionStatus !== undefined) row.digital_execution_status = params.digitalExecutionStatus;
@@ -381,13 +500,6 @@ export async function updateOnboardingRequirement(params: {
     row.verified_by = params.actorUserId;
   }
 
-  const { data: existing } = await admin
-    .from("onboarding_requirements")
-    .select("id")
-    .eq("onboarding_id", params.onboardingId)
-    .eq("requirement_key", params.requirementKey)
-    .maybeSingle();
-
   const { error } = existing
     ? await admin.from("onboarding_requirements").update(row).eq("id", existing.id)
     : await admin.from("onboarding_requirements").insert({ ...row, created_by: params.actorUserId });
@@ -403,7 +515,7 @@ export async function updateOnboardingRequirement(params: {
     action: "onboarding_requirement.updated",
     entityType: "user",
     entityId: onboarding?.profile_id ?? params.onboardingId,
-    metadata: { onboardingId: params.onboardingId, requirementKey: params.requirementKey, newStatus: params.status },
+    metadata: { onboardingId: params.onboardingId, requirementKey: params.requirementKey, requestedStatus: params.status, effectiveStatus },
   });
 
   return { ok: true };

@@ -3,6 +3,7 @@ import { logActivity } from "@/lib/admin/activityLog";
 import { isSuperAdminId, hasJurisdictionAuthority, isGrantActive, listAuthorityGrants } from "@/lib/organization/authority";
 import {
   computeUnsatisfiedRequired,
+  toClientSafeResolvedRequirement,
   type RequirementTemplate,
   type RequirementStatus,
 } from "@/lib/organization/onboardingRequirements";
@@ -130,9 +131,18 @@ export type SeparationRequirementRow = {
   updatedAt: string;
 };
 
-export type ResolvedSeparationRequirement = RequirementTemplate & {
+// Deliberately Omit<..., "derive"> — same reasoning as
+// onboardingRequirements.ts's ResolvedRequirement (E.5 Stage 2K): this
+// type crosses the Server -> Client Component boundary as a prop into
+// the Clearance Workspace, and a catalog template's `derive` function
+// (e.g. authority_grants_revoked's) cannot be serialized across it.
+// This exact defect was found live in the sibling Onboarding Workspace
+// and is fixed here proactively before the Clearance Workspace is ever
+// exercised against a real case.
+export type ResolvedSeparationRequirement = Omit<RequirementTemplate, "derive"> & {
   status: RequirementStatus;
   row: SeparationRequirementRow | null;
+  isDerived: boolean;
 };
 
 function mapRow(r: {
@@ -213,7 +223,7 @@ export async function listResolvedSeparationRequirements(params: {
   return catalog.map((template) => {
     const row = rowsByKey.get(template.requirementKey) ?? null;
     const status: RequirementStatus = row?.status ?? derivedByKey.get(template.requirementKey) ?? "pending";
-    return { ...template, status, row };
+    return toClientSafeResolvedRequirement(template, status, row);
   });
 }
 

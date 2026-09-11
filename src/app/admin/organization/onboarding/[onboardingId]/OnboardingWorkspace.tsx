@@ -48,7 +48,16 @@ function StatusPill({ status }: { status: RequirementStatus }) {
 // the page-level Advance/Complete actions.
 function RequirementRow({ onboardingId, pipeline, requirement }: { onboardingId: string; pipeline: string; requirement: ResolvedRequirement }) {
   const [state, formAction, pending] = useActionState<ActionState, FormData>(updateOnboardingRequirementAction, null);
-  const showsPhysical = requirement.requirementType === "physical_document" || requirement.row?.physicalOriginalRequired;
+  const showsPhysical = requirement.requirementType === "physical_document" || requirement.requiresPhysicalExecution === true;
+  // TD-071, B1 (E.5 Stage 2K) — when the requirement's own DEFINITION
+  // configures digital and/or physical execution, "Satisfied"/"Pending"
+  // are computed server-side from that evidence, not from this
+  // dropdown directly (see applyConfiguredEvidenceStatus() /
+  // updateOnboardingRequirement()'s own enforcement) — only
+  // "Waived"/"Not applicable" are real manual choices here. The select
+  // still shows all four so a waiver/exemption stays reachable; the
+  // note below makes the computed behavior explicit rather than silent.
+  const hasConfiguredEvidence = requirement.requiresDigitalExecution === true || requirement.requiresPhysicalExecution === true;
 
   return (
     <form action={formAction} className="rounded-lg border border-black/10 bg-white p-4 space-y-2">
@@ -61,17 +70,32 @@ function RequirementRow({ onboardingId, pipeline, requirement }: { onboardingId:
           <p className="font-sans text-caption text-ordift-ink-muted">
             {REQUIREMENT_TYPE_LABELS[requirement.requirementType]} · Stage: {requirement.stage} ·{" "}
             {requirement.required ? "Required" : "Optional"}
-            {requirement.derive && !requirement.row ? " · live-derived" : ""}
+            {requirement.isDerived && !requirement.row ? " · live-derived" : ""}
           </p>
         </div>
         <StatusPill status={requirement.status} />
       </div>
+      {hasConfiguredEvidence && (
+        <p className="font-sans text-caption text-ordift-ink-muted">
+          Satisfied/Pending is computed automatically from the evidence below — Waived/Not applicable remain available as a manual decision.
+        </p>
+      )}
       <div className="flex flex-wrap items-center gap-2">
         <select name="status" defaultValue={requirement.status} className="rounded-lg border border-black/15 bg-white px-2 py-1 font-sans text-caption">
           {(Object.keys(REQUIREMENT_STATUS_LABELS) as RequirementStatus[]).map((s) => (
             <option key={s} value={s}>{REQUIREMENT_STATUS_LABELS[s]}</option>
           ))}
         </select>
+        {requirement.requiresDigitalExecution && (
+          <label className="font-sans text-caption text-ordift-ink-muted flex items-center gap-1">
+            Digital execution:
+            <select name="digitalExecutionStatus" defaultValue={requirement.row?.digitalExecutionStatus ?? ""} className="rounded-lg border border-black/15 bg-white px-2 py-1 font-sans text-caption">
+              <option value="">Not set</option>
+              <option value="pending">Pending</option>
+              <option value="completed">Completed</option>
+            </select>
+          </label>
+        )}
         {showsPhysical && (
           <label className="font-sans text-caption text-ordift-ink-muted flex items-center gap-1">
             <input type="checkbox" name="physicalOriginalReceived" defaultChecked={requirement.row?.physicalOriginalReceived ?? false} />

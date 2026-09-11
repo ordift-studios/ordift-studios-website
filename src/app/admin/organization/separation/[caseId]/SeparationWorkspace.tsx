@@ -68,7 +68,7 @@ function ClearanceItemRow({ separationCaseId, profileId, requirement }: { separa
           <p className="font-sans text-caption text-ordift-ink-muted">
             {REQUIREMENT_TYPE_LABELS[requirement.requirementType]} · Area: {requirement.stage} ·{" "}
             {requirement.required ? "Required" : "Optional"}
-            {requirement.derive && !requirement.row ? " · live-derived" : ""}
+            {requirement.isDerived && !requirement.row ? " · live-derived" : ""}
           </p>
         </div>
         <StatusPill status={requirement.status} />

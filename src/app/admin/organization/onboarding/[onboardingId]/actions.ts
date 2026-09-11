@@ -70,6 +70,11 @@ export async function updateOnboardingRequirementAction(_prev: ActionState, form
   const requirementKey = String(formData.get("requirementKey") ?? "");
   const status = String(formData.get("status") ?? "") as RequirementStatus;
   const notes = String(formData.get("notes") ?? "").trim() || undefined;
+  // TD-071, B1 (E.5 Stage 2K) — digital execution now has a real form
+  // field; empty means "leave whatever was previously recorded
+  // unchanged", not "clear it".
+  const digitalExecutionStatusRaw = String(formData.get("digitalExecutionStatus") ?? "").trim();
+  const digitalExecutionStatus = digitalExecutionStatusRaw || undefined;
   const physicalOriginalReceived = formData.get("physicalOriginalReceived") === "on";
   const verifiedNow = formData.get("verifiedNow") === "on";
   if (!onboardingId || !requirementKey || !REQUIREMENT_STATUSES.includes(status)) {
@@ -83,6 +88,7 @@ export async function updateOnboardingRequirementAction(_prev: ActionState, form
     status,
     actorUserId: actor.id,
     notes,
+    digitalExecutionStatus,
     physicalOriginalReceived,
     verifiedNow,
   });
