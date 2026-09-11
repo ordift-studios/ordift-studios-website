@@ -2,7 +2,6 @@
 
 import { useActionState } from "react";
 import type { SeparationCase, NoticePolicySource, FinalSettlementStatus } from "@/lib/organization/separationCases";
-import { NOTICE_POLICY_SOURCES, FINAL_SETTLEMENT_STATUSES } from "@/lib/organization/separationCases";
 import type { ResolvedSeparationRequirement } from "@/lib/organization/separationRequirements";
 import type { RequirementStatus } from "@/lib/organization/onboardingRequirements";
 import type { ActivityLogEntry } from "@/lib/admin/activityLog";
@@ -16,6 +15,16 @@ import {
   updateSeparationRequirementAction,
   type ActionState,
 } from "./actions";
+
+// Duplicated as literal arrays (not imported) deliberately — this is a
+// client component, and separationCases.ts also exports real
+// server-only functions (logActivity() -> next/headers); importing
+// even a plain const from that module would pull its whole server-only
+// dependency graph into the client bundle. Values must stay in sync
+// with NOTICE_POLICY_SOURCES/FINAL_SETTLEMENT_STATUSES in
+// separationCases.ts by hand — small, stable, rarely-changed lists.
+const NOTICE_POLICY_SOURCE_OPTIONS: readonly NoticePolicySource[] = ["contract", "company_policy", "statutory_override", "unresolved"];
+const FINAL_SETTLEMENT_STATUS_OPTIONS: readonly FinalSettlementStatus[] = ["not_started", "handoff_requested", "in_progress", "completed"];
 
 const REQUIREMENT_STATUS_LABELS: Record<RequirementStatus, string> = {
   pending: "Pending",
@@ -124,7 +133,7 @@ function NoticePolicyControl({ separationCaseId }: { separationCaseId: string })
       <input type="hidden" name="separationCaseId" value={separationCaseId} />
       <select name="source" required defaultValue="" className="rounded-lg border border-black/15 bg-white px-2 py-1 font-sans text-caption col-span-2">
         <option value="" disabled>Notice policy source…</option>
-        {(NOTICE_POLICY_SOURCES as readonly NoticePolicySource[]).map((s) => (
+        {NOTICE_POLICY_SOURCE_OPTIONS.map((s) => (
           <option key={s} value={s}>{s.replace(/_/g, " ")}</option>
         ))}
       </select>
@@ -146,7 +155,7 @@ function FinalSettlementControl({ separationCaseId }: { separationCaseId: string
       <input type="hidden" name="separationCaseId" value={separationCaseId} />
       <select name="status" required defaultValue="" className="rounded-lg border border-black/15 bg-white px-2 py-1 font-sans text-caption col-span-2">
         <option value="" disabled>Final settlement status…</option>
-        {(FINAL_SETTLEMENT_STATUSES as readonly FinalSettlementStatus[]).map((s) => (
+        {FINAL_SETTLEMENT_STATUS_OPTIONS.map((s) => (
           <option key={s} value={s}>{s.replace(/_/g, " ")}</option>
         ))}
       </select>
