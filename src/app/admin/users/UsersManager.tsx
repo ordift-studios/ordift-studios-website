@@ -147,6 +147,15 @@ function UserDetail({
   const [titleId, setTitleId] = useState(user.operationalTitleId ?? "");
   const [engagementId, setEngagementId] = useState(user.engagementTypeId ?? "");
   const [classificationId, setClassificationId] = useState(user.classificationId ?? "");
+  // TD-069 fix, narrow scope (E.5 Stage 2I, 2026-09-11) — the
+  // onboarding controls (Start/Complete) shared `pending`/`error` with
+  // every other action in this row but had no success confirmation at
+  // all, so a successful click was indistinguishable from nothing
+  // having happened. Existing error handling (`error`, above) is
+  // untouched; this only adds the missing success case, scoped to
+  // onboarding specifically, matching the same problem Grant
+  // Role/Temporary Password already solved for themselves (2026-09-09).
+  const [onboardingSuccess, setOnboardingSuccess] = useState<string | null>(null);
   const [positionId, setPositionId] = useState(user.positionId ?? "");
 
   // Grouped by Department for the Position select's <optgroup>s, same
@@ -250,22 +259,31 @@ function UserDetail({
       if (!confirmed) return;
     }
     setError(null);
+    setOnboardingSuccess(null);
     const fd = new FormData();
     fd.set("userId", user.id);
+    // TD-070 fix (2026-09-11) — thread the person's real engagement
+    // type through so the correct pipeline (employee vs.
+    // external_contractor) is resolved, instead of always silently
+    // falling back to 'employee'.
+    if (user.engagementTypeSlug) fd.set("engagementTypeSlug", user.engagementTypeSlug);
     startTransition(async () => {
       const result = await startStaffOnboardingAction(fd);
       if (result.error) setError(result.error);
+      else setOnboardingSuccess("Onboarding started.");
     });
   }
 
   function completeOnboarding() {
     if (!user.onboardingId) return;
     setError(null);
+    setOnboardingSuccess(null);
     const fd = new FormData();
     fd.set("onboardingId", user.onboardingId);
     startTransition(async () => {
       const result = await completeStaffOnboardingAction(fd);
       if (result.error) setError(result.error);
+      else setOnboardingSuccess("Onboarding marked complete.");
     });
   }
 
@@ -790,7 +808,24 @@ function UserDetail({
                 Mark Onboarding Complete
               </button>
             )}
+            {user.onboardingId && (
+              <Link
+                href={`/admin/organization/onboarding/${user.onboardingId}`}
+                onClick={(e) => e.stopPropagation()}
+                className="font-sans text-caption text-ordift-gold-pressed underline underline-offset-4"
+              >
+                Open Onboarding Workspace →
+              </Link>
+            )}
           </div>
+          {onboardingSuccess && (
+            <p className="font-sans text-caption text-green-700">{onboardingSuccess}</p>
+          )}
+          {user.onboardingStage && (
+            <p className="font-sans text-caption text-ordift-ink-muted">
+              Current stage: {user.onboardingStage} ({user.onboardingPipeline})
+            </p>
+          )}
           <p className="font-sans text-caption text-ordift-ink-muted">
             Tracks the internal-employment onboarding process only — assign Department/Position/Grade above, and set
             up a payment destination via Payables → Payees if this person will be paid through Ordift.

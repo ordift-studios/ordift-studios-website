@@ -1,7 +1,8 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { logActivity } from "@/lib/admin/activityLog";
 import { isSuperAdminId, hasJurisdictionAuthority } from "@/lib/organization/authority";
-import { resolveOnboardingPipeline, canAdvanceToStage, type OnboardingPipeline } from "@/lib/organization/onboardingStages";
+import { resolveOnboardingPipeline, canAdvanceToStage, isTerminalStage, type OnboardingPipeline } from "@/lib/organization/onboardingStages";
+import { getUnsatisfiedRequiredRequirements, getUnsatisfiedRequiredForStage } from "@/lib/organization/onboardingRequirements";
 
 // Ordift Organizational & Administrative Architecture V1, Phase 3.3,
 // Part F (2026-08-25) — staff onboarding PROCESS tracker, against
@@ -67,7 +68,7 @@ const SELECT = "id, profile_id, recruitment_application_id, corporate_identity_i
 // the operations.administer capability (PRIME's package) — the same
 // tier already trusted with routine organizational assignment. No new
 // authorization concept introduced.
-async function canManageOnboarding(actorUserId: string): Promise<boolean> {
+export async function canManageOnboarding(actorUserId: string): Promise<boolean> {
   if (await isSuperAdminId(actorUserId)) return true;
   return hasJurisdictionAuthority(actorUserId, "operations", "administer");
 }
@@ -91,6 +92,13 @@ export async function listStaffOnboarding(): Promise<StaffOnboarding[]> {
     return [];
   }
   return (data ?? []).map(mapOnboarding);
+}
+
+export async function getStaffOnboardingById(onboardingId: string): Promise<StaffOnboarding | null> {
+  const admin = createAdminClient();
+  const { data, error } = await admin.from("staff_onboarding").select(SELECT).eq("id", onboardingId).maybeSingle();
+  if (error || !data) return null;
+  return mapOnboarding(data);
 }
 
 export async function startStaffOnboarding(params: {
@@ -146,8 +154,39 @@ export async function completeStaffOnboarding(params: {
   }
 
   const admin = createAdminClient();
-  const { data: existing } = await admin.from("staff_onboarding").select("profile_id").eq("id", params.onboardingId).maybeSingle();
+  const { data: existing } = await admin
+    .from("staff_onboarding")
+    .select("profile_id, pipeline, stage")
+    .eq("id", params.onboardingId)
+    .maybeSingle();
   if (!existing) return { ok: false, error: "Onboarding record not found." };
+
+  // Completion safety (E.5 Stage 2I, Part G, 2026-09-11) — completing
+  // onboarding is no longer an unconditional shortcut from any
+  // in_progress stage. Two fail-closed checks, both ahead of the
+  // atomic status transition below: the record must have actually
+  // reached the terminal stage of its own resolved pipeline
+  // (isTerminalStage(), pre-existing and previously unused), and every
+  // REQUIRED requirement the current foundation knows about
+  // (src/lib/organization/onboardingRequirements.ts) must be
+  // satisfied/waived/not_applicable. Optional requirements never
+  // block. Nothing here silently satisfies a missing requirement —
+  // an unmet one simply refuses completion with a specific reason.
+  const pipeline = existing.pipeline as OnboardingPipeline;
+  if (!isTerminalStage(pipeline, existing.stage)) {
+    return { ok: false, error: `Onboarding cannot be completed until it reaches the final stage of its pipeline (currently "${existing.stage}").` };
+  }
+  const unsatisfied = await getUnsatisfiedRequiredRequirements({
+    onboardingId: params.onboardingId,
+    profileId: existing.profile_id,
+    pipeline,
+  });
+  if (unsatisfied.length > 0) {
+    return {
+      ok: false,
+      error: `Onboarding cannot be completed while required items remain outstanding: ${unsatisfied.map((r) => r.label).join(", ")}.`,
+    };
+  }
 
   // Atomic idempotency guard (Phase J.2, same pattern already proven for
   // setProjectFileRetain()/promoteProjectFileToFinalApproved()/
@@ -203,6 +242,28 @@ export async function advanceOnboardingStage(params: {
 
   if (!canAdvanceToStage(existing.pipeline as OnboardingPipeline, existing.stage, params.toStage)) {
     return { ok: false, error: `Cannot move from "${existing.stage}" directly to "${params.toStage}" — stages advance one at a time, forward only.` };
+  }
+
+  // Requirement gating (E.5 Stage 2I, Part J, 2026-09-11) — a stage
+  // must not advance merely because an administrator can click "Next".
+  // Every REQUIRED requirement that gates the CURRENT stage (not a
+  // later one) must be satisfied/waived/not_applicable before moving
+  // past it. This sits inside advanceOnboardingStage() itself, not
+  // only in its caller's server action — the real boundary, matching
+  // this codebase's own established pattern (assignStaffPosition()'s
+  // staff-role guard, startStaffOnboarding()'s own authorization),
+  // so it can't be bypassed by a future second caller.
+  const unsatisfiedForStage = await getUnsatisfiedRequiredForStage({
+    onboardingId: params.onboardingId,
+    profileId: existing.profile_id,
+    pipeline: existing.pipeline as OnboardingPipeline,
+    stage: existing.stage,
+  });
+  if (unsatisfiedForStage.length > 0) {
+    return {
+      ok: false,
+      error: `Cannot advance past "${existing.stage}" — required item(s) outstanding: ${unsatisfiedForStage.map((r) => r.label).join(", ")}.`,
+    };
   }
 
   const { error } = await admin

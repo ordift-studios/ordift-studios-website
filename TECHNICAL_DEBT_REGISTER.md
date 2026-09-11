@@ -688,6 +688,30 @@
 
 ---
 
+### TD-069 — `/admin/users` action controls (Organizational Assignment, Internal Staff Onboarding, and siblings sharing the same pattern) give no explicit success confirmation (found 2026-09-11, E.5 Stage 2E real-world validation)
+
+- **Category:** UX
+- **Severity:** Low (no data risk — the underlying write itself is confirmed correct via direct Production verification in every case observed; the gap is purely in what the admin sees after clicking)
+- **What:** during Stage 2E's real-person Position assignment for Mishael Adjei, the Founder clicked "Save" on the Organizational Assignment control and received no explicit success or loading confirmation — completion had to be inferred from the page's changed content after the fact. Traced to the shared pattern in `src/app/admin/users/UsersManager.tsx`: each action (`savePosition`, `startOnboarding`, `completeOnboarding`, and other sibling controls in this file) uses `useTransition()`'s `pending` only to disable the button mid-request, and a `setError()` call surfaces failure — but there is no corresponding success state or message anywhere in this component. A failed save is visible; a successful one is not, until the surrounding read-only summary text happens to reflect the new value on next render.
+- **Why accepted (not fixed now):** found incidentally during a read-only validation stage explicitly scoped to investigation, not UI changes; the instruction under which this was found was explicit that no interface redesign should occur in that pass.
+- **Current impact:** low — an admin who clicks Save/Start/Complete without watching the surrounding text closely could plausibly click twice, or wrongly believe the action failed silently. No functional consequence found: `assignStaffPositionAction`/`startStaffOnboardingAction` are safe to reason about from source (the latter is additionally protected by `staff_onboarding`'s own `unique(profile_id)` constraint against an accidental double-start), but the *experience* of not knowing whether a click landed is a real, now-repeated observation (first surfaced as part of TD-059's Phase K.2B work, on the same file).
+- **Pay-down trigger:** the next time `src/app/admin/users/UsersManager.tsx` is substantially revisited — add a lightweight, consistent success acknowledgment (e.g. a transient confirmation message alongside the existing error-message pattern) to `savePosition`/`startOnboarding`/`completeOnboarding` and any other action sharing this same `pending`/`setError`-only shape, rather than fixing one control in isolation.
+- **Status:** Open, low priority.
+
+---
+
+### TD-070 — "Start Internal Staff Onboarding" never passes the person's actual `engagementTypeSlug`, so every onboarding always resolves the `employee` pipeline regardless of true engagement type (found 2026-09-11, E.5 Stage 2F/2G real-world validation)
+
+- **Category:** Data / Correctness
+- **Severity:** Low-Medium (no incident yet — the only real onboarding run to date, Mishael's, happens to resolve correctly — but this directly contradicts the module's own explicit design principle and will misfire the first time it's used as designed)
+- **What:** `startStaffOnboarding()` (`src/lib/organization/onboarding.ts:96`) accepts an optional `engagementTypeSlug` and, when given one, calls `resolveOnboardingPipeline()` to choose between the 11-stage `employee` pipeline and the shorter 7-stage `external_contractor` pipeline. `startStaffOnboardingAction()` (`src/app/admin/users/actions.ts:452`) — the only real caller — never passes it; the UI's `startOnboarding()` (`src/app/admin/users/UsersManager.tsx:245`) sends only `userId`. With no override, the `staff_onboarding.pipeline` column's own default (`'employee'`, migration `0066`) always wins. This is coincidentally correct for Mishael (his `engagement_type` is genuinely `full_time`), but the "Start Internal Staff Onboarding" control is explicitly reachable — with its own confirm-dialog warning — for accounts already holding a Contractor/Vendor/Model relationship (TD-059, Phase K.2B), which is exactly the scenario `resolveOnboardingPipeline()`'s own comment says must never be forced through the employee-only stages (e.g. `background_screening`, `management_review`).
+- **Why accepted (not fixed now):** found incidentally during Stage 2F/2G's real-world validation of the onboarding-start workflow; the instruction under which this was found was explicit read-only investigation and reporting, not a code fix.
+- **Current impact:** none yet — the only onboarding ever started in Production (Mishael's, Stage 2G) resolved to the correct pipeline by coincidence, not by design enforcement. **This is a broader future correctness risk, not a Mishael-specific non-issue**: the first time this button is used for a genuine non-employee engagement type (contractor/vendor/model/freelancer/intern/volunteer transitioning to internal employment, or simply started on the wrong account), that person would be silently placed on the full employee pipeline instead of the shorter, correct one.
+- **Pay-down trigger:** before "Start Internal Staff Onboarding" is next used for anyone whose `staff_details.engagement_type` is not already `full_time`/`part_time`/`fixed_term` — thread the target's actual `engagement_types.slug` from `UsersManager.tsx` through `startStaffOnboardingAction()`'s `FormData` into `startStaffOnboarding({ engagementTypeSlug })`, matching the parameter that already exists and is already tested by `resolveOnboardingPipeline()` — no new mechanism needed, only wiring the existing one all the way to the UI.
+- **Status:** Open.
+
+---
+
 ## Adding new entries
 
 Any future compromise — a deferred edge case, a "fix properly later" comment, a scope-narrowing decision made under time pressure — gets an entry here at the time it's made, not retroactively. Cross-reference the relevant `TECHNICAL_DECISION_RECORDS.md` ADR if the debt stems from a documented architectural trade-off.

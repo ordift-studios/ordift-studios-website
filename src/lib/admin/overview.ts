@@ -15,6 +15,8 @@ import {
   type Engagement,
 } from "@/lib/payables/engagements";
 import { listProjectFilesAwaitingBackup, type ProjectFileAwaitingBackup } from "@/lib/payables/projectFiles";
+import { listStaffOnboarding, canManageOnboarding } from "@/lib/organization/onboarding";
+import { getUnsatisfiedRequiredForStage } from "@/lib/organization/onboardingRequirements";
 import {
   getRecentActivity,
   SUPER_ADMIN_ONLY_ACTIONS,
@@ -98,6 +100,52 @@ export async function getGeneralNeedsAttention(): Promise<GeneralNeedsAttention>
     newLeadEnquiries: newLeadEnquiries.length,
     pendingPaymentRegistrations: pendingPaymentRegistrations.length,
   };
+}
+
+// E.5 Stage 2I, Part F (2026-09-11) — Onboarding-domain tier of "Needs
+// Attention", following the exact same typed/conditionally-rendered
+// pattern as GeneralNeedsAttention/PayablesNeedsAttention above/below,
+// not a new notification architecture. Deliberately narrow — only a
+// real, actionable condition surfaces here (a required approval-type
+// requirement genuinely blocking the current stage), never every
+// in_progress record, per explicit instruction not to turn every
+// onboarding record into a warning.
+export type OnboardingNeedsAttention = {
+  awaitingApproval: { onboardingId: string; profileId: string; profileName: string | null; stage: string; requirementLabels: string[] }[];
+};
+
+export async function getOnboardingNeedsAttention(actorUserId: string): Promise<OnboardingNeedsAttention | null> {
+  if (!(await canManageOnboarding(actorUserId))) return null;
+
+  const admin = createAdminClient();
+  const inProgress = (await listStaffOnboarding()).filter((o) => o.status === "in_progress");
+  if (inProgress.length === 0) return { awaitingApproval: [] };
+
+  const profileIds = inProgress.map((o) => o.profileId);
+  const { data: profiles } = await admin.from("profiles").select("id, full_name").in("id", profileIds);
+  const nameById = new Map((profiles ?? []).map((p) => [p.id, p.full_name as string | null]));
+
+  const awaitingApproval: OnboardingNeedsAttention["awaitingApproval"] = [];
+  for (const o of inProgress) {
+    const unsatisfied = await getUnsatisfiedRequiredForStage({
+      onboardingId: o.id,
+      profileId: o.profileId,
+      pipeline: o.pipeline,
+      stage: o.stage,
+    });
+    const approvalItems = unsatisfied.filter((r) => r.requirementType === "approval");
+    if (approvalItems.length > 0) {
+      awaitingApproval.push({
+        onboardingId: o.id,
+        profileId: o.profileId,
+        profileName: nameById.get(o.profileId) ?? null,
+        stage: o.stage,
+        requirementLabels: approvalItems.map((r) => r.label),
+      });
+    }
+  }
+
+  return { awaitingApproval };
 }
 
 // Phase K.3 (2026-09-06) — Payables-domain tier of "Needs Attention", plus

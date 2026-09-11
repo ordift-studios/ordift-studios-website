@@ -20,6 +20,12 @@ export type AdminUserRow = {
   operationalTitleName: string | null;
   engagementTypeId: string | null;
   engagementTypeName: string | null;
+  // TD-070 fix (E.5 Stage 2I, 2026-09-11) — the actual engagement_types
+  // slug, needed so "Start Internal Staff Onboarding" can pass the
+  // person's genuine classification through to
+  // startStaffOnboarding()/resolveOnboardingPipeline() instead of
+  // always resolving the DB column's 'employee' default.
+  engagementTypeSlug: string | null;
   memberNumber: string | null;
   classificationId: string | null;
   classificationName: string | null;
@@ -47,6 +53,13 @@ export type AdminUserRow = {
   // projections of existing tables, not new state.
   onboardingId: string | null;
   onboardingStatus: string | null;
+  // E.5 Stage 2I (2026-09-11) — Stage 2H's own capability-map audit
+  // found stage/pipeline were resolved correctly in the database but
+  // never even queried by any admin UI. Exposed here so the
+  // onboarding workspace (and, cheaply, /admin/users itself) can show
+  // real state instead of only the coarse status.
+  onboardingPipeline: string | null;
+  onboardingStage: string | null;
   authoritySummary: string | null;
   // Organizational Structure & Authority Grants V1 (2026-09-07) —
   // Employment/engagement STATUS (Pre-Start/Active/Probation/Leave/
@@ -162,10 +175,10 @@ export async function listUsersWithRoles(): Promise<AdminUserListResult> {
         "id, operational_title_id, engagement_type_id, position_id, employment_status, positions(name, call_sign, departments(name), grades(grade_code, name))"
       ),
     admin.from("operational_titles").select("id, name"),
-    admin.from("engagement_types").select("id, name"),
+    admin.from("engagement_types").select("id, name, slug"),
     admin.from("member_numbers").select("profile_id, classification_id").eq("status", "active"),
     admin.from("member_number_classifications").select("id, name"),
-    admin.from("staff_onboarding").select("id, profile_id, status"),
+    admin.from("staff_onboarding").select("id, profile_id, status, pipeline, stage"),
     admin
       .from("authority_grants")
       .select("profile_id, authority, scope_department_id, effective_at, expires_at, revoked_at, departments(name)")
@@ -189,12 +202,15 @@ export async function listUsersWithRoles(): Promise<AdminUserListResult> {
   const staffDetailsById = new Map((staffDetails ?? []).map((s) => [s.id, s]));
   const titleNameById = new Map((operationalTitles ?? []).map((t) => [t.id, t.name as string]));
   const engagementNameById = new Map((engagementTypes ?? []).map((e) => [e.id, e.name as string]));
+  const engagementSlugById = new Map((engagementTypes ?? []).map((e) => [e.id, e.slug as string]));
   const classificationNameById = new Map((classifications ?? []).map((c) => [c.id, c.name as string]));
   const activeClassificationByProfileId = new Map(
     (activeMemberNumbers ?? []).map((m) => [m.profile_id, m.classification_id as string])
   );
   const onboardingStatusByProfileId = new Map((staffOnboarding ?? []).map((o) => [o.profile_id, o.status as string]));
   const onboardingIdByProfileId = new Map((staffOnboarding ?? []).map((o) => [o.profile_id, o.id as string]));
+  const onboardingPipelineByProfileId = new Map((staffOnboarding ?? []).map((o) => [o.profile_id, o.pipeline as string]));
+  const onboardingStageByProfileId = new Map((staffOnboarding ?? []).map((o) => [o.profile_id, o.stage as string]));
 
   // Phase J.2 — the same "effective, not expired, not revoked" window
   // hasAuthority() checks (src/lib/organization/authority.ts), applied
@@ -273,6 +289,9 @@ export async function listUsersWithRoles(): Promise<AdminUserListResult> {
         engagementTypeName: details?.engagement_type_id
           ? (engagementNameById.get(details.engagement_type_id) ?? null)
           : null,
+        engagementTypeSlug: details?.engagement_type_id
+          ? (engagementSlugById.get(details.engagement_type_id) ?? null)
+          : null,
         memberNumber: profile?.member_number ?? null,
         classificationId: activeClassificationByProfileId.get(u.id) ?? null,
         classificationName: (() => {
@@ -288,6 +307,8 @@ export async function listUsersWithRoles(): Promise<AdminUserListResult> {
         managerName,
         onboardingId: onboardingIdByProfileId.get(u.id) ?? null,
         onboardingStatus: onboardingStatusByProfileId.get(u.id) ?? null,
+        onboardingPipeline: onboardingPipelineByProfileId.get(u.id) ?? null,
+        onboardingStage: onboardingStageByProfileId.get(u.id) ?? null,
         authoritySummary: authoritySummaryByProfileId.get(u.id) ?? null,
         employmentStatus: details?.employment_status ?? null,
         newBookingAlertsEnabled: newBookingAlertPrefs.get(u.id) ?? false,

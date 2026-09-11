@@ -458,8 +458,14 @@ export async function startStaffOnboardingAction(formData: FormData): Promise<{ 
 
   const userId = String(formData.get("userId") ?? "");
   if (!userId) return { error: "Invalid request." };
+  // TD-070 fix (E.5 Stage 2I, 2026-09-11) — thread the target's real
+  // engagement_types.slug through so resolveOnboardingPipeline() picks
+  // the correct pipeline instead of always falling back to the
+  // 'employee' DB default. Never inferred from Position/Grade/system
+  // role/authority — only the person's own recorded engagement type.
+  const engagementTypeSlug = String(formData.get("engagementTypeSlug") ?? "").trim() || null;
 
-  const result = await startStaffOnboarding({ profileId: userId, actorUserId: currentUser.id });
+  const result = await startStaffOnboarding({ profileId: userId, actorUserId: currentUser.id, engagementTypeSlug });
   if (!result.ok) return { error: result.error };
 
   revalidatePath("/admin/users");

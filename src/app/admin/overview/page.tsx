@@ -5,6 +5,7 @@ import {
   getOverviewStats,
   getGeneralNeedsAttention,
   getPayablesNeedsAttention,
+  getOnboardingNeedsAttention,
   getRecentActivityForOverview,
 } from "@/lib/admin/overview";
 import ActiveUsersPanel from "@/components/admin/ActiveUsersPanel";
@@ -282,11 +283,12 @@ function AttentionCard({ item }: { item: AttentionItem }) {
 export default async function AdminOverviewPage() {
   const user = await getCurrentUser();
 
-  const [stats, activity, general, payables] = await Promise.all([
+  const [stats, activity, general, payables, onboardingAttention] = await Promise.all([
     getOverviewStats(),
     getRecentActivityForOverview(),
     getGeneralNeedsAttention(),
     user ? getPayablesNeedsAttention(user.id) : Promise.resolve(null),
+    user ? getOnboardingNeedsAttention(user.id) : Promise.resolve(null),
   ]);
 
   // "Needs Attention" — every entry here reuses an existing, already-filterable
@@ -335,6 +337,19 @@ export default async function AdminOverviewPage() {
         label: "Files awaiting backup confirmation",
         count: payables.filesAwaitingBackup.length,
         href: "#files-awaiting-backup",
+      });
+    }
+  }
+  // E.5 Stage 2I, Part F — one card per onboarding record genuinely
+  // awaiting an approval-type requirement, each linking straight to
+  // its own workspace (not an aggregate count) so the Founder can act
+  // on the specific person, not just see a number.
+  if (onboardingAttention) {
+    for (const item of onboardingAttention.awaitingApproval) {
+      attentionItems.push({
+        label: `${item.profileName ?? "Onboarding"} — awaiting approval (${item.requirementLabels.join(", ")})`,
+        count: 1,
+        href: `/admin/organization/onboarding/${item.onboardingId}`,
       });
     }
   }
