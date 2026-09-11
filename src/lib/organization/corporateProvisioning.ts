@@ -152,6 +152,14 @@ export async function provisionCorporateIdentity(params: {
       externalId = outcome.externalId;
     } else {
       failureReason = outcome.reason;
+      // Milestone 1C-A: a failure can still carry a real external id
+      // (today, only 'partial_success' ever sets one) — preserved
+      // on the row below via the existing external_mailbox_id column,
+      // which was already nullable and already written unconditionally
+      // regardless of outcome, so this needs no schema change and
+      // changes no existing semantics for the other three failure
+      // reasons (which never carried one and still never do).
+      externalId = outcome.externalId ?? null;
     }
   } catch (e) {
     // A thrown exception (a real provider's network error, or any
@@ -217,7 +225,16 @@ export async function provisionCorporateIdentity(params: {
     action: "corporate_identity.provisioning_failed",
     entityType: "user",
     entityId: existing.profile_id,
-    metadata: { email: existing.email, provider: params.provider.name, reason: failureReason },
+    // externalId included when present (partial_success) so the audit
+    // trail itself shows reconciliation evidence, not just the row.
+    metadata: { email: existing.email, provider: params.provider.name, reason: failureReason, externalId },
   });
-  return { ok: false, error: `Provisioning did not succeed: ${failureReason ?? "unknown reason"}. The identity was not activated — it now requires human review before any retry.` };
+  const reconciliationNote =
+    failureReason === "partial_success"
+      ? ` An external account may already exist (id: ${externalId ?? "unknown"}) — do not retry as a plain re-creation without checking directly first.`
+      : "";
+  return {
+    ok: false,
+    error: `Provisioning did not succeed: ${failureReason ?? "unknown reason"}. The identity was not activated — it now requires human review before any retry.${reconciliationNote}`,
+  };
 }

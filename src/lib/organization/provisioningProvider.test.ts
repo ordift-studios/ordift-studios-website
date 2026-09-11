@@ -78,4 +78,28 @@ describe("mockProvisioningProvider.provision", () => {
     const second = await mockProvisioningProvider.provision({ ...baseRequest, email: "taken.person@ordiftstudios.com" });
     expect(first).toEqual(second);
   });
+
+  describe("'partial_success' (Milestone 1C-A test-only trigger)", () => {
+    it("fails with reason 'partial_success' AND a real externalId — the account exists, only the failure is reported", async () => {
+      const result = await mockProvisioningProvider.provision({ ...baseRequest, email: "partial.case@ordiftstudios.com" });
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.reason).toBe("partial_success");
+        expect(result.externalId?.startsWith("mock-")).toBe(true);
+      }
+    });
+
+    it("every other failure reason still carries no externalId at all, unchanged from before this milestone", async () => {
+      const takenResult = await mockProvisioningProvider.provision({ ...baseRequest, email: "taken.person@ordiftstudios.com" });
+      expect(takenResult).toEqual({ ok: false, reason: "already_exists" });
+      const unavailableResult = await mockProvisioningProvider.provision({ ...baseRequest, email: "serviceunavailable@ordiftstudios.com" });
+      expect(unavailableResult).toEqual({ ok: false, reason: "unavailable" });
+      const ambiguousResult = await mockProvisioningProvider.provision({ ...baseRequest, email: "ambiguouscase@ordiftstudios.com" });
+      expect(ambiguousResult).toEqual({ ok: false, reason: "ambiguous" });
+    });
+
+    it("does not affect checkAvailability at all — a 'partial' local part still reports 'available', since this is only knowable at actual provision time, matching the real two-step Google flow", async () => {
+      await expect(mockProvisioningProvider.checkAvailability("partial.case@ordiftstudios.com")).resolves.toBe("available");
+    });
+  });
 });

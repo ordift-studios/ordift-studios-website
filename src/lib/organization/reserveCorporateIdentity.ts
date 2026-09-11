@@ -199,6 +199,31 @@ export async function setCorporateIdentityStatus(params: {
   const authCheck = await requireIdentityCapabilityOrSuperAdmin(params.actorUserId, requiredCapability);
   if (!authCheck.ok) return authCheck;
 
+  // Active-state bypass guard (Milestone 1C-A, 2026-09-11) — this
+  // generic setter must never be the thing that marks an identity
+  // 'active'. Checked after authorization (so an unauthorized caller
+  // still gets a plain auth failure, not a hint about this rule) but
+  // before any read/write. The only legitimate route to first-time
+  // 'active' is provisionCorporateIdentity() (corporateProvisioning.ts)
+  // — reserved -> explicit request -> pending_provisioning -> explicit
+  // attempt -> a genuine provider-confirmed success, gated end-to-end
+  // by provisioningLifecycle.ts's resolveProvisioningOutcomeStatus().
+  // A future "restore a previously-provisioned identity to active"
+  // reactivation workflow is real and anticipated (STATUS_CAPABILITY
+  // above already names IDENTITY_CAPABILITIES.reactivate for exactly
+  // this) — but per explicit instruction it is not built here; when it
+  // is, it needs its own validated path (e.g. requiring
+  // external_mailbox_id/provider to already be set, proving this
+  // identity really was provisioned before), not a re-opened gap in
+  // this generic setter.
+  if (params.status === "active") {
+    return {
+      ok: false,
+      error:
+        "This generic status setter can never set 'active' directly — use the provisioning workflow (request, then an explicit provisioning attempt) for first-time activation. Restoring a previously-provisioned identity to active is not yet implemented.",
+    };
+  }
+
   const admin = createAdminClient();
   const { data: previous } = await admin.from("corporate_identities").select("profile_id, status").eq("id", params.identityId).maybeSingle();
   if (!previous) return { ok: false, error: "Identity not found." };

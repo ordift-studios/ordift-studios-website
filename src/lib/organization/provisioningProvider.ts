@@ -34,11 +34,32 @@ export type ProvisioningRequest = {
 // resolved automatically — every non-success outcome routes to
 // provisioning_failed for a human to look at, never a silent retry or
 // a different address.
-export type ProvisioningFailureReason = "already_exists" | "unavailable" | "ambiguous";
+//
+// 'partial_success' (Milestone 1C-A, 2026-09-11) — the real Google
+// Workspace flow this models is genuinely two API calls, not one:
+// Directory API user creation, then a *separate* Enterprise License
+// Manager API call to assign a license. The account can exist while
+// the license assignment still fails. This is deliberately still a
+// FAILURE reason, not a third top-level outcome shape — it must
+// resolve to provisioning_failed exactly like every other non-success
+// case (resolveProvisioningOutcomeStatus() needs no change at all: it
+// already treats every `ok: false` outcome identically), and per
+// explicit instruction the account must never be auto-retried-created
+// merely because this reason is seen.
+export type ProvisioningFailureReason = "already_exists" | "unavailable" | "ambiguous" | "partial_success";
 
 export type ProvisioningOutcome =
   | { ok: true; externalId: string }
-  | { ok: false; reason: ProvisioningFailureReason };
+  // externalId here is optional and populated ONLY when a failure
+  // genuinely knows a real external account id already exists (today,
+  // only the 'partial_success' reason does this) — every other failure
+  // reason (already_exists/unavailable/ambiguous) has never actually
+  // created anything, so it stays absent for those, exactly as before
+  // this change. Preserved specifically so a human reconciling a
+  // 'provisioning_failed' identity can see "Google already has this
+  // account, do not blindly retry creation" rather than having to
+  // guess or check Google Admin Console cold.
+  | { ok: false; reason: ProvisioningFailureReason; externalId?: string };
 
 // A real implementation must never be constructible from client code —
 // this interface itself has no browser-safe concerns baked in (no
@@ -98,6 +119,21 @@ export const mockProvisioningProvider: ProvisioningProvider = {
   },
 
   async provision(request: ProvisioningRequest): Promise<ProvisioningOutcome> {
+    // Test-only trigger for the 'partial_success' case (Milestone
+    // 1C-A) — deliberately checked separately from
+    // classifyMockLocalPart() rather than folded into it, since
+    // "partial success" isn't a meaningful pre-check/availability
+    // state (checkAvailability() above is completely untouched by
+    // this addition — a "...partial..." local part still reports
+    // "available" from that method, which is correct: this scenario
+    // can only be known at actual provision()-time, mirroring the real
+    // Google flow where the account genuinely gets created before the
+    // separate license call can fail).
+    const local = request.email.split("@")[0]?.toLowerCase() ?? "";
+    if (local.includes("partial")) {
+      return { ok: false, reason: "partial_success", externalId: `mock-${crypto.randomUUID()}` };
+    }
+
     const failure = classifyMockLocalPart(request.email);
     if (failure) return { ok: false, reason: failure };
     return { ok: true, externalId: `mock-${crypto.randomUUID()}` };

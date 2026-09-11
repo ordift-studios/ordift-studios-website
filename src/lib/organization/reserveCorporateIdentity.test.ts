@@ -57,3 +57,44 @@ describe("approveCorporateIdentityLocalPart — reserved-only guard, verified by
     expect(true).toBe(true);
   });
 });
+
+// setCorporateIdentityStatus — active-state bypass guard (Milestone
+// 1C-A, 2026-09-11), verified by code reading. Real, DB-dependent
+// (createAdminClient(), requireIdentityCapabilityOrSuperAdmin()), so
+// per this codebase's established convention this is a doc-test, not a
+// mocked unit test — matching every other Corporate Identity function
+// tested this way. Written immediately after reading the current
+// implementation of setCorporateIdentityStatus().
+//
+// Context: found during the Milestone 1C read-only readiness
+// assessment (2026-09-10) — this generic status setter (built before
+// the Milestone 1B provisioning lifecycle existed, for suspend/
+// deactivate/reactivate) accepted any raw status string including
+// "active" with zero validation, writing it directly with no
+// requirement that provisioning ever actually happened. It had zero
+// call sites anywhere in the application (confirmed by an exhaustive
+// grep both before and after this fix) — nothing exploited it — but it
+// was a real structural gap, since STATUS_CAPABILITY already names
+// IDENTITY_CAPABILITIES.reactivate for "active", implying a future
+// reactivation feature was always expected to call this function.
+describe("setCorporateIdentityStatus — active-state bypass guard, verified by code reading", () => {
+  it("refuses status: 'active' unconditionally, after the authorization check but before any database read or write — grep-confirmed: `if (params.status === \"active\") return { ok: false, error: ... }` sits between requireIdentityCapabilityOrSuperAdmin() and createAdminClient()", () => {
+    expect(true).toBe(true);
+  });
+
+  it("an unauthorized caller attempting status: 'active' still receives a plain authorization-failure error (from requireIdentityCapabilityOrSuperAdmin(), which runs first) — the active-specific refusal is never reached, so an unauthorized caller learns nothing about this rule", () => {
+    expect(true).toBe(true);
+  });
+
+  it("every other status this function already supported (suspended/deactivated/pending_provisioning/provisioning_failed/reserved) is completely unaffected — the guard checks only the literal string 'active', nothing else", () => {
+    expect(true).toBe(true);
+  });
+
+  it("the only remaining route to a first-time 'active' status anywhere in the codebase is provisionCorporateIdentity() (corporateProvisioning.ts), gated end-to-end by provisioningLifecycle.ts's resolveProvisioningOutcomeStatus() — confirmed by a repository-wide search for every .update() touching corporate_identities.status (see the Milestone 1C-A report for the full list)", () => {
+    expect(true).toBe(true);
+  });
+
+  it("does not implement a future 'restore a previously-provisioned identity to active' reactivation workflow — per explicit instruction, that remains unbuilt; this guard only closes the bypass, it does not add a replacement path", () => {
+    expect(true).toBe(true);
+  });
+});

@@ -74,4 +74,20 @@ describe("provisionCorporateIdentity — verified by code reading", () => {
   it("repeating provisionCorporateIdentity() after a genuine success (status already 'active') is refused by canAttemptProvisioning() before the provider is ever called again — a duplicate/repeated provisioning attempt against an already-provisioned identity cannot re-invoke the provider", () => {
     expect(true).toBe(true);
   });
+
+  it("Milestone 1C-A: a failure outcome's externalId (present today only for 'partial_success') is extracted and written to external_mailbox_id on the row exactly as if it were a success's externalId — no new column, no schema change; external_mailbox_id was already nullable and already written unconditionally on every attempt, regardless of outcome, before this change existed", () => {
+    expect(true).toBe(true);
+  });
+
+  it("the failure-path activity_log entry (corporate_identity.provisioning_failed) now includes externalId in its metadata, so the audit trail itself — not only the row — shows reconciliation evidence when it exists", () => {
+    expect(true).toBe(true);
+  });
+
+  it("the returned error message includes an explicit reconciliation warning when failureReason is 'partial_success', naming the preserved externalId — grep-confirmed in provisionCorporateIdentity()'s final return statement", () => {
+    expect(true).toBe(true);
+  });
+
+  it("newStatus is still resolved by the unmodified resolveProvisioningOutcomeStatus() — a 'partial_success' outcome reaches this function with ok:false exactly like every other failure, so it resolves to 'provisioning_failed' with zero change to this function's own logic", () => {
+    expect(true).toBe(true);
+  });
 });

@@ -125,6 +125,16 @@ export function CorporateIdentityProvisioning({
           {isRetry && identity.provisioningFailureReason && (
             <p className="font-sans text-caption text-red-700">Failed: {identity.provisioningFailureReason}</p>
           )}
+          {/* Milestone 1C-A: a preserved external id on a failed attempt means
+              a real account may already exist (today only reachable via the
+              mock's "partial_success" test trigger) — surfaced so a Super
+              Admin never treats "retry" as a safe plain re-creation without
+              checking first. */}
+          {isRetry && identity.externalMailboxId && (
+            <p className="font-sans text-caption font-semibold text-amber-700">
+              ⚠️ An external account may already exist (id: {identity.externalMailboxId}) — check directly before retrying.
+            </p>
+          )}
           <button type="button" onClick={() => setMode("previewAttempt")} className="font-sans text-caption underline text-ordift-ink-muted hover:text-ordift-ink">
             {isRetry ? "Retry Provisioning (MOCK)" : "Attempt Provisioning (MOCK)"}
           </button>

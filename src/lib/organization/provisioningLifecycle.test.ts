@@ -58,6 +58,14 @@ describe("resolveProvisioningOutcomeStatus — the one function that may ever pr
   it("resolves to 'provisioning_failed' for every non-success reason — ambiguous", () => {
     expect(resolveProvisioningOutcomeStatus({ ok: false, reason: "ambiguous" })).toBe("provisioning_failed");
   });
+  it("resolves to 'provisioning_failed' for 'partial_success' (Milestone 1C-A) exactly like every other failure reason — a real external account existing is never itself grounds for 'active'", () => {
+    expect(resolveProvisioningOutcomeStatus({ ok: false, reason: "partial_success", externalId: "mock-123" })).toBe("provisioning_failed");
+  });
+  it("resolving 'partial_success' needs no change to this function at all — it's already covered by the same outcome.ok check every other failure reason uses", () => {
+    // This test exists to make that fact explicit and regression-proof,
+    // not because the implementation needed to change for it to pass.
+    expect(resolveProvisioningOutcomeStatus({ ok: false, reason: "partial_success" })).toBe(resolveProvisioningOutcomeStatus({ ok: false, reason: "unavailable" }));
+  });
 });
 
 describe("resolveProvisioningExceptionStatus", () => {
@@ -70,7 +78,12 @@ describe("premature-activation guarantee, stated as a single cross-cutting prope
   it("no combination of these functions can produce 'active' without a genuine ok:true provider outcome having been resolved", () => {
     // Every non-success shape this module knows about, run through the
     // same resolver a real call site would use.
-    const nonSuccessOutcomes = [{ ok: false as const, reason: "already_exists" as const }, { ok: false as const, reason: "unavailable" as const }, { ok: false as const, reason: "ambiguous" as const }];
+    const nonSuccessOutcomes = [
+      { ok: false as const, reason: "already_exists" as const },
+      { ok: false as const, reason: "unavailable" as const },
+      { ok: false as const, reason: "ambiguous" as const },
+      { ok: false as const, reason: "partial_success" as const, externalId: "mock-123" },
+    ];
     for (const outcome of nonSuccessOutcomes) {
       expect(resolveProvisioningOutcomeStatus(outcome)).not.toBe("active");
     }
