@@ -714,6 +714,20 @@
 
 ---
 
+### TD-071 — Stage 2I starter onboarding catalogue: two false-completion-risk gaps found on review (found 2026-09-12, E.5 Stage 2J Part 1 read-only review)
+
+- **Category:** Data / Correctness, UX
+- **Severity:** Medium (no incident yet — Mishael has zero `onboarding_requirements` rows, so neither gap has ever produced a wrong "satisfied" state in Production — but both are real defects in the requirement model's honesty, not just missing polish, and would matter the first time someone relies on either requirement to actually gate a real hire)
+- **What (two distinct findings, both from `src/lib/organization/onboardingRequirements.ts`):**
+  1. **`employment_agreement_executed`'s digital/physical dual-tracking has no working UI or action path at all.** The schema (`onboarding_requirements.digital_execution_status`) and the write function (`updateOnboardingRequirement()`) both accept a `digitalExecutionStatus` value, but grep-confirmed: neither the Onboarding Workspace UI (`OnboardingWorkspace.tsx`) nor its server action (`updateOnboardingRequirementAction`) exposes or reads any `digitalExecutionStatus` field — only the generic `status` dropdown and, for `physical_document`-typed items, a `physicalOriginalReceived` checkbox. Part D's own canonical example (Employment Agreement: digital execution + physical original tracked independently) is therefore only half-wired: an admin can mark the whole requirement "satisfied" via the generic dropdown without the compound digital/physical state the schema was built to represent ever being set.
+  2. **`background_screening_cleared` is satisfied by ANY single qualifying screening category, not all applicable ones.** `deriveFromBackgroundScreening()` runs `.limit(1).maybeSingle()` against `background_screenings` filtered to `status in ('clear','management_approved_following_review')` — it returns "satisfied" the moment ONE category (of the eight defined: identity_verification, employment_history, education, professional_qualification, references, right_to_work, role_licence, criminal_history) clears, regardless of which categories are actually relevant to a given hire's jurisdiction/role. A real hire could show "Background screening cleared" after only, say, `education` clears, while `right_to_work` was never checked at all.
+- **Why accepted (not fixed now):** found during an explicitly READ-ONLY catalogue review (Stage 2J, Part 1); fixing either would mean deciding real product behavior (which screening categories are actually mandatory per role/jurisdiction; what UI the digital/physical split should look like) that wasn't authorized in this pass.
+- **Current impact:** none yet in Production (zero requirement rows exist for the only real onboarding record, Mishael's) — but both are exactly the kind of "false sense of legal/security/operational completion" Stage 2J's own review explicitly asked to check for, and both would be live risks the first time this catalogue actually gates a real hire's onboarding completion.
+- **Pay-down trigger:** before the starter catalogue (already flagged in its own code comments as a scaffold requiring Founder review — see the E.5 Stage 2I report) is relied on operationally for a real hire — (1) either wire a real `digitalExecutionStatus` control into the Onboarding Workspace or drop the unused schema fields until there's a real UI for them; (2) decide whether background-screening satisfaction should require specific named categories (possibly varying by jurisdiction/role) rather than any one, and encode that decision explicitly rather than implicitly via "any row exists."
+- **Status:** Open.
+
+---
+
 ## Adding new entries
 
 Any future compromise — a deferred edge case, a "fix properly later" comment, a scope-narrowing decision made under time pressure — gets an entry here at the time it's made, not retroactively. Cross-reference the relevant `TECHNICAL_DECISION_RECORDS.md` ADR if the debt stems from a documented architectural trade-off.

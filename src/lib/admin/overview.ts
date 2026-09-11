@@ -17,6 +17,9 @@ import {
 import { listProjectFilesAwaitingBackup, type ProjectFileAwaitingBackup } from "@/lib/payables/projectFiles";
 import { listStaffOnboarding, canManageOnboarding } from "@/lib/organization/onboarding";
 import { getUnsatisfiedRequiredForStage } from "@/lib/organization/onboardingRequirements";
+import { listSeparationCases, canManageSeparationCases } from "@/lib/organization/separationCases";
+import { getUnsatisfiedRequiredSeparationRequirements } from "@/lib/organization/separationRequirements";
+import { listUsersWithRoles } from "@/lib/portal/adminData";
 import {
   getRecentActivity,
   SUPER_ADMIN_ONLY_ACTIONS,
@@ -146,6 +149,57 @@ export async function getOnboardingNeedsAttention(actorUserId: string): Promise<
   }
 
   return { awaitingApproval };
+}
+
+// E.5 Stage 2J, Part 10 (2026-09-12) — Separation/offboarding tier of
+// "Needs Attention", same typed/conditionally-rendered pattern. Only
+// two concrete, non-arbitrary conditions are surfaced (a deliberate
+// subset of Part 10's example list, matching the same discipline
+// already applied to Onboarding's own Needs Attention tier): a
+// self-initiated case genuinely awaiting company acknowledgement, and
+// a case whose required clearance is fully satisfied and is therefore
+// genuinely ready for Final Clearance to be recorded. Routine
+// in-progress clearance work is never surfaced as a warning.
+export type SeparationNeedsAttention = {
+  awaitingAcknowledgement: { separationCaseId: string; profileId: string; profileName: string | null }[];
+  readyForFinalClearance: { separationCaseId: string; profileId: string; profileName: string | null }[];
+};
+
+export async function getSeparationNeedsAttention(actorUserId: string): Promise<SeparationNeedsAttention | null> {
+  if (!(await canManageSeparationCases(actorUserId))) return null;
+
+  const admin = createAdminClient();
+  const openCases = (await listSeparationCases()).filter((c) => c.status === "open");
+  if (openCases.length === 0) return { awaitingAcknowledgement: [], readyForFinalClearance: [] };
+
+  const profileIds = openCases.map((c) => c.profileId);
+  const [{ data: profiles }, usersResult] = await Promise.all([
+    admin.from("profiles").select("id, full_name").in("id", profileIds),
+    listUsersWithRoles(),
+  ]);
+  const nameById = new Map((profiles ?? []).map((p) => [p.id, p.full_name as string | null]));
+  const rolesByProfileId = new Map((usersResult.ok ? usersResult.users : []).map((u) => [u.id, u.roles]));
+
+  const awaitingAcknowledgement: SeparationNeedsAttention["awaitingAcknowledgement"] = [];
+  const readyForFinalClearance: SeparationNeedsAttention["readyForFinalClearance"] = [];
+
+  for (const c of openCases) {
+    if (c.initiatedByRole === "self" && !c.companyAcknowledgedAt) {
+      awaitingAcknowledgement.push({ separationCaseId: c.id, profileId: c.profileId, profileName: nameById.get(c.profileId) ?? null });
+    }
+
+    const unsatisfied = await getUnsatisfiedRequiredSeparationRequirements({
+      separationCaseId: c.id,
+      profileId: c.profileId,
+      roles: rolesByProfileId.get(c.profileId) ?? [],
+      finalSettlementStatus: c.finalSettlementStatus,
+    });
+    if (unsatisfied.length === 0) {
+      readyForFinalClearance.push({ separationCaseId: c.id, profileId: c.profileId, profileName: nameById.get(c.profileId) ?? null });
+    }
+  }
+
+  return { awaitingAcknowledgement, readyForFinalClearance };
 }
 
 // Phase K.3 (2026-09-06) — Payables-domain tier of "Needs Attention", plus

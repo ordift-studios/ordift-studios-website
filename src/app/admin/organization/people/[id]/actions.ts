@@ -8,6 +8,7 @@ import { logActivity } from "@/lib/admin/activityLog";
 import { recordBackgroundScreening } from "@/lib/organization/backgroundScreening";
 import { BACKGROUND_SCREENING_CATEGORIES, BACKGROUND_SCREENING_STATUSES } from "@/lib/organization/backgroundScreening";
 import { updateAccessStatusAction } from "@/app/admin/users/actions";
+import { createSeparationCase, SEPARATION_CATEGORIES, SEPARATION_REASON_TYPES, type SeparationCategory } from "@/lib/organization/separationCases";
 
 // Organizational Structure, Authority Grants, Onboarding & Work Email
 // V1 (2026-09-07) — Person Detail View actions. Employment/engagement
@@ -104,4 +105,43 @@ export async function updateAccessStatusFormAction(formData: FormData): Promise<
   if (result.error) console.error("[admin organization] failed to update access status", result.error);
   const profileId = String(formData.get("userId") ?? "").trim();
   if (profileId) revalidatePath(`/admin/organization/people/${profileId}`);
+}
+
+// Workforce lifecycle — separation/offboarding entry point (E.5 Stage
+// 2J, Part 5/9). This is the admin-invoked foundation only: every real
+// call in this stage records initiatedByRole "company" honestly — no
+// employee-facing self-service surface exists yet (deliberately
+// deferred). createSeparationCase() itself never touches Position/
+// Grade/roles/Authority/Corporate Identity/Workspace/payment; it only
+// opens a case for the Clearance Workspace to act on. Authorization
+// uses the same canManageSeparationCases() boundary as every other
+// separation action, deliberately not this file's own
+// PEOPLE_CAPABILITIES.workforceAdminister gate, so the whole
+// separation feature shares one consistent authorization boundary.
+export async function initiateSeparationCaseAction(formData: FormData): Promise<void> {
+  const currentUser = await getCurrentUser();
+  if (!currentUser) return;
+
+  const profileId = String(formData.get("profileId") ?? "").trim();
+  const category = String(formData.get("category") ?? "").trim() as SeparationCategory;
+  const reasonType = String(formData.get("reasonType") ?? "").trim();
+  const reasonNotes = String(formData.get("reasonNotes") ?? "").trim() || null;
+  const proposedLastWorkingDate = String(formData.get("proposedLastWorkingDate") ?? "").trim() || null;
+  if (!profileId || !(SEPARATION_CATEGORIES as readonly string[]).includes(category)) return;
+  if (!(SEPARATION_REASON_TYPES[category] as readonly string[]).includes(reasonType)) return;
+
+  const result = await createSeparationCase({
+    profileId,
+    category,
+    reasonType,
+    reasonNotes,
+    proposedLastWorkingDate,
+    actorUserId: currentUser.id,
+  });
+  if (!result.ok) {
+    console.error("[admin organization] failed to create separation case", result.error);
+    return;
+  }
+
+  revalidatePath(`/admin/organization/people/${profileId}`);
 }

@@ -216,9 +216,16 @@ const SELECT =
 // Supabase session, matching this project's standing preference for
 // separating a pure decision from its DB-dependent wiring wherever
 // possible (e.g. describeOnboardingStartError() in onboarding.ts).
+// rowsByKey's value type is intentionally the minimal shape this
+// function actually reads (just `.status`), not the full
+// OnboardingRequirementRow — this is what lets
+// separationRequirements.ts (E.5 Stage 2J) reuse this exact function
+// against its own, differently-shaped SeparationRequirementRow without
+// any change here. Any row type with a `status` field (which every
+// requirement-row type in this codebase has) satisfies it structurally.
 export function computeUnsatisfiedRequired(
   catalog: readonly RequirementTemplate[],
-  rowsByKey: ReadonlyMap<string, OnboardingRequirementRow>,
+  rowsByKey: ReadonlyMap<string, { status: RequirementStatus }>,
   derivedByKey: ReadonlyMap<string, RequirementStatus | null>,
   stage?: string
 ): RequirementTemplate[] {

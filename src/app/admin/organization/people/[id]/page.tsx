@@ -10,7 +10,8 @@ import { listActingAssignments, isActingAssignmentActive } from "@/lib/organizat
 import { listBackgroundScreeningsForProfile, BACKGROUND_SCREENING_CATEGORIES, BACKGROUND_SCREENING_STATUSES } from "@/lib/organization/backgroundScreening";
 import { listCorporateIdentities } from "@/lib/organization/reserveCorporateIdentity";
 import { getActivityForEntity } from "@/lib/admin/activityLog";
-import { setEmploymentStatusAction, recordBackgroundScreeningAction, updateAccessStatusFormAction } from "./actions";
+import { listSeparationCases, SEPARATION_CATEGORIES, SEPARATION_REASON_TYPES } from "@/lib/organization/separationCases";
+import { setEmploymentStatusAction, recordBackgroundScreeningAction, updateAccessStatusFormAction, initiateSeparationCaseAction } from "./actions";
 
 export const metadata: Metadata = {
   title: "Person — Ordift Studios Admin",
@@ -59,11 +60,14 @@ export default async function PersonDetailPage({ params }: { params: Promise<{ i
   const person = usersResult.users.find((u) => u.id === id);
   if (!person) notFound();
 
-  const [financialLevel, screenings, recentActivity] = await Promise.all([
+  const [financialLevel, screenings, recentActivity, separationCases] = await Promise.all([
     getPersonFinancialAuthorityLevel(id),
     listBackgroundScreeningsForProfile(id, currentUser.id), // empty for non-Super-Admin, by construction
     getActivityForEntity("user", id, 20),
+    listSeparationCases(),
   ]);
+  const personSeparationCases = separationCases.filter((c) => c.profileId === id);
+  const openSeparationCase = personSeparationCases.find((c) => c.status === "open") ?? null;
 
   const personGrants = grants.filter((g) => g.profileId === id && isGrantActive(g));
   const personActingAssignments = actingAssignments.filter((a) => a.profileId === id);
@@ -210,6 +214,59 @@ export default async function PersonDetailPage({ params }: { params: Promise<{ i
             </>
           ) : (
             <p className="font-sans text-caption text-ordift-ink-muted">Background screening is Super-Admin-only.</p>
+          )}
+        </div>
+
+        {/* Workforce Lifecycle — Separation/Offboarding (E.5 Stage 2J,
+            2026-09-12). Foundation-only entry point: opening a case here
+            never itself changes Position/Grade/roles/Authority/Corporate
+            Identity/Workspace/payment — it only opens a case for the
+            dedicated Clearance Workspace to act on. */}
+        <div className="rounded-xl border border-black/10 bg-white p-6 space-y-2">
+          <h2 className="font-serif font-medium text-body text-ordift-ink">Separation / Offboarding</h2>
+          {personSeparationCases.length > 0 ? (
+            <ul className="space-y-1">
+              {personSeparationCases.map((c) => (
+                <li key={c.id} className="font-sans text-caption text-ordift-ink-muted">
+                  · {c.category.replace(/_/g, " ")} ({c.reasonType.replace(/_/g, " ")}) — {c.status}
+                  {" · "}
+                  <Link href={`/admin/organization/separation/${c.id}`} className="text-ordift-gold-pressed underline underline-offset-4">
+                    Open Clearance Workspace →
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="font-sans text-caption text-ordift-ink-muted">No separation case on record.</p>
+          )}
+          {!openSeparationCase && (
+            <form action={initiateSeparationCaseAction} className="grid grid-cols-2 gap-2 mt-2">
+              <input type="hidden" name="profileId" value={id} />
+              <select name="category" required defaultValue="" className="rounded-lg border border-black/15 bg-white px-2 py-1 font-sans text-caption col-span-2">
+                <option value="" disabled>Separation category…</option>
+                {SEPARATION_CATEGORIES.map((c) => (
+                  <option key={c} value={c}>{c.replace(/_/g, " ")}</option>
+                ))}
+              </select>
+              {/* A plain form has no cascading-select JS, so reasons are
+                  grouped by category via optgroup for clarity; the
+                  server action (initiateSeparationCaseAction) is the
+                  real validator and silently refuses any
+                  category/reason mismatch. */}
+              <select name="reasonType" required defaultValue="" className="rounded-lg border border-black/15 bg-white px-2 py-1 font-sans text-caption col-span-2">
+                <option value="" disabled>Reason…</option>
+                {SEPARATION_CATEGORIES.map((c) => (
+                  <optgroup key={c} label={c.replace(/_/g, " ")}>
+                    {SEPARATION_REASON_TYPES[c].map((r) => (
+                      <option key={r} value={r}>{r.replace(/_/g, " ")}</option>
+                    ))}
+                  </optgroup>
+                ))}
+              </select>
+              <input type="date" name="proposedLastWorkingDate" className="rounded-lg border border-black/15 px-2 py-1 font-sans text-caption col-span-2" />
+              <input name="reasonNotes" placeholder="Notes (optional)" className="rounded-lg border border-black/15 px-2 py-1 font-sans text-caption col-span-2" />
+              <button type="submit" className="col-span-2 font-sans text-caption font-semibold px-3 py-1 rounded-md bg-ordift-navy-950 text-white">Initiate Separation Case</button>
+            </form>
           )}
         </div>
       </section>

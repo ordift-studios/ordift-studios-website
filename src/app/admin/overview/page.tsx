@@ -6,6 +6,7 @@ import {
   getGeneralNeedsAttention,
   getPayablesNeedsAttention,
   getOnboardingNeedsAttention,
+  getSeparationNeedsAttention,
   getRecentActivityForOverview,
 } from "@/lib/admin/overview";
 import ActiveUsersPanel from "@/components/admin/ActiveUsersPanel";
@@ -283,12 +284,13 @@ function AttentionCard({ item }: { item: AttentionItem }) {
 export default async function AdminOverviewPage() {
   const user = await getCurrentUser();
 
-  const [stats, activity, general, payables, onboardingAttention] = await Promise.all([
+  const [stats, activity, general, payables, onboardingAttention, separationAttention] = await Promise.all([
     getOverviewStats(),
     getRecentActivityForOverview(),
     getGeneralNeedsAttention(),
     user ? getPayablesNeedsAttention(user.id) : Promise.resolve(null),
     user ? getOnboardingNeedsAttention(user.id) : Promise.resolve(null),
+    user ? getSeparationNeedsAttention(user.id) : Promise.resolve(null),
   ]);
 
   // "Needs Attention" — every entry here reuses an existing, already-filterable
@@ -350,6 +352,25 @@ export default async function AdminOverviewPage() {
         label: `${item.profileName ?? "Onboarding"} — awaiting approval (${item.requirementLabels.join(", ")})`,
         count: 1,
         href: `/admin/organization/onboarding/${item.onboardingId}`,
+      });
+    }
+  }
+  // E.5 Stage 2J, Part 10 — one card per separation case genuinely
+  // awaiting company acknowledgement or ready for Final Clearance,
+  // each linking straight to its own Clearance Workspace.
+  if (separationAttention) {
+    for (const item of separationAttention.awaitingAcknowledgement) {
+      attentionItems.push({
+        label: `${item.profileName ?? "Separation case"} — resignation awaiting acknowledgement`,
+        count: 1,
+        href: `/admin/organization/separation/${item.separationCaseId}`,
+      });
+    }
+    for (const item of separationAttention.readyForFinalClearance) {
+      attentionItems.push({
+        label: `${item.profileName ?? "Separation case"} — clearance ready for Founder/authorized approval`,
+        count: 1,
+        href: `/admin/organization/separation/${item.separationCaseId}`,
       });
     }
   }
