@@ -103,6 +103,54 @@ export async function createDraftAgreement(params: CreateDraftAgreementParams): 
   return { ok: true, agreementId: data.id, agreementReference: reference };
 }
 
+// Reusable across every agreement type (E.5 Stage 3B-3C) — a party is
+// either a real Ordift account (profileId) or an external counterparty
+// (name/email), matching agreement_parties' own schema exactly. No
+// document-type-specific logic here; the same function adds the
+// Employer/Employee parties for an Employee Employment Agreement or
+// any future OS-LGL-0xx transaction agreement.
+export async function addAgreementParty(params: {
+  agreementId: string;
+  partyRole: string;
+  profileId?: string | null;
+  externalName?: string | null;
+  externalEmail?: string | null;
+  actorUserId: string;
+}): Promise<{ ok: true; partyId: string } | { ok: false; error: string }> {
+  const auth = await requireContractAdminister(params.actorUserId);
+  if (!auth.ok) return auth;
+  if (!params.profileId && !params.externalName) {
+    return { ok: false, error: "A party requires either an existing account (profileId) or a name." };
+  }
+
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from("agreement_parties")
+    .insert({
+      agreement_id: params.agreementId,
+      party_role: params.partyRole,
+      profile_id: params.profileId ?? null,
+      external_name: params.externalName ?? null,
+      external_email: params.externalEmail ?? null,
+    })
+    .select("id")
+    .single();
+  if (error || !data) {
+    console.error("[legal] failed to add agreement party", error?.message);
+    return { ok: false, error: "Failed to add this party to the agreement." };
+  }
+
+  await logActivity({
+    actorUserId: params.actorUserId,
+    action: "legal.agreement.party_added",
+    entityType: "agreement",
+    entityId: params.agreementId,
+    metadata: { partyId: data.id, partyRole: params.partyRole },
+  });
+
+  return { ok: true, partyId: data.id };
+}
+
 // Transitions an agreement's lifecycle status — atomic compare-and-
 // swap on the prior status, same idempotency pattern as
 // transitionLegalDocumentVersionStatus()/advanceOnboardingStage().

@@ -2,6 +2,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { logActivity } from "@/lib/admin/activityLog";
 import { isSuperAdminId, hasJurisdictionAuthority } from "@/lib/organization/authority";
 import type { OnboardingPipeline } from "@/lib/organization/onboardingStages";
+import { deriveEmploymentAgreementExecuted } from "@/lib/legal/employeeAgreements";
 
 // Internal Staff Onboarding — requirement/gating foundation (Sequence
 // 1, E.5 Stage 2I, 2026-09-11). Deliberately thin: this is NOT a
@@ -188,15 +189,18 @@ export const EMPLOYEE_ONBOARDING_REQUIREMENT_CATALOG: readonly RequirementTempla
     label: "Employment Agreement executed",
     required: true,
     responsibleRole: "super_admin",
-    // TD-071, B1 — digital execution is the configured baseline for
-    // this starter catalog; physical-original execution is fully
-    // supported (row-level fields, UI, satisfaction rule) but not
-    // turned on by default — requiring it is a real business-policy
-    // decision this pass doesn't have authorization to make. Flip this
-    // to `true` once that decision is made; nothing else needs to
-    // change for it to take effect.
-    requiresDigitalExecution: true,
-    requiresPhysicalExecution: false,
+    // E.5 Stage 3C — now derived ONLY from genuine completed signature
+    // evidence via the real OS-LGL-007 document-import/Signature Engine
+    // pipeline (deriveEmploymentAgreementExecuted(), src/lib/legal/employeeAgreements.ts).
+    // Superseded the earlier TD-071 manual requiresDigitalExecution
+    // attestation for this specific key — a manual "digital execution
+    // completed" claim would have let this be marked satisfied without
+    // real signature evidence, contradicting the explicit requirement
+    // that this key must never be satisfied any other way. The
+    // requiresDigitalExecution/requiresPhysicalExecution mechanism
+    // itself remains available for any future requirement that
+    // genuinely needs manual attestation.
+    derive: deriveEmploymentAgreementExecuted,
   },
   {
     requirementKey: "policies_acknowledged",
