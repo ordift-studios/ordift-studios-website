@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getCurrentUser, hasRole, isSuperAdmin } from "@/lib/portal/roles";
 import {
@@ -52,6 +53,18 @@ export default async function AdminOrganizationPage() {
           Position here never assigns anyone to it, never changes anyone&rsquo;s Grade, and never grants a system Role. Every Position
           must specify a default Grade, which will become the authoritative source for a person&rsquo;s Grade once staff assignment is
           built in a later phase.
+        </p>
+        {/* Navigation discoverability fix (E.5 Stage 2R, 2026-09-12) —
+            this page defines the org STRUCTURE only; individual people
+            (Position/Grade assignment, Compliance/Background Screening,
+            Financial Authority, Acting Assignments) live under Users &
+            Roles, not here. Nothing on this page previously pointed
+            there. */}
+        <p className="font-sans text-body-small text-ordift-ink-muted mt-2">
+          Looking for a specific person (Position/Grade assignment, Compliance, Background Screening)?{" "}
+          <Link href="/admin/users" className="text-ordift-gold-pressed underline underline-offset-4">
+            Manage individual people in Users &amp; Roles →
+          </Link>
         </p>
       </div>
 
