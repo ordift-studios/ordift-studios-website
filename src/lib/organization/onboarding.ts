@@ -3,6 +3,7 @@ import { logActivity } from "@/lib/admin/activityLog";
 import { isSuperAdminId, hasJurisdictionAuthority } from "@/lib/organization/authority";
 import { resolveOnboardingPipeline, canAdvanceToStage, isTerminalStage, type OnboardingPipeline } from "@/lib/organization/onboardingStages";
 import { getUnsatisfiedRequiredRequirements, getUnsatisfiedRequiredForStage } from "@/lib/organization/onboardingRequirements";
+import { getApprovedRequisitionForOnboarding } from "@/lib/recruitment/requisitions";
 
 // Ordift Organizational & Administrative Architecture V1, Phase 3.3,
 // Part F (2026-08-25) — staff onboarding PROCESS tracker, against
@@ -19,6 +20,12 @@ export type StaffOnboarding = {
   id: string;
   profileId: string;
   recruitmentApplicationId: string | null;
+  // The approved hire definition this onboarding originated from (E.5
+  // Stage 2M) — null for historical records created before this
+  // column existed (migration 0080), genuinely unknown, never
+  // backfilled with an invented value. Required for every NEW
+  // onboarding going forward — see startStaffOnboarding().
+  requisitionId: string | null;
   corporateIdentityId: string | null;
   startDate: string | null;
   status: string;
@@ -29,10 +36,13 @@ export type StaffOnboarding = {
   createdAt: string;
 };
 
-function mapOnboarding(r: {
+// Exported for direct unit testing (E.5 Stage 2M, Part 6 — historical
+// records with requisition_id: null must remain fully readable).
+export function mapOnboarding(r: {
   id: string;
   profile_id: string;
   recruitment_application_id: string | null;
+  requisition_id: string | null;
   corporate_identity_id: string | null;
   start_date: string | null;
   status: string;
@@ -46,6 +56,7 @@ function mapOnboarding(r: {
     id: r.id,
     profileId: r.profile_id,
     recruitmentApplicationId: r.recruitment_application_id,
+    requisitionId: r.requisition_id,
     corporateIdentityId: r.corporate_identity_id,
     startDate: r.start_date,
     status: r.status,
@@ -57,7 +68,7 @@ function mapOnboarding(r: {
   };
 }
 
-const SELECT = "id, profile_id, recruitment_application_id, corporate_identity_id, start_date, status, pipeline, stage, policies_accepted_at, completed_at, created_at";
+const SELECT = "id, profile_id, recruitment_application_id, requisition_id, corporate_identity_id, start_date, status, pipeline, stage, policies_accepted_at, completed_at, created_at";
 
 // Phase J.2 (2026-09-05) — startStaffOnboarding()/completeStaffOnboarding()
 // had NO authorization check of their own before this phase (a real
@@ -103,6 +114,14 @@ export async function getStaffOnboardingById(onboardingId: string): Promise<Staf
 
 export async function startStaffOnboarding(params: {
   profileId: string;
+  // E.5 Stage 2M, Part 5 — required, not optional. "An ordinary
+  // administrator must not be able to create an orphan employee
+  // onboarding record with no approved hire definition." This is the
+  // real enforcement point: getApprovedRequisitionForOnboarding()
+  // confirms the requisition exists, is approved, isn't already
+  // linked elsewhere, and — for a Founder Direct Hire — genuinely
+  // names this profile.
+  requisitionId: string;
   recruitmentApplicationId?: string | null;
   startDate?: string | null;
   // Onboarding stage pipeline (2026-09-07, Part 26/56) — resolved from
@@ -118,11 +137,17 @@ export async function startStaffOnboarding(params: {
     return { ok: false, error: "Not authorized to onboard staff." };
   }
 
+  const requisitionCheck = await getApprovedRequisitionForOnboarding(params.requisitionId, params.profileId);
+  if (!requisitionCheck.ok) {
+    return { ok: false, error: requisitionCheck.error };
+  }
+
   const admin = createAdminClient();
   const { data, error } = await admin
     .from("staff_onboarding")
     .insert({
       profile_id: params.profileId,
+      requisition_id: params.requisitionId,
       recruitment_application_id: params.recruitmentApplicationId ?? null,
       start_date: params.startDate ?? null,
       created_by: params.actorUserId,
@@ -140,9 +165,52 @@ export async function startStaffOnboarding(params: {
     action: "staff_onboarding.started",
     entityType: "user",
     entityId: params.profileId,
+    metadata: { requisitionId: params.requisitionId, hireOrigin: requisitionCheck.requisition.hireOrigin },
   });
 
   return { ok: true, onboardingId: data.id };
+}
+
+// Reconciliation only (E.5 Stage 2M, Part 4/6) — links an EXISTING
+// onboarding record (created before this architecture existed, e.g.
+// Mishael Adjei's, started Stage 2G) to a since-created, approved
+// requisition. Never creates a new onboarding record, never touches
+// status/stage/pipeline, never fabricates a link — the requisition
+// must already be approved and must not already be linked elsewhere,
+// the exact same real check startStaffOnboarding() applies to a new
+// record.
+export async function linkOnboardingToRequisition(params: {
+  onboardingId: string;
+  requisitionId: string;
+  actorUserId: string;
+}): Promise<{ ok: true } | { ok: false; error: string }> {
+  if (!(await canManageOnboarding(params.actorUserId))) {
+    return { ok: false, error: "Not authorized to reconcile onboarding records." };
+  }
+
+  const admin = createAdminClient();
+  const { data: existing } = await admin.from("staff_onboarding").select("profile_id, requisition_id").eq("id", params.onboardingId).maybeSingle();
+  if (!existing) return { ok: false, error: "Onboarding record not found." };
+  if (existing.requisition_id) return { ok: false, error: "This onboarding record is already linked to a requisition." };
+
+  const requisitionCheck = await getApprovedRequisitionForOnboarding(params.requisitionId, existing.profile_id);
+  if (!requisitionCheck.ok) return { ok: false, error: requisitionCheck.error };
+
+  const { error } = await admin.from("staff_onboarding").update({ requisition_id: params.requisitionId }).eq("id", params.onboardingId);
+  if (error) {
+    console.error("[organization] failed to link onboarding to requisition", error.message);
+    return { ok: false, error: "Failed to link this onboarding record to the requisition." };
+  }
+
+  await logActivity({
+    actorUserId: params.actorUserId,
+    action: "staff_onboarding.reconciled_with_requisition",
+    entityType: "user",
+    entityId: existing.profile_id,
+    metadata: { onboardingId: params.onboardingId, requisitionId: params.requisitionId, hireOrigin: requisitionCheck.requisition.hireOrigin },
+  });
+
+  return { ok: true };
 }
 
 export async function completeStaffOnboarding(params: {

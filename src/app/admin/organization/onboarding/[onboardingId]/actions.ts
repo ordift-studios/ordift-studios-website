@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { getCurrentUser } from "@/lib/portal/roles";
-import { canManageOnboarding, advanceOnboardingStage, completeStaffOnboarding } from "@/lib/organization/onboarding";
+import { canManageOnboarding, advanceOnboardingStage, completeStaffOnboarding, linkOnboardingToRequisition } from "@/lib/organization/onboarding";
 import { updateOnboardingRequirement, type RequirementStatus } from "@/lib/organization/onboardingRequirements";
 import type { OnboardingPipeline } from "@/lib/organization/onboardingStages";
 
@@ -92,6 +92,25 @@ export async function updateOnboardingRequirementAction(_prev: ActionState, form
     physicalOriginalReceived,
     verifiedNow,
   });
+  if (!result.ok) return { ok: false, error: result.error };
+
+  revalidatePath(`/admin/organization/onboarding/${onboardingId}`);
+  return { ok: true };
+}
+
+// Reconciliation only (E.5 Stage 2M, Part 4/6) — for a historical
+// onboarding record created before this architecture existed (e.g.
+// Mishael Adjei's). Never usable if a requisition is already linked —
+// linkOnboardingToRequisition() itself refuses that.
+export async function linkOnboardingToRequisitionAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  const actor = await requireOnboardingActor();
+  if ("error" in actor) return { ok: false, error: actor.error };
+
+  const onboardingId = String(formData.get("onboardingId") ?? "");
+  const requisitionId = String(formData.get("requisitionId") ?? "");
+  if (!onboardingId || !requisitionId) return { ok: false, error: "Choose a requisition." };
+
+  const result = await linkOnboardingToRequisition({ onboardingId, requisitionId, actorUserId: actor.id });
   if (!result.ok) return { ok: false, error: result.error };
 
   revalidatePath(`/admin/organization/onboarding/${onboardingId}`);

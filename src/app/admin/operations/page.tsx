@@ -2,15 +2,15 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { getCurrentUser, isSuperAdmin } from "@/lib/portal/roles";
-import { listUsersWithRoles } from "@/lib/portal/adminData";
-import { listDepartmentOptions, listGradeOptions } from "@/lib/organization/adminData";
+import { listUsersWithRoles, listEngagementTypes, listEmployingEntities, listEmploymentJurisdictions } from "@/lib/portal/adminData";
+import { listDepartmentOptions, listGradeOptions, listPositions } from "@/lib/organization/adminData";
 import { listCorporateIdentities } from "@/lib/organization/reserveCorporateIdentity";
 import { listDepartmentRequests } from "@/lib/organization/departmentRequests";
 import { listRecruitmentRequisitions } from "@/lib/recruitment/requisitions";
 import { listGradeCompensationBands } from "@/lib/organization/gradeCompensation";
 import { listAllPaymentObligations } from "@/lib/payments/payoutObligations";
 import { JURISDICTIONS } from "@/lib/organization/authority";
-import { reserveCorporateIdentityAction, createDepartmentRequestAction, createRecruitmentRequisitionAction } from "./actions";
+import { reserveCorporateIdentityAction, createDepartmentRequestAction, createRecruitmentRequisitionAction, createFounderDirectHireAction } from "./actions";
 import { CorporateIdentityCorrection } from "./CorporateIdentityCorrection";
 import { CorporateIdentityProvisioning } from "./CorporateIdentityProvisioning";
 
@@ -34,7 +34,7 @@ export default async function AdminOperationsPage() {
   const user = await getCurrentUser();
   if (!user || !isSuperAdmin(user)) redirect("/admin/overview");
 
-  const [usersResult, departments, grades, identities, requests, requisitions, compensationBands, obligations] = await Promise.all([
+  const [usersResult, departments, grades, identities, requests, requisitions, compensationBands, obligations, positions, engagementTypes, employingEntities, employmentJurisdictions] = await Promise.all([
     listUsersWithRoles(),
     listDepartmentOptions(),
     listGradeOptions(),
@@ -43,6 +43,10 @@ export default async function AdminOperationsPage() {
     listRecruitmentRequisitions(),
     listGradeCompensationBands(),
     listAllPaymentObligations(),
+    listPositions(),
+    listEngagementTypes(),
+    listEmployingEntities(),
+    listEmploymentJurisdictions(),
   ]);
   const people = usersResult.ok
     ? usersResult.users.map((u) => ({ id: u.id, label: u.fullName ? `${u.fullName} (${u.email ?? "no email"})` : (u.email ?? u.id) }))
@@ -161,9 +165,19 @@ export default async function AdminOperationsPage() {
         <ul className="divide-y divide-black/5 rounded-lg border border-black/5">
           {requisitions.map((r) => (
             <li key={r.id} className="px-4 py-2.5">
-              <p className="font-sans text-body-small text-ordift-ink font-medium">{r.requestTitle}</p>
+              <p className="font-sans text-body-small text-ordift-ink font-medium">
+                {r.requestTitle}
+                {r.hireOrigin === "founder_direct_hire" && (
+                  <span className="ml-2 px-2 py-0.5 rounded-full bg-ordift-gold-pressed/20 text-ordift-navy-950 font-sans text-caption">
+                    Founder Direct Hire{r.directHireProfileName ? ` — ${r.directHireProfileName}` : ""}
+                  </span>
+                )}
+              </p>
               <p className="font-sans text-caption text-ordift-ink-muted">
                 {r.departmentName ?? "—"} · {r.gradeName ?? "—"} · headcount {r.headcount} · {r.requestStatus}
+                {r.employingEntityName ? ` · ${r.employingEntityName}` : ""}
+                {r.employmentJurisdictionName ? ` · ${r.employmentJurisdictionName}` : ""}
+                {r.workLocation ? ` · ${r.workLocation}` : ""}
               </p>
             </li>
           ))}
@@ -187,6 +201,74 @@ export default async function AdminOperationsPage() {
           <textarea name="justification" placeholder="Justification (optional)" className="rounded-lg border border-black/15 px-3 py-1.5 font-sans text-body-small sm:col-span-2" />
           <button type="submit" className="sm:col-span-2 justify-self-start font-sans text-body-small font-semibold px-4 py-2 rounded-md bg-ordift-navy-950 text-white">
             Create Requisition
+          </button>
+        </form>
+      </section>
+
+      {/* Founder Direct Hire (E.5 Stage 2M, Part 2) — a legitimate
+          governed path for a very small company: the Founder
+          deliberately identifies a specific real person and approves
+          the hire without a public application process. NOT a bypass
+          — createFounderDirectHireAction() creates AND approves a real
+          recruitment_requisitions row through the same
+          decideRequisition() gate as any other requisition, in one
+          deliberate workflow. Super-Admin-only, enforced inside
+          createRecruitmentRequisition() itself (not just this page). */}
+      <section className="rounded-xl border border-black/10 bg-white p-6 space-y-4">
+        <h2 className="font-serif font-medium text-body text-ordift-ink">Founder Direct Hire</h2>
+        <p className="font-sans text-caption text-ordift-ink-muted -mt-2">
+          For a specific, already-identified person — not a bypass. Creates and approves a real requisition in one
+          step, through the same approval gate as Standard Recruitment.
+        </p>
+        <form action={createFounderDirectHireAction} className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <select name="directHireProfileId" required defaultValue="" className="rounded-lg border border-black/15 bg-white px-2 py-1.5 font-sans text-body-small sm:col-span-2">
+            <option value="" disabled>Person being hired…</option>
+            {people.map((p) => (
+              <option key={p.id} value={p.id}>{p.label}</option>
+            ))}
+          </select>
+          <input type="text" name="title" placeholder="Requisition title (e.g. Client Engagement Representative)" required className="rounded-lg border border-black/15 px-3 py-1.5 font-sans text-body-small sm:col-span-2" />
+          <select name="requestedPositionId" defaultValue="" className="rounded-lg border border-black/15 bg-white px-2 py-1.5 font-sans text-body-small">
+            <option value="">Position (optional)…</option>
+            {positions.map((p) => (
+              <option key={p.id} value={p.id}>{p.name}</option>
+            ))}
+          </select>
+          <select name="departmentId" defaultValue="" className="rounded-lg border border-black/15 bg-white px-2 py-1.5 font-sans text-body-small">
+            <option value="">Department (optional)…</option>
+            {departments.map((d) => (
+              <option key={d.id} value={d.id}>{d.name}</option>
+            ))}
+          </select>
+          <select name="gradeId" defaultValue="" className="rounded-lg border border-black/15 bg-white px-2 py-1.5 font-sans text-body-small">
+            <option value="">Grade (optional)…</option>
+            {grades.map((g) => (
+              <option key={g.id} value={g.id}>{g.code} — {g.name}</option>
+            ))}
+          </select>
+          <select name="engagementTypeId" defaultValue="" className="rounded-lg border border-black/15 bg-white px-2 py-1.5 font-sans text-body-small">
+            <option value="">Engagement Type (optional)…</option>
+            {engagementTypes.map((e) => (
+              <option key={e.id} value={e.id}>{e.name}</option>
+            ))}
+          </select>
+          <select name="employingEntityId" defaultValue="" className="rounded-lg border border-black/15 bg-white px-2 py-1.5 font-sans text-body-small">
+            <option value="">Employing Entity — leave unset if undecided…</option>
+            {employingEntities.map((e) => (
+              <option key={e.id} value={e.id}>{e.name}</option>
+            ))}
+          </select>
+          <select name="employmentJurisdictionId" defaultValue="" className="rounded-lg border border-black/15 bg-white px-2 py-1.5 font-sans text-body-small">
+            <option value="">Employment Jurisdiction — leave unset if undecided…</option>
+            {employmentJurisdictions.map((j) => (
+              <option key={j.id} value={j.id}>{j.name}</option>
+            ))}
+          </select>
+          <input type="text" name="workLocation" placeholder="Work location (optional, free text)" className="rounded-lg border border-black/15 px-3 py-1.5 font-sans text-body-small" />
+          <input type="date" name="preferredStartDate" className="rounded-lg border border-black/15 px-3 py-1.5 font-sans text-body-small" />
+          <textarea name="justification" placeholder="Justification (optional)" className="rounded-lg border border-black/15 px-3 py-1.5 font-sans text-body-small sm:col-span-2" />
+          <button type="submit" className="sm:col-span-2 justify-self-start font-sans text-body-small font-semibold px-4 py-2 rounded-md bg-ordift-gold-pressed text-ordift-navy-950">
+            Create &amp; Approve Founder Direct Hire
           </button>
         </form>
       </section>

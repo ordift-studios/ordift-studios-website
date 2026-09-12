@@ -25,6 +25,8 @@ async function requirePeopleAdministerOrSuperAdmin(actorUserId: string): Promise
 // is the only path that can move a requisition past People/Recruitment
 // review, independent of who requested it.
 
+export type HireOrigin = "standard_recruitment" | "founder_direct_hire";
+
 export type RecruitmentRequisition = {
   id: string;
   requestId: string;
@@ -45,6 +47,17 @@ export type RecruitmentRequisition = {
   preferredStartDate: string | null;
   hiringManagerId: string | null;
   interviewRequirements: string | null;
+  // Employment foundation + hire origin (E.5 Stage 2M, 2026-09-12) —
+  // see migration 0080. All employment-context fields are nullable/
+  // "pending" by design where genuinely undecided; never inferred.
+  hireOrigin: HireOrigin;
+  directHireProfileId: string | null;
+  directHireProfileName: string | null;
+  employingEntityId: string | null;
+  employingEntityName: string | null;
+  employmentJurisdictionId: string | null;
+  employmentJurisdictionName: string | null;
+  workLocation: string | null;
   createdAt: string;
 };
 
@@ -56,46 +69,91 @@ export async function listRecruitmentRequisitions(): Promise<RecruitmentRequisit
       `id, request_id, requested_position_id, department_id, grade_id, headcount, engagement_type_id,
        required_skills, responsibilities, justification, preferred_start_date, hiring_manager_id,
        interview_requirements, created_at,
+       hire_origin, direct_hire_profile_id, employing_entity_id, employment_jurisdiction_id, work_location,
        department_requests(title, status),
        positions(name),
        departments(name),
        grades(name),
-       engagement_types(name)`
+       engagement_types(name),
+       direct_hire_profile:profiles!recruitment_requisitions_direct_hire_profile_id_fkey(full_name),
+       employing_entities(name),
+       employment_jurisdictions(name)`
     )
     .order("created_at", { ascending: false });
   if (error) {
     console.error("[recruitment] failed to load requisitions", error.message);
     return [];
   }
-  return (data ?? []).map((r) => {
-    const request = r.department_requests as unknown as { title: string; status: string } | null;
-    const position = r.positions as unknown as { name: string } | null;
-    const department = r.departments as unknown as { name: string } | null;
-    const grade = r.grades as unknown as { name: string } | null;
-    const engagementType = r.engagement_types as unknown as { name: string } | null;
-    return {
-      id: r.id,
-      requestId: r.request_id,
-      requestTitle: request?.title ?? "—",
-      requestStatus: request?.status ?? "—",
-      requestedPositionId: r.requested_position_id,
-      requestedPositionName: position?.name ?? null,
-      departmentId: r.department_id,
-      departmentName: department?.name ?? null,
-      gradeId: r.grade_id,
-      gradeName: grade?.name ?? null,
-      headcount: r.headcount,
-      engagementTypeId: r.engagement_type_id,
-      engagementTypeName: engagementType?.name ?? null,
-      requiredSkills: r.required_skills,
-      responsibilities: r.responsibilities,
-      justification: r.justification,
-      preferredStartDate: r.preferred_start_date,
-      hiringManagerId: r.hiring_manager_id,
-      interviewRequirements: r.interview_requirements,
-      createdAt: r.created_at,
-    };
-  });
+  return (data ?? []).map(mapRequisition);
+}
+
+function mapRequisition(r: {
+  id: string;
+  request_id: string;
+  requested_position_id: string | null;
+  department_id: string | null;
+  grade_id: string | null;
+  headcount: number;
+  engagement_type_id: string | null;
+  required_skills: string | null;
+  responsibilities: string | null;
+  justification: string | null;
+  preferred_start_date: string | null;
+  hiring_manager_id: string | null;
+  interview_requirements: string | null;
+  created_at: string;
+  hire_origin: string;
+  direct_hire_profile_id: string | null;
+  employing_entity_id: string | null;
+  employment_jurisdiction_id: string | null;
+  work_location: string | null;
+  department_requests: unknown;
+  positions: unknown;
+  departments: unknown;
+  grades: unknown;
+  engagement_types: unknown;
+  direct_hire_profile: unknown;
+  employing_entities: unknown;
+  employment_jurisdictions: unknown;
+}): RecruitmentRequisition {
+  const request = r.department_requests as unknown as { title: string; status: string } | null;
+  const position = r.positions as unknown as { name: string } | null;
+  const department = r.departments as unknown as { name: string } | null;
+  const grade = r.grades as unknown as { name: string } | null;
+  const engagementType = r.engagement_types as unknown as { name: string } | null;
+  const directHireProfile = r.direct_hire_profile as unknown as { full_name: string | null } | null;
+  const employingEntity = r.employing_entities as unknown as { name: string } | null;
+  const employmentJurisdiction = r.employment_jurisdictions as unknown as { name: string } | null;
+  return {
+    id: r.id,
+    requestId: r.request_id,
+    requestTitle: request?.title ?? "—",
+    requestStatus: request?.status ?? "—",
+    requestedPositionId: r.requested_position_id,
+    requestedPositionName: position?.name ?? null,
+    departmentId: r.department_id,
+    departmentName: department?.name ?? null,
+    gradeId: r.grade_id,
+    gradeName: grade?.name ?? null,
+    headcount: r.headcount,
+    engagementTypeId: r.engagement_type_id,
+    engagementTypeName: engagementType?.name ?? null,
+    requiredSkills: r.required_skills,
+    responsibilities: r.responsibilities,
+    justification: r.justification,
+    preferredStartDate: r.preferred_start_date,
+    hiringManagerId: r.hiring_manager_id,
+    interviewRequirements: r.interview_requirements,
+    hireOrigin: r.hire_origin as HireOrigin,
+    directHireProfileId: r.direct_hire_profile_id,
+    directHireProfileName: directHireProfile?.full_name ?? null,
+    employingEntityId: r.employing_entity_id,
+    employingEntityName: employingEntity?.name ?? null,
+    employmentJurisdictionId: r.employment_jurisdiction_id,
+    employmentJurisdictionName: employmentJurisdiction?.name ?? null,
+    workLocation: r.work_location,
+    createdAt: r.created_at,
+  };
 }
 
 export type CreateRequisitionParams = {
@@ -114,6 +172,17 @@ export type CreateRequisitionParams = {
   preferredStartDate?: string | null;
   hiringManagerId?: string | null;
   interviewRequirements?: string | null;
+  // Employment foundation + hire origin (E.5 Stage 2M) — hireOrigin
+  // defaults to 'standard_recruitment' (unchanged prior behavior).
+  // 'founder_direct_hire' requires directHireProfileId and is
+  // enforced Super-Admin-only below — not a bypass of decideRequisition(),
+  // which every requisition (either origin) still goes through
+  // unchanged.
+  hireOrigin?: HireOrigin;
+  directHireProfileId?: string | null;
+  employingEntityId?: string | null;
+  employmentJurisdictionId?: string | null;
+  workLocation?: string | null;
   requestedBy: string;
 };
 
@@ -124,6 +193,28 @@ export type CreateRequisitionResult = { ok: true; requisitionId: string } | { ok
 // requisition anywhere else, satisfying "the requesting department
 // must NOT automatically control the entire recruitment process."
 export async function createRecruitmentRequisition(params: CreateRequisitionParams): Promise<CreateRequisitionResult> {
+  const hireOrigin = params.hireOrigin ?? "standard_recruitment";
+
+  // E.5 Stage 2M, Part 2 — "unauthorized users cannot manufacture
+  // Founder-direct hires." This is the real boundary, inside the
+  // library function, independent of whatever gate a calling server
+  // action applies — matching this codebase's established pattern
+  // (assignStaffPosition's staff-role guard, etc.). Deliberately
+  // stricter than the coarse People/Recruitment tier that can create a
+  // standard requisition: a direct hire names a specific real person
+  // and skips the public application process, so only a genuine Super
+  // Admin may open one.
+  if (hireOrigin === "founder_direct_hire") {
+    if (!(await isSuperAdminId(params.requestedBy))) {
+      return { ok: false, error: "Only a Super Admin can create a Founder Direct Hire requisition." };
+    }
+    if (!params.directHireProfileId) {
+      return { ok: false, error: "A Founder Direct Hire requisition must name the specific person being hired." };
+    }
+  } else if (params.directHireProfileId) {
+    return { ok: false, error: "A standard-recruitment requisition must not name a specific candidate directly." };
+  }
+
   const requestResult = await createDepartmentRequest({
     requestType: "recruitment_requisition",
     title: params.title,
@@ -139,6 +230,11 @@ export async function createRecruitmentRequisition(params: CreateRequisitionPara
     .from("recruitment_requisitions")
     .insert({
       request_id: requestResult.requestId,
+      hire_origin: hireOrigin,
+      direct_hire_profile_id: params.directHireProfileId ?? null,
+      employing_entity_id: params.employingEntityId ?? null,
+      employment_jurisdiction_id: params.employmentJurisdictionId ?? null,
+      work_location: params.workLocation ?? null,
       requested_position_id: params.requestedPositionId ?? null,
       department_id: params.departmentId ?? null,
       grade_id: params.gradeId ?? null,
@@ -159,7 +255,41 @@ export async function createRecruitmentRequisition(params: CreateRequisitionPara
     return { ok: false, error: "Failed to create the requisition." };
   }
 
+  if (hireOrigin === "founder_direct_hire") {
+    await logActivity({
+      actorUserId: params.requestedBy,
+      action: "recruitment_requisition.founder_direct_hire_created",
+      entityType: "user",
+      entityId: params.directHireProfileId!,
+      metadata: { requisitionId: data.id },
+    });
+  }
+
   return { ok: true, requisitionId: data.id };
+}
+
+// Convenience for "a Founder should be able to create and approve such
+// a direct-hire requisition in one deliberate workflow" (E.5 Stage 2M,
+// Part 2) — literally just createRecruitmentRequisition() then
+// decideRequisition({decision:'approved'}) in sequence; NOT a new or
+// weaker approval path. decideRequisition() runs its own unchanged
+// authorization and writes its own unchanged audit trail; this
+// function adds no shortcut around either.
+export async function createAndApproveFounderDirectHire(
+  params: Omit<CreateRequisitionParams, "hireOrigin"> & { directHireProfileId: string; decisionNotes?: string | null }
+): Promise<CreateRequisitionResult> {
+  const created = await createRecruitmentRequisition({ ...params, hireOrigin: "founder_direct_hire" });
+  if (!created.ok) return created;
+
+  const decided = await decideRequisition({
+    requisitionId: created.requisitionId,
+    decision: "approved",
+    decisionNotes: params.decisionNotes ?? "Founder Direct Hire — created and approved in one workflow.",
+    actorUserId: params.requestedBy,
+  });
+  if (!decided.ok) return { ok: false, error: decided.error };
+
+  return created;
 }
 
 // The ONLY path that can approve/reject a requisition — always goes
@@ -317,4 +447,104 @@ export async function submitInterviewEvaluation(params: {
   });
 
   return { ok: true };
+}
+
+// ============================================================
+// Onboarding-start integrity (E.5 Stage 2M, Part 5) — "an ordinary
+// administrator [must not be able to] create an orphan employee
+// onboarding record with no approved hire definition." Both functions
+// below are read-only; startStaffOnboarding() (onboarding.ts) is the
+// actual enforcement point that calls getApprovedRequisitionForOnboarding().
+// ============================================================
+
+// Pure display fetch — no approval/linkage validation, unlike
+// getApprovedRequisitionForOnboarding() below (which would always
+// reject an ALREADY-linked requisition, wrong for simply displaying
+// one). Used by the Onboarding Workspace's Employment/Hire Definition
+// summary.
+export async function getRequisitionById(id: string): Promise<RecruitmentRequisition | null> {
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from("recruitment_requisitions")
+    .select(
+      `id, request_id, requested_position_id, department_id, grade_id, headcount, engagement_type_id,
+       required_skills, responsibilities, justification, preferred_start_date, hiring_manager_id,
+       interview_requirements, created_at,
+       hire_origin, direct_hire_profile_id, employing_entity_id, employment_jurisdiction_id, work_location,
+       department_requests(title, status),
+       positions(name),
+       departments(name),
+       grades(name),
+       engagement_types(name),
+       direct_hire_profile:profiles!recruitment_requisitions_direct_hire_profile_id_fkey(full_name),
+       employing_entities(name),
+       employment_jurisdictions(name)`
+    )
+    .eq("id", id)
+    .maybeSingle();
+  if (error || !data) return null;
+  return mapRequisition(data);
+}
+
+// Requisitions that are genuinely usable to start a NEW onboarding:
+// approved (via department_requests.status), and not already linked
+// to an existing staff_onboarding row (one requisition -> at most one
+// onboarding). Used to populate the Start Onboarding requisition
+// picker — a Super Admin still exercises judgment picking the right
+// one; getApprovedRequisitionForOnboarding() is the real, enforced
+// check at write time.
+export async function listApprovedRequisitionsForOnboarding(): Promise<RecruitmentRequisition[]> {
+  const admin = createAdminClient();
+  const { data: linkedIds } = await admin.from("staff_onboarding").select("requisition_id").not("requisition_id", "is", null);
+  const alreadyLinked = new Set((linkedIds ?? []).map((r) => r.requisition_id as string));
+
+  const all = await listRecruitmentRequisitions();
+  return all.filter((r) => r.requestStatus === "approved" && !alreadyLinked.has(r.id));
+}
+
+// The real enforcement point. Confirms: the requisition exists, is
+// approved (department_requests.status), is not already linked to a
+// different onboarding record, and — for a Founder Direct Hire
+// specifically — genuinely names THIS profile (a standard-recruitment
+// requisition has no stored candidate link yet in this schema; see the
+// E.5 Stage 2M report's own "unresolved" note on this asymmetry).
+export async function getApprovedRequisitionForOnboarding(
+  requisitionId: string,
+  profileId: string
+): Promise<{ ok: true; requisition: RecruitmentRequisition } | { ok: false; error: string }> {
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from("recruitment_requisitions")
+    .select(
+      `id, request_id, requested_position_id, department_id, grade_id, headcount, engagement_type_id,
+       required_skills, responsibilities, justification, preferred_start_date, hiring_manager_id,
+       interview_requirements, created_at,
+       hire_origin, direct_hire_profile_id, employing_entity_id, employment_jurisdiction_id, work_location,
+       department_requests(title, status),
+       positions(name),
+       departments(name),
+       grades(name),
+       engagement_types(name),
+       direct_hire_profile:profiles!recruitment_requisitions_direct_hire_profile_id_fkey(full_name),
+       employing_entities(name),
+       employment_jurisdictions(name)`
+    )
+    .eq("id", requisitionId)
+    .maybeSingle();
+  if (error || !data) return { ok: false, error: "Requisition not found." };
+
+  const requisition = mapRequisition(data);
+  if (requisition.requestStatus !== "approved") {
+    return { ok: false, error: `This requisition is "${requisition.requestStatus}", not approved — it cannot be used to start onboarding.` };
+  }
+  if (requisition.hireOrigin === "founder_direct_hire" && requisition.directHireProfileId !== profileId) {
+    return { ok: false, error: "This Founder Direct Hire requisition names a different person." };
+  }
+
+  const { data: existingLink } = await admin.from("staff_onboarding").select("id").eq("requisition_id", requisitionId).maybeSingle();
+  if (existingLink) {
+    return { ok: false, error: "This requisition is already linked to another onboarding record." };
+  }
+
+  return { ok: true, requisition };
 }

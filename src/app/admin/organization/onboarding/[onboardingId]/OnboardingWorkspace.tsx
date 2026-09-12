@@ -4,10 +4,12 @@ import { useActionState } from "react";
 import type { StaffOnboarding } from "@/lib/organization/onboarding";
 import type { ResolvedRequirement, RequirementStatus } from "@/lib/organization/onboardingRequirements";
 import type { ActivityLogEntry } from "@/lib/admin/activityLog";
+import type { RecruitmentRequisition } from "@/lib/recruitment/requisitions";
 import {
   advanceOnboardingStageAction,
   completeOnboardingFromWorkspaceAction,
   updateOnboardingRequirementAction,
+  linkOnboardingToRequisitionAction,
   type ActionState,
 } from "./actions";
 
@@ -167,6 +169,33 @@ function CompleteControl({ onboardingId }: { onboardingId: string }) {
   );
 }
 
+// Reconciliation control (E.5 Stage 2M, Part 4/6) — only rendered when
+// this onboarding predates the origin architecture and has no
+// requisition_id yet. Never usable to create a NEW onboarding, and
+// never usable once a requisition is already linked.
+function LinkRequisitionControl({ onboardingId, candidates }: { onboardingId: string; candidates: RecruitmentRequisition[] }) {
+  const [state, formAction, pending] = useActionState<ActionState, FormData>(linkOnboardingToRequisitionAction, null);
+  return (
+    <form action={formAction} className="flex flex-wrap items-center gap-2">
+      <input type="hidden" name="onboardingId" value={onboardingId} />
+      <select name="requisitionId" required defaultValue="" className="rounded-lg border border-black/15 bg-white px-2 py-1 font-sans text-caption">
+        <option value="" disabled>Approved requisition to link…</option>
+        {candidates.map((r) => (
+          <option key={r.id} value={r.id}>
+            {r.hireOrigin === "founder_direct_hire" ? "Founder Direct Hire" : "Standard Recruitment"}
+            {r.requestedPositionName ? ` · ${r.requestedPositionName}` : ""}
+          </option>
+        ))}
+      </select>
+      <button type="submit" disabled={pending} className="font-sans text-caption font-semibold px-3 py-1 rounded-md bg-ordift-navy-950 text-white disabled:opacity-50">
+        {pending ? "Linking…" : "Link Requisition"}
+      </button>
+      {!pending && state?.ok === true && <span className="font-sans text-caption text-green-700">Linked.</span>}
+      {!pending && state?.ok === false && <span className="font-sans text-caption text-red-700">{state.error}</span>}
+    </form>
+  );
+}
+
 export function OnboardingWorkspace({
   onboarding,
   pipelineStages,
@@ -174,6 +203,9 @@ export function OnboardingWorkspace({
   isTerminal,
   requirements,
   activity,
+  requisition,
+  hiringManagerName,
+  reconciliationCandidates,
 }: {
   onboarding: StaffOnboarding;
   pipelineStages: readonly string[];
@@ -181,6 +213,9 @@ export function OnboardingWorkspace({
   isTerminal: boolean;
   requirements: ResolvedRequirement[];
   activity: ActivityLogEntry[];
+  requisition: RecruitmentRequisition | null;
+  hiringManagerName: string | null;
+  reconciliationCandidates: RecruitmentRequisition[];
 }) {
   const currentStageRequirements = requirements.filter((r) => r.stage === onboarding.stage);
   const approvals = requirements.filter((r) => r.requirementType === "approval");
@@ -191,6 +226,46 @@ export function OnboardingWorkspace({
 
   return (
     <div className="space-y-6">
+      {/* Employment / Hire Definition summary (E.5 Stage 2M, Part 7) —
+          deliberately compact: at a glance, who is being hired, by
+          which entity, where, under what employment context, for what
+          role, and through which approved hiring path. Unresolved
+          fields show "Not yet set", never a guessed value. */}
+      <section className="rounded-xl border border-black/10 bg-white p-6 space-y-2">
+        <h2 className="font-serif font-medium text-body text-ordift-ink">Employment / Hire Definition</h2>
+        {requisition ? (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1">
+            <p className="font-sans text-body-small text-ordift-ink-muted">
+              Hire Origin: <span className="text-ordift-ink">{requisition.hireOrigin === "founder_direct_hire" ? "Founder Direct Hire" : "Standard Recruitment"}</span>
+            </p>
+            <p className="font-sans text-body-small text-ordift-ink-muted">Employing Entity: <span className="text-ordift-ink">{requisition.employingEntityName ?? "Not yet set"}</span></p>
+            <p className="font-sans text-body-small text-ordift-ink-muted">Employment Jurisdiction: <span className="text-ordift-ink">{requisition.employmentJurisdictionName ?? "Not yet set"}</span></p>
+            <p className="font-sans text-body-small text-ordift-ink-muted">Work Location: <span className="text-ordift-ink">{requisition.workLocation ?? "Not yet set"}</span></p>
+            <p className="font-sans text-body-small text-ordift-ink-muted">Position: <span className="text-ordift-ink">{requisition.requestedPositionName ?? "Not yet set"}</span></p>
+            <p className="font-sans text-body-small text-ordift-ink-muted">Department: <span className="text-ordift-ink">{requisition.departmentName ?? "Not yet set"}</span></p>
+            <p className="font-sans text-body-small text-ordift-ink-muted">Grade: <span className="text-ordift-ink">{requisition.gradeName ?? "Not yet set"}</span></p>
+            <p className="font-sans text-body-small text-ordift-ink-muted">Engagement Type: <span className="text-ordift-ink">{requisition.engagementTypeName ?? "Not yet set"}</span></p>
+            <p className="font-sans text-body-small text-ordift-ink-muted">Hiring/Reporting Manager: <span className="text-ordift-ink">{requisition.hiringManagerId ? (hiringManagerName ?? "Unnamed") : "Not yet set"}</span></p>
+            <p className="font-sans text-body-small text-ordift-ink-muted">Intended Start Date: <span className="text-ordift-ink">{requisition.preferredStartDate ?? "Not yet set"}</span></p>
+          </div>
+        ) : (
+          <>
+            <p className="font-sans text-caption text-amber-700 bg-amber-50 border border-amber-200 rounded px-3 py-2">
+              No approved hire definition is linked yet — this onboarding record predates the origin architecture
+              (E.5 Stage 2M). Reconcile it with an approved requisition below.
+            </p>
+            {reconciliationCandidates.length > 0 ? (
+              <LinkRequisitionControl onboardingId={onboarding.id} candidates={reconciliationCandidates} />
+            ) : (
+              <p className="font-sans text-caption text-ordift-ink-muted">
+                No approved, unlinked requisition exists yet for this person — create and approve a Founder Direct
+                Hire requisition in Operations first, then return here to link it.
+              </p>
+            )}
+          </>
+        )}
+      </section>
+
       <section className="rounded-xl border border-black/10 bg-white p-6 space-y-2">
         <h2 className="font-serif font-medium text-body text-ordift-ink">Pipeline &amp; Stage</h2>
         <p className="font-sans text-body-small text-ordift-ink-muted">

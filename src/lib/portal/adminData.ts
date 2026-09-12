@@ -373,6 +373,31 @@ export async function listEngagementTypes(): Promise<LookupOption[]> {
   return data ?? [];
 }
 
+// Employment foundation (E.5 Stage 2M) — same thin lookup pattern as
+// listOperationalTitles()/listEngagementTypes() above. Deliberately
+// no create/edit UI is built here; employing_entities is seeded with
+// one real row (Ordift Studios), employment_jurisdictions is
+// deliberately empty until genuinely decided.
+export async function listEmployingEntities(): Promise<LookupOption[]> {
+  const admin = createAdminClient();
+  const { data, error } = await admin.from("employing_entities").select("id, name, active").order("sort_order");
+  if (error) {
+    console.error("[portal admin] failed to load employing_entities", error.message);
+    return [];
+  }
+  return data ?? [];
+}
+
+export async function listEmploymentJurisdictions(): Promise<LookupOption[]> {
+  const admin = createAdminClient();
+  const { data, error } = await admin.from("employment_jurisdictions").select("id, name, active").order("sort_order");
+  if (error) {
+    console.error("[portal admin] failed to load employment_jurisdictions", error.message);
+    return [];
+  }
+  return data ?? [];
+}
+
 export type GradeOption = { id: string; grade_code: string; name: string };
 
 // Callers must already be Admin/Super Admin — this uses the service-role

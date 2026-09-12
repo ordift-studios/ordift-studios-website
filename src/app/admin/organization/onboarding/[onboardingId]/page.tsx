@@ -10,6 +10,7 @@ import { listAuthorityGrants, isGrantActive } from "@/lib/organization/authority
 import { listCorporateIdentities } from "@/lib/organization/reserveCorporateIdentity";
 import { listPaymentInstructionsForProfile } from "@/lib/payments/payeeInstructions";
 import { getActivityForEntity } from "@/lib/admin/activityLog";
+import { getRequisitionById, listApprovedRequisitionsForOnboarding } from "@/lib/recruitment/requisitions";
 import { OnboardingWorkspace } from "./OnboardingWorkspace";
 
 export const metadata: Metadata = {
@@ -36,18 +37,29 @@ export default async function OnboardingWorkspacePage({ params }: { params: Prom
   const onboarding = await getStaffOnboardingById(onboardingId);
   if (!onboarding) notFound();
 
-  const [usersResult, requirements, activity, grants, identities, paymentInstructions] = await Promise.all([
+  const [usersResult, requirements, activity, grants, identities, paymentInstructions, requisition, unlinkedRequisitions] = await Promise.all([
     listUsersWithRoles(),
     listResolvedRequirements({ onboardingId: onboarding.id, profileId: onboarding.profileId, pipeline: onboarding.pipeline }),
     getActivityForEntity("user", onboarding.profileId, 30),
     listAuthorityGrants(),
     listCorporateIdentities(),
     listPaymentInstructionsForProfile(onboarding.profileId),
+    onboarding.requisitionId ? getRequisitionById(onboarding.requisitionId) : Promise.resolve(null),
+    // Reconciliation candidates (E.5 Stage 2M, Part 4/6) — only
+    // meaningful when this onboarding predates the origin architecture
+    // and has no requisition_id yet (e.g. Mishael Adjei's).
+    onboarding.requisitionId ? Promise.resolve([]) : listApprovedRequisitionsForOnboarding(),
   ]);
 
   const person = usersResult.ok ? usersResult.users.find((u) => u.id === onboarding.profileId) : undefined;
   const personGrants = grants.filter((g) => g.profileId === onboarding.profileId && isGrantActive(g));
   const identity = identities.find((i) => i.profileId === onboarding.profileId) ?? null;
+  const hiringManagerName = requisition?.hiringManagerId
+    ? (usersResult.ok ? usersResult.users.find((u) => u.id === requisition.hiringManagerId)?.fullName ?? null : null)
+    : null;
+  const reconciliationCandidates = unlinkedRequisitions.filter(
+    (r) => r.hireOrigin !== "founder_direct_hire" || r.directHireProfileId === onboarding.profileId
+  );
 
   const pipelineStages = stagesForPipeline(onboarding.pipeline);
   const terminal = isTerminalStage(onboarding.pipeline, onboarding.stage);
@@ -99,6 +111,9 @@ export default async function OnboardingWorkspacePage({ params }: { params: Prom
         isTerminal={terminal}
         requirements={requirements}
         activity={activity}
+        requisition={requisition}
+        hiringManagerName={hiringManagerName}
+        reconciliationCandidates={reconciliationCandidates}
       />
 
       {/* System-boundary handoff areas — view-only. Onboarding may

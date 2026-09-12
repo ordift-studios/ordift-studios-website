@@ -5,6 +5,7 @@ import { authorizeWithSuperAdminOverride, PEOPLE_CAPABILITIES } from "@/lib/orga
 import { listUsersWithRoles, listOperationalTitles, listEngagementTypes } from "@/lib/portal/adminData";
 import { listClassifications } from "@/lib/portal/memberNumbers";
 import { listPositions } from "@/lib/organization/adminData";
+import { listApprovedRequisitionsForOnboarding } from "@/lib/recruitment/requisitions";
 import UsersManager from "./UsersManager";
 
 export const metadata: Metadata = {
@@ -34,12 +35,13 @@ export default async function AdminUsersPage() {
   const auth = await authorizeWithSuperAdminOverride(user.id, PEOPLE_CAPABILITIES.workforceAdminister);
   if (!auth.ok) redirect("/admin/overview");
 
-  const [result, operationalTitles, engagementTypes, classifications, positions] = await Promise.all([
+  const [result, operationalTitles, engagementTypes, classifications, positions, approvedRequisitions] = await Promise.all([
     listUsersWithRoles(),
     listOperationalTitles(),
     listEngagementTypes(),
     listClassifications(),
     listPositions(),
+    listApprovedRequisitionsForOnboarding(),
   ]);
 
   return (
@@ -75,6 +77,7 @@ export default async function AdminUsersPage() {
           engagementTypes={engagementTypes}
           classifications={classifications}
           positions={positions}
+          approvedRequisitions={approvedRequisitions}
         />
       )}
     </div>

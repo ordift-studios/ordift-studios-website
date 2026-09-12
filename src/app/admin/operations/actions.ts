@@ -5,7 +5,7 @@ import { getCurrentUser, isSuperAdmin } from "@/lib/portal/roles";
 import { reserveCorporateIdentity, approveCorporateIdentityLocalPart } from "@/lib/organization/reserveCorporateIdentity";
 import { normalizeRequestedLocalPart } from "@/lib/organization/corporateEmail";
 import { createDepartmentRequest } from "@/lib/organization/departmentRequests";
-import { createRecruitmentRequisition } from "@/lib/recruitment/requisitions";
+import { createRecruitmentRequisition, createAndApproveFounderDirectHire } from "@/lib/recruitment/requisitions";
 import type { Jurisdiction } from "@/lib/organization/authority";
 import { requestCorporateIdentityProvisioning, provisionCorporateIdentity } from "@/lib/organization/corporateProvisioning";
 import { mockProvisioningProvider } from "@/lib/organization/provisioningProvider";
@@ -175,6 +175,51 @@ export async function createRecruitmentRequisitionAction(formData: FormData): Pr
   });
   if (!result.ok) {
     console.error("[admin operations] failed to create recruitment requisition", result.error);
+  }
+
+  revalidatePath("/admin/operations");
+}
+
+// Founder Direct Hire (E.5 Stage 2M, Part 2) — requireSuperAdmin() here
+// is the coarse page-level gate; the REAL enforcement ("unauthorized
+// users cannot manufacture Founder-direct hires") lives inside
+// createRecruitmentRequisition() itself, which independently requires
+// isSuperAdminId() for hireOrigin: 'founder_direct_hire' regardless of
+// how it's called. Not a bypass of decideRequisition() — this is
+// createRecruitmentRequisition() + decideRequisition() in sequence,
+// both unchanged, exposed as one deliberate workflow.
+export async function createFounderDirectHireAction(formData: FormData): Promise<void> {
+  const currentUser = await requireSuperAdmin();
+
+  const directHireProfileId = String(formData.get("directHireProfileId") ?? "").trim();
+  const title = String(formData.get("title") ?? "").trim();
+  const requestedPositionId = String(formData.get("requestedPositionId") ?? "").trim() || null;
+  const departmentId = String(formData.get("departmentId") ?? "").trim() || null;
+  const gradeId = String(formData.get("gradeId") ?? "").trim() || null;
+  const engagementTypeId = String(formData.get("engagementTypeId") ?? "").trim() || null;
+  const employingEntityId = String(formData.get("employingEntityId") ?? "").trim() || null;
+  const employmentJurisdictionId = String(formData.get("employmentJurisdictionId") ?? "").trim() || null;
+  const workLocation = String(formData.get("workLocation") ?? "").trim() || null;
+  const preferredStartDate = String(formData.get("preferredStartDate") ?? "").trim() || null;
+  const justification = String(formData.get("justification") ?? "").trim() || null;
+  if (!directHireProfileId || !title) return;
+
+  const result = await createAndApproveFounderDirectHire({
+    title,
+    directHireProfileId,
+    requestedPositionId,
+    departmentId,
+    gradeId,
+    engagementTypeId,
+    employingEntityId,
+    employmentJurisdictionId,
+    workLocation,
+    preferredStartDate,
+    justification,
+    requestedBy: currentUser.id,
+  });
+  if (!result.ok) {
+    console.error("[admin operations] failed to create Founder Direct Hire", result.error);
   }
 
   revalidatePath("/admin/operations");

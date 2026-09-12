@@ -8,6 +8,7 @@ import type { RoleSlug } from "@/lib/portal/roles";
 import type { Position } from "@/lib/organization/types";
 import type { AdminProjectAssignment, AssignmentStatus, ProjectSearchResult } from "@/lib/admin/projectAssignments";
 import type { ActivityLogEntry } from "@/lib/admin/activityLog";
+import type { RecruitmentRequisition } from "@/lib/recruitment/requisitions";
 import {
   grantRoleAction,
   type GrantRoleState,
@@ -118,6 +119,7 @@ function UserDetail({
   engagementTypes,
   classifications,
   positions,
+  approvedRequisitions,
 }: {
   user: AdminUserRow;
   currentUserIsSuperAdmin: boolean;
@@ -125,6 +127,7 @@ function UserDetail({
   engagementTypes: LookupOption[];
   classifications: MemberClassification[];
   positions: Position[];
+  approvedRequisitions: RecruitmentRequisition[];
 }) {
   const [pending, startTransition] = useTransition();
   // Grant Role button feedback (2026-09-09) — its own dedicated
@@ -250,8 +253,25 @@ function UserDetail({
   // genuinely can become a real employee later — just makes the
   // transition explicit rather than a single unguarded click.
   const hasExternalWorkforceRelationship = user.roles.some((r) => r === "contractor" || r === "vendor" || r === "model");
+  // E.5 Stage 2M, Part 5 — onboarding-start integrity. A new onboarding
+  // now requires a specific approved requisition (standard recruitment
+  // or Founder Direct Hire); this is the picker for it. Direct-hire
+  // requisitions naming this exact person are listed first since
+  // they're the unambiguous match; standard-recruitment ones require
+  // judgment (this schema doesn't yet link a requisition to its exact
+  // accepted candidate — see the Stage 2M report's own "unresolved" note).
+  const requisitionsForThisUser = [...approvedRequisitions].sort((a, b) => {
+    const aMatch = a.hireOrigin === "founder_direct_hire" && a.directHireProfileId === user.id ? 0 : 1;
+    const bMatch = b.hireOrigin === "founder_direct_hire" && b.directHireProfileId === user.id ? 0 : 1;
+    return aMatch - bMatch;
+  });
+  const [selectedRequisitionId, setSelectedRequisitionId] = useState("");
 
   function startOnboarding() {
+    if (!selectedRequisitionId) {
+      setError("Choose the approved requisition this onboarding originates from.");
+      return;
+    }
     if (hasExternalWorkforceRelationship) {
       const confirmed = window.confirm(
         "This account currently has an external-workforce relationship (Contractor/Vendor/Model). Starting Internal Staff Onboarding begins a SEPARATE internal-employment process — it does not replace or delete their existing external-workforce history (engagements, payables, files remain exactly as they are). Continue?"
@@ -262,6 +282,7 @@ function UserDetail({
     setOnboardingSuccess(null);
     const fd = new FormData();
     fd.set("userId", user.id);
+    fd.set("requisitionId", selectedRequisitionId);
     // TD-070 fix (2026-09-11) — thread the person's real engagement
     // type through so the correct pipeline (employee vs.
     // external_contractor) is resolved, instead of always silently
@@ -780,6 +801,31 @@ function UserDetail({
               delete their existing external-workforce history.
             </p>
           )}
+          {!user.onboardingStatus && requisitionsForThisUser.length === 0 && (
+            <p className="font-sans text-caption text-amber-700 bg-amber-50 border border-amber-200 rounded px-3 py-2">
+              No approved hire definition (requisition) is available yet — onboarding can no longer start without
+              one. Create and approve a Standard Recruitment or Founder Direct Hire requisition in{" "}
+              <Link href="/admin/operations" className="underline underline-offset-4">Operations</Link> first.
+            </p>
+          )}
+          {!user.onboardingStatus && requisitionsForThisUser.length > 0 && (
+            <div className="flex flex-wrap items-center gap-2">
+              <select
+                value={selectedRequisitionId}
+                onChange={(e) => setSelectedRequisitionId(e.target.value)}
+                className="rounded-lg border border-black/15 bg-white px-2 py-1 font-sans text-caption"
+              >
+                <option value="">Approved requisition (hire origin)…</option>
+                {requisitionsForThisUser.map((r) => (
+                  <option key={r.id} value={r.id}>
+                    {r.hireOrigin === "founder_direct_hire" ? "Founder Direct Hire" : "Standard Recruitment"}
+                    {r.requestedPositionName ? ` · ${r.requestedPositionName}` : ""}
+                    {r.hireOrigin === "founder_direct_hire" && r.directHireProfileName ? ` · ${r.directHireProfileName}` : ""}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
           <div className="flex flex-wrap items-center gap-2">
             <span className="font-sans text-body-small text-ordift-ink">
               {user.onboardingStatus === "completed"
@@ -792,7 +838,7 @@ function UserDetail({
               <button
                 type="button"
                 onClick={startOnboarding}
-                disabled={pending}
+                disabled={pending || !selectedRequisitionId}
                 className="font-sans text-body-small text-ordift-gold-pressed underline underline-offset-4 disabled:opacity-50"
               >
                 Start Internal Staff Onboarding
@@ -1223,6 +1269,7 @@ export default function UsersManager({
   engagementTypes,
   classifications,
   positions,
+  approvedRequisitions,
 }: {
   users: AdminUserRow[];
   currentUserId: string;
@@ -1231,6 +1278,7 @@ export default function UsersManager({
   engagementTypes: LookupOption[];
   classifications: MemberClassification[];
   positions: Position[];
+  approvedRequisitions: RecruitmentRequisition[];
 }) {
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<"" | AdminUserRow["accessStatus"]>("");
@@ -1380,6 +1428,7 @@ export default function UsersManager({
                 engagementTypes={engagementTypes}
                 classifications={classifications}
                 positions={positions}
+                approvedRequisitions={approvedRequisitions}
               />
             )}
           </div>

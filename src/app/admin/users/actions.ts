@@ -457,7 +457,11 @@ export async function startStaffOnboardingAction(formData: FormData): Promise<{ 
   }
 
   const userId = String(formData.get("userId") ?? "");
-  if (!userId) return { error: "Invalid request." };
+  // E.5 Stage 2M, Part 5 — required. startStaffOnboarding() itself is
+  // the real enforcement point (getApprovedRequisitionForOnboarding());
+  // this is only the coarse "is a value present" check.
+  const requisitionId = String(formData.get("requisitionId") ?? "");
+  if (!userId || !requisitionId) return { error: "Choose the approved requisition this onboarding originates from." };
   // TD-070 fix (E.5 Stage 2I, 2026-09-11) — thread the target's real
   // engagement_types.slug through so resolveOnboardingPipeline() picks
   // the correct pipeline instead of always falling back to the
@@ -465,7 +469,7 @@ export async function startStaffOnboardingAction(formData: FormData): Promise<{ 
   // role/authority — only the person's own recorded engagement type.
   const engagementTypeSlug = String(formData.get("engagementTypeSlug") ?? "").trim() || null;
 
-  const result = await startStaffOnboarding({ profileId: userId, actorUserId: currentUser.id, engagementTypeSlug });
+  const result = await startStaffOnboarding({ profileId: userId, requisitionId, actorUserId: currentUser.id, engagementTypeSlug });
   if (!result.ok) return { error: result.error };
 
   revalidatePath("/admin/users");
