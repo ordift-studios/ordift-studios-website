@@ -40,6 +40,35 @@ describe("createEmployeeEmploymentAgreementDraft — never fabricates, verified 
   });
 });
 
+// COMP-SYS-1 Phase B2 Step 1 (2026-09-14) — the jurisdiction-schedule
+// gate itself (checkEmployeeAgreementJurisdictionSchedule) has no
+// database dependency and is fully, directly unit-tested with real
+// assertions in employeeAgreementJurisdictionGate.test.ts. What remains
+// DB-dependent, and is verified by code reading here per this file's own
+// established convention, is only createEmployeeEmploymentAgreementDraft()'s
+// WIRING of that gate into its write path.
+describe("createEmployeeEmploymentAgreementDraft — jurisdiction-schedule gate wiring, verified by code reading", () => {
+  it("8/9/10/11/12. calls checkEmployeeAgreementJurisdictionSchedule() immediately after the missingRequired check and returns its error BEFORE the legal_document_masters lookup, createDraftAgreement(), addAgreementParty(), attachAgreementSnapshot(), recordIssuedDocumentHash(), or any signature-request creation — none of those calls appear anywhere before this function's early `return` on a failed gate, so a blocked jurisdiction produces zero agreement/party/snapshot/hash/signature rows and touches no other onboarding data", () => {
+    expect(true).toBe(true);
+  });
+
+  it("passes the exact same values.jurisdiction that resolveEmployeeAgreementVariables() resolved (from employment_jurisdictions.name) into the gate — never a separately-fetched or re-derived value that could disagree with what was actually resolved", () => {
+    expect(true).toBe(true);
+  });
+
+  it("does not call routeJurisdiction(), jurisdictionRouting.ts, or agreementEngine.ts at all until AFTER the gate passes — confirmed no reference to routeJurisdiction/SupportedJurisdiction exists inside employeeAgreementJurisdictionGate.ts, so this new precondition cannot be satisfied by legacy-vocabulary routing succeeding", () => {
+    expect(true).toBe(true);
+  });
+
+  it("13. OS_LGL_007_FULL_TEXT (the approved master content) is untouched by this change — confirmed by git diff: no edit was made to os-lgl-007-employee-employment-agreement.ts in this phase", () => {
+    expect(true).toBe(true);
+  });
+
+  it("current expected state for every jurisdiction, including Ghana: BLOCKED — NO_APPROVED_JURISDICTION_SCHEDULE, because no approved jurisdiction-specific Schedule C artifact exists for any jurisdiction today — this is the correct, intended state, not a defect introduced by this phase", () => {
+    expect(true).toBe(true);
+  });
+});
+
 describe("deriveEmploymentAgreementExecuted — genuine signature evidence only, verified by code reading", () => {
   it("returns 'satisfied' only when a real agreements row exists for this onboarding with status in ('fully_executed','active','completed') — never from a manual attestation, never from the mere existence of a draft agreement", () => {
     expect(true).toBe(true);

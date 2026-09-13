@@ -5,6 +5,10 @@ import {
   OS_LGL_007_CANONICAL_CODE,
   type EmploymentAgreementVariableKey,
 } from "@/lib/legal/documents/os-lgl-007-employee-employment-agreement";
+import {
+  checkEmployeeAgreementJurisdictionSchedule,
+  type EmployeeAgreementJurisdictionGateState,
+} from "@/lib/legal/employeeAgreementJurisdictionGate";
 
 // Employee Employment Agreement — onboarding integration (E.5 Stage
 // 3B-3C). The reusable pipeline (master -> version -> agreement ->
@@ -87,18 +91,36 @@ export async function resolveEmployeeAgreementVariables(
 }
 
 // Creates the real draft agreement ONLY when every required variable
-// is genuinely resolved — otherwise makes zero writes and returns the
-// exact missing fields. masterId/masterVersionId are looked up live
-// (never hard-coded) so a future re-approval/new version is picked up
-// automatically.
+// is genuinely resolved AND an approved jurisdiction-specific schedule
+// exists for the employment jurisdiction — otherwise makes zero writes.
+// masterId/masterVersionId are looked up live (never hard-coded) so a
+// future re-approval/new version is picked up automatically.
+//
+// COMP-SYS-1 Phase B2 Step 1 (2026-09-14) — the jurisdiction-schedule
+// gate below is a NEW precondition, additional to the pre-existing
+// missingRequired check. See src/lib/legal/employeeAgreementJurisdictionGate.ts:
+// the approved OS-LGL-007 master's own Clause 29/Schedule C requires a
+// separate, counsel-adapted jurisdiction-specific schedule before real
+// use, for every jurisdiction — none exists today for any jurisdiction,
+// so this function currently refuses to issue for anyone, regardless of
+// how complete the resolved variables are. This is expected, correct
+// behavior, not a defect — see the gate module's own documentation.
 export async function createEmployeeEmploymentAgreementDraft(params: {
   onboardingId: string;
   actorUserId: string;
-}): Promise<{ ok: true; agreementId: string; agreementReference: string } | { ok: false; error: string; missingFields?: string[] }> {
+}): Promise<
+  | { ok: true; agreementId: string; agreementReference: string }
+  | { ok: false; error: string; missingFields?: string[]; jurisdictionGateState?: EmployeeAgreementJurisdictionGateState }
+> {
   const { values, missingRequired, profileId } = await resolveEmployeeAgreementVariables(params.onboardingId);
   if (!profileId) return { ok: false, error: "Onboarding record not found." };
   if (missingRequired.length > 0) {
     return { ok: false, error: "Required employment particulars are not yet resolved — no draft was created.", missingFields: missingRequired };
+  }
+
+  const jurisdictionGate = await checkEmployeeAgreementJurisdictionSchedule(values.jurisdiction ?? null);
+  if (!jurisdictionGate.ok) {
+    return { ok: false, error: jurisdictionGate.error, jurisdictionGateState: jurisdictionGate.state };
   }
 
   const admin = createAdminClient();
