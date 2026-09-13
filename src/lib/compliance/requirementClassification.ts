@@ -55,8 +55,25 @@ export type RequirementClassification = (typeof REQUIREMENT_CLASSIFICATIONS)[num
 
 /** Minimal starter relationship vocabulary. Extend only when a real,
  * distinct engagement type needs its own compliance treatment — never to
- * mirror a job title or grade. */
-export const WORKFORCE_RELATIONSHIPS = ["EMPLOYEE", "CONTRACTOR", "VENDOR", "MODEL_TALENT"] as const;
+ * mirror a job title or grade.
+ *
+ * INSTRUCTOR and COLLABORATOR_PARTNER added at Phase B1 (2026-09-14) —
+ * the smallest additive extension needed to represent two real,
+ * already-seeded engagement_types.slug values (`instructor`,
+ * `collaborator_partner`) that don't correctly fit EMPLOYEE/CONTRACTOR/
+ * VENDOR/MODEL_TALENT: a workshop instructor is engaged for a distinct
+ * facilitation service, not folded into CONTRACTOR generically, and a
+ * collaborator/partner is a business-relationship concept, not a
+ * services-for-payment one. Purely additive — no existing value changed
+ * or removed, so every prior classification decision is unaffected. */
+export const WORKFORCE_RELATIONSHIPS = [
+  "EMPLOYEE",
+  "CONTRACTOR",
+  "VENDOR",
+  "MODEL_TALENT",
+  "INSTRUCTOR",
+  "COLLABORATOR_PARTNER",
+] as const;
 export type WorkforceRelationship = (typeof WORKFORCE_RELATIONSHIPS)[number];
 
 /** Jurisdiction set kept intentionally short today. The resolver itself

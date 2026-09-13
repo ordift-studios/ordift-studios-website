@@ -235,7 +235,7 @@ describe("classifyRequirement — relationship isolation", () => {
     expect(Object.keys(query).sort()).toEqual(["domain", "jurisdiction", "relationship"]);
     // WorkforceRelationship is a fixed, closed vocabulary — a caller cannot pass a
     // job title, grade name, or permission string in its place without a type error.
-    expect(WORKFORCE_RELATIONSHIPS).toEqual(["EMPLOYEE", "CONTRACTOR", "VENDOR", "MODEL_TALENT"]);
+    expect(WORKFORCE_RELATIONSHIPS).toEqual(["EMPLOYEE", "CONTRACTOR", "VENDOR", "MODEL_TALENT", "INSTRUCTOR", "COLLABORATOR_PARTNER"]);
   });
 });
 
