@@ -4,6 +4,7 @@ import {
   STARTER_REQUIREMENT_CATALOG,
   WORKFORCE_RELATIONSHIPS,
   WORKFORCE_JURISDICTIONS,
+  CLASSIFICATION_OUTCOMES,
   type RequirementRule,
 } from "./requirementClassification";
 
@@ -70,41 +71,57 @@ describe("classifyRequirement — precedence", () => {
 });
 
 describe("classifyRequirement — fail-closed behavior", () => {
-  it("5. unsupported jurisdiction value fails closed to REVIEW_REQUIRED", () => {
+  it("5. unsupported jurisdiction value fails closed to REVIEW_REQUIRED with outcome unsupported_jurisdiction", () => {
     const rules = [rule({ ruleKey: "global", classification: "REQUIRED" })];
     const result = classifyRequirement(rules, { relationship: "EMPLOYEE", jurisdiction: "FR", domain: DOMAIN });
     expect(result.classification).toBe("REVIEW_REQUIRED");
+    expect(result.outcome).toBe("unsupported_jurisdiction");
     expect(result.ruleKey).toBeNull();
+    expect(result.ruleVersion).toBeNull();
+    expect(result.effectiveFrom).toBeNull();
     expect(result.reason).toMatch(/unsupported|unconfigured/i);
   });
 
-  it("6. no applicable rule for the domain fails closed to REVIEW_REQUIRED", () => {
+  it("6. no applicable rule for the domain fails closed to REVIEW_REQUIRED with outcome no_applicable_rule", () => {
     const rules = [rule({ ruleKey: "other-domain", domain: "unrelated_domain", classification: "REQUIRED" })];
     const result = classifyRequirement(rules, { relationship: "EMPLOYEE", jurisdiction: "GH", domain: DOMAIN });
     expect(result.classification).toBe("REVIEW_REQUIRED");
+    expect(result.outcome).toBe("no_applicable_rule");
     expect(result.ruleKey).toBeNull();
     expect(result.reason).toMatch(/no applicable rule/i);
   });
 
-  it("7. equally-specific conflicting rules fail closed to REVIEW_REQUIRED with an exposed conflict reason", () => {
+  it("7. equally-specific conflicting rules fail closed to REVIEW_REQUIRED with outcome conflicting_rules and structured competing-rule identities", () => {
     const rules = [
       rule({ ruleKey: "a", relationshipScope: "EMPLOYEE", jurisdictionScope: "ANY", classification: "REQUIRED" }),
       rule({ ruleKey: "b", relationshipScope: "ANY", jurisdictionScope: "GH", classification: "PROHIBITED" }),
     ];
     const result = classifyRequirement(rules, { relationship: "EMPLOYEE", jurisdiction: "GH", domain: DOMAIN });
     expect(result.classification).toBe("REVIEW_REQUIRED");
+    expect(result.outcome).toBe("conflicting_rules");
     expect(result.ruleKey).toBeNull();
     expect(result.reason).toContain("a@v1=REQUIRED");
     expect(result.reason).toContain("b@v1=PROHIBITED");
+    expect(result.conflictingRules).toEqual([
+      { ruleKey: "a", ruleVersion: 1, classification: "REQUIRED" },
+      { ruleKey: "b", ruleVersion: 1, classification: "PROHIBITED" },
+    ]);
   });
 
-  it("20. malformed/unknown jurisdiction input (null, empty string, garbage) all fail closed to REVIEW_REQUIRED", () => {
+  it("20. malformed jurisdiction input (null, empty string, lowercase, punctuated) fails closed with outcome malformed_jurisdiction", () => {
     const rules = [rule({ ruleKey: "global", classification: "REQUIRED" })];
     for (const badJurisdiction of [null, undefined, "", "   ", "gh", "not-a-jurisdiction"]) {
       const result = classifyRequirement(rules, { relationship: "EMPLOYEE", jurisdiction: badJurisdiction, domain: DOMAIN });
       expect(result.classification).toBe("REVIEW_REQUIRED");
+      expect(result.outcome).toBe("malformed_jurisdiction");
       expect(result.ruleKey).toBeNull();
     }
+  });
+
+  it("a well-formed but unconfigured jurisdiction code is unsupported_jurisdiction, not malformed_jurisdiction — the two fail-closed reasons stay distinct", () => {
+    const rules = [rule({ ruleKey: "global", classification: "REQUIRED" })];
+    const result = classifyRequirement(rules, { relationship: "EMPLOYEE", jurisdiction: "CA", domain: DOMAIN });
+    expect(result.outcome).toBe("unsupported_jurisdiction");
   });
 });
 
@@ -129,11 +146,14 @@ describe("classifyRequirement — each classification value resolves correctly",
     expect(classifyRequirement(rules, { relationship: "MODEL_TALENT", jurisdiction: "OTHER", domain: DOMAIN }).classification).toBe("OPTIONAL");
   });
 
-  it("12. resolves REVIEW_REQUIRED from an explicit rule (not merely a fail-closed default)", () => {
+  it("12. resolves REVIEW_REQUIRED from an explicit rule (not merely a fail-closed default) — outcome stays matched_rule, distinguishing an authored decision from a fail-closed one", () => {
     const rules = [rule({ ruleKey: "r", classification: "REVIEW_REQUIRED" })];
     const result = classifyRequirement(rules, { relationship: "CONTRACTOR", jurisdiction: "DE_EU", domain: DOMAIN });
     expect(result.classification).toBe("REVIEW_REQUIRED");
+    expect(result.outcome).toBe("matched_rule");
     expect(result.ruleKey).toBe("r");
+    expect(result.ruleVersion).not.toBeNull();
+    expect(result.effectiveFrom).not.toBeNull();
   });
 });
 
@@ -170,6 +190,7 @@ describe("classifyRequirement — versioning and effective dates", () => {
     const result = classifyRequirement(rules, { relationship: "EMPLOYEE", jurisdiction: "GH", domain: DOMAIN, asOfDate: "2026-09-01" });
     expect(result).toEqual({
       classification: "REQUIRED",
+      outcome: "matched_rule",
       ruleKey: "identity.gh.employee",
       ruleVersion: 3,
       effectiveFrom: "2026-03-01",
@@ -224,6 +245,18 @@ describe("WORKFORCE_JURISDICTIONS — supported set stays as specified", () => {
   });
 });
 
+describe("CLASSIFICATION_OUTCOMES — provenance discriminator stays exactly as specified", () => {
+  it("is exactly the five specified outcomes", () => {
+    expect(CLASSIFICATION_OUTCOMES).toEqual([
+      "matched_rule",
+      "unsupported_jurisdiction",
+      "malformed_jurisdiction",
+      "no_applicable_rule",
+      "conflicting_rules",
+    ]);
+  });
+});
+
 describe("STARTER_REQUIREMENT_CATALOG — shipped content stays deliberately minimal", () => {
   it("contains exactly one rule: a global ANY+ANY fallback resolving to REVIEW_REQUIRED", () => {
     expect(STARTER_REQUIREMENT_CATALOG).toHaveLength(1);
@@ -233,7 +266,7 @@ describe("STARTER_REQUIREMENT_CATALOG — shipped content stays deliberately min
     expect(only.classification).toBe("REVIEW_REQUIRED");
   });
 
-  it("resolves every relationship/jurisdiction combination to REVIEW_REQUIRED (no jurisdiction-specific rule shipped yet)", () => {
+  it("resolves every relationship/jurisdiction combination to REVIEW_REQUIRED via outcome matched_rule — an authored default, not a fail-closed gap", () => {
     for (const relationship of WORKFORCE_RELATIONSHIPS) {
       for (const jurisdiction of WORKFORCE_JURISDICTIONS) {
         const result = classifyRequirement([...STARTER_REQUIREMENT_CATALOG], {
@@ -242,6 +275,10 @@ describe("STARTER_REQUIREMENT_CATALOG — shipped content stays deliberately min
           domain: "identity_document_collection",
         });
         expect(result.classification).toBe("REVIEW_REQUIRED");
+        expect(result.outcome).toBe("matched_rule");
+        expect(result.ruleKey).toBe("identity_document_collection.global_default");
+        expect(result.ruleVersion).not.toBeNull();
+        expect(result.effectiveFrom).not.toBeNull();
       }
     }
   });

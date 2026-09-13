@@ -1,4 +1,14 @@
-// Ordift Studios — Compliance/COMP-SYS-1, Phase A1 (2026-09-13).
+// Ordift Studios — Compliance/COMP-SYS-1, Phase A1 (2026-09-13),
+// extended by Phase A2's pre-migration provenance checkpoint (same
+// date): ClassificationResult gained an explicit `outcome` discriminator
+// (matched_rule | unsupported_jurisdiction | malformed_jurisdiction |
+// no_applicable_rule | conflicting_rules) and, for conflicts, a
+// structured `conflictingRules` list — both purely additive, so a
+// future audit record (Phase A2's requirement_evaluations table) can
+// distinguish WHY a REVIEW_REQUIRED result occurred without parsing the
+// human-readable `reason` string. No resolver precedence/fail-closed
+// BEHAVIOR changed — every existing decision still resolves to the same
+// classification it always did.
 // Jurisdiction-aware requirements-classification layer — PURE RESOLVER
 // FOUNDATION ONLY. This module has no database dependency, no caller
 // anywhere in the codebase yet, and is not wired into OS-LGL-007, the
@@ -64,6 +74,19 @@ function isWorkforceJurisdiction(value: unknown): value is WorkforceJurisdiction
   return typeof value === "string" && (WORKFORCE_JURISDICTIONS as readonly string[]).includes(value);
 }
 
+/** A syntactically plausible jurisdiction CODE shape (uppercase letters/
+ * underscores, 2-10 chars — matches the shape of every value in
+ * WORKFORCE_JURISDICTIONS). Used only to distinguish two different kinds
+ * of fail-closed input for audit provenance (Phase A2): a well-formed
+ * but not-yet-configured code like "FR" (unsupported_jurisdiction — a
+ * real business gap) versus null/empty/lowercase/punctuated input like
+ * "gh" or "not-a-jurisdiction" (malformed_jurisdiction — a caller/API
+ * formatting defect). Both still fail closed to REVIEW_REQUIRED either
+ * way; this distinction is provenance detail only, never a relaxation. */
+function isWellFormedJurisdictionCodeShape(value: unknown): value is string {
+  return typeof value === "string" && /^[A-Z][A-Z_]{1,9}$/.test(value);
+}
+
 /** A rule scope dimension: an exact value, or the ANY wildcard. */
 export type RelationshipScope = WorkforceRelationship | "ANY";
 export type JurisdictionScope = WorkforceJurisdiction | "ANY";
@@ -108,24 +131,66 @@ export interface ClassificationQuery {
   asOfDate?: string;
 }
 
+/** Explicit provenance discriminator (Phase A2 audit requirement) —
+ * distinguishes WHY a result looks the way it does, independent of what
+ * `classification` ended up being. "matched_rule" means a real
+ * RequirementRule governed this result (its classification may itself
+ * be REVIEW_REQUIRED, e.g. STARTER_REQUIREMENT_CATALOG's global default
+ * — that is a deliberate authored decision, not a fail-closed default,
+ * and outcome makes that distinction inspectable). The other four values
+ * are always fail-closed: they only ever occur with classification
+ * REVIEW_REQUIRED and never carry a rule identity, real or fabricated. */
+export const CLASSIFICATION_OUTCOMES = [
+  "matched_rule",
+  "unsupported_jurisdiction",
+  "malformed_jurisdiction",
+  "no_applicable_rule",
+  "conflicting_rules",
+] as const;
+export type ClassificationOutcome = (typeof CLASSIFICATION_OUTCOMES)[number];
+
+/** One competing rule's identity, for the "conflicting_rules" outcome —
+ * enough to look up exactly which rules disagreed, without needing to
+ * parse the human-readable `reason` string. */
+export interface ConflictingRuleRef {
+  ruleKey: string;
+  ruleVersion: number;
+  classification: RequirementClassification;
+}
+
 export interface ClassificationResult {
   classification: RequirementClassification;
-  /** Populated only when a specific rule produced this result. Null for a
-   * fail-closed result with no single governing rule (unsupported jurisdiction,
-   * no applicable rule, or an equally-specific conflict). */
+  outcome: ClassificationOutcome;
+  /** Populated only when outcome is "matched_rule". Null for every fail-closed
+   * outcome — never a fabricated rule identity standing in for "no rule matched". */
   ruleKey: string | null;
   ruleVersion: number | null;
   effectiveFrom: string | null;
   /** Always present — either "matched rule X vN" or the specific fail-closed reason. */
   reason: string;
+  /** Present only when outcome is "conflicting_rules" — the competing rules'
+   * identities and the classification each one produced. */
+  conflictingRules?: ConflictingRuleRef[];
 }
 
 function todayIsoDate(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
-function reviewRequired(reason: string): ClassificationResult {
-  return { classification: "REVIEW_REQUIRED", ruleKey: null, ruleVersion: null, effectiveFrom: null, reason };
+function reviewRequired(
+  outcome: Exclude<ClassificationOutcome, "matched_rule">,
+  reason: string,
+  conflictingRules?: ConflictingRuleRef[]
+): ClassificationResult {
+  return {
+    classification: "REVIEW_REQUIRED",
+    outcome,
+    ruleKey: null,
+    ruleVersion: null,
+    effectiveFrom: null,
+    reason,
+    ...(conflictingRules ? { conflictingRules } : {}),
+  };
 }
 
 /** For each ruleKey, keep only the highest-ruleVersion rule whose
@@ -182,8 +247,15 @@ export function classifyRequirement(
   query: ClassificationQuery
 ): ClassificationResult {
   if (!isWorkforceJurisdiction(query.jurisdiction)) {
+    if (isWellFormedJurisdictionCodeShape(query.jurisdiction)) {
+      return reviewRequired(
+        "unsupported_jurisdiction",
+        `Unsupported or unconfigured jurisdiction: ${JSON.stringify(query.jurisdiction)}.`
+      );
+    }
     return reviewRequired(
-      `Unsupported or unconfigured jurisdiction: ${query.jurisdiction === null || query.jurisdiction === undefined ? "(none supplied)" : JSON.stringify(query.jurisdiction)}.`
+      "malformed_jurisdiction",
+      `Malformed or missing jurisdiction: ${query.jurisdiction === null || query.jurisdiction === undefined ? "(none supplied)" : JSON.stringify(query.jurisdiction)}.`
     );
   }
   const jurisdiction = query.jurisdiction;
@@ -200,6 +272,7 @@ export function classifyRequirement(
 
   if (matches.length === 0) {
     return reviewRequired(
+      "no_applicable_rule",
       `No applicable rule for domain "${query.domain}" (relationship=${query.relationship}, jurisdiction=${jurisdiction}, asOfDate=${asOfDate}).`
     );
   }
@@ -209,18 +282,21 @@ export function classifyRequirement(
 
   const distinctClassifications = new Set(winners.map((rule) => rule.classification));
   if (distinctClassifications.size > 1) {
-    const detail = winners
-      .map((rule) => `${rule.ruleKey}@v${rule.ruleVersion}=${rule.classification}`)
-      .sort()
-      .join(", ");
+    const conflictingRules: ConflictingRuleRef[] = [...winners]
+      .map((rule) => ({ ruleKey: rule.ruleKey, ruleVersion: rule.ruleVersion, classification: rule.classification }))
+      .sort((a, b) => a.ruleKey.localeCompare(b.ruleKey));
+    const detail = conflictingRules.map((rule) => `${rule.ruleKey}@v${rule.ruleVersion}=${rule.classification}`).join(", ");
     return reviewRequired(
-      `Conflicting equally-specific rules for domain "${query.domain}" (relationship=${query.relationship}, jurisdiction=${jurisdiction}): ${detail}.`
+      "conflicting_rules",
+      `Conflicting equally-specific rules for domain "${query.domain}" (relationship=${query.relationship}, jurisdiction=${jurisdiction}): ${detail}.`,
+      conflictingRules
     );
   }
 
   const [chosen] = [...winners].sort((a, b) => a.ruleKey.localeCompare(b.ruleKey));
   return {
     classification: chosen.classification,
+    outcome: "matched_rule",
     ruleKey: chosen.ruleKey,
     ruleVersion: chosen.ruleVersion,
     effectiveFrom: chosen.effectiveFrom,
