@@ -1,7 +1,8 @@
+import { createAdminClient } from "@/lib/supabase/admin";
 import { mapEmploymentJurisdictionToWorkforceJurisdiction } from "@/lib/compliance/workforceMappings";
 import type { WorkforceJurisdiction } from "@/lib/compliance/requirementClassification";
 
-// Ordift Studios Compliance/COMP-SYS-1, Phase B2 Step 1 (2026-09-14).
+// Ordift Studios Compliance/COMP-SYS-1, Phase B2 Step 1-2 (2026-09-14).
 //
 // OS-LGL-007 JURISDICTION-SCHEDULE EXISTENCE HARD GATE — employee-
 // agreement-specific, not a generic Legal Suite restriction. This module
@@ -12,25 +13,22 @@ import type { WorkforceJurisdiction } from "@/lib/compliance/requirementClassifi
 // THE APPROVED OS-LGL-007 MASTER IS NOT ITSELF THE JURISDICTION-SPECIFIC
 // SCHEDULE. Its own Clause 29 and Schedule C ("Jurisdiction Routing &
 // Mandatory-Law Safeguards") explicitly require a separate,
-// counsel-adapted, jurisdiction-specific schedule before real use — for
-// every one of the six named jurisdictions, including Ghana. Nothing in
-// this module infers schedule existence from OS-LGL-007's own
+// counsel-adapted, jurisdiction-specific schedule before real use. Nothing
+// in this module infers schedule existence from OS-LGL-007's own
 // content_reference, from Schedule C's wording, from employment_jurisdictions,
 // or from whether src/lib/legal/jurisdictionRouting.ts happens to
 // recognize a jurisdiction string — none of those are evidence that a
-// real, approved schedule exists.
+// real, approved schedule exists. Only a real legal_document_masters row
+// with adapts_master_id pointing at OS-LGL-007 and an active version is
+// evidence.
 //
-// NO JURISDICTION-SCHEDULE REGISTRY/STORAGE EXISTS YET. Phase B2A's
-// read-only design confirmed no suitable existing structure represents
-// this: legal_document_masters/legal_document_versions carry no
-// jurisdiction column, and agreements.jurisdiction is a per-ISSUED-
-// AGREEMENT field, not a per-master approved-schedule artifact. Building
-// that registry is a separate, later, separately authorized phase
-// (design only in the Phase B2A report — no migration created or
-// proposed here). findApprovedJurisdictionSchedule() below is the ONLY
-// place that will need to change when that registry exists — its
-// signature and the gate's overall result contract are deliberately
-// stable across that future swap.
+// Step 2 (migration 0084): the jurisdiction-schedule registry now exists
+// — reused legal_document_masters/legal_document_versions rather than a
+// new parallel table, via two added columns (adapts_master_id,
+// applies_to_jurisdiction). findApprovedJurisdictionSchedule() below
+// queries it directly. For Ghana specifically, OS-HR-GH-001 is now
+// registered as an active version effective 2026-09-14 — every other
+// jurisdiction remains unregistered and therefore still blocked.
 
 export const OS_LGL_007_MASTER_CANONICAL_CODE = "OS-LGL-007";
 
@@ -54,22 +52,35 @@ export type EmployeeAgreementJurisdictionGateResult =
       error: string;
     };
 
-// Placeholder lookup — deliberately returns "not found" for every
-// jurisdiction today, because no approved jurisdiction-specific Schedule
-// C artifact exists for any of them (confirmed against Production,
-// 2026-09-13/14: zero rows in every candidate table, and no dedicated
-// schedule table exists at all). Kept async so a future real repository
-// lookup (once one is designed and separately authorized) can replace
-// this function's body without changing its signature or the gate's
-// overall contract. Never fabricates a schedule — there is deliberately
-// no code path here that can return `found: true` today.
+// Real lookup (Phase B2 Step 2) — queries legal_document_masters for a
+// row that (a) adapts the named master (adapts_master_id), (b) applies
+// to this exact jurisdiction (applies_to_jurisdiction), and whose
+// current_version_id is a version with status 'active' and an
+// effective_date on or before today. Never infers "found" from any
+// weaker signal (see module doc comment). A schedule dated in the
+// future (effective_date > today) is correctly NOT found yet — it
+// exists as a controlled record but is not yet in force.
 async function findApprovedJurisdictionSchedule(
   masterCanonicalCode: string,
   jurisdiction: WorkforceJurisdiction
 ): Promise<{ found: false } | { found: true; scheduleId: string }> {
-  void masterCanonicalCode;
-  void jurisdiction;
-  return { found: false };
+  const admin = createAdminClient();
+  const { data: master } = await admin.from("legal_document_masters").select("id").eq("canonical_code", masterCanonicalCode).maybeSingle();
+  if (!master) return { found: false };
+
+  const { data: schedule } = await admin
+    .from("legal_document_masters")
+    .select("id, current_version_id, legal_document_versions!legal_document_masters_current_version_fkey(status, effective_date)")
+    .eq("adapts_master_id", master.id)
+    .eq("applies_to_jurisdiction", jurisdiction)
+    .maybeSingle();
+  if (!schedule?.current_version_id) return { found: false };
+
+  const version = schedule.legal_document_versions as unknown as { status: string; effective_date: string | null } | null;
+  if (!version || version.status !== "active") return { found: false };
+  if (!version.effective_date || version.effective_date > new Date().toISOString().slice(0, 10)) return { found: false };
+
+  return { found: true, scheduleId: schedule.id };
 }
 
 // Pure decision logic apart from the lookup call above — the mapping
