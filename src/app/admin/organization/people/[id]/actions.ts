@@ -41,6 +41,14 @@ import {
   type StaffBenefitTransactionType,
   type LongServiceMilestoneYears,
 } from "@/lib/organization/compensation";
+import {
+  acknowledgeAssetAssignment,
+  returnAsset,
+  transferAsset,
+  reportAssetIncident,
+  determineAssetIncident,
+  type AssetIncidentDetermination,
+} from "@/lib/organization/assets";
 
 // Organizational Structure, Authority Grants, Onboarding & Work Email
 // V1 (2026-09-07) — Person Detail View actions. Employment/engagement
@@ -496,6 +504,100 @@ export async function awardDeathInServiceBenefitAction(formData: FormData): Prom
 
   const result = await awardDeathInServiceBenefit({ profileId, beneficiaryVerified, beneficiaryDetails, verificationNotes, actorUserId: currentUser.id });
   if (!result.ok) console.error("[admin organization] failed to award death-in-service benefit", result.error);
+
+  revalidatePath(`/admin/organization/people/${profileId}`);
+}
+
+// Assets & Equipment — per-person assignments and incidents (Phase B5
+// Step 6, 2026-09-14). Registering/assigning new assets happens on the
+// standalone /admin/organization/assets registry page; this file only
+// covers actions scoped to this specific person's existing
+// assignments. Loss/damage always routes to determineAssetIncidentAction
+// (and, where warranted, an investigation) — never directly to a
+// deduction.
+export async function acknowledgeAssetAssignmentAction(formData: FormData): Promise<void> {
+  const currentUser = await getCurrentUser();
+  if (!currentUser) return;
+
+  const profileId = String(formData.get("profileId") ?? "").trim();
+  const assignmentId = String(formData.get("assignmentId") ?? "").trim();
+  if (!profileId || !assignmentId) return;
+
+  const result = await acknowledgeAssetAssignment({ assignmentId, actorUserId: currentUser.id });
+  if (!result.ok) console.error("[admin organization] failed to acknowledge asset assignment", result.error);
+
+  revalidatePath(`/admin/organization/people/${profileId}`);
+}
+
+export async function returnAssetAction(formData: FormData): Promise<void> {
+  const currentUser = await getCurrentUser();
+  if (!currentUser) return;
+
+  const profileId = String(formData.get("profileId") ?? "").trim();
+  const assignmentId = String(formData.get("assignmentId") ?? "").trim();
+  const returnCondition = String(formData.get("returnCondition") ?? "").trim();
+  if (!profileId || !assignmentId || !returnCondition) return;
+
+  const result = await returnAsset({ assignmentId, returnCondition, actorUserId: currentUser.id });
+  if (!result.ok) console.error("[admin organization] failed to return asset", result.error);
+
+  revalidatePath(`/admin/organization/people/${profileId}`);
+}
+
+export async function transferAssetAction(formData: FormData): Promise<void> {
+  const currentUser = await getCurrentUser();
+  if (!currentUser) return;
+
+  const profileId = String(formData.get("profileId") ?? "").trim();
+  const assignmentId = String(formData.get("assignmentId") ?? "").trim();
+  const newProfileId = String(formData.get("newProfileId") ?? "").trim();
+  const transferCondition = String(formData.get("transferCondition") ?? "").trim() || null;
+  if (!profileId || !assignmentId || !newProfileId) return;
+
+  const result = await transferAsset({ assignmentId, newProfileId, transferCondition, actorUserId: currentUser.id });
+  if (!result.ok) console.error("[admin organization] failed to transfer asset", result.error);
+
+  revalidatePath(`/admin/organization/people/${profileId}`);
+}
+
+export async function reportAssetIncidentAction(formData: FormData): Promise<void> {
+  const currentUser = await getCurrentUser();
+  if (!currentUser) return;
+
+  const profileId = String(formData.get("profileId") ?? "").trim();
+  const assignmentId = String(formData.get("assignmentId") ?? "").trim();
+  const incidentType = String(formData.get("incidentType") ?? "").trim();
+  const description = String(formData.get("description") ?? "").trim();
+  if (!profileId || !assignmentId || !incidentType || !description) return;
+
+  const result = await reportAssetIncident({ assignmentId, profileId, incidentType, description, actorUserId: currentUser.id });
+  if (!result.ok) console.error("[admin organization] failed to report asset incident", result.error);
+
+  revalidatePath(`/admin/organization/people/${profileId}`);
+}
+
+export async function determineAssetIncidentAction(formData: FormData): Promise<void> {
+  const currentUser = await getCurrentUser();
+  if (!currentUser) return;
+
+  const profileId = String(formData.get("profileId") ?? "").trim();
+  const incidentId = String(formData.get("incidentId") ?? "").trim();
+  const determination = String(formData.get("determination") ?? "").trim();
+  const determinationNotes = String(formData.get("determinationNotes") ?? "").trim();
+  const recoveryRequired = formData.get("recoveryRequired") === "true";
+  const recoveryNotes = String(formData.get("recoveryNotes") ?? "").trim() || null;
+  if (!profileId || !incidentId || !determinationNotes) return;
+  if (determination !== "company_matter" && determination !== "proven_deliberate_or_negligent") return;
+
+  const result = await determineAssetIncident({
+    incidentId,
+    determination: determination as AssetIncidentDetermination,
+    determinationNotes,
+    recoveryRequired,
+    recoveryNotes,
+    actorUserId: currentUser.id,
+  });
+  if (!result.ok) console.error("[admin organization] failed to determine asset incident", result.error);
 
   revalidatePath(`/admin/organization/people/${profileId}`);
 }

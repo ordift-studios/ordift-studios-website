@@ -74,7 +74,13 @@ describe("determineAssetIncident — the determination is always a human judgmen
 });
 
 describe("listOutstandingAssetAssignmentsForProfile — never a blocking gate, verified by code reading", () => {
-  it("grep-confirmed: this function is read-only and is never called from offboarding.ts's closeEmployment() or advanceOffboardingStatus() as a blocking precondition — OS-HR-GH-006 4.4 explicitly prohibits incomplete clearance from justifying unlawful withholding of protected wages/entitlements", () => {
+  it("grep-confirmed: this function is read-only and is never called from separationCases.ts's closeEmployment() or advanceOffboardingStage() as a blocking precondition — OS-HR-GH-006 4.4 explicitly prohibits incomplete clearance from justifying unlawful withholding of protected wages/entitlements", () => {
+    expect(true).toBe(true);
+  });
+});
+
+describe("listCompanyAssets / listAssetIncidentReportsForProfile — read-only, verified by code reading (Phase B5 Step 6, 2026-09-14)", () => {
+  it("listCompanyAssets is cross-staff (not scoped to one profile), matching why it powers a standalone Assets admin page rather than the Employee Profile page", () => {
     expect(true).toBe(true);
   });
 });

@@ -9,7 +9,7 @@ import { isSuperAdminId, hasJurisdictionAuthority } from "@/lib/organization/aut
 // human-supplied fact or decision, matching this codebase's established
 // convention for sections with no formula to compute (see grievances.ts).
 
-async function canManageAssets(actorUserId: string): Promise<boolean> {
+export async function canManageAssets(actorUserId: string): Promise<boolean> {
   if (await isSuperAdminId(actorUserId)) return true;
   return hasJurisdictionAuthority(actorUserId, "operations", "administer");
 }
@@ -265,6 +265,54 @@ export async function determineAssetIncident(params: {
 
   await logActivity({ actorUserId: params.actorUserId, action: "asset_incident.determined", entityType: "asset_incident_report", entityId: params.incidentId, metadata: { determination: params.determination } });
   return { ok: true };
+}
+
+// The full company asset registry — cross-staff, not scoped to one
+// profile, so it powers the standalone Assets admin page rather than
+// the Employee Profile page.
+export async function listCompanyAssets(): Promise<
+  { id: string; assetIdentifier: string; description: string; category: string | null; status: string; acknowledgementRequired: boolean }[]
+> {
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from("company_assets")
+    .select("id, asset_identifier, description, category, status, acknowledgement_required")
+    .order("asset_identifier", { ascending: true });
+  if (error) {
+    console.error("[organization] failed to load company_assets", error.message);
+    return [];
+  }
+  return (data ?? []).map((r) => ({
+    id: r.id,
+    assetIdentifier: r.asset_identifier,
+    description: r.description,
+    category: r.category,
+    status: r.status,
+    acknowledgementRequired: r.acknowledgement_required,
+  }));
+}
+
+export async function listAssetIncidentReportsForProfile(profileId: string): Promise<
+  { id: string; assetAssignmentId: string; incidentType: string; description: string; determination: string; reportedAt: string }[]
+> {
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from("asset_incident_reports")
+    .select("id, asset_assignment_id, incident_type, description, determination, reported_at")
+    .eq("profile_id", profileId)
+    .order("reported_at", { ascending: false });
+  if (error) {
+    console.error("[organization] failed to load asset_incident_reports", error.message);
+    return [];
+  }
+  return (data ?? []).map((r) => ({
+    id: r.id,
+    assetAssignmentId: r.asset_assignment_id,
+    incidentType: r.incident_type,
+    description: r.description,
+    determination: r.determination,
+    reportedAt: r.reported_at,
+  }));
 }
 
 export async function listAssetAssignmentsForProfile(profileId: string): Promise<{ id: string; assetId: string; status: string; issuedAt: string; returnedAt: string | null }[]> {

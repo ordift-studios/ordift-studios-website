@@ -19,6 +19,7 @@ import {
   listLongServiceBenefitAwardsForProfile,
   LONG_SERVICE_MILESTONE_PERCENTAGES,
 } from "@/lib/organization/compensation";
+import { listAssetAssignmentsForProfile, listAssetIncidentReportsForProfile, listCompanyAssets } from "@/lib/organization/assets";
 import {
   setEmploymentStatusAction,
   recordBackgroundScreeningAction,
@@ -40,6 +41,11 @@ import {
   recordStaffBenefitTransactionAction,
   awardLongServiceBenefitAction,
   awardDeathInServiceBenefitAction,
+  acknowledgeAssetAssignmentAction,
+  returnAssetAction,
+  transferAssetAction,
+  reportAssetIncidentAction,
+  determineAssetIncidentAction,
 } from "./actions";
 
 export const metadata: Metadata = {
@@ -104,11 +110,16 @@ export default async function PersonDetailPage({ params }: { params: Promise<{ i
   ]);
   const disciplinaryActions = isSuper ? await listDisciplinaryActionsForProfile(id) : [];
 
-  const [salaryAdvances, benefitTransactions, longServiceAwards] = await Promise.all([
+  const [salaryAdvances, benefitTransactions, longServiceAwards, assetAssignments, assetIncidents, companyAssets] = await Promise.all([
     listSalaryAdvancesForProfile(id),
     listStaffBenefitTransactionsForProfile(id),
     listLongServiceBenefitAwardsForProfile(id),
+    listAssetAssignmentsForProfile(id),
+    listAssetIncidentReportsForProfile(id),
+    listCompanyAssets(),
   ]);
+  const assetById = new Map(companyAssets.map((a) => [a.id, a]));
+  const otherStaffOptions = usersResult.users.filter((u) => u.id !== id).map((u) => ({ id: u.id, name: u.fullName ?? u.email ?? u.id }));
   const personSeparationCases = separationCases.filter((c) => c.profileId === id);
   const openSeparationCase = personSeparationCases.find((c) => c.status === "open") ?? null;
 
@@ -635,6 +646,101 @@ export default async function PersonDetailPage({ params }: { params: Promise<{ i
             <input name="verificationNotes" placeholder="Verification notes" className="col-span-2 rounded-lg border border-black/15 px-2 py-1 font-sans text-caption" />
             <button type="submit" className="col-span-2 justify-self-start font-sans text-caption font-semibold px-3 py-1 rounded-md bg-ordift-navy-950 text-white">Award Death-in-Service Benefit</button>
           </form>
+        </div>
+      </section>
+
+      {/* Assets & Equipment — per-person assignments and incidents
+          (Phase B5 Step 6, 2026-09-14). Registering/assigning new
+          assets happens on the standalone Assets registry page; loss/
+          damage always routes to a determination, never directly to a
+          deduction. */}
+      <section className="rounded-xl border border-black/10 bg-white p-6 space-y-4">
+        <h2 className="font-serif font-medium text-body text-ordift-ink">
+          Assets &amp; Equipment <Link href="/admin/organization/assets" className="text-caption font-sans text-ordift-gold-pressed underline underline-offset-4 font-normal">Registry →</Link>
+        </h2>
+
+        <div>
+          <p className="font-sans text-caption font-semibold text-ordift-ink mb-1">Assignments</p>
+          {assetAssignments.length > 0 ? (
+            <ul className="space-y-2">
+              {assetAssignments.map((a) => {
+                const asset = assetById.get(a.assetId);
+                return (
+                  <li key={a.id} className="font-sans text-caption text-ordift-ink-muted space-y-1">
+                    <p>
+                      · {asset ? `${asset.assetIdentifier} — ${asset.description}` : a.assetId} — {a.status} · issued {new Date(a.issuedAt).toLocaleDateString()}
+                      {a.returnedAt ? ` · returned ${new Date(a.returnedAt).toLocaleDateString()}` : ""}
+                    </p>
+                    {a.status === "issued" && (
+                      <div className="pl-3 flex flex-wrap gap-2">
+                        <form action={acknowledgeAssetAssignmentAction}>
+                          <input type="hidden" name="profileId" value={id} />
+                          <input type="hidden" name="assignmentId" value={a.id} />
+                          <button type="submit" className="font-sans text-caption font-semibold px-2 py-1 rounded-md bg-ordift-navy-950 text-white">Acknowledge</button>
+                        </form>
+                        <form action={returnAssetAction} className="flex gap-2">
+                          <input type="hidden" name="profileId" value={id} />
+                          <input type="hidden" name="assignmentId" value={a.id} />
+                          <input name="returnCondition" required placeholder="Return condition" className="rounded-lg border border-black/15 px-2 py-1 font-sans text-caption" />
+                          <button type="submit" className="font-sans text-caption font-semibold px-2 py-1 rounded-md bg-ordift-gold-pressed text-ordift-navy-950">Return</button>
+                        </form>
+                        <form action={transferAssetAction} className="flex gap-2">
+                          <input type="hidden" name="profileId" value={id} />
+                          <input type="hidden" name="assignmentId" value={a.id} />
+                          <select name="newProfileId" required defaultValue="" className="rounded-lg border border-black/15 bg-white px-2 py-1 font-sans text-caption">
+                            <option value="" disabled>Transfer to…</option>
+                            {otherStaffOptions.map((s) => (
+                              <option key={s.id} value={s.id}>{s.name}</option>
+                            ))}
+                          </select>
+                          <button type="submit" className="font-sans text-caption font-semibold px-2 py-1 rounded-md bg-ordift-navy-950 text-white">Transfer</button>
+                        </form>
+                        <form action={reportAssetIncidentAction} className="flex flex-wrap gap-2 basis-full">
+                          <input type="hidden" name="profileId" value={id} />
+                          <input type="hidden" name="assignmentId" value={a.id} />
+                          <input name="incidentType" required placeholder="Incident type (e.g. damage, loss)" className="rounded-lg border border-black/15 px-2 py-1 font-sans text-caption" />
+                          <input name="description" required placeholder="Description" className="rounded-lg border border-black/15 px-2 py-1 font-sans text-caption flex-1 min-w-[160px]" />
+                          <button type="submit" className="font-sans text-caption font-semibold px-2 py-1 rounded-md bg-red-800 text-white">Report Incident</button>
+                        </form>
+                      </div>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          ) : (
+            <p className="font-sans text-caption text-ordift-ink-muted">No assets currently or previously assigned.</p>
+          )}
+        </div>
+
+        <div className="border-t border-black/5 pt-4">
+          <p className="font-sans text-caption font-semibold text-ordift-ink mb-1">Incident Reports</p>
+          {assetIncidents.length > 0 ? (
+            <ul className="space-y-2">
+              {assetIncidents.map((i) => (
+                <li key={i.id} className="font-sans text-caption text-ordift-ink-muted space-y-1">
+                  <p>· {i.incidentType} — &ldquo;{i.description}&rdquo; — {i.determination.replace(/_/g, " ")} — {new Date(i.reportedAt).toLocaleDateString()}</p>
+                  {i.determination === "pending" && (
+                    <form action={determineAssetIncidentAction} className="pl-3 flex flex-wrap gap-2">
+                      <input type="hidden" name="profileId" value={id} />
+                      <input type="hidden" name="incidentId" value={i.id} />
+                      <select name="determination" required defaultValue="" className="rounded-lg border border-black/15 bg-white px-2 py-1 font-sans text-caption">
+                        <option value="" disabled>Determination…</option>
+                        <option value="company_matter">Company matter</option>
+                        <option value="proven_deliberate_or_negligent">Proven deliberate or negligent</option>
+                      </select>
+                      <input name="determinationNotes" required placeholder="Determination notes" className="rounded-lg border border-black/15 px-2 py-1 font-sans text-caption flex-1 min-w-[160px]" />
+                      <label className="flex items-center gap-1"><input type="checkbox" name="recoveryRequired" value="true" /> Lawful recovery required</label>
+                      <input name="recoveryNotes" placeholder="Recovery notes (optional)" className="rounded-lg border border-black/15 px-2 py-1 font-sans text-caption flex-1 min-w-[140px]" />
+                      <button type="submit" className="font-sans text-caption font-semibold px-2 py-1 rounded-md bg-ordift-navy-950 text-white">Record Determination</button>
+                    </form>
+                  )}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="font-sans text-caption text-ordift-ink-muted">No asset incidents on record.</p>
+          )}
         </div>
       </section>
 
