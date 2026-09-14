@@ -9,28 +9,32 @@ import {
   checkEmployeeAgreementJurisdictionSchedule,
   type EmployeeAgreementJurisdictionGateState,
 } from "@/lib/legal/employeeAgreementJurisdictionGate";
+import { classifyEmploymentAgreementVariable } from "@/lib/legal/employeeAgreementRequirements";
+import { mapEngagementTypeSlugToWorkforceRelationship } from "@/lib/compliance/workforceMappings";
+import { recordRequirementEvaluation } from "@/lib/compliance/requirementAudit";
 
 // Employee Employment Agreement — onboarding integration (E.5 Stage
-// 3B-3C). The reusable pipeline (master -> version -> agreement ->
+// 3B-3C; requirement-engine wiring added COMP-SYS-1 Phase B3 Step 2,
+// 2026-09-14). The reusable pipeline (master -> version -> agreement ->
 // snapshot -> signature) lives in agreementEngine.ts/signatureEngine.ts
 // unchanged; this file is only the OS-LGL-007-specific variable
 // resolution against real staff_onboarding/recruitment_requisitions/
-// staff_details data. Never invents a value: an unresolved required
-// field blocks agreement creation entirely (createEmployeeEmploymentAgreementDraft
-// makes zero writes when any required field is missing).
+// staff_details data. Never invents a value: an unresolved REQUIRED
+// field, or any unresolved REVIEW_REQUIRED classification, blocks
+// agreement creation entirely — zero writes.
 
 export type EmploymentAgreementVariables = Partial<Record<EmploymentAgreementVariableKey, string>>;
 
 export async function resolveEmployeeAgreementVariables(
   onboardingId: string
-): Promise<{ values: EmploymentAgreementVariables; missingRequired: string[]; profileId: string | null }> {
+): Promise<{ values: EmploymentAgreementVariables; engagementTypeSlug: string | null; profileId: string | null }> {
   const admin = createAdminClient();
   const { data: onboarding } = await admin
     .from("staff_onboarding")
     .select("profile_id, requisition_id")
     .eq("id", onboardingId)
     .maybeSingle();
-  if (!onboarding) return { values: {}, missingRequired: ["Onboarding record not found"], profileId: null };
+  if (!onboarding) return { values: {}, engagementTypeSlug: null, profileId: null };
 
   const { data: profile } = await admin.from("profiles").select("full_name").eq("id", onboarding.profile_id).maybeSingle();
 
@@ -60,7 +64,7 @@ export async function resolveEmployeeAgreementVariables(
     requisition?.requested_position_id ? admin.from("positions").select("name").eq("id", requisition.requested_position_id).maybeSingle() : null,
     requisition?.department_id ? admin.from("departments").select("name").eq("id", requisition.department_id).maybeSingle() : null,
     requisition?.grade_id ? admin.from("grades").select("name").eq("id", requisition.grade_id).maybeSingle() : null,
-    requisition?.engagement_type_id ? admin.from("engagement_types").select("name").eq("id", requisition.engagement_type_id).maybeSingle() : null,
+    requisition?.engagement_type_id ? admin.from("engagement_types").select("name, slug").eq("id", requisition.engagement_type_id).maybeSingle() : null,
     requisition?.hiring_manager_id ? admin.from("profiles").select("full_name").eq("id", requisition.hiring_manager_id).maybeSingle() : null,
     requisition?.employing_entity_id ? admin.from("employing_entities").select("name").eq("id", requisition.employing_entity_id).maybeSingle() : null,
     requisition?.employment_jurisdiction_id ? admin.from("employment_jurisdictions").select("name").eq("id", requisition.employment_jurisdiction_id).maybeSingle() : null,
@@ -85,42 +89,115 @@ export async function resolveEmployeeAgreementVariables(
     // probation, allowances, annualLeave, notice: optional, no source yet.
   };
 
-  const missingRequired = EMPLOYMENT_AGREEMENT_VARIABLES.filter((v) => v.required && !values[v.key]).map((v) => v.label);
-
-  return { values, missingRequired, profileId: onboarding.profile_id };
+  return { values, engagementTypeSlug: engagementType?.data?.slug ?? null, profileId: onboarding.profile_id };
 }
 
-// Creates the real draft agreement ONLY when every required variable
-// is genuinely resolved AND an approved jurisdiction-specific schedule
-// exists for the employment jurisdiction — otherwise makes zero writes.
+// Creates the real draft agreement ONLY when:
+//  1. an approved jurisdiction schedule exists for the resolved jurisdiction
+//     (employeeAgreementJurisdictionGate.ts — also confirms jurisdiction
+//     itself resolves and the schedule version is active/effective);
+//  2. the person's workforce relationship resolves (workforceMappings.ts —
+//     never inferred from title/grade);
+//  3. every EMPLOYMENT_AGREEMENT_VARIABLES field classifies REQUIRED-and-
+//     present, OPTIONAL, or NOT_APPLICABLE (classifyEmploymentAgreementVariable,
+//     COMP-SYS-1 Phase B3 Step 2 — replaces the old flat required:boolean
+//     check; the classification itself is unchanged in substance, now
+//     resolver-driven and Ghana-grounded per OS-HR-GH-001 Section 2);
+//  4. no field classifies REVIEW_REQUIRED;
+//  5. no field classifies PROHIBITED while still carrying a value.
+// Otherwise: zero writes. Blocking classifications (REVIEW_REQUIRED,
+// REQUIRED-missing, PROHIBITED-present) are persisted to
+// requirement_evaluations for audit; routine passes are not, to keep the
+// audit table meaningful rather than a page-view log.
+//
 // masterId/masterVersionId are looked up live (never hard-coded) so a
 // future re-approval/new version is picked up automatically.
-//
-// COMP-SYS-1 Phase B2 Step 1 (2026-09-14) — the jurisdiction-schedule
-// gate below is a NEW precondition, additional to the pre-existing
-// missingRequired check. See src/lib/legal/employeeAgreementJurisdictionGate.ts:
-// the approved OS-LGL-007 master's own Clause 29/Schedule C requires a
-// separate, counsel-adapted jurisdiction-specific schedule before real
-// use, for every jurisdiction — none exists today for any jurisdiction,
-// so this function currently refuses to issue for anyone, regardless of
-// how complete the resolved variables are. This is expected, correct
-// behavior, not a defect — see the gate module's own documentation.
 export async function createEmployeeEmploymentAgreementDraft(params: {
   onboardingId: string;
   actorUserId: string;
 }): Promise<
   | { ok: true; agreementId: string; agreementReference: string }
-  | { ok: false; error: string; missingFields?: string[]; jurisdictionGateState?: EmployeeAgreementJurisdictionGateState }
+  | {
+      ok: false;
+      error: string;
+      missingFields?: string[];
+      reviewRequiredFields?: string[];
+      prohibitedFields?: string[];
+      jurisdictionGateState?: EmployeeAgreementJurisdictionGateState;
+    }
 > {
-  const { values, missingRequired, profileId } = await resolveEmployeeAgreementVariables(params.onboardingId);
+  const { values, engagementTypeSlug, profileId } = await resolveEmployeeAgreementVariables(params.onboardingId);
   if (!profileId) return { ok: false, error: "Onboarding record not found." };
-  if (missingRequired.length > 0) {
-    return { ok: false, error: "Required employment particulars are not yet resolved — no draft was created.", missingFields: missingRequired };
-  }
 
   const jurisdictionGate = await checkEmployeeAgreementJurisdictionSchedule(values.jurisdiction ?? null);
   if (!jurisdictionGate.ok) {
     return { ok: false, error: jurisdictionGate.error, jurisdictionGateState: jurisdictionGate.state };
+  }
+
+  const relationship = mapEngagementTypeSlugToWorkforceRelationship(engagementTypeSlug);
+  if (!relationship) {
+    return {
+      ok: false,
+      error: "This person's workforce relationship is not yet recognized by the compliance system — it requires review before an Employee Employment Agreement can be drafted.",
+    };
+  }
+
+  const missingFields: string[] = [];
+  const reviewRequiredFields: string[] = [];
+  const prohibitedFields: string[] = [];
+
+  for (const variable of EMPLOYMENT_AGREEMENT_VARIABLES) {
+    const classification = classifyEmploymentAgreementVariable({
+      relationship,
+      jurisdiction: jurisdictionGate.workforceJurisdiction,
+      key: variable.key,
+    });
+    const hasValue = Boolean(values[variable.key]);
+    const isRequiredMissing = classification.classification === "REQUIRED" && !hasValue;
+    const isProhibitedPresent = classification.classification === "PROHIBITED" && hasValue;
+    const isReviewRequired = classification.classification === "REVIEW_REQUIRED";
+
+    // Persist only the noteworthy outcomes — a meaningful controlled
+    // decision (a block, or a fail-closed classification), not every
+    // routine "required and present" pass.
+    if (isReviewRequired || isRequiredMissing || isProhibitedPresent) {
+      await recordRequirementEvaluation({
+        subjectType: "staff_onboarding",
+        subjectReference: params.onboardingId,
+        domain: `employment_agreement.${variable.key}`,
+        relationship,
+        jurisdiction: jurisdictionGate.workforceJurisdiction,
+        result: classification,
+        evaluatedBy: params.actorUserId,
+      });
+    }
+
+    if (isReviewRequired) {
+      reviewRequiredFields.push(variable.label);
+    } else if (isRequiredMissing) {
+      missingFields.push(variable.label);
+    } else if (isProhibitedPresent) {
+      prohibitedFields.push(variable.label);
+      delete values[variable.key]; // data minimization — never let a PROHIBITED value reach the snapshot
+    }
+  }
+
+  if (reviewRequiredFields.length > 0) {
+    return {
+      ok: false,
+      error: "Some employment particulars require compliance review before an Employee Employment Agreement can be drafted.",
+      reviewRequiredFields,
+    };
+  }
+  if (missingFields.length > 0) {
+    return { ok: false, error: "Required employment particulars are not yet resolved — no draft was created.", missingFields };
+  }
+  if (prohibitedFields.length > 0) {
+    return {
+      ok: false,
+      error: "Some resolved information must not be included in a Ghana employment agreement — review required before issuance.",
+      prohibitedFields,
+    };
   }
 
   const admin = createAdminClient();

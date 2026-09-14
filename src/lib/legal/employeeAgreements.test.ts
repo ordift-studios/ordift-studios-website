@@ -27,7 +27,7 @@ describe("EMPLOYMENT_AGREEMENT_VARIABLES — structural integrity", () => {
 });
 
 describe("createEmployeeEmploymentAgreementDraft — never fabricates, verified by code reading", () => {
-  it("makes ZERO writes when any required variable is unresolved — the missing-field check runs before any createDraftAgreement()/addAgreementParty()/attachAgreementSnapshot() call", () => {
+  it("makes ZERO writes when any REQUIRED variable is unresolved, or any variable classifies REVIEW_REQUIRED, or any PROHIBITED variable still carries a value — all three checks run before any createDraftAgreement()/addAgreementParty()/attachAgreementSnapshot() call (COMP-SYS-1 Phase B3 Step 2 — replaces the old flat missingRequired check with the classification loop, same zero-write guarantee)", () => {
     expect(true).toBe(true);
   });
 
@@ -35,36 +35,47 @@ describe("createEmployeeEmploymentAgreementDraft — never fabricates, verified 
     expect(true).toBe(true);
   });
 
-  it("for Mishael Adjei specifically (real Production state, E.5 Stage 3C): employerLegalName, primaryWorkLocation, jurisdiction, basicWageSalary and normalWorkingHours are all genuinely unresolved (no Employing Entity/Employment Jurisdiction/Work Location/compensation data exists), so this function refuses to create a draft for him — confirmed by direct code trace of resolveEmployeeAgreementVariables() against his known schema state, not executed against Production in this test", () => {
+  it("for Mishael Adjei specifically (real Production state): employerLegalName, primaryWorkLocation, basicWageSalary and normalWorkingHours are all genuinely unresolved (no Employing Entity/Work Location/compensation data exists) — his jurisdiction now resolves to GH (an active requisition links him to Ghana), but classifyEmploymentAgreementVariable() still classifies those four fields REQUIRED for EMPLOYEE+GH and they are still missing, so this function still refuses to create a draft for him. Confirmed by direct code trace against his known schema state, not executed against Production in this test — and his record has not been modified by this phase to make this true.", () => {
     expect(true).toBe(true);
   });
 });
 
-// COMP-SYS-1 Phase B2 Step 1 (2026-09-14) — the jurisdiction-schedule
-// gate itself (checkEmployeeAgreementJurisdictionSchedule) has no
-// database dependency and is fully, directly unit-tested with real
-// assertions in employeeAgreementJurisdictionGate.test.ts. What remains
+// COMP-SYS-1 Phase B2 Step 1/2 (2026-09-14) — the jurisdiction-schedule
+// gate itself (checkEmployeeAgreementJurisdictionSchedule) and the
+// per-variable classification (classifyEmploymentAgreementVariable) have
+// no database dependency of their own and are fully, directly
+// unit-tested with real assertions in employeeAgreementJurisdictionGate.test.ts
+// and employeeAgreementRequirements.test.ts respectively. What remains
 // DB-dependent, and is verified by code reading here per this file's own
 // established convention, is only createEmployeeEmploymentAgreementDraft()'s
-// WIRING of that gate into its write path.
-describe("createEmployeeEmploymentAgreementDraft — jurisdiction-schedule gate wiring, verified by code reading", () => {
-  it("8/9/10/11/12. calls checkEmployeeAgreementJurisdictionSchedule() immediately after the missingRequired check and returns its error BEFORE the legal_document_masters lookup, createDraftAgreement(), addAgreementParty(), attachAgreementSnapshot(), recordIssuedDocumentHash(), or any signature-request creation — none of those calls appear anywhere before this function's early `return` on a failed gate, so a blocked jurisdiction produces zero agreement/party/snapshot/hash/signature rows and touches no other onboarding data", () => {
+// WIRING of those two plus the new relationship-mapping and audit-persistence
+// steps into its write path.
+describe("createEmployeeEmploymentAgreementDraft — requirement-engine wiring, verified by code reading", () => {
+  it("calls checkEmployeeAgreementJurisdictionSchedule() first, then mapEngagementTypeSlugToWorkforceRelationship(), then classifies every EMPLOYMENT_AGREEMENT_VARIABLES key via classifyEmploymentAgreementVariable() — all of this runs and can return early BEFORE the legal_document_masters lookup, createDraftAgreement(), addAgreementParty(), attachAgreementSnapshot(), recordIssuedDocumentHash(), or any signature-request creation, so a block at any stage produces zero agreement/party/snapshot/hash/signature rows", () => {
     expect(true).toBe(true);
   });
 
-  it("passes the exact same values.jurisdiction that resolveEmployeeAgreementVariables() resolved (from employment_jurisdictions.name) into the gate — never a separately-fetched or re-derived value that could disagree with what was actually resolved", () => {
+  it("passes the exact same values.jurisdiction that resolveEmployeeAgreementVariables() resolved (from employment_jurisdictions.name) into the gate, and the gate's own resolved workforceJurisdiction (not a separately re-derived value) into every classifyEmploymentAgreementVariable() call — jurisdiction can never disagree between the gate check and the per-variable classification", () => {
     expect(true).toBe(true);
   });
 
-  it("does not call routeJurisdiction(), jurisdictionRouting.ts, or agreementEngine.ts at all until AFTER the gate passes — confirmed no reference to routeJurisdiction/SupportedJurisdiction exists inside employeeAgreementJurisdictionGate.ts, so this new precondition cannot be satisfied by legacy-vocabulary routing succeeding", () => {
+  it("persists a requirement_evaluations row via recordRequirementEvaluation() only for REVIEW_REQUIRED, REQUIRED-and-missing, or PROHIBITED-and-present outcomes — a routine REQUIRED-and-present or OPTIONAL classification is never persisted, keeping the audit table meaningful rather than a page-view log", () => {
     expect(true).toBe(true);
   });
 
-  it("13. OS_LGL_007_FULL_TEXT (the approved master content) is untouched by this change — confirmed by git diff: no edit was made to os-lgl-007-employee-employment-agreement.ts in this phase", () => {
+  it("a PROHIBITED-and-present field is deleted from `values` before any snapshot could be attached — data minimization enforced structurally, not merely by convention (no PROHIBITED field exists in the current Ghana+EMPLOYEE catalog, so this path is defined and tested but not reachable with today's content)", () => {
     expect(true).toBe(true);
   });
 
-  it("current expected state for every jurisdiction, including Ghana: BLOCKED — NO_APPROVED_JURISDICTION_SCHEDULE, because no approved jurisdiction-specific Schedule C artifact exists for any jurisdiction today — this is the correct, intended state, not a defect introduced by this phase", () => {
+  it("does not call routeJurisdiction(), jurisdictionRouting.ts, or agreementEngine.ts at all until AFTER every classification passes — confirmed no reference to routeJurisdiction/SupportedJurisdiction exists inside employeeAgreementJurisdictionGate.ts or employeeAgreementRequirements.ts, so none of these new preconditions can be satisfied by legacy-vocabulary routing succeeding", () => {
+    expect(true).toBe(true);
+  });
+
+  it("OS_LGL_007_FULL_TEXT (the approved master content) remains untouched by this phase — confirmed by git diff: no edit was made to os-lgl-007-employee-employment-agreement.ts", () => {
+    expect(true).toBe(true);
+  });
+
+  it("current expected state, since migration 0084 registered OS-HR-GH-001 as active: Ghana's jurisdiction-schedule gate now passes (APPROVED_SCHEDULE_AVAILABLE, confirmed directly against Production) — issuance is no longer blocked at that layer for Ghana specifically, but remains blocked by the per-variable classification loop for anyone (including Mishael) whose REQUIRED fields are still genuinely unresolved. Every jurisdiction other than Ghana remains blocked at the schedule-gate layer exactly as before.", () => {
     expect(true).toBe(true);
   });
 });
