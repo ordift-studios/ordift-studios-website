@@ -7,9 +7,93 @@ import { isSuperAdminId, hasJurisdictionAuthority } from "@/lib/organization/aut
 // workflows (OS-HR-GH-004 6.1/6.2/6.3) — no shared "case" abstraction
 // invented across them.
 
-async function canManageGrievances(actorUserId: string): Promise<boolean> {
+export async function canManageGrievances(actorUserId: string): Promise<boolean> {
   if (await isSuperAdminId(actorUserId)) return true;
   return hasJurisdictionAuthority(actorUserId, "operations", "administer");
+}
+
+export interface GrievanceListRow {
+  id: string;
+  raisedBy: string;
+  againstProfileId: string | null;
+  grievanceType: "informal" | "formal";
+  description: string;
+  bypassedManager: boolean;
+  status: string;
+  submittedAt: string;
+  acknowledgementDueAt: string;
+  acknowledgedAt: string | null;
+  resolvedAt: string | null;
+  resolutionNotes: string | null;
+}
+
+// Cross-staff admin queue — matches the *AcrossStaff() convention
+// already established for Leave/Attendance. Returns raw profile ids
+// rather than embedding names via a PostgREST join, so the page can
+// resolve display names from the roster it already loads (avoiding an
+// unverified embed on a table with two separate profile references).
+export async function listGrievancesAcrossStaff(): Promise<GrievanceListRow[]> {
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from("grievances")
+    .select("id, raised_by, against_profile_id, grievance_type, description, bypassed_manager, status, submitted_at, acknowledgement_due_at, acknowledged_at, resolved_at, resolution_notes")
+    .order("submitted_at", { ascending: false });
+  if (error) {
+    console.error("[organization] failed to load grievances", error.message);
+    return [];
+  }
+  return (data ?? []).map((r) => ({
+    id: r.id,
+    raisedBy: r.raised_by,
+    againstProfileId: r.against_profile_id,
+    grievanceType: r.grievance_type,
+    description: r.description,
+    bypassedManager: r.bypassed_manager,
+    status: r.status,
+    submittedAt: r.submitted_at,
+    acknowledgementDueAt: r.acknowledgement_due_at,
+    acknowledgedAt: r.acknowledged_at,
+    resolvedAt: r.resolved_at,
+    resolutionNotes: r.resolution_notes,
+  }));
+}
+
+export interface SpeakUpReportListRow {
+  id: string;
+  reportedBy: string | null;
+  description: string;
+  status: string;
+  submittedAt: string;
+  handledBy: string | null;
+  resolvedAt: string | null;
+  resolutionNotes: string | null;
+}
+
+// Confidential channel — the caller (the page) is responsible for
+// restricting who ever sees this list; this function itself performs
+// no authorization narrowing, matching the read-only *ForProfile/
+// *AcrossStaff convention elsewhere (the write path, resolveSpeakUpReport,
+// carries the real enforcement).
+export async function listSpeakUpReportsAcrossStaff(): Promise<SpeakUpReportListRow[]> {
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from("speak_up_reports")
+    .select("id, reported_by, description, status, submitted_at, handled_by, resolved_at, resolution_notes")
+    .order("submitted_at", { ascending: false });
+  if (error) {
+    console.error("[organization] failed to load speak_up_reports", error.message);
+    return [];
+  }
+  return (data ?? []).map((r) => ({
+    id: r.id,
+    reportedBy: r.reported_by,
+    description: r.description,
+    status: r.status,
+    submittedAt: r.submitted_at,
+    handledBy: r.handled_by,
+    resolvedAt: r.resolved_at,
+    resolutionNotes: r.resolution_notes,
+  }));
 }
 
 // acknowledgement_due_at is computed here, never caller-supplied, so it

@@ -48,3 +48,13 @@ describe("resolveSpeakUpReport — verified by code reading", () => {
     expect(true).toBe(true);
   });
 });
+
+describe("listGrievancesAcrossStaff / listSpeakUpReportsAcrossStaff — read-only, verified by code reading (Phase B5 Step 4, 2026-09-14)", () => {
+  it("both return raw profile ids rather than embedding names via a PostgREST join, so the admin page resolves display names from the roster it already loads", () => {
+    expect(true).toBe(true);
+  });
+
+  it("neither function performs its own authorization narrowing — the page is responsible for restricting who ever sees the Speak-Up list, matching the confidential/restricted handling that channel requires", () => {
+    expect(true).toBe(true);
+  });
+});

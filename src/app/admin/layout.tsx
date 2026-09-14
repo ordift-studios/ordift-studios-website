@@ -93,6 +93,7 @@ const NAV_GROUPS: NavGroup[] = [
       { label: "Workforce Overview", href: "/admin/organization/workforce", adminOnly: true },
       { label: "Leave", href: "/admin/organization/leave", adminOnly: true },
       { label: "Attendance", href: "/admin/organization/attendance", adminOnly: true },
+      { label: "Employee Relations", href: "/admin/organization/employee-relations", adminOnly: true },
     ],
   },
   {
