@@ -3,6 +3,8 @@ import { logActivity } from "@/lib/admin/activityLog";
 import { isSuperAdminId, hasJurisdictionAuthority } from "@/lib/organization/authority";
 import { classifyAttendance, type AttendanceDayType, type AttendanceStatus } from "@/lib/organization/attendanceClassification";
 
+export type { AttendanceDayType };
+
 // Ordift Studios Compliance/COMP-SYS-1, Phase B4 Step 3 (2026-09-14) —
 // attendance record I/O. The actual classification decision lives in
 // attendanceClassification.ts (pure, fully unit-tested); this file only
@@ -320,3 +322,48 @@ export async function listAttendanceRecordsForProfile(profileId: string, fromDat
   }
   return (data ?? []).map(mapRow);
 }
+
+export interface AttendanceRecordWithProfile extends AttendanceRecord {
+  profileFullName: string | null;
+}
+
+function mapRowWithProfile(r: Parameters<typeof mapRow>[0] & { profiles: { full_name: string | null } | null }): AttendanceRecordWithProfile {
+  return { ...mapRow(r), profileFullName: r.profiles?.full_name ?? null };
+}
+
+// Ordift Studios Compliance/COMP-SYS-1, Phase B5 Step 3 (2026-09-14) —
+// the Admin-wide Attendance workspace. Every record for the given date
+// across every person who has one — a day with no records yet for
+// anyone shows an empty list, never a fabricated roster of "present"
+// rows for people who haven't been recorded.
+export async function listAttendanceRecordsForDateAcrossStaff(attendanceDate: string): Promise<AttendanceRecordWithProfile[]> {
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from("attendance_records")
+    .select(`${SELECT}, profiles!attendance_records_profile_id_fkey(full_name)`)
+    .eq("attendance_date", attendanceDate)
+    .order("attendance_date", { ascending: false });
+  if (error) {
+    console.error("[organization] failed to load attendance_records for date", error.message);
+    return [];
+  }
+  return (data ?? []).map((r) => mapRowWithProfile(r as unknown as Parameters<typeof mapRowWithProfile>[0]));
+}
+
+// The exceptions queue — every record still awaiting the one human
+// decision reviewAttendanceException() can make, across every person.
+export async function listUnexplainedAbsencesAcrossStaff(): Promise<AttendanceRecordWithProfile[]> {
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from("attendance_records")
+    .select(`${SELECT}, profiles!attendance_records_profile_id_fkey(full_name)`)
+    .eq("attendance_status", "absent_unexplained")
+    .order("attendance_date", { ascending: true });
+  if (error) {
+    console.error("[organization] failed to load unexplained absences", error.message);
+    return [];
+  }
+  return (data ?? []).map((r) => mapRowWithProfile(r as unknown as Parameters<typeof mapRowWithProfile>[0]));
+}
+
+export { canManageAttendance };

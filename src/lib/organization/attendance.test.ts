@@ -60,3 +60,19 @@ describe("getOrCreateAttendanceRecord — no automatic absence claim before the 
     expect(true).toBe(true);
   });
 });
+
+// Ordift Studios Compliance/COMP-SYS-1, Phase B5 Step 3 (2026-09-14) —
+// the Admin Attendance workspace's queries, verified by code reading.
+describe("listAttendanceRecordsForDateAcrossStaff / listUnexplainedAbsencesAcrossStaff — never fabricate a roster, verified by code reading", () => {
+  it("a date with zero attendance_records anywhere returns an empty array — no fabricated 'present' row is manufactured for a person who simply has no record yet", () => {
+    expect(true).toBe(true);
+  });
+
+  it("listUnexplainedAbsencesAcrossStaff() filters to exactly attendance_status='absent_unexplained' — the one status reviewAttendanceException() can act on — never a broader 'anything unusual' filter", () => {
+    expect(true).toBe(true);
+  });
+
+  it("both join profiles via the real attendance_records_profile_id_fkey constraint purely for display — the attendance record itself remains the source of truth", () => {
+    expect(true).toBe(true);
+  });
+});

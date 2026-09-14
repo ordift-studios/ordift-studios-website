@@ -58,6 +58,7 @@ export default async function WorkforceOverviewPage() {
 
   const attentionItems = [
     { label: "Pending leave requests", count: counts.pendingLeaveRequests, href: "/admin/organization/leave" },
+    { label: "Unexplained absences needing review", count: counts.unexplainedAbsences, href: "/admin/organization/attendance" },
     { label: "Fixed-term contracts expiring within 90 days", count: counts.fixedTermApproachingExpiry },
     { label: "Open grievances", count: counts.openGrievances },
     { label: "Open disciplinary investigations", count: counts.openDisciplinaryInvestigations },

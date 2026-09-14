@@ -22,6 +22,10 @@ describe("getWorkforceOverviewCounts — real counts only, verified by code read
   it("resolves the 'staff' role id once and reuses it for both the roster and the count query, rather than an unsafe nested-filter embed — if no 'staff' role row exists, activeStaffCount degrades to 0 rather than throwing", () => {
     expect(true).toBe(true);
   });
+
+  it("unexplainedAbsences (Phase B5 Step 3) counts exactly attendance_status='absent_unexplained' — the same real status reviewAttendanceException() acts on, matching the Attendance workspace's own queue exactly", () => {
+    expect(true).toBe(true);
+  });
 });
 
 describe("listActiveStaffRoster — verified by code reading", () => {

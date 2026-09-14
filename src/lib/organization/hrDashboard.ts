@@ -50,6 +50,7 @@ export interface WorkforceOverviewCounts {
   outstandingAssets: number;
   activeOffboardingCases: number;
   unresolvedRequirementReviews: number;
+  unexplainedAbsences: number;
 }
 
 // Every field is a real COUNT query — zero is a normal, honestly
@@ -77,6 +78,7 @@ export async function getWorkforceOverviewCounts(): Promise<WorkforceOverviewCou
     outstandingAssets,
     activeOffboardingCases,
     unresolvedRequirementReviews,
+    unexplainedAbsences,
   ] = await Promise.all([
     staffRole
       ? admin.from("user_roles").select("user_id", { count: "exact", head: true }).eq("role_id", staffRole.id)
@@ -92,6 +94,7 @@ export async function getWorkforceOverviewCounts(): Promise<WorkforceOverviewCou
     admin.from("asset_assignments").select("id", { count: "exact", head: true }).eq("status", "issued"),
     admin.from("separation_cases").select("id", { count: "exact", head: true }).eq("status", "open"),
     admin.from("requirement_evaluations").select("id", { count: "exact", head: true }).eq("classification", "REVIEW_REQUIRED"),
+    admin.from("attendance_records").select("id", { count: "exact", head: true }).eq("attendance_status", "absent_unexplained"),
   ]);
 
   return {
@@ -107,5 +110,6 @@ export async function getWorkforceOverviewCounts(): Promise<WorkforceOverviewCou
     outstandingAssets: outstandingAssets.count ?? 0,
     activeOffboardingCases: activeOffboardingCases.count ?? 0,
     unresolvedRequirementReviews: unresolvedRequirementReviews.count ?? 0,
+    unexplainedAbsences: unexplainedAbsences.count ?? 0,
   };
 }
