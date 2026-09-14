@@ -14,6 +14,12 @@ import { listSeparationCases, SEPARATION_CATEGORIES, SEPARATION_REASON_TYPES } f
 import { listPerformanceReviewsForProfile, listPipsForProfile, PIP_ALLOWED_DURATIONS_DAYS } from "@/lib/organization/performanceReviews";
 import { listInvestigationsForProfile, listSuspensionsForProfile, listDisciplinaryActionsForProfile, DISCIPLINARY_ACTION_TYPES } from "@/lib/organization/discipline";
 import {
+  listSalaryAdvancesForProfile,
+  listStaffBenefitTransactionsForProfile,
+  listLongServiceBenefitAwardsForProfile,
+  LONG_SERVICE_MILESTONE_PERCENTAGES,
+} from "@/lib/organization/compensation";
+import {
   setEmploymentStatusAction,
   recordBackgroundScreeningAction,
   updateAccessStatusFormAction,
@@ -28,6 +34,12 @@ import {
   closeInvestigationAction,
   recordInvestigatorySuspensionAction,
   recordSuspensionReviewAction,
+  requestSalaryAdvanceAction,
+  decideSalaryAdvanceAction,
+  disburseSalaryAdvanceAction,
+  recordStaffBenefitTransactionAction,
+  awardLongServiceBenefitAction,
+  awardDeathInServiceBenefitAction,
 } from "./actions";
 
 export const metadata: Metadata = {
@@ -91,6 +103,12 @@ export default async function PersonDetailPage({ params }: { params: Promise<{ i
     isSuper ? listSuspensionsForProfile(id) : Promise.resolve([]),
   ]);
   const disciplinaryActions = isSuper ? await listDisciplinaryActionsForProfile(id) : [];
+
+  const [salaryAdvances, benefitTransactions, longServiceAwards] = await Promise.all([
+    listSalaryAdvancesForProfile(id),
+    listStaffBenefitTransactionsForProfile(id),
+    listLongServiceBenefitAwardsForProfile(id),
+  ]);
   const personSeparationCases = separationCases.filter((c) => c.profileId === id);
   const openSeparationCase = personSeparationCases.find((c) => c.status === "open") ?? null;
 
@@ -503,6 +521,121 @@ export default async function PersonDetailPage({ params }: { params: Promise<{ i
             </div>
           </>
         )}
+      </section>
+
+      {/* Compensation & Benefits (Phase B5 Step 5, 2026-09-14). Every
+          computed amount (advance cap, long-service/death-in-service
+          award) is server-computed from OS-HR-GH-003's real approved
+          figures — never entered or overridden here. */}
+      <section className="rounded-xl border border-black/10 bg-white p-6 space-y-4">
+        <h2 className="font-serif font-medium text-body text-ordift-ink">Compensation &amp; Benefits</h2>
+
+        <div>
+          <p className="font-sans text-caption font-semibold text-ordift-ink mb-1">Salary Advances</p>
+          {salaryAdvances.length > 0 ? (
+            <ul className="space-y-2">
+              {salaryAdvances.map((a) => (
+                <li key={a.id} className="font-sans text-caption text-ordift-ink-muted space-y-1">
+                  <p>
+                    · {a.requestedAmount.toLocaleString()} (cap {a.capAmount.toLocaleString()}{a.exceedsCap ? ", exceeds cap — Founder/Super Admin required" : ""}) — {a.status}
+                    {" · "}{new Date(a.createdAt).toLocaleDateString()}
+                  </p>
+                  {a.status === "requested" && (
+                    <form action={decideSalaryAdvanceAction} className="flex flex-wrap gap-2 pl-3">
+                      <input type="hidden" name="profileId" value={id} />
+                      <input type="hidden" name="advanceId" value={a.id} />
+                      <input name="decisionNotes" placeholder="Decision notes (optional)" className="rounded-lg border border-black/15 px-2 py-1 font-sans text-caption flex-1 min-w-[160px]" />
+                      <button type="submit" name="decision" value="approved" className="font-sans text-caption font-semibold px-2 py-1 rounded-md bg-ordift-navy-950 text-white">Approve</button>
+                      <button type="submit" name="decision" value="declined" className="font-sans text-caption text-red-700 underline underline-offset-4">Decline</button>
+                    </form>
+                  )}
+                  {a.status === "approved" && (
+                    <form action={disburseSalaryAdvanceAction} className="flex flex-wrap gap-2 pl-3">
+                      <input type="hidden" name="profileId" value={id} />
+                      <input type="hidden" name="advanceId" value={a.id} />
+                      <input name="repaymentTerms" required placeholder="Written repayment terms" className="rounded-lg border border-black/15 px-2 py-1 font-sans text-caption flex-1 min-w-[160px]" />
+                      <button type="submit" className="font-sans text-caption font-semibold px-2 py-1 rounded-md bg-ordift-gold-pressed text-ordift-navy-950">Disburse</button>
+                    </form>
+                  )}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="font-sans text-caption text-ordift-ink-muted">No salary advances on record.</p>
+          )}
+          <form action={requestSalaryAdvanceAction} className="flex flex-wrap gap-2 mt-2">
+            <input type="hidden" name="profileId" value={id} />
+            <input name="requestedAmount" type="number" step="0.01" min="0.01" required placeholder="Requested amount" className="rounded-lg border border-black/15 px-2 py-1 font-sans text-caption" />
+            <button type="submit" className="font-sans text-caption font-semibold px-2 py-1 rounded-md bg-ordift-navy-950 text-white">Request Salary Advance</button>
+          </form>
+        </div>
+
+        <div className="border-t border-black/5 pt-4">
+          <p className="font-sans text-caption font-semibold text-ordift-ink mb-1">Staff Benefit Transactions</p>
+          {benefitTransactions.length > 0 ? (
+            <ul className="space-y-1">
+              {benefitTransactions.map((t) => (
+                <li key={t.id} className="font-sans text-caption text-ordift-ink-muted">
+                  · {t.transactionType} — {t.benefitDescription} ({t.amount.toLocaleString()}) — {new Date(t.transactionDate).toLocaleDateString()}
+                  {t.reconciledPayrollCycle ? ` · cycle ${t.reconciledPayrollCycle}` : ""}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="font-sans text-caption text-ordift-ink-muted">No staff-benefit transactions on record.</p>
+          )}
+          <form action={recordStaffBenefitTransactionAction} className="grid grid-cols-2 gap-2 mt-2">
+            <input type="hidden" name="profileId" value={id} />
+            <select name="transactionType" required defaultValue="" className="rounded-lg border border-black/15 bg-white px-2 py-1 font-sans text-caption">
+              <option value="" disabled>Type…</option>
+              <option value="purchase">Purchase</option>
+              <option value="refund">Refund</option>
+            </select>
+            <input name="amount" type="number" step="0.01" min="0.01" required placeholder="Amount" className="rounded-lg border border-black/15 px-2 py-1 font-sans text-caption" />
+            <input name="benefitDescription" required placeholder="Benefit description" className="col-span-2 rounded-lg border border-black/15 px-2 py-1 font-sans text-caption" />
+            <input name="relatedTransactionId" placeholder="Related transaction ID (required for refunds)" className="col-span-2 rounded-lg border border-black/15 px-2 py-1 font-sans text-caption" />
+            <label className="col-span-2 flex items-center gap-1 font-sans text-caption text-ordift-ink-muted"><input type="checkbox" name="payrollRecovery" value="true" /> Recover via payroll</label>
+            <button type="submit" className="col-span-2 justify-self-start font-sans text-caption font-semibold px-3 py-1 rounded-md bg-ordift-navy-950 text-white">Record Transaction</button>
+          </form>
+        </div>
+
+        <div className="border-t border-black/5 pt-4">
+          <p className="font-sans text-caption font-semibold text-ordift-ink mb-1">Long-Service Benefits</p>
+          {longServiceAwards.length > 0 ? (
+            <ul className="space-y-1">
+              {longServiceAwards.map((a) => (
+                <li key={a.id} className="font-sans text-caption text-ordift-ink-muted">
+                  · {a.milestoneYears}-year milestone ({a.percentage}%) — {a.awardAmount.toLocaleString()} — {new Date(a.awardedAt).toLocaleDateString()}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="font-sans text-caption text-ordift-ink-muted">No long-service benefit awarded.</p>
+          )}
+          <form action={awardLongServiceBenefitAction} className="grid grid-cols-2 gap-2 mt-2">
+            <input type="hidden" name="profileId" value={id} />
+            <select name="milestoneYears" required defaultValue="" className="rounded-lg border border-black/15 bg-white px-2 py-1 font-sans text-caption">
+              <option value="" disabled>Milestone…</option>
+              {Object.entries(LONG_SERVICE_MILESTONE_PERCENTAGES).map(([years, pct]) => (
+                <option key={years} value={years}>{years} years ({pct}%)</option>
+              ))}
+            </select>
+            <input type="date" name="eligibleServiceStartDate" required className="rounded-lg border border-black/15 px-2 py-1 font-sans text-caption" />
+            <input name="notes" placeholder="Notes (optional)" className="col-span-2 rounded-lg border border-black/15 px-2 py-1 font-sans text-caption" />
+            <button type="submit" className="col-span-2 justify-self-start font-sans text-caption font-semibold px-3 py-1 rounded-md bg-ordift-navy-950 text-white">Award Long-Service Benefit</button>
+          </form>
+        </div>
+
+        <div className="border-t border-black/5 pt-4">
+          <p className="font-sans text-caption font-semibold text-ordift-ink mb-1">Death-in-Service Benefit</p>
+          <form action={awardDeathInServiceBenefitAction} className="grid grid-cols-2 gap-2">
+            <input type="hidden" name="profileId" value={id} />
+            <label className="col-span-2 flex items-center gap-1 font-sans text-caption text-ordift-ink-muted"><input type="checkbox" name="beneficiaryVerified" value="true" /> Beneficiary/estate verified</label>
+            <input name="beneficiaryDetails" placeholder="Beneficiary details" className="col-span-2 rounded-lg border border-black/15 px-2 py-1 font-sans text-caption" />
+            <input name="verificationNotes" placeholder="Verification notes" className="col-span-2 rounded-lg border border-black/15 px-2 py-1 font-sans text-caption" />
+            <button type="submit" className="col-span-2 justify-self-start font-sans text-caption font-semibold px-3 py-1 rounded-md bg-ordift-navy-950 text-white">Award Death-in-Service Benefit</button>
+          </form>
+        </div>
       </section>
 
       <section className="rounded-xl border border-black/10 bg-white p-6 space-y-2">

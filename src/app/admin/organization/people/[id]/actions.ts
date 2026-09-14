@@ -29,6 +29,18 @@ import {
   type DisciplinaryActionType,
   type InvestigationOutcome,
 } from "@/lib/organization/discipline";
+import {
+  requestSalaryAdvance,
+  decideSalaryAdvance,
+  disburseSalaryAdvance,
+  recordStaffBenefitTransaction,
+  awardLongServiceBenefit,
+  awardDeathInServiceBenefit,
+  LONG_SERVICE_MILESTONE_PERCENTAGES,
+  type SalaryAdvanceDecision,
+  type StaffBenefitTransactionType,
+  type LongServiceMilestoneYears,
+} from "@/lib/organization/compensation";
 
 // Organizational Structure, Authority Grants, Onboarding & Work Email
 // V1 (2026-09-07) — Person Detail View actions. Employment/engagement
@@ -369,6 +381,121 @@ export async function recordSuspensionReviewAction(formData: FormData): Promise<
 
   const result = await recordSuspensionReview({ suspensionId, decision, notes, nextReviewDueAt, actorUserId: currentUser.id });
   if (!result.ok) console.error("[admin organization] failed to record suspension review", result.error);
+
+  revalidatePath(`/admin/organization/people/${profileId}`);
+}
+
+// Compensation & Benefits (Phase B5 Step 5, 2026-09-14) — salary
+// advances, staff-benefit purchases/refunds, long-service and
+// death-in-service awards. Consolidated onto the Employee Profile page
+// like Performance; each lib function carries its own authorization
+// gate (canManageCompensation, or the exceeds-cap Super-Admin-only
+// routing for salary advances) independent of this file.
+export async function requestSalaryAdvanceAction(formData: FormData): Promise<void> {
+  const currentUser = await getCurrentUser();
+  if (!currentUser) return;
+
+  const profileId = String(formData.get("profileId") ?? "").trim();
+  const requestedAmount = Number(formData.get("requestedAmount") ?? "");
+  if (!profileId || !(requestedAmount > 0)) return;
+
+  const result = await requestSalaryAdvance({ profileId, requestedAmount, actorUserId: currentUser.id });
+  if (!result.ok) console.error("[admin organization] failed to request salary advance", result.error);
+
+  revalidatePath(`/admin/organization/people/${profileId}`);
+}
+
+export async function decideSalaryAdvanceAction(formData: FormData): Promise<void> {
+  const currentUser = await getCurrentUser();
+  if (!currentUser) return;
+
+  const profileId = String(formData.get("profileId") ?? "").trim();
+  const advanceId = String(formData.get("advanceId") ?? "").trim();
+  const decision = String(formData.get("decision") ?? "").trim();
+  const decisionNotes = String(formData.get("decisionNotes") ?? "").trim() || null;
+  if (!profileId || !advanceId || (decision !== "approved" && decision !== "declined")) return;
+
+  const result = await decideSalaryAdvance({ advanceId, decision: decision as SalaryAdvanceDecision, decisionNotes, actorUserId: currentUser.id });
+  if (!result.ok) console.error("[admin organization] failed to decide salary advance", result.error);
+
+  revalidatePath(`/admin/organization/people/${profileId}`);
+}
+
+export async function disburseSalaryAdvanceAction(formData: FormData): Promise<void> {
+  const currentUser = await getCurrentUser();
+  if (!currentUser) return;
+
+  const profileId = String(formData.get("profileId") ?? "").trim();
+  const advanceId = String(formData.get("advanceId") ?? "").trim();
+  const repaymentTerms = String(formData.get("repaymentTerms") ?? "").trim();
+  if (!profileId || !advanceId || !repaymentTerms) return;
+
+  const result = await disburseSalaryAdvance({ advanceId, repaymentTerms, actorUserId: currentUser.id });
+  if (!result.ok) console.error("[admin organization] failed to disburse salary advance", result.error);
+
+  revalidatePath(`/admin/organization/people/${profileId}`);
+}
+
+export async function recordStaffBenefitTransactionAction(formData: FormData): Promise<void> {
+  const currentUser = await getCurrentUser();
+  if (!currentUser) return;
+
+  const profileId = String(formData.get("profileId") ?? "").trim();
+  const transactionType = String(formData.get("transactionType") ?? "").trim();
+  const benefitDescription = String(formData.get("benefitDescription") ?? "").trim();
+  const amount = Number(formData.get("amount") ?? "");
+  const payrollRecovery = formData.get("payrollRecovery") === "true";
+  const relatedTransactionId = String(formData.get("relatedTransactionId") ?? "").trim() || null;
+  if (!profileId || !benefitDescription || !(amount > 0) || (transactionType !== "purchase" && transactionType !== "refund")) return;
+
+  const result = await recordStaffBenefitTransaction({
+    profileId,
+    transactionType: transactionType as StaffBenefitTransactionType,
+    benefitDescription,
+    amount,
+    payrollRecovery,
+    relatedTransactionId,
+    actorUserId: currentUser.id,
+  });
+  if (!result.ok) console.error("[admin organization] failed to record staff benefit transaction", result.error);
+
+  revalidatePath(`/admin/organization/people/${profileId}`);
+}
+
+export async function awardLongServiceBenefitAction(formData: FormData): Promise<void> {
+  const currentUser = await getCurrentUser();
+  if (!currentUser) return;
+
+  const profileId = String(formData.get("profileId") ?? "").trim();
+  const milestoneYearsRaw = Number(formData.get("milestoneYears") ?? "");
+  const eligibleServiceStartDate = String(formData.get("eligibleServiceStartDate") ?? "").trim();
+  const notes = String(formData.get("notes") ?? "").trim() || null;
+  if (!profileId || !eligibleServiceStartDate || !(milestoneYearsRaw in LONG_SERVICE_MILESTONE_PERCENTAGES)) return;
+
+  const result = await awardLongServiceBenefit({
+    profileId,
+    milestoneYears: milestoneYearsRaw as LongServiceMilestoneYears,
+    eligibleServiceStartDate,
+    notes,
+    actorUserId: currentUser.id,
+  });
+  if (!result.ok) console.error("[admin organization] failed to award long-service benefit", result.error);
+
+  revalidatePath(`/admin/organization/people/${profileId}`);
+}
+
+export async function awardDeathInServiceBenefitAction(formData: FormData): Promise<void> {
+  const currentUser = await getCurrentUser();
+  if (!currentUser) return;
+
+  const profileId = String(formData.get("profileId") ?? "").trim();
+  const beneficiaryVerified = formData.get("beneficiaryVerified") === "true";
+  const beneficiaryDetails = String(formData.get("beneficiaryDetails") ?? "").trim() || null;
+  const verificationNotes = String(formData.get("verificationNotes") ?? "").trim() || null;
+  if (!profileId) return;
+
+  const result = await awardDeathInServiceBenefit({ profileId, beneficiaryVerified, beneficiaryDetails, verificationNotes, actorUserId: currentUser.id });
+  if (!result.ok) console.error("[admin organization] failed to award death-in-service benefit", result.error);
 
   revalidatePath(`/admin/organization/people/${profileId}`);
 }
