@@ -12,6 +12,7 @@ import { listCorporateIdentities } from "@/lib/organization/reserveCorporateIden
 import { getActivityForEntity } from "@/lib/admin/activityLog";
 import { listSeparationCases, SEPARATION_CATEGORIES, SEPARATION_REASON_TYPES } from "@/lib/organization/separationCases";
 import { listPerformanceReviewsForProfile, listPipsForProfile, PIP_ALLOWED_DURATIONS_DAYS } from "@/lib/organization/performanceReviews";
+import { listInvestigationsForProfile, listSuspensionsForProfile, listDisciplinaryActionsForProfile, DISCIPLINARY_ACTION_TYPES } from "@/lib/organization/discipline";
 import {
   setEmploymentStatusAction,
   recordBackgroundScreeningAction,
@@ -22,6 +23,11 @@ import {
   recordPipCheckinAction,
   extendPipAction,
   decidePipAction,
+  issueDisciplinaryActionAction,
+  openInvestigationAction,
+  closeInvestigationAction,
+  recordInvestigatorySuspensionAction,
+  recordSuspensionReviewAction,
 } from "./actions";
 
 export const metadata: Metadata = {
@@ -71,14 +77,20 @@ export default async function PersonDetailPage({ params }: { params: Promise<{ i
   const person = usersResult.users.find((u) => u.id === id);
   if (!person) notFound();
 
-  const [financialLevel, screenings, recentActivity, separationCases, performanceReviews, pips] = await Promise.all([
+  const [financialLevel, screenings, recentActivity, separationCases, performanceReviews, pips, investigations, suspensions] = await Promise.all([
     getPersonFinancialAuthorityLevel(id),
     listBackgroundScreeningsForProfile(id, currentUser.id), // empty for non-Super-Admin, by construction
     getActivityForEntity("user", id, 20),
     listSeparationCases(),
     listPerformanceReviewsForProfile(id),
     listPipsForProfile(id),
+    // Discipline/Investigation is restricted, same tier as Background
+    // Screening — the page itself withholds the fetch for non-Super-Admin
+    // rather than fetching and merely hiding it in the render.
+    isSuper ? listInvestigationsForProfile(id) : Promise.resolve([]),
+    isSuper ? listSuspensionsForProfile(id) : Promise.resolve([]),
   ]);
+  const disciplinaryActions = isSuper ? await listDisciplinaryActionsForProfile(id) : [];
   const personSeparationCases = separationCases.filter((c) => c.profileId === id);
   const openSeparationCase = personSeparationCases.find((c) => c.status === "open") ?? null;
 
@@ -375,6 +387,122 @@ export default async function PersonDetailPage({ params }: { params: Promise<{ i
             <button type="submit" className="col-span-2 justify-self-start font-sans text-caption font-semibold px-3 py-1 rounded-md bg-ordift-navy-950 text-white">Initiate PIP</button>
           </form>
         </div>
+      </section>
+
+      {/* Employee Relations — Discipline / Investigation (Phase B5 Step 3,
+          2026-09-14). Deliberately a separate section from Performance
+          (never merged), and restricted to Super Admin — the same
+          "restricted access" tier already established for Background
+          Screening on this page. No automatic termination path exists
+          anywhere behind these forms. */}
+      <section className="rounded-xl border border-black/10 bg-white p-6 space-y-4">
+        <h2 className="font-serif font-medium text-body text-ordift-ink">Employee Relations — Discipline &amp; Investigations</h2>
+        {!isSuper ? (
+          <p className="font-sans text-caption text-ordift-ink-muted">Discipline and investigation records are Super-Admin-only.</p>
+        ) : (
+          <>
+            <div>
+              <p className="font-sans text-caption font-semibold text-ordift-ink mb-1">Investigations</p>
+              {investigations.length > 0 ? (
+                <ul className="space-y-3">
+                  {investigations.map((inv) => {
+                    const suspension = suspensions.find((s) => s.investigationId === inv.id) ?? null;
+                    return (
+                      <li key={inv.id} className="font-sans text-caption text-ordift-ink-muted space-y-1">
+                        <p>· {inv.reason} — {inv.status.replace(/_/g, " ")} (opened {new Date(inv.openedAt).toLocaleDateString()})</p>
+                        {inv.status === "open" && (
+                          <div className="pl-3 space-y-2">
+                            {!suspension ? (
+                              <form action={recordInvestigatorySuspensionAction} className="flex flex-wrap gap-2">
+                                <input type="hidden" name="profileId" value={id} />
+                                <input type="hidden" name="investigationId" value={inv.id} />
+                                <input name="reason" required placeholder="Suspension reason" className="rounded-lg border border-black/15 px-2 py-1 font-sans text-caption flex-1 min-w-[180px]" />
+                                <label className="flex items-center gap-1"><input type="checkbox" name="accessRestricted" value="true" /> Restrict access</label>
+                                <button type="submit" className="font-sans text-caption font-semibold px-2 py-1 rounded-md bg-ordift-navy-950 text-white">Record Investigatory Suspension</button>
+                              </form>
+                            ) : !suspension.endedAt ? (
+                              <form action={recordSuspensionReviewAction} className="flex flex-wrap gap-2">
+                                <input type="hidden" name="profileId" value={id} />
+                                <input type="hidden" name="suspensionId" value={suspension.id} />
+                                <span>Suspended {new Date(suspension.suspendedAt).toLocaleDateString()}, review due {new Date(suspension.initialReviewDueAt).toLocaleDateString()}</span>
+                                <select name="decision" required defaultValue="" className="rounded-lg border border-black/15 bg-white px-2 py-1 font-sans text-caption">
+                                  <option value="" disabled>Review decision…</option>
+                                  <option value="continue_suspension">Continue suspension</option>
+                                  <option value="end_suspension">End suspension</option>
+                                </select>
+                                <input name="notes" placeholder="Notes (optional)" className="rounded-lg border border-black/15 px-2 py-1 font-sans text-caption flex-1 min-w-[140px]" />
+                                <input type="date" name="nextReviewDueAt" className="rounded-lg border border-black/15 px-2 py-1 font-sans text-caption" />
+                                <button type="submit" className="font-sans text-caption font-semibold px-2 py-1 rounded-md bg-ordift-navy-950 text-white">Record Review</button>
+                              </form>
+                            ) : (
+                              <span>Suspension ended {new Date(suspension.endedAt).toLocaleDateString()}</span>
+                            )}
+                            <form action={closeInvestigationAction} className="flex flex-wrap gap-2">
+                              <input type="hidden" name="profileId" value={id} />
+                              <input type="hidden" name="investigationId" value={inv.id} />
+                              <select name="outcome" required defaultValue="" className="rounded-lg border border-black/15 bg-white px-2 py-1 font-sans text-caption">
+                                <option value="" disabled>Close with outcome…</option>
+                                <option value="closed_no_action">No action</option>
+                                <option value="closed_resulted_in_discipline">Resulted in discipline</option>
+                                <option value="closed_resulted_in_separation">Resulted in separation</option>
+                              </select>
+                              <input name="outcomeNotes" placeholder="Outcome notes (optional)" className="rounded-lg border border-black/15 px-2 py-1 font-sans text-caption flex-1 min-w-[140px]" />
+                              <button type="submit" className="font-sans text-caption font-semibold px-2 py-1 rounded-md bg-ordift-gold-pressed text-ordift-navy-950">Close Investigation</button>
+                            </form>
+                          </div>
+                        )}
+                      </li>
+                    );
+                  })}
+                </ul>
+              ) : (
+                <p className="font-sans text-caption text-ordift-ink-muted">No investigations on record.</p>
+              )}
+              <form action={openInvestigationAction} className="flex flex-wrap gap-2 mt-2">
+                <input type="hidden" name="profileId" value={id} />
+                <input name="reason" required placeholder="Reason to open an investigation" className="rounded-lg border border-black/15 px-2 py-1 font-sans text-caption flex-1 min-w-[180px]" />
+                <button type="submit" className="font-sans text-caption font-semibold px-2 py-1 rounded-md bg-ordift-navy-950 text-white">Open Investigation</button>
+              </form>
+            </div>
+
+            <div className="border-t border-black/5 pt-4">
+              <p className="font-sans text-caption font-semibold text-ordift-ink mb-1">Disciplinary Actions</p>
+              {disciplinaryActions.length > 0 ? (
+                <ul className="space-y-1 mb-2">
+                  {disciplinaryActions.map((a) => (
+                    <li key={a.id} className="font-sans text-caption text-ordift-ink-muted">
+                      · {a.actionType.replace(/_/g, " ")} — {new Date(a.issuedAt).toLocaleDateString()}
+                      {a.activeUntil ? ` (active until ${new Date(a.activeUntil).toLocaleDateString()})` : ""}
+                      {" · "}{a.isCurrentlyActive ? "active" : "no longer active"}
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="font-sans text-caption text-ordift-ink-muted mb-2">No disciplinary actions on record.</p>
+              )}
+              <form action={issueDisciplinaryActionAction} className="grid grid-cols-2 gap-2">
+                <input type="hidden" name="profileId" value={id} />
+                <select name="actionType" required defaultValue="" className="rounded-lg border border-black/15 bg-white px-2 py-1 font-sans text-caption col-span-2">
+                  <option value="" disabled>Action type…</option>
+                  {DISCIPLINARY_ACTION_TYPES.map((t) => (
+                    <option key={t} value={t}>{t.replace(/_/g, " ")}</option>
+                  ))}
+                </select>
+                <input type="date" name="incidentDate" className="rounded-lg border border-black/15 px-2 py-1 font-sans text-caption col-span-2" placeholder="Incident date (optional)" />
+                {investigations.length > 0 && (
+                  <select name="investigationId" defaultValue="" className="rounded-lg border border-black/15 bg-white px-2 py-1 font-sans text-caption col-span-2">
+                    <option value="">Not linked to an investigation</option>
+                    {investigations.map((inv) => (
+                      <option key={inv.id} value={inv.id}>{inv.reason} ({inv.status.replace(/_/g, " ")})</option>
+                    ))}
+                  </select>
+                )}
+                <textarea name="reason" required placeholder="Documented reason" className="col-span-2 rounded-lg border border-black/15 px-2 py-1 font-sans text-caption" rows={2} />
+                <button type="submit" className="col-span-2 justify-self-start font-sans text-caption font-semibold px-3 py-1 rounded-md bg-ordift-navy-950 text-white">Issue Disciplinary Action</button>
+              </form>
+            </div>
+          </>
+        )}
       </section>
 
       <section className="rounded-xl border border-black/10 bg-white p-6 space-y-2">

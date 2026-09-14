@@ -19,6 +19,16 @@ import {
   type PipDurationDays,
   type PipOutcome,
 } from "@/lib/organization/performanceReviews";
+import {
+  issueDisciplinaryAction,
+  openInvestigation,
+  closeInvestigation,
+  recordInvestigatorySuspension,
+  recordSuspensionReview,
+  DISCIPLINARY_ACTION_TYPES,
+  type DisciplinaryActionType,
+  type InvestigationOutcome,
+} from "@/lib/organization/discipline";
 
 // Organizational Structure, Authority Grants, Onboarding & Work Email
 // V1 (2026-09-07) — Person Detail View actions. Employment/engagement
@@ -263,6 +273,102 @@ export async function decidePipAction(formData: FormData): Promise<void> {
 
   const result = await decidePip({ pipId, outcome: outcome as PipOutcome, outcomeNotes, actorUserId: currentUser.id });
   if (!result.ok) console.error("[admin organization] failed to decide PIP outcome", result.error);
+
+  revalidatePath(`/admin/organization/people/${profileId}`);
+}
+
+// Employee Relations — Discipline / Investigation (Phase B5 Step 3,
+// 2026-09-14). The page itself restricts this section's visibility to
+// Super Admin (same "restricted access, separate from performance"
+// pattern already used for Background Screening on this page);
+// issueDisciplinaryAction/openInvestigation/etc. carry their own
+// independent authorization gate regardless.
+export async function issueDisciplinaryActionAction(formData: FormData): Promise<void> {
+  const currentUser = await getCurrentUser();
+  if (!currentUser) return;
+
+  const profileId = String(formData.get("profileId") ?? "").trim();
+  const actionType = String(formData.get("actionType") ?? "").trim();
+  const reason = String(formData.get("reason") ?? "").trim();
+  const incidentDate = String(formData.get("incidentDate") ?? "").trim() || null;
+  const investigationId = String(formData.get("investigationId") ?? "").trim() || null;
+  if (!profileId || !reason || !(DISCIPLINARY_ACTION_TYPES as readonly string[]).includes(actionType)) return;
+
+  const result = await issueDisciplinaryAction({
+    profileId,
+    actionType: actionType as DisciplinaryActionType,
+    reason,
+    incidentDate,
+    investigationId,
+    actorUserId: currentUser.id,
+  });
+  if (!result.ok) console.error("[admin organization] failed to issue disciplinary action", result.error);
+
+  revalidatePath(`/admin/organization/people/${profileId}`);
+}
+
+export async function openInvestigationAction(formData: FormData): Promise<void> {
+  const currentUser = await getCurrentUser();
+  if (!currentUser) return;
+
+  const profileId = String(formData.get("profileId") ?? "").trim();
+  const reason = String(formData.get("reason") ?? "").trim();
+  if (!profileId || !reason) return;
+
+  const result = await openInvestigation({ profileId, reason, actorUserId: currentUser.id });
+  if (!result.ok) console.error("[admin organization] failed to open investigation", result.error);
+
+  revalidatePath(`/admin/organization/people/${profileId}`);
+}
+
+export async function closeInvestigationAction(formData: FormData): Promise<void> {
+  const currentUser = await getCurrentUser();
+  if (!currentUser) return;
+
+  const profileId = String(formData.get("profileId") ?? "").trim();
+  const investigationId = String(formData.get("investigationId") ?? "").trim();
+  const outcome = String(formData.get("outcome") ?? "").trim();
+  const outcomeNotes = String(formData.get("outcomeNotes") ?? "").trim() || null;
+  const validOutcomes: InvestigationOutcome[] = ["closed_no_action", "closed_resulted_in_discipline", "closed_resulted_in_separation"];
+  if (!profileId || !investigationId || !(validOutcomes as string[]).includes(outcome)) return;
+
+  const result = await closeInvestigation({ investigationId, outcome: outcome as InvestigationOutcome, outcomeNotes, actorUserId: currentUser.id });
+  if (!result.ok) console.error("[admin organization] failed to close investigation", result.error);
+
+  revalidatePath(`/admin/organization/people/${profileId}`);
+}
+
+export async function recordInvestigatorySuspensionAction(formData: FormData): Promise<void> {
+  const currentUser = await getCurrentUser();
+  if (!currentUser) return;
+
+  const profileId = String(formData.get("profileId") ?? "").trim();
+  const investigationId = String(formData.get("investigationId") ?? "").trim();
+  const reason = String(formData.get("reason") ?? "").trim();
+  const fullBasicPay = formData.get("fullBasicPay") !== "false";
+  const normalBenefits = formData.get("normalBenefits") !== "false";
+  const accessRestricted = formData.get("accessRestricted") === "true";
+  if (!profileId || !investigationId || !reason) return;
+
+  const result = await recordInvestigatorySuspension({ investigationId, profileId, reason, fullBasicPay, normalBenefits, accessRestricted, actorUserId: currentUser.id });
+  if (!result.ok) console.error("[admin organization] failed to record investigatory suspension", result.error);
+
+  revalidatePath(`/admin/organization/people/${profileId}`);
+}
+
+export async function recordSuspensionReviewAction(formData: FormData): Promise<void> {
+  const currentUser = await getCurrentUser();
+  if (!currentUser) return;
+
+  const profileId = String(formData.get("profileId") ?? "").trim();
+  const suspensionId = String(formData.get("suspensionId") ?? "").trim();
+  const decision = String(formData.get("decision") ?? "").trim();
+  const notes = String(formData.get("notes") ?? "").trim() || null;
+  const nextReviewDueAt = String(formData.get("nextReviewDueAt") ?? "").trim() || null;
+  if (!profileId || !suspensionId || (decision !== "continue_suspension" && decision !== "end_suspension")) return;
+
+  const result = await recordSuspensionReview({ suspensionId, decision, notes, nextReviewDueAt, actorUserId: currentUser.id });
+  if (!result.ok) console.error("[admin organization] failed to record suspension review", result.error);
 
   revalidatePath(`/admin/organization/people/${profileId}`);
 }

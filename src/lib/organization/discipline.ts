@@ -113,6 +113,51 @@ export async function listDisciplinaryActionsForProfile(profileId: string): Prom
   }));
 }
 
+export async function listInvestigationsForProfile(profileId: string): Promise<
+  { id: string; reason: string; status: string; openedAt: string; closedAt: string | null; outcomeNotes: string | null }[]
+> {
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from("investigations")
+    .select("id, reason, status, opened_at, closed_at, outcome_notes")
+    .eq("profile_id", profileId)
+    .order("opened_at", { ascending: false });
+  if (error) {
+    console.error("[organization] failed to load investigations", error.message);
+    return [];
+  }
+  return (data ?? []).map((r) => ({ id: r.id, reason: r.reason, status: r.status, openedAt: r.opened_at, closedAt: r.closed_at, outcomeNotes: r.outcome_notes }));
+}
+
+// Queried by profile_id (not investigation_id) so the profile page can
+// load every suspension for a person in one round trip rather than one
+// query per investigation.
+export async function listSuspensionsForProfile(profileId: string): Promise<
+  { id: string; investigationId: string; reason: string; fullBasicPay: boolean; normalBenefits: boolean; accessRestricted: boolean; suspendedAt: string; initialReviewDueAt: string; endedAt: string | null }[]
+> {
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from("investigatory_suspensions")
+    .select("id, investigation_id, reason, full_basic_pay, normal_benefits, access_restricted, suspended_at, initial_review_due_at, ended_at")
+    .eq("profile_id", profileId)
+    .order("suspended_at", { ascending: false });
+  if (error) {
+    console.error("[organization] failed to load investigatory_suspensions", error.message);
+    return [];
+  }
+  return (data ?? []).map((r) => ({
+    id: r.id,
+    investigationId: r.investigation_id,
+    reason: r.reason,
+    fullBasicPay: r.full_basic_pay,
+    normalBenefits: r.normal_benefits,
+    accessRestricted: r.access_restricted,
+    suspendedAt: r.suspended_at,
+    initialReviewDueAt: r.initial_review_due_at,
+    endedAt: r.ended_at,
+  }));
+}
+
 // Investigation — genuinely distinct from discipline: it can close with
 // no disciplinary action at all (OS-HR-GH-004 5.2).
 export async function openInvestigation(params: { profileId: string; reason: string; actorUserId: string }): Promise<{ ok: true; investigationId: string } | { ok: false; error: string }> {

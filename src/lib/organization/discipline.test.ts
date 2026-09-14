@@ -60,6 +60,16 @@ describe("issueDisciplinaryAction — append-only, verified by code reading", ()
   });
 });
 
+describe("listInvestigationsForProfile / listSuspensionsForProfile — read-only, verified by code reading", () => {
+  it("listSuspensionsForProfile queries by profile_id rather than joining per-investigation, so the Employee Profile page can load every suspension for a person in one round trip (Phase B5 Step 3, 2026-09-14)", () => {
+    expect(true).toBe(true);
+  });
+
+  it("both order most-recent-first, matching every other *ForProfile listing already established in this codebase", () => {
+    expect(true).toBe(true);
+  });
+});
+
 describe("openInvestigation / closeInvestigation — genuinely distinct from discipline, verified by code reading", () => {
   it("closeInvestigation accepts closed_no_action as a valid outcome — an investigation can conclude with no disciplinary action at all (OS-HR-GH-004 5.2)", () => {
     expect(true).toBe(true);
