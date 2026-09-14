@@ -1,7 +1,8 @@
 "use client";
 
+import Link from "next/link";
 import { useActionState } from "react";
-import type { SeparationCase, NoticePolicySource, FinalSettlementStatus } from "@/lib/organization/separationCases";
+import type { SeparationCase, NoticePolicySource, FinalSettlementStatus, GhanaSeparationRoute, NoticeTreatment, OffboardingStage } from "@/lib/organization/separationCases";
 import type { ResolvedSeparationRequirement } from "@/lib/organization/separationRequirements";
 import type { RequirementStatus } from "@/lib/organization/onboardingRequirements";
 import type { ActivityLogEntry } from "@/lib/admin/activityLog";
@@ -13,6 +14,11 @@ import {
   cancelSeparationCaseAction,
   finalizeSeparationClearanceAction,
   updateSeparationRequirementAction,
+  recordNoticeTreatmentAction,
+  advanceOffboardingStageAction,
+  closeEmploymentAction,
+  requestResignationWithdrawalAction,
+  decideResignationWithdrawalAction,
   type ActionState,
 } from "./actions";
 
@@ -21,10 +27,41 @@ import {
 // server-only functions (logActivity() -> next/headers); importing
 // even a plain const from that module would pull its whole server-only
 // dependency graph into the client bundle. Values must stay in sync
-// with NOTICE_POLICY_SOURCES/FINAL_SETTLEMENT_STATUSES in
+// with NOTICE_POLICY_SOURCES/FINAL_SETTLEMENT_STATUSES/
+// GHANA_SEPARATION_ROUTES/NOTICE_TREATMENTS/OFFBOARDING_STAGES in
 // separationCases.ts by hand — small, stable, rarely-changed lists.
 const NOTICE_POLICY_SOURCE_OPTIONS: readonly NoticePolicySource[] = ["contract", "company_policy", "statutory_override", "unresolved"];
 const FINAL_SETTLEMENT_STATUS_OPTIONS: readonly FinalSettlementStatus[] = ["not_started", "handoff_requested", "in_progress", "completed"];
+const GHANA_SEPARATION_ROUTE_OPTIONS: readonly GhanaSeparationRoute[] = [
+  "resignation",
+  "probationary_separation",
+  "performance_capability_termination",
+  "misconduct_dismissal",
+  "redundancy_role_elimination",
+  "fixed_term_expiry",
+  "retirement",
+  "death_in_service",
+  "other_lawful_route",
+];
+const NOTICE_TREATMENT_OPTIONS: readonly NoticeTreatment[] = ["worked_in_full", "shortened_by_mutual_agreement", "payment_in_lieu", "restricted_garden_duties"];
+const OFFBOARDING_STAGE_LABELS: Record<OffboardingStage, string> = {
+  offboarding_initiated: "Offboarding Initiated",
+  handover: "Handover",
+  departmental_clearance: "Departmental Clearance",
+  assets_access_reconciled: "Assets/Access Reconciled",
+  final_settlement_review: "Final Settlement Review",
+  cleared: "Cleared",
+  employment_closed: "Employment Closed",
+};
+const OFFBOARDING_STAGE_ORDER: readonly OffboardingStage[] = [
+  "offboarding_initiated",
+  "handover",
+  "departmental_clearance",
+  "assets_access_reconciled",
+  "final_settlement_review",
+  "cleared",
+  "employment_closed",
+];
 
 const REQUIREMENT_STATUS_LABELS: Record<RequirementStatus, string> = {
   pending: "Pending",
@@ -199,6 +236,124 @@ function CancelCaseControl({ separationCaseId }: { separationCaseId: string }) {
   );
 }
 
+// Ghana-specific fields (Phase B5 Step 4) — folded onto the canonical
+// separation_cases record per the schema reconciliation (migration
+// 0104), never a second workspace.
+function NoticeTreatmentControl({ separationCaseId }: { separationCaseId: string }) {
+  const [state, formAction, pending] = useActionState<ActionState, FormData>(recordNoticeTreatmentAction, null);
+  return (
+    <form action={formAction} className="flex flex-wrap items-center gap-2">
+      <input type="hidden" name="separationCaseId" value={separationCaseId} />
+      <select name="treatment" required defaultValue="" className="rounded-lg border border-black/15 bg-white px-2 py-1 font-sans text-caption">
+        <option value="" disabled>Notice treatment…</option>
+        {NOTICE_TREATMENT_OPTIONS.map((t) => (
+          <option key={t} value={t}>{t.replace(/_/g, " ")}</option>
+        ))}
+      </select>
+      <button type="submit" disabled={pending} className="font-sans text-caption font-semibold px-3 py-1 rounded-md bg-ordift-navy-950 text-white disabled:opacity-50">
+        {pending ? "Saving…" : "Record"}
+      </button>
+      {!pending && state?.ok === true && <span className="font-sans text-caption text-green-700">Recorded.</span>}
+      {!pending && state?.ok === false && <span className="font-sans text-caption text-red-700">{state.error}</span>}
+    </form>
+  );
+}
+
+function OffboardingStageTracker({ separationCaseId, currentStage }: { separationCaseId: string; currentStage: OffboardingStage }) {
+  const [advanceState, advanceAction, advancePending] = useActionState<ActionState, FormData>(advanceOffboardingStageAction, null);
+  const [closeState, closeAction, closePending] = useActionState<ActionState, FormData>(closeEmploymentAction, null);
+  const currentIndex = OFFBOARDING_STAGE_ORDER.indexOf(currentStage);
+
+  return (
+    <div className="space-y-3">
+      <ol className="flex flex-wrap gap-2">
+        {OFFBOARDING_STAGE_ORDER.map((stage, i) => (
+          <li
+            key={stage}
+            className={`px-2 py-1 rounded-full font-sans text-caption whitespace-nowrap ${
+              i < currentIndex ? "bg-green-100 text-green-800" : i === currentIndex ? "bg-ordift-gold-pressed/20 text-ordift-navy-950 font-semibold" : "bg-ordift-offwhite text-ordift-ink-muted"
+            }`}
+          >
+            {OFFBOARDING_STAGE_LABELS[stage]}
+          </li>
+        ))}
+      </ol>
+      {currentStage !== "employment_closed" && currentStage !== "cleared" && (
+        <form action={advanceAction} className="flex items-center gap-2">
+          <input type="hidden" name="separationCaseId" value={separationCaseId} />
+          <button type="submit" disabled={advancePending} className="font-sans text-caption font-semibold px-3 py-1.5 rounded-md bg-ordift-navy-950 text-white disabled:opacity-50">
+            {advancePending ? "Advancing…" : `Advance to ${OFFBOARDING_STAGE_LABELS[OFFBOARDING_STAGE_ORDER[currentIndex + 1]]}`}
+          </button>
+          {!advancePending && advanceState?.ok === false && <span className="font-sans text-caption text-red-700">{advanceState.error}</span>}
+        </form>
+      )}
+      {currentStage === "cleared" && (
+        <form action={closeAction} className="flex flex-wrap items-center gap-2">
+          <input type="hidden" name="separationCaseId" value={separationCaseId} />
+          <input name="effectiveDate" type="date" aria-label="Effective date (or leave blank to use the confirmed last working date)" className="rounded-lg border border-black/15 px-2 py-1 font-sans text-caption" />
+          <button type="submit" disabled={closePending} className="font-sans text-caption font-semibold px-3 py-1.5 rounded-md bg-ordift-gold-pressed text-ordift-navy-950 disabled:opacity-50">
+            {closePending ? "Closing…" : "Close Employment"}
+          </button>
+          {!closePending && closeState?.ok === true && <span className="font-sans text-caption text-green-700">Employment closed.</span>}
+          {!closePending && closeState?.ok === false && <span className="font-sans text-caption text-red-700">{closeState.error}</span>}
+        </form>
+      )}
+    </div>
+  );
+}
+
+function ResignationWithdrawalSection({ separationCase }: { separationCase: SeparationCase }) {
+  const [requestState, requestAction, requestPending] = useActionState<ActionState, FormData>(requestResignationWithdrawalAction, null);
+  const [decideState, decideAction, decidePending] = useActionState<ActionState, FormData>(decideResignationWithdrawalAction, null);
+
+  if (separationCase.category !== "employee_initiated") return null;
+
+  if (!separationCase.resignationWithdrawalRequestedAt) {
+    return (
+      <form action={requestAction} className="flex items-center gap-2">
+        <input type="hidden" name="separationCaseId" value={separationCase.id} />
+        <button type="submit" disabled={requestPending} className="font-sans text-caption font-semibold px-3 py-1.5 rounded-md bg-ordift-navy-950 text-white disabled:opacity-50">
+          {requestPending ? "Submitting…" : "Request Withdrawal"}
+        </button>
+        {!requestPending && requestState?.ok === false && <span className="font-sans text-caption text-red-700">{requestState.error}</span>}
+      </form>
+    );
+  }
+
+  if (!separationCase.resignationWithdrawalDecidedAt) {
+    return (
+      <form action={decideAction} className="flex items-center gap-2">
+        <input type="hidden" name="separationCaseId" value={separationCase.id} />
+        <p className="font-sans text-caption text-ordift-ink-muted w-full">
+          Withdrawal requested {new Date(separationCase.resignationWithdrawalRequestedAt).toLocaleString()} — pending management review.
+        </p>
+        <button type="submit" name="outcome" value="approved" disabled={decidePending} className="font-sans text-caption font-semibold px-3 py-1.5 rounded-md bg-ordift-navy-950 text-white disabled:opacity-50">
+          Approve (cancels offboarding)
+        </button>
+        <button type="submit" name="outcome" value="declined" disabled={decidePending} className="font-sans text-caption text-red-700 underline underline-offset-4 disabled:opacity-50">
+          Decline
+        </button>
+        {!decidePending && decideState?.ok === false && <span className="font-sans text-caption text-red-700">{decideState.error}</span>}
+      </form>
+    );
+  }
+
+  return (
+    <p className="font-sans text-caption text-ordift-ink-muted">
+      Withdrawal {separationCase.resignationWithdrawalOutcome} on {new Date(separationCase.resignationWithdrawalDecidedAt).toLocaleString()}.
+    </p>
+  );
+}
+
+// Displays the Ghana route once set — this workspace does not (yet)
+// expose changing it after case creation, since createSeparationCase()
+// is where separationRoute is set; a route correction is an admin
+// data-correction concern outside this workspace's normal flow.
+function GhanaRouteDisplay({ route }: { route: GhanaSeparationRoute | null }) {
+  if (!route) return <p className="font-sans text-caption text-ordift-ink-muted">No Ghana-specific separation route recorded for this case.</p>;
+  return <p className="font-sans text-body-small text-ordift-ink">{GHANA_SEPARATION_ROUTE_OPTIONS.includes(route) ? route.replace(/_/g, " ") : route}</p>;
+}
+
 export function SeparationWorkspace({
   separationCase,
   requirements,
@@ -238,6 +393,34 @@ export function SeparationWorkspace({
             <ConfirmLastWorkingDateControl separationCaseId={separationCase.id} />
           </div>
         )}
+      </section>
+
+      <section className="rounded-xl border border-black/10 bg-white p-6 space-y-3">
+        <h2 className="font-serif font-medium text-body text-ordift-ink">Ghana Separation Route (OS-HR-GH-006)</h2>
+        <GhanaRouteDisplay route={separationCase.separationRoute} />
+        <div>
+          <p className="font-sans text-caption font-semibold text-ordift-ink-muted uppercase tracking-wide mb-1">Notice Treatment</p>
+          <p className="font-sans text-body-small text-ordift-ink-muted mb-2">
+            {separationCase.noticeTreatment ? separationCase.noticeTreatment.replace(/_/g, " ") : "Not yet recorded."}
+          </p>
+          {isOpen && <NoticeTreatmentControl separationCaseId={separationCase.id} />}
+        </div>
+        {separationCase.category === "employee_initiated" && (
+          <div>
+            <p className="font-sans text-caption font-semibold text-ordift-ink-muted uppercase tracking-wide mb-1">Resignation Withdrawal</p>
+            <ResignationWithdrawalSection separationCase={separationCase} />
+          </div>
+        )}
+      </section>
+
+      <section className="rounded-xl border border-black/10 bg-white p-6 space-y-3">
+        <h2 className="font-serif font-medium text-body text-ordift-ink">Offboarding Stage (OS-HR-GH-006 4.1)</h2>
+        <OffboardingStageTracker separationCaseId={separationCase.id} currentStage={separationCase.offboardingStage} />
+        <p className="font-sans text-caption text-ordift-ink-muted">
+          <Link href={`/admin/organization/separation/${separationCase.id}/final-settlement`} className="text-ordift-gold-pressed underline underline-offset-4">
+            Open Final Settlement →
+          </Link>
+        </p>
       </section>
 
       <section className="rounded-xl border border-black/10 bg-white p-6 space-y-2">

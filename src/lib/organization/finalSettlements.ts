@@ -150,12 +150,26 @@ export async function advanceFinalSettlementStatus(params: { finalSettlementId: 
 }
 
 export async function getFinalSettlementForSeparationCase(separationCaseId: string): Promise<
-  { id: string; status: string; grossEntitlements: number; deductionsTotal: number; netFinalSettlement: number } | null
+  {
+    id: string;
+    status: string;
+    salaryThroughFinalWorkingDay: number;
+    outstandingEarningsOvertime: number;
+    annualLeaveSettlement: number;
+    approvedReimbursements: number;
+    noticePilonAmount: number;
+    otherLawfulEntitlements: number;
+    deductionsTotal: number;
+    grossEntitlements: number;
+    netFinalSettlement: number;
+  } | null
 > {
   const admin = createAdminClient();
   const { data, error } = await admin
     .from("final_settlements")
-    .select("id, status, gross_entitlements, deductions_total, net_final_settlement")
+    .select(
+      "id, status, salary_through_final_working_day, outstanding_earnings_overtime, annual_leave_settlement, approved_reimbursements, notice_pilon_amount, other_lawful_entitlements, deductions_total, gross_entitlements, net_final_settlement"
+    )
     .eq("separation_case_id", separationCaseId)
     .maybeSingle();
   if (error) {
@@ -163,5 +177,33 @@ export async function getFinalSettlementForSeparationCase(separationCaseId: stri
     return null;
   }
   if (!data) return null;
-  return { id: data.id, status: data.status, grossEntitlements: data.gross_entitlements, deductionsTotal: data.deductions_total, netFinalSettlement: data.net_final_settlement };
+  return {
+    id: data.id,
+    status: data.status,
+    salaryThroughFinalWorkingDay: data.salary_through_final_working_day,
+    outstandingEarningsOvertime: data.outstanding_earnings_overtime,
+    annualLeaveSettlement: data.annual_leave_settlement,
+    approvedReimbursements: data.approved_reimbursements,
+    noticePilonAmount: data.notice_pilon_amount,
+    otherLawfulEntitlements: data.other_lawful_entitlements,
+    deductionsTotal: data.deductions_total,
+    grossEntitlements: data.gross_entitlements,
+    netFinalSettlement: data.net_final_settlement,
+  };
+}
+
+export async function listFinalSettlementDeductions(finalSettlementId: string): Promise<
+  { id: string; classification: string; basis: string; amount: number; supportingRecordReference: string | null }[]
+> {
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from("final_settlement_deductions")
+    .select("id, classification, basis, amount, supporting_record_reference")
+    .eq("final_settlement_id", finalSettlementId)
+    .order("created_at", { ascending: true });
+  if (error) {
+    console.error("[organization] failed to load final_settlement_deductions", error.message);
+    return [];
+  }
+  return (data ?? []).map((r) => ({ id: r.id, classification: r.classification, basis: r.basis, amount: r.amount, supportingRecordReference: r.supporting_record_reference }));
 }

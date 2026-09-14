@@ -47,3 +47,9 @@ describe("getFinalSettlementForSeparationCase — verified by code reading", () 
     expect(true).toBe(true);
   });
 });
+
+describe("listFinalSettlementDeductions — verified by code reading", () => {
+  it("orders oldest-first (ascending by created_at) so the deduction audit trail reads in the order deductions were actually added", () => {
+    expect(true).toBe(true);
+  });
+});

@@ -11,8 +11,15 @@ import {
   updateFinalSettlementStatus,
   cancelSeparationCase,
   finalizeSeparationClearance,
+  recordNoticeTreatment,
+  advanceOffboardingStage,
+  closeEmployment,
+  requestResignationWithdrawal,
+  decideResignationWithdrawal,
   type NoticePolicySource,
   type FinalSettlementStatus,
+  type NoticeTreatment,
+  type ResignationWithdrawalOutcome,
 } from "@/lib/organization/separationCases";
 import { updateSeparationRequirement, type RequirementStatus } from "@/lib/organization/separationRequirements";
 import { listUsersWithRoles } from "@/lib/portal/adminData";
@@ -131,6 +138,66 @@ export async function updateSeparationRequirementAction(_prev: ActionState, form
   }
   const roles = await rolesForProfile(profileId);
   const result = await updateSeparationRequirement({ separationCaseId, roles, requirementKey, status, actorUserId: actor.id, notes, verifiedNow });
+  if (!result.ok) return { ok: false, error: result.error };
+  revalidatePath(`/admin/organization/separation/${separationCaseId}`);
+  return { ok: true };
+}
+
+// --- Ghana-specific extensions (Phase B5 Step 4, schema reconciliation follow-through) ---
+
+export async function recordNoticeTreatmentAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  const actor = await requireActor();
+  if ("error" in actor) return { ok: false, error: actor.error };
+  const separationCaseId = String(formData.get("separationCaseId") ?? "");
+  const treatment = String(formData.get("treatment") ?? "") as NoticeTreatment;
+  if (!separationCaseId || !treatment) return { ok: false, error: "Invalid request." };
+  const result = await recordNoticeTreatment({ separationCaseId, treatment, actorUserId: actor.id });
+  if (!result.ok) return { ok: false, error: result.error };
+  revalidatePath(`/admin/organization/separation/${separationCaseId}`);
+  return { ok: true };
+}
+
+export async function advanceOffboardingStageAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  const actor = await requireActor();
+  if ("error" in actor) return { ok: false, error: actor.error };
+  const separationCaseId = String(formData.get("separationCaseId") ?? "");
+  if (!separationCaseId) return { ok: false, error: "Invalid request." };
+  const result = await advanceOffboardingStage({ separationCaseId, actorUserId: actor.id });
+  if (!result.ok) return { ok: false, error: result.error };
+  revalidatePath(`/admin/organization/separation/${separationCaseId}`);
+  return { ok: true };
+}
+
+export async function closeEmploymentAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  const actor = await requireActor();
+  if ("error" in actor) return { ok: false, error: actor.error };
+  const separationCaseId = String(formData.get("separationCaseId") ?? "");
+  const effectiveDate = String(formData.get("effectiveDate") ?? "").trim() || undefined;
+  if (!separationCaseId) return { ok: false, error: "Invalid request." };
+  const result = await closeEmployment({ separationCaseId, effectiveDate, actorUserId: actor.id });
+  if (!result.ok) return { ok: false, error: result.error };
+  revalidatePath(`/admin/organization/separation/${separationCaseId}`);
+  return { ok: true };
+}
+
+export async function requestResignationWithdrawalAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  const currentUser = await getCurrentUser();
+  if (!currentUser) return { ok: false, error: "Not authenticated." };
+  const separationCaseId = String(formData.get("separationCaseId") ?? "");
+  if (!separationCaseId) return { ok: false, error: "Invalid request." };
+  const result = await requestResignationWithdrawal({ separationCaseId, actorUserId: currentUser.id });
+  if (!result.ok) return { ok: false, error: result.error };
+  revalidatePath(`/admin/organization/separation/${separationCaseId}`);
+  return { ok: true };
+}
+
+export async function decideResignationWithdrawalAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  const actor = await requireActor();
+  if ("error" in actor) return { ok: false, error: actor.error };
+  const separationCaseId = String(formData.get("separationCaseId") ?? "");
+  const outcome = String(formData.get("outcome") ?? "") as ResignationWithdrawalOutcome;
+  if (!separationCaseId || !["approved", "declined"].includes(outcome)) return { ok: false, error: "Invalid request." };
+  const result = await decideResignationWithdrawal({ separationCaseId, outcome, actorUserId: actor.id });
   if (!result.ok) return { ok: false, error: result.error };
   revalidatePath(`/admin/organization/separation/${separationCaseId}`);
   return { ok: true };
