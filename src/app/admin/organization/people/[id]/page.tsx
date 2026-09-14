@@ -218,8 +218,45 @@ export default async function PersonDetailPage({ params }: { params: Promise<{ i
         </p>
       </div>
 
+      {/* Section jump-nav (Phase B6 Step 7, 2026-09-15) — this page has
+          grown to 19 sections across the engagement; a horizontally-
+          scrollable anchor row keeps every section reachable without
+          scrolling blind, on mobile and desktop alike, without hiding
+          or removing anything. */}
+      <nav aria-label="Jump to section" className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1">
+        {[
+          ["section-identity", "Identity"],
+          ["section-organization", "Organization"],
+          ["section-engagement", "Engagement"],
+          ["section-access", "Access"],
+          ["section-authority", "Authority"],
+          ["section-compliance", "Compliance"],
+          ["section-separation", "Separation"],
+          ["section-performance", "Performance"],
+          ["section-discipline", "Discipline"],
+          ["section-compensation", "Compensation"],
+          ["section-assets", "Assets"],
+          ["section-business-travel", "Travel & Safety"],
+          ["section-portfolio", "Portfolio/IP"],
+          ["section-agreement-readiness", "Agreement Readiness"],
+          ["section-references", "References"],
+          ["section-policy-acknowledgements", "Policies"],
+          ["section-transitions", "Transitions"],
+          ["section-appeals", "Appeals"],
+          ["section-history", "History"],
+        ].map(([anchor, label]) => (
+          <a
+            key={anchor}
+            href={`#${anchor}`}
+            className="shrink-0 rounded-full border border-black/10 bg-white px-3 py-1 font-sans text-caption text-ordift-ink-muted hover:border-ordift-gold-pressed hover:text-ordift-ink whitespace-nowrap"
+          >
+            {label}
+          </a>
+        ))}
+      </nav>
+
       <section className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="rounded-xl border border-black/10 bg-white p-6 space-y-2">
+        <div id="section-identity" className="rounded-xl border border-black/10 bg-white p-6 space-y-2 scroll-mt-6">
           <h2 className="font-serif font-medium text-body text-ordift-ink">Identity</h2>
           <p className="font-sans text-body-small text-ordift-ink-muted">Name: {person.fullName ?? "—"}</p>
           <p className="font-sans text-body-small text-ordift-ink-muted">Personal/contact email: {person.email ?? "—"}</p>
@@ -228,7 +265,7 @@ export default async function PersonDetailPage({ params }: { params: Promise<{ i
           </p>
         </div>
 
-        <div className="rounded-xl border border-black/10 bg-white p-6 space-y-2">
+        <div id="section-organization" className="rounded-xl border border-black/10 bg-white p-6 space-y-2 scroll-mt-6">
           <h2 className="font-serif font-medium text-body text-ordift-ink">Organization</h2>
           <p className="font-sans text-body-small text-ordift-ink-muted">Grade: {person.gradeCode ? `${person.gradeCode} — ${person.gradeName}` : "—"}</p>
           <p className="font-sans text-body-small text-ordift-ink-muted">Title/Position: {person.positionName ?? person.operationalTitleName ?? "—"}</p>
@@ -237,7 +274,7 @@ export default async function PersonDetailPage({ params }: { params: Promise<{ i
           <p className="font-sans text-body-small text-ordift-ink-muted">Reports to: {person.managerName ?? "—"}</p>
         </div>
 
-        <div className="rounded-xl border border-black/10 bg-white p-6 space-y-3">
+        <div id="section-engagement" className="rounded-xl border border-black/10 bg-white p-6 space-y-3 scroll-mt-6">
           <h2 className="font-serif font-medium text-body text-ordift-ink">Engagement</h2>
           <p className="font-sans text-body-small text-ordift-ink-muted">Engagement classification: {person.engagementTypeName ?? "—"}</p>
           <p className="font-sans text-body-small text-ordift-ink-muted">
@@ -255,7 +292,7 @@ export default async function PersonDetailPage({ params }: { params: Promise<{ i
           </form>
         </div>
 
-        <div className="rounded-xl border border-black/10 bg-white p-6 space-y-3">
+        <div id="section-access" className="rounded-xl border border-black/10 bg-white p-6 space-y-3 scroll-mt-6">
           <h2 className="font-serif font-medium text-body text-ordift-ink">Access</h2>
           <p className="font-sans text-body-small text-ordift-ink-muted">System roles: {person.roles.join(", ") || "—"}</p>
           <p className="font-sans text-body-small text-ordift-ink-muted">Account/system access status: {person.accessStatus}</p>
@@ -274,7 +311,7 @@ export default async function PersonDetailPage({ params }: { params: Promise<{ i
           </form>
         </div>
 
-        <div className="rounded-xl border border-black/10 bg-white p-6 space-y-2">
+        <div id="section-authority" className="rounded-xl border border-black/10 bg-white p-6 space-y-2 scroll-mt-6">
           <h2 className="font-serif font-medium text-body text-ordift-ink">Authority</h2>
           <p className="font-sans text-body-small text-ordift-ink-muted">
             Financial Authority Level: {financialLevel !== null ? FINANCIAL_AUTHORITY_LEVEL_LABELS[financialLevel] : "None granted"}
@@ -307,7 +344,7 @@ export default async function PersonDetailPage({ params }: { params: Promise<{ i
           </Link>
         </div>
 
-        <div className="rounded-xl border border-black/10 bg-white p-6 space-y-2">
+        <div id="section-compliance" className="rounded-xl border border-black/10 bg-white p-6 space-y-2 scroll-mt-6">
           <h2 className="font-serif font-medium text-body text-ordift-ink">Compliance / Onboarding</h2>
           <p className="font-sans text-body-small text-ordift-ink-muted">Onboarding status: {person.onboardingStatus ?? "Not started"}</p>
           {isSuper ? (
@@ -351,7 +388,7 @@ export default async function PersonDetailPage({ params }: { params: Promise<{ i
             never itself changes Position/Grade/roles/Authority/Corporate
             Identity/Workspace/payment — it only opens a case for the
             dedicated Clearance Workspace to act on. */}
-        <div className="rounded-xl border border-black/10 bg-white p-6 space-y-2">
+        <div id="section-separation" className="rounded-xl border border-black/10 bg-white p-6 space-y-2 scroll-mt-6">
           <h2 className="font-serif font-medium text-body text-ordift-ink">Separation / Offboarding</h2>
           {personSeparationCases.length > 0 ? (
             <ul className="space-y-1">
@@ -403,7 +440,7 @@ export default async function PersonDetailPage({ params }: { params: Promise<{ i
       {/* Performance Reviews / PIP (Phase B5 Step 2, 2026-09-14) —
           performance and discipline are deliberately kept separate
           modules; a failed PIP never auto-terminates employment. */}
-      <section className="rounded-xl border border-black/10 bg-white p-6 space-y-4">
+      <section id="section-performance" className="rounded-xl border border-black/10 bg-white p-6 space-y-4 scroll-mt-6">
         <h2 className="font-serif font-medium text-body text-ordift-ink">Performance</h2>
 
         <div>
@@ -499,7 +536,7 @@ export default async function PersonDetailPage({ params }: { params: Promise<{ i
           "restricted access" tier already established for Background
           Screening on this page. No automatic termination path exists
           anywhere behind these forms. */}
-      <section className="rounded-xl border border-black/10 bg-white p-6 space-y-4">
+      <section id="section-discipline" className="rounded-xl border border-black/10 bg-white p-6 space-y-4 scroll-mt-6">
         <h2 className="font-serif font-medium text-body text-ordift-ink">Employee Relations — Discipline &amp; Investigations</h2>
         {!isSuper ? (
           <p className="font-sans text-caption text-ordift-ink-muted">Discipline and investigation records are Super-Admin-only.</p>
@@ -613,7 +650,7 @@ export default async function PersonDetailPage({ params }: { params: Promise<{ i
           computed amount (advance cap, long-service/death-in-service
           award) is server-computed from OS-HR-GH-003's real approved
           figures — never entered or overridden here. */}
-      <section className="rounded-xl border border-black/10 bg-white p-6 space-y-4">
+      <section id="section-compensation" className="rounded-xl border border-black/10 bg-white p-6 space-y-4 scroll-mt-6">
         <h2 className="font-serif font-medium text-body text-ordift-ink">Compensation &amp; Benefits</h2>
 
         <div>
@@ -729,7 +766,7 @@ export default async function PersonDetailPage({ params }: { params: Promise<{ i
           assets happens on the standalone Assets registry page; loss/
           damage always routes to a determination, never directly to a
           deduction. */}
-      <section className="rounded-xl border border-black/10 bg-white p-6 space-y-4">
+      <section id="section-assets" className="rounded-xl border border-black/10 bg-white p-6 space-y-4 scroll-mt-6">
         <h2 className="font-serif font-medium text-body text-ordift-ink">
           Assets &amp; Equipment <Link href="/admin/organization/assets" className="text-caption font-sans text-ordift-gold-pressed underline underline-offset-4 font-normal">Registry →</Link>
         </h2>
@@ -825,7 +862,7 @@ export default async function PersonDetailPage({ params }: { params: Promise<{ i
           never merged into one generic "incident" concept. An accident
           never automatically makes the employee financially liable;
           responsibility is always an explicit human determination. */}
-      <section className="rounded-xl border border-black/10 bg-white p-6 space-y-4">
+      <section id="section-business-travel" className="rounded-xl border border-black/10 bg-white p-6 space-y-4 scroll-mt-6">
         <h2 className="font-serif font-medium text-body text-ordift-ink">Business Travel, Driving &amp; Safety</h2>
 
         <div>
@@ -1011,7 +1048,7 @@ export default async function PersonDetailPage({ params }: { params: Promise<{ i
           Employees do not gain automatic publication rights — approval
           always requires confidentiality, embargo, contractual, and
           client/model release-rights checks, enforced server-side. */}
-      <section className="rounded-xl border border-black/10 bg-white p-6 space-y-4">
+      <section id="section-portfolio" className="rounded-xl border border-black/10 bg-white p-6 space-y-4 scroll-mt-6">
         <h2 className="font-serif font-medium text-body text-ordift-ink">Portfolio / Personal-Use IP</h2>
         {portfolioUseRequests.length > 0 ? (
           <ul className="space-y-2">
@@ -1062,7 +1099,7 @@ export default async function PersonDetailPage({ params }: { params: Promise<{ i
           never invents a value for an unresolved field, and viewing
           this section has no side effect (it is a read-only preview of
           createEmployeeEmploymentAgreementDraft()'s own gate). */}
-      <section className="rounded-xl border border-black/10 bg-white p-6 space-y-3">
+      <section id="section-agreement-readiness" className="rounded-xl border border-black/10 bg-white p-6 space-y-3 scroll-mt-6">
         <h2 className="font-serif font-medium text-body text-ordift-ink">Agreement Readiness</h2>
         {!onboarding ? (
           <p className="font-sans text-body-small text-ordift-ink-muted">No onboarding record on file for this person — readiness cannot be evaluated.</p>
@@ -1114,7 +1151,7 @@ export default async function PersonDetailPage({ params }: { params: Promise<{ i
           free-text content. Detailed corporate references always
           require human-authored content and an explicitly scoped
           authorization of what may be released. */}
-      <section className="rounded-xl border border-black/10 bg-white p-6 space-y-4">
+      <section id="section-references" className="rounded-xl border border-black/10 bg-white p-6 space-y-4 scroll-mt-6">
         <h2 className="font-serif font-medium text-body text-ordift-ink">Employment References</h2>
         {referenceRequests.length > 0 ? (
           <ul className="space-y-2">
@@ -1192,7 +1229,7 @@ export default async function PersonDetailPage({ params }: { params: Promise<{ i
           table (migration 0067) rather than a new document concept — a
           person acknowledges a given document VERSION at most once, a
           new version always needs a fresh, genuine acknowledgement. */}
-      <section className="rounded-xl border border-black/10 bg-white p-6 space-y-2">
+      <section id="section-policy-acknowledgements" className="rounded-xl border border-black/10 bg-white p-6 space-y-2 scroll-mt-6">
         <h2 className="font-serif font-medium text-body text-ordift-ink">Controlled Policy Acknowledgements</h2>
         {controlledPolicyDocuments.length > 0 ? (
           <ul className="divide-y divide-black/5">
@@ -1237,7 +1274,7 @@ export default async function PersonDetailPage({ params }: { params: Promise<{ i
           together. Every genuinely international/inter-entity type
           auto-flags for enhanced review; it can never silently inherit
           the previous jurisdiction's rules. */}
-      <section className="rounded-xl border border-black/10 bg-white p-6 space-y-4">
+      <section id="section-transitions" className="rounded-xl border border-black/10 bg-white p-6 space-y-4 scroll-mt-6">
         <h2 className="font-serif font-medium text-body text-ordift-ink">International &amp; Employment Transitions</h2>
         {employmentTermsHistory.length > 0 ? (
           <ul className="space-y-2">
@@ -1332,7 +1369,7 @@ export default async function PersonDetailPage({ params }: { params: Promise<{ i
           disciplinary action, grievance resolution, or other decided
           outcome. Backend (appeals.ts) already existed fully; this is
           its first UI. */}
-      <section className="rounded-xl border border-black/10 bg-white p-6 space-y-4">
+      <section id="section-appeals" className="rounded-xl border border-black/10 bg-white p-6 space-y-4 scroll-mt-6">
         <h2 className="font-serif font-medium text-body text-ordift-ink">Appeals</h2>
         {appeals.length > 0 ? (
           <ul className="space-y-2">
@@ -1369,7 +1406,7 @@ export default async function PersonDetailPage({ params }: { params: Promise<{ i
         </form>
       </section>
 
-      <section className="rounded-xl border border-black/10 bg-white p-6 space-y-2">
+      <section id="section-history" className="rounded-xl border border-black/10 bg-white p-6 space-y-2 scroll-mt-6">
         <h2 className="font-serif font-medium text-body text-ordift-ink">History</h2>
         {recentActivity.length > 0 ? (
           <ul className="divide-y divide-black/5">
