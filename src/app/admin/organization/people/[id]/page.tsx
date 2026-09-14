@@ -28,6 +28,7 @@ import {
   VEHICLE_INCIDENT_WORKFLOW_ORDER,
   WORKPLACE_INJURY_WORKFLOW_ORDER,
 } from "@/lib/organization/businessTravel";
+import { listPortfolioUseRequestsForProfile } from "@/lib/organization/portfolioUse";
 import {
   setEmploymentStatusAction,
   recordBackgroundScreeningAction,
@@ -67,6 +68,9 @@ import {
   advanceWorkplaceInjuryStageAction,
   recordWorkplaceInjuryAbsencePayClassificationAction,
   resolveWorkplaceInjuryReportAction,
+  submitPortfolioUseRequestAction,
+  approvePortfolioUseRequestAction,
+  declinePortfolioUseRequestAction,
 } from "./actions";
 
 export const metadata: Metadata = {
@@ -148,6 +152,7 @@ export default async function PersonDetailPage({ params }: { params: Promise<{ i
     listVehicleIncidentsForProfile(id),
     listWorkplaceInjuryReportsForProfile(id),
   ]);
+  const portfolioUseRequests = await listPortfolioUseRequestsForProfile(id);
   const personSeparationCases = separationCases.filter((c) => c.profileId === id);
   const openSeparationCase = personSeparationCases.find((c) => c.status === "open") ?? null;
 
@@ -958,6 +963,56 @@ export default async function PersonDetailPage({ params }: { params: Promise<{ i
             <button type="submit" className="font-sans text-caption font-semibold px-2 py-1 rounded-md bg-red-800 text-white">Report Workplace Injury</button>
           </form>
         </div>
+      </section>
+
+      {/* Portfolio / Personal-Use IP (Phase B5 Step 8, 2026-09-14).
+          Employees do not gain automatic publication rights — approval
+          always requires confidentiality, embargo, contractual, and
+          client/model release-rights checks, enforced server-side. */}
+      <section className="rounded-xl border border-black/10 bg-white p-6 space-y-4">
+        <h2 className="font-serif font-medium text-body text-ordift-ink">Portfolio / Personal-Use IP</h2>
+        {portfolioUseRequests.length > 0 ? (
+          <ul className="space-y-2">
+            {portfolioUseRequests.map((r) => (
+              <li key={r.id} className="font-sans text-caption text-ordift-ink-muted space-y-1">
+                <p>
+                  · &ldquo;{r.description}&rdquo; — {r.status} · {new Date(r.createdAt).toLocaleDateString()}
+                  {r.status === "approved" && Array.isArray(r.approvedPlatforms) && r.approvedPlatforms.length > 0 ? ` — platforms: ${(r.approvedPlatforms as string[]).join(", ")}` : ""}
+                </p>
+                {r.status === "requested" && (
+                  <div className="pl-3 space-y-1">
+                    <form action={approvePortfolioUseRequestAction} className="flex flex-wrap items-center gap-2">
+                      <input type="hidden" name="profileId" value={id} />
+                      <input type="hidden" name="requestId" value={r.id} />
+                      <label className="flex items-center gap-1"><input type="checkbox" name="confidentialityChecked" value="true" /> Confidentiality</label>
+                      <label className="flex items-center gap-1"><input type="checkbox" name="embargoChecked" value="true" /> Embargo</label>
+                      <label className="flex items-center gap-1"><input type="checkbox" name="contractualRestrictionsChecked" value="true" /> Contractual</label>
+                      <label className="flex items-center gap-1"><input type="checkbox" name="releaseRightsChecked" value="true" /> Release rights</label>
+                      <input name="approvedAssets" required placeholder="Approved assets" className="rounded-lg border border-black/15 px-2 py-1 font-sans text-caption" />
+                      <input name="approvedPlatforms" required placeholder="Platforms (comma-separated)" className="rounded-lg border border-black/15 px-2 py-1 font-sans text-caption" />
+                      <input name="approvedTiming" placeholder="Timing (optional)" className="rounded-lg border border-black/15 px-2 py-1 font-sans text-caption" />
+                      <input name="approvedConditions" placeholder="Conditions (optional)" className="rounded-lg border border-black/15 px-2 py-1 font-sans text-caption" />
+                      <button type="submit" className="font-sans text-caption font-semibold px-2 py-1 rounded-md bg-ordift-navy-950 text-white">Approve</button>
+                    </form>
+                    <form action={declinePortfolioUseRequestAction} className="flex flex-wrap gap-2">
+                      <input type="hidden" name="profileId" value={id} />
+                      <input type="hidden" name="requestId" value={r.id} />
+                      <input name="decisionNotes" required placeholder="Decision notes" className="rounded-lg border border-black/15 px-2 py-1 font-sans text-caption flex-1 min-w-[160px]" />
+                      <button type="submit" className="font-sans text-caption text-red-700 underline underline-offset-4">Decline</button>
+                    </form>
+                  </div>
+                )}
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="font-sans text-caption text-ordift-ink-muted">No portfolio-use requests on record.</p>
+        )}
+        <form action={submitPortfolioUseRequestAction} className="flex flex-wrap gap-2 mt-2">
+          <input type="hidden" name="profileId" value={id} />
+          <input name="description" required placeholder="Describe the requested assets/use" className="rounded-lg border border-black/15 px-2 py-1 font-sans text-caption flex-1 min-w-[200px]" />
+          <button type="submit" className="font-sans text-caption font-semibold px-2 py-1 rounded-md bg-ordift-navy-950 text-white">Submit Portfolio-Use Request</button>
+        </form>
       </section>
 
       <section className="rounded-xl border border-black/10 bg-white p-6 space-y-2">

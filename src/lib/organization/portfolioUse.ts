@@ -9,7 +9,7 @@ import { isSuperAdminId, hasJurisdictionAuthority } from "@/lib/organization/aut
 // rights rather than duplicating usage-rights data — this module only
 // adds the request/controlled-approval layer on top of it.
 
-async function canManagePortfolioUse(actorUserId: string): Promise<boolean> {
+export async function canManagePortfolioUse(actorUserId: string): Promise<boolean> {
   if (await isSuperAdminId(actorUserId)) return true;
   return hasJurisdictionAuthority(actorUserId, "operations", "administer");
 }

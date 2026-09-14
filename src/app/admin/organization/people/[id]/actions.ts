@@ -65,6 +65,7 @@ import {
   resolveWorkplaceInjuryReport,
   type VehicleIncidentResponsibilityDetermination,
 } from "@/lib/organization/businessTravel";
+import { submitPortfolioUseRequest, approvePortfolioUseRequest, declinePortfolioUseRequest } from "@/lib/organization/portfolioUse";
 
 // Organizational Structure, Authority Grants, Onboarding & Work Email
 // V1 (2026-09-07) — Person Detail View actions. Employment/engagement
@@ -826,6 +827,67 @@ export async function resolveWorkplaceInjuryReportAction(formData: FormData): Pr
 
   const result = await resolveWorkplaceInjuryReport({ reportId, returnToWorkNotes, actorUserId: currentUser.id });
   if (!result.ok) console.error("[admin organization] failed to resolve workplace injury report", result.error);
+
+  revalidatePath(`/admin/organization/people/${profileId}`);
+}
+
+// Portfolio / Personal-Use IP (Phase B5 Step 8, 2026-09-14). Employees
+// do not gain automatic publication rights — approvePortfolioUseRequest()
+// itself enforces the four required checks (confidentiality, embargo,
+// contractual restrictions, client/model release rights) before any
+// row can be approved.
+export async function submitPortfolioUseRequestAction(formData: FormData): Promise<void> {
+  const currentUser = await getCurrentUser();
+  if (!currentUser) return;
+
+  const profileId = String(formData.get("profileId") ?? "").trim();
+  const description = String(formData.get("description") ?? "").trim();
+  if (!profileId || !description) return;
+
+  const result = await submitPortfolioUseRequest({ profileId, description, actorUserId: currentUser.id });
+  if (!result.ok) console.error("[admin organization] failed to submit portfolio-use request", result.error);
+
+  revalidatePath(`/admin/organization/people/${profileId}`);
+}
+
+export async function approvePortfolioUseRequestAction(formData: FormData): Promise<void> {
+  const currentUser = await getCurrentUser();
+  if (!currentUser) return;
+
+  const profileId = String(formData.get("profileId") ?? "").trim();
+  const requestId = String(formData.get("requestId") ?? "").trim();
+  const approvedAssets = String(formData.get("approvedAssets") ?? "").trim();
+  const approvedPlatforms = String(formData.get("approvedPlatforms") ?? "")
+    .split(",")
+    .map((p) => p.trim())
+    .filter(Boolean);
+  const approvedTiming = String(formData.get("approvedTiming") ?? "").trim() || null;
+  const approvedConditions = String(formData.get("approvedConditions") ?? "").trim() || null;
+  const checks = {
+    confidentialityChecked: formData.get("confidentialityChecked") === "true",
+    embargoChecked: formData.get("embargoChecked") === "true",
+    contractualRestrictionsChecked: formData.get("contractualRestrictionsChecked") === "true",
+    releaseRightsChecked: formData.get("releaseRightsChecked") === "true",
+  };
+  if (!profileId || !requestId || !approvedAssets || approvedPlatforms.length === 0) return;
+
+  const result = await approvePortfolioUseRequest({ requestId, checks, approvedAssets, approvedPlatforms, approvedTiming, approvedConditions, actorUserId: currentUser.id });
+  if (!result.ok) console.error("[admin organization] failed to approve portfolio-use request", result.error);
+
+  revalidatePath(`/admin/organization/people/${profileId}`);
+}
+
+export async function declinePortfolioUseRequestAction(formData: FormData): Promise<void> {
+  const currentUser = await getCurrentUser();
+  if (!currentUser) return;
+
+  const profileId = String(formData.get("profileId") ?? "").trim();
+  const requestId = String(formData.get("requestId") ?? "").trim();
+  const decisionNotes = String(formData.get("decisionNotes") ?? "").trim();
+  if (!profileId || !requestId || !decisionNotes) return;
+
+  const result = await declinePortfolioUseRequest({ requestId, decisionNotes, actorUserId: currentUser.id });
+  if (!result.ok) console.error("[admin organization] failed to decline portfolio-use request", result.error);
 
   revalidatePath(`/admin/organization/people/${profileId}`);
 }
