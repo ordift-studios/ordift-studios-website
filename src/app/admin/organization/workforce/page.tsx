@@ -2,7 +2,16 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getCurrentUser, hasRole, isSuperAdmin } from "@/lib/portal/roles";
-import { getWorkforceOverviewCounts, listActiveStaffRoster } from "@/lib/organization/hrDashboard";
+import {
+  getWorkforceOverviewCounts,
+  listActiveStaffRoster,
+  countBelowStatutoryFloor,
+  getPolicyAcknowledgementCompletion,
+  countCurrentlyOnLeave,
+  countOverdueReviews,
+  countPendingSalaryAdvances,
+  countAgreementReadinessBlocked,
+} from "@/lib/organization/hrDashboard";
 
 export const metadata: Metadata = {
   title: "Workforce Overview — Ordift Studios Admin",
@@ -53,18 +62,36 @@ function AttentionCard({ label, count, href }: { label: string; count: number; h
 export default async function WorkforceOverviewPage() {
   const user = await getCurrentUser();
   if (!user || (!hasRole(user, "admin") && !isSuperAdmin(user))) redirect("/admin/overview");
+  const isSuper = isSuperAdmin(user);
 
-  const [counts, roster] = await Promise.all([getWorkforceOverviewCounts(), listActiveStaffRoster()]);
+  const [counts, roster, belowFloorCount, policyCompletion, currentlyOnLeave, overdueReviews, pendingSalaryAdvances, agreementReadinessBlocked] = await Promise.all([
+    getWorkforceOverviewCounts(),
+    listActiveStaffRoster(),
+    countBelowStatutoryFloor(),
+    getPolicyAcknowledgementCompletion(),
+    countCurrentlyOnLeave(),
+    countOverdueReviews(),
+    countPendingSalaryAdvances(),
+    countAgreementReadinessBlocked(),
+  ]);
 
   const attentionItems = [
     { label: "Pending leave requests", count: counts.pendingLeaveRequests, href: "/admin/organization/leave" },
     { label: "Unexplained absences needing review", count: counts.unexplainedAbsences, href: "/admin/organization/attendance" },
     { label: "Fixed-term contracts expiring within 90 days", count: counts.fixedTermApproachingExpiry },
-    { label: "Open grievances", count: counts.openGrievances },
+    { label: "Open grievances / Speak-Up", count: counts.openGrievances, href: "/admin/organization/employee-relations" },
     { label: "Open disciplinary investigations", count: counts.openDisciplinaryInvestigations },
     { label: "Pending development/training requests", count: counts.pendingHrApprovals },
     { label: "Unresolved requirement reviews (agreement readiness)", count: counts.unresolvedRequirementReviews },
     { label: "Active offboarding cases", count: counts.activeOffboardingCases, href: "/admin/organization" },
+    { label: "Open safeguarding concerns", count: counts.openSafeguardingConcerns, href: isSuper ? "/admin/organization/safeguarding" : undefined },
+    { label: "Pending employment reference requests", count: counts.pendingReferenceRequests },
+    { label: "Pending business travel authorizations", count: counts.pendingBusinessTravelAuthorizations },
+    { label: "Pending portfolio-use requests", count: counts.pendingPortfolioUseRequests },
+    { label: "Below statutory wage floor", count: belowFloorCount, href: isSuper ? "/admin/organization/statutory-wages" : undefined },
+    { label: "Overdue performance reviews", count: overdueReviews },
+    { label: "Pending salary advance requests", count: pendingSalaryAdvances },
+    { label: "Onboarding employees not yet Agreement-Ready", count: agreementReadinessBlocked },
   ].filter((item) => item.count > 0);
 
   return (
@@ -82,7 +109,10 @@ export default async function WorkforceOverviewPage() {
         <StatCard label="Onboarding in Progress" value={counts.onboardingInProgress} />
         <StatCard label="Active PIPs" value={counts.activePips} />
         <StatCard label="Acting Assignments (active)" value={counts.actingAssignmentsActive} href="/admin/authority" />
-        <StatCard label="Outstanding Assets" value={counts.outstandingAssets} />
+        <StatCard label="Outstanding Assets" value={counts.outstandingAssets} href="/admin/organization/assets" />
+        <StatCard label="Currently On Leave" value={currentlyOnLeave} href="/admin/organization/leave" />
+        {isSuper && <StatCard label="Registered Legal Entities" value={counts.registeredLegalEntities} href="/admin/organization/legal-entities" />}
+        <StatCard label="Policy Acknowledgement Completion (%)" value={policyCompletion.completionPercent} />
       </section>
 
       {attentionItems.length > 0 && (

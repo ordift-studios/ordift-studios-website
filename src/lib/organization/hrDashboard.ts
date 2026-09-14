@@ -1,4 +1,7 @@
 import { createAdminClient } from "@/lib/supabase/admin";
+import { getStatutoryComplianceForProfile } from "@/lib/organization/statutoryWageEngine";
+import { listControlledPolicyDocuments } from "@/lib/organization/policyAcknowledgements";
+import { checkEmployeeAgreementReadiness } from "@/lib/legal/employeeAgreements";
 
 // Ordift Studios Compliance/COMP-SYS-1, Phase B5 Step 2 (2026-09-14) —
 // Workforce Overview data aggregation. Every count below is a real,
@@ -51,6 +54,11 @@ export interface WorkforceOverviewCounts {
   activeOffboardingCases: number;
   unresolvedRequirementReviews: number;
   unexplainedAbsences: number;
+  openSafeguardingConcerns: number;
+  pendingReferenceRequests: number;
+  pendingBusinessTravelAuthorizations: number;
+  pendingPortfolioUseRequests: number;
+  registeredLegalEntities: number;
 }
 
 // Every field is a real COUNT query — zero is a normal, honestly
@@ -79,6 +87,11 @@ export async function getWorkforceOverviewCounts(): Promise<WorkforceOverviewCou
     activeOffboardingCases,
     unresolvedRequirementReviews,
     unexplainedAbsences,
+    openSafeguardingConcerns,
+    pendingReferenceRequests,
+    pendingBusinessTravelAuthorizations,
+    pendingPortfolioUseRequests,
+    registeredLegalEntities,
   ] = await Promise.all([
     staffRole
       ? admin.from("user_roles").select("user_id", { count: "exact", head: true }).eq("role_id", staffRole.id)
@@ -95,6 +108,11 @@ export async function getWorkforceOverviewCounts(): Promise<WorkforceOverviewCou
     admin.from("separation_cases").select("id", { count: "exact", head: true }).eq("status", "open"),
     admin.from("requirement_evaluations").select("id", { count: "exact", head: true }).eq("classification", "REVIEW_REQUIRED"),
     admin.from("attendance_records").select("id", { count: "exact", head: true }).eq("attendance_status", "absent_unexplained"),
+    admin.from("safeguarding_concern_reports").select("id", { count: "exact", head: true }).in("status", ["reported", "escalated"]),
+    admin.from("reference_requests").select("id", { count: "exact", head: true }).eq("status", "requested"),
+    admin.from("business_travel_authorizations").select("id", { count: "exact", head: true }).eq("status", "requested"),
+    admin.from("portfolio_use_requests").select("id", { count: "exact", head: true }).eq("status", "requested"),
+    admin.from("employing_entities").select("id", { count: "exact", head: true }),
   ]);
 
   return {
@@ -111,5 +129,121 @@ export async function getWorkforceOverviewCounts(): Promise<WorkforceOverviewCou
     activeOffboardingCases: activeOffboardingCases.count ?? 0,
     unresolvedRequirementReviews: unresolvedRequirementReviews.count ?? 0,
     unexplainedAbsences: unexplainedAbsences.count ?? 0,
+    openSafeguardingConcerns: openSafeguardingConcerns.count ?? 0,
+    pendingReferenceRequests: pendingReferenceRequests.count ?? 0,
+    pendingBusinessTravelAuthorizations: pendingBusinessTravelAuthorizations.count ?? 0,
+    pendingPortfolioUseRequests: pendingPortfolioUseRequests.count ?? 0,
+    registeredLegalEntities: registeredLegalEntities.count ?? 0,
   };
+}
+
+// Company-wide statutory-wage compliance — how many people currently
+// resolve to BELOW_FLOOR. Loops per-profile (one compliance check per
+// person with employment-terms history) rather than a single SQL
+// aggregate, since the comparison itself (compareSalaryToStatutoryFloor())
+// is deliberately non-trivial application logic, not something safely
+// expressible as one query — acceptable given this engagement's real
+// current workforce size.
+export async function countBelowStatutoryFloor(): Promise<number> {
+  const admin = createAdminClient();
+  const { data, error } = await admin.from("employment_terms_history").select("profile_id");
+  if (error) {
+    console.error("[organization] failed to load employment_terms_history for compliance count", error.message);
+    return 0;
+  }
+  const profileIds = [...new Set((data ?? []).map((r) => r.profile_id))];
+  let belowFloorCount = 0;
+  for (const profileId of profileIds) {
+    const result = await getStatutoryComplianceForProfile(profileId);
+    if (result.state === "BELOW_FLOOR") belowFloorCount++;
+  }
+  return belowFloorCount;
+}
+
+// Approved leave whose window covers today — "currently-away
+// employees" (Part 5 §3). Deliberately status='approved' only:
+// submitted/under_review requests are not yet decided, so they don't
+// mean someone is actually away.
+export async function countCurrentlyOnLeave(): Promise<number> {
+  const admin = createAdminClient();
+  const today = new Date().toISOString().slice(0, 10);
+  const { count, error } = await admin
+    .from("leave_requests")
+    .select("id", { count: "exact", head: true })
+    .eq("status", "approved")
+    .lte("start_date", today)
+    .gte("end_date", today);
+  if (error) {
+    console.error("[organization] failed to count currently-on-leave", error.message);
+    return 0;
+  }
+  return count ?? 0;
+}
+
+// Overdue performance reviews (Part 5 §4) — a real next_review_due_at
+// already in the past, per the same field recordPerformanceReview()
+// itself computes (performanceReviews.ts's computeNextReviewDueDate()).
+export async function countOverdueReviews(): Promise<number> {
+  const admin = createAdminClient();
+  const today = new Date().toISOString().slice(0, 10);
+  const { count, error } = await admin.from("performance_reviews").select("id", { count: "exact", head: true }).lt("next_review_due_at", today);
+  if (error) {
+    console.error("[organization] failed to count overdue reviews", error.message);
+    return 0;
+  }
+  return count ?? 0;
+}
+
+// Salary advance requests still awaiting a decision (Part 5 §7).
+export async function countPendingSalaryAdvances(): Promise<number> {
+  const admin = createAdminClient();
+  const { count, error } = await admin.from("salary_advances").select("id", { count: "exact", head: true }).eq("status", "requested");
+  if (error) {
+    console.error("[organization] failed to count pending salary advances", error.message);
+    return 0;
+  }
+  return count ?? 0;
+}
+
+// How many onboarding employees are NOT yet Agreement-Ready (Part 5
+// §12) — loops checkEmployeeAgreementReadiness() (the exact same
+// resolver each individual Employee Profile page uses) across every
+// in-progress onboarding, rather than a separate simplified check that
+// could disagree with the real per-employee result.
+export async function countAgreementReadinessBlocked(): Promise<number> {
+  const admin = createAdminClient();
+  const { data, error } = await admin.from("staff_onboarding").select("id").eq("status", "in_progress");
+  if (error) {
+    console.error("[organization] failed to load staff_onboarding for readiness count", error.message);
+    return 0;
+  }
+  let blockedCount = 0;
+  for (const row of data ?? []) {
+    const readiness = await checkEmployeeAgreementReadiness(row.id);
+    if (!readiness.ok || !readiness.ready) blockedCount++;
+  }
+  return blockedCount;
+}
+
+export interface PolicyAcknowledgementCompletion {
+  totalPossible: number;
+  totalCompleted: number;
+  completionPercent: number;
+}
+
+// (staff roster size) x (active controlled documents) = total possible
+// acknowledgements; actual completed count comes from the real
+// policy_acknowledgements table. A 0/0 case reports 100% (nothing yet
+// required), never a division-by-zero artifact.
+export async function getPolicyAcknowledgementCompletion(): Promise<PolicyAcknowledgementCompletion> {
+  const admin = createAdminClient();
+  const [roster, documents, { count: totalCompleted }] = await Promise.all([
+    listActiveStaffRoster(),
+    listControlledPolicyDocuments(),
+    admin.from("policy_acknowledgements").select("id", { count: "exact", head: true }),
+  ]);
+  const totalPossible = roster.length * documents.length;
+  const completed = totalCompleted ?? 0;
+  const completionPercent = totalPossible === 0 ? 100 : Math.round((completed / totalPossible) * 100);
+  return { totalPossible, totalCompleted: completed, completionPercent };
 }

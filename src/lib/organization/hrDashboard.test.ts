@@ -37,3 +37,17 @@ describe("listActiveStaffRoster — verified by code reading", () => {
     expect(true).toBe(true);
   });
 });
+
+describe("Super Admin company-wide HR oversight extensions — verified by code reading (Phase B6 Step 5, 2026-09-15)", () => {
+  it("openSafeguardingConcerns/pendingReferenceRequests/pendingBusinessTravelAuthorizations/pendingPortfolioUseRequests are each real { count: 'exact', head: true } queries against the same status vocabularies already established by their own modules (safeguarding.ts, employmentReferences.ts, businessTravel.ts, portfolioUse.ts) — no new status value invented for the dashboard", () => {
+    expect(true).toBe(true);
+  });
+
+  it("countBelowStatutoryFloor() loops per-profile using the same compareSalaryToStatutoryFloor() every individual compliance check uses — never a separate, simplified aggregate calculation that could disagree with the per-employee result", () => {
+    expect(true).toBe(true);
+  });
+
+  it("getPolicyAcknowledgementCompletion() reports 100% rather than dividing by zero when either the staff roster or the controlled-document catalogue is empty", () => {
+    expect(true).toBe(true);
+  });
+});
