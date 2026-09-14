@@ -37,7 +37,10 @@ const NAV_GROUPS: NavGroup[] = [
     // independently scopes every read/write to the CURRENT user's own
     // id — the nav's visibility is never the security boundary.
     label: "My Workspace",
-    items: [{ label: "My Leave", href: "/admin/me/leave" }],
+    items: [
+      { label: "My Leave", href: "/admin/me/leave" },
+      { label: "My Attendance", href: "/admin/me/attendance" },
+    ],
   },
   {
     label: "Overview",
