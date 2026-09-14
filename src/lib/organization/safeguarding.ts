@@ -18,7 +18,7 @@ import { isSuperAdminId, hasJurisdictionAuthority } from "@/lib/organization/aut
 // file retains only restricted CONCERN reporting (6.4), which has no
 // pre-existing counterpart anywhere in this codebase.
 
-async function canManageSafeguarding(actorUserId: string): Promise<boolean> {
+export async function canManageSafeguarding(actorUserId: string): Promise<boolean> {
   if (await isSuperAdminId(actorUserId)) return true;
   return hasJurisdictionAuthority(actorUserId, "operations", "administer");
 }
@@ -103,15 +103,40 @@ export async function resolveSafeguardingConcern(params: { reportId: string; res
 // Admin-only listing — matches the table's own admin-only RLS; there is
 // no "for profile" self-service variant since 6.4's restricted-access
 // requirement applies regardless of who the concern is about.
-export async function listSafeguardingConcernReports(actorUserId: string): Promise<{ id: string; status: string; reportedAt: string }[]> {
+export async function listSafeguardingConcernReports(actorUserId: string): Promise<
+  {
+    id: string;
+    reportedBy: string;
+    concerningProfileId: string | null;
+    description: string;
+    immediateSafetyActionTaken: string | null;
+    mandatoryReportingObligationNotes: string | null;
+    status: string;
+    resolutionNotes: string | null;
+    reportedAt: string;
+  }[]
+> {
   if (!(await canManageSafeguarding(actorUserId))) {
     return [];
   }
   const admin = createAdminClient();
-  const { data, error } = await admin.from("safeguarding_concern_reports").select("id, status, created_at").order("created_at", { ascending: false });
+  const { data, error } = await admin
+    .from("safeguarding_concern_reports")
+    .select("id, reported_by, concerning_profile_id, description, immediate_safety_action_taken, mandatory_reporting_obligation_notes, status, resolution_notes, created_at")
+    .order("created_at", { ascending: false });
   if (error) {
     console.error("[organization] failed to load safeguarding_concern_reports", error.message);
     return [];
   }
-  return (data ?? []).map((r) => ({ id: r.id, status: r.status, reportedAt: r.created_at }));
+  return (data ?? []).map((r) => ({
+    id: r.id,
+    reportedBy: r.reported_by,
+    concerningProfileId: r.concerning_profile_id,
+    description: r.description,
+    immediateSafetyActionTaken: r.immediate_safety_action_taken,
+    mandatoryReportingObligationNotes: r.mandatory_reporting_obligation_notes,
+    status: r.status,
+    resolutionNotes: r.resolution_notes,
+    reportedAt: r.created_at,
+  }));
 }

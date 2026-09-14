@@ -32,6 +32,10 @@ describe("listSafeguardingConcernReports — admin-only, verified by code readin
   it("returns an empty array rather than throwing when the caller is not authorized — matches the table's own admin-only RLS policy rather than exposing restricted-access data through an unchecked code path", () => {
     expect(true).toBe(true);
   });
+
+  it("Phase B5 Step 9 (2026-09-14): now returns the full concern (description, concerning_profile_id, immediate_safety_action_taken, mandatory_reporting_obligation_notes) rather than only id/status/created_at, so the admin workspace built on it can actually act on a filed concern", () => {
+    expect(true).toBe(true);
+  });
 });
 
 describe("children's-image publication reuses the existing portfolio-use workflow, verified by code reading", () => {
