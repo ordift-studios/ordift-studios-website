@@ -80,6 +80,7 @@ import { recordPolicyAcknowledgement, type PolicyAcknowledgementMethod } from "@
 import {
   recordEmploymentTransition,
   completeEnhancedReview,
+  recordInitialEmploymentTerms,
   EMPLOYMENT_TRANSITION_TYPES,
   type EmploymentTransitionType,
   type EmploymentTermsFields,
@@ -1078,6 +1079,34 @@ export async function recordEmploymentTransitionAction(formData: FormData): Prom
     actorUserId: currentUser.id,
   });
   if (!result.ok) console.error("[admin organization] failed to record employment transition", result.error);
+
+  revalidatePath(`/admin/organization/people/${profileId}`);
+}
+
+export async function recordInitialEmploymentTermsAction(formData: FormData): Promise<void> {
+  const currentUser = await getCurrentUser();
+  if (!currentUser) return;
+
+  const profileId = String(formData.get("profileId") ?? "").trim();
+  const effectiveFrom = String(formData.get("effectiveFrom") ?? "").trim();
+  if (!profileId || !effectiveFrom) return;
+
+  const changes: Partial<EmploymentTermsFields> = {};
+  const employingEntityId = String(formData.get("employingEntityId") ?? "").trim();
+  const employmentJurisdictionId = String(formData.get("employmentJurisdictionId") ?? "").trim();
+  const workLocation = String(formData.get("workLocation") ?? "").trim();
+  const basicSalaryRaw = String(formData.get("basicSalary") ?? "").trim();
+  const currency = String(formData.get("currency") ?? "").trim();
+  const workPattern = String(formData.get("workPattern") ?? "").trim();
+  if (employingEntityId) changes.employingEntityId = employingEntityId;
+  if (employmentJurisdictionId) changes.employmentJurisdictionId = employmentJurisdictionId;
+  if (workLocation) changes.workLocation = workLocation;
+  if (basicSalaryRaw) changes.basicSalary = Number(basicSalaryRaw);
+  if (currency) changes.currency = currency;
+  if (workPattern) changes.workPattern = workPattern;
+
+  const result = await recordInitialEmploymentTerms({ profileId, effectiveFrom, changes, actorUserId: currentUser.id });
+  if (!result.ok) console.error("[admin organization] failed to record initial employment terms", result.error);
 
   revalidatePath(`/admin/organization/people/${profileId}`);
 }

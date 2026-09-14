@@ -253,6 +253,40 @@ export async function recordEmploymentTermsSnapshot(params: {
   return { ok: true, id: data.id };
 }
 
+// A person's FIRST-EVER employment-terms snapshot — the commencement
+// of their present formal employment arrangement, distinct from any
+// earlier informal/prior working relationship (which is never
+// automatically reinterpreted as continuous statutory employment
+// merely by recording this). Refuses if a snapshot already exists for
+// this profile: an ongoing change belongs through
+// recordEmploymentTransition() instead, never through this function.
+export async function recordInitialEmploymentTerms(params: {
+  profileId: string;
+  effectiveFrom: string;
+  changes: Partial<EmploymentTermsFields>;
+  actorUserId: string;
+}): Promise<RecordEmploymentTermsSnapshotResult> {
+  if (!(await canManageEmploymentTransitions(params.actorUserId))) {
+    return { ok: false, error: "Not authorized to record employment terms." };
+  }
+  const existing = await getCurrentEmploymentTerms(params.profileId);
+  if (existing) {
+    return { ok: false, error: "This person already has employment-terms history — record a change via an employment transition instead." };
+  }
+
+  const result = await recordEmploymentTermsSnapshot({
+    profileId: params.profileId,
+    effectiveFrom: params.effectiveFrom,
+    changes: params.changes,
+    source: "formal_employment_commencement",
+    recordedBy: params.actorUserId,
+  });
+  if (!result.ok) return result;
+
+  await logActivity({ actorUserId: params.actorUserId, action: "employment_terms.initial_recorded", entityType: "user", entityId: params.profileId, metadata: { employmentTermsHistoryId: result.id } });
+  return result;
+}
+
 async function canManageEmploymentTransitions(actorUserId: string): Promise<boolean> {
   if (await isSuperAdminId(actorUserId)) return true;
   return hasJurisdictionAuthority(actorUserId, "operations", "administer");

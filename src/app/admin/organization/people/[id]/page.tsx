@@ -86,6 +86,7 @@ import {
   recordPolicyAcknowledgementAction,
   recordEmploymentTransitionAction,
   completeEnhancedReviewAction,
+  recordInitialEmploymentTermsAction,
 } from "./actions";
 
 export const metadata: Metadata = {
@@ -1266,6 +1267,30 @@ export default async function PersonDetailPage({ params }: { params: Promise<{ i
           </ul>
         ) : (
           <p className="font-sans text-caption text-ordift-ink-muted">No employment-terms history on record.</p>
+        )}
+        {employmentTermsHistory.length === 0 && (
+          <form action={recordInitialEmploymentTermsAction} className="grid grid-cols-2 gap-2 mt-2 rounded-lg border border-ordift-gold-pressed/40 bg-ordift-gold-pressed/5 p-3">
+            <p className="col-span-2 font-sans text-caption font-semibold text-ordift-ink">Record Initial Employment Terms (formal commencement)</p>
+            <input type="hidden" name="profileId" value={id} />
+            <input type="date" name="effectiveFrom" required aria-label="Formal commencement date" className="col-span-2 rounded-lg border border-black/15 px-2 py-1 font-sans text-caption" />
+            <select name="employingEntityId" required defaultValue="" className="rounded-lg border border-black/15 bg-white px-2 py-1 font-sans text-caption">
+              <option value="" disabled>Employing entity…</option>
+              {employingEntitiesForTransitions.map((e) => (
+                <option key={e.id} value={e.id}>{e.legalName ?? e.name}</option>
+              ))}
+            </select>
+            <select name="employmentJurisdictionId" required defaultValue="" className="rounded-lg border border-black/15 bg-white px-2 py-1 font-sans text-caption">
+              <option value="" disabled>Employment jurisdiction…</option>
+              {jurisdictionsForTransitions.map((j) => (
+                <option key={j.id} value={j.id}>{j.name}</option>
+              ))}
+            </select>
+            <input name="workLocation" required placeholder="Primary work location" className="rounded-lg border border-black/15 px-2 py-1 font-sans text-caption" />
+            <input name="workPattern" required placeholder="Normal working hours (e.g. Mon–Fri, 08:00–17:00)" className="rounded-lg border border-black/15 px-2 py-1 font-sans text-caption" />
+            <input name="basicSalary" type="number" step="0.01" min="0" required placeholder="Basic salary" className="rounded-lg border border-black/15 px-2 py-1 font-sans text-caption" />
+            <input name="currency" required placeholder="Currency (e.g. GHS)" className="rounded-lg border border-black/15 px-2 py-1 font-sans text-caption" />
+            <button type="submit" className="col-span-2 justify-self-start font-sans text-caption font-semibold px-3 py-1 rounded-md bg-ordift-navy-950 text-white">Record Formal Commencement</button>
+          </form>
         )}
         <form action={recordEmploymentTransitionAction} className="grid grid-cols-2 gap-2 mt-2">
           <input type="hidden" name="profileId" value={id} />

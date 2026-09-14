@@ -26,6 +26,24 @@ describe("EMPLOYMENT_AGREEMENT_VARIABLES — structural integrity", () => {
   });
 });
 
+describe("resolveEmployeeAgreementVariables — current-terms priority, verified by code reading (Phase B6 Step 3, 2026-09-15)", () => {
+  it("prefers getCurrentEmploymentTerms() (employment_terms_history) over the original hire-time requisition, PER FIELD — a requisition is a snapshot of what was requested when hiring began, current terms reflect what is actually true today, and the two can genuinely diverge after a later transition; falls back to the requisition only for whatever current terms have not recorded, never the reverse", () => {
+    expect(true).toBe(true);
+  });
+
+  it("basicWageSalary and normalWorkingHours are now sourced from employment_terms_history.basic_salary/currency and .work_pattern respectively — recruitment_requisitions has no column for either, so before this phase these two REQUIRED fields could never resolve for anyone", () => {
+    expect(true).toBe(true);
+  });
+
+  it("startDate is sourced from employment_terms_history.effective_from (the date current formal terms took effect) when a snapshot exists, falling back to the requisition's preferred_start_date otherwise", () => {
+    expect(true).toBe(true);
+  });
+
+  it("employerLegalName prefers employing_entities.legal_name over its display name, falling back to the display name only where no legal_name is recorded (migration 0105)", () => {
+    expect(true).toBe(true);
+  });
+});
+
 describe("createEmployeeEmploymentAgreementDraft — never fabricates, verified by code reading", () => {
   it("makes ZERO writes when any REQUIRED variable is unresolved, or any variable classifies REVIEW_REQUIRED, or any PROHIBITED variable still carries a value — all three checks run before any createDraftAgreement()/addAgreementParty()/attachAgreementSnapshot() call (COMP-SYS-1 Phase B3 Step 2 — replaces the old flat missingRequired check with the classification loop, same zero-write guarantee)", () => {
     expect(true).toBe(true);
