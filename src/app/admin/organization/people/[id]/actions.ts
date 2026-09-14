@@ -76,6 +76,7 @@ import {
   type EmploymentReferenceStatus,
   type ReferenceType,
 } from "@/lib/organization/employmentReferences";
+import { recordPolicyAcknowledgement, type PolicyAcknowledgementMethod } from "@/lib/organization/policyAcknowledgements";
 
 // Organizational Structure, Authority Grants, Onboarding & Work Email
 // V1 (2026-09-07) — Person Detail View actions. Employment/engagement
@@ -1009,6 +1010,24 @@ export async function issueDetailedCorporateReferenceAction(formData: FormData):
 
   const result = await issueDetailedCorporateReference({ requestId, informationAuthorizedForRelease, content, actorUserId: currentUser.id });
   if (!result.ok) console.error("[admin organization] failed to issue detailed corporate reference", result.error);
+
+  revalidatePath(`/admin/organization/people/${profileId}`);
+}
+
+// Controlled Policy / Acknowledgement (Phase B5 Step 12, 2026-09-14).
+export async function recordPolicyAcknowledgementAction(formData: FormData): Promise<void> {
+  const currentUser = await getCurrentUser();
+  if (!currentUser) return;
+
+  const profileId = String(formData.get("profileId") ?? "").trim();
+  const documentVersionId = String(formData.get("documentVersionId") ?? "").trim();
+  const method = String(formData.get("method") ?? "").trim();
+  const evidenceReference = String(formData.get("evidenceReference") ?? "").trim() || null;
+  if (!profileId || !documentVersionId) return;
+  if (method !== "digital_click_through" && method !== "physical_signature") return;
+
+  const result = await recordPolicyAcknowledgement({ profileId, documentVersionId, method: method as PolicyAcknowledgementMethod, evidenceReference, actorUserId: currentUser.id });
+  if (!result.ok) console.error("[admin organization] failed to record policy acknowledgement", result.error);
 
   revalidatePath(`/admin/organization/people/${profileId}`);
 }

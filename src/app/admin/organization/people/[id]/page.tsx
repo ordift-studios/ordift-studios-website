@@ -32,6 +32,7 @@ import { listPortfolioUseRequestsForProfile } from "@/lib/organization/portfolio
 import { checkEmployeeAgreementReadiness } from "@/lib/legal/employeeAgreements";
 import { getStaffOnboardingByProfileId } from "@/lib/organization/onboarding";
 import { listReferenceRequestsForProfile } from "@/lib/organization/employmentReferences";
+import { listControlledPolicyDocuments, listPolicyAcknowledgementsForProfile } from "@/lib/organization/policyAcknowledgements";
 import {
   setEmploymentStatusAction,
   recordBackgroundScreeningAction,
@@ -80,6 +81,7 @@ import {
   declineReferenceRequestAction,
   issueStandardEmploymentVerificationAction,
   issueDetailedCorporateReferenceAction,
+  recordPolicyAcknowledgementAction,
 } from "./actions";
 
 export const metadata: Metadata = {
@@ -167,6 +169,13 @@ export default async function PersonDetailPage({ params }: { params: Promise<{ i
   const agreementReadiness = onboarding ? await checkEmployeeAgreementReadiness(onboarding.id) : null;
 
   const referenceRequests = await listReferenceRequestsForProfile(id);
+
+  const [controlledPolicyDocuments, policyAcknowledgements] = await Promise.all([
+    listControlledPolicyDocuments(),
+    listPolicyAcknowledgementsForProfile(id),
+  ]);
+  const acknowledgedVersionIds = new Set(policyAcknowledgements.map((a) => a.policyVersionId));
+  const acknowledgedAtByVersionId = new Map(policyAcknowledgements.map((a) => [a.policyVersionId, a.acknowledgedAt]));
   const personSeparationCases = separationCases.filter((c) => c.profileId === id);
   const openSeparationCase = personSeparationCases.find((c) => c.status === "open") ?? null;
 
@@ -1157,6 +1166,47 @@ export default async function PersonDetailPage({ params }: { params: Promise<{ i
           </select>
           <button type="submit" className="col-span-2 justify-self-start font-sans text-caption font-semibold px-3 py-1 rounded-md bg-ordift-navy-950 text-white">Log Reference Request</button>
         </form>
+      </section>
+
+      {/* Controlled Policy / Acknowledgement (Phase B5 Step 12,
+          2026-09-14). References the existing legal_document_versions
+          table (migration 0067) rather than a new document concept — a
+          person acknowledges a given document VERSION at most once, a
+          new version always needs a fresh, genuine acknowledgement. */}
+      <section className="rounded-xl border border-black/10 bg-white p-6 space-y-2">
+        <h2 className="font-serif font-medium text-body text-ordift-ink">Controlled Policy Acknowledgements</h2>
+        {controlledPolicyDocuments.length > 0 ? (
+          <ul className="divide-y divide-black/5">
+            {controlledPolicyDocuments.map((doc) => {
+              const acknowledged = acknowledgedVersionIds.has(doc.documentVersionId);
+              const acknowledgedAt = acknowledgedAtByVersionId.get(doc.documentVersionId);
+              return (
+                <li key={doc.masterId} className="py-2 flex flex-wrap items-center justify-between gap-2">
+                  <span className="font-sans text-body-small text-ordift-ink">{doc.canonicalCode} — {doc.title} <span className="text-ordift-ink-muted">(v{doc.version})</span></span>
+                  {acknowledged && acknowledgedAt ? (
+                    <span className="px-2 py-0.5 rounded-full bg-green-100 text-green-800 font-sans text-caption whitespace-nowrap">
+                      Acknowledged {new Date(acknowledgedAt).toLocaleDateString()}
+                    </span>
+                  ) : (
+                    <form action={recordPolicyAcknowledgementAction} className="flex flex-wrap gap-2">
+                      <input type="hidden" name="profileId" value={id} />
+                      <input type="hidden" name="documentVersionId" value={doc.documentVersionId} />
+                      <select name="method" required defaultValue="" className="rounded-lg border border-black/15 bg-white px-2 py-1 font-sans text-caption">
+                        <option value="" disabled>Method…</option>
+                        <option value="digital_click_through">Digital click-through</option>
+                        <option value="physical_signature">Physical signature</option>
+                      </select>
+                      <input name="evidenceReference" placeholder="Evidence reference (required for physical signature)" className="rounded-lg border border-black/15 px-2 py-1 font-sans text-caption flex-1 min-w-[180px]" />
+                      <button type="submit" className="font-sans text-caption font-semibold px-2 py-1 rounded-md bg-ordift-navy-950 text-white">Record Acknowledgement</button>
+                    </form>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        ) : (
+          <p className="font-sans text-body-small text-ordift-ink-muted">No controlled policy documents are currently active.</p>
+        )}
       </section>
 
       <section className="rounded-xl border border-black/10 bg-white p-6 space-y-2">
