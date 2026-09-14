@@ -92,6 +92,75 @@ export async function resolveEmployeeAgreementVariables(
   return { values, engagementTypeSlug: engagementType?.data?.slug ?? null, profileId: onboarding.profile_id };
 }
 
+export interface EmploymentAgreementFieldReadiness {
+  key: EmploymentAgreementVariableKey;
+  label: string;
+  classification: string;
+  value: string | null;
+  status: "satisfied" | "missing" | "review_required" | "prohibited_present" | "not_applicable";
+}
+
+// Read-only preview of createEmployeeEmploymentAgreementDraft()'s own
+// gate — computes the identical classification for every field but
+// never writes anything (no requirement_evaluations row, no agreement
+// draft). This is what "truthfully show the actual missing facts"
+// (rather than inventing them) means in practice: the Agreement
+// Readiness screen calls this, not the draft-creation function, so
+// simply viewing a person's readiness never has a side effect.
+export async function checkEmployeeAgreementReadiness(onboardingId: string): Promise<
+  | { ok: true; ready: boolean; fields: EmploymentAgreementFieldReadiness[] }
+  | { ok: false; error: string; jurisdictionGateState?: EmployeeAgreementJurisdictionGateState }
+> {
+  const { values, engagementTypeSlug, profileId } = await resolveEmployeeAgreementVariables(onboardingId);
+  if (!profileId) return { ok: false, error: "Onboarding record not found." };
+
+  const jurisdictionGate = await checkEmployeeAgreementJurisdictionSchedule(values.jurisdiction ?? null);
+  if (!jurisdictionGate.ok) {
+    return { ok: false, error: jurisdictionGate.error, jurisdictionGateState: jurisdictionGate.state };
+  }
+
+  const relationship = mapEngagementTypeSlugToWorkforceRelationship(engagementTypeSlug);
+  if (!relationship) {
+    return {
+      ok: false,
+      error: "This person's workforce relationship is not yet recognized by the compliance system — it requires review before an Employee Employment Agreement can be drafted.",
+    };
+  }
+
+  const fields: EmploymentAgreementFieldReadiness[] = [];
+  let ready = true;
+
+  for (const variable of EMPLOYMENT_AGREEMENT_VARIABLES) {
+    const classification = classifyEmploymentAgreementVariable({
+      relationship,
+      jurisdiction: jurisdictionGate.workforceJurisdiction,
+      key: variable.key,
+    });
+    const value = values[variable.key] ?? null;
+    const hasValue = Boolean(value);
+
+    let status: EmploymentAgreementFieldReadiness["status"];
+    if (classification.classification === "REVIEW_REQUIRED") {
+      status = "review_required";
+      ready = false;
+    } else if (classification.classification === "REQUIRED" && !hasValue) {
+      status = "missing";
+      ready = false;
+    } else if (classification.classification === "PROHIBITED" && hasValue) {
+      status = "prohibited_present";
+      ready = false;
+    } else if (classification.classification === "NOT_APPLICABLE") {
+      status = "not_applicable";
+    } else {
+      status = "satisfied";
+    }
+
+    fields.push({ key: variable.key, label: variable.label, classification: classification.classification, value, status });
+  }
+
+  return { ok: true, ready, fields };
+}
+
 // Creates the real draft agreement ONLY when:
 //  1. an approved jurisdiction schedule exists for the resolved jurisdiction
 //     (employeeAgreementJurisdictionGate.ts — also confirms jurisdiction

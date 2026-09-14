@@ -29,6 +29,8 @@ import {
   WORKPLACE_INJURY_WORKFLOW_ORDER,
 } from "@/lib/organization/businessTravel";
 import { listPortfolioUseRequestsForProfile } from "@/lib/organization/portfolioUse";
+import { checkEmployeeAgreementReadiness } from "@/lib/legal/employeeAgreements";
+import { getStaffOnboardingByProfileId } from "@/lib/organization/onboarding";
 import {
   setEmploymentStatusAction,
   recordBackgroundScreeningAction,
@@ -71,6 +73,7 @@ import {
   submitPortfolioUseRequestAction,
   approvePortfolioUseRequestAction,
   declinePortfolioUseRequestAction,
+  createEmployeeEmploymentAgreementDraftAction,
 } from "./actions";
 
 export const metadata: Metadata = {
@@ -153,6 +156,9 @@ export default async function PersonDetailPage({ params }: { params: Promise<{ i
     listWorkplaceInjuryReportsForProfile(id),
   ]);
   const portfolioUseRequests = await listPortfolioUseRequestsForProfile(id);
+
+  const onboarding = await getStaffOnboardingByProfileId(id);
+  const agreementReadiness = onboarding ? await checkEmployeeAgreementReadiness(onboarding.id) : null;
   const personSeparationCases = separationCases.filter((c) => c.profileId === id);
   const openSeparationCase = personSeparationCases.find((c) => c.status === "open") ?? null;
 
@@ -1013,6 +1019,57 @@ export default async function PersonDetailPage({ params }: { params: Promise<{ i
           <input name="description" required placeholder="Describe the requested assets/use" className="rounded-lg border border-black/15 px-2 py-1 font-sans text-caption flex-1 min-w-[200px]" />
           <button type="submit" className="font-sans text-caption font-semibold px-2 py-1 rounded-md bg-ordift-navy-950 text-white">Submit Portfolio-Use Request</button>
         </form>
+      </section>
+
+      {/* Agreement Readiness (Phase B5 Step 10, 2026-09-14). Truthfully
+          shows the actual missing facts — checkEmployeeAgreementReadiness()
+          never invents a value for an unresolved field, and viewing
+          this section has no side effect (it is a read-only preview of
+          createEmployeeEmploymentAgreementDraft()'s own gate). */}
+      <section className="rounded-xl border border-black/10 bg-white p-6 space-y-3">
+        <h2 className="font-serif font-medium text-body text-ordift-ink">Agreement Readiness</h2>
+        {!onboarding ? (
+          <p className="font-sans text-body-small text-ordift-ink-muted">No onboarding record on file for this person — readiness cannot be evaluated.</p>
+        ) : !agreementReadiness ? (
+          <p className="font-sans text-body-small text-ordift-ink-muted">Readiness could not be evaluated.</p>
+        ) : !agreementReadiness.ok ? (
+          <div className="space-y-1">
+            <p className="font-sans text-body-small text-red-700">{agreementReadiness.error}</p>
+            {agreementReadiness.jurisdictionGateState && (
+              <p className="font-sans text-caption text-ordift-ink-muted">Jurisdiction gate: {agreementReadiness.jurisdictionGateState.replace(/_/g, " ")}</p>
+            )}
+          </div>
+        ) : (
+          <>
+            <ul className="divide-y divide-black/5">
+              {agreementReadiness.fields.map((f) => (
+                <li key={f.key} className="py-1.5 flex items-center justify-between gap-3">
+                  <span className="font-sans text-caption text-ordift-ink">{f.label}{f.value ? ` — ${f.value}` : ""}</span>
+                  <span
+                    className={`px-2 py-0.5 rounded-full font-sans text-caption whitespace-nowrap ${
+                      f.status === "satisfied" || f.status === "not_applicable"
+                        ? "bg-green-100 text-green-800"
+                        : f.status === "missing"
+                          ? "bg-amber-100 text-amber-800"
+                          : "bg-red-100 text-red-800"
+                    }`}
+                  >
+                    {f.status.replace(/_/g, " ")}
+                  </span>
+                </li>
+              ))}
+            </ul>
+            {agreementReadiness.ready ? (
+              <form action={createEmployeeEmploymentAgreementDraftAction}>
+                <input type="hidden" name="profileId" value={id} />
+                <input type="hidden" name="onboardingId" value={onboarding.id} />
+                <button type="submit" className="font-sans text-caption font-semibold px-3 py-1.5 rounded-md bg-ordift-navy-950 text-white">Create Draft Employment Agreement</button>
+              </form>
+            ) : (
+              <p className="font-sans text-caption text-ordift-ink-muted">Every field above must be satisfied before a draft can be created — no field is ever filled in automatically.</p>
+            )}
+          </>
+        )}
       </section>
 
       <section className="rounded-xl border border-black/10 bg-white p-6 space-y-2">

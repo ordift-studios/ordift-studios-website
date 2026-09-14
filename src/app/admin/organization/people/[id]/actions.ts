@@ -66,6 +66,7 @@ import {
   type VehicleIncidentResponsibilityDetermination,
 } from "@/lib/organization/businessTravel";
 import { submitPortfolioUseRequest, approvePortfolioUseRequest, declinePortfolioUseRequest } from "@/lib/organization/portfolioUse";
+import { createEmployeeEmploymentAgreementDraft } from "@/lib/legal/employeeAgreements";
 
 // Organizational Structure, Authority Grants, Onboarding & Work Email
 // V1 (2026-09-07) — Person Detail View actions. Employment/engagement
@@ -888,6 +889,26 @@ export async function declinePortfolioUseRequestAction(formData: FormData): Prom
 
   const result = await declinePortfolioUseRequest({ requestId, decisionNotes, actorUserId: currentUser.id });
   if (!result.ok) console.error("[admin organization] failed to decline portfolio-use request", result.error);
+
+  revalidatePath(`/admin/organization/people/${profileId}`);
+}
+
+// Agreement Readiness (Phase B5 Step 10, 2026-09-14). The readiness
+// preview itself (checkEmployeeAgreementReadiness) is computed directly
+// in page.tsx, read-only, no action needed — this is only the "create
+// the real draft" step, which createEmployeeEmploymentAgreementDraft()
+// re-derives and re-validates independently rather than trusting
+// whatever the readiness preview showed a moment earlier.
+export async function createEmployeeEmploymentAgreementDraftAction(formData: FormData): Promise<void> {
+  const currentUser = await getCurrentUser();
+  if (!currentUser) return;
+
+  const profileId = String(formData.get("profileId") ?? "").trim();
+  const onboardingId = String(formData.get("onboardingId") ?? "").trim();
+  if (!profileId || !onboardingId) return;
+
+  const result = await createEmployeeEmploymentAgreementDraft({ onboardingId, actorUserId: currentUser.id });
+  if (!result.ok) console.error("[admin organization] failed to create employment agreement draft", result.error);
 
   revalidatePath(`/admin/organization/people/${profileId}`);
 }

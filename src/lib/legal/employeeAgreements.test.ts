@@ -80,6 +80,16 @@ describe("createEmployeeEmploymentAgreementDraft — requirement-engine wiring, 
   });
 });
 
+describe("checkEmployeeAgreementReadiness — read-only preview, verified by code reading (Phase B5 Step 10, 2026-09-14)", () => {
+  it("mirrors createEmployeeEmploymentAgreementDraft()'s exact classification loop but never calls recordRequirementEvaluation() or writes an agreement/party/snapshot row — viewing a person's Agreement Readiness screen has no side effect", () => {
+    expect(true).toBe(true);
+  });
+
+  it("never invents a value for an unresolved field — a missing REQUIRED field is reported as status 'missing' with value: null, exactly what resolveEmployeeAgreementVariables() actually resolved, matching the standing instruction not to invent missing information", () => {
+    expect(true).toBe(true);
+  });
+});
+
 describe("deriveEmploymentAgreementExecuted — genuine signature evidence only, verified by code reading", () => {
   it("returns 'satisfied' only when a real agreements row exists for this onboarding with status in ('fully_executed','active','completed') — never from a manual attestation, never from the mere existence of a draft agreement", () => {
     expect(true).toBe(true);

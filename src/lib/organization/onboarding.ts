@@ -112,6 +112,18 @@ export async function getStaffOnboardingById(onboardingId: string): Promise<Staf
   return mapOnboarding(data);
 }
 
+// staff_onboarding has a unique(profile_id) constraint (migration
+// 0046), so this can never return more than one row — used by the
+// Employee Profile page's Agreement Readiness section to resolve a
+// person's onboarding record without the caller needing to already
+// know its id.
+export async function getStaffOnboardingByProfileId(profileId: string): Promise<StaffOnboarding | null> {
+  const admin = createAdminClient();
+  const { data, error } = await admin.from("staff_onboarding").select(SELECT).eq("profile_id", profileId).maybeSingle();
+  if (error || !data) return null;
+  return mapOnboarding(data);
+}
+
 export async function startStaffOnboarding(params: {
   profileId: string;
   // E.5 Stage 2M, Part 5 — required, not optional. "An ordinary
