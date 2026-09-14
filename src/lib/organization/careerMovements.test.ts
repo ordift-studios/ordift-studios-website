@@ -1,13 +1,18 @@
 import { describe, expect, it } from "vitest";
 
-// Ordift Studios Compliance/COMP-SYS-1, Phase B4 Step 16. No pure/
-// computed function is exported from this module — the one piece of
-// derived logic (remuneration_review_required) is computed inline
-// inside recordPromotion() rather than as a separately exported pure
+// Ordift Studios Compliance/COMP-SYS-1, Phase B4 Step 16, updated
+// Phase B5 Step 1 (2026-09-14). No pure/computed function is exported
+// from this module — the one piece of derived logic
+// (remuneration_review_required) is computed inline inside
+// recordPromotion() rather than as a separately exported pure
 // function, since it depends on nothing but its own two inputs and has
 // no independent reuse. Every function is DB-dependent
 // (createAdminClient()) — verified by code reading, matching this
 // codebase's established convention.
+//
+// Acting-appointment coverage moved to actingAssignments.test.ts as
+// part of the schema reconciliation (migration 0104) — this file no
+// longer has any acting-appointment functions to test.
 
 describe("recordPromotion — grade change triggers review, never a predetermined increase, verified by code reading", () => {
   it("remuneration_review_required is computed as (toGradeId !== fromGradeId) — grep-confirmed the caller cannot pass this value directly, so it can never disagree with the actual grade change it describes", () => {
@@ -25,22 +30,6 @@ describe("recordPromotion — grade change triggers review, never a predetermine
 
 describe("completePromotionRemunerationReview — verified by code reading", () => {
   it("the update carries a compound atomic guard (.eq('remuneration_review_required', true).eq('remuneration_review_completed', false)) so a review cannot be completed twice or when none was ever required", () => {
-    expect(true).toBe(true);
-  });
-});
-
-describe("endActingAppointment — the ONLY path to status='ended', verified by code reading", () => {
-  it("grep-confirmed: no other function in this file sets acting_appointments.status to 'ended' — OS-HR-GH-003 8.2: 'Temporary authority/allowance ends with the acting appointment unless a new decision is made', and no automatic rollover to a new appointment exists anywhere in this file", () => {
-    expect(true).toBe(true);
-  });
-
-  it("the update carries an atomic .eq('status','active') guard so an appointment cannot be ended twice", () => {
-    expect(true).toBe(true);
-  });
-});
-
-describe("createActingAppointment — allowance approval, verified by code reading", () => {
-  it("allowance_approved_by/allowance_approved_at are only ever set together with a non-null acting_allowance_amount — grep-confirmed both are conditioned on the same `params.allowanceAmount != null` check, never set independently", () => {
     expect(true).toBe(true);
   });
 });

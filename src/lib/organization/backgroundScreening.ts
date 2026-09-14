@@ -22,6 +22,13 @@ export const BACKGROUND_SCREENING_CATEGORIES = [
   "right_to_work",
   "role_licence",
   "criminal_history",
+  // Added Phase B5 Step 1 (2026-09-14), schema reconciliation:
+  // OS-HR-GH-005 6.3's "Background/safeguarding checks are role- and
+  // jurisdiction-specific through the requirement-classification
+  // system" — this canonical screening table now carries the
+  // safeguarding case as a typed category rather than a second table
+  // (the since-retired safeguarding_checks, migration 0097/0104).
+  "safeguarding_clearance",
 ] as const;
 export type BackgroundScreeningCategory = (typeof BACKGROUND_SCREENING_CATEGORIES)[number];
 
@@ -47,9 +54,13 @@ export type BackgroundScreening = {
   decidedAt: string | null;
   notes: string | null;
   createdAt: string;
+  requirementEvaluationId: string | null;
+  expiryDate: string | null;
+  childVulnerablePersonRelevant: boolean;
 };
 
-const SELECT = "id, profile_id, category, jurisdiction, status, evidence_reference, decided_by, decided_at, notes, created_at";
+const SELECT =
+  "id, profile_id, category, jurisdiction, status, evidence_reference, decided_by, decided_at, notes, created_at, requirement_evaluation_id, expiry_date, child_vulnerable_person_relevant";
 
 function mapRow(r: {
   id: string;
@@ -62,6 +73,9 @@ function mapRow(r: {
   decided_at: string | null;
   notes: string | null;
   created_at: string;
+  requirement_evaluation_id: string | null;
+  expiry_date: string | null;
+  child_vulnerable_person_relevant: boolean;
 }): BackgroundScreening {
   return {
     id: r.id,
@@ -74,6 +88,9 @@ function mapRow(r: {
     decidedAt: r.decided_at,
     notes: r.notes,
     createdAt: r.created_at,
+    requirementEvaluationId: r.requirement_evaluation_id,
+    expiryDate: r.expiry_date,
+    childVulnerablePersonRelevant: r.child_vulnerable_person_relevant,
   };
 }
 
@@ -111,6 +128,9 @@ export async function recordBackgroundScreening(params: {
   evidenceReference?: string | null;
   notes?: string | null;
   actorUserId: string;
+  requirementEvaluationId?: string | null;
+  expiryDate?: string | null;
+  childVulnerablePersonRelevant?: boolean;
 }): Promise<{ ok: true; id: string } | { ok: false; error: string }> {
   const auth = await requireSuperAdmin(params.actorUserId);
   if (!auth.ok) return auth;
@@ -129,6 +149,9 @@ export async function recordBackgroundScreening(params: {
       decided_by: decided ? params.actorUserId : null,
       decided_at: decided ? new Date().toISOString() : null,
       created_by: params.actorUserId,
+      requirement_evaluation_id: params.requirementEvaluationId ?? null,
+      expiry_date: params.expiryDate ?? null,
+      child_vulnerable_person_relevant: params.childVulnerablePersonRelevant ?? false,
     })
     .select("id")
     .single();

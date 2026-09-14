@@ -6,12 +6,8 @@ import { describe, expect, it } from "vitest";
 // Every function is DB-dependent (createAdminClient()) — verified by
 // code reading, matching this codebase's established convention.
 
-describe("recordSafeguardingCheck — reuses the existing classification system, verified by code reading", () => {
-  it("requirementEvaluationId is accepted but never derived or re-decided by this function — grep-confirmed this file contains no classifyRequirement()-style logic of its own, matching OS-HR-GH-005 6.3's explicit instruction that role/jurisdiction applicability runs 'through the requirement-classification system' (the existing requirement_evaluations table, migration 0083), not a second, competing engine", () => {
-    expect(true).toBe(true);
-  });
-
-  it("requires Super Admin or operations.administer — same tier already established throughout this phase", () => {
+describe("safeguarding checks moved to the canonical background_screenings table, verified by code reading", () => {
+  it("grep-confirmed: this file no longer defines recordSafeguardingCheck() or listSafeguardingChecksForProfile() — that logic moved to backgroundScreening.ts as part of the schema reconciliation (migration 0104), extending the pre-existing, already-UI-connected background_screenings table rather than maintaining a second, competing screening record", () => {
     expect(true).toBe(true);
   });
 });

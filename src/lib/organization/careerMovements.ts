@@ -3,14 +3,20 @@ import { logActivity } from "@/lib/admin/activityLog";
 import { isSuperAdminId, hasJurisdictionAuthority } from "@/lib/organization/authority";
 import { recordEmploymentTermsSnapshot } from "@/lib/organization/employmentTermsHistory";
 
-// Ordift Studios Compliance/COMP-SYS-1, Phase B4 Step 16 (2026-09-14) —
-// promotion, acting appointments, and transfers, OS-HR-GH-003 section
-// 8. Every function that actually applies a position/grade/entity/
-// department change delegates to the existing
+// Ordift Studios Compliance/COMP-SYS-1, Phase B4 Step 16 (2026-09-14),
+// updated Phase B5 Step 1 (2026-09-14) — promotion and transfers,
+// OS-HR-GH-003 section 8. Every function that actually applies a
+// position/grade/entity/department change delegates to the existing
 // recordEmploymentTermsSnapshot() (employmentTermsHistory.ts, migration
 // 0086) — this file never writes those columns itself, so there is
 // exactly one place in the codebase that can change a person's
 // recorded terms.
+//
+// Acting appointments (8.2) are no longer covered by this file — the
+// schema reconciliation (migration 0104) retired the acting_appointments
+// table in favor of extending the pre-existing, already-UI-connected
+// acting_assignments table (migration 0065); see
+// src/lib/organization/actingAssignments.ts for that logic now.
 
 async function canManageCareerMovements(actorUserId: string): Promise<boolean> {
   if (await isSuperAdminId(actorUserId)) return true;
@@ -108,90 +114,6 @@ export async function listPromotionsForProfile(profileId: string): Promise<{ id:
     return [];
   }
   return (data ?? []).map((r) => ({ id: r.id, basis: r.basis, effectiveDate: r.effective_date, remunerationReviewRequired: r.remuneration_review_required, remunerationReviewCompleted: r.remuneration_review_completed }));
-}
-
-// --- acting appointments (8.2) --------------------------------------------
-
-// allowanceAmount is optional (8.2: "An acting allowance is optional
-// and separately approved") — when supplied, it is recorded as
-// already-approved by the same actor authorizing the appointment;
-// there is no separate later approval step modeled here since 8.2
-// names no such sequencing requirement.
-export async function createActingAppointment(params: {
-  profileId: string;
-  actingPositionId?: string | null;
-  responsibilities: string;
-  reportingTo?: string | null;
-  temporaryPermissions?: string | null;
-  startDate: string;
-  endDate?: string | null;
-  allowanceAmount?: number | null;
-  actorUserId: string;
-}): Promise<{ ok: true; appointmentId: string } | { ok: false; error: string }> {
-  if (!(await canManageCareerMovements(params.actorUserId))) {
-    return { ok: false, error: "Not authorized to create an acting appointment." };
-  }
-  if (!params.responsibilities.trim()) return { ok: false, error: "Responsibilities must be documented." };
-
-  const admin = createAdminClient();
-  const { data, error } = await admin
-    .from("acting_appointments")
-    .insert({
-      profile_id: params.profileId,
-      acting_position_id: params.actingPositionId ?? null,
-      responsibilities: params.responsibilities,
-      reporting_to: params.reportingTo ?? null,
-      temporary_permissions: params.temporaryPermissions ?? null,
-      start_date: params.startDate,
-      end_date: params.endDate ?? null,
-      acting_allowance_amount: params.allowanceAmount ?? null,
-      allowance_approved_by: params.allowanceAmount != null ? params.actorUserId : null,
-      allowance_approved_at: params.allowanceAmount != null ? new Date().toISOString() : null,
-      approved_by: params.actorUserId,
-    })
-    .select("id")
-    .single();
-  if (error || !data) return { ok: false, error: error?.message ?? "Failed to create the acting appointment." };
-
-  await logActivity({ actorUserId: params.actorUserId, action: "acting_appointment.created", entityType: "user", entityId: params.profileId, metadata: { appointmentId: data.id } });
-  return { ok: true, appointmentId: data.id };
-}
-
-// The ONLY function that can set status='ended' — "Temporary authority/
-// allowance ends with the acting appointment unless a new decision is
-// made" (8.2): any continuation is always a new row or an explicit
-// extension, never inferred here.
-export async function endActingAppointment(params: { appointmentId: string; endedReason?: string | null; actorUserId: string }): Promise<{ ok: true } | { ok: false; error: string }> {
-  if (!(await canManageCareerMovements(params.actorUserId))) {
-    return { ok: false, error: "Not authorized to end an acting appointment." };
-  }
-  const admin = createAdminClient();
-  const { data, error } = await admin
-    .from("acting_appointments")
-    .update({ status: "ended", ended_at: new Date().toISOString(), ended_reason: params.endedReason ?? null })
-    .eq("id", params.appointmentId)
-    .eq("status", "active")
-    .select("id, profile_id")
-    .maybeSingle();
-  if (error) return { ok: false, error: "Failed to end the acting appointment." };
-  if (!data) return { ok: false, error: "Appointment not found, or already ended." };
-
-  await logActivity({ actorUserId: params.actorUserId, action: "acting_appointment.ended", entityType: "user", entityId: data.profile_id, metadata: { appointmentId: params.appointmentId } });
-  return { ok: true };
-}
-
-export async function listActingAppointmentsForProfile(profileId: string): Promise<{ id: string; responsibilities: string; status: string; startDate: string; endDate: string | null }[]> {
-  const admin = createAdminClient();
-  const { data, error } = await admin
-    .from("acting_appointments")
-    .select("id, responsibilities, status, start_date, end_date")
-    .eq("profile_id", profileId)
-    .order("start_date", { ascending: false });
-  if (error) {
-    console.error("[organization] failed to load acting_appointments", error.message);
-    return [];
-  }
-  return (data ?? []).map((r) => ({ id: r.id, responsibilities: r.responsibilities, status: r.status, startDate: r.start_date, endDate: r.end_date }));
 }
 
 // --- staff transfers (8.3) -------------------------------------------------

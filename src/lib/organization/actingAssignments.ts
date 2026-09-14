@@ -28,10 +28,16 @@ export type ActingAssignment = {
   endedEarlyAt: string | null;
   endedEarlyBy: string | null;
   createdAt: string;
+  responsibilities: string | null;
+  reportingTo: string | null;
+  temporaryPermissions: string | null;
+  actingAllowanceAmount: number | null;
+  allowanceApprovedBy: string | null;
+  allowanceApprovedAt: string | null;
 };
 
 const SELECT =
-  "id, profile_id, acting_title, acting_position_id, scope_department_id, financial_authority_level, linked_authority_grant_id, start_date, end_date, approved_by, reason, ended_early_at, ended_early_by, created_at";
+  "id, profile_id, acting_title, acting_position_id, scope_department_id, financial_authority_level, linked_authority_grant_id, start_date, end_date, approved_by, reason, ended_early_at, ended_early_by, created_at, responsibilities, reporting_to, temporary_permissions, acting_allowance_amount, allowance_approved_by, allowance_approved_at";
 
 function mapRow(r: {
   id: string;
@@ -48,6 +54,12 @@ function mapRow(r: {
   ended_early_at: string | null;
   ended_early_by: string | null;
   created_at: string;
+  responsibilities: string | null;
+  reporting_to: string | null;
+  temporary_permissions: string | null;
+  acting_allowance_amount: number | null;
+  allowance_approved_by: string | null;
+  allowance_approved_at: string | null;
 }): ActingAssignment {
   return {
     id: r.id,
@@ -64,6 +76,12 @@ function mapRow(r: {
     endedEarlyAt: r.ended_early_at,
     endedEarlyBy: r.ended_early_by,
     createdAt: r.created_at,
+    responsibilities: r.responsibilities,
+    reportingTo: r.reporting_to,
+    temporaryPermissions: r.temporary_permissions,
+    actingAllowanceAmount: r.acting_allowance_amount,
+    allowanceApprovedBy: r.allowance_approved_by,
+    allowanceApprovedAt: r.allowance_approved_at,
   };
 }
 
@@ -110,6 +128,9 @@ export async function createActingAssignment(params: {
   endDate: string;
   reason: string;
   approvedBy: string;
+  responsibilities?: string | null;
+  reportingTo?: string | null;
+  temporaryPermissions?: string | null;
 }): Promise<{ ok: true; assignmentId: string } | { ok: false; error: string }> {
   if (!(await canManageActingAssignments(params.approvedBy))) {
     return { ok: false, error: "Not authorized to create an acting assignment." };
@@ -132,6 +153,9 @@ export async function createActingAssignment(params: {
       end_date: params.endDate,
       approved_by: params.approvedBy,
       reason: params.reason,
+      responsibilities: params.responsibilities ?? null,
+      reporting_to: params.reportingTo ?? null,
+      temporary_permissions: params.temporaryPermissions ?? null,
     })
     .select("id")
     .single();
@@ -186,5 +210,37 @@ export async function endActingAssignmentEarly(params: {
     metadata: { assignmentId: params.assignmentId },
   });
 
+  return { ok: true };
+}
+
+// OS-HR-GH-003 8.2: "An acting allowance is optional and separately
+// approved." allowance_approved_by/allowance_approved_at are only ever
+// set together with a non-null amount, in this one function — a flat,
+// optional figure on the canonical acting record, never a second
+// table, and never wired into employment_terms_history.basic_salary
+// (an acting allowance is explicitly separate from substantive pay).
+export async function authorizeActingAllowance(params: { assignmentId: string; amount: number; actorUserId: string }): Promise<{ ok: true } | { ok: false; error: string }> {
+  if (!(await canManageActingAssignments(params.actorUserId))) {
+    return { ok: false, error: "Not authorized to authorize an acting allowance." };
+  }
+  if (!(params.amount > 0)) return { ok: false, error: "The allowance amount must be greater than zero." };
+
+  const admin = createAdminClient();
+  const { data: existing } = await admin.from("acting_assignments").select("profile_id, ended_early_at, acting_allowance_amount").eq("id", params.assignmentId).maybeSingle();
+  if (!existing) return { ok: false, error: "Acting assignment not found." };
+  if (existing.ended_early_at) return { ok: false, error: "This acting assignment has already ended." };
+  if (existing.acting_allowance_amount !== null) return { ok: false, error: "An allowance has already been authorized for this assignment." };
+
+  const { data, error } = await admin
+    .from("acting_assignments")
+    .update({ acting_allowance_amount: params.amount, allowance_approved_by: params.actorUserId, allowance_approved_at: new Date().toISOString() })
+    .eq("id", params.assignmentId)
+    .is("acting_allowance_amount", null)
+    .select("id")
+    .maybeSingle();
+  if (error) return { ok: false, error: "Failed to authorize the allowance." };
+  if (!data) return { ok: false, error: "An allowance has already been authorized for this assignment." };
+
+  await logActivity({ actorUserId: params.actorUserId, action: "acting_assignment.allowance_authorized", entityType: "user", entityId: existing.profile_id, metadata: { assignmentId: params.assignmentId, amount: params.amount } });
   return { ok: true };
 }

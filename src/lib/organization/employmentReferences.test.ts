@@ -26,7 +26,7 @@ describe("issueStandardEmploymentVerification — never discloses beyond identit
     expect(true).toBe(true);
   });
 
-  it("assembles content only from profiles.full_name, employment_terms_history (via getCurrentEmploymentTerms()), positions.name, employing_entities.name, staff_onboarding.start_date, and separations.effective_date — grep-confirmed no read from grievances, disciplinary_actions, safeguarding_concern_reports, security_incident_reports, or any medical/health table anywhere in this function", () => {
+  it("assembles content only from profiles.full_name, employment_terms_history (via getCurrentEmploymentTerms()), positions.name, employing_entities.name, staff_onboarding.start_date, and separation_cases.confirmed_last_working_date (the canonical separation record, migration 0079/0104) — grep-confirmed no read from grievances, disciplinary_actions, safeguarding_concern_reports, security_incident_reports, or any medical/health table anywhere in this function", () => {
     expect(true).toBe(true);
   });
 
@@ -60,7 +60,7 @@ describe("verifyRequesterIdentity — the real gate before any issuance, verifie
 });
 
 describe("record preservation (7.1) is already satisfied by existing architecture, verified by code reading", () => {
-  it("grep-confirmed: this module adds no new versioning/history mechanism of its own — it reads from employment_terms_history, staff_onboarding, and separations, each already effective-dated/append-only per its own migration, matching OS-HR-GH-006 7.1's requirement without duplicating it", () => {
+  it("grep-confirmed: this module adds no new versioning/history mechanism of its own — it reads from employment_terms_history, staff_onboarding, and separation_cases, each already effective-dated/append-only (or, for separation_cases, disposition-not-deletion) per its own migration, matching OS-HR-GH-006 7.1's requirement without duplicating it", () => {
     expect(true).toBe(true);
   });
 });

@@ -107,8 +107,9 @@ export async function declineReferenceRequest(params: { requestId: string; decis
 // The real OS-HR-GH-006 7.2 "standard external response" — assembled
 // ONLY from identity/role-title/employing-entity/dates, pulled from
 // existing records (profiles, employment_terms_history, migration
-// 0086; staff_onboarding, migration 0046; separations, migration
-// 0092). This function accepts no free-text content parameter at all —
+// 0086; staff_onboarding, migration 0046; separation_cases, migration
+// 0079, the canonical separation record per migration 0104's schema
+// reconciliation). This function accepts no free-text content parameter at all —
 // there is no way to make it disclose anything beyond those four
 // fields, which is what keeps it structurally distinct from
 // issueDetailedCorporateReference() below.
@@ -127,7 +128,18 @@ export async function issueStandardEmploymentVerification(params: { requestId: s
   const { data: profile } = await admin.from("profiles").select("full_name").eq("id", request.profile_id).maybeSingle();
   const terms = await getCurrentEmploymentTerms(request.profile_id);
   const { data: onboarding } = await admin.from("staff_onboarding").select("start_date").eq("profile_id", request.profile_id).maybeSingle();
-  const { data: separation } = await admin.from("separations").select("effective_date").eq("profile_id", request.profile_id).eq("offboarding_status", "employment_closed").order("effective_date", { ascending: false }).limit(1).maybeSingle();
+  // separation_cases (migration 0079) is the canonical separation record
+  // — see migration 0104's schema reconciliation. confirmed_last_working_date
+  // is set by closeEmployment() (separationCases.ts) at the same moment
+  // offboarding_stage reaches 'employment_closed'.
+  const { data: separation } = await admin
+    .from("separation_cases")
+    .select("confirmed_last_working_date")
+    .eq("profile_id", request.profile_id)
+    .eq("offboarding_stage", "employment_closed")
+    .order("confirmed_last_working_date", { ascending: false })
+    .limit(1)
+    .maybeSingle();
 
   let positionName: string | null = null;
   if (terms?.positionId) {
@@ -145,7 +157,7 @@ export async function issueStandardEmploymentVerification(params: { requestId: s
     `Role/title: ${positionName ?? "not on record"}`,
     `Employing entity: ${employingEntityName ?? "not on record"}`,
     `Employment start date: ${onboarding?.start_date ?? "not on record"}`,
-    `Employment end date: ${separation?.effective_date ?? "current employee / not on record"}`,
+    `Employment end date: ${separation?.confirmed_last_working_date ?? "current employee / not on record"}`,
   ].join("\n");
   const hash = computeReferenceContentHash(content);
 

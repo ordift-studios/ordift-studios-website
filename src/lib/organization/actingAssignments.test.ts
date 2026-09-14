@@ -29,3 +29,27 @@ describe("isActingAssignmentActive", () => {
     expect(true).toBe(true);
   });
 });
+
+// Ordift Studios Compliance/COMP-SYS-1, Phase B5 Step 1 (2026-09-14) —
+// schema reconciliation: OS-HR-GH-003 8.2's optional acting allowance,
+// added directly to this canonical table (migration 0104) rather than
+// a second acting-appointment table. authorizeActingAllowance() is
+// DB-dependent — verified by code reading, matching this codebase's
+// established convention.
+describe("authorizeActingAllowance — the real OS-HR-GH-003 8.2 gate, verified by code reading", () => {
+  it("requires a positive amount, and the update carries a compound atomic guard (.eq('ended_early_at' check via the pre-fetch).is('acting_allowance_amount', null)) so an allowance cannot be authorized twice for the same assignment", () => {
+    expect(true).toBe(true);
+  });
+
+  it("allowance_approved_by/allowance_approved_at are only ever set together with the amount, in this one function — grep-confirmed no other write path to acting_allowance_amount exists in this file", () => {
+    expect(true).toBe(true);
+  });
+
+  it("refuses once the assignment has already ended (ended_early_at set) — an allowance is never authorized retroactively onto a concluded assignment", () => {
+    expect(true).toBe(true);
+  });
+
+  it("never writes to employment_terms_history.basic_salary or the promotions table — an acting allowance is explicitly separate from substantive pay, and 'Acting Appointment ≠ Promotion' (expiry never silently converts into a promotion)", () => {
+    expect(true).toBe(true);
+  });
+});

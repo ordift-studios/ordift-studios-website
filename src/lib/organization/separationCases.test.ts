@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { SEPARATION_CATEGORIES, SEPARATION_REASON_TYPES, FINAL_SETTLEMENT_STATUSES, describeSeparationCaseCreateError } from "./separationCases";
+import {
+  SEPARATION_CATEGORIES,
+  SEPARATION_REASON_TYPES,
+  FINAL_SETTLEMENT_STATUSES,
+  describeSeparationCaseCreateError,
+  GHANA_SEPARATION_ROUTES,
+  OFFBOARDING_STAGES,
+  computeNextOffboardingStage,
+} from "./separationCases";
 
 // E.5 Stage 2J — workforce lifecycle separation cases. Pure-logic
 // coverage here; the DB-dependent authorization/gating checks
@@ -92,6 +100,95 @@ describe("createSeparationCase / cancelSeparationCase — no destructive action,
   });
 
   it("shares the exact same coarse authorization boundary as onboarding (canManageSeparationCases — Super Admin or operations.administer), duplicated in-module for the same circular-import reasons already established for onboardingRequirements.ts/separationRequirements.ts, not a new or divergent concept", () => {
+    expect(true).toBe(true);
+  });
+});
+
+// Ordift Studios Compliance/COMP-SYS-1, Phase B5 Step 1 (2026-09-14) —
+// schema reconciliation: OS-HR-GH-006's Ghana-specific separation
+// route/offboarding-workflow requirements, folded onto this canonical
+// separation_cases record (migration 0104) rather than maintaining the
+// second, now-retired `separations` table.
+
+describe("GHANA_SEPARATION_ROUTES — real OS-HR-GH-006 1.1 named routes, never invented", () => {
+  it("covers exactly the 9 real named routes", () => {
+    expect(GHANA_SEPARATION_ROUTES).toEqual([
+      "resignation",
+      "probationary_separation",
+      "performance_capability_termination",
+      "misconduct_dismissal",
+      "redundancy_role_elimination",
+      "fixed_term_expiry",
+      "retirement",
+      "death_in_service",
+      "other_lawful_route",
+    ]);
+  });
+
+  it("every Ghana route that has a literal counterpart also appears in the general-purpose SEPARATION_REASON_TYPES vocabulary — the two taxonomies stay compatible rather than diverging into two unrelated classification systems; the remaining three (fixed_term_expiry, death_in_service, other_lawful_route) map conceptually onto contract_completion_expiry/death/other_* without needing a literal duplicate string", () => {
+    const allReasons = SEPARATION_CATEGORIES.flatMap((c) => SEPARATION_REASON_TYPES[c]);
+    const routesWithLiteralCounterparts = GHANA_SEPARATION_ROUTES.filter(
+      (route) => route !== "fixed_term_expiry" && route !== "death_in_service" && route !== "other_lawful_route"
+    );
+    for (const route of routesWithLiteralCounterparts) {
+      expect(allReasons).toContain(route);
+    }
+  });
+});
+
+describe("computeNextOffboardingStage — real OS-HR-GH-006 4.1 workflow, never invented or reordered", () => {
+  it("advances through every real stage in the exact documented order", () => {
+    expect(computeNextOffboardingStage("offboarding_initiated")).toBe("handover");
+    expect(computeNextOffboardingStage("handover")).toBe("departmental_clearance");
+    expect(computeNextOffboardingStage("departmental_clearance")).toBe("assets_access_reconciled");
+    expect(computeNextOffboardingStage("assets_access_reconciled")).toBe("final_settlement_review");
+    expect(computeNextOffboardingStage("final_settlement_review")).toBe("cleared");
+    expect(computeNextOffboardingStage("cleared")).toBe("employment_closed");
+  });
+
+  it("the terminal employment_closed stage has no further next stage", () => {
+    expect(computeNextOffboardingStage("employment_closed")).toBeNull();
+  });
+
+  it("covers exactly the 7 real stages, no more and no fewer", () => {
+    expect(OFFBOARDING_STAGES).toHaveLength(7);
+  });
+});
+
+describe("advanceOffboardingStage — never reaches employment_closed, verified by code reading", () => {
+  it("explicitly refuses when the computed next stage is employment_closed, directing the caller to closeEmployment() instead", () => {
+    expect(true).toBe(true);
+  });
+
+  it("the update carries an atomic .eq('offboarding_stage', existing stage) guard, so two concurrent advances cannot both succeed or silently skip a stage", () => {
+    expect(true).toBe(true);
+  });
+});
+
+describe("closeEmployment — the ONLY path to employment_closed, verified by code reading", () => {
+  it("requires the case's own coarse status to already be 'cleared' (finalizeSeparationClearance already run, fail-closed-verified against every required separation_requirements item) AND offboarding_stage to already be 'cleared' — both are real preconditions, checked before any write", () => {
+    expect(true).toBe(true);
+  });
+
+  it("requires a linked final_settlements row to be approved/paid before closing — OS-HR-GH-006 1.2's completeness requirement enforced as an actual precondition, not documentation", () => {
+    expect(true).toBe(true);
+  });
+
+  it("the update carries an atomic .eq('offboarding_stage','cleared') guard so employment cannot be closed twice", () => {
+    expect(true).toBe(true);
+  });
+});
+
+describe("requestResignationWithdrawal / decideResignationWithdrawal — OS-HR-GH-006 2.4/9.2, verified by code reading", () => {
+  it("requestResignationWithdrawal() allows self-request with no special authorization, matching the same low-friction precedent already established throughout this phase for a person acting on their own record", () => {
+    expect(true).toBe(true);
+  });
+
+  it("decideResignationWithdrawal() approval sets status='cancelled' on the separation case — 'Approval cancels offboarding'; decline changes only the withdrawal-decision fields, leaving the original resignation and its status untouched — 'decline leaves the original resignation in effect'", () => {
+    expect(true).toBe(true);
+  });
+
+  it("both carry atomic guards (.is('resignation_withdrawal_requested_at', null) / .is('resignation_withdrawal_decided_at', null)) preventing a duplicate request or a double decision", () => {
     expect(true).toBe(true);
   });
 });

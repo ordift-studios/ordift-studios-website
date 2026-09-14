@@ -21,11 +21,81 @@ export type SeparationCategory = (typeof SEPARATION_CATEGORIES)[number];
 // this codebase's established convention (staff_onboarding.stage) of
 // not encoding this as a DB enum. No jurisdiction-specific legal
 // conclusion is implied by any of these labels (Part 3).
+//
+// probationary_separation/performance_capability_termination/
+// misconduct_dismissal/redundancy_role_elimination were added
+// (Phase B5 Step 1, schema reconciliation) so this general-purpose
+// taxonomy can also carry OS-HR-GH-006 1.1's exact real named routes
+// for a Ghana staff case, via the separate, more specific
+// separationRoute field below — reasonType stays the general-purpose
+// classification used across every relationship type this table
+// serves (staff, vendor, contractor, instructor, model/talent,
+// collaborator); separationRoute is Ghana-employee-specific and
+// nullable.
 export const SEPARATION_REASON_TYPES: Record<SeparationCategory, readonly string[]> = {
   employee_initiated: ["resignation"],
-  company_initiated: ["termination", "contract_completion_expiry", "redundancy", "mutual_separation", "retirement", "other_company_initiated"],
+  company_initiated: [
+    "termination",
+    "contract_completion_expiry",
+    "redundancy",
+    "mutual_separation",
+    "retirement",
+    "other_company_initiated",
+    "probationary_separation",
+    "performance_capability_termination",
+    "misconduct_dismissal",
+    "redundancy_role_elimination",
+  ],
   exceptional: ["abandonment_no_contact", "death", "incapacity_disability", "emergency_involuntary", "other_exceptional"],
 } as const;
+
+// OS-HR-GH-006 1.1's exact real named routes for a Ghana employee case
+// — a separate, more specific classification from the general-purpose
+// category/reasonType above (added Phase B5 Step 1, schema
+// reconciliation, resolving the overlap between this table and the
+// since-retired `separations` table). Nullable: not every
+// separation_cases row is a Ghana staff case.
+export const GHANA_SEPARATION_ROUTES = [
+  "resignation",
+  "probationary_separation",
+  "performance_capability_termination",
+  "misconduct_dismissal",
+  "redundancy_role_elimination",
+  "fixed_term_expiry",
+  "retirement",
+  "death_in_service",
+  "other_lawful_route",
+] as const;
+export type GhanaSeparationRoute = (typeof GHANA_SEPARATION_ROUTES)[number];
+
+// OS-HR-GH-006 2.2's real named notice treatments — unconstrained text
+// (descriptive, not a closed enum in the database), matching this
+// module's own established convention for reasonType.
+export const NOTICE_TREATMENTS = ["worked_in_full", "shortened_by_mutual_agreement", "payment_in_lieu", "restricted_garden_duties"] as const;
+export type NoticeTreatment = (typeof NOTICE_TREATMENTS)[number];
+
+// OS-HR-GH-006 4.1's real, exact 7-stage offboarding workflow.
+export const OFFBOARDING_STAGES = [
+  "offboarding_initiated",
+  "handover",
+  "departmental_clearance",
+  "assets_access_reconciled",
+  "final_settlement_review",
+  "cleared",
+  "employment_closed",
+] as const;
+export type OffboardingStage = (typeof OFFBOARDING_STAGES)[number];
+
+// Pure — the real 4.1 sequence, never invented or reordered. Mirrors
+// the same pattern already proven by computeNextVehicleIncidentStage()
+// (businessTravel.ts).
+export function computeNextOffboardingStage(current: OffboardingStage): OffboardingStage | null {
+  const index = OFFBOARDING_STAGES.indexOf(current);
+  if (index === -1 || index === OFFBOARDING_STAGES.length - 1) return null;
+  return OFFBOARDING_STAGES[index + 1];
+}
+
+export type ResignationWithdrawalOutcome = "approved" | "declined";
 
 export const SEPARATION_CASE_STATUSES = ["open", "cleared", "cancelled"] as const;
 export type SeparationCaseStatus = (typeof SEPARATION_CASE_STATUSES)[number];
@@ -82,6 +152,14 @@ export type SeparationCase = {
   finalClearanceAt: string | null;
   finalClearanceBy: string | null;
   createdAt: string;
+  separationRoute: GhanaSeparationRoute | null;
+  noticeTreatment: NoticeTreatment | null;
+  appealId: string | null;
+  offboardingStage: OffboardingStage;
+  resignationWithdrawalRequestedAt: string | null;
+  resignationWithdrawalDecidedAt: string | null;
+  resignationWithdrawalDecidedBy: string | null;
+  resignationWithdrawalOutcome: ResignationWithdrawalOutcome | null;
 };
 
 function mapCase(r: {
@@ -107,6 +185,14 @@ function mapCase(r: {
   final_clearance_at: string | null;
   final_clearance_by: string | null;
   created_at: string;
+  separation_route: string | null;
+  notice_treatment: string | null;
+  appeal_id: string | null;
+  offboarding_stage: string;
+  resignation_withdrawal_requested_at: string | null;
+  resignation_withdrawal_decided_at: string | null;
+  resignation_withdrawal_decided_by: string | null;
+  resignation_withdrawal_outcome: string | null;
 }): SeparationCase {
   return {
     id: r.id,
@@ -131,11 +217,19 @@ function mapCase(r: {
     finalClearanceAt: r.final_clearance_at,
     finalClearanceBy: r.final_clearance_by,
     createdAt: r.created_at,
+    separationRoute: r.separation_route as GhanaSeparationRoute | null,
+    noticeTreatment: r.notice_treatment as NoticeTreatment | null,
+    appealId: r.appeal_id,
+    offboardingStage: r.offboarding_stage as OffboardingStage,
+    resignationWithdrawalRequestedAt: r.resignation_withdrawal_requested_at,
+    resignationWithdrawalDecidedAt: r.resignation_withdrawal_decided_at,
+    resignationWithdrawalDecidedBy: r.resignation_withdrawal_decided_by,
+    resignationWithdrawalOutcome: r.resignation_withdrawal_outcome as ResignationWithdrawalOutcome | null,
   };
 }
 
 const SELECT =
-  "id, profile_id, category, reason_type, reason_notes, initiated_by, initiated_by_role, submitted_at, proposed_last_working_date, confirmed_last_working_date, company_acknowledged_at, company_acknowledged_by, notice_policy_source, notice_reference, notice_required_days, notice_resolved_at, final_settlement_status, final_settlement_reference, status, final_clearance_at, final_clearance_by, created_at";
+  "id, profile_id, category, reason_type, reason_notes, initiated_by, initiated_by_role, submitted_at, proposed_last_working_date, confirmed_last_working_date, company_acknowledged_at, company_acknowledged_by, notice_policy_source, notice_reference, notice_required_days, notice_resolved_at, final_settlement_status, final_settlement_reference, status, final_clearance_at, final_clearance_by, created_at, separation_route, notice_treatment, appeal_id, offboarding_stage, resignation_withdrawal_requested_at, resignation_withdrawal_decided_at, resignation_withdrawal_decided_by, resignation_withdrawal_outcome";
 
 // Same coarse boundary as onboarding — Super Admin, or a holder of
 // operations.administer. No new authority introduced or granted.
@@ -181,6 +275,7 @@ export async function createSeparationCase(params: {
   reasonNotes?: string | null;
   initiatedByRole?: "self" | "company";
   proposedLastWorkingDate?: string | null;
+  separationRoute?: GhanaSeparationRoute | null;
   actorUserId: string;
 }): Promise<{ ok: true; separationCaseId: string } | { ok: false; error: string }> {
   if (!(await canManageSeparationCases(params.actorUserId))) {
@@ -201,6 +296,7 @@ export async function createSeparationCase(params: {
       initiated_by: params.actorUserId,
       initiated_by_role: params.initiatedByRole ?? "company",
       proposed_last_working_date: params.proposedLastWorkingDate ?? null,
+      separation_route: params.separationRoute ?? null,
       created_by: params.actorUserId,
     })
     .select("id")
@@ -369,5 +465,157 @@ export async function finalizeSeparationClearance(params: {
   if (!updated || updated.length === 0) return { ok: false, error: "This case has already been cleared or cancelled." };
 
   await logActivity({ actorUserId: params.actorUserId, action: "separation_case.cleared", entityType: "user", entityId: existing.profile_id, metadata: { separationCaseId: params.separationCaseId } });
+  return { ok: true };
+}
+
+// --- Ghana-specific extensions (Phase B5 Step 1, schema reconciliation) ---
+// Added directly onto the canonical separation_cases record rather than
+// a second table — see migration 0104's inspection summary.
+
+export async function recordNoticeTreatment(params: { separationCaseId: string; treatment: NoticeTreatment; actorUserId: string }): Promise<{ ok: true } | { ok: false; error: string }> {
+  if (!(await canManageSeparationCases(params.actorUserId))) return { ok: false, error: "Not authorized." };
+  const admin = createAdminClient();
+  const { data: existing } = await admin.from("separation_cases").select("profile_id").eq("id", params.separationCaseId).maybeSingle();
+  if (!existing) return { ok: false, error: "Separation case not found." };
+
+  const { error } = await admin
+    .from("separation_cases")
+    .update({ notice_treatment: params.treatment, updated_at: new Date().toISOString() })
+    .eq("id", params.separationCaseId);
+  if (error) return { ok: false, error: "Failed to record the notice treatment." };
+
+  await logActivity({ actorUserId: params.actorUserId, action: "separation_case.notice_treatment_recorded", entityType: "user", entityId: existing.profile_id, metadata: { separationCaseId: params.separationCaseId, treatment: params.treatment } });
+  return { ok: true };
+}
+
+// OS-HR-GH-006 2.4/9.2: "An employee may request withdrawal during
+// notice." Self-request has no special authorization requirement;
+// requesting on someone else's behalf requires the same tier as every
+// other separation-case action.
+export async function requestResignationWithdrawal(params: { separationCaseId: string; actorUserId: string }): Promise<{ ok: true } | { ok: false; error: string }> {
+  const admin = createAdminClient();
+  const { data: existing } = await admin.from("separation_cases").select("profile_id, status, resignation_withdrawal_requested_at").eq("id", params.separationCaseId).maybeSingle();
+  if (!existing) return { ok: false, error: "Separation case not found." };
+  const isSelf = params.actorUserId === existing.profile_id;
+  if (!isSelf && !(await canManageSeparationCases(params.actorUserId))) return { ok: false, error: "Not authorized to request withdrawal on behalf of another person." };
+  if (existing.status !== "open") return { ok: false, error: `This case is "${existing.status}", not open.` };
+  if (existing.resignation_withdrawal_requested_at) return { ok: false, error: "A withdrawal request has already been submitted for this case." };
+
+  const { data, error } = await admin
+    .from("separation_cases")
+    .update({ resignation_withdrawal_requested_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+    .eq("id", params.separationCaseId)
+    .is("resignation_withdrawal_requested_at", null)
+    .select("id")
+    .maybeSingle();
+  if (error) return { ok: false, error: "Failed to submit the withdrawal request." };
+  if (!data) return { ok: false, error: "A withdrawal request has already been submitted for this case." };
+
+  await logActivity({ actorUserId: params.actorUserId, action: "separation_case.withdrawal_requested", entityType: "user", entityId: existing.profile_id, metadata: { separationCaseId: params.separationCaseId } });
+  return { ok: true };
+}
+
+// Approval "cancels offboarding and restores appropriate access" (2.4)
+// — restoring access is a separate, independently authorized action in
+// the Authority Grants / access-control system (same boundary
+// discipline as finalizeSeparationClearance() never itself touching
+// those systems); this function only records the management decision.
+// Decline leaves the original resignation in effect — no other field
+// changes.
+export async function decideResignationWithdrawal(params: { separationCaseId: string; outcome: ResignationWithdrawalOutcome; actorUserId: string }): Promise<{ ok: true } | { ok: false; error: string }> {
+  if (!(await canManageSeparationCases(params.actorUserId))) return { ok: false, error: "Not authorized." };
+  const admin = createAdminClient();
+  const { data: existing } = await admin.from("separation_cases").select("profile_id, resignation_withdrawal_requested_at, resignation_withdrawal_decided_at").eq("id", params.separationCaseId).maybeSingle();
+  if (!existing) return { ok: false, error: "Separation case not found." };
+  if (!existing.resignation_withdrawal_requested_at) return { ok: false, error: "No withdrawal request is pending for this case." };
+  if (existing.resignation_withdrawal_decided_at) return { ok: false, error: "This withdrawal request has already been decided." };
+
+  const updates: Record<string, unknown> = {
+    resignation_withdrawal_decided_at: new Date().toISOString(),
+    resignation_withdrawal_decided_by: params.actorUserId,
+    resignation_withdrawal_outcome: params.outcome,
+    updated_at: new Date().toISOString(),
+  };
+  if (params.outcome === "approved") updates.status = "cancelled";
+
+  const { data, error } = await admin
+    .from("separation_cases")
+    .update(updates)
+    .eq("id", params.separationCaseId)
+    .is("resignation_withdrawal_decided_at", null)
+    .select("id")
+    .maybeSingle();
+  if (error) return { ok: false, error: "Failed to record the withdrawal decision." };
+  if (!data) return { ok: false, error: "This withdrawal request has already been decided." };
+
+  await logActivity({ actorUserId: params.actorUserId, action: "separation_case.withdrawal_decided", entityType: "user", entityId: existing.profile_id, metadata: { separationCaseId: params.separationCaseId, outcome: params.outcome } });
+  return { ok: true };
+}
+
+// Only ever advances by one stage in the fixed real OS-HR-GH-006 4.1
+// order; deliberately refuses to produce employment_closed — that
+// transition exists only in closeEmployment() below.
+export async function advanceOffboardingStage(params: { separationCaseId: string; actorUserId: string }): Promise<{ ok: true; newStage: OffboardingStage } | { ok: false; error: string }> {
+  if (!(await canManageSeparationCases(params.actorUserId))) return { ok: false, error: "Not authorized." };
+  const admin = createAdminClient();
+  const { data: existing } = await admin.from("separation_cases").select("profile_id, offboarding_stage").eq("id", params.separationCaseId).maybeSingle();
+  if (!existing) return { ok: false, error: "Separation case not found." };
+
+  const next = computeNextOffboardingStage(existing.offboarding_stage as OffboardingStage);
+  if (next === null) return { ok: false, error: "This case is already at its final offboarding stage." };
+  if (next === "employment_closed") return { ok: false, error: "Use closeEmployment() to close employment — it is never reached via a generic stage advance." };
+
+  const { data, error } = await admin
+    .from("separation_cases")
+    .update({ offboarding_stage: next, updated_at: new Date().toISOString() })
+    .eq("id", params.separationCaseId)
+    .eq("offboarding_stage", existing.offboarding_stage)
+    .select("id")
+    .maybeSingle();
+  if (error) return { ok: false, error: "Failed to advance the offboarding stage." };
+  if (!data) return { ok: false, error: "The offboarding stage changed concurrently — please retry." };
+
+  await logActivity({ actorUserId: params.actorUserId, action: "separation_case.offboarding_stage_advanced", entityType: "user", entityId: existing.profile_id, metadata: { separationCaseId: params.separationCaseId, newStage: next } });
+  return { ok: true, newStage: next };
+}
+
+// The ONLY function that can set offboarding_stage='employment_closed'.
+// Requires the case's own status to already be 'cleared' (i.e.
+// finalizeSeparationClearance() has already fail-closed-verified every
+// required separation_requirements item), offboarding_stage to already
+// be 'cleared', an effective date, and a linked final_settlements row
+// already approved/paid — OS-HR-GH-006 1.2's completeness requirement
+// enforced as an actual precondition, not documentation.
+export async function closeEmployment(params: { separationCaseId: string; effectiveDate?: string | null; actorUserId: string }): Promise<{ ok: true } | { ok: false; error: string }> {
+  if (!(await canManageSeparationCases(params.actorUserId))) return { ok: false, error: "Not authorized." };
+  const admin = createAdminClient();
+  const { data: existing } = await admin
+    .from("separation_cases")
+    .select("profile_id, status, offboarding_stage, confirmed_last_working_date")
+    .eq("id", params.separationCaseId)
+    .maybeSingle();
+  if (!existing) return { ok: false, error: "Separation case not found." };
+  if (existing.status !== "cleared") return { ok: false, error: "Employment can only be closed once the case's own clearance (finalizeSeparationClearance) has been recorded." };
+  if (existing.offboarding_stage !== "cleared") return { ok: false, error: "Employment can only be closed from the 'cleared' offboarding stage." };
+
+  const effectiveDate = params.effectiveDate ?? existing.confirmed_last_working_date;
+  if (!effectiveDate) return { ok: false, error: "An effective date (or a confirmed last working date) is required before employment can be closed." };
+
+  const { data: settlement } = await admin.from("final_settlements").select("id, status").eq("separation_case_id", params.separationCaseId).maybeSingle();
+  if (!settlement || !["approved", "paid"].includes(settlement.status)) {
+    return { ok: false, error: "Employment cannot be closed until the final settlement is approved." };
+  }
+
+  const { data, error } = await admin
+    .from("separation_cases")
+    .update({ offboarding_stage: "employment_closed", confirmed_last_working_date: effectiveDate, updated_at: new Date().toISOString() })
+    .eq("id", params.separationCaseId)
+    .eq("offboarding_stage", "cleared")
+    .select("id")
+    .maybeSingle();
+  if (error) return { ok: false, error: "Failed to close employment." };
+  if (!data) return { ok: false, error: "The offboarding stage changed concurrently — please retry." };
+
+  await logActivity({ actorUserId: params.actorUserId, action: "separation_case.employment_closed", entityType: "user", entityId: existing.profile_id, metadata: { separationCaseId: params.separationCaseId, effectiveDate } });
   return { ok: true };
 }
