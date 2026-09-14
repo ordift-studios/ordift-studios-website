@@ -18,7 +18,7 @@ export function computeReferenceContentHash(content: string): string {
   return createHash("sha256").update(content, "utf8").digest("hex");
 }
 
-async function canManageReferences(actorUserId: string): Promise<boolean> {
+export async function canManageReferences(actorUserId: string): Promise<boolean> {
   if (await isSuperAdminId(actorUserId)) return true;
   return hasJurisdictionAuthority(actorUserId, "operations", "administer");
 }
@@ -218,16 +218,42 @@ export async function issueDetailedCorporateReference(params: { requestId: strin
   return { ok: true, hash };
 }
 
-export async function listReferenceRequestsForProfile(profileId: string): Promise<{ id: string; referenceType: string; status: string; requesterName: string; issuedAt: string | null }[]> {
+export async function listReferenceRequestsForProfile(profileId: string): Promise<
+  {
+    id: string;
+    referenceType: string;
+    status: string;
+    requesterName: string;
+    requesterOrganization: string | null;
+    employeeOrFormerEmployee: string;
+    identityAuthorityVerified: boolean;
+    issuedAt: string | null;
+    issuedReferenceContent: string | null;
+    issuedReferenceHash: string | null;
+  }[]
+> {
   const admin = createAdminClient();
   const { data, error } = await admin
     .from("reference_requests")
-    .select("id, reference_type, status, requester_name, issued_at")
+    .select(
+      "id, reference_type, status, requester_name, requester_organization, employee_or_former_employee, identity_authority_verified, issued_at, issued_reference_content, issued_reference_hash"
+    )
     .eq("profile_id", profileId)
     .order("created_at", { ascending: false });
   if (error) {
     console.error("[organization] failed to load reference_requests", error.message);
     return [];
   }
-  return (data ?? []).map((r) => ({ id: r.id, referenceType: r.reference_type, status: r.status, requesterName: r.requester_name, issuedAt: r.issued_at }));
+  return (data ?? []).map((r) => ({
+    id: r.id,
+    referenceType: r.reference_type,
+    status: r.status,
+    requesterName: r.requester_name,
+    requesterOrganization: r.requester_organization,
+    employeeOrFormerEmployee: r.employee_or_former_employee,
+    identityAuthorityVerified: r.identity_authority_verified,
+    issuedAt: r.issued_at,
+    issuedReferenceContent: r.issued_reference_content,
+    issuedReferenceHash: r.issued_reference_hash,
+  }));
 }

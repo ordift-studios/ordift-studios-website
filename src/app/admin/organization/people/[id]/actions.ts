@@ -67,6 +67,15 @@ import {
 } from "@/lib/organization/businessTravel";
 import { submitPortfolioUseRequest, approvePortfolioUseRequest, declinePortfolioUseRequest } from "@/lib/organization/portfolioUse";
 import { createEmployeeEmploymentAgreementDraft } from "@/lib/legal/employeeAgreements";
+import {
+  requestEmploymentReference,
+  verifyRequesterIdentity,
+  declineReferenceRequest,
+  issueStandardEmploymentVerification,
+  issueDetailedCorporateReference,
+  type EmploymentReferenceStatus,
+  type ReferenceType,
+} from "@/lib/organization/employmentReferences";
 
 // Organizational Structure, Authority Grants, Onboarding & Work Email
 // V1 (2026-09-07) — Person Detail View actions. Employment/engagement
@@ -909,6 +918,97 @@ export async function createEmployeeEmploymentAgreementDraftAction(formData: For
 
   const result = await createEmployeeEmploymentAgreementDraft({ onboardingId, actorUserId: currentUser.id });
   if (!result.ok) console.error("[admin organization] failed to create employment agreement draft", result.error);
+
+  revalidatePath(`/admin/organization/people/${profileId}`);
+}
+
+// Employment References (Phase B5 Step 11, 2026-09-14). Identity/
+// authority verification is the real gate before any issuance — both
+// issue actions carry their own independent check of it, matching the
+// two issue functions' own atomic guards.
+export async function requestEmploymentReferenceAction(formData: FormData): Promise<void> {
+  const currentUser = await getCurrentUser();
+  if (!currentUser) return;
+
+  const profileId = String(formData.get("profileId") ?? "").trim();
+  const requesterName = String(formData.get("requesterName") ?? "").trim();
+  const requesterOrganization = String(formData.get("requesterOrganization") ?? "").trim() || null;
+  const requesterContact = String(formData.get("requesterContact") ?? "").trim() || null;
+  const employeeOrFormerEmployee = String(formData.get("employeeOrFormerEmployee") ?? "").trim();
+  const referenceType = String(formData.get("referenceType") ?? "").trim();
+  if (!profileId || !requesterName) return;
+  if (employeeOrFormerEmployee !== "employee" && employeeOrFormerEmployee !== "former_employee") return;
+  if (referenceType !== "standard_verification" && referenceType !== "detailed_corporate_reference") return;
+
+  const result = await requestEmploymentReference({
+    profileId,
+    requesterName,
+    requesterOrganization,
+    requesterContact,
+    employeeOrFormerEmployee: employeeOrFormerEmployee as EmploymentReferenceStatus,
+    referenceType: referenceType as ReferenceType,
+    actorUserId: currentUser.id,
+  });
+  if (!result.ok) console.error("[admin organization] failed to log reference request", result.error);
+
+  revalidatePath(`/admin/organization/people/${profileId}`);
+}
+
+export async function verifyRequesterIdentityAction(formData: FormData): Promise<void> {
+  const currentUser = await getCurrentUser();
+  if (!currentUser) return;
+
+  const profileId = String(formData.get("profileId") ?? "").trim();
+  const requestId = String(formData.get("requestId") ?? "").trim();
+  if (!profileId || !requestId) return;
+
+  const result = await verifyRequesterIdentity({ requestId, actorUserId: currentUser.id });
+  if (!result.ok) console.error("[admin organization] failed to verify requester identity", result.error);
+
+  revalidatePath(`/admin/organization/people/${profileId}`);
+}
+
+export async function declineReferenceRequestAction(formData: FormData): Promise<void> {
+  const currentUser = await getCurrentUser();
+  if (!currentUser) return;
+
+  const profileId = String(formData.get("profileId") ?? "").trim();
+  const requestId = String(formData.get("requestId") ?? "").trim();
+  const decisionNotes = String(formData.get("decisionNotes") ?? "").trim();
+  if (!profileId || !requestId || !decisionNotes) return;
+
+  const result = await declineReferenceRequest({ requestId, decisionNotes, actorUserId: currentUser.id });
+  if (!result.ok) console.error("[admin organization] failed to decline reference request", result.error);
+
+  revalidatePath(`/admin/organization/people/${profileId}`);
+}
+
+export async function issueStandardEmploymentVerificationAction(formData: FormData): Promise<void> {
+  const currentUser = await getCurrentUser();
+  if (!currentUser) return;
+
+  const profileId = String(formData.get("profileId") ?? "").trim();
+  const requestId = String(formData.get("requestId") ?? "").trim();
+  if (!profileId || !requestId) return;
+
+  const result = await issueStandardEmploymentVerification({ requestId, actorUserId: currentUser.id });
+  if (!result.ok) console.error("[admin organization] failed to issue standard employment verification", result.error);
+
+  revalidatePath(`/admin/organization/people/${profileId}`);
+}
+
+export async function issueDetailedCorporateReferenceAction(formData: FormData): Promise<void> {
+  const currentUser = await getCurrentUser();
+  if (!currentUser) return;
+
+  const profileId = String(formData.get("profileId") ?? "").trim();
+  const requestId = String(formData.get("requestId") ?? "").trim();
+  const informationAuthorizedForRelease = String(formData.get("informationAuthorizedForRelease") ?? "").trim();
+  const content = String(formData.get("content") ?? "").trim();
+  if (!profileId || !requestId || !informationAuthorizedForRelease || !content) return;
+
+  const result = await issueDetailedCorporateReference({ requestId, informationAuthorizedForRelease, content, actorUserId: currentUser.id });
+  if (!result.ok) console.error("[admin organization] failed to issue detailed corporate reference", result.error);
 
   revalidatePath(`/admin/organization/people/${profileId}`);
 }

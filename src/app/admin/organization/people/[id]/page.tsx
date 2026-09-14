@@ -31,6 +31,7 @@ import {
 import { listPortfolioUseRequestsForProfile } from "@/lib/organization/portfolioUse";
 import { checkEmployeeAgreementReadiness } from "@/lib/legal/employeeAgreements";
 import { getStaffOnboardingByProfileId } from "@/lib/organization/onboarding";
+import { listReferenceRequestsForProfile } from "@/lib/organization/employmentReferences";
 import {
   setEmploymentStatusAction,
   recordBackgroundScreeningAction,
@@ -74,6 +75,11 @@ import {
   approvePortfolioUseRequestAction,
   declinePortfolioUseRequestAction,
   createEmployeeEmploymentAgreementDraftAction,
+  requestEmploymentReferenceAction,
+  verifyRequesterIdentityAction,
+  declineReferenceRequestAction,
+  issueStandardEmploymentVerificationAction,
+  issueDetailedCorporateReferenceAction,
 } from "./actions";
 
 export const metadata: Metadata = {
@@ -159,6 +165,8 @@ export default async function PersonDetailPage({ params }: { params: Promise<{ i
 
   const onboarding = await getStaffOnboardingByProfileId(id);
   const agreementReadiness = onboarding ? await checkEmployeeAgreementReadiness(onboarding.id) : null;
+
+  const referenceRequests = await listReferenceRequestsForProfile(id);
   const personSeparationCases = separationCases.filter((c) => c.profileId === id);
   const openSeparationCase = personSeparationCases.find((c) => c.status === "open") ?? null;
 
@@ -1070,6 +1078,85 @@ export default async function PersonDetailPage({ params }: { params: Promise<{ i
             )}
           </>
         )}
+      </section>
+
+      {/* Employment References (Phase B5 Step 11, 2026-09-14). Standard
+          verifications are assembled ONLY from identity/role-title/
+          employing-entity/dates — the issue action for them accepts no
+          free-text content. Detailed corporate references always
+          require human-authored content and an explicitly scoped
+          authorization of what may be released. */}
+      <section className="rounded-xl border border-black/10 bg-white p-6 space-y-4">
+        <h2 className="font-serif font-medium text-body text-ordift-ink">Employment References</h2>
+        {referenceRequests.length > 0 ? (
+          <ul className="space-y-2">
+            {referenceRequests.map((r) => (
+              <li key={r.id} className="font-sans text-caption text-ordift-ink-muted space-y-1">
+                <p>
+                  · {r.requesterName}{r.requesterOrganization ? ` (${r.requesterOrganization})` : ""} — {r.referenceType.replace(/_/g, " ")}
+                  {" for "}{r.employeeOrFormerEmployee.replace(/_/g, " ")} — {r.status}
+                  {r.identityAuthorityVerified ? " · identity verified" : ""}
+                </p>
+                {r.status === "issued" && r.issuedReferenceContent && (
+                  <div className="pl-3 rounded-lg bg-ordift-offwhite p-2">
+                    <p className="whitespace-pre-line">{r.issuedReferenceContent}</p>
+                    <p className="mt-1 text-ordift-ink-muted">Hash: {r.issuedReferenceHash}</p>
+                  </div>
+                )}
+                {r.status === "requested" && (
+                  <div className="pl-3 space-y-1">
+                    {!r.identityAuthorityVerified ? (
+                      <form action={verifyRequesterIdentityAction} className="flex items-center gap-2">
+                        <input type="hidden" name="profileId" value={id} />
+                        <input type="hidden" name="requestId" value={r.id} />
+                        <button type="submit" className="font-sans text-caption font-semibold px-2 py-1 rounded-md bg-ordift-navy-950 text-white">Verify Requester Identity/Authority</button>
+                      </form>
+                    ) : r.referenceType === "standard_verification" ? (
+                      <form action={issueStandardEmploymentVerificationAction}>
+                        <input type="hidden" name="profileId" value={id} />
+                        <input type="hidden" name="requestId" value={r.id} />
+                        <button type="submit" className="font-sans text-caption font-semibold px-2 py-1 rounded-md bg-ordift-navy-950 text-white">Issue Standard Verification</button>
+                      </form>
+                    ) : (
+                      <form action={issueDetailedCorporateReferenceAction} className="flex flex-wrap gap-2">
+                        <input type="hidden" name="profileId" value={id} />
+                        <input type="hidden" name="requestId" value={r.id} />
+                        <input name="informationAuthorizedForRelease" required placeholder="Information authorized for release" className="rounded-lg border border-black/15 px-2 py-1 font-sans text-caption flex-1 min-w-[180px]" />
+                        <textarea name="content" required placeholder="Reference content" className="w-full rounded-lg border border-black/15 px-2 py-1 font-sans text-caption" rows={3} />
+                        <button type="submit" className="font-sans text-caption font-semibold px-2 py-1 rounded-md bg-ordift-navy-950 text-white">Issue Detailed Corporate Reference</button>
+                      </form>
+                    )}
+                    <form action={declineReferenceRequestAction} className="flex flex-wrap gap-2">
+                      <input type="hidden" name="profileId" value={id} />
+                      <input type="hidden" name="requestId" value={r.id} />
+                      <input name="decisionNotes" required placeholder="Decline reason" className="rounded-lg border border-black/15 px-2 py-1 font-sans text-caption flex-1 min-w-[160px]" />
+                      <button type="submit" className="font-sans text-caption text-red-700 underline underline-offset-4">Decline</button>
+                    </form>
+                  </div>
+                )}
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="font-sans text-caption text-ordift-ink-muted">No reference requests on record.</p>
+        )}
+        <form action={requestEmploymentReferenceAction} className="grid grid-cols-2 gap-2 mt-2">
+          <input type="hidden" name="profileId" value={id} />
+          <input name="requesterName" required placeholder="Requester name" className="rounded-lg border border-black/15 px-2 py-1 font-sans text-caption" />
+          <input name="requesterOrganization" placeholder="Requester organization (optional)" className="rounded-lg border border-black/15 px-2 py-1 font-sans text-caption" />
+          <input name="requesterContact" placeholder="Requester contact (optional)" className="col-span-2 rounded-lg border border-black/15 px-2 py-1 font-sans text-caption" />
+          <select name="employeeOrFormerEmployee" required defaultValue="" className="rounded-lg border border-black/15 bg-white px-2 py-1 font-sans text-caption">
+            <option value="" disabled>Employee or former employee…</option>
+            <option value="employee">Employee</option>
+            <option value="former_employee">Former employee</option>
+          </select>
+          <select name="referenceType" required defaultValue="" className="rounded-lg border border-black/15 bg-white px-2 py-1 font-sans text-caption">
+            <option value="" disabled>Reference type…</option>
+            <option value="standard_verification">Standard verification</option>
+            <option value="detailed_corporate_reference">Detailed corporate reference</option>
+          </select>
+          <button type="submit" className="col-span-2 justify-self-start font-sans text-caption font-semibold px-3 py-1 rounded-md bg-ordift-navy-950 text-white">Log Reference Request</button>
+        </form>
       </section>
 
       <section className="rounded-xl border border-black/10 bg-white p-6 space-y-2">

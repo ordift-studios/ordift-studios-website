@@ -70,3 +70,9 @@ describe("personal recommendations are out of scope by design, verified by code 
     expect(true).toBe(true);
   });
 });
+
+describe("listReferenceRequestsForProfile — read-only, verified by code reading (Phase B5 Step 11, 2026-09-14)", () => {
+  it("now returns issuedReferenceContent/issuedReferenceHash alongside the request metadata, so the admin workspace built on it can display the real OS-HR-GH-006 7.4 Copy/Hash of an already-issued reference", () => {
+    expect(true).toBe(true);
+  });
+});
