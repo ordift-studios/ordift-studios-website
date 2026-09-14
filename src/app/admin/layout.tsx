@@ -41,6 +41,7 @@ const NAV_GROUPS: NavGroup[] = [
       { label: "My Workspace", href: "/admin/me" },
       { label: "My Leave", href: "/admin/me/leave" },
       { label: "My Attendance", href: "/admin/me/attendance" },
+      { label: "My Compensation", href: "/admin/me/compensation" },
     ],
   },
   {
