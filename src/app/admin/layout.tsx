@@ -38,6 +38,7 @@ const NAV_GROUPS: NavGroup[] = [
     // id — the nav's visibility is never the security boundary.
     label: "My Workspace",
     items: [
+      { label: "My Workspace", href: "/admin/me" },
       { label: "My Leave", href: "/admin/me/leave" },
       { label: "My Attendance", href: "/admin/me/attendance" },
     ],
