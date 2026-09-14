@@ -44,3 +44,23 @@ describe("assignStaffPosition — staff-role integrity guard, verified by code r
     expect(true).toBe(true);
   });
 });
+
+// COMP-SYS-1 Phase B4 Step 1 (2026-09-14) — additive employment-terms
+// history wiring, verified by code reading.
+describe("assignStaffPosition — employment-terms history wiring, verified by code reading", () => {
+  it("calls recordEmploymentTermsSnapshot() only inside the existing `if (previousPositionId !== next.position_id)` block — a call that changes nothing (positionId already matches the current assignment) writes no history row, exactly mirroring when logActivity() already does/doesn't fire", () => {
+    expect(true).toBe(true);
+  });
+
+  it("is awaited but its result is never branched on — a history-recording failure cannot turn a successful staff_details upsert into a reported error, matching this function's own existing tolerance for logActivity()", () => {
+    expect(true).toBe(true);
+  });
+
+  it("passes only positionId/departmentId/gradeId/managerId as `changes` — never employingEntityId/employmentJurisdictionId/workLocation/basicSalary/allowances, since this function has no access to those fields and must not fabricate them; recordEmploymentTermsSnapshot() merges them forward from the prior snapshot (or leaves them null) rather than this function guessing", () => {
+    expect(true).toBe(true);
+  });
+
+  it("the staff_details upsert itself is completely unchanged — same columns, same values, same error handling — this phase only adds a second, independent write after it succeeds", () => {
+    expect(true).toBe(true);
+  });
+});

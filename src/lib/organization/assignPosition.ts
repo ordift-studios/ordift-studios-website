@@ -1,6 +1,7 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { logActivity } from "@/lib/admin/activityLog";
 import { isSuperAdminId, isStaffId, hasJurisdictionAuthority, PROTECTED_LEADERSHIP_POSITION_SLUGS } from "@/lib/organization/authority";
+import { recordEmploymentTermsSnapshot } from "@/lib/organization/employmentTermsHistory";
 
 // Shared core of Position assignment — the single place that resolves
 // Department + Craft (operational_title_id) + Grade + direct manager
@@ -156,6 +157,24 @@ export async function assignStaffPosition(params: {
       entityType: "user",
       entityId: targetUserId,
       metadata: { previousPositionId, newPositionId: next.position_id, newPositionName: positionName },
+    });
+
+    // Effective-dated history (COMP-SYS-1 Phase B4 Step 1, 2026-09-14) —
+    // additive alongside the existing staff_details upsert/logActivity
+    // above, never a replacement for either. Merges onto whatever this
+    // profile's prior snapshot already had (employing entity/jurisdiction/
+    // salary etc., all still unknown/null for everyone today — this call
+    // never invents them) so "current terms" stays queryable even though
+    // staff_details itself only ever holds the latest values. Awaited but
+    // never branched on for failure, matching this function's own
+    // established tolerance for logActivity() — a history-recording
+    // problem must never turn a successful Position assignment into a
+    // reported failure.
+    await recordEmploymentTermsSnapshot({
+      profileId: targetUserId,
+      changes: { positionId: next.position_id, departmentId: next.department_id, gradeId: next.grade_id, managerId: next.manager_id },
+      source: previousPositionId ? "position.changed" : "position.assigned",
+      recordedBy: actorUserId,
     });
 
     const previousGradeId = previous?.grade_id ?? null;
