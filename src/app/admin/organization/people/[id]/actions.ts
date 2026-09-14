@@ -9,6 +9,16 @@ import { recordBackgroundScreening } from "@/lib/organization/backgroundScreenin
 import { BACKGROUND_SCREENING_CATEGORIES, BACKGROUND_SCREENING_STATUSES } from "@/lib/organization/backgroundScreening";
 import { updateAccessStatusAction } from "@/app/admin/users/actions";
 import { createSeparationCase, SEPARATION_CATEGORIES, SEPARATION_REASON_TYPES, type SeparationCategory } from "@/lib/organization/separationCases";
+import {
+  recordPerformanceReview,
+  initiatePip,
+  recordPipCheckin,
+  extendPip,
+  decidePip,
+  PIP_ALLOWED_DURATIONS_DAYS,
+  type PipDurationDays,
+  type PipOutcome,
+} from "@/lib/organization/performanceReviews";
 
 // Organizational Structure, Authority Grants, Onboarding & Work Email
 // V1 (2026-09-07) — Person Detail View actions. Employment/engagement
@@ -142,6 +152,117 @@ export async function initiateSeparationCaseAction(formData: FormData): Promise<
     console.error("[admin organization] failed to create separation case", result.error);
     return;
   }
+
+  revalidatePath(`/admin/organization/people/${profileId}`);
+}
+
+// Performance Reviews / Performance Improvement Plans (Phase B5 Step 2,
+// 2026-09-14) — consolidated onto the Employee Profile page rather than
+// a separate top-level page (spec: "one coherent employee workspace").
+// Authorization is enforced inside each lib function
+// (canManagePerformance) exactly as the Separation forms above already
+// rely on their own lib-level gate.
+export async function recordPerformanceReviewAction(formData: FormData): Promise<void> {
+  const currentUser = await getCurrentUser();
+  if (!currentUser) return;
+
+  const profileId = String(formData.get("profileId") ?? "").trim();
+  const outcomeSummary = String(formData.get("outcomeSummary") ?? "").trim();
+  const reviewPeriodStart = String(formData.get("reviewPeriodStart") ?? "").trim() || null;
+  const reviewPeriodEnd = String(formData.get("reviewPeriodEnd") ?? "").trim() || null;
+  const competencyNotes = String(formData.get("competencyNotes") ?? "").trim() || null;
+  const kpiNotes = String(formData.get("kpiNotes") ?? "").trim() || null;
+  if (!profileId || !outcomeSummary) return;
+
+  const result = await recordPerformanceReview({
+    profileId,
+    reviewerId: currentUser.id,
+    reviewPeriodStart,
+    reviewPeriodEnd,
+    competencyNotes,
+    kpiNotes,
+    outcomeSummary,
+    actorUserId: currentUser.id,
+  });
+  if (!result.ok) console.error("[admin organization] failed to record performance review", result.error);
+
+  revalidatePath(`/admin/organization/people/${profileId}`);
+}
+
+export async function initiatePipAction(formData: FormData): Promise<void> {
+  const currentUser = await getCurrentUser();
+  if (!currentUser) return;
+
+  const profileId = String(formData.get("profileId") ?? "").trim();
+  const deficientStandard = String(formData.get("deficientStandard") ?? "").trim();
+  const requiredImprovement = String(formData.get("requiredImprovement") ?? "").trim();
+  const measurableObjectives = String(formData.get("measurableObjectives") ?? "")
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const supportResources = String(formData.get("supportResources") ?? "").trim() || null;
+  const durationRaw = Number(formData.get("plannedDurationDays") ?? "");
+  const plannedDurationDays = (PIP_ALLOWED_DURATIONS_DAYS as readonly number[]).includes(durationRaw) ? (durationRaw as PipDurationDays) : undefined;
+  if (!profileId || !deficientStandard || !requiredImprovement || measurableObjectives.length === 0) return;
+
+  const result = await initiatePip({
+    profileId,
+    deficientStandard,
+    requiredImprovement,
+    measurableObjectives,
+    supportResources,
+    plannedDurationDays,
+    actorUserId: currentUser.id,
+  });
+  if (!result.ok) console.error("[admin organization] failed to initiate PIP", result.error);
+
+  revalidatePath(`/admin/organization/people/${profileId}`);
+}
+
+export async function recordPipCheckinAction(formData: FormData): Promise<void> {
+  const currentUser = await getCurrentUser();
+  if (!currentUser) return;
+
+  const profileId = String(formData.get("profileId") ?? "").trim();
+  const pipId = String(formData.get("pipId") ?? "").trim();
+  const notes = String(formData.get("notes") ?? "").trim();
+  if (!profileId || !pipId || !notes) return;
+
+  const result = await recordPipCheckin({ pipId, notes, actorUserId: currentUser.id });
+  if (!result.ok) console.error("[admin organization] failed to record PIP check-in", result.error);
+
+  revalidatePath(`/admin/organization/people/${profileId}`);
+}
+
+export async function extendPipAction(formData: FormData): Promise<void> {
+  const currentUser = await getCurrentUser();
+  if (!currentUser) return;
+
+  const profileId = String(formData.get("profileId") ?? "").trim();
+  const pipId = String(formData.get("pipId") ?? "").trim();
+  const newEndDate = String(formData.get("newEndDate") ?? "").trim();
+  const reason = String(formData.get("reason") ?? "").trim();
+  if (!profileId || !pipId || !newEndDate || !reason) return;
+
+  const result = await extendPip({ pipId, newEndDate, reason, actorUserId: currentUser.id });
+  if (!result.ok) console.error("[admin organization] failed to extend PIP", result.error);
+
+  revalidatePath(`/admin/organization/people/${profileId}`);
+}
+
+export async function decidePipAction(formData: FormData): Promise<void> {
+  const currentUser = await getCurrentUser();
+  if (!currentUser) return;
+
+  const profileId = String(formData.get("profileId") ?? "").trim();
+  const pipId = String(formData.get("pipId") ?? "").trim();
+  const outcome = String(formData.get("outcome") ?? "").trim();
+  const outcomeNotes = String(formData.get("outcomeNotes") ?? "").trim();
+  if (!profileId || !pipId || !outcomeNotes) return;
+  if (outcome !== "completed_improved" && outcome !== "completed_failed_escalated") return;
+
+  const result = await decidePip({ pipId, outcome: outcome as PipOutcome, outcomeNotes, actorUserId: currentUser.id });
+  if (!result.ok) console.error("[admin organization] failed to decide PIP outcome", result.error);
 
   revalidatePath(`/admin/organization/people/${profileId}`);
 }

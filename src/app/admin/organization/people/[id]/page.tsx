@@ -11,7 +11,18 @@ import { listBackgroundScreeningsForProfile, BACKGROUND_SCREENING_CATEGORIES, BA
 import { listCorporateIdentities } from "@/lib/organization/reserveCorporateIdentity";
 import { getActivityForEntity } from "@/lib/admin/activityLog";
 import { listSeparationCases, SEPARATION_CATEGORIES, SEPARATION_REASON_TYPES } from "@/lib/organization/separationCases";
-import { setEmploymentStatusAction, recordBackgroundScreeningAction, updateAccessStatusFormAction, initiateSeparationCaseAction } from "./actions";
+import { listPerformanceReviewsForProfile, listPipsForProfile, PIP_ALLOWED_DURATIONS_DAYS } from "@/lib/organization/performanceReviews";
+import {
+  setEmploymentStatusAction,
+  recordBackgroundScreeningAction,
+  updateAccessStatusFormAction,
+  initiateSeparationCaseAction,
+  recordPerformanceReviewAction,
+  initiatePipAction,
+  recordPipCheckinAction,
+  extendPipAction,
+  decidePipAction,
+} from "./actions";
 
 export const metadata: Metadata = {
   title: "Person — Ordift Studios Admin",
@@ -60,11 +71,13 @@ export default async function PersonDetailPage({ params }: { params: Promise<{ i
   const person = usersResult.users.find((u) => u.id === id);
   if (!person) notFound();
 
-  const [financialLevel, screenings, recentActivity, separationCases] = await Promise.all([
+  const [financialLevel, screenings, recentActivity, separationCases, performanceReviews, pips] = await Promise.all([
     getPersonFinancialAuthorityLevel(id),
     listBackgroundScreeningsForProfile(id, currentUser.id), // empty for non-Super-Admin, by construction
     getActivityForEntity("user", id, 20),
     listSeparationCases(),
+    listPerformanceReviewsForProfile(id),
+    listPipsForProfile(id),
   ]);
   const personSeparationCases = separationCases.filter((c) => c.profileId === id);
   const openSeparationCase = personSeparationCases.find((c) => c.status === "open") ?? null;
@@ -268,6 +281,99 @@ export default async function PersonDetailPage({ params }: { params: Promise<{ i
               <button type="submit" className="col-span-2 font-sans text-caption font-semibold px-3 py-1 rounded-md bg-ordift-navy-950 text-white">Initiate Separation Case</button>
             </form>
           )}
+        </div>
+      </section>
+
+      {/* Performance Reviews / PIP (Phase B5 Step 2, 2026-09-14) —
+          performance and discipline are deliberately kept separate
+          modules; a failed PIP never auto-terminates employment. */}
+      <section className="rounded-xl border border-black/10 bg-white p-6 space-y-4">
+        <h2 className="font-serif font-medium text-body text-ordift-ink">Performance</h2>
+
+        <div>
+          <p className="font-sans text-caption font-semibold text-ordift-ink mb-1">Reviews</p>
+          {performanceReviews.length > 0 ? (
+            <ul className="space-y-1">
+              {performanceReviews.map((r) => (
+                <li key={r.id} className="font-sans text-caption text-ordift-ink-muted">
+                  · {new Date(r.conductedAt).toLocaleDateString()} — {r.outcomeSummary}
+                  {r.nextReviewDueAt ? ` (next due ${new Date(r.nextReviewDueAt).toLocaleDateString()})` : ""}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="font-sans text-caption text-ordift-ink-muted">No performance reviews recorded.</p>
+          )}
+          <form action={recordPerformanceReviewAction} className="grid grid-cols-2 gap-2 mt-2">
+            <input type="hidden" name="profileId" value={id} />
+            <input type="date" name="reviewPeriodStart" className="rounded-lg border border-black/15 px-2 py-1 font-sans text-caption" placeholder="Period start" />
+            <input type="date" name="reviewPeriodEnd" className="rounded-lg border border-black/15 px-2 py-1 font-sans text-caption" placeholder="Period end" />
+            <textarea name="competencyNotes" placeholder="Competency notes (optional)" className="col-span-2 rounded-lg border border-black/15 px-2 py-1 font-sans text-caption" rows={2} />
+            <textarea name="kpiNotes" placeholder="KPI notes (optional)" className="col-span-2 rounded-lg border border-black/15 px-2 py-1 font-sans text-caption" rows={2} />
+            <textarea name="outcomeSummary" required placeholder="Outcome summary" className="col-span-2 rounded-lg border border-black/15 px-2 py-1 font-sans text-caption" rows={2} />
+            <button type="submit" className="col-span-2 justify-self-start font-sans text-caption font-semibold px-3 py-1 rounded-md bg-ordift-navy-950 text-white">Record Review</button>
+          </form>
+        </div>
+
+        <div className="border-t border-black/5 pt-4">
+          <p className="font-sans text-caption font-semibold text-ordift-ink mb-1">Performance Improvement Plans</p>
+          {pips.length > 0 ? (
+            <ul className="space-y-3">
+              {pips.map((p) => (
+                <li key={p.id} className="font-sans text-caption text-ordift-ink-muted space-y-1">
+                  <p>
+                    · {p.startDate} → {p.extendedEndDate ?? p.plannedEndDate}
+                    {p.extendedEndDate ? " (extended)" : ""} — {p.status.replace(/_/g, " ")}
+                  </p>
+                  {(p.status === "active" || p.status === "extended") && (
+                    <div className="pl-3 space-y-2">
+                      <form action={recordPipCheckinAction} className="flex flex-wrap gap-2">
+                        <input type="hidden" name="profileId" value={id} />
+                        <input type="hidden" name="pipId" value={p.id} />
+                        <input name="notes" required placeholder="Check-in notes" className="rounded-lg border border-black/15 px-2 py-1 font-sans text-caption flex-1 min-w-[180px]" />
+                        <button type="submit" className="font-sans text-caption font-semibold px-2 py-1 rounded-md bg-ordift-navy-950 text-white">Record Check-in</button>
+                      </form>
+                      {p.status === "active" && (
+                        <form action={extendPipAction} className="flex flex-wrap gap-2">
+                          <input type="hidden" name="profileId" value={id} />
+                          <input type="hidden" name="pipId" value={p.id} />
+                          <input type="date" name="newEndDate" required className="rounded-lg border border-black/15 px-2 py-1 font-sans text-caption" />
+                          <input name="reason" required placeholder="Extension reason" className="rounded-lg border border-black/15 px-2 py-1 font-sans text-caption flex-1 min-w-[180px]" />
+                          <button type="submit" className="font-sans text-caption font-semibold px-2 py-1 rounded-md bg-ordift-gold-pressed text-ordift-navy-950">Extend (once only)</button>
+                        </form>
+                      )}
+                      <form action={decidePipAction} className="flex flex-wrap gap-2">
+                        <input type="hidden" name="profileId" value={id} />
+                        <input type="hidden" name="pipId" value={p.id} />
+                        <select name="outcome" required defaultValue="" className="rounded-lg border border-black/15 bg-white px-2 py-1 font-sans text-caption">
+                          <option value="" disabled>Outcome…</option>
+                          <option value="completed_improved">Completed — improved</option>
+                          <option value="completed_failed_escalated">Completed — failed (escalate separately)</option>
+                        </select>
+                        <input name="outcomeNotes" required placeholder="Outcome notes" className="rounded-lg border border-black/15 px-2 py-1 font-sans text-caption flex-1 min-w-[180px]" />
+                        <button type="submit" className="font-sans text-caption font-semibold px-2 py-1 rounded-md bg-ordift-navy-950 text-white">Decide Outcome</button>
+                      </form>
+                    </div>
+                  )}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="font-sans text-caption text-ordift-ink-muted">No Performance Improvement Plans on record.</p>
+          )}
+          <form action={initiatePipAction} className="grid grid-cols-2 gap-2 mt-3">
+            <input type="hidden" name="profileId" value={id} />
+            <textarea name="deficientStandard" required placeholder="Deficient standard" className="col-span-2 rounded-lg border border-black/15 px-2 py-1 font-sans text-caption" rows={2} />
+            <textarea name="requiredImprovement" required placeholder="Required improvement" className="col-span-2 rounded-lg border border-black/15 px-2 py-1 font-sans text-caption" rows={2} />
+            <textarea name="measurableObjectives" required placeholder="Measurable objectives (one per line)" className="col-span-2 rounded-lg border border-black/15 px-2 py-1 font-sans text-caption" rows={3} />
+            <textarea name="supportResources" placeholder="Support resources (optional)" className="col-span-2 rounded-lg border border-black/15 px-2 py-1 font-sans text-caption" rows={2} />
+            <select name="plannedDurationDays" defaultValue="30" className="rounded-lg border border-black/15 bg-white px-2 py-1 font-sans text-caption col-span-2">
+              {PIP_ALLOWED_DURATIONS_DAYS.map((d) => (
+                <option key={d} value={d}>{d} days</option>
+              ))}
+            </select>
+            <button type="submit" className="col-span-2 justify-self-start font-sans text-caption font-semibold px-3 py-1 rounded-md bg-ordift-navy-950 text-white">Initiate PIP</button>
+          </form>
         </div>
       </section>
 
