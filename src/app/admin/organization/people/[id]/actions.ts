@@ -77,6 +77,13 @@ import {
   type ReferenceType,
 } from "@/lib/organization/employmentReferences";
 import { recordPolicyAcknowledgement, type PolicyAcknowledgementMethod } from "@/lib/organization/policyAcknowledgements";
+import {
+  recordEmploymentTransition,
+  completeEnhancedReview,
+  EMPLOYMENT_TRANSITION_TYPES,
+  type EmploymentTransitionType,
+  type EmploymentTermsFields,
+} from "@/lib/organization/employmentTermsHistory";
 
 // Organizational Structure, Authority Grants, Onboarding & Work Email
 // V1 (2026-09-07) — Person Detail View actions. Employment/engagement
@@ -1028,6 +1035,64 @@ export async function recordPolicyAcknowledgementAction(formData: FormData): Pro
 
   const result = await recordPolicyAcknowledgement({ profileId, documentVersionId, method: method as PolicyAcknowledgementMethod, evidenceReference, actorUserId: currentUser.id });
   if (!result.ok) console.error("[admin organization] failed to record policy acknowledgement", result.error);
+
+  revalidatePath(`/admin/organization/people/${profileId}`);
+}
+
+// International & Employment Transitions (Phase B6 Step 2, 2026-09-15).
+// Deliberately never accepts positionId/gradeId/managerId here — role/
+// title, grade, and reporting-line changes remain the exclusive
+// responsibility of assignStaffPosition() (the Organization page), so a
+// country move recorded here and a promotion recorded there are always
+// two separate, separately-audited actions, even when submitted
+// together in the same sitting.
+export async function recordEmploymentTransitionAction(formData: FormData): Promise<void> {
+  const currentUser = await getCurrentUser();
+  if (!currentUser) return;
+
+  const profileId = String(formData.get("profileId") ?? "").trim();
+  const transitionType = String(formData.get("transitionType") ?? "").trim();
+  const effectiveFrom = String(formData.get("effectiveFrom") ?? "").trim() || undefined;
+  const notes = String(formData.get("notes") ?? "").trim() || null;
+  if (!profileId || !(EMPLOYMENT_TRANSITION_TYPES as readonly string[]).includes(transitionType)) return;
+
+  const changes: Partial<EmploymentTermsFields> = {};
+  const employingEntityId = String(formData.get("employingEntityId") ?? "").trim();
+  const employmentJurisdictionId = String(formData.get("employmentJurisdictionId") ?? "").trim();
+  const workLocation = String(formData.get("workLocation") ?? "").trim();
+  const basicSalaryRaw = String(formData.get("basicSalary") ?? "").trim();
+  const currency = String(formData.get("currency") ?? "").trim();
+  if (employingEntityId) changes.employingEntityId = employingEntityId;
+  if (employmentJurisdictionId) changes.employmentJurisdictionId = employmentJurisdictionId;
+  if (workLocation) changes.workLocation = workLocation;
+  if (basicSalaryRaw) changes.basicSalary = Number(basicSalaryRaw);
+  if (currency) changes.currency = currency;
+  if (Object.keys(changes).length === 0) return;
+
+  const result = await recordEmploymentTransition({
+    profileId,
+    transitionType: transitionType as EmploymentTransitionType,
+    effectiveFrom,
+    changes,
+    notes,
+    actorUserId: currentUser.id,
+  });
+  if (!result.ok) console.error("[admin organization] failed to record employment transition", result.error);
+
+  revalidatePath(`/admin/organization/people/${profileId}`);
+}
+
+export async function completeEnhancedReviewAction(formData: FormData): Promise<void> {
+  const currentUser = await getCurrentUser();
+  if (!currentUser) return;
+
+  const profileId = String(formData.get("profileId") ?? "").trim();
+  const employmentTermsHistoryId = String(formData.get("employmentTermsHistoryId") ?? "").trim();
+  const notes = String(formData.get("notes") ?? "").trim() || null;
+  if (!profileId || !employmentTermsHistoryId) return;
+
+  const result = await completeEnhancedReview({ employmentTermsHistoryId, notes, actorUserId: currentUser.id });
+  if (!result.ok) console.error("[admin organization] failed to complete enhanced review", result.error);
 
   revalidatePath(`/admin/organization/people/${profileId}`);
 }

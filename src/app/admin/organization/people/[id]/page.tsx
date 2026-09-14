@@ -3,7 +3,7 @@ import { redirect, notFound } from "next/navigation";
 import Link from "next/link";
 import { getCurrentUser, isSuperAdmin } from "@/lib/portal/roles";
 import { authorizeWithSuperAdminOverride, PEOPLE_CAPABILITIES, listAuthorityGrants, isGrantActive } from "@/lib/organization/authority";
-import { listUsersWithRoles } from "@/lib/portal/adminData";
+import { listUsersWithRoles, listEmploymentJurisdictions } from "@/lib/portal/adminData";
 import { getPersonFinancialAuthorityLevel } from "@/lib/organization/financialAuthorityGrants";
 import { FINANCIAL_AUTHORITY_LEVEL_LABELS } from "@/lib/organization/financialAuthority";
 import { listActingAssignments, isActingAssignmentActive } from "@/lib/organization/actingAssignments";
@@ -33,6 +33,8 @@ import { checkEmployeeAgreementReadiness } from "@/lib/legal/employeeAgreements"
 import { getStaffOnboardingByProfileId } from "@/lib/organization/onboarding";
 import { listReferenceRequestsForProfile } from "@/lib/organization/employmentReferences";
 import { listControlledPolicyDocuments, listPolicyAcknowledgementsForProfile } from "@/lib/organization/policyAcknowledgements";
+import { listEmploymentTermsHistory, listEnhancedReviewCompletions, EMPLOYMENT_TRANSITION_TYPES } from "@/lib/organization/employmentTermsHistory";
+import { listEmployingEntities } from "@/lib/organization/legalEntities";
 import {
   setEmploymentStatusAction,
   recordBackgroundScreeningAction,
@@ -82,6 +84,8 @@ import {
   issueStandardEmploymentVerificationAction,
   issueDetailedCorporateReferenceAction,
   recordPolicyAcknowledgementAction,
+  recordEmploymentTransitionAction,
+  completeEnhancedReviewAction,
 } from "./actions";
 
 export const metadata: Metadata = {
@@ -176,6 +180,16 @@ export default async function PersonDetailPage({ params }: { params: Promise<{ i
   ]);
   const acknowledgedVersionIds = new Set(policyAcknowledgements.map((a) => a.policyVersionId));
   const acknowledgedAtByVersionId = new Map(policyAcknowledgements.map((a) => [a.policyVersionId, a.acknowledgedAt]));
+
+  const [employmentTermsHistory, employingEntitiesForTransitions, jurisdictionsForTransitions] = await Promise.all([
+    listEmploymentTermsHistory(id),
+    listEmployingEntities(),
+    listEmploymentJurisdictions(),
+  ]);
+  const reviewCompletions = await listEnhancedReviewCompletions(employmentTermsHistory.map((t) => t.id));
+  const reviewCompletedIds = new Set(reviewCompletions.map((r) => r.employmentTermsHistoryId));
+  const entityNameById = new Map(employingEntitiesForTransitions.map((e) => [e.id, e.legalName ?? e.name]));
+  const jurisdictionNameById = new Map(jurisdictionsForTransitions.map((j) => [j.id, j.name]));
   const personSeparationCases = separationCases.filter((c) => c.profileId === id);
   const openSeparationCase = personSeparationCases.find((c) => c.status === "open") ?? null;
 
@@ -1207,6 +1221,82 @@ export default async function PersonDetailPage({ params }: { params: Promise<{ i
         ) : (
           <p className="font-sans text-body-small text-ordift-ink-muted">No controlled policy documents are currently active.</p>
         )}
+      </section>
+
+      {/* International & Employment Transitions (Phase B6 Step 2,
+          2026-09-15). Deliberately never offers Position/Grade/
+          reporting-line fields — those remain governed exclusively by
+          assignStaffPosition() (the Organization page) — so a country
+          move recorded here and a promotion recorded there are always
+          two separate, separately-audited actions, even when decided
+          together. Every genuinely international/inter-entity type
+          auto-flags for enhanced review; it can never silently inherit
+          the previous jurisdiction's rules. */}
+      <section className="rounded-xl border border-black/10 bg-white p-6 space-y-4">
+        <h2 className="font-serif font-medium text-body text-ordift-ink">International &amp; Employment Transitions</h2>
+        {employmentTermsHistory.length > 0 ? (
+          <ul className="space-y-2">
+            {employmentTermsHistory.map((t) => (
+              <li key={t.id} className="font-sans text-caption text-ordift-ink-muted space-y-1">
+                <p>
+                  · {t.effectiveFrom} — {t.transitionType ? t.transitionType.replace(/_/g, " ") : t.source}
+                  {t.employingEntityId ? ` · ${entityNameById.get(t.employingEntityId) ?? "unknown entity"}` : ""}
+                  {t.employmentJurisdictionId ? ` · ${jurisdictionNameById.get(t.employmentJurisdictionId) ?? "unknown jurisdiction"}` : ""}
+                  {t.workLocation ? ` · ${t.workLocation}` : ""}
+                  {t.basicSalary !== null ? ` · ${t.basicSalary.toLocaleString()}${t.currency ? ` ${t.currency}` : ""}` : ""}
+                </p>
+                {t.notes && <p>&ldquo;{t.notes}&rdquo;</p>}
+                {t.enhancedReviewRequired && (
+                  <p>
+                    {reviewCompletedIds.has(t.id) ? (
+                      <span className="text-green-700">Enhanced review completed</span>
+                    ) : (
+                      <form action={completeEnhancedReviewAction} className="inline-flex flex-wrap items-center gap-2">
+                        <span className="text-amber-700">Enhanced review required —</span>
+                        <input type="hidden" name="profileId" value={id} />
+                        <input type="hidden" name="employmentTermsHistoryId" value={t.id} />
+                        <input name="notes" placeholder="Review notes" className="rounded-lg border border-black/15 px-2 py-0.5 font-sans text-caption" />
+                        <button type="submit" className="font-sans text-caption font-semibold px-2 py-0.5 rounded-md bg-ordift-navy-950 text-white">Mark Reviewed</button>
+                      </form>
+                    )}
+                  </p>
+                )}
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="font-sans text-caption text-ordift-ink-muted">No employment-terms history on record.</p>
+        )}
+        <form action={recordEmploymentTransitionAction} className="grid grid-cols-2 gap-2 mt-2">
+          <input type="hidden" name="profileId" value={id} />
+          <select name="transitionType" required defaultValue="" className="col-span-2 rounded-lg border border-black/15 bg-white px-2 py-1 font-sans text-caption">
+            <option value="" disabled>Transition type…</option>
+            {EMPLOYMENT_TRANSITION_TYPES.map((t) => (
+              <option key={t} value={t}>{t.replace(/_/g, " ")}</option>
+            ))}
+          </select>
+          <input type="date" name="effectiveFrom" className="rounded-lg border border-black/15 px-2 py-1 font-sans text-caption" />
+          <select name="employingEntityId" defaultValue="" className="rounded-lg border border-black/15 bg-white px-2 py-1 font-sans text-caption">
+            <option value="">Employing entity unchanged</option>
+            {employingEntitiesForTransitions.map((e) => (
+              <option key={e.id} value={e.id}>{e.legalName ?? e.name}</option>
+            ))}
+          </select>
+          <select name="employmentJurisdictionId" defaultValue="" className="rounded-lg border border-black/15 bg-white px-2 py-1 font-sans text-caption">
+            <option value="">Jurisdiction unchanged</option>
+            {jurisdictionsForTransitions.map((j) => (
+              <option key={j.id} value={j.id}>{j.name}</option>
+            ))}
+          </select>
+          <input name="workLocation" placeholder="Work location (if changed)" className="rounded-lg border border-black/15 px-2 py-1 font-sans text-caption" />
+          <input name="basicSalary" type="number" step="0.01" min="0" placeholder="Basic salary (if changed)" className="rounded-lg border border-black/15 px-2 py-1 font-sans text-caption" />
+          <input name="currency" placeholder="Currency (e.g. GHS)" className="rounded-lg border border-black/15 px-2 py-1 font-sans text-caption" />
+          <input name="notes" placeholder="Notes (optional)" className="col-span-2 rounded-lg border border-black/15 px-2 py-1 font-sans text-caption" />
+          <button type="submit" className="col-span-2 justify-self-start font-sans text-caption font-semibold px-3 py-1 rounded-md bg-ordift-navy-950 text-white">Record Transition</button>
+        </form>
+        <p className="font-sans text-caption text-ordift-ink-muted">
+          Role/title, grade, and reporting-line changes are recorded separately via <a href={`/admin/profile/${id}`} className="underline underline-offset-4">Position assignment</a> — never through this form.
+        </p>
       </section>
 
       <section className="rounded-xl border border-black/10 bg-white p-6 space-y-2">
