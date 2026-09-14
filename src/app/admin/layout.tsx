@@ -30,6 +30,16 @@ type NavGroup = { label: string; items: NavItem[] };
 // role-aware without any group-level flag of its own.
 const NAV_GROUPS: NavGroup[] = [
   {
+    // Employee Self-Service (Phase B5 Step 13, 2026-09-14) — no
+    // adminOnly/superAdminOnly/etc. flag on its items: visible to every
+    // staff member who reaches /admin at all (the layout's own
+    // isStaffOrAdmin() gate above), not just admins. Each page still
+    // independently scopes every read/write to the CURRENT user's own
+    // id — the nav's visibility is never the security boundary.
+    label: "My Workspace",
+    items: [{ label: "My Leave", href: "/admin/me/leave" }],
+  },
+  {
     label: "Overview",
     items: [
       { label: "Overview", href: "/admin/overview" },
