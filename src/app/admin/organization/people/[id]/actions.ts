@@ -49,6 +49,22 @@ import {
   determineAssetIncident,
   type AssetIncidentDetermination,
 } from "@/lib/organization/assets";
+import {
+  requestBusinessTravelAuthorization,
+  approveBusinessTravelAuthorization,
+  declineBusinessTravelAuthorization,
+  authorizeDriver,
+  revokeDriverAuthorization,
+  reportVehicleIncident,
+  advanceVehicleIncidentStage,
+  recordVehicleIncidentResponsibilityDetermination,
+  resolveVehicleIncident,
+  reportWorkplaceInjury,
+  advanceWorkplaceInjuryStage,
+  recordWorkplaceInjuryAbsencePayClassification,
+  resolveWorkplaceInjuryReport,
+  type VehicleIncidentResponsibilityDetermination,
+} from "@/lib/organization/businessTravel";
 
 // Organizational Structure, Authority Grants, Onboarding & Work Email
 // V1 (2026-09-07) — Person Detail View actions. Employment/engagement
@@ -598,6 +614,218 @@ export async function determineAssetIncidentAction(formData: FormData): Promise<
     actorUserId: currentUser.id,
   });
   if (!result.ok) console.error("[admin organization] failed to determine asset incident", result.error);
+
+  revalidatePath(`/admin/organization/people/${profileId}`);
+}
+
+// Business Travel, Driving & Production Safety (Phase B5 Step 7,
+// 2026-09-14). Vehicle incidents and workplace injuries are
+// deliberately separate workflows with their own stage sequences —
+// never merged into one generic "incident" concept.
+export async function requestBusinessTravelAuthorizationAction(formData: FormData): Promise<void> {
+  const currentUser = await getCurrentUser();
+  if (!currentUser) return;
+
+  const profileId = String(formData.get("profileId") ?? "").trim();
+  const destinationCountry = String(formData.get("destinationCountry") ?? "").trim();
+  const purpose = String(formData.get("purpose") ?? "").trim();
+  const travelStartDate = String(formData.get("travelStartDate") ?? "").trim() || null;
+  const travelEndDate = String(formData.get("travelEndDate") ?? "").trim() || null;
+  if (!profileId || !destinationCountry || !purpose) return;
+
+  const result = await requestBusinessTravelAuthorization({ profileId, destinationCountry, purpose, travelStartDate, travelEndDate, actorUserId: currentUser.id });
+  if (!result.ok) console.error("[admin organization] failed to request business travel authorization", result.error);
+
+  revalidatePath(`/admin/organization/people/${profileId}`);
+}
+
+export async function approveBusinessTravelAuthorizationAction(formData: FormData): Promise<void> {
+  const currentUser = await getCurrentUser();
+  if (!currentUser) return;
+
+  const profileId = String(formData.get("profileId") ?? "").trim();
+  const authorizationId = String(formData.get("authorizationId") ?? "").trim();
+  const decisionNotes = String(formData.get("decisionNotes") ?? "").trim() || null;
+  const checks = {
+    immigrationReviewed: formData.get("immigrationReviewed") === "true",
+    workAuthorizationReviewed: formData.get("workAuthorizationReviewed") === "true",
+    safetyReviewed: formData.get("safetyReviewed") === "true",
+    jurisdictionReviewed: formData.get("jurisdictionReviewed") === "true",
+  };
+  if (!profileId || !authorizationId) return;
+
+  const result = await approveBusinessTravelAuthorization({ authorizationId, checks, decisionNotes, actorUserId: currentUser.id });
+  if (!result.ok) console.error("[admin organization] failed to approve business travel authorization", result.error);
+
+  revalidatePath(`/admin/organization/people/${profileId}`);
+}
+
+export async function declineBusinessTravelAuthorizationAction(formData: FormData): Promise<void> {
+  const currentUser = await getCurrentUser();
+  if (!currentUser) return;
+
+  const profileId = String(formData.get("profileId") ?? "").trim();
+  const authorizationId = String(formData.get("authorizationId") ?? "").trim();
+  const decisionNotes = String(formData.get("decisionNotes") ?? "").trim();
+  if (!profileId || !authorizationId || !decisionNotes) return;
+
+  const result = await declineBusinessTravelAuthorization({ authorizationId, decisionNotes, actorUserId: currentUser.id });
+  if (!result.ok) console.error("[admin organization] failed to decline business travel authorization", result.error);
+
+  revalidatePath(`/admin/organization/people/${profileId}`);
+}
+
+export async function authorizeDriverAction(formData: FormData): Promise<void> {
+  const currentUser = await getCurrentUser();
+  if (!currentUser) return;
+
+  const profileId = String(formData.get("profileId") ?? "").trim();
+  const licenseNumber = String(formData.get("licenseNumber") ?? "").trim() || null;
+  const licenseClass = String(formData.get("licenseClass") ?? "").trim() || null;
+  const licenseExpiryDate = String(formData.get("licenseExpiryDate") ?? "").trim() || null;
+  const authorizedVehicleTypes = String(formData.get("authorizedVehicleTypes") ?? "").trim() || null;
+  if (!profileId) return;
+
+  const result = await authorizeDriver({ profileId, licenseNumber, licenseClass, licenseExpiryDate, authorizedVehicleTypes, actorUserId: currentUser.id });
+  if (!result.ok) console.error("[admin organization] failed to authorize driver", result.error);
+
+  revalidatePath(`/admin/organization/people/${profileId}`);
+}
+
+export async function revokeDriverAuthorizationAction(formData: FormData): Promise<void> {
+  const currentUser = await getCurrentUser();
+  if (!currentUser) return;
+
+  const profileId = String(formData.get("profileId") ?? "").trim();
+  const authorizationId = String(formData.get("authorizationId") ?? "").trim();
+  const reason = String(formData.get("reason") ?? "").trim();
+  if (!profileId || !authorizationId || !reason) return;
+
+  const result = await revokeDriverAuthorization({ authorizationId, reason, actorUserId: currentUser.id });
+  if (!result.ok) console.error("[admin organization] failed to revoke driver authorization", result.error);
+
+  revalidatePath(`/admin/organization/people/${profileId}`);
+}
+
+export async function reportVehicleIncidentAction(formData: FormData): Promise<void> {
+  const currentUser = await getCurrentUser();
+  if (!currentUser) return;
+
+  const profileId = String(formData.get("profileId") ?? "").trim();
+  const description = String(formData.get("description") ?? "").trim();
+  if (!profileId || !description) return;
+
+  const result = await reportVehicleIncident({ profileId, description, actorUserId: currentUser.id });
+  if (!result.ok) console.error("[admin organization] failed to report vehicle incident", result.error);
+
+  revalidatePath(`/admin/organization/people/${profileId}`);
+}
+
+export async function advanceVehicleIncidentStageAction(formData: FormData): Promise<void> {
+  const currentUser = await getCurrentUser();
+  if (!currentUser) return;
+
+  const profileId = String(formData.get("profileId") ?? "").trim();
+  const incidentId = String(formData.get("incidentId") ?? "").trim();
+  if (!profileId || !incidentId) return;
+
+  const result = await advanceVehicleIncidentStage({ incidentId, actorUserId: currentUser.id });
+  if (!result.ok) console.error("[admin organization] failed to advance vehicle incident stage", result.error);
+
+  revalidatePath(`/admin/organization/people/${profileId}`);
+}
+
+export async function recordVehicleIncidentResponsibilityDeterminationAction(formData: FormData): Promise<void> {
+  const currentUser = await getCurrentUser();
+  if (!currentUser) return;
+
+  const profileId = String(formData.get("profileId") ?? "").trim();
+  const incidentId = String(formData.get("incidentId") ?? "").trim();
+  const determination = String(formData.get("determination") ?? "").trim();
+  const responsibilityNotes = String(formData.get("responsibilityNotes") ?? "").trim();
+  const validDeterminations: VehicleIncidentResponsibilityDetermination[] = ["employee_responsible", "not_employee_responsible", "shared", "undetermined"];
+  if (!profileId || !incidentId || !responsibilityNotes || !(validDeterminations as string[]).includes(determination)) return;
+
+  const result = await recordVehicleIncidentResponsibilityDetermination({
+    incidentId,
+    determination: determination as VehicleIncidentResponsibilityDetermination,
+    responsibilityNotes,
+    actorUserId: currentUser.id,
+  });
+  if (!result.ok) console.error("[admin organization] failed to record vehicle incident responsibility determination", result.error);
+
+  revalidatePath(`/admin/organization/people/${profileId}`);
+}
+
+export async function resolveVehicleIncidentAction(formData: FormData): Promise<void> {
+  const currentUser = await getCurrentUser();
+  if (!currentUser) return;
+
+  const profileId = String(formData.get("profileId") ?? "").trim();
+  const incidentId = String(formData.get("incidentId") ?? "").trim();
+  const financialDisciplinaryTreatmentNotes = String(formData.get("financialDisciplinaryTreatmentNotes") ?? "").trim();
+  if (!profileId || !incidentId || !financialDisciplinaryTreatmentNotes) return;
+
+  const result = await resolveVehicleIncident({ incidentId, financialDisciplinaryTreatmentNotes, actorUserId: currentUser.id });
+  if (!result.ok) console.error("[admin organization] failed to resolve vehicle incident", result.error);
+
+  revalidatePath(`/admin/organization/people/${profileId}`);
+}
+
+export async function reportWorkplaceInjuryAction(formData: FormData): Promise<void> {
+  const currentUser = await getCurrentUser();
+  if (!currentUser) return;
+
+  const profileId = String(formData.get("profileId") ?? "").trim();
+  const description = String(formData.get("description") ?? "").trim();
+  if (!profileId || !description) return;
+
+  const result = await reportWorkplaceInjury({ profileId, description, actorUserId: currentUser.id });
+  if (!result.ok) console.error("[admin organization] failed to report workplace injury", result.error);
+
+  revalidatePath(`/admin/organization/people/${profileId}`);
+}
+
+export async function advanceWorkplaceInjuryStageAction(formData: FormData): Promise<void> {
+  const currentUser = await getCurrentUser();
+  if (!currentUser) return;
+
+  const profileId = String(formData.get("profileId") ?? "").trim();
+  const reportId = String(formData.get("reportId") ?? "").trim();
+  if (!profileId || !reportId) return;
+
+  const result = await advanceWorkplaceInjuryStage({ reportId, actorUserId: currentUser.id });
+  if (!result.ok) console.error("[admin organization] failed to advance workplace injury stage", result.error);
+
+  revalidatePath(`/admin/organization/people/${profileId}`);
+}
+
+export async function recordWorkplaceInjuryAbsencePayClassificationAction(formData: FormData): Promise<void> {
+  const currentUser = await getCurrentUser();
+  if (!currentUser) return;
+
+  const profileId = String(formData.get("profileId") ?? "").trim();
+  const reportId = String(formData.get("reportId") ?? "").trim();
+  const classification = String(formData.get("classification") ?? "").trim();
+  if (!profileId || !reportId || !classification) return;
+
+  const result = await recordWorkplaceInjuryAbsencePayClassification({ reportId, classification, actorUserId: currentUser.id });
+  if (!result.ok) console.error("[admin organization] failed to record workplace injury absence/pay classification", result.error);
+
+  revalidatePath(`/admin/organization/people/${profileId}`);
+}
+
+export async function resolveWorkplaceInjuryReportAction(formData: FormData): Promise<void> {
+  const currentUser = await getCurrentUser();
+  if (!currentUser) return;
+
+  const profileId = String(formData.get("profileId") ?? "").trim();
+  const reportId = String(formData.get("reportId") ?? "").trim();
+  const returnToWorkNotes = String(formData.get("returnToWorkNotes") ?? "").trim();
+  if (!profileId || !reportId || !returnToWorkNotes) return;
+
+  const result = await resolveWorkplaceInjuryReport({ reportId, returnToWorkNotes, actorUserId: currentUser.id });
+  if (!result.ok) console.error("[admin organization] failed to resolve workplace injury report", result.error);
 
   revalidatePath(`/admin/organization/people/${profileId}`);
 }

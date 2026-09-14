@@ -21,6 +21,14 @@ import {
 } from "@/lib/organization/compensation";
 import { listAssetAssignmentsForProfile, listAssetIncidentReportsForProfile, listCompanyAssets } from "@/lib/organization/assets";
 import {
+  listBusinessTravelAuthorizationsForProfile,
+  listDriverAuthorizationsForProfile,
+  listVehicleIncidentsForProfile,
+  listWorkplaceInjuryReportsForProfile,
+  VEHICLE_INCIDENT_WORKFLOW_ORDER,
+  WORKPLACE_INJURY_WORKFLOW_ORDER,
+} from "@/lib/organization/businessTravel";
+import {
   setEmploymentStatusAction,
   recordBackgroundScreeningAction,
   updateAccessStatusFormAction,
@@ -46,6 +54,19 @@ import {
   transferAssetAction,
   reportAssetIncidentAction,
   determineAssetIncidentAction,
+  requestBusinessTravelAuthorizationAction,
+  approveBusinessTravelAuthorizationAction,
+  declineBusinessTravelAuthorizationAction,
+  authorizeDriverAction,
+  revokeDriverAuthorizationAction,
+  reportVehicleIncidentAction,
+  advanceVehicleIncidentStageAction,
+  recordVehicleIncidentResponsibilityDeterminationAction,
+  resolveVehicleIncidentAction,
+  reportWorkplaceInjuryAction,
+  advanceWorkplaceInjuryStageAction,
+  recordWorkplaceInjuryAbsencePayClassificationAction,
+  resolveWorkplaceInjuryReportAction,
 } from "./actions";
 
 export const metadata: Metadata = {
@@ -120,6 +141,13 @@ export default async function PersonDetailPage({ params }: { params: Promise<{ i
   ]);
   const assetById = new Map(companyAssets.map((a) => [a.id, a]));
   const otherStaffOptions = usersResult.users.filter((u) => u.id !== id).map((u) => ({ id: u.id, name: u.fullName ?? u.email ?? u.id }));
+
+  const [travelAuthorizations, driverAuthorizations, vehicleIncidents, workplaceInjuries] = await Promise.all([
+    listBusinessTravelAuthorizationsForProfile(id),
+    listDriverAuthorizationsForProfile(id),
+    listVehicleIncidentsForProfile(id),
+    listWorkplaceInjuryReportsForProfile(id),
+  ]);
   const personSeparationCases = separationCases.filter((c) => c.profileId === id);
   const openSeparationCase = personSeparationCases.find((c) => c.status === "open") ?? null;
 
@@ -741,6 +769,194 @@ export default async function PersonDetailPage({ params }: { params: Promise<{ i
           ) : (
             <p className="font-sans text-caption text-ordift-ink-muted">No asset incidents on record.</p>
           )}
+        </div>
+      </section>
+
+      {/* Business Travel, Driving & Production Safety (Phase B5 Step 7,
+          2026-09-14). Vehicle incidents and workplace injuries stay
+          genuinely separate workflows with their own stage sequences —
+          never merged into one generic "incident" concept. An accident
+          never automatically makes the employee financially liable;
+          responsibility is always an explicit human determination. */}
+      <section className="rounded-xl border border-black/10 bg-white p-6 space-y-4">
+        <h2 className="font-serif font-medium text-body text-ordift-ink">Business Travel, Driving &amp; Safety</h2>
+
+        <div>
+          <p className="font-sans text-caption font-semibold text-ordift-ink mb-1">Travel Authorizations</p>
+          {travelAuthorizations.length > 0 ? (
+            <ul className="space-y-2">
+              {travelAuthorizations.map((t) => (
+                <li key={t.id} className="font-sans text-caption text-ordift-ink-muted space-y-1">
+                  <p>
+                    · {t.destinationCountry} — {t.purpose}
+                    {t.travelStartDate ? ` (${t.travelStartDate} → ${t.travelEndDate ?? "?"})` : ""} — {t.status}
+                  </p>
+                  {t.status === "requested" && (
+                    <div className="pl-3 space-y-1">
+                      <form action={approveBusinessTravelAuthorizationAction} className="flex flex-wrap items-center gap-2">
+                        <input type="hidden" name="profileId" value={id} />
+                        <input type="hidden" name="authorizationId" value={t.id} />
+                        <label className="flex items-center gap-1"><input type="checkbox" name="immigrationReviewed" value="true" /> Immigration</label>
+                        <label className="flex items-center gap-1"><input type="checkbox" name="workAuthorizationReviewed" value="true" /> Work authorization</label>
+                        <label className="flex items-center gap-1"><input type="checkbox" name="safetyReviewed" value="true" /> Safety</label>
+                        <label className="flex items-center gap-1"><input type="checkbox" name="jurisdictionReviewed" value="true" /> Jurisdiction</label>
+                        <button type="submit" className="font-sans text-caption font-semibold px-2 py-1 rounded-md bg-ordift-navy-950 text-white">Approve</button>
+                      </form>
+                      <form action={declineBusinessTravelAuthorizationAction} className="flex flex-wrap gap-2">
+                        <input type="hidden" name="profileId" value={id} />
+                        <input type="hidden" name="authorizationId" value={t.id} />
+                        <input name="decisionNotes" required placeholder="Decision notes" className="rounded-lg border border-black/15 px-2 py-1 font-sans text-caption flex-1 min-w-[160px]" />
+                        <button type="submit" className="font-sans text-caption text-red-700 underline underline-offset-4">Decline</button>
+                      </form>
+                    </div>
+                  )}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="font-sans text-caption text-ordift-ink-muted">No travel authorizations on record.</p>
+          )}
+          <form action={requestBusinessTravelAuthorizationAction} className="grid grid-cols-2 gap-2 mt-2">
+            <input type="hidden" name="profileId" value={id} />
+            <input name="destinationCountry" required placeholder="Destination country" className="rounded-lg border border-black/15 px-2 py-1 font-sans text-caption" />
+            <input name="purpose" required placeholder="Purpose" className="rounded-lg border border-black/15 px-2 py-1 font-sans text-caption" />
+            <input type="date" name="travelStartDate" className="rounded-lg border border-black/15 px-2 py-1 font-sans text-caption" />
+            <input type="date" name="travelEndDate" className="rounded-lg border border-black/15 px-2 py-1 font-sans text-caption" />
+            <button type="submit" className="col-span-2 justify-self-start font-sans text-caption font-semibold px-3 py-1 rounded-md bg-ordift-navy-950 text-white">Request Travel Authorization</button>
+          </form>
+        </div>
+
+        <div className="border-t border-black/5 pt-4">
+          <p className="font-sans text-caption font-semibold text-ordift-ink mb-1">Driver Authorization</p>
+          {driverAuthorizations.length > 0 ? (
+            <ul className="space-y-1 mb-2">
+              {driverAuthorizations.map((d) => (
+                <li key={d.id} className="font-sans text-caption text-ordift-ink-muted">
+                  · {d.licenseClass ?? "License"} {d.licenseNumber ? `#${d.licenseNumber}` : ""}
+                  {d.licenseExpiryDate ? ` (expires ${d.licenseExpiryDate})` : ""} — {d.status}
+                  {d.status === "active" && (
+                    <form action={revokeDriverAuthorizationAction} className="inline-flex items-center gap-2 ml-2">
+                      <input type="hidden" name="profileId" value={id} />
+                      <input type="hidden" name="authorizationId" value={d.id} />
+                      <input name="reason" required placeholder="Revocation reason" className="rounded-lg border border-black/15 px-2 py-0.5 font-sans text-caption" />
+                      <button type="submit" className="font-sans text-caption text-red-700 underline underline-offset-4">Revoke</button>
+                    </form>
+                  )}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="font-sans text-caption text-ordift-ink-muted mb-2">No driver authorization on record.</p>
+          )}
+          <form action={authorizeDriverAction} className="grid grid-cols-2 gap-2">
+            <input type="hidden" name="profileId" value={id} />
+            <input name="licenseNumber" placeholder="License number" className="rounded-lg border border-black/15 px-2 py-1 font-sans text-caption" />
+            <input name="licenseClass" placeholder="License class" className="rounded-lg border border-black/15 px-2 py-1 font-sans text-caption" />
+            <input type="date" name="licenseExpiryDate" className="rounded-lg border border-black/15 px-2 py-1 font-sans text-caption" />
+            <input name="authorizedVehicleTypes" placeholder="Authorized vehicle types" className="rounded-lg border border-black/15 px-2 py-1 font-sans text-caption" />
+            <button type="submit" className="col-span-2 justify-self-start font-sans text-caption font-semibold px-3 py-1 rounded-md bg-ordift-navy-950 text-white">Authorize Driver</button>
+          </form>
+        </div>
+
+        <div className="border-t border-black/5 pt-4">
+          <p className="font-sans text-caption font-semibold text-ordift-ink mb-1">Vehicle Incidents</p>
+          {vehicleIncidents.length > 0 ? (
+            <ul className="space-y-2">
+              {vehicleIncidents.map((v) => (
+                <li key={v.id} className="font-sans text-caption text-ordift-ink-muted space-y-1">
+                  <p>· &ldquo;{v.description}&rdquo; — stage: {v.stage.replace(/_/g, " ")}{v.resolvedAt ? " · resolved" : ""}</p>
+                  {!v.resolvedAt && (
+                    <div className="pl-3 flex flex-wrap gap-2">
+                      {v.stage !== VEHICLE_INCIDENT_WORKFLOW_ORDER[VEHICLE_INCIDENT_WORKFLOW_ORDER.length - 1] && (
+                        <form action={advanceVehicleIncidentStageAction}>
+                          <input type="hidden" name="profileId" value={id} />
+                          <input type="hidden" name="incidentId" value={v.id} />
+                          <button type="submit" className="font-sans text-caption font-semibold px-2 py-1 rounded-md bg-ordift-gold-pressed text-ordift-navy-950">Advance Stage</button>
+                        </form>
+                      )}
+                      {v.stage === "responsibility_determination" && (
+                        <form action={recordVehicleIncidentResponsibilityDeterminationAction} className="flex flex-wrap gap-2">
+                          <input type="hidden" name="profileId" value={id} />
+                          <input type="hidden" name="incidentId" value={v.id} />
+                          <select name="determination" required defaultValue="" className="rounded-lg border border-black/15 bg-white px-2 py-1 font-sans text-caption">
+                            <option value="" disabled>Determination…</option>
+                            <option value="employee_responsible">Employee responsible</option>
+                            <option value="not_employee_responsible">Not employee responsible</option>
+                            <option value="shared">Shared</option>
+                            <option value="undetermined">Undetermined</option>
+                          </select>
+                          <input name="responsibilityNotes" required placeholder="Notes" className="rounded-lg border border-black/15 px-2 py-1 font-sans text-caption flex-1 min-w-[140px]" />
+                          <button type="submit" className="font-sans text-caption font-semibold px-2 py-1 rounded-md bg-ordift-navy-950 text-white">Record Determination</button>
+                        </form>
+                      )}
+                      {v.stage === "lawful_financial_disciplinary_treatment" && (
+                        <form action={resolveVehicleIncidentAction} className="flex flex-wrap gap-2">
+                          <input type="hidden" name="profileId" value={id} />
+                          <input type="hidden" name="incidentId" value={v.id} />
+                          <input name="financialDisciplinaryTreatmentNotes" required placeholder="Financial/disciplinary treatment notes" className="rounded-lg border border-black/15 px-2 py-1 font-sans text-caption flex-1 min-w-[160px]" />
+                          <button type="submit" className="font-sans text-caption font-semibold px-2 py-1 rounded-md bg-ordift-navy-950 text-white">Resolve</button>
+                        </form>
+                      )}
+                    </div>
+                  )}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="font-sans text-caption text-ordift-ink-muted">No vehicle incidents on record.</p>
+          )}
+          <form action={reportVehicleIncidentAction} className="flex flex-wrap gap-2 mt-2">
+            <input type="hidden" name="profileId" value={id} />
+            <input name="description" required placeholder="Describe the incident" className="rounded-lg border border-black/15 px-2 py-1 font-sans text-caption flex-1 min-w-[200px]" />
+            <button type="submit" className="font-sans text-caption font-semibold px-2 py-1 rounded-md bg-red-800 text-white">Report Vehicle Incident</button>
+          </form>
+        </div>
+
+        <div className="border-t border-black/5 pt-4">
+          <p className="font-sans text-caption font-semibold text-ordift-ink mb-1">Workplace Injuries</p>
+          {workplaceInjuries.length > 0 ? (
+            <ul className="space-y-2">
+              {workplaceInjuries.map((w) => (
+                <li key={w.id} className="font-sans text-caption text-ordift-ink-muted space-y-1">
+                  <p>· &ldquo;{w.description}&rdquo; — stage: {w.stage.replace(/_/g, " ")}{w.resolvedAt ? " · resolved" : ""}</p>
+                  {!w.resolvedAt && (
+                    <div className="pl-3 flex flex-wrap gap-2">
+                      {w.stage !== WORKPLACE_INJURY_WORKFLOW_ORDER[WORKPLACE_INJURY_WORKFLOW_ORDER.length - 1] && (
+                        <form action={advanceWorkplaceInjuryStageAction}>
+                          <input type="hidden" name="profileId" value={id} />
+                          <input type="hidden" name="reportId" value={w.id} />
+                          <button type="submit" className="font-sans text-caption font-semibold px-2 py-1 rounded-md bg-ordift-gold-pressed text-ordift-navy-950">Advance Stage</button>
+                        </form>
+                      )}
+                      {w.stage === "absence_pay_classification" && (
+                        <form action={recordWorkplaceInjuryAbsencePayClassificationAction} className="flex flex-wrap gap-2">
+                          <input type="hidden" name="profileId" value={id} />
+                          <input type="hidden" name="reportId" value={w.id} />
+                          <input name="classification" required placeholder="Absence/pay classification" className="rounded-lg border border-black/15 px-2 py-1 font-sans text-caption flex-1 min-w-[160px]" />
+                          <button type="submit" className="font-sans text-caption font-semibold px-2 py-1 rounded-md bg-ordift-navy-950 text-white">Record Classification</button>
+                        </form>
+                      )}
+                      {w.stage === "return_to_work" && (
+                        <form action={resolveWorkplaceInjuryReportAction} className="flex flex-wrap gap-2">
+                          <input type="hidden" name="profileId" value={id} />
+                          <input type="hidden" name="reportId" value={w.id} />
+                          <input name="returnToWorkNotes" required placeholder="Return-to-work notes" className="rounded-lg border border-black/15 px-2 py-1 font-sans text-caption flex-1 min-w-[160px]" />
+                          <button type="submit" className="font-sans text-caption font-semibold px-2 py-1 rounded-md bg-ordift-navy-950 text-white">Resolve</button>
+                        </form>
+                      )}
+                    </div>
+                  )}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="font-sans text-caption text-ordift-ink-muted">No workplace injuries on record.</p>
+          )}
+          <form action={reportWorkplaceInjuryAction} className="flex flex-wrap gap-2 mt-2">
+            <input type="hidden" name="profileId" value={id} />
+            <input name="description" required placeholder="Describe the injury" className="rounded-lg border border-black/15 px-2 py-1 font-sans text-caption flex-1 min-w-[200px]" />
+            <button type="submit" className="font-sans text-caption font-semibold px-2 py-1 rounded-md bg-red-800 text-white">Report Workplace Injury</button>
+          </form>
         </div>
       </section>
 

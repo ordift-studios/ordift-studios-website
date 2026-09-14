@@ -8,9 +8,103 @@ import { isSuperAdminId, hasJurisdictionAuthority } from "@/lib/organization/aut
 // vs. workplace injuries) are kept structurally separate, matching the
 // standing instruction not to merge conceptually different workflows.
 
-async function canManageBusinessTravel(actorUserId: string): Promise<boolean> {
+export async function canManageBusinessTravel(actorUserId: string): Promise<boolean> {
   if (await isSuperAdminId(actorUserId)) return true;
   return hasJurisdictionAuthority(actorUserId, "operations", "administer");
+}
+
+export async function listBusinessTravelAuthorizationsForProfile(profileId: string): Promise<
+  { id: string; destinationCountry: string; purpose: string; travelStartDate: string | null; travelEndDate: string | null; status: string; createdAt: string }[]
+> {
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from("business_travel_authorizations")
+    .select("id, destination_country, purpose, travel_start_date, travel_end_date, status, created_at")
+    .eq("profile_id", profileId)
+    .order("created_at", { ascending: false });
+  if (error) {
+    console.error("[organization] failed to load business_travel_authorizations", error.message);
+    return [];
+  }
+  return (data ?? []).map((r) => ({
+    id: r.id,
+    destinationCountry: r.destination_country,
+    purpose: r.purpose,
+    travelStartDate: r.travel_start_date,
+    travelEndDate: r.travel_end_date,
+    status: r.status,
+    createdAt: r.created_at,
+  }));
+}
+
+export async function listDriverAuthorizationsForProfile(profileId: string): Promise<
+  { id: string; licenseNumber: string | null; licenseClass: string | null; licenseExpiryDate: string | null; authorizedVehicleTypes: string | null; status: string; authorizedAt: string }[]
+> {
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from("driver_authorizations")
+    .select("id, license_number, license_class, license_expiry_date, authorized_vehicle_types, status, authorized_at")
+    .eq("profile_id", profileId)
+    .order("authorized_at", { ascending: false });
+  if (error) {
+    console.error("[organization] failed to load driver_authorizations", error.message);
+    return [];
+  }
+  return (data ?? []).map((r) => ({
+    id: r.id,
+    licenseNumber: r.license_number,
+    licenseClass: r.license_class,
+    licenseExpiryDate: r.license_expiry_date,
+    authorizedVehicleTypes: r.authorized_vehicle_types,
+    status: r.status,
+    authorizedAt: r.authorized_at,
+  }));
+}
+
+export async function listVehicleIncidentsForProfile(profileId: string): Promise<
+  { id: string; description: string; occurredAt: string; stage: VehicleIncidentStage; responsibilityDetermination: string | null; resolvedAt: string | null }[]
+> {
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from("vehicle_incident_reports")
+    .select("id, description, occurred_at, stage, responsibility_determination, resolved_at")
+    .eq("profile_id", profileId)
+    .order("occurred_at", { ascending: false });
+  if (error) {
+    console.error("[organization] failed to load vehicle_incident_reports", error.message);
+    return [];
+  }
+  return (data ?? []).map((r) => ({
+    id: r.id,
+    description: r.description,
+    occurredAt: r.occurred_at,
+    stage: r.stage as VehicleIncidentStage,
+    responsibilityDetermination: r.responsibility_determination,
+    resolvedAt: r.resolved_at,
+  }));
+}
+
+export async function listWorkplaceInjuryReportsForProfile(profileId: string): Promise<
+  { id: string; description: string; occurredAt: string; stage: WorkplaceInjuryStage; absencePayClassification: string | null; resolvedAt: string | null }[]
+> {
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from("workplace_injury_reports")
+    .select("id, description, occurred_at, stage, absence_pay_classification, resolved_at")
+    .eq("profile_id", profileId)
+    .order("occurred_at", { ascending: false });
+  if (error) {
+    console.error("[organization] failed to load workplace_injury_reports", error.message);
+    return [];
+  }
+  return (data ?? []).map((r) => ({
+    id: r.id,
+    description: r.description,
+    occurredAt: r.occurred_at,
+    stage: r.stage as WorkplaceInjuryStage,
+    absencePayClassification: r.absence_pay_classification,
+    resolvedAt: r.resolved_at,
+  }));
 }
 
 // --- business travel (5.1) --------------------------------------------

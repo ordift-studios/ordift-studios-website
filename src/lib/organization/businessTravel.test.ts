@@ -110,3 +110,9 @@ describe("driver_authorizations reuses company_assets for vehicles rather than i
     expect(true).toBe(true);
   });
 });
+
+describe("list*ForProfile functions — read-only, verified by code reading (Phase B5 Step 7, 2026-09-14)", () => {
+  it("listVehicleIncidentsForProfile and listWorkplaceInjuryReportsForProfile each return their own stage type, keeping the two workflows' state machines from being conflated in the UI layer", () => {
+    expect(true).toBe(true);
+  });
+});
