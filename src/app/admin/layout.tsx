@@ -85,6 +85,13 @@ const NAV_GROUPS: NavGroup[] = [
       { label: "Recruitment", href: "/admin/recruitment", adminOnly: true },
       { label: "Organization", href: "/admin/organization", adminOnly: true },
       { label: "Authority", href: "/admin/authority", superAdminOnly: true },
+      // Ghana HR Portal, Phase B5 Step 2 (2026-09-14) — the HR
+      // subsystems' entry point. No adminOnly/superAdminOnly flag: the
+      // page itself gates on the same hasRole("admin")/isSuperAdmin()
+      // check as /admin/organization, the real boundary; adminOnly
+      // mirrors that here purely for nav-visibility consistency.
+      { label: "Workforce Overview", href: "/admin/organization/workforce", adminOnly: true },
+      { label: "Leave", href: "/admin/organization/leave", adminOnly: true },
     ],
   },
   {

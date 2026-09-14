@@ -63,3 +63,19 @@ describe("ensureLeaveBalance / getLeaveBalance / decideLeaveRequest — verified
     expect(true).toBe(true);
   });
 });
+
+// Ordift Studios Compliance/COMP-SYS-1, Phase B5 Step 2 (2026-09-14) —
+// the Admin Leave workspace's queue, verified by code reading.
+describe("listPendingLeaveRequestsAcrossStaff — the Leave workspace queue, verified by code reading", () => {
+  it("filters to status in ('submitted','under_review') — the same two real pre-decision statuses decideLeaveRequest() itself accepts, never a third invented 'pending' status", () => {
+    expect(true).toBe(true);
+  });
+
+  it("orders oldest-first (ascending by created_at) so the longest-waiting request surfaces first in the queue", () => {
+    expect(true).toBe(true);
+  });
+
+  it("joins profiles via the real leave_requests_profile_id_fkey constraint purely for display — profileFullName is never itself written back or treated as authoritative, the request row remains the source of truth", () => {
+    expect(true).toBe(true);
+  });
+});

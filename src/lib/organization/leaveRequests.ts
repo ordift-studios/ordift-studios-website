@@ -101,7 +101,7 @@ export async function ensureLeaveBalance(params: {
   return { ok: true, balance: mapBalanceRow(data) };
 }
 
-async function canManageLeave(actorUserId: string): Promise<boolean> {
+export async function canManageLeave(actorUserId: string): Promise<boolean> {
   if (await isSuperAdminId(actorUserId)) return true;
   return hasJurisdictionAuthority(actorUserId, "operations", "administer");
 }
@@ -319,4 +319,30 @@ export async function listLeaveRequestsForProfile(profileId: string): Promise<Le
     return [];
   }
   return (data ?? []).map(mapRequestRow);
+}
+
+export interface PendingLeaveRequest extends LeaveRequest {
+  profileFullName: string | null;
+}
+
+// Ordift Studios Compliance/COMP-SYS-1, Phase B5 Step 2 (2026-09-14) —
+// the Admin-wide queue: every request still awaiting a decision, across
+// every person, for the Leave workspace. profileFullName is read
+// alongside the request row (not a separate N+1 lookup) purely for
+// display — the request itself remains the authoritative record.
+export async function listPendingLeaveRequestsAcrossStaff(): Promise<PendingLeaveRequest[]> {
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from("leave_requests")
+    .select(`${REQUEST_SELECT}, profiles!leave_requests_profile_id_fkey(full_name)`)
+    .in("status", ["submitted", "under_review"])
+    .order("created_at", { ascending: true });
+  if (error) {
+    console.error("[organization] failed to load pending leave_requests", error.message);
+    return [];
+  }
+  return (data ?? []).map((r) => {
+    const row = r as unknown as Parameters<typeof mapRequestRow>[0] & { profiles: { full_name: string | null } | null };
+    return { ...mapRequestRow(row), profileFullName: row.profiles?.full_name ?? null };
+  });
 }
