@@ -53,6 +53,10 @@ export default async function MyWorkspacePage() {
           <ul className="space-y-1">
             <li><Link href="/admin/me/leave" className="font-sans text-body-small text-ordift-gold-pressed underline underline-offset-4">My Leave →</Link></li>
             <li><Link href="/admin/me/attendance" className="font-sans text-body-small text-ordift-gold-pressed underline underline-offset-4">My Attendance →</Link></li>
+            <li><Link href="/admin/me/compensation" className="font-sans text-body-small text-ordift-gold-pressed underline underline-offset-4">My Compensation →</Link></li>
+            <li><Link href="/admin/me/performance" className="font-sans text-body-small text-ordift-gold-pressed underline underline-offset-4">My Performance →</Link></li>
+            <li><Link href="/admin/me/grievances" className="font-sans text-body-small text-ordift-gold-pressed underline underline-offset-4">My Grievances →</Link></li>
+            <li><Link href="/admin/me/requests" className="font-sans text-body-small text-ordift-gold-pressed underline underline-offset-4">My Requests →</Link></li>
           </ul>
         </div>
       </section>

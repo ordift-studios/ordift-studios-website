@@ -101,6 +101,44 @@ export async function listSpeakUpReportsAcrossStaff(): Promise<SpeakUpReportList
 // "Working day" is not modeled here (no working-calendar table exists
 // in this codebase yet) — this uses calendar days, a deliberately
 // conservative target, never invented as a working-day calculation.
+export interface OwnGrievanceView {
+  id: string;
+  grievanceType: "informal" | "formal";
+  description: string;
+  status: string;
+  submittedAt: string;
+  acknowledgedAt: string | null;
+  resolvedAt: string | null;
+  resolutionNotes: string | null;
+}
+
+// Self-service — mirrors the table's own "read own submission or
+// admin" RLS policy (migration 0089), scoped server-side since this
+// codebase's reads always go through the service-role admin client
+// (which bypasses RLS) rather than relying on it as the enforcement.
+export async function listGrievancesForProfile(profileId: string): Promise<OwnGrievanceView[]> {
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from("grievances")
+    .select("id, grievance_type, description, status, submitted_at, acknowledged_at, resolved_at, resolution_notes")
+    .eq("raised_by", profileId)
+    .order("submitted_at", { ascending: false });
+  if (error) {
+    console.error("[organization] failed to load own grievances", error.message);
+    return [];
+  }
+  return (data ?? []).map((r) => ({
+    id: r.id,
+    grievanceType: r.grievance_type,
+    description: r.description,
+    status: r.status,
+    submittedAt: r.submitted_at,
+    acknowledgedAt: r.acknowledged_at,
+    resolvedAt: r.resolved_at,
+    resolutionNotes: r.resolution_notes,
+  }));
+}
+
 export async function submitGrievance(params: {
   raisedBy: string;
   grievanceType: "informal" | "formal";

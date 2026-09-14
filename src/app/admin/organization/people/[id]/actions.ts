@@ -85,6 +85,7 @@ import {
   type EmploymentTransitionType,
   type EmploymentTermsFields,
 } from "@/lib/organization/employmentTermsHistory";
+import { submitAppeal, decideAppeal, type AppealDecision } from "@/lib/organization/appeals";
 
 // Organizational Structure, Authority Grants, Onboarding & Work Email
 // V1 (2026-09-07) — Person Detail View actions. Employment/engagement
@@ -1122,6 +1123,42 @@ export async function completeEnhancedReviewAction(formData: FormData): Promise<
 
   const result = await completeEnhancedReview({ employmentTermsHistoryId, notes, actorUserId: currentUser.id });
   if (!result.ok) console.error("[admin organization] failed to complete enhanced review", result.error);
+
+  revalidatePath(`/admin/organization/people/${profileId}`);
+}
+
+// Appeals (Phase B6 Step 6, 2026-09-15) — against a decided
+// disciplinary action, grievance resolution, or other decided outcome.
+export async function submitAppealAction(formData: FormData): Promise<void> {
+  const currentUser = await getCurrentUser();
+  if (!currentUser) return;
+
+  const profileId = String(formData.get("profileId") ?? "").trim();
+  const appealedDecisionType = String(formData.get("appealedDecisionType") ?? "").trim();
+  const appealedDecisionReference = String(formData.get("appealedDecisionReference") ?? "").trim();
+  const reason = String(formData.get("reason") ?? "").trim();
+  const decisionDate = String(formData.get("decisionDate") ?? "").trim() || null;
+  if (!profileId || !appealedDecisionType || !appealedDecisionReference || !reason) return;
+
+  const result = await submitAppeal({ profileId, appealedDecisionType, appealedDecisionReference, reason, decisionDate, actorUserId: currentUser.id });
+  if (!result.ok) console.error("[admin organization] failed to submit appeal", result.error);
+
+  revalidatePath(`/admin/organization/people/${profileId}`);
+}
+
+export async function decideAppealAction(formData: FormData): Promise<void> {
+  const currentUser = await getCurrentUser();
+  if (!currentUser) return;
+
+  const profileId = String(formData.get("profileId") ?? "").trim();
+  const appealId = String(formData.get("appealId") ?? "").trim();
+  const decision = String(formData.get("decision") ?? "").trim();
+  const decisionNotes = String(formData.get("decisionNotes") ?? "").trim();
+  if (!profileId || !appealId || !decisionNotes) return;
+  if (decision !== "upheld" && decision !== "overturned" && decision !== "partially_upheld") return;
+
+  const result = await decideAppeal({ appealId, decision: decision as AppealDecision, decisionNotes, actorUserId: currentUser.id });
+  if (!result.ok) console.error("[admin organization] failed to decide appeal", result.error);
 
   revalidatePath(`/admin/organization/people/${profileId}`);
 }

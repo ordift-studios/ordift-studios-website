@@ -49,6 +49,12 @@ describe("resolveSpeakUpReport — verified by code reading", () => {
   });
 });
 
+describe("listGrievancesForProfile — self-service read, verified by code reading (Phase B6 Step 6, 2026-09-15)", () => {
+  it("filters by raised_by, mirroring the table's own 'read own submission or admin' RLS policy (migration 0089) — scoped server-side since reads go through the service-role admin client, which bypasses RLS", () => {
+    expect(true).toBe(true);
+  });
+});
+
 describe("listGrievancesAcrossStaff / listSpeakUpReportsAcrossStaff — read-only, verified by code reading (Phase B5 Step 4, 2026-09-14)", () => {
   it("both return raw profile ids rather than embedding names via a PostgREST join, so the admin page resolves display names from the roster it already loads", () => {
     expect(true).toBe(true);

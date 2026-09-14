@@ -42,6 +42,9 @@ const NAV_GROUPS: NavGroup[] = [
       { label: "My Leave", href: "/admin/me/leave" },
       { label: "My Attendance", href: "/admin/me/attendance" },
       { label: "My Compensation", href: "/admin/me/compensation" },
+      { label: "My Performance", href: "/admin/me/performance" },
+      { label: "My Grievances", href: "/admin/me/grievances" },
+      { label: "My Requests", href: "/admin/me/requests" },
     ],
   },
   {

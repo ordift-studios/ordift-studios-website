@@ -34,6 +34,7 @@ import { getStaffOnboardingByProfileId } from "@/lib/organization/onboarding";
 import { listReferenceRequestsForProfile } from "@/lib/organization/employmentReferences";
 import { listControlledPolicyDocuments, listPolicyAcknowledgementsForProfile } from "@/lib/organization/policyAcknowledgements";
 import { listEmploymentTermsHistory, listEnhancedReviewCompletions, EMPLOYMENT_TRANSITION_TYPES } from "@/lib/organization/employmentTermsHistory";
+import { listAppealsForProfile } from "@/lib/organization/appeals";
 import { listEmployingEntities } from "@/lib/organization/legalEntities";
 import {
   setEmploymentStatusAction,
@@ -87,6 +88,8 @@ import {
   recordEmploymentTransitionAction,
   completeEnhancedReviewAction,
   recordInitialEmploymentTermsAction,
+  submitAppealAction,
+  decideAppealAction,
 } from "./actions";
 
 export const metadata: Metadata = {
@@ -188,6 +191,7 @@ export default async function PersonDetailPage({ params }: { params: Promise<{ i
     listEmploymentJurisdictions(),
   ]);
   const reviewCompletions = await listEnhancedReviewCompletions(employmentTermsHistory.map((t) => t.id));
+  const appeals = await listAppealsForProfile(id);
   const reviewCompletedIds = new Set(reviewCompletions.map((r) => r.employmentTermsHistoryId));
   const entityNameById = new Map(employingEntitiesForTransitions.map((e) => [e.id, e.legalName ?? e.name]));
   const jurisdictionNameById = new Map(jurisdictionsForTransitions.map((j) => [j.id, j.name]));
@@ -1322,6 +1326,47 @@ export default async function PersonDetailPage({ params }: { params: Promise<{ i
         <p className="font-sans text-caption text-ordift-ink-muted">
           Role/title, grade, and reporting-line changes are recorded separately via <a href={`/admin/profile/${id}`} className="underline underline-offset-4">Position assignment</a> — never through this form.
         </p>
+      </section>
+
+      {/* Appeals (Phase B6 Step 6, 2026-09-15) — against a decided
+          disciplinary action, grievance resolution, or other decided
+          outcome. Backend (appeals.ts) already existed fully; this is
+          its first UI. */}
+      <section className="rounded-xl border border-black/10 bg-white p-6 space-y-4">
+        <h2 className="font-serif font-medium text-body text-ordift-ink">Appeals</h2>
+        {appeals.length > 0 ? (
+          <ul className="space-y-2">
+            {appeals.map((a) => (
+              <li key={a.id} className="font-sans text-caption text-ordift-ink-muted space-y-1">
+                <p>· {a.appealedDecisionType.replace(/_/g, " ")} ({a.appealedDecisionReference}) — {a.status.replace(/_/g, " ")} · {new Date(a.submittedAt).toLocaleDateString()}</p>
+                {(a.status === "submitted" || a.status === "under_review") && (
+                  <form action={decideAppealAction} className="pl-3 flex flex-wrap gap-2">
+                    <input type="hidden" name="profileId" value={id} />
+                    <input type="hidden" name="appealId" value={a.id} />
+                    <select name="decision" required defaultValue="" className="rounded-lg border border-black/15 bg-white px-2 py-1 font-sans text-caption">
+                      <option value="" disabled>Decision…</option>
+                      <option value="upheld">Upheld</option>
+                      <option value="overturned">Overturned</option>
+                      <option value="partially_upheld">Partially upheld</option>
+                    </select>
+                    <input name="decisionNotes" required placeholder="Decision notes" className="rounded-lg border border-black/15 px-2 py-1 font-sans text-caption flex-1 min-w-[160px]" />
+                    <button type="submit" className="font-sans text-caption font-semibold px-2 py-1 rounded-md bg-ordift-navy-950 text-white">Decide Appeal</button>
+                  </form>
+                )}
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="font-sans text-caption text-ordift-ink-muted">No appeals on record.</p>
+        )}
+        <form action={submitAppealAction} className="grid grid-cols-2 gap-2 mt-2">
+          <input type="hidden" name="profileId" value={id} />
+          <input name="appealedDecisionType" required placeholder="Decision type (e.g. disciplinary_action)" className="rounded-lg border border-black/15 px-2 py-1 font-sans text-caption" />
+          <input name="appealedDecisionReference" required placeholder="Decision reference (ID)" className="rounded-lg border border-black/15 px-2 py-1 font-sans text-caption" />
+          <input type="date" name="decisionDate" placeholder="Original decision date" className="rounded-lg border border-black/15 px-2 py-1 font-sans text-caption" />
+          <textarea name="reason" required placeholder="Reason for appeal" className="col-span-2 rounded-lg border border-black/15 px-2 py-1 font-sans text-caption" rows={2} />
+          <button type="submit" className="col-span-2 justify-self-start font-sans text-caption font-semibold px-3 py-1 rounded-md bg-ordift-navy-950 text-white">File Appeal</button>
+        </form>
       </section>
 
       <section className="rounded-xl border border-black/10 bg-white p-6 space-y-2">
