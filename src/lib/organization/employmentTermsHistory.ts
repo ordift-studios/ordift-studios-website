@@ -287,6 +287,58 @@ export async function recordInitialEmploymentTerms(params: {
   return result;
 }
 
+// Founder/CEO self-administration (Workforce/Employee Self-Service
+// Phase, 2026-09-15) — the Founder has no internal reporting authority
+// above him, so the ordinary "someone else records your employment
+// terms" model has no independent approver to fill that role for his
+// OWN record. This is deliberately its own function, not a relaxed
+// path through recordInitialEmploymentTerms(), for two reasons: (1) it
+// is strictly narrower — actorUserId must equal profileId, so no
+// Super Admin can use this to self-administer on someone ELSE's
+// behalf, which would defeat the entire point; (2) the source value is
+// distinct ("founder_self_administered_commencement" vs. the ordinary
+// "formal_employment_commencement") specifically so this NEVER reads,
+// in any report or audit trail, as if an independent HR review took
+// place — the instruction's own words are "must not masquerade as
+// independent HR approval." Still refuses if a record already exists
+// (delegates the same first-ever-snapshot guard to
+// recordEmploymentTermsSnapshot's caller pattern), still fully audited.
+export async function recordFounderSelfAdministeredEmploymentTerms(params: {
+  profileId: string;
+  effectiveFrom: string;
+  changes: Partial<EmploymentTermsFields>;
+  actorUserId: string;
+}): Promise<RecordEmploymentTermsSnapshotResult> {
+  if (params.actorUserId !== params.profileId) {
+    return { ok: false, error: "Self-administered employment terms can only be recorded by the person they belong to." };
+  }
+  if (!(await isSuperAdminId(params.actorUserId))) {
+    return { ok: false, error: "Not authorized to self-administer employment terms." };
+  }
+  const existing = await getCurrentEmploymentTerms(params.profileId);
+  if (existing) {
+    return { ok: false, error: "An employment-terms record already exists — record a change via an employment transition instead." };
+  }
+
+  const result = await recordEmploymentTermsSnapshot({
+    profileId: params.profileId,
+    effectiveFrom: params.effectiveFrom,
+    changes: params.changes,
+    source: "founder_self_administered_commencement",
+    recordedBy: params.actorUserId,
+  });
+  if (!result.ok) return result;
+
+  await logActivity({
+    actorUserId: params.actorUserId,
+    action: "employment_terms.founder_self_administered",
+    entityType: "user",
+    entityId: params.profileId,
+    metadata: { employmentTermsHistoryId: result.id, selfAdministered: true },
+  });
+  return result;
+}
+
 async function canManageEmploymentTransitions(actorUserId: string): Promise<boolean> {
   if (await isSuperAdminId(actorUserId)) return true;
   return hasJurisdictionAuthority(actorUserId, "operations", "administer");

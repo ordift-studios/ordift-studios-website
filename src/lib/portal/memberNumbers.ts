@@ -164,6 +164,21 @@ export async function assignClassification(
     status: "active",
   });
   if (insertError) {
+    // Race safety (member_numbers_one_active_per_profile, migration
+    // 0019): two concurrent callers can both pass the currentActive
+    // check above and both attempt to insert. The loser hits this
+    // unique violation — that is a genuine "already assigned"
+    // outcome, not a failure, so resolve it the same way the idempotent
+    // early-return above does, rather than surfacing a spurious error.
+    if (insertError.code === "23505") {
+      const { data: winner } = await admin
+        .from("member_numbers")
+        .select("formatted_number")
+        .eq("profile_id", profileId)
+        .eq("status", "active")
+        .maybeSingle();
+      if (winner) return { ok: true, formattedNumber: winner.formatted_number, changed: false };
+    }
     console.error("[memberNumbers] failed to insert new active number", insertError.message);
     return { ok: false, error: "Failed to record the new number." };
   }
@@ -209,4 +224,46 @@ export async function assignClassificationBySlug(profileId: string, slug: string
   if (!result.ok) {
     console.error(`[memberNumbers] auto-assign "${slug}" failed for ${profileId}`, result.error);
   }
+}
+
+// Staff-number controlled lifecycle (Workforce/Employee Self-Service
+// Phase, Founder decision 2026-09-15) — called from
+// advanceOnboardingStage() (src/lib/organization/onboarding.ts) once an
+// employee-pipeline onboarding reaches or has passed "approved_for_hire".
+// Deliberately conservative: if the profile ALREADY has any active
+// member number (under any classification — e.g. a former client or
+// contractor being converted to staff), this does nothing and leaves
+// that number exactly as-is. Silently reclassifying someone as a side
+// effect of an onboarding stage advance would be a surprising, invisible
+// change; a genuine reclassification remains the existing deliberate
+// admin action (assignClassification via Users & Roles / the profile
+// page), never automatic. This function only ever fills a genuinely
+// empty slot — it never overwrites, never reuses an archived number
+// (member_numbers is insert/archive-only, migration 0019), and is
+// idempotent + race-safe through assignClassification's own guards.
+export async function assignPermanentStaffNumberIfEligible(
+  profileId: string,
+  actorUserId: string | null
+): Promise<AssignClassificationResult> {
+  const admin = createAdminClient();
+  const { data: currentActive } = await admin
+    .from("member_numbers")
+    .select("formatted_number")
+    .eq("profile_id", profileId)
+    .eq("status", "active")
+    .maybeSingle();
+  if (currentActive) {
+    return { ok: true, formattedNumber: currentActive.formatted_number, changed: false };
+  }
+
+  const { data: classificationRow } = await admin
+    .from("member_number_classifications")
+    .select("id")
+    .eq("slug", "permanent_staff")
+    .maybeSingle();
+  if (!classificationRow) {
+    return { ok: false, error: "The 'permanent_staff' classification is not configured — CONFIGURATION REQUIRED before staff numbers can be auto-issued." };
+  }
+
+  return assignClassification(profileId, classificationRow.id, actorUserId);
 }

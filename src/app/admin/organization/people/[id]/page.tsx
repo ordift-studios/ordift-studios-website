@@ -276,7 +276,9 @@ export default async function PersonDetailPage({ params }: { params: Promise<{ i
               ? `Reports to: ${person.managerName}`
               : person.reportsToPositionName
                 ? `Reporting Position: ${person.reportsToPositionName} — position currently unoccupied`
-                : "Reports to: —"}
+                : person.positionId
+                  ? `No internal reporting manager — top of the reporting hierarchy (${person.positionName ?? "this Position"})`
+                  : "Reports to: —"}
           </p>
         </div>
 

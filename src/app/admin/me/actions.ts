@@ -1,8 +1,9 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { getCurrentUser, isStaffOrAdmin } from "@/lib/portal/roles";
+import { getCurrentUser, isStaffOrAdmin, isSuperAdmin } from "@/lib/portal/roles";
 import { recordPolicyAcknowledgement } from "@/lib/organization/policyAcknowledgements";
+import { recordFounderSelfAdministeredEmploymentTerms } from "@/lib/organization/employmentTermsHistory";
 
 // Employee Self-Service — My Workspace landing page (Phase B5 Step 15,
 // 2026-09-14). Self-acknowledgement only — recordPolicyAcknowledgement()
@@ -24,6 +25,46 @@ export async function acknowledgeOwnPolicyAction(_prev: ActionState, formData: F
     documentVersionId,
     method: "digital_click_through",
     actorUserId: currentUser.id,
+  });
+  if (!result.ok) return { ok: false, error: result.error };
+  revalidatePath("/admin/me");
+  return { ok: true };
+}
+
+// Founder/CEO self-administration (Workforce/Employee Self-Service
+// Phase, 2026-09-15) — never accepts a profileId or actorUserId from
+// the form, exactly like acknowledgeOwnPolicyAction above: this can
+// only ever record for the caller's own profile, and
+// recordFounderSelfAdministeredEmploymentTerms() itself independently
+// re-enforces actor === profile and Super Admin, so this action is not
+// the only thing standing between it and misuse.
+export async function recordOwnFounderEmploymentTermsAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  const currentUser = await getCurrentUser();
+  if (!currentUser || !isSuperAdmin(currentUser)) return { ok: false, error: "Not authorized." };
+
+  const employingEntityId = String(formData.get("employingEntityId") ?? "").trim() || null;
+  const employmentJurisdictionId = String(formData.get("employmentJurisdictionId") ?? "").trim() || null;
+  const workLocation = String(formData.get("workLocation") ?? "").trim() || null;
+  const effectiveFrom = String(formData.get("effectiveFrom") ?? "").trim();
+  const workPattern = String(formData.get("workPattern") ?? "").trim() || null;
+  const basicSalaryRaw = String(formData.get("basicSalary") ?? "").trim();
+  const currency = String(formData.get("currency") ?? "").trim() || null;
+  if (!effectiveFrom) return { ok: false, error: "A commencement date is required." };
+  const basicSalary = basicSalaryRaw ? Number(basicSalaryRaw) : null;
+  if (basicSalaryRaw && (basicSalary === null || Number.isNaN(basicSalary))) return { ok: false, error: "Invalid salary amount." };
+
+  const result = await recordFounderSelfAdministeredEmploymentTerms({
+    profileId: currentUser.id,
+    effectiveFrom,
+    actorUserId: currentUser.id,
+    changes: {
+      employingEntityId,
+      employmentJurisdictionId,
+      workLocation,
+      workPattern,
+      basicSalary,
+      currency,
+    },
   });
   if (!result.ok) return { ok: false, error: result.error };
   revalidatePath("/admin/me");

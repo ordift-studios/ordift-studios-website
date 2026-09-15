@@ -1,9 +1,10 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { logActivity } from "@/lib/admin/activityLog";
 import { isSuperAdminId, hasJurisdictionAuthority } from "@/lib/organization/authority";
-import { resolveOnboardingPipeline, canAdvanceToStage, isTerminalStage, type OnboardingPipeline } from "@/lib/organization/onboardingStages";
+import { resolveOnboardingPipeline, canAdvanceToStage, isTerminalStage, stagesForPipeline, type OnboardingPipeline, type OnboardingStage } from "@/lib/organization/onboardingStages";
 import { getUnsatisfiedRequiredRequirements, getUnsatisfiedRequiredForStage } from "@/lib/organization/onboardingRequirements";
 import { getApprovedRequisitionForOnboarding } from "@/lib/recruitment/requisitions";
+import { assignPermanentStaffNumberIfEligible } from "@/lib/portal/memberNumbers";
 
 // Ordift Organizational & Administrative Architecture V1, Phase 3.3,
 // Part F (2026-08-25) — staff onboarding PROCESS tracker, against
@@ -363,6 +364,37 @@ export async function advanceOnboardingStage(params: {
     entityId: existing.profile_id,
     metadata: { fromStage: existing.stage, toStage: params.toStage, pipeline: existing.pipeline },
   });
+
+  // Staff-number controlled issuance (Founder decision, Workforce/
+  // Employee Self-Service Phase, 2026-09-15): "issue the permanent
+  // staff number automatically when the employee reaches Approved for
+  // Hire." Implemented as a LEVEL check (the resulting stage is at or
+  // past "approved_for_hire") rather than an edge listener for only the
+  // literal transition into it — the two are identical for every future
+  // employee advancing through the pipeline in order (both first become
+  // true at the same transition), but the level check also correctly
+  // and safely covers a real, already-existing onboarding record that
+  // reached and moved past "approved_for_hire" before this rule
+  // existed (e.g. Mishael Adjei, currently at "work_email"): their next
+  // stage advance is the first time this check has ever run for them,
+  // and they are, in fact, at or past Approved for Hire, so this is not
+  // a different trigger — it is a correct, self-healing reading of the
+  // same specified condition, avoiding a one-off backfill migration.
+  // Never gates or fails the stage advance itself — Google Workspace/
+  // corporate-identity provisioning must not block onboarding, and
+  // neither should this (assignPermanentStaffNumberIfEligible is
+  // idempotent, race-safe, and a no-op if a number already exists).
+  if (existing.pipeline === "employee") {
+    const stages = stagesForPipeline(existing.pipeline as OnboardingPipeline);
+    const approvedForHireIndex = stages.indexOf("approved_for_hire" as OnboardingStage);
+    const toStageIndex = stages.indexOf(params.toStage as OnboardingStage);
+    if (approvedForHireIndex >= 0 && toStageIndex >= approvedForHireIndex) {
+      const issuance = await assignPermanentStaffNumberIfEligible(existing.profile_id, params.actorUserId);
+      if (!issuance.ok) {
+        console.error("[organization] failed to auto-issue staff number on stage advance", issuance.error);
+      }
+    }
+  }
 
   return { ok: true };
 }

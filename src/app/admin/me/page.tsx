@@ -1,10 +1,13 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import Link from "next/link";
-import { getCurrentUser, isStaffOrAdmin } from "@/lib/portal/roles";
+import { getCurrentUser, isStaffOrAdmin, isSuperAdmin } from "@/lib/portal/roles";
 import { listUsersWithRoles } from "@/lib/portal/adminData";
 import { listControlledPolicyDocuments, listPolicyAcknowledgementsForProfile } from "@/lib/organization/policyAcknowledgements";
+import { getCurrentEmploymentTerms } from "@/lib/organization/employmentTermsHistory";
+import { listEmployingEntities } from "@/lib/organization/legalEntities";
 import { MyWorkspaceLanding } from "./MyWorkspaceLanding";
+import { FounderSelfAdministrationForm } from "./FounderSelfAdministrationForm";
 
 export const metadata: Metadata = {
   title: "My Workspace — Ordift Studios",
@@ -20,14 +23,27 @@ export default async function MyWorkspacePage() {
   const user = await getCurrentUser();
   if (!user || !isStaffOrAdmin(user)) redirect("/admin/overview");
 
-  const [usersResult, controlledPolicyDocuments, myAcknowledgements] = await Promise.all([
+  const [usersResult, controlledPolicyDocuments, myAcknowledgements, myEmploymentTerms] = await Promise.all([
     listUsersWithRoles(),
     listControlledPolicyDocuments(),
     listPolicyAcknowledgementsForProfile(user.id),
+    getCurrentEmploymentTerms(user.id),
   ]);
   const me = usersResult.ok ? usersResult.users.find((u) => u.id === user.id) : undefined;
   const acknowledgedVersionIds = new Set(myAcknowledgements.map((a) => a.policyVersionId));
   const pendingPolicies = controlledPolicyDocuments.filter((doc) => !acknowledgedVersionIds.has(doc.documentVersionId));
+
+  // Founder/CEO self-administration (2026-09-15) — shown ONLY when the
+  // viewer is Super Admin AND genuinely has no employment-terms record
+  // of their own yet. This is not a Founder-specific hardcode: it is a
+  // self-healing condition that happens to be true only for the
+  // Founder today (the one Super Admin with Position/Department/Grade
+  // already assigned but no employment_terms_history row — see
+  // recordFounderSelfAdministeredEmploymentTerms()'s own comment for
+  // why this exists at all), and disappears permanently for anyone
+  // once they've recorded it once.
+  const showFounderSelfAdministration = isSuperAdmin(user) && !myEmploymentTerms;
+  const employingEntities = showFounderSelfAdministration ? await listEmployingEntities() : [];
 
   return (
     <div className="space-y-8">
@@ -60,6 +76,18 @@ export default async function MyWorkspacePage() {
           </ul>
         </div>
       </section>
+
+      {showFounderSelfAdministration && (
+        <section className="rounded-xl border border-amber-300 bg-amber-50 p-6 space-y-3">
+          <h2 className="font-serif font-medium text-body text-ordift-ink">Founder &amp; CEO — Self-Administered Employment Record</h2>
+          <p className="font-sans text-body-small text-ordift-ink-muted">
+            No internal HR authority exists above the Founder &amp; CEO, so this record is self-administered rather
+            than independently reviewed — it is recorded and audited as such, distinct from every other employee&apos;s
+            HR-reviewed employment record.
+          </p>
+          <FounderSelfAdministrationForm employingEntities={employingEntities} />
+        </section>
+      )}
 
       <section className="rounded-xl border border-black/10 bg-white p-6 space-y-3">
         <h2 className="font-serif font-medium text-body text-ordift-ink">Policies to Acknowledge</h2>

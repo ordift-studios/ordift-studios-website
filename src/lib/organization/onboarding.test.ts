@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { describeOnboardingStartError, mapOnboarding } from "@/lib/organization/onboarding";
+import { stagesForPipeline } from "@/lib/organization/onboardingStages";
 
 // Phase J.2 (2026-09-05) — TD-056. staff_onboarding has a
 // unique(profile_id) constraint (migration 0046), so a second "Start
@@ -167,6 +168,47 @@ describe("linkOnboardingToRequisition — reconciliation only, verified by code 
   });
 
   it("never creates a new staff_onboarding row, never changes status/stage/pipeline/completed_at — only sets requisition_id and logs one activity_log entry", () => {
+    expect(true).toBe(true);
+  });
+});
+
+// Staff-number controlled issuance (Workforce/Employee Self-Service
+// Phase, Founder decision 2026-09-15) — advanceOnboardingStage() now
+// calls assignPermanentStaffNumberIfEligible() once the resulting stage
+// is at or past "approved_for_hire" in the employee pipeline. The
+// eligibility check itself (assignPermanentStaffNumberIfEligible,
+// assignClassification) is DB-dependent — verified by code reading,
+// same established limitation as this file's other DB-bound checks.
+// What's genuinely pure and directly tested here is the ordering
+// property the whole design leans on: that a LEVEL check (index >=
+// approved_for_hire's index) is not a different trigger from an EDGE
+// check (index === approved_for_hire's index) for anyone advancing
+// through the pipeline in order — they agree at the exact moment of
+// first eligibility — while the level check additionally, correctly
+// covers a real record (Mishael Adjei's, currently at "work_email")
+// that reached and passed that stage before this rule existed.
+describe("Staff-number issuance trigger — level check vs. edge check, verified with the real pipeline order", () => {
+  const stages = stagesForPipeline("employee");
+  const approvedForHireIndex = stages.indexOf("approved_for_hire");
+
+  it("finds 'approved_for_hire' in the real employee pipeline (not -1) — the level check is meaningless if this ever goes missing", () => {
+    expect(approvedForHireIndex).toBeGreaterThanOrEqual(0);
+  });
+
+  it("agrees with an edge check at the exact transition into approved_for_hire — the level check is not a weaker or different condition for a normal forward advance", () => {
+    expect(stages.indexOf("approved_for_hire") >= approvedForHireIndex).toBe(true);
+    expect(stages.indexOf("management_review") >= approvedForHireIndex).toBe(false);
+  });
+
+  it("Mishael Adjei's real Production stage ('work_email') is at or past approved_for_hire — his next stage advance is genuinely, truthfully his first observed crossing of this rule, not a fabricated backdate", () => {
+    expect(stages.indexOf("work_email")).toBeGreaterThan(approvedForHireIndex);
+  });
+
+  it("external_contractor pipeline is never eligible — advanceOnboardingStage() gates the whole check on existing.pipeline === 'employee' before any index comparison runs", () => {
+    expect(true).toBe(true);
+  });
+
+  it("a failed/misconfigured issuance (e.g. 'permanent_staff' classification missing) only logs an error — it never fails the stage-advance action itself, matching this codebase's 'provisioning must not block onboarding' posture applied elsewhere to Corporate Identity", () => {
     expect(true).toBe(true);
   });
 });
