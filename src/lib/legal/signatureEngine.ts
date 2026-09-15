@@ -1,7 +1,7 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { logActivity } from "@/lib/admin/activityLog";
 import { authorizeWithSuperAdminOverride, GOVERNANCE_CAPABILITIES } from "@/lib/organization/authority";
-import { transitionAgreementStatus } from "./agreementEngine";
+import { advanceAgreementToFullyExecuted } from "./agreementEngine";
 import { resolveDeferredRequirementsForAgreement } from "@/lib/organization/onboardingRequirements";
 import {
   deriveSignatureRequestStatus,
@@ -310,13 +310,19 @@ export async function recordSignatorySignature(params: RecordSignatorySignatureP
   const requestStatus = await syncSignatureRequestStatus(admin, signatory.signatureRequestId);
   let fullyExecuted = false;
   if (requestStatus === "completed") {
-    // actorUserId: null — a genuine system-derived transition (every
-    // required signatory's own evidence just completed), not a human
-    // decision; see transitionAgreementStatus()'s own 2026-09-15
-    // comment for why null is the correct, non-bypassable case here
-    // rather than a placeholder actor id.
-    const transition = await transitionAgreementStatus({ agreementId: signatory.agreementId, toStatus: "fully_executed", actorUserId: null });
+    // Fixed 2026-09-16 (see agreementLifecycle.ts's normalForwardPathToFullyExecuted()
+    // comment for the full defect): a single direct transitionAgreementStatus()
+    // call to "fully_executed" is never valid from the agreement's real
+    // current status (in practice always "sent" — nothing else advances
+    // it), so it silently refused every time this ran. Walks every
+    // required intermediate hop instead — actorUserId: null throughout,
+    // a genuine system-derived transition (every required signatory's
+    // own evidence just completed), never a human decision.
+    const transition = await advanceAgreementToFullyExecuted({ agreementId: signatory.agreementId });
     fullyExecuted = transition.ok;
+    if (!transition.ok) {
+      console.error("[legal] failed to advance agreement to fully_executed despite complete signature evidence", signatory.agreementId, transition.error);
+    }
 
     if (fullyExecuted) {
       // Best-effort — a controlled onboarding deferral (2026-09-15,

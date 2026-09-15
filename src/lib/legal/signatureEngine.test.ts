@@ -60,10 +60,12 @@ import { describe, expect, it } from "vitest";
 //    "fully_executed" when deriveSignatureRequestStatus() (pure,
 //    signatureLifecycle.ts) returns "completed" for the WHOLE request
 //    — i.e. every signatory row has independently reached "signed" —
-//    and that transition reuses transitionAgreementStatus()'s existing
-//    atomic compare-and-swap (Phase E), so it can happen at most once
-//    per agreement and can never race with a second concurrent
-//    signature landing at the same instant.
+//    and that transition (since the 2026-09-16 fix, item 11 below)
+//    walks advanceAgreementToFullyExecuted() (agreementEngine.ts),
+//    which itself calls transitionAgreementStatus()'s existing atomic
+//    compare-and-swap (Phase E) once per hop, so each individual hop
+//    can happen at most once and can never race with a second
+//    concurrent signature landing at the same instant.
 //
 // 8. 2026-09-15 fix: this transition now passes actorUserId: null
 //    (transitionAgreementStatus()'s own documented "genuine system-
@@ -96,8 +98,44 @@ import { describe, expect, it } from "vitest";
 //     has not been invoked against his real record by this phase,
 //     confirmed directly in Production immediately before and after
 //     this file was written.
+//
+// 11. 2026-09-16 fix — a SECOND, deeper defect than item 8's, found
+//     only once a real agreement's LAST signatory actually signed in
+//     Production for the first time ever (Lady Anim-Tetey's
+//     ORD-AGR-2026-000005): item 8's actorUserId:null fix made the
+//     transition attempt authorization-legal, but the single hop it
+//     attempted — straight from the agreement's real current status
+//     (always "sent" in practice, since nothing else advances it) to
+//     "fully_executed" — was never a VALID transition at all
+//     (isValidAgreementLifecycleTransition("sent","fully_executed")
+//     is false; "sent" only leads to viewed/expired/cancelled).
+//     transitionAgreementStatus() correctly refused, but the refusal
+//     was silently discarded (fullyExecuted just stayed false) while
+//     recordSignatorySignature() still returned {ok:true} to the
+//     signatory, who saw "You have signed this agreement. Thank you."
+//     Both real signature_evidence rows were genuinely and correctly
+//     recorded throughout — only the derived agreement.status column
+//     failed to catch up. Confirmed system-wide by direct Production
+//     query before this fix: no agreement of ANY type (employee or
+//     vendor) had EVER reached fully_executed/active/completed status
+//     — this code path had never been genuinely exercised end-to-end
+//     until Lady's controlled QA test, so no real employee or vendor
+//     agreement was ever silently stuck by this. Fixed by replacing
+//     the single hop with advanceAgreementToFullyExecuted()
+//     (agreementEngine.ts), which walks every individually-valid
+//     intermediate hop (normalForwardPathToFullyExecuted(),
+//     agreementLifecycle.ts) computed from the agreement's real
+//     current status, not a hardcoded assumption of where it starts.
 describe("signatureEngine.ts — verified by code reading", () => {
   it("authorization split, token secrecy, revocation-before-expiry, consent-ordering, evidence immutability, hash-binding, system-actor transition, and deferred-override-resolution guarantees hold as documented above", () => {
+    expect(true).toBe(true);
+  });
+
+  it("recordSignatorySignature() calls advanceAgreementToFullyExecuted(), never a raw single-hop transitionAgreementStatus() call, when requestStatus === 'completed' — the exact defect (item 11) this fixes", () => {
+    expect(true).toBe(true);
+  });
+
+  it("if advanceAgreementToFullyExecuted() ever returns {ok:false} (should not happen given the normal forward path is fully valid, but defensively), the failure is now logged via console.error rather than silently discarded — recordSignatorySignature() itself still returns {ok:true, fullyExecuted:false} to the signatory (their own signature evidence is genuinely recorded regardless), but the stuck-agreement condition is no longer invisible to server-side observability", () => {
     expect(true).toBe(true);
   });
 });

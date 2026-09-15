@@ -1,7 +1,7 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { logActivity } from "@/lib/admin/activityLog";
 import { authorizeWithSuperAdminOverride, GOVERNANCE_CAPABILITIES } from "@/lib/organization/authority";
-import { isValidAgreementLifecycleTransition, isIssuedAgreementStatus, type AgreementLifecycleStatus } from "./agreementLifecycle";
+import { isValidAgreementLifecycleTransition, isIssuedAgreementStatus, normalForwardPathToFullyExecuted, type AgreementLifecycleStatus } from "./agreementLifecycle";
 import { formatAgreementReference } from "./agreementReference";
 import { routeJurisdiction, requiresJurisdictionReview } from "./jurisdictionRouting";
 
@@ -282,6 +282,38 @@ export async function transitionAgreementStatus(params: {
     entityId: params.agreementId,
     metadata: { fromStatus, toStatus: params.toStatus, isIssued: isIssuedAgreementStatus(params.toStatus) },
   });
+
+  return { ok: true };
+}
+
+// Signature-completion fix (2026-09-16) — see agreementLifecycle.ts's
+// own comment on normalForwardPathToFullyExecuted() for the full
+// defect this closes. Reads the agreement's CURRENT status fresh
+// (never assumes it's still "sent" — the whole point is this is now
+// safe to call regardless of how far it's already progressed) and
+// walks transitionAgreementStatus() through every individually-valid
+// hop needed to reach fully_executed, stopping and reporting exactly
+// which hop failed if the chain is ever broken (it shouldn't be, since
+// every hop in the sequence is already a documented valid transition).
+// actorUserId is always null here — the SAME genuine system-derived
+// case transitionAgreementStatus()'s own null-actor path already
+// documents: every hop fires only because every required signatory's
+// own real evidence already exists, never a human decision.
+export async function advanceAgreementToFullyExecuted(params: { agreementId: string }): Promise<{ ok: true } | { ok: false; error: string; failedAtStatus: AgreementLifecycleStatus }> {
+  const admin = createAdminClient();
+  const { data: agreement } = await admin.from("agreements").select("status").eq("id", params.agreementId).maybeSingle();
+  if (!agreement) return { ok: false, error: "Agreement not found.", failedAtStatus: "draft" };
+
+  const currentStatus = agreement.status as AgreementLifecycleStatus;
+  const path = normalForwardPathToFullyExecuted(currentStatus);
+  if (!path) {
+    return { ok: false, error: `Agreement status "${currentStatus}" has no normal forward path to fully_executed.`, failedAtStatus: currentStatus };
+  }
+
+  for (const toStatus of path) {
+    const result = await transitionAgreementStatus({ agreementId: params.agreementId, toStatus, actorUserId: null });
+    if (!result.ok) return { ok: false, error: result.error, failedAtStatus: toStatus };
+  }
 
   return { ok: true };
 }

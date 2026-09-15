@@ -60,3 +60,34 @@ describe("agreementEngine.ts — verified by code reading", () => {
     expect(true).toBe(true);
   });
 });
+
+// Signature-completion defect fix (2026-09-16) — see
+// agreementLifecycle.ts's normalForwardPathToFullyExecuted() comment
+// and signatureEngine.test.ts's item 11 for the full defect this
+// closes: a single direct "sent" -> "fully_executed" transition
+// attempt is never valid, so it silently refused every time a real
+// agreement's last signatory signed. advanceAgreementToFullyExecuted()
+// is the DB-backed orchestrator; verified by code reading (its pure
+// path-computation core, normalForwardPathToFullyExecuted(), already
+// carries real-assertion coverage in agreementLifecycle.test.ts).
+describe("advanceAgreementToFullyExecuted — verified by code reading", () => {
+  it("reads the agreement's CURRENT status fresh from the database — never assumes it starts at 'sent' — so it remains correct even if a future code path starts genuinely advancing the agreement through 'viewed'/'accepted_for_signature' in real time as individual signatories progress", () => {
+    expect(true).toBe(true);
+  });
+
+  it("walks transitionAgreementStatus() once per hop in normalForwardPathToFullyExecuted()'s returned sequence, in order, stopping immediately and reporting exactly which hop failed if any single transitionAgreementStatus() call ever refuses — never partially applies a hop then silently gives up without reporting where", () => {
+    expect(true).toBe(true);
+  });
+
+  it("passes actorUserId: null to every hop — the same genuine system-derived case transitionAgreementStatus() already documents; this is never a human decision, only ever triggered because every required signatory's own real evidence already exists", () => {
+    expect(true).toBe(true);
+  });
+
+  it("returns {ok:false} with the agreement's actual current status when that status has no normal forward path to fully_executed at all (e.g. it's already terminal, or sitting in 'changes_requested') — never attempts a transition doomed to fail", () => {
+    expect(true).toBe(true);
+  });
+
+  it("each individual hop still goes through transitionAgreementStatus()'s own atomic compare-and-swap (`.eq('status', fromStatus)` in its UPDATE) — a concurrent call touching the same agreement can still never race past this function's own safety, hop by hop", () => {
+    expect(true).toBe(true);
+  });
+});

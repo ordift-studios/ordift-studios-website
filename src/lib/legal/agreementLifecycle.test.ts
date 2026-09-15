@@ -5,6 +5,7 @@ import {
   isTerminalAgreementStatus,
   isIssuedAgreementStatus,
   isFullyExecuted,
+  normalForwardPathToFullyExecuted,
   AGREEMENT_LIFECYCLE_STATUSES,
 } from "./agreementLifecycle";
 
@@ -100,5 +101,52 @@ describe("isFullyExecuted — Part 18 (documented definition only, wired to noth
   it("false for anything before fully_executed", () => {
     expect(isFullyExecuted("sent")).toBe(false);
     expect(isFullyExecuted("partially_signed")).toBe(false);
+  });
+});
+
+// Production defect (2026-09-16) — discovered via controlled QA on
+// Lady Anim-Tetey's OS-LGL-009A Framework (ORD-AGR-2026-000005):
+// recordSignatorySignature() (signatureEngine.ts) tried a single
+// direct transitionAgreementStatus() hop from "sent" straight to
+// "fully_executed" once every signatory had signed — but
+// isValidAgreementLifecycleTransition("sent","fully_executed") is
+// false (sent only leads to viewed/expired/cancelled), so it silently
+// refused every time, while the signatory-facing UI still reported
+// success. Both real signature_evidence rows existed correctly; only
+// the derived agreement.status column failed to catch up.
+// normalForwardPathToFullyExecuted() is the fix's pure core: every
+// single hop it returns must itself already be a documented valid
+// transition (verified against isValidAgreementLifecycleTransition()
+// directly below, not just asserted).
+describe("normalForwardPathToFullyExecuted — the fix for the 2026-09-16 signature-completion defect", () => {
+  it("from 'sent' (the real-world starting point every agreement is actually stuck at today), returns exactly ['viewed','accepted_for_signature','fully_executed']", () => {
+    expect(normalForwardPathToFullyExecuted("sent")).toEqual(["viewed", "accepted_for_signature", "fully_executed"]);
+  });
+
+  it("every consecutive pair in the returned path is independently a valid transition — the exact property that was violated by the single-hop 'sent' -> 'fully_executed' attempt this fix replaces", () => {
+    const path = normalForwardPathToFullyExecuted("sent");
+    expect(path).not.toBeNull();
+    let from: (typeof AGREEMENT_LIFECYCLE_STATUSES)[number] = "sent";
+    for (const to of path!) {
+      expect(isValidAgreementLifecycleTransition(from, to)).toBe(true);
+      from = to;
+    }
+  });
+
+  it("from 'viewed' or 'accepted_for_signature' (an agreement that DID get its intermediate status advanced by some other future code path), returns only the remaining hops — never re-walks a hop already passed", () => {
+    expect(normalForwardPathToFullyExecuted("viewed")).toEqual(["accepted_for_signature", "fully_executed"]);
+    expect(normalForwardPathToFullyExecuted("accepted_for_signature")).toEqual(["fully_executed"]);
+  });
+
+  it("returns null once already at or past fully_executed — never attempts a redundant or backward transition", () => {
+    expect(normalForwardPathToFullyExecuted("fully_executed")).toBeNull();
+    expect(normalForwardPathToFullyExecuted("active")).toBeNull();
+    expect(normalForwardPathToFullyExecuted("completed")).toBeNull();
+  });
+
+  it("returns null for a status with no normal forward path at all (an exceptional/terminal state, or 'changes_requested' — the off-ramp back to draft, deliberately excluded from this forward sequence)", () => {
+    expect(normalForwardPathToFullyExecuted("declined")).toBeNull();
+    expect(normalForwardPathToFullyExecuted("cancelled")).toBeNull();
+    expect(normalForwardPathToFullyExecuted("changes_requested")).toBeNull();
   });
 });

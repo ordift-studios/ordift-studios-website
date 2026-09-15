@@ -83,3 +83,49 @@ export function isIssuedAgreementStatus(status: AgreementLifecycleStatus): boole
 export function isFullyExecuted(status: AgreementLifecycleStatus): boolean {
   return status === "fully_executed" || status === "active" || status === "completed";
 }
+
+// Signature-completion transition defect (2026-09-16) — discovered via
+// controlled Production QA (Lady Anim-Tetey's OS-LGL-009A Framework,
+// ORD-AGR-2026-000005): recordSignatorySignature() (signatureEngine.ts,
+// shared by BOTH the employee and vendor agreement flows) tried a
+// single direct transitionAgreementStatus() call straight from
+// whatever the agreement's current status happened to be (in practice
+// always "sent", since nothing else ever advances the agreement's own
+// status as individual signatories view/consent/sign) to
+// "fully_executed" — but VALID_TRANSITIONS never allows that as a
+// single hop ("sent" only ever leads to viewed/expired/cancelled).
+// transitionAgreementStatus() correctly REFUSED (the state machine
+// worked exactly as designed), but that refusal was silently
+// discarded by the caller, which still returned {ok:true} to the
+// signatory — "You have signed this agreement. Thank you." displayed
+// successfully even though the agreement's own status update never
+// took effect. Real signature evidence was never affected — this is
+// purely about the derived agreement.status column catching up to
+// evidence that already genuinely exists.
+//
+// normalForwardPathToFullyExecuted() returns the exact sequence of
+// single, individually-valid hops needed to walk an agreement from its
+// CURRENT status to fully_executed — e.g. from "sent":
+// ["viewed","accepted_for_signature","fully_executed"]. Deliberately
+// excludes "changes_requested" and "partially_signed" (an off-ramp and
+// an optional intermediate the normal happy-path forward sequence
+// still permits skipping directly through, since accepted_for_signature
+// already allows fully_executed in one hop) — returns null if `from`
+// is not on the normal forward path at all, or is already at/past
+// fully_executed.
+const NORMAL_FORWARD_SEQUENCE: readonly AgreementLifecycleStatus[] = [
+  "draft",
+  "internal_review",
+  "approved_for_issue",
+  "sent",
+  "viewed",
+  "accepted_for_signature",
+  "fully_executed",
+];
+
+export function normalForwardPathToFullyExecuted(from: AgreementLifecycleStatus): AgreementLifecycleStatus[] | null {
+  const fromIndex = NORMAL_FORWARD_SEQUENCE.indexOf(from);
+  if (fromIndex === -1) return null;
+  const path = NORMAL_FORWARD_SEQUENCE.slice(fromIndex + 1);
+  return path.length > 0 ? path : null;
+}
