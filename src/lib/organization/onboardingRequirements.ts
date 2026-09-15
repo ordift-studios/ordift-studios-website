@@ -37,7 +37,17 @@ export const REQUIREMENT_TYPES = [
 ] as const;
 export type RequirementType = (typeof REQUIREMENT_TYPES)[number];
 
-export const REQUIREMENT_STATUSES = ["pending", "satisfied", "waived", "not_applicable"] as const;
+// "deferred" (2026-09-15, controlled onboarding override) is
+// deliberately distinct from "waived": a waiver is a real human
+// decision that the requirement doesn't apply at all; a deferral is an
+// authorized, temporary permission to let onboarding progress while
+// the underlying requirement is genuinely still outstanding and must
+// still be completed when practicable. Never set directly through
+// updateOnboardingRequirement()'s generic manual dropdown — reachable
+// only through authorizeOnboardingRequirementOverride() below, which
+// requires a reason and writes a permanent, structured audit record
+// (onboarding_requirement_overrides, migration 0117).
+export const REQUIREMENT_STATUSES = ["pending", "satisfied", "waived", "not_applicable", "deferred"] as const;
 export type RequirementStatus = (typeof REQUIREMENT_STATUSES)[number];
 
 export type RequirementTemplate = {
@@ -299,7 +309,7 @@ export function computeUnsatisfiedRequired(
     if (!template.required) return false;
     if (stage !== undefined && template.stage !== stage) return false;
     const row = rowsByKey.get(template.requirementKey);
-    if (row) return row.status !== "satisfied" && row.status !== "waived" && row.status !== "not_applicable";
+    if (row) return row.status !== "satisfied" && row.status !== "waived" && row.status !== "not_applicable" && row.status !== "deferred";
     const derived = derivedByKey.get(template.requirementKey);
     if (derived) return derived !== "satisfied";
     return true; // no row, no derived opinion — a required item defaults to pending, never silently satisfied
@@ -325,7 +335,7 @@ export function applyConfiguredEvidenceStatus(
     if (!template.requiresDigitalExecution && !template.requiresPhysicalExecution) continue;
     const row = result.get(template.requirementKey);
     if (!row) continue;
-    if (row.status === "waived" || row.status === "not_applicable") continue;
+    if (row.status === "waived" || row.status === "not_applicable" || row.status === "deferred") continue;
     const digitalOk = !template.requiresDigitalExecution || row.digitalExecutionStatus === "completed";
     const physicalOk = !template.requiresPhysicalExecution || row.physicalOriginalReceived === true;
     result.set(template.requirementKey, { ...row, status: digitalOk && physicalOk ? "satisfied" : "pending" });
@@ -370,7 +380,15 @@ export async function listResolvedRequirements(params: {
   const rowsByKey = applyConfiguredEvidenceStatus(catalog, rawRowsByKey);
   return catalog.map((template) => {
     const row = rowsByKey.get(template.requirementKey) ?? null;
-    const status: RequirementStatus = row?.status ?? derivedByKey.get(template.requirementKey) ?? "pending";
+    const derived = derivedByKey.get(template.requirementKey) ?? null;
+    // A "deferred" row is a temporary administrative permission, not a
+    // human decision like "waived" — genuine derived evidence (e.g. the
+    // employee's own real signature completing) always supersedes a
+    // stale deferral the moment it exists, so the display never keeps
+    // showing "deferred" once the real requirement is actually
+    // satisfied. "waived"/"not_applicable" are real human decisions and
+    // are never overridden this way (unchanged from existing behavior).
+    const status: RequirementStatus = row?.status === "deferred" && derived === "satisfied" ? "satisfied" : (row?.status ?? derived ?? "pending");
     return toClientSafeResolvedRequirement(template, status, row);
   });
 }
@@ -523,4 +541,258 @@ export async function updateOnboardingRequirement(params: {
   });
 
   return { ok: true };
+}
+
+// ============================================================
+// Controlled onboarding requirement override/deferral (2026-09-15)
+// ============================================================
+// Real example: Mishael Adjei's ORD-AGR-2026-000004 is genuinely
+// "sent" for signature but he cannot presently complete it himself.
+// This is NOT satisfaction of employment_agreement_executed — that
+// remains governed solely by deriveEmploymentAgreementExecuted()
+// (employeeAgreements.ts), reading the real agreement lifecycle — and
+// never by anything in this section. This only records a controlled,
+// reason-required, permanently-audited administrative permission to
+// let onboarding progress with the requirement still genuinely
+// outstanding, matching every other onboarding_requirements status
+// change in one respect (an activity_log entry) but going further:
+// onboarding_requirement_overrides (migration 0117) is a dedicated,
+// append-only, richly-structured record — who authorized it, why, what
+// the real status was at that moment, and (later) how it was genuinely
+// resolved — because a bare status/notes column can't hold that
+// structure or guarantee it's never silently overwritten.
+
+export type OnboardingRequirementOverrideRow = {
+  id: string;
+  onboardingId: string;
+  requirementKey: string;
+  agreementId: string | null;
+  originalStatus: RequirementStatus;
+  reason: string;
+  authorizedBy: string;
+  authorizedAt: string;
+  onboardingTreatment: string;
+  followUpRequired: boolean;
+  resolvedAt: string | null;
+  resolutionNote: string | null;
+  createdAt: string;
+};
+
+function mapOverrideRow(r: {
+  id: string;
+  onboarding_id: string;
+  requirement_key: string;
+  agreement_id: string | null;
+  original_status: string;
+  reason: string;
+  authorized_by: string;
+  authorized_at: string;
+  onboarding_treatment: string;
+  follow_up_required: boolean;
+  resolved_at: string | null;
+  resolution_note: string | null;
+  created_at: string;
+}): OnboardingRequirementOverrideRow {
+  return {
+    id: r.id,
+    onboardingId: r.onboarding_id,
+    requirementKey: r.requirement_key,
+    agreementId: r.agreement_id,
+    originalStatus: r.original_status as RequirementStatus,
+    reason: r.reason,
+    authorizedBy: r.authorized_by,
+    authorizedAt: r.authorized_at,
+    onboardingTreatment: r.onboarding_treatment,
+    followUpRequired: r.follow_up_required,
+    resolvedAt: r.resolved_at,
+    resolutionNote: r.resolution_note,
+    createdAt: r.created_at,
+  };
+}
+
+const OVERRIDE_SELECT =
+  "id, onboarding_id, requirement_key, agreement_id, original_status, reason, authorized_by, authorized_at, onboarding_treatment, follow_up_required, resolved_at, resolution_note, created_at";
+
+// Full override history for an onboarding record — including already-
+// resolved overrides, never hidden once resolved, so the Onboarding
+// Workspace can show both the historical authorization and (once it
+// exists) its later genuine resolution together, per the explicit
+// requirement to preserve both.
+export async function listOnboardingRequirementOverrides(onboardingId: string): Promise<OnboardingRequirementOverrideRow[]> {
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from("onboarding_requirement_overrides")
+    .select(OVERRIDE_SELECT)
+    .eq("onboarding_id", onboardingId)
+    .order("authorized_at", { ascending: false });
+  if (error) {
+    console.error("[organization] failed to load onboarding_requirement_overrides", error.message);
+    return [];
+  }
+  return (data ?? []).map(mapOverrideRow);
+}
+
+// Delegation hook (explicit instruction: inspect the existing
+// authority model before hard-coding role strings). "people" is
+// authority.ts's existing HR jurisdiction (already used by
+// actingAssignments.ts's "people.administer"); "override" is one of
+// AUTHORITY_VERBS. "people.override" lets a future delegated HR
+// authority grant reach this specific action without any code change
+// here — today, in Production, zero non-Super-Admin holds it, so Super
+// Admin remains the only actor who can pass, exactly matching every
+// other capability-gated function in this Legal/Onboarding suite.
+async function canAuthorizeOnboardingOverride(actorUserId: string): Promise<boolean> {
+  if (await isSuperAdminId(actorUserId)) return true;
+  return hasJurisdictionAuthority(actorUserId, "people", "override");
+}
+
+// The single write path for authorizing a controlled deferral. Never
+// callable to reach "satisfied" (that would just be
+// updateOnboardingRequirement() under a different name) — only ever
+// transitions a requirement INTO "deferred", from whatever its real,
+// freshly-resolved status actually is right now (never trusting a
+// client-submitted "original status").
+export async function authorizeOnboardingRequirementOverride(params: {
+  onboardingId: string;
+  pipeline: OnboardingPipeline;
+  requirementKey: string;
+  agreementId?: string | null;
+  reason: string;
+  actorUserId: string;
+}): Promise<{ ok: true; overrideId: string } | { ok: false; error: string }> {
+  if (!(await canAuthorizeOnboardingOverride(params.actorUserId))) {
+    return { ok: false, error: "Not authorized to authorize an onboarding requirement override." };
+  }
+  const reason = params.reason.trim();
+  if (!reason) {
+    return { ok: false, error: "A reason is required to authorize this override." };
+  }
+
+  const template = catalogForPipeline(params.pipeline).find((t) => t.requirementKey === params.requirementKey);
+  if (!template) {
+    return { ok: false, error: "Unknown onboarding requirement for this pipeline." };
+  }
+
+  const admin = createAdminClient();
+  const { data: onboarding } = await admin.from("staff_onboarding").select("id, profile_id").eq("id", params.onboardingId).maybeSingle();
+  if (!onboarding) return { ok: false, error: "Onboarding record not found." };
+
+  // The TRUE current status, from the same resolver the workspace
+  // itself reads — never a client-submitted claim.
+  const resolved = await listResolvedRequirements({ onboardingId: params.onboardingId, profileId: onboarding.profile_id, pipeline: params.pipeline });
+  const current = resolved.find((r) => r.requirementKey === params.requirementKey);
+  if (!current) return { ok: false, error: "Unable to resolve this requirement's current status." };
+  if (current.status === "satisfied") {
+    return { ok: false, error: "This requirement is already genuinely satisfied — no override is needed or permitted." };
+  }
+  if (current.status === "deferred") {
+    return { ok: false, error: "This requirement already has an active administrative deferral." };
+  }
+
+  const now = new Date().toISOString();
+  const { data: override, error: overrideError } = await admin
+    .from("onboarding_requirement_overrides")
+    .insert({
+      onboarding_id: params.onboardingId,
+      requirement_key: params.requirementKey,
+      agreement_id: params.agreementId ?? null,
+      original_status: current.status,
+      reason,
+      authorized_by: params.actorUserId,
+      authorized_at: now,
+      onboarding_treatment: "progression_authorized",
+      follow_up_required: true,
+      created_by: params.actorUserId,
+    })
+    .select("id")
+    .single();
+  if (overrideError || !override) {
+    console.error("[organization] failed to record onboarding requirement override", overrideError?.message);
+    return { ok: false, error: "Failed to record this override." };
+  }
+
+  const updateResult = await updateOnboardingRequirement({
+    onboardingId: params.onboardingId,
+    pipeline: params.pipeline,
+    requirementKey: params.requirementKey,
+    status: "deferred",
+    actorUserId: params.actorUserId,
+    notes: `Administratively deferred (override ${override.id}): ${reason}`,
+  });
+  if (!updateResult.ok) return { ok: false, error: updateResult.error };
+
+  await logActivity({
+    actorUserId: params.actorUserId,
+    action: "onboarding_requirement.override_authorized",
+    entityType: "user",
+    entityId: onboarding.profile_id,
+    metadata: { onboardingId: params.onboardingId, requirementKey: params.requirementKey, agreementId: params.agreementId ?? null, overrideId: override.id, reason },
+  });
+
+  return { ok: true, overrideId: override.id };
+}
+
+// Resolution hook, called by the REAL completion event — not a
+// generic admin action. signatureEngine.ts's recordSignatorySignature()
+// calls this (best-effort, never able to block or undo the genuine
+// signature it just recorded) immediately after an agreement
+// genuinely transitions to fully_executed, so a previously deferred
+// employment_agreement_executed requirement is promptly and durably
+// marked resolved rather than relying solely on the read-time
+// "deferred + derived satisfied => satisfied" correction in
+// listResolvedRequirements() above (that correction keeps the display
+// honest even if this hook is never reached; this hook is what makes
+// the resolution a permanent, timestamped fact instead of only a
+// live computation). Resolves every still-open override recorded
+// against this specific agreement — today that's just
+// employment_agreement_executed, never more than one real row in
+// practice, but this is not hardcoded to that single key.
+export async function resolveDeferredRequirementsForAgreement(params: { agreementId: string }): Promise<void> {
+  const admin = createAdminClient();
+  const { data: overrides } = await admin
+    .from("onboarding_requirement_overrides")
+    .select("id, onboarding_id, requirement_key")
+    .eq("agreement_id", params.agreementId)
+    .is("resolved_at", null);
+  if (!overrides || overrides.length === 0) return;
+
+  const now = new Date().toISOString();
+  for (const override of overrides) {
+    const { data: row } = await admin
+      .from("onboarding_requirements")
+      .select("id, status")
+      .eq("onboarding_id", override.onboarding_id)
+      .eq("requirement_key", override.requirement_key)
+      .maybeSingle();
+    // Only resolve what is still genuinely deferred — if it's already
+    // "satisfied" some other way, or was reset back to "pending",
+    // there is nothing for this hook to do.
+    if (!row || row.status !== "deferred") continue;
+
+    const { error: rowError } = await admin
+      .from("onboarding_requirements")
+      .update({ status: "satisfied", updated_at: now, completed_at: now, completed_by: null })
+      .eq("id", row.id);
+    if (rowError) {
+      console.error("[organization] failed to resolve deferred onboarding_requirements row", rowError.message);
+      continue;
+    }
+
+    const { error: overrideError } = await admin
+      .from("onboarding_requirement_overrides")
+      .update({ resolved_at: now, resolution_note: "Resolved by genuine employee signature completion." })
+      .eq("id", override.id);
+    if (overrideError) {
+      console.error("[organization] failed to mark onboarding_requirement_override resolved", overrideError.message);
+    }
+
+    const { data: onboarding } = await admin.from("staff_onboarding").select("profile_id").eq("id", override.onboarding_id).maybeSingle();
+    await logActivity({
+      actorUserId: null,
+      action: "onboarding_requirement.deferred_override_resolved",
+      entityType: "user",
+      entityId: onboarding?.profile_id ?? override.onboarding_id,
+      metadata: { onboardingId: override.onboarding_id, requirementKey: override.requirement_key, agreementId: params.agreementId, overrideId: override.id },
+    });
+  }
 }

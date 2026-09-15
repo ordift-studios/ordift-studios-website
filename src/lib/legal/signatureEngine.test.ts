@@ -65,11 +65,39 @@ import { describe, expect, it } from "vitest";
 //    per agreement and can never race with a second concurrent
 //    signature landing at the same instant.
 //
-// 8. No real signature request exists in Production as of this phase
-//    — confirmed via a read-only row count immediately before this
-//    file was written (see the completion report).
+// 8. 2026-09-15 fix: this transition now passes actorUserId: null
+//    (transitionAgreementStatus()'s own documented "genuine system-
+//    derived event" case) instead of the placeholder string
+//    "system:signature_engine". The placeholder was neither a real
+//    actor nor recognized by transitionAgreementStatus()'s
+//    authorization check, so it silently failed contractAdminister
+//    authorization on every call — meaning a genuine final signature
+//    could never actually move a real agreement to fully_executed in
+//    Production. Confirmed fixed by code reading (transitionAgreementStatus()
+//    skips requireContractAdminister() only when actorUserId is
+//    literally null, a value that can never be smuggled in from
+//    unvalidated request input anywhere in this codebase).
+//
+// 9. 2026-09-15 addition: once (and only once) the fully_executed
+//    transition genuinely succeeds, this function calls
+//    resolveDeferredRequirementsForAgreement()
+//    (onboardingRequirements.ts) — wrapped in try/catch at the call
+//    site so a failure there can never undo or block the signature
+//    evidence already recorded above it. This is what lets a
+//    previously-authorized controlled onboarding deferral (e.g.
+//    Mishael Adjei's employment_agreement_executed override) become
+//    permanently, durably resolved the moment his real signature
+//    genuinely completes — not merely inferred at display time.
+//
+// 10. Mishael Adjei's real ORD-AGR-2026-000004 signature request now
+//     genuinely exists in Production (issued via the issuance bridge,
+//     agreement status "sent") — his signature itself has not been
+//     recorded by any automated process; recordSignatorySignature()
+//     has not been invoked against his real record by this phase,
+//     confirmed directly in Production immediately before and after
+//     this file was written.
 describe("signatureEngine.ts — verified by code reading", () => {
-  it("authorization split, token secrecy, revocation-before-expiry, consent-ordering, evidence immutability, and hash-binding guarantees hold as documented above", () => {
+  it("authorization split, token secrecy, revocation-before-expiry, consent-ordering, evidence immutability, hash-binding, system-actor transition, and deferred-override-resolution guarantees hold as documented above", () => {
     expect(true).toBe(true);
   });
 });

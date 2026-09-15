@@ -223,13 +223,37 @@ const STATUS_TIMESTAMP_COLUMN: Partial<Record<AgreementLifecycleStatus, string>>
   terminated: "terminated_at",
 };
 
+// actorUserId is nullable (2026-09-15 fix) for the one genuine
+// system-derived transition in this codebase: signatureEngine.ts's
+// recordSignatorySignature() moves an agreement to fully_executed as
+// an automatic CONSEQUENCE of every required signatory's own evidence
+// (signature_evidence), not a discretionary human decision — there is
+// no authenticated admin session at that external, session-less
+// signing moment to require contractAdminister from. This mirrors the
+// established "actorUserId: null = genuine system/webhook-driven
+// event, no human session to attribute it to" pattern already used
+// elsewhere (payments/gatewaySync.ts, payments/crmStageSync.ts,
+// activityLog.ts's own logActivity() signature). Safe because
+// actorUserId is never derived from unvalidated request input
+// anywhere in this codebase — every real caller resolves it from an
+// authenticated session (see actions.ts/agreementIssuance.ts) or, for
+// the system case, hardcodes the literal `null` in reviewed source, so
+// this can never be smuggled in as a bypass. Previously this function
+// was called with the placeholder string "system:signature_engine",
+// which — being neither a real actor nor recognized as the system case
+// — silently failed contractAdminister authorization every time,
+// meaning a genuine final signature could never actually complete the
+// agreement in Production. Fixed by making the system case explicit
+// rather than a bogus actor id.
 export async function transitionAgreementStatus(params: {
   agreementId: string;
   toStatus: AgreementLifecycleStatus;
-  actorUserId: string;
+  actorUserId: string | null;
 }): Promise<{ ok: true } | { ok: false; error: string }> {
-  const auth = await requireContractAdminister(params.actorUserId);
-  if (!auth.ok) return auth;
+  if (params.actorUserId !== null) {
+    const auth = await requireContractAdminister(params.actorUserId);
+    if (!auth.ok) return auth;
+  }
 
   const admin = createAdminClient();
   const { data: existing } = await admin.from("agreements").select("id, status").eq("id", params.agreementId).maybeSingle();

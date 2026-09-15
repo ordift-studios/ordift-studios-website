@@ -2,6 +2,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { logActivity } from "@/lib/admin/activityLog";
 import { authorizeWithSuperAdminOverride, GOVERNANCE_CAPABILITIES } from "@/lib/organization/authority";
 import { transitionAgreementStatus } from "./agreementEngine";
+import { resolveDeferredRequirementsForAgreement } from "@/lib/organization/onboardingRequirements";
 import {
   deriveSignatureRequestStatus,
   isFullyExecutedBySignatories,
@@ -309,13 +310,25 @@ export async function recordSignatorySignature(params: RecordSignatorySignatureP
   const requestStatus = await syncSignatureRequestStatus(admin, signatory.signatureRequestId);
   let fullyExecuted = false;
   if (requestStatus === "completed") {
-    const transition = await transitionAgreementStatus({ agreementId: signatory.agreementId, toStatus: "fully_executed", actorUserId: "system:signature_engine" });
-    // "system:signature_engine" is not a real profile id — this call
-    // path is intentionally exercised only by tests/fixtures in this
-    // phase (no real agreement exists to fully-execute), and wiring a
-    // real system-actor identity is left to the separately-authorized
-    // wiring phase. Documented here rather than silently swallowed.
+    // actorUserId: null — a genuine system-derived transition (every
+    // required signatory's own evidence just completed), not a human
+    // decision; see transitionAgreementStatus()'s own 2026-09-15
+    // comment for why null is the correct, non-bypassable case here
+    // rather than a placeholder actor id.
+    const transition = await transitionAgreementStatus({ agreementId: signatory.agreementId, toStatus: "fully_executed", actorUserId: null });
     fullyExecuted = transition.ok;
+
+    if (fullyExecuted) {
+      // Best-effort — a controlled onboarding deferral (2026-09-15,
+      // onboardingRequirements.ts) is a separate concern from this
+      // signature completing; a failure here must never undo or block
+      // the genuine signature evidence already recorded above.
+      try {
+        await resolveDeferredRequirementsForAgreement({ agreementId: signatory.agreementId });
+      } catch (err) {
+        console.error("[legal] failed to resolve deferred onboarding requirements for agreement", signatory.agreementId, err);
+      }
+    }
   }
 
   return { ok: true, fullyExecuted };

@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { getCurrentUser } from "@/lib/portal/roles";
 import { canManageOnboarding, advanceOnboardingStage, completeStaffOnboarding, linkOnboardingToRequisition } from "@/lib/organization/onboarding";
-import { updateOnboardingRequirement, type RequirementStatus } from "@/lib/organization/onboardingRequirements";
+import { updateOnboardingRequirement, authorizeOnboardingRequirementOverride, type RequirementStatus } from "@/lib/organization/onboardingRequirements";
 import type { OnboardingPipeline } from "@/lib/organization/onboardingStages";
 
 // Onboarding Workspace (E.5 Stage 2I, 2026-09-11) — Parts A/E/G/J.
@@ -91,6 +91,42 @@ export async function updateOnboardingRequirementAction(_prev: ActionState, form
     digitalExecutionStatus,
     physicalOriginalReceived,
     verifiedNow,
+  });
+  if (!result.ok) return { ok: false, error: result.error };
+
+  revalidatePath(`/admin/organization/onboarding/${onboardingId}`);
+  return { ok: true };
+}
+
+// Controlled onboarding requirement override (2026-09-15). Deliberately
+// its own action, not folded into updateOnboardingRequirementAction —
+// authorizeOnboardingRequirementOverride() itself requires a reason and
+// re-derives the requirement's true current status server-side (never
+// trusting the client), and its own authorization check
+// (canAuthorizeOnboardingOverride, "people.override" or Super Admin) is
+// deliberately separate from canManageOnboarding's generic gate, per
+// the explicit instruction to design for future delegated HR authority
+// rather than reusing the coarse operations.administer boundary here.
+export async function authorizeOnboardingRequirementOverrideAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  const currentUser = await getCurrentUser();
+  if (!currentUser) return { ok: false, error: "Not authenticated." };
+
+  const onboardingId = String(formData.get("onboardingId") ?? "");
+  const pipeline = String(formData.get("pipeline") ?? "") as OnboardingPipeline;
+  const requirementKey = String(formData.get("requirementKey") ?? "");
+  const agreementId = String(formData.get("agreementId") ?? "").trim() || null;
+  const reason = String(formData.get("reason") ?? "").trim();
+  if (!onboardingId || !requirementKey || !reason) {
+    return { ok: false, error: "A reason is required to authorize this override." };
+  }
+
+  const result = await authorizeOnboardingRequirementOverride({
+    onboardingId,
+    pipeline,
+    requirementKey,
+    agreementId,
+    reason,
+    actorUserId: currentUser.id,
   });
   if (!result.ok) return { ok: false, error: result.error };
 

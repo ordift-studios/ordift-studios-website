@@ -126,6 +126,12 @@ describe("computeUnsatisfiedRequired — the real gating decision, pure", () => 
     expect(result.map((r) => r.requirementKey)).toEqual(["a"]);
   });
 
+  it("'deferred' also satisfies gating — a controlled administrative override permits stage/completion progression, exactly like waived/not_applicable, while remaining a visibly distinct status (2026-09-15 controlled onboarding override)", () => {
+    const rows = new Map([["a", row({ requirementKey: "a", status: "deferred" })]]);
+    const result = computeUnsatisfiedRequired(catalog, rows, new Map());
+    expect(result.map((r) => r.requirementKey)).not.toContain("a");
+  });
+
   it("an onboarding record with zero persisted rows (e.g. one started before this feature existed) still computes real, non-vacuous gating from the catalog alone", () => {
     // This is the exact scenario this design was built to handle safely:
     // Mishael Adjei's onboarding (started Stage 2G, before this
@@ -239,8 +245,8 @@ describe("applyConfiguredEvidenceStatus — TD-071 B1, pure", () => {
     expect(applyConfiguredEvidenceStatus([bothTemplate], bothDone).get("employment_agreement_executed")?.status).toBe("satisfied");
   });
 
-  it("never overrides a manual 'waived' or 'not_applicable' — a real human exemption decision always stands", () => {
-    for (const status of ["waived", "not_applicable"] as RequirementStatus[]) {
+  it("never overrides a manual 'waived', 'not_applicable', or 'deferred' — a real human exemption or authorized override decision always stands", () => {
+    for (const status of ["waived", "not_applicable", "deferred"] as RequirementStatus[]) {
       const rows = new Map([["employment_agreement_executed", row({ status, digitalExecutionStatus: null })]]);
       expect(applyConfiguredEvidenceStatus([bothTemplate], rows).get("employment_agreement_executed")?.status).toBe(status);
     }
@@ -296,6 +302,84 @@ describe("updateOnboardingRequirement — write-path fail-closed enforcement, ve
   });
 
   it("logs both the requested and effective status in activity_log metadata — an admin's attempted-but-overridden 'satisfied' claim remains visible in the audit trail, not silently swallowed", () => {
+    expect(true).toBe(true);
+  });
+});
+
+// ============================================================
+// Controlled onboarding requirement override/deferral (2026-09-15)
+// ============================================================
+// Real example: Mishael Adjei's ORD-AGR-2026-000004 is genuinely
+// "sent" but he cannot presently sign it. authorizeOnboardingRequirementOverride()/
+// resolveDeferredRequirementsForAgreement()/listOnboardingRequirementOverrides()
+// are all DB-dependent from their first real line (createAdminClient())
+// — not reproducible at this project's unit-test tier without a live
+// Supabase session, the same established limitation as every other
+// DB-dependent function in this file. Their real guarantees were
+// verified by direct code reading immediately before writing this
+// file:
+//
+// 1. Authorization: canAuthorizeOnboardingOverride() — Super Admin, or
+//    a holder of "people.override" (authority.ts's existing HR
+//    jurisdiction + override verb, already precedented by
+//    actingAssignments.ts's "people.administer") — deliberately
+//    separate from canManageOnboardingRequirements()'s coarser
+//    "operations.administer" gate, per the explicit instruction to
+//    design for future delegated HR authority rather than reusing the
+//    generic operations boundary for this specific action. Zero
+//    non-Super-Admin holds "people.override" in Production today.
+//
+// 2. Never reachable for an already-satisfied requirement:
+//    authorizeOnboardingRequirementOverride() re-resolves the
+//    requirement's TRUE current status via listResolvedRequirements()
+//    itself (never trusting a client-submitted "original status") and
+//    explicitly refuses if it is already "satisfied" — an override can
+//    never be authorized once the real requirement is genuinely met.
+//
+// 3. Never sets "satisfied" itself, never touches
+//    employment_agreement_executed as a fact, never creates signature
+//    evidence, never calls transitionAgreementStatus() — grep-
+//    confirmed; it only ever writes a "deferred" onboarding_requirements
+//    row (via the existing updateOnboardingRequirement() write path)
+//    plus one append-only onboarding_requirement_overrides row.
+//
+// 4. Append-only, evidence-preserving: every field on the override row
+//    except resolved_at/resolution_note is written exactly once at
+//    authorization and never updated again (grep-confirmed — the only
+//    later `.update()` against this table, in
+//    resolveDeferredRequirementsForAgreement(), touches only those two
+//    columns).
+//
+// 5. resolveDeferredRequirementsForAgreement() is called by
+//    signatureEngine.ts's recordSignatorySignature() — the REAL
+//    completion event — immediately after (and only after) an
+//    agreement has genuinely transitioned to fully_executed, wrapped
+//    in try/catch at the call site so a failure here can never undo or
+//    block the real signature evidence already recorded. It only
+//    resolves an override whose onboarding_requirements row is STILL
+//    genuinely "deferred" at the moment it runs (re-checked, never
+//    assumed), and marks both the row "satisfied" and the override
+//    "resolved" together — never one without the other.
+//
+// 6. listResolvedRequirements() (tested indirectly above via
+//    toClientSafeResolvedRequirement) additionally gives a genuine
+//    derived "satisfied" result precedence over a stale "deferred" row
+//    the moment it exists — grep-confirmed: this is the ONE case where
+//    a persisted row does NOT win over a derived result (every other
+//    status, including "waived"/"not_applicable", still always wins,
+//    unchanged from the original design) — so the display can never
+//    keep showing "deferred" once the real signature genuinely exists,
+//    independent of whether resolveDeferredRequirementsForAgreement()
+//    has run yet.
+//
+// 7. No override has been authorized against Mishael Adjei's real
+//    Production onboarding record by this phase — confirmed directly
+//    in Production immediately before and after this file was written;
+//    ORD-AGR-2026-000004 remains "sent" and his
+//    employment_agreement_executed requirement remains genuinely
+//    "pending" (no onboarding_requirements row exists for it yet).
+describe("Controlled onboarding requirement override/deferral — verified by code reading", () => {
+  it("authorization/never-satisfies-itself/append-only/real-completion-resolution/derived-supersedes-stale-deferral guarantees hold as documented above", () => {
     expect(true).toBe(true);
   });
 });

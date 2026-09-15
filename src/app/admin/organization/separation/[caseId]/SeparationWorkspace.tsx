@@ -68,7 +68,17 @@ const REQUIREMENT_STATUS_LABELS: Record<RequirementStatus, string> = {
   satisfied: "Satisfied",
   waived: "Waived",
   not_applicable: "Not applicable",
+  // "deferred" (2026-09-15) is an onboarding-only controlled-override
+  // status — separation_requirements has no equivalent mechanism and
+  // updateSeparationRequirementAction's own allowlist never accepts
+  // it. Included here only so RequirementStatus (shared with
+  // onboardingRequirements.ts) stays exhaustively typed; never offered
+  // in the dropdown below.
+  deferred: "Deferred",
 };
+
+// Never includes "deferred" — see the comment above.
+const SEPARATION_SELECTABLE_STATUSES: readonly RequirementStatus[] = ["pending", "satisfied", "waived", "not_applicable"];
 
 const REQUIREMENT_TYPE_LABELS: Record<string, string> = {
   task: "Task",
@@ -86,6 +96,7 @@ function StatusPill({ status }: { status: RequirementStatus }) {
     satisfied: "bg-green-100 text-green-800",
     waived: "bg-ordift-offwhite text-ordift-ink-muted",
     not_applicable: "bg-ordift-offwhite text-ordift-ink-muted",
+    deferred: "bg-ordift-offwhite text-ordift-ink-muted",
   };
   return <span className={`px-2 py-0.5 rounded-full font-sans text-caption ${styles[status]}`}>{REQUIREMENT_STATUS_LABELS[status]}</span>;
 }
@@ -112,7 +123,7 @@ function ClearanceItemRow({ separationCaseId, profileId, requirement }: { separa
       </div>
       <div className="flex flex-wrap items-center gap-2">
         <select name="status" defaultValue={requirement.status} className="rounded-lg border border-black/15 bg-white px-2 py-1 font-sans text-caption">
-          {(Object.keys(REQUIREMENT_STATUS_LABELS) as RequirementStatus[]).map((s) => (
+          {SEPARATION_SELECTABLE_STATUSES.map((s) => (
             <option key={s} value={s}>{REQUIREMENT_STATUS_LABELS[s]}</option>
           ))}
         </select>

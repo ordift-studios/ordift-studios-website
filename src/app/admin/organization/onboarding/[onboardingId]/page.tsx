@@ -3,7 +3,7 @@ import { redirect, notFound } from "next/navigation";
 import Link from "next/link";
 import { getCurrentUser } from "@/lib/portal/roles";
 import { canManageOnboarding, getStaffOnboardingById } from "@/lib/organization/onboarding";
-import { listResolvedRequirements } from "@/lib/organization/onboardingRequirements";
+import { listResolvedRequirements, listOnboardingRequirementOverrides } from "@/lib/organization/onboardingRequirements";
 import { stagesForPipeline, isTerminalStage, nextStage } from "@/lib/organization/onboardingStages";
 import { listUsersWithRoles } from "@/lib/portal/adminData";
 import { listAuthorityGrants, isGrantActive } from "@/lib/organization/authority";
@@ -39,7 +39,7 @@ export default async function OnboardingWorkspacePage({ params }: { params: Prom
   const onboarding = await getStaffOnboardingById(onboardingId);
   if (!onboarding) notFound();
 
-  const [usersResult, requirements, activity, grants, identities, paymentInstructions, requisition, unlinkedRequisitions] = await Promise.all([
+  const [usersResult, requirements, activity, grants, identities, paymentInstructions, requisition, unlinkedRequisitions, requirementOverrideRows] = await Promise.all([
     listUsersWithRoles(),
     listResolvedRequirements({ onboardingId: onboarding.id, profileId: onboarding.profileId, pipeline: onboarding.pipeline }),
     getActivityForEntity("user", onboarding.profileId, 30),
@@ -51,6 +51,7 @@ export default async function OnboardingWorkspacePage({ params }: { params: Prom
     // meaningful when this onboarding predates the origin architecture
     // and has no requisition_id yet (e.g. Mishael Adjei's).
     onboarding.requisitionId ? Promise.resolve([]) : listApprovedRequisitionsForOnboarding(),
+    listOnboardingRequirementOverrides(onboarding.id),
   ]);
 
   const person = usersResult.ok ? usersResult.users.find((u) => u.id === onboarding.profileId) : undefined;
@@ -62,6 +63,10 @@ export default async function OnboardingWorkspacePage({ params }: { params: Prom
   const reconciliationCandidates = unlinkedRequisitions.filter(
     (r) => r.hireOrigin !== "founder_direct_hire" || r.directHireProfileId === onboarding.profileId
   );
+  const requirementOverrides = requirementOverrideRows.map((o) => ({
+    ...o,
+    authorizedByName: usersResult.ok ? usersResult.users.find((u) => u.id === o.authorizedBy)?.fullName ?? null : null,
+  }));
 
   // Same canonical resolver used by the Agreement Readiness path
   // (employeeAgreements.ts) — this person's current employment_terms_
@@ -143,6 +148,7 @@ export default async function OnboardingWorkspacePage({ params }: { params: Prom
         agreementSummary={agreementSummary}
         hiringManagerName={hiringManagerName}
         reconciliationCandidates={reconciliationCandidates}
+        requirementOverrides={requirementOverrides}
       />
 
       {/* System-boundary handoff areas — view-only. Onboarding may
