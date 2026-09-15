@@ -29,9 +29,16 @@ export type VendorProfile = {
   metadata: Record<string, unknown>;
   createdAt: string;
   fullName: string | null;
+  // Vendor QA correction (2026-09-15) — see migration 0123's header
+  // comment: deliberately NOT the employee-shaped
+  // employment_jurisdiction_id elsewhere; this is the Vendor
+  // relationship's own field, reusing the same generic
+  // employment_jurisdictions lookup table.
+  relationshipJurisdictionId: string | null;
+  relationshipJurisdictionName: string | null;
 };
 
-const SELECT = "id, company_name, status, metadata, created_at";
+const SELECT = "id, company_name, status, metadata, created_at, relationship_jurisdiction_id";
 
 type RawVendorProfileRow = {
   id: string;
@@ -39,16 +46,19 @@ type RawVendorProfileRow = {
   status: string;
   metadata: Record<string, unknown>;
   created_at: string;
+  relationship_jurisdiction_id: string | null;
 };
 
 async function attachFullName(admin: ReturnType<typeof createAdminClient>, rows: RawVendorProfileRow[]): Promise<VendorProfile[]> {
   if (rows.length === 0) return [];
-  const { data: profiles, error } = await admin
-    .from("profiles")
-    .select("id, full_name")
-    .in("id", rows.map((r) => r.id));
+  const jurisdictionIds = [...new Set(rows.map((r) => r.relationship_jurisdiction_id).filter((id): id is string => Boolean(id)))];
+  const [{ data: profiles, error }, { data: jurisdictions }] = await Promise.all([
+    admin.from("profiles").select("id, full_name").in("id", rows.map((r) => r.id)),
+    jurisdictionIds.length > 0 ? admin.from("employment_jurisdictions").select("id, name").in("id", jurisdictionIds) : Promise.resolve({ data: [] as { id: string; name: string }[] }),
+  ]);
   if (error) console.error("[vendors] failed to load profiles for vendor_profiles", error.message);
   const nameById = new Map((profiles ?? []).map((p) => [p.id, p.full_name as string | null]));
+  const jurisdictionNameById = new Map((jurisdictions ?? []).map((j) => [j.id, j.name]));
   return rows.map((r) => ({
     id: r.id,
     companyName: r.company_name,
@@ -56,6 +66,8 @@ async function attachFullName(admin: ReturnType<typeof createAdminClient>, rows:
     metadata: r.metadata ?? {},
     createdAt: r.created_at,
     fullName: nameById.get(r.id) ?? null,
+    relationshipJurisdictionId: r.relationship_jurisdiction_id,
+    relationshipJurisdictionName: r.relationship_jurisdiction_id ? (jurisdictionNameById.get(r.relationship_jurisdiction_id) ?? null) : null,
   }));
 }
 
@@ -91,6 +103,11 @@ export async function getOwnVendorProfile(profileId: string): Promise<VendorProf
 export type UpsertVendorProfileParams = {
   profileId: string;
   companyName: string;
+  // Optional — undefined leaves the existing value untouched (the
+  // upsert's `on_conflict` merge below only sets the column when this
+  // is explicitly provided); explicit null clears it back to genuinely
+  // unset. Never inferred/guessed.
+  relationshipJurisdictionId?: string | null;
   actorUserId: string;
 };
 
@@ -113,7 +130,14 @@ export async function upsertVendorProfile(params: UpsertVendorProfileParams): Pr
 
   const { error } = await admin
     .from("vendor_profiles")
-    .upsert({ id: params.profileId, company_name: companyName }, { onConflict: "id" });
+    .upsert(
+      {
+        id: params.profileId,
+        company_name: companyName,
+        ...(params.relationshipJurisdictionId !== undefined ? { relationship_jurisdiction_id: params.relationshipJurisdictionId } : {}),
+      },
+      { onConflict: "id" }
+    );
   if (error) {
     console.error("[vendors] failed to upsert vendor_profile", error.message);
     return { ok: false, error: "Failed to record the vendor profile." };
@@ -124,7 +148,7 @@ export async function upsertVendorProfile(params: UpsertVendorProfileParams): Pr
     action: "vendor_profile.recorded",
     entityType: "user",
     entityId: params.profileId,
-    metadata: { companyName },
+    metadata: { companyName, relationshipJurisdictionId: params.relationshipJurisdictionId ?? undefined },
   });
 
   return { ok: true };

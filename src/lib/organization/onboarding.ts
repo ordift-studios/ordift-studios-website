@@ -140,9 +140,16 @@ export async function startStaffOnboarding(params: {
   // Onboarding stage pipeline (2026-09-07, Part 26/56) — resolved from
   // the person's actual engagement classification, per explicit
   // instruction never to force employee-only stages onto a contractor/
-  // vendor. Optional: callers that don't yet know the engagement type
-  // fall back to the DB column's own default ('employee'), matching
-  // this table's pre-existing default before this addition.
+  // vendor. Optional: a caller-supplied value always wins; when
+  // omitted, this now falls back to the REQUISITION's own
+  // engagement_type_id (below) rather than silently defaulting to the
+  // DB column's 'employee' default — root-cause fix (2026-09-15) for a
+  // real Production incident where a vendor_supplier Founder Direct
+  // Hire was started before the target had a staff_details row of
+  // their own (the UI's only prior source for this value), silently
+  // producing an employee-pipeline onboarding for a vendor. The
+  // requisition is the authoritative statement of what this specific
+  // hire genuinely is — it was just approved as exactly that.
   engagementTypeSlug?: string | null;
   actorUserId: string;
 }): Promise<{ ok: true; onboardingId: string } | { ok: false; error: string }> {
@@ -156,6 +163,17 @@ export async function startStaffOnboarding(params: {
   }
 
   const admin = createAdminClient();
+
+  let engagementTypeSlug = params.engagementTypeSlug ?? null;
+  if (!engagementTypeSlug && requisitionCheck.requisition.engagementTypeId) {
+    const { data: engagementType } = await admin
+      .from("engagement_types")
+      .select("slug")
+      .eq("id", requisitionCheck.requisition.engagementTypeId)
+      .maybeSingle();
+    engagementTypeSlug = engagementType?.slug ?? null;
+  }
+
   const { data, error } = await admin
     .from("staff_onboarding")
     .insert({
@@ -164,7 +182,8 @@ export async function startStaffOnboarding(params: {
       recruitment_application_id: params.recruitmentApplicationId ?? null,
       start_date: params.startDate ?? null,
       created_by: params.actorUserId,
-      ...(params.engagementTypeSlug ? { pipeline: resolveOnboardingPipeline(params.engagementTypeSlug) } : {}),
+      ...(engagementTypeSlug ? { pipeline: resolveOnboardingPipeline(engagementTypeSlug) } : {}),
+      ...(engagementTypeSlug ? { stage: stagesForPipeline(resolveOnboardingPipeline(engagementTypeSlug))[0] } : {}),
     })
     .select("id")
     .single();
@@ -208,6 +227,16 @@ export async function startExternalWorkforceOnboarding(params: {
   profileId: string;
   engagementTypeSlug: string;
   recruitmentApplicationId?: string | null;
+  // Vendor QA correction (2026-09-15) — optional. requisition_id is
+  // never REQUIRED here (no approval-gating logic runs against it,
+  // unlike startStaffOnboarding()'s getApprovedRequisitionForOnboarding()),
+  // but when a genuine, already-approved requisition exists for this
+  // exact relationship (e.g. a Founder Direct Hire whose engagement
+  // type happens to be vendor_supplier), the caller may pass its id
+  // purely for lineage/audit — this function trusts the caller rather
+  // than re-deriving/enforcing approval, since that enforcement
+  // already happened wherever the requisition itself was approved.
+  requisitionId?: string | null;
   actorUserId: string;
 }): Promise<{ ok: true; onboardingId: string } | { ok: false; error: string }> {
   if (!(await canManageOnboarding(params.actorUserId))) {
@@ -225,7 +254,7 @@ export async function startExternalWorkforceOnboarding(params: {
     .insert({
       profile_id: params.profileId,
       recruitment_application_id: params.recruitmentApplicationId ?? null,
-      requisition_id: null,
+      requisition_id: params.requisitionId ?? null,
       pipeline,
       stage: stages[0],
       created_by: params.actorUserId,
@@ -242,10 +271,72 @@ export async function startExternalWorkforceOnboarding(params: {
     action: "staff_onboarding.external_workforce_started",
     entityType: "user",
     entityId: params.profileId,
-    metadata: { engagementTypeSlug: params.engagementTypeSlug, recruitmentApplicationId: params.recruitmentApplicationId ?? null },
+    metadata: { engagementTypeSlug: params.engagementTypeSlug, recruitmentApplicationId: params.recruitmentApplicationId ?? null, requisitionId: params.requisitionId ?? null },
   });
 
   return { ok: true, onboardingId: data.id };
+}
+
+// Vendor QA correction (2026-09-15) — a genuine data-entry correction
+// tool, never a normal business operation: repairs a staff_onboarding
+// record that was started on the WRONG relationship pipeline (e.g. a
+// vendor accidentally routed through startStaffOnboarding() because
+// the UI's engagement-type source was empty at the time — see the
+// requisition-fallback fix on startStaffOnboarding() above, which
+// prevents this going forward). Deliberately distinct from
+// advanceOnboardingStage(), which explicitly REFUSES a cross-pipeline
+// move (canAdvanceToStage() — correct for normal progression, wrong
+// for correcting a mistake). Refuses once ANY onboarding_requirements
+// row exists for this record — at that point the mistake has real
+// recorded consequences and must be handled deliberately by a human,
+// never silently reclassified out from under real history.
+export async function correctOnboardingRelationshipClassification(params: {
+  onboardingId: string;
+  engagementTypeSlug: string;
+  reason: string;
+  actorUserId: string;
+}): Promise<{ ok: true } | { ok: false; error: string }> {
+  if (!(await canManageOnboarding(params.actorUserId))) {
+    return { ok: false, error: "Not authorized to correct an onboarding record's classification." };
+  }
+  const reason = params.reason.trim();
+  if (!reason) return { ok: false, error: "A reason is required to correct an onboarding record's classification." };
+
+  const admin = createAdminClient();
+  const { data: existing } = await admin.from("staff_onboarding").select("id, profile_id, pipeline, stage, status").eq("id", params.onboardingId).maybeSingle();
+  if (!existing) return { ok: false, error: "Onboarding record not found." };
+  if (existing.status !== "in_progress") return { ok: false, error: "Only an in-progress onboarding record can be reclassified." };
+
+  const { count } = await admin.from("onboarding_requirements").select("id", { count: "exact", head: true }).eq("onboarding_id", params.onboardingId);
+  if (count && count > 0) {
+    return { ok: false, error: "This onboarding record already has recorded requirement progress — reclassifying it now could hide real history. Resolve this manually instead." };
+  }
+
+  const newPipeline = resolveOnboardingPipeline(params.engagementTypeSlug);
+  if (newPipeline === existing.pipeline) {
+    return { ok: false, error: "This onboarding record is already on that pipeline." };
+  }
+  const stages = stagesForPipeline(newPipeline);
+
+  const { error } = await admin
+    .from("staff_onboarding")
+    .update({ pipeline: newPipeline, stage: stages[0], stage_changed_at: new Date().toISOString(), stage_changed_by: params.actorUserId })
+    .eq("id", params.onboardingId)
+    .eq("pipeline", existing.pipeline); // atomic: only corrects if still on the expected wrong pipeline
+  if (error) {
+    console.error("[organization] failed to correct staff_onboarding relationship classification", error.message);
+    return { ok: false, error: "Failed to correct the onboarding classification." };
+  }
+
+  await logActivity({
+    actorUserId: params.actorUserId,
+    action: "staff_onboarding.relationship_classification_corrected",
+    entityType: "user",
+    entityId: existing.profile_id,
+    metadata: { onboardingId: params.onboardingId, fromPipeline: existing.pipeline, toPipeline: newPipeline, engagementTypeSlug: params.engagementTypeSlug, reason },
+  });
+
+  return { ok: true };
 }
 
 // Reconciliation only (E.5 Stage 2M, Part 4/6) — links an EXISTING

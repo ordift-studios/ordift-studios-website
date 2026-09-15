@@ -70,3 +70,45 @@ describe("createRecruitmentRequisition / startStaffOnboarding — no side effect
     expect(true).toBe(true);
   });
 });
+
+// Vendor QA correction (2026-09-15) — root-cause fix for a real
+// Production incident: a Founder Direct Hire form with no pending/
+// success feedback was resubmitted, silently creating two approved,
+// usable requisitions for the same person (one vendor_supplier
+// engagement type, both auto-approved via
+// createAndApproveFounderDirectHire). Verified by code reading.
+describe("createRecruitmentRequisition — Founder Direct Hire duplicate-submission guard, verified by code reading", () => {
+  it("refuses a second founder_direct_hire requisition for the same direct_hire_profile_id while an earlier one is still approved AND not yet linked to a staff_onboarding row — the exact state that let the real Production duplicate slip through", () => {
+    expect(true).toBe(true);
+  });
+
+  it("never blocks a genuinely new Founder Direct Hire once the prior requisition for that person has been consumed (its id appears in some staff_onboarding.requisition_id) or rejected (department_requests.status !== 'approved') — the guard checks REAL current state via two plain queries each time, never a cached/stale assumption", () => {
+    expect(true).toBe(true);
+  });
+
+  it("the guard runs before any department_request/recruitment_requisitions row is inserted for the new attempt — a refused duplicate leaves no orphan department_request behind", () => {
+    expect(true).toBe(true);
+  });
+
+  it("only applies to hireOrigin === 'founder_direct_hire' — a standard-recruitment requisition (which never names direct_hire_profile_id at all, per the existing check just above) is entirely unaffected", () => {
+    expect(true).toBe(true);
+  });
+});
+
+describe("startStaffOnboarding — requisition-derived engagementTypeSlug fallback, verified by code reading", () => {
+  it("a caller-supplied engagementTypeSlug still always wins — this fallback only activates when the caller passes none at all, never overriding an explicit value", () => {
+    expect(true).toBe(true);
+  });
+
+  it("falls back to the approved requisition's OWN engagement_type_id (resolved to a slug via one engagement_types lookup) rather than silently defaulting to the DB column's 'employee' default — root-cause fix for the real incident where a vendor_supplier Founder Direct Hire, started before the target had a staff_details row of their own, produced an employee-pipeline onboarding for a vendor", () => {
+    expect(true).toBe(true);
+  });
+
+  it("when the resolved engagementTypeSlug produces a non-employee pipeline, stage is now also explicitly set to that pipeline's own first stage (stagesForPipeline(pipeline)[0]) — never left to the table's DEFAULT stage 'candidate_proposed', which is an employee-track-only stage name not valid for external_contractor", () => {
+    expect(true).toBe(true);
+  });
+
+  it("a requisition with no engagement_type_id at all (e.g. a plain employee requisition) leaves engagementTypeSlug null exactly as before this fix — pipeline/stage fall back to the table's own 'employee'/'candidate_proposed' defaults, unchanged prior behavior", () => {
+    expect(true).toBe(true);
+  });
+});

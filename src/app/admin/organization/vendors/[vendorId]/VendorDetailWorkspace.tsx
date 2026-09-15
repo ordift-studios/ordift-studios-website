@@ -10,6 +10,7 @@ import { nextStage, isTerminalStage } from "@/lib/organization/onboardingStages"
 import {
   recordVendorCompanyProfileAction,
   startVendorOnboardingAction,
+  correctVendorOnboardingClassificationAction,
   advanceVendorOnboardingStageAction,
   completeVendorOnboardingAction,
   updateVendorRequirementAction,
@@ -22,12 +23,14 @@ import {
 } from "./actions";
 
 type PaymentInstructionRow = { id: string; method: string; verification_status: string; is_default: boolean };
+type JurisdictionOption = { id: string; name: string };
 
 export function VendorDetailWorkspace({
   vendorId,
   vendorProfile,
   engagementTypeSlug,
   engagementTypeName,
+  jurisdictionOptions,
   onboarding,
   resolvedRequirements,
   overrides,
@@ -39,6 +42,7 @@ export function VendorDetailWorkspace({
   vendorProfile: VendorProfile | null;
   engagementTypeSlug: string | null;
   engagementTypeName: string | null;
+  jurisdictionOptions: JurisdictionOption[];
   onboarding: StaffOnboarding | null;
   resolvedRequirements: ResolvedRequirement[];
   overrides: OnboardingRequirementOverrideRow[];
@@ -48,7 +52,13 @@ export function VendorDetailWorkspace({
 }) {
   return (
     <div className="space-y-8">
-      <IdentitySection vendorId={vendorId} vendorProfile={vendorProfile} engagementTypeSlug={engagementTypeSlug} engagementTypeName={engagementTypeName} />
+      <IdentitySection
+        vendorId={vendorId}
+        vendorProfile={vendorProfile}
+        engagementTypeSlug={engagementTypeSlug}
+        engagementTypeName={engagementTypeName}
+        jurisdictionOptions={jurisdictionOptions}
+      />
       <OnboardingSection vendorId={vendorId} onboarding={onboarding} resolvedRequirements={resolvedRequirements} overrides={overrides} />
       <DocumentsSection vendorId={vendorId} documents={documents} />
       <PaymentSection vendorId={vendorId} vendorProfile={vendorProfile} payeeProfile={payeeProfile} paymentInstructions={paymentInstructions} />
@@ -66,11 +76,13 @@ function IdentitySection({
   vendorProfile,
   engagementTypeSlug,
   engagementTypeName,
+  jurisdictionOptions,
 }: {
   vendorId: string;
   vendorProfile: VendorProfile | null;
   engagementTypeSlug: string | null;
   engagementTypeName: string | null;
+  jurisdictionOptions: JurisdictionOption[];
 }) {
   const [profileState, profileAction, profilePending] = useActionState<ActionState, FormData>(recordVendorCompanyProfileAction, null);
   const [statusState, statusAction, statusPending] = useActionState<ActionState, FormData>(setVendorStatusAction, null);
@@ -89,10 +101,27 @@ function IdentitySection({
           Company name
           <input name="companyName" defaultValue={vendorProfile?.companyName ?? ""} required className="rounded-lg border border-black/15 px-2 py-1.5 font-sans text-body-small" />
         </label>
+        <label className="flex flex-col gap-1 font-sans text-caption text-ordift-ink-muted">
+          Relationship Jurisdiction
+          <select
+            name="relationshipJurisdictionId"
+            defaultValue={vendorProfile?.relationshipJurisdictionId ?? ""}
+            className="rounded-lg border border-black/15 bg-white px-2 py-1.5 font-sans text-body-small"
+          >
+            <option value="">Not yet set</option>
+            {jurisdictionOptions.map((j) => (
+              <option key={j.id} value={j.id}>{j.name}</option>
+            ))}
+          </select>
+        </label>
         <button type="submit" disabled={profilePending} className="font-sans text-caption font-semibold px-3 py-2 rounded-md bg-ordift-navy-950 text-white disabled:opacity-50">
           {profilePending ? "Saving…" : "Record Company Profile"}
         </button>
       </form>
+      <p className="font-sans text-caption text-ordift-ink-muted">
+        The jurisdiction governing this Vendor/Supplier relationship — never the employee-specific &ldquo;Employment
+        Jurisdiction&rdquo; field. A future Work Order may record its own override.
+      </p>
       <FormError state={profileState} />
 
       {vendorProfile && (
@@ -128,6 +157,32 @@ function StartOnboardingForm({ vendorId }: { vendorId: string }) {
       </p>
       <button type="submit" disabled={pending} className="font-sans text-body-small font-semibold px-4 py-2 rounded-md bg-ordift-navy-950 text-white disabled:opacity-50">
         {pending ? "Starting…" : "Start Vendor Onboarding"}
+      </button>
+      <FormError state={state} />
+    </form>
+  );
+}
+
+function CorrectClassificationForm({ vendorId, onboardingId, currentPipeline }: { vendorId: string; onboardingId: string; currentPipeline: string }) {
+  const [state, formAction, pending] = useActionState<ActionState, FormData>(correctVendorOnboardingClassificationAction, null);
+  return (
+    <form action={formAction} className="space-y-2 rounded-lg border border-amber-300 bg-amber-50 p-3">
+      <input type="hidden" name="vendorId" value={vendorId} />
+      <input type="hidden" name="onboardingId" value={onboardingId} />
+      <p className="font-sans text-caption text-amber-800">
+        This onboarding record is on the <strong>{currentPipeline.replace(/_/g, " ")}</strong> pipeline, not
+        external_contractor — it was likely started before this person&rsquo;s engagement classification was set.
+        Correcting it sets engagement classification to vendor_supplier and reclassifies this record to the Vendor
+        pipeline. Refused if any requirement progress has already been recorded.
+      </p>
+      <input
+        name="reason"
+        required
+        placeholder="Reason — e.g. 'Started via generic requisition picker before engagement type was set; correcting to Vendor pipeline'"
+        className="w-full rounded-lg border border-black/15 px-2 py-1.5 font-sans text-caption"
+      />
+      <button type="submit" disabled={pending} className="font-sans text-caption font-semibold px-3 py-1.5 rounded-md bg-amber-700 text-white disabled:opacity-50">
+        {pending ? "Correcting…" : "Correct to Vendor Onboarding"}
       </button>
       <FormError state={state} />
     </form>
@@ -237,6 +292,8 @@ function OnboardingSection({
       <h2 className="font-serif font-medium text-body text-ordift-ink">Onboarding Lifecycle</h2>
       {!onboarding ? (
         <StartOnboardingForm vendorId={vendorId} />
+      ) : onboarding.pipeline !== "external_contractor" ? (
+        <CorrectClassificationForm vendorId={vendorId} onboardingId={onboarding.id} currentPipeline={onboarding.pipeline} />
       ) : (
         <div className="space-y-4">
           <p className="font-sans text-body-small text-ordift-ink">

@@ -180,8 +180,18 @@ export default async function PersonDetailPage({ params }: { params: Promise<{ i
   const portfolioUseRequests = await listPortfolioUseRequestsForProfile(id);
 
   const onboarding = await getStaffOnboardingByProfileId(id);
-  const agreementReadiness = onboarding ? await checkEmployeeAgreementReadiness(onboarding.id) : null;
-  const agreementSummary = onboarding ? await getEmployeeEmploymentAgreementSummary(onboarding.id) : null;
+  // Vendor QA correction (2026-09-15) — both of these are genuinely
+  // employee-pipeline-only (OS-LGL-007, employment_jurisdiction_id,
+  // Position/Grade/Department). Calling them for a vendor/external-
+  // contractor onboarding produced a real, confusing Production
+  // symptom: "Employment jurisdiction has not been resolved... an
+  // Employee Employment Agreement cannot be drafted yet" shown for a
+  // Vendor who was never meant to have an Employee Agreement at all.
+  // The Vendor's own agreement requirement (vendor_supplier_agreement_executed,
+  // OS-LGL-009) is surfaced correctly and separately on the Vendor
+  // Admin page (/admin/organization/vendors/[vendorId]) instead.
+  const agreementReadiness = onboarding && onboarding.pipeline === "employee" ? await checkEmployeeAgreementReadiness(onboarding.id) : null;
+  const agreementSummary = onboarding && onboarding.pipeline === "employee" ? await getEmployeeEmploymentAgreementSummary(onboarding.id) : null;
 
   const referenceRequests = await listReferenceRequestsForProfile(id);
 
@@ -1130,6 +1140,13 @@ export default async function PersonDetailPage({ params }: { params: Promise<{ i
         <h2 className="font-serif font-medium text-body text-ordift-ink">Agreement Readiness</h2>
         {!onboarding ? (
           <p className="font-sans text-body-small text-ordift-ink-muted">No onboarding record on file for this person — readiness cannot be evaluated.</p>
+        ) : onboarding.pipeline !== "employee" ? (
+          <p className="font-sans text-body-small text-ordift-ink-muted">
+            This section applies to the employee pipeline (OS-LGL-007) only. This person&rsquo;s onboarding is on the{" "}
+            {onboarding.pipeline.replace(/_/g, " ")} pipeline — see{" "}
+            <Link href="/admin/organization/vendors" className="underline underline-offset-4">Vendor Management</Link> for the applicable
+            agreement requirement (OS-LGL-009, for a vendor_supplier relationship).
+          </p>
         ) : !agreementReadiness ? (
           <p className="font-sans text-body-small text-ordift-ink-muted">Readiness could not be evaluated.</p>
         ) : !agreementReadiness.ok ? (

@@ -188,7 +188,19 @@ export async function createRecruitmentRequisitionAction(formData: FormData): Pr
 // how it's called. Not a bypass of decideRequisition() — this is
 // createRecruitmentRequisition() + decideRequisition() in sequence,
 // both unchanged, exposed as one deliberate workflow.
-export async function createFounderDirectHireAction(formData: FormData): Promise<void> {
+export type FounderDirectHireState = { ok: boolean; error?: string } | null;
+
+// UX/idempotency fix (2026-09-15) — root cause of a real Production
+// incident: this action previously returned void, surfacing NO
+// feedback at all (success or failure) to the admin, and the form had
+// no pending/disabled state. A slow response looked like nothing had
+// happened, leading to a resubmission that silently created two
+// approved, usable requisitions for the same person. Now returns a
+// typed result the form (FounderDirectHireForm.tsx, useActionState)
+// can render, and createRecruitmentRequisition() itself independently
+// refuses a duplicate in-flight requisition for the same person — see
+// that function's own "Duplicate-submission guard" comment.
+export async function createFounderDirectHireAction(_prev: FounderDirectHireState, formData: FormData): Promise<FounderDirectHireState> {
   const currentUser = await requireSuperAdmin();
 
   const directHireProfileId = String(formData.get("directHireProfileId") ?? "").trim();
@@ -202,7 +214,7 @@ export async function createFounderDirectHireAction(formData: FormData): Promise
   const workLocation = String(formData.get("workLocation") ?? "").trim() || null;
   const preferredStartDate = String(formData.get("preferredStartDate") ?? "").trim() || null;
   const justification = String(formData.get("justification") ?? "").trim() || null;
-  if (!directHireProfileId || !title) return;
+  if (!directHireProfileId || !title) return { ok: false, error: "Choose the person being hired and a requisition title." };
 
   const result = await createAndApproveFounderDirectHire({
     title,
@@ -220,7 +232,9 @@ export async function createFounderDirectHireAction(formData: FormData): Promise
   });
   if (!result.ok) {
     console.error("[admin operations] failed to create Founder Direct Hire", result.error);
+    return { ok: false, error: result.error };
   }
 
   revalidatePath("/admin/operations");
+  return { ok: true };
 }

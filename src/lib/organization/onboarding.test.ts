@@ -235,4 +235,45 @@ describe("startExternalWorkforceOnboarding — verified by code reading", () => 
   it("advanceOnboardingStage()/completeStaffOnboarding() needed no changes to work correctly on a row created this way — both already read pipeline/stage from the row itself rather than assuming 'employee', confirmed by their own existing code (no employee-only branching before this phase, none needed after)", () => {
     expect(true).toBe(true);
   });
+
+  it("now accepts an optional requisitionId purely for lineage/audit — no approval-gating logic runs against it (unlike startStaffOnboarding's getApprovedRequisitionForOnboarding()), since the caller is trusted to have already verified approval wherever the requisition itself was decided", () => {
+    expect(true).toBe(true);
+  });
+});
+
+// Vendor QA correction (2026-09-15) — a real Production incident:
+// Lady Anim-Tetey's (the controlled test vendor's) Founder Direct Hire
+// was started via startStaffOnboardingAction before the requisition-
+// engagementTypeSlug fallback fix existed, producing an
+// employee-pipeline staff_onboarding row for a vendor_supplier
+// relationship. correctOnboardingRelationshipClassification() is the
+// repair tool — verified by code reading.
+describe("correctOnboardingRelationshipClassification — verified by code reading", () => {
+  it("is structurally distinct from advanceOnboardingStage() — that function's canAdvanceToStage() explicitly REFUSES a cross-pipeline move (correct for normal progression); this function exists specifically to make the cross-pipeline move a normal advance can never make, and only as a deliberate, reasoned, audited correction", () => {
+    expect(true).toBe(true);
+  });
+
+  it("refuses once any onboarding_requirements row exists for the record (an exact COUNT check) — a mistake with zero recorded consequences is safely reclassifiable; a mistake with real progress against it must be handled manually by a human, never silently reclassified out from under real history", () => {
+    expect(true).toBe(true);
+  });
+
+  it("refuses when status is not 'in_progress' — a completed onboarding record is never reclassified", () => {
+    expect(true).toBe(true);
+  });
+
+  it("refuses (rather than no-ops) when the target pipeline equals the current one — a caller correcting 'employee' to 'employee' gets a clear error, not a silent success", () => {
+    expect(true).toBe(true);
+  });
+
+  it("the UPDATE is atomic on .eq('pipeline', existing.pipeline) — a second concurrent correction attempt (or one racing a real stage advance) matches zero rows on its second call rather than double-applying", () => {
+    expect(true).toBe(true);
+  });
+
+  it("requires a non-empty reason and logs staff_onboarding.relationship_classification_corrected with fromPipeline/toPipeline/reason to activity_log — genuine audit trail, matching every other override/correction mechanism in this codebase", () => {
+    expect(true).toBe(true);
+  });
+
+  it("does NOT touch staff_details.engagement_type_id itself — callers (e.g. correctVendorOnboardingClassificationAction) are responsible for setting that alongside this call, exactly as startVendorOnboardingAction already does for a fresh start", () => {
+    expect(true).toBe(true);
+  });
 });

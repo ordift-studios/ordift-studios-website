@@ -211,6 +211,38 @@ export async function createRecruitmentRequisition(params: CreateRequisitionPara
     if (!params.directHireProfileId) {
       return { ok: false, error: "A Founder Direct Hire requisition must name the specific person being hired." };
     }
+
+    // Duplicate-submission guard (Vendor Completion Phase follow-up,
+    // 2026-09-15) — root cause of a real Production incident: the
+    // Founder Direct Hire form previously gave no pending/success
+    // feedback (fixed alongside this, see FounderDirectHireForm.tsx),
+    // so a slow response looked like nothing happened and was
+    // resubmitted, silently creating two usable, approved requisitions
+    // for the same person (createAndApproveFounderDirectHire()
+    // auto-approves in the same call). Refuses a second Direct Hire
+    // requisition for the same person while an earlier one is still
+    // approved and not yet consumed by starting onboarding — never
+    // blocks a genuinely new direct hire once the prior one has been
+    // used (linked to a staff_onboarding row) or rejected.
+    const admin = createAdminClient();
+    const { data: existingForPerson } = await admin
+      .from("recruitment_requisitions")
+      .select("id, request_id")
+      .eq("direct_hire_profile_id", params.directHireProfileId)
+      .eq("hire_origin", "founder_direct_hire");
+    if (existingForPerson && existingForPerson.length > 0) {
+      const requestIds = existingForPerson.map((r) => r.request_id);
+      const [{ data: requests }, { data: linkedRows }] = await Promise.all([
+        admin.from("department_requests").select("id, status").in("id", requestIds),
+        admin.from("staff_onboarding").select("requisition_id").not("requisition_id", "is", null),
+      ]);
+      const approvedRequestIds = new Set((requests ?? []).filter((r) => r.status === "approved").map((r) => r.id));
+      const linkedRequisitionIds = new Set((linkedRows ?? []).map((r) => r.requisition_id as string));
+      const hasUnresolvedApproved = existingForPerson.some((r) => approvedRequestIds.has(r.request_id) && !linkedRequisitionIds.has(r.id));
+      if (hasUnresolvedApproved) {
+        return { ok: false, error: "An approved Founder Direct Hire requisition already exists for this person and has not yet been used to start onboarding. Use that existing requisition, or reject it first, rather than creating a duplicate." };
+      }
+    }
   } else if (params.directHireProfileId) {
     return { ok: false, error: "A standard-recruitment requisition must not name a specific candidate directly." };
   }

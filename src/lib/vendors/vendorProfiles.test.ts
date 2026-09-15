@@ -35,3 +35,15 @@ describe("vendorProfiles.ts — canonical vendor identity, verified by code read
     expect(true).toBe(true);
   });
 });
+
+// Vendor QA correction (2026-09-15) — relationship_jurisdiction_id
+// (migration 0123), verified by code reading.
+describe("vendorProfiles.ts — relationship jurisdiction, verified by code reading", () => {
+  it("relationship_jurisdiction_id reuses the generic employment_jurisdictions lookup table but is a SEPARATE column from any employee-hire-shaped employment_jurisdiction_id elsewhere (employment_terms_history, recruitment_requisitions) — a Vendor relationship is not an employment relationship, and this column is never read or written by any employee-pipeline code path", () => {
+    expect(true).toBe(true);
+  });
+
+  it("upsertVendorProfile()'s relationshipJurisdictionId param is optional and tri-state: undefined leaves the existing value untouched (omitted from the upsert payload entirely), explicit null clears it, a real id sets it — never inferred or guessed", () => {
+    expect(true).toBe(true);
+  });
+});

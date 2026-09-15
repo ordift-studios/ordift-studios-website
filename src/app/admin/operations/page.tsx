@@ -10,9 +10,10 @@ import { listRecruitmentRequisitions } from "@/lib/recruitment/requisitions";
 import { listGradeCompensationBands } from "@/lib/organization/gradeCompensation";
 import { listAllPaymentObligations } from "@/lib/payments/payoutObligations";
 import { JURISDICTIONS } from "@/lib/organization/authority";
-import { reserveCorporateIdentityAction, createDepartmentRequestAction, createRecruitmentRequisitionAction, createFounderDirectHireAction } from "./actions";
+import { reserveCorporateIdentityAction, createDepartmentRequestAction, createRecruitmentRequisitionAction } from "./actions";
 import { CorporateIdentityCorrection } from "./CorporateIdentityCorrection";
 import { CorporateIdentityProvisioning } from "./CorporateIdentityProvisioning";
+import { FounderDirectHireForm } from "./FounderDirectHireForm";
 
 export const metadata: Metadata = {
   title: "Operations — Ordift Studios Admin",
@@ -220,57 +221,15 @@ export default async function AdminOperationsPage() {
           For a specific, already-identified person — not a bypass. Creates and approves a real requisition in one
           step, through the same approval gate as Standard Recruitment.
         </p>
-        <form action={createFounderDirectHireAction} className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <select name="directHireProfileId" required defaultValue="" className="rounded-lg border border-black/15 bg-white px-2 py-1.5 font-sans text-body-small sm:col-span-2">
-            <option value="" disabled>Person being hired…</option>
-            {people.map((p) => (
-              <option key={p.id} value={p.id}>{p.label}</option>
-            ))}
-          </select>
-          <input type="text" name="title" placeholder="Requisition title (e.g. Client Engagement Representative)" required className="rounded-lg border border-black/15 px-3 py-1.5 font-sans text-body-small sm:col-span-2" />
-          <select name="requestedPositionId" defaultValue="" className="rounded-lg border border-black/15 bg-white px-2 py-1.5 font-sans text-body-small">
-            <option value="">Position (optional)…</option>
-            {positions.map((p) => (
-              <option key={p.id} value={p.id}>{p.name}</option>
-            ))}
-          </select>
-          <select name="departmentId" defaultValue="" className="rounded-lg border border-black/15 bg-white px-2 py-1.5 font-sans text-body-small">
-            <option value="">Department (optional)…</option>
-            {departments.map((d) => (
-              <option key={d.id} value={d.id}>{d.name}</option>
-            ))}
-          </select>
-          <select name="gradeId" defaultValue="" className="rounded-lg border border-black/15 bg-white px-2 py-1.5 font-sans text-body-small">
-            <option value="">Grade (optional)…</option>
-            {grades.map((g) => (
-              <option key={g.id} value={g.id}>{g.code} — {g.name}</option>
-            ))}
-          </select>
-          <select name="engagementTypeId" defaultValue="" className="rounded-lg border border-black/15 bg-white px-2 py-1.5 font-sans text-body-small">
-            <option value="">Engagement Type (optional)…</option>
-            {engagementTypes.map((e) => (
-              <option key={e.id} value={e.id}>{e.name}</option>
-            ))}
-          </select>
-          <select name="employingEntityId" defaultValue="" className="rounded-lg border border-black/15 bg-white px-2 py-1.5 font-sans text-body-small">
-            <option value="">Employing Entity — leave unset if undecided…</option>
-            {employingEntities.map((e) => (
-              <option key={e.id} value={e.id}>{e.name}</option>
-            ))}
-          </select>
-          <select name="employmentJurisdictionId" defaultValue="" className="rounded-lg border border-black/15 bg-white px-2 py-1.5 font-sans text-body-small">
-            <option value="">Employment Jurisdiction — leave unset if undecided…</option>
-            {employmentJurisdictions.map((j) => (
-              <option key={j.id} value={j.id}>{j.name}</option>
-            ))}
-          </select>
-          <input type="text" name="workLocation" placeholder="Work location (optional, free text)" className="rounded-lg border border-black/15 px-3 py-1.5 font-sans text-body-small" />
-          <input type="date" name="preferredStartDate" className="rounded-lg border border-black/15 px-3 py-1.5 font-sans text-body-small" />
-          <textarea name="justification" placeholder="Justification (optional)" className="rounded-lg border border-black/15 px-3 py-1.5 font-sans text-body-small sm:col-span-2" />
-          <button type="submit" className="sm:col-span-2 justify-self-start font-sans text-body-small font-semibold px-4 py-2 rounded-md bg-ordift-gold-pressed text-ordift-navy-950">
-            Create &amp; Approve Founder Direct Hire
-          </button>
-        </form>
+        <FounderDirectHireForm
+          people={people}
+          positions={positions}
+          departments={departments}
+          grades={grades}
+          engagementTypes={engagementTypes}
+          employingEntities={employingEntities}
+          employmentJurisdictions={employmentJurisdictions}
+        />
       </section>
 
       <section className="rounded-xl border border-black/10 bg-white p-6 space-y-4">

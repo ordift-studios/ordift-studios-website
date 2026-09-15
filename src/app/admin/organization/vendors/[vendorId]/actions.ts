@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { getCurrentUser } from "@/lib/portal/roles";
-import { canManageOnboarding, startExternalWorkforceOnboarding, advanceOnboardingStage, completeStaffOnboarding } from "@/lib/organization/onboarding";
+import { canManageOnboarding, startExternalWorkforceOnboarding, advanceOnboardingStage, completeStaffOnboarding, correctOnboardingRelationshipClassification } from "@/lib/organization/onboarding";
 import { updateOnboardingRequirement, authorizeOnboardingRequirementOverride, type RequirementStatus } from "@/lib/organization/onboardingRequirements";
 import { upsertVendorProfile, setVendorProfileStatus } from "@/lib/vendors/vendorProfiles";
 import { uploadVendorDocument, reviewVendorDocument } from "@/lib/vendors/vendorDocuments";
@@ -28,7 +28,8 @@ export async function recordVendorCompanyProfileAction(_prev: ActionState, formD
     const user = await requireVendorAdmin();
     const vendorId = String(formData.get("vendorId") ?? "");
     const companyName = String(formData.get("companyName") ?? "");
-    const result = await upsertVendorProfile({ profileId: vendorId, companyName, actorUserId: user.id });
+    const relationshipJurisdictionId = String(formData.get("relationshipJurisdictionId") ?? "").trim() || null;
+    const result = await upsertVendorProfile({ profileId: vendorId, companyName, relationshipJurisdictionId, actorUserId: user.id });
     if (!result.ok) return { ok: false, error: result.error };
     revalidateVendor(vendorId);
     return { ok: true };
@@ -58,6 +59,38 @@ export async function startVendorOnboardingAction(_prev: ActionState, formData: 
     if (staffDetailsError) return { ok: false, error: "Failed to set engagement classification." };
 
     const result = await startExternalWorkforceOnboarding({ profileId: vendorId, engagementTypeSlug: "vendor_supplier", actorUserId: user.id });
+    if (!result.ok) return { ok: false, error: result.error };
+    revalidateVendor(vendorId);
+    return { ok: true };
+  } catch {
+    return { ok: false, error: "You are not authorized to do this." };
+  }
+}
+
+// Vendor QA correction (2026-09-15) — repairs an onboarding record
+// that was mistakenly started on the employee pipeline (e.g. via the
+// generic Users "Start Onboarding" requisition picker before the
+// requisition-engagementTypeSlug fallback fix). Also sets
+// staff_details.engagement_type_id to vendor_supplier, exactly like
+// startVendorOnboardingAction above, since correcting the
+// staff_onboarding row alone would leave the requirement catalog
+// unable to resolve the right engagement type.
+export async function correctVendorOnboardingClassificationAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  try {
+    const user = await requireVendorAdmin();
+    const vendorId = String(formData.get("vendorId") ?? "");
+    const onboardingId = String(formData.get("onboardingId") ?? "");
+    const reason = String(formData.get("reason") ?? "");
+    const admin = createAdminClient();
+    const { data: vendorEngagementType } = await admin.from("engagement_types").select("id").eq("slug", "vendor_supplier").single();
+    if (!vendorEngagementType) return { ok: false, error: "vendor_supplier engagement type is missing reference data." };
+
+    const { error: staffDetailsError } = await admin
+      .from("staff_details")
+      .upsert({ id: vendorId, engagement_type_id: vendorEngagementType.id }, { onConflict: "id" });
+    if (staffDetailsError) return { ok: false, error: "Failed to set engagement classification." };
+
+    const result = await correctOnboardingRelationshipClassification({ onboardingId, engagementTypeSlug: "vendor_supplier", reason, actorUserId: user.id });
     if (!result.ok) return { ok: false, error: result.error };
     revalidateVendor(vendorId);
     return { ok: true };

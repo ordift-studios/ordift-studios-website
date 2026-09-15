@@ -7,6 +7,7 @@ import { listResolvedRequirements, listOnboardingRequirementOverrides } from "@/
 import { getVendorProfile } from "@/lib/vendors/vendorProfiles";
 import { listVendorDocuments } from "@/lib/vendors/vendorDocuments";
 import { getPayeeProfile } from "@/lib/payables/payeeProfiles";
+import { listEmploymentJurisdictions } from "@/lib/portal/adminData";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { VendorDetailWorkspace } from "./VendorDetailWorkspace";
 
@@ -29,13 +30,15 @@ export default async function VendorDetailPage({ params }: { params: Promise<{ v
   ]);
   if (!profile) notFound();
 
-  const [resolvedRequirements, overrides, documents, payeeProfile, { data: paymentInstructions }] = await Promise.all([
+  const [resolvedRequirements, overrides, documents, payeeProfile, { data: paymentInstructions }, jurisdictions] = await Promise.all([
     onboarding ? listResolvedRequirements({ onboardingId: onboarding.id, profileId: vendorId, pipeline: onboarding.pipeline }) : Promise.resolve([]),
     onboarding ? listOnboardingRequirementOverrides(onboarding.id) : Promise.resolve([]),
     listVendorDocuments(vendorId, user.id),
     getPayeeProfile(vendorId),
     admin.from("payment_instructions").select("id, method, verification_status, is_default").eq("profile_id", vendorId),
+    listEmploymentJurisdictions(),
   ]);
+  const jurisdictionOptions = jurisdictions.map((j) => ({ id: j.id, name: j.name }));
 
   const engagementType = staffDetails?.engagement_types as unknown as { slug: string; name: string } | null;
 
@@ -56,6 +59,7 @@ export default async function VendorDetailPage({ params }: { params: Promise<{ v
         vendorProfile={vendorProfile}
         engagementTypeSlug={engagementType?.slug ?? null}
         engagementTypeName={engagementType?.name ?? null}
+        jurisdictionOptions={jurisdictionOptions}
         onboarding={onboarding}
         resolvedRequirements={resolvedRequirements}
         overrides={overrides}
