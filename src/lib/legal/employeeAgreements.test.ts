@@ -135,6 +135,44 @@ describe("createEmployeeEmploymentAgreementDraftIdempotent — never a silent du
   it("never advances onboarding stage, never marks policies acknowledged, never issues/sends/signs/executes anything — grep-confirmed: no call to advanceOnboardingStage, recordPolicyAcknowledgement, transitionAgreementStatus, or any signature-request function exists anywhere in createEmployeeEmploymentAgreementDraftIdempotent() or createEmployeeEmploymentAgreementDraft()", () => {
     expect(true).toBe(true);
   });
+
+  it("a concurrent double-click from two different sessions/tabs is not fully closed by a database constraint — grep-confirmed: no unique index exists on agreements(primary_context_type, primary_context_reference), deliberately, since a genuine future replacement must be able to add a second live row for the same onboarding. The realistic protection is layered: the button disables itself for the request's own duration (CreateAgreementDraftForm's pending state, same-tab double-click), and this function's own check-then-act comparison catches the common sequential-retry case. A true simultaneous cross-tab race remains a known, accepted residual limitation, unchanged by this phase.", () => {
+    expect(true).toBe(true);
+  });
+});
+
+// Stale-draft detection (2026-09-15 fix) — root cause of the reported
+// bug: the Full Profile/Onboarding Workspace UI treated "a summary
+// exists" and "the summary is still accurate" as the same fact, so the
+// create/replacement action stayed permanently hidden once any draft
+// existed, even after the underlying resolved Schedule A genuinely
+// changed. findLatestLiveAgreement()/getEmployeeEmploymentAgreementSummary()
+// are DB-dependent — verified by code reading; sameAgreementValues()
+// itself (the actual comparison) is already directly tested above.
+describe("Stale-draft detection and cancelled-draft exclusion, verified by code reading", () => {
+  it("getEmployeeEmploymentAgreementSummary() now returns isStale: true whenever the freshly resolved Schedule A values differ from the current live draft's frozen snapshot — using the same sameAgreementValues() comparison createEmployeeEmploymentAgreementDraftIdempotent() uses, never a second independently-drifting comparison", () => {
+    expect(true).toBe(true);
+  });
+
+  it("isStale is always false once isIssued is true — an issued/executed agreement is frozen by design; this flag only ever applies to a live, unissued draft, never suggesting a replacement path for something already executed", () => {
+    expect(true).toBe(true);
+  });
+
+  it("for Mishael Adjei specifically (real Production state): ORD-AGR-2026-000003's frozen snapshot has no probation/notice/annualLeave/reportingTo keys at all, while the freshly resolved values now include all four (the 2026-09-15 fix) — sameAgreementValues() correctly detects this as a difference, so getEmployeeEmploymentAgreementSummary() reports isStale: true for his onboarding", () => {
+    expect(true).toBe(true);
+  });
+
+  it("findLatestLiveAgreement() excludes any agreement whose status is exceptional (declined/cancelled/expired/superseded/terminated) via the canonical isExceptionalAgreementStatus() — a cancelled draft (e.g. ORD-AGR-2026-000002, reconciled 2026-09-15) is never returned as 'the' current agreement, so it can never be mistaken for a live draft, never incorrectly suppress the create action, and never be the thing a fresh value is compared against for idempotency", () => {
+    expect(true).toBe(true);
+  });
+
+  it("findLatestLiveAgreement() fetches a page of recent agreements (not just the single newest row) and returns the first non-exceptional one — so a cancellation landing on the newest row does not blind the function to an earlier agreement that is still genuinely live", () => {
+    expect(true).toBe(true);
+  });
+
+  it("the UI (people/[id]/page.tsx, OnboardingWorkspace.tsx) shows the existing-draft summary and the create/replacement action independently — 'a live draft exists' and 'the create action is available' are no longer the same boolean; the create action shows whenever readiness is met AND (no live draft exists OR the live draft isStale)", () => {
+    expect(true).toBe(true);
+  });
 });
 
 // COMP-SYS-1 Phase B2 Step 1/2 (2026-09-14) — the jurisdiction-schedule

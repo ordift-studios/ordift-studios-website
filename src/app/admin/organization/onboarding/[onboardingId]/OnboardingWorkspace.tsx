@@ -363,6 +363,12 @@ export function OnboardingWorkspace({
             </Link>
           </div>
         )}
+        {agreementSummary?.isStale && (
+          <p className="font-sans text-caption text-amber-700 bg-amber-50 border border-amber-200 rounded px-3 py-2">
+            The currently resolved Schedule A values no longer match this draft&apos;s frozen snapshot — a corrected
+            replacement can be generated from the Full Profile&apos;s Agreement Readiness section.
+          </p>
+        )}
         {documentsAndAgreements.length === 0 ? (
           <p className="font-sans text-caption text-ordift-ink-muted">No document/agreement requirements defined for this pipeline yet.</p>
         ) : (

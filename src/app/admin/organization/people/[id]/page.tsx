@@ -1146,7 +1146,7 @@ export default async function PersonDetailPage({ params }: { params: Promise<{ i
                 </li>
               ))}
             </ul>
-            {agreementSummary ? (
+            {agreementSummary && (
               <div className="rounded-lg border border-black/10 bg-ordift-offwhite p-3 flex flex-wrap items-center justify-between gap-2">
                 <p className="font-sans text-body-small text-ordift-ink">
                   {agreementSummary.agreementReference} —{" "}
@@ -1158,11 +1158,29 @@ export default async function PersonDetailPage({ params }: { params: Promise<{ i
                   View Draft / Review Agreement →
                 </Link>
               </div>
-            ) : agreementReadiness.ready ? (
-              <CreateAgreementDraftForm profileId={id} onboardingId={onboarding.id} />
-            ) : (
-              <p className="font-sans text-caption text-ordift-ink-muted">Every field above must be satisfied before a draft can be created — no field is ever filled in automatically.</p>
             )}
+            {/* Stale-draft detection (2026-09-15 fix) — a live draft
+                existing is NOT the same fact as "the resolved terms
+                still match what that draft was generated with". Before
+                this fix, ANY existing summary unconditionally hid the
+                create action, so a corrected replacement could never
+                be generated once a draft existed, even after the
+                underlying resolved facts genuinely changed (e.g. the
+                Probation/Notice/Annual Leave/Reporting To fix). */}
+            {agreementReadiness.ready && (!agreementSummary || agreementSummary.isStale) ? (
+              <div className="space-y-2">
+                {agreementSummary?.isStale && (
+                  <p className="font-sans text-caption text-amber-700 bg-amber-50 border border-amber-200 rounded px-3 py-2">
+                    The currently resolved Schedule A values no longer match {agreementSummary.agreementReference}&apos;s frozen
+                    snapshot — a corrected replacement draft can be generated below. {agreementSummary.agreementReference} remains
+                    untouched, real history.
+                  </p>
+                )}
+                <CreateAgreementDraftForm profileId={id} onboardingId={onboarding.id} isReplacement={Boolean(agreementSummary?.isStale)} />
+              </div>
+            ) : !agreementSummary && !agreementReadiness.ready ? (
+              <p className="font-sans text-caption text-ordift-ink-muted">Every field above must be satisfied before a draft can be created — no field is ever filled in automatically.</p>
+            ) : null}
           </>
         )}
       </section>

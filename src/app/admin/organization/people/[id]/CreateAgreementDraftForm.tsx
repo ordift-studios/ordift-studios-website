@@ -15,7 +15,19 @@ import { createEmployeeEmploymentAgreementDraftAction, type CreateAgreementDraft
 // server action underneath (createEmployeeEmploymentAgreementDraftIdempotent)
 // independently guards against a genuine duplicate draft if this ever
 // fires twice regardless (e.g. two separate tabs).
-export function CreateAgreementDraftForm({ profileId, onboardingId }: { profileId: string; onboardingId: string }) {
+export function CreateAgreementDraftForm({
+  profileId,
+  onboardingId,
+  isReplacement = false,
+}: {
+  profileId: string;
+  onboardingId: string;
+  // 2026-09-15 stale-draft fix — shown when a live draft already
+  // exists but its frozen snapshot no longer matches the currently
+  // resolved terms. Label/messaging only; the underlying action and
+  // idempotency guarantee are identical either way.
+  isReplacement?: boolean;
+}) {
   const [state, formAction, pending] = useActionState<CreateAgreementDraftActionState, FormData>(createEmployeeEmploymentAgreementDraftAction, null);
 
   return (
@@ -29,7 +41,7 @@ export function CreateAgreementDraftForm({ profileId, onboardingId }: { profileI
           aria-busy={pending}
           className="font-sans text-caption font-semibold px-3 py-1.5 rounded-md bg-ordift-navy-950 text-white disabled:opacity-50"
         >
-          {pending ? "Creating Draft…" : "Create Draft Employment Agreement"}
+          {pending ? "Creating Draft…" : isReplacement ? "Create Corrected Replacement Draft" : "Create Draft Employment Agreement"}
         </button>
       </form>
       <div role="status" aria-live="polite">
@@ -37,7 +49,7 @@ export function CreateAgreementDraftForm({ profileId, onboardingId }: { profileI
           <p className="font-sans text-caption text-green-700">
             {state.alreadyExisted
               ? `A current draft already exists (${state.agreementReference}) — nothing new was created.`
-              : "Employment agreement draft created successfully."}{" "}
+              : `A new ${state.agreementReference} draft was created successfully.`}{" "}
             This is a DRAFT for Founder review only — it has not been issued, approved, signed or executed.{" "}
             <Link href={`/admin/organization/agreements/${state.agreementId}`} className="font-semibold text-ordift-gold-pressed underline underline-offset-4">
               View Draft / Review Agreement →

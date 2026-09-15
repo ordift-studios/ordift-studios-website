@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createDraftAgreement, attachAgreementSnapshot, addAgreementParty } from "@/lib/legal/agreementEngine";
-import { isIssuedAgreementStatus, type AgreementLifecycleStatus } from "@/lib/legal/agreementLifecycle";
+import { isIssuedAgreementStatus, isExceptionalAgreementStatus, type AgreementLifecycleStatus } from "@/lib/legal/agreementLifecycle";
 import { authorizeWithSuperAdminOverride, GOVERNANCE_CAPABILITIES } from "@/lib/organization/authority";
 import {
   EMPLOYMENT_AGREEMENT_VARIABLES,
@@ -439,19 +439,36 @@ export type CreateDraftIdempotentResult =
 // independently-re-validating createEmployeeEmploymentAgreementDraft().
 // Never mutates, deletes, or marks the prior agreement in any way —
 // it remains exactly as issued, a separate, older row.
+// Finds the most recent LIVE (non-exceptional) agreement for an
+// onboarding — 2026-09-15 fix. A cancelled/declined/expired/superseded/
+// terminated agreement is real history, but it must never be treated
+// as "the current draft" for idempotency/staleness purposes: it isn't
+// current, and a value coincidentally matching its frozen snapshot
+// must never be mistaken for "nothing has changed" or block a genuine
+// replacement from being created. Fetches a small page of recent
+// agreements (newest first) rather than assuming the single newest row
+// is live, since a cancellation can leave the newest row exceptional
+// while an earlier one is still the real live draft (not the case
+// today, but this must not assume today's specific history forever).
+async function findLatestLiveAgreement(onboardingId: string): Promise<{ id: string; agreementReference: string } | null> {
+  const admin = createAdminClient();
+  const { data } = await admin
+    .from("agreements")
+    .select("id, agreement_reference, status")
+    .eq("primary_context_type", "staff_onboarding")
+    .eq("primary_context_reference", onboardingId)
+    .order("created_at", { ascending: false })
+    .limit(10);
+  const live = (data ?? []).find((a) => !isExceptionalAgreementStatus(a.status as AgreementLifecycleStatus));
+  return live ? { id: live.id, agreementReference: live.agreement_reference } : null;
+}
+
 export async function createEmployeeEmploymentAgreementDraftIdempotent(params: {
   onboardingId: string;
   actorUserId: string;
 }): Promise<CreateDraftIdempotentResult> {
   const admin = createAdminClient();
-  const { data: existingAgreement } = await admin
-    .from("agreements")
-    .select("id, agreement_reference")
-    .eq("primary_context_type", "staff_onboarding")
-    .eq("primary_context_reference", params.onboardingId)
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
+  const existingAgreement = await findLatestLiveAgreement(params.onboardingId);
 
   if (existingAgreement) {
     const { data: snapshotRow } = await admin
@@ -464,7 +481,7 @@ export async function createEmployeeEmploymentAgreementDraftIdempotent(params: {
     if (snapshotRow) {
       const { values: freshValues } = await resolveEmployeeAgreementVariables(params.onboardingId);
       if (sameAgreementValues(freshValues, snapshotRow.snapshot_data as EmploymentAgreementVariables)) {
-        return { ok: true, alreadyExisted: true, agreementId: existingAgreement.id, agreementReference: existingAgreement.agreement_reference };
+        return { ok: true, alreadyExisted: true, agreementId: existingAgreement.id, agreementReference: existingAgreement.agreementReference };
       }
     }
   }
@@ -508,28 +525,58 @@ export interface EmploymentAgreementSummary {
   // already defines "issued" with; this never re-derives that meaning.
   isIssued: boolean;
   createdAt: string;
+  // Whether the CURRENTLY, freshly resolved Schedule A values differ
+  // from this draft's own frozen snapshot (2026-09-15 fix). Root cause
+  // of the reported bug: the Full Profile/Onboarding Workspace UI
+  // showed "View Draft" whenever ANY summary existed and hid the
+  // create action entirely, with no awareness that the underlying
+  // resolved facts could have changed since that draft was generated
+  // (e.g. the Probation/Notice/Annual Leave/Reporting To fix). Only
+  // ever meaningful while NOT issued — an issued/executed agreement is
+  // frozen by design and its correction path is a real amendment/
+  // re-issuance workflow, not this flag; always false once isIssued.
+  isStale: boolean;
 }
 
-// Lightweight existence/status check — used by both the Documents-stage
-// summary (Onboarding Workspace) and the Full Profile's Agreement
-// Readiness section, so neither maintains its own independent read of
-// "does a draft already exist" (2026-09-15).
+// Lightweight existence/status/staleness check — used by both the
+// Documents-stage summary (Onboarding Workspace) and the Full Profile's
+// Agreement Readiness section, so neither maintains its own
+// independent read of "does a draft already exist, and is it still
+// accurate" (2026-09-15). Only ever considers the most recent LIVE
+// (non-exceptional) agreement — findLatestLiveAgreement() — so a
+// cancelled draft (e.g. ORD-AGR-2026-000002, reconciled 2026-09-15)
+// never displays as "the" summary and never blocks a genuine
+// replacement from showing as creatable.
 export async function getEmployeeEmploymentAgreementSummary(onboardingId: string): Promise<EmploymentAgreementSummary | null> {
   const admin = createAdminClient();
-  const { data } = await admin
-    .from("agreements")
-    .select("id, agreement_reference, status, created_at")
-    .eq("primary_context_type", "staff_onboarding")
-    .eq("primary_context_reference", onboardingId)
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
+  const live = await findLatestLiveAgreement(onboardingId);
+  if (!live) return null;
+
+  const { data } = await admin.from("agreements").select("id, agreement_reference, status, created_at").eq("id", live.id).maybeSingle();
   if (!data) return null;
   const status = data.status as AgreementLifecycleStatus;
+  const isIssued = isIssuedAgreementStatus(status);
+
+  let isStale = false;
+  if (!isIssued) {
+    const { data: snapshotRow } = await admin
+      .from("agreement_snapshots")
+      .select("snapshot_data")
+      .eq("agreement_id", data.id)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (snapshotRow) {
+      const { values: freshValues } = await resolveEmployeeAgreementVariables(onboardingId);
+      isStale = !sameAgreementValues(freshValues, snapshotRow.snapshot_data as EmploymentAgreementVariables);
+    }
+  }
+
   return {
     agreementId: data.id,
     agreementReference: data.agreement_reference,
     status,
+    isStale,
     isIssued: isIssuedAgreementStatus(status),
     createdAt: data.created_at,
   };
