@@ -24,6 +24,26 @@ import { isSuperAdminId, hasJurisdictionAuthority } from "@/lib/organization/aut
 export const WORK_PATTERN_TYPES = ["fixed_schedule", "shift_roster", "flexible_executive"] as const;
 export type WorkPatternType = (typeof WORK_PATTERN_TYPES)[number];
 
+// Founder/Director compensation CLASSIFICATION (Founder Employment
+// Workspace Phase, Part B Sequence 3, 2026-09-15) — deliberately
+// structurally separate from basicSalary/currency below, and from
+// grade/title/employment-status/workPatternType/authority elsewhere.
+// This is NOT a general employee compensation field: ordinary staff
+// compensation is already unambiguous (a wage, recorded via
+// basicSalary/currency); this field exists only for the genuinely
+// distinct Founder/Director question of whether, and under what
+// classification, a Director's compensation may legitimately be zero
+// or deferred under Ghanaian law. That is a legal/policy
+// determination this codebase does not make — see the Sequence 3
+// report. Only "not_yet_determined" is defined for now: an explicit,
+// legally-neutral "this decision has been deliberately deferred"
+// marker, never a legal characterization of the relationship itself.
+// Further values (e.g. distinguishing a Director's-fees arrangement
+// from an employment salary) can only be added once that legal
+// question is resolved — never guessed.
+export const COMPENSATION_STATUSES = ["not_yet_determined"] as const;
+export type CompensationStatus = (typeof COMPENSATION_STATUSES)[number];
+
 export interface EmploymentTermsFields {
   employingEntityId: string | null;
   employmentJurisdictionId: string | null;
@@ -39,6 +59,11 @@ export interface EmploymentTermsFields {
   // remain null too — this is never forced into a fixed weekday array
   // merely to satisfy the calendar resolver.
   workPatternType: WorkPatternType | null;
+  // Classification, not amount — see COMPENSATION_STATUSES above.
+  // Never inferred or auto-assigned; null means genuinely
+  // unconsidered (distinct from "not_yet_determined", which is an
+  // explicit deferred-decision marker someone deliberately recorded).
+  compensationStatus: CompensationStatus | null;
   basicSalary: number | null;
   currency: string | null;
   allowances: Record<string, unknown> | null;
@@ -76,6 +101,7 @@ const EMPTY_FIELDS: EmploymentTermsFields = {
   managerId: null,
   workPattern: null,
   workPatternType: null,
+  compensationStatus: null,
   basicSalary: null,
   currency: null,
   allowances: null,
@@ -155,6 +181,7 @@ function mapRow(r: {
   manager_id: string | null;
   work_pattern: string | null;
   work_pattern_type: string | null;
+  compensation_status: string | null;
   basic_salary: number | null;
   currency: string | null;
   allowances: Record<string, unknown> | null;
@@ -179,6 +206,7 @@ function mapRow(r: {
     managerId: r.manager_id,
     workPattern: r.work_pattern,
     workPatternType: r.work_pattern_type as WorkPatternType | null,
+    compensationStatus: r.compensation_status as CompensationStatus | null,
     basicSalary: r.basic_salary,
     currency: r.currency,
     allowances: r.allowances,
@@ -193,7 +221,7 @@ function mapRow(r: {
 }
 
 const SELECT =
-  "id, profile_id, effective_from, employing_entity_id, employment_jurisdiction_id, work_location, position_id, department_id, grade_id, manager_id, work_pattern, work_pattern_type, basic_salary, currency, allowances, working_weekdays, source, recorded_at, recorded_by, transition_type, notes, enhanced_review_required";
+  "id, profile_id, effective_from, employing_entity_id, employment_jurisdiction_id, work_location, position_id, department_id, grade_id, manager_id, work_pattern, work_pattern_type, compensation_status, basic_salary, currency, allowances, working_weekdays, source, recorded_at, recorded_by, transition_type, notes, enhanced_review_required";
 
 export async function getCurrentEmploymentTerms(profileId: string): Promise<EmploymentTermsRow | null> {
   const admin = createAdminClient();
@@ -295,6 +323,7 @@ export async function recordEmploymentTermsSnapshot(params: {
       manager_id: merged.managerId,
       work_pattern: merged.workPattern,
       work_pattern_type: merged.workPatternType,
+      compensation_status: merged.compensationStatus,
       basic_salary: merged.basicSalary,
       currency: merged.currency,
       allowances: merged.allowances,
@@ -445,6 +474,7 @@ export async function recordEmploymentTransition(params: {
       manager_id: merged.managerId,
       work_pattern: merged.workPattern,
       work_pattern_type: merged.workPatternType,
+      compensation_status: merged.compensationStatus,
       basic_salary: merged.basicSalary,
       currency: merged.currency,
       allowances: merged.allowances,

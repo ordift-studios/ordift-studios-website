@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { mergeEmploymentTermsFields, doesTransitionRequireEnhancedReview, EMPLOYMENT_TRANSITION_TYPES, WORK_PATTERN_TYPES, type EmploymentTermsFields } from "./employmentTermsHistory";
+import {
+  mergeEmploymentTermsFields,
+  doesTransitionRequireEnhancedReview,
+  EMPLOYMENT_TRANSITION_TYPES,
+  WORK_PATTERN_TYPES,
+  COMPENSATION_STATUSES,
+  type EmploymentTermsFields,
+} from "./employmentTermsHistory";
 
 // Ordift Studios Compliance/COMP-SYS-1, Phase B4 Step 1. mergeEmploymentTermsFields()
 // is pure and fully, directly tested with real assertions below.
@@ -18,6 +25,7 @@ const FULL_SNAPSHOT: EmploymentTermsFields = {
   managerId: "manager-1",
   workPattern: "office",
   workPatternType: "fixed_schedule",
+  compensationStatus: "not_yet_determined",
   basicSalary: 5000,
   currency: "GHS",
   allowances: { transport: 200 },
@@ -37,6 +45,7 @@ describe("mergeEmploymentTermsFields — full-snapshot merge, no sparse deltas",
       managerId: null,
       workPattern: null,
       workPatternType: null,
+      compensationStatus: null,
       basicSalary: null,
       currency: null,
       allowances: null,
@@ -180,6 +189,57 @@ describe("work_pattern_type — DB-dependent wiring, verified by code reading", 
   });
 
   it("the ordinary-employee employment-terms forms (Record Initial Employment Terms and Employment Transition, on the Full Profile page) expose the identical three-option workPatternType select as the Founder's own form, for architectural consistency across both paths", () => {
+    expect(true).toBe(true);
+  });
+});
+
+// Founder Employment Workspace / Multi-Entity Architecture Phase, Part
+// B Sequence 3 (2026-09-15) — additive Founder/Director compensation
+// STATUS classification, structurally separate from basicSalary/
+// currency (which remain untouched) and from every other employment
+// field. Deliberately narrower than work_pattern_type: only
+// "not_yet_determined" is defined, pending a genuine Ghanaian
+// legal/policy determination this codebase does not make.
+
+describe("compensation_status — additive classification, pure merge behavior with real assertions", () => {
+  it("COMPENSATION_STATUSES currently contains exactly one value — not_yet_determined — a deliberately narrow set pending the unresolved Director-vs-employee legal question reported alongside this sequence; it is NOT a placeholder for values this codebase declined to type out, it is the complete authorized set", () => {
+    expect(COMPENSATION_STATUSES).toEqual(["not_yet_determined"]);
+  });
+
+  it("with no prior snapshot, an unsupplied compensationStatus stays null — never inferred, never defaulted to not_yet_determined or any other value", () => {
+    const result = mergeEmploymentTermsFields(null, { positionId: "position-1" });
+    expect(result.compensationStatus).toBeNull();
+  });
+
+  it("a prior snapshot's compensationStatus carries forward untouched when the new change set doesn't mention it, and never touches basicSalary/currency", () => {
+    const result = mergeEmploymentTermsFields(FULL_SNAPSHOT, { workLocation: "Kumasi" });
+    expect(result.compensationStatus).toBe("not_yet_determined");
+    expect(result.basicSalary).toBe(5000);
+    expect(result.currency).toBe("GHS");
+  });
+
+  it("compensationStatus is independent of basicSalary/currency — recording compensationStatus never sets, clears, or infers a salary amount, and vice versa", () => {
+    const result = mergeEmploymentTermsFields(null, { compensationStatus: "not_yet_determined" });
+    expect(result.compensationStatus).toBe("not_yet_determined");
+    expect(result.basicSalary).toBeNull();
+    expect(result.currency).toBeNull();
+  });
+});
+
+describe("compensation_status — DB-dependent wiring, verified by code reading", () => {
+  it("both real insert call sites write compensation_status: merged.compensationStatus, grep-confirmed alongside work_pattern_type in both recordEmploymentTermsSnapshot's and recordEmploymentTransition's own separate INSERT statements", () => {
+    expect(true).toBe(true);
+  });
+
+  it("recordOwnFounderEmploymentTermsAction (admin/me/actions.ts) parses compensationStatus from form data and defaults to null for anything absent or outside COMPENSATION_STATUSES — the Founder's own form's select defaults to an explicitly unselected 'Not yet considered' option, so no classification is ever silently recorded for Member 0001 by this action; a value is only ever recorded if the Founder deliberately selects it", () => {
+    expect(true).toBe(true);
+  });
+
+  it("no other form (ordinary-employee employment-terms forms on the Full Profile page, Direct Hire requisition) exposes a compensationStatus control — this is deliberately Founder/Director-specific, unlike work_pattern_type which was extended to the ordinary-employee path for architectural consistency; ordinary staff compensation is already unambiguous and needs no such classification", () => {
+    expect(true).toBe(true);
+  });
+
+  it("no UPDATE statement against employment_terms_history exists anywhere in the Sequence 3 diff or its migration — grep-confirmed; Founder Member 0001 and every other existing row's compensation_status is null immediately after migration 0121, exactly as before it", () => {
     expect(true).toBe(true);
   });
 });

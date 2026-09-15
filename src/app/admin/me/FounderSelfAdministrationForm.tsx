@@ -41,6 +41,14 @@ export function FounderSelfAdministrationForm({ employingEntities }: { employing
       </label>
       <input name="basicSalary" type="number" step="0.01" min="0" placeholder="Basic salary (optional)" className="rounded-lg border border-black/15 px-2 py-1.5 font-sans text-body-small" />
       <input name="currency" placeholder="Currency (e.g. GHS)" className="rounded-lg border border-black/15 px-2 py-1.5 font-sans text-body-small" />
+      <label className="sm:col-span-2 flex flex-col gap-1 font-sans text-caption text-ordift-ink-muted">
+        Founder/Director compensation classification
+        <select name="compensationStatus" defaultValue="" className="rounded-lg border border-black/15 bg-white px-2 py-1.5 font-sans text-body-small text-ordift-ink">
+          <option value="">Not yet considered</option>
+          <option value="not_yet_determined">Decision deliberately deferred (pending legal/policy determination)</option>
+        </select>
+        <span>This does not set a salary or make any legal claim about Director vs employee status — it only records that a classification decision is outstanding.</span>
+      </label>
       <button
         type="submit"
         disabled={pending || !entityId}

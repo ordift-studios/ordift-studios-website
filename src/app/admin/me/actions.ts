@@ -4,7 +4,13 @@ import { revalidatePath } from "next/cache";
 import { getCurrentUser, isStaffOrAdmin, isSuperAdmin } from "@/lib/portal/roles";
 import { recordPolicyAcknowledgement } from "@/lib/organization/policyAcknowledgements";
 import { resolveDeferredRequirementForProfile } from "@/lib/organization/onboardingRequirements";
-import { recordFounderSelfAdministeredEmploymentTerms, WORK_PATTERN_TYPES, type WorkPatternType } from "@/lib/organization/employmentTermsHistory";
+import {
+  recordFounderSelfAdministeredEmploymentTerms,
+  WORK_PATTERN_TYPES,
+  type WorkPatternType,
+  COMPENSATION_STATUSES,
+  type CompensationStatus,
+} from "@/lib/organization/employmentTermsHistory";
 
 // Employee Self-Service — My Workspace landing page (Phase B5 Step 15,
 // 2026-09-14). Self-acknowledgement only — recordPolicyAcknowledgement()
@@ -63,6 +69,15 @@ export async function recordOwnFounderEmploymentTermsAction(_prev: ActionState, 
   const workPattern = String(formData.get("workPattern") ?? "").trim() || null;
   const workPatternTypeRaw = String(formData.get("workPatternType") ?? "").trim();
   const workPatternType: WorkPatternType | null = (WORK_PATTERN_TYPES as readonly string[]).includes(workPatternTypeRaw) ? (workPatternTypeRaw as WorkPatternType) : null;
+  // Founder/Director compensation CLASSIFICATION (Part B Sequence 3) —
+  // structurally separate from basicSalary/currency below. Defaults to
+  // null (genuinely unconsidered) for anything absent or not a genuine
+  // COMPENSATION_STATUSES member; only ever recorded when the Founder
+  // deliberately selects it themselves, never inferred by this action.
+  const compensationStatusRaw = String(formData.get("compensationStatus") ?? "").trim();
+  const compensationStatus: CompensationStatus | null = (COMPENSATION_STATUSES as readonly string[]).includes(compensationStatusRaw)
+    ? (compensationStatusRaw as CompensationStatus)
+    : null;
   const basicSalaryRaw = String(formData.get("basicSalary") ?? "").trim();
   const currency = String(formData.get("currency") ?? "").trim() || null;
   if (!effectiveFrom) return { ok: false, error: "A commencement date is required." };
@@ -79,6 +94,7 @@ export async function recordOwnFounderEmploymentTermsAction(_prev: ActionState, 
       workLocation,
       workPattern,
       workPatternType,
+      compensationStatus,
       basicSalary,
       currency,
     },
