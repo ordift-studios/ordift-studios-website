@@ -4,6 +4,8 @@ import { useState, useRef } from "react";
 import type { StaffOnboarding } from "@/lib/organization/onboarding";
 import type { ResolvedRequirement } from "@/lib/organization/onboardingRequirements";
 import type { VendorDocument } from "@/lib/vendors/vendorDocuments";
+import type { VendorAgreementSummary } from "@/lib/legal/vendorAgreements";
+import { isIssuedAgreementStatus, isFullyExecuted } from "@/lib/legal/agreementLifecycle";
 import { createClient } from "@/lib/supabase/client";
 import { validateVendorDocumentFile, describeVendorDocumentUploadError } from "@/lib/vendors/vendorDocumentUploadValidation";
 import { requestOwnVendorDocumentUploadAction, recordOwnVendorDocumentUploadAction } from "./actions";
@@ -113,15 +115,69 @@ function UploadForm() {
   );
 }
 
+// Vendor Portal Framework Agreement visibility (2026-09-16) — closes a
+// real defect found during controlled Production QA on Lady Anim-Tetey:
+// the "framework_ready_for_signature" courtesy email tells the vendor
+// to "sign in to your Vendor Portal for status", but the portal never
+// actually showed anything about an outstanding Framework Agreement —
+// a vendor landing here after that email had no reference, no status,
+// and no indication a real, unexpired signing link had already been
+// emailed separately. This card is read-only status only: it never
+// shows or reconstructs the signing token/link (that stays exclusively
+// in the original tokenized email, preserving the session-less,
+// possession-based signing model) and never offers a "resend"/
+// "regenerate" action — an admin-side resend remains the correct path
+// if a link is ever genuinely lost, not something this portal exposes.
+// Reuses agreementLifecycle.ts's own generic status predicates rather
+// than re-declaring a parallel status list here — "issued but not yet
+// approved_for_issue's pre-vendor state, and not yet executed" is
+// exactly the window during which a real vendor-facing signing email
+// has actually been sent (issueVendorFrameworkAgreement() only
+// transitions past approved_for_issue once every access link is
+// genuinely delivered — see vendorAgreementIssuance.ts).
+function isAwaitingSignature(status: VendorAgreementSummary["status"]): boolean {
+  return isIssuedAgreementStatus(status) && status !== "approved_for_issue" && !isFullyExecuted(status);
+}
+
+function FrameworkAgreementStatus({ frameworkAgreement }: { frameworkAgreement: VendorAgreementSummary | null }) {
+  if (!frameworkAgreement) return null;
+  // A draft or approved_for_issue Framework has not actually been
+  // issued to the vendor yet — nothing to show them until it is.
+  if (!isAwaitingSignature(frameworkAgreement.status) && !isFullyExecuted(frameworkAgreement.status)) return null;
+
+  const awaitingSignature = isAwaitingSignature(frameworkAgreement.status);
+
+  return (
+    <div className="rounded-lg border border-black/10 p-3 space-y-1">
+      <div className="flex items-center justify-between gap-2">
+        <span className="font-sans text-body-small font-semibold text-ordift-ink">Vendor &amp; Supplier Framework Agreement</span>
+        <span className={`px-2 py-0.5 rounded-full font-sans text-caption whitespace-nowrap ${awaitingSignature ? "bg-amber-100 text-amber-800" : "bg-green-100 text-green-800"}`}>
+          {frameworkAgreement.status.replace(/_/g, " ")}
+        </span>
+      </div>
+      <p className="font-sans text-caption text-ordift-ink-muted">{frameworkAgreement.agreementReference}</p>
+      {awaitingSignature && (
+        <p className="font-sans text-caption text-ordift-ink-muted">
+          Ordift Studios has sent you a secure email with a link to review and sign this agreement. Please check your
+          inbox (including spam/promotions) for an email referencing {frameworkAgreement.agreementReference}. This
+          page cannot display or resend that signing link directly — contact Ordift Studios if you can&rsquo;t find it.
+        </p>
+      )}
+    </div>
+  );
+}
+
 export function VendorOnboardingStatus({
   onboarding,
   resolvedRequirements,
   documents,
+  frameworkAgreement,
 }: {
   vendorId: string;
   onboarding: StaffOnboarding | null;
   resolvedRequirements: ResolvedRequirement[];
   documents: VendorDocument[];
+  frameworkAgreement: VendorAgreementSummary | null;
 }) {
   if (!onboarding) {
     return (
@@ -153,6 +209,8 @@ export function VendorOnboardingStatus({
           ))}
         </ul>
       )}
+
+      <FrameworkAgreementStatus frameworkAgreement={frameworkAgreement} />
 
       <div>
         <h3 className="font-sans text-body-small font-semibold text-ordift-ink mb-2">Documents</h3>

@@ -6,6 +6,7 @@ import ExternalWorkforceEngagements from "@/components/portal/ExternalWorkforceE
 import { getStaffOnboardingByProfileId } from "@/lib/organization/onboarding";
 import { listResolvedRequirements } from "@/lib/organization/onboardingRequirements";
 import { listVendorDocuments } from "@/lib/vendors/vendorDocuments";
+import { getCurrentVendorFrameworkAgreement } from "@/lib/legal/vendorAgreements";
 import { VendorOnboardingStatus } from "./VendorOnboardingStatus";
 
 export const metadata: Metadata = {
@@ -49,9 +50,10 @@ export default async function VendorPortalPage() {
   // profile only (RLS/application-layer own-row checks in
   // onboardingRequirements.ts/vendorDocuments.ts are the real
   // boundary; this page never passes another vendor's id).
-  const [resolvedRequirements, documents] = await Promise.all([
+  const [resolvedRequirements, documents, frameworkAgreement] = await Promise.all([
     user && onboarding ? listResolvedRequirements({ onboardingId: onboarding.id, profileId: user.id, pipeline: onboarding.pipeline }) : Promise.resolve([]),
     user ? listVendorDocuments(user.id, user.id) : Promise.resolve([]),
+    user ? getCurrentVendorFrameworkAgreement(user.id) : Promise.resolve(null),
   ]);
 
   return (
@@ -69,7 +71,13 @@ export default async function VendorPortalPage() {
       </div>
 
       {user && (
-        <VendorOnboardingStatus vendorId={user.id} onboarding={onboarding} resolvedRequirements={resolvedRequirements} documents={documents} />
+        <VendorOnboardingStatus
+          vendorId={user.id}
+          onboarding={onboarding}
+          resolvedRequirements={resolvedRequirements}
+          documents={documents}
+          frameworkAgreement={frameworkAgreement}
+        />
       )}
 
       <ExternalWorkforceEngagements
