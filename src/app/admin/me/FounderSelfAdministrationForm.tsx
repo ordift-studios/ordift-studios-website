@@ -29,7 +29,16 @@ export function FounderSelfAdministrationForm({ employingEntities }: { employing
         Commencement date
         <input name="effectiveFrom" type="date" required className="rounded-lg border border-black/15 px-2 py-1.5 font-sans text-body-small text-ordift-ink" />
       </label>
-      <input name="workPattern" placeholder="Working pattern (e.g. Monday-Friday, 08:00-17:00)" className="rounded-lg border border-black/15 px-2 py-1.5 font-sans text-body-small" />
+      <input name="workPattern" placeholder="Working pattern description (e.g. Flexible — weekdays, evenings, and weekends as required)" className="rounded-lg border border-black/15 px-2 py-1.5 font-sans text-body-small" />
+      <label className="flex flex-col gap-1 font-sans text-caption text-ordift-ink-muted">
+        Work pattern classification
+        <select name="workPatternType" defaultValue="" className="rounded-lg border border-black/15 bg-white px-2 py-1.5 font-sans text-body-small text-ordift-ink">
+          <option value="">Not yet classified</option>
+          <option value="fixed_schedule">Standard / Fixed Schedule</option>
+          <option value="shift_roster">Shift / Rostered</option>
+          <option value="flexible_executive">Flexible Executive</option>
+        </select>
+      </label>
       <input name="basicSalary" type="number" step="0.01" min="0" placeholder="Basic salary (optional)" className="rounded-lg border border-black/15 px-2 py-1.5 font-sans text-body-small" />
       <input name="currency" placeholder="Currency (e.g. GHS)" className="rounded-lg border border-black/15 px-2 py-1.5 font-sans text-body-small" />
       <button

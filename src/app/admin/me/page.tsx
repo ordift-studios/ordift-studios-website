@@ -5,7 +5,7 @@ import { getCurrentUser, isStaffOrAdmin, isSuperAdmin } from "@/lib/portal/roles
 import { listUsersWithRoles } from "@/lib/portal/adminData";
 import { listControlledPolicyDocuments, listPolicyAcknowledgementsForProfile } from "@/lib/organization/policyAcknowledgements";
 import { getCurrentEmploymentTerms } from "@/lib/organization/employmentTermsHistory";
-import { listEmployingEntities } from "@/lib/organization/legalEntities";
+import { listEmployerCapableEmployingEntities } from "@/lib/organization/legalEntities";
 import { MyWorkspaceLanding } from "./MyWorkspaceLanding";
 import { FounderSelfAdministrationForm } from "./FounderSelfAdministrationForm";
 
@@ -43,7 +43,7 @@ export default async function MyWorkspacePage() {
   // why this exists at all), and disappears permanently for anyone
   // once they've recorded it once.
   const showFounderSelfAdministration = isSuperAdmin(user) && !myEmploymentTerms;
-  const employingEntities = showFounderSelfAdministration ? await listEmployingEntities() : [];
+  const employingEntities = showFounderSelfAdministration ? await listEmployerCapableEmployingEntities() : [];
 
   return (
     <div className="space-y-8">

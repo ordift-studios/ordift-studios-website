@@ -15,6 +15,15 @@ import { isSuperAdminId, hasJurisdictionAuthority } from "@/lib/organization/aut
 // — any field not supplied simply stays null, exactly reflecting that
 // it is genuinely not yet known, never fabricated.
 
+// Structured work-pattern classification (Founder Employment Workspace
+// Phase, Part B Sequence 2, 2026-09-15) — deliberately separate from
+// the free-text workPattern field below, which remains the source of
+// truth for descriptive prose. shift_roster is a classification label
+// only at this stage; the real shift/roster assignment data model is a
+// separate, later undertaking.
+export const WORK_PATTERN_TYPES = ["fixed_schedule", "shift_roster", "flexible_executive"] as const;
+export type WorkPatternType = (typeof WORK_PATTERN_TYPES)[number];
+
 export interface EmploymentTermsFields {
   employingEntityId: string | null;
   employmentJurisdictionId: string | null;
@@ -24,6 +33,12 @@ export interface EmploymentTermsFields {
   gradeId: string | null;
   managerId: string | null;
   workPattern: string | null;
+  // Classification, not description — see WORK_PATTERN_TYPES above.
+  // Never inferred or auto-assigned; null means genuinely unclassified.
+  // A "flexible_executive" person may legitimately have workingWeekdays
+  // remain null too — this is never forced into a fixed weekday array
+  // merely to satisfy the calendar resolver.
+  workPatternType: WorkPatternType | null;
   basicSalary: number | null;
   currency: string | null;
   allowances: Record<string, unknown> | null;
@@ -60,6 +75,7 @@ const EMPTY_FIELDS: EmploymentTermsFields = {
   gradeId: null,
   managerId: null,
   workPattern: null,
+  workPatternType: null,
   basicSalary: null,
   currency: null,
   allowances: null,
@@ -138,6 +154,7 @@ function mapRow(r: {
   grade_id: string | null;
   manager_id: string | null;
   work_pattern: string | null;
+  work_pattern_type: string | null;
   basic_salary: number | null;
   currency: string | null;
   allowances: Record<string, unknown> | null;
@@ -161,6 +178,7 @@ function mapRow(r: {
     gradeId: r.grade_id,
     managerId: r.manager_id,
     workPattern: r.work_pattern,
+    workPatternType: r.work_pattern_type as WorkPatternType | null,
     basicSalary: r.basic_salary,
     currency: r.currency,
     allowances: r.allowances,
@@ -175,7 +193,7 @@ function mapRow(r: {
 }
 
 const SELECT =
-  "id, profile_id, effective_from, employing_entity_id, employment_jurisdiction_id, work_location, position_id, department_id, grade_id, manager_id, work_pattern, basic_salary, currency, allowances, working_weekdays, source, recorded_at, recorded_by, transition_type, notes, enhanced_review_required";
+  "id, profile_id, effective_from, employing_entity_id, employment_jurisdiction_id, work_location, position_id, department_id, grade_id, manager_id, work_pattern, work_pattern_type, basic_salary, currency, allowances, working_weekdays, source, recorded_at, recorded_by, transition_type, notes, enhanced_review_required";
 
 export async function getCurrentEmploymentTerms(profileId: string): Promise<EmploymentTermsRow | null> {
   const admin = createAdminClient();
@@ -276,6 +294,7 @@ export async function recordEmploymentTermsSnapshot(params: {
       grade_id: merged.gradeId,
       manager_id: merged.managerId,
       work_pattern: merged.workPattern,
+      work_pattern_type: merged.workPatternType,
       basic_salary: merged.basicSalary,
       currency: merged.currency,
       allowances: merged.allowances,
@@ -425,6 +444,7 @@ export async function recordEmploymentTransition(params: {
       grade_id: merged.gradeId,
       manager_id: merged.managerId,
       work_pattern: merged.workPattern,
+      work_pattern_type: merged.workPatternType,
       basic_salary: merged.basicSalary,
       currency: merged.currency,
       allowances: merged.allowances,

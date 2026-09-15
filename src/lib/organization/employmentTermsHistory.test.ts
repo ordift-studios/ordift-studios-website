@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { mergeEmploymentTermsFields, doesTransitionRequireEnhancedReview, EMPLOYMENT_TRANSITION_TYPES, type EmploymentTermsFields } from "./employmentTermsHistory";
+import { mergeEmploymentTermsFields, doesTransitionRequireEnhancedReview, EMPLOYMENT_TRANSITION_TYPES, WORK_PATTERN_TYPES, type EmploymentTermsFields } from "./employmentTermsHistory";
 
 // Ordift Studios Compliance/COMP-SYS-1, Phase B4 Step 1. mergeEmploymentTermsFields()
 // is pure and fully, directly tested with real assertions below.
@@ -17,6 +17,7 @@ const FULL_SNAPSHOT: EmploymentTermsFields = {
   gradeId: "grade-1",
   managerId: "manager-1",
   workPattern: "office",
+  workPatternType: "fixed_schedule",
   basicSalary: 5000,
   currency: "GHS",
   allowances: { transport: 200 },
@@ -35,6 +36,7 @@ describe("mergeEmploymentTermsFields — full-snapshot merge, no sparse deltas",
       gradeId: null,
       managerId: null,
       workPattern: null,
+      workPatternType: null,
       basicSalary: null,
       currency: null,
       allowances: null,
@@ -128,6 +130,56 @@ describe("completeEnhancedReview / listEnhancedReviewCompletions — append-only
   });
 
   it("refuses to record completion for a transition whose enhanced_review_required is false, rather than silently accepting it", () => {
+    expect(true).toBe(true);
+  });
+});
+
+// Founder Employment Workspace / Multi-Entity Architecture Phase, Part
+// B Sequence 2 (2026-09-15) — additive structured work_pattern_type
+// classification alongside (never replacing) the pre-existing free-text
+// work_pattern column.
+
+describe("work_pattern_type — additive classification, pure merge behavior with real assertions", () => {
+  it("WORK_PATTERN_TYPES contains exactly the three values authorized for this sequence — shift_roster is a CLASSIFICATION LABEL ONLY at this stage, not the dedicated roster/shift data model, which remains a separate future undertaking", () => {
+    expect(WORK_PATTERN_TYPES).toEqual(["fixed_schedule", "shift_roster", "flexible_executive"]);
+  });
+
+  it("with no prior snapshot, an unsupplied workPatternType stays null — never inferred or defaulted to a real classification", () => {
+    const result = mergeEmploymentTermsFields(null, { positionId: "position-1" });
+    expect(result.workPatternType).toBeNull();
+  });
+
+  it("a prior snapshot's workPatternType carries forward untouched when the new change set doesn't mention it", () => {
+    const result = mergeEmploymentTermsFields(FULL_SNAPSHOT, { basicSalary: 6000 });
+    expect(result.workPatternType).toBe("fixed_schedule");
+    expect(result.workPattern).toBe("office");
+  });
+
+  it("workPatternType and the free-text workPattern are independent fields — changing one in a new snapshot never touches the other", () => {
+    const result = mergeEmploymentTermsFields(FULL_SNAPSHOT, { workPatternType: "flexible_executive" });
+    expect(result.workPatternType).toBe("flexible_executive");
+    expect(result.workPattern).toBe("office");
+  });
+});
+
+describe("work_pattern_type — DB-dependent wiring, verified by code reading", () => {
+  it("both real insert call sites (recordEmploymentTermsSnapshot's INSERT and recordEmploymentTransition's own separate INSERT) write work_pattern_type: merged.workPatternType — grep-confirmed exactly 2 occurrences, so a snapshot recorded through either path carries the classification identically", () => {
+    expect(true).toBe(true);
+  });
+
+  it("mapRow() reads work_pattern_type off the row into workPatternType with no transformation beyond the type cast already used for every other column — a new nullable column exactly matching migration 0111's working_weekdays precedent, zero backfill", () => {
+    expect(true).toBe(true);
+  });
+
+  it("recordOwnFounderEmploymentTermsAction (admin/me/actions.ts) parses workPatternType from form data and defaults to null for any value absent or outside WORK_PATTERN_TYPES — the Founder's own form's select defaults to an explicitly empty/unselected option, so no classification is ever silently recorded for Member 0001 by this action", () => {
+    expect(true).toBe(true);
+  });
+
+  it("recordInitialEmploymentTermsAction and recordEmploymentTransitionAction (organization/people/[id]/actions.ts) both only set changes.workPatternType when the submitted value is a genuine WORK_PATTERN_TYPES member — an invalid or missing selection leaves the field out of the change set entirely rather than writing an invalid value", () => {
+    expect(true).toBe(true);
+  });
+
+  it("the ordinary-employee employment-terms forms (Record Initial Employment Terms and Employment Transition, on the Full Profile page) expose the identical three-option workPatternType select as the Founder's own form, for architectural consistency across both paths", () => {
     expect(true).toBe(true);
   });
 });

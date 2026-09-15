@@ -83,8 +83,10 @@ import {
   completeEnhancedReview,
   recordInitialEmploymentTerms,
   EMPLOYMENT_TRANSITION_TYPES,
+  WORK_PATTERN_TYPES,
   type EmploymentTransitionType,
   type EmploymentTermsFields,
+  type WorkPatternType,
 } from "@/lib/organization/employmentTermsHistory";
 import { submitAppeal, decideAppeal, type AppealDecision } from "@/lib/organization/appeals";
 
@@ -1099,11 +1101,13 @@ export async function recordEmploymentTransitionAction(formData: FormData): Prom
   const workLocation = String(formData.get("workLocation") ?? "").trim();
   const basicSalaryRaw = String(formData.get("basicSalary") ?? "").trim();
   const currency = String(formData.get("currency") ?? "").trim();
+  const workPatternTypeRaw = String(formData.get("workPatternType") ?? "").trim();
   if (employingEntityId) changes.employingEntityId = employingEntityId;
   if (employmentJurisdictionId) changes.employmentJurisdictionId = employmentJurisdictionId;
   if (workLocation) changes.workLocation = workLocation;
   if (basicSalaryRaw) changes.basicSalary = Number(basicSalaryRaw);
   if (currency) changes.currency = currency;
+  if ((WORK_PATTERN_TYPES as readonly string[]).includes(workPatternTypeRaw)) changes.workPatternType = workPatternTypeRaw as WorkPatternType;
   if (Object.keys(changes).length === 0) return;
 
   const result = await recordEmploymentTransition({
@@ -1134,12 +1138,14 @@ export async function recordInitialEmploymentTermsAction(formData: FormData): Pr
   const basicSalaryRaw = String(formData.get("basicSalary") ?? "").trim();
   const currency = String(formData.get("currency") ?? "").trim();
   const workPattern = String(formData.get("workPattern") ?? "").trim();
+  const workPatternTypeRaw = String(formData.get("workPatternType") ?? "").trim();
   if (employingEntityId) changes.employingEntityId = employingEntityId;
   if (employmentJurisdictionId) changes.employmentJurisdictionId = employmentJurisdictionId;
   if (workLocation) changes.workLocation = workLocation;
   if (basicSalaryRaw) changes.basicSalary = Number(basicSalaryRaw);
   if (currency) changes.currency = currency;
   if (workPattern) changes.workPattern = workPattern;
+  if ((WORK_PATTERN_TYPES as readonly string[]).includes(workPatternTypeRaw)) changes.workPatternType = workPatternTypeRaw as WorkPatternType;
 
   const result = await recordInitialEmploymentTerms({ profileId, effectiveFrom, changes, actorUserId: currentUser.id });
   if (!result.ok) console.error("[admin organization] failed to record initial employment terms", result.error);

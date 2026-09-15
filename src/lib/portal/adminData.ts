@@ -391,9 +391,16 @@ export async function listEngagementTypes(): Promise<LookupOption[]> {
 // no create/edit UI is built here; employing_entities is seeded with
 // one real row (Ordift Studios), employment_jurisdictions is
 // deliberately empty until genuinely decided.
+// Feeds the Founder Direct Hire requisition form's employing-entity
+// select — a NEW-hire, employment-facing context, so (2026-09-15, Part
+// B Sequence 1) this is now filtered to employer_capable = true only.
+// This function has exactly one real caller (confirmed by repo-wide
+// search) — no historical-display use exists to protect here, unlike
+// legalEntities.ts's own listEmployingEntities()/listEmployerCapableEmployingEntities()
+// split.
 export async function listEmployingEntities(): Promise<LookupOption[]> {
   const admin = createAdminClient();
-  const { data, error } = await admin.from("employing_entities").select("id, name, active").order("sort_order");
+  const { data, error } = await admin.from("employing_entities").select("id, name, active").eq("employer_capable", true).order("sort_order");
   if (error) {
     console.error("[portal admin] failed to load employing_entities", error.message);
     return [];

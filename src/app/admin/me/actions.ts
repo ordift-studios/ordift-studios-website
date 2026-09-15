@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { getCurrentUser, isStaffOrAdmin, isSuperAdmin } from "@/lib/portal/roles";
 import { recordPolicyAcknowledgement } from "@/lib/organization/policyAcknowledgements";
 import { resolveDeferredRequirementForProfile } from "@/lib/organization/onboardingRequirements";
-import { recordFounderSelfAdministeredEmploymentTerms } from "@/lib/organization/employmentTermsHistory";
+import { recordFounderSelfAdministeredEmploymentTerms, WORK_PATTERN_TYPES, type WorkPatternType } from "@/lib/organization/employmentTermsHistory";
 
 // Employee Self-Service — My Workspace landing page (Phase B5 Step 15,
 // 2026-09-14). Self-acknowledgement only — recordPolicyAcknowledgement()
@@ -61,6 +61,8 @@ export async function recordOwnFounderEmploymentTermsAction(_prev: ActionState, 
   const workLocation = String(formData.get("workLocation") ?? "").trim() || null;
   const effectiveFrom = String(formData.get("effectiveFrom") ?? "").trim();
   const workPattern = String(formData.get("workPattern") ?? "").trim() || null;
+  const workPatternTypeRaw = String(formData.get("workPatternType") ?? "").trim();
+  const workPatternType: WorkPatternType | null = (WORK_PATTERN_TYPES as readonly string[]).includes(workPatternTypeRaw) ? (workPatternTypeRaw as WorkPatternType) : null;
   const basicSalaryRaw = String(formData.get("basicSalary") ?? "").trim();
   const currency = String(formData.get("currency") ?? "").trim() || null;
   if (!effectiveFrom) return { ok: false, error: "A commencement date is required." };
@@ -76,6 +78,7 @@ export async function recordOwnFounderEmploymentTermsAction(_prev: ActionState, 
       employmentJurisdictionId,
       workLocation,
       workPattern,
+      workPatternType,
       basicSalary,
       currency,
     },

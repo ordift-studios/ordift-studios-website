@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { getCurrentUser } from "@/lib/portal/roles";
 import { isSuperAdmin } from "@/lib/portal/roles";
-import { createEmployingEntity, setEmployingEntityActive, verifyEmployingEntity } from "@/lib/organization/legalEntities";
+import { createEmployingEntity, setEmployingEntityActive, verifyEmployingEntity, setEmployingEntityEmployerCapable } from "@/lib/organization/legalEntities";
 
 // Legal Entities registry actions (Phase B6 Step 1, 2026-09-15). Every
 // action independently re-checks Super Admin — nav visibility is never
@@ -30,9 +30,29 @@ export async function createEmployingEntityAction(_prev: ActionState, formData: 
   const registrationDate = String(formData.get("registrationDate") ?? "").trim() || null;
   const effectiveFrom = String(formData.get("effectiveFrom") ?? "").trim() || null;
   const defaultCurrency = String(formData.get("defaultCurrency") ?? "").trim() || null;
+  // Always an explicit boolean (never omitted) so the checkbox's own
+  // unchecked-by-default state genuinely controls this, rather than
+  // falling through to createEmployingEntity()'s own true-default
+  // (which exists only to preserve compatibility for a caller that
+  // omits the field entirely).
+  const employerCapable = formData.get("employerCapable") === "on";
   if (!legalName) return { ok: false, error: "A legal name is required." };
 
-  const result = await createEmployingEntity({ legalName, tradingName, jurisdictionId, registrationType, registrationDate, effectiveFrom, defaultCurrency, actorUserId: actor.id });
+  const result = await createEmployingEntity({ legalName, tradingName, jurisdictionId, registrationType, registrationDate, effectiveFrom, defaultCurrency, employerCapable, actorUserId: actor.id });
+  if (!result.ok) return { ok: false, error: result.error };
+  revalidatePath("/admin/organization/legal-entities");
+  return { ok: true };
+}
+
+export async function setEmployingEntityEmployerCapableAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  const actor = await requireSuperAdminActor();
+  if ("error" in actor) return { ok: false, error: actor.error };
+
+  const entityId = String(formData.get("entityId") ?? "");
+  const employerCapable = String(formData.get("employerCapable") ?? "") === "true";
+  if (!entityId) return { ok: false, error: "Invalid request." };
+
+  const result = await setEmployingEntityEmployerCapable({ entityId, employerCapable, actorUserId: actor.id });
   if (!result.ok) return { ok: false, error: result.error };
   revalidatePath("/admin/organization/legal-entities");
   return { ok: true };

@@ -99,6 +99,22 @@ export async function listEmployingEntities(): Promise<EmployingEntity[]> {
   return (entities ?? []).map((r) => mapRow(r, jurisdictionNameById));
 }
 
+// Employment-facing entity selector (2026-09-15, Part B Sequence 1) —
+// the SAME data as listEmployingEntities(), filtered to
+// employer_capable = true only. Use this specifically for choosing an
+// entity for a NEW employment record (Founder self-administration,
+// Record Initial Employment Terms, Employment Transitions, Founder
+// Direct Hire requisitions) — never for resolving/displaying a
+// HISTORICAL record's entity name, which must keep working even for an
+// entity later marked not-yet/no-longer employer-capable. Callers that
+// need both (e.g. the Full Profile page, which shows historical terms
+// AND offers a new-terms form) should call listEmployingEntities() for
+// display and this function separately for the form's own options.
+export async function listEmployerCapableEmployingEntities(): Promise<EmployingEntity[]> {
+  const all = await listEmployingEntities();
+  return all.filter((e) => e.employerCapable);
+}
+
 export async function getEmployingEntityById(entityId: string): Promise<EmployingEntity | null> {
   const admin = createAdminClient();
   const [{ data: entity }, { data: jurisdictions }] = await Promise.all([
@@ -114,6 +130,18 @@ export async function getEmployingEntityById(entityId: string): Promise<Employin
 // duplicate/placeholder for an existing one. slug is derived from the
 // legal name, matching the pre-existing seed convention (name
 // "Ordift Studios" -> slug "ordift-studios").
+// employerCapable (2026-09-15, Part B Sequence 1) — the pre-existing
+// employing_entities.employer_capable column (migration 0105) had no
+// creation-time control anywhere: every entity silently inherited the
+// column's own DB default (true), regardless of whether real
+// registration was actually complete. Optional and defaulting to
+// `true` here ONLY to preserve exact backward compatibility for any
+// existing caller that omits it — the UI form (legal-entities/actions.ts)
+// always passes an explicit value, defaulting its own checkbox
+// UNCHECKED, so a genuinely new/not-yet-ready entity (e.g. a future
+// Qatar registration in progress) must be deliberately marked capable
+// before it can ever appear in an employment-facing selector — never
+// inferred from jurisdiction, physical location, or any other signal.
 export async function createEmployingEntity(params: {
   legalName: string;
   tradingName?: string | null;
@@ -122,6 +150,7 @@ export async function createEmployingEntity(params: {
   registrationDate?: string | null;
   effectiveFrom?: string | null;
   defaultCurrency?: string | null;
+  employerCapable?: boolean;
   actorUserId: string;
 }): Promise<{ ok: true; entityId: string } | { ok: false; error: string }> {
   if (!(await requireSuperAdmin(params.actorUserId))) return { ok: false, error: "Not authorized to create a legal entity." };
@@ -147,6 +176,7 @@ export async function createEmployingEntity(params: {
       registration_date: params.registrationDate ?? null,
       effective_from: params.effectiveFrom ?? null,
       default_currency: params.defaultCurrency ?? null,
+      employer_capable: params.employerCapable ?? true,
     })
     .select("id")
     .single();
@@ -155,8 +185,37 @@ export async function createEmployingEntity(params: {
     return { ok: false, error: error?.message ?? "Failed to create the legal entity." };
   }
 
-  await logActivity({ actorUserId: params.actorUserId, action: "employing_entity.created", entityType: "employing_entity", entityId: data.id, metadata: { legalName: params.legalName } });
+  await logActivity({
+    actorUserId: params.actorUserId,
+    action: "employing_entity.created",
+    entityType: "employing_entity",
+    entityId: data.id,
+    metadata: { legalName: params.legalName, employerCapable: params.employerCapable ?? true },
+  });
   return { ok: true, entityId: data.id };
+}
+
+// The only new write path for employer_capable after creation — a
+// deliberate, separate, auditable Super-Admin action (e.g. "this
+// entity's registration is now genuinely complete, make it selectable
+// for employment"), never silently flipped by verification or
+// activation, which govern different concerns (verificationStatus,
+// active).
+export async function setEmployingEntityEmployerCapable(params: { entityId: string; employerCapable: boolean; actorUserId: string }): Promise<{ ok: true } | { ok: false; error: string }> {
+  if (!(await requireSuperAdmin(params.actorUserId))) return { ok: false, error: "Not authorized to change this entity's employer-capable status." };
+
+  const admin = createAdminClient();
+  const { error } = await admin.from("employing_entities").update({ employer_capable: params.employerCapable }).eq("id", params.entityId);
+  if (error) return { ok: false, error: "Failed to update employer-capable status." };
+
+  await logActivity({
+    actorUserId: params.actorUserId,
+    action: "employing_entity.employer_capable_changed",
+    entityType: "employing_entity",
+    entityId: params.entityId,
+    metadata: { employerCapable: params.employerCapable },
+  });
+  return { ok: true };
 }
 
 export async function setEmployingEntityActive(params: { entityId: string; active: boolean; actorUserId: string }): Promise<{ ok: true } | { ok: false; error: string }> {

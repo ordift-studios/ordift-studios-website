@@ -33,9 +33,9 @@ import { checkEmployeeAgreementReadiness, getEmployeeEmploymentAgreementSummary 
 import { getStaffOnboardingByProfileId } from "@/lib/organization/onboarding";
 import { listReferenceRequestsForProfile } from "@/lib/organization/employmentReferences";
 import { listControlledPolicyDocuments, listPolicyAcknowledgementsForProfile } from "@/lib/organization/policyAcknowledgements";
-import { listEmploymentTermsHistory, listEnhancedReviewCompletions, EMPLOYMENT_TRANSITION_TYPES } from "@/lib/organization/employmentTermsHistory";
+import { listEmploymentTermsHistory, listEnhancedReviewCompletions, EMPLOYMENT_TRANSITION_TYPES, type WorkPatternType } from "@/lib/organization/employmentTermsHistory";
 import { listAppealsForProfile } from "@/lib/organization/appeals";
-import { listEmployingEntities } from "@/lib/organization/legalEntities";
+import { listEmployingEntities, listEmployerCapableEmployingEntities } from "@/lib/organization/legalEntities";
 import { CreateAgreementDraftForm } from "./CreateAgreementDraftForm";
 import {
   setEmploymentStatusAction,
@@ -105,6 +105,12 @@ const EMPLOYMENT_STATUS_LABELS: Record<string, string> = {
   suspended: "Suspended",
   notice_period: "Notice Period",
   exited: "Exited",
+};
+
+const WORK_PATTERN_TYPE_LABELS: Record<WorkPatternType, string> = {
+  fixed_schedule: "Standard / Fixed Schedule",
+  shift_roster: "Shift / Rostered",
+  flexible_executive: "Flexible Executive",
 };
 
 // Person Detail View (Organizational Structure & Authority Grants V1,
@@ -186,15 +192,22 @@ export default async function PersonDetailPage({ params }: { params: Promise<{ i
   const acknowledgedVersionIds = new Set(policyAcknowledgements.map((a) => a.policyVersionId));
   const acknowledgedAtByVersionId = new Map(policyAcknowledgements.map((a) => [a.policyVersionId, a.acknowledgedAt]));
 
-  const [employmentTermsHistory, employingEntitiesForTransitions, jurisdictionsForTransitions] = await Promise.all([
+  const [employmentTermsHistory, employingEntitiesForNameResolution, employingEntitiesForTransitions, jurisdictionsForTransitions] = await Promise.all([
     listEmploymentTermsHistory(id),
     listEmployingEntities(),
+    listEmployerCapableEmployingEntities(),
     listEmploymentJurisdictions(),
   ]);
   const reviewCompletions = await listEnhancedReviewCompletions(employmentTermsHistory.map((t) => t.id));
   const appeals = await listAppealsForProfile(id);
   const reviewCompletedIds = new Set(reviewCompletions.map((r) => r.employmentTermsHistoryId));
-  const entityNameById = new Map(employingEntitiesForTransitions.map((e) => [e.id, e.legalName ?? e.name]));
+  // Historical entity-name resolution deliberately uses the UNFILTERED
+  // list — an entity later marked not employer-capable (or inactive)
+  // must never make a past employment-terms record's entity name
+  // disappear from display. The employer-capable-only list below is
+  // used exclusively for the two "choose an entity for a NEW record"
+  // selects further down this page.
+  const entityNameById = new Map(employingEntitiesForNameResolution.map((e) => [e.id, e.legalName ?? e.name]));
   const jurisdictionNameById = new Map(jurisdictionsForTransitions.map((j) => [j.id, j.name]));
   const personSeparationCases = separationCases.filter((c) => c.profileId === id);
   const openSeparationCase = personSeparationCases.find((c) => c.status === "open") ?? null;
@@ -1325,6 +1338,7 @@ export default async function PersonDetailPage({ params }: { params: Promise<{ i
                   {t.employingEntityId ? ` · ${entityNameById.get(t.employingEntityId) ?? "unknown entity"}` : ""}
                   {t.employmentJurisdictionId ? ` · ${jurisdictionNameById.get(t.employmentJurisdictionId) ?? "unknown jurisdiction"}` : ""}
                   {t.workLocation ? ` · ${t.workLocation}` : ""}
+                  {t.workPatternType ? ` · ${WORK_PATTERN_TYPE_LABELS[t.workPatternType]}` : ""}
                   {t.basicSalary !== null ? ` · ${t.basicSalary.toLocaleString()}${t.currency ? ` ${t.currency}` : ""}` : ""}
                 </p>
                 {t.notes && <p>&ldquo;{t.notes}&rdquo;</p>}
@@ -1368,6 +1382,12 @@ export default async function PersonDetailPage({ params }: { params: Promise<{ i
             </select>
             <input name="workLocation" required placeholder="Primary work location" className="rounded-lg border border-black/15 px-2 py-1 font-sans text-caption" />
             <input name="workPattern" required placeholder="Normal working hours (e.g. Mon–Fri, 08:00–17:00)" className="rounded-lg border border-black/15 px-2 py-1 font-sans text-caption" />
+            <select name="workPatternType" defaultValue="" className="rounded-lg border border-black/15 bg-white px-2 py-1 font-sans text-caption">
+              <option value="">Work pattern classification — not yet set</option>
+              <option value="fixed_schedule">Standard / Fixed Schedule</option>
+              <option value="shift_roster">Shift / Rostered</option>
+              <option value="flexible_executive">Flexible Executive</option>
+            </select>
             <input name="basicSalary" type="number" step="0.01" min="0" required placeholder="Basic salary" className="rounded-lg border border-black/15 px-2 py-1 font-sans text-caption" />
             <input name="currency" required placeholder="Currency (e.g. GHS)" className="rounded-lg border border-black/15 px-2 py-1 font-sans text-caption" />
             <button type="submit" className="col-span-2 justify-self-start font-sans text-caption font-semibold px-3 py-1 rounded-md bg-ordift-navy-950 text-white">Record Formal Commencement</button>
@@ -1395,6 +1415,12 @@ export default async function PersonDetailPage({ params }: { params: Promise<{ i
             ))}
           </select>
           <input name="workLocation" placeholder="Work location (if changed)" className="rounded-lg border border-black/15 px-2 py-1 font-sans text-caption" />
+          <select name="workPatternType" defaultValue="" className="rounded-lg border border-black/15 bg-white px-2 py-1 font-sans text-caption">
+            <option value="">Work pattern classification unchanged</option>
+            <option value="fixed_schedule">Standard / Fixed Schedule</option>
+            <option value="shift_roster">Shift / Rostered</option>
+            <option value="flexible_executive">Flexible Executive</option>
+          </select>
           <input name="basicSalary" type="number" step="0.01" min="0" placeholder="Basic salary (if changed)" className="rounded-lg border border-black/15 px-2 py-1 font-sans text-caption" />
           <input name="currency" placeholder="Currency (e.g. GHS)" className="rounded-lg border border-black/15 px-2 py-1 font-sans text-caption" />
           <input name="notes" placeholder="Notes (optional)" className="col-span-2 rounded-lg border border-black/15 px-2 py-1 font-sans text-caption" />
