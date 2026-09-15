@@ -66,7 +66,13 @@ export default async function AdminProfilePage({
         <div className="bg-white rounded-lg border border-ordift-ink/10 divide-y divide-ordift-ink/10">
           {(
             [
-              ["Email", card.email ?? "—"],
+              // Canonical corporate/work email (corporate_identities) when
+              // one is reserved for this person; falls back to their real
+              // authentication/login identity otherwise — never the
+              // reverse, and never a second, independently-hardcoded
+              // value. The authentication identity itself is never
+              // altered by this — see profileCard.ts.
+              ["Email", card.workEmail ?? card.email ?? "—"],
               ["Phone", card.phone ?? "Not set"],
               ["Member Number", card.memberNumber ?? "Not yet assigned"],
               ["Classification", card.classificationName ?? "Not yet assigned"],

@@ -22,7 +22,18 @@ import { formatGradeDisplay } from "@/lib/organization/gradeDisplay";
 // GRADE system policy in ADMIN_GUIDE.md.
 export type ProfileCard = {
   id: string;
+  // Authentication/login identity (Supabase Auth) — unchanged meaning,
+  // still the source for initialsFromName()'s fallback. Never the same
+  // concept as workEmail below; this card deliberately keeps both
+  // resolvable rather than conflating them (2026-09-15).
   email: string | null;
+  // Canonical corporate/work email, resolved from corporate_identities
+  // (the same reservation Full Profile's "Work email" line already
+  // reads) — null when this person has no reserved corporate identity.
+  // Never a second, independently-maintained email value: this is a
+  // read-time resolution of the existing single source of truth, not a
+  // new persisted field.
+  workEmail: string | null;
   fullName: string | null;
   phone: string | null;
   initials: string;
@@ -106,7 +117,7 @@ export async function getProfileCard(user: CurrentUser): Promise<ProfileCard> {
   const supabase = await createClient();
   const canViewGrade = hasRole(user, "admin") || isSuperAdmin(user);
 
-  const [{ data: profile }, { data: userRoles }, { data: staffDetails }, { data: activeMemberNumber }] =
+  const [{ data: profile }, { data: userRoles }, { data: staffDetails }, { data: activeMemberNumber }, { data: corporateIdentity }] =
     await Promise.all([
       supabase
         .from("profiles")
@@ -127,6 +138,11 @@ export async function getProfileCard(user: CurrentUser): Promise<ProfileCard> {
         .eq("profile_id", user.id)
         .eq("status", "active")
         .maybeSingle(),
+      // Self-view only (own id), same RLS-bound client as everything
+      // else on this card — "corporate_identities: read admin tier"
+      // (migration 0046) already permits any admin/super_admin to read
+      // their own row this way.
+      supabase.from("corporate_identities").select("email").eq("profile_id", user.id).maybeSingle(),
     ]);
 
   const roles = (userRoles ?? [])
@@ -181,6 +197,7 @@ export async function getProfileCard(user: CurrentUser): Promise<ProfileCard> {
   return {
     id: user.id,
     email: user.email,
+    workEmail: corporateIdentity?.email ?? null,
     fullName: profile?.full_name ?? null,
     phone: profile?.phone ?? null,
     initials: initialsFromName(profile?.full_name ?? null, user.email),
