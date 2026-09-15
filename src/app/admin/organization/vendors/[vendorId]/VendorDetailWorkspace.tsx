@@ -167,14 +167,18 @@ function CorrectClassificationForm({
   vendorId,
   onboardingId,
   currentPipeline,
+  currentStatus,
   hasRequirementProgress,
 }: {
   vendorId: string;
   onboardingId: string;
   currentPipeline: string;
+  currentStatus: string;
   hasRequirementProgress: boolean;
 }) {
   const [state, formAction, pending] = useActionState<ActionState, FormData>(correctVendorOnboardingClassificationAction, null);
+  const wasCompleted = currentStatus === "completed";
+  const needsAcknowledgment = hasRequirementProgress || wasCompleted;
   return (
     <form action={formAction} className="space-y-2 rounded-lg border border-amber-300 bg-amber-50 p-3">
       <input type="hidden" name="vendorId" value={vendorId} />
@@ -183,16 +187,19 @@ function CorrectClassificationForm({
         This onboarding record is on the <strong>{currentPipeline.replace(/_/g, " ")}</strong> pipeline, not
         external_contractor — it was likely started before this person&rsquo;s engagement classification was set.
         Correcting it sets engagement classification to vendor_supplier and reclassifies this record to the Vendor
-        pipeline. Any requirement rows already recorded on the {currentPipeline.replace(/_/g, " ")} pipeline are left
-        exactly as they are (never deleted) — they simply stop being displayed once the pipeline changes, since the
-        new pipeline reads a different set of requirement keys.
+        pipeline{wasCompleted ? " and reopens it (status back to in-progress, since its prior completion described the wrong pipeline)" : ""}.
+        Any requirement rows already recorded on the {currentPipeline.replace(/_/g, " ")} pipeline are left exactly as
+        they are (never deleted) — they simply stop being displayed once the pipeline changes, since the new pipeline
+        reads a different set of requirement keys.
       </p>
-      {hasRequirementProgress && (
+      {needsAcknowledgment && (
         <label className="flex items-start gap-2 font-sans text-caption text-amber-900">
           <input type="checkbox" name="acknowledgeExistingProgress" required className="mt-0.5" />
           <span>
-            This record already has requirement progress recorded against the {currentPipeline.replace(/_/g, " ")}{" "}
-            pipeline. I confirm this is known non-genuine test/QA data (not a real fact about this person) and want to
+            {wasCompleted
+              ? "This record was already marked COMPLETE on the wrong pipeline."
+              : `This record already has requirement progress recorded against the ${currentPipeline.replace(/_/g, " ")} pipeline.`}{" "}
+            I confirm this is known non-genuine test/QA data (not a real fact about this person) and want to
             reclassify anyway.
           </span>
         </label>
@@ -319,6 +326,7 @@ function OnboardingSection({
           vendorId={vendorId}
           onboardingId={onboarding.id}
           currentPipeline={onboarding.pipeline}
+          currentStatus={onboarding.status}
           hasRequirementProgress={resolvedRequirements.some((r) => r.row !== null)}
         />
       ) : (

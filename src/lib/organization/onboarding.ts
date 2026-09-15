@@ -313,12 +313,26 @@ export async function correctOnboardingRelationshipClassification(params: {
   const admin = createAdminClient();
   const { data: existing } = await admin.from("staff_onboarding").select("id, profile_id, pipeline, stage, status").eq("id", params.onboardingId).maybeSingle();
   if (!existing) return { ok: false, error: "Onboarding record not found." };
-  if (existing.status !== "in_progress") return { ok: false, error: "Only an in-progress onboarding record can be reclassified." };
 
+  // A record can pick up real progress two ways: individual
+  // requirement rows, or having been driven all the way to
+  // status='completed' (completeStaffOnboarding() requires every
+  // required item resolved first, so 'completed' on the wrong
+  // pipeline implies requirement progress too — but each is checked
+  // and reported on its own, since a caller/UI may want to distinguish
+  // them). Both share the SAME acknowledgment gate: this is real
+  // progress recorded on the wrong pipeline, not proof the mistake is
+  // low-stakes — only an explicit, reasoned override clears it.
+  const wasCompleted = existing.status === "completed";
   const { count } = await admin.from("onboarding_requirements").select("id", { count: "exact", head: true }).eq("onboarding_id", params.onboardingId);
   const hadExistingRequirementProgress = Boolean(count && count > 0);
-  if (hadExistingRequirementProgress && !params.acknowledgeExistingProgress) {
-    return { ok: false, error: "This onboarding record already has recorded requirement progress — reclassifying it now could hide real history. Check the acknowledgement box to confirm this progress is known, non-genuine test data before proceeding." };
+  if ((hadExistingRequirementProgress || wasCompleted) && !params.acknowledgeExistingProgress) {
+    return {
+      ok: false,
+      error: wasCompleted
+        ? "This onboarding record was already marked COMPLETE on the wrong pipeline — reclassifying it now could hide real history. Check the acknowledgement box to confirm this is known, non-genuine test data before proceeding."
+        : "This onboarding record already has recorded requirement progress — reclassifying it now could hide real history. Check the acknowledgement box to confirm this progress is known, non-genuine test data before proceeding.",
+    };
   }
 
   const newPipeline = resolveOnboardingPipeline(params.engagementTypeSlug);
@@ -329,7 +343,20 @@ export async function correctOnboardingRelationshipClassification(params: {
 
   const { error } = await admin
     .from("staff_onboarding")
-    .update({ pipeline: newPipeline, stage: stages[0], stage_changed_at: new Date().toISOString(), stage_changed_by: params.actorUserId })
+    .update({
+      pipeline: newPipeline,
+      stage: stages[0],
+      // Reopens a wrongly-completed record — its 'completed' status
+      // described completing the WRONG pipeline, which is no longer
+      // true once the pipeline itself changes; the corrected record
+      // must go through real completion again, on the correct
+      // pipeline's own requirements, before it can be 'completed'
+      // again.
+      status: "in_progress",
+      completed_at: null,
+      stage_changed_at: new Date().toISOString(),
+      stage_changed_by: params.actorUserId,
+    })
     .eq("id", params.onboardingId)
     .eq("pipeline", existing.pipeline); // atomic: only corrects if still on the expected wrong pipeline
   if (error) {
@@ -349,7 +376,8 @@ export async function correctOnboardingRelationshipClassification(params: {
       engagementTypeSlug: params.engagementTypeSlug,
       reason,
       hadExistingRequirementProgress,
-      acknowledgedExistingProgress: hadExistingRequirementProgress ? true : undefined,
+      wasCompleted,
+      acknowledgedExistingProgress: hadExistingRequirementProgress || wasCompleted ? true : undefined,
     },
   });
 

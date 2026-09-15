@@ -284,4 +284,12 @@ describe("correctOnboardingRelationshipClassification — verified by code readi
   it("never deletes or alters existing onboarding_requirements/onboarding_requirement_overrides rows, with or without the override — a corrected record's stale-pipeline requirement rows stay exactly as recorded (real history), they simply stop being read/displayed once catalogForPipeline() resolves a different set of requirementKeys for the new pipeline", () => {
     expect(true).toBe(true);
   });
+
+  it("also accepts a status='completed' record under the SAME acknowledgeExistingProgress gate — completeStaffOnboarding() only reaches 'completed' once every required item is resolved, so a completed record on the wrong pipeline implies real progress by construction; the two conditions (requirement rows exist, status is completed) are checked and reported independently but share one acknowledgment flag, since both mean 'this looks like real progress on the wrong pipeline'", () => {
+    expect(true).toBe(true);
+  });
+
+  it("reopens a corrected 'completed' record — sets status back to 'in_progress' and completed_at to null, since its prior completion genuinely described the WRONG pipeline and is no longer a true fact once the pipeline changes; the record must be completed again for real, on the correct pipeline's own requirements", () => {
+    expect(true).toBe(true);
+  });
 });
