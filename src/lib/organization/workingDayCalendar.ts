@@ -112,12 +112,23 @@ function isoWeekdayOf(dateStr: string): number {
 async function findVerifiedPublicHoliday(employmentJurisdictionId: string | null, date: string): Promise<{ name: string } | null> {
   if (!employmentJurisdictionId) return null;
   const admin = createAdminClient();
+  // A row with a distinct observed_date means the Government has
+  // substituted the actual non-working day away from the nominal
+  // holiday_date (e.g. Republic Day: nominal 1 July, observed Friday
+  // 3 July 2026) — the nominal date is NOT itself a public holiday in
+  // that case, only the observed one is. Matching holiday_date
+  // unconditionally would incorrectly make BOTH dates non-working,
+  // which the authorizing instruction explicitly warns against
+  // ("Do not accidentally cause both nominal and substituted dates to
+  // become non-working days unless the Government actually declared
+  // both", 2026-09-15). So: match holiday_date only when there is no
+  // observed_date override, or match observed_date directly.
   const { data } = await admin
     .from("public_holidays")
     .select("name, observed_date")
     .eq("employment_jurisdiction_id", employmentJurisdictionId)
     .eq("effective_status", "active")
-    .or(`holiday_date.eq.${date},observed_date.eq.${date}`)
+    .or(`and(holiday_date.eq.${date},observed_date.is.null),observed_date.eq.${date}`)
     .limit(1)
     .maybeSingle();
   return data ? { name: data.name } : null;
