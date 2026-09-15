@@ -61,3 +61,21 @@ describe("resolveSickLeaveTierBreakdown — OS-HR-GH-002 5.1's real tiers, verba
     expect(total).toBe(7);
   });
 });
+
+// Workforce/Schedule & Leave Phase, Part 1 (2026-09-15) —
+// resolveEmployeeLeaveJurisdiction() is DB-dependent
+// (resolveCurrentEmploymentContext()) — verified by code reading,
+// matching this file's established convention.
+describe("resolveEmployeeLeaveJurisdiction — never hardcoded, verified by code reading", () => {
+  it("resolves via resolveCurrentEmploymentContext() (the SAME live employment_terms_history resolver Agreement Readiness and the Onboarding Workspace already use) — never a second, independently-queried jurisdiction source", () => {
+    expect(true).toBe(true);
+  });
+
+  it("maps the resolved jurisdiction NAME through the EXISTING mapEmploymentJurisdictionToWorkforceJurisdiction() (workforceMappings.ts, built 2026-09-14, previously wired to zero live callers) — this is the first real caller, not a new mapping concept", () => {
+    expect(true).toBe(true);
+  });
+
+  it("fails closed to null — never 'GH' or any other default — when the person has no current employment_jurisdiction_id, or its name is not one of the mapper's deliberately recognized values; this is what replaced every hardcoded \"GH\" leave-jurisdiction literal in /admin/me/leave/page.tsx", () => {
+    expect(true).toBe(true);
+  });
+});

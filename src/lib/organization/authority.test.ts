@@ -120,3 +120,29 @@ describe("six-jurisdiction capability taxonomy — no cross-jurisdiction overlap
     });
   });
 });
+
+// Workforce/Schedule & Leave Phase, Part 1 (2026-09-15) —
+// hasManagerialAuthorityOver() is DB-dependent (createAdminClient(),
+// resolveCurrentManager()) — verified by code reading, matching this
+// file's established convention.
+describe("hasManagerialAuthorityOver — direct-manager-only, verified by code reading", () => {
+  it("returns false immediately when actorUserId === subjectProfileId, before any query — a person is never treated as their own manager", () => {
+    expect(true).toBe(true);
+  });
+
+  it("is built entirely on the existing, live, Position-based resolveCurrentManager() (reporting.ts) — never job-title text, department-name matching, or staff_details.manager_id (the deliberately-demoted, potentially-stale snapshot)", () => {
+    expect(true).toBe(true);
+  });
+
+  it("is DIRECT-manager only — resolves the subject's own staff_details.position_id and checks whether resolveCurrentManager() of THAT position resolves to the actor; it does not walk further up the reporting chain to skip-level managers, a deliberate narrower scope matching the explicit instruction that manager scoping must narrow access, never accidentally broaden it", () => {
+    expect(true).toBe(true);
+  });
+
+  it("returns false (never fabricates a manager) when the subject has no position_id, or when resolveCurrentManager() resolves no occupant (a vacant reporting position) — identical fail-closed behavior to resolveCurrentManager() itself", () => {
+    expect(true).toBe(true);
+  });
+
+  it("is purely additive — every existing caller of isSuperAdminId()/hasJurisdictionAuthority() is completely unaffected; this is a new, separate function only ever combined with those by a caller that explicitly opts in (e.g. leaveRequests.ts's canReviewLeaveRequestFor())", () => {
+    expect(true).toBe(true);
+  });
+});

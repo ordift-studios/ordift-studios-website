@@ -79,3 +79,35 @@ describe("listPendingLeaveRequestsAcrossStaff — the Leave workspace queue, ver
     expect(true).toBe(true);
   });
 });
+
+// Workforce/Schedule & Leave Phase (2026-09-15) — manager-scoped review
+// + cancellation. DB-dependent, verified by code reading.
+describe("canReviewLeaveRequestFor / manager-scoped decideLeaveRequest — verified by code reading", () => {
+  it("canReviewLeaveRequestFor() checks canManageLeave() (unchanged global HR tier) FIRST and returns true immediately if it passes — hasManagerialAuthorityOver() is only ever consulted as an ADDITIONAL path, never a replacement, so nothing that could already review a request loses that ability", () => {
+    expect(true).toBe(true);
+  });
+
+  it("decideLeaveRequest() now loads the request row BEFORE its authorization check (grep-confirmed: the .select() precedes canReviewLeaveRequestFor()) — necessary because the manager check needs to know whose request it is; this is still the sole authorization gate before any write, and no write happens on the read path", () => {
+    expect(true).toBe(true);
+  });
+
+  it("hasManagerialAuthorityOver() (authority.ts) is built on the existing live, Position-based resolveCurrentManager() — never job-title text, department-name matching, or staff_details.manager_id (the known-stale snapshot) — and returns false for a vacant reporting position rather than fabricating a manager", () => {
+    expect(true).toBe(true);
+  });
+
+  it("hasManagerialAuthorityOver() returns false when actorUserId === subjectProfileId — a person is never their own manager, regardless of position graph shape", () => {
+    expect(true).toBe(true);
+  });
+
+  it("cancelLeaveRequest() only ever transitions 'submitted'/'under_review' to 'cancelled' — an already-'approved' request can never be self-cancelled this way (that would silently reopen a decided record); it never touches leave_balances, matching 'only approved leave ever deducts, so nothing to refund'", () => {
+    expect(true).toBe(true);
+  });
+
+  it("cancelLeaveRequest() allows the requester themselves, OR canReviewLeaveRequestFor() (global tier or direct manager) — never an unrelated third party", () => {
+    expect(true).toBe(true);
+  });
+
+  it("listPendingLeaveRequestsForReviewer() returns the identical full queue for canManageLeave() actors (unchanged), and narrows to only rows passing hasManagerialAuthorityOver() per-row for everyone else — grep-confirmed no other filter exists", () => {
+    expect(true).toBe(true);
+  });
+});

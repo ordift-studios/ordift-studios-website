@@ -1,4 +1,5 @@
 import { createAdminClient } from "@/lib/supabase/admin";
+import { resolveCurrentManager } from "@/lib/organization/reporting";
 
 // Ordift Organizational & Administrative Architecture V1, Phase 3,
 // Parts B and D (2026-08-25). Reads against public.authority_grants —
@@ -648,4 +649,31 @@ export async function getExecutivePositionOccupancy(
   }
 
   return result;
+}
+
+// ============================================================
+// Manager-scoped review authority (Workforce/Schedule & Leave Phase,
+// 2026-09-15)
+// ============================================================
+// The one reusable "does this person genuinely manage that person"
+// primitive — built on the existing, live, Position-based
+// resolveCurrentManager() (reporting.ts), never on job-title text,
+// department-name matching, or a cached manager_id. A vacant reporting
+// Position resolves no manager (reporting.ts's own established
+// behavior), so this never fabricates one. Deliberately DIRECT-manager
+// only — the subject's own immediate reporting-position occupant, not
+// the whole upward chain — a narrower grant than "every ancestor
+// position," matching the explicit instruction that manager scoping
+// must narrow access, never accidentally broaden it. Callers combine
+// this with their own existing global-tier check (Super Admin /
+// operations.administer, unchanged) — this function alone is never
+// meant to be the only gate; it only ever ADDS a narrower path, never
+// replaces the broader one.
+export async function hasManagerialAuthorityOver(actorUserId: string, subjectProfileId: string): Promise<boolean> {
+  if (actorUserId === subjectProfileId) return false; // never "your own manager"
+  const admin = createAdminClient();
+  const { data: subject } = await admin.from("staff_details").select("position_id").eq("id", subjectProfileId).maybeSingle();
+  if (!subject?.position_id) return false;
+  const manager = await resolveCurrentManager(subject.position_id);
+  return Boolean(manager?.id) && manager!.id === actorUserId;
 }

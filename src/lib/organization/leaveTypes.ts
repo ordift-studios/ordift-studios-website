@@ -1,5 +1,7 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { WorkforceJurisdiction } from "@/lib/compliance/requirementClassification";
+import { resolveCurrentEmploymentContext } from "@/lib/organization/employmentTermsHistory";
+import { mapEmploymentJurisdictionToWorkforceJurisdiction } from "@/lib/compliance/workforceMappings";
 
 // Ordift Studios Compliance/COMP-SYS-1, Phase B4 Step 2 (2026-09-14) —
 // leave-type catalog reads. The catalog itself is seeded, real,
@@ -80,6 +82,23 @@ export async function getLeaveTypeBySlug(slug: string, jurisdiction: WorkforceJu
   const admin = createAdminClient();
   const { data } = await admin.from("leave_types").select(SELECT).eq("slug", slug).eq("jurisdiction", jurisdiction).maybeSingle();
   return data ? mapRow(data) : null;
+}
+
+// THE canonical "which WorkforceJurisdiction governs this person's
+// leave" resolver (2026-09-15) — reuses resolveCurrentEmploymentContext()
+// (the same live employment_terms_history resolver Agreement Readiness
+// and the Onboarding Workspace already use) and the EXISTING
+// mapEmploymentJurisdictionToWorkforceJurisdiction() mapper (built
+// 2026-09-14, never wired to a live caller until now) — never a second,
+// independently-invented jurisdiction concept. Fails closed to null
+// (never a guessed default, never "GH") when the person has no current
+// employment_jurisdiction_id, or when its name isn't one of the
+// deliberately recognized values — matching the mapper's own fail-closed
+// contract. This is what replaces every hardcoded "GH" leave-jurisdiction
+// literal in this codebase.
+export async function resolveEmployeeLeaveJurisdiction(profileId: string): Promise<WorkforceJurisdiction | null> {
+  const context = await resolveCurrentEmploymentContext({ profileId });
+  return mapEmploymentJurisdictionToWorkforceJurisdiction(context.employmentJurisdictionName);
 }
 
 export interface SickLeaveTierBreakdownEntry {

@@ -93,6 +93,11 @@ async function findApprovedLeaveForDate(profileId: string, date: string): Promis
     .select("id")
     .eq("profile_id", profileId)
     .eq("status", "approved")
+    // A superseded row (2026-09-15, Leave Swap) is historical only — its
+    // dates no longer reflect this person's real approved leave; the
+    // replacement row (created by decideLeaveSwap()) is what's queried
+    // for its own, different dates instead.
+    .is("superseded_by_leave_request_id", null)
     .lte("start_date", date)
     .gte("end_date", date)
     .limit(1)

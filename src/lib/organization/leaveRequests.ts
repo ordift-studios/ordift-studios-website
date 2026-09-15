@@ -1,6 +1,6 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { logActivity } from "@/lib/admin/activityLog";
-import { isSuperAdminId, hasJurisdictionAuthority } from "@/lib/organization/authority";
+import { isSuperAdminId, hasJurisdictionAuthority, hasManagerialAuthorityOver } from "@/lib/organization/authority";
 
 // Ordift Studios Compliance/COMP-SYS-1, Phase B4 Step 2 (2026-09-14) —
 // leave balance/request workflow. Reuses the exact "Super Admin, or a
@@ -104,6 +104,17 @@ export async function ensureLeaveBalance(params: {
 export async function canManageLeave(actorUserId: string): Promise<boolean> {
   if (await isSuperAdminId(actorUserId)) return true;
   return hasJurisdictionAuthority(actorUserId, "operations", "administer");
+}
+
+// Subject-aware review authority (Workforce/Schedule & Leave Phase,
+// 2026-09-15) — the existing global HR tier (canManageLeave) is
+// preserved unchanged and always wins first; this ADDS a narrower path
+// for a genuine direct manager (hasManagerialAuthorityOver(),
+// authority.ts) to review only their own reports' requests. Never
+// narrows what canManageLeave() already permits.
+export async function canReviewLeaveRequestFor(actorUserId: string, subjectProfileId: string): Promise<boolean> {
+  if (await canManageLeave(actorUserId)) return true;
+  return hasManagerialAuthorityOver(actorUserId, subjectProfileId);
 }
 
 export type LeaveRequestStatus = "submitted" | "under_review" | "approved" | "alternative_proposed" | "declined" | "cancelled";
@@ -231,10 +242,6 @@ export async function decideLeaveRequest(params: {
   decisionNotes?: string | null;
   actorUserId: string;
 }): Promise<{ ok: true } | { ok: false; error: string }> {
-  if (!(await canManageLeave(params.actorUserId))) {
-    return { ok: false, error: "Not authorized to decide leave requests." };
-  }
-
   const admin = createAdminClient();
   const { data: existing } = await admin
     .from("leave_requests")
@@ -242,6 +249,16 @@ export async function decideLeaveRequest(params: {
     .eq("id", params.requestId)
     .maybeSingle();
   if (!existing) return { ok: false, error: "Leave request not found." };
+
+  // Subject-aware: the existing global HR tier, or this specific
+  // person's genuine direct manager — never job-title/department-name
+  // inference. Checked after the read (not before) purely because the
+  // manager check needs to know WHO this request belongs to; this is
+  // still the sole authorization gate before any write below.
+  if (!(await canReviewLeaveRequestFor(params.actorUserId, existing.profile_id))) {
+    return { ok: false, error: "Not authorized to decide this leave request." };
+  }
+
   if (existing.status !== "submitted" && existing.status !== "under_review") {
     return { ok: false, error: `Cannot decide a leave request already in status "${existing.status}".` };
   }
@@ -311,6 +328,44 @@ export async function decideLeaveRequest(params: {
   return { ok: true };
 }
 
+// Withdrawal — self-service only (the requester withdrawing their own
+// still-pending request), the one real gap the discovery pass
+// confirmed: "cancelled" has existed as a valid status since migration
+// 0087 but no function ever set it. Never touches leave_balances — only
+// an "approved" decision ever deducts, and a request that never reached
+// "approved" never had anything to refund. Deliberately does not allow
+// cancelling an ALREADY-approved request (that would silently reopen a
+// decided leave record without any review) — withdrawing genuinely
+// approved leave is a Leave Swap or a fresh HR-reviewed decision, not a
+// unilateral self-cancel.
+export async function cancelLeaveRequest(params: { requestId: string; actorUserId: string }): Promise<{ ok: true } | { ok: false; error: string }> {
+  const admin = createAdminClient();
+  const { data: existing } = await admin.from("leave_requests").select("id, profile_id, status").eq("id", params.requestId).maybeSingle();
+  if (!existing) return { ok: false, error: "Leave request not found." };
+  if (existing.profile_id !== params.actorUserId && !(await canReviewLeaveRequestFor(params.actorUserId, existing.profile_id))) {
+    return { ok: false, error: "Not authorized to cancel this leave request." };
+  }
+  if (existing.status !== "submitted" && existing.status !== "under_review") {
+    return { ok: false, error: `Cannot cancel a leave request already in status "${existing.status}".` };
+  }
+
+  const { error } = await admin.from("leave_requests").update({ status: "cancelled" }).eq("id", params.requestId).in("status", ["submitted", "under_review"]);
+  if (error) {
+    console.error("[organization] failed to cancel leave_request", error.message);
+    return { ok: false, error: "Failed to cancel the request." };
+  }
+
+  await logActivity({
+    actorUserId: params.actorUserId,
+    action: "leave_request.cancelled",
+    entityType: "user",
+    entityId: existing.profile_id,
+    metadata: { requestId: params.requestId },
+  });
+
+  return { ok: true };
+}
+
 export async function listLeaveRequestsForProfile(profileId: string): Promise<LeaveRequest[]> {
   const admin = createAdminClient();
   const { data, error } = await admin.from("leave_requests").select(REQUEST_SELECT).eq("profile_id", profileId).order("created_at", { ascending: false });
@@ -345,4 +400,19 @@ export async function listPendingLeaveRequestsAcrossStaff(): Promise<PendingLeav
     const row = r as unknown as Parameters<typeof mapRequestRow>[0] & { profiles: { full_name: string | null } | null };
     return { ...mapRequestRow(row), profileFullName: row.profiles?.full_name ?? null };
   });
+}
+
+// Manager-scoped equivalent (2026-09-15) — HR/Super Admin (canManageLeave)
+// still see the identical full queue above; a genuine direct manager
+// with no broader HR tier sees only their own reports' pending
+// requests, narrowed via hasManagerialAuthorityOver() (authority.ts),
+// never by job title or department-name guessing. Small-team-sized
+// per-row check (no roster large enough yet to warrant a bulk-join
+// optimization) — correctness over premature performance work.
+export async function listPendingLeaveRequestsForReviewer(actorUserId: string): Promise<PendingLeaveRequest[]> {
+  const all = await listPendingLeaveRequestsAcrossStaff();
+  if (await canManageLeave(actorUserId)) return all;
+
+  const scoped = await Promise.all(all.map(async (r) => ((await hasManagerialAuthorityOver(actorUserId, r.profileId)) ? r : null)));
+  return scoped.filter((r): r is PendingLeaveRequest => r !== null);
 }
