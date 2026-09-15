@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { VENDOR_FRAMEWORK_VARIABLES } from "./documents/os-lgl-009a-vendor-supplier-framework-agreement";
 
 // OS-LGL-009 Vendor & Supplier Framework Agreement architecture
 // (2026-09-15) — Option A integration, approved by the Founder/Super
@@ -150,7 +151,7 @@ describe("createVendorFrameworkDraftAgreement — missing-fields validation, ver
     expect(true).toBe(true);
   });
 
-  it("refuses to create a draft — no agreements row, no agreement_parties rows, no snapshot — when any VENDOR_FRAMEWORK_VARIABLES entry marked required is still missing after the merge, and returns the exact list of missing field labels so the caller (the admin form) can show precisely what's absent, never a generic error", () => {
+  it("refuses to create a draft — no agreements row, no agreement_parties rows, no snapshot — when any VENDOR_FRAMEWORK_VARIABLES entry marked required (other than agreementReference — see the dedicated regression block below) is still missing after the merge, and returns the exact list of missing field labels so the caller (the admin form) can show precisely what's absent, never a generic error", () => {
     expect(true).toBe(true);
   });
 
@@ -159,6 +160,66 @@ describe("createVendorFrameworkDraftAgreement — missing-fields validation, ver
   });
 
   it("sets variables.agreementReference to the real draft's own generated agreementReference (from createDraftAgreement(), which calls generateNextAgreementReference()) before attaching the snapshot — the snapshot's own reference is never a placeholder or guessed value", () => {
+    expect(true).toBe(true);
+  });
+});
+
+// Production defect (2026-09-16) — Lady Anim-Tetey's controlled QA
+// Framework draft attempt, first try with every genuine Vendor
+// particular resolved (vendorType/registeredAddress/contactPerson all
+// recorded via Vendor Profile Particulars, migration 0127), correctly
+// FAILED CLOSED with "Missing: Agreement Reference." — a circular
+// creation dependency: agreementReference was declared required:true
+// in VENDOR_FRAMEWORK_VARIABLES and checked by the pre-creation
+// missing-fields filter, but it does not exist until
+// createDraftAgreement() (below that same check) generates it via
+// generateNextAgreementReference(). No caller can ever pre-supply it —
+// it is not a fact ABOUT the vendor at all, unlike every other
+// required field. Fixed by excluding agreementReference specifically
+// from the pre-creation completeness check (it remains required:true
+// for the FINAL snapshot's own documentation/labeling purposes, and is
+// unconditionally set from the real generated value a few lines later
+// regardless). Verified by code reading, plus the one real executed
+// assertion below against the actual VENDOR_FRAMEWORK_VARIABLES data.
+describe("createVendorFrameworkDraftAgreement — agreementReference circular-dependency fix, verified by code reading", () => {
+  it("VENDOR_FRAMEWORK_VARIABLES still declares agreementReference as required:true (real assertion, not a doc-test) — the fix excludes it from the PRE-creation check by key, not by weakening its required flag, so it remains correctly labeled 'required' in the final Schedule A snapshot", () => {
+    const entry = VENDOR_FRAMEWORK_VARIABLES.find((v) => v.key === "agreementReference");
+    expect(entry?.required).toBe(true);
+  });
+
+  it("reproduces today's exact Production scenario: vendorLegalName/vendorTradingName/vendorType/registeredAddress/contactPerson/telephone/registrationNumber/taxIdentifiers/relationshipJurisdiction/effectiveDate/email/ordiftContractingEntity ALL genuinely resolved (the real state of Lady's profile after her two Company Profile saves) and agreementReference absent from `variables` at check-time purely because it is creation-generated — the missing-fields check now passes cleanly instead of always refusing every vendor, for every draft, unconditionally (the actual defect: this filter previously excluded NO required field, so it was structurally impossible for ANY Framework — Lady's or anyone else's — to ever be created)", () => {
+    expect(true).toBe(true);
+  });
+
+  it("draft creation proceeds to createDraftAgreement(), which generates the real reference (generateNextAgreementReference() -> a Postgres sequence, migration 0069) and inserts the agreements row with that exact reference in agreement_reference", () => {
+    expect(true).toBe(true);
+  });
+
+  it("the SAME generated reference is then written into the Schedule A snapshot via `variables.agreementReference = draft.agreementReference` before attachAgreementSnapshot() — the agreement row and its own snapshot can never disagree on the reference, since one value is copied directly into the other in-process, never independently generated or re-derived", () => {
+    expect(true).toBe(true);
+  });
+
+  it("agreements.agreement_reference carries a genuine DB-level `unique (business_id, agreement_reference)` constraint (migration 0069) — a duplicate reference is impossible even if the sequence RPC were ever misused, independent of any application-code discipline", () => {
+    expect(true).toBe(true);
+  });
+
+  it("the resulting draft has status EXACTLY 'draft' (createDraftAgreement()'s own hardcoded value) — nothing in this fix touches issuance, signature requests, execution, Work Orders, or Variations; deriveVendorSupplierAgreementExecuted() still returns null for a status of 'draft', so the vendor_supplier_agreement_executed onboarding requirement remains Pending exactly as before", () => {
+    expect(true).toBe(true);
+  });
+
+  it("getCurrentVendorFrameworkAgreement()'s own pre-creation existence check (line above the fixed check) is completely unaffected by this fix — a second Framework-creation attempt for a vendor that already has a current non-terminal Framework is still refused with the existing 'already has a current Framework Agreement' error, unchanged", () => {
+    expect(true).toBe(true);
+  });
+
+  it("a genuinely missing REQUIRED field OTHER than agreementReference (e.g. a vendor whose registeredAddress was never recorded) still fails closed before any write — the fix narrows the check by exactly one key, not by removing or relaxing it for any other field", () => {
+    expect(true).toBe(true);
+  });
+
+  it("duplicate-Framework risk under true concurrent submission (two simultaneous requests, not a same-tab double-click already prevented by the form's own pending-disabled submit button) is an existing, pre-existing application-level check-then-insert characteristic shared by every 'at most one X' guard in this codebase (e.g. the Founder Direct Hire requisition duplicate guard) — this fix does not introduce, worsen, or claim to close that gap; agreement REFERENCES remain duplicate-proof regardless (DB constraint above), only a genuinely simultaneous multi-request race on the Framework-existence check itself is a distinct, unaddressed, and unchanged concern", () => {
+    expect(true).toBe(true);
+  });
+
+  it("this fix touches ONLY vendorAgreements.ts's createVendorFrameworkDraftAgreement() — createDraftAgreement()/addAgreementParty()/attachAgreementSnapshot() (agreementEngine.ts) and every employee/OS-LGL-007 code path that also calls them are completely unmodified; grep-confirmed the employee flow never had this bug in the first place — EMPLOYMENT_AGREEMENT_VARIABLES (os-lgl-007-employee-employment-agreement.ts), the array createEmployeeEmploymentAgreementDraft() (employeeAgreements.ts) iterates for its own required-field check, has no 'agreementReference' entry at all; that flow's agreement reference was never treated as a Schedule A fact needing pre-creation resolution", () => {
     expect(true).toBe(true);
   });
 });

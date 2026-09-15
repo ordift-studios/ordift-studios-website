@@ -189,7 +189,18 @@ export async function createVendorFrameworkDraftAgreement(params: {
   const known = await resolveKnownVendorFrameworkVariables(admin, params.vendorProfileId, jurisdictionCheck.jurisdiction);
   const variables: Partial<Record<VendorFrameworkVariableKey, string>> = { ...known, ...(params.additionalVariables ?? {}) };
 
-  const missingFields = VENDOR_FRAMEWORK_VARIABLES.filter((v) => v.required && !variables[v.key]).map((v) => v.label);
+  // agreementReference is a required VENDOR_FRAMEWORK_VARIABLES entry
+  // in the FINAL snapshot, but it cannot exist before this point —
+  // createDraftAgreement() below is what generates it
+  // (generateNextAgreementReference(), a real Postgres sequence,
+  // migration 0069), and it's only assigned into `variables` after the
+  // draft row already exists. Excluded from this pre-creation
+  // completeness check for that structural reason alone — it is set
+  // unconditionally a few lines below and re-validated implicitly by
+  // agreements' own `unique (business_id, agreement_reference)`
+  // constraint (migration 0069), which makes a duplicate/missing
+  // reference impossible regardless of this check.
+  const missingFields = VENDOR_FRAMEWORK_VARIABLES.filter((v) => v.required && v.key !== "agreementReference" && !variables[v.key]).map((v) => v.label);
   if (missingFields.length > 0) {
     return { ok: false, error: "Required Framework particulars are not yet resolved — no draft was created.", missingFields };
   }
