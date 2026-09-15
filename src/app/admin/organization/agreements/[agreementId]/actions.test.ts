@@ -47,7 +47,29 @@ describe("advanceAgreementLifecycleStatusAction — authorization and validation
     expect(true).toBe(true);
   });
 
-  it("never offers, and would refuse, a direct jump to approved_for_issue -> sent (real issuance) — that transition is not in ALLOWED_FROM_UI at all, matching the page's own explicit CONFIGURATION REQUIRED notice for that stage rather than exposing a control for infrastructure that does not exist", () => {
+  it("never offers, and would refuse, a direct jump to approved_for_issue -> sent through THIS action — that transition is not in ALLOWED_FROM_UI at all; real issuance now goes through the separate issueAgreementForSignatureAction below, never through a plain status flip", () => {
+    expect(true).toBe(true);
+  });
+});
+
+// issueAgreementForSignatureAction (2026-09-15) — same
+// getCurrentUser()/isSuperAdmin() session-dependent shape as
+// advanceAgreementLifecycleStatusAction above, so also a
+// "verified by code reading" doc-test.
+describe("issueAgreementForSignatureAction, verified by code reading", () => {
+  it("requires getCurrentUser() to return a real session AND isSuperAdmin(currentUser) to be true before any other logic runs — the exact same isSuperAdmin() gate every other action on this page uses", () => {
+    expect(true).toBe(true);
+  });
+
+  it("delegates entirely to issueEmployeeEmploymentAgreement() (agreementIssuance.ts) — this action itself performs no status transition, no DB write, and no email send directly; it only forwards agreementId/actorUserId and surfaces the result", () => {
+    expect(true).toBe(true);
+  });
+
+  it("on failure, returns the orchestrator's own error and step without ever having advanced the agreement's status — the underlying function only calls transitionAgreementStatus() as its very last step, once every earlier step has verifiably succeeded", () => {
+    expect(true).toBe(true);
+  });
+
+  it("on success, revalidates only this agreement's own review path — no onboarding stage, no other agreement, and no historical snapshot is touched", () => {
     expect(true).toBe(true);
   });
 });

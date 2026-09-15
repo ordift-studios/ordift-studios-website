@@ -151,6 +151,60 @@ export async function addAgreementParty(params: {
   return { ok: true, partyId: data.id };
 }
 
+// Attaches a real account to an EXISTING party row that currently has
+// none (2026-09-15, agreement-issuance bridge). Deliberately an UPDATE,
+// not a second addAgreementParty() call — that function unconditionally
+// INSERTs, and agreement_parties has no uniqueness constraint on
+// (agreement_id, party_role), so calling it again for a role that
+// already has a row (e.g. "employer", recorded as an external company
+// name with no signing human) would create a duplicate party rather
+// than complete the existing one. Refuses if the row already has a
+// profile_id — set-once, like recordIssuedDocumentHash() — so this can
+// never silently reassign an already-attached real signatory.
+export async function assignAgreementPartyProfile(params: {
+  agreementId: string;
+  partyRole: string;
+  profileId: string;
+  actorUserId: string;
+}): Promise<{ ok: true; partyId: string } | { ok: false; error: string }> {
+  const auth = await requireContractAdminister(params.actorUserId);
+  if (!auth.ok) return auth;
+
+  const admin = createAdminClient();
+  const { data: existing } = await admin
+    .from("agreement_parties")
+    .select("id, profile_id")
+    .eq("agreement_id", params.agreementId)
+    .eq("party_role", params.partyRole)
+    .maybeSingle();
+  if (!existing) return { ok: false, error: `No "${params.partyRole}" party exists on this agreement.` };
+  if (existing.profile_id) {
+    return existing.profile_id === params.profileId
+      ? { ok: true, partyId: existing.id }
+      : { ok: false, error: `The "${params.partyRole}" party already has a different account attached.` };
+  }
+
+  const { error } = await admin
+    .from("agreement_parties")
+    .update({ profile_id: params.profileId })
+    .eq("id", existing.id)
+    .is("profile_id", null);
+  if (error) {
+    console.error("[legal] failed to assign agreement party profile", error.message);
+    return { ok: false, error: "Failed to attach the signatory's account to this party." };
+  }
+
+  await logActivity({
+    actorUserId: params.actorUserId,
+    action: "legal.agreement.party_profile_assigned",
+    entityType: "agreement",
+    entityId: params.agreementId,
+    metadata: { partyId: existing.id, partyRole: params.partyRole, profileId: params.profileId },
+  });
+
+  return { ok: true, partyId: existing.id };
+}
+
 // Transitions an agreement's lifecycle status — atomic compare-and-
 // swap on the prior status, same idempotency pattern as
 // transitionLegalDocumentVersionStatus()/advanceOnboardingStage().

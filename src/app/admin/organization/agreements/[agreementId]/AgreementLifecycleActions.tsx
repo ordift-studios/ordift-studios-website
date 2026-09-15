@@ -1,7 +1,7 @@
 "use client";
 
 import { useActionState, useState } from "react";
-import { advanceAgreementLifecycleStatusAction, type AgreementLifecycleActionState } from "./actions";
+import { advanceAgreementLifecycleStatusAction, issueAgreementForSignatureAction, type AgreementLifecycleActionState, type IssueAgreementActionState } from "./actions";
 import type { AgreementLifecycleStatus } from "@/lib/legal/agreementLifecycle";
 
 const STATUS_LABELS: Partial<Record<AgreementLifecycleStatus, string>> = {
@@ -94,6 +94,72 @@ function LifecycleStepForm({
   );
 }
 
+// Real issuance action (2026-09-15) — composes/hashes/stores the
+// issued artifact and emails real signatory access links before moving
+// the agreement to "sent"; irreversible (no path back to
+// approved_for_issue once sent), so it uses the same expand-to-confirm
+// pattern as the Approve for Issue step above.
+function IssueAgreementForm({ agreementId }: { agreementId: string }) {
+  const [state, formAction, pending] = useActionState<IssueAgreementActionState, FormData>(issueAgreementForSignatureAction, null);
+  const [confirming, setConfirming] = useState(false);
+
+  const succeeded = !pending && state?.ok === true;
+
+  if (succeeded) {
+    return (
+      <p role="status" aria-live="polite" className="font-sans text-caption text-green-700">
+        Issued and sent for signature. Each signatory has been emailed a secure access link to review and sign the
+        exact issued document.
+      </p>
+    );
+  }
+
+  const form = (
+    <form action={formAction} className="flex flex-wrap items-center gap-2">
+      <input type="hidden" name="agreementId" value={agreementId} />
+      <button
+        type="submit"
+        disabled={pending}
+        aria-busy={pending}
+        className="font-sans text-caption font-semibold px-3 py-1.5 rounded-md bg-ordift-navy-950 text-white disabled:opacity-50"
+      >
+        {pending ? "Issuing…" : "Yes, Issue Agreement & Send for Signature"}
+      </button>
+      <button
+        type="button"
+        onClick={() => setConfirming(false)}
+        disabled={pending}
+        className="font-sans text-caption font-medium px-3 py-1.5 rounded-md border border-black/15"
+      >
+        Cancel
+      </button>
+    </form>
+  );
+
+  return (
+    <div className="space-y-2">
+      {!confirming ? (
+        <button
+          type="button"
+          onClick={() => setConfirming(true)}
+          className="font-sans text-caption font-semibold px-3 py-1.5 rounded-md bg-ordift-navy-950 text-white"
+        >
+          Issue Agreement & Send for Signature
+        </button>
+      ) : (
+        <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 space-y-2">
+          <p className="font-sans text-caption text-amber-800">
+            This generates the immutable issued document, records its cryptographic hash, and emails each signatory a
+            secure link to review and sign. This cannot be undone once sent. Confirm you want to proceed.
+          </p>
+          {form}
+        </div>
+      )}
+      {!pending && state?.ok === false && <p className="font-sans text-caption text-red-700">{state.error}</p>}
+    </div>
+  );
+}
+
 // Founder-facing lifecycle bridge (2026-09-15) — see actions.ts for the
 // full rationale. Shows exactly one next step at a time, driven by the
 // agreement's real current status, so an action disappears the moment
@@ -133,12 +199,14 @@ export function AgreementLifecycleActions({ agreementId, status }: { agreementId
 
   if (status === "approved_for_issue") {
     return (
-      <p className="font-sans text-caption text-amber-700 bg-amber-50 border border-amber-200 rounded px-3 py-2">
-        Approved for Issue. CONFIGURATION REQUIRED: real issuance (recording the issued document and sending it to
-        Mishael for signature) requires a document-rendering/export pipeline that does not exist in this codebase yet
-        — no further action is offered here rather than fabricating a Send/Sign/Execute control that would not
-        actually deliver or sign anything.
-      </p>
+      <div className="space-y-2">
+        <p className="font-sans text-caption text-ordift-ink-muted">
+          Next step: issue this agreement and send it for signature. This generates the immutable issued document
+          from the approved terms, records its hash, and emails each signatory a secure link to review and sign —
+          nobody is signed automatically, and this does not mark the agreement executed.
+        </p>
+        <IssueAgreementForm agreementId={agreementId} />
+      </div>
     );
   }
 
