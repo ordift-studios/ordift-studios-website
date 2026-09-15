@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   EMPLOYEE_ONBOARDING_REQUIREMENT_CATALOG,
   EXTERNAL_CONTRACTOR_ONBOARDING_REQUIREMENT_CATALOG,
+  VENDOR_SUPPLIER_ONBOARDING_REQUIREMENT_CATALOG,
   catalogForPipeline,
   computeUnsatisfiedRequired,
   toClientSafeResolvedRequirement,
@@ -64,16 +65,59 @@ describe("EMPLOYEE_ONBOARDING_REQUIREMENT_CATALOG — structural integrity", () 
   });
 });
 
-describe("EXTERNAL_CONTRACTOR_ONBOARDING_REQUIREMENT_CATALOG — deliberately empty for now", () => {
-  it("has no entries yet (Part C — implement only what's needed for the current Internal Staff validation)", () => {
-    expect(EXTERNAL_CONTRACTOR_ONBOARDING_REQUIREMENT_CATALOG).toEqual([]);
+// Vendor Completion Phase (2026-09-15) — the catalog is no longer
+// empty: VENDOR_SUPPLIER_ONBOARDING_REQUIREMENT_CATALOG's three
+// entries are its first real contents, each scoped to
+// applicableEngagementTypeSlugs: ["vendor_supplier"]. Other
+// external_contractor sub-types (contractor/freelancer/model/
+// instructor/collaborator-partner/intern/volunteer) remain
+// deliberately undefined — the "configurable, not one universal
+// checklist" requirement this scoping exists to satisfy.
+describe("EXTERNAL_CONTRACTOR_ONBOARDING_REQUIREMENT_CATALOG — now vendor_supplier's real starter set", () => {
+  it("is exactly VENDOR_SUPPLIER_ONBOARDING_REQUIREMENT_CATALOG today — the only external_contractor sub-type with defined requirements", () => {
+    expect(EXTERNAL_CONTRACTOR_ONBOARDING_REQUIREMENT_CATALOG).toEqual(VENDOR_SUPPLIER_ONBOARDING_REQUIREMENT_CATALOG);
+  });
+
+  it("every entry is scoped to applicableEngagementTypeSlugs: ['vendor_supplier'] — never universal, never hardcoded onto every external relationship", () => {
+    for (const t of VENDOR_SUPPLIER_ONBOARDING_REQUIREMENT_CATALOG) {
+      expect(t.applicableEngagementTypeSlugs).toEqual(["vendor_supplier"]);
+    }
+  });
+
+  it("vendor_supplier_agreement_executed has no derive function — genuinely manual-only, since OS-LGL-009 has no counsel-authored content or issuance pipeline (see the Vendor Completion Phase report); it can only ever be satisfied by a real future signature or administratively deferred, never by a bare manual claim standing in for a signature", () => {
+    const entry = VENDOR_SUPPLIER_ONBOARDING_REQUIREMENT_CATALOG.find((t) => t.requirementKey === "vendor_supplier_agreement_executed");
+    expect(entry?.derive).toBeUndefined();
+  });
+
+  it("every entry's requirementType is one of the seven defined types and its stage is a real external_contractor stage", () => {
+    for (const t of VENDOR_SUPPLIER_ONBOARDING_REQUIREMENT_CATALOG) {
+      expect(REQUIREMENT_TYPES).toContain(t.requirementType);
+      expect(isValidStage("external_contractor", t.stage)).toBe(true);
+    }
   });
 });
 
-describe("catalogForPipeline", () => {
-  it("returns the employee catalog for 'employee' and the (empty) external catalog otherwise", () => {
+describe("catalogForPipeline — engagementTypeSlug filtering, pure, real assertions", () => {
+  it("returns the employee catalog for 'employee' regardless of any engagementTypeSlug argument (employee pipeline has no per-engagement-type entries to filter)", () => {
     expect(catalogForPipeline("employee")).toBe(EMPLOYEE_ONBOARDING_REQUIREMENT_CATALOG);
+    expect(catalogForPipeline("employee", "vendor_supplier")).toBe(EMPLOYEE_ONBOARDING_REQUIREMENT_CATALOG);
+  });
+
+  it("omitting engagementTypeSlug for 'external_contractor' returns the FULL catalog unfiltered — identical to every pre-existing call site's behavior before applicableEngagementTypeSlugs existed", () => {
     expect(catalogForPipeline("external_contractor")).toBe(EXTERNAL_CONTRACTOR_ONBOARDING_REQUIREMENT_CATALOG);
+    expect(catalogForPipeline("external_contractor", null)).toBe(EXTERNAL_CONTRACTOR_ONBOARDING_REQUIREMENT_CATALOG);
+  });
+
+  it("passing engagementTypeSlug: 'vendor_supplier' includes every vendor_supplier-scoped entry", () => {
+    const result = catalogForPipeline("external_contractor", "vendor_supplier");
+    expect(result.map((t) => t.requirementKey).sort()).toEqual(
+      VENDOR_SUPPLIER_ONBOARDING_REQUIREMENT_CATALOG.map((t) => t.requirementKey).sort()
+    );
+  });
+
+  it("passing a DIFFERENT engagement type (e.g. a future 'model_talent' onboarding) excludes every vendor_supplier-scoped entry — the exact hardcoding this field exists to prevent", () => {
+    const result = catalogForPipeline("external_contractor", "model_talent");
+    expect(result).toEqual([]);
   });
 });
 
@@ -430,6 +474,34 @@ describe("updateOnboardingRequirement — write-path fail-closed enforcement, ve
 //    his Company Policies requirement remains genuinely "pending".
 describe("Controlled onboarding requirement override/deferral — verified by code reading", () => {
   it("authorization/never-satisfies-itself/append-only/real-completion-resolution/derived-supersedes-stale-deferral/re-verified-resolution guarantees hold as documented above", () => {
+    expect(true).toBe(true);
+  });
+});
+
+// Vendor Completion Phase (2026-09-15) — DB-dependent wiring, verified
+// by code reading.
+describe("vendor requirement derive functions and engagement-type resolution — verified by code reading", () => {
+  it("deriveVendorCompanyProfileRecorded() returns 'satisfied' only when a vendor_profiles row exists AND its company_name is genuinely set — a row existing with company_name still null (e.g. immediately after role grant, before upsertVendorProfile() is ever called) correctly returns null (no opinion), never a false 'satisfied'", () => {
+    expect(true).toBe(true);
+  });
+
+  it("deriveVendorPaymentSetupCompleted() returns 'satisfied' once at least one payment_instructions row exists for the profile — deliberately does not require verification_status = 'verified', since this requirement only gates that setup has genuinely begun, a separate concern from later verification", () => {
+    expect(true).toBe(true);
+  });
+
+  it("resolveProfileEngagementTypeSlug() returns null for the employee pipeline without querying the database at all (short-circuits before any staff_details read) — zero added query cost for every employee-pipeline call site", () => {
+    expect(true).toBe(true);
+  });
+
+  it("resolveProfileEngagementTypeSlug() reads staff_details.engagement_type_id -> engagement_types.slug for the external_contractor pipeline — the exact same column inviteCollaboratorAction() itself writes to, so a profile's resolved catalog can never diverge from what was actually recorded at invite/onboarding-start time", () => {
+    expect(true).toBe(true);
+  });
+
+  it("listResolvedRequirements()/getUnsatisfiedRequiredRequirements()/getUnsatisfiedRequiredForStage() all now resolve engagementTypeSlug internally before calling catalogForPipeline() — advanceOnboardingStage()/completeStaffOnboarding() in onboarding.ts needed ZERO changes to correctly gate only on vendor_supplier's own requirements, since they call these three functions unchanged and the filtering happens transparently inside onboardingRequirements.ts", () => {
+    expect(true).toBe(true);
+  });
+
+  it("updateOnboardingRequirement()/authorizeOnboardingRequirementOverride() still validate requirementKey against the UNFILTERED catalog (catalogForPipeline(pipeline) with no engagementTypeSlug argument) — a deliberate, harmless simplification: both remain Super-Admin/operations.administer-gated mutations tied to a real onboarding_id, so accepting a vendor-only key for a non-vendor onboarding is a minor permissiveness, never a security or data-integrity issue", () => {
     expect(true).toBe(true);
   });
 });

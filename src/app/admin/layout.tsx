@@ -115,6 +115,7 @@ const NAV_GROUPS: NavGroup[] = [
       { label: "Assets & Equipment", href: "/admin/organization/assets", adminOnly: true },
       { label: "Safeguarding", href: "/admin/organization/safeguarding", adminOnly: true },
       { label: "Legal Entities", href: "/admin/organization/legal-entities", superAdminOnly: true },
+      { label: "Vendors", href: "/admin/organization/vendors", adminOnly: true },
       { label: "Statutory Wages", href: "/admin/organization/statutory-wages", superAdminOnly: true },
     ],
   },

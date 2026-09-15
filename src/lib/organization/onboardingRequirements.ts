@@ -79,6 +79,21 @@ export type RequirementTemplate = {
   // that a requirement doesn't apply), never silently bypassed.
   requiresDigitalExecution?: boolean;
   requiresPhysicalExecution?: boolean;
+  // Vendor Completion Phase (2026-09-15) — the external_contractor
+  // pipeline is one shared bucket covering every non-employee
+  // relationship (contractor/freelancer/vendor/instructor/model/
+  // collaborator-partner/intern/volunteer alike, per
+  // resolveOnboardingPipeline()). Without this, populating the
+  // catalog for vendor_supplier would force those SAME requirements
+  // onto every other external relationship too — exactly the
+  // "hardcode every possible vendor type into one universal checklist"
+  // this was built to avoid. When set, a requirement applies ONLY to
+  // an onboarding whose profile's engagement_types.slug is in this
+  // list; when omitted, it applies to every external_contractor
+  // onboarding regardless of engagement type (unchanged, universal
+  // behavior — matches every entry that existed before this field was
+  // added).
+  applicableEngagementTypeSlugs?: readonly string[];
 };
 
 export type OnboardingRequirementRow = {
@@ -199,6 +214,32 @@ async function deriveFromCorporateIdentityReserved(profileId: string): Promise<R
   return data ? "satisfied" : null;
 }
 
+// Vendor Completion Phase (2026-09-15) — "satisfied" means the
+// company-facing identity has genuinely been recorded via
+// upsertVendorProfile() (vendorProfiles.ts), never inferred from the
+// bare existence of the vendor_profiles row alone (a row can exist
+// with company_name still null, e.g. immediately after role grant,
+// before anyone has recorded anything).
+async function deriveVendorCompanyProfileRecorded(profileId: string): Promise<RequirementStatus | null> {
+  const admin = createAdminClient();
+  const { data } = await admin.from("vendor_profiles").select("company_name").eq("id", profileId).maybeSingle();
+  if (!data || !data.company_name) return null;
+  return "satisfied";
+}
+
+// "satisfied" means at least one real payment_instructions row exists
+// for this profile — genuine payment DESTINATION detail has been
+// recorded, matching this requirement's stage name ("payment_setup").
+// Deliberately does not require verification_status = 'verified':
+// verification is a separate, later concern (payment_instructions'
+// own lifecycle), and this requirement only gates that setup has
+// begun, not that it has been fully verified.
+async function deriveVendorPaymentSetupCompleted(profileId: string): Promise<RequirementStatus | null> {
+  const admin = createAdminClient();
+  const { data } = await admin.from("payment_instructions").select("id").eq("profile_id", profileId).limit(1).maybeSingle();
+  return data ? "satisfied" : null;
+}
+
 export const EMPLOYEE_ONBOARDING_REQUIREMENT_CATALOG: readonly RequirementTemplate[] = [
   {
     requirementKey: "identity_documents_verified",
@@ -263,15 +304,103 @@ export const EMPLOYEE_ONBOARDING_REQUIREMENT_CATALOG: readonly RequirementTempla
   },
 ] as const;
 
-// External-contractor pipeline requirements are deliberately not
-// defined yet (Part C — implement only what's needed for the current
-// Internal Staff validation). An empty catalog means gating for that
-// pipeline is a no-op today, i.e. unchanged from its pre-existing
-// behavior — not a regression, just not yet built out.
-export const EXTERNAL_CONTRACTOR_ONBOARDING_REQUIREMENT_CATALOG: readonly RequirementTemplate[] = [];
+// Vendor Completion Phase (2026-09-15) — the first real entries in the
+// external_contractor catalog, scoped to engagement_types.slug =
+// 'vendor_supplier' only via applicableEngagementTypeSlugs (see that
+// field's own comment). A genuinely conservative starter set, in the
+// same spirit as EMPLOYEE_ONBOARDING_REQUIREMENT_CATALOG's own header
+// comment: real, non-fabricated requirements, not an asserted
+// statement of Ordift's full vendor compliance policy. Deliberately
+// excludes any identity/tax/compliance-document requirement with an
+// invented specific type (e.g. "certificate of incorporation") —
+// evidence review happens generically through vendor_documents
+// (vendorDocuments.ts); this catalog only gates that the STRUCTURAL
+// steps (company profile recorded, payment destination configured,
+// agreement executed) have happened, matching the same
+// evidence-only, never-fabricated discipline as
+// employment_agreement_executed above.
+export const VENDOR_SUPPLIER_ONBOARDING_REQUIREMENT_CATALOG: readonly RequirementTemplate[] = [
+  {
+    requirementKey: "vendor_company_profile_recorded",
+    stage: "profile",
+    requirementType: "task",
+    label: "Vendor company profile recorded",
+    required: true,
+    responsibleRole: "super_admin",
+    derive: deriveVendorCompanyProfileRecorded,
+    applicableEngagementTypeSlugs: ["vendor_supplier"],
+  },
+  {
+    requirementKey: "vendor_supplier_agreement_executed",
+    stage: "profile",
+    requirementType: "agreement",
+    label: "Vendor / Supplier Agreement (OS-LGL-009) executed",
+    required: true,
+    responsibleRole: "super_admin",
+    // No `derive` — deliberately manual-only. OS-LGL-009 has no
+    // counsel-authored content or issuance pipeline today (confirmed:
+    // catalogue-master row only, migration 0067, zero
+    // legal_document_versions row exists) — see the Vendor Completion
+    // Phase report. This stays genuinely "pending" (or, for a
+    // controlled test vendor, administratively "deferred" via
+    // authorizeOnboardingRequirementOverride()) until a real signed
+    // agreement exists; never a manual "satisfied" claim standing in
+    // for an actual signature the way employment_agreement_executed
+    // explicitly forbids for the employee pipeline.
+    applicableEngagementTypeSlugs: ["vendor_supplier"],
+  },
+  {
+    requirementKey: "vendor_payment_setup_completed",
+    stage: "payment_setup",
+    requirementType: "task",
+    label: "Vendor payment destination configured",
+    required: true,
+    responsibleRole: "super_admin",
+    derive: deriveVendorPaymentSetupCompleted,
+    applicableEngagementTypeSlugs: ["vendor_supplier"],
+  },
+] as const;
 
-export function catalogForPipeline(pipeline: OnboardingPipeline): readonly RequirementTemplate[] {
-  return pipeline === "employee" ? EMPLOYEE_ONBOARDING_REQUIREMENT_CATALOG : EXTERNAL_CONTRACTOR_ONBOARDING_REQUIREMENT_CATALOG;
+// External-contractor pipeline requirements beyond vendor_supplier
+// (contractor/freelancer/model/instructor/collaborator-partner/intern/
+// volunteer) remain deliberately not defined — unchanged, not a
+// regression: those sub-types simply see no applicable requirements
+// yet, exactly the pre-existing "empty catalog = no-op gating"
+// behavior this array used to have in full.
+export const EXTERNAL_CONTRACTOR_ONBOARDING_REQUIREMENT_CATALOG: readonly RequirementTemplate[] = [
+  ...VENDOR_SUPPLIER_ONBOARDING_REQUIREMENT_CATALOG,
+];
+
+// engagementTypeSlug is optional and additive: omitted (every
+// pre-existing call site), it returns the FULL catalog for the
+// pipeline, identical to this function's behavior before
+// applicableEngagementTypeSlugs existed. Supplied, it additionally
+// drops any external_contractor entry scoped to OTHER engagement
+// types — never affects the employee pipeline, which has no
+// per-engagement-type entries to begin with.
+export function catalogForPipeline(pipeline: OnboardingPipeline, engagementTypeSlug?: string | null): readonly RequirementTemplate[] {
+  const full = pipeline === "employee" ? EMPLOYEE_ONBOARDING_REQUIREMENT_CATALOG : EXTERNAL_CONTRACTOR_ONBOARDING_REQUIREMENT_CATALOG;
+  if (pipeline === "employee" || !engagementTypeSlug) return full;
+  return full.filter((t) => !t.applicableEngagementTypeSlugs || t.applicableEngagementTypeSlugs.includes(engagementTypeSlug));
+}
+
+// Resolves a profile's own engagement_types.slug via staff_details —
+// the same source inviteCollaboratorAction() itself writes to
+// (staff_details.engagement_type_id). Returns null for an employee (no
+// lookup needed — catalogForPipeline ignores this pipeline anyway) or
+// when no staff_details row/engagement type is recorded yet (a
+// requirement gated to a specific engagement type simply doesn't apply
+// until one is).
+async function resolveProfileEngagementTypeSlug(pipeline: OnboardingPipeline, profileId: string): Promise<string | null> {
+  if (pipeline === "employee") return null;
+  const admin = createAdminClient();
+  const { data } = await admin
+    .from("staff_details")
+    .select("engagement_types(slug)")
+    .eq("id", profileId)
+    .maybeSingle();
+  const engagementType = data?.engagement_types as unknown as { slug: string } | null;
+  return engagementType?.slug ?? null;
 }
 
 function mapRow(r: {
@@ -404,7 +533,8 @@ export async function listResolvedRequirements(params: {
   profileId: string;
   pipeline: OnboardingPipeline;
 }): Promise<ResolvedRequirement[]> {
-  const catalog = catalogForPipeline(params.pipeline);
+  const engagementTypeSlug = await resolveProfileEngagementTypeSlug(params.pipeline, params.profileId);
+  const catalog = catalogForPipeline(params.pipeline, engagementTypeSlug);
   const [rawRowsByKey, derivedByKey] = await Promise.all([
     fetchRowsByKey(params.onboardingId),
     fetchDerivedByKey(catalog, params.profileId),
@@ -432,7 +562,8 @@ export async function getUnsatisfiedRequiredRequirements(params: {
   profileId: string;
   pipeline: OnboardingPipeline;
 }): Promise<RequirementTemplate[]> {
-  const catalog = catalogForPipeline(params.pipeline);
+  const engagementTypeSlug = await resolveProfileEngagementTypeSlug(params.pipeline, params.profileId);
+  const catalog = catalogForPipeline(params.pipeline, engagementTypeSlug);
   const [rawRowsByKey, derivedByKey] = await Promise.all([
     fetchRowsByKey(params.onboardingId),
     fetchDerivedByKey(catalog, params.profileId),
@@ -449,7 +580,8 @@ export async function getUnsatisfiedRequiredForStage(params: {
   pipeline: OnboardingPipeline;
   stage: string;
 }): Promise<RequirementTemplate[]> {
-  const catalog = catalogForPipeline(params.pipeline);
+  const engagementTypeSlug = await resolveProfileEngagementTypeSlug(params.pipeline, params.profileId);
+  const catalog = catalogForPipeline(params.pipeline, engagementTypeSlug);
   const [rawRowsByKey, derivedByKey] = await Promise.all([
     fetchRowsByKey(params.onboardingId),
     fetchDerivedByKey(catalog, params.profileId),

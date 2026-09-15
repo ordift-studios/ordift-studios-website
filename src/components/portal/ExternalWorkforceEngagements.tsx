@@ -1,6 +1,21 @@
 import Link from "next/link";
 import type { MyEngagement } from "@/lib/portal/engagementPortalData";
 
+// Vendor Completion Phase (2026-09-15) — display-only label
+// correction. groupEngagementsByLifecycle()'s "active" bucket
+// genuinely includes draft/engagement_active/work_submitted/
+// work_approved/on_hold together (engagementPortalData.ts) — that
+// bucketing is deliberately left untouched here (shared by every
+// relationship using this component; narrowing it is a separate,
+// wider-blast-radius change outside this phase's scope). This map only
+// ensures a genuinely unconfirmed "draft" engagement never reads as
+// indistinguishable from a real ACTIVE commercial engagement — the
+// exact ambiguity flagged for staff onboarding's own "active" status,
+// avoided here at the label level rather than the bucket level.
+const STATUS_LABELS: Record<string, string> = {
+  draft: "Draft — not yet confirmed",
+};
+
 // Phase K.1 (2026-09-05) — the Active/Completed/Cancelled engagement
 // list, extracted from the collaborator (contractor) dashboard so
 // Vendor and Model can reuse it verbatim rather than re-implementing
@@ -55,7 +70,7 @@ export default function ExternalWorkforceEngagements({
                     {e.operationalTitleName ?? itemFallbackLabel} {e.engagementTypeName ? `· ${e.engagementTypeName}` : ""}
                   </p>
                   <p className="font-sans text-caption text-ordift-ink-muted mt-1">
-                    Status: {e.status} {e.agreedAmount ? `· ${e.currency ?? ""} ${e.agreedAmount}` : ""}
+                    Status: {STATUS_LABELS[e.status] ?? e.status} {e.agreedAmount ? `· ${e.currency ?? ""} ${e.agreedAmount}` : ""}
                     {e.dueDate ? ` · Due ${new Date(e.dueDate).toLocaleDateString()}` : ""}
                   </p>
                 </Link>

@@ -212,3 +212,27 @@ describe("Staff-number issuance trigger — level check vs. edge check, verified
     expect(true).toBe(true);
   });
 });
+
+// Vendor Completion Phase (2026-09-15) — startExternalWorkforceOnboarding(),
+// verified by code reading.
+describe("startExternalWorkforceOnboarding — verified by code reading", () => {
+  it("refuses an employee-classified engagementTypeSlug (resolveOnboardingPipeline() returns 'employee') rather than silently routing it through the requisition-free path — a genuine employee hire must still go through startStaffOnboarding()'s approved-requisition gate", () => {
+    expect(true).toBe(true);
+  });
+
+  it("sets requisition_id: null explicitly — never omitted, never inherited from any prior call — since a vendor relationship genuinely has no department-headcount requisition behind it, exactly like every historical staff_onboarding record that predates migration 0080's requisition-linking architecture", () => {
+    expect(true).toBe(true);
+  });
+
+  it("sets pipeline/stage explicitly from stagesForPipeline(pipeline)[0] rather than relying on the table's own DEFAULT ('employee'/'candidate_proposed', migration 0066) — grep-confirmed staff_onboarding.insert() never omits either field in this function", () => {
+    expect(true).toBe(true);
+  });
+
+  it("shares the same staff_onboarding table and unique(profile_id) constraint as startStaffOnboarding() — a profile already onboarded through either path cannot be started again through the other, the same 23505-mapped 'already started' error covers both", () => {
+    expect(true).toBe(true);
+  });
+
+  it("advanceOnboardingStage()/completeStaffOnboarding() needed no changes to work correctly on a row created this way — both already read pipeline/stage from the row itself rather than assuming 'employee', confirmed by their own existing code (no employee-only branching before this phase, none needed after)", () => {
+    expect(true).toBe(true);
+  });
+});

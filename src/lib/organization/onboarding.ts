@@ -184,6 +184,70 @@ export async function startStaffOnboarding(params: {
   return { ok: true, onboardingId: data.id };
 }
 
+// Vendor Completion Phase (2026-09-15) — a SEPARATE start function for
+// external-workforce relationships (vendor_supplier today; any future
+// non-employee engagement type), deliberately never routed through
+// startStaffOnboarding() above. That function's approved-requisition
+// gate exists specifically to prevent an "orphan EMPLOYEE onboarding
+// record with no approved hire definition" — a genuinely
+// employee-shaped control (department headcount requisition ->
+// approval) that does not fit a vendor/supplier relationship, and
+// forcing one through it would mean either fabricating a requisition
+// for a vendor or weakening that gate for employees. Neither is
+// acceptable, so this is structurally its own function: same
+// staff_onboarding table (reused, never duplicated), same
+// canManageOnboarding() authorization tier, same unique(profile_id)
+// constraint/error handling — just no requisition dependency.
+// requisition_id is left null, exactly as it is for every historical
+// record that predates the requisition-linking architecture (0080) —
+// genuinely not applicable here, never backfilled with an invented
+// value. pipeline/stage are set explicitly (never left to the table's
+// own DEFAULT, which is the EMPLOYEE track's 'employee'/
+// 'candidate_proposed' — see migration 0066).
+export async function startExternalWorkforceOnboarding(params: {
+  profileId: string;
+  engagementTypeSlug: string;
+  recruitmentApplicationId?: string | null;
+  actorUserId: string;
+}): Promise<{ ok: true; onboardingId: string } | { ok: false; error: string }> {
+  if (!(await canManageOnboarding(params.actorUserId))) {
+    return { ok: false, error: "Not authorized to onboard external workforce relationships." };
+  }
+  const pipeline = resolveOnboardingPipeline(params.engagementTypeSlug);
+  if (pipeline === "employee") {
+    return { ok: false, error: "This engagement type is a genuine employment classification — use the employee onboarding/requisition path instead." };
+  }
+
+  const admin = createAdminClient();
+  const stages = stagesForPipeline(pipeline);
+  const { data, error } = await admin
+    .from("staff_onboarding")
+    .insert({
+      profile_id: params.profileId,
+      recruitment_application_id: params.recruitmentApplicationId ?? null,
+      requisition_id: null,
+      pipeline,
+      stage: stages[0],
+      created_by: params.actorUserId,
+    })
+    .select("id")
+    .single();
+  if (error || !data) {
+    console.error("[organization] failed to start external workforce onboarding", error?.message);
+    return { ok: false, error: describeOnboardingStartError(error?.code) };
+  }
+
+  await logActivity({
+    actorUserId: params.actorUserId,
+    action: "staff_onboarding.external_workforce_started",
+    entityType: "user",
+    entityId: params.profileId,
+    metadata: { engagementTypeSlug: params.engagementTypeSlug, recruitmentApplicationId: params.recruitmentApplicationId ?? null },
+  });
+
+  return { ok: true, onboardingId: data.id };
+}
+
 // Reconciliation only (E.5 Stage 2M, Part 4/6) — links an EXISTING
 // onboarding record (created before this architecture existed, e.g.
 // Mishael Adjei's, started Stage 2G) to a since-created, approved

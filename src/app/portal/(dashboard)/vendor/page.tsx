@@ -3,6 +3,10 @@ import { getCurrentUser } from "@/lib/portal/roles";
 import { createClient } from "@/lib/supabase/server";
 import { listMyEngagements, groupEngagementsByLifecycle } from "@/lib/portal/engagementPortalData";
 import ExternalWorkforceEngagements from "@/components/portal/ExternalWorkforceEngagements";
+import { getStaffOnboardingByProfileId } from "@/lib/organization/onboarding";
+import { listResolvedRequirements } from "@/lib/organization/onboardingRequirements";
+import { listVendorDocuments } from "@/lib/vendors/vendorDocuments";
+import { VendorOnboardingStatus } from "./VendorOnboardingStatus";
 
 export const metadata: Metadata = {
   title: "Vendor — Ordift Studios Portal",
@@ -33,11 +37,22 @@ const STATUS_LABELS: Record<string, string> = {
 export default async function VendorPortalPage() {
   const user = await getCurrentUser();
   const supabase = await createClient();
-  const [{ data: profile }, engagements] = await Promise.all([
+  const [{ data: profile }, engagements, onboarding] = await Promise.all([
     user ? supabase.from("vendor_profiles").select("company_name, status").eq("id", user.id).maybeSingle() : Promise.resolve({ data: null }),
     user ? listMyEngagements(user.id) : Promise.resolve([]),
+    user ? getStaffOnboardingByProfileId(user.id) : Promise.resolve(null),
   ]);
   const { active: activeEngagements, completed: completedEngagements, cancelled: cancelledEngagements } = groupEngagementsByLifecycle(engagements);
+
+  // Vendor Completion Phase (2026-09-15) — resolved requirements and
+  // the vendor's own documents, both scoped to the caller's own
+  // profile only (RLS/application-layer own-row checks in
+  // onboardingRequirements.ts/vendorDocuments.ts are the real
+  // boundary; this page never passes another vendor's id).
+  const [resolvedRequirements, documents] = await Promise.all([
+    user && onboarding ? listResolvedRequirements({ onboardingId: onboarding.id, profileId: user.id, pipeline: onboarding.pipeline }) : Promise.resolve([]),
+    user ? listVendorDocuments(user.id, user.id) : Promise.resolve([]),
+  ]);
 
   return (
     <div className="space-y-10">
@@ -52,6 +67,10 @@ export default async function VendorPortalPage() {
           {profile ? STATUS_LABELS[profile.status] ?? profile.status : "Not yet set up"}
         </p>
       </div>
+
+      {user && (
+        <VendorOnboardingStatus vendorId={user.id} onboarding={onboarding} resolvedRequirements={resolvedRequirements} documents={documents} />
+      )}
 
       <ExternalWorkforceEngagements
         engagementBasePath="/portal/collaborator/engagement"
