@@ -1,5 +1,9 @@
+"use client";
+
+import { useSyncExternalStore } from "react";
 import Link from "next/link";
 import type { DateResolution } from "@/lib/organization/workingDayCalendar";
+import { formatLocalDateString, isTodayCell } from "./todayIndicator";
 
 // PRE_EMPLOYMENT/POST_EMPLOYMENT deliberately use a neutral slate
 // treatment, never the red UNRESOLVED styling (2026-09-15 semantic
@@ -29,6 +33,36 @@ const CLASSIFICATION_LABELS: Record<DateResolution["classification"], string> = 
   UNRESOLVED: "Unconfigured",
 };
 
+// Today's date as "YYYY-MM-DD" in the VIEWER's own browser-local
+// timezone (2026-09-15 Today-indicator addition). No canonical
+// per-user/company timezone architecture exists anywhere in this
+// codebase yet — grep-confirmed; the one precedent
+// (attendanceClassification.ts) deliberately uses UTC accessors only
+// because Ghana has zero UTC offset year-round, which is not a general
+// solution and must not be silently relied on here (Qatar/UK/US would
+// all be wrong). Computing this via `new Date()` inside a client-only
+// effect, rather than during render, is the smallest safe browser-
+// local-date behavior available without inventing a company-wide
+// timezone policy: it reads the browser's actual local clock, is
+// correct for a viewer in any timezone, and never risks a server/
+// client hydration mismatch (the initial render highlights nothing
+// until this effect runs after mount).
+// useSyncExternalStore, not useState+useEffect: "today" is external
+// state (the browser's own clock), not something React owns — this is
+// the React-recommended shape for a value that must differ between the
+// server snapshot (unknown/null, so the initial render highlights
+// nothing) and the client snapshot (the viewer's real local date),
+// without the extra render pass and lint warning a setState-in-effect
+// pattern would produce. No subscription is needed: this is a
+// point-in-time read of "today" per mount, not a live clock — matching
+// the scope of a small UX enhancement, not a real-time ticker.
+function subscribeNever() {
+  return () => {};
+}
+function useTodayDateString(): string | null {
+  return useSyncExternalStore(subscribeNever, () => formatLocalDateString(new Date()), () => null);
+}
+
 // Read-only month grid (Workforce/Employee Self-Service Phase,
 // 2026-09-15) — shared by the self-service (/admin/me/calendar) and
 // admin (/admin/organization/calendar/[profileId]) views so there is
@@ -50,6 +84,7 @@ export function CalendarMonthView({
   basePath: string;
   employeeName: string | null;
 }) {
+  const todayDateString = useTodayDateString();
   const byDate = new Map(resolutions.map((r) => [r.date, r]));
   const firstOfMonth = new Date(Date.UTC(year, month - 1, 1));
   const daysInMonth = new Date(Date.UTC(year, month, 0)).getUTCDate();
@@ -88,22 +123,39 @@ export function CalendarMonthView({
             {d}
           </div>
         ))}
-        {cells.map((resolution, i) =>
-          resolution ? (
+        {cells.map((resolution, i) => {
+          if (!resolution) return <div key={`blank-${i}`} className="min-h-[3.5rem] sm:min-h-[4.5rem]" />;
+
+          // Presentation overlay ONLY — never a classification of its
+          // own (Section 2's explicit requirement). The cell's
+          // background/label below still come entirely from
+          // CLASSIFICATION_STYLES/CLASSIFICATION_LABELS, unchanged;
+          // isToday only adds a ring and a badge on top.
+          const isToday = isTodayCell(resolution.date, todayDateString);
+          const label = resolution.holidayName ?? CLASSIFICATION_LABELS[resolution.classification];
+
+          return (
             <div
               key={resolution.date}
-              title={resolution.holidayName ?? CLASSIFICATION_LABELS[resolution.classification]}
-              className={`rounded-lg border p-1.5 sm:p-2 min-h-[3.5rem] sm:min-h-[4.5rem] flex flex-col items-start justify-between ${CLASSIFICATION_STYLES[resolution.classification]}`}
+              title={isToday ? `${label} — Today` : label}
+              aria-current={isToday ? "date" : undefined}
+              className={`relative rounded-lg border p-1.5 sm:p-2 min-h-[3.5rem] sm:min-h-[4.5rem] flex flex-col items-start justify-between ${CLASSIFICATION_STYLES[resolution.classification]} ${
+                isToday ? "ring-2 ring-green-600 ring-offset-1" : ""
+              }`}
             >
-              <span className="font-sans text-caption font-semibold">{Number(resolution.date.slice(-2))}</span>
-              <span className="font-sans text-[0.65rem] sm:text-caption leading-tight">
-                {resolution.holidayName ?? CLASSIFICATION_LABELS[resolution.classification]}
+              <span className="font-sans text-caption font-semibold flex items-center gap-1">
+                {Number(resolution.date.slice(-2))}
+                {isToday && (
+                  <span className="px-1 py-0.5 rounded bg-green-600 text-white text-[0.55rem] sm:text-[0.6rem] font-semibold uppercase tracking-wide leading-none">
+                    Today
+                  </span>
+                )}
               </span>
+              <span className="font-sans text-[0.65rem] sm:text-caption leading-tight">{label}</span>
+              {isToday && <span className="sr-only"> — this is today&apos;s date</span>}
             </div>
-          ) : (
-            <div key={`blank-${i}`} className="min-h-[3.5rem] sm:min-h-[4.5rem]" />
-          )
-        )}
+          );
+        })}
       </div>
 
       <div className="flex flex-wrap gap-3 pt-2 border-t border-black/5">
