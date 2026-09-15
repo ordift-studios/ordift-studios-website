@@ -237,3 +237,48 @@ export async function reviewVendorDocument(params: {
 
   return { ok: true };
 }
+
+// Vendor QA correction (2026-09-15) — uses the EXISTING notes column
+// (already displayed inline next to every document, VendorDetailWorkspace.tsx)
+// rather than inventing a new status/table for this. A document's
+// technical review status ("approved") proves the upload/review
+// MECHANISM was genuinely exercised — it does not, and must not, assert
+// that the underlying file is genuine legal/compliance evidence.
+// Deliberately never changes status/reviewed_by/reviewed_at (that
+// remains reviewVendorDocument()'s exclusive concern) — this only
+// annotates, so the real review-mechanism audit trail (who approved
+// it, when) stays exactly as recorded, alongside a clear note that the
+// content itself is not to be relied on. Staff/admin-only, same as
+// review — a vendor must never be able to alter their own document's
+// annotation to look more or less credible.
+export async function annotateVendorDocument(params: {
+  documentId: string;
+  notes: string;
+  actorUserId: string;
+}): Promise<{ ok: true } | { ok: false; error: string }> {
+  if (!(await canManageOnboarding(params.actorUserId))) {
+    return { ok: false, error: "Not authorized to annotate vendor documents." };
+  }
+  const notes = params.notes.trim();
+  if (!notes) return { ok: false, error: "A note is required." };
+
+  const admin = createAdminClient();
+  const { data: existing } = await admin.from("vendor_documents").select("vendor_profile_id").eq("id", params.documentId).maybeSingle();
+  if (!existing) return { ok: false, error: "Document not found." };
+
+  const { error } = await admin.from("vendor_documents").update({ notes }).eq("id", params.documentId);
+  if (error) {
+    console.error("[vendors] failed to annotate vendor_document", error.message);
+    return { ok: false, error: "Failed to save the note." };
+  }
+
+  await logActivity({
+    actorUserId: params.actorUserId,
+    action: "vendor_document.annotated",
+    entityType: "user",
+    entityId: existing.vendor_profile_id,
+    metadata: { documentId: params.documentId, notes },
+  });
+
+  return { ok: true };
+}

@@ -20,6 +20,7 @@ import {
   requestVendorDocumentUploadAuthorizationAction,
   recordVendorDocumentUploadAction,
   reviewVendorDocumentAction,
+  annotateVendorDocumentAction,
   setVendorStatusAction,
   createVendorPayeeProfileAction,
   type ActionState,
@@ -519,31 +520,59 @@ function UploadDocumentForm({ vendorId }: { vendorId: string }) {
   );
 }
 
+function AnnotateDocumentForm({ vendorId, documentId, currentNotes }: { vendorId: string; documentId: string; currentNotes: string | null }) {
+  const [state, formAction, pending] = useActionState<ActionState, FormData>(annotateVendorDocumentAction, null);
+  return (
+    <form action={formAction} className="flex flex-wrap items-center gap-2">
+      <input type="hidden" name="vendorId" value={vendorId} />
+      <input type="hidden" name="documentId" value={documentId} />
+      <input
+        name="notes"
+        defaultValue={currentNotes ?? ""}
+        placeholder="Note — e.g. 'QA TEST UPLOAD ONLY — not genuine registration evidence'"
+        className="min-w-[20rem] rounded-lg border border-black/15 px-2 py-1 font-sans text-caption"
+      />
+      <button type="submit" disabled={pending} className="font-sans text-caption font-semibold px-2 py-1 rounded-md border border-black/15 text-ordift-ink disabled:opacity-50">
+        {pending ? "Saving…" : "Save Note"}
+      </button>
+      <FormError state={state} />
+    </form>
+  );
+}
+
 function DocumentRow({ vendorId, document }: { vendorId: string; document: VendorDocument }) {
   const [state, formAction, pending] = useActionState<ActionState, FormData>(reviewVendorDocumentAction, null);
   return (
-    <li className="rounded-lg border border-black/10 p-3 flex flex-wrap items-center justify-between gap-2">
-      <div>
-        <p className="font-sans text-body-small text-ordift-ink">{document.documentType}</p>
-        <p className="font-sans text-caption text-ordift-ink-muted">Uploaded {new Date(document.uploadedAt).toLocaleDateString()}{document.notes ? ` — ${document.notes}` : ""}</p>
+    <li className="rounded-lg border border-black/10 p-3 space-y-2">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <p className="font-sans text-body-small text-ordift-ink">{document.documentType}</p>
+          <p className="font-sans text-caption text-ordift-ink-muted">Uploaded {new Date(document.uploadedAt).toLocaleDateString()}{document.notes ? ` — ${document.notes}` : ""}</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className={`px-2 py-0.5 rounded-full font-sans text-caption whitespace-nowrap ${document.status === "approved" ? "bg-green-100 text-green-800" : document.status === "rejected" ? "bg-red-100 text-red-800" : "bg-amber-100 text-amber-800"}`}>
+            {document.status.replace(/_/g, " ")}
+          </span>
+          {document.status === "pending_review" && (
+            <form action={formAction} className="flex items-center gap-1">
+              <input type="hidden" name="vendorId" value={vendorId} />
+              <input type="hidden" name="documentId" value={document.id} />
+              <button type="submit" name="status" value="approved" disabled={pending} className="font-sans text-caption font-semibold px-2 py-1 rounded-md bg-green-700 text-white disabled:opacity-50">
+                Approve
+              </button>
+              <button type="submit" name="status" value="rejected" disabled={pending} className="font-sans text-caption font-semibold px-2 py-1 rounded-md bg-red-700 text-white disabled:opacity-50">
+                Reject
+              </button>
+            </form>
+          )}
+        </div>
       </div>
-      <div className="flex items-center gap-2">
-        <span className={`px-2 py-0.5 rounded-full font-sans text-caption whitespace-nowrap ${document.status === "approved" ? "bg-green-100 text-green-800" : document.status === "rejected" ? "bg-red-100 text-red-800" : "bg-amber-100 text-amber-800"}`}>
-          {document.status.replace(/_/g, " ")}
-        </span>
-        {document.status === "pending_review" && (
-          <form action={formAction} className="flex items-center gap-1">
-            <input type="hidden" name="vendorId" value={vendorId} />
-            <input type="hidden" name="documentId" value={document.id} />
-            <button type="submit" name="status" value="approved" disabled={pending} className="font-sans text-caption font-semibold px-2 py-1 rounded-md bg-green-700 text-white disabled:opacity-50">
-              Approve
-            </button>
-            <button type="submit" name="status" value="rejected" disabled={pending} className="font-sans text-caption font-semibold px-2 py-1 rounded-md bg-red-700 text-white disabled:opacity-50">
-              Reject
-            </button>
-          </form>
-        )}
-      </div>
+      {/* Vendor QA correction (2026-09-15) — a document's review status
+          proves the upload/review MECHANISM was exercised; it never by
+          itself asserts the file is genuine legal/compliance evidence.
+          This note is the deliberate, visible place to record that
+          distinction without altering the review record itself. */}
+      <AnnotateDocumentForm vendorId={vendorId} documentId={document.id} currentNotes={document.notes} />
       <FormError state={state} />
     </li>
   );

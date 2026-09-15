@@ -5,7 +5,7 @@ import { getCurrentUser } from "@/lib/portal/roles";
 import { canManageOnboarding, startExternalWorkforceOnboarding, advanceOnboardingStage, completeStaffOnboarding, correctOnboardingRelationshipClassification } from "@/lib/organization/onboarding";
 import { updateOnboardingRequirement, authorizeOnboardingRequirementOverride, type RequirementStatus } from "@/lib/organization/onboardingRequirements";
 import { upsertVendorProfile, setVendorProfileStatus } from "@/lib/vendors/vendorProfiles";
-import { requestVendorDocumentUploadAuthorization, recordVendorDocument, reviewVendorDocument } from "@/lib/vendors/vendorDocuments";
+import { requestVendorDocumentUploadAuthorization, recordVendorDocument, reviewVendorDocument, annotateVendorDocument } from "@/lib/vendors/vendorDocuments";
 import { createPayeeProfile } from "@/lib/payables/payeeProfiles";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { OnboardingPipeline } from "@/lib/organization/onboardingStages";
@@ -216,6 +216,26 @@ export async function reviewVendorDocumentAction(_prev: ActionState, formData: F
     const documentId = String(formData.get("documentId") ?? "");
     const status = String(formData.get("status") ?? "") as "approved" | "rejected";
     const result = await reviewVendorDocument({ documentId, status, actorUserId: user.id });
+    if (!result.ok) return { ok: false, error: result.error };
+    revalidateVendor(vendorId);
+    return { ok: true };
+  } catch {
+    return { ok: false, error: "You are not authorized to do this." };
+  }
+}
+
+// Vendor QA correction (2026-09-15) — lets an admin annotate a
+// document's existing notes field without touching its review status.
+// Used, e.g., to mark a controlled test upload clearly as non-genuine
+// evidence even after its review mechanism has been legitimately
+// exercised (approved) — see vendorDocuments.ts's annotateVendorDocument().
+export async function annotateVendorDocumentAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  try {
+    const user = await requireVendorAdmin();
+    const vendorId = String(formData.get("vendorId") ?? "");
+    const documentId = String(formData.get("documentId") ?? "");
+    const notes = String(formData.get("notes") ?? "");
+    const result = await annotateVendorDocument({ documentId, notes, actorUserId: user.id });
     if (!result.ok) return { ok: false, error: result.error };
     revalidateVendor(vendorId);
     return { ok: true };
