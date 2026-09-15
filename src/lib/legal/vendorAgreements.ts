@@ -1,7 +1,8 @@
 import { createAdminClient } from "@/lib/supabase/admin";
-import { createDraftAgreement, addAgreementParty, createAgreementAmendment } from "./agreementEngine";
+import { createDraftAgreement, addAgreementParty, attachAgreementSnapshot, createAgreementAmendment } from "./agreementEngine";
 import { isTerminalAgreementStatus, isIssuedAgreementStatus, type AgreementLifecycleStatus } from "./agreementLifecycle";
 import { checkVendorAgreementJurisdiction } from "./vendorAgreementJurisdictionGate";
+import { VENDOR_FRAMEWORK_VARIABLES, type VendorFrameworkVariableKey } from "./documents/os-lgl-009a-vendor-supplier-framework-agreement";
 
 // Ordift Studios Legal Suite — OS-LGL-009 Vendor & Supplier Framework
 // Agreement architecture (2026-09-15). Approved integration: Option A
@@ -105,10 +106,54 @@ export async function getCurrentVendorFrameworkAgreement(vendorProfileId: string
 // until terminated" (a superseded/terminated one does not block a
 // genuinely new one afterward). Refuses if the vendor's relationship
 // jurisdiction isn't resolved/supported yet (checkVendorAgreementJurisdiction()).
+// Resolves the Schedule A facts genuinely already known to the system
+// — never guesses the rest. vendorLegalName/vendorTradingName/email/
+// relationshipJurisdiction come from real, already-recorded data
+// (profiles, vendor_profiles, auth.users, the jurisdiction gate);
+// effectiveDate defaults to today only because it's the genuine date
+// this draft is being created, not a guess about anything substantive.
+// Every other VENDOR_FRAMEWORK_VARIABLES key (ordiftContractingEntity,
+// vendorType, registrationNumber, registeredAddress, contactPerson,
+// telephone, taxIdentifiers) has no existing system source and is
+// never fabricated here — the caller must supply it explicitly (a
+// future admin form), or it stays genuinely absent.
+async function resolveKnownVendorFrameworkVariables(
+  admin: ReturnType<typeof createAdminClient>,
+  vendorProfileId: string,
+  jurisdiction: string
+): Promise<Partial<Record<VendorFrameworkVariableKey, string>>> {
+  const [{ data: profile }, { data: vendorProfile }, { data: authUser }] = await Promise.all([
+    admin.from("profiles").select("full_name").eq("id", vendorProfileId).maybeSingle(),
+    admin.from("vendor_profiles").select("company_name").eq("id", vendorProfileId).maybeSingle(),
+    admin.auth.admin.getUserById(vendorProfileId),
+  ]);
+  const resolved: Partial<Record<VendorFrameworkVariableKey, string>> = {
+    relationshipJurisdiction: jurisdiction,
+    effectiveDate: new Date().toISOString().slice(0, 10),
+  };
+  if (profile?.full_name) resolved.vendorLegalName = profile.full_name;
+  if (vendorProfile?.company_name) resolved.vendorTradingName = vendorProfile.company_name;
+  const email = authUser?.user?.email;
+  if (email) resolved.email = email;
+  return resolved;
+}
+
+export type CreateVendorFrameworkDraftAgreementResult =
+  | { ok: true; agreementId: string; agreementReference: string }
+  | { ok: false; error: string; missingFields?: string[] };
+
+// OS-LGL-009A — Framework. `additionalVariables` supplies the Schedule
+// A facts that have no existing system source (see
+// resolveKnownVendorFrameworkVariables()'s own comment) — merged with,
+// never overriding, the genuinely-known values. Refuses (listing
+// exactly which fields) if any VENDOR_FRAMEWORK_VARIABLES entry marked
+// required is still missing after the merge — never creates a draft
+// with an invented value standing in for a real one.
 export async function createVendorFrameworkDraftAgreement(params: {
   vendorProfileId: string;
+  additionalVariables?: Partial<Record<VendorFrameworkVariableKey, string>>;
   actorUserId: string;
-}): Promise<{ ok: true; agreementId: string; agreementReference: string } | { ok: false; error: string }> {
+}): Promise<CreateVendorFrameworkDraftAgreementResult> {
   const jurisdictionCheck = await checkVendorAgreementJurisdiction(params.vendorProfileId);
   if (!jurisdictionCheck.ok) return { ok: false, error: jurisdictionCheck.error };
 
@@ -119,7 +164,13 @@ export async function createVendorFrameworkDraftAgreement(params: {
   const existing = await getCurrentVendorFrameworkAgreement(params.vendorProfileId);
   if (existing) return { ok: false, error: `This vendor already has a current Framework Agreement (${existing.agreementReference}, status "${existing.status}").` };
 
-  const { data: vendorProfile } = await admin.from("vendor_profiles").select("company_name").eq("id", params.vendorProfileId).maybeSingle();
+  const known = await resolveKnownVendorFrameworkVariables(admin, params.vendorProfileId, jurisdictionCheck.jurisdiction);
+  const variables: Partial<Record<VendorFrameworkVariableKey, string>> = { ...known, ...(params.additionalVariables ?? {}) };
+
+  const missingFields = VENDOR_FRAMEWORK_VARIABLES.filter((v) => v.required && !variables[v.key]).map((v) => v.label);
+  if (missingFields.length > 0) {
+    return { ok: false, error: "Required Framework particulars are not yet resolved — no draft was created.", missingFields };
+  }
 
   const draft = await createDraftAgreement({
     masterId: master.id,
@@ -136,13 +187,21 @@ export async function createVendorFrameworkDraftAgreement(params: {
     agreementId: draft.agreementId,
     partyRole: "vendor",
     profileId: params.vendorProfileId,
-    externalName: vendorProfile?.company_name ?? null,
+    externalName: variables.vendorTradingName ?? variables.vendorLegalName ?? null,
     actorUserId: params.actorUserId,
   });
   await addAgreementParty({
     agreementId: draft.agreementId,
     partyRole: "ordift",
     profileId: params.actorUserId,
+    actorUserId: params.actorUserId,
+  });
+
+  variables.agreementReference = draft.agreementReference;
+  await attachAgreementSnapshot({
+    agreementId: draft.agreementId,
+    snapshotData: variables,
+    sourceReference: `vendor_profile:${params.vendorProfileId}`,
     actorUserId: params.actorUserId,
   });
 
@@ -158,9 +217,52 @@ export async function createVendorFrameworkDraftAgreement(params: {
 // status lifecycle, own signature evidence, own ORD-AGR reference —
 // multiple Work Orders may exist under one Framework, and each remains
 // independently auditable even after the Framework is terminated.
+// Work Order commercial/operational particulars (Part 3's field list) —
+// stored as an agreement_snapshots row on the Work Order's own
+// agreement, the exact same "frozen commercial/legal facts" mechanism
+// every other agreement type already uses, never a new table. Purely
+// a compile-time documentation/safety layer for callers — jsonb itself
+// enforces no shape. Every field is optional: a Work Order may
+// legitimately not need all of them (e.g. no personnel/crew for a
+// goods-only supply), and none is ever fabricated to fill a gap.
+export type VendorWorkOrderDetails = {
+  projectTitle?: string;
+  internalProjectReference?: string;
+  clientReference?: string;
+  serviceCategory?: string;
+  scope?: string;
+  deliverables?: string;
+  quantities?: string;
+  dates?: string;
+  location?: string;
+  callTimeSchedule?: string;
+  milestones?: string;
+  vendorPersonnel?: string;
+  equipmentFacilityRequirements?: string;
+  vendorCost?: string;
+  currency?: string;
+  taxWithholdingTreatment?: string;
+  deposit?: string;
+  paymentMilestones?: string;
+  paymentDueBasis?: string;
+  approvedExpenses?: string;
+  overtimeRule?: string;
+  cancellationRescheduling?: string;
+  acceptanceCriteria?: string;
+  ipTreatment?: string;
+  publicityAuthorizationStatus?: string;
+  confidentialityClassification?: string;
+  personalDataProcessingIndicator?: string;
+  dpaRequirement?: string;
+  requiredLicencesInsurance?: string;
+  safetySiteRequirements?: string;
+  specialTerms?: string;
+};
+
 export async function createVendorWorkOrderDraftAgreement(params: {
   frameworkAgreementId: string;
   vendorProfileId: string;
+  details?: VendorWorkOrderDetails;
   actorUserId: string;
 }): Promise<{ ok: true; agreementId: string; agreementReference: string } | { ok: false; error: string }> {
   const admin = createAdminClient();
@@ -204,6 +306,15 @@ export async function createVendorWorkOrderDraftAgreement(params: {
     actorUserId: params.actorUserId,
   });
 
+  if (params.details) {
+    await attachAgreementSnapshot({
+      agreementId: draft.agreementId,
+      snapshotData: params.details,
+      sourceReference: `vendor_framework_agreement:${params.frameworkAgreementId}`,
+      actorUserId: params.actorUserId,
+    });
+  }
+
   return draft;
 }
 
@@ -214,10 +325,25 @@ export async function createVendorWorkOrderDraftAgreement(params: {
 // already refuses against a not-yet-issued agreement and preserves the
 // original terms untouched (append-only amendment history, never an
 // overwrite).
+// Variation / Change Order particulars (Part 4's field list) — stored
+// in agreement_amendments.changes, reusing that column exactly as
+// designed. Compile-time documentation only, same discipline as
+// VendorWorkOrderDetails.
+export type VendorWorkOrderVariationChanges = {
+  originalTerm?: string;
+  revisedTerm?: string;
+  scopeImpact?: string;
+  priceImpact?: string;
+  scheduleImpact?: string;
+  deliverableImpact?: string;
+  taxPaymentImpact?: string;
+  effectiveDate?: string;
+};
+
 export async function createVendorWorkOrderVariation(params: {
   workOrderAgreementId: string;
   reason: string;
-  changes: Record<string, unknown>;
+  changes: VendorWorkOrderVariationChanges;
   actorUserId: string;
 }): Promise<{ ok: true; amendmentId: string; amendmentNumber: number } | { ok: false; error: string }> {
   const admin = createAdminClient();

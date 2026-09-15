@@ -9,6 +9,7 @@ import { listVendorDocuments } from "@/lib/vendors/vendorDocuments";
 import { getPayeeProfile } from "@/lib/payables/payeeProfiles";
 import { listEmploymentJurisdictions } from "@/lib/portal/adminData";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { getCurrentVendorFrameworkAgreement } from "@/lib/legal/vendorAgreements";
 import { VendorDetailWorkspace } from "./VendorDetailWorkspace";
 
 export const metadata: Metadata = {
@@ -30,13 +31,14 @@ export default async function VendorDetailPage({ params }: { params: Promise<{ v
   ]);
   if (!profile) notFound();
 
-  const [resolvedRequirements, overrides, documents, payeeProfile, { data: paymentInstructions }, jurisdictions] = await Promise.all([
+  const [resolvedRequirements, overrides, documents, payeeProfile, { data: paymentInstructions }, jurisdictions, frameworkAgreement] = await Promise.all([
     onboarding ? listResolvedRequirements({ onboardingId: onboarding.id, profileId: vendorId, pipeline: onboarding.pipeline }) : Promise.resolve([]),
     onboarding ? listOnboardingRequirementOverrides(onboarding.id) : Promise.resolve([]),
     listVendorDocuments(vendorId, user.id),
     getPayeeProfile(vendorId),
     admin.from("payment_instructions").select("id, method, verification_status, is_default").eq("profile_id", vendorId),
     listEmploymentJurisdictions(),
+    getCurrentVendorFrameworkAgreement(vendorId),
   ]);
   const jurisdictionOptions = jurisdictions.map((j) => ({ id: j.id, name: j.name }));
 
@@ -66,6 +68,7 @@ export default async function VendorDetailPage({ params }: { params: Promise<{ v
         documents={documents}
         payeeProfile={payeeProfile}
         paymentInstructions={paymentInstructions ?? []}
+        frameworkAgreement={frameworkAgreement}
       />
     </div>
   );

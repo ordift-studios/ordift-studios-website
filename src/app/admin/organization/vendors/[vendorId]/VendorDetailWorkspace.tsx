@@ -6,6 +6,7 @@ import type { ResolvedRequirement, OnboardingRequirementOverrideRow } from "@/li
 import type { VendorProfile } from "@/lib/vendors/vendorProfiles";
 import type { VendorDocument } from "@/lib/vendors/vendorDocuments";
 import type { PayeeProfile } from "@/lib/payables/payeeProfiles";
+import type { VendorAgreementSummary } from "@/lib/legal/vendorAgreements";
 import { nextStage, isTerminalStage } from "@/lib/organization/onboardingStages";
 import { createClient } from "@/lib/supabase/client";
 import { validateVendorDocumentFile, describeVendorDocumentUploadError } from "@/lib/vendors/vendorDocumentUploadValidation";
@@ -23,7 +24,11 @@ import {
   annotateVendorDocumentAction,
   setVendorStatusAction,
   createVendorPayeeProfileAction,
+  createVendorFrameworkAction,
+  approveVendorFrameworkForIssueAction,
+  issueVendorFrameworkAction,
   type ActionState,
+  type CreateFrameworkActionState,
 } from "./actions";
 
 // Same bucket-name-as-a-local-constant convention as TalentMediaUpload.tsx
@@ -48,6 +53,7 @@ export function VendorDetailWorkspace({
   documents,
   payeeProfile,
   paymentInstructions,
+  frameworkAgreement,
 }: {
   vendorId: string;
   vendorProfile: VendorProfile | null;
@@ -60,6 +66,7 @@ export function VendorDetailWorkspace({
   documents: VendorDocument[];
   payeeProfile: PayeeProfile | null;
   paymentInstructions: PaymentInstructionRow[];
+  frameworkAgreement: VendorAgreementSummary | null;
 }) {
   return (
     <div className="space-y-8">
@@ -71,6 +78,7 @@ export function VendorDetailWorkspace({
         jurisdictionOptions={jurisdictionOptions}
       />
       <OnboardingSection vendorId={vendorId} onboarding={onboarding} resolvedRequirements={resolvedRequirements} overrides={overrides} />
+      <FrameworkAgreementSection vendorId={vendorId} frameworkAgreement={frameworkAgreement} />
       <DocumentsSection vendorId={vendorId} documents={documents} />
       <PaymentSection vendorId={vendorId} vendorProfile={vendorProfile} payeeProfile={payeeProfile} paymentInstructions={paymentInstructions} />
     </div>
@@ -575,6 +583,120 @@ function DocumentRow({ vendorId, document }: { vendorId: string; document: Vendo
       <AnnotateDocumentForm vendorId={vendorId} documentId={document.id} currentNotes={document.notes} />
       <FormError state={state} />
     </li>
+  );
+}
+
+// OS-LGL-009A Vendor & Supplier Framework Agreement (2026-09-15) — the
+// counsel-approved consolidated content is attached and this vendor's
+// own draft-creation/issuance flow is fully wired, but nothing here
+// ever marks the vendor_supplier_agreement_executed requirement
+// satisfied directly: that stays entirely derived
+// (deriveVendorSupplierAgreementExecuted, onboardingRequirements.ts)
+// from a real fully_executed/active/completed agreement status, itself
+// only reachable through genuine signature_evidence
+// (signatureEngine.ts). This UI can create a draft and issue it for
+// signature — it cannot fabricate a signature.
+function CreateFrameworkForm({ vendorId }: { vendorId: string }) {
+  const [state, formAction, pending] = useActionState<CreateFrameworkActionState, FormData>(createVendorFrameworkAction, null);
+  return (
+    <form action={formAction} className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+      <input type="hidden" name="vendorId" value={vendorId} />
+      <p className="sm:col-span-2 font-sans text-caption text-ordift-ink-muted">
+        Vendor legal name, trading name, email, relationship jurisdiction, and effective date are resolved
+        automatically from this vendor&rsquo;s own recorded profile. Supply the remaining Schedule A particulars
+        below — leave a field blank only where it is genuinely not applicable (e.g. Registration Number for an
+        individual/sole provider).
+      </p>
+      <input name="ordiftContractingEntity" placeholder="Ordift Contracting Entity (required)" className="rounded-lg border border-black/15 px-2 py-1.5 font-sans text-body-small" />
+      <input name="vendorType" placeholder="Vendor Type — e.g. Individual / Company / Studio (required)" className="rounded-lg border border-black/15 px-2 py-1.5 font-sans text-body-small" />
+      <input name="registeredAddress" placeholder="Registered / Business Address (required)" className="rounded-lg border border-black/15 px-2 py-1.5 font-sans text-body-small" />
+      <input name="contactPerson" placeholder="Contact Person (required)" className="rounded-lg border border-black/15 px-2 py-1.5 font-sans text-body-small" />
+      <input name="registrationNumber" placeholder="Registration / Incorporation Number (optional)" className="rounded-lg border border-black/15 px-2 py-1.5 font-sans text-body-small" />
+      <input name="telephone" placeholder="Telephone / WhatsApp (optional)" className="rounded-lg border border-black/15 px-2 py-1.5 font-sans text-body-small" />
+      <input name="taxIdentifiers" placeholder="Applicable Tax / Business Identifiers (optional)" className="rounded-lg border border-black/15 px-2 py-1.5 font-sans text-body-small" />
+      <button type="submit" disabled={pending} className="sm:col-span-2 justify-self-start font-sans text-body-small font-semibold px-4 py-2 rounded-md bg-ordift-navy-950 text-white disabled:opacity-50">
+        {pending ? "Creating…" : "Create Framework Agreement Draft"}
+      </button>
+      {!pending && state?.ok === false && (
+        <div className="sm:col-span-2 font-sans text-caption text-red-700">
+          {state.error}
+          {state.missingFields && state.missingFields.length > 0 && <span> Missing: {state.missingFields.join(", ")}.</span>}
+        </div>
+      )}
+    </form>
+  );
+}
+
+function ApproveFrameworkForIssueForm({ vendorId, agreementId }: { vendorId: string; agreementId: string }) {
+  const [state, formAction, pending] = useActionState<ActionState, FormData>(approveVendorFrameworkForIssueAction, null);
+  return (
+    <form action={formAction}>
+      <input type="hidden" name="vendorId" value={vendorId} />
+      <input type="hidden" name="agreementId" value={agreementId} />
+      <button type="submit" disabled={pending} className="font-sans text-caption font-semibold px-3 py-1.5 rounded-md bg-ordift-gold-pressed text-ordift-navy-950 disabled:opacity-50">
+        {pending ? "Approving…" : "Approve for Issue"}
+      </button>
+      <FormError state={state} />
+    </form>
+  );
+}
+
+function IssueFrameworkForm({ vendorId, agreementId }: { vendorId: string; agreementId: string }) {
+  const [state, formAction, pending] = useActionState<ActionState, FormData>(issueVendorFrameworkAction, null);
+  return (
+    <form action={formAction} className="space-y-1">
+      <input type="hidden" name="vendorId" value={vendorId} />
+      <input type="hidden" name="agreementId" value={agreementId} />
+      <button type="submit" disabled={pending} className="font-sans text-caption font-semibold px-3 py-1.5 rounded-md bg-green-700 text-white disabled:opacity-50">
+        {pending ? "Issuing…" : "Issue for Signature"}
+      </button>
+      <p className="font-sans text-caption text-ordift-ink-muted">
+        Composes and hashes the issued document, creates a real signature request, and emails a genuine signing
+        link to the vendor&rsquo;s own account. Nothing here signs on the vendor&rsquo;s behalf.
+      </p>
+      <FormError state={state} />
+    </form>
+  );
+}
+
+const AGREEMENT_STATUS_STYLES: Record<string, string> = {
+  draft: "bg-black/5 text-ordift-ink-muted",
+  internal_review: "bg-amber-100 text-amber-800",
+  approved_for_issue: "bg-amber-100 text-amber-800",
+  sent: "bg-blue-100 text-blue-800",
+  viewed: "bg-blue-100 text-blue-800",
+  accepted_for_signature: "bg-blue-100 text-blue-800",
+  partially_signed: "bg-blue-100 text-blue-800",
+  fully_executed: "bg-green-100 text-green-800",
+  active: "bg-green-100 text-green-800",
+  completed: "bg-green-100 text-green-800",
+};
+
+function FrameworkAgreementSection({ vendorId, frameworkAgreement }: { vendorId: string; frameworkAgreement: VendorAgreementSummary | null }) {
+  return (
+    <section className="rounded-xl border border-black/10 bg-white p-6 space-y-4">
+      <h2 className="font-serif font-medium text-body text-ordift-ink">Vendor &amp; Supplier Framework Agreement (OS-LGL-009A)</h2>
+      {!frameworkAgreement ? (
+        <CreateFrameworkForm vendorId={vendorId} />
+      ) : (
+        <div className="space-y-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <p className="font-sans text-body-small text-ordift-ink">{frameworkAgreement.agreementReference}</p>
+            <span className={`px-2 py-0.5 rounded-full font-sans text-caption whitespace-nowrap ${AGREEMENT_STATUS_STYLES[frameworkAgreement.status] ?? "bg-black/5"}`}>
+              {frameworkAgreement.status.replace(/_/g, " ")}
+            </span>
+          </div>
+          {frameworkAgreement.status === "draft" && <ApproveFrameworkForIssueForm vendorId={vendorId} agreementId={frameworkAgreement.id} />}
+          {frameworkAgreement.status === "approved_for_issue" && <IssueFrameworkForm vendorId={vendorId} agreementId={frameworkAgreement.id} />}
+          {frameworkAgreement.status === "sent" && (
+            <p className="font-sans text-caption text-ordift-ink-muted">
+              Issued and sent for signature — a real signing link has been emailed to the vendor&rsquo;s own account.
+              Execution is recorded only once the vendor genuinely completes signing.
+            </p>
+          )}
+        </div>
+      )}
+    </section>
   );
 }
 

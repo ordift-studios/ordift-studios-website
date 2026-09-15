@@ -1,6 +1,7 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { logActivity } from "@/lib/admin/activityLog";
 import { canManageOnboarding } from "@/lib/organization/onboarding";
+import { sendVendorAgreementNotification } from "@/lib/notifications/vendorAgreementNotification";
 
 // Vendor Completion Phase (2026-09-15) — against public.vendor_documents
 // (migration 0122). Shape and authorization pattern deliberately copy
@@ -233,6 +234,13 @@ export async function reviewVendorDocument(params: {
     entityType: "user",
     entityId: existing.vendor_profile_id,
     metadata: { documentId: params.documentId, status: params.status },
+  });
+
+  // Fire-and-forget, never blocks the review itself (same discipline
+  // as sendEngagementNotification()'s own callers).
+  void sendVendorAgreementNotification({
+    vendorProfileId: existing.vendor_profile_id,
+    event: params.status === "approved" ? "document_approved" : "document_rejected",
   });
 
   return { ok: true };
