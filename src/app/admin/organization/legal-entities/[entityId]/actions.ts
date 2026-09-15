@@ -1,8 +1,9 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 import { getCurrentUser, isSuperAdmin } from "@/lib/portal/roles";
-import { recordEmployingEntitySensitiveDetails, addEmployingEntityDocument } from "@/lib/organization/legalEntities";
+import { recordEmployingEntitySensitiveDetails, addEmployingEntityDocument, getEmployingEntityDocumentSignedUrl } from "@/lib/organization/legalEntities";
 
 export type ActionState = { ok: boolean; error?: string } | null;
 
@@ -44,4 +45,24 @@ export async function uploadEntityDocumentAction(_prev: ActionState, formData: F
   if (!result.ok) return { ok: false, error: result.error };
   revalidatePath(`/admin/organization/legal-entities/${entityId}`);
   return { ok: true };
+}
+
+// Server-mediated retrieval only — never a stored/public URL. Re-checks
+// Super Admin on every call (defense in depth: the page itself already
+// gates Super Admin, but a document id could otherwise be replayed
+// directly against this action) and issues a fresh, short-lived signed
+// URL (getEmployingEntityDocumentSignedUrl, 5-minute TTL) each time,
+// redirecting the browser straight to it rather than persisting or
+// returning the URL as page state (Mishael Adjei reconciliation, Part K,
+// 2026-09-15).
+export async function viewEntityDocumentAction(formData: FormData): Promise<void> {
+  const actor = await requireSuperAdminActor();
+  if ("error" in actor) return;
+
+  const documentId = String(formData.get("documentId") ?? "");
+  if (!documentId) return;
+
+  const url = await getEmployingEntityDocumentSignedUrl(documentId, actor.id);
+  if (!url) return;
+  redirect(url);
 }

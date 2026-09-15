@@ -5,6 +5,7 @@ import type { StaffOnboarding } from "@/lib/organization/onboarding";
 import type { ResolvedRequirement, RequirementStatus } from "@/lib/organization/onboardingRequirements";
 import type { ActivityLogEntry } from "@/lib/admin/activityLog";
 import type { RecruitmentRequisition } from "@/lib/recruitment/requisitions";
+import type { CurrentEmploymentContext } from "@/lib/organization/employmentTermsHistory";
 import {
   advanceOnboardingStageAction,
   completeOnboardingFromWorkspaceAction,
@@ -204,6 +205,7 @@ export function OnboardingWorkspace({
   requirements,
   activity,
   requisition,
+  employmentContext,
   hiringManagerName,
   reconciliationCandidates,
 }: {
@@ -214,6 +216,7 @@ export function OnboardingWorkspace({
   requirements: ResolvedRequirement[];
   activity: ActivityLogEntry[];
   requisition: RecruitmentRequisition | null;
+  employmentContext: CurrentEmploymentContext;
   hiringManagerName: string | null;
   reconciliationCandidates: RecruitmentRequisition[];
 }) {
@@ -234,20 +237,28 @@ export function OnboardingWorkspace({
       <section className="rounded-xl border border-black/10 bg-white p-6 space-y-2">
         <h2 className="font-serif font-medium text-body text-ordift-ink">Employment / Hire Definition</h2>
         {requisition ? (
+          <>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1">
             <p className="font-sans text-body-small text-ordift-ink-muted">
               Hire Origin: <span className="text-ordift-ink">{requisition.hireOrigin === "founder_direct_hire" ? "Founder Direct Hire" : "Standard Recruitment"}</span>
             </p>
-            <p className="font-sans text-body-small text-ordift-ink-muted">Employing Entity: <span className="text-ordift-ink">{requisition.employingEntityName ?? "Not yet set"}</span></p>
-            <p className="font-sans text-body-small text-ordift-ink-muted">Employment Jurisdiction: <span className="text-ordift-ink">{requisition.employmentJurisdictionName ?? "Not yet set"}</span></p>
-            <p className="font-sans text-body-small text-ordift-ink-muted">Work Location: <span className="text-ordift-ink">{requisition.workLocation ?? "Not yet set"}</span></p>
+            <p className="font-sans text-body-small text-ordift-ink-muted">Employing Entity: <span className="text-ordift-ink">{employmentContext.employingEntityName ?? "Not yet set"}</span></p>
+            <p className="font-sans text-body-small text-ordift-ink-muted">Employment Jurisdiction: <span className="text-ordift-ink">{employmentContext.employmentJurisdictionName ?? "Not yet set"}</span></p>
+            <p className="font-sans text-body-small text-ordift-ink-muted">Work Location: <span className="text-ordift-ink">{employmentContext.workLocation ?? "Not yet set"}</span></p>
             <p className="font-sans text-body-small text-ordift-ink-muted">Position: <span className="text-ordift-ink">{requisition.requestedPositionName ?? "Not yet set"}</span></p>
             <p className="font-sans text-body-small text-ordift-ink-muted">Department: <span className="text-ordift-ink">{requisition.departmentName ?? "Not yet set"}</span></p>
             <p className="font-sans text-body-small text-ordift-ink-muted">Grade: <span className="text-ordift-ink">{requisition.gradeName ?? "Not yet set"}</span></p>
             <p className="font-sans text-body-small text-ordift-ink-muted">Engagement Type: <span className="text-ordift-ink">{requisition.engagementTypeName ?? "Not yet set"}</span></p>
             <p className="font-sans text-body-small text-ordift-ink-muted">Hiring/Reporting Manager: <span className="text-ordift-ink">{requisition.hiringManagerId ? (hiringManagerName ?? "Unnamed") : "Not yet set"}</span></p>
-            <p className="font-sans text-body-small text-ordift-ink-muted">Intended Start Date: <span className="text-ordift-ink">{requisition.preferredStartDate ?? "Not yet set"}</span></p>
+            <p className="font-sans text-body-small text-ordift-ink-muted">Intended Start Date: <span className="text-ordift-ink">{employmentContext.startDate ?? "Not yet set"}</span></p>
           </div>
+          {employmentContext.resolvedFromCurrentTerms && (
+            <p className="font-sans text-caption text-ordift-ink-muted">
+              Employing Entity / Jurisdiction / Work Location / Start Date reflect this person&apos;s current
+              employment record, which may have been recorded after the original hire requisition.
+            </p>
+          )}
+          </>
         ) : (
           <>
             <p className="font-sans text-caption text-amber-700 bg-amber-50 border border-amber-200 rounded px-3 py-2">

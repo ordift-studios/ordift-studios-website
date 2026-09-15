@@ -412,3 +412,84 @@ export async function listEnhancedReviewCompletions(employmentTermsHistoryIds: s
   }
   return (data ?? []).map((r) => ({ employmentTermsHistoryId: r.employment_terms_history_id, completedAt: r.completed_at, completedBy: r.completed_by }));
 }
+
+export interface CurrentEmploymentContext {
+  employingEntityId: string | null;
+  employingEntityName: string | null;
+  employmentJurisdictionId: string | null;
+  employmentJurisdictionName: string | null;
+  workLocation: string | null;
+  startDate: string | null;
+  // True when at least one of the fields above was actually sourced
+  // from this person's current employment_terms_history rather than
+  // the caller's fallback — lets a UI note that the shown value
+  // reflects a later fact than whatever the original fallback source
+  // (e.g. a hire-time requisition) ever captured.
+  resolvedFromCurrentTerms: boolean;
+}
+
+// THE canonical "what is actually true for this person right now"
+// resolver for employing entity / jurisdiction / work location / start
+// date — used by BOTH the Agreement Readiness resolver
+// (resolveEmployeeAgreementVariables(), employeeAgreements.ts) and the
+// Onboarding Workspace's "Employment / Hire Definition" summary
+// (src/app/admin/organization/onboarding/[onboardingId]/page.tsx), so
+// the two views can never again show two different answers for the
+// same real fact. A caller's `fallback` (typically resolved from a
+// hire-time recruitment_requisitions row) is used ONLY for whichever
+// field this person's current employment_terms_history has not (yet)
+// recorded — never the reverse, and never a fabricated merge of the
+// two into one incoherent record. Position/Department/Grade/Engagement
+// Type/Reporting Manager are deliberately NOT part of this resolver —
+// those remain governed exclusively by assignStaffPosition() (see
+// migration 0106's own header comment).
+export async function resolveCurrentEmploymentContext(params: {
+  profileId: string;
+  fallback?: Partial<{
+    employingEntityId: string | null;
+    employingEntityName: string | null;
+    employmentJurisdictionId: string | null;
+    employmentJurisdictionName: string | null;
+    workLocation: string | null;
+    startDate: string | null;
+  }> | null;
+}): Promise<CurrentEmploymentContext> {
+  const fallback = params.fallback ?? {};
+  const currentTerms = await getCurrentEmploymentTerms(params.profileId);
+
+  const employingEntityId = currentTerms?.employingEntityId ?? fallback.employingEntityId ?? null;
+  const employmentJurisdictionId = currentTerms?.employmentJurisdictionId ?? fallback.employmentJurisdictionId ?? null;
+  const workLocation = currentTerms?.workLocation ?? fallback.workLocation ?? null;
+  const startDate = currentTerms?.effectiveFrom ?? fallback.startDate ?? null;
+  const resolvedFromCurrentTerms = Boolean(
+    currentTerms?.employingEntityId || currentTerms?.employmentJurisdictionId || currentTerms?.workLocation || currentTerms?.effectiveFrom
+  );
+
+  // Only re-resolve a name when current terms actually supplied a
+  // (possibly different) id than the fallback already had a name for
+  // — avoids a redundant query when the fallback's own name already
+  // applies.
+  let employingEntityName = fallback.employingEntityName ?? null;
+  if (currentTerms?.employingEntityId && currentTerms.employingEntityId !== fallback.employingEntityId) {
+    const admin = createAdminClient();
+    const { data } = await admin.from("employing_entities").select("name, legal_name").eq("id", currentTerms.employingEntityId).maybeSingle();
+    employingEntityName = data ? (data.legal_name ?? data.name) : null;
+  }
+
+  let employmentJurisdictionName = fallback.employmentJurisdictionName ?? null;
+  if (currentTerms?.employmentJurisdictionId && currentTerms.employmentJurisdictionId !== fallback.employmentJurisdictionId) {
+    const admin = createAdminClient();
+    const { data } = await admin.from("employment_jurisdictions").select("name").eq("id", currentTerms.employmentJurisdictionId).maybeSingle();
+    employmentJurisdictionName = data?.name ?? null;
+  }
+
+  return {
+    employingEntityId,
+    employingEntityName,
+    employmentJurisdictionId,
+    employmentJurisdictionName,
+    workLocation,
+    startDate,
+    resolvedFromCurrentTerms,
+  };
+}

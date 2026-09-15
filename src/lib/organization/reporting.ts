@@ -46,21 +46,26 @@ export async function resolveCurrentManager(positionId: string | null): Promise<
   return { id: occupant.id, fullName: profile.full_name };
 }
 
-export type PositionReportingRow = { id: string; reportsToPositionId: string | null };
+export type PositionReportingRow = { id: string; name: string; reportsToPositionId: string | null };
 
 // Bulk chain fetch for list views (e.g. /admin/users) — callers combine
 // this with data they already have (staff_details.position_id per
 // person, profiles.access_status per person) to resolve every person's
 // current manager in-memory, with zero additional per-row queries. See
 // resolveManagersInMemory() below for the shared resolution logic.
+// Includes each Position's own name so a caller can show the
+// STRUCTURAL reporting relationship (e.g. "Client Services Supervisor")
+// even when nobody currently occupies it — never fabricating a manager
+// merely because the position is vacant (Mishael Adjei reconciliation,
+// 2026-09-15).
 export async function listPositionReportingChain(): Promise<PositionReportingRow[]> {
   const admin = createAdminClient();
-  const { data, error } = await admin.from("positions").select("id, reports_to_position_id");
+  const { data, error } = await admin.from("positions").select("id, name, reports_to_position_id");
   if (error) {
     console.error("[organization] failed to load position reporting chain", error.message);
     return [];
   }
-  return (data ?? []).map((p) => ({ id: p.id, reportsToPositionId: p.reports_to_position_id }));
+  return (data ?? []).map((p) => ({ id: p.id, name: p.name, reportsToPositionId: p.reports_to_position_id }));
 }
 
 // Shared in-memory resolution — given the reporting chain, who occupies

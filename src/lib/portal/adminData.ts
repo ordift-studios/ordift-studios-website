@@ -47,6 +47,14 @@ export type AdminUserRow = {
   // managerName resolves from staff_details.manager_id.
   callSign: string | null;
   managerName: string | null;
+  // Mishael Adjei reconciliation (2026-09-15) — the STRUCTURAL
+  // reporting Position (e.g. "Client Services Supervisor"), independent
+  // of whether anyone currently occupies it. managerName above stays
+  // null when the position is vacant; these two let a UI show the
+  // truthful "reports to this position, currently unoccupied" state
+  // instead of a bare "—" that reads as a missing/broken assignment.
+  reportsToPositionId: string | null;
+  reportsToPositionName: string | null;
   // Phase J.2 (2026-09-05) — staff-onboarding process status
   // (public.staff_onboarding.status) and a plain-language summary of
   // any standing authority_grants this account holds. Both read-only
@@ -237,6 +245,7 @@ export async function listUsersWithRoles(): Promise<AdminUserListResult> {
   // remains the authoritative source; staff_details.manager_id is no
   // longer read here at all. See src/lib/organization/reporting.ts.
   const reportsToByPositionId = new Map(positionReportingChain.map((p) => [p.id, p.reportsToPositionId]));
+  const positionNameById = new Map(positionReportingChain.map((p) => [p.id, p.name]));
   const activeOccupantProfileIdByPositionId = new Map<string, string>();
   for (const s of staffDetails ?? []) {
     if (!s.position_id) continue;
@@ -269,6 +278,8 @@ export async function listUsersWithRoles(): Promise<AdminUserListResult> {
         activeOccupantProfileIdByPositionId
       );
       const managerName = resolvedManagerId ? (profileById.get(resolvedManagerId)?.full_name ?? null) : null;
+      const reportsToPositionId = details?.position_id ? (reportsToByPositionId.get(details.position_id) ?? null) : null;
+      const reportsToPositionName = reportsToPositionId ? (positionNameById.get(reportsToPositionId) ?? null) : null;
       return {
         id: u.id,
         email: u.email,
@@ -305,6 +316,8 @@ export async function listUsersWithRoles(): Promise<AdminUserListResult> {
         gradeName: positionRow?.grades?.name ?? null,
         callSign: positionRow?.call_sign ?? null,
         managerName,
+        reportsToPositionId,
+        reportsToPositionName,
         onboardingId: onboardingIdByProfileId.get(u.id) ?? null,
         onboardingStatus: onboardingStatusByProfileId.get(u.id) ?? null,
         onboardingPipeline: onboardingPipelineByProfileId.get(u.id) ?? null,

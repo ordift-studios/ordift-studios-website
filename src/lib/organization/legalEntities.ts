@@ -294,10 +294,11 @@ const SIGNED_URL_TTL_SECONDS = 300;
 export async function getEmployingEntityDocumentSignedUrl(documentId: string, actorUserId: string): Promise<string | null> {
   if (!(await requireSuperAdmin(actorUserId))) return null;
   const admin = createAdminClient();
-  const { data: row } = await admin.from("employing_entity_documents").select("storage_path").eq("id", documentId).maybeSingle();
+  const { data: row } = await admin.from("employing_entity_documents").select("employing_entity_id, storage_path").eq("id", documentId).maybeSingle();
   if (!row) return null;
   const { data, error } = await admin.storage.from(DOCUMENT_BUCKET).createSignedUrl(row.storage_path, SIGNED_URL_TTL_SECONDS);
   if (error || !data) return null;
+  await logActivity({ actorUserId, action: "employing_entity_document.viewed", entityType: "employing_entity", entityId: row.employing_entity_id, metadata: { documentId } });
   return data.signedUrl;
 }
 

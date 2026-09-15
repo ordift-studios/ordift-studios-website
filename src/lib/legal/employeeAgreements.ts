@@ -12,7 +12,7 @@ import {
 import { classifyEmploymentAgreementVariable } from "@/lib/legal/employeeAgreementRequirements";
 import { mapEngagementTypeSlugToWorkforceRelationship } from "@/lib/compliance/workforceMappings";
 import { recordRequirementEvaluation } from "@/lib/compliance/requirementAudit";
-import { getCurrentEmploymentTerms } from "@/lib/organization/employmentTermsHistory";
+import { getCurrentEmploymentTerms, resolveCurrentEmploymentContext } from "@/lib/organization/employmentTermsHistory";
 
 // Employee Employment Agreement — onboarding integration (E.5 Stage
 // 3B-3C; requirement-engine wiring added COMP-SYS-1 Phase B3 Step 2,
@@ -61,50 +61,54 @@ export async function resolveEmployeeAgreementVariables(
     requisition = data;
   }
 
-  // Phase B6 Step 3 (2026-09-15): a person's CURRENT employment terms
-  // (employment_terms_history — the same effective-dated record every
-  // international-transition/compensation change is recorded against,
-  // see employmentTermsHistory.ts) take priority, per field, over the
-  // original hire-time requisition. A requisition is a snapshot of what
-  // was requested when hiring began; employment_terms_history reflects
-  // what is actually true today — the two can genuinely diverge (a
-  // transition recorded after hiring, or facts the requisition never
-  // captured at all, like basic salary or normal working hours, which
-  // have no column on recruitment_requisitions). Falls back to the
-  // requisition only for whatever employment_terms_history has not
-  // (yet) recorded — never the reverse.
+  // Phase B6 Step 3 (2026-09-15), consolidated Phase B6 Step 9
+  // (2026-09-15): entity/jurisdiction/work-location/start-date now come
+  // from the SAME canonical resolveCurrentEmploymentContext()
+  // (employmentTermsHistory.ts) the Onboarding Workspace's "Employment /
+  // Hire Definition" summary uses — one shared resolver, not two
+  // independently-written merges of employment_terms_history over the
+  // original hire-time requisition, so the two views can never again
+  // show two different answers for the same real fact. basicSalary/
+  // normalWorkingHours have no requisition fallback at all (no such
+  // column exists on recruitment_requisitions) — they come directly
+  // from current terms, unchanged from before this consolidation.
   const currentTerms = await getCurrentEmploymentTerms(onboarding.profile_id);
+  const context = await resolveCurrentEmploymentContext({
+    profileId: onboarding.profile_id,
+    fallback: requisition
+      ? {
+          employingEntityId: requisition.employing_entity_id,
+          employmentJurisdictionId: requisition.employment_jurisdiction_id,
+          workLocation: requisition.work_location,
+          startDate: requisition.preferred_start_date,
+        }
+      : null,
+  });
 
-  const [position, department, grade, engagementType, manager, employingEntity, jurisdiction] = await Promise.all([
+  const [position, department, grade, engagementType, manager] = await Promise.all([
     requisition?.requested_position_id ? admin.from("positions").select("name").eq("id", requisition.requested_position_id).maybeSingle() : null,
     requisition?.department_id ? admin.from("departments").select("name").eq("id", requisition.department_id).maybeSingle() : null,
     requisition?.grade_id ? admin.from("grades").select("name").eq("id", requisition.grade_id).maybeSingle() : null,
     requisition?.engagement_type_id ? admin.from("engagement_types").select("name, slug").eq("id", requisition.engagement_type_id).maybeSingle() : null,
     requisition?.hiring_manager_id ? admin.from("profiles").select("full_name").eq("id", requisition.hiring_manager_id).maybeSingle() : null,
-    (currentTerms?.employingEntityId ?? requisition?.employing_entity_id)
-      ? admin.from("employing_entities").select("name, legal_name").eq("id", (currentTerms?.employingEntityId ?? requisition?.employing_entity_id) as string).maybeSingle()
-      : null,
-    (currentTerms?.employmentJurisdictionId ?? requisition?.employment_jurisdiction_id)
-      ? admin.from("employment_jurisdictions").select("name").eq("id", (currentTerms?.employmentJurisdictionId ?? requisition?.employment_jurisdiction_id) as string).maybeSingle()
-      : null,
   ]);
 
   // probation, allowances, annualLeave, notice: optional, no source yet.
   const values: EmploymentAgreementVariables = {
-    employerLegalName: employingEntity?.data?.legal_name ?? employingEntity?.data?.name ?? undefined,
+    employerLegalName: context.employingEntityName ?? undefined,
     employeeLegalName: profile?.full_name ?? undefined,
     jobTitle: position?.data?.name ?? undefined,
     organizationalGrade: grade?.data?.name ?? undefined,
     department: department?.data?.name ?? undefined,
     reportingTo: manager?.data?.full_name ?? undefined,
-    startDate: currentTerms?.effectiveFrom ?? requisition?.preferred_start_date ?? undefined,
+    startDate: context.startDate ?? undefined,
     employmentType: engagementType?.data?.name ?? undefined,
-    primaryWorkLocation: currentTerms?.workLocation ?? requisition?.work_location ?? undefined,
+    primaryWorkLocation: context.workLocation ?? undefined,
     normalWorkingHours: currentTerms?.workPattern ?? undefined,
     basicWageSalary: currentTerms?.basicSalary
       ? `${currentTerms.currency ?? ""} ${currentTerms.basicSalary.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`.trim()
       : undefined,
-    jurisdiction: jurisdiction?.data?.name ?? undefined,
+    jurisdiction: context.employmentJurisdictionName ?? undefined,
   };
 
   return { values, engagementTypeSlug: engagementType?.data?.slug ?? null, profileId: onboarding.profile_id };

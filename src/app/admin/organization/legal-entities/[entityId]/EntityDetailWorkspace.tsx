@@ -1,7 +1,7 @@
 "use client";
 
 import { useActionState } from "react";
-import { recordSensitiveDetailsAction, uploadEntityDocumentAction, type ActionState } from "./actions";
+import { recordSensitiveDetailsAction, uploadEntityDocumentAction, viewEntityDocumentAction, type ActionState } from "./actions";
 
 export interface DocumentView {
   id: string;
@@ -78,8 +78,16 @@ export function EntityDetailWorkspace({
         {documents.length > 0 ? (
           <ul className="space-y-1">
             {documents.map((d) => (
-              <li key={d.id} className="font-sans text-caption text-ordift-ink-muted">
-                · {d.documentType} — uploaded {new Date(d.uploadedAt).toLocaleDateString()}{d.notes ? ` — "${d.notes}"` : ""}
+              <li key={d.id} className="flex flex-wrap items-center justify-between gap-2">
+                <span className="font-sans text-caption text-ordift-ink-muted">
+                  · {d.documentType} — uploaded {new Date(d.uploadedAt).toLocaleDateString()}{d.notes ? ` — "${d.notes}"` : ""}
+                </span>
+                <form action={viewEntityDocumentAction} target="_blank">
+                  <input type="hidden" name="documentId" value={d.id} />
+                  <button type="submit" className="font-sans text-caption font-semibold text-ordift-gold-pressed underline underline-offset-4">
+                    View / Download →
+                  </button>
+                </form>
               </li>
             ))}
           </ul>

@@ -11,6 +11,7 @@ import { listCorporateIdentities } from "@/lib/organization/reserveCorporateIden
 import { listPaymentInstructionsForProfile } from "@/lib/payments/payeeInstructions";
 import { getActivityForEntity } from "@/lib/admin/activityLog";
 import { getRequisitionById, listApprovedRequisitionsForOnboarding } from "@/lib/recruitment/requisitions";
+import { resolveCurrentEmploymentContext } from "@/lib/organization/employmentTermsHistory";
 import { OnboardingWorkspace } from "./OnboardingWorkspace";
 
 export const metadata: Metadata = {
@@ -60,6 +61,26 @@ export default async function OnboardingWorkspacePage({ params }: { params: Prom
   const reconciliationCandidates = unlinkedRequisitions.filter(
     (r) => r.hireOrigin !== "founder_direct_hire" || r.directHireProfileId === onboarding.profileId
   );
+
+  // Same canonical resolver used by the Agreement Readiness path
+  // (employeeAgreements.ts) — this person's current employment_terms_
+  // history overrides the hire-time requisition per field, never the
+  // reverse, so this workspace can never again show "Not yet set" for
+  // a fact that has since been recorded (Instruction 3 reconciliation,
+  // 2026-09-15).
+  const employmentContext = await resolveCurrentEmploymentContext({
+    profileId: onboarding.profileId,
+    fallback: requisition
+      ? {
+          employingEntityId: requisition.employingEntityId,
+          employingEntityName: requisition.employingEntityName,
+          employmentJurisdictionId: requisition.employmentJurisdictionId,
+          employmentJurisdictionName: requisition.employmentJurisdictionName,
+          workLocation: requisition.workLocation,
+          startDate: requisition.preferredStartDate,
+        }
+      : null,
+  });
 
   const pipelineStages = stagesForPipeline(onboarding.pipeline);
   const terminal = isTerminalStage(onboarding.pipeline, onboarding.stage);
@@ -112,6 +133,7 @@ export default async function OnboardingWorkspacePage({ params }: { params: Prom
         requirements={requirements}
         activity={activity}
         requisition={requisition}
+        employmentContext={employmentContext}
         hiringManagerName={hiringManagerName}
         reconciliationCandidates={reconciliationCandidates}
       />

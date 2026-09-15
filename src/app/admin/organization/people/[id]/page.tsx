@@ -271,7 +271,13 @@ export default async function PersonDetailPage({ params }: { params: Promise<{ i
           <p className="font-sans text-body-small text-ordift-ink-muted">Title/Position: {person.positionName ?? person.operationalTitleName ?? "—"}</p>
           <p className="font-sans text-body-small text-ordift-ink-muted">Department: {person.departmentName ?? "—"}</p>
           <p className="font-sans text-body-small text-ordift-ink-muted">Call Sign: {person.callSign ?? "—"}</p>
-          <p className="font-sans text-body-small text-ordift-ink-muted">Reports to: {person.managerName ?? "—"}</p>
+          <p className="font-sans text-body-small text-ordift-ink-muted">
+            {person.managerName
+              ? `Reports to: ${person.managerName}`
+              : person.reportsToPositionName
+                ? `Reporting Position: ${person.reportsToPositionName} — position currently unoccupied`
+                : "Reports to: —"}
+          </p>
         </div>
 
         <div id="section-engagement" className="rounded-xl border border-black/10 bg-white p-6 space-y-3 scroll-mt-6">
