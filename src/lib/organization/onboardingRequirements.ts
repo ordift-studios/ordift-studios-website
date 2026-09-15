@@ -3,6 +3,7 @@ import { logActivity } from "@/lib/admin/activityLog";
 import { isSuperAdminId, hasJurisdictionAuthority } from "@/lib/organization/authority";
 import type { OnboardingPipeline } from "@/lib/organization/onboardingStages";
 import { deriveEmploymentAgreementExecuted } from "@/lib/legal/employeeAgreements";
+import { deriveVendorSupplierAgreementExecuted } from "@/lib/legal/vendorAgreements";
 import { listControlledPolicyDocuments, listPolicyAcknowledgementsForProfile } from "@/lib/organization/policyAcknowledgements";
 
 // Internal Staff Onboarding — requirement/gating foundation (Sequence
@@ -341,16 +342,20 @@ export const VENDOR_SUPPLIER_ONBOARDING_REQUIREMENT_CATALOG: readonly Requiremen
     label: "Vendor / Supplier Agreement (OS-LGL-009) executed",
     required: true,
     responsibleRole: "super_admin",
-    // No `derive` — deliberately manual-only. OS-LGL-009 has no
-    // counsel-authored content or issuance pipeline today (confirmed:
-    // catalogue-master row only, migration 0067, zero
-    // legal_document_versions row exists) — see the Vendor Completion
-    // Phase report. This stays genuinely "pending" (or, for a
-    // controlled test vendor, administratively "deferred" via
-    // authorizeOnboardingRequirementOverride()) until a real signed
-    // agreement exists; never a manual "satisfied" claim standing in
-    // for an actual signature the way employment_agreement_executed
-    // explicitly forbids for the employee pipeline.
+    // OS-LGL-009 Vendor & Supplier Framework Agreement architecture
+    // (2026-09-15) — now derive-backed, same evidence-only discipline
+    // as employment_agreement_executed: deriveVendorSupplierAgreementExecuted()
+    // (vendorAgreements.ts) only returns "satisfied" once a REAL
+    // Framework agreement genuinely reaches fully_executed/active/
+    // completed via signatureEngine.ts's own signature-evidence path —
+    // never a manual claim standing in for an actual signature. Still
+    // correctly reads as null/pending today: OS-LGL-009's real
+    // counsel-approved TEXT has not been supplied yet, so no Framework
+    // can actually be composed/issued/signed — only drafted. Stays
+    // pending (or, for a controlled test vendor, administratively
+    // "deferred" via authorizeOnboardingRequirementOverride()) until
+    // content is supplied and a real signature genuinely occurs.
+    derive: deriveVendorSupplierAgreementExecuted,
     applicableEngagementTypeSlugs: ["vendor_supplier"],
   },
   {

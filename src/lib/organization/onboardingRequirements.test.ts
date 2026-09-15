@@ -84,9 +84,9 @@ describe("EXTERNAL_CONTRACTOR_ONBOARDING_REQUIREMENT_CATALOG — now vendor_supp
     }
   });
 
-  it("vendor_supplier_agreement_executed has no derive function — genuinely manual-only, since OS-LGL-009 has no counsel-authored content or issuance pipeline (see the Vendor Completion Phase report); it can only ever be satisfied by a real future signature or administratively deferred, never by a bare manual claim standing in for a signature", () => {
+  it("vendor_supplier_agreement_executed IS now derive-backed (OS-LGL-009 architecture phase, 2026-09-15) — deriveVendorSupplierAgreementExecuted() (vendorAgreements.ts), the same evidence-only discipline as employment_agreement_executed: it can only ever be satisfied by a real future signature (via signatureEngine.ts) or administratively deferred, never by a bare manual claim standing in for a signature", () => {
     const entry = VENDOR_SUPPLIER_ONBOARDING_REQUIREMENT_CATALOG.find((t) => t.requirementKey === "vendor_supplier_agreement_executed");
-    expect(entry?.derive).toBeUndefined();
+    expect(entry?.derive).toBeDefined();
   });
 
   it("every entry's requirementType is one of the seven defined types and its stage is a real external_contractor stage", () => {
