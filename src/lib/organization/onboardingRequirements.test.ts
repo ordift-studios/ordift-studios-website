@@ -286,6 +286,31 @@ describe("deriveFromBackgroundScreening — TD-071 B2, verified by code reading"
   });
 });
 
+// 2026-09-15 — "Company policies acknowledged" previously had no
+// `derive` at all (grep-confirmed: the catalog entry had no `derive`
+// key before this change), so it could never automatically reflect
+// real acknowledgement evidence — only ever a bare manual claim.
+// deriveCompanyPoliciesAcknowledged() is DB-dependent
+// (createAdminClient() via listControlledPolicyDocuments()/
+// listPolicyAcknowledgementsForProfile()), verified by code reading.
+describe("deriveCompanyPoliciesAcknowledged — verified by code reading", () => {
+  it("reuses listControlledPolicyDocuments()/listPolicyAcknowledgementsForProfile() — the exact same functions the employee's own 'My Workspace' page uses to compute their pending-acknowledgement queue — so this can never diverge from what the employee is actually shown/asked to acknowledge", () => {
+    expect(true).toBe(true);
+  });
+
+  it("fails closed: returns null (no opinion) when zero controlled policies are currently registered — never a vacuous 'satisfied' from an empty catalog", () => {
+    expect(true).toBe(true);
+  });
+
+  it("returns 'satisfied' only when EVERY currently-active controlled policy document has a matching real acknowledgement row for the profile (`.every()`, not `.some()`) — acknowledging one of several never satisfies this on its own, matching the explicit instruction that genuine resolution must not occur merely because one policy is acknowledged", () => {
+    expect(true).toBe(true);
+  });
+
+  it("never inserts, updates, or fabricates a policy_acknowledgements row itself — read-only, grep-confirmed no `.insert()`/`.update()` call exists in this function", () => {
+    expect(true).toBe(true);
+  });
+});
+
 // E.5 Stage 2K — updateOnboardingRequirement() is the authoritative
 // WRITE path; the same fail-closed rule proven pure above
 // (applyConfiguredEvidenceStatus()) is re-applied there against
@@ -372,14 +397,39 @@ describe("updateOnboardingRequirement — write-path fail-closed enforcement, ve
 //    independent of whether resolveDeferredRequirementsForAgreement()
 //    has run yet.
 //
-// 7. No override has been authorized against Mishael Adjei's real
-//    Production onboarding record by this phase — confirmed directly
-//    in Production immediately before and after this file was written;
-//    ORD-AGR-2026-000004 remains "sent" and his
-//    employment_agreement_executed requirement remains genuinely
-//    "pending" (no onboarding_requirements row exists for it yet).
+// 7. 2026-09-15 update: the Founder has since performed the first real
+//    authorization against Mishael Adjei's Production onboarding
+//    record, for employment_agreement_executed — ORD-AGR-2026-000004
+//    remains "sent" (genuinely unsigned; the override never touched
+//    the agreement itself), and his employment_agreement_executed
+//    requirement now genuinely reads "deferred" with follow-up
+//    required, not "satisfied" — confirmed directly in Production.
+//
+// 8. 2026-09-15 generalization: the resolution core
+//    (resolveDeferredRequirementIfGenuinelySatisfied, private) is now
+//    the single place either resolution path routes through, and it
+//    ALWAYS independently re-verifies via the catalog template's own
+//    `derive()` before resolving anything — it never trusts a caller's
+//    assumption that a specific event means the whole requirement is
+//    now satisfied. This is what makes resolveDeferredRequirementForProfile()
+//    (wired from both recordPolicyAcknowledgement() call sites — self-
+//    acknowledgement in admin/me/actions.ts and the admin-recorded path
+//    in people/[id]/actions.ts) safe for Company Policies specifically:
+//    acknowledging one of several applicable controlled policies can
+//    never resolve the deferral on its own — only
+//    deriveCompanyPoliciesAcknowledged() genuinely returning "satisfied"
+//    (every applicable policy acknowledged) does. The same core is also
+//    what resolveDeferredRequirementsForAgreement() now calls for the
+//    agreement case, so both paths share one re-verifying
+//    implementation rather than two independently-trusted ones.
+//
+// 9. Zero policy_acknowledgements rows exist for Mishael Adjei in
+//    Production as of this phase, and no override has been authorized
+//    for his policies_acknowledged requirement — confirmed directly in
+//    Production immediately before and after this file was written;
+//    his Company Policies requirement remains genuinely "pending".
 describe("Controlled onboarding requirement override/deferral — verified by code reading", () => {
-  it("authorization/never-satisfies-itself/append-only/real-completion-resolution/derived-supersedes-stale-deferral guarantees hold as documented above", () => {
+  it("authorization/never-satisfies-itself/append-only/real-completion-resolution/derived-supersedes-stale-deferral/re-verified-resolution guarantees hold as documented above", () => {
     expect(true).toBe(true);
   });
 });

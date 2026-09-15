@@ -32,9 +32,9 @@ const REQUIREMENT_STATUS_LABELS: Record<RequirementStatus, string> = {
 };
 
 // Never includes "deferred" — that status is reachable only through
-// the dedicated AgreementExecutionOverrideControl below (requires a
-// reason and writes a permanent audit record), never through this
-// generic per-requirement dropdown.
+// the dedicated RequirementOverrideControl below (requires a reason
+// and writes a permanent audit record), never through this generic
+// per-requirement dropdown.
 const MANUALLY_SELECTABLE_STATUSES: readonly RequirementStatus[] = ["pending", "satisfied", "waived", "not_applicable"];
 
 const REQUIREMENT_TYPE_LABELS: Record<string, string> = {
@@ -84,10 +84,10 @@ function RequirementRow({ onboardingId, pipeline, requirement }: { onboardingId:
   // rendering the normal <select> here would show a mismatched
   // defaultValue (no "Deferred" option exists in it) and risk an
   // unrelated Save silently reverting the deferral back to "Pending".
-  // The dedicated AgreementExecutionOverrideControl (Documents &
-  // Agreements section) is the only place this status is set or
-  // discussed in detail; this is just a compact, honest read-only
-  // acknowledgement here.
+  // The dedicated RequirementOverrideControl (Documents & Agreements
+  // section) is the only place this status is set or discussed in
+  // detail; this is just a compact, honest read-only acknowledgement
+  // here.
   if (requirement.status === "deferred") {
     return (
       <div className="rounded-lg border border-blue-200 bg-blue-50 p-4 space-y-1">
@@ -248,22 +248,35 @@ function LinkRequisitionControl({ onboardingId, candidates }: { onboardingId: st
 // Satisfied/Waived/Not-applicable dropdown, because this is not a
 // claim that the requirement is satisfied or doesn't apply: it is an
 // authorized, temporary permission to let onboarding progress while
-// the employee's own signature genuinely remains outstanding. Requires
-// a reason and an explicit confirm step before committing, and — once
-// authorized — always keeps the outstanding requirement visible
-// (never silently promoted to "Satisfied").
-function AgreementExecutionOverrideControl({
+// the requirement genuinely remains outstanding. Requires a reason and
+// an explicit confirm step before committing, and — once authorized —
+// always keeps the outstanding requirement visible (never silently
+// promoted to "Satisfied"). Generic across requirement types — reused
+// for both Employment Agreement execution and Company Policy
+// acknowledgement (and any future one) via the copy props below,
+// rather than duplicating this whole control per requirement.
+function RequirementOverrideControl({
   onboardingId,
   pipeline,
   requirementKey,
   agreementId,
   overrides,
+  headline,
+  explanation,
+  confirmationNotice,
+  buttonLabel,
+  defaultReason,
 }: {
   onboardingId: string;
   pipeline: string;
   requirementKey: string;
-  agreementId: string;
+  agreementId?: string | null;
   overrides: ResolvedOnboardingRequirementOverride[];
+  headline: string;
+  explanation: string;
+  confirmationNotice: string;
+  buttonLabel: string;
+  defaultReason: string;
 }) {
   const [state, formAction, pending] = useActionState<ActionState, FormData>(authorizeOnboardingRequirementOverrideAction, null);
   const [confirming, setConfirming] = useState(false);
@@ -271,7 +284,7 @@ function AgreementExecutionOverrideControl({
 
   return (
     <div className="rounded-lg border border-blue-200 bg-blue-50 p-4 space-y-3">
-      <p className="font-sans text-body-small font-medium text-ordift-ink">Employee agreement: Signature pending</p>
+      <p className="font-sans text-body-small font-medium text-ordift-ink">{headline}</p>
 
       {activeOverride ? (
         <div className="space-y-1">
@@ -288,16 +301,13 @@ function AgreementExecutionOverrideControl({
         </div>
       ) : !confirming ? (
         <>
-          <p className="font-sans text-caption text-ordift-ink-muted">
-            The employee has not yet signed this agreement and is presently unable to. An authorized administrator
-            may permit onboarding to continue while their signature remains outstanding.
-          </p>
+          <p className="font-sans text-caption text-ordift-ink-muted">{explanation}</p>
           <button
             type="button"
             onClick={() => setConfirming(true)}
             className="font-sans text-caption font-semibold px-3 py-1.5 rounded-md bg-ordift-navy-950 text-white"
           >
-            Authorize Onboarding to Proceed — Signature Still Required
+            {buttonLabel}
           </button>
         </>
       ) : (
@@ -305,10 +315,9 @@ function AgreementExecutionOverrideControl({
           <input type="hidden" name="onboardingId" value={onboardingId} />
           <input type="hidden" name="pipeline" value={pipeline} />
           <input type="hidden" name="requirementKey" value={requirementKey} />
-          <input type="hidden" name="agreementId" value={agreementId} />
+          {agreementId && <input type="hidden" name="agreementId" value={agreementId} />}
           <p className="font-sans text-caption font-medium text-amber-800 bg-amber-50 border border-amber-200 rounded px-3 py-2">
-            This does not sign, accept, or execute the employment agreement on behalf of the employee. It only
-            permits onboarding progression while employee execution remains outstanding.
+            {confirmationNotice}
           </p>
           <label className="block font-sans text-caption font-medium text-ordift-ink">
             Reason
@@ -317,7 +326,7 @@ function AgreementExecutionOverrideControl({
               required
               rows={3}
               className="mt-1 w-full rounded-md border border-black/15 px-2 py-1 font-sans text-caption"
-              defaultValue="Employee presently unable to complete agreement execution process. Founder/Super Admin authorizes onboarding progression while employee execution remains outstanding. Employee execution remains required when practicable."
+              defaultValue={defaultReason}
             />
           </label>
           <div className="flex gap-2">
@@ -409,6 +418,14 @@ export function OnboardingWorkspace({
     employmentAgreementRequirement !== undefined &&
     (employmentAgreementRequirement.status === "pending" || employmentAgreementRequirement.status === "deferred");
   const employmentAgreementOverrides = requirementOverrides.filter((o) => o.requirementKey === "employment_agreement_executed");
+
+  // Company Policies acknowledgement — genuinely outstanding whenever
+  // the requirement's own resolved status is "pending" or "deferred"
+  // (never offered once genuinely "satisfied" from real acknowledgement
+  // evidence, or "waived"/"not_applicable").
+  const policiesRequirement = requirements.find((r) => r.requirementKey === "policies_acknowledged");
+  const showPoliciesOverride = policiesRequirement !== undefined && (policiesRequirement.status === "pending" || policiesRequirement.status === "deferred");
+  const policiesOverrides = requirementOverrides.filter((o) => o.requirementKey === "policies_acknowledged");
 
   return (
     <div className="space-y-6">
@@ -549,12 +566,30 @@ export function OnboardingWorkspace({
           </p>
         )}
         {showAgreementExecutionOverride && agreementSummary && (
-          <AgreementExecutionOverrideControl
+          <RequirementOverrideControl
             onboardingId={onboarding.id}
             pipeline={onboarding.pipeline}
             requirementKey="employment_agreement_executed"
             agreementId={agreementSummary.agreementId}
             overrides={employmentAgreementOverrides}
+            headline="Employee agreement: Signature pending"
+            explanation="The employee has not yet signed this agreement and is presently unable to. An authorized administrator may permit onboarding to continue while their signature remains outstanding."
+            confirmationNotice="This does not sign, accept, or execute the employment agreement on behalf of the employee. It only permits onboarding progression while employee execution remains outstanding."
+            buttonLabel="Authorize Onboarding to Proceed — Signature Still Required"
+            defaultReason="Employee presently unable to complete agreement execution process. Founder/Super Admin authorizes onboarding progression while employee execution remains outstanding. Employee execution remains required when practicable."
+          />
+        )}
+        {showPoliciesOverride && (
+          <RequirementOverrideControl
+            onboardingId={onboarding.id}
+            pipeline={onboarding.pipeline}
+            requirementKey="policies_acknowledged"
+            overrides={policiesOverrides}
+            headline="Company policies acknowledged: Pending / not genuinely acknowledged"
+            explanation="The employee has not yet acknowledged every applicable controlled company policy and is presently unable to. An authorized administrator may permit onboarding to continue while their acknowledgement remains outstanding."
+            confirmationNotice="This does not read, accept, acknowledge, or agree to company policies on behalf of the employee. It only permits onboarding progression while employee acknowledgement remains outstanding."
+            buttonLabel="Authorize Onboarding to Proceed — Policy Acknowledgement Still Required"
+            defaultReason="Employee presently unable to complete the company policy acknowledgement process. Founder/Super Admin authorizes onboarding progression while employee acknowledgement remains outstanding. Employee acknowledgement remains required when practicable."
           />
         )}
         {documentsAndAgreements.length === 0 ? (

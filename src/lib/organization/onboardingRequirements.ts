@@ -3,6 +3,7 @@ import { logActivity } from "@/lib/admin/activityLog";
 import { isSuperAdminId, hasJurisdictionAuthority } from "@/lib/organization/authority";
 import type { OnboardingPipeline } from "@/lib/organization/onboardingStages";
 import { deriveEmploymentAgreementExecuted } from "@/lib/legal/employeeAgreements";
+import { listControlledPolicyDocuments, listPolicyAcknowledgementsForProfile } from "@/lib/organization/policyAcknowledgements";
 
 // Internal Staff Onboarding — requirement/gating foundation (Sequence
 // 1, E.5 Stage 2I, 2026-09-11). Deliberately thin: this is NOT a
@@ -162,6 +163,30 @@ async function deriveFromBackgroundScreening(profileId: string): Promise<Require
   return everyRecordedCategoryQualifies ? "satisfied" : null;
 }
 
+// 2026-09-15 — the "Company policies acknowledged" catalog entry
+// previously had no `derive` at all (only ever manually set), meaning
+// it could never automatically reflect real acknowledgement evidence.
+// Reuses the exact same list a real employee's own "My Workspace" page
+// already computes their pending-acknowledgement queue from
+// (listControlledPolicyDocuments()/listPolicyAcknowledgementsForProfile(),
+// policyAcknowledgements.ts) — so this can never diverge from what the
+// employee themselves is actually shown/asked to acknowledge. Fails
+// closed like deriveFromBackgroundScreening(): zero controlled
+// policies registered returns null (no opinion) rather than a vacuous
+// "satisfied", and any one policy still outstanding also returns null
+// — "satisfied" only once EVERY currently-active controlled policy has
+// a real, genuine acknowledgement row for this profile.
+async function deriveCompanyPoliciesAcknowledged(profileId: string): Promise<RequirementStatus | null> {
+  const [documents, acknowledgements] = await Promise.all([
+    listControlledPolicyDocuments(),
+    listPolicyAcknowledgementsForProfile(profileId),
+  ]);
+  if (documents.length === 0) return null;
+  const acknowledgedVersionIds = new Set(acknowledgements.map((a) => a.policyVersionId));
+  const allAcknowledged = documents.every((d) => acknowledgedVersionIds.has(d.documentVersionId));
+  return allAcknowledged ? "satisfied" : null;
+}
+
 async function deriveFromCorporateIdentityReserved(profileId: string): Promise<RequirementStatus | null> {
   // "Satisfied" here means the handoff has been REQUESTED — a
   // Corporate Identity row exists at all (reserved or beyond) — never
@@ -219,6 +244,13 @@ export const EMPLOYEE_ONBOARDING_REQUIREMENT_CATALOG: readonly RequirementTempla
     label: "Company policies acknowledged",
     required: true,
     responsibleRole: "super_admin",
+    // 2026-09-15 — now derived ONLY from genuine acknowledgement
+    // evidence (policy_acknowledgements, via
+    // deriveCompanyPoliciesAcknowledged() above), the same evidence-
+    // only discipline already established for
+    // employment_agreement_executed. Never satisfied by a bare manual
+    // claim.
+    derive: deriveCompanyPoliciesAcknowledged,
   },
   {
     requirementKey: "work_email_handoff_requested",
@@ -732,67 +764,124 @@ export async function authorizeOnboardingRequirementOverride(params: {
   return { ok: true, overrideId: override.id };
 }
 
-// Resolution hook, called by the REAL completion event — not a
-// generic admin action. signatureEngine.ts's recordSignatorySignature()
-// calls this (best-effort, never able to block or undo the genuine
-// signature it just recorded) immediately after an agreement
-// genuinely transitions to fully_executed, so a previously deferred
-// employment_agreement_executed requirement is promptly and durably
-// marked resolved rather than relying solely on the read-time
-// "deferred + derived satisfied => satisfied" correction in
-// listResolvedRequirements() above (that correction keeps the display
-// honest even if this hook is never reached; this hook is what makes
-// the resolution a permanent, timestamped fact instead of only a
-// live computation). Resolves every still-open override recorded
-// against this specific agreement — today that's just
-// employment_agreement_executed, never more than one real row in
-// practice, but this is not hardcoded to that single key.
+// Generic resolution core (2026-09-15). Called by a REAL completion
+// event — never a generic admin action — and ALWAYS independently
+// re-verifies genuineness itself by calling the catalog template's own
+// `derive()` function and requiring "satisfied" before resolving
+// anything: it never trusts a caller's assumption that "this specific
+// event means the whole requirement is now satisfied" (the exact
+// failure mode the explicit instruction warns against for policies —
+// one acknowledged policy must never resolve a deferral covering
+// several applicable ones). A requirement with no `derive` at all has
+// no live truth to check against and is never auto-resolved by this
+// path — it stays deferred until an admin manually revisits it.
+async function resolveDeferredRequirementIfGenuinelySatisfied(params: {
+  onboardingId: string;
+  profileId: string;
+  pipeline: OnboardingPipeline;
+  requirementKey: string;
+  resolutionNote: string;
+}): Promise<void> {
+  const admin = createAdminClient();
+  const { data: override } = await admin
+    .from("onboarding_requirement_overrides")
+    .select("id")
+    .eq("onboarding_id", params.onboardingId)
+    .eq("requirement_key", params.requirementKey)
+    .is("resolved_at", null)
+    .maybeSingle();
+  if (!override) return; // nothing currently deferred for this requirement
+
+  const { data: row } = await admin
+    .from("onboarding_requirements")
+    .select("id, status")
+    .eq("onboarding_id", params.onboardingId)
+    .eq("requirement_key", params.requirementKey)
+    .maybeSingle();
+  // Only resolve what is still genuinely deferred — if it's already
+  // "satisfied" some other way, or was reset back to "pending", there
+  // is nothing for this hook to do.
+  if (!row || row.status !== "deferred") return;
+
+  const template = catalogForPipeline(params.pipeline).find((t) => t.requirementKey === params.requirementKey);
+  if (!template?.derive) return;
+  const derived = await template.derive(params.profileId);
+  if (derived !== "satisfied") return; // re-verified against real evidence — never resolved on a caller's say-so alone
+
+  const now = new Date().toISOString();
+  const { error: rowError } = await admin
+    .from("onboarding_requirements")
+    .update({ status: "satisfied", updated_at: now, completed_at: now, completed_by: null })
+    .eq("id", row.id);
+  if (rowError) {
+    console.error("[organization] failed to resolve deferred onboarding_requirements row", rowError.message);
+    return;
+  }
+
+  const { error: overrideError } = await admin
+    .from("onboarding_requirement_overrides")
+    .update({ resolved_at: now, resolution_note: params.resolutionNote })
+    .eq("id", override.id);
+  if (overrideError) {
+    console.error("[organization] failed to mark onboarding_requirement_override resolved", overrideError.message);
+  }
+
+  await logActivity({
+    actorUserId: null,
+    action: "onboarding_requirement.deferred_override_resolved",
+    entityType: "user",
+    entityId: params.profileId,
+    metadata: { onboardingId: params.onboardingId, requirementKey: params.requirementKey, overrideId: override.id },
+  });
+}
+
+// Wired from signatureEngine.ts's recordSignatorySignature() (best-
+// effort, never able to block or undo the genuine signature it just
+// recorded) immediately after an agreement genuinely transitions to
+// fully_executed. Resolves every still-open override tied to this
+// specific agreement — today that's just employment_agreement_executed
+// in practice, but not hardcoded to that single key.
 export async function resolveDeferredRequirementsForAgreement(params: { agreementId: string }): Promise<void> {
   const admin = createAdminClient();
   const { data: overrides } = await admin
     .from("onboarding_requirement_overrides")
-    .select("id, onboarding_id, requirement_key")
+    .select("onboarding_id, requirement_key")
     .eq("agreement_id", params.agreementId)
     .is("resolved_at", null);
   if (!overrides || overrides.length === 0) return;
 
-  const now = new Date().toISOString();
   for (const override of overrides) {
-    const { data: row } = await admin
-      .from("onboarding_requirements")
-      .select("id, status")
-      .eq("onboarding_id", override.onboarding_id)
-      .eq("requirement_key", override.requirement_key)
-      .maybeSingle();
-    // Only resolve what is still genuinely deferred — if it's already
-    // "satisfied" some other way, or was reset back to "pending",
-    // there is nothing for this hook to do.
-    if (!row || row.status !== "deferred") continue;
-
-    const { error: rowError } = await admin
-      .from("onboarding_requirements")
-      .update({ status: "satisfied", updated_at: now, completed_at: now, completed_by: null })
-      .eq("id", row.id);
-    if (rowError) {
-      console.error("[organization] failed to resolve deferred onboarding_requirements row", rowError.message);
-      continue;
-    }
-
-    const { error: overrideError } = await admin
-      .from("onboarding_requirement_overrides")
-      .update({ resolved_at: now, resolution_note: "Resolved by genuine employee signature completion." })
-      .eq("id", override.id);
-    if (overrideError) {
-      console.error("[organization] failed to mark onboarding_requirement_override resolved", overrideError.message);
-    }
-
-    const { data: onboarding } = await admin.from("staff_onboarding").select("profile_id").eq("id", override.onboarding_id).maybeSingle();
-    await logActivity({
-      actorUserId: null,
-      action: "onboarding_requirement.deferred_override_resolved",
-      entityType: "user",
-      entityId: onboarding?.profile_id ?? override.onboarding_id,
-      metadata: { onboardingId: override.onboarding_id, requirementKey: override.requirement_key, agreementId: params.agreementId, overrideId: override.id },
+    const { data: onboarding } = await admin.from("staff_onboarding").select("profile_id, pipeline").eq("id", override.onboarding_id).maybeSingle();
+    if (!onboarding) continue;
+    await resolveDeferredRequirementIfGenuinelySatisfied({
+      onboardingId: override.onboarding_id,
+      profileId: onboarding.profile_id,
+      pipeline: onboarding.pipeline as OnboardingPipeline,
+      requirementKey: override.requirement_key,
+      resolutionNote: "Resolved by genuine employee signature completion.",
     });
   }
+}
+
+// Wired from the two real recordPolicyAcknowledgement() call sites
+// (My Workspace self-acknowledgement, and the admin-recorded/physical-
+// signature path) — best-effort, called after a genuine acknowledgement
+// is recorded. Re-verifies via deriveCompanyPoliciesAcknowledged()
+// (through the generic core above) that EVERY currently-applicable
+// controlled policy is now acknowledged before resolving anything —
+// acknowledging one of several never resolves the deferral on its own.
+// Generic by requirementKey, not hardcoded to policies, for any future
+// derive-backed requirement that needs the same "resolve on real
+// completion" wiring.
+export async function resolveDeferredRequirementForProfile(params: { profileId: string; requirementKey: string }): Promise<void> {
+  const admin = createAdminClient();
+  const { data: onboarding } = await admin.from("staff_onboarding").select("id, pipeline").eq("profile_id", params.profileId).maybeSingle();
+  if (!onboarding) return;
+  await resolveDeferredRequirementIfGenuinelySatisfied({
+    onboardingId: onboarding.id,
+    profileId: params.profileId,
+    pipeline: onboarding.pipeline as OnboardingPipeline,
+    requirementKey: params.requirementKey,
+    resolutionNote: "Resolved by genuine employee acknowledgement of every applicable controlled policy.",
+  });
 }

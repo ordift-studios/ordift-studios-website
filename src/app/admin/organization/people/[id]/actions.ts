@@ -77,6 +77,7 @@ import {
   type ReferenceType,
 } from "@/lib/organization/employmentReferences";
 import { recordPolicyAcknowledgement, type PolicyAcknowledgementMethod } from "@/lib/organization/policyAcknowledgements";
+import { resolveDeferredRequirementForProfile } from "@/lib/organization/onboardingRequirements";
 import {
   recordEmploymentTransition,
   completeEnhancedReview,
@@ -1060,6 +1061,17 @@ export async function recordPolicyAcknowledgementAction(formData: FormData): Pro
 
   const result = await recordPolicyAcknowledgement({ profileId, documentVersionId, method: method as PolicyAcknowledgementMethod, evidenceReference, actorUserId: currentUser.id });
   if (!result.ok) console.error("[admin organization] failed to record policy acknowledgement", result.error);
+  else {
+    // Best-effort, same reasoning as the self-acknowledgement path in
+    // admin/me/actions.ts — never blocks the genuine evidence already
+    // recorded above, and only resolves once EVERY applicable policy
+    // is genuinely acknowledged.
+    try {
+      await resolveDeferredRequirementForProfile({ profileId, requirementKey: "policies_acknowledged" });
+    } catch (err) {
+      console.error("[admin organization] failed to resolve deferred policies_acknowledged requirement", err);
+    }
+  }
 
   revalidatePath(`/admin/organization/people/${profileId}`);
 }

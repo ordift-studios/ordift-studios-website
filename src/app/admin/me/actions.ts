@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { getCurrentUser, isStaffOrAdmin, isSuperAdmin } from "@/lib/portal/roles";
 import { recordPolicyAcknowledgement } from "@/lib/organization/policyAcknowledgements";
+import { resolveDeferredRequirementForProfile } from "@/lib/organization/onboardingRequirements";
 import { recordFounderSelfAdministeredEmploymentTerms } from "@/lib/organization/employmentTermsHistory";
 
 // Employee Self-Service — My Workspace landing page (Phase B5 Step 15,
@@ -27,6 +28,19 @@ export async function acknowledgeOwnPolicyAction(_prev: ActionState, formData: F
     actorUserId: currentUser.id,
   });
   if (!result.ok) return { ok: false, error: result.error };
+
+  // Best-effort — a controlled onboarding deferral (2026-09-15,
+  // onboardingRequirements.ts) is a separate concern from this genuine
+  // acknowledgement; a failure here must never undo or block the
+  // evidence already recorded above. Re-verifies EVERY applicable
+  // policy is acknowledged before resolving anything — this single
+  // acknowledgement alone never resolves it if others remain.
+  try {
+    await resolveDeferredRequirementForProfile({ profileId: currentUser.id, requirementKey: "policies_acknowledged" });
+  } catch (err) {
+    console.error("[admin me] failed to resolve deferred policies_acknowledged requirement", err);
+  }
+
   revalidatePath("/admin/me");
   return { ok: true };
 }
