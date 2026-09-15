@@ -36,9 +36,23 @@ export type VendorProfile = {
   // employment_jurisdictions lookup table.
   relationshipJurisdictionId: string | null;
   relationshipJurisdictionName: string | null;
+  // Vendor Profile Particulars (2026-09-15) — the canonical, reusable
+  // source for OS-LGL-009A Schedule A facts (vendorAgreements.ts's
+  // resolveKnownVendorFrameworkVariables()), so an admin records each
+  // fact ONCE here rather than retyping it into every Framework draft.
+  // All six are genuinely optional — never required to save a Company
+  // Profile; Framework creation is what enforces which of them must
+  // actually be present before a Framework can be drafted.
+  vendorType: string | null;
+  registeredAddress: string | null;
+  contactPerson: string | null;
+  telephone: string | null;
+  registrationNumber: string | null;
+  taxIdentifiers: string | null;
 };
 
-const SELECT = "id, company_name, status, metadata, created_at, relationship_jurisdiction_id";
+const SELECT =
+  "id, company_name, status, metadata, created_at, relationship_jurisdiction_id, vendor_type, registered_address, contact_person, telephone, registration_number, tax_identifiers";
 
 type RawVendorProfileRow = {
   id: string;
@@ -47,6 +61,12 @@ type RawVendorProfileRow = {
   metadata: Record<string, unknown>;
   created_at: string;
   relationship_jurisdiction_id: string | null;
+  vendor_type: string | null;
+  registered_address: string | null;
+  contact_person: string | null;
+  telephone: string | null;
+  registration_number: string | null;
+  tax_identifiers: string | null;
 };
 
 async function attachFullName(admin: ReturnType<typeof createAdminClient>, rows: RawVendorProfileRow[]): Promise<VendorProfile[]> {
@@ -68,6 +88,12 @@ async function attachFullName(admin: ReturnType<typeof createAdminClient>, rows:
     fullName: nameById.get(r.id) ?? null,
     relationshipJurisdictionId: r.relationship_jurisdiction_id,
     relationshipJurisdictionName: r.relationship_jurisdiction_id ? (jurisdictionNameById.get(r.relationship_jurisdiction_id) ?? null) : null,
+    vendorType: r.vendor_type,
+    registeredAddress: r.registered_address,
+    contactPerson: r.contact_person,
+    telephone: r.telephone,
+    registrationNumber: r.registration_number,
+    taxIdentifiers: r.tax_identifiers,
   }));
 }
 
@@ -119,8 +145,30 @@ export type UpsertVendorProfileParams = {
   // is explicitly provided); explicit null clears it back to genuinely
   // unset. Never inferred/guessed.
   relationshipJurisdictionId?: string | null;
+  // Vendor Profile Particulars (2026-09-15) — each is independently
+  // optional, same "undefined leaves untouched, explicit null clears
+  // it" discipline as relationshipJurisdictionId above. Recorded here
+  // ONCE and reused by every Framework draft
+  // (resolveKnownVendorFrameworkVariables(), vendorAgreements.ts) —
+  // never re-typed per draft, never guessed if still absent.
+  vendorType?: string | null;
+  registeredAddress?: string | null;
+  contactPerson?: string | null;
+  telephone?: string | null;
+  registrationNumber?: string | null;
+  taxIdentifiers?: string | null;
   actorUserId: string;
 };
+
+// Trims a provided value to null-if-blank (matching companyName's own
+// discipline just above); leaves `undefined` as `undefined` so the
+// upsert's conditional spread below can still distinguish "not
+// supplied, don't touch" from "supplied, genuinely blank."
+function normalizeOptionalText(value: string | null | undefined): string | null | undefined {
+  if (value === undefined) return undefined;
+  if (value === null) return null;
+  return value.trim() || null;
+}
 
 // Idempotent by design (insert-or-update on the same 1:1 id), unlike
 // createPayeeProfile()'s deliberate insert-only "already classified"
@@ -145,6 +193,12 @@ export async function upsertVendorProfile(params: UpsertVendorProfileParams): Pr
         id: params.profileId,
         company_name: companyName,
         ...(params.relationshipJurisdictionId !== undefined ? { relationship_jurisdiction_id: params.relationshipJurisdictionId } : {}),
+        ...(params.vendorType !== undefined ? { vendor_type: normalizeOptionalText(params.vendorType) } : {}),
+        ...(params.registeredAddress !== undefined ? { registered_address: normalizeOptionalText(params.registeredAddress) } : {}),
+        ...(params.contactPerson !== undefined ? { contact_person: normalizeOptionalText(params.contactPerson) } : {}),
+        ...(params.telephone !== undefined ? { telephone: normalizeOptionalText(params.telephone) } : {}),
+        ...(params.registrationNumber !== undefined ? { registration_number: normalizeOptionalText(params.registrationNumber) } : {}),
+        ...(params.taxIdentifiers !== undefined ? { tax_identifiers: normalizeOptionalText(params.taxIdentifiers) } : {}),
       },
       { onConflict: "id" }
     );

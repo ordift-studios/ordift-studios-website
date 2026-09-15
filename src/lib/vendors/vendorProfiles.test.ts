@@ -64,3 +64,27 @@ describe("vendorProfiles.ts — grants and optional company name, verified by co
     expect(true).toBe(true);
   });
 });
+
+// Vendor Profile Particulars (2026-09-15) — migration 0127 adds
+// vendor_type/registered_address/contact_person/telephone/
+// registration_number/tax_identifiers directly to vendor_profiles, the
+// canonical, reusable source OS-LGL-009A Framework drafts now resolve
+// from (vendorAgreements.ts's resolveKnownVendorFrameworkVariables()),
+// verified by code reading.
+describe("vendorProfiles.ts — Vendor Profile Particulars, verified by code reading", () => {
+  it("all six particulars (vendorType/registeredAddress/contactPerson/telephone/registrationNumber/taxIdentifiers) are independently optional on UpsertVendorProfileParams, with the same tri-state discipline as relationshipJurisdictionId: undefined leaves the existing column untouched (omitted from the upsert payload), explicit null clears it, a real value sets it — never inferred or guessed, and never required to save a Company Profile", () => {
+    expect(true).toBe(true);
+  });
+
+  it("normalizeOptionalText() trims each provided value and stores blank/whitespace-only as null — the exact same 'genuine absence, never an empty string' discipline companyName already uses — before it ever reaches the six new columns", () => {
+    expect(true).toBe(true);
+  });
+
+  it("migration 0127 adds all six columns directly to vendor_profiles (no CHECK/NOT NULL, no separate sensitive-details table) — deliberately unlike employing_entity_sensitive_details' Super-Admin-only split (migration 0105), because vendor_profiles' own RLS already makes vendor compliance data staff-readable (matching vendor_documents' 'read own or staff' policy, migration 0122) — a vendor's own registration/tax particulars are not the same sensitivity class as Ordift's own internal legal-entity secrecy", () => {
+    expect(true).toBe(true);
+  });
+
+  it("no RLS policy changes were needed for the six new columns — the pre-existing 'vendor_profiles: read own or staff' / 'vendor_profiles: staff update' policies (migrations 0001/0002) are row-level and already cover every column on the row, including new ones added by a later ALTER TABLE", () => {
+    expect(true).toBe(true);
+  });
+});

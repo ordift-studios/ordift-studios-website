@@ -40,6 +40,7 @@ const VENDOR_DOCUMENT_BUCKET = "vendor-documents";
 
 type PaymentInstructionRow = { id: string; method: string; verification_status: string; is_default: boolean };
 type JurisdictionOption = { id: string; name: string };
+type ContractingEntityOption = { id: string; legalName: string; jurisdictionName: string | null };
 
 export function VendorDetailWorkspace({
   vendorId,
@@ -54,6 +55,7 @@ export function VendorDetailWorkspace({
   payeeProfile,
   paymentInstructions,
   frameworkAgreement,
+  contractingEntityOptions,
 }: {
   vendorId: string;
   vendorProfile: VendorProfile | null;
@@ -67,6 +69,7 @@ export function VendorDetailWorkspace({
   payeeProfile: PayeeProfile | null;
   paymentInstructions: PaymentInstructionRow[];
   frameworkAgreement: VendorAgreementSummary | null;
+  contractingEntityOptions: ContractingEntityOption[];
 }) {
   return (
     <div className="space-y-8">
@@ -78,7 +81,7 @@ export function VendorDetailWorkspace({
         jurisdictionOptions={jurisdictionOptions}
       />
       <OnboardingSection vendorId={vendorId} onboarding={onboarding} resolvedRequirements={resolvedRequirements} overrides={overrides} />
-      <FrameworkAgreementSection vendorId={vendorId} frameworkAgreement={frameworkAgreement} />
+      <FrameworkAgreementSection vendorId={vendorId} frameworkAgreement={frameworkAgreement} contractingEntityOptions={contractingEntityOptions} />
       <DocumentsSection vendorId={vendorId} documents={documents} />
       <PaymentSection vendorId={vendorId} vendorProfile={vendorProfile} payeeProfile={payeeProfile} paymentInstructions={paymentInstructions} />
     </div>
@@ -114,7 +117,7 @@ function IdentitySection({
         {engagementTypeSlug && engagementTypeSlug !== "vendor_supplier" && " — vendor-specific onboarding requirements will not apply."}
       </p>
 
-      <form action={profileAction} className="flex flex-wrap items-end gap-2">
+      <form action={profileAction} className="grid grid-cols-1 sm:grid-cols-2 gap-2">
         <input type="hidden" name="vendorId" value={vendorId} />
         <label className="flex flex-col gap-1 font-sans text-caption text-ordift-ink-muted">
           Company / Trading name (optional — leave blank for an individual/sole provider)
@@ -133,13 +136,47 @@ function IdentitySection({
             ))}
           </select>
         </label>
-        <button type="submit" disabled={profilePending} className="font-sans text-caption font-semibold px-3 py-2 rounded-md bg-ordift-navy-950 text-white disabled:opacity-50">
+        <label className="flex flex-col gap-1 font-sans text-caption text-ordift-ink-muted">
+          Vendor Type (optional — leave unset until genuinely known)
+          <select name="vendorType" defaultValue={vendorProfile?.vendorType ?? ""} className="rounded-lg border border-black/15 bg-white px-2 py-1.5 font-sans text-body-small">
+            <option value="">Not yet set</option>
+            <option value="Individual">Individual</option>
+            <option value="Sole Provider">Sole Provider</option>
+            <option value="Company">Company</option>
+            <option value="Studio">Studio</option>
+            <option value="Supplier">Supplier</option>
+            <option value="Other">Other</option>
+          </select>
+        </label>
+        <label className="flex flex-col gap-1 font-sans text-caption text-ordift-ink-muted">
+          Registered / Business Address (optional)
+          <input name="registeredAddress" defaultValue={vendorProfile?.registeredAddress ?? ""} className="rounded-lg border border-black/15 px-2 py-1.5 font-sans text-body-small" />
+        </label>
+        <label className="flex flex-col gap-1 font-sans text-caption text-ordift-ink-muted">
+          Contact Person (optional)
+          <input name="contactPerson" defaultValue={vendorProfile?.contactPerson ?? ""} className="rounded-lg border border-black/15 px-2 py-1.5 font-sans text-body-small" />
+        </label>
+        <label className="flex flex-col gap-1 font-sans text-caption text-ordift-ink-muted">
+          Telephone / WhatsApp (optional)
+          <input name="telephone" defaultValue={vendorProfile?.telephone ?? ""} className="rounded-lg border border-black/15 px-2 py-1.5 font-sans text-body-small" />
+        </label>
+        <label className="flex flex-col gap-1 font-sans text-caption text-ordift-ink-muted">
+          Registration / Incorporation Number (optional — leave blank where not genuinely applicable, e.g. an individual)
+          <input name="registrationNumber" defaultValue={vendorProfile?.registrationNumber ?? ""} className="rounded-lg border border-black/15 px-2 py-1.5 font-sans text-body-small" />
+        </label>
+        <label className="flex flex-col gap-1 font-sans text-caption text-ordift-ink-muted">
+          Applicable Tax / Business Identifier(s) (optional — leave blank where not genuinely applicable)
+          <input name="taxIdentifiers" defaultValue={vendorProfile?.taxIdentifiers ?? ""} className="rounded-lg border border-black/15 px-2 py-1.5 font-sans text-body-small" />
+        </label>
+        <button type="submit" disabled={profilePending} className="sm:col-span-2 justify-self-start font-sans text-caption font-semibold px-3 py-2 rounded-md bg-ordift-navy-950 text-white disabled:opacity-50">
           {profilePending ? "Saving…" : "Record Company Profile"}
         </button>
       </form>
       <p className="font-sans text-caption text-ordift-ink-muted">
         The jurisdiction governing this Vendor/Supplier relationship — never the employee-specific &ldquo;Employment
-        Jurisdiction&rdquo; field. A future Work Order may record its own override.
+        Jurisdiction&rdquo; field. A future Work Order may record its own override. These particulars are recorded once
+        here and reused automatically by every OS-LGL-009A Framework Agreement draft — none of them is required to save
+        this profile; leave blank whatever isn&rsquo;t genuinely known or applicable yet.
       </p>
       <FormError state={profileState} />
 
@@ -596,24 +633,34 @@ function DocumentRow({ vendorId, document }: { vendorId: string; document: Vendo
 // only reachable through genuine signature_evidence
 // (signatureEngine.ts). This UI can create a draft and issue it for
 // signature — it cannot fabricate a signature.
-function CreateFrameworkForm({ vendorId }: { vendorId: string }) {
+function CreateFrameworkForm({ vendorId, contractingEntityOptions }: { vendorId: string; contractingEntityOptions: ContractingEntityOption[] }) {
   const [state, formAction, pending] = useActionState<CreateFrameworkActionState, FormData>(createVendorFrameworkAction, null);
   return (
     <form action={formAction} className="grid grid-cols-1 sm:grid-cols-2 gap-2">
       <input type="hidden" name="vendorId" value={vendorId} />
       <p className="sm:col-span-2 font-sans text-caption text-ordift-ink-muted">
-        Vendor legal name, trading name, email, relationship jurisdiction, and effective date are resolved
-        automatically from this vendor&rsquo;s own recorded profile. Supply the remaining Schedule A particulars
-        below — leave a field blank only where it is genuinely not applicable (e.g. Registration Number for an
-        individual/sole provider).
+        Vendor legal name, trading name, email, relationship jurisdiction, effective date, vendor type, registered
+        address, contact person, telephone, registration number, and tax identifiers are all resolved automatically
+        from this vendor&rsquo;s own recorded Company Profile above — record them there first if any is still
+        missing. The only input here is which Ordift entity is contracting.
       </p>
-      <input name="ordiftContractingEntity" placeholder="Ordift Contracting Entity (required)" className="rounded-lg border border-black/15 px-2 py-1.5 font-sans text-body-small" />
-      <input name="vendorType" placeholder="Vendor Type — e.g. Individual / Company / Studio (required)" className="rounded-lg border border-black/15 px-2 py-1.5 font-sans text-body-small" />
-      <input name="registeredAddress" placeholder="Registered / Business Address (required)" className="rounded-lg border border-black/15 px-2 py-1.5 font-sans text-body-small" />
-      <input name="contactPerson" placeholder="Contact Person (required)" className="rounded-lg border border-black/15 px-2 py-1.5 font-sans text-body-small" />
-      <input name="registrationNumber" placeholder="Registration / Incorporation Number (optional)" className="rounded-lg border border-black/15 px-2 py-1.5 font-sans text-body-small" />
-      <input name="telephone" placeholder="Telephone / WhatsApp (optional)" className="rounded-lg border border-black/15 px-2 py-1.5 font-sans text-body-small" />
-      <input name="taxIdentifiers" placeholder="Applicable Tax / Business Identifiers (optional)" className="rounded-lg border border-black/15 px-2 py-1.5 font-sans text-body-small" />
+      <label className="sm:col-span-2 flex flex-col gap-1 font-sans text-caption text-ordift-ink-muted">
+        Ordift Contracting Entity (required)
+        <select name="ordiftContractingEntity" defaultValue={contractingEntityOptions[0]?.legalName ?? ""} className="rounded-lg border border-black/15 bg-white px-2 py-1.5 font-sans text-body-small">
+          <option value="">Select a verified entity</option>
+          {contractingEntityOptions.map((e) => (
+            <option key={e.id} value={e.legalName}>
+              {e.legalName}
+              {e.jurisdictionName ? ` (${e.jurisdictionName})` : ""}
+            </option>
+          ))}
+        </select>
+      </label>
+      {contractingEntityOptions.length === 0 && (
+        <p className="sm:col-span-2 font-sans text-caption text-red-700">
+          No verified legal entity is available yet — record one in Legal Entities before a Framework can be drafted.
+        </p>
+      )}
       <button type="submit" disabled={pending} className="sm:col-span-2 justify-self-start font-sans text-body-small font-semibold px-4 py-2 rounded-md bg-ordift-navy-950 text-white disabled:opacity-50">
         {pending ? "Creating…" : "Create Framework Agreement Draft"}
       </button>
@@ -672,12 +719,20 @@ const AGREEMENT_STATUS_STYLES: Record<string, string> = {
   completed: "bg-green-100 text-green-800",
 };
 
-function FrameworkAgreementSection({ vendorId, frameworkAgreement }: { vendorId: string; frameworkAgreement: VendorAgreementSummary | null }) {
+function FrameworkAgreementSection({
+  vendorId,
+  frameworkAgreement,
+  contractingEntityOptions,
+}: {
+  vendorId: string;
+  frameworkAgreement: VendorAgreementSummary | null;
+  contractingEntityOptions: ContractingEntityOption[];
+}) {
   return (
     <section className="rounded-xl border border-black/10 bg-white p-6 space-y-4">
       <h2 className="font-serif font-medium text-body text-ordift-ink">Vendor &amp; Supplier Framework Agreement (OS-LGL-009A)</h2>
       {!frameworkAgreement ? (
-        <CreateFrameworkForm vendorId={vendorId} />
+        <CreateFrameworkForm vendorId={vendorId} contractingEntityOptions={contractingEntityOptions} />
       ) : (
         <div className="space-y-2">
           <div className="flex flex-wrap items-center gap-2">

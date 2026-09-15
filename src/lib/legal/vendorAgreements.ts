@@ -112,11 +112,23 @@ export async function getCurrentVendorFrameworkAgreement(vendorProfileId: string
 // (profiles, vendor_profiles, auth.users, the jurisdiction gate);
 // effectiveDate defaults to today only because it's the genuine date
 // this draft is being created, not a guess about anything substantive.
-// Every other VENDOR_FRAMEWORK_VARIABLES key (ordiftContractingEntity,
-// vendorType, registrationNumber, registeredAddress, contactPerson,
-// telephone, taxIdentifiers) has no existing system source and is
-// never fabricated here — the caller must supply it explicitly (a
-// future admin form), or it stays genuinely absent.
+//
+// Vendor Profile Particulars (2026-09-15) — vendorType,
+// registeredAddress, contactPerson, telephone, registrationNumber, and
+// taxIdentifiers now ALSO have a genuine system source:
+// vendor_profiles' own particulars columns (migration 0127), recorded
+// once by an admin via the Company Profile form and reused by every
+// Framework draft, rather than re-typed each time. Each is resolved
+// here ONLY when genuinely present on the row — a vendor whose
+// particulars are still incomplete simply leaves that key absent, and
+// createVendorFrameworkDraftAgreement()'s own missing-fields check
+// (below) refuses cleanly and names exactly what's still missing.
+//
+// ordiftContractingEntity is deliberately NOT resolved here — it is
+// not a fact ABOUT the vendor, it is Ordift's own contracting party
+// for this relationship, selected by the caller from the canonical
+// employing_entities list (see the Framework form) and passed in via
+// additionalVariables.
 async function resolveKnownVendorFrameworkVariables(
   admin: ReturnType<typeof createAdminClient>,
   vendorProfileId: string,
@@ -124,7 +136,11 @@ async function resolveKnownVendorFrameworkVariables(
 ): Promise<Partial<Record<VendorFrameworkVariableKey, string>>> {
   const [{ data: profile }, { data: vendorProfile }, { data: authUser }] = await Promise.all([
     admin.from("profiles").select("full_name").eq("id", vendorProfileId).maybeSingle(),
-    admin.from("vendor_profiles").select("company_name").eq("id", vendorProfileId).maybeSingle(),
+    admin
+      .from("vendor_profiles")
+      .select("company_name, vendor_type, registered_address, contact_person, telephone, registration_number, tax_identifiers")
+      .eq("id", vendorProfileId)
+      .maybeSingle(),
     admin.auth.admin.getUserById(vendorProfileId),
   ]);
   const resolved: Partial<Record<VendorFrameworkVariableKey, string>> = {
@@ -133,6 +149,12 @@ async function resolveKnownVendorFrameworkVariables(
   };
   if (profile?.full_name) resolved.vendorLegalName = profile.full_name;
   if (vendorProfile?.company_name) resolved.vendorTradingName = vendorProfile.company_name;
+  if (vendorProfile?.vendor_type) resolved.vendorType = vendorProfile.vendor_type;
+  if (vendorProfile?.registered_address) resolved.registeredAddress = vendorProfile.registered_address;
+  if (vendorProfile?.contact_person) resolved.contactPerson = vendorProfile.contact_person;
+  if (vendorProfile?.telephone) resolved.telephone = vendorProfile.telephone;
+  if (vendorProfile?.registration_number) resolved.registrationNumber = vendorProfile.registration_number;
+  if (vendorProfile?.tax_identifiers) resolved.taxIdentifiers = vendorProfile.tax_identifiers;
   const email = authUser?.user?.email;
   if (email) resolved.email = email;
   return resolved;

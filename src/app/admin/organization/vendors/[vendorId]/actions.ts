@@ -33,7 +33,19 @@ export async function recordVendorCompanyProfileAction(_prev: ActionState, formD
     const vendorId = String(formData.get("vendorId") ?? "");
     const companyName = String(formData.get("companyName") ?? "");
     const relationshipJurisdictionId = String(formData.get("relationshipJurisdictionId") ?? "").trim() || null;
-    const result = await upsertVendorProfile({ profileId: vendorId, companyName, relationshipJurisdictionId, actorUserId: user.id });
+    const optionalField = (name: string) => String(formData.get(name) ?? "").trim() || null;
+    const result = await upsertVendorProfile({
+      profileId: vendorId,
+      companyName,
+      relationshipJurisdictionId,
+      vendorType: optionalField("vendorType"),
+      registeredAddress: optionalField("registeredAddress"),
+      contactPerson: optionalField("contactPerson"),
+      telephone: optionalField("telephone"),
+      registrationNumber: optionalField("registrationNumber"),
+      taxIdentifiers: optionalField("taxIdentifiers"),
+      actorUserId: user.id,
+    });
     if (!result.ok) return { ok: false, error: result.error };
     revalidateVendor(vendorId);
     return { ok: true };
@@ -294,12 +306,18 @@ export async function createVendorFrameworkAction(_prev: CreateFrameworkActionSt
     const user = await requireVendorAdmin();
     const vendorId = String(formData.get("vendorId") ?? "");
 
+    // Vendor Profile Particulars (2026-09-15) — vendorType,
+    // registrationNumber, registeredAddress, contactPerson, telephone,
+    // and taxIdentifiers are no longer collected on this form: they now
+    // resolve from the vendor's own recorded profile
+    // (resolveKnownVendorFrameworkVariables(), vendorAgreements.ts).
+    // ordiftContractingEntity remains the one genuine caller input —
+    // Ordift's own contracting party is not a fact about the vendor —
+    // and is now a <select> constrained to the canonical
+    // employing_entities list, never arbitrary free text.
     const additionalVariables: Partial<Record<VendorFrameworkVariableKey, string>> = {};
-    const fields: VendorFrameworkVariableKey[] = ["ordiftContractingEntity", "vendorType", "registrationNumber", "registeredAddress", "contactPerson", "telephone", "taxIdentifiers"];
-    for (const field of fields) {
-      const value = String(formData.get(field) ?? "").trim();
-      if (value) additionalVariables[field] = value;
-    }
+    const ordiftContractingEntity = String(formData.get("ordiftContractingEntity") ?? "").trim();
+    if (ordiftContractingEntity) additionalVariables.ordiftContractingEntity = ordiftContractingEntity;
 
     const result = await createVendorFrameworkDraftAgreement({ vendorProfileId: vendorId, additionalVariables, actorUserId: user.id });
     if (!result.ok) return { ok: false, error: result.error, missingFields: result.missingFields };

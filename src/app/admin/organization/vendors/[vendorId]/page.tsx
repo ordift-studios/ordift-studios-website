@@ -10,6 +10,7 @@ import { getPayeeProfile } from "@/lib/payables/payeeProfiles";
 import { listEmploymentJurisdictions } from "@/lib/portal/adminData";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getCurrentVendorFrameworkAgreement } from "@/lib/legal/vendorAgreements";
+import { listEmployingEntities } from "@/lib/organization/legalEntities";
 import { VendorDetailWorkspace } from "./VendorDetailWorkspace";
 
 export const metadata: Metadata = {
@@ -31,7 +32,7 @@ export default async function VendorDetailPage({ params }: { params: Promise<{ v
   ]);
   if (!profile) notFound();
 
-  const [resolvedRequirements, overrides, documents, payeeProfile, { data: paymentInstructions }, jurisdictions, frameworkAgreement] = await Promise.all([
+  const [resolvedRequirements, overrides, documents, payeeProfile, { data: paymentInstructions }, jurisdictions, frameworkAgreement, employingEntities] = await Promise.all([
     onboarding ? listResolvedRequirements({ onboardingId: onboarding.id, profileId: vendorId, pipeline: onboarding.pipeline }) : Promise.resolve([]),
     onboarding ? listOnboardingRequirementOverrides(onboarding.id) : Promise.resolve([]),
     listVendorDocuments(vendorId, user.id),
@@ -39,8 +40,17 @@ export default async function VendorDetailPage({ params }: { params: Promise<{ v
     admin.from("payment_instructions").select("id, method, verification_status, is_default").eq("profile_id", vendorId),
     listEmploymentJurisdictions(),
     getCurrentVendorFrameworkAgreement(vendorId),
+    listEmployingEntities(),
   ]);
   const jurisdictionOptions = jurisdictions.map((j) => ({ id: j.id, name: j.name }));
+  // Vendor Profile Particulars (2026-09-15) — the Ordift Contracting
+  // Entity field resolves/selects from this canonical, verified list
+  // rather than free text (see FrameworkAgreementSection). active &&
+  // verified only — never an entity whose registration facts haven't
+  // been reviewed, and never a placeholder.
+  const contractingEntityOptions = employingEntities
+    .filter((e) => e.active && e.verificationStatus === "verified")
+    .map((e) => ({ id: e.id, legalName: e.legalName ?? e.name, jurisdictionName: e.jurisdictionName }));
 
   const engagementType = staffDetails?.engagement_types as unknown as { slug: string; name: string } | null;
 
@@ -69,6 +79,7 @@ export default async function VendorDetailPage({ params }: { params: Promise<{ v
         payeeProfile={payeeProfile}
         paymentInstructions={paymentInstructions ?? []}
         frameworkAgreement={frameworkAgreement}
+        contractingEntityOptions={contractingEntityOptions}
       />
     </div>
   );
