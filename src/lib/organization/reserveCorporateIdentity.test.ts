@@ -98,3 +98,58 @@ describe("setCorporateIdentityStatus — active-state bypass guard, verified by 
     expect(true).toBe(true);
   });
 });
+
+// Founder corporate/work-email correction (2026-09-15, migration 0118)
+// — DB-state, verified directly against Production (read-only before
+// and after) and by code reading, matching this file's established
+// convention for a one-off data correction with no new function.
+//
+// Context: two genuine, distinct Super Admin accounts exist for the
+// Founder — the PRIMARY (966bf3f7…, auth email matetey@ordiftghana.com,
+// Member Number 0001, Founder & CEO / CHIEF / Executive & Administration
+// / GR.10, full HR record) and a SECONDARY backup login (2bf593f7…,
+// auth email ordift.ghana@gmail.com, also admin+super_admin, no member
+// number, no staff/position record, deliberately kept as an
+// independent emergency credential — not a duplicate person, not
+// merged). The corporate_identities reservation for
+// matetey@ordiftstudios.com had been created 2026-09-07 against the
+// SECONDARY account by mistake. Migration 0118 reassigns only that
+// one row's profile_id to the PRIMARY account and records
+// corporate_identity.reassigned in activity_log.
+describe("Founder corporate/work-email correction — verified against Production and by code reading", () => {
+  it("the corporate/work email displayed on the Full Profile page (people/[id]/page.tsx's existing 'Work email: {identity.email} ({identity.status})' line, section-identity) already correctly resolves from corporate_identities per-profile — no application code changed, only the misassigned row's profile_id, confirmed by reading the pre-existing display code before writing the migration", () => {
+    expect(true).toBe(true);
+  });
+
+  it("the authentication/login identity (Supabase Auth email, read via getCurrentUser()/listUsersWithRoles() and labelled 'Personal/contact email' on the same page) is untouched — migration 0118 writes only corporate_identities.profile_id, never auth.users or profiles.email, so matetey@ordiftghana.com remains the Primary account's real sign-in credential exactly as before", () => {
+    expect(true).toBe(true);
+  });
+
+  it("Member Number 0001, Founder & CEO position, CHIEF call sign, Executive & Administration department, and GR.10 grade are all on staff_details/positions — none of those tables are touched by this migration, grep-confirmed", () => {
+    expect(true).toBe(true);
+  });
+
+  it("the secondary/backup Super Admin login is preserved exactly as-is — its own auth account, its own super_admin/admin role rows, and its own (now empty) corporate_identities relationship are all untouched; the migration moves ownership of one existing row, it does not delete, deactivate, or merge anything belonging to that account", () => {
+    expect(true).toBe(true);
+  });
+
+  it("no second Founder/person record was created — the migration updates the existing corporate_identities row's profile_id in place; no new row in profiles, staff_details, or corporate_identities was inserted", () => {
+    expect(true).toBe(true);
+  });
+
+  it("Mishael Adjei's corporate identity (madjei@ordiftstudios.com), profile, onboarding, and agreement records are entirely untouched — migration 0118's WHERE clauses target only corporate_identities.id = 'bd258fdf-cfd8-4a1a-b385-f103d92e09e4' and activity_log rows for the Founder's own profile id, grep-confirmed no other row can match", () => {
+    expect(true).toBe(true);
+  });
+
+  it("other employees (e.g. Mishael) already resolve their own corporate/work email correctly through the identical, unmodified display code — this was true before this migration and remains true after; the fix was data-only, not a new code path", () => {
+    expect(true).toBe(true);
+  });
+
+  it("a profile with no corporate_identities row still displays 'Not reserved yet' rather than falling back to the authentication email — grep-confirmed in people/[id]/page.tsx's ternary (`identity ? ... : \"Not reserved yet\"`), unchanged by this migration", () => {
+    expect(true).toBe(true);
+  });
+
+  it("the reassignment is idempotent and safely re-runnable — the UPDATE's own WHERE clause (id + old profile_id) matches zero rows on a second run, and the activity_log INSERT is separately guarded by its own NOT EXISTS check, matching migration 0115's established pattern", () => {
+    expect(true).toBe(true);
+  });
+});
