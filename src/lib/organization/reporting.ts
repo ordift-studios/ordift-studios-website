@@ -32,13 +32,22 @@ export async function resolveCurrentManager(positionId: string | null): Promise<
   if (!positionId) return null;
   const admin = createAdminClient();
 
-  const { data: position } = await admin
-    .from("positions")
-    .select("reports_to_position_id, reports_to:positions!positions_reports_to_position_id_fkey(name)")
-    .eq("id", positionId)
-    .maybeSingle();
+  const { data: position } = await admin.from("positions").select("reports_to_position_id").eq("id", positionId).maybeSingle();
   if (!position?.reports_to_position_id) return null;
-  const reportingPositionName = (position.reports_to as unknown as { name: string } | null)?.name ?? null;
+
+  // Two plain, unambiguous queries rather than a single embedded
+  // self-referencing-FK select (positions -> positions via
+  // reports_to_position_id) — found, root-caused and fixed 2026-09-15:
+  // the embedded form silently resolved to no row for Mishael Adjei's
+  // real Position chain (Client Engagement Representative -> Client
+  // Services Supervisor), which is exactly why "reportingTo" never
+  // appeared in his first generated Employment Agreement snapshot
+  // (ORD-AGR-2026-000003) despite the structural reporting Position
+  // genuinely existing. A self-referencing embed on the SAME table as
+  // the outer select is a known PostgREST ambiguity risk; two direct
+  // .eq("id", ...) lookups on positions carry no such risk.
+  const { data: reportsToPosition } = await admin.from("positions").select("name").eq("id", position.reports_to_position_id).maybeSingle();
+  const reportingPositionName = reportsToPosition?.name ?? null;
 
   const { data: occupant } = await admin
     .from("staff_details")

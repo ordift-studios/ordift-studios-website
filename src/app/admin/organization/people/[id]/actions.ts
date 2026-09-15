@@ -66,7 +66,7 @@ import {
   type VehicleIncidentResponsibilityDetermination,
 } from "@/lib/organization/businessTravel";
 import { submitPortfolioUseRequest, approvePortfolioUseRequest, declinePortfolioUseRequest } from "@/lib/organization/portfolioUse";
-import { createEmployeeEmploymentAgreementDraft } from "@/lib/legal/employeeAgreements";
+import { createEmployeeEmploymentAgreementDraftIdempotent } from "@/lib/legal/employeeAgreements";
 import {
   requestEmploymentReference,
   verifyRequesterIdentity,
@@ -915,21 +915,44 @@ export async function declinePortfolioUseRequestAction(formData: FormData): Prom
 // Agreement Readiness (Phase B5 Step 10, 2026-09-14). The readiness
 // preview itself (checkEmployeeAgreementReadiness) is computed directly
 // in page.tsx, read-only, no action needed — this is only the "create
-// the real draft" step, which createEmployeeEmploymentAgreementDraft()
+// the real draft" step, which createEmployeeEmploymentAgreementDraftIdempotent()
 // re-derives and re-validates independently rather than trusting
 // whatever the readiness preview showed a moment earlier.
-export async function createEmployeeEmploymentAgreementDraftAction(formData: FormData): Promise<void> {
+//
+// Rich useActionState return (2026-09-15 UI-feedback fix) — the prior
+// plain Promise<void> shape gave the Founder no visible confirmation
+// that a click had registered, succeeded, or failed (authenticated QA
+// finding: the backend created the draft successfully with no UI
+// feedback at all). alreadyExisted distinguishes "this exact click
+// created a new draft" from "an identical draft already existed and
+// nothing new was created" so the success message is always accurate
+// — never implies issuance, approval, signature or execution, only
+// that a draft exists for Founder review.
+export type CreateAgreementDraftActionState =
+  | { ok: true; agreementId: string; agreementReference: string; alreadyExisted: boolean }
+  | { ok: false; error: string }
+  | null;
+
+export async function createEmployeeEmploymentAgreementDraftAction(
+  _prev: CreateAgreementDraftActionState,
+  formData: FormData
+): Promise<CreateAgreementDraftActionState> {
   const currentUser = await getCurrentUser();
-  if (!currentUser) return;
+  if (!currentUser) return { ok: false, error: "Not authorized." };
 
   const profileId = String(formData.get("profileId") ?? "").trim();
   const onboardingId = String(formData.get("onboardingId") ?? "").trim();
-  if (!profileId || !onboardingId) return;
+  if (!profileId || !onboardingId) return { ok: false, error: "Invalid request." };
 
-  const result = await createEmployeeEmploymentAgreementDraft({ onboardingId, actorUserId: currentUser.id });
-  if (!result.ok) console.error("[admin organization] failed to create employment agreement draft", result.error);
+  const result = await createEmployeeEmploymentAgreementDraftIdempotent({ onboardingId, actorUserId: currentUser.id });
+  if (!result.ok) {
+    console.error("[admin organization] failed to create employment agreement draft", result.error);
+    return { ok: false, error: result.error };
+  }
 
   revalidatePath(`/admin/organization/people/${profileId}`);
+  revalidatePath(`/admin/organization/agreements/${result.agreementId}`);
+  return { ok: true, agreementId: result.agreementId, agreementReference: result.agreementReference, alreadyExisted: result.alreadyExisted };
 }
 
 // Employment References (Phase B5 Step 11, 2026-09-14). Identity/

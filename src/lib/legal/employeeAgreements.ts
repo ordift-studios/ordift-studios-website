@@ -14,10 +14,12 @@ import {
   type EmployeeAgreementJurisdictionGateState,
 } from "@/lib/legal/employeeAgreementJurisdictionGate";
 import { classifyEmploymentAgreementVariable } from "@/lib/legal/employeeAgreementRequirements";
-import { mapEngagementTypeSlugToWorkforceRelationship } from "@/lib/compliance/workforceMappings";
+import { mapEngagementTypeSlugToWorkforceRelationship, mapEmploymentJurisdictionToWorkforceJurisdiction } from "@/lib/compliance/workforceMappings";
 import { recordRequirementEvaluation } from "@/lib/compliance/requirementAudit";
 import { getCurrentEmploymentTerms, resolveCurrentEmploymentContext } from "@/lib/organization/employmentTermsHistory";
 import { resolveCurrentManager } from "@/lib/organization/reporting";
+import { getLeaveTypeBySlug } from "@/lib/organization/leaveTypes";
+import { formatProbationVariable, formatNoticeVariable, formatAnnualLeaveVariable } from "@/lib/legal/ghanaEmployeeAgreementPolicy";
 
 // Employee Employment Agreement — onboarding integration (E.5 Stage
 // 3B-3C; requirement-engine wiring added COMP-SYS-1 Phase B3 Step 2,
@@ -132,7 +134,25 @@ export async function resolveEmployeeAgreementVariables(
     requisition?.requested_position_id ? resolveCurrentManager(requisition.requested_position_id) : null,
   ]);
 
-  // probation, annualLeave, notice: optional, no source yet.
+  // Probation/Notice/Annual Leave (2026-09-15 fix) — previously always
+  // undefined ("no source yet"). All three are Ghana(GH)-specific
+  // controlled-policy restatements (ghanaEmployeeAgreementPolicy.ts);
+  // deliberately gated on the real resolved workforceJurisdiction, not
+  // a global default, so a non-Ghana employee never silently inherits
+  // Ghana's numbers — for any other/unresolved jurisdiction these stay
+  // undefined exactly as before, correctly falling through to their
+  // existing OPTIONAL classification.
+  const workforceJurisdiction = mapEmploymentJurisdictionToWorkforceJurisdiction(context.employmentJurisdictionName);
+  let probation: string | undefined;
+  let notice: string | undefined;
+  let annualLeave: string | undefined;
+  if (workforceJurisdiction === "GH") {
+    if (context.startDate) probation = formatProbationVariable(context.startDate);
+    notice = formatNoticeVariable();
+    const annualLeaveType = await getLeaveTypeBySlug("annual", "GH");
+    if (annualLeaveType?.annualEntitlementDays) annualLeave = formatAnnualLeaveVariable(annualLeaveType.annualEntitlementDays);
+  }
+
   const values: EmploymentAgreementVariables = {
     employerLegalName: context.employingEntityName ?? undefined,
     employeeLegalName: profile?.full_name ?? undefined,
@@ -141,15 +161,18 @@ export async function resolveEmployeeAgreementVariables(
     department: department?.data?.name ?? undefined,
     reportingTo: structuralManager?.fullName
       ? `${structuralManager.reportingPositionName ?? "Reporting Position"} (${structuralManager.fullName})`
-      : (structuralManager?.reportingPositionName ? `${structuralManager.reportingPositionName} (position currently unoccupied)` : undefined),
+      : (structuralManager?.reportingPositionName ? `${structuralManager.reportingPositionName} — position currently unoccupied` : undefined),
     startDate: context.startDate ?? undefined,
     employmentType: engagementType?.data?.name ?? undefined,
+    probation,
     primaryWorkLocation: context.workLocation ?? undefined,
     normalWorkingHours: currentTerms?.workPattern ?? undefined,
     basicWageSalary: currentTerms?.basicSalary
       ? `${currentTerms.currency ?? ""} ${currentTerms.basicSalary.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`.trim()
       : undefined,
     allowances: formatAllowancesVariable(currentTerms?.allowances ?? null),
+    annualLeave,
+    notice,
     jurisdiction: context.employmentJurisdictionName ?? undefined,
   };
 
@@ -375,6 +398,80 @@ export async function createEmployeeEmploymentAgreementDraft(params: {
   if (!snapshot.ok) return snapshot;
 
   return { ok: true, agreementId: draft.agreementId, agreementReference: draft.agreementReference };
+}
+
+// Order-independent equality over the flat EmploymentAgreementVariables
+// shape (string values only, no nesting) — deliberately not a
+// JSON.stringify comparison, since Postgres jsonb does not guarantee
+// preserving the original key insertion order on read-back, which
+// would make a naive string comparison unreliable.
+export function sameAgreementValues(a: EmploymentAgreementVariables, b: EmploymentAgreementVariables): boolean {
+  const keys = new Set([...Object.keys(a), ...Object.keys(b)]);
+  for (const key of keys) {
+    if ((a as Record<string, string | undefined>)[key] !== (b as Record<string, string | undefined>)[key]) return false;
+  }
+  return true;
+}
+
+export type CreateDraftIdempotentResult =
+  | ({ ok: true; alreadyExisted: boolean } & { agreementId: string; agreementReference: string })
+  | {
+      ok: false;
+      error: string;
+      missingFields?: string[];
+      reviewRequiredFields?: string[];
+      prohibitedFields?: string[];
+      jurisdictionGateState?: EmployeeAgreementJurisdictionGateState;
+    };
+
+// Idempotent wrapper around createEmployeeEmploymentAgreementDraft()
+// (2026-09-15 UI-feedback fix) — "Do not create duplicate agreement
+// snapshots because of retries/double-clicks/network ambiguity" and
+// "a genuinely changed resolved snapshot may produce a new immutable
+// draft when explicitly requested." Compares the FRESHLY resolved
+// Schedule A values against the most recent existing agreement's own
+// frozen snapshot for this onboarding: identical -> this is an
+// accidental repeat (double-click, back-navigation, network retry) —
+// return the existing draft's identity, create nothing. Different ->
+// the underlying facts genuinely changed since that draft was
+// generated (e.g. this same phase's Probation/Notice/Annual Leave
+// fix) — proceed to create a real new draft via the unchanged,
+// independently-re-validating createEmployeeEmploymentAgreementDraft().
+// Never mutates, deletes, or marks the prior agreement in any way —
+// it remains exactly as issued, a separate, older row.
+export async function createEmployeeEmploymentAgreementDraftIdempotent(params: {
+  onboardingId: string;
+  actorUserId: string;
+}): Promise<CreateDraftIdempotentResult> {
+  const admin = createAdminClient();
+  const { data: existingAgreement } = await admin
+    .from("agreements")
+    .select("id, agreement_reference")
+    .eq("primary_context_type", "staff_onboarding")
+    .eq("primary_context_reference", params.onboardingId)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (existingAgreement) {
+    const { data: snapshotRow } = await admin
+      .from("agreement_snapshots")
+      .select("snapshot_data")
+      .eq("agreement_id", existingAgreement.id)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (snapshotRow) {
+      const { values: freshValues } = await resolveEmployeeAgreementVariables(params.onboardingId);
+      if (sameAgreementValues(freshValues, snapshotRow.snapshot_data as EmploymentAgreementVariables)) {
+        return { ok: true, alreadyExisted: true, agreementId: existingAgreement.id, agreementReference: existingAgreement.agreement_reference };
+      }
+    }
+  }
+
+  const created = await createEmployeeEmploymentAgreementDraft(params);
+  if (!created.ok) return created;
+  return { ok: true, alreadyExisted: false, agreementId: created.agreementId, agreementReference: created.agreementReference };
 }
 
 // The derive function for the onboarding requirement

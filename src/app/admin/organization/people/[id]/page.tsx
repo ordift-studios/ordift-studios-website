@@ -36,6 +36,7 @@ import { listControlledPolicyDocuments, listPolicyAcknowledgementsForProfile } f
 import { listEmploymentTermsHistory, listEnhancedReviewCompletions, EMPLOYMENT_TRANSITION_TYPES } from "@/lib/organization/employmentTermsHistory";
 import { listAppealsForProfile } from "@/lib/organization/appeals";
 import { listEmployingEntities } from "@/lib/organization/legalEntities";
+import { CreateAgreementDraftForm } from "./CreateAgreementDraftForm";
 import {
   setEmploymentStatusAction,
   recordBackgroundScreeningAction,
@@ -78,7 +79,6 @@ import {
   submitPortfolioUseRequestAction,
   approvePortfolioUseRequestAction,
   declinePortfolioUseRequestAction,
-  createEmployeeEmploymentAgreementDraftAction,
   requestEmploymentReferenceAction,
   verifyRequesterIdentityAction,
   declineReferenceRequestAction,
@@ -1159,11 +1159,7 @@ export default async function PersonDetailPage({ params }: { params: Promise<{ i
                 </Link>
               </div>
             ) : agreementReadiness.ready ? (
-              <form action={createEmployeeEmploymentAgreementDraftAction}>
-                <input type="hidden" name="profileId" value={id} />
-                <input type="hidden" name="onboardingId" value={onboarding.id} />
-                <button type="submit" className="font-sans text-caption font-semibold px-3 py-1.5 rounded-md bg-ordift-navy-950 text-white">Create Draft Employment Agreement</button>
-              </form>
+              <CreateAgreementDraftForm profileId={id} onboardingId={onboarding.id} />
             ) : (
               <p className="font-sans text-caption text-ordift-ink-muted">Every field above must be satisfied before a draft can be created — no field is ever filled in automatically.</p>
             )}
