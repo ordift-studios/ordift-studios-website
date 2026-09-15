@@ -81,6 +81,7 @@ export async function correctVendorOnboardingClassificationAction(_prev: ActionS
     const vendorId = String(formData.get("vendorId") ?? "");
     const onboardingId = String(formData.get("onboardingId") ?? "");
     const reason = String(formData.get("reason") ?? "");
+    const acknowledgeExistingProgress = formData.get("acknowledgeExistingProgress") === "on";
     const admin = createAdminClient();
     const { data: vendorEngagementType } = await admin.from("engagement_types").select("id").eq("slug", "vendor_supplier").single();
     if (!vendorEngagementType) return { ok: false, error: "vendor_supplier engagement type is missing reference data." };
@@ -90,7 +91,7 @@ export async function correctVendorOnboardingClassificationAction(_prev: ActionS
       .upsert({ id: vendorId, engagement_type_id: vendorEngagementType.id }, { onConflict: "id" });
     if (staffDetailsError) return { ok: false, error: "Failed to set engagement classification." };
 
-    const result = await correctOnboardingRelationshipClassification({ onboardingId, engagementTypeSlug: "vendor_supplier", reason, actorUserId: user.id });
+    const result = await correctOnboardingRelationshipClassification({ onboardingId, engagementTypeSlug: "vendor_supplier", reason, actorUserId: user.id, acknowledgeExistingProgress });
     if (!result.ok) return { ok: false, error: result.error };
     revalidateVendor(vendorId);
     return { ok: true };

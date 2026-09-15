@@ -287,14 +287,22 @@ export async function startExternalWorkforceOnboarding(params: {
 // advanceOnboardingStage(), which explicitly REFUSES a cross-pipeline
 // move (canAdvanceToStage() — correct for normal progression, wrong
 // for correcting a mistake). Refuses once ANY onboarding_requirements
-// row exists for this record — at that point the mistake has real
-// recorded consequences and must be handled deliberately by a human,
-// never silently reclassified out from under real history.
+// row exists for this record, UNLESS the caller explicitly passes
+// acknowledgeExistingProgress: true — a conscious, logged override
+// (matching this codebase's established authorizeWithSuperAdminOverride
+// pattern), never a silent bypass. Existing onboarding_requirements/
+// onboarding_requirement_overrides rows are NEVER deleted or altered
+// by this function either way — they stay exactly as recorded (real
+// audit trail of what happened), simply becoming inert once the
+// pipeline changes: the new pipeline's own requirement catalog is
+// keyed by different requirementKeys, so a stale row from the wrong
+// pipeline is never read or displayed as if it were current.
 export async function correctOnboardingRelationshipClassification(params: {
   onboardingId: string;
   engagementTypeSlug: string;
   reason: string;
   actorUserId: string;
+  acknowledgeExistingProgress?: boolean;
 }): Promise<{ ok: true } | { ok: false; error: string }> {
   if (!(await canManageOnboarding(params.actorUserId))) {
     return { ok: false, error: "Not authorized to correct an onboarding record's classification." };
@@ -308,8 +316,9 @@ export async function correctOnboardingRelationshipClassification(params: {
   if (existing.status !== "in_progress") return { ok: false, error: "Only an in-progress onboarding record can be reclassified." };
 
   const { count } = await admin.from("onboarding_requirements").select("id", { count: "exact", head: true }).eq("onboarding_id", params.onboardingId);
-  if (count && count > 0) {
-    return { ok: false, error: "This onboarding record already has recorded requirement progress — reclassifying it now could hide real history. Resolve this manually instead." };
+  const hadExistingRequirementProgress = Boolean(count && count > 0);
+  if (hadExistingRequirementProgress && !params.acknowledgeExistingProgress) {
+    return { ok: false, error: "This onboarding record already has recorded requirement progress — reclassifying it now could hide real history. Check the acknowledgement box to confirm this progress is known, non-genuine test data before proceeding." };
   }
 
   const newPipeline = resolveOnboardingPipeline(params.engagementTypeSlug);
@@ -333,7 +342,15 @@ export async function correctOnboardingRelationshipClassification(params: {
     action: "staff_onboarding.relationship_classification_corrected",
     entityType: "user",
     entityId: existing.profile_id,
-    metadata: { onboardingId: params.onboardingId, fromPipeline: existing.pipeline, toPipeline: newPipeline, engagementTypeSlug: params.engagementTypeSlug, reason },
+    metadata: {
+      onboardingId: params.onboardingId,
+      fromPipeline: existing.pipeline,
+      toPipeline: newPipeline,
+      engagementTypeSlug: params.engagementTypeSlug,
+      reason,
+      hadExistingRequirementProgress,
+      acknowledgedExistingProgress: hadExistingRequirementProgress ? true : undefined,
+    },
   });
 
   return { ok: true };

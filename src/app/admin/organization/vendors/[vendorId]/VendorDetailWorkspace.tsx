@@ -163,7 +163,17 @@ function StartOnboardingForm({ vendorId }: { vendorId: string }) {
   );
 }
 
-function CorrectClassificationForm({ vendorId, onboardingId, currentPipeline }: { vendorId: string; onboardingId: string; currentPipeline: string }) {
+function CorrectClassificationForm({
+  vendorId,
+  onboardingId,
+  currentPipeline,
+  hasRequirementProgress,
+}: {
+  vendorId: string;
+  onboardingId: string;
+  currentPipeline: string;
+  hasRequirementProgress: boolean;
+}) {
   const [state, formAction, pending] = useActionState<ActionState, FormData>(correctVendorOnboardingClassificationAction, null);
   return (
     <form action={formAction} className="space-y-2 rounded-lg border border-amber-300 bg-amber-50 p-3">
@@ -173,8 +183,20 @@ function CorrectClassificationForm({ vendorId, onboardingId, currentPipeline }: 
         This onboarding record is on the <strong>{currentPipeline.replace(/_/g, " ")}</strong> pipeline, not
         external_contractor — it was likely started before this person&rsquo;s engagement classification was set.
         Correcting it sets engagement classification to vendor_supplier and reclassifies this record to the Vendor
-        pipeline. Refused if any requirement progress has already been recorded.
+        pipeline. Any requirement rows already recorded on the {currentPipeline.replace(/_/g, " ")} pipeline are left
+        exactly as they are (never deleted) — they simply stop being displayed once the pipeline changes, since the
+        new pipeline reads a different set of requirement keys.
       </p>
+      {hasRequirementProgress && (
+        <label className="flex items-start gap-2 font-sans text-caption text-amber-900">
+          <input type="checkbox" name="acknowledgeExistingProgress" required className="mt-0.5" />
+          <span>
+            This record already has requirement progress recorded against the {currentPipeline.replace(/_/g, " ")}{" "}
+            pipeline. I confirm this is known non-genuine test/QA data (not a real fact about this person) and want to
+            reclassify anyway.
+          </span>
+        </label>
+      )}
       <input
         name="reason"
         required
@@ -293,7 +315,12 @@ function OnboardingSection({
       {!onboarding ? (
         <StartOnboardingForm vendorId={vendorId} />
       ) : onboarding.pipeline !== "external_contractor" ? (
-        <CorrectClassificationForm vendorId={vendorId} onboardingId={onboarding.id} currentPipeline={onboarding.pipeline} />
+        <CorrectClassificationForm
+          vendorId={vendorId}
+          onboardingId={onboarding.id}
+          currentPipeline={onboarding.pipeline}
+          hasRequirementProgress={resolvedRequirements.some((r) => r.row !== null)}
+        />
       ) : (
         <div className="space-y-4">
           <p className="font-sans text-body-small text-ordift-ink">
