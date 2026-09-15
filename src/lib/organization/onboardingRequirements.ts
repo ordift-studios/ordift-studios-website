@@ -214,16 +214,20 @@ async function deriveFromCorporateIdentityReserved(profileId: string): Promise<R
   return data ? "satisfied" : null;
 }
 
-// Vendor Completion Phase (2026-09-15) — "satisfied" means the
-// company-facing identity has genuinely been recorded via
-// upsertVendorProfile() (vendorProfiles.ts), never inferred from the
-// bare existence of the vendor_profiles row alone (a row can exist
-// with company_name still null, e.g. immediately after role grant,
-// before anyone has recorded anything).
+// "satisfied" means a vendor_profiles row exists at all — the row is
+// only ever created via a deliberate admin action, upsertVendorProfile()
+// (vendorProfiles.ts), never auto-created (e.g. on role grant), so its
+// mere existence proves someone genuinely reviewed and recorded this
+// vendor's company-facing identity. Deliberately does NOT require
+// company_name specifically (Vendor QA correction, 2026-09-15) — the
+// approved OS-LGL-009 architecture explicitly covers both registered
+// businesses/entities AND legitimate individual/sole providers, and a
+// genuine individual vendor may have no separate company/trading name
+// at all. Requiring one here would force fabricating one.
 async function deriveVendorCompanyProfileRecorded(profileId: string): Promise<RequirementStatus | null> {
   const admin = createAdminClient();
-  const { data } = await admin.from("vendor_profiles").select("company_name").eq("id", profileId).maybeSingle();
-  if (!data || !data.company_name) return null;
+  const { data } = await admin.from("vendor_profiles").select("id").eq("id", profileId).maybeSingle();
+  if (!data) return null;
   return "satisfied";
 }
 

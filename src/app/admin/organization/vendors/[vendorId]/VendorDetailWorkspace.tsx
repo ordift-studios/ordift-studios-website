@@ -1,12 +1,14 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useState, useRef } from "react";
 import type { StaffOnboarding } from "@/lib/organization/onboarding";
 import type { ResolvedRequirement, OnboardingRequirementOverrideRow } from "@/lib/organization/onboardingRequirements";
 import type { VendorProfile } from "@/lib/vendors/vendorProfiles";
 import type { VendorDocument } from "@/lib/vendors/vendorDocuments";
 import type { PayeeProfile } from "@/lib/payables/payeeProfiles";
 import { nextStage, isTerminalStage } from "@/lib/organization/onboardingStages";
+import { createClient } from "@/lib/supabase/client";
+import { validateVendorDocumentFile, describeVendorDocumentUploadError } from "@/lib/vendors/vendorDocumentUploadValidation";
 import {
   recordVendorCompanyProfileAction,
   startVendorOnboardingAction,
@@ -15,12 +17,20 @@ import {
   completeVendorOnboardingAction,
   updateVendorRequirementAction,
   deferVendorRequirementAction,
-  uploadVendorDocumentAction,
+  requestVendorDocumentUploadAuthorizationAction,
+  recordVendorDocumentUploadAction,
   reviewVendorDocumentAction,
   setVendorStatusAction,
   createVendorPayeeProfileAction,
   type ActionState,
 } from "./actions";
+
+// Same bucket-name-as-a-local-constant convention as TalentMediaUpload.tsx
+// — the client only needs the bucket's NAME (a public identifier, not a
+// secret) to call supabase.storage.from(...).uploadToSignedUrl(); the
+// server module that actually creates the bucket/signed URLs
+// (vendorDocuments.ts) is server-only and must never be imported here.
+const VENDOR_DOCUMENT_BUCKET = "vendor-documents";
 
 type PaymentInstructionRow = { id: string; method: string; verification_status: string; is_default: boolean };
 type JurisdictionOption = { id: string; name: string };
@@ -98,8 +108,8 @@ function IdentitySection({
       <form action={profileAction} className="flex flex-wrap items-end gap-2">
         <input type="hidden" name="vendorId" value={vendorId} />
         <label className="flex flex-col gap-1 font-sans text-caption text-ordift-ink-muted">
-          Company name
-          <input name="companyName" defaultValue={vendorProfile?.companyName ?? ""} required className="rounded-lg border border-black/15 px-2 py-1.5 font-sans text-body-small" />
+          Company / Trading name (optional — leave blank for an individual/sole provider)
+          <input name="companyName" defaultValue={vendorProfile?.companyName ?? ""} className="rounded-lg border border-black/15 px-2 py-1.5 font-sans text-body-small" />
         </label>
         <label className="flex flex-col gap-1 font-sans text-caption text-ordift-ink-muted">
           Relationship Jurisdiction
@@ -359,43 +369,152 @@ function OnboardingSection({
             )}
           </div>
 
-          {overrides.length > 0 && (
-            <div>
-              <h3 className="font-sans text-body-small font-semibold text-ordift-ink mb-2">Deferral / Override History</h3>
-              <ul className="space-y-1">
-                {overrides.map((o) => (
-                  <li key={o.id} className="font-sans text-caption text-ordift-ink-muted">
-                    {o.requirementKey}: {o.reason} — authorized {new Date(o.authorizedAt).toLocaleDateString()}
-                    {o.resolvedAt ? ` · resolved ${new Date(o.resolvedAt).toLocaleDateString()}` : " · still open"}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
+          {overrides.length > 0 &&
+            (() => {
+              // Vendor QA correction (2026-09-15) — this record's full
+              // override history spans BOTH pipelines it has ever been
+              // on (the 5 preserved employee-pipeline requirement rows
+              // plus their 1 override predate the correction to
+              // vendor_supplier). A requirementKey that appears in the
+              // CURRENT pipeline's own resolved requirements is a real,
+              // current Vendor obligation; anything else is historical
+              // activity from a prior pipeline, kept for its genuine
+              // audit value but never presented as a live Vendor
+              // requirement. Nothing here is deleted or reworded — this
+              // only sorts already-preserved rows into two clearly
+              // labeled groups.
+              const currentKeys = new Set(resolvedRequirements.map((r) => r.requirementKey));
+              const current = overrides.filter((o) => currentKeys.has(o.requirementKey));
+              const historical = overrides.filter((o) => !currentKeys.has(o.requirementKey));
+              return (
+                <div className="space-y-4">
+                  {current.length > 0 && (
+                    <div>
+                      <h3 className="font-sans text-body-small font-semibold text-ordift-ink mb-2">Current Vendor Deferral / Override History</h3>
+                      <ul className="space-y-1">
+                        {current.map((o) => (
+                          <li key={o.id} className="font-sans text-caption text-ordift-ink-muted">
+                            {o.requirementKey}: {o.reason} — authorized {new Date(o.authorizedAt).toLocaleDateString()}
+                            {o.resolvedAt ? ` · resolved ${new Date(o.resolvedAt).toLocaleDateString()}` : " · still open"}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                  {historical.length > 0 && (
+                    <div className="rounded-lg border border-black/10 bg-black/[0.02] p-3">
+                      <h3 className="font-sans text-body-small font-semibold text-ordift-ink-muted mb-1">
+                        Historical Activity — Previous Employee Pipeline
+                      </h3>
+                      <p className="font-sans text-caption text-ordift-ink-muted mb-2">
+                        Recorded before this record was corrected to the Vendor pipeline. Preserved as genuine history —
+                        not a current Vendor obligation.
+                      </p>
+                      <ul className="space-y-1">
+                        {historical.map((o) => (
+                          <li key={o.id} className="font-sans text-caption text-ordift-ink-muted italic">
+                            {o.requirementKey}: {o.reason} — authorized {new Date(o.authorizedAt).toLocaleDateString()}
+                            {o.resolvedAt ? ` · resolved ${new Date(o.resolvedAt).toLocaleDateString()}` : " · still open"}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
         </div>
       )}
     </section>
   );
 }
 
+// Vendor QA correction (2026-09-15) — direct-to-Storage signed-URL
+// upload, not a useActionState <form> like every other form here (same
+// reason as TalentMediaUpload.tsx: the actual file PUT happens in the
+// browser, between two server round-trips, which a single form action
+// can't express). File bytes never pass through this Next.js server or
+// this component's state beyond the browser's own upload.
 function UploadDocumentForm({ vendorId }: { vendorId: string }) {
-  const [state, formAction, pending] = useActionState<ActionState, FormData>(uploadVendorDocumentAction, null);
+  const [uploading, setUploading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const documentTypeRef = useRef<HTMLInputElement>(null);
+  const notesRef = useRef<HTMLInputElement>(null);
+
+  async function handleUpload(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setError(null);
+    setSuccess(false);
+
+    const file = fileInputRef.current?.files?.[0];
+    const documentType = documentTypeRef.current?.value.trim() ?? "";
+    const notes = notesRef.current?.value.trim() || null;
+    if (!file) {
+      setError("Choose a file to upload.");
+      return;
+    }
+    if (!documentType) {
+      setError("A document type is required.");
+      return;
+    }
+    const fileValidation = validateVendorDocumentFile(file);
+    if (!fileValidation.ok) {
+      setError(fileValidation.error);
+      return;
+    }
+
+    setUploading(true);
+
+    const authorization = await requestVendorDocumentUploadAuthorizationAction({ vendorId, originalFilename: file.name });
+    if (!authorization.ok) {
+      setError(authorization.error);
+      setUploading(false);
+      return;
+    }
+
+    const supabase = createClient();
+    const { error: uploadError } = await supabase.storage
+      .from(VENDOR_DOCUMENT_BUCKET)
+      .uploadToSignedUrl(authorization.path, authorization.token, file, { contentType: file.type });
+    if (uploadError) {
+      console.error("[vendors] upload to storage failed", { message: uploadError.message, status: uploadError.status, statusCode: uploadError.statusCode });
+      setError(describeVendorDocumentUploadError({ message: uploadError.message, status: uploadError.status, statusCode: uploadError.statusCode }));
+      setUploading(false);
+      return;
+    }
+
+    const recorded = await recordVendorDocumentUploadAction({ vendorId, storagePath: authorization.path, documentType, notes });
+    if (!recorded.ok) {
+      setError(recorded.error);
+      setUploading(false);
+      return;
+    }
+
+    setUploading(false);
+    setSuccess(true);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+    if (documentTypeRef.current) documentTypeRef.current.value = "";
+    if (notesRef.current) notesRef.current.value = "";
+  }
+
   return (
-    <form action={formAction} className="flex flex-wrap items-end gap-2">
-      <input type="hidden" name="vendorId" value={vendorId} />
+    <form onSubmit={handleUpload} className="flex flex-wrap items-end gap-2">
       <label className="flex flex-col gap-1 font-sans text-caption text-ordift-ink-muted">
         Document type
-        <input name="documentType" required placeholder="e.g. company_registration" className="rounded-lg border border-black/15 px-2 py-1.5 font-sans text-body-small" />
+        <input ref={documentTypeRef} name="documentType" required placeholder="e.g. company_registration" className="rounded-lg border border-black/15 px-2 py-1.5 font-sans text-body-small" />
       </label>
       <label className="flex flex-col gap-1 font-sans text-caption text-ordift-ink-muted">
         File
-        <input name="file" type="file" required className="font-sans text-body-small" />
+        <input ref={fileInputRef} name="file" type="file" required className="font-sans text-body-small" />
       </label>
-      <input name="notes" placeholder="Notes (optional)" className="rounded-lg border border-black/15 px-2 py-1.5 font-sans text-body-small" />
-      <button type="submit" disabled={pending} className="font-sans text-caption font-semibold px-3 py-2 rounded-md bg-ordift-navy-950 text-white disabled:opacity-50">
-        {pending ? "Uploading…" : "Upload"}
+      <input ref={notesRef} name="notes" placeholder="Notes (optional)" className="rounded-lg border border-black/15 px-2 py-1.5 font-sans text-body-small" />
+      <button type="submit" disabled={uploading} className="font-sans text-caption font-semibold px-3 py-2 rounded-md bg-ordift-navy-950 text-white disabled:opacity-50">
+        {uploading ? "Uploading…" : "Upload"}
       </button>
-      <FormError state={state} />
+      {success && <p className="font-sans text-caption text-green-700 w-full">Uploaded.</p>}
+      {error && <p className="font-sans text-caption text-red-700 w-full">{error}</p>}
     </form>
   );
 }

@@ -102,7 +102,18 @@ export async function getOwnVendorProfile(profileId: string): Promise<VendorProf
 
 export type UpsertVendorProfileParams = {
   profileId: string;
-  companyName: string;
+  // Vendor QA correction (2026-09-15) — deliberately OPTIONAL, matching
+  // the schema (vendor_profiles.company_name has no NOT NULL, migration
+  // 0001) and the approved OS-LGL-009 architecture, which explicitly
+  // covers both "registered businesses/entities" AND "legitimate
+  // individual/sole providers" — a real individual vendor genuinely may
+  // have no separate company/trading name, and this must never force
+  // one to be invented. Empty/whitespace-only is stored as null (a
+  // genuine absence), never coerced to an empty string. Where a display
+  // name is needed and this is null, callers fall back to the account's
+  // own full_name (already the established pattern on the vendor list/
+  // detail pages).
+  companyName?: string | null;
   // Optional — undefined leaves the existing value untouched (the
   // upsert's `on_conflict` merge below only sets the column when this
   // is explicitly provided); explicit null clears it back to genuinely
@@ -121,8 +132,7 @@ export async function upsertVendorProfile(params: UpsertVendorProfileParams): Pr
   if (!(await canManageOnboarding(params.actorUserId))) {
     return { ok: false, error: "Not authorized to record vendor profile details." };
   }
-  const companyName = params.companyName.trim();
-  if (!companyName) return { ok: false, error: "A company name is required." };
+  const companyName = params.companyName?.trim() || null;
 
   const admin = createAdminClient();
   const { data: existingProfile } = await admin.from("profiles").select("id").eq("id", params.profileId).maybeSingle();

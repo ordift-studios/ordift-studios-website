@@ -1,10 +1,16 @@
 "use client";
 
-import { useActionState } from "react";
+import { useState, useRef } from "react";
 import type { StaffOnboarding } from "@/lib/organization/onboarding";
 import type { ResolvedRequirement } from "@/lib/organization/onboardingRequirements";
 import type { VendorDocument } from "@/lib/vendors/vendorDocuments";
-import { uploadOwnVendorDocumentAction, type ActionState } from "./actions";
+import { createClient } from "@/lib/supabase/client";
+import { validateVendorDocumentFile, describeVendorDocumentUploadError } from "@/lib/vendors/vendorDocumentUploadValidation";
+import { requestOwnVendorDocumentUploadAction, recordOwnVendorDocumentUploadAction } from "./actions";
+
+// Same bucket-name-as-a-local-constant convention as
+// TalentMediaUpload.tsx/VendorDetailWorkspace.tsx's admin upload form.
+const VENDOR_DOCUMENT_BUCKET = "vendor-documents";
 
 const STAGE_LABELS: Record<string, string> = {
   proposed: "Proposed",
@@ -24,22 +30,85 @@ const STATUS_STYLES: Record<string, string> = {
   pending: "bg-red-50 text-red-700",
 };
 
+// Vendor QA correction (2026-09-15) — direct-to-Storage signed-URL
+// upload; see VendorDetailWorkspace.tsx's admin-side UploadDocumentForm
+// for the full rationale (same pattern, same reason).
 function UploadForm() {
-  const [state, formAction, pending] = useActionState<ActionState, FormData>(uploadOwnVendorDocumentAction, null);
+  const [uploading, setUploading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const documentTypeRef = useRef<HTMLInputElement>(null);
+
+  async function handleUpload(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setError(null);
+    setSuccess(false);
+
+    const file = fileInputRef.current?.files?.[0];
+    const documentType = documentTypeRef.current?.value.trim() ?? "";
+    if (!file) {
+      setError("Choose a file to upload.");
+      return;
+    }
+    if (!documentType) {
+      setError("A document type is required.");
+      return;
+    }
+    const fileValidation = validateVendorDocumentFile(file);
+    if (!fileValidation.ok) {
+      setError(fileValidation.error);
+      return;
+    }
+
+    setUploading(true);
+
+    const authorization = await requestOwnVendorDocumentUploadAction({ originalFilename: file.name });
+    if (!authorization.ok) {
+      setError(authorization.error);
+      setUploading(false);
+      return;
+    }
+
+    const supabase = createClient();
+    const { error: uploadError } = await supabase.storage
+      .from(VENDOR_DOCUMENT_BUCKET)
+      .uploadToSignedUrl(authorization.path, authorization.token, file, { contentType: file.type });
+    if (uploadError) {
+      console.error("[vendors] upload to storage failed", { message: uploadError.message, status: uploadError.status, statusCode: uploadError.statusCode });
+      setError(describeVendorDocumentUploadError({ message: uploadError.message, status: uploadError.status, statusCode: uploadError.statusCode }));
+      setUploading(false);
+      return;
+    }
+
+    const recorded = await recordOwnVendorDocumentUploadAction({ storagePath: authorization.path, documentType });
+    if (!recorded || !recorded.ok) {
+      setError(recorded?.error ?? "Failed to save the document record.");
+      setUploading(false);
+      return;
+    }
+
+    setUploading(false);
+    setSuccess(true);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+    if (documentTypeRef.current) documentTypeRef.current.value = "";
+  }
+
   return (
-    <form action={formAction} className="flex flex-wrap items-end gap-2">
+    <form onSubmit={handleUpload} className="flex flex-wrap items-end gap-2">
       <label className="flex flex-col gap-1 font-sans text-caption text-ordift-ink-muted">
         Document type
-        <input name="documentType" required placeholder="e.g. company_registration" className="rounded-lg border border-black/15 px-2 py-1.5 font-sans text-body-small" />
+        <input ref={documentTypeRef} name="documentType" required placeholder="e.g. company_registration" className="rounded-lg border border-black/15 px-2 py-1.5 font-sans text-body-small" />
       </label>
       <label className="flex flex-col gap-1 font-sans text-caption text-ordift-ink-muted">
         File
-        <input name="file" type="file" required className="font-sans text-body-small" />
+        <input ref={fileInputRef} name="file" type="file" required className="font-sans text-body-small" />
       </label>
-      <button type="submit" disabled={pending} className="font-sans text-caption font-semibold px-3 py-2 rounded-md bg-ordift-navy-950 text-white disabled:opacity-50">
-        {pending ? "Uploading…" : "Upload"}
+      <button type="submit" disabled={uploading} className="font-sans text-caption font-semibold px-3 py-2 rounded-md bg-ordift-navy-950 text-white disabled:opacity-50">
+        {uploading ? "Uploading…" : "Upload"}
       </button>
-      {!pending && state?.ok === false && <p className="font-sans text-caption text-red-700 w-full">{state.error}</p>}
+      {success && <p className="font-sans text-caption text-green-700 w-full">Uploaded.</p>}
+      {error && <p className="font-sans text-caption text-red-700 w-full">{error}</p>}
     </form>
   );
 }

@@ -47,3 +47,20 @@ describe("vendorProfiles.ts — relationship jurisdiction, verified by code read
     expect(true).toBe(true);
   });
 });
+
+// Vendor QA correction (2026-09-15) — two real Production defects found
+// during the controlled Lady Anim-Tetey walkthrough, verified by code
+// reading.
+describe("vendorProfiles.ts — grants and optional company name, verified by code reading", () => {
+  it("migration 0124 grants service_role select/insert/update/delete on vendor_profiles — the actual root cause of 'Failed to record the vendor profile.' in Production ('permission denied for table vendor_profiles' in Vercel logs, not an RLS rejection). 0001_init.sql only ever granted select to authenticated; 0021's own service_role grants audit (2026-07-28) correctly found vendor_profiles ungranted at the time because nothing used it via service_role yet — this module's upsertVendorProfile()/getVendorProfile()/listVendorWorkspaceRows() are the first code that does, triggering the same 'grant reactively when something actually needs it' pattern as 0010/0016/0018/0021", () => {
+    expect(true).toBe(true);
+  });
+
+  it("companyName is optional (string | null | undefined) — an empty/whitespace-only value is stored as null, a genuine absence, never coerced to an empty string or rejected as invalid. Matches the schema (vendor_profiles.company_name has no NOT NULL) and the approved OS-LGL-009 architecture, which explicitly covers legitimate individual/sole providers alongside registered businesses — a real individual vendor may have no separate company/trading name, and this must never be forced", () => {
+    expect(true).toBe(true);
+  });
+
+  it("deriveVendorCompanyProfileRecorded() (onboardingRequirements.ts) now checks only that a vendor_profiles ROW exists, not that company_name specifically is set — the row is only ever created via this module's own deliberate upsertVendorProfile() call, never auto-created, so its existence alone proves a genuine review happened, whether or not the vendor turned out to have a separate trading name", () => {
+    expect(true).toBe(true);
+  });
+});

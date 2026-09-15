@@ -5,7 +5,7 @@ import { getCurrentUser } from "@/lib/portal/roles";
 import { canManageOnboarding, startExternalWorkforceOnboarding, advanceOnboardingStage, completeStaffOnboarding, correctOnboardingRelationshipClassification } from "@/lib/organization/onboarding";
 import { updateOnboardingRequirement, authorizeOnboardingRequirementOverride, type RequirementStatus } from "@/lib/organization/onboardingRequirements";
 import { upsertVendorProfile, setVendorProfileStatus } from "@/lib/vendors/vendorProfiles";
-import { uploadVendorDocument, reviewVendorDocument } from "@/lib/vendors/vendorDocuments";
+import { requestVendorDocumentUploadAuthorization, recordVendorDocument, reviewVendorDocument } from "@/lib/vendors/vendorDocuments";
 import { createPayeeProfile } from "@/lib/payables/payeeProfiles";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { OnboardingPipeline } from "@/lib/organization/onboardingStages";
@@ -170,17 +170,39 @@ export async function deferVendorRequirementAction(_prev: ActionState, formData:
   }
 }
 
-export async function uploadVendorDocumentAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
+// Vendor QA correction (2026-09-15) — split into two thin actions
+// around the direct-to-Storage signed-URL flow (see vendorDocuments.ts's
+// header comment for why the original single-action upload silently
+// failed on any real file). requestVendorDocumentUploadAuthorizationAction
+// only issues a signed URL/token; the browser then PUTs the file bytes
+// straight to Supabase Storage; recordVendorDocumentUploadAction writes
+// the metadata row only after that upload has genuinely succeeded.
+export type RequestVendorDocumentUploadResult = { ok: true; signedUrl: string; token: string; path: string } | { ok: false; error: string };
+
+export async function requestVendorDocumentUploadAuthorizationAction(params: { vendorId: string; originalFilename: string }): Promise<RequestVendorDocumentUploadResult> {
   try {
     const user = await requireVendorAdmin();
-    const vendorId = String(formData.get("vendorId") ?? "");
-    const documentType = String(formData.get("documentType") ?? "");
-    const notes = String(formData.get("notes") ?? "").trim() || null;
-    const file = formData.get("file") as File | null;
-    if (!file || file.size === 0) return { ok: false, error: "Choose a file to upload." };
-    const result = await uploadVendorDocument({ vendorProfileId: vendorId, documentType, file, notes, actorUserId: user.id });
+    if (!params.vendorId || !params.originalFilename) return { ok: false, error: "Missing file." };
+    return requestVendorDocumentUploadAuthorization({ vendorProfileId: params.vendorId, originalFilename: params.originalFilename, actorUserId: user.id });
+  } catch {
+    return { ok: false, error: "You are not authorized to do this." };
+  }
+}
+
+export type RecordVendorDocumentUploadResult = { ok: true } | { ok: false; error: string };
+
+export async function recordVendorDocumentUploadAction(params: {
+  vendorId: string;
+  storagePath: string;
+  documentType: string;
+  notes?: string | null;
+}): Promise<RecordVendorDocumentUploadResult> {
+  try {
+    const user = await requireVendorAdmin();
+    if (!params.vendorId || !params.storagePath || !params.documentType) return { ok: false, error: "Missing upload details." };
+    const result = await recordVendorDocument({ vendorProfileId: params.vendorId, storagePath: params.storagePath, documentType: params.documentType, notes: params.notes ?? null, actorUserId: user.id });
     if (!result.ok) return { ok: false, error: result.error };
-    revalidateVendor(vendorId);
+    revalidateVendor(params.vendorId);
     return { ok: true };
   } catch {
     return { ok: false, error: "You are not authorized to do this." };

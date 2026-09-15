@@ -93,10 +93,53 @@ export async function listVendorDocuments(vendorProfileId: string, actorUserId: 
   return (data ?? []).map(mapRow);
 }
 
-export async function uploadVendorDocument(params: {
+// Vendor QA correction (2026-09-15) — replaces the original single-call,
+// FormData-through-a-Server-Action upload with the direct-to-Storage
+// signed-URL pattern this codebase already established and proved for
+// exactly this class of problem (talentMediaEngine.ts's
+// requestTalentMediaUploadAuthorization()/recordTalentMediaAsset(),
+// projectFiles.ts's requestProjectFileUploadAuthorization()/
+// recordUploadedProjectFile()). The original approach silently failed
+// in Production for any real test file: Next.js Server Actions have a
+// default 1MB body-size limit, and file bytes travelling through the
+// action's FormData counted against it — a rejection that happened
+// before uploadVendorDocument()'s own code ever ran, so it produced no
+// server-side error message and no vendor_documents row, exactly the
+// "silent failure with no feedback" symptom found during QA. File
+// bytes now go straight from the browser to Supabase Storage; no
+// service-role credential ever reaches the browser, and no file size
+// this bucket allows (10MB) can hit a Server Action body limit again.
+
+// Step 1: browser asks for permission before touching Storage at all.
+export async function requestVendorDocumentUploadAuthorization(params: {
   vendorProfileId: string;
+  originalFilename: string;
+  actorUserId: string;
+}): Promise<{ ok: true; signedUrl: string; token: string; path: string } | { ok: false; error: string }> {
+  if (!(await canAccessVendorDocuments(params.vendorProfileId, params.actorUserId))) {
+    return { ok: false, error: "Not authorized to upload a document for this vendor." };
+  }
+
+  const admin = createAdminClient();
+  const sanitizedFilename = params.originalFilename.replace(/[^a-zA-Z0-9._-]/g, "_").slice(-180);
+  const path = `${params.vendorProfileId}/${crypto.randomUUID()}-${sanitizedFilename}`;
+  const { data, error } = await admin.storage.from(DOCUMENT_BUCKET).createSignedUploadUrl(path);
+  if (error || !data) {
+    console.error("[vendors] failed to create vendor document signed upload url", error?.message);
+    return { ok: false, error: "Failed to authorize the upload." };
+  }
+  return { ok: true, signedUrl: data.signedUrl, token: data.token, path: data.path };
+}
+
+// Step 2: called by the browser only after the direct upload to
+// Storage has actually succeeded — writes the metadata row. Path-prefix
+// check mirrors recordTalentMediaAsset()'s identical guard: an
+// authorized caller could otherwise record a path under a DIFFERENT
+// vendor's prefix than the one being written against.
+export async function recordVendorDocument(params: {
+  vendorProfileId: string;
+  storagePath: string;
   documentType: string;
-  file: File;
   notes?: string | null;
   expiresAt?: string | null;
   supersedesId?: string | null;
@@ -107,22 +150,17 @@ export async function uploadVendorDocument(params: {
   }
   const documentType = params.documentType.trim();
   if (!documentType) return { ok: false, error: "A document type is required." };
-
-  const admin = createAdminClient();
-  const path = `${params.vendorProfileId}/${crypto.randomUUID()}-${params.file.name}`;
-  const buffer = Buffer.from(await params.file.arrayBuffer());
-  const { error: uploadError } = await admin.storage.from(DOCUMENT_BUCKET).upload(path, buffer, { contentType: params.file.type });
-  if (uploadError) {
-    console.error("[vendors] failed to upload vendor document", uploadError.message);
-    return { ok: false, error: "Failed to upload the file." };
+  if (!params.storagePath.startsWith(`${params.vendorProfileId}/`)) {
+    return { ok: false, error: "Storage path does not match this vendor." };
   }
 
+  const admin = createAdminClient();
   const { data, error } = await admin
     .from("vendor_documents")
     .insert({
       vendor_profile_id: params.vendorProfileId,
       document_type: documentType,
-      storage_path: path,
+      storage_path: params.storagePath,
       notes: params.notes ?? null,
       expires_at: params.expiresAt ?? null,
       supersedes_id: params.supersedesId ?? null,
