@@ -27,6 +27,16 @@ export interface EmploymentTermsFields {
   basicSalary: number | null;
   currency: string | null;
   allowances: Record<string, unknown> | null;
+  // Structured working-weekday set (Public Holiday / Working-Day
+  // Calendar foundation, 2026-09-15) — ISO weekday numbers, 1=Monday..
+  // 7=Sunday, e.g. [1,2,3,4,5] for Monday-Friday. Deliberately separate
+  // from the free-text workPattern above (which stays the source of
+  // truth for hours/breaks prose in the agreement) — this is the one
+  // new structured fact the calendar's Working-Day Resolver needs and
+  // free text can't safely answer. Never assumed Monday-Friday for
+  // anyone: null here means genuinely unconfigured, resolved as
+  // UNRESOLVED by the calendar, never guessed.
+  workingWeekdays: number[] | null;
 }
 
 export interface EmploymentTermsRow extends EmploymentTermsFields {
@@ -53,6 +63,7 @@ const EMPTY_FIELDS: EmploymentTermsFields = {
   basicSalary: null,
   currency: null,
   allowances: null,
+  workingWeekdays: null,
 };
 
 // International Employment Transitions (Phase B6 Step 2, 2026-09-15) —
@@ -130,6 +141,7 @@ function mapRow(r: {
   basic_salary: number | null;
   currency: string | null;
   allowances: Record<string, unknown> | null;
+  working_weekdays: number[] | null;
   source: string;
   recorded_at: string;
   recorded_by: string | null;
@@ -152,6 +164,7 @@ function mapRow(r: {
     basicSalary: r.basic_salary,
     currency: r.currency,
     allowances: r.allowances,
+    workingWeekdays: r.working_weekdays,
     source: r.source,
     recordedAt: r.recorded_at,
     recordedBy: r.recorded_by,
@@ -162,7 +175,7 @@ function mapRow(r: {
 }
 
 const SELECT =
-  "id, profile_id, effective_from, employing_entity_id, employment_jurisdiction_id, work_location, position_id, department_id, grade_id, manager_id, work_pattern, basic_salary, currency, allowances, source, recorded_at, recorded_by, transition_type, notes, enhanced_review_required";
+  "id, profile_id, effective_from, employing_entity_id, employment_jurisdiction_id, work_location, position_id, department_id, grade_id, manager_id, work_pattern, basic_salary, currency, allowances, working_weekdays, source, recorded_at, recorded_by, transition_type, notes, enhanced_review_required";
 
 export async function getCurrentEmploymentTerms(profileId: string): Promise<EmploymentTermsRow | null> {
   const admin = createAdminClient();
@@ -244,6 +257,7 @@ export async function recordEmploymentTermsSnapshot(params: {
       basic_salary: merged.basicSalary,
       currency: merged.currency,
       allowances: merged.allowances,
+      working_weekdays: merged.workingWeekdays,
       source: params.source,
       recorded_by: params.recordedBy,
     })
@@ -392,6 +406,7 @@ export async function recordEmploymentTransition(params: {
       basic_salary: merged.basicSalary,
       currency: merged.currency,
       allowances: merged.allowances,
+      working_weekdays: merged.workingWeekdays,
       source: `transition:${params.transitionType}`,
       recorded_by: params.actorUserId,
       transition_type: params.transitionType,

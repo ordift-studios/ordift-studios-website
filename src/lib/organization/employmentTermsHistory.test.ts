@@ -20,6 +20,7 @@ const FULL_SNAPSHOT: EmploymentTermsFields = {
   basicSalary: 5000,
   currency: "GHS",
   allowances: { transport: 200 },
+  workingWeekdays: [1, 2, 3, 4, 5],
 };
 
 describe("mergeEmploymentTermsFields — full-snapshot merge, no sparse deltas", () => {
@@ -37,6 +38,7 @@ describe("mergeEmploymentTermsFields — full-snapshot merge, no sparse deltas",
       basicSalary: null,
       currency: null,
       allowances: null,
+      workingWeekdays: null,
     });
   });
 

@@ -1,11 +1,13 @@
 "use client";
 
 import { useActionState } from "react";
+import Link from "next/link";
 import type { StaffOnboarding } from "@/lib/organization/onboarding";
 import type { ResolvedRequirement, RequirementStatus } from "@/lib/organization/onboardingRequirements";
 import type { ActivityLogEntry } from "@/lib/admin/activityLog";
 import type { RecruitmentRequisition } from "@/lib/recruitment/requisitions";
 import type { CurrentEmploymentContext } from "@/lib/organization/employmentTermsHistory";
+import type { EmploymentAgreementSummary } from "@/lib/legal/employeeAgreements";
 import {
   advanceOnboardingStageAction,
   completeOnboardingFromWorkspaceAction,
@@ -206,6 +208,7 @@ export function OnboardingWorkspace({
   activity,
   requisition,
   employmentContext,
+  agreementSummary,
   hiringManagerName,
   reconciliationCandidates,
 }: {
@@ -217,6 +220,7 @@ export function OnboardingWorkspace({
   activity: ActivityLogEntry[];
   requisition: RecruitmentRequisition | null;
   employmentContext: CurrentEmploymentContext;
+  agreementSummary: EmploymentAgreementSummary | null;
   hiringManagerName: string | null;
   reconciliationCandidates: RecruitmentRequisition[];
 }) {
@@ -339,6 +343,26 @@ export function OnboardingWorkspace({
 
       <section className="rounded-xl border border-black/10 bg-white p-6 space-y-3">
         <h2 className="font-serif font-medium text-body text-ordift-ink">Documents &amp; Agreements</h2>
+        {/* Employment Agreement generation status (2026-09-15) —
+            truthfully distinct from the "employment_agreement_executed"
+            requirement's own Pending/Satisfied pill above: a generated
+            DRAFT is not yet "satisfied" (that only derives true once
+            genuinely fully_executed/active/completed), but the Founder
+            still needs to know a draft exists and where to review it,
+            rather than only discovering it on the Full Profile page. */}
+        {agreementSummary && (
+          <div className="rounded-lg border border-black/10 bg-ordift-offwhite p-3 flex flex-wrap items-center justify-between gap-2">
+            <p className="font-sans text-body-small text-ordift-ink">
+              Employment Agreement ({agreementSummary.agreementReference}):{" "}
+              <span className={`px-2 py-0.5 rounded-full font-sans text-caption ${agreementSummary.isIssued ? "bg-blue-100 text-blue-800" : "bg-amber-100 text-amber-800"}`}>
+                {agreementSummary.isIssued ? agreementSummary.status.replace(/_/g, " ").toUpperCase() : "DRAFT AVAILABLE FOR FOUNDER REVIEW"}
+              </span>
+            </p>
+            <Link href={`/admin/organization/agreements/${agreementSummary.agreementId}`} className="font-sans text-caption font-semibold text-ordift-gold-pressed underline underline-offset-4">
+              View Draft / Review Agreement →
+            </Link>
+          </div>
+        )}
         {documentsAndAgreements.length === 0 ? (
           <p className="font-sans text-caption text-ordift-ink-muted">No document/agreement requirements defined for this pipeline yet.</p>
         ) : (

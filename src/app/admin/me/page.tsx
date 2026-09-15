@@ -68,6 +68,7 @@ export default async function MyWorkspacePage() {
           <h2 className="font-serif font-medium text-body text-ordift-ink">Quick Links</h2>
           <ul className="space-y-1">
             <li><Link href="/admin/me/leave" className="font-sans text-body-small text-ordift-gold-pressed underline underline-offset-4">My Leave →</Link></li>
+            <li><Link href="/admin/me/calendar" className="font-sans text-body-small text-ordift-gold-pressed underline underline-offset-4">My Calendar →</Link></li>
             <li><Link href="/admin/me/attendance" className="font-sans text-body-small text-ordift-gold-pressed underline underline-offset-4">My Attendance →</Link></li>
             <li><Link href="/admin/me/compensation" className="font-sans text-body-small text-ordift-gold-pressed underline underline-offset-4">My Compensation →</Link></li>
             <li><Link href="/admin/me/performance" className="font-sans text-body-small text-ordift-gold-pressed underline underline-offset-4">My Performance →</Link></li>

@@ -12,6 +12,7 @@ import { listPaymentInstructionsForProfile } from "@/lib/payments/payeeInstructi
 import { getActivityForEntity } from "@/lib/admin/activityLog";
 import { getRequisitionById, listApprovedRequisitionsForOnboarding } from "@/lib/recruitment/requisitions";
 import { resolveCurrentEmploymentContext } from "@/lib/organization/employmentTermsHistory";
+import { getEmployeeEmploymentAgreementSummary } from "@/lib/legal/employeeAgreements";
 import { OnboardingWorkspace } from "./OnboardingWorkspace";
 
 export const metadata: Metadata = {
@@ -86,6 +87,11 @@ export default async function OnboardingWorkspacePage({ params }: { params: Prom
   const terminal = isTerminalStage(onboarding.pipeline, onboarding.stage);
   const next = nextStage(onboarding.pipeline, onboarding.stage);
 
+  // Same summary function the Full Profile's Agreement Readiness
+  // section reads (2026-09-15) — one canonical read, not a second
+  // independent query of the agreements table.
+  const agreementSummary = await getEmployeeEmploymentAgreementSummary(onboarding.id);
+
   return (
     <div className="space-y-8">
       <div>
@@ -134,6 +140,7 @@ export default async function OnboardingWorkspacePage({ params }: { params: Prom
         activity={activity}
         requisition={requisition}
         employmentContext={employmentContext}
+        agreementSummary={agreementSummary}
         hiringManagerName={hiringManagerName}
         reconciliationCandidates={reconciliationCandidates}
       />

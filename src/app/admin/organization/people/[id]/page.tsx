@@ -29,7 +29,7 @@ import {
   WORKPLACE_INJURY_WORKFLOW_ORDER,
 } from "@/lib/organization/businessTravel";
 import { listPortfolioUseRequestsForProfile } from "@/lib/organization/portfolioUse";
-import { checkEmployeeAgreementReadiness } from "@/lib/legal/employeeAgreements";
+import { checkEmployeeAgreementReadiness, getEmployeeEmploymentAgreementSummary } from "@/lib/legal/employeeAgreements";
 import { getStaffOnboardingByProfileId } from "@/lib/organization/onboarding";
 import { listReferenceRequestsForProfile } from "@/lib/organization/employmentReferences";
 import { listControlledPolicyDocuments, listPolicyAcknowledgementsForProfile } from "@/lib/organization/policyAcknowledgements";
@@ -175,6 +175,7 @@ export default async function PersonDetailPage({ params }: { params: Promise<{ i
 
   const onboarding = await getStaffOnboardingByProfileId(id);
   const agreementReadiness = onboarding ? await checkEmployeeAgreementReadiness(onboarding.id) : null;
+  const agreementSummary = onboarding ? await getEmployeeEmploymentAgreementSummary(onboarding.id) : null;
 
   const referenceRequests = await listReferenceRequestsForProfile(id);
 
@@ -279,6 +280,11 @@ export default async function PersonDetailPage({ params }: { params: Promise<{ i
                 : person.positionId
                   ? `No internal reporting manager — top of the reporting hierarchy (${person.positionName ?? "this Position"})`
                   : "Reports to: —"}
+          </p>
+          <p className="font-sans text-body-small text-ordift-ink-muted">
+            <Link href={`/admin/organization/calendar/${id}`} className="text-ordift-gold-pressed underline underline-offset-4">
+              View Calendar →
+            </Link>
           </p>
         </div>
 
@@ -1140,7 +1146,19 @@ export default async function PersonDetailPage({ params }: { params: Promise<{ i
                 </li>
               ))}
             </ul>
-            {agreementReadiness.ready ? (
+            {agreementSummary ? (
+              <div className="rounded-lg border border-black/10 bg-ordift-offwhite p-3 flex flex-wrap items-center justify-between gap-2">
+                <p className="font-sans text-body-small text-ordift-ink">
+                  {agreementSummary.agreementReference} —{" "}
+                  <span className={`px-2 py-0.5 rounded-full font-sans text-caption ${agreementSummary.isIssued ? "bg-blue-100 text-blue-800" : "bg-amber-100 text-amber-800"}`}>
+                    {agreementSummary.isIssued ? agreementSummary.status.replace(/_/g, " ").toUpperCase() : "DRAFT — AVAILABLE FOR FOUNDER REVIEW"}
+                  </span>
+                </p>
+                <Link href={`/admin/organization/agreements/${agreementSummary.agreementId}`} className="font-sans text-caption font-semibold text-ordift-gold-pressed underline underline-offset-4">
+                  View Draft / Review Agreement →
+                </Link>
+              </div>
+            ) : agreementReadiness.ready ? (
               <form action={createEmployeeEmploymentAgreementDraftAction}>
                 <input type="hidden" name="profileId" value={id} />
                 <input type="hidden" name="onboardingId" value={onboarding.id} />

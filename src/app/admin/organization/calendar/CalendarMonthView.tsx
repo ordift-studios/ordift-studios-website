@@ -1,0 +1,111 @@
+import Link from "next/link";
+import type { DateResolution } from "@/lib/organization/workingDayCalendar";
+
+const CLASSIFICATION_STYLES: Record<DateResolution["classification"], string> = {
+  WORKING_DAY: "bg-white text-ordift-ink border-black/10",
+  SHIFT_WORKING_DAY: "bg-white text-ordift-ink border-black/10",
+  REST_DAY: "bg-ordift-offwhite text-ordift-ink-muted border-black/5",
+  PUBLIC_HOLIDAY: "bg-amber-50 text-amber-900 border-amber-200",
+  COMPANY_CLOSURE: "bg-blue-50 text-blue-900 border-blue-200",
+  SPECIAL_SCHEDULE: "bg-purple-50 text-purple-900 border-purple-200",
+  UNRESOLVED: "bg-red-50 text-red-700 border-red-200",
+};
+
+const CLASSIFICATION_LABELS: Record<DateResolution["classification"], string> = {
+  WORKING_DAY: "Working day",
+  SHIFT_WORKING_DAY: "Scheduled shift",
+  REST_DAY: "Rest day",
+  PUBLIC_HOLIDAY: "Public holiday",
+  COMPANY_CLOSURE: "Company closure",
+  SPECIAL_SCHEDULE: "Special schedule",
+  UNRESOLVED: "Unconfigured",
+};
+
+// Read-only month grid (Workforce/Employee Self-Service Phase,
+// 2026-09-15) — shared by the self-service (/admin/me/calendar) and
+// admin (/admin/organization/calendar/[profileId]) views so there is
+// exactly one rendering of "what does a day in this calendar look
+// like", never two independently-drifting UIs. Employee editing is
+// explicitly out of scope here (Section 19/23 — READ-ONLY from the
+// ordinary employee perspective); this component has no form, no
+// action, nothing but links to navigate months.
+export function CalendarMonthView({
+  year,
+  month,
+  resolutions,
+  basePath,
+  employeeName,
+}: {
+  year: number;
+  month: number; // 1-12
+  resolutions: DateResolution[];
+  basePath: string;
+  employeeName: string | null;
+}) {
+  const byDate = new Map(resolutions.map((r) => [r.date, r]));
+  const firstOfMonth = new Date(Date.UTC(year, month - 1, 1));
+  const daysInMonth = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  const leadingBlanks = firstOfMonth.getUTCDay() === 0 ? 6 : firstOfMonth.getUTCDay() - 1; // week starts Monday
+
+  const cells: (DateResolution | null)[] = Array.from({ length: leadingBlanks }, () => null);
+  for (let day = 1; day <= daysInMonth; day++) {
+    const dateStr = `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+    cells.push(byDate.get(dateStr) ?? null);
+  }
+  while (cells.length % 7 !== 0) cells.push(null);
+
+  const prevMonth = month === 1 ? { year: year - 1, month: 12 } : { year, month: month - 1 };
+  const nextMonth = month === 12 ? { year: year + 1, month: 1 } : { year, month: month + 1 };
+  const monthLabel = firstOfMonth.toLocaleDateString(undefined, { month: "long", year: "numeric", timeZone: "UTC" });
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <h2 className="font-serif font-medium text-body text-ordift-ink">
+          {employeeName ? `${employeeName} — ${monthLabel}` : monthLabel}
+        </h2>
+        <div className="flex items-center gap-3">
+          <Link href={`${basePath}?year=${prevMonth.year}&month=${prevMonth.month}`} className="font-sans text-body-small text-ordift-gold-pressed underline underline-offset-4">
+            ← Previous
+          </Link>
+          <Link href={`${basePath}?year=${nextMonth.year}&month=${nextMonth.month}`} className="font-sans text-body-small text-ordift-gold-pressed underline underline-offset-4">
+            Next →
+          </Link>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-7 gap-1 text-center">
+        {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((d) => (
+          <div key={d} className="font-sans text-caption font-semibold text-ordift-ink-muted uppercase tracking-wide py-1">
+            {d}
+          </div>
+        ))}
+        {cells.map((resolution, i) =>
+          resolution ? (
+            <div
+              key={resolution.date}
+              title={resolution.holidayName ?? CLASSIFICATION_LABELS[resolution.classification]}
+              className={`rounded-lg border p-1.5 sm:p-2 min-h-[3.5rem] sm:min-h-[4.5rem] flex flex-col items-start justify-between ${CLASSIFICATION_STYLES[resolution.classification]}`}
+            >
+              <span className="font-sans text-caption font-semibold">{Number(resolution.date.slice(-2))}</span>
+              <span className="font-sans text-[0.65rem] sm:text-caption leading-tight">
+                {resolution.holidayName ?? CLASSIFICATION_LABELS[resolution.classification]}
+              </span>
+            </div>
+          ) : (
+            <div key={`blank-${i}`} className="min-h-[3.5rem] sm:min-h-[4.5rem]" />
+          )
+        )}
+      </div>
+
+      <div className="flex flex-wrap gap-3 pt-2 border-t border-black/5">
+        {(Object.keys(CLASSIFICATION_LABELS) as DateResolution["classification"][]).map((c) => (
+          <span key={c} className="flex items-center gap-1.5 font-sans text-caption text-ordift-ink-muted">
+            <span className={`inline-block w-3 h-3 rounded border ${CLASSIFICATION_STYLES[c]}`} />
+            {CLASSIFICATION_LABELS[c]}
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}

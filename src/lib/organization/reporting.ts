@@ -19,31 +19,38 @@ import { createAdminClient } from "@/lib/supabase/admin";
 // occupant, simply resolves to null, exactly matching "Empty Positions
 // must remain valid" and "an upstream occupant leaves/deactivates".
 
-export type ResolvedManager = { id: string; fullName: string | null } | null;
+export type ResolvedManager = { id: string; fullName: string | null; reportingPositionName: string | null } | null;
 
-// Single-person lookup — used by getProfileCard() (self-view).
+// Single-person lookup — used by getProfileCard() (self-view) and by
+// the Employment Agreement's "Reporting to" variable resolution
+// (employeeAgreements.ts, 2026-09-15), which needs the STRUCTURAL
+// reporting position's name even when nobody occupies it — the master
+// template's own "Reporting to [ROLE / NAME]" wording explicitly
+// accepts a role, so this is never a fabricated person, only ever a
+// real Position or a real current occupant.
 export async function resolveCurrentManager(positionId: string | null): Promise<ResolvedManager> {
   if (!positionId) return null;
   const admin = createAdminClient();
 
   const { data: position } = await admin
     .from("positions")
-    .select("reports_to_position_id")
+    .select("reports_to_position_id, reports_to:positions!positions_reports_to_position_id_fkey(name)")
     .eq("id", positionId)
     .maybeSingle();
   if (!position?.reports_to_position_id) return null;
+  const reportingPositionName = (position.reports_to as unknown as { name: string } | null)?.name ?? null;
 
   const { data: occupant } = await admin
     .from("staff_details")
     .select("id")
     .eq("position_id", position.reports_to_position_id)
     .maybeSingle();
-  if (!occupant) return null;
+  if (!occupant) return { id: "", fullName: null, reportingPositionName };
 
   const { data: profile } = await admin.from("profiles").select("full_name, access_status").eq("id", occupant.id).maybeSingle();
-  if (!profile || profile.access_status !== "active") return null;
+  if (!profile || profile.access_status !== "active") return { id: "", fullName: null, reportingPositionName };
 
-  return { id: occupant.id, fullName: profile.full_name };
+  return { id: occupant.id, fullName: profile.full_name, reportingPositionName };
 }
 
 export type PositionReportingRow = { id: string; name: string; reportsToPositionId: string | null };

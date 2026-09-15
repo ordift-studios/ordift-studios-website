@@ -1,8 +1,12 @@
+import { createHash } from "node:crypto";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createDraftAgreement, attachAgreementSnapshot, addAgreementParty } from "@/lib/legal/agreementEngine";
+import { isIssuedAgreementStatus, type AgreementLifecycleStatus } from "@/lib/legal/agreementLifecycle";
+import { authorizeWithSuperAdminOverride, GOVERNANCE_CAPABILITIES } from "@/lib/organization/authority";
 import {
   EMPLOYMENT_AGREEMENT_VARIABLES,
   OS_LGL_007_CANONICAL_CODE,
+  OS_LGL_007_FULL_TEXT,
   type EmploymentAgreementVariableKey,
 } from "@/lib/legal/documents/os-lgl-007-employee-employment-agreement";
 import {
@@ -13,6 +17,7 @@ import { classifyEmploymentAgreementVariable } from "@/lib/legal/employeeAgreeme
 import { mapEngagementTypeSlugToWorkforceRelationship } from "@/lib/compliance/workforceMappings";
 import { recordRequirementEvaluation } from "@/lib/compliance/requirementAudit";
 import { getCurrentEmploymentTerms, resolveCurrentEmploymentContext } from "@/lib/organization/employmentTermsHistory";
+import { resolveCurrentManager } from "@/lib/organization/reporting";
 
 // Employee Employment Agreement — onboarding integration (E.5 Stage
 // 3B-3C; requirement-engine wiring added COMP-SYS-1 Phase B3 Step 2,
@@ -25,6 +30,33 @@ import { getCurrentEmploymentTerms, resolveCurrentEmploymentContext } from "@/li
 // agreement creation entirely — zero writes.
 
 export type EmploymentAgreementVariables = Partial<Record<EmploymentAgreementVariableKey, string>>;
+
+// Renders employment_terms_history.allowances (a structured
+// { key: { label, amount, currency, frequency } } object — see
+// migration 0111) into the plain text the OS-LGL-007 master's
+// "Allowances [DETAILS / NONE]" Schedule A line expects. Each
+// allowance is its own line, kept strictly separate from Basic Salary
+// — never summed into one figure here, and never labeled tax-free or
+// otherwise given an invented statutory treatment; that determination
+// remains payroll/tax policy, outside this document. Returns undefined
+// (not "NONE") when nothing is recorded, so the OPTIONAL classification
+// path decides what that means, exactly like every other unrecorded
+// optional field.
+function formatAllowancesVariable(allowances: Record<string, unknown> | null): string | undefined {
+  if (!allowances || Object.keys(allowances).length === 0) return undefined;
+  const lines = Object.values(allowances)
+    .map((entry) => {
+      if (!entry || typeof entry !== "object") return null;
+      const { label, amount, currency, frequency } = entry as { label?: unknown; amount?: unknown; currency?: unknown; frequency?: unknown };
+      if (typeof label !== "string" || typeof amount !== "number") return null;
+      const formattedAmount = amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      const currencyPart = typeof currency === "string" ? `${currency} ` : "";
+      const frequencyPart = typeof frequency === "string" ? ` per ${frequency}` : "";
+      return `${label}: ${currencyPart}${formattedAmount}${frequencyPart}`;
+    })
+    .filter((line): line is string => line !== null);
+  return lines.length > 0 ? lines.join("; ") : undefined;
+}
 
 export async function resolveEmployeeAgreementVariables(
   onboardingId: string
@@ -85,22 +117,31 @@ export async function resolveEmployeeAgreementVariables(
       : null,
   });
 
-  const [position, department, grade, engagementType, manager] = await Promise.all([
+  const [position, department, grade, engagementType, structuralManager] = await Promise.all([
     requisition?.requested_position_id ? admin.from("positions").select("name").eq("id", requisition.requested_position_id).maybeSingle() : null,
     requisition?.department_id ? admin.from("departments").select("name").eq("id", requisition.department_id).maybeSingle() : null,
     requisition?.grade_id ? admin.from("grades").select("name").eq("id", requisition.grade_id).maybeSingle() : null,
     requisition?.engagement_type_id ? admin.from("engagement_types").select("name, slug").eq("id", requisition.engagement_type_id).maybeSingle() : null,
-    requisition?.hiring_manager_id ? admin.from("profiles").select("full_name").eq("id", requisition.hiring_manager_id).maybeSingle() : null,
+    // Reporting to (2026-09-15) — resolved from the live Position
+    // reporting chain, not the requisition's own historical
+    // hiring_manager_id (a different fact: who oversaw THIS hire, not
+    // who this person currently reports to). resolveCurrentManager()
+    // returns a real current occupant's name when one exists, and
+    // otherwise the real structural Position's name — never a
+    // fabricated person merely because the position is vacant.
+    requisition?.requested_position_id ? resolveCurrentManager(requisition.requested_position_id) : null,
   ]);
 
-  // probation, allowances, annualLeave, notice: optional, no source yet.
+  // probation, annualLeave, notice: optional, no source yet.
   const values: EmploymentAgreementVariables = {
     employerLegalName: context.employingEntityName ?? undefined,
     employeeLegalName: profile?.full_name ?? undefined,
     jobTitle: position?.data?.name ?? undefined,
     organizationalGrade: grade?.data?.name ?? undefined,
     department: department?.data?.name ?? undefined,
-    reportingTo: manager?.data?.full_name ?? undefined,
+    reportingTo: structuralManager?.fullName
+      ? `${structuralManager.reportingPositionName ?? "Reporting Position"} (${structuralManager.fullName})`
+      : (structuralManager?.reportingPositionName ? `${structuralManager.reportingPositionName} (position currently unoccupied)` : undefined),
     startDate: context.startDate ?? undefined,
     employmentType: engagementType?.data?.name ?? undefined,
     primaryWorkLocation: context.workLocation ?? undefined,
@@ -108,6 +149,7 @@ export async function resolveEmployeeAgreementVariables(
     basicWageSalary: currentTerms?.basicSalary
       ? `${currentTerms.currency ?? ""} ${currentTerms.basicSalary.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`.trim()
       : undefined,
+    allowances: formatAllowancesVariable(currentTerms?.allowances ?? null),
     jurisdiction: context.employmentJurisdictionName ?? undefined,
   };
 
@@ -356,4 +398,114 @@ export async function deriveEmploymentAgreementExecuted(profileId: string): Prom
     .limit(1)
     .maybeSingle();
   return data ? "satisfied" : null;
+}
+
+export interface EmploymentAgreementSummary {
+  agreementId: string;
+  agreementReference: string;
+  status: AgreementLifecycleStatus;
+  // Truthful distinction the Documents-stage UI and Full Profile both
+  // need (2026-09-15): a "draft" is available for Founder review only
+  // — never issued, sent, signed, or executed. isIssuedAgreementStatus()
+  // is the same canonical lifecycle function agreementLifecycle.ts
+  // already defines "issued" with; this never re-derives that meaning.
+  isIssued: boolean;
+  createdAt: string;
+}
+
+// Lightweight existence/status check — used by both the Documents-stage
+// summary (Onboarding Workspace) and the Full Profile's Agreement
+// Readiness section, so neither maintains its own independent read of
+// "does a draft already exist" (2026-09-15).
+export async function getEmployeeEmploymentAgreementSummary(onboardingId: string): Promise<EmploymentAgreementSummary | null> {
+  const admin = createAdminClient();
+  const { data } = await admin
+    .from("agreements")
+    .select("id, agreement_reference, status, created_at")
+    .eq("primary_context_type", "staff_onboarding")
+    .eq("primary_context_reference", onboardingId)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (!data) return null;
+  const status = data.status as AgreementLifecycleStatus;
+  return {
+    agreementId: data.id,
+    agreementReference: data.agreement_reference,
+    status,
+    isIssued: isIssuedAgreementStatus(status),
+    createdAt: data.created_at,
+  };
+}
+
+export interface EmploymentAgreementReviewDetail {
+  agreementId: string;
+  agreementReference: string;
+  status: AgreementLifecycleStatus;
+  isIssued: boolean;
+  createdAt: string;
+  masterVersion: string;
+  masterFullText: string;
+  masterTextSha256: string;
+  employeeName: string | null;
+  snapshot: { key: EmploymentAgreementVariableKey; label: string; value: string | null }[];
+  snapshotRecordedAt: string | null;
+}
+
+// Founder-review-only detail (2026-09-15): renders the REAL, unmodified
+// OS-LGL-007 master text (imported verbatim from
+// os-lgl-007-employee-employment-agreement.ts — never reconstructed,
+// never altered) alongside the actual frozen snapshot values this
+// specific agreement was created with. Deliberately does NOT attempt
+// to splice values into the master's prose — Schedule A's placeholders
+// are shown as their own clearly-labeled table instead, so the
+// counsel-approved wording is never at risk of being corrupted by
+// string substitution. Same authorization as every other real write
+// on this agreement (GOVERNANCE_CAPABILITIES.contractAdminister via
+// Super Admin override) — viewing a draft is still a governance action
+// on a real legal record, not a public read.
+export async function getEmployeeEmploymentAgreementForReview(
+  agreementId: string,
+  actorUserId: string
+): Promise<{ ok: true; detail: EmploymentAgreementReviewDetail } | { ok: false; error: string }> {
+  const auth = await authorizeWithSuperAdminOverride(actorUserId, GOVERNANCE_CAPABILITIES.contractAdminister);
+  if (!auth.ok) return { ok: false, error: "Not authorized to review this agreement." };
+
+  const admin = createAdminClient();
+  const { data: agreement } = await admin
+    .from("agreements")
+    .select("id, agreement_reference, status, created_at, master_version_id")
+    .eq("id", agreementId)
+    .maybeSingle();
+  if (!agreement) return { ok: false, error: "Agreement not found." };
+
+  const [{ data: version }, { data: employeeParty }, { data: snapshotRow }] = await Promise.all([
+    admin.from("legal_document_versions").select("version").eq("id", agreement.master_version_id).maybeSingle(),
+    admin.from("agreement_parties").select("profile_id").eq("agreement_id", agreementId).eq("party_role", "employee").maybeSingle(),
+    admin.from("agreement_snapshots").select("snapshot_data, created_at").eq("agreement_id", agreementId).order("created_at", { ascending: false }).limit(1).maybeSingle(),
+  ]);
+
+  const employeeProfile = employeeParty?.profile_id
+    ? (await admin.from("profiles").select("full_name").eq("id", employeeParty.profile_id).maybeSingle()).data
+    : null;
+
+  const snapshotData = (snapshotRow?.snapshot_data ?? {}) as EmploymentAgreementVariables;
+  const status = agreement.status as AgreementLifecycleStatus;
+
+  return {
+    ok: true,
+    detail: {
+      agreementId: agreement.id,
+      agreementReference: agreement.agreement_reference,
+      status,
+      isIssued: isIssuedAgreementStatus(status),
+      createdAt: agreement.created_at,
+      masterVersion: version?.version ?? "unknown",
+      masterFullText: OS_LGL_007_FULL_TEXT,
+      masterTextSha256: createHash("sha256").update(OS_LGL_007_FULL_TEXT, "utf8").digest("hex"),
+      employeeName: employeeProfile?.full_name ?? null,
+      snapshot: EMPLOYMENT_AGREEMENT_VARIABLES.map((v) => ({ key: v.key, label: v.label, value: snapshotData[v.key] ?? null })),
+      snapshotRecordedAt: snapshotRow?.created_at ?? null,
+    },
+  };
 }
