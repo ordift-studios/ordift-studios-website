@@ -3,6 +3,8 @@ import { redirect, notFound } from "next/navigation";
 import Link from "next/link";
 import { getCurrentUser, isSuperAdmin } from "@/lib/portal/roles";
 import { getEmployeeEmploymentAgreementForReview } from "@/lib/legal/employeeAgreements";
+import { isExceptionalAgreementStatus, isFullyExecuted } from "@/lib/legal/agreementLifecycle";
+import { AgreementLifecycleActions } from "./AgreementLifecycleActions";
 
 export const metadata: Metadata = {
   title: "Agreement Review — Ordift Studios Admin",
@@ -57,9 +59,22 @@ export default async function AgreementReviewPage({ params }: { params: Promise<
           <p className="font-sans text-body-small text-ordift-ink-muted">
             Generation itself is not Founder approval. Nothing has been issued to the employee, sent for signature,
             marked executed, or used to advance onboarding or acknowledge policies. Return to the Full Profile to
-            regenerate (via a fresh Create Draft) if a correction is needed — later phases will add explicit
-            approve/issue actions.
+            regenerate (via a fresh Create Draft) if a correction is needed.
           </p>
+        </section>
+      )}
+
+      {/* Founder-facing lifecycle bridge (2026-09-15) — the canonical
+          agreement lifecycle (agreementLifecycle.ts) already existed;
+          it was simply never exposed to any UI for this agreement
+          type. Only shown for the statuses this page manages
+          (draft/internal_review/approved_for_issue) — an exceptional
+          status (cancelled/declined/expired/superseded/terminated) or
+          a fully-executed-and-beyond status needs no action here. */}
+      {!isExceptionalAgreementStatus(detail.status) && !isFullyExecuted(detail.status) && (
+        <section className="rounded-xl border border-black/10 bg-white p-6 space-y-3">
+          <h2 className="font-serif font-medium text-body text-ordift-ink">Lifecycle</h2>
+          <AgreementLifecycleActions agreementId={detail.agreementId} status={detail.status} />
         </section>
       )}
 
