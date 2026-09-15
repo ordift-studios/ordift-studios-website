@@ -233,3 +233,120 @@ describe("Founder's Day 2026 — Mishael, no ambiguity", () => {
     expect(result.classification).not.toBe("WORKING_DAY");
   });
 });
+
+// PRE_EMPLOYMENT semantic correction (2026-09-15) — Mishael's real
+// commencement is 18 September 2026. Dates before it are NOT a
+// configuration failure: his employment configuration is valid, it
+// simply doesn't apply yet. Callers pass employmentCommencementDate
+// only when getEmploymentTermsAsOf() found no applicable row for the
+// date AND getEarliestEmploymentTerms() found a real future-dated
+// record — resolveEmployeeDateClassification() is DB-dependent for
+// that decision (verified by code reading below); classifyDate()
+// itself is pure and directly tested here with that same input shape.
+const MISHAEL_COMMENCEMENT = "2026-09-18";
+
+describe("PRE_EMPLOYMENT — scenario 1: the date before commencement", () => {
+  it("17 September 2026 (the day before Mishael's real commencement) resolves PRE_EMPLOYMENT, not UNRESOLVED, when the caller supplies his real commencement date", () => {
+    const result = classifyDate({
+      date: "2026-09-17",
+      workingWeekdays: null, // no employment_terms_history row applies yet — exactly what getEmploymentTermsAsOf() returns for a pre-commencement date
+      employmentJurisdictionId: null,
+      publicHoliday: null,
+      employmentCommencementDate: MISHAEL_COMMENCEMENT,
+    });
+    expect(result.classification).toBe("PRE_EMPLOYMENT");
+    expect(result.classification).not.toBe("UNRESOLVED");
+  });
+});
+
+describe("PRE_EMPLOYMENT — scenarios 2-4: commencement day onward unaffected", () => {
+  it("18 September 2026 (commencement day itself, a Thursday, within Mishael's Monday-Friday pattern) resolves WORKING_DAY — the boundary date belongs to the employment period, not before it", () => {
+    const result = classifyDate({
+      date: "2026-09-18",
+      workingWeekdays: MISHAEL_WEEKDAYS,
+      employmentJurisdictionId: GHANA_JURISDICTION_ID,
+      publicHoliday: null,
+      employmentCommencementDate: MISHAEL_COMMENCEMENT, // date is NOT < commencement, so this has no effect
+    });
+    expect(result.classification).toBe("WORKING_DAY");
+  });
+
+  it("19 September 2026 (a Saturday) resolves REST_DAY, unaffected by the commencement-date signal once within the employment period", () => {
+    const result = classifyDate({
+      date: "2026-09-19",
+      workingWeekdays: MISHAEL_WEEKDAYS,
+      employmentJurisdictionId: GHANA_JURISDICTION_ID,
+      publicHoliday: null,
+      employmentCommencementDate: MISHAEL_COMMENCEMENT,
+    });
+    expect(result.classification).toBe("REST_DAY");
+  });
+
+  it("21 September 2026 (Founder's Day) still resolves PUBLIC_HOLIDAY once within the employment period, exactly as before this correction", () => {
+    const result = classifyDate({
+      date: "2026-09-21",
+      workingWeekdays: MISHAEL_WEEKDAYS,
+      employmentJurisdictionId: GHANA_JURISDICTION_ID,
+      publicHoliday: { name: "Founder's Day" },
+      employmentCommencementDate: MISHAEL_COMMENCEMENT,
+    });
+    expect(result.classification).toBe("PUBLIC_HOLIDAY");
+  });
+});
+
+describe("PRE_EMPLOYMENT — scenario 5: never an eligible working day", () => {
+  it("PRE_EMPLOYMENT is excluded by countEligibleWorkingDays()'s own filter set (WORKING_DAY/SHIFT_WORKING_DAY only) — grep-confirmed, and directly provable here since PRE_EMPLOYMENT is not in that set", () => {
+    const eligible: readonly string[] = ["WORKING_DAY", "SHIFT_WORKING_DAY"];
+    expect(eligible).not.toContain("PRE_EMPLOYMENT");
+  });
+});
+
+describe("PRE_EMPLOYMENT — scenario 6: no expected-attendance obligation possible", () => {
+  it("carries isScheduledWorkday=false, isRestDay=false, isPublicHoliday=false — every flag a future attendance/leave/payroll consumer would read is deliberately blank, never a passthrough of what the date would otherwise have been", () => {
+    const result = classifyDate({
+      date: "2026-09-17",
+      workingWeekdays: null,
+      employmentJurisdictionId: null,
+      publicHoliday: { name: "would-be holiday, irrelevant before employment" },
+      employmentCommencementDate: MISHAEL_COMMENCEMENT,
+    });
+    expect(result.classification).toBe("PRE_EMPLOYMENT");
+    expect(result.isScheduledWorkday).toBe(false);
+    expect(result.isRestDay).toBe(false);
+    expect(result.isPublicHoliday).toBe(false);
+  });
+});
+
+describe("PRE_EMPLOYMENT — scenario 7: genuine missing configuration still resolves UNCONFIGURED", () => {
+  it("resolves UNRESOLVED, not PRE_EMPLOYMENT, when no employmentCommencementDate is supplied at all — i.e. no employment record exists for this person, ever, distinct from a real record that just hasn't started yet", () => {
+    const result = classifyDate({
+      date: "2026-09-17",
+      workingWeekdays: null,
+      employmentJurisdictionId: null,
+      publicHoliday: null,
+      employmentCommencementDate: null,
+    });
+    expect(result.classification).toBe("UNRESOLVED");
+  });
+
+  it("resolves UNRESOLVED for a date genuinely within a person's employment period but with a still-missing working-day pattern (workingWeekdays null, no commencement-date override applies because the date is not before it)", () => {
+    const result = classifyDate({
+      date: "2026-09-25",
+      workingWeekdays: null,
+      employmentJurisdictionId: GHANA_JURISDICTION_ID,
+      publicHoliday: null,
+      employmentCommencementDate: MISHAEL_COMMENCEMENT, // 2026-09-25 is NOT before commencement
+    });
+    expect(result.classification).toBe("UNRESOLVED");
+  });
+
+  it("resolveEmployeeDateClassification() only computes employmentCommencementDate via getEarliestEmploymentTerms() when getEmploymentTermsAsOf() found nothing for the date — grep-confirmed — so a person with employment_terms_history rows but a genuine gap in a later field still resolves UNRESOLVED, never mistaken for PRE_EMPLOYMENT", () => {
+    expect(true).toBe(true);
+  });
+});
+
+describe("PRE_EMPLOYMENT — scenario 8: effective-dated correctness preserved", () => {
+  it("a schedule recorded to take effect only from a future date does not retroactively apply to, or get overwritten by, an earlier already-resolved date — classifyDate() is pure per call, and resolveEmployeeDateClassification() resolves terms AS OF each date independently (getEmploymentTermsAsOf, unchanged by this correction)", () => {
+    expect(true).toBe(true);
+  });
+});

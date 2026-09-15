@@ -204,6 +204,28 @@ export async function getEmploymentTermsAsOf(profileId: string, asOfDate: string
   return data ? mapRow(data) : null;
 }
 
+// The EARLIEST recorded snapshot for a profile — i.e. their real
+// employment commencement date, distinct from getEmploymentTermsAsOf()
+// (which answers "what applied AS OF a date" and returns null for any
+// date before the first snapshot). The Working-Day Calendar
+// (workingDayCalendar.ts, 2026-09-15) needs this specific distinction:
+// a date before someone's real commencement is PRE_EMPLOYMENT (a
+// genuine employment record exists, just not yet effective), never
+// the same UNCONFIGURED/UNRESOLVED state as someone with no employment
+// record at all.
+export async function getEarliestEmploymentTerms(profileId: string): Promise<EmploymentTermsRow | null> {
+  const admin = createAdminClient();
+  const { data } = await admin
+    .from("employment_terms_history")
+    .select(SELECT)
+    .eq("profile_id", profileId)
+    .order("effective_from", { ascending: true })
+    .order("recorded_at", { ascending: true })
+    .limit(1)
+    .maybeSingle();
+  return data ? mapRow(data) : null;
+}
+
 export async function listEmploymentTermsHistory(profileId: string): Promise<EmploymentTermsRow[]> {
   const admin = createAdminClient();
   const { data, error } = await admin

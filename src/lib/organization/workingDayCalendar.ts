@@ -1,5 +1,5 @@
 import { createAdminClient } from "@/lib/supabase/admin";
-import { getEmploymentTermsAsOf } from "@/lib/organization/employmentTermsHistory";
+import { getEmploymentTermsAsOf, getEarliestEmploymentTerms } from "@/lib/organization/employmentTermsHistory";
 
 // Public Holiday / Working-Day Calendar — READ-ONLY foundation
 // (Workforce/Employee Self-Service Phase, 2026-09-15). This is the
@@ -21,12 +21,23 @@ import { getEmploymentTermsAsOf } from "@/lib/organization/employmentTermsHistor
 // rows, never a code change here.
 
 export const DATE_CLASSIFICATIONS = [
+  "PRE_EMPLOYMENT",
   "WORKING_DAY",
   "REST_DAY",
   "PUBLIC_HOLIDAY",
   "COMPANY_CLOSURE",
   "SHIFT_WORKING_DAY",
   "SPECIAL_SCHEDULE",
+  // Architecture reserved for a future employment end date
+  // (2026-09-15) — no queryable "employment ended on X" signal exists
+  // anywhere in this codebase yet (employment_terms_history has no
+  // effective_to; separation/offboarding isn't a date range this
+  // resolver can read), so nothing currently produces this
+  // classification. Reserved so a later separation-workflow date can
+  // be wired in as an additive change to resolveEmployeeDateClassification()
+  // — mirroring PRE_EMPLOYMENT's own shape — without redesigning the
+  // enum or any downstream consumer that already switches on it.
+  "POST_EMPLOYMENT",
   "UNRESOLVED",
 ] as const;
 export type DateClassification = (typeof DATE_CLASSIFICATIONS)[number];
@@ -57,14 +68,45 @@ export interface DateResolution {
 // unconfigured for this person as of this date, which resolves
 // UNRESOLVED, not a guessed default (Section 17's explicit requirement
 // — "do not globally assume Monday-Friday for every employee").
+//
+// PRE_EMPLOYMENT vs. UNRESOLVED (2026-09-15 semantic correction): a
+// date before someone's real, already-recorded employment
+// commencement is NOT a configuration failure — the configuration is
+// valid, it simply doesn't apply yet. employmentCommencementDate is
+// the caller's answer to "does a real employment record exist, and if
+// so, when does it start" — null means either the date already falls
+// within a resolvable employment period (workingWeekdays will be set)
+// or no employment record exists at all (genuinely UNRESOLVED). Only
+// when the caller has confirmed the date precedes a real commencement
+// date does this return PRE_EMPLOYMENT — never fabricated, never
+// inferred from the absence of data alone.
 export function classifyDate(params: {
   date: string;
   workingWeekdays: number[] | null;
   employmentJurisdictionId: string | null;
   publicHoliday: { name: string } | null;
+  employmentCommencementDate?: string | null;
 }): DateResolution {
   const isPublicHoliday = params.publicHoliday !== null;
   const holidayName = params.publicHoliday?.name ?? null;
+
+  if (params.employmentCommencementDate && params.date < params.employmentCommencementDate) {
+    // Deliberately blank flags, not a passthrough of isPublicHoliday/
+    // isRestDay — none of those facts are operative before employment
+    // begins (Section 3's explicit safeguards: never an expected
+    // working day, never a rest-day/holiday obligation either), so a
+    // downstream consumer reading the flags directly can never
+    // mistake a pre-employment date for one requiring any treatment.
+    return {
+      date: params.date,
+      classification: "PRE_EMPLOYMENT",
+      isPublicHoliday: false,
+      isScheduledWorkday: false,
+      isRestDay: false,
+      holidayName: null,
+      employmentJurisdictionId: params.employmentJurisdictionId,
+    };
+  }
 
   if (!params.workingWeekdays) {
     return {
@@ -141,12 +183,17 @@ async function findVerifiedPublicHoliday(employmentJurisdictionId: string | null
 // 23's explicit requirement, and calendar test #6).
 export async function resolveEmployeeDateClassification(params: { profileId: string; date: string }): Promise<DateResolution> {
   const terms = await getEmploymentTermsAsOf(params.profileId, params.date);
+  // Only queried when no terms apply as of this date — i.e. either a
+  // genuine pre-employment date, or genuinely no employment record at
+  // all. getEarliestEmploymentTerms() answers which of those it is.
+  const employmentCommencementDate = terms ? null : ((await getEarliestEmploymentTerms(params.profileId))?.effectiveFrom ?? null);
   const publicHoliday = await findVerifiedPublicHoliday(terms?.employmentJurisdictionId ?? null, params.date);
   return classifyDate({
     date: params.date,
     workingWeekdays: terms?.workingWeekdays ?? null,
     employmentJurisdictionId: terms?.employmentJurisdictionId ?? null,
     publicHoliday,
+    employmentCommencementDate,
   });
 }
 

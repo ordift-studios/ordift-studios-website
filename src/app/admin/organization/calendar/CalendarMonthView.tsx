@@ -1,23 +1,31 @@
 import Link from "next/link";
 import type { DateResolution } from "@/lib/organization/workingDayCalendar";
 
+// PRE_EMPLOYMENT/POST_EMPLOYMENT deliberately use a neutral slate
+// treatment, never the red UNRESOLVED styling (2026-09-15 semantic
+// correction) — a date outside someone's employment period is not a
+// configuration problem, and must not read as one.
 const CLASSIFICATION_STYLES: Record<DateResolution["classification"], string> = {
+  PRE_EMPLOYMENT: "bg-slate-50 text-slate-500 border-slate-200",
   WORKING_DAY: "bg-white text-ordift-ink border-black/10",
   SHIFT_WORKING_DAY: "bg-white text-ordift-ink border-black/10",
   REST_DAY: "bg-ordift-offwhite text-ordift-ink-muted border-black/5",
   PUBLIC_HOLIDAY: "bg-amber-50 text-amber-900 border-amber-200",
   COMPANY_CLOSURE: "bg-blue-50 text-blue-900 border-blue-200",
   SPECIAL_SCHEDULE: "bg-purple-50 text-purple-900 border-purple-200",
+  POST_EMPLOYMENT: "bg-slate-50 text-slate-500 border-slate-200",
   UNRESOLVED: "bg-red-50 text-red-700 border-red-200",
 };
 
 const CLASSIFICATION_LABELS: Record<DateResolution["classification"], string> = {
+  PRE_EMPLOYMENT: "Pre-employment",
   WORKING_DAY: "Working day",
   SHIFT_WORKING_DAY: "Scheduled shift",
   REST_DAY: "Rest day",
   PUBLIC_HOLIDAY: "Public holiday",
   COMPANY_CLOSURE: "Company closure",
   SPECIAL_SCHEDULE: "Special schedule",
+  POST_EMPLOYMENT: "Post-employment",
   UNRESOLVED: "Unconfigured",
 };
 
