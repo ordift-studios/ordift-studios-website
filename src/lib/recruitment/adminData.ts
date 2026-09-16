@@ -33,7 +33,7 @@ export async function listRecruitmentApplications(): Promise<RecruitmentApplicat
   const admin = createAdminClient();
   const { data, error } = await admin
     .from("recruitment_applications")
-    .select("id, full_name, role_interest, location, submitted_at, status")
+    .select("id, full_name, email, role_interest, location, submitted_at, status")
     .order("submitted_at", { ascending: false });
 
   if (error || !data) {
@@ -44,6 +44,7 @@ export async function listRecruitmentApplications(): Promise<RecruitmentApplicat
   return data.map((r) => ({
     id: r.id,
     fullName: r.full_name,
+    email: r.email,
     roleInterest: r.role_interest,
     location: r.location,
     submittedAt: r.submitted_at,

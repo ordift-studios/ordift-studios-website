@@ -4,6 +4,7 @@ import { summarizeHrCommandCentre } from "./hrCommandCentre";
 const base = {
   users: [] as { roles: string[]; accessStatus: string }[],
   applications: [] as { status: string; id: string; fullName: string }[],
+  acceptedApplicationsBridgeStatus: [] as import("./hrCommandCentre").AcceptedApplicationBridgeStatus[],
   onboardingInProgress: 0,
   onboardingComplete: 0,
   onLeaveToday: 0,
@@ -42,8 +43,8 @@ describe("summarizeHrCommandCentre — real assertions", () => {
     expect(externalWorkforceByType.workshop_participant).toBe(0);
   });
 
-  it("accepted applications appear in Needs Attention, pipeline, and count as acceptedAwaitingHire", () => {
-    const { summary, needsAttention, pipeline } = summarizeHrCommandCentre({
+  it("accepted applications appear in the pipeline count regardless of bridge stage", () => {
+    const { summary, pipeline } = summarizeHrCommandCentre({
       ...base,
       applications: [
         { id: "a1", fullName: "Kelvin Acheampong", status: "accepted" },
@@ -52,24 +53,55 @@ describe("summarizeHrCommandCentre — real assertions", () => {
     });
     expect(summary.acceptedAwaitingHire).toBe(1);
     expect(summary.newApplications).toBe(1);
-    expect(needsAttention.some((n) => n.key === "accepted-a1" && n.href === "/admin/recruitment/a1")).toBe(true);
     expect(pipeline.find((s) => s.key === "accepted")?.count).toBe(1);
     expect(pipeline.find((s) => s.key === "new")?.count).toBe(1);
   });
 
-  it("pipeline includes shortlisted+interview combined and onboarding/active stages", () => {
-    const { pipeline } = summarizeHrCommandCentre({
+  // Kelvin staleness fix (2026-09-16) — the exact reported defect: an
+  // application whose Proceed-to-Hire bridge already ran must NEVER
+  // still show "Accepted, awaiting Proceed to Hire". Each real stage
+  // produces its own distinct, accurate label.
+  it("stage 'not_invited' shows the original awaiting-Proceed-to-Hire action", () => {
+    const { needsAttention } = summarizeHrCommandCentre({
       ...base,
-      applications: [
-        { id: "a1", fullName: "A", status: "shortlisted" },
-        { id: "a2", fullName: "B", status: "interview" },
-      ],
-      onboardingInProgress: 2,
-      users: [{ roles: ["staff"], accessStatus: "active" }],
+      acceptedApplicationsBridgeStatus: [{ id: "a1", fullName: "Kelvin Acheampong", stage: "not_invited" }],
     });
-    expect(pipeline.find((s) => s.key === "shortlisted")?.count).toBe(2);
-    expect(pipeline.find((s) => s.key === "onboarding")?.count).toBe(2);
-    expect(pipeline.find((s) => s.key === "active")?.count).toBe(1);
+    expect(needsAttention.find((n) => n.key === "accepted-a1")?.label).toBe("Kelvin Acheampong — Accepted, awaiting Proceed to Hire");
+  });
+
+  it("stage 'account_created' with no Position assigned shows a DIFFERENT, accurate action — never the stale 'awaiting Proceed to Hire'", () => {
+    const { needsAttention } = summarizeHrCommandCentre({
+      ...base,
+      acceptedApplicationsBridgeStatus: [{ id: "a1", fullName: "Kelvin Acheampong", stage: "account_created", profileId: "p1", positionAssigned: false }],
+    });
+    const entry = needsAttention.find((n) => n.key === "accepted-a1");
+    expect(entry?.label).toBe("Kelvin Acheampong — Account created, needs a Position assigned");
+    expect(entry?.label).not.toContain("awaiting Proceed to Hire");
+    expect(entry?.href).toBe("/admin/organization/people/p1");
+  });
+
+  it("stage 'account_created' with a Position assigned shows Ready to start onboarding", () => {
+    const { needsAttention } = summarizeHrCommandCentre({
+      ...base,
+      acceptedApplicationsBridgeStatus: [{ id: "a1", fullName: "Kelvin Acheampong", stage: "account_created", profileId: "p1", positionAssigned: true }],
+    });
+    expect(needsAttention.find((n) => n.key === "accepted-a1")?.label).toBe("Kelvin Acheampong — Ready to start onboarding");
+  });
+
+  it("stage 'onboarding_in_progress' produces NO individual entry — already covered by the aggregate onboarding-in-progress card", () => {
+    const { needsAttention } = summarizeHrCommandCentre({
+      ...base,
+      acceptedApplicationsBridgeStatus: [{ id: "a1", fullName: "Kelvin Acheampong", stage: "onboarding_in_progress", profileId: "p1" }],
+    });
+    expect(needsAttention.find((n) => n.key === "accepted-a1")).toBeUndefined();
+  });
+
+  it("stage 'onboarding_complete' produces no entry at all — genuinely nothing left to do", () => {
+    const { needsAttention } = summarizeHrCommandCentre({
+      ...base,
+      acceptedApplicationsBridgeStatus: [{ id: "a1", fullName: "Kelvin Acheampong", stage: "onboarding_complete", profileId: "p1" }],
+    });
+    expect(needsAttention.find((n) => n.key === "accepted-a1")).toBeUndefined();
   });
 
   it("empty input produces an empty Needs Attention list, never a fabricated entry", () => {

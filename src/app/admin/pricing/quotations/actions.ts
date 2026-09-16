@@ -1,7 +1,6 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { redirect } from "next/navigation";
 import {
   createClientQuotation,
   updateQuotationStatus,
@@ -10,13 +9,24 @@ import {
 } from "@/lib/commercial/clientQuotations";
 
 export type ActionState = { ok: boolean; error?: string } | null;
+// Create-specific result — deliberately does NOT call redirect() from
+// inside this action (2026-09-16 Production fix). redirect() throws
+// NEXT_REDIRECT, and calling it inside a useActionState-bound action
+// races React's own state-commit machinery on this Next version — the
+// real Production symptom was "Creating…" never resolving into either
+// the new quotation page or a visible error, landing on a blank
+// screen instead. Every other create-flow in this codebase (e.g.
+// inviteCollaboratorAction) already avoids this exact combination by
+// returning a plain result and letting the CLIENT navigate — this
+// follows the same proven pattern instead of inventing a new one.
+export type CreateQuotationState = { ok: true; quotationId: string; quotationReference: string } | { ok: false; error: string } | null;
 
 // Client Quotations admin actions (2026-09-16 Universal Commercial Rate
 // Card & Quotation System). All authorization lives inside
 // clientQuotations.ts itself (requireAdminActor()) — these are thin
 // FormData-parsing wrappers, same convention as every other admin
 // action in this codebase.
-export async function createQuotationAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
+export async function createQuotationAction(_prev: CreateQuotationState, formData: FormData): Promise<CreateQuotationState> {
   const clientProfileId = String(formData.get("clientProfileId") ?? "").trim() || null;
   const prospectName = String(formData.get("prospectName") ?? "").trim() || null;
   const prospectEmail = String(formData.get("prospectEmail") ?? "").trim() || null;
@@ -69,7 +79,7 @@ export async function createQuotationAction(_prev: ActionState, formData: FormDa
   if (!result.ok) return { ok: false, error: result.error };
 
   revalidatePath("/admin/pricing/quotations");
-  redirect(`/admin/pricing/quotations/${result.quotationId}`);
+  return { ok: true, quotationId: result.quotationId, quotationReference: result.quotationReference };
 }
 
 export async function updateQuotationStatusAction(_prev: ActionState, formData: FormData): Promise<ActionState> {

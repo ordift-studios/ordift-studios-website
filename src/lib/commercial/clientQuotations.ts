@@ -182,7 +182,7 @@ export async function listClientQuotations(): Promise<ClientQuotationSummary[]> 
   const admin = createAdminClient();
   const { data, error } = await admin
     .from("client_quotations")
-    .select("id, quotation_reference, client_profile_id, prospect_name, prospect_company, status, currency, total, valid_until, created_at, profiles(full_name)")
+    .select("id, quotation_reference, client_profile_id, prospect_name, prospect_company, status, currency, total, valid_until, created_at, profiles!client_profile_id(full_name)")
     .order("created_at", { ascending: false });
   if (error) {
     console.error("[commercial] failed to list client_quotations", error.message);
@@ -227,11 +227,11 @@ export type ClientQuotationDetail = ClientQuotationSummary & {
 
 export async function getClientQuotation(id: string): Promise<ClientQuotationDetail | null> {
   const admin = createAdminClient();
-  const [{ data: quotation }, { data: items }] = await Promise.all([
+  const [{ data: quotation, error: quotationError }, { data: items, error: itemsError }] = await Promise.all([
     admin
       .from("client_quotations")
       .select(
-        "id, quotation_reference, client_profile_id, prospect_name, prospect_email, prospect_phone, prospect_company, status, currency, subtotal, discount_total, tax_total, total, valid_until, payment_booking_terms, commercial_notes, version, created_at, profiles(full_name)"
+        "id, quotation_reference, client_profile_id, prospect_name, prospect_email, prospect_phone, prospect_company, status, currency, subtotal, discount_total, tax_total, total, valid_until, payment_booking_terms, commercial_notes, version, created_at, profiles!client_profile_id(full_name)"
       )
       .eq("id", id)
       .maybeSingle(),
@@ -241,6 +241,14 @@ export async function getClientQuotation(id: string): Promise<ClientQuotationDet
       .eq("quotation_id", id)
       .order("sort_order", { ascending: true }),
   ]);
+  // Production fix (2026-09-16) — a query error here (e.g. the
+  // ambiguous-embed bug this same fix corrects) previously fell through
+  // silently to `!quotation` -> null -> the page's own notFound(),
+  // which read to a user as "my new quotation vanished" rather than a
+  // genuine, debuggable error. Logged loudly now, same convention as
+  // every other query in this codebase.
+  if (quotationError) console.error("[commercial] failed to load client_quotation", quotationError.message);
+  if (itemsError) console.error("[commercial] failed to load client_quotation_items", itemsError.message);
   if (!quotation) return null;
 
   return {

@@ -43,6 +43,7 @@ export const RECRUITMENT_STATUS_LABEL: Record<RecruitmentStatus, string> = {
 export type RecruitmentApplicationSummary = {
   id: string;
   fullName: string;
+  email: string;
   roleInterest: string;
   location: string | null;
   submittedAt: string;

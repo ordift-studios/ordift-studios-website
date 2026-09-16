@@ -1,5 +1,5 @@
 import { listUsersWithRoles, type AdminUserRow } from "@/lib/portal/adminData";
-import { listRecruitmentApplications } from "@/lib/recruitment/adminData";
+import { listRecruitmentApplications, getHiringBridgeStatus } from "@/lib/recruitment/adminData";
 import { getWorkforceOverviewCounts, countCurrentlyOnLeave } from "@/lib/organization/hrDashboard";
 import { listPendingLeaveRequestsAcrossStaff } from "@/lib/organization/leaveRequests";
 import { getRecentActivity } from "@/lib/admin/activityLog";
@@ -68,11 +68,30 @@ export type HrActivityItem = {
   createdAt: string;
 };
 
+// One accepted application's real current hiring-bridge stage
+// (getHiringBridgeStatus, adminData.ts) — resolved by the async wrapper
+// below, never guessed from application.status alone. This is the
+// concrete fix for the reported staleness bug: Kelvin's application
+// stayed status='accepted' forever (recruitment status is a one-time
+// decision, correctly never rewritten), but the DASHBOARD previously
+// inferred "still awaiting Proceed to Hire" from that alone, ignoring
+// that the bridge had already run. Every stage produces a DIFFERENT,
+// accurate label — never a blanket "Accepted" action once real
+// progress exists.
+export type AcceptedApplicationBridgeStatus = {
+  id: string;
+  fullName: string;
+  stage: "not_invited" | "invitation_sent" | "account_created" | "onboarding_in_progress" | "onboarding_complete";
+  profileId?: string;
+  positionAssigned?: boolean;
+};
+
 // Pure summarizer — takes already-fetched rows, decides the counts and
 // the Needs Your Attention list. Directly testable without a database.
 export function summarizeHrCommandCentre(input: {
   users: { roles: string[]; accessStatus: string }[];
   applications: { status: string; id: string; fullName: string }[];
+  acceptedApplicationsBridgeStatus: AcceptedApplicationBridgeStatus[];
   onboardingInProgress: number;
   onboardingComplete: number;
   onLeaveToday: number;
@@ -102,12 +121,24 @@ export function summarizeHrCommandCentre(input: {
     { key: "active", label: "Active", count: activeEmployees },
   ];
 
+  const acceptedApplicationAttentionItems: NeedsAttentionItem[] = [];
+  for (const a of input.acceptedApplicationsBridgeStatus) {
+    if (a.stage === "not_invited") {
+      acceptedApplicationAttentionItems.push({ key: `accepted-${a.id}`, label: `${a.fullName} — Accepted, awaiting Proceed to Hire`, href: `/admin/recruitment/${a.id}` });
+    } else if (a.stage === "invitation_sent") {
+      acceptedApplicationAttentionItems.push({ key: `accepted-${a.id}`, label: `${a.fullName} — Invitation sent, awaiting response`, href: `/admin/recruitment/${a.id}` });
+    } else if (a.stage === "account_created" && !a.positionAssigned) {
+      acceptedApplicationAttentionItems.push({ key: `accepted-${a.id}`, label: `${a.fullName} — Account created, needs a Position assigned`, href: a.profileId ? `/admin/organization/people/${a.profileId}` : `/admin/recruitment/${a.id}` });
+    } else if (a.stage === "account_created" && a.positionAssigned) {
+      acceptedApplicationAttentionItems.push({ key: `accepted-${a.id}`, label: `${a.fullName} — Ready to start onboarding`, href: a.profileId ? `/admin/organization/people/${a.profileId}` : `/admin/recruitment/${a.id}` });
+    }
+    // onboarding_in_progress / onboarding_complete: no individual entry —
+    // already covered by the aggregate "N onboarding records in
+    // progress" entry below, or genuinely no longer needs attention.
+  }
+
   const needsAttention: NeedsAttentionItem[] = [
-    ...acceptedApplications.map((a) => ({
-      key: `accepted-${a.id}`,
-      label: `${a.fullName} — Accepted, awaiting Proceed to Hire`,
-      href: `/admin/recruitment/${a.id}`,
-    })),
+    ...acceptedApplicationAttentionItems,
     ...input.pendingLeaveRequests.map((r) => ({
       key: `leave-${r.id}`,
       label: `${r.profileFullName ?? "A staff member"} — leave request awaiting decision`,
@@ -168,9 +199,29 @@ export async function getHrCommandCentreSummary(): Promise<{
   ]);
   const users: AdminUserRow[] = usersResult.ok ? usersResult.users : [];
 
+  // Resolves each accepted application's REAL current stage — small,
+  // bounded fan-out (only ever as many rows as genuinely have
+  // status='accepted', never every application) via the same
+  // getHiringBridgeStatus() the Recruitment detail page itself uses,
+  // so the dashboard and that page can never disagree.
+  const acceptedApplications = applications.filter((a) => a.status === "accepted");
+  const acceptedApplicationsBridgeStatus = await Promise.all(
+    acceptedApplications.map(async (a) => {
+      const bridge = await getHiringBridgeStatus({ id: a.id, email: a.email });
+      return {
+        id: a.id,
+        fullName: a.fullName,
+        stage: bridge.stage,
+        profileId: "profileId" in bridge ? bridge.profileId : undefined,
+        positionAssigned: "positionAssigned" in bridge ? bridge.positionAssigned : undefined,
+      };
+    })
+  );
+
   const result = summarizeHrCommandCentre({
     users,
     applications,
+    acceptedApplicationsBridgeStatus,
     onboardingInProgress: workforceCounts.onboardingInProgress,
     onboardingComplete: 0,
     onLeaveToday,

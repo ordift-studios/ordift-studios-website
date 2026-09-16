@@ -1,7 +1,8 @@
 "use client";
 
-import { useActionState, useState } from "react";
-import { createQuotationAction, type ActionState } from "../actions";
+import { useActionState, useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import { createQuotationAction, type CreateQuotationState } from "../actions";
 import SubmitButton from "@/components/admin/SubmitButton";
 
 type ClientOption = { id: string; fullName: string | null; email: string | null };
@@ -11,9 +12,19 @@ type LineItem = { serviceItem: string; description: string; quantity: string; un
 const EMPTY_ITEM: LineItem = { serviceItem: "", description: "", quantity: "1", unitBasis: "item", sellingRate: "", discountPercent: "", taxPercent: "" };
 
 export function NewQuotationForm({ clients }: { clients: ClientOption[] }) {
-  const [state, formAction] = useActionState<ActionState, FormData>(createQuotationAction, null);
+  const router = useRouter();
+  const [state, formAction] = useActionState<CreateQuotationState, FormData>(createQuotationAction, null);
   const [partyType, setPartyType] = useState<"client" | "prospect">("prospect");
   const [items, setItems] = useState<LineItem[]>([{ ...EMPTY_ITEM }]);
+
+  // Production fix (2026-09-16) — navigation happens HERE, client-side,
+  // once the action's result confirms success, rather than calling
+  // redirect() inside the action itself (see actions.ts's own comment
+  // for why that combination was unreliable on this Next version and
+  // left the user on a blank screen with no visible error).
+  useEffect(() => {
+    if (state?.ok === true) router.push(`/admin/pricing/quotations/${state.quotationId}`);
+  }, [state, router]);
 
   function updateItem(i: number, field: keyof LineItem, value: string) {
     setItems((prev) => prev.map((item, idx) => (idx === i ? { ...item, [field]: value } : item)));
