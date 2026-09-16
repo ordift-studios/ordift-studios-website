@@ -1,31 +1,20 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import Logo from "@/components/Logo";
-import { getCurrentUser, hasRole, type RoleSlug } from "@/lib/portal/roles";
+import { getCurrentUser } from "@/lib/portal/roles";
 import { getOwnPayeeProfile } from "@/lib/payables/payeeProfiles";
 import { isWorkshopInstructor } from "@/lib/workshops/instructorEngagements";
+import { resolveVisibleNavItems } from "@/lib/portal/navigation";
 import { signOutAction } from "../login/actions";
 
 // Defense in depth: proxy.ts already redirects unauthenticated /portal/**
 // requests to /portal/login, but that's a JWT-presence check only (kept
 // fast, no DB query — see src/lib/supabase/middleware.ts). This layout
 // does the real check, including role lookup, since every dashboard page
-// needs the role list anyway to decide what to show.
-// Staff/admin both point at the same /admin destination (the internal
-// Admin Platform, src/app/admin/**, which superseded the old
-// /portal/staff and /portal/admin pages — see primaryPortalPath() in
-// src/lib/portal/roles.ts) — a dual staff+admin user only ever needs
-// the one link, deduplicated by href below.
-const NAV_ITEMS: { role: RoleSlug; label: string; href: string }[] = [
-  { role: "client", label: "My Bookings", href: "/portal/client" },
-  { role: "workshop_participant", label: "My Workshops", href: "/portal/workshops" },
-  { role: "model", label: "My Profile", href: "/portal/model" },
-  { role: "vendor", label: "Vendor", href: "/portal/vendor" },
-  { role: "contractor", label: "My Projects", href: "/portal/collaborator" },
-  { role: "staff", label: "Admin Platform", href: "/admin" },
-  { role: "admin", label: "Admin Platform", href: "/admin" },
-  { role: "super_admin", label: "Admin Platform", href: "/admin" },
-];
+// needs the role list anyway to decide what to show. The actual role →
+// nav-item mapping lives in resolveVisibleNavItems() (navigation.ts) —
+// a pure, independently-tested function — so a fixture-based regression
+// test can catch a broken mapping without touching this async layout.
 
 export default async function PortalDashboardLayout({
   children,
@@ -35,22 +24,15 @@ export default async function PortalDashboardLayout({
   const user = await getCurrentUser();
   if (!user) redirect("/portal/login");
 
-  const matchingNavItems = NAV_ITEMS.filter((item) => hasRole(user, item.role));
-  const dedupedNavItems: { label: string; href: string }[] = matchingNavItems.filter(
-    (item, index) => matchingNavItems.findIndex((other) => other.href === item.href) === index
-  );
-  // Payment Details (2026-09-04) — gated by public.payee_profiles, not
-  // the legacy roles table above: a payee can hold any role (client,
-  // staff, ...) and still be classified as vendor/contractor/
-  // instructor/etc. via payee_profiles, so this can't be expressed as
-  // a NAV_ITEMS role entry the way every other link above is.
-  const isPayee = Boolean(await getOwnPayeeProfile(user.id));
-  // Instructor Portal (2026-09-16) — same reasoning as Payment Details
-  // just above: "instructor" is workshop_instructor_engagements
-  // ownership, not a role, so it can't be a NAV_ITEMS entry either.
-  const isInstructor = await isWorkshopInstructor(user.id);
-  const withPayeeLink = isPayee ? [...dedupedNavItems, { label: "Payment Details", href: "/portal/payment-details" }] : dedupedNavItems;
-  const visibleNavItems = isInstructor ? [...withPayeeLink, { label: "Instructor", href: "/portal/instructor" }] : withPayeeLink;
+  // Payment Details (2026-09-04) / Instructor Portal (2026-09-16) —
+  // both real capability facts, not roles (public.payee_profiles /
+  // workshop_instructor_engagements ownership), resolved here and
+  // passed into the pure function above.
+  const [isPayee, isInstructor] = await Promise.all([
+    getOwnPayeeProfile(user.id).then(Boolean),
+    isWorkshopInstructor(user.id),
+  ]);
+  const visibleNavItems = resolveVisibleNavItems(user, isPayee, isInstructor);
 
   return (
     <div className="min-h-screen flex flex-col">
