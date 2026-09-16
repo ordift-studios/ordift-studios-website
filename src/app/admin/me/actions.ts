@@ -11,6 +11,7 @@ import {
   COMPENSATION_STATUSES,
   type CompensationStatus,
 } from "@/lib/organization/employmentTermsHistory";
+import { setNotificationPreference, NOTIFICATION_CATEGORIES, type NotificationCategory } from "@/lib/notifications/preferences";
 
 // Employee Self-Service — My Workspace landing page (Phase B5 Step 15,
 // 2026-09-14). Self-acknowledgement only — recordPolicyAcknowledgement()
@@ -19,6 +20,26 @@ import {
 // from the form at all, so it can only ever record for the caller.
 
 export type ActionState = { ok: boolean; error?: string } | null;
+
+// My Workspace Notifications section (2026-09-16) — self-service only,
+// same guard shape as acknowledgeOwnPolicyAction above: the form never
+// carries a userId, so setNotificationPreference() (which does not
+// re-check authorization itself, per its own header comment) can only
+// ever be called for the caller's own account here.
+export async function setOwnNotificationPreferenceAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  const currentUser = await getCurrentUser();
+  if (!currentUser || !isStaffOrAdmin(currentUser)) return { ok: false, error: "Not authorized." };
+
+  const category = String(formData.get("category") ?? "");
+  if (!NOTIFICATION_CATEGORIES.includes(category as NotificationCategory)) return { ok: false, error: "Invalid request." };
+  const enabled = formData.get("enabled") === "true";
+
+  const result = await setNotificationPreference(currentUser.id, category as NotificationCategory, enabled);
+  if (!result.ok) return result;
+
+  revalidatePath("/admin/me");
+  return { ok: true };
+}
 
 export async function acknowledgeOwnPolicyAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const currentUser = await getCurrentUser();

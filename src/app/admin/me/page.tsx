@@ -1,7 +1,11 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import Link from "next/link";
-import { getCurrentUser, isStaffOrAdmin, isSuperAdmin } from "@/lib/portal/roles";
+import { getCurrentUser, hasRole, isStaffOrAdmin, isSuperAdmin } from "@/lib/portal/roles";
+import { resolveEmployeeDateRange } from "@/lib/organization/workingDayCalendar";
+import { getAssignmentsForUser, ASSIGNMENT_STATUS_LABELS } from "@/lib/admin/projectAssignments";
+import { getNotificationPreference } from "@/lib/notifications/preferences";
+import { NotificationPreferenceToggle } from "./NotificationPreferenceToggle";
 import { listUsersWithRoles } from "@/lib/portal/adminData";
 import { listControlledPolicyDocuments, listPolicyAcknowledgementsForProfile } from "@/lib/organization/policyAcknowledgements";
 import { getCurrentEmploymentTerms } from "@/lib/organization/employmentTermsHistory";
@@ -97,6 +101,30 @@ export default async function MyWorkspacePage() {
       : [];
   const myAgreementSummary =
     myOnboarding && myOnboarding.pipeline === "employee" ? await getEmployeeEmploymentAgreementSummary(myOnboarding.id) : null;
+  // My Workspace — Schedule, Projects, Notifications (2026-09-16).
+  // Schedule reuses the SAME resolveEmployeeDateRange() the My Calendar
+  // page itself calls, for the current week only — a teaser, never a
+  // second calendar engine. Projects reuses getAssignmentsForUser(),
+  // the same function admin/users already calls for the other
+  // direction of this relationship. Notifications is only real for a
+  // plain `admin` today (new_booking is the only wired category, and
+  // it's meaningless for Super Admin — see adminData.ts's own comment
+  // on newBookingAlertsEnabled) — nobody else sees a fabricated toggle.
+  const now = new Date();
+  const startOfWeek = new Date(now);
+  startOfWeek.setDate(now.getDate() - now.getDay());
+  const endOfWeek = new Date(startOfWeek);
+  endOfWeek.setDate(startOfWeek.getDate() + 6);
+  const toISODate = (d: Date) => d.toISOString().slice(0, 10);
+  const [weekResolutions, myProjectAssignments, newBookingAlertsEnabled] = await Promise.all([
+    myEmploymentTerms
+      ? resolveEmployeeDateRange({ profileId: user.id, startDate: toISODate(startOfWeek), endDate: toISODate(endOfWeek) })
+      : Promise.resolve([]),
+    getAssignmentsForUser(user.id),
+    hasRole(user, "admin") ? getNotificationPreference(user.id, "new_booking") : Promise.resolve(null),
+  ]);
+  const activeProjectAssignments = myProjectAssignments.filter((a) => a.status === "active" || a.status === "invited");
+
   const leaveSummary =
     leaveBalances.length > 0
       ? {
@@ -235,6 +263,69 @@ export default async function MyWorkspacePage() {
                 );
               })}
             </ul>
+          )}
+        </div>
+      </section>
+
+      <section className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="rounded-xl border border-black/10 bg-white p-6 space-y-2">
+          <div className="flex items-center justify-between mb-1">
+            <h2 className="font-serif font-medium text-body text-ordift-ink">This Week</h2>
+            <Link href="/admin/me/calendar" className="font-sans text-caption text-ordift-gold-pressed underline underline-offset-4">
+              Full calendar →
+            </Link>
+          </div>
+          {weekResolutions.length === 0 ? (
+            <p className="font-sans text-body-small text-ordift-ink-muted">Employment calendar not configured yet.</p>
+          ) : (
+            <div className="grid grid-cols-7 gap-1">
+              {weekResolutions.map((r) => (
+                <div key={r.date} className="text-center">
+                  <p className="font-sans text-[0.6rem] uppercase tracking-wide text-ordift-ink-muted">
+                    {new Date(`${r.date}T00:00:00Z`).toLocaleDateString("en-GB", { weekday: "short", timeZone: "UTC" })}
+                  </p>
+                  <p
+                    className={`mt-1 rounded-md py-1 font-sans text-[0.65rem] font-semibold ${
+                      r.classification === "WORKING_DAY"
+                        ? "bg-ordift-navy-950 text-white"
+                        : r.classification === "PUBLIC_HOLIDAY"
+                          ? "bg-ordift-gold/30 text-ordift-ink"
+                          : "bg-black/5 text-ordift-ink-muted"
+                    }`}
+                    title={r.holidayName ?? undefined}
+                  >
+                    {new Date(`${r.date}T00:00:00Z`).getUTCDate()}
+                  </p>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="rounded-xl border border-black/10 bg-white p-6 space-y-2">
+          <h2 className="font-serif font-medium text-body text-ordift-ink">My Projects</h2>
+          {activeProjectAssignments.length === 0 ? (
+            <p className="font-sans text-body-small text-ordift-ink-muted">No current project assignments.</p>
+          ) : (
+            <ul className="space-y-1.5">
+              {activeProjectAssignments.map((a) => (
+                <li key={a.id} className="font-sans text-body-small text-ordift-ink-muted">
+                  {a.entityLabel}
+                  <span className="ml-1.5 px-1.5 py-0.5 rounded-full font-sans text-[0.65rem] bg-black/5 text-ordift-ink">
+                    {ASSIGNMENT_STATUS_LABELS[a.status]}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+
+        <div className="rounded-xl border border-black/10 bg-white p-6 space-y-1">
+          <h2 className="font-serif font-medium text-body text-ordift-ink mb-1">Notifications</h2>
+          {newBookingAlertsEnabled === null ? (
+            <p className="font-sans text-body-small text-ordift-ink-muted">No notification preferences apply to your account yet.</p>
+          ) : (
+            <NotificationPreferenceToggle category="new_booking" label="New booking alerts" initialEnabled={newBookingAlertsEnabled} />
           )}
         </div>
       </section>
