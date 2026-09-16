@@ -4,7 +4,7 @@ import Link from "next/link";
 import { getCurrentUser } from "@/lib/portal/roles";
 import { isStaffOrAdmin } from "@/lib/portal/roles";
 import { getAllWorkshopsAdmin } from "@/lib/content/sanity/workshopAdmin";
-import { getWorkshopOperationalWarnings } from "@/lib/workshops/financialOverview";
+import { getWorkshopsDepartmentOverview } from "@/lib/workshops/departmentOverview";
 
 export const metadata: Metadata = {
   title: "Workshop Management — Ordift Studios Admin",
@@ -20,13 +20,11 @@ export default async function AdminWorkshopsPage() {
   if (!user || !isStaffOrAdmin(user)) redirect("/admin/overview");
 
   const workshops = await getAllWorkshopsAdmin();
-  const warningsByWorkshop = new Map(
-    await Promise.all(
-      workshops.map(
-        async (w) => [w.id, await getWorkshopOperationalWarnings(w.id, { capacity: w.capacity, requiresPayment: w.requiresPayment })] as const
-      )
-    )
-  );
+  const { summary, warnings, upcomingSessions } = await getWorkshopsDepartmentOverview(workshops);
+  const warningsByWorkshop = new Map<string, typeof warnings>();
+  for (const w of warnings) {
+    warningsByWorkshop.set(w.workshopId, [...(warningsByWorkshop.get(w.workshopId) ?? []), w]);
+  }
 
   return (
     <div>
@@ -44,6 +42,55 @@ export default async function AdminWorkshopsPage() {
           New Workshop
         </Link>
       </div>
+
+      <section className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-8">
+        {[
+          { label: "Total Workshops", value: summary.totalWorkshops },
+          { label: "Upcoming", value: summary.upcomingWorkshopsCount },
+          { label: "Registered (all)", value: summary.totalRegisteredCount },
+          { label: "Gross Revenue", value: `$${summary.totalGrossRevenueUsd.toFixed(2)}` },
+          { label: "Outstanding", value: `$${summary.totalOutstandingUsd.toFixed(2)}` },
+          { label: "Instructor Obligations", value: `$${summary.totalInstructorObligationsUsd.toFixed(2)}` },
+        ].map((card) => (
+          <div key={card.label} className="rounded-xl border border-black/10 bg-white p-4">
+            <p className="font-sans text-[1.5rem] leading-none font-semibold text-ordift-ink tabular-nums">{card.value}</p>
+            <p className="font-sans text-caption text-ordift-ink-muted mt-1.5">{card.label}</p>
+          </div>
+        ))}
+      </section>
+
+      {warnings.length > 0 && (
+        <section className="rounded-xl border border-black/10 bg-white p-6 mb-8">
+          <h2 className="font-serif font-medium text-body text-ordift-ink mb-3">Needs Attention</h2>
+          <ul className="divide-y divide-black/5">
+            {warnings.map((w, i) => (
+              <li key={`${w.workshopId}-${w.key}-${i}`} className="py-2.5">
+                <Link href={`/admin/workshops/${w.workshopId}`} className="font-sans text-body-small text-ordift-gold-pressed underline underline-offset-4">
+                  {w.workshopTitle} — {w.label} →
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      {upcomingSessions.length > 0 && (
+        <section className="rounded-xl border border-black/10 bg-white p-6 mb-8">
+          <h2 className="font-serif font-medium text-body text-ordift-ink mb-3">Upcoming Sessions (30 days)</h2>
+          <ul className="divide-y divide-black/5">
+            {upcomingSessions.map((s) => (
+              <li key={s.id} className="py-2.5 flex items-center justify-between gap-3">
+                <Link href={`/admin/workshops/${s.id}`} className="font-sans text-body-small text-ordift-gold-pressed underline underline-offset-4">
+                  {s.title}
+                </Link>
+                <span className="font-sans text-caption text-ordift-ink-muted whitespace-nowrap">
+                  {s.startDate} · {s.registeredCount}/{s.capacity}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       <div className="rounded-xl border border-black/10 bg-white divide-y divide-black/5">
         {workshops.map((w) => {
