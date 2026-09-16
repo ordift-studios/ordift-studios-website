@@ -9,7 +9,8 @@ import type { RoleSlug } from "@/lib/portal/roles";
 import type { Position } from "@/lib/organization/types";
 import type { AdminProjectAssignment, AssignmentStatus, ProjectSearchResult } from "@/lib/admin/projectAssignments";
 import type { ActivityLogEntry } from "@/lib/admin/activityLog";
-import { findNamedPersonRequisitionMatch, type RecruitmentRequisition } from "@/lib/recruitment/requisitions";
+import type { RecruitmentRequisition } from "@/lib/recruitment/requisitions";
+import { findNamedPersonRequisitionMatch } from "@/lib/recruitment/requisitionMatching";
 import {
   grantRoleAction,
   type GrantRoleState,

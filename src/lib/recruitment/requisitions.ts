@@ -2,6 +2,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { logActivity, getActivityForEntity } from "@/lib/admin/activityLog";
 import { createDepartmentRequest, decideDepartmentRequest } from "@/lib/organization/departmentRequests";
 import { isSuperAdminId, hasAuthority, PEOPLE_CAPABILITIES, type Jurisdiction } from "@/lib/organization/authority";
+import { NAMED_PERSON_ORIGINS, findNamedPersonRequisitionMatch } from "./requisitionMatching";
 
 async function requirePeopleAdministerOrSuperAdmin(actorUserId: string): Promise<{ ok: true } | { ok: false; error: string }> {
   if (await isSuperAdminId(actorUserId)) return { ok: true };
@@ -27,12 +28,14 @@ async function requirePeopleAdministerOrSuperAdmin(actorUserId: string): Promise
 
 export type HireOrigin = "standard_recruitment" | "founder_direct_hire" | "existing_account_conversion";
 
-// Hoisted to module scope (2026-09-16 — Kelvin "disabled button" fix)
-// so both the write-side consistency check (createRecruitmentRequisition)
-// and findNamedPersonRequisitionMatch() below share the exact same
-// definition of "this origin names one specific real person" — never
-// two independently-drifting lists.
-const NAMED_PERSON_ORIGINS = new Set<HireOrigin>(["founder_direct_hire", "existing_account_conversion"]);
+// NAMED_PERSON_ORIGINS/findNamedPersonRequisitionMatch live in the
+// zero-import requisitionMatching.ts (2026-09-16) — re-exported here so
+// every existing server-side caller of this module keeps working
+// unchanged; a Client Component must import them from
+// requisitionMatching.ts directly, never from this server-only module
+// (see that file's own comment — this is the exact Production build
+// failure it fixes).
+export { findNamedPersonRequisitionMatch };
 
 export type RecruitmentRequisition = {
   id: string;
@@ -645,22 +648,6 @@ export async function getRequisitionById(id: string): Promise<RecruitmentRequisi
     .maybeSingle();
   if (error || !data) return null;
   return mapRequisition(data);
-}
-
-// Production fix (2026-09-16) — the "Start Internal Staff Onboarding"
-// button read as permanently disabled/broken (Kelvin's own reported
-// case) even though his real, approved Founder Direct Hire requisition
-// was sitting right there in the picker: the picker requires an ACTIVE
-// selection (defaults to a blank placeholder) and nothing ever
-// auto-selected the one unambiguous match. A named-person requisition
-// (founder_direct_hire / existing_account_conversion) whose
-// directHireProfileId is THIS exact profile is, by construction, never
-// ambiguous — there is only ever one real candidate it could mean. Pure
-// and directly testable: finds that match, or null when none exists
-// (e.g. a genuine standard_recruitment case, which still correctly
-// requires a human to exercise judgment among several options).
-export function findNamedPersonRequisitionMatch(requisitions: readonly RecruitmentRequisition[], profileId: string): RecruitmentRequisition | null {
-  return requisitions.find((r) => NAMED_PERSON_ORIGINS.has(r.hireOrigin) && r.directHireProfileId === profileId) ?? null;
 }
 
 // Requisitions that are genuinely usable to start a NEW onboarding:
