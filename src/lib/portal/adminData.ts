@@ -337,6 +337,16 @@ export async function listUsersWithRoles(): Promise<AdminUserListResult> {
 // specifically so it's NOT reachable via PostgREST/.rpc(), only from
 // inside RLS policies. The admin client already bypasses RLS, so the
 // same count is just as correctly computed here via a normal query.
+// Founder-lockout hardening (2026-09-16) — previously only checked
+// access_status = 'active', never access_expires_at. A Super Admin
+// whose access had genuinely (if accidentally) expired still counted
+// as "active" here, so this guard could have let someone remove the
+// only FUNCTIONALLY working Super Admin while a second, merely
+// status-active-but-expired one still counted toward the minimum —
+// exactly the class of account state the real incident (2026-09-16,
+// Founder/0001's own access_expires_at) exposed. Now requires the same
+// genuine usability test getCurrentUser() itself applies: active status
+// AND (no expiry, or an expiry still in the future).
 export async function getActiveSuperAdminCount(): Promise<number> {
   const admin = createAdminClient();
   const { data: superAdminRole } = await admin.from("roles").select("id").eq("slug", "super_admin").single();
@@ -350,7 +360,7 @@ export async function getActiveSuperAdminCount(): Promise<number> {
 
   const { data: activeProfiles, error: profilesError } = await admin
     .from("profiles")
-    .select("id")
+    .select("id, access_expires_at")
     .in(
       "id",
       holders.map((h) => h.user_id)
@@ -358,7 +368,8 @@ export async function getActiveSuperAdminCount(): Promise<number> {
     .eq("access_status", "active");
   if (profilesError) return 0;
 
-  return activeProfiles?.length ?? 0;
+  const now = Date.now();
+  return (activeProfiles ?? []).filter((p) => !p.access_expires_at || new Date(p.access_expires_at).getTime() > now).length;
 }
 
 export type LookupOption = { id: string; name: string; active: boolean };

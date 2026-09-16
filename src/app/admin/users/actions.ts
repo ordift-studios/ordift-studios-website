@@ -329,14 +329,56 @@ export async function updateAccessStatusAction(formData: FormData): Promise<{ er
   return {};
 }
 
+// Founder-lockout hardening (2026-09-16) — this function had NO
+// protection at all before today's real incident (Founder/0001
+// accidentally set his own access_expires_at to a near-immediate
+// value, silently losing Super Admin access on next request). Now
+// mirrors updateAccessStatusAction()'s own already-proven guards
+// exactly: a Super Admin target setting a non-future (i.e.
+// immediately-or-already expiring) expiry requires the actor to be a
+// Super Admin themselves, a non-empty reason, and is refused outright
+// if it would drop the count of genuinely recoverable Super Admins
+// (getActiveSuperAdminCount(), itself hardened today to account for
+// expiry) to zero — this is the "final recoverable Super Admin" floor,
+// deliberately checked here so a self-inflicted lockout like today's
+// can never happen silently again. A FUTURE-dated expiry on a Super
+// Admin is still permitted without the reason/floor check (it is not
+// yet an access change — a real ordinary offboarding scheduling
+// action), matching "keep access expiry available for ordinary
+// workforce offboarding."
 export async function setAccessExpiryAction(formData: FormData): Promise<{ error?: string }> {
   const currentUser = await requireAdmin();
 
   const userId = String(formData.get("userId") ?? "");
   const expiresAtRaw = String(formData.get("expiresAt") ?? "").trim();
+  const reason = String(formData.get("reason") ?? "").trim() || null;
   if (!userId) return { error: "Invalid request." };
 
   const expiresAt = expiresAtRaw ? new Date(expiresAtRaw).toISOString() : null;
+  const isImmediatelyExpiring = expiresAt !== null && new Date(expiresAt).getTime() <= Date.now();
+
+  if (isImmediatelyExpiring) {
+    const admin = createAdminClient();
+    const { data: targetRoles } = await admin.from("user_roles").select("roles(slug)").eq("user_id", userId);
+    const targetIsSuperAdmin = (targetRoles ?? []).some((r) => (r.roles as unknown as { slug: string } | null)?.slug === "super_admin");
+
+    if (targetIsSuperAdmin) {
+      if (!isSuperAdmin(currentUser)) {
+        return { error: "Only a Super Admin can set an immediately-expiring access date for another Super Admin." };
+      }
+      if (!reason) {
+        return { error: "A reason is required to set an immediately-expiring access date for a Super Admin." };
+      }
+      const activeCount = await getActiveSuperAdminCount();
+      // targetIsSuperAdmin's own current genuine usability already
+      // factors into activeCount via the same expiry-aware count — if
+      // they're the only one left, refuse regardless of whether the
+      // actor is targeting themselves or someone else.
+      if (activeCount <= 1) {
+        return { error: "Refused — this would leave Ordift without a recoverable Super Admin. Promote another account or use Super Admin recovery first." };
+      }
+    }
+  }
 
   const admin = createAdminClient();
   const { error } = await admin.from("profiles").update({ access_expires_at: expiresAt }).eq("id", userId);
@@ -350,7 +392,64 @@ export async function setAccessExpiryAction(formData: FormData): Promise<{ error
     action: "access_expiry.change",
     entityType: "user",
     entityId: userId,
-    metadata: { accessExpiresAt: expiresAt },
+    metadata: { accessExpiresAt: expiresAt, reason },
+  });
+
+  revalidatePath("/admin/users");
+  return {};
+}
+
+// Super Admin recovery (2026-09-16, backlog access-regression hardening)
+// — a verified, currently-functional Super Admin restoring another
+// GENUINE Super Admin's access after an accidental lockout (expiry) or
+// a 'restricted' state. Deliberately narrow: never touches user_roles
+// (never grants/restores a role that wasn't already, genuinely there —
+// refuses outright if the target never held super_admin at all, so
+// this can never be used to escalate an ordinary account), never
+// reverses a deliberate 'suspended'/'deactivated' security action (that
+// remains the separate, existing reactivate/restore flow — recovery is
+// for ACCIDENTAL administrative lockout only, never a backdoor around a
+// genuine security suspension). Fully audited: actor, target,
+// timestamp, and reason are all logged for real.
+export async function recoverSuperAdminAccessAction(formData: FormData): Promise<{ error?: string }> {
+  const currentUser = await requireAdmin();
+  if (!isSuperAdmin(currentUser)) {
+    return { error: "Only a Super Admin can perform account recovery." };
+  }
+
+  const targetUserId = String(formData.get("userId") ?? "");
+  const reason = String(formData.get("reason") ?? "").trim();
+  if (!targetUserId) return { error: "Invalid request." };
+  if (!reason) return { error: "A reason is required for Super Admin recovery." };
+
+  const admin = createAdminClient();
+  const { data: targetRoles } = await admin.from("user_roles").select("roles(slug)").eq("user_id", targetUserId);
+  const targetIsSuperAdmin = (targetRoles ?? []).some((r) => (r.roles as unknown as { slug: string } | null)?.slug === "super_admin");
+  if (!targetIsSuperAdmin) {
+    return { error: "This account does not genuinely hold the Super Admin role — recovery only restores access for an existing Super Admin, never grants the role." };
+  }
+
+  const { data: targetProfile } = await admin.from("profiles").select("access_status").eq("id", targetUserId).maybeSingle();
+  if (!targetProfile) return { error: "Account not found." };
+  if (targetProfile.access_status === "suspended" || targetProfile.access_status === "deactivated") {
+    return { error: `This account is "${targetProfile.access_status}" — a deliberate security action, not an accidental lockout. Use the normal reactivate/restore flow if this is genuinely intended.` };
+  }
+
+  const { error } = await admin
+    .from("profiles")
+    .update({ access_status: "active", access_expires_at: null })
+    .eq("id", targetUserId);
+  if (error) {
+    console.error("[admin] failed to recover super admin access", error.message);
+    return { error: "Failed to recover access." };
+  }
+
+  await logActivity({
+    actorUserId: currentUser.id,
+    action: "super_admin.access_recovered",
+    entityType: "user",
+    entityId: targetUserId,
+    metadata: { reason },
   });
 
   revalidatePath("/admin/users");

@@ -17,6 +17,7 @@ import {
   revokeRoleAction,
   updateAccessStatusAction,
   setAccessExpiryAction,
+  recoverSuperAdminAccessAction,
   updateCollaboratorDetailsAction,
   reclassifyUserAction,
   assignStaffPositionAction,
@@ -141,11 +142,15 @@ function UserDetail({
   // useActionState, same reasoning as Grant Role above: never share
   // pending/result state with an unrelated action in this component.
   const [tempPasswordState, tempPasswordFormAction, tempPasswordPending] = useActionState<SetTemporaryPasswordState, FormData>(setTemporaryPasswordAction, null);
-  const [confirming, setConfirming] = useState<null | { kind: "suspend" | "deactivate" | "reactivate" | "restore" }>(
+  const [confirming, setConfirming] = useState<null | { kind: "suspend" | "deactivate" | "reactivate" | "restore" | "expiry" | "recover" }>(
     null
   );
   const [reason, setReason] = useState("");
   const [error, setError] = useState<string | null>(null);
+  // Lazy-init snapshot, not a live clock read during render — satisfies
+  // react-hooks/purity while still giving an accurate "is this
+  // Super Admin's access currently expired" signal for this view.
+  const [nowMs] = useState(() => Date.now());
   const [expiry, setExpiry] = useState(user.accessExpiresAt ? user.accessExpiresAt.slice(0, 10) : "");
   const [titleId, setTitleId] = useState(user.operationalTitleId ?? "");
   const [engagementId, setEngagementId] = useState(user.engagementTypeId ?? "");
@@ -215,9 +220,32 @@ function UserDetail({
     const fd = new FormData();
     fd.set("userId", user.id);
     fd.set("expiresAt", expiry);
+    fd.set("reason", reason);
     startTransition(async () => {
       const result = await setAccessExpiryAction(fd);
       if (result.error) setError(result.error);
+      else {
+        setConfirming(null);
+        setReason("");
+      }
+    });
+  }
+
+  // Super Admin recovery (2026-09-16) — restores an accidentally
+  // locked-out Super Admin's access (expiry/restricted only, never a
+  // deliberate suspension) without ever touching roles.
+  function recoverAccess() {
+    setError(null);
+    const fd = new FormData();
+    fd.set("userId", user.id);
+    fd.set("reason", reason);
+    startTransition(async () => {
+      const result = await recoverSuperAdminAccessAction(fd);
+      if (result.error) setError(result.error);
+      else {
+        setConfirming(null);
+        setReason("");
+      }
     });
   }
 
@@ -408,7 +436,7 @@ function UserDetail({
         <h3 className="font-sans text-caption font-semibold uppercase tracking-wide text-ordift-ink-muted">
           Access Status
         </h3>
-        {!confirming ? (
+        {!confirming || confirming.kind === "expiry" ? (
           <div className="flex flex-wrap items-center gap-2">
             <StatusBadge status={user.accessStatus} />
             {user.accessStatusReason && (
@@ -451,7 +479,43 @@ function UserDetail({
                   Restore
                 </button>
               )}
+              {user.roles.includes("super_admin") &&
+                currentUserIsSuperAdmin &&
+                (user.accessStatus === "restricted" ||
+                  (user.accessExpiresAt && new Date(user.accessExpiresAt).getTime() <= nowMs)) && (
+                  <button
+                    type="button"
+                    onClick={() => setConfirming({ kind: "recover" })}
+                    className="font-sans text-caption px-3 py-1.5 rounded-md border border-green-300 text-green-700 hover:bg-green-50"
+                  >
+                    Recover Super Admin Access
+                  </button>
+                )}
             </div>
+          </div>
+        ) : confirming?.kind === "recover" ? (
+          <div className="space-y-2">
+            <p className="font-sans text-caption text-amber-900 bg-amber-50 border border-amber-300 rounded-lg px-3 py-2.5">
+              This restores access for an existing Super Admin only — it never grants the role and never reverses a
+              deliberate suspension.
+            </p>
+            <textarea
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              placeholder="Reason (required, recorded in the history log)"
+              className="w-full rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small"
+              rows={2}
+            />
+            <ConfirmBar
+              message={`Restore Super Admin access for ${user.email}? This clears any access expiry and sets status to active.`}
+              confirmLabel="Recover access"
+              pending={pending}
+              onCancel={() => {
+                setConfirming(null);
+                setReason("");
+              }}
+              onConfirm={recoverAccess}
+            />
           </div>
         ) : (
           <div className="space-y-2">
@@ -600,44 +664,84 @@ function UserDetail({
         )}
       </section>
 
-      {/* Expiry */}
+      {/* Expiry — Founder-lockout hardening (2026-09-16): a
+          Super-Admin target with a today-or-earlier date requires the
+          same explicit confirmation as suspend/deactivate, since it has
+          the identical practical effect. A future date, or any change
+          for a non-Super-Admin, stays a direct one-click action —
+          ordinary workforce offboarding is unaffected. */}
       <section className="space-y-2">
         <h3 className="font-sans text-caption font-semibold uppercase tracking-wide text-ordift-ink-muted">
           Access Expiry (optional)
         </h3>
-        <div className="flex items-center gap-2">
-          <input
-            type="date"
-            value={expiry}
-            onChange={(e) => setExpiry(e.target.value)}
-            className="rounded-lg border border-black/15 px-3 py-1.5 font-sans text-body-small"
-          />
-          <button
-            type="button"
-            onClick={saveExpiry}
-            disabled={pending}
-            className="font-sans text-body-small text-ordift-gold-pressed underline underline-offset-4 disabled:opacity-50"
-          >
-            Save
-          </button>
-          {expiry && (
-            <button
-              type="button"
-              onClick={() => {
-                setExpiry("");
-                saveExpiry();
+        {confirming?.kind !== "expiry" ? (
+          <>
+            <div className="flex items-center gap-2">
+              <input
+                type="date"
+                value={expiry}
+                onChange={(e) => setExpiry(e.target.value)}
+                className="rounded-lg border border-black/15 px-3 py-1.5 font-sans text-body-small"
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  const immediatelyExpiring = expiry && new Date(expiry).getTime() <= Date.now();
+                  if (user.roles.includes("super_admin") && immediatelyExpiring) {
+                    setConfirming({ kind: "expiry" });
+                  } else {
+                    saveExpiry();
+                  }
+                }}
+                disabled={pending}
+                className="font-sans text-body-small text-ordift-gold-pressed underline underline-offset-4 disabled:opacity-50"
+              >
+                Save
+              </button>
+              {expiry && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setExpiry("");
+                    saveExpiry();
+                  }}
+                  disabled={pending}
+                  className="font-sans text-caption text-ordift-ink-muted underline underline-offset-4"
+                >
+                  Clear
+                </button>
+              )}
+            </div>
+            <p className="font-sans text-caption text-ordift-ink-muted">
+              For temporary or project-based collaborators. Past this date, access is blocked automatically — no manual
+              follow-up needed.
+            </p>
+          </>
+        ) : (
+          <div className="space-y-2">
+            <p className="font-sans text-caption text-amber-900 bg-amber-50 border border-amber-300 rounded-lg px-3 py-2.5">
+              This will immediately block {user.email}&rsquo;s administrative access — this account holds Super Admin.
+              If this is your own account, you will lose access on your next request.
+            </p>
+            <textarea
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              placeholder="Reason (required for a Super Admin, recorded in the history log)"
+              className="w-full rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small"
+              rows={2}
+            />
+            <ConfirmBar
+              message={`Set an immediately-expiring access date for ${user.email}? Refused if this would leave no recoverable Super Admin.`}
+              confirmLabel="Confirm expiry"
+              pending={pending}
+              onCancel={() => {
+                setConfirming(null);
+                setReason("");
               }}
-              disabled={pending}
-              className="font-sans text-caption text-ordift-ink-muted underline underline-offset-4"
-            >
-              Clear
-            </button>
-          )}
-        </div>
-        <p className="font-sans text-caption text-ordift-ink-muted">
-          For temporary or project-based collaborators. Past this date, access is blocked automatically — no manual
-          follow-up needed.
-        </p>
+              onConfirm={saveExpiry}
+            />
+          </div>
+        )}
       </section>
 
       {/* Account Classification / Member Number — Super Admin only,
