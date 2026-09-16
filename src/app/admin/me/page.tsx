@@ -4,6 +4,7 @@ import Link from "next/link";
 import { getCurrentUser, hasRole, isStaffOrAdmin, isSuperAdmin } from "@/lib/portal/roles";
 import { resolveEmployeeDateRange } from "@/lib/organization/workingDayCalendar";
 import { getAssignmentsForUser, ASSIGNMENT_STATUS_LABELS } from "@/lib/admin/projectAssignments";
+import { isWorkshopInstructor } from "@/lib/workshops/instructorEngagements";
 import { getNotificationPreference } from "@/lib/notifications/preferences";
 import { NotificationPreferenceToggle } from "./NotificationPreferenceToggle";
 import { listUsersWithRoles } from "@/lib/portal/adminData";
@@ -116,12 +117,13 @@ export default async function MyWorkspacePage() {
   const endOfWeek = new Date(startOfWeek);
   endOfWeek.setDate(startOfWeek.getDate() + 6);
   const toISODate = (d: Date) => d.toISOString().slice(0, 10);
-  const [weekResolutions, myProjectAssignments, newBookingAlertsEnabled] = await Promise.all([
+  const [weekResolutions, myProjectAssignments, newBookingAlertsEnabled, isInstructor] = await Promise.all([
     myEmploymentTerms
       ? resolveEmployeeDateRange({ profileId: user.id, startDate: toISODate(startOfWeek), endDate: toISODate(endOfWeek) })
       : Promise.resolve([]),
     getAssignmentsForUser(user.id),
     hasRole(user, "admin") ? getNotificationPreference(user.id, "new_booking") : Promise.resolve(null),
+    isWorkshopInstructor(user.id),
   ]);
   const activeProjectAssignments = myProjectAssignments.filter((a) => a.status === "active" || a.status === "invited");
 
@@ -166,6 +168,9 @@ export default async function MyWorkspacePage() {
             <li><Link href="/admin/me/performance" className="font-sans text-body-small text-ordift-gold-pressed underline underline-offset-4">My Performance →</Link></li>
             <li><Link href="/admin/me/grievances" className="font-sans text-body-small text-ordift-gold-pressed underline underline-offset-4">My Grievances →</Link></li>
             <li><Link href="/admin/me/requests" className="font-sans text-body-small text-ordift-gold-pressed underline underline-offset-4">My Requests →</Link></li>
+            {isInstructor && (
+              <li><Link href="/portal/instructor" className="font-sans text-body-small text-ordift-gold-pressed underline underline-offset-4">My Workshops (Instructor) →</Link></li>
+            )}
           </ul>
         </div>
       </section>

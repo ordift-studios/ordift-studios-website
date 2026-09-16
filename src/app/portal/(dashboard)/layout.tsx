@@ -3,6 +3,7 @@ import Link from "next/link";
 import Logo from "@/components/Logo";
 import { getCurrentUser, hasRole, type RoleSlug } from "@/lib/portal/roles";
 import { getOwnPayeeProfile } from "@/lib/payables/payeeProfiles";
+import { isWorkshopInstructor } from "@/lib/workshops/instructorEngagements";
 import { signOutAction } from "../login/actions";
 
 // Defense in depth: proxy.ts already redirects unauthenticated /portal/**
@@ -44,7 +45,12 @@ export default async function PortalDashboardLayout({
   // instructor/etc. via payee_profiles, so this can't be expressed as
   // a NAV_ITEMS role entry the way every other link above is.
   const isPayee = Boolean(await getOwnPayeeProfile(user.id));
-  const visibleNavItems = isPayee ? [...dedupedNavItems, { label: "Payment Details", href: "/portal/payment-details" }] : dedupedNavItems;
+  // Instructor Portal (2026-09-16) — same reasoning as Payment Details
+  // just above: "instructor" is workshop_instructor_engagements
+  // ownership, not a role, so it can't be a NAV_ITEMS entry either.
+  const isInstructor = await isWorkshopInstructor(user.id);
+  const withPayeeLink = isPayee ? [...dedupedNavItems, { label: "Payment Details", href: "/portal/payment-details" }] : dedupedNavItems;
+  const visibleNavItems = isInstructor ? [...withPayeeLink, { label: "Instructor", href: "/portal/instructor" }] : withPayeeLink;
 
   return (
     <div className="min-h-screen flex flex-col">
