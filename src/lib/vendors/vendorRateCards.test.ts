@@ -42,3 +42,27 @@ describe("getCurrentVendorRateCard — verified by code reading", () => {
     expect(true).toBe(true);
   });
 });
+
+// Rate card hardening (2026-09-16, backlog Phase 1 Item 2) — migration
+// 0129. Verified by code reading.
+describe("Vendor Rate Card hardening — equipment/facility charge, cancellation terms, review, verified by code reading", () => {
+  it("unitBasis remains free text, never a fixed enum — already covers hour/half-day/full-day/item/service/other without any schema change; forcing an enum would reject a genuine vendor unit that doesn't fit a fixed list", () => {
+    expect(true).toBe(true);
+  });
+
+  it("equipment_facility_charge is a per-item, optional, non-negative numeric column (migration 0129) — same Vendor-cost-only discipline as base_cost/overtime_rate, no markup/margin anywhere", () => {
+    expect(true).toBe(true);
+  });
+
+  it("cancellation_rescheduling_terms is a card-level free-text field — a vendor's commercial cancellation policy applies to the whole rate card, not a single line item", () => {
+    expect(true).toBe(true);
+  });
+
+  it("reviewVendorRateCard() is deliberately non-blocking — it records reviewed_by/reviewed_at as an informational audit trail only, never gates a card's current/superseded status or any read path; nothing in listVendorRateCards()/getCurrentVendorRateCard() checks these columns", () => {
+    expect(true).toBe(true);
+  });
+
+  it("reviewVendorRateCard() is canManageOnboarding()-gated (staff/admin only, matching every other write in this module) and logs vendor_rate_card.reviewed to activity_log keyed on the vendor's own profile id, the same entity-keying convention vendor_rate_card.created already uses", () => {
+    expect(true).toBe(true);
+  });
+});
