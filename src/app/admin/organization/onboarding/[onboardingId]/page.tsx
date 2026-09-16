@@ -5,13 +5,14 @@ import { getCurrentUser } from "@/lib/portal/roles";
 import { canManageOnboarding, getStaffOnboardingById } from "@/lib/organization/onboarding";
 import { listResolvedRequirements, listOnboardingRequirementOverrides } from "@/lib/organization/onboardingRequirements";
 import { stagesForPipeline, isTerminalStage, nextStage } from "@/lib/organization/onboardingStages";
-import { listUsersWithRoles } from "@/lib/portal/adminData";
+import { listUsersWithRoles, listEmploymentJurisdictions } from "@/lib/portal/adminData";
 import { listAuthorityGrants, isGrantActive } from "@/lib/organization/authority";
 import { listCorporateIdentities } from "@/lib/organization/reserveCorporateIdentity";
 import { listPaymentInstructionsForProfile } from "@/lib/payments/payeeInstructions";
 import { getActivityForEntity } from "@/lib/admin/activityLog";
 import { getRequisitionById, listApprovedRequisitionsForOnboarding } from "@/lib/recruitment/requisitions";
-import { resolveCurrentEmploymentContext } from "@/lib/organization/employmentTermsHistory";
+import { resolveCurrentEmploymentContext, listEmploymentTermsHistory, EMPLOYMENT_TRANSITION_TYPES } from "@/lib/organization/employmentTermsHistory";
+import { listEmployerCapableEmployingEntities } from "@/lib/organization/legalEntities";
 import { getEmployeeEmploymentAgreementSummary, checkEmployeeAgreementReadiness } from "@/lib/legal/employeeAgreements";
 import { OnboardingWorkspace } from "./OnboardingWorkspace";
 
@@ -104,6 +105,16 @@ export default async function OnboardingWorkspacePage({ params }: { params: Prom
   // Agreement Readiness section calls — never a second gate.
   const agreementReadiness = onboarding.pipeline === "employee" ? await checkEmployeeAgreementReadiness(onboarding.id) : null;
 
+  // Task 3A (2026-09-17) — Employment Terms Setup, reusing the EXACT
+  // SAME recordInitialEmploymentTermsAction/recordEmploymentTransitionAction
+  // and lookups the Full Profile's International & Employment
+  // Transitions section already uses — no duplicate fields/tables, no
+  // second setter.
+  const [employmentTermsHistory, employingEntitiesForTerms, jurisdictionsForTerms] =
+    onboarding.pipeline === "employee"
+      ? await Promise.all([listEmploymentTermsHistory(onboarding.profileId), listEmployerCapableEmployingEntities(), listEmploymentJurisdictions()])
+      : [[], [], []];
+
   return (
     <div className="space-y-8">
       <div>
@@ -154,6 +165,10 @@ export default async function OnboardingWorkspacePage({ params }: { params: Prom
         employmentContext={employmentContext}
         agreementSummary={agreementSummary}
         agreementReadiness={agreementReadiness}
+        employmentTermsHistory={employmentTermsHistory}
+        employingEntitiesForTerms={employingEntitiesForTerms}
+        jurisdictionsForTerms={jurisdictionsForTerms}
+        employmentTransitionTypes={EMPLOYMENT_TRANSITION_TYPES}
         hiringManagerName={hiringManagerName}
         reconciliationCandidates={reconciliationCandidates}
         requirementOverrides={requirementOverrides}
