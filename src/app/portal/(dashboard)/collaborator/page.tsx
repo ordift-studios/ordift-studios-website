@@ -5,6 +5,9 @@ import { getCurrentUser, hasRole } from "@/lib/portal/roles";
 import { getMyActiveAssignments } from "@/lib/portal/collaboratorData";
 import { listMyEngagements, listMyWorkshopInstructorEngagements, groupEngagementsByLifecycle } from "@/lib/portal/engagementPortalData";
 import ExternalWorkforceEngagements from "@/components/portal/ExternalWorkforceEngagements";
+import { ExternalOnboardingStatus } from "@/components/portal/ExternalOnboardingStatus";
+import { getStaffOnboardingByProfileId } from "@/lib/organization/onboarding";
+import { listResolvedRequirements } from "@/lib/organization/onboardingRequirements";
 
 export const metadata: Metadata = {
   title: "My Projects — Ordift Studios Portal",
@@ -21,12 +24,16 @@ export default async function CollaboratorPortalPage() {
   if (!user) redirect("/portal/login");
   if (!hasRole(user, "contractor")) redirect("/portal");
 
-  const [assignments, engagements, workshopEngagements] = await Promise.all([
+  const [assignments, engagements, workshopEngagements, onboarding] = await Promise.all([
     getMyActiveAssignments(user.id),
     listMyEngagements(user.id),
     listMyWorkshopInstructorEngagements(user.id),
+    getStaffOnboardingByProfileId(user.id),
   ]);
   const { active: activeEngagements, completed: completedEngagements, cancelled: cancelledEngagements } = groupEngagementsByLifecycle(engagements);
+  const resolvedRequirements = onboarding
+    ? await listResolvedRequirements({ onboardingId: onboarding.id, profileId: user.id, pipeline: onboarding.pipeline })
+    : [];
 
   return (
     <div className="space-y-10">
@@ -38,6 +45,8 @@ export default async function CollaboratorPortalPage() {
           My Work
         </h1>
       </div>
+
+      <ExternalOnboardingStatus onboarding={onboarding} resolvedRequirements={resolvedRequirements} />
 
       {/* Universal Payables engagements — Phase H.1/H.2, generalized into
           a shared component in Phase K.1 (see ExternalWorkforceEngagements) */}

@@ -3,6 +3,9 @@ import { getCurrentUser } from "@/lib/portal/roles";
 import { createClient } from "@/lib/supabase/server";
 import { listMyEngagements, groupEngagementsByLifecycle } from "@/lib/portal/engagementPortalData";
 import ExternalWorkforceEngagements from "@/components/portal/ExternalWorkforceEngagements";
+import { ExternalOnboardingStatus } from "@/components/portal/ExternalOnboardingStatus";
+import { getStaffOnboardingByProfileId } from "@/lib/organization/onboarding";
+import { listResolvedRequirements } from "@/lib/organization/onboardingRequirements";
 
 export const metadata: Metadata = {
   title: "My Profile — Ordift Studios Portal",
@@ -38,11 +41,14 @@ const REPRESENTATION_LABELS: Record<string, string> = {
 export default async function ModelPortalPage() {
   const user = await getCurrentUser();
   const supabase = await createClient();
-  const [{ data: profile }, engagements] = await Promise.all([
+  const [{ data: profile }, engagements, onboarding] = await Promise.all([
     user ? supabase.from("model_profiles").select("status, representation_status").eq("id", user.id).maybeSingle() : Promise.resolve({ data: null }),
     user ? listMyEngagements(user.id) : Promise.resolve([]),
+    user ? getStaffOnboardingByProfileId(user.id) : Promise.resolve(null),
   ]);
   const { active: activeEngagements, completed: completedEngagements, cancelled: cancelledEngagements } = groupEngagementsByLifecycle(engagements);
+  const resolvedRequirements =
+    user && onboarding ? await listResolvedRequirements({ onboardingId: onboarding.id, profileId: user.id, pipeline: onboarding.pipeline }) : [];
 
   return (
     <div className="space-y-10">
@@ -62,6 +68,8 @@ export default async function ModelPortalPage() {
           </p>
         ) : null}
       </div>
+
+      <ExternalOnboardingStatus onboarding={onboarding} resolvedRequirements={resolvedRequirements} />
 
       <ExternalWorkforceEngagements
         engagementBasePath="/portal/collaborator/engagement"
