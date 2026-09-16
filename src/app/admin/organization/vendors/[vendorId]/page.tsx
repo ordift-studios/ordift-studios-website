@@ -9,8 +9,9 @@ import { listVendorDocuments } from "@/lib/vendors/vendorDocuments";
 import { getPayeeProfile } from "@/lib/payables/payeeProfiles";
 import { listEmploymentJurisdictions } from "@/lib/portal/adminData";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { listVendorAgreementFamily, listVendorWorkOrderVariations } from "@/lib/legal/vendorAgreements";
+import { listVendorAgreementFamily, listVendorWorkOrderVariations, summarizeCurrentEngagement, VENDOR_ENGAGEMENT_SUMMARY_LABEL } from "@/lib/legal/vendorAgreements";
 import { listEmployingEntities } from "@/lib/organization/legalEntities";
+import { isTerminalStage } from "@/lib/organization/onboardingStages";
 import { VendorDetailWorkspace } from "./VendorDetailWorkspace";
 
 export const metadata: Metadata = {
@@ -58,6 +59,19 @@ export default async function VendorDetailPage({ params }: { params: Promise<{ v
 
   const engagementType = staffDetails?.engagement_types as unknown as { slug: string; name: string } | null;
 
+  // Vendor lifecycle reconciliation (2026-09-16) — three separate,
+  // clearly-labeled states, never one conflated "Overall" status.
+  // Onboarding, Vendor Approval, and Current Engagement are genuinely
+  // independent: a vendor can be fully onboarded, Approved, and still
+  // correctly show "No Current Engagement" — Ordift maintains an
+  // Approved Vendor Pool before a real project exists.
+  const onboardingSummary = onboarding
+    ? onboarding.status === "completed" || isTerminalStage(onboarding.pipeline, onboarding.stage)
+      ? "Complete"
+      : `In progress — ${onboarding.stage.replace(/_/g, " ")}`
+    : "Not started";
+  const engagementSummary = VENDOR_ENGAGEMENT_SUMMARY_LABEL[summarizeCurrentEngagement(workOrders)];
+
   return (
     <div>
       <div className="mb-8">
@@ -68,6 +82,17 @@ export default async function VendorDetailPage({ params }: { params: Promise<{ v
         <p className="font-sans text-body-small text-ordift-ink-muted mt-2">
           {profile.full_name} {profile.member_number ? `· ${profile.member_number}` : ""}
         </p>
+        <div className="flex flex-wrap gap-2 mt-4">
+          <span className="px-2.5 py-1 rounded-full font-sans text-caption bg-black/5 text-ordift-ink-muted whitespace-nowrap">
+            Onboarding: {onboardingSummary}
+          </span>
+          <span className="px-2.5 py-1 rounded-full font-sans text-caption bg-amber-50 text-amber-900 whitespace-nowrap">
+            Vendor Approval: {vendorProfile ? vendorProfile.status.replace(/_/g, " ") : "not recorded"}
+          </span>
+          <span className="px-2.5 py-1 rounded-full font-sans text-caption bg-blue-50 text-blue-900 whitespace-nowrap">
+            Current Engagement: {engagementSummary}
+          </span>
+        </div>
       </div>
 
       <VendorDetailWorkspace

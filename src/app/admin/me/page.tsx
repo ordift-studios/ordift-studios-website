@@ -6,8 +6,18 @@ import { listUsersWithRoles } from "@/lib/portal/adminData";
 import { listControlledPolicyDocuments, listPolicyAcknowledgementsForProfile } from "@/lib/organization/policyAcknowledgements";
 import { getCurrentEmploymentTerms } from "@/lib/organization/employmentTermsHistory";
 import { listEmployerCapableEmployingEntities } from "@/lib/organization/legalEntities";
+import { getServiceLengthSummary } from "@/lib/organization/serviceLength";
+import { getLeaveBalance, listLeaveRequestsForProfile } from "@/lib/organization/leaveRequests";
+import { listLeaveTypes, resolveEmployeeLeaveJurisdiction } from "@/lib/organization/leaveTypes";
+import { listLongServiceBenefitAwardsForProfile } from "@/lib/organization/compensation";
 import { MyWorkspaceLanding } from "./MyWorkspaceLanding";
 import { FounderSelfAdministrationForm } from "./FounderSelfAdministrationForm";
+
+// Pending/reserved leave, for the My Workspace HR Summary below: any
+// request not yet in a final state (approved/declined/cancelled) —
+// reuses LeaveRequestStatus (leaveRequests.ts) verbatim rather than a
+// second status list.
+const PENDING_LEAVE_STATUSES = new Set(["submitted", "under_review", "alternative_proposed"]);
 
 export const metadata: Metadata = {
   title: "My Workspace — Ordift Studios",
@@ -45,6 +55,37 @@ export default async function MyWorkspacePage() {
   const showFounderSelfAdministration = isSuperAdmin(user) && !myEmploymentTerms;
   const employingEntities = showFounderSelfAdministration ? await listEmployerCapableEmployingEntities() : [];
 
+  // My Workspace HR Summary (backlog sweep, 2026-09-16) — service
+  // length, leave, and benefits, all read from the same source-of-truth
+  // modules the dedicated My Leave / My Compensation pages already use
+  // (never a second, separately-maintained computation). Each fetch is
+  // independently optional: a person with no employment-terms history
+  // or no resolved leave jurisdiction yet simply sees that section
+  // omitted, never a fabricated zero pretending to be real data.
+  const jurisdiction = await resolveEmployeeLeaveJurisdiction(user.id);
+  const currentLeaveYear = new Date().getUTCFullYear();
+  const [serviceLength, leaveTypes, longServiceAwards] = await Promise.all([
+    getServiceLengthSummary(user.id),
+    jurisdiction ? listLeaveTypes(jurisdiction) : Promise.resolve([]),
+    listLongServiceBenefitAwardsForProfile(user.id),
+  ]);
+  const [leaveBalanceRows, leaveRequests] = await Promise.all([
+    Promise.all(leaveTypes.map((t) => getLeaveBalance(user.id, t.id, currentLeaveYear))),
+    leaveTypes.length > 0 ? listLeaveRequestsForProfile(user.id) : Promise.resolve([]),
+  ]);
+  const leaveBalances = leaveBalanceRows.filter((b): b is NonNullable<typeof b> => b !== null);
+  const leaveSummary =
+    leaveBalances.length > 0
+      ? {
+          entitlementDays: leaveBalances.reduce((sum, b) => sum + b.entitlementDays + b.carriedOverDays + b.protectedCarriedOverDays, 0),
+          usedDays: leaveBalances.reduce((sum, b) => sum + b.usedDays, 0),
+          remainingDays: leaveBalances.reduce((sum, b) => sum + b.remainingDays, 0),
+          pendingDays: leaveRequests
+            .filter((r) => PENDING_LEAVE_STATUSES.has(r.status))
+            .reduce((sum, r) => sum + r.daysRequested, 0),
+        }
+      : null;
+
   return (
     <div className="space-y-8">
       <div>
@@ -75,6 +116,55 @@ export default async function MyWorkspacePage() {
             <li><Link href="/admin/me/grievances" className="font-sans text-body-small text-ordift-gold-pressed underline underline-offset-4">My Grievances →</Link></li>
             <li><Link href="/admin/me/requests" className="font-sans text-body-small text-ordift-gold-pressed underline underline-offset-4">My Requests →</Link></li>
           </ul>
+        </div>
+      </section>
+
+      <section className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="rounded-xl border border-black/10 bg-white p-6 space-y-2">
+          <h2 className="font-serif font-medium text-body text-ordift-ink">Service Length</h2>
+          {serviceLength ? (
+            <>
+              <p className="font-sans text-body text-ordift-ink">{serviceLength.formatted}</p>
+              <p className="font-sans text-caption text-ordift-ink-muted">Since {serviceLength.startDate}</p>
+            </>
+          ) : (
+            <p className="font-sans text-body-small text-ordift-ink-muted">No employment start date recorded yet.</p>
+          )}
+        </div>
+
+        <div className="rounded-xl border border-black/10 bg-white p-6 space-y-2">
+          <h2 className="font-serif font-medium text-body text-ordift-ink">Leave</h2>
+          {leaveSummary ? (
+            <>
+              <p className="font-sans text-body-small text-ordift-ink-muted">Entitlement: {leaveSummary.entitlementDays} days</p>
+              <p className="font-sans text-body-small text-ordift-ink-muted">Used: {leaveSummary.usedDays} days</p>
+              {leaveSummary.pendingDays > 0 && (
+                <p className="font-sans text-body-small text-ordift-ink-muted">Pending/reserved: {leaveSummary.pendingDays} days</p>
+              )}
+              <p className="font-sans text-body text-ordift-ink">Remaining: {leaveSummary.remainingDays} days</p>
+            </>
+          ) : (
+            <p className="font-sans text-body-small text-ordift-ink-muted">No leave balance recorded yet for {currentLeaveYear}.</p>
+          )}
+        </div>
+
+        <div className="rounded-xl border border-black/10 bg-white p-6 space-y-2">
+          <h2 className="font-serif font-medium text-body text-ordift-ink">Benefits &amp; Employment</h2>
+          <p className="font-sans text-body-small text-ordift-ink-muted">
+            Basic salary: {myEmploymentTerms?.basicSalary != null ? `${myEmploymentTerms.currency ?? ""} ${myEmploymentTerms.basicSalary}`.trim() : "—"}
+          </p>
+          <p className="font-sans text-body-small text-ordift-ink-muted">Work pattern: {myEmploymentTerms?.workPattern ?? "—"}</p>
+          {longServiceAwards.length > 0 ? (
+            <ul className="space-y-1 pt-1">
+              {longServiceAwards.map((a) => (
+                <li key={a.id} className="font-sans text-body-small text-ordift-ink-muted">
+                  {a.milestoneYears}-year long-service award — {a.percentage}% — {a.awardedAt}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="font-sans text-body-small text-ordift-ink-muted">No long-service benefit awarded yet.</p>
+          )}
         </div>
       </section>
 

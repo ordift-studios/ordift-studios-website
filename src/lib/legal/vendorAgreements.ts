@@ -61,9 +61,24 @@ export type VendorAgreementSummary = {
   primaryContextType: string | null;
   primaryContextReference: string | null;
   createdAt: string;
+  // Vendor Agreement Safety Check (2026-09-16) — null/default for
+  // virtually every agreement (= genuine). 'controlled_test' marks an
+  // agreement whose signature evidence is technically real but whose
+  // signing party is a designated controlled QA/test account (see
+  // migration 0133) — the UI must surface this prominently and never
+  // present it as a genuine legal execution.
+  evidenceClassification: "genuine" | "controlled_test" | null;
 };
 
-function mapAgreementSummary(r: { id: string; agreement_reference: string; status: string; primary_context_type: string | null; primary_context_reference: string | null; created_at: string }): VendorAgreementSummary {
+function mapAgreementSummary(r: {
+  id: string;
+  agreement_reference: string;
+  status: string;
+  primary_context_type: string | null;
+  primary_context_reference: string | null;
+  created_at: string;
+  evidence_classification?: string | null;
+}): VendorAgreementSummary {
   return {
     id: r.id,
     agreementReference: r.agreement_reference,
@@ -71,6 +86,7 @@ function mapAgreementSummary(r: { id: string; agreement_reference: string; statu
     primaryContextType: r.primary_context_type,
     primaryContextReference: r.primary_context_reference,
     createdAt: r.created_at,
+    evidenceClassification: (r.evidence_classification as "genuine" | "controlled_test" | null | undefined) ?? null,
   };
 }
 
@@ -85,7 +101,7 @@ export async function getCurrentVendorFrameworkAgreement(vendorProfileId: string
 
   const { data } = await admin
     .from("agreements")
-    .select("id, agreement_reference, status, primary_context_type, primary_context_reference, created_at")
+    .select("id, agreement_reference, status, primary_context_type, primary_context_reference, created_at, evidence_classification")
     .eq("master_id", master.id)
     .eq("primary_context_type", VENDOR_FRAMEWORK_CONTEXT_TYPE)
     .eq("primary_context_reference", vendorProfileId)
@@ -493,7 +509,7 @@ export async function listVendorAgreementFamily(vendorProfileId: string): Promis
 
   const { data: frameworkRows } = await admin
     .from("agreements")
-    .select("id, agreement_reference, status, primary_context_type, primary_context_reference, created_at")
+    .select("id, agreement_reference, status, primary_context_type, primary_context_reference, created_at, evidence_classification")
     .eq("master_id", master.id)
     .eq("primary_context_type", VENDOR_FRAMEWORK_CONTEXT_TYPE)
     .eq("primary_context_reference", vendorProfileId)
@@ -505,7 +521,7 @@ export async function listVendorAgreementFamily(vendorProfileId: string): Promis
 
   const { data: workOrderRows } = await admin
     .from("agreements")
-    .select("id, agreement_reference, status, primary_context_type, primary_context_reference, created_at")
+    .select("id, agreement_reference, status, primary_context_type, primary_context_reference, created_at, evidence_classification")
     .eq("master_id", master.id)
     .eq("primary_context_type", VENDOR_WORK_ORDER_CONTEXT_TYPE)
     .eq("primary_context_reference", framework.id)
@@ -513,3 +529,36 @@ export async function listVendorAgreementFamily(vendorProfileId: string): Promis
 
   return { framework, workOrders: (workOrderRows ?? []).map(mapAgreementSummary) };
 }
+
+// Vendor lifecycle reconciliation (2026-09-16) — the ENGAGEMENT concept
+// the Founder's own QA distinguished from Vendor ONBOARDING and Vendor
+// APPROVAL: "No Current Engagement -> Work Order Draft -> Pending
+// Signature/Approval -> Engaged/Active -> Completed/Closed". Pure —
+// reads only the given work orders' own status (most-recent-first,
+// listVendorAgreementFamily's own ordering), never infers anything
+// about onboarding or vendor-approval state. A vendor may correctly
+// show "No Current Engagement" while fully onboarded and Approved —
+// that is the corrected, non-contradictory model, not a defect.
+export type VendorEngagementSummary = "none" | "draft" | "pending_signature" | "active" | "completed" | "closed";
+
+const ENGAGEMENT_DRAFT_STATUSES = new Set<AgreementLifecycleStatus>(["draft", "internal_review", "approved_for_issue"]);
+const ENGAGEMENT_PENDING_SIGNATURE_STATUSES = new Set<AgreementLifecycleStatus>(["sent", "viewed", "changes_requested", "accepted_for_signature", "partially_signed"]);
+
+export function summarizeCurrentEngagement(workOrders: readonly { status: AgreementLifecycleStatus }[]): VendorEngagementSummary {
+  if (workOrders.length === 0) return "none";
+  const mostRecentStatus = workOrders[0].status;
+  if (mostRecentStatus === "fully_executed" || mostRecentStatus === "active") return "active";
+  if (mostRecentStatus === "completed") return "completed";
+  if (ENGAGEMENT_DRAFT_STATUSES.has(mostRecentStatus)) return "draft";
+  if (ENGAGEMENT_PENDING_SIGNATURE_STATUSES.has(mostRecentStatus)) return "pending_signature";
+  return "closed"; // declined / cancelled / expired / superseded / terminated
+}
+
+export const VENDOR_ENGAGEMENT_SUMMARY_LABEL: Record<VendorEngagementSummary, string> = {
+  none: "No Current Engagement",
+  draft: "Work Order Draft",
+  pending_signature: "Pending Signature/Approval",
+  active: "Engaged/Active",
+  completed: "Completed/Closed",
+  closed: "Closed",
+};

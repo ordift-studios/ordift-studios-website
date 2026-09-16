@@ -269,19 +269,49 @@ export default async function AdminLayout({ children }: { children: React.ReactN
               on a child fixes a clip on its ancestor). A group with
               exactly one visible item still renders as a single direct
               link — no dropdown, no clipping risk, unaffected either way. */}
-          {visibleNavGroups.map((group) =>
-            group.items.length === 1 ? (
+          {/* Super Admin flat navigation (2026-09-16) — a Super Admin is
+              authorized for nearly every module, so the grouped/SAP-style
+              dropdown bar was hiding entire categories (HR, Vendors, ...)
+              behind an extra click the Founder's own QA flagged. For
+              Super Admin only: every group except My Workspace renders as
+              individual top-level links (no dropdown, no group header) so
+              every authorized module is directly visible; horizontal
+              scroll/wrap is accepted in exchange. My Workspace stays a
+              dropdown (explicit requirement — it's a 7-item personal
+              menu, not a module list). Non-Super-Admin viewers are
+              unaffected: same grouped/dropdown bar as before, unchanged —
+              this is a Super-Admin-only presentation choice, never a
+              permission change (itemVisible/visibleNavGroups above are
+              identical for every role). No route, page, or authorization
+              check changes; this only decides dropdown vs. flat link. */}
+          {visibleNavGroups.map((group) => {
+            if (group.label === "My Workspace") {
+              return <AdminNavDropdown key={group.label} label={group.label} items={group.items} />;
+            }
+            if (group.items.length === 1) {
+              return (
+                <Link
+                  key={group.label}
+                  href={group.items[0].href}
+                  className="font-sans text-body-small text-white/70 hover:text-white py-3 px-2 whitespace-nowrap"
+                >
+                  {group.label}
+                </Link>
+              );
+            }
+            if (!isSuper) {
+              return <AdminNavDropdown key={group.label} label={group.label} items={group.items} />;
+            }
+            return group.items.map((item) => (
               <Link
-                key={group.label}
-                href={group.items[0].href}
+                key={item.href}
+                href={item.href}
                 className="font-sans text-body-small text-white/70 hover:text-white py-3 px-2 whitespace-nowrap"
               >
-                {group.label}
+                {item.label}
               </Link>
-            ) : (
-              <AdminNavDropdown key={group.label} label={group.label} items={group.items} />
-            )
-          )}
+            ));
+          })}
         </div>
       </header>
 

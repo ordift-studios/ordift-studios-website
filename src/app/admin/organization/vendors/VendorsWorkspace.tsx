@@ -8,7 +8,12 @@ const STAGE_LABELS: Record<string, string> = {
   profile: "Profile",
   payment_setup: "Payment Setup",
   engagement_assigned: "Engagement Assigned",
-  active: "Active (onboarding complete)",
+  // "Onboarding Complete", never "Active" (2026-09-16 vendor lifecycle
+  // reconciliation) — "Active" is reserved for the separate Vendor
+  // Approval status (vendorProfileStatus, badge above) and this stage
+  // reaching its end previously read as directly contradicting a
+  // genuinely "Pending" approval status right next to it.
+  active: "Onboarding Complete",
 };
 
 function VendorRow({ vendor }: { vendor: VendorWorkspaceRow }) {
@@ -28,7 +33,7 @@ function VendorRow({ vendor }: { vendor: VendorWorkspaceRow }) {
         </div>
         <div className="flex flex-col items-end gap-1">
           <span className={`px-2 py-0.5 rounded-full font-sans text-caption whitespace-nowrap ${vendor.vendorProfileStatus === "active" ? "bg-green-100 text-green-800" : "bg-amber-100 text-amber-800"}`}>
-            {vendor.vendorProfileStatus ? vendor.vendorProfileStatus.replace(/_/g, " ") : "Company profile not recorded"}
+            Vendor Approval: {vendor.vendorProfileStatus ? vendor.vendorProfileStatus.replace(/_/g, " ") : "Company profile not recorded"}
           </span>
           {vendor.onboardingStage && (
             <span className="px-2 py-0.5 rounded-full font-sans text-caption whitespace-nowrap bg-black/5 text-ordift-ink-muted">

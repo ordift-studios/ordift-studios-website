@@ -722,6 +722,22 @@ function IssueFrameworkForm({ vendorId, agreementId }: { vendorId: string; agree
   );
 }
 
+// Vendor Agreement Safety Check (2026-09-16) — renders directly next to
+// any agreement's status badge whenever evidenceClassification ===
+// 'controlled_test' (see migration 0133): the signature evidence is
+// technically real, but the signing party is a designated controlled
+// QA/test account, not a genuine commercial vendor. Never omit this
+// wherever a status badge appears — that is exactly where an admin
+// could otherwise mistake it for a genuine legal execution.
+function EvidenceClassificationBadge({ evidenceClassification }: { evidenceClassification: "genuine" | "controlled_test" | null }) {
+  if (evidenceClassification !== "controlled_test") return null;
+  return (
+    <span className="px-2 py-0.5 rounded-full font-sans text-caption font-semibold whitespace-nowrap bg-red-100 text-red-800" title="Signature evidence is genuine, but the signing party is a designated controlled QA/test account — never treat this as a real legal execution.">
+      QA / TEST EVIDENCE — not a genuine execution
+    </span>
+  );
+}
+
 const AGREEMENT_STATUS_STYLES: Record<string, string> = {
   draft: "bg-black/5 text-ordift-ink-muted",
   internal_review: "bg-amber-100 text-amber-800",
@@ -756,6 +772,7 @@ function FrameworkAgreementSection({
             <span className={`px-2 py-0.5 rounded-full font-sans text-caption whitespace-nowrap ${AGREEMENT_STATUS_STYLES[frameworkAgreement.status] ?? "bg-black/5"}`}>
               {frameworkAgreement.status.replace(/_/g, " ")}
             </span>
+            <EvidenceClassificationBadge evidenceClassification={frameworkAgreement.evidenceClassification} />
           </div>
           {frameworkAgreement.status === "draft" && <ApproveFrameworkForIssueForm vendorId={vendorId} agreementId={frameworkAgreement.id} />}
           {frameworkAgreement.status === "approved_for_issue" && <IssueFrameworkForm vendorId={vendorId} agreementId={frameworkAgreement.id} />}
@@ -765,7 +782,13 @@ function FrameworkAgreementSection({
               Execution is recorded only once the vendor genuinely completes signing.
             </p>
           )}
-          {frameworkAgreement.status === "fully_executed" && (
+          {frameworkAgreement.status === "fully_executed" && frameworkAgreement.evidenceClassification === "controlled_test" && (
+            <p className="font-sans text-caption text-red-700">
+              Fully executed via genuine Signature Engine evidence, but the signing party is the designated
+              controlled QA/test Vendor account — this is not a genuine, binding legal execution.
+            </p>
+          )}
+          {frameworkAgreement.status === "fully_executed" && frameworkAgreement.evidenceClassification !== "controlled_test" && (
             <p className="font-sans text-caption text-green-700">Fully executed — both parties have genuinely signed.</p>
           )}
         </div>
@@ -927,11 +950,12 @@ function WorkOrdersSection({
                     <span className={`px-2 py-0.5 rounded-full font-sans text-caption whitespace-nowrap ${AGREEMENT_STATUS_STYLES[wo.status] ?? "bg-black/5"}`}>
                       {wo.status.replace(/_/g, " ")}
                     </span>
+                    <EvidenceClassificationBadge evidenceClassification={wo.evidenceClassification} />
                   </div>
                   {wo.status === "draft" && <ApproveWorkOrderForIssueForm vendorId={vendorId} agreementId={wo.id} />}
                   {wo.status === "approved_for_issue" && <IssueWorkOrderForm vendorId={vendorId} agreementId={wo.id} />}
                   {wo.status === "sent" && <p className="font-sans text-caption text-ordift-ink-muted">Issued and sent for signature.</p>}
-                  {wo.status === "fully_executed" && <p className="font-sans text-caption text-green-700">Fully executed.</p>}
+                  {wo.status === "fully_executed" && wo.evidenceClassification !== "controlled_test" && <p className="font-sans text-caption text-green-700">Fully executed.</p>}
                   {wo.status !== "draft" && wo.status !== "internal_review" && (
                     <VariationsSubsection vendorId={vendorId} workOrderAgreementId={wo.id} variations={variationsByWorkOrderId[wo.id] ?? []} />
                   )}

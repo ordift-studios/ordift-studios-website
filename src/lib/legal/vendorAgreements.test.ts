@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { VENDOR_FRAMEWORK_VARIABLES } from "./documents/os-lgl-009a-vendor-supplier-framework-agreement";
+import { summarizeCurrentEngagement, VENDOR_ENGAGEMENT_SUMMARY_LABEL, type VendorEngagementSummary } from "./vendorAgreements";
+import type { AgreementLifecycleStatus } from "./agreementLifecycle";
 
 // OS-LGL-009 Vendor & Supplier Framework Agreement architecture
 // (2026-09-15) — Option A integration, approved by the Founder/Super
@@ -359,5 +361,58 @@ describe("Vendor Portal Framework Agreement visibility fix, verified by code rea
 
   it("this fix touches ONLY the Vendor self-service portal (page.tsx, VendorOnboardingStatus.tsx) — issueVendorFrameworkAgreement(), signatureEngine.ts, the email dispatch pipeline, and src/proxy.ts are all completely unmodified; the existing tokenized emails for ORD-AGR-2026-000005 remain the sole real signing path, exactly as issued", () => {
     expect(true).toBe(true);
+  });
+});
+
+// Vendor lifecycle reconciliation (2026-09-16) — summarizeCurrentEngagement
+// is pure and directly tested with real assertions, not a doc-test:
+// this is the function that now decides what "Current Engagement" shows
+// on the vendor detail page, deliberately independent of Onboarding and
+// Vendor Approval status.
+describe("summarizeCurrentEngagement — real assertions", () => {
+  it("no work orders at all -> 'none'", () => {
+    expect(summarizeCurrentEngagement([])).toBe("none");
+  });
+
+  it("most recent work order draft/internal_review/approved_for_issue -> 'draft'", () => {
+    const draftLike: AgreementLifecycleStatus[] = ["draft", "internal_review", "approved_for_issue"];
+    for (const status of draftLike) {
+      expect(summarizeCurrentEngagement([{ status }])).toBe("draft");
+    }
+  });
+
+  it("most recent work order sent/viewed/changes_requested/accepted_for_signature/partially_signed -> 'pending_signature'", () => {
+    const pendingLike: AgreementLifecycleStatus[] = ["sent", "viewed", "changes_requested", "accepted_for_signature", "partially_signed"];
+    for (const status of pendingLike) {
+      expect(summarizeCurrentEngagement([{ status }])).toBe("pending_signature");
+    }
+  });
+
+  it("most recent work order fully_executed or active -> 'active'", () => {
+    expect(summarizeCurrentEngagement([{ status: "fully_executed" }])).toBe("active");
+    expect(summarizeCurrentEngagement([{ status: "active" }])).toBe("active");
+  });
+
+  it("most recent work order completed -> 'completed'", () => {
+    expect(summarizeCurrentEngagement([{ status: "completed" }])).toBe("completed");
+  });
+
+  it("most recent work order declined/cancelled/expired/superseded/terminated -> 'closed'", () => {
+    const exceptional: AgreementLifecycleStatus[] = ["declined", "cancelled", "expired", "superseded", "terminated"];
+    for (const status of exceptional) {
+      expect(summarizeCurrentEngagement([{ status }])).toBe("closed");
+    }
+  });
+
+  it("only the MOST RECENT (first) work order decides the summary — an old completed order followed by a new draft reads as 'draft', not 'completed'", () => {
+    const workOrders: { status: AgreementLifecycleStatus }[] = [{ status: "draft" }, { status: "completed" }];
+    expect(summarizeCurrentEngagement(workOrders)).toBe("draft");
+  });
+
+  it("every VendorEngagementSummary value has a distinct, non-empty display label", () => {
+    const values: VendorEngagementSummary[] = ["none", "draft", "pending_signature", "active", "completed", "closed"];
+    const labels = values.map((v) => VENDOR_ENGAGEMENT_SUMMARY_LABEL[v]);
+    expect(labels.every((l) => l.length > 0)).toBe(true);
+    expect(new Set(labels).size).toBe(labels.length);
   });
 });
