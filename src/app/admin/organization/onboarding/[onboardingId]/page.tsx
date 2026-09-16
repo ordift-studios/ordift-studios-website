@@ -12,7 +12,7 @@ import { listPaymentInstructionsForProfile } from "@/lib/payments/payeeInstructi
 import { getActivityForEntity } from "@/lib/admin/activityLog";
 import { getRequisitionById, listApprovedRequisitionsForOnboarding } from "@/lib/recruitment/requisitions";
 import { resolveCurrentEmploymentContext } from "@/lib/organization/employmentTermsHistory";
-import { getEmployeeEmploymentAgreementSummary } from "@/lib/legal/employeeAgreements";
+import { getEmployeeEmploymentAgreementSummary, checkEmployeeAgreementReadiness } from "@/lib/legal/employeeAgreements";
 import { OnboardingWorkspace } from "./OnboardingWorkspace";
 
 export const metadata: Metadata = {
@@ -96,6 +96,13 @@ export default async function OnboardingWorkspacePage({ params }: { params: Prom
   // section reads (2026-09-15) — one canonical read, not a second
   // independent query of the agreements table.
   const agreementSummary = await getEmployeeEmploymentAgreementSummary(onboarding.id);
+  // Task 1 fix (2026-09-17) — this workspace previously showed the
+  // Employment Agreement's status once a draft existed, but never the
+  // READINESS state or the create action itself when no draft existed
+  // yet, silently deferring both to the Full Profile page. Reuses the
+  // exact same checkEmployeeAgreementReadiness() the Full Profile's
+  // Agreement Readiness section calls — never a second gate.
+  const agreementReadiness = onboarding.pipeline === "employee" ? await checkEmployeeAgreementReadiness(onboarding.id) : null;
 
   return (
     <div className="space-y-8">
@@ -146,6 +153,7 @@ export default async function OnboardingWorkspacePage({ params }: { params: Prom
         requisition={requisition}
         employmentContext={employmentContext}
         agreementSummary={agreementSummary}
+        agreementReadiness={agreementReadiness}
         hiringManagerName={hiringManagerName}
         reconciliationCandidates={reconciliationCandidates}
         requirementOverrides={requirementOverrides}

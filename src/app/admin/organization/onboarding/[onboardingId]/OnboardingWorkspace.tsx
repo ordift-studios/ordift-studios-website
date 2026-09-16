@@ -7,8 +7,9 @@ import type { ResolvedRequirement, RequirementStatus, OnboardingRequirementOverr
 import type { ActivityLogEntry } from "@/lib/admin/activityLog";
 import type { RecruitmentRequisition } from "@/lib/recruitment/requisitions";
 import type { CurrentEmploymentContext } from "@/lib/organization/employmentTermsHistory";
-import type { EmploymentAgreementSummary } from "@/lib/legal/employeeAgreements";
+import type { EmploymentAgreementSummary, EmploymentAgreementFieldReadiness } from "@/lib/legal/employeeAgreements";
 import { isExceptionalAgreementStatus, isFullyExecuted } from "@/lib/legal/agreementLifecycle";
+import { CreateAgreementDraftForm } from "../../people/[id]/CreateAgreementDraftForm";
 import {
   advanceOnboardingStageAction,
   completeOnboardingFromWorkspaceAction,
@@ -377,6 +378,7 @@ export function OnboardingWorkspace({
   requisition,
   employmentContext,
   agreementSummary,
+  agreementReadiness,
   hiringManagerName,
   reconciliationCandidates,
   requirementOverrides,
@@ -390,6 +392,10 @@ export function OnboardingWorkspace({
   requisition: RecruitmentRequisition | null;
   employmentContext: CurrentEmploymentContext;
   agreementSummary: EmploymentAgreementSummary | null;
+  agreementReadiness:
+    | { ok: true; ready: boolean; fields: EmploymentAgreementFieldReadiness[] }
+    | { ok: false; error: string; jurisdictionGateState?: string }
+    | null;
   hiringManagerName: string | null;
   reconciliationCandidates: RecruitmentRequisition[];
   requirementOverrides: ResolvedOnboardingRequirementOverride[];
@@ -539,6 +545,59 @@ export function OnboardingWorkspace({
 
       <section className="rounded-xl border border-black/10 bg-white p-6 space-y-3">
         <h2 className="font-serif font-medium text-body text-ordift-ink">Documents &amp; Agreements</h2>
+
+        {/* Employment Agreement Readiness (Task 1 fix, 2026-09-17) —
+            reuses the EXACT SAME checkEmployeeAgreementReadiness()/
+            CreateAgreementDraftForm the Full Profile page's Agreement
+            Readiness section uses; this is the same governed gate and
+            the same draft-creation action, surfaced here too so HR/
+            Super Admin never has to leave this workspace to see why an
+            agreement can't be drafted yet, or to draft it once it can. */}
+        {onboarding.pipeline === "employee" && (
+          <div className="rounded-lg border border-black/10 p-4 space-y-3">
+            <h3 className="font-sans text-body-small font-semibold text-ordift-ink">Employment Agreement Readiness</h3>
+            {!agreementReadiness ? (
+              <p className="font-sans text-caption text-ordift-ink-muted">Readiness could not be evaluated.</p>
+            ) : !agreementReadiness.ok ? (
+              <div className="space-y-1">
+                <p className="font-sans text-caption text-red-700">{agreementReadiness.error}</p>
+                {agreementReadiness.jurisdictionGateState && (
+                  <p className="font-sans text-caption text-ordift-ink-muted">Jurisdiction gate: {agreementReadiness.jurisdictionGateState.replace(/_/g, " ")}</p>
+                )}
+              </div>
+            ) : (
+              <>
+                <ul className="divide-y divide-black/5">
+                  {agreementReadiness.fields.map((f) => (
+                    <li key={f.key} className="py-1.5 flex items-center justify-between gap-3">
+                      <span className="font-sans text-caption text-ordift-ink">{f.label}{f.value ? ` — ${f.value}` : ""}</span>
+                      <span
+                        className={`px-2 py-0.5 rounded-full font-sans text-caption whitespace-nowrap ${
+                          f.status === "satisfied" || f.status === "not_applicable"
+                            ? "bg-green-100 text-green-800"
+                            : f.status === "missing"
+                              ? "bg-amber-100 text-amber-800"
+                              : "bg-red-100 text-red-800"
+                        }`}
+                      >
+                        {f.status.replace(/_/g, " ")}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+                {agreementReadiness.ready && (!agreementSummary || agreementSummary.isStale) ? (
+                  <CreateAgreementDraftForm profileId={onboarding.profileId} onboardingId={onboarding.id} isReplacement={Boolean(agreementSummary?.isStale)} />
+                ) : !agreementSummary && !agreementReadiness.ready ? (
+                  <p className="font-sans text-caption text-ordift-ink-muted">
+                    Every field above must be satisfied before a draft can be created — complete the outstanding
+                    Employment Terms on the Full Profile page, then return here.
+                  </p>
+                ) : null}
+              </>
+            )}
+          </div>
+        )}
+
         {/* Employment Agreement generation status (2026-09-15) —
             truthfully distinct from the "employment_agreement_executed"
             requirement's own Pending/Satisfied pill above: a generated
@@ -562,7 +621,7 @@ export function OnboardingWorkspace({
         {agreementSummary?.isStale && (
           <p className="font-sans text-caption text-amber-700 bg-amber-50 border border-amber-200 rounded px-3 py-2">
             The currently resolved Schedule A values no longer match this draft&apos;s frozen snapshot — a corrected
-            replacement can be generated from the Full Profile&apos;s Agreement Readiness section.
+            replacement can be generated from the Employment Agreement Readiness panel above.
           </p>
         )}
         {showAgreementExecutionOverride && agreementSummary && (
