@@ -272,6 +272,14 @@ export type VendorWorkOrderDetails = {
   milestones?: string;
   vendorPersonnel?: string;
   equipmentFacilityRequirements?: string;
+  // Optional structured link to the specific vendor_rate_card_items row
+  // this Work Order's cost is drawn from (vendorRateCards.ts) — the
+  // "future quotation/job-costing integration point" this whole rate
+  // card module exists for. Purely a reference id; vendorCost below
+  // remains the actual agreed commercial figure recorded on THIS Work
+  // Order (a rate card's own base_cost may change later without
+  // silently altering an already-issued Work Order).
+  rateCardItemId?: string;
   vendorCost?: string;
   currency?: string;
   taxWithholdingTreatment?: string;
@@ -291,6 +299,47 @@ export type VendorWorkOrderDetails = {
   safetySiteRequirements?: string;
   specialTerms?: string;
 };
+
+// Label ordering for Schedule B (the issued Work Order artifact,
+// vendorWorkOrderIssuance.ts) — same "label + N/A for absent" rendering
+// discipline as VENDOR_FRAMEWORK_VARIABLES' own Schedule A, but every
+// field here is genuinely optional (no VendorWorkOrderDetails field is
+// required — a goods-only supply may have no personnel/crew fields at
+// all, and that's a real, valid Work Order, never an incomplete one).
+export const VENDOR_WORK_ORDER_DETAIL_FIELDS: readonly { key: keyof VendorWorkOrderDetails; label: string }[] = [
+  { key: "projectTitle", label: "Project Title" },
+  { key: "internalProjectReference", label: "Internal Project Reference" },
+  { key: "clientReference", label: "Client Reference" },
+  { key: "serviceCategory", label: "Service Category" },
+  { key: "scope", label: "Scope" },
+  { key: "deliverables", label: "Deliverables" },
+  { key: "quantities", label: "Quantities" },
+  { key: "dates", label: "Dates" },
+  { key: "location", label: "Location" },
+  { key: "callTimeSchedule", label: "Call Time / Schedule" },
+  { key: "milestones", label: "Milestones" },
+  { key: "vendorPersonnel", label: "Vendor Personnel" },
+  { key: "equipmentFacilityRequirements", label: "Equipment / Facility Requirements" },
+  { key: "rateCardItemId", label: "Rate Card Reference" },
+  { key: "vendorCost", label: "Vendor Cost" },
+  { key: "currency", label: "Currency" },
+  { key: "taxWithholdingTreatment", label: "Tax Withholding Treatment" },
+  { key: "deposit", label: "Deposit" },
+  { key: "paymentMilestones", label: "Payment Milestones" },
+  { key: "paymentDueBasis", label: "Payment Due Basis" },
+  { key: "approvedExpenses", label: "Approved Expenses" },
+  { key: "overtimeRule", label: "Overtime Rule" },
+  { key: "cancellationRescheduling", label: "Cancellation / Rescheduling" },
+  { key: "acceptanceCriteria", label: "Acceptance Criteria" },
+  { key: "ipTreatment", label: "IP Treatment" },
+  { key: "publicityAuthorizationStatus", label: "Publicity Authorization Status" },
+  { key: "confidentialityClassification", label: "Confidentiality Classification" },
+  { key: "personalDataProcessingIndicator", label: "Personal Data Processing Indicator" },
+  { key: "dpaRequirement", label: "DPA Requirement" },
+  { key: "requiredLicencesInsurance", label: "Required Licences / Insurance" },
+  { key: "safetySiteRequirements", label: "Safety / Site Requirements" },
+  { key: "specialTerms", label: "Special Terms" },
+];
 
 export async function createVendorWorkOrderDraftAgreement(params: {
   frameworkAgreementId: string;

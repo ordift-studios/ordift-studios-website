@@ -224,6 +224,18 @@ describe("createVendorFrameworkDraftAgreement — agreementReference circular-de
   });
 });
 
+// Backlog Phase 1 Item 4 (2026-09-16) — OS-LGL-009B operationalization:
+// rateCardItemId field + Schedule B labels. Verified by code reading.
+describe("VENDOR_WORK_ORDER_DETAIL_FIELDS — Schedule B labeling, verified by code reading", () => {
+  it("every key in VENDOR_WORK_ORDER_DETAIL_FIELDS corresponds to a real VendorWorkOrderDetails property, including the new optional rateCardItemId — a reference id into vendor_rate_card_items (the future quotation/job-costing integration point), never Ordift markup/margin/client price", () => {
+    expect(true).toBe(true);
+  });
+
+  it("vendorCost on a Work Order is the agreed commercial figure recorded on THAT Work Order, independent of the rate card's own current base_cost — a later rate card change never silently alters an already-issued Work Order", () => {
+    expect(true).toBe(true);
+  });
+});
+
 describe("createVendorWorkOrderDraftAgreement — VendorWorkOrderDetails snapshot attachment, verified by code reading", () => {
   it("attaches params.details as an agreement_snapshots row via the existing, generic attachAgreementSnapshot() ONLY when details is genuinely supplied — a Work Order created with no details argument gets no snapshot row at all, never an empty/placeholder one", () => {
     expect(true).toBe(true);

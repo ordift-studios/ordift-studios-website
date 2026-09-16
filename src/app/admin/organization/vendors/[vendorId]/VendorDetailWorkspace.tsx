@@ -27,6 +27,9 @@ import {
   createVendorFrameworkAction,
   approveVendorFrameworkForIssueAction,
   issueVendorFrameworkAction,
+  createVendorWorkOrderAction,
+  approveVendorWorkOrderForIssueAction,
+  issueVendorWorkOrderAction,
   type ActionState,
   type CreateFrameworkActionState,
 } from "./actions";
@@ -55,6 +58,7 @@ export function VendorDetailWorkspace({
   payeeProfile,
   paymentInstructions,
   frameworkAgreement,
+  workOrders,
   contractingEntityOptions,
 }: {
   vendorId: string;
@@ -69,6 +73,7 @@ export function VendorDetailWorkspace({
   payeeProfile: PayeeProfile | null;
   paymentInstructions: PaymentInstructionRow[];
   frameworkAgreement: VendorAgreementSummary | null;
+  workOrders: VendorAgreementSummary[];
   contractingEntityOptions: ContractingEntityOption[];
 }) {
   return (
@@ -82,6 +87,7 @@ export function VendorDetailWorkspace({
       />
       <OnboardingSection vendorId={vendorId} onboarding={onboarding} resolvedRequirements={resolvedRequirements} overrides={overrides} />
       <FrameworkAgreementSection vendorId={vendorId} frameworkAgreement={frameworkAgreement} contractingEntityOptions={contractingEntityOptions} />
+      <WorkOrdersSection vendorId={vendorId} frameworkAgreement={frameworkAgreement} workOrders={workOrders} />
       <DocumentsSection vendorId={vendorId} documents={documents} />
       <PaymentSection vendorId={vendorId} vendorProfile={vendorProfile} payeeProfile={payeeProfile} paymentInstructions={paymentInstructions} />
     </div>
@@ -749,7 +755,117 @@ function FrameworkAgreementSection({
               Execution is recorded only once the vendor genuinely completes signing.
             </p>
           )}
+          {frameworkAgreement.status === "fully_executed" && (
+            <p className="font-sans text-caption text-green-700">Fully executed — both parties have genuinely signed.</p>
+          )}
         </div>
+      )}
+    </section>
+  );
+}
+
+// OS-LGL-009B Work Order (2026-09-16, backlog Phase 1 Item 4) — mirrors
+// FrameworkAgreementSection's own draft -> approve -> issue -> sign
+// pattern exactly, one per Work Order. Only offered once the Framework
+// itself has been issued (createVendorWorkOrderDraftAgreement() itself
+// refuses otherwise) — this form is simply not shown before then.
+function CreateWorkOrderForm({ vendorId, frameworkAgreementId }: { vendorId: string; frameworkAgreementId: string }) {
+  const [state, formAction, pending] = useActionState<ActionState, FormData>(createVendorWorkOrderAction, null);
+  return (
+    <form action={formAction} className="grid grid-cols-1 sm:grid-cols-2 gap-2 rounded-lg border border-black/10 p-4">
+      <input type="hidden" name="vendorId" value={vendorId} />
+      <input type="hidden" name="frameworkAgreementId" value={frameworkAgreementId} />
+      <p className="sm:col-span-2 font-sans text-caption text-ordift-ink-muted">
+        Every field is optional — leave blank whatever is genuinely not yet known or not applicable to this Work Order.
+      </p>
+      <input name="projectTitle" placeholder="Project Title" className="rounded-lg border border-black/15 px-2 py-1.5 font-sans text-body-small" />
+      <input name="internalProjectReference" placeholder="Internal Project Reference" className="rounded-lg border border-black/15 px-2 py-1.5 font-sans text-body-small" />
+      <input name="clientReference" placeholder="Client Reference" className="rounded-lg border border-black/15 px-2 py-1.5 font-sans text-body-small" />
+      <input name="serviceCategory" placeholder="Service Category" className="rounded-lg border border-black/15 px-2 py-1.5 font-sans text-body-small" />
+      <textarea name="scope" placeholder="Scope" className="sm:col-span-2 rounded-lg border border-black/15 px-2 py-1.5 font-sans text-body-small" rows={2} />
+      <textarea name="deliverables" placeholder="Deliverables" className="sm:col-span-2 rounded-lg border border-black/15 px-2 py-1.5 font-sans text-body-small" rows={2} />
+      <input name="dates" placeholder="Dates" className="rounded-lg border border-black/15 px-2 py-1.5 font-sans text-body-small" />
+      <input name="location" placeholder="Location" className="rounded-lg border border-black/15 px-2 py-1.5 font-sans text-body-small" />
+      <input name="vendorPersonnel" placeholder="Vendor Personnel" className="rounded-lg border border-black/15 px-2 py-1.5 font-sans text-body-small" />
+      <input name="paymentDueBasis" placeholder="Payment Due Basis" className="rounded-lg border border-black/15 px-2 py-1.5 font-sans text-body-small" />
+      <input name="vendorCost" placeholder="Vendor Cost (amount only)" className="rounded-lg border border-black/15 px-2 py-1.5 font-sans text-body-small" />
+      <input name="currency" placeholder="Currency" className="rounded-lg border border-black/15 px-2 py-1.5 font-sans text-body-small" />
+      <textarea name="acceptanceCriteria" placeholder="Acceptance Criteria" className="sm:col-span-2 rounded-lg border border-black/15 px-2 py-1.5 font-sans text-body-small" rows={2} />
+      <textarea name="cancellationRescheduling" placeholder="Cancellation / Rescheduling Terms" className="sm:col-span-2 rounded-lg border border-black/15 px-2 py-1.5 font-sans text-body-small" rows={2} />
+      <textarea name="specialTerms" placeholder="Special Terms" className="sm:col-span-2 rounded-lg border border-black/15 px-2 py-1.5 font-sans text-body-small" rows={2} />
+      <button type="submit" disabled={pending} className="sm:col-span-2 justify-self-start font-sans text-body-small font-semibold px-4 py-2 rounded-md bg-ordift-navy-950 text-white disabled:opacity-50">
+        {pending ? "Creating…" : "Create Work Order Draft"}
+      </button>
+      <FormError state={state} />
+    </form>
+  );
+}
+
+function ApproveWorkOrderForIssueForm({ vendorId, agreementId }: { vendorId: string; agreementId: string }) {
+  const [state, formAction, pending] = useActionState<ActionState, FormData>(approveVendorWorkOrderForIssueAction, null);
+  return (
+    <form action={formAction}>
+      <input type="hidden" name="vendorId" value={vendorId} />
+      <input type="hidden" name="agreementId" value={agreementId} />
+      <button type="submit" disabled={pending} className="font-sans text-caption font-semibold px-3 py-1.5 rounded-md bg-ordift-gold-pressed text-ordift-navy-950 disabled:opacity-50">
+        {pending ? "Approving…" : "Approve for Issue"}
+      </button>
+      <FormError state={state} />
+    </form>
+  );
+}
+
+function IssueWorkOrderForm({ vendorId, agreementId }: { vendorId: string; agreementId: string }) {
+  const [state, formAction, pending] = useActionState<ActionState, FormData>(issueVendorWorkOrderAction, null);
+  return (
+    <form action={formAction} className="space-y-1">
+      <input type="hidden" name="vendorId" value={vendorId} />
+      <input type="hidden" name="agreementId" value={agreementId} />
+      <button type="submit" disabled={pending} className="font-sans text-caption font-semibold px-3 py-1.5 rounded-md bg-green-700 text-white disabled:opacity-50">
+        {pending ? "Issuing…" : "Issue for Signature"}
+      </button>
+      <FormError state={state} />
+    </form>
+  );
+}
+
+function WorkOrdersSection({
+  vendorId,
+  frameworkAgreement,
+  workOrders,
+}: {
+  vendorId: string;
+  frameworkAgreement: VendorAgreementSummary | null;
+  workOrders: VendorAgreementSummary[];
+}) {
+  const frameworkIssued = frameworkAgreement && frameworkAgreement.status !== "draft" && frameworkAgreement.status !== "internal_review";
+  return (
+    <section className="rounded-xl border border-black/10 bg-white p-6 space-y-4">
+      <h2 className="font-serif font-medium text-body text-ordift-ink">Vendor Work Orders (OS-LGL-009B)</h2>
+      {!frameworkIssued ? (
+        <p className="font-sans text-caption text-ordift-ink-muted">A Work Order can only be created once the Framework Agreement above has been issued.</p>
+      ) : (
+        <>
+          {workOrders.length > 0 && (
+            <ul className="space-y-2">
+              {workOrders.map((wo) => (
+                <li key={wo.id} className="rounded-lg border border-black/10 p-3 space-y-2">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <p className="font-sans text-body-small text-ordift-ink">{wo.agreementReference}</p>
+                    <span className={`px-2 py-0.5 rounded-full font-sans text-caption whitespace-nowrap ${AGREEMENT_STATUS_STYLES[wo.status] ?? "bg-black/5"}`}>
+                      {wo.status.replace(/_/g, " ")}
+                    </span>
+                  </div>
+                  {wo.status === "draft" && <ApproveWorkOrderForIssueForm vendorId={vendorId} agreementId={wo.id} />}
+                  {wo.status === "approved_for_issue" && <IssueWorkOrderForm vendorId={vendorId} agreementId={wo.id} />}
+                  {wo.status === "sent" && <p className="font-sans text-caption text-ordift-ink-muted">Issued and sent for signature.</p>}
+                  {wo.status === "fully_executed" && <p className="font-sans text-caption text-green-700">Fully executed.</p>}
+                </li>
+              ))}
+            </ul>
+          )}
+          <CreateWorkOrderForm vendorId={vendorId} frameworkAgreementId={frameworkAgreement!.id} />
+        </>
       )}
     </section>
   );

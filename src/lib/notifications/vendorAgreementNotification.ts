@@ -33,7 +33,8 @@ export type VendorAgreementNotificationEvent =
   | "framework_ready_for_signature"
   | "document_received"
   | "onboarding_started"
-  | "onboarding_completed";
+  | "onboarding_completed"
+  | "work_order_ready_for_signature";
 
 const EVENT_COPY: Record<VendorAgreementNotificationEvent, { subject: string; heading: string; body: string }> = {
   document_approved: {
@@ -65,6 +66,11 @@ const EVENT_COPY: Record<VendorAgreementNotificationEvent, { subject: string; he
     subject: "Vendor Onboarding Complete — Ordift Studios",
     heading: "Your Vendor onboarding is complete",
     body: "Ordift Studios has confirmed your Vendor onboarding is complete. Sign in to your Vendor Portal for details.",
+  },
+  work_order_ready_for_signature: {
+    subject: "Vendor Work Order Ready — Ordift Studios",
+    heading: "A Work Order is ready for your review and signature",
+    body: "Ordift Studios has issued a Vendor Work Order under your Framework Agreement. Please review and sign it using the secure link in the separate Work Order email you received, or sign in to your Vendor Portal for status.",
   },
 };
 

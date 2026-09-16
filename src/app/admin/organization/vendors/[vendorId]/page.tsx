@@ -9,7 +9,7 @@ import { listVendorDocuments } from "@/lib/vendors/vendorDocuments";
 import { getPayeeProfile } from "@/lib/payables/payeeProfiles";
 import { listEmploymentJurisdictions } from "@/lib/portal/adminData";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { getCurrentVendorFrameworkAgreement } from "@/lib/legal/vendorAgreements";
+import { listVendorAgreementFamily } from "@/lib/legal/vendorAgreements";
 import { listEmployingEntities } from "@/lib/organization/legalEntities";
 import { VendorDetailWorkspace } from "./VendorDetailWorkspace";
 
@@ -32,16 +32,17 @@ export default async function VendorDetailPage({ params }: { params: Promise<{ v
   ]);
   if (!profile) notFound();
 
-  const [resolvedRequirements, overrides, documents, payeeProfile, { data: paymentInstructions }, jurisdictions, frameworkAgreement, employingEntities] = await Promise.all([
+  const [resolvedRequirements, overrides, documents, payeeProfile, { data: paymentInstructions }, jurisdictions, agreementFamily, employingEntities] = await Promise.all([
     onboarding ? listResolvedRequirements({ onboardingId: onboarding.id, profileId: vendorId, pipeline: onboarding.pipeline }) : Promise.resolve([]),
     onboarding ? listOnboardingRequirementOverrides(onboarding.id) : Promise.resolve([]),
     listVendorDocuments(vendorId, user.id),
     getPayeeProfile(vendorId),
     admin.from("payment_instructions").select("id, method, verification_status, is_default").eq("profile_id", vendorId),
     listEmploymentJurisdictions(),
-    getCurrentVendorFrameworkAgreement(vendorId),
+    listVendorAgreementFamily(vendorId),
     listEmployingEntities(),
   ]);
+  const { framework: frameworkAgreement, workOrders } = agreementFamily;
   const jurisdictionOptions = jurisdictions.map((j) => ({ id: j.id, name: j.name }));
   // Vendor Profile Particulars (2026-09-15) — the Ordift Contracting
   // Entity field resolves/selects from this canonical, verified list
@@ -79,6 +80,7 @@ export default async function VendorDetailPage({ params }: { params: Promise<{ v
         payeeProfile={payeeProfile}
         paymentInstructions={paymentInstructions ?? []}
         frameworkAgreement={frameworkAgreement}
+        workOrders={workOrders}
         contractingEntityOptions={contractingEntityOptions}
       />
     </div>

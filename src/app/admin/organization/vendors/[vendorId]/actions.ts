@@ -9,10 +9,11 @@ import { requestVendorDocumentUploadAuthorization, recordVendorDocument, reviewV
 import { createPayeeProfile } from "@/lib/payables/payeeProfiles";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { OnboardingPipeline } from "@/lib/organization/onboardingStages";
-import { createVendorFrameworkDraftAgreement } from "@/lib/legal/vendorAgreements";
+import { createVendorFrameworkDraftAgreement, createVendorWorkOrderDraftAgreement, type VendorWorkOrderDetails } from "@/lib/legal/vendorAgreements";
 import type { VendorFrameworkVariableKey } from "@/lib/legal/documents/os-lgl-009a-vendor-supplier-framework-agreement";
 import { transitionAgreementStatus } from "@/lib/legal/agreementEngine";
 import { issueVendorFrameworkAgreement } from "@/lib/legal/vendorAgreementIssuance";
+import { issueVendorWorkOrder } from "@/lib/legal/vendorWorkOrderIssuance";
 import { sendVendorAgreementNotification } from "@/lib/notifications/vendorAgreementNotification";
 
 export type ActionState = { ok: boolean; error?: string } | null;
@@ -362,6 +363,82 @@ export async function issueVendorFrameworkAction(_prev: ActionState, formData: F
     const agreementId = String(formData.get("agreementId") ?? "");
 
     const result = await issueVendorFrameworkAgreement({ agreementId, actorUserId: user.id });
+    if (!result.ok) return { ok: false, error: `${result.error} (step: ${result.step})` };
+
+    revalidateVendor(vendorId);
+    return { ok: true };
+  } catch {
+    return { ok: false, error: "You are not authorized to do this." };
+  }
+}
+
+// ============================================================
+// OS-LGL-009B Vendor Work Order (2026-09-16, backlog Phase 1 Item 4)
+// ============================================================
+
+export async function createVendorWorkOrderAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  try {
+    const user = await requireVendorAdmin();
+    const vendorId = String(formData.get("vendorId") ?? "");
+    const frameworkAgreementId = String(formData.get("frameworkAgreementId") ?? "");
+
+    const textFields: (keyof VendorWorkOrderDetails)[] = [
+      "projectTitle",
+      "internalProjectReference",
+      "clientReference",
+      "serviceCategory",
+      "scope",
+      "deliverables",
+      "dates",
+      "location",
+      "vendorPersonnel",
+      "vendorCost",
+      "currency",
+      "paymentDueBasis",
+      "acceptanceCriteria",
+      "cancellationRescheduling",
+      "specialTerms",
+    ];
+    const details: VendorWorkOrderDetails = {};
+    for (const field of textFields) {
+      const value = String(formData.get(field) ?? "").trim();
+      if (value) details[field] = value;
+    }
+
+    const result = await createVendorWorkOrderDraftAgreement({ frameworkAgreementId, vendorProfileId: vendorId, details, actorUserId: user.id });
+    if (!result.ok) return { ok: false, error: result.error };
+    revalidateVendor(vendorId);
+    return { ok: true };
+  } catch {
+    return { ok: false, error: "You are not authorized to do this." };
+  }
+}
+
+export async function approveVendorWorkOrderForIssueAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  try {
+    const user = await requireVendorAdmin();
+    const vendorId = String(formData.get("vendorId") ?? "");
+    const agreementId = String(formData.get("agreementId") ?? "");
+
+    const toReview = await transitionAgreementStatus({ agreementId, toStatus: "internal_review", actorUserId: user.id });
+    if (!toReview.ok) return { ok: false, error: toReview.error };
+    const toApproved = await transitionAgreementStatus({ agreementId, toStatus: "approved_for_issue", actorUserId: user.id });
+    if (!toApproved.ok) return { ok: false, error: toApproved.error };
+
+    revalidateVendor(vendorId);
+    return { ok: true };
+  } catch {
+    return { ok: false, error: "You are not authorized to do this." };
+  }
+}
+
+export async function issueVendorWorkOrderAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  try {
+    const user = await requireVendorAdmin();
+    const vendorId = String(formData.get("vendorId") ?? "");
+    const agreementId = String(formData.get("agreementId") ?? "");
+
+    const result = await issueVendorWorkOrder({ agreementId, actorUserId: user.id });
     if (!result.ok) return { ok: false, error: `${result.error} (step: ${result.step})` };
 
     revalidateVendor(vendorId);

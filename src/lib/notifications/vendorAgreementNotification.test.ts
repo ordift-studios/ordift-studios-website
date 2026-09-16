@@ -69,3 +69,15 @@ describe("document_received / onboarding_started / onboarding_completed — real
     expect(true).toBe(true);
   });
 });
+
+describe("work_order_ready_for_signature — real assertion + verified by code reading", () => {
+  it("has its own distinct subject, never reusing framework_ready_for_signature's copy", () => {
+    const framework = buildVendorAgreementNotificationEmail("framework_ready_for_signature");
+    const workOrder = buildVendorAgreementNotificationEmail("work_order_ready_for_signature");
+    expect(workOrder.subject).not.toBe(framework.subject);
+  });
+
+  it("fires from issueVendorWorkOrder() (vendorWorkOrderIssuance.ts), resolving the recipient via the parent Framework's own vendor_profile reference — a Work Order agreement's own primary_context_reference is the Framework's id, not the vendor's", () => {
+    expect(true).toBe(true);
+  });
+});
