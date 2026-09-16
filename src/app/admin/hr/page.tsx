@@ -87,7 +87,26 @@ export default async function HrHubPage() {
   const user = await getCurrentUser();
   if (!user || (!hasRole(user, "admin") && !isSuperAdmin(user))) redirect("/admin/overview");
 
-  const { summary, needsAttention } = await getHrCommandCentreSummary();
+  const { summary, needsAttention, pipeline, externalWorkforceByType, recentHires, recentActivity } = await getHrCommandCentreSummary();
+  const EXTERNAL_TYPE_LABELS: Record<string, string> = {
+    vendor: "Vendor / Supplier",
+    contractor: "Contractor / Freelancer",
+    model: "Model / Talent",
+    workshop_participant: "Workshop Participant",
+  };
+  const ACTIVITY_LABELS: Record<string, string> = {
+    "recruitment.status_changed": "Recruitment status changed",
+    "recruitment_application.converted_to_vendor": "Application converted to vendor",
+    "recruitment_requisition.founder_direct_hire_created": "Founder Direct Hire requisition created",
+    "recruitment_requisition.standard_hire_created_from_application": "Hiring requisition created from application",
+    "collaborator.invited": "Collaborator invited",
+    "position.assigned": "Position assigned",
+    "grade.auto_resolved": "Grade resolved",
+    "onboarding.started": "Onboarding started",
+    "staff_onboarding.completed": "Onboarding completed",
+    "vendor_profile.status_changed": "Vendor Approval status changed",
+    "access_status.changed": "Access status changed",
+  };
 
   return (
     <div>
@@ -124,6 +143,81 @@ export default async function HrHubPage() {
                 <Link href={item.href} className="font-sans text-body-small text-ordift-gold-pressed underline underline-offset-4">
                   {item.label} →
                 </Link>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
+      <section className="rounded-xl border border-black/10 bg-white p-6 mb-8">
+        <h2 className="font-serif font-medium text-body text-ordift-ink mb-4">Hiring / Onboarding Pipeline</h2>
+        <div className="grid grid-cols-3 sm:grid-cols-6 gap-3">
+          {pipeline.map((stage, i) => (
+            <div key={stage.key} className="text-center">
+              <p className="font-sans text-[1.5rem] leading-none font-semibold text-ordift-ink tabular-nums">{stage.count}</p>
+              <p className="font-sans text-caption text-ordift-ink-muted mt-1">{stage.label}</p>
+              {i < pipeline.length - 1 && <p className="text-ordift-ink-muted/40 mt-1 hidden sm:block" aria-hidden="true">→</p>}
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <section className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+        <div className="rounded-xl border border-black/10 bg-white p-6">
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="font-serif font-medium text-body text-ordift-ink">Recent Hires</h2>
+            <Link href="/admin/organization/people" className="font-sans text-caption text-ordift-gold-pressed underline underline-offset-4">
+              Full directory →
+            </Link>
+          </div>
+          {recentHires.length === 0 ? (
+            <p className="font-sans text-body-small text-ordift-ink-muted">No staff accounts on record.</p>
+          ) : (
+            <ul className="divide-y divide-black/5">
+              {recentHires.map((h) => (
+                <li key={h.id} className="py-2">
+                  <Link href={`/admin/organization/people/${h.id}`} className="font-sans text-body-small text-ordift-ink hover:text-ordift-gold-pressed">
+                    {h.fullName ?? "(no name on record)"}
+                  </Link>
+                  <p className="font-sans text-caption text-ordift-ink-muted">
+                    {h.positionName ?? "—"} {h.memberNumber ? `· ${h.memberNumber}` : ""}
+                  </p>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+
+        <div className="rounded-xl border border-black/10 bg-white p-6">
+          <h2 className="font-serif font-medium text-body text-ordift-ink mb-3">External Workforce</h2>
+          <ul className="divide-y divide-black/5">
+            {Object.entries(externalWorkforceByType).map(([slug, count]) => (
+              <li key={slug} className="py-2 flex items-center justify-between">
+                <span className="font-sans text-body-small text-ordift-ink">{EXTERNAL_TYPE_LABELS[slug] ?? slug}</span>
+                <span className="font-sans text-body-small font-semibold text-ordift-ink tabular-nums">{count}</span>
+              </li>
+            ))}
+          </ul>
+          <Link href="/admin/organization/vendors" className="inline-block mt-3 font-sans text-caption text-ordift-gold-pressed underline underline-offset-4">
+            Manage Vendors →
+          </Link>
+        </div>
+      </section>
+
+      <section className="rounded-xl border border-black/10 bg-white p-6 mb-8">
+        <h2 className="font-serif font-medium text-body text-ordift-ink mb-3">Recent HR Activity</h2>
+        {recentActivity.length === 0 ? (
+          <p className="font-sans text-body-small text-ordift-ink-muted">No recent HR activity recorded.</p>
+        ) : (
+          <ul className="divide-y divide-black/5">
+            {recentActivity.map((a) => (
+              <li key={a.id} className="py-2 flex items-center justify-between gap-3">
+                <span className="font-sans text-body-small text-ordift-ink">
+                  {ACTIVITY_LABELS[a.action] ?? a.action} — <span className="text-ordift-ink-muted">{a.actorLabel}</span>
+                </span>
+                <span className="font-sans text-caption text-ordift-ink-muted whitespace-nowrap">
+                  {new Date(a.createdAt).toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}
+                </span>
               </li>
             ))}
           </ul>
