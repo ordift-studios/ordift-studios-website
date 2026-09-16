@@ -29,13 +29,22 @@ export const RECRUITMENT_STATUSES = [
 ] as const;
 export type RecruitmentStatus = (typeof RECRUITMENT_STATUSES)[number];
 
+// Semantic status labeling (2026-09-16) — DISPLAY TEXT only, never the
+// underlying RecruitmentStatus/DB value ('accepted' stays exactly as
+// stored on every historical and future row; the audit trail is
+// untouched). "Accepted" read ambiguously — Ordift selected the
+// candidate, not the candidate accepting an offer — so the label here
+// is "Selected", matching the approved Hiring-stage terminology
+// (Hiring Review -> Selected -> Conditional Offer -> ...), while
+// RecruitmentStatus/RECRUITMENT_STATUSES/every stored value remain
+// literally 'accepted'.
 export const RECRUITMENT_STATUS_LABEL: Record<RecruitmentStatus, string> = {
   new: "New",
   reviewing: "Reviewing",
   shortlisted: "Shortlisted",
   interview: "Interview",
-  accepted: "Accepted",
-  rejected: "Rejected",
+  accepted: "Selected",
+  rejected: "Not Selected",
   archived: "Archived",
 };
 

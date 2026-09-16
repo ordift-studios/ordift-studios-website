@@ -116,7 +116,7 @@ export function summarizeHrCommandCentre(input: {
     { key: "new", label: "New", count: newApplications },
     { key: "review", label: "Review", count: reviewingApplications },
     { key: "shortlisted", label: "Shortlisted / Interview", count: shortlistedOrInterview },
-    { key: "accepted", label: "Accepted", count: acceptedApplications.length },
+    { key: "accepted", label: "Selected", count: acceptedApplications.length },
     { key: "onboarding", label: "Onboarding", count: input.onboardingInProgress },
     { key: "active", label: "Active", count: activeEmployees },
   ];
@@ -124,7 +124,7 @@ export function summarizeHrCommandCentre(input: {
   const acceptedApplicationAttentionItems: NeedsAttentionItem[] = [];
   for (const a of input.acceptedApplicationsBridgeStatus) {
     if (a.stage === "not_invited") {
-      acceptedApplicationAttentionItems.push({ key: `accepted-${a.id}`, label: `${a.fullName} — Accepted, awaiting Proceed to Hire`, href: `/admin/recruitment/${a.id}` });
+      acceptedApplicationAttentionItems.push({ key: `accepted-${a.id}`, label: `${a.fullName} — Selected, awaiting Proceed to Hire`, href: `/admin/recruitment/${a.id}` });
     } else if (a.stage === "invitation_sent") {
       acceptedApplicationAttentionItems.push({ key: `accepted-${a.id}`, label: `${a.fullName} — Invitation sent, awaiting response`, href: `/admin/recruitment/${a.id}` });
     } else if (a.stage === "account_created" && !a.positionAssigned) {

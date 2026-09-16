@@ -27,6 +27,13 @@ async function requirePeopleAdministerOrSuperAdmin(actorUserId: string): Promise
 
 export type HireOrigin = "standard_recruitment" | "founder_direct_hire" | "existing_account_conversion";
 
+// Hoisted to module scope (2026-09-16 — Kelvin "disabled button" fix)
+// so both the write-side consistency check (createRecruitmentRequisition)
+// and findNamedPersonRequisitionMatch() below share the exact same
+// definition of "this origin names one specific real person" — never
+// two independently-drifting lists.
+const NAMED_PERSON_ORIGINS = new Set<HireOrigin>(["founder_direct_hire", "existing_account_conversion"]);
+
 export type RecruitmentRequisition = {
   id: string;
   requestId: string;
@@ -204,7 +211,6 @@ export async function createRecruitmentRequisition(params: CreateRequisitionPara
   // standard requisition: a direct hire names a specific real person
   // and skips the public application process, so only a genuine Super
   // Admin may open one.
-  const NAMED_PERSON_ORIGINS = new Set(["founder_direct_hire", "existing_account_conversion"]);
   if (NAMED_PERSON_ORIGINS.has(hireOrigin)) {
     if (hireOrigin === "founder_direct_hire") {
       // E.5 Stage 2M, Part 2 — "unauthorized users cannot manufacture
@@ -639,6 +645,22 @@ export async function getRequisitionById(id: string): Promise<RecruitmentRequisi
     .maybeSingle();
   if (error || !data) return null;
   return mapRequisition(data);
+}
+
+// Production fix (2026-09-16) — the "Start Internal Staff Onboarding"
+// button read as permanently disabled/broken (Kelvin's own reported
+// case) even though his real, approved Founder Direct Hire requisition
+// was sitting right there in the picker: the picker requires an ACTIVE
+// selection (defaults to a blank placeholder) and nothing ever
+// auto-selected the one unambiguous match. A named-person requisition
+// (founder_direct_hire / existing_account_conversion) whose
+// directHireProfileId is THIS exact profile is, by construction, never
+// ambiguous — there is only ever one real candidate it could mean. Pure
+// and directly testable: finds that match, or null when none exists
+// (e.g. a genuine standard_recruitment case, which still correctly
+// requires a human to exercise judgment among several options).
+export function findNamedPersonRequisitionMatch(requisitions: readonly RecruitmentRequisition[], profileId: string): RecruitmentRequisition | null {
+  return requisitions.find((r) => NAMED_PERSON_ORIGINS.has(r.hireOrigin) && r.directHireProfileId === profileId) ?? null;
 }
 
 // Requisitions that are genuinely usable to start a NEW onboarding:

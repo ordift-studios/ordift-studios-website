@@ -66,7 +66,7 @@ describe("summarizeHrCommandCentre — real assertions", () => {
       ...base,
       acceptedApplicationsBridgeStatus: [{ id: "a1", fullName: "Kelvin Acheampong", stage: "not_invited" }],
     });
-    expect(needsAttention.find((n) => n.key === "accepted-a1")?.label).toBe("Kelvin Acheampong — Accepted, awaiting Proceed to Hire");
+    expect(needsAttention.find((n) => n.key === "accepted-a1")?.label).toBe("Kelvin Acheampong — Selected, awaiting Proceed to Hire");
   });
 
   it("stage 'account_created' with no Position assigned shows a DIFFERENT, accurate action — never the stale 'awaiting Proceed to Hire'", () => {

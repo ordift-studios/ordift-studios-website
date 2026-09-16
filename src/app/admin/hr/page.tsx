@@ -77,7 +77,7 @@ const KPI_CARDS: { key: keyof Awaited<ReturnType<typeof getHrCommandCentreSummar
   { key: "activeEmployees", label: "Active Employees", href: "/admin/organization/workforce" },
   { key: "externalWorkforce", label: "External Workforce", href: "/admin/organization/vendors" },
   { key: "newApplications", label: "New Applications", href: "/admin/recruitment" },
-  { key: "acceptedAwaitingHire", label: "Accepted / Awaiting Hire", href: "/admin/recruitment" },
+  { key: "acceptedAwaitingHire", label: "Selected / Awaiting Hire", href: "/admin/recruitment" },
   { key: "onboardingInProgress", label: "Onboarding In Progress", href: "/admin/organization/workforce" },
   { key: "onLeaveToday", label: "On Leave Today", href: "/admin/organization/leave" },
   { key: "attendanceExceptions", label: "Attendance Exceptions", href: "/admin/organization/attendance" },

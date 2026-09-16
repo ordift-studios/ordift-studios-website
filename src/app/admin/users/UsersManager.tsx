@@ -9,7 +9,7 @@ import type { RoleSlug } from "@/lib/portal/roles";
 import type { Position } from "@/lib/organization/types";
 import type { AdminProjectAssignment, AssignmentStatus, ProjectSearchResult } from "@/lib/admin/projectAssignments";
 import type { ActivityLogEntry } from "@/lib/admin/activityLog";
-import type { RecruitmentRequisition } from "@/lib/recruitment/requisitions";
+import { findNamedPersonRequisitionMatch, type RecruitmentRequisition } from "@/lib/recruitment/requisitions";
 import {
   grantRoleAction,
   type GrantRoleState,
@@ -167,6 +167,7 @@ function UserDetail({
   // onboarding specifically, matching the same problem Grant
   // Role/Temporary Password already solved for themselves (2026-09-09).
   const [onboardingSuccess, setOnboardingSuccess] = useState<string | null>(null);
+  const [startedOnboardingId, setStartedOnboardingId] = useState<string | null>(null);
   const [positionId, setPositionId] = useState(user.positionId ?? "");
 
   // Grouped by Department for the Position select's <optgroup>s, same
@@ -292,11 +293,19 @@ function UserDetail({
   // judgment (this schema doesn't yet link a requisition to its exact
   // accepted candidate — see the Stage 2M report's own "unresolved" note).
   const requisitionsForThisUser = [...approvedRequisitions].sort((a, b) => {
-    const aMatch = a.hireOrigin === "founder_direct_hire" && a.directHireProfileId === user.id ? 0 : 1;
-    const bMatch = b.hireOrigin === "founder_direct_hire" && b.directHireProfileId === user.id ? 0 : 1;
+    const aMatch = a.directHireProfileId === user.id ? 0 : 1;
+    const bMatch = b.directHireProfileId === user.id ? 0 : 1;
     return aMatch - bMatch;
   });
-  const [selectedRequisitionId, setSelectedRequisitionId] = useState("");
+  // Production fix (2026-09-16, Kelvin's reported disabled button) —
+  // when this exact person has one unambiguous named-person requisition
+  // (Founder Direct Hire / Existing Account Conversion), it is
+  // pre-selected on load rather than defaulting to a blank placeholder
+  // an admin has to know to click first. A genuine standard_recruitment
+  // case (no named match) still starts blank, correctly requiring human
+  // judgment among the open options.
+  const namedMatch = findNamedPersonRequisitionMatch(requisitionsForThisUser, user.id);
+  const [selectedRequisitionId, setSelectedRequisitionId] = useState(namedMatch?.id ?? "");
 
   function startOnboarding() {
     if (!selectedRequisitionId) {
@@ -322,7 +331,10 @@ function UserDetail({
     startTransition(async () => {
       const result = await startStaffOnboardingAction(fd);
       if (result.error) setError(result.error);
-      else setOnboardingSuccess("Onboarding started.");
+      else {
+        setOnboardingSuccess("Onboarding started.");
+        setStartedOnboardingId(result.onboardingId ?? null);
+      }
     });
   }
 
@@ -932,21 +944,39 @@ function UserDetail({
             </div>
           )}
           {!user.onboardingStatus && requisitionsForThisUser.length > 0 && (
-            <div className="flex flex-wrap items-center gap-2">
-              <select
-                value={selectedRequisitionId}
-                onChange={(e) => setSelectedRequisitionId(e.target.value)}
-                className="rounded-lg border border-black/15 bg-white px-2 py-1 font-sans text-caption"
-              >
-                <option value="">Approved requisition (hire origin)…</option>
-                {requisitionsForThisUser.map((r) => (
-                  <option key={r.id} value={r.id}>
-                    {r.hireOrigin === "founder_direct_hire" ? "Founder Direct Hire" : "Standard Recruitment"}
-                    {r.requestedPositionName ? ` · ${r.requestedPositionName}` : ""}
-                    {r.hireOrigin === "founder_direct_hire" && r.directHireProfileName ? ` · ${r.directHireProfileName}` : ""}
-                  </option>
-                ))}
-              </select>
+            <div className="space-y-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <select
+                  value={selectedRequisitionId}
+                  onChange={(e) => setSelectedRequisitionId(e.target.value)}
+                  className="rounded-lg border border-black/15 bg-white px-2 py-1 font-sans text-caption"
+                >
+                  <option value="">Approved requisition (hire origin)…</option>
+                  {requisitionsForThisUser.map((r) => (
+                    <option key={r.id} value={r.id}>
+                      {r.hireOrigin === "founder_direct_hire"
+                        ? "Founder Direct Hire"
+                        : r.hireOrigin === "existing_account_conversion"
+                          ? "Existing Account → Staff"
+                          : "Standard Recruitment"}
+                      {r.requestedPositionName ? ` · ${r.requestedPositionName}` : ""}
+                      {r.directHireProfileId && r.directHireProfileName ? ` · ${r.directHireProfileName}` : ""}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              {/* UI state clarity (2026-09-16, Task 4) — explains WHY the
+                  button is enabled/what it will do, rather than a silent
+                  disabled state with no visible reason. */}
+              {namedMatch && selectedRequisitionId === namedMatch.id ? (
+                <p className="font-sans text-caption text-green-700">
+                  Matched to this person&rsquo;s own approved hire — ready to start onboarding.
+                </p>
+              ) : (
+                <p className="font-sans text-caption text-ordift-ink-muted">
+                  {selectedRequisitionId ? "Ready to start onboarding with the selected requisition." : "Choose the approved requisition above to enable Start."}
+                </p>
+              )}
             </div>
           )}
           <div className="flex flex-wrap items-center gap-2">
@@ -962,9 +992,10 @@ function UserDetail({
                 type="button"
                 onClick={startOnboarding}
                 disabled={pending || !selectedRequisitionId}
+                aria-busy={pending}
                 className="font-sans text-body-small text-ordift-gold-pressed underline underline-offset-4 disabled:opacity-50"
               >
-                Start Internal Staff Onboarding
+                {pending ? "Starting…" : "Start Internal Staff Onboarding"}
               </button>
             )}
             {user.onboardingStatus === "in_progress" && (
@@ -988,7 +1019,17 @@ function UserDetail({
             )}
           </div>
           {onboardingSuccess && (
-            <p className="font-sans text-caption text-green-700">{onboardingSuccess}</p>
+            <p className="font-sans text-caption text-green-700">
+              {onboardingSuccess}
+              {startedOnboardingId && (
+                <>
+                  {" "}
+                  <Link href={`/admin/organization/onboarding/${startedOnboardingId}`} className="underline underline-offset-4">
+                    Open Onboarding Workspace →
+                  </Link>
+                </>
+              )}
+            </p>
           )}
           {user.onboardingStage && (
             <p className="font-sans text-caption text-ordift-ink-muted">

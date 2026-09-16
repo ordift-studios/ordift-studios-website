@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { findNamedPersonRequisitionMatch } from "./requisitions";
 
 // E.5 Stage 2M — Employment foundation + onboarding origin. Every
 // function touched here is DB-dependent (createAdminClient()) and
@@ -136,5 +137,66 @@ describe("getSourceRecruitmentApplicationId — verified by code reading", () =>
 
   it("returns null for any account not invited through that bridge (a pre-existing account, or one created before the bridge existed) — createStandardHireRequisitionFromApplicationAction then refuses cleanly rather than fabricating a link", () => {
     expect(true).toBe(true);
+  });
+});
+
+// Production fix (2026-09-16) — findNamedPersonRequisitionMatch() is
+// pure and directly tested with real assertions: this is the exact
+// function that closes Kelvin's reported "disabled button" defect (the
+// requisition picker never auto-selected his own unambiguous, approved
+// Founder Direct Hire requisition).
+describe("findNamedPersonRequisitionMatch — real assertions", () => {
+  const base = {
+    requestId: "r1",
+    requestTitle: "t",
+    requestStatus: "approved",
+    requestedPositionId: null,
+    requestedPositionName: "Senior Photographer",
+    departmentId: null,
+    departmentName: null,
+    gradeId: null,
+    gradeName: null,
+    headcount: 1,
+    engagementTypeId: null,
+    engagementTypeName: null,
+    requiredSkills: null,
+    responsibilities: null,
+    justification: null,
+    preferredStartDate: null,
+    hiringManagerId: null,
+    interviewRequirements: null,
+    directHireProfileName: "Kelvin Acheampong",
+    employingEntityId: null,
+    employingEntityName: null,
+    employmentJurisdictionId: null,
+    employmentJurisdictionName: null,
+    workLocation: null,
+    createdAt: "2026-09-16T00:00:00Z",
+  };
+
+  it("finds a founder_direct_hire requisition naming this exact profile — Kelvin's real case", () => {
+    const kelvinReq = { ...base, id: "req-kelvin", hireOrigin: "founder_direct_hire" as const, directHireProfileId: "kelvin-id" };
+    const otherReq = { ...base, id: "req-other", hireOrigin: "standard_recruitment" as const, directHireProfileId: null };
+    const match = findNamedPersonRequisitionMatch([otherReq, kelvinReq], "kelvin-id");
+    expect(match?.id).toBe("req-kelvin");
+  });
+
+  it("finds an existing_account_conversion requisition naming this exact profile", () => {
+    const req = { ...base, id: "req-conv", hireOrigin: "existing_account_conversion" as const, directHireProfileId: "client-id" };
+    expect(findNamedPersonRequisitionMatch([req], "client-id")?.id).toBe("req-conv");
+  });
+
+  it("never matches a standard_recruitment requisition — those are never named to a specific person", () => {
+    const req = { ...base, id: "req-std", hireOrigin: "standard_recruitment" as const, directHireProfileId: null };
+    expect(findNamedPersonRequisitionMatch([req], "anyone")).toBeNull();
+  });
+
+  it("never matches a named-person requisition belonging to a DIFFERENT person", () => {
+    const req = { ...base, id: "req-x", hireOrigin: "founder_direct_hire" as const, directHireProfileId: "someone-else" };
+    expect(findNamedPersonRequisitionMatch([req], "kelvin-id")).toBeNull();
+  });
+
+  it("returns null for an empty list", () => {
+    expect(findNamedPersonRequisitionMatch([], "kelvin-id")).toBeNull();
   });
 });

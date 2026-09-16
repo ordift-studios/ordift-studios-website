@@ -549,7 +549,7 @@ export async function assignStaffPositionAction(formData: FormData): Promise<{ e
 // themselves (hardened this same phase — they had no authorization
 // check of their own before now), not here.
 // ============================================================
-export async function startStaffOnboardingAction(formData: FormData): Promise<{ error?: string }> {
+export async function startStaffOnboardingAction(formData: FormData): Promise<{ error?: string; onboardingId?: string }> {
   const currentUser = await getCurrentUser();
   if (!currentUser) return { error: "Not authenticated." };
   if (!isSuperAdmin(currentUser) && !(await hasJurisdictionAuthority(currentUser.id, "operations", "administer"))) {
@@ -573,7 +573,7 @@ export async function startStaffOnboardingAction(formData: FormData): Promise<{ 
   if (!result.ok) return { error: result.error };
 
   revalidatePath("/admin/users");
-  return {};
+  return { onboardingId: result.onboardingId };
 }
 
 // Recruitment -> Hiring bridge fix (2026-09-16, Kelvin QA). Creates and
