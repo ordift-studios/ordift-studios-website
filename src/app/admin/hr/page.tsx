@@ -33,6 +33,7 @@ const HUB_GROUPS: HubGroup[] = [
     links: [
       { label: "Workforce Overview", href: "/admin/organization/workforce", description: "The staff roster and current employment terms." },
       { label: "People Directory", href: "/admin/organization/people", description: "Card/list workforce directory with search and filters." },
+      { label: "Onboarding Documents", href: "/admin/hr/onboarding-documents", description: "Everyone currently onboarding, and their real document/agreement readiness by relationship type." },
       { label: "Onboarding Playbooks", href: "/admin/hr/playbooks", description: "Internal + External onboarding guides, generated from the real workflow, for every supported relationship." },
       { label: "Organization Structure", href: "/admin/organization", description: "Departments and Positions (structural only)." },
       { label: "Legal Entities", href: "/admin/organization/legal-entities", description: "Employing entities for agreements and payroll." },
