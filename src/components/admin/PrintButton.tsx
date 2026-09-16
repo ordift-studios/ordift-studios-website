@@ -1,5 +1,8 @@
 "use client";
 
+// Shared "Print / Save as PDF" trigger for every letterhead-branded
+// print view (Client Quotations, Onboarding Playbooks, and future
+// controlled documents) — one component, not duplicated per feature.
 export function PrintButton() {
   return (
     <div className="print-toolbar" style={{ textAlign: "center", margin: "16px 0", fontFamily: "sans-serif" }}>

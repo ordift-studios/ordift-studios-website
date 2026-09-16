@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { redirect, notFound } from "next/navigation";
 import { getCurrentUser, hasRole, isSuperAdmin } from "@/lib/portal/roles";
 import { getClientQuotation } from "@/lib/commercial/clientQuotations";
-import { PrintButton } from "./PrintButton";
+import { PrintButton } from "@/components/admin/PrintButton";
 
 export const metadata: Metadata = {
   title: "Quotation PDF — Ordift Studios",
