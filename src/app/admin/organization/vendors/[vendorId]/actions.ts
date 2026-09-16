@@ -13,6 +13,7 @@ import { createVendorFrameworkDraftAgreement } from "@/lib/legal/vendorAgreement
 import type { VendorFrameworkVariableKey } from "@/lib/legal/documents/os-lgl-009a-vendor-supplier-framework-agreement";
 import { transitionAgreementStatus } from "@/lib/legal/agreementEngine";
 import { issueVendorFrameworkAgreement } from "@/lib/legal/vendorAgreementIssuance";
+import { sendVendorAgreementNotification } from "@/lib/notifications/vendorAgreementNotification";
 
 export type ActionState = { ok: boolean; error?: string } | null;
 
@@ -76,6 +77,7 @@ export async function startVendorOnboardingAction(_prev: ActionState, formData: 
 
     const result = await startExternalWorkforceOnboarding({ profileId: vendorId, engagementTypeSlug: "vendor_supplier", actorUserId: user.id });
     if (!result.ok) return { ok: false, error: result.error };
+    void sendVendorAgreementNotification({ vendorProfileId: vendorId, event: "onboarding_started" });
     revalidateVendor(vendorId);
     return { ok: true };
   } catch {
@@ -138,6 +140,7 @@ export async function completeVendorOnboardingAction(_prev: ActionState, formDat
     const onboardingId = String(formData.get("onboardingId") ?? "");
     const result = await completeStaffOnboarding({ onboardingId, actorUserId: user.id });
     if (!result.ok) return { ok: false, error: result.error };
+    void sendVendorAgreementNotification({ vendorProfileId: vendorId, event: "onboarding_completed" });
     revalidateVendor(vendorId);
     return { ok: true };
   } catch {

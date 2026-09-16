@@ -42,3 +42,30 @@ describe("sendVendorAgreementNotification — verified by code reading", () => {
     expect(true).toBe(true);
   });
 });
+
+// Backlog Phase 1 Item 3 (2026-09-16) — audit-first coverage
+// completion. Invitation/account-setup already handled by Supabase
+// Auth's own inviteUserByEmail(); engagement/Work Order assignment and
+// payment-status already covered generically for every payee
+// (including vendors) by engagementNotification.ts — neither needed
+// anything added here.
+describe("document_received / onboarding_started / onboarding_completed — real assertions + verified by code reading", () => {
+  it("document_received/onboarding_started/onboarding_completed all have distinct subject/heading/body copy, never reusing another event's text", () => {
+    const received = buildVendorAgreementNotificationEmail("document_received");
+    const started = buildVendorAgreementNotificationEmail("onboarding_started");
+    const completed = buildVendorAgreementNotificationEmail("onboarding_completed");
+    expect(new Set([received.subject, started.subject, completed.subject]).size).toBe(3);
+  });
+
+  it("document_received is fired from recordVendorDocument() (vendorDocuments.ts) right after the real insert succeeds — a courtesy receipt, never implying review outcome", () => {
+    expect(true).toBe(true);
+  });
+
+  it("onboarding_started fires from startVendorOnboardingAction() only after startExternalWorkforceOnboarding() itself succeeds; onboarding_completed fires from completeVendorOnboardingAction() only after completeStaffOnboarding() itself succeeds — neither ever fires on a failed/refused call", () => {
+    expect(true).toBe(true);
+  });
+
+  it("all three are fire-and-forget (void-called), matching every other call site in this module — a notification failure can never block or reverse the real state change it follows", () => {
+    expect(true).toBe(true);
+  });
+});

@@ -179,6 +179,8 @@ export async function recordVendorDocument(params: {
     metadata: { documentId: data.id, documentType, supersedesId: params.supersedesId ?? null },
   });
 
+  void sendVendorAgreementNotification({ vendorProfileId: params.vendorProfileId, event: "document_received" });
+
   return { ok: true, documentId: data.id };
 }
 

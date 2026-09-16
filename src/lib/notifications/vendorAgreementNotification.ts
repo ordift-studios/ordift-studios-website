@@ -20,7 +20,20 @@ import { siteUrl } from "@/lib/shared/env";
 // there is no genuine trigger point to notify from without inventing
 // one. See the architecture report for this explicit scope boundary.
 
-export type VendorAgreementNotificationEvent = "document_approved" | "document_rejected" | "framework_ready_for_signature";
+// Backlog Phase 1 Item 3 (2026-09-16) — audited existing coverage
+// first (document_approved/rejected, framework_ready_for_signature)
+// before adding these three. Invitation/account-setup is already
+// covered by Supabase Auth's own inviteUserByEmail() (inviteCollaboratorAction()),
+// engagement/Work Order assignment and payment-status are already
+// covered generically for every payee (including vendors) by
+// engagementNotification.ts — neither needed anything new here.
+export type VendorAgreementNotificationEvent =
+  | "document_approved"
+  | "document_rejected"
+  | "framework_ready_for_signature"
+  | "document_received"
+  | "onboarding_started"
+  | "onboarding_completed";
 
 const EVENT_COPY: Record<VendorAgreementNotificationEvent, { subject: string; heading: string; body: string }> = {
   document_approved: {
@@ -37,6 +50,21 @@ const EVENT_COPY: Record<VendorAgreementNotificationEvent, { subject: string; he
     subject: "Vendor & Supplier Framework Agreement Ready — Ordift Studios",
     heading: "Your Framework Agreement is ready for review and signature",
     body: "Ordift Studios has issued your Vendor & Supplier Framework Agreement. Please review and sign it using the secure link in the separate agreement email you received, or sign in to your Vendor Portal for status.",
+  },
+  document_received: {
+    subject: "Document Received — Ordift Studios",
+    heading: "We've received your document",
+    body: "Ordift Studios has received the document you submitted. It is now under review — sign in to your Vendor Portal for status.",
+  },
+  onboarding_started: {
+    subject: "Vendor Onboarding Started — Ordift Studios",
+    heading: "Your Vendor onboarding has started",
+    body: "Ordift Studios has started your Vendor onboarding. Sign in to your Vendor Portal to see what's needed next.",
+  },
+  onboarding_completed: {
+    subject: "Vendor Onboarding Complete — Ordift Studios",
+    heading: "Your Vendor onboarding is complete",
+    body: "Ordift Studios has confirmed your Vendor onboarding is complete. Sign in to your Vendor Portal for details.",
   },
 };
 
