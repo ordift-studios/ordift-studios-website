@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { redirect } from "next/navigation";
+import { getCurrentUser, hasRole, isSuperAdmin } from "@/lib/portal/roles";
 import { getAllEnquiries, crmStageLabel, paymentStatusLabel } from "@/lib/portal/data";
 import { CRM_STAGES } from "@/lib/admin/enquiries";
 import { PATHWAYS, pathwayLabel } from "@/lib/enquiry/pathways";
@@ -40,6 +42,16 @@ export default async function AdminEnquiriesPage({
 }: {
   searchParams: Promise<EnquiriesSearchParams>;
 }) {
+  // Access-control gap fix (2026-09-16, Kelvin QA) — this page had no
+  // per-page authorization check at all, relying solely on the layout's
+  // broad staff-or-admin gate. Client enquiries carry contact details,
+  // budgets, and payment status across the WHOLE business — every
+  // comparable business-data page in this codebase already gates on
+  // admin/super_admin; this one was a genuine outlier, not an
+  // intentional "every staff member sees the whole CRM" design.
+  const user = await getCurrentUser();
+  if (!user || (!hasRole(user, "admin") && !isSuperAdmin(user))) redirect("/admin/overview");
+
   const { stage, q, service, paymentStatus, dateFrom, dateTo } = await searchParams;
 
   const enquiries = await getAllEnquiries({

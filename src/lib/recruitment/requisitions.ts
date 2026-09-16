@@ -1,5 +1,5 @@
 import { createAdminClient } from "@/lib/supabase/admin";
-import { logActivity } from "@/lib/admin/activityLog";
+import { logActivity, getActivityForEntity } from "@/lib/admin/activityLog";
 import { createDepartmentRequest, decideDepartmentRequest } from "@/lib/organization/departmentRequests";
 import { isSuperAdminId, hasAuthority, PEOPLE_CAPABILITIES, type Jurisdiction } from "@/lib/organization/authority";
 
@@ -320,6 +320,78 @@ export async function createAndApproveFounderDirectHire(
     actorUserId: params.requestedBy,
   });
   if (!decided.ok) return { ok: false, error: decided.error };
+
+  return created;
+}
+
+// Reads the real link the Proceed-to-Hire bridge already writes
+// (inviteCollaboratorAction's collaborator.invited activity_log entry,
+// metadata.sourceApplicationId) — never a guess, never a second,
+// separately-maintained link. Null when this account wasn't invited
+// through that bridge (e.g. a genuine pre-existing account, or one
+// created before the bridge existed).
+export async function getSourceRecruitmentApplicationId(profileId: string): Promise<string | null> {
+  const entries = await getActivityForEntity("user", profileId, 50);
+  const invited = entries.find((e) => e.action === "collaborator.invited" && e.metadata && typeof e.metadata === "object" && "sourceApplicationId" in e.metadata);
+  if (!invited) return null;
+  const id = (invited.metadata as Record<string, unknown>).sourceApplicationId;
+  return typeof id === "string" ? id : null;
+}
+
+// Recruitment -> Hiring bridge fix (2026-09-16, Kelvin QA) — closes the
+// gap the E.5 Stage 2M report itself flagged as "unresolved": someone
+// who already has a real account AND a real accepted recruitment
+// application (via the Proceed-to-Hire bridge, /admin/recruitment/[id])
+// previously had NO way to reach an approved standard_recruitment
+// requisition except misusing Founder Direct Hire — a real Production
+// incident (Kelvin Acheampong's own requisition). Founder Direct Hire
+// requires isSuperAdminId() and names a specific person by construction
+// (createRecruitmentRequisition() above); it was never meant for a
+// person who came through the ordinary application pipeline.
+//
+// This is the standard_recruitment equivalent of
+// createAndApproveFounderDirectHire() — same "create then immediately
+// decideRequisition({decision:'approved'})" convenience, same
+// unchanged people.recruitment.administer-or-Super-Admin authorization,
+// no new or weaker approval path. The Accept decision on the
+// application plus this deliberate action (by the same authorized
+// tier) together ARE the genuine hiring decision — requiring a SEPARATE
+// department-approval cycle here would duplicate a decision already
+// made, which is exactly what this bridge exists to avoid. Position/
+// department/grade/engagementType are passed in by the caller from the
+// account's own ALREADY-assigned real data (assignStaffPositionAction
+// must run first) — never invented here.
+export async function createAndApproveStandardHireRequisition(
+  params: Omit<CreateRequisitionParams, "hireOrigin" | "directHireProfileId"> & {
+    sourceRecruitmentApplicationId: string;
+    decisionNotes?: string | null;
+  }
+): Promise<CreateRequisitionResult> {
+  const { sourceRecruitmentApplicationId, ...requisitionParams } = params;
+  const created = await createRecruitmentRequisition({
+    ...requisitionParams,
+    hireOrigin: "standard_recruitment",
+    justification:
+      (requisitionParams.justification ? `${requisitionParams.justification}\n\n` : "") +
+      `Originates from accepted recruitment application ${sourceRecruitmentApplicationId} via the Proceed-to-Hire bridge — not a Founder Direct Hire.`,
+  });
+  if (!created.ok) return created;
+
+  const decided = await decideRequisition({
+    requisitionId: created.requisitionId,
+    decision: "approved",
+    decisionNotes: params.decisionNotes ?? "Created and approved from an accepted recruitment application (Proceed-to-Hire bridge).",
+    actorUserId: params.requestedBy,
+  });
+  if (!decided.ok) return { ok: false, error: decided.error };
+
+  await logActivity({
+    actorUserId: params.requestedBy,
+    action: "recruitment_requisition.standard_hire_created_from_application",
+    entityType: "recruitment_application",
+    entityId: sourceRecruitmentApplicationId,
+    metadata: { requisitionId: created.requisitionId },
+  });
 
   return created;
 }

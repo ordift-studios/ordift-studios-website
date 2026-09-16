@@ -79,6 +79,53 @@ export async function getRecruitmentApplication(id: string): Promise<Recruitment
   };
 }
 
+export type HiringBridgeStatus =
+  | { stage: "not_invited" }
+  | { stage: "invitation_sent"; profileId: string }
+  | { stage: "account_created"; profileId: string; positionAssigned: boolean }
+  | { stage: "onboarding_in_progress"; profileId: string }
+  | { stage: "onboarding_complete"; profileId: string };
+
+// Invitation idempotency fix (2026-09-16, Kelvin QA) — the Recruitment
+// application detail page previously always showed "Proceed to Hire",
+// even once the bridge had already run and a real account existed
+// (Kelvin's own reported case). Reads the SAME real signals the bridge
+// itself writes — collaborator.invited's activity_log metadata.email
+// (the same lookup convertApplicationToVendorAction already uses),
+// profiles.access_status, auth email confirmation, position assignment,
+// and staff_onboarding.status — never a separate, second-guessing
+// tracker.
+export async function getHiringBridgeStatus(application: { id: string; email: string }): Promise<HiringBridgeStatus> {
+  const admin = createAdminClient();
+  const { data: invite } = await admin
+    .from("activity_log")
+    .select("entity_id")
+    .eq("action", "collaborator.invited")
+    .contains("metadata", { email: application.email })
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (!invite?.entity_id) return { stage: "not_invited" };
+
+  const profileId = invite.entity_id as string;
+  const [{ data: profile }, { data: authUser }, { data: staffDetails }, { data: onboarding }] = await Promise.all([
+    admin.from("profiles").select("access_status").eq("id", profileId).maybeSingle(),
+    admin.auth.admin.getUserById(profileId),
+    admin.from("staff_details").select("id").eq("id", profileId).not("position_id", "is", null).maybeSingle(),
+    admin.from("staff_onboarding").select("status").eq("profile_id", profileId).maybeSingle(),
+  ]);
+
+  if (onboarding) {
+    return onboarding.status === "completed"
+      ? { stage: "onboarding_complete", profileId }
+      : { stage: "onboarding_in_progress", profileId };
+  }
+  if (!authUser?.user?.email_confirmed_at || profile?.access_status === "invited") {
+    return { stage: "invitation_sent", profileId };
+  }
+  return { stage: "account_created", profileId, positionAssigned: Boolean(staffDetails) };
+}
+
 // Signed URLs, generated on demand — the storage paths themselves are
 // never exposed to the client; this is the one place a browser ever
 // receives a working link, and it expires shortly after.

@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { redirect } from "next/navigation";
+import { getCurrentUser, hasRole, isSuperAdmin } from "@/lib/portal/roles";
 import { getAllWorkshopRegistrations, paymentStatusLabel } from "@/lib/portal/data";
 import { REGISTRATION_STATUSES, PAYMENT_STATUSES } from "@/lib/admin/bookings";
 import { contentRepository } from "@/lib/content";
@@ -40,6 +42,11 @@ export default async function AdminBookingsPage({
 }: {
   searchParams: Promise<BookingsSearchParams>;
 }) {
+  // Access-control gap fix (2026-09-16, Kelvin QA) — see enquiries/page.tsx's
+  // identical comment; this page had the same missing per-page gate.
+  const user = await getCurrentUser();
+  if (!user || (!hasRole(user, "admin") && !isSuperAdmin(user))) redirect("/admin/overview");
+
   const { status, q, workshop, paymentStatus, dateFrom, dateTo } = await searchParams;
 
   const [registrations, workshops] = await Promise.all([

@@ -23,6 +23,7 @@ import {
   reclassifyUserAction,
   assignStaffPositionAction,
   startStaffOnboardingAction,
+  createStandardHireRequisitionFromApplicationAction,
   completeStaffOnboardingAction,
   assignToProjectAction,
   updateAssignmentStatusAction,
@@ -907,11 +908,21 @@ function UserDetail({
             </p>
           )}
           {!user.onboardingStatus && requisitionsForThisUser.length === 0 && (
-            <p className="font-sans text-caption text-amber-700 bg-amber-50 border border-amber-200 rounded px-3 py-2">
-              No approved hire definition (requisition) is available yet — onboarding can no longer start without
-              one. Create and approve a Standard Recruitment or Founder Direct Hire requisition in{" "}
-              <Link href="/admin/operations" className="underline underline-offset-4">Operations</Link> first.
-            </p>
+            <div className="font-sans text-caption text-amber-700 bg-amber-50 border border-amber-200 rounded px-3 py-2 space-y-2">
+              <p>
+                No approved hire definition (requisition) is available yet — onboarding can no longer start without
+                one.
+              </p>
+              {user.positionId ? (
+                <CreateStandardHireRequisitionButton userId={user.id} positionId={user.positionId} engagementTypeId={user.engagementTypeId} />
+              ) : (
+                <p>
+                  Create and approve a Standard Recruitment or Founder Direct Hire requisition in{" "}
+                  <Link href="/admin/operations" className="underline underline-offset-4">Operations</Link> first —
+                  or, if this account came from an accepted recruitment application, assign a Position above first.
+                </p>
+              )}
+            </div>
           )}
           {!user.onboardingStatus && requisitionsForThisUser.length > 0 && (
             <div className="flex flex-wrap items-center gap-2">
@@ -1162,6 +1173,58 @@ function UserDetail({
   );
 }
 
+// Recruitment -> Hiring bridge fix (2026-09-16, Kelvin QA) — the
+// missing action that let a real accepted-application hire reach an
+// approved standard_recruitment requisition without misusing Founder
+// Direct Hire. Only meaningful once a Position is assigned (this
+// button's caller already gates on that) and the account was genuinely
+// invited through the Proceed-to-Hire bridge — the server action
+// itself verifies the latter via getSourceRecruitmentApplicationId()
+// and refuses cleanly if it can't find one.
+function CreateStandardHireRequisitionButton({
+  userId,
+  positionId,
+  engagementTypeId,
+}: {
+  userId: string;
+  positionId: string;
+  engagementTypeId: string | null;
+}) {
+  const [pending, startTransition] = useTransition();
+  const [error, setError] = useState<string | null>(null);
+  const [done, setDone] = useState(false);
+
+  function submit() {
+    setError(null);
+    const fd = new FormData();
+    fd.set("userId", userId);
+    fd.set("positionId", positionId);
+    if (engagementTypeId) fd.set("engagementTypeId", engagementTypeId);
+    startTransition(async () => {
+      const result = await createStandardHireRequisitionFromApplicationAction(fd);
+      if (result.error) setError(result.error);
+      else setDone(true);
+    });
+  }
+
+  if (done) return <p className="text-green-700">Requisition created and approved — choose it above to start onboarding.</p>;
+
+  return (
+    <div>
+      <button
+        type="button"
+        onClick={submit}
+        disabled={pending}
+        aria-busy={pending}
+        className="font-sans text-caption font-semibold underline underline-offset-4 disabled:opacity-50"
+      >
+        {pending ? "Creating…" : "Create Hiring Requisition from Application"}
+      </button>
+      {error && <p className="text-red-700 mt-1">{error}</p>}
+    </div>
+  );
+}
+
 function InvitePanel({
   operationalTitles,
   engagementTypes,
@@ -1219,7 +1282,14 @@ function InvitePanel({
 
   return (
     <div className="rounded-xl border border-black/10 bg-white p-5 space-y-3">
-      <h2 className="font-serif font-medium text-body text-ordift-ink">Invite a Collaborator</h2>
+      {/* Terminology fix (2026-09-16, Kelvin QA) — same underlying
+          auth-invitation mechanism either way (deliberately not
+          duplicated); only the heading/copy changes so an employee
+          recruitment hire reads as Employee Account Setup, not a
+          generic "collaborator" invite. */}
+      <h2 className="font-serif font-medium text-body text-ordift-ink">
+        {prefill?.sourceApplicationId ? "Employee Account Setup / Pre-Employment" : "Invite a Collaborator"}
+      </h2>
       <p className="font-sans text-caption text-ordift-ink-muted">
         Sends a real Supabase Auth invite email — the person sets their own password. Never grants Client access.
       </p>

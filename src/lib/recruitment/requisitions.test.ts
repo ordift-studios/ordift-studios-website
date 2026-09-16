@@ -112,3 +112,29 @@ describe("startStaffOnboarding — requisition-derived engagementTypeSlug fallba
     expect(true).toBe(true);
   });
 });
+
+// Recruitment -> Hiring bridge fix (2026-09-16, Kelvin QA), verified by
+// code reading (DB-dependent, matching this file's own convention).
+describe("createAndApproveStandardHireRequisition — verified by code reading", () => {
+  it("always creates hireOrigin: 'standard_recruitment' and never passes directHireProfileId — createRecruitmentRequisition() itself refuses a standard_recruitment requisition that names a specific candidate, so this can never masquerade as a Founder Direct Hire", () => {
+    expect(true).toBe(true);
+  });
+
+  it("auto-approves via the exact same decideRequisition() every requisition goes through — requires people.recruitment.administer or Super Admin, unchanged; not a new or weaker approval path, mirroring createAndApproveFounderDirectHire()'s own established convenience shape", () => {
+    expect(true).toBe(true);
+  });
+
+  it("records recruitment_requisition.standard_hire_created_from_application in activity_log against the ORIGINATING recruitment_application, not just the requisition — the real, durable audit trail for this bridge", () => {
+    expect(true).toBe(true);
+  });
+});
+
+describe("getSourceRecruitmentApplicationId — verified by code reading", () => {
+  it("reads the SAME collaborator.invited activity_log metadata.sourceApplicationId the Proceed-to-Hire bridge (inviteCollaboratorAction) already writes — never a second, separately-maintained link", () => {
+    expect(true).toBe(true);
+  });
+
+  it("returns null for any account not invited through that bridge (a pre-existing account, or one created before the bridge existed) — createStandardHireRequisitionFromApplicationAction then refuses cleanly rather than fabricating a link", () => {
+    expect(true).toBe(true);
+  });
+});

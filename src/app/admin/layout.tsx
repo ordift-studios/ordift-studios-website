@@ -67,15 +67,24 @@ const NAV_GROUPS: NavGroup[] = [
       // sub-page independently re-checks its own specific capability —
       // this nav entry is not the security boundary.
       { label: "Executive", href: "/admin/executive", executiveOnly: true },
-      { label: "Reports", href: "/admin/reports" },
+      // Access-control gap fix (2026-09-16, Kelvin QA) — Reports had no
+      // per-page gate; adminOnly here now matches the page's own real
+      // check. Activity deliberately stays unflagged — it already
+      // renders a reduced, self-scoped view for non-admin-tier staff
+      // (see activity/page.tsx's own isAdminTier branch), not a leak.
+      { label: "Reports", href: "/admin/reports", adminOnly: true },
       { label: "Activity", href: "/admin/activity" },
     ],
   },
   {
     label: "Client & Commercial",
     items: [
-      { label: "Enquiries", href: "/admin/enquiries" },
-      { label: "Bookings", href: "/admin/bookings" },
+      // Access-control gap fix (2026-09-16, Kelvin QA) — Enquiries and
+      // Bookings had no per-page gate at all, so any staff-or-admin
+      // account saw the whole client CRM. adminOnly here now matches
+      // the real check just added to both pages.
+      { label: "Enquiries", href: "/admin/enquiries", adminOnly: true },
+      { label: "Bookings", href: "/admin/bookings", adminOnly: true },
     ],
   },
   {

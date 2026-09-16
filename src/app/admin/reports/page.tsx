@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { redirect } from "next/navigation";
+import { getCurrentUser, hasRole, isSuperAdmin } from "@/lib/portal/roles";
 import { listReportModules } from "@/lib/admin/reports/registry";
 import { listSummaryReportModules } from "@/lib/admin/reports/summaryModules";
 import { emailReportAction } from "./actions";
@@ -29,6 +31,11 @@ export default async function AdminReportsPage({
 }: {
   searchParams: Promise<{ sent?: string; error?: string; mode?: string; dateFrom?: string; dateTo?: string }>;
 }) {
+  // Access-control gap fix (2026-09-16, Kelvin QA) — see enquiries/page.tsx's
+  // identical comment; this page had the same missing per-page gate.
+  const user = await getCurrentUser();
+  if (!user || (!hasRole(user, "admin") && !isSuperAdmin(user))) redirect("/admin/overview");
+
   const { sent, error, mode, dateFrom, dateTo } = await searchParams;
   const liveModules = listReportModules().filter((m) => m.live);
   const reservedModules = listReportModules().filter((m) => !m.live);

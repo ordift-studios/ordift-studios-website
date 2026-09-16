@@ -29,6 +29,7 @@ import { setNotificationPreference } from "@/lib/notifications/preferences";
 import { assignStaffPosition } from "@/lib/organization/assignPosition";
 import { hasJurisdictionAuthority, authorizeWithSuperAdminOverride, PEOPLE_CAPABILITIES } from "@/lib/organization/authority";
 import { startStaffOnboarding, completeStaffOnboarding } from "@/lib/organization/onboarding";
+import { createAndApproveStandardHireRequisition, getSourceRecruitmentApplicationId } from "@/lib/recruitment/requisitions";
 
 // ============================================================
 // Read-only data fetchers — thin server-action wrappers so the client
@@ -569,6 +570,48 @@ export async function startStaffOnboardingAction(formData: FormData): Promise<{ 
   const engagementTypeSlug = String(formData.get("engagementTypeSlug") ?? "").trim() || null;
 
   const result = await startStaffOnboarding({ profileId: userId, requisitionId, actorUserId: currentUser.id, engagementTypeSlug });
+  if (!result.ok) return { error: result.error };
+
+  revalidatePath("/admin/users");
+  return {};
+}
+
+// Recruitment -> Hiring bridge fix (2026-09-16, Kelvin QA). Creates and
+// auto-approves a standard_recruitment requisition (never Founder
+// Direct Hire) for an account that came through the Proceed-to-Hire
+// bridge and already has a real Position assigned — the two pieces of
+// genuine, already-recorded data this needs. Same authorization tier
+// as starting onboarding itself.
+export async function createStandardHireRequisitionFromApplicationAction(formData: FormData): Promise<{ error?: string }> {
+  const currentUser = await getCurrentUser();
+  if (!currentUser) return { error: "Not authenticated." };
+  if (!isSuperAdmin(currentUser) && !(await hasJurisdictionAuthority(currentUser.id, "operations", "administer"))) {
+    return { error: "Not authorized to create a hiring requisition." };
+  }
+
+  const userId = String(formData.get("userId") ?? "");
+  const positionId = String(formData.get("positionId") ?? "") || null;
+  const engagementTypeId = String(formData.get("engagementTypeId") ?? "") || null;
+  if (!userId || !positionId) return { error: "This account needs a Position assigned first." };
+
+  const sourceApplicationId = await getSourceRecruitmentApplicationId(userId);
+  if (!sourceApplicationId) {
+    return { error: "This account has no traceable accepted recruitment application — use Founder Direct Hire instead if this is a genuine direct hire." };
+  }
+
+  const admin = createAdminClient();
+  const { data: position } = await admin.from("positions").select("name, department_id, default_grade_id").eq("id", positionId).maybeSingle();
+  if (!position) return { error: "Position not found." };
+
+  const result = await createAndApproveStandardHireRequisition({
+    title: position.name,
+    requestedPositionId: positionId,
+    departmentId: position.department_id,
+    gradeId: position.default_grade_id,
+    engagementTypeId,
+    sourceRecruitmentApplicationId: sourceApplicationId,
+    requestedBy: currentUser.id,
+  });
   if (!result.ok) return { error: result.error };
 
   revalidatePath("/admin/users");
