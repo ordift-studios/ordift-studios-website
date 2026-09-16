@@ -3,6 +3,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getCurrentUser, hasRole, isSuperAdmin } from "@/lib/portal/roles";
 import { listUsersWithRoles } from "@/lib/portal/adminData";
+import { listActivePricingMarkets } from "@/lib/commercial/pricingCatalog";
 import { NewQuotationForm } from "./NewQuotationForm";
 
 export const metadata: Metadata = {
@@ -14,7 +15,7 @@ export default async function NewQuotationPage() {
   const user = await getCurrentUser();
   if (!user || (!hasRole(user, "admin") && !isSuperAdmin(user))) redirect("/admin/overview");
 
-  const usersResult = await listUsersWithRoles();
+  const [usersResult, markets] = await Promise.all([listUsersWithRoles(), listActivePricingMarkets()]);
   const clients = usersResult.ok
     ? usersResult.users.filter((u) => u.roles.includes("client")).map((u) => ({ id: u.id, fullName: u.fullName, email: u.email }))
     : [];
@@ -27,7 +28,7 @@ export default async function NewQuotationPage() {
         </Link>
         <h1 className="font-serif font-medium text-section-heading lg:text-section-heading-desktop text-ordift-ink mt-3">New Quotation</h1>
       </div>
-      <NewQuotationForm clients={clients} />
+      <NewQuotationForm clients={clients} markets={markets} />
     </div>
   );
 }

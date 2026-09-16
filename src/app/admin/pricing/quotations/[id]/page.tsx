@@ -60,7 +60,13 @@ export default async function QuotationDetailPage({ params }: { params: Promise<
               <tr key={item.id} className="border-b border-black/5 last:border-0">
                 <td className="px-4 py-2 font-sans text-body-small text-ordift-ink">
                   {item.serviceItem}
+                  {item.sourceType !== "manual" && (
+                    <span className="ml-2 px-1.5 py-0.5 rounded-full font-sans text-[0.65rem] bg-ordift-gold/20 text-ordift-gold-pressed">
+                      {item.sourceType === "pricing" ? "Pricing" : "Pricing (adjusted)"}
+                    </span>
+                  )}
                   {item.description && <span className="block text-caption text-ordift-ink-muted">{item.description}</span>}
+                  {item.sourceReference && <span className="block text-caption text-ordift-ink-muted">Source: {item.sourceReference}</span>}
                 </td>
                 <td className="px-4 py-2 font-sans text-body-small text-ordift-ink-muted">{item.quantity} {item.unitBasis}</td>
                 <td className="px-4 py-2 font-sans text-body-small text-ordift-ink-muted tabular-nums">{quotation.currency} {item.sellingRate.toFixed(2)}</td>

@@ -1,12 +1,15 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { getCurrentUser, hasRole, isSuperAdmin } from "@/lib/portal/roles";
 import {
   createClientQuotation,
   updateQuotationStatus,
   associateProspectQuotationWithClient,
   type QuotationLineItemInput,
 } from "@/lib/commercial/clientQuotations";
+import { suggestCorporateHeadshotQuotationLine, type CorporateHeadshotQuoteSuggestion } from "@/lib/commercial/pricingCatalog";
+import type { CorporateProductSlug } from "@/lib/pricing/corporateHeadshotPricing";
 
 export type ActionState = { ok: boolean; error?: string } | null;
 // Create-specific result — deliberately does NOT call redirect() from
@@ -47,6 +50,9 @@ export async function createQuotationAction(_prev: CreateQuotationState, formDat
     const discountPercentRaw = String(formData.get(`items[${i}][discountPercent]`) ?? "").trim();
     const taxPercentRaw = String(formData.get(`items[${i}][taxPercent]`) ?? "").trim();
     const description = String(formData.get(`items[${i}][description]`) ?? "").trim() || null;
+    const sourceTypeRaw = String(formData.get(`items[${i}][sourceType]`) ?? "").trim();
+    const sourceType = sourceTypeRaw === "pricing" || sourceTypeRaw === "adjusted" ? sourceTypeRaw : "manual";
+    const sourceReference = String(formData.get(`items[${i}][sourceReference]`) ?? "").trim() || null;
     if (serviceItem && unitBasis && quantity > 0 && sellingRate >= 0) {
       items.push({
         serviceItem,
@@ -56,6 +62,8 @@ export async function createQuotationAction(_prev: CreateQuotationState, formDat
         sellingRate,
         discountPercent: discountPercentRaw ? Number(discountPercentRaw) : null,
         taxPercent: taxPercentRaw ? Number(taxPercentRaw) : null,
+        sourceType,
+        sourceReference,
       });
     }
     i++;
@@ -80,6 +88,32 @@ export async function createQuotationAction(_prev: CreateQuotationState, formDat
 
   revalidatePath("/admin/pricing/quotations");
   return { ok: true, quotationId: result.quotationId, quotationReference: result.quotationReference };
+}
+
+// Connect Client Quotations to existing Pricing (2026-09-16, Task C).
+// Read-only — computes a suggestion via the real, existing Corporate &
+// Headshots pricing engine (never a new formula); the caller still
+// decides whether to add it as a line item. Never writes anything.
+export async function suggestCorporateHeadshotLineAction(
+  _prev: CorporateHeadshotQuoteSuggestion | null,
+  formData: FormData
+): Promise<CorporateHeadshotQuoteSuggestion> {
+  const user = await getCurrentUser();
+  if (!user || (!hasRole(user, "admin") && !isSuperAdmin(user))) {
+    return { ok: false, requiresCustomQuote: false, error: "Not authorized." };
+  }
+  const marketSlug = String(formData.get("marketSlug") ?? "");
+  const marketName = String(formData.get("marketName") ?? "");
+  const product = String(formData.get("product") ?? "") as CorporateProductSlug;
+  const numberOfPeopleRaw = String(formData.get("numberOfPeople") ?? "").trim();
+  if (!marketSlug || !product) return { ok: false, requiresCustomQuote: false, error: "Choose a market and product." };
+
+  return suggestCorporateHeadshotQuotationLine({
+    marketSlug,
+    marketName,
+    product,
+    numberOfPeople: numberOfPeopleRaw ? Number(numberOfPeopleRaw) : undefined,
+  });
 }
 
 export async function updateQuotationStatusAction(_prev: ActionState, formData: FormData): Promise<ActionState> {

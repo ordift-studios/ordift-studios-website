@@ -2,16 +2,113 @@
 
 import { useActionState, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { createQuotationAction, type CreateQuotationState } from "../actions";
+import { createQuotationAction, suggestCorporateHeadshotLineAction, type CreateQuotationState } from "../actions";
 import SubmitButton from "@/components/admin/SubmitButton";
 
 type ClientOption = { id: string; fullName: string | null; email: string | null };
+type MarketOption = { slug: string; name: string };
 
-type LineItem = { serviceItem: string; description: string; quantity: string; unitBasis: string; sellingRate: string; discountPercent: string; taxPercent: string };
+type LineItem = {
+  serviceItem: string;
+  description: string;
+  quantity: string;
+  unitBasis: string;
+  sellingRate: string;
+  discountPercent: string;
+  taxPercent: string;
+  sourceType: "pricing" | "manual" | "adjusted";
+  sourceReference: string;
+};
 
-const EMPTY_ITEM: LineItem = { serviceItem: "", description: "", quantity: "1", unitBasis: "item", sellingRate: "", discountPercent: "", taxPercent: "" };
+const EMPTY_ITEM: LineItem = {
+  serviceItem: "",
+  description: "",
+  quantity: "1",
+  unitBasis: "item",
+  sellingRate: "",
+  discountPercent: "",
+  taxPercent: "",
+  sourceType: "manual",
+  sourceReference: "",
+};
 
-export function NewQuotationForm({ clients }: { clients: ClientOption[] }) {
+const PRODUCT_OPTIONS: { value: string; label: string }[] = [
+  { value: "individual_headshot", label: "Corporate Headshot — Individual" },
+  { value: "executive_portrait", label: "Executive Portrait" },
+  { value: "team_headshots", label: "Team Headshots" },
+];
+
+// Connect Client Quotations to existing Pricing (2026-09-16, Task C) —
+// a small, real, working integration with Corporate & Headshots Pricing
+// (the exact scenario named in the request: "100 staff need corporate
+// headshots"). Reuses the existing estimator via a server action;
+// suggests a line item the admin can review and add, never silently
+// inserts one. Other Ordift services (Film, Advertising, Events, Video
+// Production etc.) each have their own distinct pricing dimensions not
+// yet wired here — those stay authorized manual entries, correctly
+// marked source_type: 'manual', never a fabricated price.
+function PricingPrefillPanel({ markets, onAdd }: { markets: MarketOption[]; onAdd: (item: LineItem) => void }) {
+  const [state, formAction] = useActionState(suggestCorporateHeadshotLineAction, null);
+  const [product, setProduct] = useState("individual_headshot");
+  const [marketName, setMarketName] = useState("");
+
+  useEffect(() => {
+    if (state?.ok === true) {
+      onAdd({
+        serviceItem: state.item.serviceItem,
+        description: state.item.description ?? "",
+        quantity: String(state.item.quantity),
+        unitBasis: state.item.unitBasis,
+        sellingRate: String(state.item.sellingRate),
+        discountPercent: "",
+        taxPercent: "",
+        sourceType: "pricing",
+        sourceReference: state.item.sourceReference ?? "",
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state]);
+
+  if (markets.length === 0) return null;
+
+  return (
+    <details className="rounded-xl border border-ordift-gold/40 bg-white p-4">
+      <summary className="font-sans text-body-small font-semibold text-ordift-ink cursor-pointer">Prefill from Pricing — Corporate &amp; Headshots</summary>
+      <form action={formAction} className="mt-3 grid grid-cols-1 sm:grid-cols-4 gap-2 items-end">
+        <select
+          name="marketSlug"
+          required
+          className="rounded-lg border border-black/15 bg-white px-2 py-1.5 font-sans text-caption"
+          onChange={(e) => setMarketName(e.target.selectedOptions[0]?.text ?? "")}
+        >
+          <option value="">Market…</option>
+          {markets.map((m) => (
+            <option key={m.slug} value={m.slug}>{m.name}</option>
+          ))}
+        </select>
+        <input type="hidden" name="marketName" value={marketName} />
+        <select name="product" value={product} onChange={(e) => setProduct(e.target.value)} className="rounded-lg border border-black/15 bg-white px-2 py-1.5 font-sans text-caption">
+          {PRODUCT_OPTIONS.map((p) => (
+            <option key={p.value} value={p.value}>{p.label}</option>
+          ))}
+        </select>
+        {product === "team_headshots" && (
+          <input name="numberOfPeople" type="number" min="1" placeholder="Number of people" className="rounded-lg border border-black/15 px-2 py-1.5 font-sans text-caption" />
+        )}
+        <SubmitButton pendingLabel="Calculating…" className="font-sans text-caption font-semibold px-3 py-1.5 rounded-md bg-ordift-navy-950 text-white">
+          Get Rate
+        </SubmitButton>
+      </form>
+      {state?.ok === false && state.requiresCustomQuote && (
+        <p className="font-sans text-caption text-amber-700 mt-2">{state.reason} — add a manual line item below instead.</p>
+      )}
+      {state?.ok === false && !state.requiresCustomQuote && <p className="font-sans text-caption text-red-700 mt-2">{state.error}</p>}
+      {state?.ok === true && <p className="font-sans text-caption text-green-700 mt-2">Added as a line item below (USD, from Pricing).</p>}
+    </details>
+  );
+}
+
+export function NewQuotationForm({ clients, markets }: { clients: ClientOption[]; markets: MarketOption[] }) {
   const router = useRouter();
   const [state, formAction] = useActionState<CreateQuotationState, FormData>(createQuotationAction, null);
   const [partyType, setPartyType] = useState<"client" | "prospect">("prospect");
@@ -26,8 +123,16 @@ export function NewQuotationForm({ clients }: { clients: ClientOption[] }) {
     if (state?.ok === true) router.push(`/admin/pricing/quotations/${state.quotationId}`);
   }, [state, router]);
 
+  // Editing a field on a Pricing-derived item marks it 'adjusted' (still
+  // keeps its sourceReference for audit context) — a genuinely manual
+  // item (sourceType already 'manual') stays 'manual' while its own
+  // fields are first typed in, never flipped just because it was edited.
   function updateItem(i: number, field: keyof LineItem, value: string) {
-    setItems((prev) => prev.map((item, idx) => (idx === i ? { ...item, [field]: value } : item)));
+    setItems((prev) =>
+      prev.map((item, idx) =>
+        idx === i ? { ...item, [field]: value, sourceType: item.sourceType === "pricing" && field !== "sourceType" ? "adjusted" : item.sourceType } : item
+      )
+    );
   }
 
   return (
@@ -61,10 +166,22 @@ export function NewQuotationForm({ clients }: { clients: ClientOption[] }) {
         )}
       </section>
 
+      <PricingPrefillPanel markets={markets} onAdd={(item) => setItems((prev) => [...prev, item])} />
+
       <section className="rounded-xl border border-black/10 bg-white p-6 space-y-3">
         <h2 className="font-serif font-medium text-body text-ordift-ink">Line Items</h2>
         {items.map((item, i) => (
           <div key={i} className="grid grid-cols-2 sm:grid-cols-7 gap-2 items-end border-b border-black/5 pb-3">
+            <input type="hidden" name={`items[${i}][sourceType]`} value={item.sourceType} />
+            <input type="hidden" name={`items[${i}][sourceReference]`} value={item.sourceReference} />
+            <div className="col-span-2 sm:col-span-7 flex items-center gap-2">
+              {item.sourceType !== "manual" && (
+                <span className="px-2 py-0.5 rounded-full font-sans text-[0.65rem] bg-ordift-gold/20 text-ordift-gold-pressed whitespace-nowrap">
+                  {item.sourceType === "pricing" ? "From Pricing" : "From Pricing (adjusted)"}
+                </span>
+              )}
+              {item.sourceReference && <span className="font-sans text-[0.65rem] text-ordift-ink-muted truncate">{item.sourceReference}</span>}
+            </div>
             <input name={`items[${i}][serviceItem]`} value={item.serviceItem} onChange={(e) => updateItem(i, "serviceItem", e.target.value)} placeholder="Service/item" required className="col-span-2 rounded-lg border border-black/15 px-2 py-1.5 font-sans text-caption" />
             <input name={`items[${i}][description]`} value={item.description} onChange={(e) => updateItem(i, "description", e.target.value)} placeholder="Description" className="col-span-2 rounded-lg border border-black/15 px-2 py-1.5 font-sans text-caption" />
             <input name={`items[${i}][quantity]`} value={item.quantity} onChange={(e) => updateItem(i, "quantity", e.target.value)} type="number" min="0.01" step="0.01" placeholder="Qty" required className="rounded-lg border border-black/15 px-2 py-1.5 font-sans text-caption" />
@@ -82,7 +199,7 @@ export function NewQuotationForm({ clients }: { clients: ClientOption[] }) {
           </div>
         ))}
         <button type="button" onClick={() => setItems((prev) => [...prev, { ...EMPTY_ITEM }])} className="font-sans text-caption font-semibold text-ordift-gold-pressed underline underline-offset-4">
-          + Add line item
+          + Add manual line item
         </button>
       </section>
 

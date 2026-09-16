@@ -19,6 +19,8 @@ async function requireAdminActor(): Promise<{ ok: true; actorUserId: string } | 
   return { ok: true, actorUserId: user.id };
 }
 
+export type QuotationLineItemSourceType = "pricing" | "manual" | "adjusted";
+
 export type QuotationLineItemInput = {
   serviceItem: string;
   description?: string | null;
@@ -27,6 +29,15 @@ export type QuotationLineItemInput = {
   sellingRate: number;
   discountPercent?: number | null;
   taxPercent?: number | null;
+  // Connect Client Quotations to existing Pricing (2026-09-16) — records
+  // whether this line came from a real configured Pricing rate, an
+  // authorized manual entry, or a Pricing rate that was deliberately
+  // adjusted. Defaults to 'manual' (every pre-existing quotation's true
+  // origin). sourceReference is a human-readable snapshot label, never a
+  // live foreign key — a quotation line must never change because the
+  // referenced rate later changes.
+  sourceType?: QuotationLineItemSourceType;
+  sourceReference?: string | null;
 };
 
 export type CreateQuotationParams = {
@@ -146,6 +157,8 @@ export async function createClientQuotation(params: CreateQuotationParams): Prom
     tax_percent: item.taxPercent ?? null,
     line_total: totals.lineTotals[i],
     sort_order: i,
+    source_type: item.sourceType ?? "manual",
+    source_reference: item.sourceReference ?? null,
   }));
   const { error: itemsError } = await admin.from("client_quotation_items").insert(itemRows);
   if (itemsError) {
@@ -222,6 +235,8 @@ export type ClientQuotationDetail = ClientQuotationSummary & {
     discountPercent: number | null;
     taxPercent: number | null;
     lineTotal: number;
+    sourceType: QuotationLineItemSourceType;
+    sourceReference: string | null;
   }[];
 };
 
@@ -237,7 +252,7 @@ export async function getClientQuotation(id: string): Promise<ClientQuotationDet
       .maybeSingle(),
     admin
       .from("client_quotation_items")
-      .select("id, service_item, description, quantity, unit_basis, selling_rate, discount_percent, tax_percent, line_total")
+      .select("id, service_item, description, quantity, unit_basis, selling_rate, discount_percent, tax_percent, line_total, source_type, source_reference")
       .eq("quotation_id", id)
       .order("sort_order", { ascending: true }),
   ]);
@@ -281,6 +296,8 @@ export async function getClientQuotation(id: string): Promise<ClientQuotationDet
       discountPercent: i.discount_percent,
       taxPercent: i.tax_percent,
       lineTotal: i.line_total,
+      sourceType: i.source_type as QuotationLineItemSourceType,
+      sourceReference: i.source_reference,
     })),
   };
 }
