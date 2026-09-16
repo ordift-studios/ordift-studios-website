@@ -10,6 +10,10 @@ import { getServiceLengthSummary } from "@/lib/organization/serviceLength";
 import { getLeaveBalance, listLeaveRequestsForProfile } from "@/lib/organization/leaveRequests";
 import { listLeaveTypes, resolveEmployeeLeaveJurisdiction } from "@/lib/organization/leaveTypes";
 import { listLongServiceBenefitAwardsForProfile } from "@/lib/organization/compensation";
+import { getStaffOnboardingByProfileId } from "@/lib/organization/onboarding";
+import { listResolvedRequirements } from "@/lib/organization/onboardingRequirements";
+import { listAssetAssignmentsForProfile, listCompanyAssets } from "@/lib/organization/assets";
+import { getEmployeeEmploymentAgreementSummary } from "@/lib/legal/employeeAgreements";
 import { MyWorkspaceLanding } from "./MyWorkspaceLanding";
 import { FounderSelfAdministrationForm } from "./FounderSelfAdministrationForm";
 
@@ -74,6 +78,25 @@ export default async function MyWorkspacePage() {
     leaveTypes.length > 0 ? listLeaveRequestsForProfile(user.id) : Promise.resolve([]),
   ]);
   const leaveBalances = leaveBalanceRows.filter((b): b is NonNullable<typeof b> => b !== null);
+
+  // My Workspace completion (2026-09-16) — Onboarding/Assets/Agreements,
+  // all read from the same modules the admin profile page and Vendor
+  // detail page already use for the equivalent data, never duplicated.
+  const [myOnboarding, myAssetAssignments, companyAssets] = await Promise.all([
+    getStaffOnboardingByProfileId(user.id),
+    listAssetAssignmentsForProfile(user.id),
+    listCompanyAssets(),
+  ]);
+  const assetById = new Map(companyAssets.map((a) => [a.id, a]));
+  const myActiveAssets = myAssetAssignments.filter((a) => !a.returnedAt);
+  const myOutstandingRequirements =
+    myOnboarding && myOnboarding.status !== "completed"
+      ? (await listResolvedRequirements({ onboardingId: myOnboarding.id, profileId: user.id, pipeline: myOnboarding.pipeline })).filter(
+          (r) => r.status !== "satisfied" && r.status !== "waived" && r.status !== "not_applicable"
+        )
+      : [];
+  const myAgreementSummary =
+    myOnboarding && myOnboarding.pipeline === "employee" ? await getEmployeeEmploymentAgreementSummary(myOnboarding.id) : null;
   const leaveSummary =
     leaveBalances.length > 0
       ? {
@@ -164,6 +187,54 @@ export default async function MyWorkspacePage() {
             </ul>
           ) : (
             <p className="font-sans text-body-small text-ordift-ink-muted">No long-service benefit awarded yet.</p>
+          )}
+        </div>
+      </section>
+
+      <section className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="rounded-xl border border-black/10 bg-white p-6 space-y-2">
+          <h2 className="font-serif font-medium text-body text-ordift-ink">My Onboarding</h2>
+          {!myOnboarding ? (
+            <p className="font-sans text-body-small text-ordift-ink-muted">No onboarding record on file.</p>
+          ) : myOnboarding.status === "completed" ? (
+            <p className="font-sans text-body-small text-green-700">Complete.</p>
+          ) : myOutstandingRequirements.length === 0 ? (
+            <p className="font-sans text-body-small text-ordift-ink-muted">In progress — no outstanding requirements.</p>
+          ) : (
+            <ul className="space-y-1">
+              {myOutstandingRequirements.map((r) => (
+                <li key={r.requirementKey} className="font-sans text-body-small text-ordift-ink-muted">{r.label} — {r.status}</li>
+              ))}
+            </ul>
+          )}
+        </div>
+
+        <div className="rounded-xl border border-black/10 bg-white p-6 space-y-2">
+          <h2 className="font-serif font-medium text-body text-ordift-ink">My Agreements</h2>
+          {myAgreementSummary ? (
+            <p className="font-sans text-body-small text-ordift-ink-muted">
+              {myAgreementSummary.agreementReference} — {myAgreementSummary.status.replace(/_/g, " ")}
+            </p>
+          ) : (
+            <p className="font-sans text-body-small text-ordift-ink-muted">No agreement on file yet.</p>
+          )}
+        </div>
+
+        <div className="rounded-xl border border-black/10 bg-white p-6 space-y-2">
+          <h2 className="font-serif font-medium text-body text-ordift-ink">My Assets</h2>
+          {myActiveAssets.length === 0 ? (
+            <p className="font-sans text-body-small text-ordift-ink-muted">No equipment currently issued.</p>
+          ) : (
+            <ul className="space-y-1">
+              {myActiveAssets.map((a) => {
+                const asset = assetById.get(a.assetId);
+                return (
+                  <li key={a.id} className="font-sans text-body-small text-ordift-ink-muted">
+                    {asset ? `${asset.assetIdentifier} — ${asset.description}` : a.assetId}
+                  </li>
+                );
+              })}
+            </ul>
           )}
         </div>
       </section>

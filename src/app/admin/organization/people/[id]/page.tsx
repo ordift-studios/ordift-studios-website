@@ -34,6 +34,7 @@ import { getStaffOnboardingByProfileId } from "@/lib/organization/onboarding";
 import { listReferenceRequestsForProfile } from "@/lib/organization/employmentReferences";
 import { listControlledPolicyDocuments, listPolicyAcknowledgementsForProfile } from "@/lib/organization/policyAcknowledgements";
 import { listEmploymentTermsHistory, listEnhancedReviewCompletions, EMPLOYMENT_TRANSITION_TYPES, type WorkPatternType } from "@/lib/organization/employmentTermsHistory";
+import { getServiceLengthSummary } from "@/lib/organization/serviceLength";
 import { listAppealsForProfile } from "@/lib/organization/appeals";
 import { listEmployingEntities, listEmployerCapableEmployingEntities } from "@/lib/organization/legalEntities";
 import { CreateAgreementDraftForm } from "./CreateAgreementDraftForm";
@@ -225,6 +226,11 @@ export default async function PersonDetailPage({ params }: { params: Promise<{ i
   const personGrants = grants.filter((g) => g.profileId === id && isGrantActive(g));
   const personActingAssignments = actingAssignments.filter((a) => a.profileId === id);
   const identity = identities.find((i) => i.profileId === id) ?? null;
+  // My Workspace HR Summary parity (2026-09-16) — same
+  // getServiceLengthSummary() the employee's own My Workspace uses,
+  // never a second calculation. Null when no employment-terms history
+  // exists yet.
+  const serviceLength = await getServiceLengthSummary(id);
 
   return (
     <div className="space-y-8">
@@ -239,6 +245,7 @@ export default async function PersonDetailPage({ params }: { params: Promise<{ i
           <Link href="/admin/organization" className="underline underline-offset-4">← Organization</Link>
           {" · "}
           <Link href="/admin/users" className="underline underline-offset-4">Users & Roles</Link>
+          {serviceLength && ` · Service: ${serviceLength.formatted}`}
         </p>
       </div>
 
