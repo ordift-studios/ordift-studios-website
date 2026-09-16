@@ -1,5 +1,5 @@
 import { createAdminClient } from "@/lib/supabase/admin";
-import { getEmploymentTermsAsOf, getEarliestEmploymentTerms } from "@/lib/organization/employmentTermsHistory";
+import { getEmploymentTermsAsOf, getEarliestEmploymentTerms, type WorkPatternType } from "@/lib/organization/employmentTermsHistory";
 
 // Public Holiday / Working-Day Calendar — READ-ONLY foundation
 // (Workforce/Employee Self-Service Phase, 2026-09-15). This is the
@@ -28,6 +28,19 @@ export const DATE_CLASSIFICATIONS = [
   "COMPANY_CLOSURE",
   "SHIFT_WORKING_DAY",
   "SPECIAL_SCHEDULE",
+  // Flexible Executive calendar fix (2026-09-16) — a real Production
+  // defect: the Founder's own employment_terms_history row (effective
+  // 2026-09-16, work_pattern_type: 'flexible_executive') deliberately
+  // has working_weekdays: null — a flexible executive genuinely has no
+  // fixed weekday pattern, that IS the correct configuration for this
+  // work pattern, never a gap. Before this fix, classifyDate() only
+  // understood "has explicit working weekdays" vs. "nothing configured
+  // at all", so a genuinely-flexible person collapsed into the same
+  // UNRESOLVED bucket as someone truly never configured. This
+  // classification is the honest third state: real, active employment
+  // terms exist as of this date, and the person's own work pattern is
+  // deliberately not a fixed weekday schedule.
+  "FLEXIBLE_WORKING_DAY",
   // Architecture reserved for a future employment end date
   // (2026-09-15) — no queryable "employment ended on X" signal exists
   // anywhere in this codebase yet (employment_terms_history has no
@@ -86,6 +99,7 @@ export function classifyDate(params: {
   employmentJurisdictionId: string | null;
   publicHoliday: { name: string } | null;
   employmentCommencementDate?: string | null;
+  workPatternType?: WorkPatternType | null;
 }): DateResolution {
   const isPublicHoliday = params.publicHoliday !== null;
   const holidayName = params.publicHoliday?.name ?? null;
@@ -104,6 +118,30 @@ export function classifyDate(params: {
       isScheduledWorkday: false,
       isRestDay: false,
       holidayName: null,
+      employmentJurisdictionId: params.employmentJurisdictionId,
+    };
+  }
+
+  // Flexible Executive (2026-09-16 fix) — checked BEFORE the
+  // "no working weekdays configured" fallback below, since a flexible
+  // executive genuinely has no fixed weekday pattern by design; that
+  // must never read as UNRESOLVED. Still real employment terms exist
+  // as of this date (the pre-employment check above already passed),
+  // and a public holiday still takes classification precedence exactly
+  // as it does for a fixed-schedule employee — a flexible executive
+  // does not lose the holiday, they simply have no fixed working days
+  // to compare it against. isScheduledWorkday/isRestDay are both left
+  // false, matching PRE_EMPLOYMENT's own "neither concept cleanly
+  // applies" discipline — never fabricates a fixed-schedule fact for a
+  // pattern that explicitly has none.
+  if (params.workPatternType === "flexible_executive") {
+    return {
+      date: params.date,
+      classification: isPublicHoliday ? "PUBLIC_HOLIDAY" : "FLEXIBLE_WORKING_DAY",
+      isPublicHoliday,
+      isScheduledWorkday: false,
+      isRestDay: false,
+      holidayName,
       employmentJurisdictionId: params.employmentJurisdictionId,
     };
   }
@@ -194,6 +232,7 @@ export async function resolveEmployeeDateClassification(params: { profileId: str
     employmentJurisdictionId: terms?.employmentJurisdictionId ?? null,
     publicHoliday,
     employmentCommencementDate,
+    workPatternType: terms?.workPatternType ?? null,
   });
 }
 

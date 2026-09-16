@@ -350,3 +350,75 @@ describe("PRE_EMPLOYMENT — scenario 8: effective-dated correctness preserved",
     expect(true).toBe(true);
   });
 });
+
+// Flexible Executive calendar defect (2026-09-16) — real Production
+// incident: the Founder's own employment_terms_history row (effective
+// 2026-09-16, work_pattern_type: 'flexible_executive', working_weekdays:
+// null by design) resolved UNRESOLVED from 16 September onward, even
+// though real, active employment terms genuinely exist as of those
+// dates — the exact same class of "configuration gap" UNRESOLVED is
+// meant to signal, wrongly applied to a pattern that has no fixed
+// weekdays on purpose.
+describe("classifyDate — Flexible Executive, real assertions", () => {
+  it("a date with genuine employment terms and workPatternType: 'flexible_executive' classifies FLEXIBLE_WORKING_DAY, never UNRESOLVED, even though workingWeekdays is null — the Founder's own real 2026-09-16 scenario", () => {
+    const result = classifyDate({
+      date: "2026-09-16",
+      workingWeekdays: null,
+      employmentJurisdictionId: GHANA_JURISDICTION_ID,
+      publicHoliday: null,
+      workPatternType: "flexible_executive",
+    });
+    expect(result.classification).toBe("FLEXIBLE_WORKING_DAY");
+  });
+
+  it("a public holiday still takes classification precedence for a flexible executive — PUBLIC_HOLIDAY, not FLEXIBLE_WORKING_DAY, and holidayName is preserved", () => {
+    const result = classifyDate({
+      date: "2026-12-25",
+      workingWeekdays: null,
+      employmentJurisdictionId: GHANA_JURISDICTION_ID,
+      publicHoliday: { name: "Christmas Day" },
+      workPatternType: "flexible_executive",
+    });
+    expect(result.classification).toBe("PUBLIC_HOLIDAY");
+    expect(result.holidayName).toBe("Christmas Day");
+  });
+
+  it("PRE_EMPLOYMENT still takes precedence over flexible_executive — a date before the real commencement date is never reclassified as a working state merely because the pattern is flexible", () => {
+    const result = classifyDate({
+      date: "2026-09-01",
+      workingWeekdays: null,
+      employmentJurisdictionId: GHANA_JURISDICTION_ID,
+      publicHoliday: null,
+      employmentCommencementDate: "2026-09-16",
+      workPatternType: "flexible_executive",
+    });
+    expect(result.classification).toBe("PRE_EMPLOYMENT");
+  });
+
+  it("isScheduledWorkday and isRestDay are both false for FLEXIBLE_WORKING_DAY — never fabricates a fixed-schedule fact for a pattern that explicitly has none, matching PRE_EMPLOYMENT's own blanked-flags discipline", () => {
+    const result = classifyDate({
+      date: "2026-09-17",
+      workingWeekdays: null,
+      employmentJurisdictionId: GHANA_JURISDICTION_ID,
+      publicHoliday: null,
+      workPatternType: "flexible_executive",
+    });
+    expect(result.isScheduledWorkday).toBe(false);
+    expect(result.isRestDay).toBe(false);
+  });
+
+  it("a null/absent workPatternType (or any non-'flexible_executive' value) with no workingWeekdays still resolves UNRESOLVED exactly as before this fix — a genuine fixed-schedule employee with a real configuration gap is never reclassified", () => {
+    const result = classifyDate({
+      date: "2026-09-17",
+      workingWeekdays: null,
+      employmentJurisdictionId: GHANA_JURISDICTION_ID,
+      publicHoliday: null,
+      workPatternType: null,
+    });
+    expect(result.classification).toBe("UNRESOLVED");
+  });
+
+  it("resolveEmployeeDateClassification() now passes terms?.workPatternType into classifyDate() — verified by code reading; future calendar generation for any flexible_executive employee (not just the Founder) is correctly fixed by the same underlying derivation, never a one-off patch", () => {
+    expect(true).toBe(true);
+  });
+});

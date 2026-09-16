@@ -19,6 +19,11 @@ const CLASSIFICATION_STYLES: Record<DateResolution["classification"], string> = 
   SPECIAL_SCHEDULE: "bg-purple-50 text-purple-900 border-purple-200",
   POST_EMPLOYMENT: "bg-slate-50 text-slate-500 border-slate-200",
   UNRESOLVED: "bg-red-50 text-red-700 border-red-200",
+  // Flexible Executive (2026-09-16) — a genuine, actively-configured
+  // working state, never the red "unconfigured" treatment; distinct
+  // from WORKING_DAY's own neutral white to make the "no fixed
+  // schedule, this is by design" fact visible at a glance.
+  FLEXIBLE_WORKING_DAY: "bg-ordift-offwhite text-ordift-ink border-black/10",
 };
 
 const CLASSIFICATION_LABELS: Record<DateResolution["classification"], string> = {
@@ -31,6 +36,7 @@ const CLASSIFICATION_LABELS: Record<DateResolution["classification"], string> = 
   SPECIAL_SCHEDULE: "Special schedule",
   POST_EMPLOYMENT: "Post-employment",
   UNRESOLVED: "Unconfigured",
+  FLEXIBLE_WORKING_DAY: "Flexible working day",
 };
 
 // Today's date as "YYYY-MM-DD" in the VIEWER's own browser-local
