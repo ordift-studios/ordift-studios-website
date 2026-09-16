@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { summarizeHrCommandCentre } from "./hrCommandCentre";
+import {
+  summarizeHrCommandCentre,
+  summarizeOnboardingProgress,
+  summarizeWorkforceAnalytics,
+  summarizeAttendanceLeaveSnapshot,
+  summarizeUpcomingPeopleEvents,
+} from "./hrCommandCentre";
 
 const base = {
   users: [] as { roles: string[]; accessStatus: string }[],
@@ -119,5 +125,65 @@ describe("summarizeHrCommandCentre — real assertions", () => {
     const { needsAttention } = summarizeHrCommandCentre({ ...base, unexplainedAbsencesCount: 2 });
     const entry = needsAttention.find((n) => n.key === "attendance-exceptions");
     expect(entry?.label).toContain("2 unexplained absences");
+  });
+});
+
+// Task 4 additions (2026-09-16) — HR Command Centre D/G/H/I subsections.
+describe("summarizeOnboardingProgress — real assertions", () => {
+  it("groups by pipeline + stage, excluding completed and cancelled records", () => {
+    const rows = summarizeOnboardingProgress([
+      { pipeline: "employee", stage: "management_review", status: "active" },
+      { pipeline: "employee", stage: "management_review", status: "active" },
+      { pipeline: "employee", stage: "active", status: "completed" },
+      { pipeline: "external_contractor", stage: "proposed", status: "active" },
+    ]);
+    expect(rows.find((r) => r.pipeline === "employee" && r.stage === "management_review")?.count).toBe(2);
+    expect(rows.find((r) => r.stage === "active")).toBeUndefined();
+    expect(rows.find((r) => r.pipeline === "external_contractor")?.count).toBe(1);
+  });
+});
+
+describe("summarizeWorkforceAnalytics — real assertions", () => {
+  it("counts only active users, grouped by department and engagement type", () => {
+    const { byDepartment, byEngagementType } = summarizeWorkforceAnalytics([
+      { accessStatus: "active", departmentName: "Photography", engagementTypeName: "Full-Time" },
+      { accessStatus: "active", departmentName: "Photography", engagementTypeName: "Full-Time" },
+      { accessStatus: "suspended", departmentName: "Photography", engagementTypeName: "Full-Time" },
+      { accessStatus: "active", departmentName: null, engagementTypeName: null },
+    ]);
+    expect(byDepartment.find((r) => r.label === "Photography")?.count).toBe(2);
+    expect(byDepartment.find((r) => r.label === "Unassigned")?.count).toBe(1);
+    expect(byEngagementType.find((r) => r.label === "Unclassified")?.count).toBe(1);
+  });
+});
+
+describe("summarizeAttendanceLeaveSnapshot — real assertions", () => {
+  it("counts present/remote as present, tallies late and unexplained separately, passes onLeaveToday through", () => {
+    const snapshot = summarizeAttendanceLeaveSnapshot(
+      [
+        { attendanceStatus: "present", isLate: false },
+        { attendanceStatus: "remote", isLate: true },
+        { attendanceStatus: "absent_unexplained", isLate: false },
+      ],
+      3
+    );
+    expect(snapshot.presentToday).toBe(2);
+    expect(snapshot.lateToday).toBe(1);
+    expect(snapshot.unexplainedAbsencesToday).toBe(1);
+    expect(snapshot.onLeaveToday).toBe(3);
+  });
+});
+
+describe("summarizeUpcomingPeopleEvents — real assertions", () => {
+  it("merges and sorts upcoming leave and onboarding starts by date", () => {
+    const events = summarizeUpcomingPeopleEvents({
+      upcomingLeave: [{ id: "l1", profileFullName: "Kelvin Acheampong", startDate: "2026-09-20" }],
+      upcomingOnboardingStarts: [{ id: "o1", profileId: "p1", startDate: "2026-09-18", pipeline: "employee" }],
+    });
+    expect(events.map((e) => e.key)).toEqual(["onboarding-o1", "leave-l1"]);
+  });
+
+  it("empty input produces an empty list, never a fabricated event", () => {
+    expect(summarizeUpcomingPeopleEvents({ upcomingLeave: [], upcomingOnboardingStarts: [] })).toEqual([]);
   });
 });

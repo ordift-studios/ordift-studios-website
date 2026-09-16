@@ -453,3 +453,30 @@ export async function listPendingLeaveRequestsForReviewer(actorUserId: string): 
   const scoped = await Promise.all(all.map(async (r) => ((await hasManagerialAuthorityOver(actorUserId, r.profileId)) ? r : null)));
   return scoped.filter((r): r is PendingLeaveRequest => r !== null);
 }
+
+// HR Command Centre Attendance & Leave Snapshot / Upcoming People
+// Events (2026-09-16) — every already-DECIDED (status='approved')
+// leave request whose start date falls within the given window,
+// across every person. Deliberately separate from the pending queues
+// above: this is about what's coming up on the calendar, not what
+// still needs a decision.
+export async function listApprovedLeaveStartingSoonAcrossStaff(withinDays: number): Promise<PendingLeaveRequest[]> {
+  const admin = createAdminClient();
+  const today = new Date().toISOString().slice(0, 10);
+  const until = new Date(Date.now() + withinDays * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  const { data, error } = await admin
+    .from("leave_requests")
+    .select(`${REQUEST_SELECT}, profiles!leave_requests_profile_id_fkey(full_name)`)
+    .eq("status", "approved")
+    .gte("start_date", today)
+    .lte("start_date", until)
+    .order("start_date", { ascending: true });
+  if (error) {
+    console.error("[organization] failed to load upcoming approved leave_requests", error.message);
+    return [];
+  }
+  return (data ?? []).map((r) => {
+    const row = r as unknown as Parameters<typeof mapRequestRow>[0] & { profiles: { full_name: string | null } | null };
+    return { ...mapRequestRow(row), profileFullName: row.profiles?.full_name ?? null };
+  });
+}

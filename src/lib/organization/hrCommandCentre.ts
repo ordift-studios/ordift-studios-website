@@ -1,7 +1,9 @@
 import { listUsersWithRoles, type AdminUserRow } from "@/lib/portal/adminData";
 import { listRecruitmentApplications, getHiringBridgeStatus } from "@/lib/recruitment/adminData";
 import { getWorkforceOverviewCounts, countCurrentlyOnLeave } from "@/lib/organization/hrDashboard";
-import { listPendingLeaveRequestsAcrossStaff } from "@/lib/organization/leaveRequests";
+import { listPendingLeaveRequestsAcrossStaff, listApprovedLeaveStartingSoonAcrossStaff } from "@/lib/organization/leaveRequests";
+import { listAttendanceRecordsForDateAcrossStaff } from "@/lib/organization/attendance";
+import { listStaffOnboarding } from "@/lib/organization/onboarding";
 import { getRecentActivity } from "@/lib/admin/activityLog";
 
 // HR / People Command Centre (2026-09-16) — layers on top of the
@@ -181,6 +183,104 @@ export function summarizeHrCommandCentre(input: {
   };
 }
 
+// D. Onboarding Progress — a stage-level breakdown, not just the
+// single in-progress count the pipeline strip already shows. Pure and
+// independently testable: groups already-fetched onboarding rows by
+// pipeline + stage, in the catalog's own declared order.
+export type OnboardingProgressStage = { pipeline: "employee" | "external_contractor"; stage: string; count: number };
+
+export function summarizeOnboardingProgress(
+  onboarding: { pipeline: "employee" | "external_contractor"; stage: string; status: string }[]
+): OnboardingProgressStage[] {
+  const counts = new Map<string, number>();
+  for (const o of onboarding) {
+    if (o.status === "completed" || o.status === "cancelled") continue;
+    const key = `${o.pipeline}::${o.stage}`;
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+  return [...counts.entries()]
+    .map(([key, count]) => {
+      const [pipeline, stage] = key.split("::") as [OnboardingProgressStage["pipeline"], string];
+      return { pipeline, stage, count };
+    })
+    .sort((a, b) => (a.pipeline === b.pipeline ? b.count - a.count : a.pipeline.localeCompare(b.pipeline)));
+}
+
+// I. Workforce Analytics — headcount breakdowns over the SAME
+// listUsersWithRoles() roster the rest of the Command Centre and the
+// People Directory already use, never a second roster query.
+export type WorkforceBreakdownRow = { label: string; count: number };
+
+export function summarizeWorkforceAnalytics(
+  users: { accessStatus: string; departmentName: string | null; engagementTypeName: string | null }[]
+): { byDepartment: WorkforceBreakdownRow[]; byEngagementType: WorkforceBreakdownRow[] } {
+  const active = users.filter((u) => u.accessStatus === "active");
+  const byDepartmentMap = new Map<string, number>();
+  const byEngagementMap = new Map<string, number>();
+  for (const u of active) {
+    const dept = u.departmentName ?? "Unassigned";
+    byDepartmentMap.set(dept, (byDepartmentMap.get(dept) ?? 0) + 1);
+    const engagement = u.engagementTypeName ?? "Unclassified";
+    byEngagementMap.set(engagement, (byEngagementMap.get(engagement) ?? 0) + 1);
+  }
+  const toSortedRows = (m: Map<string, number>): WorkforceBreakdownRow[] =>
+    [...m.entries()].map(([label, count]) => ({ label, count })).sort((a, b) => b.count - a.count);
+  return { byDepartment: toSortedRows(byDepartmentMap), byEngagementType: toSortedRows(byEngagementMap) };
+}
+
+// G. Attendance & Leave Snapshot — today's attendance breakdown,
+// reusing listAttendanceRecordsForDateAcrossStaff() (the same function
+// the Attendance admin page itself uses for a given date) rather than
+// a second query style. onLeaveToday is passed in from
+// countCurrentlyOnLeave() (already computed above) rather than
+// re-derived from attendance_status, since leave and attendance are
+// deliberately separate systems in this codebase.
+export type AttendanceLeaveSnapshot = {
+  presentToday: number;
+  lateToday: number;
+  unexplainedAbsencesToday: number;
+  onLeaveToday: number;
+};
+
+export function summarizeAttendanceLeaveSnapshot(
+  todayRecords: { attendanceStatus: string; isLate: boolean }[],
+  onLeaveToday: number
+): AttendanceLeaveSnapshot {
+  return {
+    presentToday: todayRecords.filter((r) => r.attendanceStatus === "present" || r.attendanceStatus === "remote").length,
+    lateToday: todayRecords.filter((r) => r.isLate).length,
+    unexplainedAbsencesToday: todayRecords.filter((r) => r.attendanceStatus === "absent_unexplained").length,
+    onLeaveToday,
+  };
+}
+
+// H. Upcoming People Events — genuinely scheduled future facts only
+// (approved leave already decided to start soon, onboarding already
+// under way with a start date coming up) — never a fabricated
+// "birthdays/anniversaries" list the codebase has no data for.
+export type UpcomingPeopleEvent = { key: string; label: string; date: string; href: string };
+
+export function summarizeUpcomingPeopleEvents(input: {
+  upcomingLeave: { id: string; profileFullName: string | null; startDate: string }[];
+  upcomingOnboardingStarts: { id: string; profileId: string; startDate: string; pipeline: "employee" | "external_contractor" }[];
+}): UpcomingPeopleEvent[] {
+  const events: UpcomingPeopleEvent[] = [
+    ...input.upcomingLeave.map((l) => ({
+      key: `leave-${l.id}`,
+      label: `${l.profileFullName ?? "A staff member"} — leave begins`,
+      date: l.startDate,
+      href: "/admin/organization/leave",
+    })),
+    ...input.upcomingOnboardingStarts.map((o) => ({
+      key: `onboarding-${o.id}`,
+      label: `${o.pipeline === "employee" ? "Staff" : "External workforce"} onboarding start date`,
+      date: o.startDate,
+      href: `/admin/organization/onboarding/${o.id}`,
+    })),
+  ];
+  return events.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+}
+
 export async function getHrCommandCentreSummary(): Promise<{
   summary: HrCommandCentreSummary;
   needsAttention: NeedsAttentionItem[];
@@ -188,15 +288,25 @@ export async function getHrCommandCentreSummary(): Promise<{
   externalWorkforceByType: Record<string, number>;
   recentHires: RecentHire[];
   recentActivity: HrActivityItem[];
+  onboardingProgress: OnboardingProgressStage[];
+  workforceAnalytics: { byDepartment: WorkforceBreakdownRow[]; byEngagementType: WorkforceBreakdownRow[] };
+  activeWorkforceRows: { departmentName: string | null; engagementTypeName: string | null }[];
+  attendanceLeaveSnapshot: AttendanceLeaveSnapshot;
+  upcomingEvents: UpcomingPeopleEvent[];
 }> {
-  const [usersResult, applications, workforceCounts, onLeaveToday, pendingLeaveRequests, activity] = await Promise.all([
-    listUsersWithRoles(),
-    listRecruitmentApplications(),
-    getWorkforceOverviewCounts(),
-    countCurrentlyOnLeave(),
-    listPendingLeaveRequestsAcrossStaff(),
-    getRecentActivity(150),
-  ]);
+  const today = new Date().toISOString().slice(0, 10);
+  const [usersResult, applications, workforceCounts, onLeaveToday, pendingLeaveRequests, activity, onboarding, todayAttendance, upcomingLeave] =
+    await Promise.all([
+      listUsersWithRoles(),
+      listRecruitmentApplications(),
+      getWorkforceOverviewCounts(),
+      countCurrentlyOnLeave(),
+      listPendingLeaveRequestsAcrossStaff(),
+      getRecentActivity(150),
+      listStaffOnboarding(),
+      listAttendanceRecordsForDateAcrossStaff(today),
+      listApprovedLeaveStartingSoonAcrossStaff(14),
+    ]);
   const users: AdminUserRow[] = usersResult.ok ? usersResult.users : [];
 
   // Resolves each accepted application's REAL current stage — small,
@@ -240,5 +350,32 @@ export async function getHrCommandCentreSummary(): Promise<{
     .slice(0, 10)
     .map((e) => ({ id: e.id, actorLabel: e.actorLabel, action: e.action, createdAt: e.createdAt }));
 
-  return { ...result, recentHires, recentActivity };
+  const onboardingProgress = summarizeOnboardingProgress(onboarding);
+  const workforceAnalytics = summarizeWorkforceAnalytics(users);
+  const attendanceLeaveSnapshot = summarizeAttendanceLeaveSnapshot(todayAttendance, onLeaveToday);
+
+  const withinTwoWeeks = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  const upcomingOnboardingStarts = onboarding
+    .filter((o) => o.status !== "completed" && o.status !== "cancelled")
+    .filter((o): o is typeof o & { startDate: string } => o.startDate !== null && o.startDate >= today && o.startDate <= withinTwoWeeks)
+    .map((o) => ({ id: o.id, profileId: o.profileId, startDate: o.startDate, pipeline: o.pipeline }));
+  const upcomingEvents = summarizeUpcomingPeopleEvents({
+    upcomingLeave: upcomingLeave.map((l) => ({ id: l.id, profileFullName: l.profileFullName, startDate: l.startDate })),
+    upcomingOnboardingStarts,
+  });
+
+  const activeWorkforceRows = users
+    .filter((u) => u.accessStatus === "active")
+    .map((u) => ({ departmentName: u.departmentName, engagementTypeName: u.engagementTypeName }));
+
+  return {
+    ...result,
+    recentHires,
+    recentActivity,
+    onboardingProgress,
+    workforceAnalytics,
+    activeWorkforceRows,
+    attendanceLeaveSnapshot,
+    upcomingEvents,
+  };
 }

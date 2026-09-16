@@ -3,6 +3,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getCurrentUser, hasRole, isSuperAdmin } from "@/lib/portal/roles";
 import { getHrCommandCentreSummary } from "@/lib/organization/hrCommandCentre";
+import { WorkforceAnalyticsPanel } from "./WorkforceAnalyticsPanel";
 
 export const metadata: Metadata = {
   title: "HR / People — Ordift Studios Admin",
@@ -88,7 +89,18 @@ export default async function HrHubPage() {
   const user = await getCurrentUser();
   if (!user || (!hasRole(user, "admin") && !isSuperAdmin(user))) redirect("/admin/overview");
 
-  const { summary, needsAttention, pipeline, externalWorkforceByType, recentHires, recentActivity } = await getHrCommandCentreSummary();
+  const {
+    summary,
+    needsAttention,
+    pipeline,
+    externalWorkforceByType,
+    recentHires,
+    recentActivity,
+    onboardingProgress,
+    activeWorkforceRows,
+    attendanceLeaveSnapshot,
+    upcomingEvents,
+  } = await getHrCommandCentreSummary();
   const EXTERNAL_TYPE_LABELS: Record<string, string> = {
     vendor: "Vendor / Supplier",
     contractor: "Contractor / Freelancer",
@@ -162,6 +174,73 @@ export default async function HrHubPage() {
           ))}
         </div>
       </section>
+
+      {onboardingProgress.length > 0 && (
+        <section className="rounded-xl border border-black/10 bg-white p-6 mb-8">
+          <h2 className="font-serif font-medium text-body text-ordift-ink mb-4">Onboarding Progress</h2>
+          <ul className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            {onboardingProgress.map((s) => (
+              <li key={`${s.pipeline}-${s.stage}`} className="flex items-center justify-between gap-3 rounded-lg border border-black/5 px-3 py-2">
+                <span className="font-sans text-body-small text-ordift-ink capitalize">
+                  {s.pipeline === "employee" ? "Staff" : "External"} — {s.stage.replace(/_/g, " ")}
+                </span>
+                <span className="font-sans text-body-small font-semibold text-ordift-ink tabular-nums">{s.count}</span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      <section className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+        <div className="rounded-xl border border-black/10 bg-white p-6">
+          <h2 className="font-serif font-medium text-body text-ordift-ink mb-4">Attendance &amp; Leave Snapshot — Today</h2>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <p className="font-sans text-[1.5rem] leading-none font-semibold text-ordift-ink tabular-nums">{attendanceLeaveSnapshot.presentToday}</p>
+              <p className="font-sans text-caption text-ordift-ink-muted mt-1">Present</p>
+            </div>
+            <div>
+              <p className="font-sans text-[1.5rem] leading-none font-semibold text-ordift-ink tabular-nums">{attendanceLeaveSnapshot.onLeaveToday}</p>
+              <p className="font-sans text-caption text-ordift-ink-muted mt-1">On Leave</p>
+            </div>
+            <div>
+              <p className="font-sans text-[1.5rem] leading-none font-semibold text-ordift-ink tabular-nums">{attendanceLeaveSnapshot.lateToday}</p>
+              <p className="font-sans text-caption text-ordift-ink-muted mt-1">Late</p>
+            </div>
+            <div>
+              <p className="font-sans text-[1.5rem] leading-none font-semibold text-ordift-ink tabular-nums">{attendanceLeaveSnapshot.unexplainedAbsencesToday}</p>
+              <p className="font-sans text-caption text-ordift-ink-muted mt-1">Unexplained</p>
+            </div>
+          </div>
+          <Link href="/admin/organization/attendance" className="inline-block mt-4 font-sans text-caption text-ordift-gold-pressed underline underline-offset-4">
+            Attendance workspace →
+          </Link>
+        </div>
+
+        <div className="rounded-xl border border-black/10 bg-white p-6">
+          <h2 className="font-serif font-medium text-body text-ordift-ink mb-3">Upcoming People Events (14 days)</h2>
+          {upcomingEvents.length === 0 ? (
+            <p className="font-sans text-body-small text-ordift-ink-muted">Nothing scheduled in the next two weeks.</p>
+          ) : (
+            <ul className="divide-y divide-black/5">
+              {upcomingEvents.map((e) => (
+                <li key={e.key} className="py-2 flex items-center justify-between gap-3">
+                  <Link href={e.href} className="font-sans text-body-small text-ordift-gold-pressed underline underline-offset-4">
+                    {e.label}
+                  </Link>
+                  <span className="font-sans text-caption text-ordift-ink-muted whitespace-nowrap">
+                    {new Date(e.date).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </section>
+
+      <div className="mb-8">
+        <WorkforceAnalyticsPanel activeUsers={activeWorkforceRows} />
+      </div>
 
       <section className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
         <div className="rounded-xl border border-black/10 bg-white p-6">
