@@ -48,6 +48,16 @@ const NAV_GROUPS: NavGroup[] = [
     ],
   },
   {
+    // HR / People Hub (2026-09-16) — a single, directly-visible entry
+    // point over the existing HR/workforce modules below, per explicit
+    // Human QA finding: Super Admin could not identify an obvious HR
+    // surface even though every underlying module already existed.
+    // adminOnly mirrors the hub page's own hasRole("admin")/isSuperAdmin()
+    // gate exactly.
+    label: "HR / People",
+    items: [{ label: "HR / People", href: "/admin/hr", adminOnly: true }],
+  },
+  {
     label: "Overview",
     items: [
       { label: "Overview", href: "/admin/overview" },

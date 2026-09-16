@@ -48,6 +48,34 @@ export default async function RecruitmentApplicationPage({ params }: { params: P
         <StatusUpdateForm applicationId={app.id} currentStatus={app.status} />
       </div>
 
+      {/* Accepted -> HR bridge (2026-09-16) — deliberately does NOT
+          auto-create an employee account. Accepted is a recruitment
+          decision, never itself an employment decision (role,
+          classification, engagement type, position, grade, department,
+          salary, start date remain a separate, deliberate HR action).
+          This only carries the genuine, already-recorded application
+          data forward as a prefill into the existing, proven Invite
+          Collaborator flow (Users & Roles) — the same account-creation
+          mechanism convertApplicationToVendorAction reuses, which
+          itself refuses a duplicate email, so this can never create a
+          duplicate identity. */}
+      {app.status === "accepted" && (
+        <div className="bg-white rounded-lg border border-ordift-gold/40 p-6 mb-6 space-y-3">
+          <p className="font-sans text-body-small font-semibold text-ordift-ink">Proceed to Hire / Begin Pre-Employment</p>
+          <p className="font-sans text-caption text-ordift-ink-muted">
+            Opens Users &amp; Roles with this applicant&rsquo;s name and email pre-filled. Role, account classification,
+            engagement type, position, department, grade, salary, and start date are all deliberately left for you to
+            set there — nothing here invents an employment decision.
+          </p>
+          <Link
+            href={`/admin/users?prefillFullName=${encodeURIComponent(app.fullName)}&prefillEmail=${encodeURIComponent(app.email)}&sourceApplicationId=${app.id}`}
+            className="inline-block font-sans text-body-small font-semibold px-4 py-2 rounded-md bg-ordift-navy-950 text-white"
+          >
+            Proceed to Hire →
+          </Link>
+        </div>
+      )}
+
       {(app.hasPhoto || app.hasCv) && (
         <div className="bg-white rounded-lg border border-ordift-ink/10 p-6 mb-6 flex flex-wrap gap-3">
           {app.hasPhoto && <FileLinkButton applicationId={app.id} file="photo" label="View Profile Photograph" />}

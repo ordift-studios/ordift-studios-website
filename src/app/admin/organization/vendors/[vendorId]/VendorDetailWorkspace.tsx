@@ -196,21 +196,43 @@ function IdentitySection({
       </p>
       <FormError state={profileState} />
 
+      {/* Vendor Approval (2026-09-16 lifecycle reconciliation) — explicit
+          Approve/Reject/Suspend/Reactivate actions rather than a generic
+          status dropdown, so this reads as the deliberate human decision
+          it is. Each button still calls the same setVendorStatusAction ->
+          setVendorProfileStatus() (vendor_profiles.status, default
+          'pending' on onboarding), which already writes a real
+          activity_log row (actor + timestamp + status) on every change —
+          that existing audit trail is reused as-is, not duplicated. */}
       {vendorProfile && (
-        <form action={statusAction} className="flex items-center gap-2">
-          <input type="hidden" name="vendorId" value={vendorId} />
-          <label className="font-sans text-caption text-ordift-ink-muted">
-            Status
-            <select name="status" defaultValue={vendorProfile.status} className="ml-2 rounded-lg border border-black/15 bg-white px-2 py-1 font-sans text-caption">
-              <option value="pending">Pending</option>
-              <option value="active">Active</option>
-              <option value="inactive">Inactive</option>
-            </select>
-          </label>
-          <button type="submit" disabled={statusPending} className="font-sans text-caption font-semibold px-3 py-1.5 rounded-md border border-black/15 text-ordift-ink disabled:opacity-50">
-            {statusPending ? "Saving…" : "Update Status"}
-          </button>
-        </form>
+        <div className="space-y-2">
+          <p className="font-sans text-caption text-ordift-ink-muted">
+            Vendor Approval: <strong className="text-ordift-ink">{vendorProfile.status.replace(/_/g, " ")}</strong>
+          </p>
+          <form action={statusAction} className="flex flex-wrap items-center gap-2">
+            <input type="hidden" name="vendorId" value={vendorId} />
+            {vendorProfile.status !== "active" && (
+              <button type="submit" name="status" value="active" disabled={statusPending} className="font-sans text-caption font-semibold px-3 py-1.5 rounded-md bg-green-700 text-white disabled:opacity-50">
+                {statusPending ? "Saving…" : "Approve"}
+              </button>
+            )}
+            {vendorProfile.status === "pending" && (
+              <button type="submit" name="status" value="inactive" disabled={statusPending} className="font-sans text-caption font-semibold px-3 py-1.5 rounded-md bg-red-700 text-white disabled:opacity-50">
+                {statusPending ? "Saving…" : "Reject"}
+              </button>
+            )}
+            {vendorProfile.status === "active" && (
+              <button type="submit" name="status" value="inactive" disabled={statusPending} className="font-sans text-caption font-semibold px-3 py-1.5 rounded-md border border-red-300 text-red-700 disabled:opacity-50">
+                {statusPending ? "Saving…" : "Suspend"}
+              </button>
+            )}
+            {vendorProfile.status === "inactive" && (
+              <button type="submit" name="status" value="pending" disabled={statusPending} className="font-sans text-caption font-semibold px-3 py-1.5 rounded-md border border-black/15 text-ordift-ink disabled:opacity-50">
+                {statusPending ? "Saving…" : "Reopen for Review"}
+              </button>
+            )}
+          </form>
+        </div>
       )}
       <FormError state={statusState} />
     </section>

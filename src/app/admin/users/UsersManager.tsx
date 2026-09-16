@@ -2,6 +2,7 @@
 
 import { useActionState, useMemo, useState, useTransition } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import type { AdminUserRow, LookupOption } from "@/lib/portal/adminData";
 import type { MemberClassification } from "@/lib/portal/memberNumbers";
 import type { RoleSlug } from "@/lib/portal/roles";
@@ -1167,17 +1168,25 @@ function InvitePanel({
   classifications,
   currentUserIsSuperAdmin,
   onDone,
+  prefill,
 }: {
   operationalTitles: LookupOption[];
   engagementTypes: LookupOption[];
   classifications: MemberClassification[];
   currentUserIsSuperAdmin: boolean;
   onDone: () => void;
+  // Accepted -> HR bridge (2026-09-16) — carries forward only the
+  // genuine name/email already recorded on a recruitment application
+  // (see /admin/recruitment/[id]'s "Proceed to Hire" link) as a
+  // starting point. Deliberately nothing else: role, classification,
+  // engagement type, position, department, grade, salary, and start
+  // date all stay real human choices made right here, never inferred.
+  prefill?: { fullName: string; email: string; sourceApplicationId: string } | null;
 }) {
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
-  const [email, setEmail] = useState("");
-  const [fullName, setFullName] = useState("");
+  const [email, setEmail] = useState(prefill?.email ?? "");
+  const [fullName, setFullName] = useState(prefill?.fullName ?? "");
   const [role, setRole] = useState<RoleSlug | "">("");
   const [titleId, setTitleId] = useState("");
   const [engagementId, setEngagementId] = useState("");
@@ -1192,6 +1201,7 @@ function InvitePanel({
     fd.set("operationalTitleId", titleId);
     fd.set("engagementTypeId", engagementId);
     fd.set("classificationId", classificationId);
+    if (prefill?.sourceApplicationId) fd.set("sourceApplicationId", prefill.sourceApplicationId);
     startTransition(async () => {
       const result = await inviteCollaboratorAction(fd);
       if (result.error) setError(result.error);
@@ -1213,6 +1223,12 @@ function InvitePanel({
       <p className="font-sans text-caption text-ordift-ink-muted">
         Sends a real Supabase Auth invite email — the person sets their own password. Never grants Client access.
       </p>
+      {prefill?.sourceApplicationId && (
+        <p className="font-sans text-caption text-ordift-gold-pressed bg-ordift-gold/10 rounded-md px-3 py-2">
+          Name and email pre-filled from their recruitment application. Choose role, classification, engagement type,
+          and title below — nothing employment-related is inferred automatically.
+        </p>
+      )}
       {error && <p className="font-sans text-caption text-red-700">{error}</p>}
       <div className="grid sm:grid-cols-2 gap-3">
         <input
@@ -1388,7 +1404,17 @@ export default function UsersManager({
   const [statusFilter, setStatusFilter] = useState<"" | AdminUserRow["accessStatus"]>("");
   const [roleFilter, setRoleFilter] = useState<"" | RoleSlug>("");
   const [expandedId, setExpandedId] = useState<string | null>(null);
-  const [showInvite, setShowInvite] = useState(false);
+  const searchParams = useSearchParams();
+  const invitePrefill = useMemo(() => {
+    const sourceApplicationId = searchParams.get("sourceApplicationId");
+    if (!sourceApplicationId) return null;
+    return {
+      sourceApplicationId,
+      fullName: searchParams.get("prefillFullName") ?? "",
+      email: searchParams.get("prefillEmail") ?? "",
+    };
+  }, [searchParams]);
+  const [showInvite, setShowInvite] = useState(() => invitePrefill !== null);
   const [showClientInvite, setShowClientInvite] = useState(false);
 
   const filtered = useMemo(() => {
@@ -1462,6 +1488,7 @@ export default function UsersManager({
           classifications={classifications}
           currentUserIsSuperAdmin={currentUserIsSuperAdmin}
           onDone={() => setShowInvite(false)}
+          prefill={invitePrefill}
         />
       )}
 

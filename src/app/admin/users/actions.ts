@@ -711,6 +711,12 @@ export async function inviteCollaboratorAction(formData: FormData): Promise<{ er
   const operationalTitleId = String(formData.get("operationalTitleId") ?? "").trim() || null;
   const engagementTypeId = String(formData.get("engagementTypeId") ?? "").trim() || null;
   const classificationId = String(formData.get("classificationId") ?? "").trim() || null;
+  // Accepted -> HR bridge (2026-09-16) — optional, additive. When this
+  // invite originated from a recruitment application's "Proceed to
+  // Hire" link, the link back is preserved in activity_log metadata
+  // (same pattern convertApplicationToVendorAction already uses),
+  // never a schema change to recruitment_applications itself.
+  const sourceApplicationId = String(formData.get("sourceApplicationId") ?? "").trim() || null;
 
   if (!email || !fullName || !isGrantableRole(role) || !classificationId) {
     return { error: "Fill in name, email, role, and account classification." };
@@ -766,6 +772,7 @@ export async function inviteCollaboratorAction(formData: FormData): Promise<{ er
       email,
       role,
       memberNumber: classificationResult.ok ? classificationResult.formattedNumber : null,
+      ...(sourceApplicationId ? { sourceApplicationId } : {}),
     },
   });
 
