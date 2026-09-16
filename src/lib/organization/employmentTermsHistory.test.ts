@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   mergeEmploymentTermsFields,
   doesTransitionRequireEnhancedReview,
+  needsNameLookup,
   EMPLOYMENT_TRANSITION_TYPES,
   WORK_PATTERN_TYPES,
   COMPENSATION_STATUSES,
@@ -241,5 +242,39 @@ describe("compensation_status — DB-dependent wiring, verified by code reading"
 
   it("no UPDATE statement against employment_terms_history exists anywhere in the Sequence 3 diff or its migration — grep-confirmed; Founder Member 0001 and every other existing row's compensation_status is null immediately after migration 0121, exactly as before it", () => {
     expect(true).toBe(true);
+  });
+});
+
+// MISSING_JURISDICTION regression fix (2026-09-17) — root cause was
+// resolveCurrentEmploymentContext() only re-resolving a name when
+// CURRENT TERMS supplied a different id than the fallback (typically a
+// hire-time recruitment_requisitions row), silently assuming the
+// fallback's own name (if any) was already valid whenever its id was
+// the one used. A caller whose fallback carried an id with no paired
+// name (e.g. Kelvin Acheampong's real onboarding — his requisition's
+// employment_jurisdiction_id was correctly set to Ghana, but the
+// caller only passed that id, no name) produced a silent null name —
+// read by the OS-LGL-007 jurisdiction gate as no jurisdiction on file
+// at all, even though a real, governed one existed. needsNameLookup()
+// is the extracted, independently-tested pure core of the fix.
+describe("needsNameLookup — real assertions (MISSING_JURISDICTION regression, 2026-09-17)", () => {
+  it("no lookup needed when there is no resolved id at all", () => {
+    expect(needsNameLookup(null, null, null)).toBe(false);
+  });
+
+  it("THE BUG: a resolved id with a null known name always needs a lookup, even if a (different) fallback id was also null — this is exactly Kelvin's case: employment_jurisdiction_id resolved from the requisition, no name ever supplied", () => {
+    expect(needsNameLookup("jurisdiction-gh", null, null)).toBe(true);
+  });
+
+  it("no lookup needed when the known name is already paired with the exact resolved id", () => {
+    expect(needsNameLookup("jurisdiction-gh", "Ghana", "jurisdiction-gh")).toBe(false);
+  });
+
+  it("lookup needed when the known name belongs to a DIFFERENT id than the one actually resolved (e.g. current terms overrode the fallback's id)", () => {
+    expect(needsNameLookup("jurisdiction-uk", "Ghana", "jurisdiction-gh")).toBe(true);
+  });
+
+  it("lookup needed when a name exists but is not associated with any known id (defensive — never trust an orphaned name)", () => {
+    expect(needsNameLookup("jurisdiction-gh", "Ghana", null)).toBe(true);
   });
 });

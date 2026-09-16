@@ -17,6 +17,7 @@ import { classifyEmploymentAgreementVariable } from "@/lib/legal/employeeAgreeme
 import { mapEngagementTypeSlugToWorkforceRelationship, mapEmploymentJurisdictionToWorkforceJurisdiction } from "@/lib/compliance/workforceMappings";
 import { recordRequirementEvaluation } from "@/lib/compliance/requirementAudit";
 import { getCurrentEmploymentTerms, resolveCurrentEmploymentContext } from "@/lib/organization/employmentTermsHistory";
+import { getRequisitionById } from "@/lib/recruitment/requisitions";
 import { resolveCurrentManager } from "@/lib/organization/reporting";
 import { getLeaveTypeBySlug } from "@/lib/organization/leaveTypes";
 import { formatProbationVariable, formatNoticeVariable, formatAnnualLeaveVariable } from "@/lib/legal/ghanaEmployeeAgreementPolicy";
@@ -73,27 +74,22 @@ export async function resolveEmployeeAgreementVariables(
 
   const { data: profile } = await admin.from("profiles").select("full_name").eq("id", onboarding.profile_id).maybeSingle();
 
-  let requisition: {
-    requested_position_id: string | null;
-    department_id: string | null;
-    grade_id: string | null;
-    engagement_type_id: string | null;
-    hiring_manager_id: string | null;
-    preferred_start_date: string | null;
-    employing_entity_id: string | null;
-    employment_jurisdiction_id: string | null;
-    work_location: string | null;
-  } | null = null;
-  if (onboarding.requisition_id) {
-    const { data } = await admin
-      .from("recruitment_requisitions")
-      .select(
-        "requested_position_id, department_id, grade_id, engagement_type_id, hiring_manager_id, preferred_start_date, employing_entity_id, employment_jurisdiction_id, work_location"
-      )
-      .eq("id", onboarding.requisition_id)
-      .maybeSingle();
-    requisition = data;
-  }
+  // Jurisdiction resolution fix (2026-09-17) — previously fetched the
+  // requisition's raw *_id columns directly and never resolved their
+  // names, relying entirely on resolveCurrentEmploymentContext()'s
+  // fallback-name mechanism — which only fires when the caller ALREADY
+  // supplies a name. Since this fallback never did, a real, correctly-
+  // recorded employment_jurisdiction_id on the requisition (the correct
+  // governed source of truth) silently produced a null
+  // employmentJurisdictionName, which this function passes straight
+  // into the OS-LGL-007 jurisdiction gate as `jurisdiction` — read as
+  // "no jurisdiction at all" (MISSING_JURISDICTION) even though one was
+  // genuinely on file. Fixed by reusing getRequisitionById()
+  // (requisitions.ts) — the SAME already-correct resolver the
+  // Onboarding Workspace's "Employment / Hire Definition" summary uses,
+  // which joins employment_jurisdictions/employing_entities and
+  // returns their names — instead of a second, name-blind query.
+  const requisition = onboarding.requisition_id ? await getRequisitionById(onboarding.requisition_id) : null;
 
   // Phase B6 Step 3 (2026-09-15), consolidated Phase B6 Step 9
   // (2026-09-15): entity/jurisdiction/work-location/start-date now come
@@ -111,19 +107,22 @@ export async function resolveEmployeeAgreementVariables(
     profileId: onboarding.profile_id,
     fallback: requisition
       ? {
-          employingEntityId: requisition.employing_entity_id,
-          employmentJurisdictionId: requisition.employment_jurisdiction_id,
-          workLocation: requisition.work_location,
-          startDate: requisition.preferred_start_date,
+          employingEntityId: requisition.employingEntityId,
+          employingEntityName: requisition.employingEntityName,
+          employmentJurisdictionId: requisition.employmentJurisdictionId,
+          employmentJurisdictionName: requisition.employmentJurisdictionName,
+          workLocation: requisition.workLocation,
+          startDate: requisition.preferredStartDate,
         }
       : null,
   });
 
-  const [position, department, grade, engagementType, structuralManager] = await Promise.all([
-    requisition?.requested_position_id ? admin.from("positions").select("name").eq("id", requisition.requested_position_id).maybeSingle() : null,
-    requisition?.department_id ? admin.from("departments").select("name").eq("id", requisition.department_id).maybeSingle() : null,
-    requisition?.grade_id ? admin.from("grades").select("name").eq("id", requisition.grade_id).maybeSingle() : null,
-    requisition?.engagement_type_id ? admin.from("engagement_types").select("name, slug").eq("id", requisition.engagement_type_id).maybeSingle() : null,
+  const [engagementTypeSlugRow, structuralManager] = await Promise.all([
+    // RecruitmentRequisition doesn't carry the engagement_types.slug —
+    // only its name/id — so this one lookup remains; position/
+    // department/grade/engagement-type NAMES now come straight off
+    // requisition (getRequisitionById already resolved them).
+    requisition?.engagementTypeId ? admin.from("engagement_types").select("slug").eq("id", requisition.engagementTypeId).maybeSingle() : null,
     // Reporting to (2026-09-15) — resolved from the live Position
     // reporting chain, not the requisition's own historical
     // hiring_manager_id (a different fact: who oversaw THIS hire, not
@@ -131,7 +130,7 @@ export async function resolveEmployeeAgreementVariables(
     // returns a real current occupant's name when one exists, and
     // otherwise the real structural Position's name — never a
     // fabricated person merely because the position is vacant.
-    requisition?.requested_position_id ? resolveCurrentManager(requisition.requested_position_id) : null,
+    requisition?.requestedPositionId ? resolveCurrentManager(requisition.requestedPositionId) : null,
   ]);
 
   // Probation/Notice/Annual Leave (2026-09-15 fix) — previously always
@@ -156,14 +155,14 @@ export async function resolveEmployeeAgreementVariables(
   const values: EmploymentAgreementVariables = {
     employerLegalName: context.employingEntityName ?? undefined,
     employeeLegalName: profile?.full_name ?? undefined,
-    jobTitle: position?.data?.name ?? undefined,
-    organizationalGrade: grade?.data?.name ?? undefined,
-    department: department?.data?.name ?? undefined,
+    jobTitle: requisition?.requestedPositionName ?? undefined,
+    organizationalGrade: requisition?.gradeName ?? undefined,
+    department: requisition?.departmentName ?? undefined,
     reportingTo: structuralManager?.fullName
       ? `${structuralManager.reportingPositionName ?? "Reporting Position"} (${structuralManager.fullName})`
       : (structuralManager?.reportingPositionName ? `${structuralManager.reportingPositionName} — position currently unoccupied` : undefined),
     startDate: context.startDate ?? undefined,
-    employmentType: engagementType?.data?.name ?? undefined,
+    employmentType: requisition?.engagementTypeName ?? undefined,
     probation,
     primaryWorkLocation: context.workLocation ?? undefined,
     normalWorkingHours: currentTerms?.workPattern ?? undefined,
@@ -176,7 +175,7 @@ export async function resolveEmployeeAgreementVariables(
     jurisdiction: context.employmentJurisdictionName ?? undefined,
   };
 
-  return { values, engagementTypeSlug: engagementType?.data?.slug ?? null, profileId: onboarding.profile_id };
+  return { values, engagementTypeSlug: engagementTypeSlugRow?.data?.slug ?? null, profileId: onboarding.profile_id };
 }
 
 export interface EmploymentAgreementFieldReadiness {

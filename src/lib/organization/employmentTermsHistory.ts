@@ -567,6 +567,18 @@ export interface CurrentEmploymentContext {
   resolvedFromCurrentTerms: boolean;
 }
 
+// Pure decision core of the id/name pairing bug fixed 2026-09-17 (see
+// resolveCurrentEmploymentContext() below) — independently testable
+// without a database. A lookup is needed whenever there IS a resolved
+// id but no name already known to correspond to that EXACT id — never
+// merely "did current terms override the fallback's id", which is what
+// silently dropped a real, governed fallback-only id's name before.
+export function needsNameLookup(resolvedId: string | null, knownName: string | null, knownNameId: string | null): boolean {
+  if (!resolvedId) return false;
+  if (knownName !== null && knownNameId === resolvedId) return false;
+  return true;
+}
+
 // THE canonical "what is actually true for this person right now"
 // resolver for employing entity / jurisdiction / work location / start
 // date — used by BOTH the Agreement Readiness resolver
@@ -604,21 +616,31 @@ export async function resolveCurrentEmploymentContext(params: {
     currentTerms?.employingEntityId || currentTerms?.employmentJurisdictionId || currentTerms?.workLocation || currentTerms?.effectiveFrom
   );
 
-  // Only re-resolve a name when current terms actually supplied a
-  // (possibly different) id than the fallback already had a name for
-  // — avoids a redundant query when the fallback's own name already
-  // applies.
+  // MISSING_JURISDICTION root-cause fix (2026-09-17) — the previous
+  // condition only re-resolved a name when CURRENT TERMS supplied a
+  // *different* id than the fallback's own id, silently assuming that
+  // whenever the fallback's id was the one actually used, the
+  // fallback's name (if any) was already trustworthy for it. That's
+  // false for a caller whose fallback carries an id with NO
+  // corresponding name (exactly what resolveEmployeeAgreementVariables()
+  // used to do): the final resolved id correctly fell back to the
+  // fallback's real, governed id, but its name silently stayed null —
+  // a genuine jurisdiction on file was read as no jurisdiction at all.
+  // needsNameLookup() is keyed off the FINAL resolved id, not merely
+  // "did current terms override" — a lookup fires whenever we don't
+  // already hold a name that's actually paired with that exact id,
+  // regardless of which source (current terms or fallback) supplied it.
   let employingEntityName = fallback.employingEntityName ?? null;
-  if (currentTerms?.employingEntityId && currentTerms.employingEntityId !== fallback.employingEntityId) {
+  if (needsNameLookup(employingEntityId, employingEntityName, fallback.employingEntityId ?? null)) {
     const admin = createAdminClient();
-    const { data } = await admin.from("employing_entities").select("name, legal_name").eq("id", currentTerms.employingEntityId).maybeSingle();
+    const { data } = await admin.from("employing_entities").select("name, legal_name").eq("id", employingEntityId as string).maybeSingle();
     employingEntityName = data ? (data.legal_name ?? data.name) : null;
   }
 
   let employmentJurisdictionName = fallback.employmentJurisdictionName ?? null;
-  if (currentTerms?.employmentJurisdictionId && currentTerms.employmentJurisdictionId !== fallback.employmentJurisdictionId) {
+  if (needsNameLookup(employmentJurisdictionId, employmentJurisdictionName, fallback.employmentJurisdictionId ?? null)) {
     const admin = createAdminClient();
-    const { data } = await admin.from("employment_jurisdictions").select("name").eq("id", currentTerms.employmentJurisdictionId).maybeSingle();
+    const { data } = await admin.from("employment_jurisdictions").select("name").eq("id", employmentJurisdictionId as string).maybeSingle();
     employmentJurisdictionName = data?.name ?? null;
   }
 
