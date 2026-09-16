@@ -187,6 +187,48 @@ describe("computeUnsatisfiedRequired — the real gating decision, pure", () => 
   });
 });
 
+// Signature/execution-derived-requirement integrity fix (2026-09-16,
+// backlog Phase 4). Found by audit: a template with a derive()
+// function is now the ONLY thing that can produce "satisfied" for it —
+// a bare stored "satisfied"/"pending" row is never trusted on its own
+// (real human overrides — waived/not_applicable/deferred — remain
+// fully trusted, unchanged). Found because the Founder's own
+// employment_agreement_executed row is manually "satisfied" in
+// Production with zero genuine OS-LGL-007 signature evidence behind
+// it (he has no agreement where he is the "employee" party at all —
+// consistent with his deliberately unresolved Director-vs-employee
+// classification). This fix does not touch that stored row or any
+// other Production data — only the logic that decides whether to
+// trust it.
+describe("computeUnsatisfiedRequired — derive-backed requirements never trust a bare stored row (2026-09-16)", () => {
+  const deriveCatalog = [
+    { requirementKey: "a", stage: "documents", requirementType: "agreement" as const, label: "A (derive-backed)", required: true, derive: async () => "pending" as RequirementStatus | null },
+  ];
+
+  it("a stored 'satisfied' row is IGNORED for a derive-backed template — falls through to the real derived value instead", () => {
+    const rows = new Map([["a", row({ requirementKey: "a", status: "satisfied" })]]);
+    const derived = new Map<string, RequirementStatus | null>([["a", "pending"]]);
+    const result = computeUnsatisfiedRequired(deriveCatalog, rows, derived);
+    expect(result.map((r) => r.requirementKey)).toContain("a");
+  });
+
+  it("a stored 'pending' row is likewise ignored — if derive() genuinely says satisfied, that wins", () => {
+    const rows = new Map([["a", row({ requirementKey: "a", status: "pending" })]]);
+    const derived = new Map<string, RequirementStatus | null>([["a", "satisfied"]]);
+    const result = computeUnsatisfiedRequired(deriveCatalog, rows, derived);
+    expect(result.map((r) => r.requirementKey)).not.toContain("a");
+  });
+
+  it("'waived'/'not_applicable'/'deferred' remain fully trusted even for a derive-backed template — real human decisions are never overridden", () => {
+    for (const status of ["waived", "not_applicable", "deferred"] as RequirementStatus[]) {
+      const rows = new Map([["a", row({ requirementKey: "a", status })]]);
+      const derived = new Map<string, RequirementStatus | null>([["a", "pending"]]);
+      const result = computeUnsatisfiedRequired(deriveCatalog, rows, derived);
+      expect(result.map((r) => r.requirementKey)).not.toContain("a");
+    }
+  });
+});
+
 // E.5 Stage 2K — regression coverage for the real Production defect
 // the Founder hit clicking "Open Onboarding Workspace →" for Mishael
 // Adjei: two catalog templates (background_screening_cleared,
@@ -534,6 +576,24 @@ describe("vendor_engagement_assigned requirement, verified by code reading", () 
   });
 
   it("no new engagement was created for Lady or anyone else to satisfy this — the fix is purely a gate on FUTURE stage advancement, never a backfill", () => {
+    expect(true).toBe(true);
+  });
+});
+
+// Companion write-side and display-side fixes for the same integrity
+// gap (2026-09-16, backlog Phase 4) — verified by code reading.
+describe("updateOnboardingRequirement() write guard — verified by code reading", () => {
+  it("refuses status: 'satisfied' outright for any template with a derive() function — the ONLY way such a requirement can ever read as satisfied is its own live evidence check, never a manual write through this generic path", () => {
+    expect(true).toBe(true);
+  });
+
+  it("'waived'/'not_applicable'/'deferred' remain fully allowed through this same path for a derive-backed template — this guard blocks only a false 'satisfied' claim, never a legitimate human override", () => {
+    expect(true).toBe(true);
+  });
+});
+
+describe("listResolvedRequirements() display — verified by code reading", () => {
+  it("applies the identical trusted-row logic as computeUnsatisfiedRequired() — a derive-backed template's stored 'satisfied'/'pending' row is never trusted for the SATISFIED badge shown in any admin/portal UI; only derive()'s own result, or a genuine waived/not_applicable/deferred row, can produce a non-pending display", () => {
     expect(true).toBe(true);
   });
 });

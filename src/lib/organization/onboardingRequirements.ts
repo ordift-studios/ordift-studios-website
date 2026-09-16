@@ -505,7 +505,19 @@ export function computeUnsatisfiedRequired(
     if (!template.required) return false;
     if (stage !== undefined && template.stage !== stage) return false;
     const row = rowsByKey.get(template.requirementKey);
-    if (row) return row.status !== "satisfied" && row.status !== "waived" && row.status !== "not_applicable" && row.status !== "deferred";
+    // Signature/execution-derived-requirement integrity fix
+    // (2026-09-16, backlog Phase 4) — a template with a derive()
+    // function can only genuinely be "satisfied" by its own live
+    // evidence check. A stored row is still trusted for the three
+    // real human-decision statuses (waived/not_applicable/deferred),
+    // but a bare "satisfied"/"pending" row is never trusted on its
+    // own for these — it's treated as if no row exists, falling
+    // through to the real derived check below. This closes the same
+    // gap updateOnboardingRequirement() now refuses to open at write
+    // time, as defense in depth against a row written before that
+    // guard existed or written by any other path.
+    const trustedRow = template.derive && row && row.status !== "waived" && row.status !== "not_applicable" && row.status !== "deferred" ? undefined : row;
+    if (trustedRow) return trustedRow.status !== "satisfied" && trustedRow.status !== "waived" && trustedRow.status !== "not_applicable" && trustedRow.status !== "deferred";
     const derived = derivedByKey.get(template.requirementKey);
     if (derived) return derived !== "satisfied";
     return true; // no row, no derived opinion — a required item defaults to pending, never silently satisfied
@@ -585,7 +597,16 @@ export async function listResolvedRequirements(params: {
     // showing "deferred" once the real requirement is actually
     // satisfied. "waived"/"not_applicable" are real human decisions and
     // are never overridden this way (unchanged from existing behavior).
-    const status: RequirementStatus = row?.status === "deferred" && derived === "satisfied" ? "satisfied" : (row?.status ?? derived ?? "pending");
+    //
+    // Signature/execution-derived-requirement integrity fix (2026-09-16,
+    // backlog Phase 4) — the same defense-in-depth as
+    // computeUnsatisfiedRequired()'s own comment: for a derive()-backed
+    // template, a bare "satisfied"/"pending" stored row is never
+    // trusted on its own — only derived's own live evidence check ever
+    // produces "satisfied" for these, so the display can never show
+    // SATISFIED merely because some row happens to carry that value.
+    const trustedRowStatus = template.derive && row && row.status !== "waived" && row.status !== "not_applicable" && row.status !== "deferred" ? null : row?.status;
+    const status: RequirementStatus = trustedRowStatus === "deferred" && derived === "satisfied" ? "satisfied" : (trustedRowStatus ?? derived ?? "pending");
     return toClientSafeResolvedRequirement(template, status, row);
   });
 }
@@ -662,6 +683,25 @@ export async function updateOnboardingRequirement(params: {
   const template = catalogForPipeline(params.pipeline).find((t) => t.requirementKey === params.requirementKey);
   if (!template) {
     return { ok: false, error: "Unknown onboarding requirement for this pipeline." };
+  }
+
+  // Signature/execution-derived-requirement integrity fix (2026-09-16,
+  // backlog Phase 4). Found by audit: computeUnsatisfiedRequired()
+  // (below) treats a manually-stored row as authoritative WHENEVER one
+  // exists, only falling back to template.derive()'s real evidence
+  // check when no row exists at all — so nothing previously stopped
+  // this exact function from writing a manual "satisfied" row for
+  // employment_agreement_executed/vendor_supplier_agreement_executed/
+  // policies_acknowledged/work_email_handoff_requested, which would
+  // then have silently outranked the real signature/acknowledgement
+  // check. This is the real enforcement boundary — inside the function
+  // itself, not only a caller's UI choice — matching this codebase's
+  // own established pattern for requiresDigitalExecution just below.
+  // "waived"/"not_applicable"/"deferred" remain real, legitimate human
+  // decisions and are never blocked here — only a bare "satisfied"
+  // claim standing in for evidence that must come from derive() alone.
+  if (template.derive && params.status === "satisfied") {
+    return { ok: false, error: `"${template.label}" is evidence-derived and can never be manually marked satisfied — use waive, mark not applicable, or a controlled defer instead if genuinely appropriate.` };
   }
 
   const admin = createAdminClient();
