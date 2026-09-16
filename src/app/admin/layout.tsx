@@ -105,6 +105,9 @@ const NAV_GROUPS: NavGroup[] = [
       // Super Admin) at the page itself.
       { label: "Payables", href: "/admin/payables" },
       { label: "Pricing", href: "/admin/pricing" },
+      // Universal Commercial Rate Card & Quotation System (2026-09-16)
+      // — adminOnly mirrors the page's own hasRole("admin")/isSuperAdmin() gate.
+      { label: "Client Quotations", href: "/admin/pricing/quotations", adminOnly: true },
     ],
   },
   {
