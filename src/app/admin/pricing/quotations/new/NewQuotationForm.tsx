@@ -2,7 +2,13 @@
 
 import { useActionState, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { createQuotationAction, suggestCorporateHeadshotLineAction, type CreateQuotationState } from "../actions";
+import {
+  createQuotationAction,
+  updateQuotationDraftAction,
+  suggestCorporateHeadshotLineAction,
+  type CreateQuotationState,
+  type SimpleActionState,
+} from "../actions";
 import SubmitButton from "@/components/admin/SubmitButton";
 
 type ClientOption = { id: string; fullName: string | null; email: string | null };
@@ -108,11 +114,33 @@ function PricingPrefillPanel({ markets, onAdd }: { markets: MarketOption[]; onAd
   );
 }
 
-export function NewQuotationForm({ clients, markets }: { clients: ClientOption[]; markets: MarketOption[] }) {
+export type QuotationFormInitialData = {
+  quotationId: string;
+  partyType: "client" | "prospect";
+  clientProfileId: string | null;
+  prospectName: string;
+  prospectCompany: string;
+  prospectEmail: string;
+  prospectPhone: string;
+  items: LineItem[];
+  currency: string;
+  validUntil: string;
+  paymentBookingTerms: string;
+  commercialNotes: string;
+};
+
+// Task 1 — Client Quotation record management (2026-09-16). Same form
+// now serves both Create and Edit (a draft only — see
+// updateClientQuotationDraft()'s own guard) rather than a duplicated
+// component, so the party/items/terms UI can never drift between the
+// two modes.
+export function NewQuotationForm({ clients, markets, editing }: { clients: ClientOption[]; markets: MarketOption[]; editing?: QuotationFormInitialData }) {
   const router = useRouter();
-  const [state, formAction] = useActionState<CreateQuotationState, FormData>(createQuotationAction, null);
-  const [partyType, setPartyType] = useState<"client" | "prospect">("prospect");
-  const [items, setItems] = useState<LineItem[]>([{ ...EMPTY_ITEM }]);
+  const createState = useActionState<CreateQuotationState, FormData>(createQuotationAction, null);
+  const editState = useActionState<SimpleActionState, FormData>(updateQuotationDraftAction, null);
+  const [formAction] = editing ? [editState[1]] : [createState[1]];
+  const [partyType, setPartyType] = useState<"client" | "prospect">(editing?.partyType ?? "prospect");
+  const [items, setItems] = useState<LineItem[]>(editing?.items ?? [{ ...EMPTY_ITEM }]);
 
   // Production fix (2026-09-16) — navigation happens HERE, client-side,
   // once the action's result confirms success, rather than calling
@@ -120,8 +148,15 @@ export function NewQuotationForm({ clients, markets }: { clients: ClientOption[]
   // for why that combination was unreliable on this Next version and
   // left the user on a blank screen with no visible error).
   useEffect(() => {
-    if (state?.ok === true) router.push(`/admin/pricing/quotations/${state.quotationId}`);
-  }, [state, router]);
+    if (!editing && createState[0]?.ok === true) router.push(`/admin/pricing/quotations/${createState[0].quotationId}`);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [createState[0]]);
+  useEffect(() => {
+    if (editing && editState[0]?.ok === true) router.push(`/admin/pricing/quotations/${editing.quotationId}`);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editState[0]]);
+
+  const errorMessage = editing ? (editState[0]?.ok === false ? editState[0].error : null) : createState[0]?.ok === false ? createState[0].error : null;
 
   // Editing a field on a Pricing-derived item marks it 'adjusted' (still
   // keeps its sourceReference for audit context) — a genuinely manual
@@ -137,6 +172,7 @@ export function NewQuotationForm({ clients, markets }: { clients: ClientOption[]
 
   return (
     <form action={formAction} className="space-y-6">
+      {editing && <input type="hidden" name="quotationId" value={editing.quotationId} />}
       <section className="rounded-xl border border-black/10 bg-white p-6 space-y-3">
         <h2 className="font-serif font-medium text-body text-ordift-ink">Client / Prospect</h2>
         <div className="flex gap-4 font-sans text-body-small text-ordift-ink">
@@ -150,7 +186,7 @@ export function NewQuotationForm({ clients, markets }: { clients: ClientOption[]
           </label>
         </div>
         {partyType === "client" ? (
-          <select name="clientProfileId" required className="w-full rounded-lg border border-black/15 bg-white px-3 py-2 font-sans text-body-small">
+          <select name="clientProfileId" required defaultValue={editing?.clientProfileId ?? ""} className="w-full rounded-lg border border-black/15 bg-white px-3 py-2 font-sans text-body-small">
             <option value="">Choose a Client…</option>
             {clients.map((c) => (
               <option key={c.id} value={c.id}>{c.fullName ?? c.email ?? c.id}</option>
@@ -158,10 +194,10 @@ export function NewQuotationForm({ clients, markets }: { clients: ClientOption[]
           </select>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-            <input name="prospectName" required placeholder="Prospect name (required)" className="rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small" />
-            <input name="prospectCompany" placeholder="Company (optional)" className="rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small" />
-            <input name="prospectEmail" type="email" placeholder="Email (optional)" className="rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small" />
-            <input name="prospectPhone" placeholder="Phone (optional)" className="rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small" />
+            <input name="prospectName" required defaultValue={editing?.prospectName} placeholder="Prospect name (required)" className="rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small" />
+            <input name="prospectCompany" defaultValue={editing?.prospectCompany} placeholder="Company (optional)" className="rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small" />
+            <input name="prospectEmail" type="email" defaultValue={editing?.prospectEmail} placeholder="Email (optional)" className="rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small" />
+            <input name="prospectPhone" defaultValue={editing?.prospectPhone} placeholder="Phone (optional)" className="rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small" />
           </div>
         )}
       </section>
@@ -181,6 +217,9 @@ export function NewQuotationForm({ clients, markets }: { clients: ClientOption[]
                 </span>
               )}
               {item.sourceReference && <span className="font-sans text-[0.65rem] text-ordift-ink-muted truncate">{item.sourceReference}</span>}
+              <button type="button" onClick={() => setItems((prev) => prev.filter((_, idx) => idx !== i))} className="ml-auto font-sans text-[0.65rem] text-red-700 underline underline-offset-4">
+                Remove
+              </button>
             </div>
             <input name={`items[${i}][serviceItem]`} value={item.serviceItem} onChange={(e) => updateItem(i, "serviceItem", e.target.value)} placeholder="Service/item" required className="col-span-2 rounded-lg border border-black/15 px-2 py-1.5 font-sans text-caption" />
             <input name={`items[${i}][description]`} value={item.description} onChange={(e) => updateItem(i, "description", e.target.value)} placeholder="Description" className="col-span-2 rounded-lg border border-black/15 px-2 py-1.5 font-sans text-caption" />
@@ -206,16 +245,16 @@ export function NewQuotationForm({ clients, markets }: { clients: ClientOption[]
       <section className="rounded-xl border border-black/10 bg-white p-6 space-y-3">
         <h2 className="font-serif font-medium text-body text-ordift-ink">Terms</h2>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-          <input name="currency" required placeholder="Currency (e.g. GHS)" defaultValue="GHS" className="rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small" />
-          <input name="validUntil" type="date" className="rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small" />
-          <textarea name="paymentBookingTerms" placeholder="Payment / booking terms (optional)" className="sm:col-span-2 rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small" rows={2} />
-          <textarea name="commercialNotes" placeholder="Commercial notes (optional, internal)" className="sm:col-span-2 rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small" rows={2} />
+          <input name="currency" required defaultValue={editing?.currency ?? "GHS"} placeholder="Currency (e.g. GHS)" className="rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small" />
+          <input name="validUntil" type="date" defaultValue={editing?.validUntil} className="rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small" />
+          <textarea name="paymentBookingTerms" defaultValue={editing?.paymentBookingTerms} placeholder="Payment / booking terms (optional)" className="sm:col-span-2 rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small" rows={2} />
+          <textarea name="commercialNotes" defaultValue={editing?.commercialNotes} placeholder="Commercial notes (optional, internal)" className="sm:col-span-2 rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small" rows={2} />
         </div>
       </section>
 
-      {state?.ok === false && <p className="font-sans text-body-small text-red-700">{state.error}</p>}
-      <SubmitButton pendingLabel="Creating…" className="font-sans text-body-small font-semibold px-4 py-2 rounded-md bg-ordift-navy-950 text-white">
-        Create Quotation
+      {errorMessage && <p className="font-sans text-body-small text-red-700">{errorMessage}</p>}
+      <SubmitButton pendingLabel={editing ? "Saving…" : "Creating…"} className="font-sans text-body-small font-semibold px-4 py-2 rounded-md bg-ordift-navy-950 text-white">
+        {editing ? "Save Changes" : "Create Quotation"}
       </SubmitButton>
     </form>
   );

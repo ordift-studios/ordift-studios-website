@@ -57,6 +57,7 @@ export default async function ClientQuotationsPage() {
                 <th className="px-4 py-2 font-sans text-caption uppercase tracking-wide text-ordift-ink-muted">Total</th>
                 <th className="px-4 py-2 font-sans text-caption uppercase tracking-wide text-ordift-ink-muted">Status</th>
                 <th className="px-4 py-2 font-sans text-caption uppercase tracking-wide text-ordift-ink-muted">Valid Until</th>
+                <th className="px-4 py-2 font-sans text-caption uppercase tracking-wide text-ordift-ink-muted">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -75,6 +76,16 @@ export default async function ClientQuotationsPage() {
                     <span className={`px-2 py-0.5 rounded-full font-sans text-caption ${STATUS_STYLES[q.status] ?? "bg-black/5"}`}>{q.status}</span>
                   </td>
                   <td className="px-4 py-2 font-sans text-body-small text-ordift-ink-muted">{q.validUntil ?? "—"}</td>
+                  <td className="px-4 py-2 whitespace-nowrap">
+                    {q.status === "draft" && (
+                      <Link href={`/admin/pricing/quotations/${q.id}/edit`} className="font-sans text-caption text-ordift-gold-pressed underline underline-offset-4 mr-3">
+                        Edit
+                      </Link>
+                    )}
+                    <Link href={`/admin/pricing/quotations/${q.id}/pdf`} target="_blank" className="font-sans text-caption text-ordift-gold-pressed underline underline-offset-4">
+                      PDF
+                    </Link>
+                  </td>
                 </tr>
               ))}
             </tbody>

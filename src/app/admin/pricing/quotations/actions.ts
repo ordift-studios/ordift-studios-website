@@ -4,6 +4,9 @@ import { revalidatePath } from "next/cache";
 import { getCurrentUser, hasRole, isSuperAdmin } from "@/lib/portal/roles";
 import {
   createClientQuotation,
+  updateClientQuotationDraft,
+  reviseClientQuotation,
+  deleteClientQuotation,
   updateQuotationStatus,
   associateProspectQuotationWithClient,
   type QuotationLineItemInput,
@@ -24,12 +27,10 @@ export type ActionState = { ok: boolean; error?: string } | null;
 // follows the same proven pattern instead of inventing a new one.
 export type CreateQuotationState = { ok: true; quotationId: string; quotationReference: string } | { ok: false; error: string } | null;
 
-// Client Quotations admin actions (2026-09-16 Universal Commercial Rate
-// Card & Quotation System). All authorization lives inside
-// clientQuotations.ts itself (requireAdminActor()) — these are thin
-// FormData-parsing wrappers, same convention as every other admin
-// action in this codebase.
-export async function createQuotationAction(_prev: CreateQuotationState, formData: FormData): Promise<CreateQuotationState> {
+// Shared by create and edit — the party/terms/items FormData shape is
+// identical either way; only which library function the caller passes
+// the result to differs. Not exported — internal to this module only.
+function parseQuotationFormData(formData: FormData) {
   const clientProfileId = String(formData.get("clientProfileId") ?? "").trim() || null;
   const prospectName = String(formData.get("prospectName") ?? "").trim() || null;
   const prospectEmail = String(formData.get("prospectEmail") ?? "").trim() || null;
@@ -69,6 +70,17 @@ export async function createQuotationAction(_prev: CreateQuotationState, formDat
     i++;
   }
 
+  return { clientProfileId, prospectName, prospectEmail, prospectPhone, prospectCompany, currency, validUntil, paymentBookingTerms, commercialNotes, items };
+}
+
+// Client Quotations admin actions (2026-09-16 Universal Commercial Rate
+// Card & Quotation System). All authorization lives inside
+// clientQuotations.ts itself (requireAdminActor()) — these are thin
+// FormData-parsing wrappers, same convention as every other admin
+// action in this codebase.
+export async function createQuotationAction(_prev: CreateQuotationState, formData: FormData): Promise<CreateQuotationState> {
+  const { clientProfileId, prospectName, prospectEmail, prospectPhone, prospectCompany, currency, validUntil, paymentBookingTerms, commercialNotes, items } = parseQuotationFormData(formData);
+
   if (!currency) return { ok: false, error: "Currency is required." };
   if (items.length === 0) return { ok: false, error: "Add at least one valid line item." };
 
@@ -88,6 +100,67 @@ export async function createQuotationAction(_prev: CreateQuotationState, formDat
 
   revalidatePath("/admin/pricing/quotations");
   return { ok: true, quotationId: result.quotationId, quotationReference: result.quotationReference };
+}
+
+// Task 1 — Client Quotation record management (2026-09-16). Edit is
+// only valid for a draft (enforced inside updateClientQuotationDraft()
+// itself); an issued quotation is revised instead (see
+// reviseQuotationAction below), never edited in place.
+export type SimpleActionState = { ok: boolean; error?: string } | null;
+
+export async function updateQuotationDraftAction(_prev: SimpleActionState, formData: FormData): Promise<SimpleActionState> {
+  const quotationId = String(formData.get("quotationId") ?? "");
+  if (!quotationId) return { ok: false, error: "Invalid request." };
+
+  const { clientProfileId, prospectName, prospectEmail, prospectPhone, prospectCompany, currency, validUntil, paymentBookingTerms, commercialNotes, items } = parseQuotationFormData(formData);
+  if (!currency) return { ok: false, error: "Currency is required." };
+  if (items.length === 0) return { ok: false, error: "Add at least one valid line item." };
+
+  const result = await updateClientQuotationDraft({
+    quotationId,
+    clientProfileId,
+    prospectName,
+    prospectEmail,
+    prospectPhone,
+    prospectCompany,
+    currency,
+    validUntil,
+    paymentBookingTerms,
+    commercialNotes,
+    items,
+  });
+  if (!result.ok) return { ok: false, error: result.error };
+
+  revalidatePath("/admin/pricing/quotations");
+  revalidatePath(`/admin/pricing/quotations/${quotationId}`);
+  return { ok: true };
+}
+
+// Revise an issued quotation: creates a new versioned draft, marks the
+// original superseded. Returns the new quotation's id so the client
+// can navigate to it (same redirect-avoidance reason as create/edit).
+export type ReviseQuotationState = { ok: true; quotationId: string } | { ok: false; error: string } | null;
+export async function reviseQuotationAction(_prev: ReviseQuotationState, formData: FormData): Promise<ReviseQuotationState> {
+  const quotationId = String(formData.get("quotationId") ?? "");
+  if (!quotationId) return { ok: false, error: "Invalid request." };
+
+  const result = await reviseClientQuotation(quotationId);
+  if (!result.ok) return { ok: false, error: result.error };
+
+  revalidatePath("/admin/pricing/quotations");
+  return { ok: true, quotationId: result.quotationId };
+}
+
+// Delete — draft only (enforced inside deleteClientQuotation()).
+export async function deleteQuotationAction(_prev: SimpleActionState, formData: FormData): Promise<SimpleActionState> {
+  const quotationId = String(formData.get("quotationId") ?? "");
+  if (!quotationId) return { ok: false, error: "Invalid request." };
+
+  const result = await deleteClientQuotation(quotationId);
+  if (!result.ok) return { ok: false, error: result.error };
+
+  revalidatePath("/admin/pricing/quotations");
+  return { ok: true };
 }
 
 // Connect Client Quotations to existing Pricing (2026-09-16, Task C).

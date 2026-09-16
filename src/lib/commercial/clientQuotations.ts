@@ -97,10 +97,34 @@ function round2(n: number): number {
   return Math.round(n * 100) / 100;
 }
 
-export async function createClientQuotation(params: CreateQuotationParams): Promise<CreateQuotationResult> {
-  const auth = await requireAdminActor();
-  if (!auth.ok) return auth;
+// Shared by create and edit — inserts the item rows for one quotation
+// against the totals already computed for that same item list. Never
+// called with a stale totals object (every caller computes totals
+// immediately before calling this).
+async function insertQuotationItems(admin: ReturnType<typeof createAdminClient>, quotationId: string, items: QuotationLineItemInput[], totals: ReturnType<typeof computeQuotationTotals>): Promise<{ ok: true } | { ok: false; error: string }> {
+  const itemRows = items.map((item, i) => ({
+    quotation_id: quotationId,
+    service_item: item.serviceItem,
+    description: item.description ?? null,
+    quantity: item.quantity,
+    unit_basis: item.unitBasis,
+    selling_rate: item.sellingRate,
+    discount_percent: item.discountPercent ?? null,
+    tax_percent: item.taxPercent ?? null,
+    line_total: totals.lineTotals[i],
+    sort_order: i,
+    source_type: item.sourceType ?? "manual",
+    source_reference: item.sourceReference ?? null,
+  }));
+  const { error } = await admin.from("client_quotation_items").insert(itemRows);
+  if (error) {
+    console.error("[commercial] failed to insert client_quotation_items", error.message);
+    return { ok: false, error: "Failed to save quotation line items." };
+  }
+  return { ok: true };
+}
 
+function validatePartyAndItems(params: { clientProfileId?: string | null; prospectName?: string | null; items: QuotationLineItemInput[] }): { ok: true } | { ok: false; error: string } {
   if (!params.clientProfileId && !params.prospectName) {
     return { ok: false, error: "A quotation needs either a registered Client or a prospect name." };
   }
@@ -110,6 +134,15 @@ export async function createClientQuotation(params: CreateQuotationParams): Prom
   if (params.items.length === 0) {
     return { ok: false, error: "A quotation needs at least one line item." };
   }
+  return { ok: true };
+}
+
+export async function createClientQuotation(params: CreateQuotationParams): Promise<CreateQuotationResult> {
+  const auth = await requireAdminActor();
+  if (!auth.ok) return auth;
+
+  const validation = validatePartyAndItems(params);
+  if (!validation.ok) return validation;
 
   const admin = createAdminClient();
   const { data: seqValue, error: seqError } = await admin.rpc("next_client_quotation_reference_seq");
@@ -146,25 +179,8 @@ export async function createClientQuotation(params: CreateQuotationParams): Prom
     return { ok: false, error: "Failed to create the quotation." };
   }
 
-  const itemRows = params.items.map((item, i) => ({
-    quotation_id: quotation.id,
-    service_item: item.serviceItem,
-    description: item.description ?? null,
-    quantity: item.quantity,
-    unit_basis: item.unitBasis,
-    selling_rate: item.sellingRate,
-    discount_percent: item.discountPercent ?? null,
-    tax_percent: item.taxPercent ?? null,
-    line_total: totals.lineTotals[i],
-    sort_order: i,
-    source_type: item.sourceType ?? "manual",
-    source_reference: item.sourceReference ?? null,
-  }));
-  const { error: itemsError } = await admin.from("client_quotation_items").insert(itemRows);
-  if (itemsError) {
-    console.error("[commercial] failed to insert client_quotation_items", itemsError.message);
-    return { ok: false, error: "Failed to save quotation line items." };
-  }
+  const itemsResult = await insertQuotationItems(admin, quotation.id, params.items, totals);
+  if (!itemsResult.ok) return itemsResult;
 
   await logActivity({
     actorUserId: auth.actorUserId,
@@ -375,5 +391,191 @@ export async function associateProspectQuotationWithClient(params: { quotationId
     entityId: params.quotationId,
     metadata: { clientProfileId: params.clientProfileId, formerProspectName: current.prospect_name },
   });
+  return { ok: true };
+}
+
+// Task 1 — Client Quotation record management (2026-09-16). EDIT is
+// only ever allowed while status='draft' — a quotation that has been
+// sent/accepted/etc. carries real commercial history that must never
+// be silently overwritten; revising one of those goes through
+// reviseClientQuotation() below instead, which creates a new
+// versioned row rather than mutating the issued one.
+export type UpdateQuotationDraftParams = CreateQuotationParams & { quotationId: string };
+
+export async function updateClientQuotationDraft(params: UpdateQuotationDraftParams): Promise<{ ok: true } | { ok: false; error: string }> {
+  const auth = await requireAdminActor();
+  if (!auth.ok) return auth;
+
+  const validation = validatePartyAndItems(params);
+  if (!validation.ok) return validation;
+
+  const admin = createAdminClient();
+  const { data: current } = await admin.from("client_quotations").select("status").eq("id", params.quotationId).maybeSingle();
+  if (!current) return { ok: false, error: "Quotation not found." };
+  if (current.status !== "draft") {
+    return { ok: false, error: "Only a draft quotation can be edited directly — use Revise to create a new version of an issued quotation." };
+  }
+
+  const totals = computeQuotationTotals(params.items);
+
+  const { error: updateError } = await admin
+    .from("client_quotations")
+    .update({
+      client_profile_id: params.clientProfileId ?? null,
+      prospect_name: params.prospectName ?? null,
+      prospect_email: params.prospectEmail ?? null,
+      prospect_phone: params.prospectPhone ?? null,
+      prospect_company: params.prospectCompany ?? null,
+      currency: params.currency,
+      subtotal: totals.subtotal,
+      discount_total: totals.discountTotal,
+      tax_total: totals.taxTotal,
+      total: totals.total,
+      valid_until: params.validUntil ?? null,
+      payment_booking_terms: params.paymentBookingTerms ?? null,
+      commercial_notes: params.commercialNotes ?? null,
+    })
+    .eq("id", params.quotationId)
+    .eq("status", "draft");
+  if (updateError) {
+    console.error("[commercial] failed to update client_quotation draft", updateError.message);
+    return { ok: false, error: "Failed to save changes." };
+  }
+
+  // Draft line items carry no issued commercial history of their own —
+  // replacing them wholesale (delete + reinsert) is safe and simpler
+  // than a diff, and keeps computeQuotationTotals() as the one place
+  // this arithmetic exists.
+  const { error: deleteItemsError } = await admin.from("client_quotation_items").delete().eq("quotation_id", params.quotationId);
+  if (deleteItemsError) {
+    console.error("[commercial] failed to clear client_quotation_items for edit", deleteItemsError.message);
+    return { ok: false, error: "Failed to save line items." };
+  }
+  const itemsResult = await insertQuotationItems(admin, params.quotationId, params.items, totals);
+  if (!itemsResult.ok) return itemsResult;
+
+  await logActivity({
+    actorUserId: auth.actorUserId,
+    action: "client_quotation.draft_updated",
+    entityType: "client_quotation",
+    entityId: params.quotationId,
+    metadata: { total: totals.total, currency: params.currency },
+  });
+  return { ok: true };
+}
+
+// Revises an already-issued (non-draft) quotation: creates a NEW draft
+// row copying its current party/terms/items, linked via supersedes_id,
+// version = original + 1 — never mutates the original's own issued
+// commercial history. Marks the original 'superseded' via the same
+// governed status transition every other status change goes through.
+// Refuses for an already-draft quotation (edit it directly instead —
+// no version bump needed for something never issued).
+export async function reviseClientQuotation(quotationId: string): Promise<CreateQuotationResult> {
+  const auth = await requireAdminActor();
+  if (!auth.ok) return auth;
+
+  const original = await getClientQuotation(quotationId);
+  if (!original) return { ok: false, error: "Quotation not found." };
+  if (original.status === "draft") return { ok: false, error: "A draft quotation can be edited directly — no revision needed." };
+  if (!isValidQuotationStatusTransition(original.status, "superseded")) {
+    return { ok: false, error: `A ${original.status} quotation cannot be revised.` };
+  }
+
+  const admin = createAdminClient();
+  const { data: seqValue, error: seqError } = await admin.rpc("next_client_quotation_reference_seq");
+  if (seqError || seqValue === null || seqValue === undefined) {
+    return { ok: false, error: "Failed to generate a quotation reference." };
+  }
+  const quotationReference = formatQuotationReference(new Date().getFullYear(), Number(seqValue));
+
+  const items: QuotationLineItemInput[] = original.items.map((i) => ({
+    serviceItem: i.serviceItem,
+    description: i.description,
+    quantity: i.quantity,
+    unitBasis: i.unitBasis,
+    sellingRate: i.sellingRate,
+    discountPercent: i.discountPercent,
+    taxPercent: i.taxPercent,
+    sourceType: i.sourceType,
+    sourceReference: i.sourceReference,
+  }));
+  const totals = computeQuotationTotals(items);
+
+  const { data: revision, error: insertError } = await admin
+    .from("client_quotations")
+    .insert({
+      quotation_reference: quotationReference,
+      client_profile_id: original.clientProfileId,
+      prospect_name: original.prospectName,
+      prospect_email: original.prospectEmail,
+      prospect_phone: original.prospectPhone,
+      prospect_company: original.prospectCompany,
+      currency: original.currency,
+      subtotal: totals.subtotal,
+      discount_total: totals.discountTotal,
+      tax_total: totals.taxTotal,
+      total: totals.total,
+      valid_until: original.validUntil,
+      payment_booking_terms: original.paymentBookingTerms,
+      commercial_notes: original.commercialNotes,
+      version: original.version + 1,
+      supersedes_id: original.id,
+      created_by: auth.actorUserId,
+    })
+    .select("id")
+    .single();
+  if (insertError || !revision) {
+    console.error("[commercial] failed to create quotation revision", insertError?.message);
+    return { ok: false, error: "Failed to create the revision." };
+  }
+
+  const itemsResult = await insertQuotationItems(admin, revision.id, items, totals);
+  if (!itemsResult.ok) return itemsResult;
+
+  const supersede = await updateQuotationStatus({ quotationId: original.id, status: "superseded" });
+  if (!supersede.ok) return { ok: false, error: supersede.error };
+
+  await logActivity({
+    actorUserId: auth.actorUserId,
+    action: "client_quotation.revised",
+    entityType: "client_quotation",
+    entityId: revision.id,
+    metadata: { quotationReference, supersedesId: original.id, supersedesReference: original.quotationReference },
+  });
+
+  return { ok: true, quotationId: revision.id, quotationReference };
+}
+
+// Hard delete — draft ONLY (a status other than 'draft' means real
+// commercial history exists: it was sent, and possibly accepted —
+// exactly what must never be destructively deleted; use the status
+// transitions above to decline/expire/supersede instead). Line items
+// cascade via client_quotation_items.quotation_id ON DELETE CASCADE
+// (migration 0134) — no orphan rows possible.
+export async function deleteClientQuotation(quotationId: string): Promise<{ ok: true } | { ok: false; error: string }> {
+  const auth = await requireAdminActor();
+  if (!auth.ok) return auth;
+
+  const admin = createAdminClient();
+  const { data: current } = await admin.from("client_quotations").select("status, quotation_reference").eq("id", quotationId).maybeSingle();
+  if (!current) return { ok: false, error: "Quotation not found." };
+  if (current.status !== "draft") {
+    return { ok: false, error: "Only a draft quotation can be deleted — an issued quotation's history must be preserved (decline/expire/supersede it instead)." };
+  }
+
+  await logActivity({
+    actorUserId: auth.actorUserId,
+    action: "client_quotation.draft_deleted",
+    entityType: "client_quotation",
+    entityId: quotationId,
+    metadata: { quotationReference: current.quotation_reference },
+  });
+
+  const { error } = await admin.from("client_quotations").delete().eq("id", quotationId).eq("status", "draft");
+  if (error) {
+    console.error("[commercial] failed to delete client_quotation", error.message);
+    return { ok: false, error: "Failed to delete the quotation." };
+  }
   return { ok: true };
 }

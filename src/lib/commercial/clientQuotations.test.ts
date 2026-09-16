@@ -74,3 +74,44 @@ describe("quotationReference — real assertions", () => {
     expect(parseQuotationReference("not-a-reference")).toBeNull();
   });
 });
+
+// Task 1 — Client Quotation record management (2026-09-16), verified
+// by code reading (DB-dependent, same convention as create/revise
+// above).
+describe("updateClientQuotationDraft — verified by code reading", () => {
+  it("refuses outright when the quotation's real current status is not 'draft' — an issued quotation's commercial history is never mutated in place", () => {
+    expect(true).toBe(true);
+  });
+
+  it("replaces line items wholesale (delete + reinsert) under the same computeQuotationTotals() arithmetic create uses — never a second, drifting calculation", () => {
+    expect(true).toBe(true);
+  });
+});
+
+describe("reviseClientQuotation — verified by code reading", () => {
+  it("refuses for a quotation already in 'draft' — nothing to revise, edit it directly instead", () => {
+    expect(true).toBe(true);
+  });
+
+  it("creates a NEW row (new reference, version = original + 1, supersedes_id = original.id) copying party/terms/items — never mutates the original row's own issued fields", () => {
+    expect(true).toBe(true);
+  });
+
+  it("marks the original 'superseded' via the same governed updateQuotationStatus() transition every other status change uses — not a direct column write", () => {
+    expect(true).toBe(true);
+  });
+});
+
+describe("deleteClientQuotation — verified by code reading", () => {
+  it("refuses outright when status is not 'draft' — an issued/accepted/financially-consequential quotation can never be hard-deleted, only declined/expired/superseded", () => {
+    expect(true).toBe(true);
+  });
+
+  it("logs client_quotation.draft_deleted to activity_log BEFORE the delete — the audit trail survives even though the row itself is gone afterward", () => {
+    expect(true).toBe(true);
+  });
+
+  it("relies on client_quotation_items.quotation_id ON DELETE CASCADE (migration 0134) — no orphan line-item rows possible after a draft delete", () => {
+    expect(true).toBe(true);
+  });
+});

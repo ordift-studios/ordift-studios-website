@@ -4,6 +4,7 @@ import { redirect, notFound } from "next/navigation";
 import { getCurrentUser, hasRole, isSuperAdmin } from "@/lib/portal/roles";
 import { getClientQuotation } from "@/lib/commercial/clientQuotations";
 import { QuotationStatusActions } from "./QuotationStatusActions";
+import { ReviseQuotationButton, DeleteQuotationButton } from "./QuotationRecordActions";
 
 export const metadata: Metadata = {
   title: "Quotation — Ordift Studios Admin",
@@ -32,14 +33,30 @@ export default async function QuotationDetailPage({ params }: { params: Promise<
             {quotation.clientName ?? quotation.prospectName} {quotation.prospectCompany ? `(${quotation.prospectCompany})` : ""}
           </p>
         </div>
-        <Link
-          href={`/admin/pricing/quotations/${quotation.id}/pdf`}
-          target="_blank"
-          className="font-sans text-body-small font-semibold px-4 py-2 rounded-md border border-black/15 text-ordift-ink"
-        >
-          View / Print PDF →
-        </Link>
+        <div className="flex flex-wrap items-center gap-2">
+          <Link
+            href={`/admin/pricing/quotations/${quotation.id}/pdf`}
+            target="_blank"
+            className="font-sans text-body-small font-semibold px-4 py-2 rounded-md border border-black/15 text-ordift-ink"
+          >
+            View / Download PDF →
+          </Link>
+          {quotation.status === "draft" && (
+            <Link
+              href={`/admin/pricing/quotations/${quotation.id}/edit`}
+              className="font-sans text-body-small font-semibold px-4 py-2 rounded-md border border-black/15 text-ordift-ink"
+            >
+              Edit
+            </Link>
+          )}
+          {quotation.status === "sent" && <ReviseQuotationButton quotationId={quotation.id} />}
+          {quotation.status === "draft" && <DeleteQuotationButton quotationId={quotation.id} />}
+        </div>
       </div>
+
+      {quotation.version > 1 && (
+        <p className="font-sans text-caption text-ordift-ink-muted mb-4">Version {quotation.version} — revises an earlier issued quotation.</p>
+      )}
 
       <div className="rounded-xl border border-black/10 bg-white p-6 mb-6">
         <QuotationStatusActions quotationId={quotation.id} status={quotation.status} hasClient={Boolean(quotation.clientProfileId)} />
