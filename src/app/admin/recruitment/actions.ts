@@ -7,6 +7,7 @@ import { logActivity } from "@/lib/admin/activityLog";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { inviteCollaboratorAction } from "@/app/admin/users/actions";
 import type { RecruitmentStatus } from "@/lib/recruitment/types";
+import { sendRecruitmentNotification, type RecruitmentNotificationEvent } from "@/lib/notifications/recruitmentNotification";
 
 async function requireRecruitmentAdmin() {
   const user = await getCurrentUser();
@@ -38,6 +39,14 @@ export async function updateApplicationStatusAction(
       entityId: applicationId,
       metadata: { status },
     });
+
+    const NOTIFIABLE_STATUSES = new Set<RecruitmentStatus>(["shortlisted", "interview", "accepted", "rejected"]);
+    if (NOTIFIABLE_STATUSES.has(status)) {
+      const application = await getRecruitmentApplication(applicationId);
+      if (application?.email) {
+        void sendRecruitmentNotification({ applicantEmail: application.email, event: status as RecruitmentNotificationEvent, applicationId });
+      }
+    }
 
     revalidatePath(`/admin/recruitment/${applicationId}`);
     revalidatePath("/admin/recruitment");
