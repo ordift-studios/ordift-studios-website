@@ -9,9 +9,15 @@ import { requestVendorDocumentUploadAuthorization, recordVendorDocument, reviewV
 import { createPayeeProfile } from "@/lib/payables/payeeProfiles";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { OnboardingPipeline } from "@/lib/organization/onboardingStages";
-import { createVendorFrameworkDraftAgreement, createVendorWorkOrderDraftAgreement, type VendorWorkOrderDetails } from "@/lib/legal/vendorAgreements";
+import {
+  createVendorFrameworkDraftAgreement,
+  createVendorWorkOrderDraftAgreement,
+  createVendorWorkOrderVariation,
+  type VendorWorkOrderDetails,
+  type VendorWorkOrderVariationChanges,
+} from "@/lib/legal/vendorAgreements";
 import type { VendorFrameworkVariableKey } from "@/lib/legal/documents/os-lgl-009a-vendor-supplier-framework-agreement";
-import { transitionAgreementStatus } from "@/lib/legal/agreementEngine";
+import { transitionAgreementStatus, approveAgreementAmendment } from "@/lib/legal/agreementEngine";
 import { issueVendorFrameworkAgreement } from "@/lib/legal/vendorAgreementIssuance";
 import { issueVendorWorkOrder } from "@/lib/legal/vendorWorkOrderIssuance";
 import { sendVendorAgreementNotification } from "@/lib/notifications/vendorAgreementNotification";
@@ -441,6 +447,49 @@ export async function issueVendorWorkOrderAction(_prev: ActionState, formData: F
     const result = await issueVendorWorkOrder({ agreementId, actorUserId: user.id });
     if (!result.ok) return { ok: false, error: `${result.error} (step: ${result.step})` };
 
+    revalidateVendor(vendorId);
+    return { ok: true };
+  } catch {
+    return { ok: false, error: "You are not authorized to do this." };
+  }
+}
+
+// ============================================================
+// OS-LGL-009C Variation / Change Order (2026-09-16, backlog Phase 1 Item 5)
+// ============================================================
+
+export async function createVendorWorkOrderVariationAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  try {
+    const user = await requireVendorAdmin();
+    const vendorId = String(formData.get("vendorId") ?? "");
+    const workOrderAgreementId = String(formData.get("workOrderAgreementId") ?? "");
+    const reason = String(formData.get("reason") ?? "").trim();
+    if (!reason) return { ok: false, error: "A reason is required." };
+
+    const changeFields: (keyof VendorWorkOrderVariationChanges)[] = ["originalTerm", "revisedTerm", "scopeImpact", "priceImpact", "scheduleImpact", "effectiveDate"];
+    const changes: VendorWorkOrderVariationChanges = {};
+    for (const field of changeFields) {
+      const value = String(formData.get(field) ?? "").trim();
+      if (value) changes[field] = value;
+    }
+
+    const result = await createVendorWorkOrderVariation({ workOrderAgreementId, reason, changes, actorUserId: user.id });
+    if (!result.ok) return { ok: false, error: result.error };
+    revalidateVendor(vendorId);
+    return { ok: true };
+  } catch {
+    return { ok: false, error: "You are not authorized to do this." };
+  }
+}
+
+export async function approveVendorWorkOrderVariationAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  try {
+    const user = await requireVendorAdmin();
+    const vendorId = String(formData.get("vendorId") ?? "");
+    const amendmentId = String(formData.get("amendmentId") ?? "");
+
+    const result = await approveAgreementAmendment({ amendmentId, actorUserId: user.id });
+    if (!result.ok) return { ok: false, error: result.error };
     revalidateVendor(vendorId);
     return { ok: true };
   } catch {

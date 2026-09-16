@@ -9,7 +9,7 @@ import { listVendorDocuments } from "@/lib/vendors/vendorDocuments";
 import { getPayeeProfile } from "@/lib/payables/payeeProfiles";
 import { listEmploymentJurisdictions } from "@/lib/portal/adminData";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { listVendorAgreementFamily } from "@/lib/legal/vendorAgreements";
+import { listVendorAgreementFamily, listVendorWorkOrderVariations } from "@/lib/legal/vendorAgreements";
 import { listEmployingEntities } from "@/lib/organization/legalEntities";
 import { VendorDetailWorkspace } from "./VendorDetailWorkspace";
 
@@ -43,6 +43,9 @@ export default async function VendorDetailPage({ params }: { params: Promise<{ v
     listEmployingEntities(),
   ]);
   const { framework: frameworkAgreement, workOrders } = agreementFamily;
+  const variationsByWorkOrderId = Object.fromEntries(
+    await Promise.all(workOrders.map(async (wo) => [wo.id, await listVendorWorkOrderVariations(wo.id)] as const))
+  );
   const jurisdictionOptions = jurisdictions.map((j) => ({ id: j.id, name: j.name }));
   // Vendor Profile Particulars (2026-09-15) — the Ordift Contracting
   // Entity field resolves/selects from this canonical, verified list
@@ -81,6 +84,7 @@ export default async function VendorDetailPage({ params }: { params: Promise<{ v
         paymentInstructions={paymentInstructions ?? []}
         frameworkAgreement={frameworkAgreement}
         workOrders={workOrders}
+        variationsByWorkOrderId={variationsByWorkOrderId}
         contractingEntityOptions={contractingEntityOptions}
       />
     </div>

@@ -7,6 +7,7 @@ import type { VendorProfile } from "@/lib/vendors/vendorProfiles";
 import type { VendorDocument } from "@/lib/vendors/vendorDocuments";
 import type { PayeeProfile } from "@/lib/payables/payeeProfiles";
 import type { VendorAgreementSummary } from "@/lib/legal/vendorAgreements";
+import type { AgreementAmendment } from "@/lib/legal/agreementEngine";
 import { nextStage, isTerminalStage } from "@/lib/organization/onboardingStages";
 import { createClient } from "@/lib/supabase/client";
 import { validateVendorDocumentFile, describeVendorDocumentUploadError } from "@/lib/vendors/vendorDocumentUploadValidation";
@@ -30,6 +31,8 @@ import {
   createVendorWorkOrderAction,
   approveVendorWorkOrderForIssueAction,
   issueVendorWorkOrderAction,
+  createVendorWorkOrderVariationAction,
+  approveVendorWorkOrderVariationAction,
   type ActionState,
   type CreateFrameworkActionState,
 } from "./actions";
@@ -59,6 +62,7 @@ export function VendorDetailWorkspace({
   paymentInstructions,
   frameworkAgreement,
   workOrders,
+  variationsByWorkOrderId,
   contractingEntityOptions,
 }: {
   vendorId: string;
@@ -74,6 +78,7 @@ export function VendorDetailWorkspace({
   paymentInstructions: PaymentInstructionRow[];
   frameworkAgreement: VendorAgreementSummary | null;
   workOrders: VendorAgreementSummary[];
+  variationsByWorkOrderId: Record<string, AgreementAmendment[]>;
   contractingEntityOptions: ContractingEntityOption[];
 }) {
   return (
@@ -87,7 +92,12 @@ export function VendorDetailWorkspace({
       />
       <OnboardingSection vendorId={vendorId} onboarding={onboarding} resolvedRequirements={resolvedRequirements} overrides={overrides} />
       <FrameworkAgreementSection vendorId={vendorId} frameworkAgreement={frameworkAgreement} contractingEntityOptions={contractingEntityOptions} />
-      <WorkOrdersSection vendorId={vendorId} frameworkAgreement={frameworkAgreement} workOrders={workOrders} />
+      <WorkOrdersSection
+        vendorId={vendorId}
+        frameworkAgreement={frameworkAgreement}
+        workOrders={workOrders}
+        variationsByWorkOrderId={variationsByWorkOrderId}
+      />
       <DocumentsSection vendorId={vendorId} documents={documents} />
       <PaymentSection vendorId={vendorId} vendorProfile={vendorProfile} payeeProfile={payeeProfile} paymentInstructions={paymentInstructions} />
     </div>
@@ -829,14 +839,76 @@ function IssueWorkOrderForm({ vendorId, agreementId }: { vendorId: string; agree
   );
 }
 
+// OS-LGL-009C Variation / Change Order (2026-09-16, backlog Phase 1
+// Item 5) — one Work Order may have several, append-only, sequential.
+// "approved" here means Ordift's own internal approval only — never a
+// fabricated vendor acceptance (see approveAgreementAmendment()'s own
+// comment, agreementEngine.ts).
+function CreateVariationForm({ vendorId, workOrderAgreementId }: { vendorId: string; workOrderAgreementId: string }) {
+  const [state, formAction, pending] = useActionState<ActionState, FormData>(createVendorWorkOrderVariationAction, null);
+  return (
+    <form action={formAction} className="grid grid-cols-1 sm:grid-cols-2 gap-2 rounded-lg border border-black/10 p-3">
+      <input type="hidden" name="vendorId" value={vendorId} />
+      <input type="hidden" name="workOrderAgreementId" value={workOrderAgreementId} />
+      <input name="reason" placeholder="Reason (required)" required className="sm:col-span-2 rounded-lg border border-black/15 px-2 py-1.5 font-sans text-body-small" />
+      <input name="originalTerm" placeholder="Original Term" className="rounded-lg border border-black/15 px-2 py-1.5 font-sans text-body-small" />
+      <input name="revisedTerm" placeholder="Revised Term" className="rounded-lg border border-black/15 px-2 py-1.5 font-sans text-body-small" />
+      <input name="scopeImpact" placeholder="Scope Impact" className="rounded-lg border border-black/15 px-2 py-1.5 font-sans text-body-small" />
+      <input name="priceImpact" placeholder="Price Impact" className="rounded-lg border border-black/15 px-2 py-1.5 font-sans text-body-small" />
+      <input name="scheduleImpact" placeholder="Schedule Impact" className="rounded-lg border border-black/15 px-2 py-1.5 font-sans text-body-small" />
+      <input name="effectiveDate" placeholder="Effective Date" className="rounded-lg border border-black/15 px-2 py-1.5 font-sans text-body-small" />
+      <button type="submit" disabled={pending} className="sm:col-span-2 justify-self-start font-sans text-caption font-semibold px-3 py-1.5 rounded-md bg-ordift-navy-950 text-white disabled:opacity-50">
+        {pending ? "Recording…" : "Record Variation"}
+      </button>
+      <FormError state={state} />
+    </form>
+  );
+}
+
+function ApproveVariationForm({ vendorId, amendmentId }: { vendorId: string; amendmentId: string }) {
+  const [state, formAction, pending] = useActionState<ActionState, FormData>(approveVendorWorkOrderVariationAction, null);
+  return (
+    <form action={formAction}>
+      <input type="hidden" name="vendorId" value={vendorId} />
+      <input type="hidden" name="amendmentId" value={amendmentId} />
+      <button type="submit" disabled={pending} className="font-sans text-caption font-semibold px-3 py-1 rounded-md bg-ordift-gold-pressed text-ordift-navy-950 disabled:opacity-50">
+        {pending ? "Approving…" : "Approve (Ordift internal)"}
+      </button>
+      <FormError state={state} />
+    </form>
+  );
+}
+
+function VariationsSubsection({ vendorId, workOrderAgreementId, variations }: { vendorId: string; workOrderAgreementId: string; variations: AgreementAmendment[] }) {
+  return (
+    <div className="mt-2 space-y-2 border-t border-black/10 pt-2">
+      <p className="font-sans text-caption font-semibold text-ordift-ink-muted">Variations / Change Orders (OS-LGL-009C)</p>
+      {variations.length > 0 && (
+        <ul className="space-y-1">
+          {variations.map((v) => (
+            <li key={v.id} className="flex flex-wrap items-center gap-2 font-sans text-caption text-ordift-ink-muted">
+              <span>#{v.amendmentNumber} — {v.reason}</span>
+              <span className={`px-2 py-0.5 rounded-full whitespace-nowrap ${v.status === "approved" ? "bg-green-100 text-green-800" : "bg-black/5"}`}>{v.status}</span>
+              {v.status === "draft" && <ApproveVariationForm vendorId={vendorId} amendmentId={v.id} />}
+            </li>
+          ))}
+        </ul>
+      )}
+      <CreateVariationForm vendorId={vendorId} workOrderAgreementId={workOrderAgreementId} />
+    </div>
+  );
+}
+
 function WorkOrdersSection({
   vendorId,
   frameworkAgreement,
   workOrders,
+  variationsByWorkOrderId,
 }: {
   vendorId: string;
   frameworkAgreement: VendorAgreementSummary | null;
   workOrders: VendorAgreementSummary[];
+  variationsByWorkOrderId: Record<string, AgreementAmendment[]>;
 }) {
   const frameworkIssued = frameworkAgreement && frameworkAgreement.status !== "draft" && frameworkAgreement.status !== "internal_review";
   return (
@@ -860,6 +932,9 @@ function WorkOrdersSection({
                   {wo.status === "approved_for_issue" && <IssueWorkOrderForm vendorId={vendorId} agreementId={wo.id} />}
                   {wo.status === "sent" && <p className="font-sans text-caption text-ordift-ink-muted">Issued and sent for signature.</p>}
                   {wo.status === "fully_executed" && <p className="font-sans text-caption text-green-700">Fully executed.</p>}
+                  {wo.status !== "draft" && wo.status !== "internal_review" && (
+                    <VariationsSubsection vendorId={vendorId} workOrderAgreementId={wo.id} variations={variationsByWorkOrderId[wo.id] ?? []} />
+                  )}
                 </li>
               ))}
             </ul>

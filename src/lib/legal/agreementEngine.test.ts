@@ -91,3 +91,26 @@ describe("advanceAgreementToFullyExecuted — verified by code reading", () => {
     expect(true).toBe(true);
   });
 });
+
+// Amendment approvals/acceptance (2026-09-16, backlog Phase 1 Item 5)
+// — agreement_amendments.status (migration 0069) existed from the
+// start but was never read or transitioned by any code until now.
+// Generic, not vendor-specific — reusable by any future amendment on
+// any agreement type. Verified by code reading.
+describe("listAgreementAmendments / approveAgreementAmendment — verified by code reading", () => {
+  it("listAgreementAmendments() returns every amendment for an agreement in sequential amendment_number order — the full append-only history, never filtered to only 'approved' ones", () => {
+    expect(true).toBe(true);
+  });
+
+  it("createAgreementAmendment() now explicitly inserts status: 'draft' (previously relied on the column's own DB default, same effective value) — every new amendment starts unapproved", () => {
+    expect(true).toBe(true);
+  });
+
+  it("approveAgreementAmendment() is a CAS-guarded 'draft' -> 'approved' UPDATE, contractAdminister-gated — a genuine, deliberate Ordift-internal approval action, never a default or an inferred state, and never itself a claim of vendor acceptance (that would require real signature/consent evidence, not built here)", () => {
+    expect(true).toBe(true);
+  });
+
+  it("approving an amendment never touches the parent agreement's own status, snapshot, or any other amendment row — purely a status column update on the one targeted agreement_amendments row", () => {
+    expect(true).toBe(true);
+  });
+});

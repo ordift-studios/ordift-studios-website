@@ -441,6 +441,7 @@ export async function createAgreementAmendment(params: {
       amendment_number: nextNumber,
       reason: params.reason,
       changes: params.changes,
+      status: "draft",
       created_by: params.actorUserId,
     })
     .select("id")
@@ -459,4 +460,78 @@ export async function createAgreementAmendment(params: {
   });
 
   return { ok: true, amendmentId: data.id, amendmentNumber: nextNumber };
+}
+
+// Amendment approvals/acceptance (2026-09-16, backlog Phase 1 Item 5) —
+// agreement_amendments.status (migration 0069) has always existed but
+// nothing ever read or transitioned it; every amendment sat permanently
+// at its DB default 'draft'. This is the first real read/write path for
+// it — generic, reusable by any agreement type's amendments, not
+// vendor-specific. Deliberately Ordift-internal approval only, never a
+// fabricated vendor "acceptance": recording genuine vendor acceptance
+// of a Variation would need real consent/signature evidence (a future
+// signatureEngine.ts integration), not a checkbox standing in for one.
+
+export type AgreementAmendment = {
+  id: string;
+  agreementId: string;
+  amendmentNumber: number;
+  reason: string;
+  changes: Record<string, unknown>;
+  status: string;
+  createdAt: string;
+  createdBy: string | null;
+};
+
+const AMENDMENT_SELECT = "id, agreement_id, amendment_number, reason, changes, status, created_at, created_by";
+
+function mapAmendment(r: {
+  id: string;
+  agreement_id: string;
+  amendment_number: number;
+  reason: string;
+  changes: Record<string, unknown>;
+  status: string;
+  created_at: string;
+  created_by: string | null;
+}): AgreementAmendment {
+  return {
+    id: r.id,
+    agreementId: r.agreement_id,
+    amendmentNumber: r.amendment_number,
+    reason: r.reason,
+    changes: r.changes,
+    status: r.status,
+    createdAt: r.created_at,
+    createdBy: r.created_by,
+  };
+}
+
+export async function listAgreementAmendments(agreementId: string): Promise<AgreementAmendment[]> {
+  const admin = createAdminClient();
+  const { data, error } = await admin.from("agreement_amendments").select(AMENDMENT_SELECT).eq("agreement_id", agreementId).order("amendment_number", { ascending: true });
+  if (error) {
+    console.error("[legal] failed to load agreement_amendments", error.message);
+    return [];
+  }
+  return (data ?? []).map(mapAmendment);
+}
+
+// CAS-guarded 'draft' -> 'approved' only — a real, deliberate Super
+// Admin/contractAdminister action, never a default or an inferred
+// state. Refuses on anything already approved (idempotent-safe, never
+// double-approves or regresses).
+export async function approveAgreementAmendment(params: { amendmentId: string; actorUserId: string }): Promise<{ ok: true } | { ok: false; error: string }> {
+  const auth = await requireContractAdminister(params.actorUserId);
+  if (!auth.ok) return auth;
+
+  const admin = createAdminClient();
+  const { error } = await admin.from("agreement_amendments").update({ status: "approved" }).eq("id", params.amendmentId).eq("status", "draft");
+  if (error) {
+    console.error("[legal] failed to approve agreement amendment", error.message);
+    return { ok: false, error: "Failed to approve the amendment." };
+  }
+
+  await logActivity({ actorUserId: params.actorUserId, action: "legal.agreement.amendment_approved", entityType: "agreement_amendment", entityId: params.amendmentId });
+  return { ok: true };
 }

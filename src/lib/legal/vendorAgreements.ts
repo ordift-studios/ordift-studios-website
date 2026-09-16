@@ -1,5 +1,5 @@
 import { createAdminClient } from "@/lib/supabase/admin";
-import { createDraftAgreement, addAgreementParty, attachAgreementSnapshot, createAgreementAmendment } from "./agreementEngine";
+import { createDraftAgreement, addAgreementParty, attachAgreementSnapshot, createAgreementAmendment, listAgreementAmendments } from "./agreementEngine";
 import { isTerminalAgreementStatus, isIssuedAgreementStatus, type AgreementLifecycleStatus } from "./agreementLifecycle";
 import { checkVendorAgreementJurisdiction } from "./vendorAgreementJurisdictionGate";
 import { VENDOR_FRAMEWORK_VARIABLES, type VendorFrameworkVariableKey } from "./documents/os-lgl-009a-vendor-supplier-framework-agreement";
@@ -445,6 +445,13 @@ export async function createVendorWorkOrderVariation(params: {
     changes: params.changes,
     actorUserId: params.actorUserId,
   });
+}
+
+// Read-only, thin wrapper over the generic listAgreementAmendments() —
+// every Variation/Change Order (OS-LGL-009C) ever recorded against this
+// Work Order, in sequential order, append-only history intact.
+export async function listVendorWorkOrderVariations(workOrderAgreementId: string) {
+  return listAgreementAmendments(workOrderAgreementId);
 }
 
 // Evidence-only derive for the vendor_supplier_agreement_executed

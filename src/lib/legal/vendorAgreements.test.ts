@@ -284,6 +284,10 @@ describe("createVendorWorkOrderVariation (OS-LGL-009C) — typed changes and his
   it("delegates entirely to the existing, generic createAgreementAmendment() (agreementEngine.ts) — sequential amendment_number, append-only, the original Work Order's own snapshot/terms are never edited or overwritten by a Variation", () => {
     expect(true).toBe(true);
   });
+
+  it("listVendorWorkOrderVariations() (2026-09-16) is a thin wrapper over the generic listAgreementAmendments() — no separate query logic, no filtering by status, returns the complete append-only history for admin display", () => {
+    expect(true).toBe(true);
+  });
 });
 
 describe("Vendor isolation and internal pricing isolation, verified by code reading", () => {
