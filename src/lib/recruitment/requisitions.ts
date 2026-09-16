@@ -25,7 +25,7 @@ async function requirePeopleAdministerOrSuperAdmin(actorUserId: string): Promise
 // is the only path that can move a requisition past People/Recruitment
 // review, independent of who requested it.
 
-export type HireOrigin = "standard_recruitment" | "founder_direct_hire";
+export type HireOrigin = "standard_recruitment" | "founder_direct_hire" | "existing_account_conversion";
 
 export type RecruitmentRequisition = {
   id: string;
@@ -204,32 +204,47 @@ export async function createRecruitmentRequisition(params: CreateRequisitionPara
   // standard requisition: a direct hire names a specific real person
   // and skips the public application process, so only a genuine Super
   // Admin may open one.
-  if (hireOrigin === "founder_direct_hire") {
-    if (!(await isSuperAdminId(params.requestedBy))) {
-      return { ok: false, error: "Only a Super Admin can create a Founder Direct Hire requisition." };
+  const NAMED_PERSON_ORIGINS = new Set(["founder_direct_hire", "existing_account_conversion"]);
+  if (NAMED_PERSON_ORIGINS.has(hireOrigin)) {
+    if (hireOrigin === "founder_direct_hire") {
+      // E.5 Stage 2M, Part 2 — "unauthorized users cannot manufacture
+      // Founder-direct hires." Deliberately stricter than the coarse
+      // People/Recruitment tier: a direct hire names a specific real
+      // person and skips the public application process, so only a
+      // genuine Super Admin may open one.
+      if (!(await isSuperAdminId(params.requestedBy))) {
+        return { ok: false, error: "Only a Super Admin can create a Founder Direct Hire requisition." };
+      }
+    } else {
+      // existing_account_conversion (2026-09-16, Recruitment/Hiring
+      // convergence Route 3) — IDENTITY REUSE, not a public-application
+      // bypass in the same sense as Founder Direct Hire, so this uses
+      // the same People/Recruitment-or-Super-Admin tier a standard
+      // requisition already requires, never the stricter Super-Admin-only
+      // bar.
+      const auth = await requirePeopleAdministerOrSuperAdmin(params.requestedBy);
+      if (!auth.ok) return auth;
     }
     if (!params.directHireProfileId) {
-      return { ok: false, error: "A Founder Direct Hire requisition must name the specific person being hired." };
+      return { ok: false, error: "This requisition origin must name the specific person." };
     }
 
     // Duplicate-submission guard (Vendor Completion Phase follow-up,
-    // 2026-09-15) — root cause of a real Production incident: the
-    // Founder Direct Hire form previously gave no pending/success
-    // feedback (fixed alongside this, see FounderDirectHireForm.tsx),
-    // so a slow response looked like nothing happened and was
+    // 2026-09-15; generalized 2026-09-16 to cover both named-person
+    // origins) — root cause of a real Production incident: a form with
+    // no pending/success feedback looked like nothing happened and was
     // resubmitted, silently creating two usable, approved requisitions
-    // for the same person (createAndApproveFounderDirectHire()
-    // auto-approves in the same call). Refuses a second Direct Hire
-    // requisition for the same person while an earlier one is still
-    // approved and not yet consumed by starting onboarding — never
-    // blocks a genuinely new direct hire once the prior one has been
-    // used (linked to a staff_onboarding row) or rejected.
+    // for the same person. Refuses a second requisition for the same
+    // person+origin while an earlier one is still approved and not yet
+    // consumed by starting onboarding — never blocks a genuinely new
+    // one once the prior has been used (linked to a staff_onboarding
+    // row) or rejected.
     const admin = createAdminClient();
     const { data: existingForPerson } = await admin
       .from("recruitment_requisitions")
       .select("id, request_id")
       .eq("direct_hire_profile_id", params.directHireProfileId)
-      .eq("hire_origin", "founder_direct_hire");
+      .eq("hire_origin", hireOrigin);
     if (existingForPerson && existingForPerson.length > 0) {
       const requestIds = existingForPerson.map((r) => r.request_id);
       const [{ data: requests }, { data: linkedRows }] = await Promise.all([
@@ -240,7 +255,7 @@ export async function createRecruitmentRequisition(params: CreateRequisitionPara
       const linkedRequisitionIds = new Set((linkedRows ?? []).map((r) => r.requisition_id as string));
       const hasUnresolvedApproved = existingForPerson.some((r) => approvedRequestIds.has(r.request_id) && !linkedRequisitionIds.has(r.id));
       if (hasUnresolvedApproved) {
-        return { ok: false, error: "An approved Founder Direct Hire requisition already exists for this person and has not yet been used to start onboarding. Use that existing requisition, or reject it first, rather than creating a duplicate." };
+        return { ok: false, error: "An approved requisition of this kind already exists for this person and has not yet been used to start onboarding. Use that existing requisition, or reject it first, rather than creating a duplicate." };
       }
     }
   } else if (params.directHireProfileId) {
@@ -295,9 +310,45 @@ export async function createRecruitmentRequisition(params: CreateRequisitionPara
       entityId: params.directHireProfileId!,
       metadata: { requisitionId: data.id },
     });
+  } else if (hireOrigin === "existing_account_conversion") {
+    await logActivity({
+      actorUserId: params.requestedBy,
+      action: "recruitment_requisition.existing_account_conversion_created",
+      entityType: "user",
+      entityId: params.directHireProfileId!,
+      metadata: { requisitionId: data.id },
+    });
   }
 
   return { ok: true, requisitionId: data.id };
+}
+
+// Recruitment/Hiring convergence, Route 3: Existing Client/Account ->
+// Staff (2026-09-16). IDENTITY REUSE — the person already has a real
+// account (most commonly Client); this never deletes/recreates them,
+// never issues a new invitation, never assigns a new member number
+// (assignClassification()'s own idempotent-by-construction guard
+// already prevents that). It only opens and auto-approves a governed
+// hiring record naming them, the same "create then decideRequisition()"
+// convenience as createAndApproveFounderDirectHire(), under the
+// broader People/Recruitment-or-Super-Admin tier (not Super-Admin-only
+// — this is not a public-process bypass, just a real hiring decision
+// about someone Ordift already knows).
+export async function createAndApproveExistingAccountConversion(
+  params: Omit<CreateRequisitionParams, "hireOrigin"> & { directHireProfileId: string; decisionNotes?: string | null }
+): Promise<CreateRequisitionResult> {
+  const created = await createRecruitmentRequisition({ ...params, hireOrigin: "existing_account_conversion" });
+  if (!created.ok) return created;
+
+  const decided = await decideRequisition({
+    requisitionId: created.requisitionId,
+    decision: "approved",
+    decisionNotes: params.decisionNotes ?? "Existing Client/Account -> Staff — created and approved in one workflow.",
+    actorUserId: params.requestedBy,
+  });
+  if (!decided.ok) return { ok: false, error: decided.error };
+
+  return created;
 }
 
 // Convenience for "a Founder should be able to create and approve such

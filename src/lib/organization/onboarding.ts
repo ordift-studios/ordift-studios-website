@@ -3,7 +3,7 @@ import { logActivity } from "@/lib/admin/activityLog";
 import { isSuperAdminId, hasJurisdictionAuthority } from "@/lib/organization/authority";
 import { resolveOnboardingPipeline, canAdvanceToStage, isTerminalStage, stagesForPipeline, type OnboardingPipeline, type OnboardingStage } from "@/lib/organization/onboardingStages";
 import { getUnsatisfiedRequiredRequirements, getUnsatisfiedRequiredForStage } from "@/lib/organization/onboardingRequirements";
-import { getApprovedRequisitionForOnboarding } from "@/lib/recruitment/requisitions";
+import { getApprovedRequisitionForOnboarding, getSourceRecruitmentApplicationId } from "@/lib/recruitment/requisitions";
 import { assignPermanentStaffNumberIfEligible } from "@/lib/portal/memberNumbers";
 
 // Ordift Organizational & Administrative Architecture V1, Phase 3.3,
@@ -174,12 +174,22 @@ export async function startStaffOnboarding(params: {
     engagementTypeSlug = engagementType?.slug ?? null;
   }
 
+  // Recruitment/Hiring convergence (2026-09-16) — auto-resolves the
+  // real originating application via the SAME link the Proceed-to-Hire
+  // bridge already writes (getSourceRecruitmentApplicationId), so the
+  // full Person -> Application -> Hiring -> Account -> Onboarding chain
+  // stays connected without the caller needing to know or re-pass it.
+  // A caller-supplied value still always wins; genuinely not every hire
+  // has a recruitment_application (Founder Direct Hire, existing-account
+  // conversion) — this resolves to null for those, exactly as before.
+  const recruitmentApplicationId = params.recruitmentApplicationId ?? (await getSourceRecruitmentApplicationId(params.profileId));
+
   const { data, error } = await admin
     .from("staff_onboarding")
     .insert({
       profile_id: params.profileId,
       requisition_id: params.requisitionId,
-      recruitment_application_id: params.recruitmentApplicationId ?? null,
+      recruitment_application_id: recruitmentApplicationId,
       start_date: params.startDate ?? null,
       created_by: params.actorUserId,
       ...(engagementTypeSlug ? { pipeline: resolveOnboardingPipeline(engagementTypeSlug) } : {}),
@@ -249,11 +259,13 @@ export async function startExternalWorkforceOnboarding(params: {
 
   const admin = createAdminClient();
   const stages = stagesForPipeline(pipeline);
+  // Same auto-resolution as startStaffOnboarding() above.
+  const recruitmentApplicationId = params.recruitmentApplicationId ?? (await getSourceRecruitmentApplicationId(params.profileId));
   const { data, error } = await admin
     .from("staff_onboarding")
     .insert({
       profile_id: params.profileId,
-      recruitment_application_id: params.recruitmentApplicationId ?? null,
+      recruitment_application_id: recruitmentApplicationId,
       requisition_id: params.requisitionId ?? null,
       pipeline,
       stage: stages[0],

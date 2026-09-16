@@ -24,6 +24,7 @@ import {
   assignStaffPositionAction,
   startStaffOnboardingAction,
   createStandardHireRequisitionFromApplicationAction,
+  createExistingAccountConversionRequisitionAction,
   completeStaffOnboardingAction,
   assignToProjectAction,
   updateAssignmentStatusAction,
@@ -914,12 +915,18 @@ function UserDetail({
                 one.
               </p>
               {user.positionId ? (
-                <CreateStandardHireRequisitionButton userId={user.id} positionId={user.positionId} engagementTypeId={user.engagementTypeId} />
+                <div className="flex flex-wrap gap-2">
+                  <CreateStandardHireRequisitionButton userId={user.id} positionId={user.positionId} engagementTypeId={user.engagementTypeId} />
+                  {!user.roles.includes("staff") && (
+                    <CreateExistingAccountConversionButton userId={user.id} positionId={user.positionId} engagementTypeId={user.engagementTypeId} />
+                  )}
+                </div>
               ) : (
                 <p>
                   Create and approve a Standard Recruitment or Founder Direct Hire requisition in{" "}
                   <Link href="/admin/operations" className="underline underline-offset-4">Operations</Link> first —
-                  or, if this account came from an accepted recruitment application, assign a Position above first.
+                  or, if this account came from an accepted recruitment application or is an existing Client/other
+                  account becoming Staff, assign a Position above first.
                 </p>
               )}
             </div>
@@ -1219,6 +1226,54 @@ function CreateStandardHireRequisitionButton({
         className="font-sans text-caption font-semibold underline underline-offset-4 disabled:opacity-50"
       >
         {pending ? "Creating…" : "Create Hiring Requisition from Application"}
+      </button>
+      {error && <p className="text-red-700 mt-1">{error}</p>}
+    </div>
+  );
+}
+
+// Recruitment/Hiring convergence, Route 3: Existing Client/Account ->
+// Staff (2026-09-16). IDENTITY REUSE — creates+approves an
+// existing_account_conversion requisition naming this exact account,
+// never a new person/invitation/member number.
+function CreateExistingAccountConversionButton({
+  userId,
+  positionId,
+  engagementTypeId,
+}: {
+  userId: string;
+  positionId: string;
+  engagementTypeId: string | null;
+}) {
+  const [pending, startTransition] = useTransition();
+  const [error, setError] = useState<string | null>(null);
+  const [done, setDone] = useState(false);
+
+  function submit() {
+    setError(null);
+    const fd = new FormData();
+    fd.set("userId", userId);
+    fd.set("positionId", positionId);
+    if (engagementTypeId) fd.set("engagementTypeId", engagementTypeId);
+    startTransition(async () => {
+      const result = await createExistingAccountConversionRequisitionAction(fd);
+      if (result.error) setError(result.error);
+      else setDone(true);
+    });
+  }
+
+  if (done) return <p className="text-green-700">Requisition created and approved — choose it above to start onboarding.</p>;
+
+  return (
+    <div>
+      <button
+        type="button"
+        onClick={submit}
+        disabled={pending}
+        aria-busy={pending}
+        className="font-sans text-caption font-semibold underline underline-offset-4 disabled:opacity-50"
+      >
+        {pending ? "Creating…" : "Create Hiring Requisition — Existing Account → Staff"}
       </button>
       {error && <p className="text-red-700 mt-1">{error}</p>}
     </div>
