@@ -37,6 +37,37 @@ export async function listBusinessTravelAuthorizationsForProfile(profileId: stri
   }));
 }
 
+// Needs My Approval / Action centre (2026-09-16) — the cross-staff
+// counterpart to listBusinessTravelAuthorizationsForProfile(): every
+// authorization still awaiting approveBusinessTravelAuthorization(),
+// across every person. Two queries joined in JS, matching the
+// established pattern (see getPublicTeamMembers.ts).
+export async function listBusinessTravelAuthorizationsAwaitingApproval(): Promise<
+  { id: string; profileId: string; profileFullName: string | null; destinationCountry: string; purpose: string; createdAt: string }[]
+> {
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from("business_travel_authorizations")
+    .select("id, profile_id, destination_country, purpose, created_at")
+    .eq("status", "requested")
+    .order("created_at", { ascending: true });
+  if (error) {
+    console.error("[organization] failed to load pending business_travel_authorizations", error.message);
+    return [];
+  }
+  const profileIds = [...new Set((data ?? []).map((r) => r.profile_id))];
+  const { data: profiles } = await admin.from("profiles").select("id, full_name").in("id", profileIds);
+  const nameById = new Map((profiles ?? []).map((p) => [p.id, p.full_name as string | null]));
+  return (data ?? []).map((r) => ({
+    id: r.id,
+    profileId: r.profile_id,
+    profileFullName: nameById.get(r.profile_id) ?? null,
+    destinationCountry: r.destination_country,
+    purpose: r.purpose,
+    createdAt: r.created_at,
+  }));
+}
+
 export async function listDriverAuthorizationsForProfile(profileId: string): Promise<
   { id: string; licenseNumber: string | null; licenseClass: string | null; licenseExpiryDate: string | null; authorizedVehicleTypes: string | null; status: string; authorizedAt: string }[]
 > {

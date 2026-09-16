@@ -315,6 +315,38 @@ export async function listAssetIncidentReportsForProfile(profileId: string): Pro
   }));
 }
 
+// Needs My Approval / Action centre (2026-09-16) — the cross-staff
+// counterpart to listAssetIncidentReportsForProfile(): every incident
+// still awaiting determineAssetIncident(), across every person. Two
+// queries joined in JS rather than a PostgREST embed, matching the
+// established pattern (see getPublicTeamMembers.ts) — profiles has no
+// single unambiguous FK from asset_incident_reports worth relying on.
+export async function listAssetIncidentsAwaitingDetermination(): Promise<
+  { id: string; profileId: string; profileFullName: string | null; incidentType: string; description: string; reportedAt: string }[]
+> {
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from("asset_incident_reports")
+    .select("id, profile_id, incident_type, description, reported_at")
+    .eq("determination", "pending")
+    .order("reported_at", { ascending: true });
+  if (error) {
+    console.error("[organization] failed to load pending asset_incident_reports", error.message);
+    return [];
+  }
+  const profileIds = [...new Set((data ?? []).map((r) => r.profile_id))];
+  const { data: profiles } = await admin.from("profiles").select("id, full_name").in("id", profileIds);
+  const nameById = new Map((profiles ?? []).map((p) => [p.id, p.full_name as string | null]));
+  return (data ?? []).map((r) => ({
+    id: r.id,
+    profileId: r.profile_id,
+    profileFullName: nameById.get(r.profile_id) ?? null,
+    incidentType: r.incident_type,
+    description: r.description,
+    reportedAt: r.reported_at,
+  }));
+}
+
 export async function listAssetAssignmentsForProfile(profileId: string): Promise<{ id: string; assetId: string; status: string; issuedAt: string; returnedAt: string | null }[]> {
   const admin = createAdminClient();
   const { data, error } = await admin.from("asset_assignments").select("id, asset_id, status, issued_at, returned_at").eq("profile_id", profileId).order("issued_at", { ascending: false });
