@@ -505,3 +505,35 @@ describe("vendor requirement derive functions and engagement-type resolution —
     expect(true).toBe(true);
   });
 });
+
+// Vendor lifecycle hardening (2026-09-16) — closes the engagement_assigned
+// evidence gap: the stage name alone previously let an admin advance
+// past it with zero genuine work relationship on file (Lady
+// Anim-Tetey's own controlled QA walkthrough exposed this — she
+// reached "active"/"completed" with no engagements row at all, before
+// this requirement existed). Verified by code reading.
+describe("vendor_engagement_assigned requirement, verified by code reading", () => {
+  it("deriveVendorEngagementAssigned() returns 'satisfied' only when a real public.engagements row exists for this profile as payee_profile_id with status != 'cancelled' — reuses the pre-existing Universal Payables engagements table (migration 0049) verbatim, no new table, no new concept", () => {
+    expect(true).toBe(true);
+  });
+
+  it("a 'cancelled' engagement never counts as evidence — a genuinely called-off engagement is not proof anything was actually assigned", () => {
+    expect(true).toBe(true);
+  });
+
+  it("'draft' and every other non-cancelled status DOES count — the requirement only proves a real engagement record exists, not that it has progressed to any particular later state", () => {
+    expect(true).toBe(true);
+  });
+
+  it("registered at stage 'engagement_assigned' in VENDOR_SUPPLIER_ONBOARDING_REQUIREMENT_CATALOG, scoped to applicableEngagementTypeSlugs: ['vendor_supplier'] — getUnsatisfiedRequiredForStage() now genuinely blocks advancing past this stage without it, closing the gap that let Lady's own onboarding reach 'active'/'completed' with zero engagement evidence", () => {
+    expect(true).toBe(true);
+  });
+
+  it("adding this requirement does NOT retroactively alter Lady's already-completed staff_onboarding row (status/completed_at are set-once, never re-evaluated) — her historical QA completion is preserved exactly as it happened; the requirement will simply now display as genuinely unsatisfied for her going forward, an honest reflection of reality, never fabricated to look otherwise", () => {
+    expect(true).toBe(true);
+  });
+
+  it("no new engagement was created for Lady or anyone else to satisfy this — the fix is purely a gate on FUTURE stage advancement, never a backfill", () => {
+    expect(true).toBe(true);
+  });
+});

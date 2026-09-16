@@ -245,6 +245,22 @@ async function deriveVendorPaymentSetupCompleted(profileId: string): Promise<Req
   return data ? "satisfied" : null;
 }
 
+// Vendor lifecycle hardening (2026-09-16) — the "engagement_assigned"
+// stage name is not itself evidence anything real was assigned; an
+// admin could previously advance past it with zero genuine work
+// relationship on file. "satisfied" means at least one real
+// public.engagements row exists for this vendor with a real,
+// non-cancelled status — reuses the existing, pre-existing Universal
+// Payables engagements table (migration 0049) as-is, never a new
+// concept. A 'cancelled' engagement is not evidence of a genuine
+// assignment; every other status (including 'draft') is a real record
+// someone created, not fabricated by this check.
+async function deriveVendorEngagementAssigned(profileId: string): Promise<RequirementStatus | null> {
+  const admin = createAdminClient();
+  const { data } = await admin.from("engagements").select("id").eq("payee_profile_id", profileId).neq("status", "cancelled").limit(1).maybeSingle();
+  return data ? "satisfied" : null;
+}
+
 export const EMPLOYEE_ONBOARDING_REQUIREMENT_CATALOG: readonly RequirementTemplate[] = [
   {
     requirementKey: "identity_documents_verified",
@@ -366,6 +382,16 @@ export const VENDOR_SUPPLIER_ONBOARDING_REQUIREMENT_CATALOG: readonly Requiremen
     required: true,
     responsibleRole: "super_admin",
     derive: deriveVendorPaymentSetupCompleted,
+    applicableEngagementTypeSlugs: ["vendor_supplier"],
+  },
+  {
+    requirementKey: "vendor_engagement_assigned",
+    stage: "engagement_assigned",
+    requirementType: "task",
+    label: "Genuine engagement/Work Order on file",
+    required: true,
+    responsibleRole: "super_admin",
+    derive: deriveVendorEngagementAssigned,
     applicableEngagementTypeSlugs: ["vendor_supplier"],
   },
 ] as const;
