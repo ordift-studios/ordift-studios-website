@@ -114,6 +114,12 @@ const WORK_PATTERN_TYPE_LABELS: Record<WorkPatternType, string> = {
   flexible_executive: "Flexible Executive",
 };
 
+function personInitials(name: string | null): string {
+  if (!name) return "?";
+  const parts = name.trim().split(/\s+/);
+  return ((parts[0]?.[0] ?? "") + (parts[parts.length - 1]?.[0] ?? "")).toUpperCase();
+}
+
 // Person Detail View (Organizational Structure & Authority Grants V1,
 // 2026-09-07, Part 51) — Identity/Organization/Engagement/Access/
 // Authority/Compliance-Onboarding/Work Email/History as clearly
@@ -234,19 +240,39 @@ export default async function PersonDetailPage({ params }: { params: Promise<{ i
 
   return (
     <div className="space-y-8">
-      <div>
-        <p className="font-sans font-semibold uppercase tracking-[0.2em] text-eyebrow text-ordift-gold-pressed mb-2">
-          Admin · Organization
-        </p>
-        <h1 className="font-serif font-medium text-section-heading lg:text-section-heading-desktop text-ordift-ink">
-          {person.fullName ?? person.email ?? id}
-        </h1>
-        <p className="font-sans text-body-small text-ordift-ink-muted mt-2">
-          <Link href="/admin/organization" className="underline underline-offset-4">← Organization</Link>
-          {" · "}
-          <Link href="/admin/users" className="underline underline-offset-4">Users & Roles</Link>
-          {serviceLength && ` · Service: ${serviceLength.formatted}`}
-        </p>
+      <div className="flex items-start gap-4">
+        {/* Same profiles.avatar_url/avatar_focal_x/avatar_focal_y source
+            as the People Directory cards and Meet the Team — never a
+            fabricated photo. Initials fallback when none exists. */}
+        {person.avatarUrl ? (
+          <div className="w-14 h-14 rounded-full overflow-hidden shrink-0 bg-ordift-navy-950">
+            {/* eslint-disable-next-line @next/next/no-img-element -- arbitrary Storage URL */}
+            <img
+              src={person.avatarUrl}
+              alt=""
+              className="w-full h-full object-cover"
+              style={{ objectPosition: `${person.avatarFocalX}% ${person.avatarFocalY}%` }}
+            />
+          </div>
+        ) : (
+          <div className="w-14 h-14 rounded-full bg-ordift-navy-950 text-white flex items-center justify-center font-sans text-body font-semibold shrink-0">
+            {personInitials(person.fullName)}
+          </div>
+        )}
+        <div>
+          <p className="font-sans font-semibold uppercase tracking-[0.2em] text-eyebrow text-ordift-gold-pressed mb-2">
+            Admin · Organization
+          </p>
+          <h1 className="font-serif font-medium text-section-heading lg:text-section-heading-desktop text-ordift-ink">
+            {person.fullName ?? person.email ?? id}
+          </h1>
+          <p className="font-sans text-body-small text-ordift-ink-muted mt-2">
+            <Link href="/admin/organization" className="underline underline-offset-4">← Organization</Link>
+            {" · "}
+            <Link href="/admin/users" className="underline underline-offset-4">Users & Roles</Link>
+            {serviceLength && ` · Service: ${serviceLength.formatted}`}
+          </p>
+        </div>
       </div>
 
       {/* Section jump-nav (Phase B6 Step 7, 2026-09-15) — this page has

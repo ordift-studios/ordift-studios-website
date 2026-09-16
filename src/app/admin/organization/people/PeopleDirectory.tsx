@@ -6,16 +6,41 @@ import type { AdminUserRow } from "@/lib/portal/adminData";
 
 // People Directory (2026-09-16) — reuses listUsersWithRoles() exactly
 // as /admin/users already does; this is a second VIEW over the same
-// accounts, never a second source of truth. No photo/avatar field
-// exists on AdminUserRow yet, so every card uses a safe initials
-// fallback — never a fabricated photograph.
+// accounts, never a second source of truth. Photos reuse the SAME
+// profiles.avatar_url/avatar_focal_x/avatar_focal_y columns Meet the
+// Team reads (see getPublicTeamMembers.ts / MeetTheTeamCarousel.tsx) —
+// never a second photo source, never a fabricated image. A person with
+// no genuine photo on record always falls back to initials.
 function initials(name: string | null): string {
   if (!name) return "?";
   const parts = name.trim().split(/\s+/);
   return ((parts[0]?.[0] ?? "") + (parts[parts.length - 1]?.[0] ?? "")).toUpperCase();
 }
 
-function Avatar({ name }: { name: string | null }) {
+function Avatar({
+  name,
+  avatarUrl,
+  avatarFocalX,
+  avatarFocalY,
+}: {
+  name: string | null;
+  avatarUrl: string | null;
+  avatarFocalX: number;
+  avatarFocalY: number;
+}) {
+  if (avatarUrl) {
+    return (
+      <div className="w-10 h-10 rounded-full overflow-hidden shrink-0 bg-ordift-navy-950">
+        {/* eslint-disable-next-line @next/next/no-img-element -- arbitrary Storage URL, not a static/local asset next/image can optimize */}
+        <img
+          src={avatarUrl}
+          alt=""
+          className="w-full h-full object-cover"
+          style={{ objectPosition: `${avatarFocalX}% ${avatarFocalY}%` }}
+        />
+      </div>
+    );
+  }
   return (
     <div className="w-10 h-10 rounded-full bg-ordift-navy-950 text-white flex items-center justify-center font-sans text-caption font-semibold shrink-0">
       {initials(name)}
@@ -99,7 +124,7 @@ export function PeopleDirectory({ people }: { people: AdminUserRow[] }) {
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {filtered.map((p) => (
             <Link key={p.id} href={`/admin/organization/people/${p.id}`} className="rounded-xl border border-black/10 bg-white p-4 flex gap-3 hover:border-ordift-gold/60 transition-colors">
-              <Avatar name={p.fullName} />
+              <Avatar name={p.fullName} avatarUrl={p.avatarUrl} avatarFocalX={p.avatarFocalX} avatarFocalY={p.avatarFocalY} />
               <div className="min-w-0">
                 <p className="font-sans text-body-small font-semibold text-ordift-ink truncate">{p.fullName ?? "(no name on record)"}</p>
                 <p className="font-sans text-caption text-ordift-ink-muted truncate">{p.positionName ?? p.operationalTitleName ?? "—"}</p>

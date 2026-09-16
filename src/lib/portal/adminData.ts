@@ -83,6 +83,14 @@ export type AdminUserRow = {
   // them rather than showing a value that wouldn't actually control
   // anything.
   newBookingAlertsEnabled: boolean;
+  // People Directory profile photos (2026-09-16) — the SAME
+  // profiles.avatar_url/avatar_focal_x/avatar_focal_y columns Meet the
+  // Team reads (see getPublicTeamMembers.ts), never a second photo
+  // source. Null means no genuine photo has been uploaded for this
+  // person — callers must fall back to initials, never fabricate one.
+  avatarUrl: string | null;
+  avatarFocalX: number;
+  avatarFocalY: number;
 };
 
 export type AdminUserListResult =
@@ -173,7 +181,7 @@ export async function listUsersWithRoles(): Promise<AdminUserListResult> {
     admin
       .from("profiles")
       .select(
-        "id, full_name, member_number, access_status, access_status_reason, access_status_changed_at, access_expires_at"
+        "id, full_name, member_number, access_status, access_status_reason, access_status_changed_at, access_expires_at, avatar_url, avatar_focal_x, avatar_focal_y"
       ),
     admin.from("user_roles").select("user_id, role_id"),
     admin.from("roles").select("id, slug"),
@@ -325,6 +333,9 @@ export async function listUsersWithRoles(): Promise<AdminUserListResult> {
         authoritySummary: authoritySummaryByProfileId.get(u.id) ?? null,
         employmentStatus: details?.employment_status ?? null,
         newBookingAlertsEnabled: newBookingAlertPrefs.get(u.id) ?? false,
+        avatarUrl: profile?.avatar_url ?? null,
+        avatarFocalX: profile?.avatar_focal_x ?? 50,
+        avatarFocalY: profile?.avatar_focal_y ?? 50,
       };
     })
     .sort((a, b) => (a.email ?? "").localeCompare(b.email ?? ""));
