@@ -1,6 +1,7 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { logActivity } from "@/lib/admin/activityLog";
 import { isSuperAdminId, hasJurisdictionAuthority, hasManagerialAuthorityOver } from "@/lib/organization/authority";
+import { assessCoverageImpact, type CoverageAssessment } from "@/lib/organization/coverageValidation";
 
 // Ordift Studios Compliance/COMP-SYS-1, Phase B4 Step 2 (2026-09-14) —
 // leave balance/request workflow. Reuses the exact "Super Admin, or a
@@ -326,6 +327,42 @@ export async function decideLeaveRequest(params: {
   });
 
   return { ok: true };
+}
+
+// Roster/Coverage validation (backlog Phase 6, 2026-09-16) — read-only,
+// purely informational. Deliberately separate from decideLeaveRequest()
+// itself: this never blocks or alters an approval decision, only gives
+// a manager real data to weigh before deciding. "Expected" headcount is
+// every OTHER staff_details row sharing the same department_id as the
+// requester — the only genuinely-known "who else normally works here"
+// signal this codebase has today (no dedicated roster/shift-assignment
+// table exists yet). "Absent" is every profile in that same department
+// with an "approved" leave request whose own date range overlaps this
+// request's. No staffing minimum is invented or asserted anywhere here.
+export async function getLeaveRequestCoverageImpact(requestId: string): Promise<CoverageAssessment | null> {
+  const admin = createAdminClient();
+  const { data: request } = await admin.from("leave_requests").select("id, profile_id, start_date, end_date").eq("id", requestId).maybeSingle();
+  if (!request) return null;
+
+  const { data: requester } = await admin.from("staff_details").select("department_id").eq("id", request.profile_id).maybeSingle();
+  if (!requester?.department_id) return null;
+
+  const { data: deptStaff } = await admin.from("staff_details").select("id").eq("department_id", requester.department_id);
+  const expectedProfileIds = (deptStaff ?? []).map((s) => s.id).filter((id) => id !== request.profile_id);
+  if (expectedProfileIds.length === 0) return assessCoverageImpact({ expectedProfileIds: [], approvedAbsenceProfileIds: [] });
+
+  const { data: overlapping } = await admin
+    .from("leave_requests")
+    .select("profile_id")
+    .in("profile_id", expectedProfileIds)
+    .eq("status", "approved")
+    .lte("start_date", request.end_date)
+    .gte("end_date", request.start_date);
+
+  return assessCoverageImpact({
+    expectedProfileIds,
+    approvedAbsenceProfileIds: (overlapping ?? []).map((r) => r.profile_id),
+  });
 }
 
 // Withdrawal — self-service only (the requester withdrawing their own
