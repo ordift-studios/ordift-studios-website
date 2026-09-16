@@ -215,6 +215,11 @@ export async function createFounderDirectHireAction(_prev: FounderDirectHireStat
   const preferredStartDate = String(formData.get("preferredStartDate") ?? "").trim() || null;
   const justification = String(formData.get("justification") ?? "").trim() || null;
   if (!directHireProfileId || !title) return { ok: false, error: "Choose the person being hired and a requisition title." };
+  // Task 3 (2026-09-17) — jurisdiction captured at the point of
+  // decision, required (not merely optional) so a future Employment
+  // Agreement can never again hit MISSING_JURISDICTION for a Founder
+  // Direct Hire. Server-enforced, not merely the form's own `required`.
+  if (!employmentJurisdictionId) return { ok: false, error: "Select the applicable Employment Jurisdiction." };
 
   const result = await createAndApproveFounderDirectHire({
     title,

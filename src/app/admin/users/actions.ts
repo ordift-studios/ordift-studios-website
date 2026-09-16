@@ -592,7 +592,12 @@ export async function createStandardHireRequisitionFromApplicationAction(formDat
   const userId = String(formData.get("userId") ?? "");
   const positionId = String(formData.get("positionId") ?? "") || null;
   const engagementTypeId = String(formData.get("engagementTypeId") ?? "") || null;
+  const employmentJurisdictionId = String(formData.get("employmentJurisdictionId") ?? "").trim() || null;
   if (!userId || !positionId) return { error: "This account needs a Position assigned first." };
+  // Task 3 (2026-09-17) — the Kelvin bug's real root: this bridge
+  // previously created a requisition with NO employment jurisdiction at
+  // all. Required here, captured/confirmed at the point of decision.
+  if (!employmentJurisdictionId) return { error: "Select the applicable Employment Jurisdiction before creating this requisition." };
 
   const sourceApplicationId = await getSourceRecruitmentApplicationId(userId);
   if (!sourceApplicationId) {
@@ -609,6 +614,7 @@ export async function createStandardHireRequisitionFromApplicationAction(formDat
     departmentId: position.department_id,
     gradeId: position.default_grade_id,
     engagementTypeId,
+    employmentJurisdictionId,
     sourceRecruitmentApplicationId: sourceApplicationId,
     requestedBy: currentUser.id,
   });
@@ -634,7 +640,14 @@ export async function createExistingAccountConversionRequisitionAction(formData:
   const userId = String(formData.get("userId") ?? "");
   const positionId = String(formData.get("positionId") ?? "") || null;
   const engagementTypeId = String(formData.get("engagementTypeId") ?? "") || null;
+  const employmentJurisdictionId = String(formData.get("employmentJurisdictionId") ?? "").trim() || null;
   if (!userId || !positionId) return { error: "This account needs a Position assigned first." };
+  // Task 3 (2026-09-17) — jurisdiction belongs to the employment
+  // relationship, captured at the point the decision is made, never
+  // inferred later. Required here (not merely optional) so a future
+  // Employment Agreement can never again hit MISSING_JURISDICTION for
+  // a hire that went through this path.
+  if (!employmentJurisdictionId) return { error: "Select the applicable Employment Jurisdiction before creating this requisition." };
 
   const admin = createAdminClient();
   const { data: position } = await admin.from("positions").select("name, department_id, default_grade_id").eq("id", positionId).maybeSingle();
@@ -646,6 +659,7 @@ export async function createExistingAccountConversionRequisitionAction(formData:
     departmentId: position.department_id,
     gradeId: position.default_grade_id,
     engagementTypeId,
+    employmentJurisdictionId,
     directHireProfileId: userId,
     requestedBy: currentUser.id,
   });

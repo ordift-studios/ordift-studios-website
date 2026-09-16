@@ -77,8 +77,8 @@ export function FounderDirectHireForm({
           <option key={e.id} value={e.id}>{e.name}</option>
         ))}
       </select>
-      <select name="employmentJurisdictionId" defaultValue="" className="rounded-lg border border-black/15 bg-white px-2 py-1.5 font-sans text-body-small">
-        <option value="">Employment Jurisdiction — leave unset if undecided…</option>
+      <select name="employmentJurisdictionId" required defaultValue="" className="rounded-lg border border-black/15 bg-white px-2 py-1.5 font-sans text-body-small">
+        <option value="" disabled>Employment Jurisdiction…</option>
         {employmentJurisdictions.map((j) => (
           <option key={j.id} value={j.id}>{j.name}</option>
         ))}

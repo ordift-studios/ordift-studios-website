@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { getCurrentUser, isSuperAdmin } from "@/lib/portal/roles";
 import { authorizeWithSuperAdminOverride, PEOPLE_CAPABILITIES } from "@/lib/organization/authority";
-import { listUsersWithRoles, listOperationalTitles, listEngagementTypes } from "@/lib/portal/adminData";
+import { listUsersWithRoles, listOperationalTitles, listEngagementTypes, listEmploymentJurisdictions } from "@/lib/portal/adminData";
 import { listClassifications } from "@/lib/portal/memberNumbers";
 import { listPositions } from "@/lib/organization/adminData";
 import { listApprovedRequisitionsForOnboarding } from "@/lib/recruitment/requisitions";
@@ -35,13 +35,14 @@ export default async function AdminUsersPage() {
   const auth = await authorizeWithSuperAdminOverride(user.id, PEOPLE_CAPABILITIES.workforceAdminister);
   if (!auth.ok) redirect("/admin/overview");
 
-  const [result, operationalTitles, engagementTypes, classifications, positions, approvedRequisitions] = await Promise.all([
+  const [result, operationalTitles, engagementTypes, classifications, positions, approvedRequisitions, employmentJurisdictions] = await Promise.all([
     listUsersWithRoles(),
     listOperationalTitles(),
     listEngagementTypes(),
     listClassifications(),
     listPositions(),
     listApprovedRequisitionsForOnboarding(),
+    listEmploymentJurisdictions(),
   ]);
 
   return (
@@ -78,6 +79,7 @@ export default async function AdminUsersPage() {
           classifications={classifications}
           positions={positions}
           approvedRequisitions={approvedRequisitions}
+          employmentJurisdictions={employmentJurisdictions}
         />
       )}
     </div>

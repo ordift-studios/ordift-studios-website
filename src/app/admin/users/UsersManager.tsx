@@ -125,6 +125,7 @@ function UserDetail({
   classifications,
   positions,
   approvedRequisitions,
+  employmentJurisdictions,
 }: {
   user: AdminUserRow;
   currentUserIsSuperAdmin: boolean;
@@ -133,6 +134,7 @@ function UserDetail({
   classifications: MemberClassification[];
   positions: Position[];
   approvedRequisitions: RecruitmentRequisition[];
+  employmentJurisdictions: LookupOption[];
 }) {
   const [pending, startTransition] = useTransition();
   // Grant Role button feedback (2026-09-09) — its own dedicated
@@ -929,9 +931,19 @@ function UserDetail({
               </p>
               {user.positionId ? (
                 <div className="flex flex-wrap gap-2">
-                  <CreateStandardHireRequisitionButton userId={user.id} positionId={user.positionId} engagementTypeId={user.engagementTypeId} />
+                  <CreateStandardHireRequisitionButton
+                    userId={user.id}
+                    positionId={user.positionId}
+                    engagementTypeId={user.engagementTypeId}
+                    employmentJurisdictions={employmentJurisdictions}
+                  />
                   {!user.roles.includes("staff") && (
-                    <CreateExistingAccountConversionButton userId={user.id} positionId={user.positionId} engagementTypeId={user.engagementTypeId} />
+                    <CreateExistingAccountConversionButton
+                      userId={user.id}
+                      positionId={user.positionId}
+                      engagementTypeId={user.engagementTypeId}
+                      employmentJurisdictions={employmentJurisdictions}
+                    />
                   )}
                 </div>
               ) : (
@@ -1234,21 +1246,36 @@ function CreateStandardHireRequisitionButton({
   userId,
   positionId,
   engagementTypeId,
+  employmentJurisdictions,
 }: {
   userId: string;
   positionId: string;
   engagementTypeId: string | null;
+  employmentJurisdictions: LookupOption[];
 }) {
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
+  // Task 3 (2026-09-17) — the Kelvin bug's real root: this bridge
+  // created a requisition with NO employment jurisdiction at all,
+  // relying entirely on someone remembering to set it later. Jurisdiction
+  // belongs to the employment relationship and is captured/confirmed
+  // HERE, at the point of decision — never inferred from nationality,
+  // IP, or physical location, and never silently defaulted without a
+  // human confirming it.
+  const [employmentJurisdictionId, setEmploymentJurisdictionId] = useState("");
 
   function submit() {
     setError(null);
+    if (!employmentJurisdictionId) {
+      setError("Select the applicable Employment Jurisdiction first.");
+      return;
+    }
     const fd = new FormData();
     fd.set("userId", userId);
     fd.set("positionId", positionId);
     if (engagementTypeId) fd.set("engagementTypeId", engagementTypeId);
+    fd.set("employmentJurisdictionId", employmentJurisdictionId);
     startTransition(async () => {
       const result = await createStandardHireRequisitionFromApplicationAction(fd);
       if (result.error) setError(result.error);
@@ -1259,7 +1286,17 @@ function CreateStandardHireRequisitionButton({
   if (done) return <p className="text-green-700">Requisition created and approved — choose it above to start onboarding.</p>;
 
   return (
-    <div>
+    <div className="flex flex-wrap items-center gap-2">
+      <select
+        value={employmentJurisdictionId}
+        onChange={(e) => setEmploymentJurisdictionId(e.target.value)}
+        className="rounded-lg border border-black/15 bg-white px-2 py-1 font-sans text-caption"
+      >
+        <option value="" disabled>Employment jurisdiction…</option>
+        {employmentJurisdictions.map((j) => (
+          <option key={j.id} value={j.id}>{j.name}</option>
+        ))}
+      </select>
       <button
         type="button"
         onClick={submit}
@@ -1269,7 +1306,7 @@ function CreateStandardHireRequisitionButton({
       >
         {pending ? "Creating…" : "Create Hiring Requisition from Application"}
       </button>
-      {error && <p className="text-red-700 mt-1">{error}</p>}
+      {error && <p className="text-red-700 mt-1 w-full">{error}</p>}
     </div>
   );
 }
@@ -1282,21 +1319,32 @@ function CreateExistingAccountConversionButton({
   userId,
   positionId,
   engagementTypeId,
+  employmentJurisdictions,
 }: {
   userId: string;
   positionId: string;
   engagementTypeId: string | null;
+  employmentJurisdictions: LookupOption[];
 }) {
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
+  // Task 3 (2026-09-17) — jurisdiction belongs to the employment
+  // relationship, not the person's existing client/account identity;
+  // required here so it's never silently absent at agreement time.
+  const [employmentJurisdictionId, setEmploymentJurisdictionId] = useState("");
 
   function submit() {
     setError(null);
+    if (!employmentJurisdictionId) {
+      setError("Select the applicable Employment Jurisdiction first.");
+      return;
+    }
     const fd = new FormData();
     fd.set("userId", userId);
     fd.set("positionId", positionId);
     if (engagementTypeId) fd.set("engagementTypeId", engagementTypeId);
+    fd.set("employmentJurisdictionId", employmentJurisdictionId);
     startTransition(async () => {
       const result = await createExistingAccountConversionRequisitionAction(fd);
       if (result.error) setError(result.error);
@@ -1307,7 +1355,17 @@ function CreateExistingAccountConversionButton({
   if (done) return <p className="text-green-700">Requisition created and approved — choose it above to start onboarding.</p>;
 
   return (
-    <div>
+    <div className="flex flex-wrap items-center gap-2">
+      <select
+        value={employmentJurisdictionId}
+        onChange={(e) => setEmploymentJurisdictionId(e.target.value)}
+        className="rounded-lg border border-black/15 bg-white px-2 py-1 font-sans text-caption"
+      >
+        <option value="" disabled>Employment jurisdiction…</option>
+        {employmentJurisdictions.map((j) => (
+          <option key={j.id} value={j.id}>{j.name}</option>
+        ))}
+      </select>
       <button
         type="button"
         onClick={submit}
@@ -1317,7 +1375,7 @@ function CreateExistingAccountConversionButton({
       >
         {pending ? "Creating…" : "Create Hiring Requisition — Existing Account → Staff"}
       </button>
-      {error && <p className="text-red-700 mt-1">{error}</p>}
+      {error && <p className="text-red-700 mt-1 w-full">{error}</p>}
     </div>
   );
 }
@@ -1557,6 +1615,7 @@ export default function UsersManager({
   classifications,
   positions,
   approvedRequisitions,
+  employmentJurisdictions,
 }: {
   users: AdminUserRow[];
   currentUserId: string;
@@ -1566,6 +1625,7 @@ export default function UsersManager({
   classifications: MemberClassification[];
   positions: Position[];
   approvedRequisitions: RecruitmentRequisition[];
+  employmentJurisdictions: LookupOption[];
 }) {
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<"" | AdminUserRow["accessStatus"]>("");
@@ -1727,6 +1787,7 @@ export default function UsersManager({
                 classifications={classifications}
                 positions={positions}
                 approvedRequisitions={approvedRequisitions}
+                employmentJurisdictions={employmentJurisdictions}
               />
             )}
           </div>
