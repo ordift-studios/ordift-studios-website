@@ -11,6 +11,8 @@ import type { AgreementAmendment } from "@/lib/legal/agreementEngine";
 import { nextStage, isTerminalStage } from "@/lib/organization/onboardingStages";
 import { createClient } from "@/lib/supabase/client";
 import { validateVendorDocumentFile, describeVendorDocumentUploadError } from "@/lib/vendors/vendorDocumentUploadValidation";
+import SubmitButton from "@/components/admin/SubmitButton";
+import ConfirmSubmitButton from "@/components/admin/ConfirmSubmitButton";
 import {
   recordVendorCompanyProfileAction,
   startVendorOnboardingAction,
@@ -123,7 +125,7 @@ function IdentitySection({
   jurisdictionOptions: JurisdictionOption[];
 }) {
   const [profileState, profileAction, profilePending] = useActionState<ActionState, FormData>(recordVendorCompanyProfileAction, null);
-  const [statusState, statusAction, statusPending] = useActionState<ActionState, FormData>(setVendorStatusAction, null);
+  const [statusState, statusAction] = useActionState<ActionState, FormData>(setVendorStatusAction, null);
 
   return (
     <section className="rounded-xl border border-black/10 bg-white p-6 space-y-4">
@@ -212,24 +214,36 @@ function IdentitySection({
           <form action={statusAction} className="flex flex-wrap items-center gap-2">
             <input type="hidden" name="vendorId" value={vendorId} />
             {vendorProfile.status !== "active" && (
-              <button type="submit" name="status" value="active" disabled={statusPending} className="font-sans text-caption font-semibold px-3 py-1.5 rounded-md bg-green-700 text-white disabled:opacity-50">
-                {statusPending ? "Saving…" : "Approve"}
-              </button>
+              <SubmitButton name="status" value="active" pendingLabel="Approving…" className="font-sans text-caption font-semibold px-3 py-1.5 rounded-md bg-green-700 text-white">
+                Approve
+              </SubmitButton>
             )}
             {vendorProfile.status === "pending" && (
-              <button type="submit" name="status" value="inactive" disabled={statusPending} className="font-sans text-caption font-semibold px-3 py-1.5 rounded-md bg-red-700 text-white disabled:opacity-50">
-                {statusPending ? "Saving…" : "Reject"}
-              </button>
+              <ConfirmSubmitButton
+                name="status"
+                value="inactive"
+                confirmMessage="Reject this vendor? They will not be able to proceed until reopened for review."
+                pendingLabel="Rejecting…"
+                className="font-sans text-caption font-semibold px-3 py-1.5 rounded-md bg-red-700 text-white"
+              >
+                Reject
+              </ConfirmSubmitButton>
             )}
             {vendorProfile.status === "active" && (
-              <button type="submit" name="status" value="inactive" disabled={statusPending} className="font-sans text-caption font-semibold px-3 py-1.5 rounded-md border border-red-300 text-red-700 disabled:opacity-50">
-                {statusPending ? "Saving…" : "Suspend"}
-              </button>
+              <ConfirmSubmitButton
+                name="status"
+                value="inactive"
+                confirmMessage="Suspend this vendor? Their approval will be withdrawn until reinstated."
+                pendingLabel="Suspending…"
+                className="font-sans text-caption font-semibold px-3 py-1.5 rounded-md border border-red-300 text-red-700"
+              >
+                Suspend
+              </ConfirmSubmitButton>
             )}
             {vendorProfile.status === "inactive" && (
-              <button type="submit" name="status" value="pending" disabled={statusPending} className="font-sans text-caption font-semibold px-3 py-1.5 rounded-md border border-black/15 text-ordift-ink disabled:opacity-50">
-                {statusPending ? "Saving…" : "Reopen for Review"}
-              </button>
+              <SubmitButton name="status" value="pending" pendingLabel="Reopening…" className="font-sans text-caption font-semibold px-3 py-1.5 rounded-md border border-black/15 text-ordift-ink">
+                Reopen for Review
+              </SubmitButton>
             )}
           </form>
         </div>

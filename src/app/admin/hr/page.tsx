@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getCurrentUser, hasRole, isSuperAdmin } from "@/lib/portal/roles";
+import { getHrCommandCentreSummary } from "@/lib/organization/hrCommandCentre";
 
 export const metadata: Metadata = {
   title: "HR / People — Ordift Studios Admin",
@@ -30,6 +31,7 @@ const HUB_GROUPS: HubGroup[] = [
     label: "Employees & Workforce",
     links: [
       { label: "Workforce Overview", href: "/admin/organization/workforce", description: "The staff roster and current employment terms." },
+      { label: "People Directory", href: "/admin/organization/people", description: "Card/list workforce directory with search and filters." },
       { label: "Organization Structure", href: "/admin/organization", description: "Departments and Positions (structural only)." },
       { label: "Legal Entities", href: "/admin/organization/legal-entities", description: "Employing entities for agreements and payroll." },
     ],
@@ -70,9 +72,22 @@ const HUB_GROUPS: HubGroup[] = [
   },
 ];
 
+const KPI_CARDS: { key: keyof Awaited<ReturnType<typeof getHrCommandCentreSummary>>["summary"]; label: string; href: string }[] = [
+  { key: "activeEmployees", label: "Active Employees", href: "/admin/organization/workforce" },
+  { key: "externalWorkforce", label: "External Workforce", href: "/admin/organization/vendors" },
+  { key: "newApplications", label: "New Applications", href: "/admin/recruitment" },
+  { key: "acceptedAwaitingHire", label: "Accepted / Awaiting Hire", href: "/admin/recruitment" },
+  { key: "onboardingInProgress", label: "Onboarding In Progress", href: "/admin/organization/workforce" },
+  { key: "onLeaveToday", label: "On Leave Today", href: "/admin/organization/leave" },
+  { key: "attendanceExceptions", label: "Attendance Exceptions", href: "/admin/organization/attendance" },
+  { key: "pendingLeaveDecisions", label: "Pending HR Actions", href: "/admin/organization/leave" },
+];
+
 export default async function HrHubPage() {
   const user = await getCurrentUser();
   if (!user || (!hasRole(user, "admin") && !isSuperAdmin(user))) redirect("/admin/overview");
+
+  const { summary, needsAttention } = await getHrCommandCentreSummary();
 
   return (
     <div>
@@ -80,11 +95,42 @@ export default async function HrHubPage() {
         <p className="font-sans font-semibold uppercase tracking-[0.2em] text-eyebrow text-ordift-gold-pressed mb-2">Admin</p>
         <h1 className="font-serif font-medium text-section-heading lg:text-section-heading-desktop text-ordift-ink">HR / People</h1>
         <p className="font-sans text-body-small text-ordift-ink-muted mt-2 max-w-2xl">
-          One operational entry point over Ordift&rsquo;s existing HR and workforce modules. Every link below goes to an
-          already-built, already-authorized page — nothing here duplicates or rebuilds those modules.
+          Ordift&rsquo;s operational HR command centre — genuine counts from existing records, an outstanding-actions
+          queue, and quick access to every underlying module. Nothing below duplicates or rebuilds those modules.
         </p>
       </div>
 
+      <section className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-8">
+        {KPI_CARDS.map((card) => (
+          <Link
+            key={card.key}
+            href={card.href}
+            className="rounded-xl border border-black/10 bg-white p-4 hover:border-ordift-gold/60 transition-colors"
+          >
+            <p className="font-sans text-[1.75rem] leading-none font-semibold text-ordift-ink tabular-nums">{summary[card.key]}</p>
+            <p className="font-sans text-caption text-ordift-ink-muted mt-1.5">{card.label}</p>
+          </Link>
+        ))}
+      </section>
+
+      <section className="rounded-xl border border-black/10 bg-white p-6 mb-8">
+        <h2 className="font-serif font-medium text-body text-ordift-ink mb-3">Needs Your Attention</h2>
+        {needsAttention.length === 0 ? (
+          <p className="font-sans text-body-small text-ordift-ink-muted">Nothing outstanding right now.</p>
+        ) : (
+          <ul className="divide-y divide-black/5">
+            {needsAttention.map((item) => (
+              <li key={item.key} className="py-2.5">
+                <Link href={item.href} className="font-sans text-body-small text-ordift-gold-pressed underline underline-offset-4">
+                  {item.label} →
+                </Link>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
+      <h2 className="font-serif font-medium text-body text-ordift-ink mb-3">Quick Access / HR Modules</h2>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
         {HUB_GROUPS.map((group) => (
           <section key={group.label} className="rounded-xl border border-black/10 bg-white p-6 space-y-3">

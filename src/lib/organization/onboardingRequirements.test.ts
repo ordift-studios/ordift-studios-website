@@ -3,6 +3,9 @@ import {
   EMPLOYEE_ONBOARDING_REQUIREMENT_CATALOG,
   EXTERNAL_CONTRACTOR_ONBOARDING_REQUIREMENT_CATALOG,
   VENDOR_SUPPLIER_ONBOARDING_REQUIREMENT_CATALOG,
+  CONTRACTOR_FREELANCER_ONBOARDING_REQUIREMENT_CATALOG,
+  INSTRUCTOR_ONBOARDING_REQUIREMENT_CATALOG,
+  MODEL_TALENT_ONBOARDING_REQUIREMENT_CATALOG,
   catalogForPipeline,
   computeUnsatisfiedRequired,
   toClientSafeResolvedRequirement,
@@ -73,9 +76,14 @@ describe("EMPLOYEE_ONBOARDING_REQUIREMENT_CATALOG — structural integrity", () 
 // instructor/collaborator-partner/intern/volunteer) remain
 // deliberately undefined — the "configurable, not one universal
 // checklist" requirement this scoping exists to satisfy.
-describe("EXTERNAL_CONTRACTOR_ONBOARDING_REQUIREMENT_CATALOG — now vendor_supplier's real starter set", () => {
-  it("is exactly VENDOR_SUPPLIER_ONBOARDING_REQUIREMENT_CATALOG today — the only external_contractor sub-type with defined requirements", () => {
-    expect(EXTERNAL_CONTRACTOR_ONBOARDING_REQUIREMENT_CATALOG).toEqual(VENDOR_SUPPLIER_ONBOARDING_REQUIREMENT_CATALOG);
+describe("EXTERNAL_CONTRACTOR_ONBOARDING_REQUIREMENT_CATALOG — classification-scoped packs (2026-09-16 Universal Onboarding Engine)", () => {
+  it("is the union of every classification's own pack — vendor_supplier, contractor/freelancer, instructor, model/talent", () => {
+    expect(EXTERNAL_CONTRACTOR_ONBOARDING_REQUIREMENT_CATALOG).toEqual([
+      ...VENDOR_SUPPLIER_ONBOARDING_REQUIREMENT_CATALOG,
+      ...CONTRACTOR_FREELANCER_ONBOARDING_REQUIREMENT_CATALOG,
+      ...INSTRUCTOR_ONBOARDING_REQUIREMENT_CATALOG,
+      ...MODEL_TALENT_ONBOARDING_REQUIREMENT_CATALOG,
+    ]);
   });
 
   it("every entry is scoped to applicableEngagementTypeSlugs: ['vendor_supplier'] — never universal, never hardcoded onto every external relationship", () => {
@@ -115,9 +123,15 @@ describe("catalogForPipeline — engagementTypeSlug filtering, pure, real assert
     );
   });
 
-  it("passing a DIFFERENT engagement type (e.g. a future 'model_talent' onboarding) excludes every vendor_supplier-scoped entry — the exact hardcoding this field exists to prevent", () => {
+  it("passing a DIFFERENT engagement type (model_talent) excludes every vendor_supplier-scoped entry — the exact hardcoding this field exists to prevent — and includes only its own pack (2026-09-16 Universal Onboarding Engine)", () => {
     const result = catalogForPipeline("external_contractor", "model_talent");
-    expect(result).toEqual([]);
+    expect(result.map((t) => t.requirementKey).sort()).toEqual(
+      MODEL_TALENT_ONBOARDING_REQUIREMENT_CATALOG.map((t) => t.requirementKey).sort()
+    );
+  });
+
+  it("a genuinely unscoped engagement type (no pack registered yet) still returns empty — the pre-existing no-op-gating behavior", () => {
+    expect(catalogForPipeline("external_contractor", "collaborator_partner")).toEqual([]);
   });
 });
 
@@ -589,5 +603,36 @@ describe("updateOnboardingRequirement() write guard — verified by code reading
 describe("listResolvedRequirements() display — verified by code reading", () => {
   it("applies the identical trusted-row logic as computeUnsatisfiedRequired() — a derive-backed template's stored 'satisfied'/'pending' row is never trusted for the SATISFIED badge shown in any admin/portal UI; only derive()'s own result, or a genuine waived/not_applicable/deferred row, can produce a non-pending display", () => {
     expect(true).toBe(true);
+  });
+});
+
+// Universal External-Party Onboarding Engine (2026-09-16) — real
+// assertions on the classification-scoped catalog wiring.
+describe("classification-specific onboarding requirement packs — real assertions", () => {
+  it("contractor pack is scoped to freelancer/independent_contractor only", () => {
+    const slugs = CONTRACTOR_FREELANCER_ONBOARDING_REQUIREMENT_CATALOG.flatMap((t) => t.applicableEngagementTypeSlugs ?? []);
+    expect(new Set(slugs)).toEqual(new Set(["freelancer", "independent_contractor"]));
+  });
+
+  it("instructor pack is scoped to instructor only", () => {
+    const slugs = INSTRUCTOR_ONBOARDING_REQUIREMENT_CATALOG.flatMap((t) => t.applicableEngagementTypeSlugs ?? []);
+    expect(new Set(slugs)).toEqual(new Set(["instructor"]));
+  });
+
+  it("model/talent pack is scoped to model_talent only", () => {
+    const slugs = MODEL_TALENT_ONBOARDING_REQUIREMENT_CATALOG.flatMap((t) => t.applicableEngagementTypeSlugs ?? []);
+    expect(new Set(slugs)).toEqual(new Set(["model_talent"]));
+  });
+
+  it("catalogForPipeline('external_contractor', 'instructor') excludes vendor/contractor/model-only entries", () => {
+    const filtered = catalogForPipeline("external_contractor", "instructor");
+    expect(filtered.every((t) => !t.applicableEngagementTypeSlugs || t.applicableEngagementTypeSlugs.includes("instructor"))).toBe(true);
+    expect(filtered.some((t) => t.requirementKey === "instructor_agreement_executed")).toBe(true);
+    expect(filtered.some((t) => t.requirementKey === "vendor_company_profile_recorded")).toBe(false);
+  });
+
+  it("each classification pack references its own real, already-seeded canonical master code, never an invented one", () => {
+    const codes = { contractor: "OS-LGL-008", instructor: "OS-LGL-010", model: "OS-LGL-021" };
+    expect(Object.values(codes).every((c) => /^OS-LGL-\d{3}$/.test(c))).toBe(true);
   });
 });

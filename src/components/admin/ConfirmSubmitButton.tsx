@@ -22,16 +22,22 @@ export default function ConfirmSubmitButton({
   pendingLabel,
   className,
   children,
+  name,
+  value,
 }: {
   confirmMessage: string;
   pendingLabel: string;
   className?: string;
   children: React.ReactNode;
+  name?: string;
+  value?: string;
 }) {
   const { pending } = useFormStatus();
   return (
     <button
       type="submit"
+      name={name}
+      value={value}
       disabled={pending}
       aria-busy={pending}
       className={`${className ?? ""} disabled:opacity-50 disabled:cursor-not-allowed`}

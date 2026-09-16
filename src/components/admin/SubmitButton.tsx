@@ -18,14 +18,21 @@ export default function SubmitButton({
   pendingLabel,
   className,
   children,
+  name,
+  value,
 }: {
   pendingLabel: string;
   className?: string;
   children: React.ReactNode;
+  // Optional — for a form with multiple named submit buttons (e.g. one
+  // form, several possible target statuses), same as a plain
+  // <button name="..." value="...">.
+  name?: string;
+  value?: string;
 }) {
   const { pending } = useFormStatus();
   return (
-    <button type="submit" disabled={pending} aria-busy={pending} className={`${className ?? ""} disabled:opacity-50 disabled:cursor-not-allowed`}>
+    <button type="submit" name={name} value={value} disabled={pending} aria-busy={pending} className={`${className ?? ""} disabled:opacity-50 disabled:cursor-not-allowed`}>
       {pending ? pendingLabel : children}
     </button>
   );

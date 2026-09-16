@@ -4,6 +4,7 @@ import { isSuperAdminId, hasJurisdictionAuthority } from "@/lib/organization/aut
 import type { OnboardingPipeline } from "@/lib/organization/onboardingStages";
 import { deriveEmploymentAgreementExecuted } from "@/lib/legal/employeeAgreements";
 import { deriveVendorSupplierAgreementExecuted } from "@/lib/legal/vendorAgreements";
+import { hasFullyExecutedAgreement } from "@/lib/legal/agreementEngine";
 import { listControlledPolicyDocuments, listPolicyAcknowledgementsForProfile } from "@/lib/organization/policyAcknowledgements";
 
 // Internal Staff Onboarding — requirement/gating foundation (Sequence
@@ -377,14 +378,105 @@ export const VENDOR_SUPPLIER_ONBOARDING_REQUIREMENT_CATALOG: readonly Requiremen
   // stage to "active" without a Work Order on file, by design.
 ] as const;
 
-// External-contractor pipeline requirements beyond vendor_supplier
-// (contractor/freelancer/model/instructor/collaborator-partner/intern/
-// volunteer) remain deliberately not defined — unchanged, not a
-// regression: those sub-types simply see no applicable requirements
-// yet, exactly the pre-existing "empty catalog = no-op gating"
-// behavior this array used to have in full.
+// Universal External-Party Onboarding Engine (2026-09-16) — the same
+// evidence-only, classification-scoped pattern VENDOR_SUPPLIER's own
+// catalog established, generalized via hasFullyExecutedAgreement()
+// (agreementEngine.ts) instead of a hand-rolled per-classification
+// query. Reuses the EXACT canonical Counsel-Approved masters already
+// seeded (migration 0067) — OS-LGL-008 (Independent Contractor/
+// Freelancer), OS-LGL-010 (Instructor/Workshop Facilitator), OS-LGL-021
+// (Model/Talent Management) — never a new/invented master. Each stays
+// honestly null/pending until that master's real content is attached
+// AND a real signature genuinely occurs (the same two-step reality
+// OS-LGL-009 went through) — this catalog entry existing does not
+// itself claim anyone has signed anything.
+function deriveAgreementExecuted(canonicalCode: string, primaryContextType: string) {
+  return async (profileId: string): Promise<RequirementStatus | null> => {
+    const satisfied = await hasFullyExecutedAgreement({ canonicalCode, primaryContextType, primaryContextReference: profileId });
+    return satisfied ? "satisfied" : null;
+  };
+}
+
+export const CONTRACTOR_FREELANCER_ONBOARDING_REQUIREMENT_CATALOG: readonly RequirementTemplate[] = [
+  {
+    requirementKey: "contractor_payment_setup_completed",
+    stage: "payment_setup",
+    requirementType: "task",
+    label: "Payment destination configured",
+    required: true,
+    responsibleRole: "super_admin",
+    derive: deriveVendorPaymentSetupCompleted,
+    applicableEngagementTypeSlugs: ["freelancer", "independent_contractor"],
+  },
+  {
+    requirementKey: "contractor_agreement_executed",
+    stage: "profile",
+    requirementType: "agreement",
+    label: "Independent Contractor / Freelancer Agreement (OS-LGL-008) executed",
+    required: true,
+    responsibleRole: "super_admin",
+    derive: deriveAgreementExecuted("OS-LGL-008", "contractor_profile"),
+    applicableEngagementTypeSlugs: ["freelancer", "independent_contractor"],
+  },
+] as const;
+
+export const INSTRUCTOR_ONBOARDING_REQUIREMENT_CATALOG: readonly RequirementTemplate[] = [
+  {
+    requirementKey: "instructor_payment_setup_completed",
+    stage: "payment_setup",
+    requirementType: "task",
+    label: "Payment destination configured",
+    required: true,
+    responsibleRole: "super_admin",
+    derive: deriveVendorPaymentSetupCompleted,
+    applicableEngagementTypeSlugs: ["instructor"],
+  },
+  {
+    requirementKey: "instructor_agreement_executed",
+    stage: "profile",
+    requirementType: "agreement",
+    label: "Instructor / Workshop Facilitator Agreement (OS-LGL-010) executed",
+    required: true,
+    responsibleRole: "super_admin",
+    derive: deriveAgreementExecuted("OS-LGL-010", "instructor_profile"),
+    applicableEngagementTypeSlugs: ["instructor"],
+  },
+] as const;
+
+export const MODEL_TALENT_ONBOARDING_REQUIREMENT_CATALOG: readonly RequirementTemplate[] = [
+  {
+    requirementKey: "model_talent_payment_setup_completed",
+    stage: "payment_setup",
+    requirementType: "task",
+    label: "Payment destination configured",
+    required: true,
+    responsibleRole: "super_admin",
+    derive: deriveVendorPaymentSetupCompleted,
+    applicableEngagementTypeSlugs: ["model_talent"],
+  },
+  {
+    requirementKey: "model_talent_agreement_executed",
+    stage: "profile",
+    requirementType: "agreement",
+    label: "Model / Talent Management Agreement (OS-LGL-021) executed",
+    required: true,
+    responsibleRole: "super_admin",
+    derive: deriveAgreementExecuted("OS-LGL-021", "model_talent_profile"),
+    applicableEngagementTypeSlugs: ["model_talent"],
+  },
+] as const;
+
+// External-contractor pipeline requirements beyond the classifications
+// listed above (collaborator-partner/intern/volunteer) remain
+// deliberately not defined — unchanged, not a regression: those
+// sub-types simply see no applicable requirements yet, exactly the
+// pre-existing "empty catalog = no-op gating" behavior this array used
+// to have in full.
 export const EXTERNAL_CONTRACTOR_ONBOARDING_REQUIREMENT_CATALOG: readonly RequirementTemplate[] = [
   ...VENDOR_SUPPLIER_ONBOARDING_REQUIREMENT_CATALOG,
+  ...CONTRACTOR_FREELANCER_ONBOARDING_REQUIREMENT_CATALOG,
+  ...INSTRUCTOR_ONBOARDING_REQUIREMENT_CATALOG,
+  ...MODEL_TALENT_ONBOARDING_REQUIREMENT_CATALOG,
 ];
 
 // engagementTypeSlug is optional and additive: omitted (every

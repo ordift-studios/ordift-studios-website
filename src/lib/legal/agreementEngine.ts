@@ -535,3 +535,39 @@ export async function approveAgreementAmendment(params: { amendmentId: string; a
   await logActivity({ actorUserId: params.actorUserId, action: "legal.agreement.amendment_approved", entityType: "agreement_amendment", entityId: params.amendmentId });
   return { ok: true };
 }
+
+// Universal External-Party Onboarding Engine (2026-09-16) — the one
+// generic "has this party genuinely, fully executed the required
+// agreement" check, reused by every classification's onboarding
+// requirement (deriveVendorSupplierAgreementExecuted already proved
+// this exact shape for OS-LGL-009; this extracts it as a parameterized
+// primitive so Contractor/Instructor/Model, etc. reuse the SAME check
+// against their own canonical master code rather than each
+// hand-rolling a near-identical query). Evidence-only, same as every
+// other derive() in this codebase: returns true only for an agreement
+// genuinely reaching fully_executed/active/completed via real
+// signature_evidence (signatureEngine.ts) — never a manual claim.
+export async function hasFullyExecutedAgreement(params: {
+  canonicalCode: string;
+  primaryContextType: string;
+  primaryContextReference: string;
+}): Promise<boolean> {
+  const admin = createAdminClient();
+  const { data: master } = await admin
+    .from("legal_document_masters")
+    .select("id")
+    .eq("canonical_code", params.canonicalCode)
+    .maybeSingle();
+  if (!master) return false;
+
+  const { data } = await admin
+    .from("agreements")
+    .select("id")
+    .eq("master_id", master.id)
+    .eq("primary_context_type", params.primaryContextType)
+    .eq("primary_context_reference", params.primaryContextReference)
+    .in("status", ["fully_executed", "active", "completed"])
+    .limit(1)
+    .maybeSingle();
+  return Boolean(data);
+}
