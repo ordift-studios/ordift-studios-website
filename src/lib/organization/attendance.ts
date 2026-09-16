@@ -2,6 +2,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { logActivity } from "@/lib/admin/activityLog";
 import { isSuperAdminId, hasJurisdictionAuthority } from "@/lib/organization/authority";
 import { classifyAttendance, type AttendanceDayType, type AttendanceStatus } from "@/lib/organization/attendanceClassification";
+import { summarizeAttendanceReconciliation } from "@/lib/organization/attendanceReconciliation";
 
 export type { AttendanceDayType };
 
@@ -326,6 +327,17 @@ export async function listAttendanceRecordsForProfile(profileId: string, fromDat
     return [];
   }
   return (data ?? []).map(mapRow);
+}
+
+// Weekly reconciliation (backlog Phase 2, 2026-09-16) — thin DB wiring
+// over the existing listAttendanceRecordsForProfile() + the pure
+// summarizeAttendanceReconciliation() (attendanceReconciliation.ts).
+// weekStartDate/weekEndDate are caller-supplied ("YYYY-MM-DD") rather
+// than computed here — this module has no opinion on which day a
+// "week" starts; that stays the caller's own real-calendar decision.
+export async function getWeeklyAttendanceReconciliation(profileId: string, weekStartDate: string, weekEndDate: string) {
+  const records = await listAttendanceRecordsForProfile(profileId, weekStartDate, weekEndDate);
+  return summarizeAttendanceReconciliation(records);
 }
 
 export interface AttendanceRecordWithProfile extends AttendanceRecord {
