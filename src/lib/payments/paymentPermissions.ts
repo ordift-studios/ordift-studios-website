@@ -45,12 +45,19 @@ export const PAYMENT_CAPABILITIES: WorkflowCapabilityMatrix = {
   staff: ["view_all_payments", "approve_bank_transfer", "reject_bank_transfer", "reconcile_payment"],
 };
 
-// Same staff/admin/super_admin boundary as every other /admin/** module
-// (src/app/admin/layout.tsx) — clients never see the admin payment
-// review surface, only their own Payment History (RLS-scoped, not a
-// capability check).
+// Task 4 audit fix (2026-09-17, real Kelvin QA finding) — previously
+// any `staff` role holder (e.g. a photographer with no finance
+// responsibility) could reach the full company-wide payments review
+// surface merely by holding the blanket `staff` role, per
+// PAYMENT_CAPABILITIES' own staff tier above. A staff member must
+// never gain company-wide financial visibility merely because this
+// route exists — narrowed to admin/super_admin, the same tier every
+// other genuinely-restricted financial/governance module in this
+// codebase uses (Client Quotations, Payables, Legal & Governance).
+// PAYMENT_CAPABILITIES.staff is left in place architecturally (not
+// deleted) for a future, deliberately-scoped re-admission of specific
+// staff via a real authority_grant, exactly like every other capability
+// in this codebase — never merely the `staff` role again.
 export function canAccessPaymentsAdmin(user: CurrentUser | null): boolean {
-  return Boolean(
-    user && (hasRole(user, "staff") || hasRole(user, "admin") || hasRole(user, "super_admin"))
-  );
+  return Boolean(user && (hasRole(user, "admin") || hasRole(user, "super_admin")));
 }

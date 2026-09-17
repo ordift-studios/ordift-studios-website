@@ -3,8 +3,20 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import { getCurrentUser } from "@/lib/portal/roles";
 import { isStaffOrAdmin } from "@/lib/portal/roles";
+import { authorizeWithSuperAdminOverride, FINANCE_CAPABILITIES } from "@/lib/organization/authority";
 import { getAllWorkshopsAdmin } from "@/lib/content/sanity/workshopAdmin";
 import { getWorkshopsDepartmentOverview } from "@/lib/workshops/departmentOverview";
+
+// Task 4 audit (2026-09-17) — a real Production exposure: this list
+// page showed gross revenue / outstanding balances / instructor
+// obligations to ANY staff/admin (the same broad visibility the
+// per-workshop detail page's Instructors/Registrations sections
+// deliberately do NOT give — that page already gates its own
+// financial overview behind FINANCE_CAPABILITIES.workshopRevenueView;
+// this list page never did). Fixed by applying the exact same check
+// here, never inferring financial visibility from the staff/admin
+// role alone.
+const FINANCIAL_WARNING_KEYS = new Set(["unpaid", "engagements-incomplete"]);
 
 export const metadata: Metadata = {
   title: "Workshop Management — Ordift Studios Admin",
@@ -18,9 +30,11 @@ export const metadata: Metadata = {
 export default async function AdminWorkshopsPage() {
   const user = await getCurrentUser();
   if (!user || !isStaffOrAdmin(user)) redirect("/admin/overview");
+  const canSeeFinance = (await authorizeWithSuperAdminOverride(user.id, FINANCE_CAPABILITIES.workshopRevenueView)).ok;
 
   const workshops = await getAllWorkshopsAdmin();
-  const { summary, warnings, upcomingSessions } = await getWorkshopsDepartmentOverview(workshops);
+  const { summary, warnings: allWarnings, upcomingSessions } = await getWorkshopsDepartmentOverview(workshops);
+  const warnings = canSeeFinance ? allWarnings : allWarnings.filter((w) => !FINANCIAL_WARNING_KEYS.has(w.key));
   const warningsByWorkshop = new Map<string, typeof warnings>();
   for (const w of warnings) {
     warningsByWorkshop.set(w.workshopId, [...(warningsByWorkshop.get(w.workshopId) ?? []), w]);
@@ -48,9 +62,13 @@ export default async function AdminWorkshopsPage() {
           { label: "Total Workshops", value: summary.totalWorkshops },
           { label: "Upcoming", value: summary.upcomingWorkshopsCount },
           { label: "Registered (all)", value: summary.totalRegisteredCount },
-          { label: "Gross Revenue", value: `$${summary.totalGrossRevenueUsd.toFixed(2)}` },
-          { label: "Outstanding", value: `$${summary.totalOutstandingUsd.toFixed(2)}` },
-          { label: "Instructor Obligations", value: `$${summary.totalInstructorObligationsUsd.toFixed(2)}` },
+          ...(canSeeFinance
+            ? [
+                { label: "Gross Revenue", value: `$${summary.totalGrossRevenueUsd.toFixed(2)}` },
+                { label: "Outstanding", value: `$${summary.totalOutstandingUsd.toFixed(2)}` },
+                { label: "Instructor Obligations", value: `$${summary.totalInstructorObligationsUsd.toFixed(2)}` },
+              ]
+            : []),
         ].map((card) => (
           <div key={card.label} className="rounded-xl border border-black/10 bg-white p-4">
             <p className="font-sans text-[1.5rem] leading-none font-semibold text-ordift-ink tabular-nums">{card.value}</p>

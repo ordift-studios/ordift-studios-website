@@ -7,7 +7,7 @@ import { getProfileCard } from "@/lib/portal/profileCard";
 import ProfileQuickCard from "@/components/admin/ProfileQuickCard";
 import { PresenceProvider } from "@/components/admin/PresenceProvider";
 import AdminNavDropdown from "@/components/admin/AdminNavDropdown";
-import { isExecutiveAdmin, hasAuthority, PEOPLE_CAPABILITIES } from "@/lib/organization/authority";
+import { isExecutiveAdmin, hasAuthority, PEOPLE_CAPABILITIES, OPERATIONS_CAPABILITIES, STRATEGY_CAPABILITIES } from "@/lib/organization/authority";
 
 // Internal operations console — separate from the customer/partner-facing
 // /portal, but built on the exact same auth/role foundation (Supabase Auth
@@ -16,7 +16,23 @@ import { isExecutiveAdmin, hasAuthority, PEOPLE_CAPABILITIES } from "@/lib/organ
 // reasoning as src/app/portal/(dashboard)/layout.tsx: proxy.ts only does a
 // fast JWT-presence check for /portal/**, not /admin/**, so this layout's
 // getCurrentUser() call is the actual gate here, not just a backstop.
-type NavItem = { label: string; href: string; adminOnly?: boolean; superAdminOnly?: boolean; executiveOnly?: boolean; workforceAdminOnly?: boolean };
+type NavItem = {
+  label: string;
+  href: string;
+  adminOnly?: boolean;
+  superAdminOnly?: boolean;
+  executiveOnly?: boolean;
+  workforceAdminOnly?: boolean;
+  // Task 4 audit (2026-09-17, real Kelvin QA finding) — Production
+  // Operations and Partnerships were previously unflagged, relying on
+  // "the page itself gates it" — which meant every staff member saw a
+  // link that immediately redirected them back to Overview. Navigation
+  // visibility now matches the exact same real check each page already
+  // enforces; that page-level check remains the actual boundary either
+  // way, this flag only stops a dead link from ever being SHOWN.
+  operationsCoordinateOnly?: boolean;
+  partnershipAdministerOnly?: boolean;
+};
 type NavGroup = { label: string; items: NavItem[] };
 
 // Admin Workspace Reorganization (2026-09-07) — business-workspace
@@ -90,10 +106,11 @@ const NAV_GROUPS: NavGroup[] = [
   {
     label: "Creative & Production",
     items: [
-      // Production Operations Admin (2026-09-07) — no adminOnly/
-      // superAdminOnly flag: the page itself gates on
-      // operations.coordinate (or Super Admin), the real boundary.
-      { label: "Production Operations", href: "/admin/production" },
+      // Production Operations Admin (2026-09-07) — operationsCoordinateOnly
+      // mirrors the page's own operations.coordinate (or Super Admin)
+      // gate exactly (Task 4 fix, 2026-09-17 — previously unflagged,
+      // shown to every staff member as a dead link).
+      { label: "Production Operations", href: "/admin/production", operationsCoordinateOnly: true },
     ],
   },
   {
@@ -144,10 +161,12 @@ const NAV_GROUPS: NavGroup[] = [
   {
     label: "Talent & Partnerships",
     items: [
-      // Partnerships & Collaborations V1 (2026-09-07) — no adminOnly/
-      // superAdminOnly flag: gated on
-      // strategy.partnership_opportunity.administer (or Super Admin).
-      { label: "Partnerships & Collaborations", href: "/admin/partnerships" },
+      // Partnerships & Collaborations V1 (2026-09-07) —
+      // partnershipAdministerOnly mirrors the page's own
+      // strategy.partnership_opportunity.administer (or Super Admin)
+      // gate exactly (Task 4 fix, 2026-09-17 — previously unflagged,
+      // shown to every staff member as a dead link).
+      { label: "Partnerships & Collaborations", href: "/admin/partnerships", partnershipAdministerOnly: true },
     ],
   },
   {
@@ -172,7 +191,14 @@ const NAV_GROUPS: NavGroup[] = [
     label: "Content & Website",
     items: [
       { label: "Portfolio", href: "/admin/portfolio" },
-      { label: "Content", href: "/admin/content" },
+      // Task 4 audit (2026-09-17) — this hub links into full Sanity
+      // Studio editing (Homepage, About, Founder, Navigation, Site-wide
+      // Settings). It previously had NO page-level check at all (relying
+      // only on the layout's blanket isStaffOrAdmin()), so any staff
+      // member — including a photographer with no content-editing
+      // responsibility — saw it. adminOnly here now matches a real
+      // check newly added to the page itself.
+      { label: "Content", href: "/admin/content", adminOnly: true },
       { label: "Ordift Pulse", href: "/admin/pulse", adminOnly: true },
     ],
   },
@@ -225,11 +251,18 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   // pattern as isExecutive above, for the new people.workforce.administer
   // capability (see authority.ts / src/app/admin/users/actions.ts).
   const isWorkforceAdmin = isSuper || (await hasAuthority(user.id, PEOPLE_CAPABILITIES.workforceAdminister, null));
+  // Task 4 fix (2026-09-17) — same async-capability-check pattern as
+  // isExecutive/isWorkforceAdmin above, for the two real dead-link
+  // findings (Production Operations, Partnerships & Collaborations).
+  const canCoordinateOperations = isSuper || (await hasAuthority(user.id, OPERATIONS_CAPABILITIES.coordinate, null));
+  const canAdministerPartnerships = isSuper || (await hasAuthority(user.id, STRATEGY_CAPABILITIES.partnershipOpportunityAdminister, null));
   const itemVisible = (item: NavItem) =>
     (!item.adminOnly || isAdmin) &&
     (!item.superAdminOnly || isSuper) &&
     (!item.executiveOnly || isExecutive) &&
-    (!item.workforceAdminOnly || isWorkforceAdmin);
+    (!item.workforceAdminOnly || isWorkforceAdmin) &&
+    (!item.operationsCoordinateOnly || canCoordinateOperations) &&
+    (!item.partnershipAdministerOnly || canAdministerPartnerships);
   // Role-aware navigation (Part 39/58): each group renders ONLY the
   // items this viewer can see, and a group with zero visible items is
   // dropped entirely rather than showing an empty heading. This is

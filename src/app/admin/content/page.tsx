@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { redirect } from "next/navigation";
+import { getCurrentUser, hasRole, isSuperAdmin } from "@/lib/portal/roles";
 
 export const metadata: Metadata = {
   title: "Content — Ordift Studios Admin",
@@ -79,7 +81,17 @@ const SECTIONS: ContentSection[] = [
   },
 ];
 
-export default function AdminContentPage() {
+// Task 4 audit (2026-09-17) — this page had NO auth check of its own
+// before this fix, relying only on the admin layout's blanket
+// isStaffOrAdmin(). It links into full Sanity Studio editing (Homepage,
+// About, Founder, Navigation, Site-wide Settings), so it's gated to the
+// same hasRole("admin")/isSuperAdmin() boundary every other content/
+// governance hub in this codebase already uses (Legal & Governance,
+// HR/People, Client Quotations).
+export default async function AdminContentPage() {
+  const user = await getCurrentUser();
+  if (!user || (!hasRole(user, "admin") && !isSuperAdmin(user))) redirect("/admin/overview");
+
   return (
     <div>
       <div className="mb-8">
