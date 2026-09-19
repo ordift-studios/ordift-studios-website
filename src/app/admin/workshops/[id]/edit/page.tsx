@@ -31,7 +31,7 @@ export default async function EditWorkshopPage({ params }: { params: Promise<{ i
         <p className="font-sans font-semibold uppercase tracking-[0.2em] text-eyebrow text-ordift-gold-pressed mb-2">Admin</p>
         <h1 className="font-serif font-medium text-section-heading lg:text-section-heading-desktop text-ordift-ink">Edit Workshop</h1>
       </div>
-      <WorkshopForm action={updateWorkshopAction} workshop={workshop} internalNotes={internalNotes} venues={venues} submitLabel="Save Changes" />
+      <WorkshopForm action={updateWorkshopAction} workshop={workshop} internalNotes={internalNotes} venues={venues} submitLabel="Save Changes" processingLabel="Saving changes…" />
     </div>
   );
 }

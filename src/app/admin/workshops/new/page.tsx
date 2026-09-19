@@ -25,7 +25,7 @@ export default async function NewWorkshopPage() {
         <p className="font-sans font-semibold uppercase tracking-[0.2em] text-eyebrow text-ordift-gold-pressed mb-2">Admin</p>
         <h1 className="font-serif font-medium text-section-heading lg:text-section-heading-desktop text-ordift-ink">New Workshop</h1>
       </div>
-      <WorkshopForm action={createWorkshopAction} venues={venues} submitLabel="Create Workshop" />
+      <WorkshopForm action={createWorkshopAction} venues={venues} submitLabel="Create Workshop" processingLabel="Creating workshop…" />
     </div>
   );
 }

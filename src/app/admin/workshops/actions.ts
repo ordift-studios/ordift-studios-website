@@ -69,12 +69,39 @@ function readCoreFields(formData: FormData): WorkshopCoreFields {
   };
 }
 
-export async function createWorkshopAction(formData: FormData): Promise<void> {
-  const { user, actedAsOverride } = await requireWorkshopAdminister();
-  const fields = readCoreFields(formData);
-  if (!fields.title || !fields.shortDescription || !fields.description) return;
+// Submission feedback UX correction (2026-09-20) — createWorkshopAction/
+// updateWorkshopAction converted from a plain Promise<void> action to
+// the ActionState/useActionState shape (immediate pending state,
+// disabled duplicate submit, explicit success/error), matching the
+// established pattern this batch also applies to Add Session and every
+// other consequential action on this page. No business rule, validation
+// requirement, or authorization change — required/capacity/etc. are
+// unchanged, and the native HTML `required` attributes on the form
+// still block invalid submission before this ever runs; this only
+// makes the (rare) server-side rejection path visible instead of a
+// silent no-op, and reports genuine failures instead of leaving the
+// button in a permanently "submitting" state.
+export async function createWorkshopAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  let user;
+  let actedAsOverride;
+  try {
+    ({ user, actedAsOverride } = await requireWorkshopAdminister());
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : "Not authorized." };
+  }
 
-  const id = await createWorkshopDraft(fields);
+  const fields = readCoreFields(formData);
+  if (!fields.title || !fields.shortDescription || !fields.description) {
+    return { ok: false, error: "Title, short description, and full description are required." };
+  }
+
+  let id: string;
+  try {
+    id = await createWorkshopDraft(fields);
+  } catch (err) {
+    console.error("[admin workshops] failed to create workshop", err);
+    return { ok: false, error: "Failed to create the workshop. Please try again." };
+  }
 
   await logActivity({
     actorUserId: user.id,
@@ -88,14 +115,28 @@ export async function createWorkshopAction(formData: FormData): Promise<void> {
   redirect(`/admin/workshops/${id}`);
 }
 
-export async function updateWorkshopAction(formData: FormData): Promise<void> {
-  const { user, actedAsOverride } = await requireWorkshopAdminister();
-  const id = String(formData.get("id") ?? "");
-  if (!id) return;
-  const fields = readCoreFields(formData);
-  if (!fields.title || !fields.shortDescription || !fields.description) return;
+export async function updateWorkshopAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  let user;
+  let actedAsOverride;
+  try {
+    ({ user, actedAsOverride } = await requireWorkshopAdminister());
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : "Not authorized." };
+  }
 
-  await patchWorkshopCoreFields(id, fields);
+  const id = String(formData.get("id") ?? "");
+  if (!id) return { ok: false, error: "Invalid request." };
+  const fields = readCoreFields(formData);
+  if (!fields.title || !fields.shortDescription || !fields.description) {
+    return { ok: false, error: "Title, short description, and full description are required." };
+  }
+
+  try {
+    await patchWorkshopCoreFields(id, fields);
+  } catch (err) {
+    console.error("[admin workshops] failed to update workshop", err);
+    return { ok: false, error: "Failed to save changes. Please try again." };
+  }
 
   await logActivity({
     actorUserId: user.id,
@@ -110,8 +151,13 @@ export async function updateWorkshopAction(formData: FormData): Promise<void> {
   redirect(`/admin/workshops/${id}`);
 }
 
-export async function createTicketTypeAction(formData: FormData): Promise<void> {
-  const { user } = await requireWorkshopAdminister();
+export async function createTicketTypeAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  let user;
+  try {
+    ({ user } = await requireWorkshopAdminister());
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : "Not authorized." };
+  }
 
   const workshopId = String(formData.get("workshopId") ?? "");
   const name = String(formData.get("name") ?? "").trim();
@@ -120,7 +166,7 @@ export async function createTicketTypeAction(formData: FormData): Promise<void> 
   const saleStartsAt = String(formData.get("saleStartsAt") ?? "").trim() || null;
   const saleEndsAt = String(formData.get("saleEndsAt") ?? "").trim() || null;
   const perPersonLimitRaw = String(formData.get("perPersonLimit") ?? "").trim();
-  if (!workshopId || !name) return;
+  if (!workshopId || !name) return { ok: false, error: "A name is required." };
 
   const result = await createTicketType({
     workshopId,
@@ -133,27 +179,40 @@ export async function createTicketTypeAction(formData: FormData): Promise<void> 
     perPersonLimit: perPersonLimitRaw ? Number(perPersonLimitRaw) : null,
     actorUserId: user.id,
   });
-  if (!result.ok) console.error("[admin workshops] failed to create ticket type", result.error);
+  if (!result.ok) {
+    console.error("[admin workshops] failed to create ticket type", result.error);
+    return { ok: false, error: result.error };
+  }
 
   revalidatePath(`/admin/workshops/${workshopId}`);
+  return { ok: true };
 }
 
-export async function toggleTicketTypeAction(formData: FormData): Promise<void> {
-  const { user } = await requireWorkshopAdminister();
+export async function toggleTicketTypeAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  let user;
+  try {
+    ({ user } = await requireWorkshopAdminister());
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : "Not authorized." };
+  }
   const ticketTypeId = String(formData.get("ticketTypeId") ?? "");
   const active = formData.get("active") === "true";
   const workshopId = String(formData.get("workshopId") ?? "");
-  if (!ticketTypeId) return;
+  if (!ticketTypeId) return { ok: false, error: "Invalid request." };
 
   const result = await setTicketTypeActive({ ticketTypeId, active: !active, actorUserId: user.id });
-  if (!result.ok) console.error("[admin workshops] failed to toggle ticket type", result.error);
+  if (!result.ok) {
+    console.error("[admin workshops] failed to toggle ticket type", result.error);
+    return { ok: false, error: result.error };
+  }
 
   if (workshopId) revalidatePath(`/admin/workshops/${workshopId}`);
+  return { ok: true };
 }
 
-export async function createInstructorEngagementAction(formData: FormData): Promise<void> {
+export async function createInstructorEngagementAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const currentUser = await getCurrentUser();
-  if (!currentUser) return;
+  if (!currentUser) return { ok: false, error: "Not authenticated." };
 
   const workshopId = String(formData.get("workshopId") ?? "");
   const profileId = String(formData.get("profileId") ?? "").trim() || null;
@@ -161,7 +220,7 @@ export async function createInstructorEngagementAction(formData: FormData): Prom
   const role = String(formData.get("role") ?? "instructor").trim();
   const amountRaw = String(formData.get("agreedCompensationAmount") ?? "").trim();
   const currency = String(formData.get("agreedCompensationCurrency") ?? "").trim() || null;
-  if (!workshopId) return;
+  if (!workshopId) return { ok: false, error: "Invalid request." };
 
   const result = await createInstructorEngagement({
     workshopId,
@@ -172,23 +231,31 @@ export async function createInstructorEngagementAction(formData: FormData): Prom
     agreedCompensationCurrency: currency,
     actorUserId: currentUser.id,
   });
-  if (!result.ok) console.error("[admin workshops] failed to create instructor engagement", result.error);
+  if (!result.ok) {
+    console.error("[admin workshops] failed to create instructor engagement", result.error);
+    return { ok: false, error: result.error };
+  }
 
   revalidatePath(`/admin/workshops/${workshopId}`);
+  return { ok: true };
 }
 
-export async function linkEngagementPayoutObligationAction(formData: FormData): Promise<void> {
+export async function linkEngagementPayoutObligationAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const currentUser = await getCurrentUser();
-  if (!currentUser) return;
+  if (!currentUser) return { ok: false, error: "Not authenticated." };
 
   const engagementId = String(formData.get("engagementId") ?? "");
   const workshopId = String(formData.get("workshopId") ?? "");
-  if (!engagementId) return;
+  if (!engagementId) return { ok: false, error: "Invalid request." };
 
   const result = await linkEngagementToPaymentObligation({ engagementId, actorUserId: currentUser.id });
-  if (!result.ok) console.error("[admin workshops] failed to link payment obligation", result.error);
+  if (!result.ok) {
+    console.error("[admin workshops] failed to link payment obligation", result.error);
+    return { ok: false, error: result.error };
+  }
 
   if (workshopId) revalidatePath(`/admin/workshops/${workshopId}`);
+  return { ok: true };
 }
 
 // VAULT's real enforcement point for finance.payment_obligation.approve
@@ -197,13 +264,13 @@ export async function linkEngagementPayoutObligationAction(formData: FormData): 
 // compensation obligation without leaving the module (Part 1's "one
 // unified module" requirement) — the underlying authorization and
 // audit trail is identical to approving any other payment obligation.
-export async function approveWorkshopObligationAction(formData: FormData): Promise<void> {
+export async function approveWorkshopObligationAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const currentUser = await getCurrentUser();
-  if (!currentUser) return;
+  if (!currentUser) return { ok: false, error: "Not authenticated." };
 
   const obligationId = String(formData.get("obligationId") ?? "");
   const workshopId = String(formData.get("workshopId") ?? "");
-  if (!obligationId) return;
+  if (!obligationId) return { ok: false, error: "Invalid request." };
 
   const result = await approvePaymentObligation({ obligationId, actorUserId: currentUser.id });
   if (!result.ok) {
@@ -245,6 +312,7 @@ export async function approveWorkshopObligationAction(formData: FormData): Promi
   }
 
   if (workshopId) revalidatePath(`/admin/workshops/${workshopId}`);
+  return result.ok ? { ok: true } : { ok: false, error: result.error };
 }
 
 // Workshop Management V1, Phase C (2026-08-25) — closes the "dedicated
@@ -256,14 +324,21 @@ export async function approveWorkshopObligationAction(formData: FormData): Promi
 // exactly: 'requested' | 'in_progress' | 'arranged' | 'declined' | 'cancelled'.
 const TRAVEL_ASSISTANCE_STATUSES = ["requested", "in_progress", "arranged", "declined", "cancelled"] as const;
 
-export async function updateTravelAssistanceStatusAction(formData: FormData): Promise<void> {
-  const { user } = await requireWorkshopAdminister();
+export async function updateTravelAssistanceStatusAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  let user;
+  try {
+    ({ user } = await requireWorkshopAdminister());
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : "Not authorized." };
+  }
 
   const requestId = String(formData.get("requestId") ?? "");
   const status = String(formData.get("status") ?? "");
   const workshopId = String(formData.get("workshopId") ?? "");
   const internalNotes = String(formData.get("internalNotes") ?? "").trim();
-  if (!requestId || !(TRAVEL_ASSISTANCE_STATUSES as readonly string[]).includes(status)) return;
+  if (!requestId || !(TRAVEL_ASSISTANCE_STATUSES as readonly string[]).includes(status)) {
+    return { ok: false, error: "Invalid status." };
+  }
 
   const admin = createAdminClient();
   const { data: request, error } = await admin
@@ -274,7 +349,7 @@ export async function updateTravelAssistanceStatusAction(formData: FormData): Pr
     .single();
   if (error || !request) {
     console.error("[admin workshops] failed to update travel assistance status", error?.message);
-    return;
+    return { ok: false, error: "Failed to update the request." };
   }
 
   await logActivity({
@@ -291,6 +366,7 @@ export async function updateTravelAssistanceStatusAction(formData: FormData): Pr
   }
 
   if (workshopId) revalidatePath(`/admin/workshops/${workshopId}`);
+  return { ok: true };
 }
 
 // Workshop Management V1, Phase C (2026-08-25) — closes the "workshop
@@ -302,13 +378,18 @@ export async function updateTravelAssistanceStatusAction(formData: FormData): Pr
 // explicit, staff-initiated broadcast — a genuinely real, reliable
 // event — sent only to this workshop's actual active (Registered or
 // Waitlisted) registrations, never a fabricated recipient list.
-export async function sendWorkshopNoticeAction(formData: FormData): Promise<void> {
-  const { user } = await requireWorkshopAdminister();
+export async function sendWorkshopNoticeAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  let user;
+  try {
+    ({ user } = await requireWorkshopAdminister());
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : "Not authorized." };
+  }
 
   const workshopId = String(formData.get("workshopId") ?? "");
   const noticeType = String(formData.get("noticeType") ?? "update");
   const message = String(formData.get("message") ?? "").trim();
-  if (!workshopId || !message) return;
+  if (!workshopId || !message) return { ok: false, error: "A message is required." };
 
   const admin = createAdminClient();
   const { data: registrations, error } = await admin
@@ -318,7 +399,7 @@ export async function sendWorkshopNoticeAction(formData: FormData): Promise<void
     .in("registration_status", ["Registered", "Waitlisted"]);
   if (error) {
     console.error("[admin workshops] failed to load registrations for notice", error.message);
-    return;
+    return { ok: false, error: "Failed to load registrants." };
   }
 
   let sent = 0;
@@ -338,6 +419,7 @@ export async function sendWorkshopNoticeAction(formData: FormData): Promise<void
   });
 
   revalidatePath(`/admin/workshops/${workshopId}`);
+  return { ok: true };
 }
 
 // ============================================================

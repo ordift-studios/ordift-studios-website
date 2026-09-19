@@ -17,14 +17,14 @@ import { SessionList, CreateSessionForm } from "../WorkshopScheduleForms";
 import { MaterialList, MaterialUploadForm, AddMaterialLinkForm } from "../WorkshopMaterialsPanel";
 import { AnnouncementsPanel, BriefsPanel } from "../WorkshopCommunicationForms";
 import {
-  createTicketTypeAction,
-  toggleTicketTypeAction,
-  createInstructorEngagementAction,
-  linkEngagementPayoutObligationAction,
-  approveWorkshopObligationAction,
-  updateTravelAssistanceStatusAction,
-  sendWorkshopNoticeAction,
-} from "../actions";
+  ToggleTicketTypeButton,
+  CreateTicketTypeForm,
+  CreateInstructorEngagementForm,
+  LinkPayoutObligationButton,
+  ApproveObligationButton,
+  TravelAssistanceStatusForm,
+  NotifyRegistrantsForm,
+} from "../WorkshopDashboardForms";
 
 export const metadata: Metadata = {
   title: "Workshop Dashboard — Ordift Studios Admin",
@@ -215,31 +215,12 @@ export default async function WorkshopDashboardPage({ params }: { params: Promis
                   ${t.priceUsd.toFixed(2)} · {t.seatsReserved}{t.capacity ? `/${t.capacity}` : ""} reserved
                 </p>
               </div>
-              {canManageWorkshop && (
-                <form action={toggleTicketTypeAction}>
-                  <input type="hidden" name="ticketTypeId" value={t.id} />
-                  <input type="hidden" name="workshopId" value={id} />
-                  <input type="hidden" name="active" value={String(t.active)} />
-                  <button type="submit" className="font-sans text-caption text-ordift-gold-pressed underline underline-offset-4">
-                    {t.active ? "Deactivate" : "Reactivate"}
-                  </button>
-                </form>
-              )}
+              {canManageWorkshop && <ToggleTicketTypeButton ticketTypeId={t.id} workshopId={id} active={t.active} />}
             </li>
           ))}
           {ticketTypes.length === 0 && <li className="px-4 py-3 font-sans text-body-small text-ordift-ink-muted">None yet — registration remains open/free without one.</li>}
         </ul>
-        {canManageWorkshop && (
-          <form action={createTicketTypeAction} className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <input type="hidden" name="workshopId" value={id} />
-            <input name="name" placeholder="Name (e.g. Early Bird)" required className="rounded-lg border border-black/15 px-3 py-1.5 font-sans text-body-small" />
-            <input type="number" name="priceUsd" placeholder="Price (USD)" min={0} step="0.01" required className="rounded-lg border border-black/15 px-3 py-1.5 font-sans text-body-small" />
-            <input type="number" name="capacity" placeholder="Capacity (optional)" min={1} className="rounded-lg border border-black/15 px-3 py-1.5 font-sans text-body-small" />
-            <button type="submit" className="sm:col-span-3 justify-self-start font-sans text-body-small font-semibold px-4 py-2 rounded-md bg-ordift-navy-950 text-white">
-              Add Ticket Type
-            </button>
-          </form>
-        )}
+        {canManageWorkshop && <CreateTicketTypeForm workshopId={id} />}
       </section>
 
       {canManageEngagements && (
@@ -256,33 +237,13 @@ export default async function WorkshopDashboardPage({ params }: { params: Promis
                   {e.paymentObligationId ? " · obligation linked" : ""}
                 </p>
                 {!e.paymentObligationId && e.profileId && e.agreedCompensationAmount && (
-                  <form action={linkEngagementPayoutObligationAction} className="mt-1">
-                    <input type="hidden" name="engagementId" value={e.id} />
-                    <input type="hidden" name="workshopId" value={id} />
-                    <button type="submit" className="font-sans text-caption text-ordift-gold-pressed underline underline-offset-4">
-                      Create Payment Obligation
-                    </button>
-                  </form>
+                  <LinkPayoutObligationButton engagementId={e.id} workshopId={id} />
                 )}
               </li>
             ))}
             {engagements.length === 0 && <li className="px-4 py-3 font-sans text-body-small text-ordift-ink-muted">None yet.</li>}
           </ul>
-          <form action={createInstructorEngagementAction} className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <input type="hidden" name="workshopId" value={id} />
-            <select name="profileId" defaultValue="" className="rounded-lg border border-black/15 bg-white px-2 py-1.5 font-sans text-body-small">
-              <option value="">External payee (use name field instead)…</option>
-              {people.map((p) => (
-                <option key={p.id} value={p.id}>{p.label}</option>
-              ))}
-            </select>
-            <input name="externalPayeeName" placeholder="External payee name (if not staff/contractor)" className="rounded-lg border border-black/15 px-3 py-1.5 font-sans text-body-small" />
-            <input name="role" placeholder="Role (e.g. Lead Instructor)" defaultValue="instructor" className="rounded-lg border border-black/15 px-3 py-1.5 font-sans text-body-small" />
-            <input type="number" name="agreedCompensationAmount" placeholder="Agreed compensation (optional)" min={0} step="0.01" className="rounded-lg border border-black/15 px-3 py-1.5 font-sans text-body-small" />
-            <button type="submit" className="sm:col-span-2 justify-self-start font-sans text-body-small font-semibold px-4 py-2 rounded-md bg-ordift-navy-950 text-white">
-              Add Engagement
-            </button>
-          </form>
+          <CreateInstructorEngagementForm workshopId={id} people={people} />
         </section>
       )}
 
@@ -309,22 +270,7 @@ export default async function WorkshopDashboardPage({ params }: { params: Promis
               <p className="font-sans text-caption text-ordift-ink-muted">
                 {t.traveller_count ? `${t.traveller_count} traveller(s)` : ""} {t.arrival_date ? `· Arrives ${t.arrival_date}` : ""} {t.departure_date ? `· Departs ${t.departure_date}` : ""}
               </p>
-              {canManageWorkshop && (
-                <form action={updateTravelAssistanceStatusAction} className="flex items-center gap-2 mt-2">
-                  <input type="hidden" name="requestId" value={t.id} />
-                  <input type="hidden" name="workshopId" value={id} />
-                  <select name="status" defaultValue={t.status} className="rounded-lg border border-black/15 bg-white px-2 py-1 font-sans text-caption">
-                    <option value="requested">Requested</option>
-                    <option value="in_progress">In Progress</option>
-                    <option value="arranged">Arranged</option>
-                    <option value="declined">Declined</option>
-                    <option value="cancelled">Cancelled</option>
-                  </select>
-                  <button type="submit" className="font-sans text-caption text-ordift-gold-pressed underline underline-offset-4">
-                    Update &amp; Notify
-                  </button>
-                </form>
-              )}
+              {canManageWorkshop && <TravelAssistanceStatusForm requestId={t.id} workshopId={id} currentStatus={t.status} />}
             </li>
           ))}
           {(!travelRequests || travelRequests.length === 0) && <li className="px-4 py-3 font-sans text-body-small text-ordift-ink-muted">None yet.</li>}
@@ -339,18 +285,7 @@ export default async function WorkshopDashboardPage({ params }: { params: Promis
             cancellation or reschedule. This is a manual, staff-triggered broadcast; nothing here changes the
             workshop&rsquo;s status automatically.
           </p>
-          <form action={sendWorkshopNoticeAction} className="space-y-3">
-            <input type="hidden" name="workshopId" value={id} />
-            <select name="noticeType" defaultValue="update" className="rounded-lg border border-black/15 bg-white px-3 py-1.5 font-sans text-body-small">
-              <option value="cancelled">Workshop Cancelled</option>
-              <option value="rescheduled">Workshop Rescheduled</option>
-              <option value="update">General Update</option>
-            </select>
-            <textarea name="message" required rows={3} placeholder="Message to registrants…" className="w-full rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small" />
-            <button type="submit" className="font-sans text-body-small font-semibold px-4 py-2 rounded-md bg-ordift-navy-950 text-white">
-              Send Notice
-            </button>
-          </form>
+          <NotifyRegistrantsForm workshopId={id} />
         </section>
       )}
 
@@ -386,15 +321,7 @@ async function ObligationsList({ workshopId, engagementIds }: { workshopId: stri
               View in Payables →
             </Link>
           </div>
-          {o.status === "pending_approval" && (
-            <form action={approveWorkshopObligationAction}>
-              <input type="hidden" name="obligationId" value={o.id} />
-              <input type="hidden" name="workshopId" value={workshopId} />
-              <button type="submit" className="font-sans text-caption text-ordift-gold-pressed underline underline-offset-4">
-                Approve
-              </button>
-            </form>
-          )}
+          {o.status === "pending_approval" && <ApproveObligationButton obligationId={o.id} workshopId={workshopId} />}
         </li>
       ))}
     </ul>

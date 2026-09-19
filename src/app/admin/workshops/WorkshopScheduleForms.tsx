@@ -88,7 +88,7 @@ export function CreateSessionForm({ workshopId, people }: { workshopId: string; 
       <input name="locationOverride" placeholder="Venue/room or online link override (optional)" className="sm:col-span-2 rounded-lg border border-black/15 px-3 py-1.5 font-sans text-body-small" />
       <input name="participantNotes" placeholder="Note visible to participants (optional)" className="sm:col-span-2 rounded-lg border border-black/15 px-3 py-1.5 font-sans text-body-small" />
       <button type="submit" disabled={pending} aria-busy={pending} className="sm:col-span-2 justify-self-start font-sans text-body-small font-semibold px-4 py-2 rounded-md bg-ordift-navy-950 text-white disabled:opacity-50">
-        {pending ? "Adding…" : "Add Session"}
+        {pending ? "Adding session…" : "Add Session"}
       </button>
       {!pending && state?.ok === false && <p className="sm:col-span-2 font-sans text-caption text-amber-700">{state.error}</p>}
       {!pending && state?.ok === true && <p className="sm:col-span-2 font-sans text-caption text-green-700">Session added.</p>}

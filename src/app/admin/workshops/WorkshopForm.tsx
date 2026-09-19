@@ -1,23 +1,30 @@
 "use client";
 
+import { useActionState } from "react";
 import type { Venue, Workshop } from "@/lib/content/types";
+import type { ActionState } from "./actions";
 
 const inputClasses = "w-full min-h-10 rounded-lg border border-black/15 bg-white px-3 py-2 font-sans text-body-small text-ordift-ink";
 
-// Workshop Management V1, Phase B (2026-08-25) — plain server-form
-// component (submits directly via the `action` prop, no client state),
-// matching /admin/organization's established pattern for this
-// codebase's simpler admin forms. Covers the core operational fields
-// only — see workshopAdmin.ts's header comment for the explicit scope
-// decision (rich content stays Studio-edited).
+// Workshop Management V1, Phase B (2026-08-25) — submission feedback
+// UX correction (2026-09-20): converted to useActionState so Create/
+// Edit Workshop get the same immediate pending state, disabled
+// duplicate submit, and explicit error feedback as every other
+// consequential action on this page. Success is the existing
+// redirect-to-dashboard behaviour, unchanged (not a workflow redesign)
+// — the pending state just covers the round trip until that happens.
+// Covers the core operational fields only — see workshopAdmin.ts's
+// header comment for the explicit scope decision (rich content stays
+// Studio-edited).
 export default function WorkshopForm({
   action,
   workshop,
   internalNotes,
   venues,
   submitLabel,
+  processingLabel,
 }: {
-  action: (formData: FormData) => void;
+  action: (prevState: ActionState, formData: FormData) => Promise<ActionState>;
   workshop?: Workshop | null;
   // Fetched separately from `workshop` on purpose — internalNotes is
   // deliberately excluded from the shared Workshop type/query (see
@@ -26,9 +33,12 @@ export default function WorkshopForm({
   internalNotes?: string | null;
   venues: Venue[];
   submitLabel: string;
+  processingLabel: string;
 }) {
+  const [state, formAction, pending] = useActionState<ActionState, FormData>(action, null);
+
   return (
-    <form action={action} className="space-y-6 max-w-3xl">
+    <form action={formAction} className="space-y-6 max-w-3xl">
       {workshop && <input type="hidden" name="id" value={workshop.id} />}
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -127,9 +137,17 @@ export default function WorkshopForm({
         Gallery, agenda, FAQs, testimonials, sponsors, and instructor bios are still edited in Sanity Studio.
       </p>
 
-      <button type="submit" className="inline-flex items-center rounded-full bg-ordift-gold text-ordift-navy-950 font-sans font-semibold text-button px-6 py-2.5">
-        {submitLabel}
-      </button>
+      <div className="flex items-center gap-3">
+        <button
+          type="submit"
+          disabled={pending}
+          aria-busy={pending}
+          className="inline-flex items-center rounded-full bg-ordift-gold text-ordift-navy-950 font-sans font-semibold text-button px-6 py-2.5 disabled:opacity-50"
+        >
+          {pending ? processingLabel : submitLabel}
+        </button>
+        {!pending && state?.ok === false && <p className="font-sans text-caption text-red-700">{state.error}</p>}
+      </div>
     </form>
   );
 }
