@@ -21,7 +21,7 @@ export default async function NewQuotationPage() {
     : [];
 
   return (
-    <div className="max-w-3xl">
+    <div className="max-w-5xl">
       <div className="mb-8">
         <Link href="/admin/pricing/quotations" className="font-sans text-caption text-ordift-ink-muted hover:text-ordift-ink">
           ← Client Quotations

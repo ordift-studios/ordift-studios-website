@@ -56,7 +56,7 @@ export default async function EditQuotationPage({ params }: { params: Promise<{ 
   };
 
   return (
-    <div className="max-w-3xl">
+    <div className="max-w-5xl">
       <div className="mb-8">
         <Link href={`/admin/pricing/quotations/${id}`} className="font-sans text-caption text-ordift-ink-muted hover:text-ordift-ink">
           ← {quotation.quotationReference}

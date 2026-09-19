@@ -50,7 +50,7 @@ export default async function ExchangeRateManagementPage({
   const actors = await resolveActorIdentities(actorIds);
 
   return (
-    <div className="space-y-8 max-w-3xl">
+    <div className="space-y-8 max-w-5xl">
       <div>
         <Link href="/admin/payments" className="font-sans text-caption text-ordift-ink-muted hover:text-ordift-ink">
           ← Payments

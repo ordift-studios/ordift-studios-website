@@ -22,7 +22,7 @@ export default async function OnboardingPlaybookDetailPage({ params }: { params:
   const playbook = buildOnboardingPlaybook(classification);
 
   return (
-    <div className="max-w-3xl">
+    <div className="max-w-5xl">
       <div className="mb-8 flex flex-wrap items-start justify-between gap-3">
         <div>
           <Link href="/admin/hr/playbooks" className="font-sans text-caption text-ordift-ink-muted hover:text-ordift-ink">

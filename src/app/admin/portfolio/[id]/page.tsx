@@ -97,7 +97,7 @@ export default async function AdminPortfolioProjectPage({ params }: { params: Pr
   const canManagePresentation = canManagePortfolioPresentation(user);
 
   return (
-    <div className="space-y-10 max-w-3xl">
+    <div className="space-y-10 max-w-5xl">
       <div>
         <Link href="/admin/portfolio" className="font-sans text-caption text-ordift-ink-muted hover:text-ordift-ink">
           ← Portfolio
@@ -131,6 +131,12 @@ export default async function AdminPortfolioProjectPage({ params }: { params: Pr
         </div>
       </div>
 
+      {/* Layout correction (2026-09-19) — these four independent, short
+          cards used to stack in a single narrow column, leaving most of
+          a desktop viewport blank. A 2-column grid on lg+ lets them use
+          the width the wider admin shell now provides; they still stack
+          on tablet/mobile exactly as before. */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
       {(readiness.blocking.length > 0 || readiness.warnings.length > 0) && (
         <section className="rounded-xl border border-black/10 bg-white p-6">
           <p className="font-sans text-body-small font-semibold text-ordift-ink mb-2">Publish Readiness</p>
@@ -259,6 +265,7 @@ export default async function AdminPortfolioProjectPage({ params }: { params: Pr
           )}
         </dl>
       </section>
+      </div>
 
       {(canManageAssignments || assignments.length > 0) && (
         <section className="rounded-xl border border-black/10 bg-white p-6 space-y-4">

@@ -31,7 +31,7 @@ export default async function RecruitmentApplicationPage({ params }: { params: P
   const liveStage = hiringBridge ? await resolveRecruitmentLiveStage(hiringBridge) : null;
 
   return (
-    <div className="max-w-2xl">
+    <div className="max-w-5xl">
       <div className="mb-8">
         <Link href="/admin/recruitment" className="font-sans text-caption text-ordift-ink-muted hover:text-ordift-ink">
           ← Recruitment

@@ -117,7 +117,7 @@ export default async function AdminPaymentDetailPage({ params }: { params: Promi
   const entityLabel = entity && "service" in entity ? entity.service : entity && "workshop_title" in entity ? entity.workshop_title : null;
 
   return (
-    <div className="max-w-2xl">
+    <div className="max-w-5xl">
       <Link href="/admin/payments" className="font-sans text-body-small text-ordift-ink-muted hover:text-ordift-ink mb-4 inline-block">
         ← Back to Payments
       </Link>

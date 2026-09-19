@@ -51,7 +51,7 @@ export default async function AdminProfilePage({
   }
 
   return (
-    <div className="max-w-2xl">
+    <div className="max-w-5xl">
       <div className="mb-8">
         <p className="font-sans font-semibold uppercase tracking-[0.2em] text-eyebrow text-ordift-gold-pressed mb-2">
           {isEditing ? "Edit Profile" : "Profile"}

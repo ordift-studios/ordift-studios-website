@@ -60,7 +60,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   return (
     <div className="min-h-screen flex flex-col">
       <header className="bg-ordift-navy-950 text-white">
-        <div className="max-w-6xl mx-auto px-4 sm:px-8 py-4 flex items-center justify-between">
+        <div className="max-w-[1600px] mx-auto px-4 sm:px-8 py-4 flex items-center justify-between">
           <Link href="/admin" aria-label="Ordift Studios admin home">
             <Logo variant="nav" color="white" height={24} priority />
           </Link>
@@ -85,7 +85,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
             </form>
           </div>
         </div>
-        <div className="max-w-6xl mx-auto px-4 sm:px-8 flex gap-1 border-t border-white/10 overflow-x-auto">
+        <div className="max-w-[1600px] mx-auto px-4 sm:px-8 flex gap-1 border-t border-white/10 overflow-x-auto">
           {/* Admin Workspace Reorganization (2026-09-07) — hierarchical/
               expandable grouping (Part 38) over the same flat route list.
               Submenu dropdown fix (2026-09-07): this container is
@@ -150,8 +150,17 @@ export default async function AdminLayout({ children }: { children: React.ReactN
         </div>
       </header>
 
+      {/* Desktop layout correction (2026-09-19) — this shared wrapper
+          previously capped every Admin page's content at max-w-6xl
+          (1152px), leaving large blank margins on real desktop/large
+          desktop monitors regardless of how data-dense the page was.
+          1600px gives operational pages (dashboards, tables, card
+          grids) substantially more room while still leaving sensible
+          margins on very wide displays; px-4 sm:px-8 (unchanged) keeps
+          tablet/mobile exactly as before, since this only widens the
+          cap, it never forces narrower content to stretch. */}
       <main className="flex-1 bg-ordift-offwhite px-4 sm:px-8 py-10 sm:py-14">
-        <div className="max-w-6xl mx-auto">
+        <div className="max-w-[1600px] mx-auto">
           <PresenceProvider
             self={{
               userId: user.id,

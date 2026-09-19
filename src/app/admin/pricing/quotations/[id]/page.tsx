@@ -20,7 +20,7 @@ export default async function QuotationDetailPage({ params }: { params: Promise<
   if (!quotation) notFound();
 
   return (
-    <div className="max-w-3xl">
+    <div className="max-w-5xl">
       <div className="mb-8 flex flex-wrap items-start justify-between gap-3">
         <div>
           <Link href="/admin/pricing/quotations" className="font-sans text-caption text-ordift-ink-muted hover:text-ordift-ink">
