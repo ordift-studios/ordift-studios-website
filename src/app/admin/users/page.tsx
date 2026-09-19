@@ -6,6 +6,7 @@ import { listUsersWithRoles, listOperationalTitles, listEngagementTypes, listEmp
 import { listClassifications } from "@/lib/portal/memberNumbers";
 import { listPositions } from "@/lib/organization/adminData";
 import { listApprovedRequisitionsForOnboarding } from "@/lib/recruitment/requisitions";
+import { proposeJurisdictionForProfile } from "@/lib/recruitment/adminData";
 import UsersManager from "./UsersManager";
 
 export const metadata: Metadata = {
@@ -45,6 +46,22 @@ export default async function AdminUsersPage() {
     listEmploymentJurisdictions(),
   ]);
 
+  // Task 5 (2026-09-18) — proposes (never silently applies) a
+  // configured Employment Jurisdiction from the applicant's own
+  // location for the small set of accounts that could plausibly need
+  // the Proceed-to-Hire bridge right now (positioned, not yet
+  // onboarding) — bounded, not computed for the whole roster.
+  const proposedJurisdictionByUserId: Record<string, { id: string; name: string }> = {};
+  if (result.ok) {
+    const candidates = result.users.filter((u) => u.positionId && !u.onboardingStatus);
+    const proposals = await Promise.all(
+      candidates.map(async (u) => [u.id, await proposeJurisdictionForProfile(u.id, employmentJurisdictions)] as const)
+    );
+    for (const [userId, proposal] of proposals) {
+      if (proposal) proposedJurisdictionByUserId[userId] = proposal;
+    }
+  }
+
   return (
     <div>
       <div className="mb-8">
@@ -80,6 +97,7 @@ export default async function AdminUsersPage() {
           positions={positions}
           approvedRequisitions={approvedRequisitions}
           employmentJurisdictions={employmentJurisdictions}
+          proposedJurisdictionByUserId={proposedJurisdictionByUserId}
         />
       )}
     </div>

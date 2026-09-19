@@ -6,13 +6,14 @@ import type { StaffOnboarding } from "@/lib/organization/onboarding";
 import type { ResolvedRequirement, RequirementStatus, OnboardingRequirementOverrideRow } from "@/lib/organization/onboardingRequirements";
 import type { ActivityLogEntry } from "@/lib/admin/activityLog";
 import type { RecruitmentRequisition } from "@/lib/recruitment/requisitions";
-import type { CurrentEmploymentContext, EmploymentTermsRow, WorkPatternType, EmploymentTransitionType } from "@/lib/organization/employmentTermsHistory";
+import type { CurrentEmploymentContext, EmploymentTermsRow, EmploymentTransitionType } from "@/lib/organization/employmentTermsHistory";
 import type { EmployingEntity } from "@/lib/organization/legalEntities";
 import type { LookupOption } from "@/lib/portal/adminData";
 import type { EmploymentAgreementSummary, EmploymentAgreementFieldReadiness } from "@/lib/legal/employeeAgreements";
 import { isExceptionalAgreementStatus, isFullyExecuted } from "@/lib/legal/agreementLifecycle";
 import { CreateAgreementDraftForm } from "../../people/[id]/CreateAgreementDraftForm";
-import { recordInitialEmploymentTermsAction, recordEmploymentTransitionAction } from "../../people/[id]/actions";
+import { RecordInitialEmploymentTermsForm, RecordEmploymentTransitionForm, WORK_PATTERN_TYPE_OPTIONS } from "../../people/[id]/EmploymentTermsForms";
+import { agreementReadinessFieldHref } from "@/lib/legal/agreementReadinessLinks";
 import {
   advanceOnboardingStageAction,
   completeOnboardingFromWorkspaceAction,
@@ -21,12 +22,6 @@ import {
   authorizeOnboardingRequirementOverrideAction,
   type ActionState,
 } from "./actions";
-
-const WORK_PATTERN_TYPE_OPTIONS: { value: WorkPatternType; label: string }[] = [
-  { value: "fixed_schedule", label: "Standard / Fixed Schedule" },
-  { value: "shift_roster", label: "Shift / Rostered" },
-  { value: "flexible_executive", label: "Flexible Executive" },
-];
 
 // authorizedByName is resolved server-side (page.tsx) from the same
 // person projection every other name on this page already uses —
@@ -511,76 +506,31 @@ export function OnboardingWorkspace({
           title/grade/reporting-line remain governed exclusively by
           Position assignment, exactly as on the Full Profile page. */}
       {onboarding.pipeline === "employee" && (
-        <section className="rounded-xl border border-black/10 bg-white p-6 space-y-3">
+        <section id="section-employment-terms" className="rounded-xl border border-black/10 bg-white p-6 space-y-3 scroll-mt-6">
           <h2 className="font-serif font-medium text-body text-ordift-ink">Employment Terms Setup</h2>
           <p className="font-sans text-caption text-ordift-ink-muted">
             Sets this person&apos;s real, governed employment_terms_history record — the same source of truth the
             Employment Agreement Readiness panel below reads from.
           </p>
           {employmentTermsHistory.length === 0 ? (
-            <form action={recordInitialEmploymentTermsAction} className="grid grid-cols-2 gap-2 rounded-lg border border-ordift-gold-pressed/40 bg-ordift-gold-pressed/5 p-3">
-              <p className="col-span-2 font-sans text-caption font-semibold text-ordift-ink">Record Initial Employment Terms (formal commencement)</p>
-              <input type="hidden" name="profileId" value={onboarding.profileId} />
-              <input type="date" name="effectiveFrom" required aria-label="Formal commencement date" className="col-span-2 rounded-lg border border-black/15 px-2 py-1 font-sans text-caption" />
-              <select name="employingEntityId" required defaultValue="" className="rounded-lg border border-black/15 bg-white px-2 py-1 font-sans text-caption">
-                <option value="" disabled>Employing entity…</option>
-                {employingEntitiesForTerms.map((e) => (
-                  <option key={e.id} value={e.id}>{e.legalName ?? e.name}</option>
-                ))}
-              </select>
-              <select name="employmentJurisdictionId" required defaultValue="" className="rounded-lg border border-black/15 bg-white px-2 py-1 font-sans text-caption">
-                <option value="" disabled>Employment jurisdiction…</option>
-                {jurisdictionsForTerms.map((j) => (
-                  <option key={j.id} value={j.id}>{j.name}</option>
-                ))}
-              </select>
-              <input name="workLocation" required placeholder="Primary work location" className="rounded-lg border border-black/15 px-2 py-1 font-sans text-caption" />
-              <input name="workPattern" required placeholder="Normal working hours (e.g. Mon–Fri, 08:00–17:00)" className="rounded-lg border border-black/15 px-2 py-1 font-sans text-caption" />
-              <select name="workPatternType" defaultValue="" className="rounded-lg border border-black/15 bg-white px-2 py-1 font-sans text-caption">
-                <option value="">Work pattern classification — not yet set</option>
-                {WORK_PATTERN_TYPE_OPTIONS.map((o) => (
-                  <option key={o.value} value={o.value}>{o.label}</option>
-                ))}
-              </select>
-              <input name="basicSalary" type="number" step="0.01" min="0" required placeholder="Basic salary" className="rounded-lg border border-black/15 px-2 py-1 font-sans text-caption" />
-              <input name="currency" required placeholder="Currency (e.g. GHS)" className="rounded-lg border border-black/15 px-2 py-1 font-sans text-caption" />
-              <button type="submit" className="col-span-2 justify-self-start font-sans text-caption font-semibold px-3 py-1 rounded-md bg-ordift-navy-950 text-white">Record Formal Commencement</button>
-            </form>
+            <RecordInitialEmploymentTermsForm
+              profileId={onboarding.profileId}
+              onboardingId={onboarding.id}
+              employingEntities={employingEntitiesForTerms.map((e) => ({ id: e.id, label: e.legalName ?? e.name }))}
+              jurisdictions={jurisdictionsForTerms}
+              workPatternTypes={WORK_PATTERN_TYPE_OPTIONS}
+            />
           ) : (
-            <form action={recordEmploymentTransitionAction} className="grid grid-cols-2 gap-2">
-              <p className="col-span-2 font-sans text-caption font-semibold text-ordift-ink">Confirm / Update Employment Terms</p>
-              <input type="hidden" name="profileId" value={onboarding.profileId} />
-              <select name="transitionType" required defaultValue="" className="col-span-2 rounded-lg border border-black/15 bg-white px-2 py-1 font-sans text-caption">
-                <option value="" disabled>Transition type…</option>
-                {employmentTransitionTypes.map((t) => (
-                  <option key={t} value={t}>{t.replace(/_/g, " ")}</option>
-                ))}
-              </select>
-              <input type="date" name="effectiveFrom" className="rounded-lg border border-black/15 px-2 py-1 font-sans text-caption" />
-              <select name="employingEntityId" defaultValue="" className="rounded-lg border border-black/15 bg-white px-2 py-1 font-sans text-caption">
-                <option value="">Employing entity unchanged</option>
-                {employingEntitiesForTerms.map((e) => (
-                  <option key={e.id} value={e.id}>{e.legalName ?? e.name}</option>
-                ))}
-              </select>
-              <select name="employmentJurisdictionId" defaultValue="" className="rounded-lg border border-black/15 bg-white px-2 py-1 font-sans text-caption">
-                <option value="">Jurisdiction unchanged</option>
-                {jurisdictionsForTerms.map((j) => (
-                  <option key={j.id} value={j.id}>{j.name}</option>
-                ))}
-              </select>
-              <input name="workLocation" placeholder="Work location (if changed)" className="rounded-lg border border-black/15 px-2 py-1 font-sans text-caption" />
-              <select name="workPatternType" defaultValue="" className="rounded-lg border border-black/15 bg-white px-2 py-1 font-sans text-caption">
-                <option value="">Work pattern classification unchanged</option>
-                {WORK_PATTERN_TYPE_OPTIONS.map((o) => (
-                  <option key={o.value} value={o.value}>{o.label}</option>
-                ))}
-              </select>
-              <input name="basicSalary" type="number" step="0.01" min="0" placeholder="Basic salary (if changed)" className="rounded-lg border border-black/15 px-2 py-1 font-sans text-caption" />
-              <input name="currency" placeholder="Currency (if changed)" className="rounded-lg border border-black/15 px-2 py-1 font-sans text-caption" />
-              <input name="notes" placeholder="Notes (optional)" className="col-span-2 rounded-lg border border-black/15 px-2 py-1 font-sans text-caption" />
-              <button type="submit" className="col-span-2 justify-self-start font-sans text-caption font-semibold px-3 py-1 rounded-md bg-ordift-navy-950 text-white">Confirm Employment Terms</button>
-            </form>
+            <RecordEmploymentTransitionForm
+              profileId={onboarding.profileId}
+              onboardingId={onboarding.id}
+              employingEntities={employingEntitiesForTerms.map((e) => ({ id: e.id, label: e.legalName ?? e.name }))}
+              jurisdictions={jurisdictionsForTerms}
+              workPatternTypes={WORK_PATTERN_TYPE_OPTIONS}
+              transitionTypes={employmentTransitionTypes}
+              heading="Confirm / Update Employment Terms"
+              submitLabel="Confirm Employment Terms"
+            />
           )}
           <p className="font-sans text-caption text-ordift-ink-muted">
             Role/title, grade, and reporting-line remain governed exclusively by Position assignment on the{" "}
@@ -676,22 +626,31 @@ export function OnboardingWorkspace({
             ) : (
               <>
                 <ul className="divide-y divide-black/5">
-                  {agreementReadiness.fields.map((f) => (
-                    <li key={f.key} className="py-1.5 flex items-center justify-between gap-3">
-                      <span className="font-sans text-caption text-ordift-ink">{f.label}{f.value ? ` — ${f.value}` : ""}</span>
-                      <span
-                        className={`px-2 py-0.5 rounded-full font-sans text-caption whitespace-nowrap ${
-                          f.status === "satisfied" || f.status === "not_applicable"
-                            ? "bg-green-100 text-green-800"
-                            : f.status === "missing"
-                              ? "bg-amber-100 text-amber-800"
-                              : "bg-red-100 text-red-800"
-                        }`}
-                      >
-                        {f.status.replace(/_/g, " ")}
-                      </span>
-                    </li>
-                  ))}
+                  {agreementReadiness.fields.map((f) => {
+                    const href = agreementReadinessFieldHref(f.key, { profileId: onboarding.profileId, onboardingId: onboarding.id });
+                    return (
+                      <li key={f.key} className="py-1.5 flex items-center justify-between gap-3">
+                        {href ? (
+                          <Link href={href} className="font-sans text-caption text-ordift-gold-pressed underline underline-offset-4">
+                            {f.label}{f.value ? ` — ${f.value}` : ""} →
+                          </Link>
+                        ) : (
+                          <span className="font-sans text-caption text-ordift-ink">{f.label}{f.value ? ` — ${f.value}` : ""}</span>
+                        )}
+                        <span
+                          className={`px-2 py-0.5 rounded-full font-sans text-caption whitespace-nowrap ${
+                            f.status === "satisfied" || f.status === "not_applicable"
+                              ? "bg-green-100 text-green-800"
+                              : f.status === "missing"
+                                ? "bg-amber-100 text-amber-800"
+                                : "bg-red-100 text-red-800"
+                          }`}
+                        >
+                          {f.status.replace(/_/g, " ")}
+                        </span>
+                      </li>
+                    );
+                  })}
                 </ul>
                 {agreementReadiness.ready && (!agreementSummary || agreementSummary.isStale) ? (
                   <CreateAgreementDraftForm profileId={onboarding.profileId} onboardingId={onboarding.id} isReplacement={Boolean(agreementSummary?.isStale)} />

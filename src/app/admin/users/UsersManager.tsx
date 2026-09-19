@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useMemo, useState, useTransition } from "react";
+import { useActionState, useEffect, useMemo, useState, useTransition } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import type { AdminUserRow, LookupOption } from "@/lib/portal/adminData";
@@ -126,6 +126,7 @@ function UserDetail({
   positions,
   approvedRequisitions,
   employmentJurisdictions,
+  proposedJurisdiction,
 }: {
   user: AdminUserRow;
   currentUserIsSuperAdmin: boolean;
@@ -135,6 +136,7 @@ function UserDetail({
   positions: Position[];
   approvedRequisitions: RecruitmentRequisition[];
   employmentJurisdictions: LookupOption[];
+  proposedJurisdiction?: { id: string; name: string };
 }) {
   const [pending, startTransition] = useTransition();
   // Grant Role button feedback (2026-09-09) — its own dedicated
@@ -936,6 +938,7 @@ function UserDetail({
                     positionId={user.positionId}
                     engagementTypeId={user.engagementTypeId}
                     employmentJurisdictions={employmentJurisdictions}
+                    proposedJurisdiction={proposedJurisdiction}
                   />
                   {!user.roles.includes("staff") && (
                     <CreateExistingAccountConversionButton
@@ -1247,23 +1250,28 @@ function CreateStandardHireRequisitionButton({
   positionId,
   engagementTypeId,
   employmentJurisdictions,
+  proposedJurisdiction,
 }: {
   userId: string;
   positionId: string;
   engagementTypeId: string | null;
   employmentJurisdictions: LookupOption[];
+  proposedJurisdiction?: { id: string; name: string };
 }) {
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
-  // Task 3 (2026-09-17) — the Kelvin bug's real root: this bridge
+  // Task 3/5 (2026-09-17/18) — the Kelvin bug's real root: this bridge
   // created a requisition with NO employment jurisdiction at all,
   // relying entirely on someone remembering to set it later. Jurisdiction
   // belongs to the employment relationship and is captured/confirmed
   // HERE, at the point of decision — never inferred from nationality,
   // IP, or physical location, and never silently defaulted without a
-  // human confirming it.
-  const [employmentJurisdictionId, setEmploymentJurisdictionId] = useState("");
+  // human confirming it. proposedJurisdiction (Task 5) only PRE-FILLS
+  // this same required, editable selector from the applicant's own
+  // stated location matching a real configured jurisdiction — it is
+  // never applied without this explicit confirm step.
+  const [employmentJurisdictionId, setEmploymentJurisdictionId] = useState(proposedJurisdiction?.id ?? "");
 
   function submit() {
     setError(null);
@@ -1287,16 +1295,23 @@ function CreateStandardHireRequisitionButton({
 
   return (
     <div className="flex flex-wrap items-center gap-2">
-      <select
-        value={employmentJurisdictionId}
-        onChange={(e) => setEmploymentJurisdictionId(e.target.value)}
-        className="rounded-lg border border-black/15 bg-white px-2 py-1 font-sans text-caption"
-      >
-        <option value="" disabled>Employment jurisdiction…</option>
-        {employmentJurisdictions.map((j) => (
-          <option key={j.id} value={j.id}>{j.name}</option>
-        ))}
-      </select>
+      <div>
+        <select
+          value={employmentJurisdictionId}
+          onChange={(e) => setEmploymentJurisdictionId(e.target.value)}
+          className="rounded-lg border border-black/15 bg-white px-2 py-1 font-sans text-caption"
+        >
+          <option value="" disabled>Employment jurisdiction…</option>
+          {employmentJurisdictions.map((j) => (
+            <option key={j.id} value={j.id}>{j.name}</option>
+          ))}
+        </select>
+        {proposedJurisdiction && (
+          <p className="font-sans text-[0.65rem] text-ordift-ink-muted mt-0.5">
+            Proposed from applicant&apos;s stated location: {proposedJurisdiction.name} — confirm or change above.
+          </p>
+        )}
+      </div>
       <button
         type="button"
         onClick={submit}
@@ -1616,6 +1631,7 @@ export default function UsersManager({
   positions,
   approvedRequisitions,
   employmentJurisdictions,
+  proposedJurisdictionByUserId,
 }: {
   users: AdminUserRow[];
   currentUserId: string;
@@ -1626,12 +1642,25 @@ export default function UsersManager({
   positions: Position[];
   approvedRequisitions: RecruitmentRequisition[];
   employmentJurisdictions: LookupOption[];
+  proposedJurisdictionByUserId: Record<string, { id: string; name: string }>;
 }) {
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<"" | AdminUserRow["accessStatus"]>("");
   const [roleFilter, setRoleFilter] = useState<"" | RoleSlug>("");
-  const [expandedId, setExpandedId] = useState<string | null>(null);
   const searchParams = useSearchParams();
+  // Task 2 (2026-09-18) — Agreement Readiness deep-links here to open
+  // the real Position-assignment editor for a specific person (never a
+  // second editor). Reads the initial expansion straight from the URL
+  // (lazy initializer, not an effect+setState) so it's derived state,
+  // not synchronized state; the effect below only performs the actual
+  // DOM side effect of scrolling that row into view.
+  const [expandedId, setExpandedId] = useState<string | null>(() => searchParams.get("expandUserId"));
+  useEffect(() => {
+    const expandUserId = searchParams.get("expandUserId");
+    if (!expandUserId) return;
+    const row = document.getElementById(`user-row-${expandUserId}`);
+    row?.scrollIntoView({ block: "start" });
+  }, [searchParams]);
   const invitePrefill = useMemo(() => {
     const sourceApplicationId = searchParams.get("sourceApplicationId");
     if (!sourceApplicationId) return null;
@@ -1727,7 +1756,7 @@ export default function UsersManager({
 
       <div className="rounded-xl border border-black/10 bg-white divide-y divide-black/5">
         {filtered.map((u) => (
-          <div key={u.id}>
+          <div key={u.id} id={`user-row-${u.id}`} className="scroll-mt-6">
             <button
               type="button"
               onClick={() => setExpandedId(expandedId === u.id ? null : u.id)}
@@ -1788,6 +1817,7 @@ export default function UsersManager({
                 positions={positions}
                 approvedRequisitions={approvedRequisitions}
                 employmentJurisdictions={employmentJurisdictions}
+                proposedJurisdiction={proposedJurisdictionByUserId[u.id]}
               />
             )}
           </div>

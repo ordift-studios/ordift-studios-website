@@ -36,6 +36,13 @@ export default async function MyAttendancePage() {
     explanationNotes: r.explanationNotes,
   }));
 
+  // Task 9 (2026-09-18) — a forgotten checkout on a PAST day (never
+  // today's own still-open session, which is normal) must be surfaced
+  // and completable before it silently reads as an unexplained
+  // shortage. Derived from the same 14-day window already fetched
+  // above — no second query.
+  const openSessions = recordViews.filter((r) => r.attendanceDate !== today && r.actualCheckIn && !r.actualCheckOut);
+
   return (
     <div>
       <div className="mb-8">
@@ -47,7 +54,12 @@ export default async function MyAttendancePage() {
         </p>
       </div>
 
-      <MyAttendanceWorkspace today={today} todayRecord={recordViews.find((r) => r.attendanceDate === today) ?? null} records={recordViews} />
+      <MyAttendanceWorkspace
+        today={today}
+        todayRecord={recordViews.find((r) => r.attendanceDate === today) ?? null}
+        records={recordViews}
+        openSessions={openSessions}
+      />
     </div>
   );
 }

@@ -20,7 +20,11 @@ export type OnboardingDocumentsRow = {
   onboardingId: string;
   profileId: string;
   fullName: string | null;
+  avatarUrl: string | null;
+  avatarFocalX: number;
+  avatarFocalY: number;
   memberNumber: string | null;
+  positionName: string | null;
   departmentName: string | null;
   relationshipLabel: string;
   jurisdictionName: string | null;
@@ -29,6 +33,7 @@ export type OnboardingDocumentsRow = {
   status: string;
   documentsComplete: number;
   documentsTotal: number;
+  outstandingActionCount: number;
   employmentAgreementStatus: string | null;
 };
 
@@ -36,7 +41,9 @@ function statusIsComplete(status: string): boolean {
   return status === "satisfied" || status === "waived" || status === "not_applicable";
 }
 
-async function resolveEmploymentAgreementStatus(onboardingId: string, ready: boolean | null, error: string | undefined): Promise<string> {
+// Exported for reuse by the Recruitment live-lifecycle indicator (Task
+// 4, 2026-09-18) — the SAME status computation, never a second one.
+export async function resolveEmploymentAgreementStatus(onboardingId: string, ready: boolean | null, error: string | undefined): Promise<string> {
   if (error) return "Not Ready";
   const summary = await getEmployeeEmploymentAgreementSummary(onboardingId);
   if (!summary) return ready ? "Ready to Draft" : "Not Ready";
@@ -77,7 +84,11 @@ export async function getOnboardingDocumentsOverview(): Promise<OnboardingDocume
         onboardingId,
         profileId: u.id,
         fullName: u.fullName,
+        avatarUrl: u.avatarUrl,
+        avatarFocalX: u.avatarFocalX,
+        avatarFocalY: u.avatarFocalY,
         memberNumber: u.memberNumber,
+        positionName: u.positionName ?? u.operationalTitleName,
         departmentName: u.departmentName,
         relationshipLabel: pipeline === "employee" ? "Employee" : (u.engagementTypeName ?? "External Workforce"),
         jurisdictionName: employmentContext.employmentJurisdictionName,
@@ -86,6 +97,7 @@ export async function getOnboardingDocumentsOverview(): Promise<OnboardingDocume
         status: u.onboardingStatus ?? "—",
         documentsComplete,
         documentsTotal: documentRequirements.length,
+        outstandingActionCount: documentRequirements.length - documentsComplete,
         employmentAgreementStatus,
       };
     })

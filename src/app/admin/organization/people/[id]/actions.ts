@@ -1085,15 +1085,29 @@ export async function recordPolicyAcknowledgementAction(formData: FormData): Pro
 // country move recorded here and a promotion recorded there are always
 // two separate, separately-audited actions, even when submitted
 // together in the same sitting.
-export async function recordEmploymentTransitionAction(formData: FormData): Promise<void> {
+// Task 2 consequential-action UX fix (2026-09-18) — these two actions
+// previously returned void with no pending/success/error feedback at
+// all (the exact class of bug that produced Lady's double-click
+// duplicate elsewhere). Now return a real result so both forms can use
+// useActionState, matching CreateAgreementDraftForm's established
+// pattern, and accept an optional onboardingId so a save made FROM the
+// Onboarding Workspace also revalidates that page — not just the Full
+// Profile page — so Agreement Readiness updates immediately wherever
+// the correction was made from.
+export type EmploymentTermsActionState = { ok: true } | { ok: false; error: string } | null;
+
+export async function recordEmploymentTransitionAction(_prev: EmploymentTermsActionState, formData: FormData): Promise<EmploymentTermsActionState> {
   const currentUser = await getCurrentUser();
-  if (!currentUser) return;
+  if (!currentUser) return { ok: false, error: "Not authorized." };
 
   const profileId = String(formData.get("profileId") ?? "").trim();
+  const onboardingId = String(formData.get("onboardingId") ?? "").trim() || null;
   const transitionType = String(formData.get("transitionType") ?? "").trim();
   const effectiveFrom = String(formData.get("effectiveFrom") ?? "").trim() || undefined;
   const notes = String(formData.get("notes") ?? "").trim() || null;
-  if (!profileId || !(EMPLOYMENT_TRANSITION_TYPES as readonly string[]).includes(transitionType)) return;
+  if (!profileId || !(EMPLOYMENT_TRANSITION_TYPES as readonly string[]).includes(transitionType)) {
+    return { ok: false, error: "Choose a transition type." };
+  }
 
   const changes: Partial<EmploymentTermsFields> = {};
   const employingEntityId = String(formData.get("employingEntityId") ?? "").trim();
@@ -1101,14 +1115,37 @@ export async function recordEmploymentTransitionAction(formData: FormData): Prom
   const workLocation = String(formData.get("workLocation") ?? "").trim();
   const basicSalaryRaw = String(formData.get("basicSalary") ?? "").trim();
   const currency = String(formData.get("currency") ?? "").trim();
+  // Kelvin Normal Working Hours root-cause fix (2026-09-18) —
+  // recordEmploymentTransitionAction never read this field at all: a
+  // person with ANY existing employment_terms_history row (i.e.
+  // everyone past their very first save) can only ever reach this
+  // action, never recordInitialEmploymentTermsAction — but only that
+  // initial-terms action collected the free-text working-hours
+  // description resolveEmployeeAgreementVariables() actually reads
+  // (currentTerms?.workPattern). The Founder's transition save
+  // correctly recorded workPatternType (the classification) but had no
+  // field to also record this, so normalWorkingHours stayed
+  // permanently unreachable for Kelvin via any existing UI path.
+  const workPattern = String(formData.get("workPattern") ?? "").trim();
   const workPatternTypeRaw = String(formData.get("workPatternType") ?? "").trim();
+  // Task 6/7 root-cause fix (2026-09-18) — classifyDate()
+  // (workingDayCalendar.ts) is the SAME canonical source My Calendar
+  // reads to resolve Working Day vs Rest Day; it needs
+  // employment_terms_history.working_weekdays, which no form anywhere
+  // ever collected (the real cause of Kelvin's Calendar showing
+  // "Unconfigured" from his start date onward — workPatternType alone
+  // was never enough). Checkboxes submit multiple same-named values —
+  // getAll(), not get().
+  const workingWeekdaysRaw = formData.getAll("workingWeekdays").map((v) => Number(v)).filter((n) => Number.isInteger(n) && n >= 1 && n <= 7);
   if (employingEntityId) changes.employingEntityId = employingEntityId;
   if (employmentJurisdictionId) changes.employmentJurisdictionId = employmentJurisdictionId;
   if (workLocation) changes.workLocation = workLocation;
   if (basicSalaryRaw) changes.basicSalary = Number(basicSalaryRaw);
   if (currency) changes.currency = currency;
+  if (workPattern) changes.workPattern = workPattern;
   if ((WORK_PATTERN_TYPES as readonly string[]).includes(workPatternTypeRaw)) changes.workPatternType = workPatternTypeRaw as WorkPatternType;
-  if (Object.keys(changes).length === 0) return;
+  if (workingWeekdaysRaw.length > 0) changes.workingWeekdays = workingWeekdaysRaw;
+  if (Object.keys(changes).length === 0) return { ok: false, error: "No changes were provided." };
 
   const result = await recordEmploymentTransition({
     profileId,
@@ -1118,18 +1155,21 @@ export async function recordEmploymentTransitionAction(formData: FormData): Prom
     notes,
     actorUserId: currentUser.id,
   });
-  if (!result.ok) console.error("[admin organization] failed to record employment transition", result.error);
+  if (!result.ok) return { ok: false, error: result.error };
 
   revalidatePath(`/admin/organization/people/${profileId}`);
+  if (onboardingId) revalidatePath(`/admin/organization/onboarding/${onboardingId}`);
+  return { ok: true };
 }
 
-export async function recordInitialEmploymentTermsAction(formData: FormData): Promise<void> {
+export async function recordInitialEmploymentTermsAction(_prev: EmploymentTermsActionState, formData: FormData): Promise<EmploymentTermsActionState> {
   const currentUser = await getCurrentUser();
-  if (!currentUser) return;
+  if (!currentUser) return { ok: false, error: "Not authorized." };
 
   const profileId = String(formData.get("profileId") ?? "").trim();
+  const onboardingId = String(formData.get("onboardingId") ?? "").trim() || null;
   const effectiveFrom = String(formData.get("effectiveFrom") ?? "").trim();
-  if (!profileId || !effectiveFrom) return;
+  if (!profileId || !effectiveFrom) return { ok: false, error: "A formal commencement date is required." };
 
   const changes: Partial<EmploymentTermsFields> = {};
   const employingEntityId = String(formData.get("employingEntityId") ?? "").trim();
@@ -1139,6 +1179,7 @@ export async function recordInitialEmploymentTermsAction(formData: FormData): Pr
   const currency = String(formData.get("currency") ?? "").trim();
   const workPattern = String(formData.get("workPattern") ?? "").trim();
   const workPatternTypeRaw = String(formData.get("workPatternType") ?? "").trim();
+  const workingWeekdaysRaw = formData.getAll("workingWeekdays").map((v) => Number(v)).filter((n) => Number.isInteger(n) && n >= 1 && n <= 7);
   if (employingEntityId) changes.employingEntityId = employingEntityId;
   if (employmentJurisdictionId) changes.employmentJurisdictionId = employmentJurisdictionId;
   if (workLocation) changes.workLocation = workLocation;
@@ -1146,11 +1187,14 @@ export async function recordInitialEmploymentTermsAction(formData: FormData): Pr
   if (currency) changes.currency = currency;
   if (workPattern) changes.workPattern = workPattern;
   if ((WORK_PATTERN_TYPES as readonly string[]).includes(workPatternTypeRaw)) changes.workPatternType = workPatternTypeRaw as WorkPatternType;
+  if (workingWeekdaysRaw.length > 0) changes.workingWeekdays = workingWeekdaysRaw;
 
   const result = await recordInitialEmploymentTerms({ profileId, effectiveFrom, changes, actorUserId: currentUser.id });
-  if (!result.ok) console.error("[admin organization] failed to record initial employment terms", result.error);
+  if (!result.ok) return { ok: false, error: result.error };
 
   revalidatePath(`/admin/organization/people/${profileId}`);
+  if (onboardingId) revalidatePath(`/admin/organization/onboarding/${onboardingId}`);
+  return { ok: true };
 }
 
 export async function completeEnhancedReviewAction(formData: FormData): Promise<void> {

@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect, notFound } from "next/navigation";
 import { getCurrentUser, hasRole, isSuperAdmin } from "@/lib/portal/roles";
-import { getRecruitmentApplication, getHiringBridgeStatus } from "@/lib/recruitment/adminData";
+import { getRecruitmentApplication, getHiringBridgeStatus, resolveRecruitmentLiveStage } from "@/lib/recruitment/adminData";
 import { StatusUpdateForm, FileLinkButton } from "./RecruitmentDetailActions";
 
 export const metadata: Metadata = {
@@ -28,6 +28,7 @@ export default async function RecruitmentApplicationPage({ params }: { params: P
   const app = await getRecruitmentApplication(id);
   if (!app) notFound();
   const hiringBridge = app.status === "accepted" ? await getHiringBridgeStatus({ id: app.id, email: app.email }) : null;
+  const liveStage = hiringBridge ? await resolveRecruitmentLiveStage(hiringBridge) : null;
 
   return (
     <div className="max-w-2xl">
@@ -92,6 +93,11 @@ export default async function RecruitmentApplicationPage({ params }: { params: P
           <p className="font-sans text-caption text-ordift-ink-muted">
             Account setup already began for this applicant — no further invitation is needed.
           </p>
+          {liveStage && (
+            <Link href={liveStage.href} className="inline-block font-sans text-caption font-semibold text-ordift-gold-pressed underline underline-offset-4">
+              {liveStage.label} →
+            </Link>
+          )}
           <Link href="/admin/users" className="font-sans text-caption text-ordift-gold-pressed underline underline-offset-4">
             Manage in Users &amp; Roles →
           </Link>

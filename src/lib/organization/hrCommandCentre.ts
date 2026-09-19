@@ -5,6 +5,11 @@ import { listPendingLeaveRequestsAcrossStaff, listApprovedLeaveStartingSoonAcros
 import { listAttendanceRecordsForDateAcrossStaff } from "@/lib/organization/attendance";
 import { listStaffOnboarding } from "@/lib/organization/onboarding";
 import { getRecentActivity } from "@/lib/admin/activityLog";
+import { getEarliestEmploymentTerms } from "@/lib/organization/employmentTermsHistory";
+import { computeProbationWindow, GHANA_EMPLOYEE_PROBATION_POLICY } from "@/lib/legal/ghanaEmployeeAgreementPolicy";
+import { LONG_SERVICE_MILESTONE_PERCENTAGES, listLongServiceBenefitAwardsForProfile, type LongServiceMilestoneYears } from "@/lib/organization/compensation";
+import { mapEmploymentJurisdictionToWorkforceJurisdiction } from "@/lib/compliance/workforceMappings";
+import { createAdminClient } from "@/lib/supabase/admin";
 
 // HR / People Command Centre (2026-09-16) — layers on top of the
 // EXISTING Workforce Overview data engine (hrDashboard.ts) rather than
@@ -263,6 +268,14 @@ export type UpcomingPeopleEvent = { key: string; label: string; date: string; hr
 export function summarizeUpcomingPeopleEvents(input: {
   upcomingLeave: { id: string; profileFullName: string | null; startDate: string }[];
   upcomingOnboardingStarts: { id: string; profileId: string; startDate: string; pipeline: "employee" | "external_contractor" }[];
+  // Task 14 (2026-09-18) — genuinely computable from the existing
+  // probation policy (computeProbationWindow) and long-service engine
+  // (LONG_SERVICE_MILESTONE_PERCENTAGES) respectively; never a
+  // fabricated event. Both optional — a caller with no genuine data
+  // for either simply omits it, same "empty means nothing to show"
+  // discipline as the two lists above.
+  upcomingProbationEndings?: { profileId: string; profileFullName: string | null; endDate: string }[];
+  upcomingLongServiceMilestones?: { profileId: string; profileFullName: string | null; milestoneYears: number; date: string }[];
 }): UpcomingPeopleEvent[] {
   const events: UpcomingPeopleEvent[] = [
     ...input.upcomingLeave.map((l) => ({
@@ -276,6 +289,18 @@ export function summarizeUpcomingPeopleEvents(input: {
       label: `${o.pipeline === "employee" ? "Staff" : "External workforce"} onboarding start date`,
       date: o.startDate,
       href: `/admin/organization/onboarding/${o.id}`,
+    })),
+    ...(input.upcomingProbationEndings ?? []).map((p) => ({
+      key: `probation-${p.profileId}`,
+      label: `${p.profileFullName ?? "A staff member"} — probation period ends`,
+      date: p.endDate,
+      href: `/admin/organization/people/${p.profileId}`,
+    })),
+    ...(input.upcomingLongServiceMilestones ?? []).map((m) => ({
+      key: `long-service-${m.profileId}-${m.milestoneYears}`,
+      label: `${m.profileFullName ?? "A staff member"} — ${m.milestoneYears}-year long-service milestone`,
+      date: m.date,
+      href: `/admin/organization/people/${m.profileId}`,
     })),
   ];
   return events.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
@@ -308,6 +333,55 @@ export async function getHrCommandCentreSummary(): Promise<{
       listApprovedLeaveStartingSoonAcrossStaff(14),
     ]);
   const users: AdminUserRow[] = usersResult.ok ? usersResult.users : [];
+
+  // Task 14 (2026-09-18) — Probation milestones: genuinely computable
+  // only where a real GH probation policy applies (never a global
+  // default — see employeeAgreements.ts's own identical gating), and
+  // only for staff whose real employmentStatus is currently
+  // 'probation'. Bounded fan-out — typically a handful of people, not
+  // the whole roster.
+  const withinTwoWeeksDate = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  const probationStaff = users.filter((u) => u.employmentStatus === "probation" && u.roles.includes("staff"));
+  const probationResults = await Promise.all(
+    probationStaff.map(async (u) => {
+      const earliest = await getEarliestEmploymentTerms(u.id);
+      if (!earliest?.employmentJurisdictionId) return null;
+      const admin = createAdminClient();
+      const { data: jurisdictionRow } = await admin.from("employment_jurisdictions").select("name").eq("id", earliest.employmentJurisdictionId).maybeSingle();
+      if (mapEmploymentJurisdictionToWorkforceJurisdiction(jurisdictionRow?.name) !== "GH") return null;
+      const window = computeProbationWindow(earliest.effectiveFrom, GHANA_EMPLOYEE_PROBATION_POLICY.initialMonths);
+      if (window.endDate < today || window.endDate > withinTwoWeeksDate) return null;
+      return { profileId: u.id, profileFullName: u.fullName, endDate: window.endDate };
+    })
+  );
+  const upcomingProbationEndings = probationResults.filter((r): r is NonNullable<typeof r> => r !== null);
+
+  // Long-service milestones — genuinely computable from the same
+  // engine My Workspace's own Benefits & Employment section already
+  // uses (compensation.ts), never a fabricated anniversary. Only
+  // flagged when no award for that exact milestone already exists.
+  const activeStaff = users.filter((u) => u.roles.includes("staff") && u.accessStatus === "active");
+  const longServiceResults = await Promise.all(
+    activeStaff.map(async (u) => {
+      const earliest = await getEarliestEmploymentTerms(u.id);
+      if (!earliest) return [];
+      const existingAwards = await listLongServiceBenefitAwardsForProfile(u.id);
+      const awardedYears = new Set(existingAwards.map((a) => a.milestoneYears));
+      const matches: { profileId: string; profileFullName: string | null; milestoneYears: number; date: string }[] = [];
+      for (const yearsStr of Object.keys(LONG_SERVICE_MILESTONE_PERCENTAGES)) {
+        const years = Number(yearsStr) as LongServiceMilestoneYears;
+        if (awardedYears.has(years)) continue;
+        const anniversary = new Date(`${earliest.effectiveFrom}T00:00:00Z`);
+        anniversary.setUTCFullYear(anniversary.getUTCFullYear() + years);
+        const anniversaryDate = anniversary.toISOString().slice(0, 10);
+        if (anniversaryDate >= today && anniversaryDate <= withinTwoWeeksDate) {
+          matches.push({ profileId: u.id, profileFullName: u.fullName, milestoneYears: years, date: anniversaryDate });
+        }
+      }
+      return matches;
+    })
+  );
+  const upcomingLongServiceMilestones = longServiceResults.flat();
 
   // Resolves each accepted application's REAL current stage — small,
   // bounded fan-out (only ever as many rows as genuinely have
@@ -362,6 +436,8 @@ export async function getHrCommandCentreSummary(): Promise<{
   const upcomingEvents = summarizeUpcomingPeopleEvents({
     upcomingLeave: upcomingLeave.map((l) => ({ id: l.id, profileFullName: l.profileFullName, startDate: l.startDate })),
     upcomingOnboardingStarts,
+    upcomingProbationEndings,
+    upcomingLongServiceMilestones,
   });
 
   const activeWorkforceRows = users

@@ -1,13 +1,14 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import Logo from "@/components/Logo";
-import { getCurrentUser, hasRole, isStaffOrAdmin, isSuperAdmin, type RoleSlug } from "@/lib/portal/roles";
+import { getCurrentUser, hasRole, isStaffOrAdmin, isSuperAdmin } from "@/lib/portal/roles";
 import { signOutAction } from "@/app/portal/login/actions";
 import { getProfileCard } from "@/lib/portal/profileCard";
 import ProfileQuickCard from "@/components/admin/ProfileQuickCard";
 import { PresenceProvider } from "@/components/admin/PresenceProvider";
 import AdminNavDropdown from "@/components/admin/AdminNavDropdown";
 import { isExecutiveAdmin, hasAuthority, PEOPLE_CAPABILITIES, OPERATIONS_CAPABILITIES, STRATEGY_CAPABILITIES } from "@/lib/organization/authority";
+import { resolveVisibleAdminNavGroups, resolveVisibleAdminPortalLinks } from "@/lib/portal/adminNavigation";
 
 // Internal operations console — separate from the customer/partner-facing
 // /portal, but built on the exact same auth/role foundation (Supabase Auth
@@ -16,223 +17,7 @@ import { isExecutiveAdmin, hasAuthority, PEOPLE_CAPABILITIES, OPERATIONS_CAPABIL
 // reasoning as src/app/portal/(dashboard)/layout.tsx: proxy.ts only does a
 // fast JWT-presence check for /portal/**, not /admin/**, so this layout's
 // getCurrentUser() call is the actual gate here, not just a backstop.
-type NavItem = {
-  label: string;
-  href: string;
-  adminOnly?: boolean;
-  superAdminOnly?: boolean;
-  executiveOnly?: boolean;
-  workforceAdminOnly?: boolean;
-  // Task 4 audit (2026-09-17, real Kelvin QA finding) — Production
-  // Operations and Partnerships were previously unflagged, relying on
-  // "the page itself gates it" — which meant every staff member saw a
-  // link that immediately redirected them back to Overview. Navigation
-  // visibility now matches the exact same real check each page already
-  // enforces; that page-level check remains the actual boundary either
-  // way, this flag only stops a dead link from ever being SHOWN.
-  operationsCoordinateOnly?: boolean;
-  partnershipAdministerOnly?: boolean;
-};
-type NavGroup = { label: string; items: NavItem[] };
-
-// Admin Workspace Reorganization (2026-09-07) — business-workspace
-// grouping over the same flat list of routes/pages this nav already
-// had (nothing renamed, moved, or removed — every href below is
-// unchanged, and every page keeps its own real authorization check;
-// this grouping is a navigation-clutter fix only, per explicit
-// instruction "navigation visibility is not authorization"). A group
-// with zero visible items for the current viewer (see visibleGroups
-// below) simply doesn't render — this is what makes the nav
-// role-aware without any group-level flag of its own.
-const NAV_GROUPS: NavGroup[] = [
-  {
-    // Employee Self-Service (Phase B5 Step 13, 2026-09-14) — no
-    // adminOnly/superAdminOnly/etc. flag on its items: visible to every
-    // staff member who reaches /admin at all (the layout's own
-    // isStaffOrAdmin() gate above), not just admins. Each page still
-    // independently scopes every read/write to the CURRENT user's own
-    // id — the nav's visibility is never the security boundary.
-    label: "My Workspace",
-    items: [
-      { label: "My Workspace", href: "/admin/me" },
-      { label: "My Leave", href: "/admin/me/leave" },
-      { label: "My Attendance", href: "/admin/me/attendance" },
-      { label: "My Compensation", href: "/admin/me/compensation" },
-      { label: "My Performance", href: "/admin/me/performance" },
-      { label: "My Grievances", href: "/admin/me/grievances" },
-      { label: "My Requests", href: "/admin/me/requests" },
-    ],
-  },
-  {
-    // HR / People Hub (2026-09-16) — a single, directly-visible entry
-    // point over the existing HR/workforce modules below, per explicit
-    // Human QA finding: Super Admin could not identify an obvious HR
-    // surface even though every underlying module already existed.
-    // adminOnly mirrors the hub page's own hasRole("admin")/isSuperAdmin()
-    // gate exactly.
-    label: "HR / People",
-    items: [{ label: "HR / People", href: "/admin/hr", adminOnly: true }],
-  },
-  {
-    label: "Overview",
-    items: [
-      { label: "Overview", href: "/admin/overview" },
-      // Ordift Unified Executive Administration Platform (2026-08-25) —
-      // visible to Super Admin or an Executive Admin grant holder only
-      // (executiveOnly, checked asynchronously below). Each jurisdiction
-      // sub-page independently re-checks its own specific capability —
-      // this nav entry is not the security boundary.
-      { label: "Executive", href: "/admin/executive", executiveOnly: true },
-      // Access-control gap fix (2026-09-16, Kelvin QA) — Reports had no
-      // per-page gate; adminOnly here now matches the page's own real
-      // check. Activity deliberately stays unflagged — it already
-      // renders a reduced, self-scoped view for non-admin-tier staff
-      // (see activity/page.tsx's own isAdminTier branch), not a leak.
-      { label: "Reports", href: "/admin/reports", adminOnly: true },
-      { label: "Activity", href: "/admin/activity" },
-    ],
-  },
-  {
-    label: "Client & Commercial",
-    items: [
-      // Access-control gap fix (2026-09-16, Kelvin QA) — Enquiries and
-      // Bookings had no per-page gate at all, so any staff-or-admin
-      // account saw the whole client CRM. adminOnly here now matches
-      // the real check just added to both pages.
-      { label: "Enquiries", href: "/admin/enquiries", adminOnly: true },
-      { label: "Bookings", href: "/admin/bookings", adminOnly: true },
-    ],
-  },
-  {
-    label: "Creative & Production",
-    items: [
-      // Production Operations Admin (2026-09-07) — operationsCoordinateOnly
-      // mirrors the page's own operations.coordinate (or Super Admin)
-      // gate exactly (Task 4 fix, 2026-09-17 — previously unflagged,
-      // shown to every staff member as a dead link).
-      { label: "Production Operations", href: "/admin/production", operationsCoordinateOnly: true },
-    ],
-  },
-  {
-    label: "Finance",
-    items: [
-      { label: "Payments", href: "/admin/payments" },
-      // Universal Payables System (2026-09-03) — no adminOnly/
-      // superAdminOnly flag: gated on finance.payee.administer (or
-      // Super Admin) at the page itself.
-      { label: "Payables", href: "/admin/payables" },
-      { label: "Pricing", href: "/admin/pricing" },
-      // Universal Commercial Rate Card & Quotation System (2026-09-16)
-      // — adminOnly mirrors the page's own hasRole("admin")/isSuperAdmin() gate.
-      { label: "Client Quotations", href: "/admin/pricing/quotations", adminOnly: true },
-    ],
-  },
-  {
-    label: "People & Organization",
-    items: [
-      // Security narrowing (2026-09-07) — the page itself now requires
-      // Super Admin or the dormant people.workforce.administer
-      // capability (see authority.ts). workforceAdminOnly mirrors that
-      // exactly (checked asynchronously below, same pattern as
-      // executiveOnly) so a future genuinely-granted, non-Super-Admin
-      // workforce administrator still SEES this link — the page's own
-      // check remains the real boundary regardless, not this flag.
-      { label: "Users & Roles", href: "/admin/users", workforceAdminOnly: true },
-      { label: "Meet the Team", href: "/admin/team", superAdminOnly: true },
-      { label: "Recruitment", href: "/admin/recruitment", adminOnly: true },
-      { label: "Organization", href: "/admin/organization", adminOnly: true },
-      { label: "Authority", href: "/admin/authority", superAdminOnly: true },
-      // Ghana HR Portal, Phase B5 Step 2 (2026-09-14) — the HR
-      // subsystems' entry point. No adminOnly/superAdminOnly flag: the
-      // page itself gates on the same hasRole("admin")/isSuperAdmin()
-      // check as /admin/organization, the real boundary; adminOnly
-      // mirrors that here purely for nav-visibility consistency.
-      { label: "Workforce Overview", href: "/admin/organization/workforce", adminOnly: true },
-      { label: "Leave", href: "/admin/organization/leave", adminOnly: true },
-      { label: "Attendance", href: "/admin/organization/attendance", adminOnly: true },
-      { label: "Employee Relations", href: "/admin/organization/employee-relations", adminOnly: true },
-      { label: "Assets & Equipment", href: "/admin/organization/assets", adminOnly: true },
-      { label: "Safeguarding", href: "/admin/organization/safeguarding", adminOnly: true },
-      { label: "Legal Entities", href: "/admin/organization/legal-entities", superAdminOnly: true },
-      { label: "Vendors", href: "/admin/organization/vendors", adminOnly: true },
-      { label: "Statutory Wages", href: "/admin/organization/statutory-wages", superAdminOnly: true },
-    ],
-  },
-  {
-    label: "Talent & Partnerships",
-    items: [
-      // Partnerships & Collaborations V1 (2026-09-07) —
-      // partnershipAdministerOnly mirrors the page's own
-      // strategy.partnership_opportunity.administer (or Super Admin)
-      // gate exactly (Task 4 fix, 2026-09-17 — previously unflagged,
-      // shown to every staff member as a dead link).
-      { label: "Partnerships & Collaborations", href: "/admin/partnerships", partnershipAdministerOnly: true },
-    ],
-  },
-  {
-    // Ordift Studios Legal Suite — LEGAL-SYS-1, Phase H (2026-09-08).
-    // adminOnly mirrors the page's own hasRole("admin")/isSuperAdmin()
-    // gate exactly — the page's own check remains the real boundary.
-    label: "Legal & Governance",
-    items: [{ label: "Legal & Governance", href: "/admin/legal", adminOnly: true }],
-  },
-  {
-    // TALENT-SYS-1 Foundation (2026-09-08). Business-line-inactive —
-    // this nav entry only surfaces the read-only governance view, not
-    // a live/public Talent Management product.
-    label: "Talent Management",
-    items: [{ label: "Talent Management", href: "/admin/talent", adminOnly: true }],
-  },
-  {
-    label: "OS Academy",
-    items: [{ label: "Workshop Management", href: "/admin/workshops" }],
-  },
-  {
-    label: "Content & Website",
-    items: [
-      { label: "Portfolio", href: "/admin/portfolio" },
-      // Task 4 audit (2026-09-17) — this hub links into full Sanity
-      // Studio editing (Homepage, About, Founder, Navigation, Site-wide
-      // Settings). It previously had NO page-level check at all (relying
-      // only on the layout's blanket isStaffOrAdmin()), so any staff
-      // member — including a photographer with no content-editing
-      // responsibility — saw it. adminOnly here now matches a real
-      // check newly added to the page itself.
-      { label: "Content", href: "/admin/content", adminOnly: true },
-      { label: "Ordift Pulse", href: "/admin/pulse", adminOnly: true },
-    ],
-  },
-  {
-    label: "Technology & System",
-    items: [
-      // Closure refinement (2026-08-25) — label only, not the route or
-      // the page itself: distinguishes this flat, cross-jurisdiction
-      // utility view from the "Executive" jurisdiction-framed hub,
-      // without restructuring either.
-      { label: "Operations (Utility)", href: "/admin/operations", superAdminOnly: true },
-      { label: "Titles & Classifications", href: "/admin/lookups", superAdminOnly: true },
-      { label: "Feature Flags", href: "/admin/flags", adminOnly: true },
-      { label: "Settings", href: "/admin/settings", adminOnly: true },
-    ],
-  },
-];
-
-// Mirrors the exact pattern src/app/portal/(dashboard)/layout.tsx
-// already uses to cross-link every non-staff role a dual-role account
-// holds — previously this only checked `hasRole(user, "client")`, so a
-// staff/admin account who was also vendor/model/contractor/
-// workshop_participant (but not client) had no way back to their own
-// portal short of typing the URL. Navigation only — doesn't grant,
-// revoke, or check anything beyond what's already true of the account;
-// every server-side permission check on each destination stays exactly
-// as it is.
-const PORTAL_LINK_ITEMS: { role: RoleSlug; label: string; href: string }[] = [
-  { role: "client", label: "Client Portal", href: "/portal/client" },
-  { role: "workshop_participant", label: "Workshop Portal", href: "/portal/workshops" },
-  { role: "model", label: "Model Portal", href: "/portal/model" },
-  { role: "vendor", label: "Vendor Portal", href: "/portal/vendor" },
-  { role: "contractor", label: "Collaborator Portal", href: "/portal/collaborator" },
-];
+// Nav data/types/visibility logic extracted to src/lib/portal/adminNavigation.ts (Task 12, 2026-09-18) — ADMIN_NAV_GROUPS, resolveVisibleAdminNavGroups(), resolveVisibleAdminPortalLinks() — that module IS the formal admin access matrix, independently fixture-tested.
 
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
   const user = await getCurrentUser();
@@ -256,26 +41,21 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   // findings (Production Operations, Partnerships & Collaborations).
   const canCoordinateOperations = isSuper || (await hasAuthority(user.id, OPERATIONS_CAPABILITIES.coordinate, null));
   const canAdministerPartnerships = isSuper || (await hasAuthority(user.id, STRATEGY_CAPABILITIES.partnershipOpportunityAdminister, null));
-  const itemVisible = (item: NavItem) =>
-    (!item.adminOnly || isAdmin) &&
-    (!item.superAdminOnly || isSuper) &&
-    (!item.executiveOnly || isExecutive) &&
-    (!item.workforceAdminOnly || isWorkforceAdmin) &&
-    (!item.operationsCoordinateOnly || canCoordinateOperations) &&
-    (!item.partnershipAdministerOnly || canAdministerPartnerships);
   // Role-aware navigation (Part 39/58): each group renders ONLY the
   // items this viewer can see, and a group with zero visible items is
   // dropped entirely rather than showing an empty heading. This is
   // display-only — every destination page re-checks its own real
   // authorization; a hidden group is never the security boundary.
-  const visibleNavGroups = NAV_GROUPS.map((group) => ({ ...group, items: group.items.filter(itemVisible) })).filter(
-    (group) => group.items.length > 0
-  );
+  const visibleNavGroups = resolveVisibleAdminNavGroups({
+    isAdmin,
+    isSuper,
+    isExecutive,
+    isWorkforceAdmin,
+    canCoordinateOperations,
+    canAdministerPartnerships,
+  });
   const profileCard = await getProfileCard(user);
-  const matchingPortalLinks = PORTAL_LINK_ITEMS.filter((item) => hasRole(user, item.role));
-  const visiblePortalLinks = matchingPortalLinks.filter(
-    (item, index) => matchingPortalLinks.findIndex((other) => other.href === item.href) === index
-  );
+  const visiblePortalLinks = resolveVisibleAdminPortalLinks(user);
 
   return (
     <div className="min-h-screen flex flex-col">

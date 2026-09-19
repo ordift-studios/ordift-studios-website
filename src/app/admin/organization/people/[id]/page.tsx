@@ -86,12 +86,12 @@ import {
   issueStandardEmploymentVerificationAction,
   issueDetailedCorporateReferenceAction,
   recordPolicyAcknowledgementAction,
-  recordEmploymentTransitionAction,
   completeEnhancedReviewAction,
-  recordInitialEmploymentTermsAction,
   submitAppealAction,
   decideAppealAction,
 } from "./actions";
+import { RecordInitialEmploymentTermsForm, RecordEmploymentTransitionForm, WORK_PATTERN_TYPE_OPTIONS } from "./EmploymentTermsForms";
+import { agreementReadinessFieldHref } from "@/lib/legal/agreementReadinessLinks";
 
 export const metadata: Metadata = {
   title: "Person — Ordift Studios Admin",
@@ -1192,22 +1192,31 @@ export default async function PersonDetailPage({ params }: { params: Promise<{ i
         ) : (
           <>
             <ul className="divide-y divide-black/5">
-              {agreementReadiness.fields.map((f) => (
-                <li key={f.key} className="py-1.5 flex items-center justify-between gap-3">
-                  <span className="font-sans text-caption text-ordift-ink">{f.label}{f.value ? ` — ${f.value}` : ""}</span>
-                  <span
-                    className={`px-2 py-0.5 rounded-full font-sans text-caption whitespace-nowrap ${
-                      f.status === "satisfied" || f.status === "not_applicable"
-                        ? "bg-green-100 text-green-800"
-                        : f.status === "missing"
-                          ? "bg-amber-100 text-amber-800"
-                          : "bg-red-100 text-red-800"
-                    }`}
-                  >
-                    {f.status.replace(/_/g, " ")}
-                  </span>
-                </li>
-              ))}
+              {agreementReadiness.fields.map((f) => {
+                const href = agreementReadinessFieldHref(f.key, { profileId: id, onboardingId: onboarding?.id ?? null });
+                return (
+                  <li key={f.key} className="py-1.5 flex items-center justify-between gap-3">
+                    {href ? (
+                      <Link href={href} className="font-sans text-caption text-ordift-gold-pressed underline underline-offset-4">
+                        {f.label}{f.value ? ` — ${f.value}` : ""} →
+                      </Link>
+                    ) : (
+                      <span className="font-sans text-caption text-ordift-ink">{f.label}{f.value ? ` — ${f.value}` : ""}</span>
+                    )}
+                    <span
+                      className={`px-2 py-0.5 rounded-full font-sans text-caption whitespace-nowrap ${
+                        f.status === "satisfied" || f.status === "not_applicable"
+                          ? "bg-green-100 text-green-800"
+                          : f.status === "missing"
+                            ? "bg-amber-100 text-amber-800"
+                            : "bg-red-100 text-red-800"
+                      }`}
+                    >
+                      {f.status.replace(/_/g, " ")}
+                    </span>
+                  </li>
+                );
+              })}
             </ul>
             {agreementSummary && (
               <div className="rounded-lg border border-black/10 bg-ordift-offwhite p-3 flex flex-wrap items-center justify-between gap-2">
@@ -1414,68 +1423,26 @@ export default async function PersonDetailPage({ params }: { params: Promise<{ i
           <p className="font-sans text-caption text-ordift-ink-muted">No employment-terms history on record.</p>
         )}
         {employmentTermsHistory.length === 0 && (
-          <form action={recordInitialEmploymentTermsAction} className="grid grid-cols-2 gap-2 mt-2 rounded-lg border border-ordift-gold-pressed/40 bg-ordift-gold-pressed/5 p-3">
-            <p className="col-span-2 font-sans text-caption font-semibold text-ordift-ink">Record Initial Employment Terms (formal commencement)</p>
-            <input type="hidden" name="profileId" value={id} />
-            <input type="date" name="effectiveFrom" required aria-label="Formal commencement date" className="col-span-2 rounded-lg border border-black/15 px-2 py-1 font-sans text-caption" />
-            <select name="employingEntityId" required defaultValue="" className="rounded-lg border border-black/15 bg-white px-2 py-1 font-sans text-caption">
-              <option value="" disabled>Employing entity…</option>
-              {employingEntitiesForTransitions.map((e) => (
-                <option key={e.id} value={e.id}>{e.legalName ?? e.name}</option>
-              ))}
-            </select>
-            <select name="employmentJurisdictionId" required defaultValue="" className="rounded-lg border border-black/15 bg-white px-2 py-1 font-sans text-caption">
-              <option value="" disabled>Employment jurisdiction…</option>
-              {jurisdictionsForTransitions.map((j) => (
-                <option key={j.id} value={j.id}>{j.name}</option>
-              ))}
-            </select>
-            <input name="workLocation" required placeholder="Primary work location" className="rounded-lg border border-black/15 px-2 py-1 font-sans text-caption" />
-            <input name="workPattern" required placeholder="Normal working hours (e.g. Mon–Fri, 08:00–17:00)" className="rounded-lg border border-black/15 px-2 py-1 font-sans text-caption" />
-            <select name="workPatternType" defaultValue="" className="rounded-lg border border-black/15 bg-white px-2 py-1 font-sans text-caption">
-              <option value="">Work pattern classification — not yet set</option>
-              <option value="fixed_schedule">Standard / Fixed Schedule</option>
-              <option value="shift_roster">Shift / Rostered</option>
-              <option value="flexible_executive">Flexible Executive</option>
-            </select>
-            <input name="basicSalary" type="number" step="0.01" min="0" required placeholder="Basic salary" className="rounded-lg border border-black/15 px-2 py-1 font-sans text-caption" />
-            <input name="currency" required placeholder="Currency (e.g. GHS)" className="rounded-lg border border-black/15 px-2 py-1 font-sans text-caption" />
-            <button type="submit" className="col-span-2 justify-self-start font-sans text-caption font-semibold px-3 py-1 rounded-md bg-ordift-navy-950 text-white">Record Formal Commencement</button>
-          </form>
+          <div className="mt-2">
+            <RecordInitialEmploymentTermsForm
+              profileId={id}
+              onboardingId={onboarding?.id}
+              employingEntities={employingEntitiesForTransitions.map((e) => ({ id: e.id, label: e.legalName ?? e.name }))}
+              jurisdictions={jurisdictionsForTransitions}
+              workPatternTypes={WORK_PATTERN_TYPE_OPTIONS}
+            />
+          </div>
         )}
-        <form action={recordEmploymentTransitionAction} className="grid grid-cols-2 gap-2 mt-2">
-          <input type="hidden" name="profileId" value={id} />
-          <select name="transitionType" required defaultValue="" className="col-span-2 rounded-lg border border-black/15 bg-white px-2 py-1 font-sans text-caption">
-            <option value="" disabled>Transition type…</option>
-            {EMPLOYMENT_TRANSITION_TYPES.map((t) => (
-              <option key={t} value={t}>{t.replace(/_/g, " ")}</option>
-            ))}
-          </select>
-          <input type="date" name="effectiveFrom" className="rounded-lg border border-black/15 px-2 py-1 font-sans text-caption" />
-          <select name="employingEntityId" defaultValue="" className="rounded-lg border border-black/15 bg-white px-2 py-1 font-sans text-caption">
-            <option value="">Employing entity unchanged</option>
-            {employingEntitiesForTransitions.map((e) => (
-              <option key={e.id} value={e.id}>{e.legalName ?? e.name}</option>
-            ))}
-          </select>
-          <select name="employmentJurisdictionId" defaultValue="" className="rounded-lg border border-black/15 bg-white px-2 py-1 font-sans text-caption">
-            <option value="">Jurisdiction unchanged</option>
-            {jurisdictionsForTransitions.map((j) => (
-              <option key={j.id} value={j.id}>{j.name}</option>
-            ))}
-          </select>
-          <input name="workLocation" placeholder="Work location (if changed)" className="rounded-lg border border-black/15 px-2 py-1 font-sans text-caption" />
-          <select name="workPatternType" defaultValue="" className="rounded-lg border border-black/15 bg-white px-2 py-1 font-sans text-caption">
-            <option value="">Work pattern classification unchanged</option>
-            <option value="fixed_schedule">Standard / Fixed Schedule</option>
-            <option value="shift_roster">Shift / Rostered</option>
-            <option value="flexible_executive">Flexible Executive</option>
-          </select>
-          <input name="basicSalary" type="number" step="0.01" min="0" placeholder="Basic salary (if changed)" className="rounded-lg border border-black/15 px-2 py-1 font-sans text-caption" />
-          <input name="currency" placeholder="Currency (e.g. GHS)" className="rounded-lg border border-black/15 px-2 py-1 font-sans text-caption" />
-          <input name="notes" placeholder="Notes (optional)" className="col-span-2 rounded-lg border border-black/15 px-2 py-1 font-sans text-caption" />
-          <button type="submit" className="col-span-2 justify-self-start font-sans text-caption font-semibold px-3 py-1 rounded-md bg-ordift-navy-950 text-white">Record Transition</button>
-        </form>
+        <div className="mt-2">
+          <RecordEmploymentTransitionForm
+            profileId={id}
+            onboardingId={onboarding?.id}
+            employingEntities={employingEntitiesForTransitions.map((e) => ({ id: e.id, label: e.legalName ?? e.name }))}
+            jurisdictions={jurisdictionsForTransitions}
+            workPatternTypes={WORK_PATTERN_TYPE_OPTIONS}
+            transitionTypes={EMPLOYMENT_TRANSITION_TYPES}
+          />
+        </div>
         <p className="font-sans text-caption text-ordift-ink-muted">
           Role/title, grade, and reporting-line changes are recorded separately via <a href={`/admin/profile/${id}`} className="underline underline-offset-4">Position assignment</a> — never through this form.
         </p>

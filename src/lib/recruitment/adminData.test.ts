@@ -1,6 +1,7 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { proposeJurisdictionFromLocationText } from "./adminData";
 
 // Regression coverage for the recruitment_applications Save Status
 // defect (2026-09-16): 0036 attached the standard
@@ -55,5 +56,40 @@ describe("schema invariant — every *_set_updated_at trigger has a matching upd
 
     const missing = [...triggerTables].filter((table) => !tableDeclaresUpdatedAt(table));
     expect(missing).toEqual([]);
+  });
+});
+
+// Task 5 (2026-09-18) — jurisdiction capture at the beginning of
+// hiring. This is a PROPOSAL only, never a silent legal-jurisdiction
+// inference — real assertions on the pure matcher.
+describe("proposeJurisdictionFromLocationText — real assertions (Task 5, 2026-09-18)", () => {
+  const jurisdictions = [
+    { id: "gh-id", name: "Ghana" },
+    { id: "qa-id", name: "Qatar" },
+  ];
+
+  it("proposes the configured jurisdiction whose name appears in the location text", () => {
+    expect(proposeJurisdictionFromLocationText("Accra, Ghana", jurisdictions)).toEqual({ id: "gh-id", name: "Ghana" });
+  });
+
+  it("matches case-insensitively", () => {
+    expect(proposeJurisdictionFromLocationText("accra, ghana", jurisdictions)).toEqual({ id: "gh-id", name: "Ghana" });
+  });
+
+  it("returns null when no configured jurisdiction's name appears at all — never invents one", () => {
+    expect(proposeJurisdictionFromLocationText("Lagos, Nigeria", jurisdictions)).toBeNull();
+  });
+
+  it("returns null for a null/empty location — never guesses from nothing", () => {
+    expect(proposeJurisdictionFromLocationText(null, jurisdictions)).toBeNull();
+    expect(proposeJurisdictionFromLocationText("", jurisdictions)).toBeNull();
+  });
+
+  it("returns null when the text ambiguously matches more than one configured jurisdiction", () => {
+    expect(proposeJurisdictionFromLocationText("Ghana or Qatar", jurisdictions)).toBeNull();
+  });
+
+  it("never proposes a jurisdiction that isn't in the configured list, however plausible the text", () => {
+    expect(proposeJurisdictionFromLocationText("London, United Kingdom", jurisdictions)).toBeNull();
   });
 });

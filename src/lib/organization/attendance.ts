@@ -228,6 +228,80 @@ export async function recordCheckOut(params: { profileId: string; attendanceDate
   return recalculateAttendanceClassification({ recordId: existing.id, isPastScheduledEnd: params.isPastScheduledEnd ?? true });
 }
 
+// Missing-checkout / open-session correction (Task 9, 2026-09-18) —
+// a forgotten checkout must never silently become an unexplained
+// shortage before the person has had a real chance to complete it.
+// Deliberately reuses the SAME recordCheckOut()/recalculateAttendanceClassification()
+// path an ordinary checkout already uses — never a second attendance
+// mechanism, never an automatic minute deduction. Only ever finds a
+// record from a date STRICTLY BEFORE the given date — today's own
+// still-open session is normal and expected, not an exception.
+export async function listOpenAttendanceSessionsForProfile(profileId: string, beforeDate: string): Promise<AttendanceRecord[]> {
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from("attendance_records")
+    .select(SELECT)
+    .eq("profile_id", profileId)
+    .lt("attendance_date", beforeDate)
+    .not("actual_check_in", "is", null)
+    .is("actual_check_out", null)
+    .order("attendance_date", { ascending: true });
+  if (error) {
+    console.error("[organization] failed to load open attendance sessions", error.message);
+    return [];
+  }
+  return (data ?? []).map(mapRow);
+}
+
+// The actual correction — records the REAL checkout time the employee
+// reports (never invented), an optional reason, and an activity_log
+// audit entry recording who corrected it and when (attendance_records
+// itself has no corrected_by/corrected_at column, so the existing,
+// established activity_log mechanism is the real audit trail here —
+// no new schema, no second audit system). Refuses if the session is
+// no longer genuinely open (defense against a duplicate correction, or
+// correcting a record someone else already resolved).
+export async function correctMissingCheckout(params: {
+  recordId: string;
+  checkoutTimestamp: string;
+  reason?: string | null;
+  actorUserId: string;
+}): Promise<{ ok: true } | { ok: false; error: string }> {
+  const admin = createAdminClient();
+  const { data: existing } = await admin.from("attendance_records").select(SELECT).eq("id", params.recordId).maybeSingle();
+  if (!existing) return { ok: false, error: "Attendance record not found." };
+  const record = mapRow(existing);
+  if (params.actorUserId !== record.profileId && !(await canManageAttendance(params.actorUserId))) {
+    return { ok: false, error: "Not authorized to correct attendance on behalf of another person." };
+  }
+  if (!record.actualCheckIn) return { ok: false, error: "This record has no check-in to complete." };
+  if (record.actualCheckOut) return { ok: false, error: "This session already has a checkout recorded — nothing to correct." };
+  if (params.checkoutTimestamp <= record.actualCheckIn) return { ok: false, error: "Checkout time must be after the recorded check-in time." };
+
+  const result = await recordCheckOut({
+    profileId: record.profileId,
+    attendanceDate: record.attendanceDate,
+    timestamp: params.checkoutTimestamp,
+    actorUserId: params.actorUserId,
+    isPastScheduledEnd: true,
+  });
+  if (!result.ok) return result;
+
+  if (params.reason?.trim()) {
+    await recordAttendanceExplanation({ recordId: params.recordId, explanationNotes: params.reason.trim(), actorUserId: params.actorUserId });
+  }
+
+  await logActivity({
+    actorUserId: params.actorUserId,
+    action: "attendance.missing_checkout.corrected",
+    entityType: "attendance_record",
+    entityId: params.recordId,
+    metadata: { attendanceDate: record.attendanceDate, checkoutTimestamp: params.checkoutTimestamp, hasReason: Boolean(params.reason?.trim()) },
+  });
+
+  return { ok: true };
+}
+
 // Self-service — an employee (or admin on their behalf) attaches an
 // explanation to an unexplained absence. Does NOT itself resolve the
 // exception — see reviewAttendanceException() for the human decision.

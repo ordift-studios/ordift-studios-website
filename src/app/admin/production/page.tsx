@@ -6,6 +6,7 @@ import { authorizeWithSuperAdminOverride, OPERATIONS_CAPABILITIES } from "@/lib/
 import { listSuppliersForAdmin } from "@/lib/production/suppliers";
 import { listAllSupplierQuotes } from "@/lib/production/supplierQuotes";
 import { listRecentBudgetVersions, listRecentBudgetChanges } from "@/lib/production/budgets";
+import { listLiveProductionJobs } from "@/lib/production/liveOperations";
 import ProductionSubNav from "./ProductionSubNav";
 
 export const metadata: Metadata = {
@@ -24,12 +25,17 @@ export default async function ProductionOperationsOverviewPage() {
   const auth = await authorizeWithSuperAdminOverride(user.id, OPERATIONS_CAPABILITIES.coordinate);
   if (!auth.ok) redirect("/admin/overview");
 
-  const [suppliers, quotes, recentBudgets, recentChanges] = await Promise.all([
+  const [suppliers, quotes, recentBudgets, recentChanges, liveJobs] = await Promise.all([
     listSuppliersForAdmin(user.id),
     listAllSupplierQuotes(user.id),
     listRecentBudgetVersions(user.id, 10),
     listRecentBudgetChanges(user.id, 10),
+    listLiveProductionJobs(),
   ]);
+  const jobsByStageGroup = new Map<string, typeof liveJobs>();
+  for (const job of liveJobs) {
+    jobsByStageGroup.set(job.stageGroupLabel, [...(jobsByStageGroup.get(job.stageGroupLabel) ?? []), job]);
+  }
 
   const activeSuppliers = suppliers.filter((s) => s.active).length;
   const quotesByStatus = quotes.reduce<Record<string, number>>((acc, q) => {
@@ -51,6 +57,47 @@ export default async function ProductionOperationsOverviewPage() {
       </div>
 
       <ProductionSubNav active="overview" />
+
+      {/* Live Production Operations (Task 13, 2026-09-18) — reuses the
+          SAME real enquiries.crm_stage state machine the Enquiries CRM
+          already uses (never a second project-management database).
+          Scoped to booked-onward (earlier stages are sales pipeline,
+          already covered by Enquiries). No shoot-date/due-date column
+          exists on enquiries today, so due dates and overdue flags are
+          not shown here — a genuine data gap, not fabricated. */}
+      <section className="rounded-xl border border-black/10 bg-white p-6 space-y-4">
+        <h2 className="font-serif font-medium text-body text-ordift-ink">Live Production Jobs</h2>
+        {liveJobs.length === 0 ? (
+          <p className="font-sans text-body-small text-ordift-ink-muted rounded-lg border border-dashed border-black/15 px-4 py-6 text-center">
+            No jobs currently booked, in progress, or awaiting final delivery confirmation.
+          </p>
+        ) : (
+          <div className="space-y-5">
+            {[...jobsByStageGroup.entries()].map(([groupLabel, jobs]) => (
+              <div key={groupLabel}>
+                <p className="font-sans text-caption uppercase tracking-wide text-ordift-ink-muted mb-2">{groupLabel} ({jobs.length})</p>
+                <ul className="divide-y divide-black/5 rounded-lg border border-black/5">
+                  {jobs.map((job) => (
+                    <li key={job.id}>
+                      <Link href={`/admin/enquiries/${job.id}`} className="flex items-center justify-between gap-4 py-2.5 px-3 hover:bg-black/[0.02]">
+                        <div>
+                          <p className="font-sans text-body-small text-ordift-ink">{job.clientName} — {job.service}</p>
+                          <p className="font-sans text-caption text-ordift-ink-muted">
+                            {job.referenceNumber} · Assigned: {job.assignedStaffNames.length > 0 ? job.assignedStaffNames.join(", ") : "Unassigned"}
+                          </p>
+                        </div>
+                        <span className="font-sans text-caption text-ordift-ink-muted whitespace-nowrap">
+                          {new Date(job.submittedAt).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}
+                        </span>
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <Link href="/admin/production/suppliers" className="rounded-xl border border-black/10 bg-white p-6 hover:border-ordift-gold-pressed">

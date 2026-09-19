@@ -1,7 +1,7 @@
 "use client";
 
 import { useActionState } from "react";
-import { checkInNowAction, checkOutNowAction, addOwnAttendanceExplanationAction, type ActionState } from "./actions";
+import { checkInNowAction, checkOutNowAction, addOwnAttendanceExplanationAction, correctMissingCheckoutAction, type ActionState } from "./actions";
 
 export interface MyAttendanceRecordView {
   id: string;
@@ -22,6 +22,39 @@ const STATUS_STYLES: Record<string, string> = {
   absent_unexplained: "bg-amber-100 text-amber-800",
   pending: "bg-black/5 text-ordift-ink-muted",
 };
+
+// Task 9 (2026-09-18) — a forgotten checkout from a previous day must
+// never silently become an unexplained shortage. Surfaced BEFORE
+// today's own check-in, resolved by reporting the real checkout time
+// — never invented, never an automatic deduction.
+function OpenSessionCorrectionForm({ record }: { record: MyAttendanceRecordView }) {
+  const [state, formAction, pending] = useActionState<ActionState, FormData>(correctMissingCheckoutAction, null);
+  return (
+    <form action={formAction} className="rounded-lg border border-amber-300 bg-amber-50 p-4 space-y-2">
+      <p className="font-sans text-body-small font-semibold text-ordift-ink">
+        Previous attendance record requires completion — {record.attendanceDate}
+      </p>
+      <p className="font-sans text-caption text-ordift-ink-muted">
+        You checked in at {record.actualCheckIn ? new Date(record.actualCheckIn).toLocaleTimeString() : "—"} but no checkout
+        was recorded. Enter the actual time you left — this will not automatically deduct anything.
+      </p>
+      <input type="hidden" name="recordId" value={record.id} />
+      <input type="hidden" name="attendanceDate" value={record.attendanceDate} />
+      <div className="flex flex-wrap items-end gap-2">
+        <label className="flex flex-col gap-1">
+          <span className="font-sans text-[0.65rem] uppercase tracking-wide text-ordift-ink-muted">Actual checkout time</span>
+          <input type="time" name="checkoutTime" required className="rounded-lg border border-black/15 px-2 py-1 font-sans text-caption" />
+        </label>
+        <input name="reason" placeholder="Reason (optional)" className="rounded-lg border border-black/15 px-2 py-1 font-sans text-caption flex-1 min-w-[160px]" />
+        <button type="submit" disabled={pending} className="font-sans text-caption font-semibold px-3 py-1.5 rounded-md bg-ordift-navy-950 text-white disabled:opacity-50">
+          {pending ? "Submitting…" : "Submit Correction"}
+        </button>
+      </div>
+      {!pending && state?.ok === false && <p className="font-sans text-caption text-red-700">{state.error}</p>}
+      {!pending && state?.ok === true && <p className="font-sans text-caption text-green-700">Recorded — thank you.</p>}
+    </form>
+  );
+}
 
 function TodayCard({ today, todayRecord }: { today: string; todayRecord: MyAttendanceRecordView | null }) {
   const [checkInState, checkInAction, checkInPending] = useActionState<ActionState, FormData>(checkInNowAction, null);
@@ -105,9 +138,27 @@ function RecordRow({ record }: { record: MyAttendanceRecordView }) {
   );
 }
 
-export function MyAttendanceWorkspace({ today, todayRecord, records }: { today: string; todayRecord: MyAttendanceRecordView | null; records: MyAttendanceRecordView[] }) {
+export function MyAttendanceWorkspace({
+  today,
+  todayRecord,
+  records,
+  openSessions,
+}: {
+  today: string;
+  todayRecord: MyAttendanceRecordView | null;
+  records: MyAttendanceRecordView[];
+  openSessions: MyAttendanceRecordView[];
+}) {
   return (
     <div className="space-y-8">
+      {openSessions.length > 0 && (
+        <div className="space-y-3">
+          {openSessions.map((r) => (
+            <OpenSessionCorrectionForm key={r.id} record={r} />
+          ))}
+        </div>
+      )}
+
       <TodayCard today={today} todayRecord={todayRecord} />
 
       <section className="space-y-3">

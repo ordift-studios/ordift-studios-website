@@ -6,7 +6,9 @@ import { listLeaveTypes } from "@/lib/organization/leaveTypes";
 import { listActiveStaffRoster } from "@/lib/organization/hrDashboard";
 import { getPlanningAllocationSummary, listLeaveBiddingWindows, LEAVE_BIDDING_HALVES } from "@/lib/organization/leaveBidding";
 import { listSwapsAwaitingReviewerDecisionFor } from "@/lib/organization/leaveSwap";
+import { listWorkforceLeaveBalances } from "@/lib/organization/leaveWorkforceOverview";
 import { LeaveWorkspace } from "./LeaveWorkspace";
+import { WorkforceLeaveBalanceOverview } from "./WorkforceLeaveBalanceOverview";
 
 export const metadata: Metadata = {
   title: "Leave — Ordift Studios Admin",
@@ -36,12 +38,13 @@ export default async function LeaveWorkspacePage() {
   const canManageWindowsAndBalances = await canManageLeave(user.id);
   const currentYear = new Date().getUTCFullYear();
 
-  const [pendingRequests, leaveTypes, staffRoster, pendingSwaps, windows] = await Promise.all([
+  const [pendingRequests, leaveTypes, staffRoster, pendingSwaps, windows, workforceLeaveBalances] = await Promise.all([
     listPendingLeaveRequestsForReviewer(user.id),
     listLeaveTypes("GH"),
     listActiveStaffRoster(),
     listSwapsAwaitingReviewerDecisionFor(user.id),
     listLeaveBiddingWindows("GH", currentYear),
+    canManageWindowsAndBalances ? listWorkforceLeaveBalances(currentYear) : Promise.resolve([]),
   ]);
 
   // Per-pending-bid draw-forward context — computed only for rows
@@ -72,6 +75,12 @@ export default async function LeaveWorkspacePage() {
             : "Requests, bids, and swaps awaiting your decision as a direct manager."}
         </p>
       </div>
+
+      {canManageWindowsAndBalances && workforceLeaveBalances.length > 0 && (
+        <div className="mb-8">
+          <WorkforceLeaveBalanceOverview rows={workforceLeaveBalances} leaveYear={currentYear} />
+        </div>
+      )}
 
       <LeaveWorkspace
         pendingRequests={pendingRequests}

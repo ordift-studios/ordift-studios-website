@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getCurrentUser, hasRole, isSuperAdmin } from "@/lib/portal/roles";
-import { listRecruitmentApplications } from "@/lib/recruitment/adminData";
+import { listRecruitmentApplications, resolveRecruitmentLiveStageForApplication } from "@/lib/recruitment/adminData";
 import { RECRUITMENT_STATUS_LABEL } from "@/lib/recruitment/types";
 
 export const metadata: Metadata = {
@@ -19,6 +19,18 @@ export default async function AdminRecruitmentPage() {
   if (!user || (!hasRole(user, "admin") && !isSuperAdmin(user))) redirect("/admin/overview");
 
   const applications = await listRecruitmentApplications();
+  // Task 4 (2026-09-18) — a distinct CURRENT PROCESS/STAGE indicator
+  // alongside the historical decision, resolved from the same real
+  // downstream workflow (getHiringBridgeStatus + Agreement Readiness)
+  // — never a fabricated transition. Only accepted applications can
+  // have a live stage at all.
+  const liveStages = new Map(
+    await Promise.all(
+      applications
+        .filter((a) => a.status === "accepted")
+        .map(async (a) => [a.id, await resolveRecruitmentLiveStageForApplication({ id: a.id, email: a.email })] as const)
+    )
+  );
 
   return (
     <div>
@@ -65,6 +77,14 @@ export default async function AdminRecruitmentPage() {
                     <span className="font-sans text-caption uppercase tracking-[0.1em] px-2 py-0.5 rounded-full bg-black/5 text-ordift-ink-muted">
                       {RECRUITMENT_STATUS_LABEL[app.status]}
                     </span>
+                    {liveStages.get(app.id) && (
+                      <Link
+                        href={liveStages.get(app.id)!.href}
+                        className="block mt-1 font-sans text-caption text-ordift-gold-pressed underline underline-offset-4"
+                      >
+                        {liveStages.get(app.id)!.label} →
+                      </Link>
+                    )}
                   </td>
                 </tr>
               ))}

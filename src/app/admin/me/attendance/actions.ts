@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { getCurrentUser, isStaffOrAdmin } from "@/lib/portal/roles";
-import { getOrCreateAttendanceRecord, recordCheckIn, recordCheckOut, recordAttendanceExplanation, type AttendanceDayType } from "@/lib/organization/attendance";
+import { getOrCreateAttendanceRecord, recordCheckIn, recordCheckOut, recordAttendanceExplanation, correctMissingCheckout, type AttendanceDayType } from "@/lib/organization/attendance";
 
 // Employee Self-Service — My Attendance (Phase B5 Step 14, 2026-09-14).
 // Every action operates on the caller's OWN profileId only — never
@@ -45,6 +45,32 @@ export async function checkOutNowAction(_prev: ActionState, formData: FormData):
   if (!attendanceDate) return { ok: false, error: "Invalid request." };
 
   const result = await recordCheckOut({ profileId: actor.id, attendanceDate, timestamp: new Date().toISOString(), actorUserId: actor.id });
+  if (!result.ok) return { ok: false, error: result.error };
+  revalidatePath("/admin/me/attendance");
+  return { ok: true };
+}
+
+// Task 9 (2026-09-18) — completes a genuinely open (forgotten
+// checkout) previous session. The employee reports the ACTUAL time
+// they left, never invented, and an optional reason. Never touches
+// today's own checkout path — that stays recordCheckOut() above,
+// unchanged.
+export async function correctMissingCheckoutAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  const actor = await requireSelf();
+  if ("error" in actor) return { ok: false, error: actor.error };
+
+  const recordId = String(formData.get("recordId") ?? "");
+  const attendanceDate = String(formData.get("attendanceDate") ?? "");
+  const checkoutTime = String(formData.get("checkoutTime") ?? "").trim();
+  const reason = String(formData.get("reason") ?? "").trim() || null;
+  if (!recordId || !attendanceDate || !checkoutTime) return { ok: false, error: "Enter the actual checkout time." };
+
+  const result = await correctMissingCheckout({
+    recordId,
+    checkoutTimestamp: `${attendanceDate}T${checkoutTime}:00.000Z`,
+    reason,
+    actorUserId: actor.id,
+  });
   if (!result.ok) return { ok: false, error: result.error };
   revalidatePath("/admin/me/attendance");
   return { ok: true };

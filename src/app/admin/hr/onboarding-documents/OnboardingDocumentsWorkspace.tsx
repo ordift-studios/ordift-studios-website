@@ -13,6 +13,36 @@ function workspaceHref(row: OnboardingDocumentsRow): string {
   return row.pipeline === "employee" ? `/admin/organization/onboarding/${row.onboardingId}` : `/admin/organization/vendors/${row.profileId}`;
 }
 
+// Same profiles.avatar_url source Meet the Team / People Directory
+// already use (Task 7/10) — never a second photo source, never a
+// fabricated image. Initials fallback when none exists.
+function initials(name: string | null): string {
+  if (!name) return "?";
+  const parts = name.trim().split(/\s+/);
+  return ((parts[0]?.[0] ?? "") + (parts[parts.length - 1]?.[0] ?? "")).toUpperCase();
+}
+
+function Avatar({ row }: { row: OnboardingDocumentsRow }) {
+  if (row.avatarUrl) {
+    return (
+      <div className="w-10 h-10 rounded-full overflow-hidden shrink-0 bg-ordift-navy-950">
+        {/* eslint-disable-next-line @next/next/no-img-element -- arbitrary Storage URL */}
+        <img
+          src={row.avatarUrl}
+          alt=""
+          className="w-full h-full object-cover"
+          style={{ objectPosition: `${row.avatarFocalX}% ${row.avatarFocalY}%` }}
+        />
+      </div>
+    );
+  }
+  return (
+    <div className="w-10 h-10 rounded-full bg-ordift-navy-950 text-white flex items-center justify-center font-sans text-caption font-semibold shrink-0">
+      {initials(row.fullName)}
+    </div>
+  );
+}
+
 const EMPLOYMENT_AGREEMENT_STYLES: Record<string, string> = {
   "Not Ready": "bg-red-100 text-red-800",
   "Ready to Draft": "bg-amber-100 text-amber-800",
@@ -97,18 +127,26 @@ export function OnboardingDocumentsWorkspace({ rows }: { rows: OnboardingDocumen
         <div className="rounded-xl border border-black/10 bg-white divide-y divide-black/5">
           {filtered.map((r) => (
             <Link key={r.onboardingId} href={workspaceHref(r)} className="flex flex-wrap items-center justify-between gap-3 px-5 py-4 hover:bg-ordift-offwhite/60">
-              <div>
-                <p className="font-sans text-body-small font-medium text-ordift-ink">
-                  {r.fullName ?? "(no name on record)"} {r.memberNumber ? <span className="text-ordift-ink-muted">· {r.memberNumber}</span> : null}
-                </p>
-                <p className="font-sans text-caption text-ordift-ink-muted">
-                  {r.relationshipLabel} · {r.departmentName ?? "—"} {r.jurisdictionName ? `· ${r.jurisdictionName}` : ""} · Stage: {r.stage.replace(/_/g, " ")}
-                </p>
+              <div className="flex items-center gap-3 min-w-0">
+                <Avatar row={r} />
+                <div className="min-w-0">
+                  <p className="font-sans text-body-small font-medium text-ordift-ink truncate">
+                    {r.fullName ?? "(no name on record)"} {r.memberNumber ? <span className="text-ordift-ink-muted">· {r.memberNumber}</span> : null}
+                  </p>
+                  <p className="font-sans text-caption text-ordift-ink-muted truncate">
+                    {r.positionName ?? r.relationshipLabel} · {r.departmentName ?? "—"} {r.jurisdictionName ? `· ${r.jurisdictionName}` : ""} · Stage: {r.stage.replace(/_/g, " ")}
+                  </p>
+                </div>
               </div>
               <div className="flex items-center gap-3 shrink-0">
                 <span className="font-sans text-caption text-ordift-ink-muted tabular-nums">
                   Documents: {r.documentsComplete}/{r.documentsTotal}
                 </span>
+                {r.outstandingActionCount > 0 && (
+                  <span className="px-2 py-0.5 rounded-full font-sans text-caption whitespace-nowrap bg-amber-100 text-amber-800">
+                    {r.outstandingActionCount} outstanding
+                  </span>
+                )}
                 {r.employmentAgreementStatus && (
                   <span className={`px-2 py-0.5 rounded-full font-sans text-caption whitespace-nowrap ${EMPLOYMENT_AGREEMENT_STYLES[r.employmentAgreementStatus] ?? "bg-black/5 text-ordift-ink"}`}>
                     Agreement: {r.employmentAgreementStatus}

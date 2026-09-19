@@ -1,4 +1,8 @@
 import { createAdminClient } from "@/lib/supabase/admin";
+import { getStaffOnboardingByProfileId } from "@/lib/organization/onboarding";
+import { getSourceRecruitmentApplicationId } from "@/lib/recruitment/requisitions";
+import { checkEmployeeAgreementReadiness } from "@/lib/legal/employeeAgreements";
+import { resolveEmploymentAgreementStatus } from "@/lib/organization/onboardingDocumentsOverview";
 import type {
   RecruitmentApplicationDetail,
   RecruitmentApplicationSummary,
@@ -125,6 +129,87 @@ export async function getHiringBridgeStatus(application: { id: string; email: st
     return { stage: "invitation_sent", profileId };
   }
   return { stage: "account_created", profileId, positionAssigned: Boolean(staffDetails) };
+}
+
+// Recruitment Live Lifecycle Status (Task 4, 2026-09-18) — the
+// Recruitment list previously showed only the historical decision
+// ("Selected"), which stays permanently true and correct but tells
+// the Founder nothing about where a hire has actually reached. This
+// layers a CURRENT-PROCESS label on top of the SAME getHiringBridgeStatus()
+// signals above plus the SAME Employee Employment Agreement readiness
+// Task 1/3 already wired — never a second/fabricated state machine,
+// never overwriting recruitment_applications.status itself.
+export type RecruitmentLiveStage = { label: string; href: string };
+
+export async function resolveRecruitmentLiveStage(bridge: HiringBridgeStatus): Promise<RecruitmentLiveStage | null> {
+  switch (bridge.stage) {
+    case "not_invited":
+      return null; // no live-stage badge beyond the recruitment decision itself yet
+    case "invitation_sent":
+      return { label: "Pre-Employment — Invitation Sent", href: `/admin/organization/people/${bridge.profileId}` };
+    case "account_created":
+      return bridge.positionAssigned
+        ? { label: "Ready to Start Onboarding", href: `/admin/organization/people/${bridge.profileId}` }
+        : { label: "Pre-Employment — Needs Position", href: `/admin/organization/people/${bridge.profileId}` };
+    case "onboarding_complete":
+      return { label: "Active Employee", href: `/admin/organization/people/${bridge.profileId}` };
+    case "onboarding_in_progress": {
+      const onboarding = await getStaffOnboardingByProfileId(bridge.profileId);
+      if (!onboarding) return { label: "Onboarding", href: `/admin/organization/people/${bridge.profileId}` };
+      const href = `/admin/organization/onboarding/${onboarding.id}`;
+      if (onboarding.pipeline !== "employee") return { label: "Onboarding — Documents Pending", href };
+
+      const readiness = await checkEmployeeAgreementReadiness(onboarding.id);
+      const agreementStatus = await resolveEmploymentAgreementStatus(
+        onboarding.id,
+        readiness.ok ? readiness.ready : null,
+        readiness.ok ? undefined : readiness.error
+      );
+      if (agreementStatus === "Not Ready") return { label: "Onboarding — Documents / Agreement Pending", href };
+      if (agreementStatus === "Ready to Draft") return { label: "Onboarding — Agreement Preparation", href };
+      if (agreementStatus === "Draft") return { label: "Onboarding — Agreement Pending Signature", href };
+      return { label: `Onboarding — Agreement ${agreementStatus}`, href };
+    }
+  }
+}
+
+// Convenience: resolves both the hiring bridge AND the live-stage
+// label in one call — used by the Recruitment list, which needs this
+// for every accepted application.
+export async function resolveRecruitmentLiveStageForApplication(application: { id: string; email: string }): Promise<RecruitmentLiveStage | null> {
+  const bridge = await getHiringBridgeStatus(application);
+  return resolveRecruitmentLiveStage(bridge);
+}
+
+// Jurisdiction capture, application-based hire (Task 5, 2026-09-18) —
+// PROPOSES a configured Employment Jurisdiction from the applicant's
+// own free-text location field, never silently applies it. Only ever
+// returns a jurisdiction that is a real, configured
+// employment_jurisdictions row (never invents one, never infers from
+// nationality/IP), and only when the match is genuinely unambiguous
+// (exactly one configured jurisdiction's name appears in the text) —
+// an authorized user must still see and explicitly confirm it via the
+// existing required Employment Jurisdiction selector before a
+// requisition can be created.
+export function proposeJurisdictionFromLocationText(
+  locationText: string | null,
+  jurisdictions: { id: string; name: string }[]
+): { id: string; name: string } | null {
+  if (!locationText) return null;
+  const normalized = locationText.toLowerCase();
+  const matches = jurisdictions.filter((j) => normalized.includes(j.name.toLowerCase()));
+  return matches.length === 1 ? matches[0] : null;
+}
+
+export async function proposeJurisdictionForProfile(
+  profileId: string,
+  jurisdictions: { id: string; name: string }[]
+): Promise<{ id: string; name: string } | null> {
+  const sourceApplicationId = await getSourceRecruitmentApplicationId(profileId);
+  if (!sourceApplicationId) return null;
+  const application = await getRecruitmentApplication(sourceApplicationId);
+  if (!application) return null;
+  return proposeJurisdictionFromLocationText(application.location, jurisdictions);
 }
 
 // Signed URLs, generated on demand — the storage paths themselves are
