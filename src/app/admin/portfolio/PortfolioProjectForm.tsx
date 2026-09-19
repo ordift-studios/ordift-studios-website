@@ -1353,17 +1353,34 @@ export default function PortfolioProjectForm({
               </div>
             )}
 
-            <div className="rounded-lg border border-black/10 p-4">
-              <p className="font-sans text-body-small font-semibold text-ordift-ink mb-2">Publish Readiness</p>
+            <div className="rounded-lg border border-black/10 p-4 space-y-3">
+              <p className="font-sans text-body-small font-semibold text-ordift-ink">Publish Readiness</p>
               {readiness.blocking.length === 0 && readiness.warnings.length === 0 && (
                 <p className="font-sans text-caption text-emerald-700">Everything required is in place.</p>
               )}
-              {readiness.blocking.map((b) => (
-                <p key={b} className="font-sans text-caption text-red-700">✕ {b}</p>
-              ))}
-              {readiness.warnings.map((w) => (
-                <p key={w} className="font-sans text-caption text-amber-700">⚠ {w}</p>
-              ))}
+              {readiness.blocking.length > 0 && (
+                <div>
+                  <p className="font-sans text-caption font-semibold uppercase tracking-wide text-red-700 mb-1">Required Before Publication</p>
+                  {readiness.blocking.map((b) => (
+                    <p key={b} className="font-sans text-caption text-red-700">✕ {b}</p>
+                  ))}
+                </div>
+              )}
+              {readiness.warnings.length > 0 && (
+                <div>
+                  <p className="font-sans text-caption font-semibold uppercase tracking-wide text-amber-700 mb-1">
+                    Recommended — Optional, Will Not Block Publication
+                  </p>
+                  {readiness.warnings.map((w) => (
+                    <p key={w} className="font-sans text-caption text-amber-700">⚠ {w}</p>
+                  ))}
+                </div>
+              )}
+              {readiness.blocking.length === 0 && readiness.warnings.length > 0 && (
+                <p className="font-sans text-caption text-emerald-700">
+                  All required items are complete — this project can proceed to review/publication.
+                </p>
+              )}
             </div>
           </div>
         )}

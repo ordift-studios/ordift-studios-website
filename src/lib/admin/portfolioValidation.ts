@@ -66,3 +66,26 @@ export function getPublishReadiness(
 export function isReadyToPublish(project: ReadinessInput): boolean {
   return getPublishReadiness(project).blocking.length === 0;
 }
+
+// Publish Readiness Blocking/Advisory correction (2026-09-20) — Human
+// Production QA reported that advisory metadata (custom SEO, tags,
+// client attribution) appeared to prevent a project from proceeding
+// through review/publication, reproduced on Graphic Design after an
+// earlier Photography report. Audit of the actual enforcement point
+// (transitionPortfolioProjectAction, below) and the UI (the wizard's
+// Review step and the Project Detail page) found both already checked
+// ONLY `blocking`, never `warnings` — the underlying rule was already
+// correct and, being discipline-agnostic (this function takes no
+// discipline/category-specific branch), already applied identically
+// to every Portfolio discipline. The real defect was presentation: the
+// Publish Readiness panel rendered blocking and advisory items as one
+// undifferentiated list (color alone distinguishing them), which is
+// exactly the shape that reads as "everything listed must be
+// resolved." This function is the SINGLE named choke point every
+// consumer (current or future) must call to decide whether a project
+// may proceed — never re-deriving the same "blocking.length === 0"
+// check inline, so a future consumer can't silently regress to
+// checking `warnings` too.
+export function canProceedToReview(readiness: ReadinessResult): boolean {
+  return readiness.blocking.length === 0;
+}

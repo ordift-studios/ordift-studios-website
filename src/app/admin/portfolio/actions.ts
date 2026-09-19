@@ -9,7 +9,7 @@ import {
 } from "@/lib/admin/portfolioPermissions";
 import { canToggleFeatured, canTransition, getGrantedCapabilities, hasCapability } from "@/lib/workflow/engine";
 import type { WorkflowStatus } from "@/lib/workflow/types";
-import { getPublishReadiness } from "@/lib/admin/portfolioValidation";
+import { getPublishReadiness, canProceedToReview } from "@/lib/admin/portfolioValidation";
 import { canManagePortfolioPresentation } from "@/lib/admin/portfolioPresentationPermissions";
 import {
   createPortfolioCategory,
@@ -78,16 +78,19 @@ export async function transitionPortfolioProjectAction(formData: FormData): Prom
     throw new Error("You do not have permission to make this change.");
   }
 
-  // Publish Readiness Checklist enforcement (2026-08-05) — re-checked
-  // here, not just shown in the wizard's Review step, so a request
-  // crafted outside the UI can't skip it. Only blocking items stop the
-  // transition; warnings are informational only (see
-  // src/lib/admin/portfolioValidation.ts).
+  // Publish Readiness Checklist enforcement (2026-08-05; corrected
+  // 2026-09-20) — re-checked here, not just shown in the wizard's
+  // Review step, so a request crafted outside the UI can't skip it.
+  // canProceedToReview() is the single named rule for "may this
+  // project proceed" — only blocking items stop the transition;
+  // warnings (SEO fallback, tags, client attribution, etc.) never do,
+  // for every discipline (this check has no discipline/category
+  // branch — see src/lib/admin/portfolioValidation.ts).
   if (to === "pending_review" || to === "published") {
     const readiness = getPublishReadiness(project, {
       skipAltTextCheck: hasCapability(user, PORTFOLIO_CAPABILITIES, "publish"),
     });
-    if (readiness.blocking.length > 0) {
+    if (!canProceedToReview(readiness)) {
       throw new Error(`Not ready: ${readiness.blocking.join(" ")}`);
     }
   }

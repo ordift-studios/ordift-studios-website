@@ -138,14 +138,31 @@ export default async function AdminPortfolioProjectPage({ params }: { params: Pr
           on tablet/mobile exactly as before. */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
       {(readiness.blocking.length > 0 || readiness.warnings.length > 0) && (
-        <section className="rounded-xl border border-black/10 bg-white p-6">
-          <p className="font-sans text-body-small font-semibold text-ordift-ink mb-2">Publish Readiness</p>
-          {readiness.blocking.map((b) => (
-            <p key={b} className="font-sans text-caption text-red-700">✕ {b}</p>
-          ))}
-          {readiness.warnings.map((w) => (
-            <p key={w} className="font-sans text-caption text-amber-700">⚠ {w}</p>
-          ))}
+        <section className="rounded-xl border border-black/10 bg-white p-6 space-y-4">
+          <p className="font-sans text-body-small font-semibold text-ordift-ink">Publish Readiness</p>
+          {readiness.blocking.length > 0 && (
+            <div>
+              <p className="font-sans text-caption font-semibold uppercase tracking-wide text-red-700 mb-1">Required Before Publication</p>
+              {readiness.blocking.map((b) => (
+                <p key={b} className="font-sans text-caption text-red-700">✕ {b}</p>
+              ))}
+            </div>
+          )}
+          {readiness.warnings.length > 0 && (
+            <div>
+              <p className="font-sans text-caption font-semibold uppercase tracking-wide text-amber-700 mb-1">
+                Recommended — Optional, Will Not Block Publication
+              </p>
+              {readiness.warnings.map((w) => (
+                <p key={w} className="font-sans text-caption text-amber-700">⚠ {w}</p>
+              ))}
+            </div>
+          )}
+          {readiness.blocking.length === 0 && readiness.warnings.length > 0 && (
+            <p className="font-sans text-caption text-emerald-700">
+              All required items are complete — this project can proceed to review/publication. The recommendations above are optional.
+            </p>
+          )}
         </section>
       )}
 
