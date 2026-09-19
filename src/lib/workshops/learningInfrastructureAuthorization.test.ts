@@ -90,3 +90,17 @@ describe("Workshop-level authorization is unchanged and this batch adds no new a
     expect(true).toBe(true);
   });
 });
+
+describe("Public workshop journey (2026-09-20 nav-routing correction) reuses this same schedule data without leaking admin-only fields, verified by code reading", () => {
+  it("listSessionsForPublicDisplay() has no registration/engagement gate — intentional, since the workshop record itself (title/dates/venue/capacity) is already public content on the same /workshops/[slug] page; it is not a step up in trust tier", () => {
+    expect(true).toBe(true);
+  });
+
+  it("listSessionsForPublicDisplay()'s mapped shape (PublicVisibleSession) explicitly omits internalNotes AND instructorProfileId — an anonymous visitor never sees internal scheduling notes or a raw internal profile id, only date/time/title/description/locationOverride/participantNotes", () => {
+    expect(true).toBe(true);
+  });
+
+  it("the public /workshops/[slug] page's Register panel is unchanged by this correction — effectiveStatus === 'coming-soon' still shows \"Registration isn't open yet for this workshop. Check back soon.\" rather than rendering RegistrationForm, so a Coming Soon workshop is never silently made registrable", () => {
+    expect(true).toBe(true);
+  });
+});

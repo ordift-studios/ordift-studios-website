@@ -123,6 +123,36 @@ export async function listSessionsForParticipant(workshopId: string, actorProfil
   return (await listSessionsForWorkshop(workshopId)).map(toParticipantVisible);
 }
 
+// Public-facing schedule (2026-09-20) — the real dated/timed session
+// list shown on the public /workshops/[slug] page, alongside the
+// existing Sanity workshop.agenda (unchanged). No registration gate:
+// the workshop itself is already public marketing content at this
+// point on the same page (title/dates/venue/capacity), so a genuine
+// session's date/time/title/description is the same trust tier, not a
+// step up. Narrower than ParticipantVisibleSession — additionally
+// drops instructorProfileId (an internal profile id, never surfaced
+// to an anonymous visitor) since the page already lists instructors
+// by name via Sanity's workshop.instructors.
+export type PublicVisibleSession = Omit<ParticipantVisibleSession, "instructorProfileId">;
+
+export async function listSessionsForPublicDisplay(workshopId: string): Promise<PublicVisibleSession[]> {
+  const sessions = await listSessionsForWorkshop(workshopId);
+  return sessions.map((s) => ({
+    id: s.id,
+    workshopId: s.workshopId,
+    sessionDate: s.sessionDate,
+    startTime: s.startTime,
+    endTime: s.endTime,
+    title: s.title,
+    description: s.description,
+    sessionType: s.sessionType,
+    locationOverride: s.locationOverride,
+    participantNotes: s.participantNotes,
+    sortOrder: s.sortOrder,
+    createdAt: s.createdAt,
+  }));
+}
+
 export type MyInstructorSession = WorkshopSession & { workshopTitle: string };
 
 // Instructor Calendar (Section G) — every session across every

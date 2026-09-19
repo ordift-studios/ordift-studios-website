@@ -22,6 +22,7 @@ import {
 } from "@/lib/content/workshopHelpers";
 import { visitorFormsOpen } from "@/lib/shared/env";
 import { listTicketTypesForWorkshop } from "@/lib/workshops/ticketTypes";
+import { listSessionsForPublicDisplay } from "@/lib/workshops/sessions";
 import RegistrationForm from "./RegistrationForm";
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://ordiftstudios.com";
@@ -78,6 +79,14 @@ export default async function WorkshopDetailPage({
     priceUsd: t.priceUsd,
     description: t.description,
   }));
+
+  // Public-facing schedule (2026-09-20) — the real, dated operational
+  // sessions (workshop_sessions), never the internal-only fields
+  // (internal_notes, instructor_profile_id) — see
+  // listSessionsForPublicDisplay()'s own header comment. Separate from
+  // and shown alongside workshop.agenda (Sanity marketing copy,
+  // unchanged) since a workshop is not required to have either.
+  const sessions = await listSessionsForPublicDisplay(workshop.id);
 
   // TD-034: reflects the CMS `status` unless it's manually "open" but
   // registrationDeadline has passed, in which case it's treated as
@@ -250,6 +259,32 @@ export default async function WorkshopDetailPage({
                     <li key={i} className="font-sans text-body-small text-ordift-ink flex gap-2">
                       <span className="text-ordift-gold-pressed">—</span>
                       <span>{outcome}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {sessions.length > 0 && (
+              <div className="mb-8">
+                <p className="font-serif font-medium text-card-title text-ordift-ink mb-3">Schedule</p>
+                <ul className="flex flex-col gap-3">
+                  {sessions.map((s) => (
+                    <li key={s.id} className="border-l-2 border-ordift-gold/40 pl-4">
+                      <p className="font-sans text-caption uppercase tracking-[0.1em] text-ordift-ink-muted mb-1">
+                        {formatDate(s.sessionDate)} · {s.startTime.slice(0, 5)}
+                        {s.endTime ? `–${s.endTime.slice(0, 5)}` : ""}
+                      </p>
+                      <p className="font-sans text-body-small font-medium text-ordift-ink">{s.title}</p>
+                      {s.description && (
+                        <p className="font-sans text-body-small text-ordift-ink-muted">{s.description}</p>
+                      )}
+                      {s.locationOverride && (
+                        <p className="font-sans text-caption text-ordift-ink-muted">{s.locationOverride}</p>
+                      )}
+                      {s.participantNotes && (
+                        <p className="font-sans text-caption text-ordift-ink-muted">{s.participantNotes}</p>
+                      )}
                     </li>
                   ))}
                 </ul>
