@@ -9,6 +9,13 @@ import { listInstructorEngagementsForWorkshop } from "@/lib/workshops/instructor
 import { getWorkshopFinancialOverview, getWorkshopOperationalWarnings } from "@/lib/workshops/financialOverview";
 import { listUsersWithRoles } from "@/lib/portal/adminData";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { listSessionsForWorkshop } from "@/lib/workshops/sessions";
+import { listMaterialsForAdmin } from "@/lib/workshops/materials";
+import { listAnnouncementsForWorkshop } from "@/lib/workshops/announcements";
+import { listBriefsForWorkshop } from "@/lib/workshops/briefsAndSubmissions";
+import { SessionList, CreateSessionForm } from "../WorkshopScheduleForms";
+import { MaterialList, MaterialUploadForm, AddMaterialLinkForm } from "../WorkshopMaterialsPanel";
+import { AnnouncementsPanel, BriefsPanel } from "../WorkshopCommunicationForms";
 import {
   createTicketTypeAction,
   toggleTicketTypeAction,
@@ -77,6 +84,13 @@ export default async function WorkshopDashboardPage({ params }: { params: Promis
     ? usersResult.users.map((u) => ({ id: u.id, label: u.fullName ? `${u.fullName} (${u.email ?? "no email"})` : (u.email ?? u.id) }))
     : [];
 
+  const [sessions, materials, announcements, briefs] = await Promise.all([
+    listSessionsForWorkshop(id),
+    listMaterialsForAdmin(id),
+    listAnnouncementsForWorkshop(id),
+    listBriefsForWorkshop(id),
+  ]);
+
   return (
     <div className="space-y-8">
       <div className="flex items-start justify-between gap-4">
@@ -124,6 +138,37 @@ export default async function WorkshopDashboardPage({ params }: { params: Promis
             </div>
           ))}
         </div>
+      </section>
+
+      <section className="rounded-xl border border-black/10 bg-white p-6 space-y-4">
+        <h2 className="font-serif font-medium text-body text-ordift-ink">Schedule</h2>
+        <p className="font-sans text-caption text-ordift-ink-muted">
+          The real, dated operational schedule — separate from the public agenda shown on the workshop&rsquo;s page
+          (edited in Sanity Studio). Simple workshops can leave this empty.
+        </p>
+        <SessionList workshopId={id} sessions={sessions} people={people} />
+        {canManageWorkshop && <CreateSessionForm workshopId={id} people={people} />}
+      </section>
+
+      <section className="rounded-xl border border-black/10 bg-white p-6 space-y-4">
+        <h2 className="font-serif font-medium text-body text-ordift-ink">Materials</h2>
+        <MaterialList workshopId={id} materials={materials} />
+        {canManageWorkshop && (
+          <div className="space-y-4 pt-2 border-t border-black/5">
+            <MaterialUploadForm workshopId={id} />
+            <AddMaterialLinkForm workshopId={id} />
+          </div>
+        )}
+      </section>
+
+      <section className="rounded-xl border border-black/10 bg-white p-6 space-y-4">
+        <h2 className="font-serif font-medium text-body text-ordift-ink">Creative Briefs</h2>
+        <BriefsPanel workshopId={id} briefs={briefs} />
+      </section>
+
+      <section className="rounded-xl border border-black/10 bg-white p-6 space-y-4">
+        <h2 className="font-serif font-medium text-body text-ordift-ink">Announcements</h2>
+        <AnnouncementsPanel workshopId={id} announcements={announcements} />
       </section>
 
       {financialOverview && (

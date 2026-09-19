@@ -2,14 +2,16 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { WORKSPACE_TABS } from "@/lib/portal/workspaceTabs";
+import { workspaceTabsForKind } from "@/lib/portal/workspaceTabs";
+import type { ProjectKind } from "@/lib/portal/workspace";
 
-export default function TabNav({ basePath }: { basePath: string }) {
+export default function TabNav({ basePath, kind }: { basePath: string; kind: ProjectKind }) {
   const pathname = usePathname();
+  const tabs = workspaceTabsForKind(kind);
 
   return (
     <nav className="flex gap-1 overflow-x-auto border-b border-black/10 mb-8">
-      {WORKSPACE_TABS.map((tab) => {
+      {tabs.map((tab) => {
         const href = tab.slug ? `${basePath}/${tab.slug}` : basePath;
         const isActive = pathname === href;
         return (

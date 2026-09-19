@@ -62,6 +62,9 @@ export async function getWorkshopOperationalWarnings(
   if (incompleteEngagements > 0) {
     warnings.push({ key: "engagements-incomplete", label: `${incompleteEngagements} instructor engagement(s) awaiting a payment obligation` });
   }
+  if ((engagements ?? []).length === 0) {
+    warnings.push({ key: "missing-instructor", label: "No instructor/facilitator assigned yet" });
+  }
 
   const registrationIds = rows.map((r) => r.id);
   if (registrationIds.length > 0) {

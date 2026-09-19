@@ -10,7 +10,12 @@ import { getStaffOnboardingByProfileId } from "@/lib/organization/onboarding";
 import { listResolvedRequirements } from "@/lib/organization/onboardingRequirements";
 import { getOwnPayeeProfile } from "@/lib/payables/payeeProfiles";
 import { listPaymentObligationsForPayee } from "@/lib/payments/payoutObligations";
+import { listUpcomingSessionsForInstructor } from "@/lib/workshops/sessions";
+import { listMaterialsForInstructor } from "@/lib/workshops/materials";
+import { listAnnouncementsForInstructor } from "@/lib/workshops/announcements";
+import { listBriefsForWorkshop } from "@/lib/workshops/briefsAndSubmissions";
 import { AttendanceRoster } from "./AttendanceRoster";
+import { InstructorMaterialsList, InstructorAnnouncementsBlock, InstructorBriefsBlock } from "./InstructorWorkshopExtras";
 
 export const metadata: Metadata = {
   title: "Instructor — Ordift Studios Portal",
@@ -26,10 +31,12 @@ export const metadata: Metadata = {
 // the Vendor/Collaborator portals already use ("engagement ownership,
 // not role, is what scopes this data" — see vendor/page.tsx).
 //
-// Materials sharing and a generic payee-document library do not exist
-// anywhere in this codebase yet (confirmed by audit — no
-// workshop_materials table, no payee_documents table); this page says
-// so honestly rather than fabricating content for either.
+// Workshop Learning Infrastructure V1 (2026-09-19) — Materials,
+// Announcements, and Creative Briefs are now real, workshop-scoped,
+// engagement-gated features (workshop_materials/announcements/briefs,
+// migration 0138) — see the per-workshop card below. A generic
+// payee-document library (unrelated to workshops) still does not
+// exist anywhere in this codebase.
 export default async function InstructorPortalPage() {
   const user = await getCurrentUser();
   if (!user) redirect("/portal/login");
@@ -57,12 +64,19 @@ export default async function InstructorPortalPage() {
     getOwnPayeeProfile(user.id),
   ]);
 
-  const [outstandingRequirements, paymentObligations, rostersByWorkshop] = await Promise.all([
+  const [outstandingRequirements, paymentObligations, rostersByWorkshop, materialsByWorkshop, announcementsByWorkshop, briefsByWorkshop, upcomingSessions] = await Promise.all([
     onboarding ? listResolvedRequirements({ onboardingId: onboarding.id, profileId: user.id, pipeline: onboarding.pipeline }) : Promise.resolve([]),
     payeeProfile ? listPaymentObligationsForPayee(user.id) : Promise.resolve([]),
     Promise.all(engagements.map(async (e) => [e.workshopId, await listRegistrationsForInstructorWorkshop(e.workshopId, user.id)] as const)),
+    Promise.all(engagements.map(async (e) => [e.workshopId, await listMaterialsForInstructor(e.workshopId, user.id)] as const)),
+    Promise.all(engagements.map(async (e) => [e.workshopId, await listAnnouncementsForInstructor(e.workshopId, user.id)] as const)),
+    Promise.all(engagements.map(async (e) => [e.workshopId, await listBriefsForWorkshop(e.workshopId)] as const)),
+    listUpcomingSessionsForInstructor(user.id, new Date().toISOString().slice(0, 10)),
   ]);
   const rosterByWorkshopId = new Map(rostersByWorkshop);
+  const materialsByWorkshopId = new Map(materialsByWorkshop);
+  const announcementsByWorkshopId = new Map(announcementsByWorkshop);
+  const briefsByWorkshopId = new Map(briefsByWorkshop);
   const outstanding = outstandingRequirements.filter((r) => r.status !== "satisfied" && r.status !== "waived" && r.status !== "not_applicable");
 
   return (
@@ -71,6 +85,27 @@ export default async function InstructorPortalPage() {
         <p className="font-sans font-semibold uppercase tracking-[0.2em] text-eyebrow text-ordift-gold-pressed mb-2">Instructor / Facilitator</p>
         <h1 className="font-serif font-medium text-section-heading lg:text-section-heading-desktop text-ordift-ink">{user.fullName ?? user.email}</h1>
       </div>
+
+      <section className="rounded-xl border border-black/10 bg-white p-6 space-y-3">
+        <h2 className="font-serif font-medium text-body text-ordift-ink">Upcoming Sessions</h2>
+        {upcomingSessions.length === 0 ? (
+          <p className="font-sans text-body-small text-ordift-ink-muted">No dated sessions on your schedule yet.</p>
+        ) : (
+          <ul className="divide-y divide-black/5">
+            {upcomingSessions.slice(0, 10).map((s) => (
+              <li key={s.id} className="py-2 flex items-center justify-between gap-3">
+                <div>
+                  <p className="font-sans text-body-small text-ordift-ink">{s.title} — {s.workshopTitle}</p>
+                  <p className="font-sans text-caption text-ordift-ink-muted">{s.locationOverride ?? ""}</p>
+                </div>
+                <span className="font-sans text-caption text-ordift-ink-muted whitespace-nowrap">
+                  {s.sessionDate} · {s.startTime.slice(0, 5)}
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
 
       <section className="space-y-4">
         <h2 className="font-serif font-medium text-body text-ordift-ink">My Workshops</h2>
@@ -95,6 +130,20 @@ export default async function InstructorPortalPage() {
               <div>
                 <p className="font-sans text-caption uppercase tracking-wide text-ordift-ink-muted mb-2">Participants &amp; Attendance</p>
                 <AttendanceRoster workshopId={e.workshopId} registrations={rosterByWorkshopId.get(e.workshopId) ?? []} />
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-3 border-t border-black/5">
+                <div>
+                  <p className="font-sans text-caption uppercase tracking-wide text-ordift-ink-muted mb-2">Materials</p>
+                  <InstructorMaterialsList materials={materialsByWorkshopId.get(e.workshopId) ?? []} />
+                </div>
+                <div>
+                  <p className="font-sans text-caption uppercase tracking-wide text-ordift-ink-muted mb-2">Announcements</p>
+                  <InstructorAnnouncementsBlock workshopId={e.workshopId} announcements={announcementsByWorkshopId.get(e.workshopId) ?? []} />
+                </div>
+                <div>
+                  <p className="font-sans text-caption uppercase tracking-wide text-ordift-ink-muted mb-2">Creative Briefs</p>
+                  <InstructorBriefsBlock workshopId={e.workshopId} briefs={briefsByWorkshopId.get(e.workshopId) ?? []} />
+                </div>
               </div>
             </div>
           ))
@@ -136,14 +185,6 @@ export default async function InstructorPortalPage() {
             </ul>
           )}
         </div>
-      </section>
-
-      <section className="rounded-xl border border-black/10 bg-white p-6 space-y-1">
-        <h2 className="font-serif font-medium text-body text-ordift-ink mb-1">Materials, Documents &amp; Requests</h2>
-        <p className="font-sans text-body-small text-ordift-ink-muted">
-          No materials-sharing, document-library, or self-service request feature exists yet for the Instructor
-          relationship — nothing to show honestly, rather than a fabricated placeholder.
-        </p>
       </section>
     </div>
   );

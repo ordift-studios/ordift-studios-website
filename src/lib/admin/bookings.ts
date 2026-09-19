@@ -15,7 +15,7 @@ export async function getRegistrationById(id: string): Promise<AdminWorkshopRegi
   const { data, error } = await supabase
     .from("workshop_registrations")
     .select(
-      "id, registration_reference, email, full_name, phone, workshop_slug, workshop_title, registration_status, waiting_list_position, payment_status, amount_due, amount_paid, certificate_issued, certificate_url, registration_date, attendance_status, ticket_type_id"
+      "id, registration_reference, email, full_name, phone, workshop_id, workshop_slug, workshop_title, registration_status, waiting_list_position, payment_status, amount_due, amount_paid, certificate_issued, certificate_url, registration_date, attendance_status, ticket_type_id"
     )
     .eq("id", id)
     .maybeSingle();
@@ -32,6 +32,7 @@ export async function getRegistrationById(id: string): Promise<AdminWorkshopRegi
     email: data.email,
     fullName: data.full_name,
     phone: data.phone,
+    workshopId: data.workshop_id,
     workshopSlug: data.workshop_slug,
     workshopTitle: data.workshop_title,
     registrationStatus: data.registration_status,

@@ -4,8 +4,10 @@ import Link from "next/link";
 import { getCurrentUser } from "@/lib/portal/roles";
 import { isStaffOrAdmin } from "@/lib/portal/roles";
 import { authorizeWithSuperAdminOverride, FINANCE_CAPABILITIES } from "@/lib/organization/authority";
-import { getAllWorkshopsAdmin } from "@/lib/content/sanity/workshopAdmin";
+import { getAllWorkshopsAdmin, getWorkshopCategoriesAdmin } from "@/lib/content/sanity/workshopAdmin";
+import { contentRepository } from "@/lib/content";
 import { getWorkshopsDepartmentOverview } from "@/lib/workshops/departmentOverview";
+import { WorkshopListTable, type WorkshopListRow } from "./WorkshopListTable";
 
 // Task 4 audit (2026-09-17) — a real Production exposure: this list
 // page showed gross revenue / outstanding balances / instructor
@@ -32,13 +34,41 @@ export default async function AdminWorkshopsPage() {
   if (!user || !isStaffOrAdmin(user)) redirect("/admin/overview");
   const canSeeFinance = (await authorizeWithSuperAdminOverride(user.id, FINANCE_CAPABILITIES.workshopRevenueView)).ok;
 
-  const workshops = await getAllWorkshopsAdmin();
-  const { summary, warnings: allWarnings, upcomingSessions } = await getWorkshopsDepartmentOverview(workshops);
+  const [workshops, categories, instructors] = await Promise.all([
+    getAllWorkshopsAdmin(),
+    getWorkshopCategoriesAdmin(),
+    contentRepository.getInstructors(),
+  ]);
+  const { summary, warnings: allWarnings, upcomingSessions, perWorkshop } = await getWorkshopsDepartmentOverview(workshops);
   const warnings = canSeeFinance ? allWarnings : allWarnings.filter((w) => !FINANCIAL_WARNING_KEYS.has(w.key));
   const warningsByWorkshop = new Map<string, typeof warnings>();
   for (const w of warnings) {
     warningsByWorkshop.set(w.workshopId, [...(warningsByWorkshop.get(w.workshopId) ?? []), w]);
   }
+
+  const categoryNameById = new Map(categories.map((c) => [c.id, c.name] as const));
+  const instructorNameById = new Map(instructors.map((i) => [i.id, i.name] as const));
+  const summaryById = new Map(perWorkshop.map((p) => [p.id, p] as const));
+
+  const rows: WorkshopListRow[] = workshops.map((w) => {
+    const deliveryMode = w.venueId && w.isOnlineAttendancePossible ? "Hybrid" : w.isOnlineAttendancePossible ? "Online" : "In-Person";
+    const rowWarnings = warningsByWorkshop.get(w.id) ?? [];
+    const perWorkshopSummary = summaryById.get(w.id);
+    return {
+      id: w.id,
+      title: w.title,
+      status: w.status,
+      categoryLabel: w.categoryIds.map((id) => categoryNameById.get(id)).filter(Boolean).join(", ") || "Uncategorized",
+      instructorNames: w.instructorIds.map((id) => instructorNameById.get(id)).filter((v): v is string => Boolean(v)),
+      deliveryMode,
+      startDate: w.startDate,
+      registeredCount: perWorkshopSummary?.registeredCount ?? 0,
+      capacity: w.capacity,
+      priceLabel: w.requiresPayment ? "Paid" : "Free",
+      warningLabels: rowWarnings.map((rw) => rw.label),
+    };
+  });
+  const categoryLabels = [...new Set(rows.map((r) => r.categoryLabel))].sort();
 
   return (
     <div>
@@ -110,31 +140,7 @@ export default async function AdminWorkshopsPage() {
         </section>
       )}
 
-      <div className="rounded-xl border border-black/10 bg-white divide-y divide-black/5">
-        {workshops.map((w) => {
-          const warnings = warningsByWorkshop.get(w.id) ?? [];
-          return (
-            <Link key={w.id} href={`/admin/workshops/${w.id}`} className="flex items-center justify-between px-5 py-4 hover:bg-ordift-offwhite/60">
-              <div>
-                <p className="font-sans text-body-small text-ordift-ink font-medium">{w.title}</p>
-                <p className="font-sans text-caption text-ordift-ink-muted">
-                  {w.status} · Capacity {w.capacity} {w.startDate ? `· ${w.startDate}` : ""}
-                </p>
-                {warnings.length > 0 && (
-                  <div className="flex flex-wrap gap-1.5 mt-1.5">
-                    {warnings.map((warn) => (
-                      <span key={warn.key} className="font-sans text-[11px] px-2 py-0.5 rounded-full bg-amber-100 text-amber-900">
-                        {warn.label}
-                      </span>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </Link>
-          );
-        })}
-        {workshops.length === 0 && <p className="px-5 py-8 text-center font-sans text-body-small text-ordift-ink-muted">No workshops yet.</p>}
-      </div>
+      <WorkshopListTable rows={rows} categories={categoryLabels} />
     </div>
   );
 }

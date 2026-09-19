@@ -11,6 +11,18 @@ import { createInstructorEngagement, linkEngagementToPaymentObligation } from "@
 import { approvePaymentObligation } from "@/lib/payments/payoutObligations";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { sendTravelAssistanceStatusEmail, sendWorkshopNoticeEmailToRegistration, sendInstructorEngagementApprovedEmail } from "@/lib/workshops/registrationEmail";
+import { createWorkshopSession, deleteWorkshopSession } from "@/lib/workshops/sessions";
+import { createMaterialRecord, createMaterialUploadUrl, deleteMaterial } from "@/lib/workshops/materials";
+import { createAnnouncement } from "@/lib/workshops/announcements";
+import { createBrief, giveFeedback } from "@/lib/workshops/briefsAndSubmissions";
+
+// Workshop Learning Infrastructure V1 (2026-09-19) — the actions below
+// this point return a real ok/error ActionState consumed via
+// useActionState (immediate pending state, disabled duplicate submit,
+// explicit success/error, revalidation), per the current Ordift
+// consequential-action standard — a deliberate upgrade over the
+// Promise<void> actions above them, which predate that standard.
+export type ActionState = { ok: true } | { ok: false; error: string } | null;
 
 // Workshop Management V1, Phase B, Part 13 (2026-08-25). Overall
 // workshop administration (content, ticket types) requires
@@ -326,4 +338,173 @@ export async function sendWorkshopNoticeAction(formData: FormData): Promise<void
   });
 
   revalidatePath(`/admin/workshops/${workshopId}`);
+}
+
+// ============================================================
+// Sessions / Schedule
+// ============================================================
+export async function createSessionAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  const user = await getCurrentUser();
+  if (!user) return { ok: false, error: "Not authenticated." };
+
+  const workshopId = String(formData.get("workshopId") ?? "");
+  const sessionDate = String(formData.get("sessionDate") ?? "");
+  const startTime = String(formData.get("startTime") ?? "");
+  const endTime = String(formData.get("endTime") ?? "").trim() || null;
+  const title = String(formData.get("title") ?? "").trim();
+  const description = String(formData.get("description") ?? "").trim() || null;
+  const sessionType = String(formData.get("sessionType") ?? "session").trim();
+  const instructorProfileId = String(formData.get("instructorProfileId") ?? "").trim() || null;
+  const locationOverride = String(formData.get("locationOverride") ?? "").trim() || null;
+  const participantNotes = String(formData.get("participantNotes") ?? "").trim() || null;
+  if (!workshopId || !sessionDate || !startTime) return { ok: false, error: "Date, start time, and title are required." };
+
+  const result = await createWorkshopSession({
+    workshopId,
+    sessionDate,
+    startTime,
+    endTime,
+    title,
+    description,
+    sessionType,
+    instructorProfileId,
+    locationOverride,
+    participantNotes,
+    actorUserId: user.id,
+  });
+  if (!result.ok) return { ok: false, error: result.error };
+
+  revalidatePath(`/admin/workshops/${workshopId}`);
+  if (result.conflicts.length > 0) {
+    return { ok: false, error: `Saved, but this instructor is already scheduled for: ${result.conflicts.map((c) => `${c.sessionTitle} (${c.workshopTitle})`).join(", ")}.` };
+  }
+  return { ok: true };
+}
+
+export async function deleteSessionAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  const user = await getCurrentUser();
+  if (!user) return { ok: false, error: "Not authenticated." };
+  const sessionId = String(formData.get("sessionId") ?? "");
+  const workshopId = String(formData.get("workshopId") ?? "");
+  if (!sessionId || !workshopId) return { ok: false, error: "Invalid request." };
+
+  const result = await deleteWorkshopSession(sessionId, workshopId, user.id);
+  if (!result.ok) return { ok: false, error: result.error };
+  revalidatePath(`/admin/workshops/${workshopId}`);
+  return { ok: true };
+}
+
+// ============================================================
+// Materials
+// ============================================================
+export async function requestMaterialUploadAuthorizationAction(params: {
+  workshopId: string;
+  originalFilename: string;
+}): Promise<{ ok: true; path: string; uploadUrl: string; token: string } | { ok: false; error: string }> {
+  const user = await getCurrentUser();
+  if (!user) return { ok: false, error: "Not authenticated." };
+  return createMaterialUploadUrl(params.workshopId, params.originalFilename, user.id);
+}
+
+export async function recordMaterialUploadAction(params: {
+  workshopId: string;
+  storagePath: string;
+  title: string;
+  description: string | null;
+  visibility: "admin" | "instructor" | "participant";
+  availableFrom: string | null;
+}): Promise<{ ok: true } | { ok: false; error: string }> {
+  const user = await getCurrentUser();
+  if (!user) return { ok: false, error: "Not authenticated." };
+  const result = await createMaterialRecord({
+    workshopId: params.workshopId,
+    title: params.title,
+    description: params.description,
+    storagePath: params.storagePath,
+    visibility: params.visibility,
+    availableFrom: params.availableFrom,
+    actorUserId: user.id,
+  });
+  if (!result.ok) return result;
+  revalidatePath(`/admin/workshops/${params.workshopId}`);
+  return { ok: true };
+}
+
+export async function createMaterialLinkAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  const user = await getCurrentUser();
+  if (!user) return { ok: false, error: "Not authenticated." };
+  const workshopId = String(formData.get("workshopId") ?? "");
+  const title = String(formData.get("title") ?? "").trim();
+  const externalUrl = String(formData.get("externalUrl") ?? "").trim();
+  const visibility = String(formData.get("visibility") ?? "participant") as "admin" | "instructor" | "participant";
+  if (!workshopId || !title || !externalUrl) return { ok: false, error: "Title and link are required." };
+
+  const result = await createMaterialRecord({ workshopId, title, externalUrl, visibility, actorUserId: user.id });
+  if (!result.ok) return { ok: false, error: result.error };
+  revalidatePath(`/admin/workshops/${workshopId}`);
+  return { ok: true };
+}
+
+export async function deleteMaterialAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  const user = await getCurrentUser();
+  if (!user) return { ok: false, error: "Not authenticated." };
+  const materialId = String(formData.get("materialId") ?? "");
+  const workshopId = String(formData.get("workshopId") ?? "");
+  if (!materialId || !workshopId) return { ok: false, error: "Invalid request." };
+
+  const result = await deleteMaterial(materialId, workshopId, user.id);
+  if (!result.ok) return { ok: false, error: result.error };
+  revalidatePath(`/admin/workshops/${workshopId}`);
+  return { ok: true };
+}
+
+// ============================================================
+// Announcements
+// ============================================================
+export async function createAnnouncementAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  const user = await getCurrentUser();
+  if (!user) return { ok: false, error: "Not authenticated." };
+  const workshopId = String(formData.get("workshopId") ?? "");
+  const title = String(formData.get("title") ?? "").trim();
+  const message = String(formData.get("message") ?? "").trim();
+  if (!workshopId) return { ok: false, error: "Invalid request." };
+
+  const result = await createAnnouncement({ workshopId, title, message, actorUserId: user.id });
+  if (!result.ok) return { ok: false, error: result.error };
+  revalidatePath(`/admin/workshops/${workshopId}`);
+  return { ok: true };
+}
+
+// ============================================================
+// Creative Briefs
+// ============================================================
+export async function createBriefAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  const user = await getCurrentUser();
+  if (!user) return { ok: false, error: "Not authenticated." };
+  const workshopId = String(formData.get("workshopId") ?? "");
+  const title = String(formData.get("title") ?? "").trim();
+  const instructions = String(formData.get("instructions") ?? "").trim();
+  const dueAt = String(formData.get("dueAt") ?? "").trim() || null;
+  if (!workshopId) return { ok: false, error: "Invalid request." };
+
+  const result = await createBrief({ workshopId, title, instructions, dueAt, actorUserId: user.id });
+  if (!result.ok) return { ok: false, error: result.error };
+  revalidatePath(`/admin/workshops/${workshopId}`);
+  return { ok: true };
+}
+
+export async function giveFeedbackAsAdminAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  const user = await getCurrentUser();
+  if (!user) return { ok: false, error: "Not authenticated." };
+  const submissionId = String(formData.get("submissionId") ?? "");
+  const feedbackText = String(formData.get("feedbackText") ?? "").trim();
+  const status = String(formData.get("status") ?? "reviewed") as "reviewed" | "revision_requested";
+  const workshopId = String(formData.get("workshopId") ?? "");
+  const briefId = String(formData.get("briefId") ?? "");
+  if (!submissionId || !feedbackText) return { ok: false, error: "Feedback text is required." };
+
+  const result = await giveFeedback({ submissionId, feedbackText, status, actorUserId: user.id });
+  if (!result.ok) return { ok: false, error: result.error };
+  if (workshopId && briefId) revalidatePath(`/admin/workshops/${workshopId}/briefs/${briefId}`);
+  return { ok: true };
 }

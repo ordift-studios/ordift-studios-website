@@ -36,7 +36,7 @@ export default async function ProjectWorkspaceLayout({
   return (
     <div>
       <WorkspaceHeader overview={overview} />
-      <TabNav basePath={`/portal/client/projects/${kind}/${id}`} />
+      <TabNav basePath={`/portal/client/projects/${kind}/${id}`} kind={kind} />
       {children}
     </div>
   );

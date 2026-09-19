@@ -35,6 +35,10 @@ export type WorkspaceOverview = {
   progress: { step: number; total: number } | null;
   submittedAt: string;
   paymentStatus: string | null;
+  // Workshop Learning Infrastructure V1 (2026-09-19) — real Sanity
+  // content, workshop kind only; null for enquiries (never fabricated).
+  description: string | null;
+  learningOutcomes: string[];
 };
 
 export async function getWorkspaceOverview(
@@ -56,11 +60,14 @@ export async function getWorkspaceOverview(
       progress: crmStageProgress(enquiry.crmStage),
       submittedAt: enquiry.submittedAt,
       paymentStatus: enquiry.paymentStatus,
+      description: null,
+      learningOutcomes: [],
     };
   }
 
   const registration = await getWorkshopRegistrationByIdForUser(id, userId);
   if (!registration) return null;
+  const workshop = await contentRepository.getWorkshopBySlug(registration.workshopSlug);
   // Workshop registrations don't have a CRM-style pipeline — progress/
   // next-milestone are null (not fabricated) rather than reusing the
   // enquiry pipeline, which doesn't apply here.
@@ -77,6 +84,8 @@ export async function getWorkspaceOverview(
     progress: null,
     submittedAt: registration.registrationDate,
     paymentStatus: registration.paymentStatus,
+    description: workshop?.description ?? null,
+    learningOutcomes: workshop?.learningOutcomes ?? [],
   };
 }
 
@@ -225,8 +234,17 @@ export async function getClientUpdates(
   id: string,
   userId: string
 ): Promise<ClientUpdate[]> {
-  // No equivalent mechanism exists for workshop registrations yet — an
-  // honest empty list, not a placeholder claiming otherwise.
+  // Workshop Learning Infrastructure V1 (2026-09-19) — workshop
+  // announcements now populate this SAME "Updates" tab rather than a
+  // second announcements surface, reusing listAnnouncementsForParticipant()'s
+  // own registration-ownership check (never a second one here).
+  if (kind === "workshop") {
+    const registration = await getWorkshopRegistrationByIdForUser(id, userId);
+    if (!registration) return [];
+    const { listAnnouncementsForParticipant } = await import("@/lib/workshops/announcements");
+    const announcements = await listAnnouncementsForParticipant(registration.workshopId, userId);
+    return announcements.map((a) => ({ id: a.id, authorName: null, note: a.title ? `${a.title}: ${a.message}` : a.message, createdAt: a.createdAt }));
+  }
   if (kind !== "enquiry") return [];
 
   const enquiry = await getEnquiryByIdForUser(id, userId);

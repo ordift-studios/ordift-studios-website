@@ -83,6 +83,7 @@ export type PortalWorkshopRegistration = {
   email: string;
   fullName: string;
   phone: string | null;
+  workshopId: string;
   workshopSlug: string;
   workshopTitle: string;
   registrationStatus: string;
@@ -102,7 +103,7 @@ export async function getWorkshopRegistrationsForUser(
   const { data, error } = await supabase
     .from("workshop_registrations")
     .select(
-      "id, registration_reference, email, full_name, phone, workshop_slug, workshop_title, registration_status, waiting_list_position, payment_status, amount_due, amount_paid, certificate_issued, certificate_url, registration_date"
+      "id, registration_reference, email, full_name, phone, workshop_id, workshop_slug, workshop_title, registration_status, waiting_list_position, payment_status, amount_due, amount_paid, certificate_issued, certificate_url, registration_date"
     )
     .eq("user_id", userId)
     .order("registration_date", { ascending: false });
@@ -118,6 +119,7 @@ export async function getWorkshopRegistrationsForUser(
     email: row.email,
     fullName: row.full_name,
     phone: row.phone,
+    workshopId: row.workshop_id,
     workshopSlug: row.workshop_slug,
     workshopTitle: row.workshop_title,
     registrationStatus: row.registration_status,
@@ -139,7 +141,7 @@ export async function getWorkshopRegistrationByIdForUser(
   const { data, error } = await supabase
     .from("workshop_registrations")
     .select(
-      "id, registration_reference, email, full_name, phone, workshop_slug, workshop_title, registration_status, waiting_list_position, payment_status, amount_due, amount_paid, certificate_issued, certificate_url, registration_date"
+      "id, registration_reference, email, full_name, phone, workshop_id, workshop_slug, workshop_title, registration_status, waiting_list_position, payment_status, amount_due, amount_paid, certificate_issued, certificate_url, registration_date"
     )
     .eq("id", id)
     .eq("user_id", userId)
@@ -153,6 +155,7 @@ export async function getWorkshopRegistrationByIdForUser(
     email: data.email,
     fullName: data.full_name,
     phone: data.phone,
+    workshopId: data.workshop_id,
     workshopSlug: data.workshop_slug,
     workshopTitle: data.workshop_title,
     registrationStatus: data.registration_status,
@@ -263,7 +266,7 @@ export async function getAllWorkshopRegistrations(
   let query = supabase
     .from("workshop_registrations")
     .select(
-      "id, registration_reference, email, full_name, phone, workshop_slug, workshop_title, registration_status, waiting_list_position, payment_status, amount_due, amount_paid, certificate_issued, certificate_url, registration_date"
+      "id, registration_reference, email, full_name, phone, workshop_id, workshop_slug, workshop_title, registration_status, waiting_list_position, payment_status, amount_due, amount_paid, certificate_issued, certificate_url, registration_date"
     )
     .order("registration_date", { ascending: false })
     .limit(limit);
@@ -294,6 +297,7 @@ export async function getAllWorkshopRegistrations(
     email: row.email,
     fullName: row.full_name,
     phone: row.phone,
+    workshopId: row.workshop_id,
     workshopSlug: row.workshop_slug,
     workshopTitle: row.workshop_title,
     registrationStatus: row.registration_status,

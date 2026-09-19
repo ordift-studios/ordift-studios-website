@@ -46,6 +46,24 @@ export default async function OverviewTabPage({
           <p className="font-sans text-body text-ordift-ink mt-1">{overview.paymentStatus}</p>
         </div>
       )}
+
+      {overview.description && (
+        <div>
+          <p className="font-sans text-caption uppercase tracking-wide text-ordift-ink-muted">About This Workshop</p>
+          <p className="font-sans text-body-small text-ordift-ink mt-1">{overview.description}</p>
+        </div>
+      )}
+
+      {overview.learningOutcomes.length > 0 && (
+        <div>
+          <p className="font-sans text-caption uppercase tracking-wide text-ordift-ink-muted">You&rsquo;ll Learn</p>
+          <ul className="mt-1 space-y-1 list-disc list-inside">
+            {overview.learningOutcomes.map((o) => (
+              <li key={o} className="font-sans text-body-small text-ordift-ink">{o}</li>
+            ))}
+          </ul>
+        </div>
+      )}
     </div>
   );
 }
