@@ -2,7 +2,6 @@
 
 import { useEffect } from "react";
 import Link from "next/link";
-import NavBar from "@/components/NavBar";
 
 // Navigation-latency fix (2026-09-24) — Production QA: "a failed
 // request must resolve to an explicit recoverable error state rather
@@ -13,7 +12,14 @@ import NavBar from "@/components/NavBar";
 // page's own recoverable state — never literally "hung," but never
 // explicit or scoped to what the visitor was actually trying to do
 // either. Client Component per Next.js's own error.tsx convention —
-// the only mechanism for this.
+// the only mechanism for this. Deliberately does NOT import NavBar
+// (a Server Component that fetches the visitor's session and Sanity
+// navigation content) — a Client Component boundary file can't import
+// a Server Component's server-only work directly (this broke the
+// Production build on first attempt: "You're importing a module that
+// depends on next/headers ... in the Pages Router" traced straight to
+// NavBar via this file). An error boundary should stay maximally
+// simple and dependency-free anyway — a plain link, not a full header.
 export default function WorkshopDetailError({ error, reset }: { error: Error & { digest?: string }; reset: () => void }) {
   useEffect(() => {
     console.error("[workshops/[slug]] page error", error);
@@ -21,7 +27,11 @@ export default function WorkshopDetailError({ error, reset }: { error: Error & {
 
   return (
     <main>
-      <NavBar />
+      <div className="px-4 sm:px-8 py-4">
+        <Link href="/" className="font-sans text-body-small font-semibold text-ordift-ink">
+          Ordift Studios
+        </Link>
+      </div>
       <section className="bg-white px-4 sm:px-8 py-20 sm:py-28 text-center">
         <div className="max-w-md mx-auto">
           <p className="font-sans font-semibold uppercase tracking-[0.2em] text-eyebrow text-ordift-gold-pressed mb-4">
