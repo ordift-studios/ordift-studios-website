@@ -2,6 +2,7 @@
 
 import { useMemo } from "react";
 import { getCountries, getCountryCallingCode, parsePhoneNumberFromString, type CountryCode } from "libphonenumber-js";
+import { getAlpha3 } from "./iso3166Alpha3";
 
 // Shared international phone/WhatsApp input (2026-09-24) — Founder QA:
 // the Workshop Registration form's country-code field was a freeform
@@ -38,6 +39,22 @@ import { getCountries, getCountryCallingCode, parsePhoneNumberFromString, type C
 // string). This component itself never talks to a database, so it can
 // never rewrite an existing stored value — normalization only ever
 // happens for what the visitor types into a page using it.
+//
+// Compact closed-state correction (2026-09-25) — Founder iPad/mobile
+// QA: showing the full country name ("Ghana +233") in the closed
+// selector left too little width for the national-number field. A
+// plain native <select> always renders its CURRENTLY SELECTED
+// <option>'s own text in the closed box — there is no way to show
+// different text closed vs. open with option text alone, since the OS
+// renders the open dropdown from those same <option> labels. Fixed by
+// keeping the real, full-size, fully-interactive native <select>
+// (options still read "Ghana +233" — full names when opened, and to
+// assistive tech) but making it visually transparent and layering a
+// compact custom label ("GHA +233", ISO 3166-1 alpha-3 — see
+// iso3166Alpha3.ts) on top, sized to content rather than a fixed wide
+// column. The select still receives every click/tap/keystroke (the
+// label is pointer-events-none) — this is a presentation-only change,
+// not a new interaction model.
 
 export type PhoneInputChange = {
   countryCode: CountryCode;
@@ -105,13 +122,20 @@ export default function PhoneInput({
         {label}
       </label>
       <div className="flex gap-2">
-        <div className="shrink-0">
+        <div className="relative shrink-0 w-[5.5rem] min-w-[4.5rem]">
           <label htmlFor={countrySelectId} className="sr-only">
             Country
           </label>
+          {/* Real, full-size, fully interactive select — visually
+              transparent (text-transparent, not display:none/hidden,
+              so it stays in the accessibility tree and keyboard/tab
+              order exactly as a normal select would). Every option's
+              own label is still the full "Ghana +233" — that's what
+              opens when this is activated, and what a screen reader
+              announces. */}
           <select
             id={countrySelectId}
-            className={`${inputClasses} w-[7.5rem] pr-1`}
+            className="absolute inset-0 w-full h-full min-h-11 rounded-lg border border-black/15 bg-white text-transparent focus:outline-none focus:ring-2 focus:ring-ordift-gold focus:border-transparent cursor-pointer"
             value={selected.code}
             onChange={(e) => onChange(phoneInputChange(e.target.value as CountryCode, nationalNumber))}
           >
@@ -121,6 +145,12 @@ export default function PhoneInput({
               </option>
             ))}
           </select>
+          {/* The compact label actually shown — content-sized, never
+              a wide fixed column, and never intercepts clicks (the
+              select above it is the real target). */}
+          <div className="pointer-events-none flex items-center justify-center min-h-11 px-1.5 font-sans text-body-small text-ordift-ink whitespace-nowrap">
+            {getAlpha3(selected.code)} {selected.callingCode}
+          </div>
         </div>
         <input
           id={id}
@@ -128,7 +158,7 @@ export default function PhoneInput({
           inputMode="tel"
           autoComplete="tel-national"
           required={required}
-          className={inputClasses}
+          className={`${inputClasses} flex-1 min-w-0`}
           value={nationalNumber}
           onChange={(e) => onChange(phoneInputChange(selected.code, e.target.value))}
           aria-describedby={error ? errorId : undefined}
