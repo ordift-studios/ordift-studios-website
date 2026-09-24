@@ -53,25 +53,57 @@ export function isRegistrationDeadlinePassed(
   return closesAt !== null && now.getTime() >= closesAt.getTime();
 }
 
+// registrationOpensAt is (like registrationDeadline) a Sanity `date`
+// field — no time/zone component, so it parses as UTC midnight of that
+// date, the same convention getRegistrationCloseInstant already uses.
+// Unlike the deadline (which gets a full extra day of grace so the
+// deadline day itself stays open), opening has no such grace — it
+// simply becomes true from that UTC midnight onward, matching "once
+// the configured date/time is reached" literally.
+function isRegistrationOpenDateReached(
+  workshop: Pick<Workshop, "registrationOpensAt">,
+  now: Date = new Date()
+): boolean {
+  // No configured opening date = no auto-open rule at all — "coming-soon"
+  // stays a manual-only transition, exactly as before this fix (see the
+  // "no registrationOpensAt configured is unaffected" note above).
+  if (!workshop.registrationOpensAt) return false;
+  return now.getTime() >= new Date(workshop.registrationOpensAt).getTime();
+}
+
 // The status actually shown and enforced everywhere — same as the raw
-// CMS `status` field except a manually-"open" workshop is demoted to
-// "closed" once its deadline has passed. Every other status (staff-set
-// "closed", "full", "coming-soon", "completed") passes through
-// unchanged, so a deadline that's still in the future never reopens a
-// workshop staff closed manually. Shared by the detail page, WorkshopCard,
-// and the registration API so the frontend and server can't disagree.
+// CMS `status` field with two real-date-driven adjustments:
+//   - a manually-"open" workshop is demoted to "closed" once its
+//     deadline has passed (unchanged from before this fix);
+//   - a "coming-soon" workshop is PROMOTED to "open" once its
+//     configured registrationOpensAt date has been reached (2026-09-24
+//     correction — "coming-soon" previously had no relationship to
+//     registrationOpensAt at all, so a workshop staff configured to
+//     open automatically on a given date stayed stuck on "Registration
+//     isn't open yet" forever unless someone manually flipped its
+//     status). A workshop with no registrationOpensAt configured is
+//     unaffected — "coming-soon" with no opening date remains a
+//     manual-only transition, exactly as before.
+// "full"/"closed"/"completed" are never touched by either rule — those
+// are terminal/manual states a real registration-open date must never
+// silently override. Shared by the detail page, WorkshopCard, and the
+// registration API so the frontend and server can't disagree.
 export function getEffectiveWorkshopStatus(
-  workshop: Pick<Workshop, "status" | "registrationDeadline">,
+  workshop: Pick<Workshop, "status" | "registrationDeadline" | "registrationOpensAt">,
   now: Date = new Date()
 ): WorkshopStatus {
-  if (workshop.status === "open" && isRegistrationDeadlinePassed(workshop, now)) {
+  let status = workshop.status;
+  if (status === "coming-soon" && isRegistrationOpenDateReached(workshop, now)) {
+    status = "open";
+  }
+  if (status === "open" && isRegistrationDeadlinePassed(workshop, now)) {
     return "closed";
   }
-  return workshop.status;
+  return status;
 }
 
 export function isRegistrationOpen(
-  workshop: Pick<Workshop, "status" | "registrationDeadline">,
+  workshop: Pick<Workshop, "status" | "registrationDeadline" | "registrationOpensAt">,
   now: Date = new Date()
 ): boolean {
   return getEffectiveWorkshopStatus(workshop, now) === "open";
