@@ -2,7 +2,6 @@
 
 import { useMemo } from "react";
 import { getCountries, getCountryCallingCode, parsePhoneNumberFromString, type CountryCode } from "libphonenumber-js";
-import { getAlpha3 } from "./iso3166Alpha3";
 
 // Shared international phone/WhatsApp input (2026-09-24) — Founder QA:
 // the Workshop Registration form's country-code field was a freeform
@@ -50,11 +49,25 @@ import { getAlpha3 } from "./iso3166Alpha3";
 // keeping the real, full-size, fully-interactive native <select>
 // (options still read "Ghana +233" — full names when opened, and to
 // assistive tech) but making it visually transparent and layering a
-// compact custom label ("GHA +233", ISO 3166-1 alpha-3 — see
-// iso3166Alpha3.ts) on top, sized to content rather than a fixed wide
-// column. The select still receives every click/tap/keystroke (the
-// label is pointer-events-none) — this is a presentation-only change,
-// not a new interaction model.
+// compact custom label on top, sized to content rather than a fixed
+// wide column. The select still receives every click/tap/keystroke
+// (the label is pointer-events-none) — this is a presentation-only
+// change, not a new interaction model.
+//
+// Unified-field correction (2026-09-25, second pass) — Founder QA:
+// the calling code + national number still read as two visibly
+// separate boxes, and an earlier iteration's closed-state alpha-3 code
+// ("GHA +233") was reverted — the closed selector shows the calling
+// code alone ("+233") now, matching the Founder's exact spec. One
+// outer bordered container now IS the field (rounded/border/bg/focus
+// ring live here); the select and the national-number input each lost
+// their own border/background/focus-ring, separated only by a thin
+// inset divider, so the whole thing reads as one continuous control
+// with the compact code+chevron on the left and the number input
+// getting the overwhelming majority of the width. Width of the code
+// area is content-sized (no fixed rem value) so it stays correct for
+// a 1-digit code ("+1") or a longer one, never hard-coded to Ghana's
+// length.
 
 export type PhoneInputChange = {
   countryCode: CountryCode;
@@ -80,8 +93,16 @@ const COUNTRY_OPTIONS = ALL_COUNTRIES.map((code) => ({
   callingCode: `+${getCountryCallingCode(code)}`,
 })).sort((a, b) => a.name.localeCompare(b.name));
 
-const inputClasses =
-  "w-full min-h-11 rounded-lg border border-black/15 bg-white px-4 py-2.5 font-sans text-body text-ordift-ink placeholder:text-ordift-ink-muted/60 focus:outline-none focus:ring-2 focus:ring-ordift-gold focus:border-transparent";
+// Small caret — an inline SVG (not a Unicode "▾") for consistent size/
+// weight across platforms; aria-hidden because the real <select>
+// beneath it is what's actually announced/operated.
+function ChevronDownIcon() {
+  return (
+    <svg viewBox="0 0 10 6" aria-hidden="true" className="h-2.5 w-2.5 shrink-0 text-ordift-ink-muted">
+      <path d="M1 1l4 4 4-4" stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
 
 export function phoneInputChange(countryCode: CountryCode, nationalNumber: string): PhoneInputChange {
   const callingCode = `+${getCountryCallingCode(countryCode)}`;
@@ -121,12 +142,16 @@ export default function PhoneInput({
       <label htmlFor={id} className="block font-sans text-body-small font-medium text-ordift-ink mb-2">
         {label}
       </label>
-      <div className="flex gap-2">
-        <div className="relative shrink-0 w-[5.5rem] min-w-[4.5rem]">
+      {/* One outer bordered container IS the field — the select and
+          the number input below are borderless/transparent-background,
+          so the whole row reads as a single continuous control. */}
+      <div className="flex items-stretch rounded-lg border border-black/15 bg-white focus-within:ring-2 focus-within:ring-ordift-gold focus-within:border-transparent">
+        <div className="relative shrink-0">
           <label htmlFor={countrySelectId} className="sr-only">
             Country
           </label>
-          {/* Real, full-size, fully interactive select — visually
+          {/* Real, full-size, fully interactive select, scoped to just
+              this compact left region (not the whole field) — visually
               transparent (text-transparent, not display:none/hidden,
               so it stays in the accessibility tree and keyboard/tab
               order exactly as a normal select would). Every option's
@@ -135,7 +160,7 @@ export default function PhoneInput({
               announces. */}
           <select
             id={countrySelectId}
-            className="absolute inset-0 w-full h-full min-h-11 rounded-lg border border-black/15 bg-white text-transparent focus:outline-none focus:ring-2 focus:ring-ordift-gold focus:border-transparent cursor-pointer"
+            className="absolute inset-0 w-full h-full min-h-11 bg-transparent text-transparent border-0 focus:outline-none cursor-pointer"
             value={selected.code}
             onChange={(e) => onChange(phoneInputChange(e.target.value as CountryCode, nationalNumber))}
           >
@@ -145,20 +170,24 @@ export default function PhoneInput({
               </option>
             ))}
           </select>
-          {/* The compact label actually shown — content-sized, never
-              a wide fixed column, and never intercepts clicks (the
-              select above it is the real target). */}
-          <div className="pointer-events-none flex items-center justify-center min-h-11 px-1.5 font-sans text-body-small text-ordift-ink whitespace-nowrap">
-            {getAlpha3(selected.code)} {selected.callingCode}
+          {/* The compact label actually shown — calling code + chevron
+              only (no country code letters), tightly spaced, sized to
+              content so it's correct for any calling-code length, and
+              never intercepts clicks (the select above it is the real
+              target). */}
+          <div className="pointer-events-none flex items-center gap-1 min-h-11 pl-3 pr-2 font-sans text-body text-ordift-ink whitespace-nowrap">
+            <span>{selected.callingCode}</span>
+            <ChevronDownIcon />
           </div>
         </div>
+        <div className="w-px self-stretch my-2 bg-black/15" aria-hidden="true" />
         <input
           id={id}
           type="tel"
           inputMode="tel"
           autoComplete="tel-national"
           required={required}
-          className={`${inputClasses} flex-1 min-w-0`}
+          className="flex-1 min-w-0 min-h-11 rounded-r-lg border-0 bg-transparent px-3 py-2.5 font-sans text-body text-ordift-ink placeholder:text-ordift-ink-muted/60 focus:outline-none"
           value={nationalNumber}
           onChange={(e) => onChange(phoneInputChange(selected.code, e.target.value))}
           aria-describedby={error ? errorId : undefined}
