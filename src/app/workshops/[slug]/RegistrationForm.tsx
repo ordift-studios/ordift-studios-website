@@ -6,6 +6,8 @@ import { z } from "zod";
 import { workshopRegistrationSchema } from "@/lib/workshops/registrationSchema";
 import Button from "@/components/Button";
 import TurnstileWidget from "@/components/TurnstileWidget";
+import PhoneInput from "@/components/forms/PhoneInput";
+import type { CountryCode } from "libphonenumber-js";
 
 const inputClasses =
   "w-full min-h-11 rounded-lg border border-black/15 bg-white px-4 py-2.5 font-sans text-body text-ordift-ink placeholder:text-ordift-ink-muted/60 focus:outline-none focus:ring-2 focus:ring-ordift-gold focus:border-transparent";
@@ -31,6 +33,7 @@ type FormState = {
   middleName: string;
   surname: string;
   email: string;
+  phoneCountry: CountryCode;
   phoneCountryCode: string;
   phone: string;
   country: string;
@@ -69,7 +72,8 @@ export default function RegistrationForm({
     middleName: "",
     surname: "",
     email: "",
-    phoneCountryCode: "",
+    phoneCountry: "GH",
+    phoneCountryCode: "+233",
     phone: "",
     country: "",
     experienceLevel: "",
@@ -264,23 +268,22 @@ export default function RegistrationForm({
           <input id="email" type="email" className={inputClasses} value={data.email} onChange={(e) => update("email", e.target.value)} {...fieldAria("email", errors.email)} />
           <FieldError id="email-error" message={errors.email} />
         </div>
-        <div>
-          <label htmlFor="phone" className="block font-sans text-body-small font-medium text-ordift-ink mb-2">
-            Phone or WhatsApp number
-          </label>
-          <div className="flex gap-2">
-            <input
-              id="phoneCountryCode"
-              placeholder="+974"
-              aria-label="Phone country code"
-              className={`${inputClasses} w-20 shrink-0`}
-              value={data.phoneCountryCode}
-              onChange={(e) => update("phoneCountryCode", e.target.value)}
-            />
-            <input id="phone" type="tel" className={inputClasses} value={data.phone} onChange={(e) => update("phone", e.target.value)} {...fieldAria("phone", errors.phone)} />
-          </div>
-          <FieldError id="phone-error" message={errors.phone} />
-        </div>
+        <PhoneInput
+          id="phone"
+          label="Phone or WhatsApp number"
+          countryCode={data.phoneCountry}
+          nationalNumber={data.phone}
+          required
+          error={errors.phone}
+          onChange={(change) => {
+            setData((d) => ({
+              ...d,
+              phoneCountry: change.countryCode,
+              phoneCountryCode: change.callingCode,
+              phone: change.nationalNumber,
+            }));
+          }}
+        />
       </div>
 
       <div>

@@ -3,6 +3,8 @@
 import { useState } from "react";
 import { compressImageFile } from "@/lib/media/clientImageCompress";
 import { RECRUITMENT_ROLE_OPTIONS, RECRUITMENT_ENGAGEMENT_OPTIONS } from "@/lib/recruitment/types";
+import PhoneInput, { phoneInputChange, type PhoneInputChange } from "@/components/forms/PhoneInput";
+import type { CountryCode } from "libphonenumber-js";
 
 type SubmitState = "idle" | "submitting" | "success" | "error";
 
@@ -20,6 +22,7 @@ export default function CareersApplicationForm() {
   const [cvName, setCvName] = useState<string | null>(null);
   const [compressing, setCompressing] = useState(false);
   const [compressedPhoto, setCompressedPhoto] = useState<File | null>(null);
+  const [phone, setPhone] = useState<PhoneInputChange>(() => phoneInputChange("GH" as CountryCode, ""));
 
   async function handlePhotoChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -41,6 +44,7 @@ export default function CareersApplicationForm() {
     const form = e.currentTarget;
     const formData = new FormData(form);
     if (compressedPhoto) formData.set("photo", compressedPhoto);
+    formData.set("phone", phone.e164 ?? `${phone.callingCode}${phone.nationalNumber}`);
 
     try {
       const res = await fetch("/api/careers/apply", { method: "POST", body: formData });
@@ -85,9 +89,13 @@ export default function CareersApplicationForm() {
           <Field label="Email Address *">
             <input name="email" type="email" required className={inputClass} />
           </Field>
-          <Field label="Phone / WhatsApp Number">
-            <input name="phone" type="tel" className={inputClass} />
-          </Field>
+          <PhoneInput
+            id="careers-phone"
+            label="Phone / WhatsApp Number"
+            countryCode={phone.countryCode}
+            nationalNumber={phone.nationalNumber}
+            onChange={setPhone}
+          />
           <Field label="Current Location">
             <input name="location" type="text" placeholder="City, Country" className={inputClass} />
           </Field>

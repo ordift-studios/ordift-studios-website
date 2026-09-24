@@ -9,6 +9,8 @@ import { enquirySchema, STEP_FIELDS, type EnquiryInput } from "@/lib/enquiry/sch
 import { pricingHandoffFamilyLabel, type PricingHandoff } from "@/lib/enquiry/pricingHandoff";
 import Button from "@/components/Button";
 import TurnstileWidget from "@/components/TurnstileWidget";
+import PhoneInput from "@/components/forms/PhoneInput";
+import type { CountryCode } from "libphonenumber-js";
 
 // Booking Journey Refinement (2026-09-07) — routes a visitor who picks
 // Photography or Videography (with no configured pricing context
@@ -41,7 +43,13 @@ const STEP_LABELS = [
 // `service` is kept as a plain string here (not narrowed to PathwayValue)
 // since a controlled input starts as "" before the visitor picks one —
 // the zod schema still enforces the real union on validation/submit.
-type FormState = Omit<Partial<EnquiryInput>, "service"> & { service: string };
+// phoneCountry/phoneNational are UI-only (not part of EnquiryInput):
+// phoneNational holds exactly what the visitor types into the national-
+// number box; `phone` itself stores the derived, submitted value (E.164
+// once valid, otherwise the calling code + national number typed so
+// far) — kept separate so the national-number field never ends up
+// displaying the combined "+233241234567" string back to itself.
+type FormState = Omit<Partial<EnquiryInput>, "service"> & { service: string; phoneCountry: CountryCode; phoneNational: string };
 
 const initialState: FormState = {
   service: "",
@@ -54,6 +62,8 @@ const initialState: FormState = {
   fullName: "",
   companyName: "",
   email: "",
+  phoneCountry: "GH",
+  phoneNational: "",
   phone: "",
   country: "",
   hearAboutUs: "",
@@ -498,11 +508,21 @@ export default function BookingForm({
               )}
               <FieldError id="email-error" message={errors.email} />
             </div>
-            <div>
-              <FieldLabel htmlFor="phone">Phone or WhatsApp number</FieldLabel>
-              <input id="phone" type="tel" className={inputClasses} value={data.phone} onChange={(e) => update("phone", e.target.value)} {...fieldAria("phone", errors.phone)} />
-              <FieldError id="phone-error" message={errors.phone} />
-            </div>
+            <PhoneInput
+              id="phone"
+              label="Phone or WhatsApp number"
+              countryCode={data.phoneCountry}
+              nationalNumber={data.phoneNational}
+              error={errors.phone}
+              onChange={(change) => {
+                setData((d) => ({
+                  ...d,
+                  phoneCountry: change.countryCode,
+                  phoneNational: change.nationalNumber,
+                  phone: change.e164 ?? `${change.callingCode}${change.nationalNumber}`,
+                }));
+              }}
+            />
           </div>
           <div>
             <FieldLabel htmlFor="country" optional>Country or current location</FieldLabel>
