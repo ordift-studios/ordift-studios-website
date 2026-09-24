@@ -70,23 +70,40 @@ export default async function WorkshopDetailPage({
   const workshop = await contentRepository.getWorkshopBySlug(slug);
   if (!workshop) notFound();
 
+  // Navigation-latency fix (2026-09-24) — Production QA found selecting
+  // this page from the listing felt "stuck": every one of these fetches
+  // only depends on `workshop` (already resolved above), so none of
+  // them depend on each other — they were previously awaited one at a
+  // time (ticket types, then sessions, then this Promise.all), adding
+  // up to 3 fully sequential network round trips before the page could
+  // render at all. Combined into one Promise.all so they run
+  // concurrently instead — same data, same fields, just no longer
+  // serialized. Genuine required data, so no behavior/fallback change.
+  const [ticketTypeRows, sessions, categories, instructors, venues, allWorkshops, allTestimonials] = await Promise.all([
+    listTicketTypesForWorkshop(workshop.id, true),
+    // Public-facing schedule (2026-09-20) — the real, dated operational
+    // sessions (workshop_sessions), never the internal-only fields
+    // (internal_notes, instructor_profile_id) — see
+    // listSessionsForPublicDisplay()'s own header comment. Separate from
+    // and shown alongside workshop.agenda (Sanity marketing copy,
+    // unchanged) since a workshop is not required to have either.
+    listSessionsForPublicDisplay(workshop.id),
+    contentRepository.getCategories(),
+    contentRepository.getInstructors(),
+    contentRepository.getVenues(),
+    contentRepository.getWorkshops(),
+    contentRepository.getTestimonials(),
+  ]);
+
   // Workshop Management V1, Phase B (2026-08-25) — empty for a workshop
   // with no configured ticket types; RegistrationForm's selector simply
   // doesn't render in that case (registration works exactly as before).
-  const activeTicketTypes = (await listTicketTypesForWorkshop(workshop.id, true)).map((t) => ({
+  const activeTicketTypes = ticketTypeRows.map((t) => ({
     id: t.id,
     name: t.name,
     priceUsd: t.priceUsd,
     description: t.description,
   }));
-
-  // Public-facing schedule (2026-09-20) — the real, dated operational
-  // sessions (workshop_sessions), never the internal-only fields
-  // (internal_notes, instructor_profile_id) — see
-  // listSessionsForPublicDisplay()'s own header comment. Separate from
-  // and shown alongside workshop.agenda (Sanity marketing copy,
-  // unchanged) since a workshop is not required to have either.
-  const sessions = await listSessionsForPublicDisplay(workshop.id);
 
   // TD-034: reflects the CMS `status` unless it's manually "open" but
   // registrationDeadline has passed, in which case it's treated as
@@ -97,14 +114,6 @@ export default async function WorkshopDetailPage({
   // deadline day, not its start) — the countdown must expire at exactly
   // the moment registration actually closes, not a day early.
   const registrationClosesAt = getRegistrationCloseInstant(workshop);
-
-  const [categories, instructors, venues, allWorkshops, allTestimonials] = await Promise.all([
-    contentRepository.getCategories(),
-    contentRepository.getInstructors(),
-    contentRepository.getVenues(),
-    contentRepository.getWorkshops(),
-    contentRepository.getTestimonials(),
-  ]);
 
   const workshopCategories = categories.filter((c) => workshop.categoryIds.includes(c.id));
   const workshopInstructors = instructors.filter((i) => workshop.instructorIds.includes(i.id));
