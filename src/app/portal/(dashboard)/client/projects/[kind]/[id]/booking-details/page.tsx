@@ -54,7 +54,7 @@ export default async function BookingDetailsTabPage({
 
       {details.instructors.length > 0 && (
         <div>
-          <p className="font-sans text-caption uppercase tracking-wide text-ordift-ink-muted">Participants</p>
+          <p className="font-sans text-caption uppercase tracking-wide text-ordift-ink-muted">Instructors</p>
           <p className="font-sans text-body text-ordift-ink mt-1">{details.instructors.join(", ")}</p>
         </div>
       )}
