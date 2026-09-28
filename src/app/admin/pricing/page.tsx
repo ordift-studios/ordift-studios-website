@@ -24,6 +24,7 @@ import {
   getPriorityDeliveryRates,
   getAddonRates,
   getPercentageRates,
+  formatDeliverableSummary,
   type ServiceMode,
   type AddonSlug,
   type PercentageSlug,
@@ -368,6 +369,8 @@ const EVENT_TIER_OPTIONS = [
   { slug: "half_day", label: "Half Day" },
   { slug: "full_day", label: "Full Day" },
   { slug: "extended", label: "Extended" },
+  { slug: "full_event", label: "Full Event" },
+  { slug: "round_the_clock", label: "Round-the-Clock" },
 ] as const;
 
 const WEDDING_EVENT_PERCENTAGE_OPTIONS: { slug: PercentageSlug; label: string }[] = [
@@ -788,7 +791,14 @@ export default async function AdminPricingPage({
               {DURATIONS.map((d) => {
                 const rate = rates.find((r) => r.durationHours === d);
                 return (
-                  <details key={d} className="rounded-lg border border-black/10 px-4 py-2">
+                  // Market-scoped key (2026-09-28 correction) — see the
+                  // matching Weddings & Events fix below for the full
+                  // root-cause explanation: without the active market in
+                  // this key, React reuses the same <details>/<input>
+                  // DOM node across a market switch and never re-applies
+                  // the new defaultValue, so the edit form kept showing
+                  // whichever market's rate happened to mount it first.
+                  <details key={`${selectedMarket.slug}-${d}`} className="rounded-lg border border-black/10 px-4 py-2">
                     <summary className="cursor-pointer font-sans text-body-small text-ordift-ink select-none">Edit {d}h rate</summary>
                     <form action={createPersonalSessionRateVersionAction} className="grid grid-cols-1 sm:grid-cols-4 gap-3 mt-3">
                       <input type="hidden" name="marketSlug" value={selectedMarket.slug} />
@@ -936,7 +946,9 @@ export default async function AdminPricingPage({
                 {TEAM_TIERS.map((t) => {
                   const tierRate = corporateTeamTierRates.find((r) => r.tierSlug === t.slug);
                   return (
-                    <details key={t.slug} className="rounded-lg border border-black/10 px-4 py-2">
+                    // Market-scoped key — see the Weddings & Events fix
+                    // below for the full root-cause explanation.
+                    <details key={`${selectedMarket.slug}-${t.slug}`} className="rounded-lg border border-black/10 px-4 py-2">
                       <summary className="cursor-pointer font-sans text-body-small text-ordift-ink select-none">Edit {t.label} rate</summary>
                       <form action={createCorporateTeamTierRateVersionAction} className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3">
                         <input type="hidden" name="marketSlug" value={selectedMarket.slug} />
@@ -1036,13 +1048,13 @@ export default async function AdminPricingPage({
                           <tbody className="divide-y divide-black/5">
                             {tierOptions.map((t) => {
                               const rate = tierRates.find((r) => r.serviceMode === mode && r.tierSlug === t.slug);
-                              const deliverable = deliverables.find((d) => d.tierSlug === t.slug);
+                              const deliverable = deliverables.find((d) => d.serviceMode === mode && d.tierSlug === t.slug);
                               return (
                                 <tr key={t.slug} className="font-sans text-body-small text-ordift-ink align-top">
                                   <td className="py-2">{t.label}</td>
                                   <td className="py-2">{rate ? `$${rate.priceUsd.toFixed(2)}` : "— not set —"}</td>
                                   <td className="py-2 text-caption text-ordift-ink-muted">
-                                    {deliverable ? `${deliverable.eventDays}d · ${deliverable.coverageHours}h · ${deliverable.photographers}P/${deliverable.filmmakers}F · ${deliverable.professionallyEditedImagesMin}+ edited · ${deliverable.signatureRetouchedImages} retouched${deliverable.highlightFilmMinMinutes != null ? ` · ${deliverable.highlightFilmMinMinutes}-${deliverable.highlightFilmMaxMinutes}min film` : ""}${deliverable.includesDocumentary ? " · documentary included" : ""}` : "—"}
+                                    {deliverable ? formatDeliverableSummary(deliverable) : "—"}
                                   </td>
                                 </tr>
                               );
@@ -1056,7 +1068,28 @@ export default async function AdminPricingPage({
                         {tierOptions.map((t) => {
                           const rate = tierRates.find((r) => r.serviceMode === mode && r.tierSlug === t.slug);
                           return (
-                            <details key={t.slug} className="rounded-lg border border-black/10 px-4 py-2">
+                            // Root cause (2026-09-28) — the editable rate
+                            // ignored the active medium/market: this
+                            // <details> (and the <input defaultValue=.../>
+                            // inside its <form>) was keyed on tierSlug
+                            // ALONE. Switching Photography/Film/
+                            // Photography+Film (or market) re-renders this
+                            // Server Component with a new `mode`/
+                            // `selectedMarket`, but since the key didn't
+                            // change, React reconciles the SAME <details>/
+                            // <input> DOM node instead of remounting it —
+                            // and `defaultValue` is only ever applied on
+                            // an uncontrolled input's FIRST mount, never
+                            // reapplied on a prop update. The table above
+                            // (plain text, not a form default) always
+                            // looked correct; only the edit form stayed
+                            // stuck on whichever category/market/mode
+                            // combination happened to mount it first. The
+                            // key must include every dimension the active
+                            // combination resolves on: category, market,
+                            // medium, and tier — exactly Part 1's required
+                            // resolution key.
+                            <details key={`${category}-${selectedMarket.slug}-${mode}-${t.slug}`} className="rounded-lg border border-black/10 px-4 py-2">
                               <summary className="cursor-pointer font-sans text-body-small text-ordift-ink select-none">Edit {t.label} rate</summary>
                               <form action={createWeddingEventTierRateVersionAction} className="grid grid-cols-1 sm:grid-cols-4 gap-3 mt-3">
                                 <input type="hidden" name="marketSlug" value={selectedMarket.slug} />
@@ -1079,7 +1112,12 @@ export default async function AdminPricingPage({
                         {tierOptions.map((t) => {
                           const priority = priorityRates.find((r) => r.tierSlug === t.slug);
                           return (
-                            <li key={t.slug} className="py-2.5">
+                            // category-scoped key — same stale-defaultValue
+                            // class as the tier-rate fix above; this block
+                            // depends on `category` (wedding vs event), not
+                            // market/mode, but tierSlug alone doesn't change
+                            // when only `category` (weSub) changes.
+                            <li key={`${category}-${t.slug}`} className="py-2.5">
                               <div className="flex items-baseline justify-between font-sans text-body-small text-ordift-ink">
                                 <span>{t.label}</span>
                                 <span>{priority ? `+${priority.multiplierPercentage}%` : "Not set"}</span>
@@ -1198,7 +1236,9 @@ export default async function AdminPricingPage({
                   {COMMERCIAL_SCOPE_OPTIONS.map((s) => {
                     const rate = commercialCreativeFeeRates.find((r) => r.serviceMode === mode && r.scopeSlug === s.slug);
                     return (
-                      <details key={s.slug} className="rounded-lg border border-black/10 px-4 py-2">
+                      // market+mode-scoped key — same stale-defaultValue
+                      // class as the Weddings & Events fix above.
+                      <details key={`${selectedMarket.slug}-${mode}-${s.slug}`} className="rounded-lg border border-black/10 px-4 py-2">
                         <summary className="cursor-pointer font-sans text-body-small text-ordift-ink select-none">Edit {s.label} rate</summary>
                         <form action={createCommercialCreativeFeeRateVersionAction} className="grid grid-cols-1 sm:grid-cols-4 gap-3 mt-3">
                           <input type="hidden" name="marketSlug" value={selectedMarket.slug} />

@@ -5,6 +5,7 @@ import {
   calculateWeddingEstimate,
   calculateEventEstimate,
   calculateRawFileGuidance,
+  formatDeliverableSummary,
   type WeddingEventCategory,
   type ServiceMode,
   type WeddingTierSlug,
@@ -45,10 +46,10 @@ export type {
   WeddingEventEstimateResult,
   RawFileGuidanceResult,
 };
-export { calculateWeddingEstimate, calculateEventEstimate, calculateRawFileGuidance };
+export { calculateWeddingEstimate, calculateEventEstimate, calculateRawFileGuidance, formatDeliverableSummary };
 
 const WEDDING_TIERS: WeddingTierSlug[] = ["chapter", "narrative", "chronicle", "archive"];
-const EVENT_TIERS: EventTierSlug[] = ["focused", "half_day", "full_day", "extended"];
+const EVENT_TIERS: EventTierSlug[] = ["focused", "half_day", "full_day", "extended", "full_event", "round_the_clock"];
 const SERVICE_MODES: ServiceMode[] = ["photography", "film", "photography_film"];
 
 async function getMarketId(admin: ReturnType<typeof createAdminClient>, marketSlug: string): Promise<string | null> {
@@ -95,7 +96,7 @@ export async function getTierDeliverables(category: WeddingEventCategory): Promi
   const { data, error } = await admin
     .from("wedding_event_tier_deliverables")
     .select(
-      "category, tier_slug, event_days, coverage_hours, photographers, filmmakers, professionally_edited_images_min, signature_retouched_images, highlight_film_min_minutes, highlight_film_max_minutes, includes_documentary, online_gallery, planning_consultation, priority_sneak_peek, effective_from"
+      "category, tier_slug, service_mode, event_days, coverage_hours, photographers, filmmakers, professionally_edited_images_min, signature_retouched_images, highlight_film_min_minutes, highlight_film_max_minutes, includes_documentary, online_gallery, planning_consultation, priority_sneak_peek, effective_from"
     )
     .eq("category", category)
     .eq("active", true)
@@ -110,11 +111,13 @@ export async function getTierDeliverables(category: WeddingEventCategory): Promi
   const seen = new Set<string>();
   const rows: WeddingEventTierDeliverable[] = [];
   for (const row of data ?? []) {
-    if (seen.has(row.tier_slug)) continue;
-    seen.add(row.tier_slug);
+    const key = `${row.tier_slug}:${row.service_mode}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
     rows.push({
       category: row.category as WeddingEventCategory,
       tierSlug: row.tier_slug,
+      serviceMode: row.service_mode as ServiceMode,
       eventDays: row.event_days,
       coverageHours: row.coverage_hours,
       photographers: row.photographers,

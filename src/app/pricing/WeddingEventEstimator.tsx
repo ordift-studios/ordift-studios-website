@@ -5,6 +5,8 @@ import Link from "next/link";
 import {
   calculateWeddingEstimate,
   calculateEventEstimate,
+  formatDeliverableSummary,
+  formatTierUpgradeMessage,
   type ServiceMode,
   type WeddingTierSlug,
   type EventTierSlug,
@@ -39,6 +41,8 @@ const EVENT_TIERS: { slug: EventTierSlug; label: string }[] = [
   { slug: "half_day", label: "Half Day" },
   { slug: "full_day", label: "Full Day" },
   { slug: "extended", label: "Extended" },
+  { slug: "full_event", label: "Full Event" },
+  { slug: "round_the_clock", label: "Round-the-Clock" },
 ];
 
 const ALBUM_OPTIONS: { slug: AlbumSlug; label: string }[] = [
@@ -228,8 +232,7 @@ export default function WeddingEventEstimator({
         </div>
         {deliverable && (
           <p className="font-sans text-caption text-ordift-ink-muted mt-2">
-            {deliverable.eventDays} day{deliverable.eventDays > 1 ? "s" : ""} · {deliverable.coverageHours}h coverage · {deliverable.photographers} photographer{deliverable.photographers === 1 ? "" : "s"} · {deliverable.filmmakers} filmmaker{deliverable.filmmakers === 1 ? "" : "s"} · {deliverable.professionallyEditedImagesMin}+ edited images · {deliverable.signatureRetouchedImages} Signature Retouched
-            {deliverable.highlightFilmMinMinutes != null && serviceMode !== "photography" ? ` · ${deliverable.highlightFilmMinMinutes}–${deliverable.highlightFilmMaxMinutes} min Highlight Film` : ""}
+            {formatDeliverableSummary(deliverable)}
           </p>
         )}
       </div>
@@ -380,6 +383,21 @@ export default function WeddingEventEstimator({
               <span className="font-serif font-medium text-section-heading text-ordift-ink">${estimate.totalPriceUsd.toFixed(2)} USD</span>
             </div>
           </>
+        ) : estimate.requiresTierUpgrade ? (
+          <div>
+            <p className="font-sans text-body-small text-ordift-ink">{formatTierUpgradeMessage(estimate)}</p>
+            <button
+              type="button"
+              onClick={() => {
+                if (category === "wedding") setWeddingTier(estimate.recommendedTierSlug as WeddingTierSlug);
+                else setEventTier(estimate.recommendedTierSlug as EventTierSlug);
+                setAdditionalHours(0);
+              }}
+              className="mt-3 rounded-lg bg-ordift-ink text-white px-4 py-2 font-sans text-body-small hover:opacity-90 transition-opacity"
+            >
+              Switch to {estimate.recommendedTierLabel}
+            </button>
+          </div>
         ) : (
           <p className="font-sans text-body-small text-ordift-ink">{estimate.reason}</p>
         )}
@@ -388,9 +406,11 @@ export default function WeddingEventEstimator({
         </p>
       </div>
 
+      {!(estimate.ok === false && estimate.requiresTierUpgrade) && (
       <Link href={bookingHref} className="block text-center rounded-lg bg-ordift-ink text-white px-6 py-3 font-sans text-body-small hover:opacity-90 transition-opacity">
         {estimate.ok ? "Start Your Enquiry" : "Request a Custom Proposal"}
       </Link>
+      )}
     </div>
   );
 }
