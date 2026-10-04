@@ -109,6 +109,8 @@ import ManualDiscountForm from "./ManualDiscountForm";
 import DeleteDiscountButton from "./DeleteDiscountButton";
 import TierRateEditForm from "./TierRateEditForm";
 import { TABS, TAB_GROUPS } from "./tabsConfig";
+import ActionForm from "@/components/admin/ActionForm";
+import SubmitButton from "@/components/admin/SubmitButton";
 
 export const metadata: Metadata = {
   title: "Pricing — Ordift Studios Admin",
@@ -800,14 +802,14 @@ export default async function AdminPricingPage({
                   // whichever market's rate happened to mount it first.
                   <details key={`${selectedMarket.slug}-${d}`} className="rounded-lg border border-black/10 px-4 py-2">
                     <summary className="cursor-pointer font-sans text-body-small text-ordift-ink select-none">Edit {d}h rate</summary>
-                    <form action={createPersonalSessionRateVersionAction} className="grid grid-cols-1 sm:grid-cols-4 gap-3 mt-3">
+                    <ActionForm action={createPersonalSessionRateVersionAction} className="grid grid-cols-1 sm:grid-cols-4 gap-3 mt-3">
                       <input type="hidden" name="marketSlug" value={selectedMarket.slug} />
                       <input type="hidden" name="durationHours" value={d} />
                       <input name="priceUsd" type="number" step="0.01" min="0.01" required defaultValue={rate?.priceUsd} placeholder="Base price USD" className="rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small" />
                       <input name="signatureRetouchedImages" type="number" min="0" required defaultValue={rate?.signatureRetouchedImages} placeholder="Signature Retouched" className="rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small" />
                       <input name="professionallyEditedImages" type="number" min="0" required defaultValue={rate?.professionallyEditedImages} placeholder="Professionally Edited" className="rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small" />
-                      <button type="submit" className="rounded-lg bg-ordift-ink text-white px-4 py-2 font-sans text-body-small">Save new version</button>
-                    </form>
+                      <SubmitButton pendingLabel="Saving…" className="rounded-lg bg-ordift-ink text-white px-4 py-2 font-sans text-body-small">Save new version</SubmitButton>
+                    </ActionForm>
                   </details>
                 );
               })}
@@ -836,11 +838,11 @@ export default async function AdminPricingPage({
             {subjectCategories.filter((c) => c.slug !== "large_group").map((c) => (
               <details key={c.id} className="rounded-lg border border-black/10 px-4 py-2">
                 <summary className="cursor-pointer font-sans text-body-small text-ordift-ink select-none">Edit {c.name} multiplier</summary>
-                <form action={createSubjectCategoryMultiplierVersionAction} className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3">
+                <ActionForm action={createSubjectCategoryMultiplierVersionAction} className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3">
                   <input type="hidden" name="subjectCategorySlug" value={c.slug} />
                   <input name="priceMultiplier" type="number" step="0.01" min="0.01" required defaultValue={c.priceMultiplier ?? undefined} placeholder="Multiplier, e.g. 1.20" className="rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small" />
-                  <button type="submit" className="rounded-lg bg-ordift-ink text-white px-4 py-2 font-sans text-body-small">Save new version</button>
-                </form>
+                  <SubmitButton pendingLabel="Saving…" className="rounded-lg bg-ordift-ink text-white px-4 py-2 font-sans text-body-small">Save new version</SubmitButton>
+                </ActionForm>
               </details>
             ))}
           </div>
@@ -857,11 +859,11 @@ export default async function AdminPricingPage({
 
             <details className="rounded-lg border border-black/10 px-4 py-2">
               <summary className="cursor-pointer font-sans text-body-small text-ordift-ink select-none">Edit rate</summary>
-              <form action={createAdditionalRetouchRateVersionAction} className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3">
+              <ActionForm action={createAdditionalRetouchRateVersionAction} className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3">
                 <input type="hidden" name="marketSlug" value={selectedMarket.slug} />
                 <input name="pricePerImageUsd" type="number" step="0.01" min="0.01" required defaultValue={retouchRate ?? undefined} placeholder="Price per image USD" className="rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small" />
-                <button type="submit" className="rounded-lg bg-ordift-ink text-white px-4 py-2 font-sans text-body-small">Save new version</button>
-              </form>
+                <SubmitButton pendingLabel="Saving…" className="rounded-lg bg-ordift-ink text-white px-4 py-2 font-sans text-body-small">Save new version</SubmitButton>
+              </ActionForm>
             </details>
           </section>
         </div>
@@ -895,13 +897,13 @@ export default async function AdminPricingPage({
 
                     <details className="rounded-lg border border-black/10 px-4 py-2">
                       <summary className="cursor-pointer font-sans text-body-small text-ordift-ink select-none">Edit rate</summary>
-                      <form action={createCorporateHeadshotRateVersionAction} className="grid grid-cols-1 sm:grid-cols-4 gap-3 mt-3">
+                      <ActionForm action={createCorporateHeadshotRateVersionAction} className="grid grid-cols-1 sm:grid-cols-4 gap-3 mt-3">
                         <input type="hidden" name="marketSlug" value={selectedMarket.slug} />
                         <input type="hidden" name="productSlug" value={productSlug} />
                         <input name="priceUsd" type="number" step="0.01" min="0.01" required defaultValue={rate?.priceUsd} placeholder="Price USD" className="rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small" />
                         <input name="signatureRetouchedImages" type="number" min="0" required defaultValue={rate?.signatureRetouchedImages} placeholder="Signature Retouched Images" className="rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small" />
-                        <button type="submit" className="rounded-lg bg-ordift-ink text-white px-4 py-2 font-sans text-body-small">Save new version</button>
-                      </form>
+                        <SubmitButton pendingLabel="Saving…" className="rounded-lg bg-ordift-ink text-white px-4 py-2 font-sans text-body-small">Save new version</SubmitButton>
+                      </ActionForm>
                     </details>
                   </>
                 );
@@ -950,22 +952,22 @@ export default async function AdminPricingPage({
                     // below for the full root-cause explanation.
                     <details key={`${selectedMarket.slug}-${t.slug}`} className="rounded-lg border border-black/10 px-4 py-2">
                       <summary className="cursor-pointer font-sans text-body-small text-ordift-ink select-none">Edit {t.label} rate</summary>
-                      <form action={createCorporateTeamTierRateVersionAction} className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3">
+                      <ActionForm action={createCorporateTeamTierRateVersionAction} className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3">
                         <input type="hidden" name="marketSlug" value={selectedMarket.slug} />
                         <input type="hidden" name="tierSlug" value={t.slug} />
                         <input name="pricePerPersonUsd" type="number" step="0.01" min="0.01" required defaultValue={tierRate?.pricePerPersonUsd} placeholder="Price per person USD" className="rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small" />
-                        <button type="submit" className="rounded-lg bg-ordift-ink text-white px-4 py-2 font-sans text-body-small">Save new version</button>
-                      </form>
+                        <SubmitButton pendingLabel="Saving…" className="rounded-lg bg-ordift-ink text-white px-4 py-2 font-sans text-body-small">Save new version</SubmitButton>
+                      </ActionForm>
                     </details>
                   );
                 })}
                 <details className="rounded-lg border border-black/10 px-4 py-2">
                   <summary className="cursor-pointer font-sans text-body-small text-ordift-ink select-none">Edit minimum booking</summary>
-                  <form action={createCorporateMinimumBookingVersionAction} className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3">
+                  <ActionForm action={createCorporateMinimumBookingVersionAction} className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3">
                     <input type="hidden" name="marketSlug" value={selectedMarket.slug} />
                     <input name="minimumAmountUsd" type="number" step="0.01" min="0.01" required defaultValue={corporateMinimumBooking ?? undefined} placeholder="Minimum USD" className="rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small" />
-                    <button type="submit" className="rounded-lg bg-ordift-ink text-white px-4 py-2 font-sans text-body-small">Save new version</button>
-                  </form>
+                    <SubmitButton pendingLabel="Saving…" className="rounded-lg bg-ordift-ink text-white px-4 py-2 font-sans text-body-small">Save new version</SubmitButton>
+                  </ActionForm>
                 </details>
               </div>
             </section>
@@ -980,11 +982,11 @@ export default async function AdminPricingPage({
 
                 <details className="rounded-lg border border-black/10 px-4 py-2">
                   <summary className="cursor-pointer font-sans text-body-small text-ordift-ink select-none">Edit rate</summary>
-                  <form action={createCorporateRetouchRateVersionAction} className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3">
+                  <ActionForm action={createCorporateRetouchRateVersionAction} className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3">
                     <input type="hidden" name="marketSlug" value={selectedMarket.slug} />
                     <input name="pricePerImageUsd" type="number" step="0.01" min="0.01" required defaultValue={corporateRetouchRate ?? undefined} placeholder="Price per image USD" className="rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small" />
-                    <button type="submit" className="rounded-lg bg-ordift-ink text-white px-4 py-2 font-sans text-body-small">Save new version</button>
-                  </form>
+                    <SubmitButton pendingLabel="Saving…" className="rounded-lg bg-ordift-ink text-white px-4 py-2 font-sans text-body-small">Save new version</SubmitButton>
+                  </ActionForm>
                 </details>
               </section>
 
@@ -1002,11 +1004,11 @@ export default async function AdminPricingPage({
                       </div>
                       <details className="mt-2 rounded-lg border border-black/10 px-4 py-2">
                         <summary className="cursor-pointer font-sans text-caption text-ordift-ink select-none">Edit</summary>
-                        <form action={createCorporatePriorityDeliveryVersionAction} className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3">
+                        <ActionForm action={createCorporatePriorityDeliveryVersionAction} className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3">
                           <input type="hidden" name="scopeSlug" value={s.slug} />
                           <input name="multiplierPercentage" type="number" step="0.01" min="0.01" required defaultValue={corporatePriorityDeliveryPercentages[s.slug] ?? undefined} placeholder="Percentage" className="rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small" />
-                          <button type="submit" className="rounded-lg bg-ordift-ink text-white px-4 py-2 font-sans text-body-small">Save new version</button>
-                        </form>
+                          <SubmitButton pendingLabel="Saving…" className="rounded-lg bg-ordift-ink text-white px-4 py-2 font-sans text-body-small">Save new version</SubmitButton>
+                        </ActionForm>
                       </details>
                     </li>
                   ))}
@@ -1117,12 +1119,12 @@ export default async function AdminPricingPage({
                               </div>
                               <details className="mt-2 rounded-lg border border-black/10 px-4 py-2">
                                 <summary className="cursor-pointer font-sans text-caption text-ordift-ink select-none">Edit</summary>
-                                <form action={createWeddingEventPriorityDeliveryVersionAction} className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3">
+                                <ActionForm action={createWeddingEventPriorityDeliveryVersionAction} className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3">
                                   <input type="hidden" name="category" value={category} />
                                   <input type="hidden" name="tierSlug" value={t.slug} />
                                   <input name="multiplierPercentage" type="number" step="0.01" min="0.01" required defaultValue={priority?.multiplierPercentage} placeholder="Percentage" className="rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small" />
-                                  <button type="submit" className="rounded-lg bg-ordift-ink text-white px-4 py-2 font-sans text-body-small">Save new version</button>
-                                </form>
+                                  <SubmitButton pendingLabel="Saving…" className="rounded-lg bg-ordift-ink text-white px-4 py-2 font-sans text-body-small">Save new version</SubmitButton>
+                                </ActionForm>
                               </details>
                             </li>
                           );
@@ -1151,12 +1153,12 @@ export default async function AdminPricingPage({
                         </div>
                         <details className="mt-2 rounded-lg border border-black/10 px-4 py-2">
                           <summary className="cursor-pointer font-sans text-caption text-ordift-ink select-none">Edit</summary>
-                          <form action={createWeddingEventAddonRateVersionAction} className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3">
+                          <ActionForm action={createWeddingEventAddonRateVersionAction} className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3">
                             <input type="hidden" name="marketSlug" value={selectedMarket.slug} />
                             <input type="hidden" name="addonSlug" value={item.slug} />
                             <input name="priceUsd" type="number" step="0.01" min="0.01" required defaultValue={weddingEventAddonRates[item.slug] ?? undefined} placeholder="Price USD" className="rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small" />
-                            <button type="submit" className="rounded-lg bg-ordift-ink text-white px-4 py-2 font-sans text-body-small">Save new version</button>
-                          </form>
+                            <SubmitButton pendingLabel="Saving…" className="rounded-lg bg-ordift-ink text-white px-4 py-2 font-sans text-body-small">Save new version</SubmitButton>
+                          </ActionForm>
                         </details>
                       </li>
                     ))}
@@ -1176,11 +1178,11 @@ export default async function AdminPricingPage({
                       </div>
                       <details className="mt-2 rounded-lg border border-black/10 px-4 py-2">
                         <summary className="cursor-pointer font-sans text-caption text-ordift-ink select-none">Edit</summary>
-                        <form action={createWeddingEventPercentageRateVersionAction} className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3">
+                        <ActionForm action={createWeddingEventPercentageRateVersionAction} className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3">
                           <input type="hidden" name="percentageSlug" value={p.slug} />
                           <input name="percentage" type="number" step="0.01" min="0.01" required defaultValue={weddingEventPercentageRates[p.slug] ?? undefined} placeholder="Percentage" className="rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small" />
-                          <button type="submit" className="rounded-lg bg-ordift-ink text-white px-4 py-2 font-sans text-body-small">Save new version</button>
-                        </form>
+                          <SubmitButton pendingLabel="Saving…" className="rounded-lg bg-ordift-ink text-white px-4 py-2 font-sans text-body-small">Save new version</SubmitButton>
+                        </ActionForm>
                       </details>
                     </li>
                   ))}
@@ -1233,13 +1235,13 @@ export default async function AdminPricingPage({
                       // class as the Weddings & Events fix above.
                       <details key={`${selectedMarket.slug}-${mode}-${s.slug}`} className="rounded-lg border border-black/10 px-4 py-2">
                         <summary className="cursor-pointer font-sans text-body-small text-ordift-ink select-none">Edit {s.label} rate</summary>
-                        <form action={createCommercialCreativeFeeRateVersionAction} className="grid grid-cols-1 sm:grid-cols-4 gap-3 mt-3">
+                        <ActionForm action={createCommercialCreativeFeeRateVersionAction} className="grid grid-cols-1 sm:grid-cols-4 gap-3 mt-3">
                           <input type="hidden" name="marketSlug" value={selectedMarket.slug} />
                           <input type="hidden" name="serviceMode" value={mode} />
                           <input type="hidden" name="scopeSlug" value={s.slug} />
                           <input name="priceUsd" type="number" step="0.01" min="0.01" required defaultValue={rate?.priceUsd} placeholder="Price USD" className="rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small" />
-                          <button type="submit" className="rounded-lg bg-ordift-ink text-white px-4 py-2 font-sans text-body-small">Save new version</button>
-                        </form>
+                          <SubmitButton pendingLabel="Saving…" className="rounded-lg bg-ordift-ink text-white px-4 py-2 font-sans text-body-small">Save new version</SubmitButton>
+                        </ActionForm>
                       </details>
                     );
                   })}
@@ -1266,19 +1268,19 @@ export default async function AdminPricingPage({
 
                 <details className="rounded-lg border border-black/10 px-4 py-2">
                   <summary className="cursor-pointer font-sans text-body-small text-ordift-ink select-none">Edit base rate</summary>
-                  <form action={createCommercialCatalogueBaseRateVersionAction} className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3">
+                  <ActionForm action={createCommercialCatalogueBaseRateVersionAction} className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3">
                     <input type="hidden" name="marketSlug" value={selectedMarket.slug} />
                     <input name="priceUsd" type="number" step="0.01" min="0.01" required defaultValue={commercialCatalogueBaseRate ?? undefined} placeholder="Price per image USD" className="rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small" />
-                    <button type="submit" className="rounded-lg bg-ordift-ink text-white px-4 py-2 font-sans text-body-small">Save new version</button>
-                  </form>
+                    <SubmitButton pendingLabel="Saving…" className="rounded-lg bg-ordift-ink text-white px-4 py-2 font-sans text-body-small">Save new version</SubmitButton>
+                  </ActionForm>
                 </details>
                 <details className="rounded-lg border border-black/10 px-4 py-2">
                   <summary className="cursor-pointer font-sans text-body-small text-ordift-ink select-none">Edit minimum booking</summary>
-                  <form action={createCommercialCatalogueMinimumVersionAction} className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3">
+                  <ActionForm action={createCommercialCatalogueMinimumVersionAction} className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3">
                     <input type="hidden" name="marketSlug" value={selectedMarket.slug} />
                     <input name="minimumUsd" type="number" step="0.01" min="0.01" required defaultValue={commercialCatalogueMinimum ?? undefined} placeholder="Minimum USD" className="rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small" />
-                    <button type="submit" className="rounded-lg bg-ordift-ink text-white px-4 py-2 font-sans text-body-small">Save new version</button>
-                  </form>
+                    <SubmitButton pendingLabel="Saving…" className="rounded-lg bg-ordift-ink text-white px-4 py-2 font-sans text-body-small">Save new version</SubmitButton>
+                  </ActionForm>
                 </details>
               </section>
 
@@ -1330,15 +1332,15 @@ export default async function AdminPricingPage({
                       </div>
                       <details className="mt-2 rounded-lg border border-black/10 px-4 py-2">
                         <summary className="cursor-pointer font-sans text-caption text-ordift-ink select-none">Edit</summary>
-                        <form action={createCommercialPostProductionRateVersionAction} className="grid grid-cols-1 sm:grid-cols-4 gap-3 mt-3">
+                        <ActionForm action={createCommercialPostProductionRateVersionAction} className="grid grid-cols-1 sm:grid-cols-4 gap-3 mt-3">
                           <input type="hidden" name="itemSlug" value={item.slug} />
                           <input name="priceUsd" type="number" step="0.01" min="0.01" required defaultValue={rate?.priceUsd} placeholder="Price USD" className="rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small" />
                           <label className="flex items-center gap-2 font-sans text-caption text-ordift-ink-muted">
                             <input type="checkbox" name="isFromPrice" value="true" defaultChecked={rate?.isFromPrice} className="w-4 h-4" />
                             &ldquo;From&rdquo; indicative minimum only
                           </label>
-                          <button type="submit" className="rounded-lg bg-ordift-ink text-white px-4 py-2 font-sans text-body-small">Save new version</button>
-                        </form>
+                          <SubmitButton pendingLabel="Saving…" className="rounded-lg bg-ordift-ink text-white px-4 py-2 font-sans text-body-small">Save new version</SubmitButton>
+                        </ActionForm>
                       </details>
                     </li>
                   );
@@ -1363,12 +1365,12 @@ export default async function AdminPricingPage({
                           </div>
                           <details className="mt-2 rounded-lg border border-black/10 px-4 py-2">
                             <summary className="cursor-pointer font-sans text-caption text-ordift-ink select-none">Edit</summary>
-                            <form action={createCommercialLicensingFactorVersionAction} className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3">
+                            <ActionForm action={createCommercialLicensingFactorVersionAction} className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3">
                               <input type="hidden" name="factorType" value={group.factorType} />
                               <input type="hidden" name="factorSlug" value={item.slug} />
                               <input name="factorValue" type="number" step="0.01" min="0.01" required defaultValue={value ?? undefined} placeholder="Factor" className="rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small" />
-                              <button type="submit" className="rounded-lg bg-ordift-ink text-white px-4 py-2 font-sans text-body-small">Save new version</button>
-                            </form>
+                              <SubmitButton pendingLabel="Saving…" className="rounded-lg bg-ordift-ink text-white px-4 py-2 font-sans text-body-small">Save new version</SubmitButton>
+                            </ActionForm>
                           </details>
                         </li>
                       );
@@ -1388,11 +1390,11 @@ export default async function AdminPricingPage({
                       </div>
                       <details className="mt-2 rounded-lg border border-black/10 px-4 py-2">
                         <summary className="cursor-pointer font-sans text-caption text-ordift-ink select-none">Edit</summary>
-                        <form action={createCommercialPercentageVersionAction} className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3">
+                        <ActionForm action={createCommercialPercentageVersionAction} className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3">
                           <input type="hidden" name="percentageSlug" value={slug} />
                           <input name="percentage" type="number" step="0.01" min="0.01" required defaultValue={commercialPercentages[slug] ?? undefined} placeholder="Percentage" className="rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small" />
-                          <button type="submit" className="rounded-lg bg-ordift-ink text-white px-4 py-2 font-sans text-body-small">Save new version</button>
-                        </form>
+                          <SubmitButton pendingLabel="Saving…" className="rounded-lg bg-ordift-ink text-white px-4 py-2 font-sans text-body-small">Save new version</SubmitButton>
+                        </ActionForm>
                       </details>
                     </li>
                   ))}
@@ -1418,12 +1420,12 @@ export default async function AdminPricingPage({
 
                 <details className="rounded-lg border border-black/10 px-4 py-2">
                   <summary className="cursor-pointer font-sans text-body-small text-ordift-ink select-none">Edit thresholds</summary>
-                  <form action={createCommercialReviewThresholdVersionAction} className="grid grid-cols-1 sm:grid-cols-4 gap-3 mt-3">
+                  <ActionForm action={createCommercialReviewThresholdVersionAction} className="grid grid-cols-1 sm:grid-cols-4 gap-3 mt-3">
                     <input type="hidden" name="marketSlug" value={selectedMarket.slug} />
                     <input name="reviewUsd" type="number" step="0.01" min="0.01" required defaultValue={commercialReviewThreshold?.reviewUsd} placeholder="Review threshold USD" className="rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small" />
                     <input name="mandatoryUsd" type="number" step="0.01" min="0.01" required defaultValue={commercialReviewThreshold?.mandatoryUsd} placeholder="Mandatory threshold USD" className="rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small" />
-                    <button type="submit" className="rounded-lg bg-ordift-ink text-white px-4 py-2 font-sans text-body-small">Save new version</button>
-                  </form>
+                    <SubmitButton pendingLabel="Saving…" className="rounded-lg bg-ordift-ink text-white px-4 py-2 font-sans text-body-small">Save new version</SubmitButton>
+                  </ActionForm>
                 </details>
               </section>
             </div>
@@ -1452,12 +1454,12 @@ export default async function AdminPricingPage({
                         </div>
                         <details className="mt-2 rounded-lg border border-black/10 px-4 py-2">
                           <summary className="cursor-pointer font-sans text-caption text-ordift-ink select-none">Edit</summary>
-                          <form action={createGraphicDesignDeliverableRateVersionAction} className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3">
+                          <ActionForm action={createGraphicDesignDeliverableRateVersionAction} className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3">
                             <input type="hidden" name="marketSlug" value={selectedMarket.slug} />
                             <input type="hidden" name="deliverableSlug" value={d.slug} />
                             <input name="priceUsd" type="number" step="0.01" min="0.01" required defaultValue={rate?.priceUsd} placeholder="Price USD" className="rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small" />
-                            <button type="submit" className="rounded-lg bg-ordift-ink text-white px-4 py-2 font-sans text-body-small">Save new version</button>
-                          </form>
+                            <SubmitButton pendingLabel="Saving…" className="rounded-lg bg-ordift-ink text-white px-4 py-2 font-sans text-body-small">Save new version</SubmitButton>
+                          </ActionForm>
                         </details>
                       </li>
                     );
@@ -1482,11 +1484,11 @@ export default async function AdminPricingPage({
                       </div>
                       <details className="mt-2 rounded-lg border border-black/10 px-4 py-2">
                         <summary className="cursor-pointer font-sans text-caption text-ordift-ink select-none">Edit</summary>
-                        <form action={createGraphicDesignComplexityFactorVersionAction} className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3">
+                        <ActionForm action={createGraphicDesignComplexityFactorVersionAction} className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3">
                           <input type="hidden" name="complexity" value={c} />
                           <input name="factor" type="number" step="0.01" min="0.01" required defaultValue={factor?.factor} placeholder="Factor" className="rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small" />
-                          <button type="submit" className="rounded-lg bg-ordift-ink text-white px-4 py-2 font-sans text-body-small">Save new version</button>
-                        </form>
+                          <SubmitButton pendingLabel="Saving…" className="rounded-lg bg-ordift-ink text-white px-4 py-2 font-sans text-body-small">Save new version</SubmitButton>
+                        </ActionForm>
                       </details>
                     </li>
                   );
@@ -1511,12 +1513,12 @@ export default async function AdminPricingPage({
                         </div>
                         <details className="mt-2 rounded-lg border border-black/10 px-4 py-2">
                           <summary className="cursor-pointer font-sans text-caption text-ordift-ink select-none">Edit</summary>
-                          <form action={createGraphicDesignAddonRateVersionAction} className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3">
+                          <ActionForm action={createGraphicDesignAddonRateVersionAction} className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3">
                             <input type="hidden" name="marketSlug" value={selectedMarket.slug} />
                             <input type="hidden" name="addonSlug" value={item.slug} />
                             <input name="priceUsd" type="number" step="0.01" min="0.01" required defaultValue={rate ?? undefined} placeholder="Price USD" className="rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small" />
-                            <button type="submit" className="rounded-lg bg-ordift-ink text-white px-4 py-2 font-sans text-body-small">Save new version</button>
-                          </form>
+                            <SubmitButton pendingLabel="Saving…" className="rounded-lg bg-ordift-ink text-white px-4 py-2 font-sans text-body-small">Save new version</SubmitButton>
+                          </ActionForm>
                         </details>
                       </li>
                     );
@@ -1537,11 +1539,11 @@ export default async function AdminPricingPage({
                         </div>
                         <details className="mt-2 rounded-lg border border-black/10 px-4 py-2">
                           <summary className="cursor-pointer font-sans text-caption text-ordift-ink select-none">Edit</summary>
-                          <form action={createGraphicDesignPercentageVersionAction} className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3">
+                          <ActionForm action={createGraphicDesignPercentageVersionAction} className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3">
                             <input type="hidden" name="percentageSlug" value={p.slug} />
                             <input name="percentage" type="number" step="0.01" min="0.01" required defaultValue={value ?? undefined} placeholder="Percentage" className="rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small" />
-                            <button type="submit" className="rounded-lg bg-ordift-ink text-white px-4 py-2 font-sans text-body-small">Save new version</button>
-                          </form>
+                            <SubmitButton pendingLabel="Saving…" className="rounded-lg bg-ordift-ink text-white px-4 py-2 font-sans text-body-small">Save new version</SubmitButton>
+                          </ActionForm>
                         </details>
                       </li>
                     );
@@ -1574,12 +1576,12 @@ export default async function AdminPricingPage({
                         </div>
                         <details className="mt-2 rounded-lg border border-black/10 px-4 py-2">
                           <summary className="cursor-pointer font-sans text-caption text-ordift-ink select-none">Edit</summary>
-                          <form action={createContentCreationPackageRateVersionAction} className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3">
+                          <ActionForm action={createContentCreationPackageRateVersionAction} className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3">
                             <input type="hidden" name="marketSlug" value={selectedMarket.slug} />
                             <input type="hidden" name="packageSlug" value={d.slug} />
                             <input name="priceUsd" type="number" step="0.01" min="0.01" required defaultValue={rate?.priceUsd} placeholder="Price USD" className="rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small" />
-                            <button type="submit" className="rounded-lg bg-ordift-ink text-white px-4 py-2 font-sans text-body-small">Save new version</button>
-                          </form>
+                            <SubmitButton pendingLabel="Saving…" className="rounded-lg bg-ordift-ink text-white px-4 py-2 font-sans text-body-small">Save new version</SubmitButton>
+                          </ActionForm>
                         </details>
                       </li>
                     );
@@ -1606,12 +1608,12 @@ export default async function AdminPricingPage({
                         </div>
                         <details className="mt-2 rounded-lg border border-black/10 px-4 py-2">
                           <summary className="cursor-pointer font-sans text-caption text-ordift-ink select-none">Edit</summary>
-                          <form action={createContentCreationRetainerRateVersionAction} className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3">
+                          <ActionForm action={createContentCreationRetainerRateVersionAction} className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3">
                             <input type="hidden" name="marketSlug" value={selectedMarket.slug} />
                             <input type="hidden" name="retainerSlug" value={r.slug} />
                             <input name="priceUsd" type="number" step="0.01" min="0.01" required defaultValue={rate?.priceUsd} placeholder="Price USD" className="rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small" />
-                            <button type="submit" className="rounded-lg bg-ordift-ink text-white px-4 py-2 font-sans text-body-small">Save new version</button>
-                          </form>
+                            <SubmitButton pendingLabel="Saving…" className="rounded-lg bg-ordift-ink text-white px-4 py-2 font-sans text-body-small">Save new version</SubmitButton>
+                          </ActionForm>
                         </details>
                       </li>
                     );
@@ -1637,12 +1639,12 @@ export default async function AdminPricingPage({
                         </div>
                         <details className="mt-2 rounded-lg border border-black/10 px-4 py-2">
                           <summary className="cursor-pointer font-sans text-caption text-ordift-ink select-none">Edit</summary>
-                          <form action={createContentCreationAddonRateVersionAction} className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3">
+                          <ActionForm action={createContentCreationAddonRateVersionAction} className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3">
                             <input type="hidden" name="marketSlug" value={selectedMarket.slug} />
                             <input type="hidden" name="addonSlug" value={item.slug} />
                             <input name="priceUsd" type="number" step="0.01" min="0.01" required defaultValue={rate ?? undefined} placeholder="Price USD" className="rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small" />
-                            <button type="submit" className="rounded-lg bg-ordift-ink text-white px-4 py-2 font-sans text-body-small">Save new version</button>
-                          </form>
+                            <SubmitButton pendingLabel="Saving…" className="rounded-lg bg-ordift-ink text-white px-4 py-2 font-sans text-body-small">Save new version</SubmitButton>
+                          </ActionForm>
                         </details>
                       </li>
                     );
@@ -1664,11 +1666,11 @@ export default async function AdminPricingPage({
                         </div>
                         <details className="mt-2 rounded-lg border border-black/10 px-4 py-2">
                           <summary className="cursor-pointer font-sans text-caption text-ordift-ink select-none">Edit</summary>
-                          <form action={createContentCreationPercentageVersionAction} className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3">
+                          <ActionForm action={createContentCreationPercentageVersionAction} className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3">
                             <input type="hidden" name="percentageSlug" value={p.slug} />
                             <input name="percentage" type="number" step="0.01" min="0.01" required defaultValue={value ?? undefined} placeholder="Percentage" className="rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small" />
-                            <button type="submit" className="rounded-lg bg-ordift-ink text-white px-4 py-2 font-sans text-body-small">Save new version</button>
-                          </form>
+                            <SubmitButton pendingLabel="Saving…" className="rounded-lg bg-ordift-ink text-white px-4 py-2 font-sans text-body-small">Save new version</SubmitButton>
+                          </ActionForm>
                         </details>
                       </li>
                     );
@@ -1701,12 +1703,12 @@ export default async function AdminPricingPage({
                         </div>
                         <details className="mt-2 rounded-lg border border-black/10 px-4 py-2">
                           <summary className="cursor-pointer font-sans text-caption text-ordift-ink select-none">Edit</summary>
-                          <form action={createBrandingTierRateVersionAction} className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3">
+                          <ActionForm action={createBrandingTierRateVersionAction} className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3">
                             <input type="hidden" name="marketSlug" value={selectedMarket.slug} />
                             <input type="hidden" name="tierSlug" value={t.slug} />
                             <input name="priceUsd" type="number" step="0.01" min="0.01" required defaultValue={rate?.priceUsd} placeholder="Price USD" className="rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small" />
-                            <button type="submit" className="rounded-lg bg-ordift-ink text-white px-4 py-2 font-sans text-body-small">Save new version</button>
-                          </form>
+                            <SubmitButton pendingLabel="Saving…" className="rounded-lg bg-ordift-ink text-white px-4 py-2 font-sans text-body-small">Save new version</SubmitButton>
+                          </ActionForm>
                         </details>
                       </li>
                     );
@@ -1727,11 +1729,11 @@ export default async function AdminPricingPage({
                 </div>
                 <details className="mt-2 rounded-lg border border-black/10 px-4 py-2">
                   <summary className="cursor-pointer font-sans text-caption text-ordift-ink select-none">Edit</summary>
-                  <form action={createBrandingRevisionMinimumVersionAction} className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3">
+                  <ActionForm action={createBrandingRevisionMinimumVersionAction} className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3">
                     <input type="hidden" name="marketSlug" value={selectedMarket.slug} />
                     <input name="minimumUsd" type="number" step="0.01" min="0.01" required defaultValue={brandingRevisionMinimum ?? undefined} placeholder="Minimum USD" className="rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small" />
-                    <button type="submit" className="rounded-lg bg-ordift-ink text-white px-4 py-2 font-sans text-body-small">Save new version</button>
-                  </form>
+                    <SubmitButton pendingLabel="Saving…" className="rounded-lg bg-ordift-ink text-white px-4 py-2 font-sans text-body-small">Save new version</SubmitButton>
+                  </ActionForm>
                 </details>
               </section>
 
@@ -1749,11 +1751,11 @@ export default async function AdminPricingPage({
                         </div>
                         <details className="mt-2 rounded-lg border border-black/10 px-4 py-2">
                           <summary className="cursor-pointer font-sans text-caption text-ordift-ink select-none">Edit</summary>
-                          <form action={createBrandingPercentageVersionAction} className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3">
+                          <ActionForm action={createBrandingPercentageVersionAction} className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3">
                             <input type="hidden" name="percentageSlug" value={p.slug} />
                             <input name="percentage" type="number" step="0.01" min="0.01" required defaultValue={value ?? undefined} placeholder="Percentage" className="rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small" />
-                            <button type="submit" className="rounded-lg bg-ordift-ink text-white px-4 py-2 font-sans text-body-small">Save new version</button>
-                          </form>
+                            <SubmitButton pendingLabel="Saving…" className="rounded-lg bg-ordift-ink text-white px-4 py-2 font-sans text-body-small">Save new version</SubmitButton>
+                          </ActionForm>
                         </details>
                       </li>
                     );
@@ -1789,12 +1791,12 @@ export default async function AdminPricingPage({
                         </div>
                         <details className="mt-2 rounded-lg border border-black/10 px-4 py-2">
                           <summary className="cursor-pointer font-sans text-caption text-ordift-ink select-none">Edit</summary>
-                          <form action={createProductionRateVersionAction} className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3">
+                          <ActionForm action={createProductionRateVersionAction} className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3">
                             <input type="hidden" name="marketSlug" value={selectedMarket.slug} />
                             <input type="hidden" name="rateSlug" value={r.slug} />
                             <input name="priceUsd" type="number" step="0.01" min="0.01" required defaultValue={rate?.priceUsd} placeholder="Price USD" className="rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small" />
-                            <button type="submit" className="rounded-lg bg-ordift-ink text-white px-4 py-2 font-sans text-body-small">Save new version</button>
-                          </form>
+                            <SubmitButton pendingLabel="Saving…" className="rounded-lg bg-ordift-ink text-white px-4 py-2 font-sans text-body-small">Save new version</SubmitButton>
+                          </ActionForm>
                         </details>
                       </li>
                     );
@@ -1815,11 +1817,11 @@ export default async function AdminPricingPage({
                         </div>
                         <details className="mt-2 rounded-lg border border-black/10 px-4 py-2">
                           <summary className="cursor-pointer font-sans text-caption text-ordift-ink select-none">Edit</summary>
-                          <form action={createProductionPercentageVersionAction} className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3">
+                          <ActionForm action={createProductionPercentageVersionAction} className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3">
                             <input type="hidden" name="percentageSlug" value={p.slug} />
                             <input name="percentage" type="number" step="0.01" min="0.01" required defaultValue={value ?? undefined} placeholder="Percentage" className="rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small" />
-                            <button type="submit" className="rounded-lg bg-ordift-ink text-white px-4 py-2 font-sans text-body-small">Save new version</button>
-                          </form>
+                            <SubmitButton pendingLabel="Saving…" className="rounded-lg bg-ordift-ink text-white px-4 py-2 font-sans text-body-small">Save new version</SubmitButton>
+                          </ActionForm>
                         </details>
                       </li>
                     );
@@ -1846,12 +1848,12 @@ export default async function AdminPricingPage({
                         </div>
                         <details className="mt-2 rounded-lg border border-black/10 px-4 py-2">
                           <summary className="cursor-pointer font-sans text-caption text-ordift-ink select-none">Edit</summary>
-                          <form action={createProductionRateVersionAction} className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3">
+                          <ActionForm action={createProductionRateVersionAction} className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3">
                             <input type="hidden" name="marketSlug" value={selectedMarket.slug} />
                             <input type="hidden" name="rateSlug" value={r.slug} />
                             <input name="priceUsd" type="number" step="0.01" min="0.01" required defaultValue={rate?.priceUsd} placeholder="Price USD" className="rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small" />
-                            <button type="submit" className="rounded-lg bg-ordift-ink text-white px-4 py-2 font-sans text-body-small">Save new version</button>
-                          </form>
+                            <SubmitButton pendingLabel="Saving…" className="rounded-lg bg-ordift-ink text-white px-4 py-2 font-sans text-body-small">Save new version</SubmitButton>
+                          </ActionForm>
                         </details>
                       </li>
                     );
@@ -1882,13 +1884,11 @@ export default async function AdminPricingPage({
                       </span>
                       {!d.archivedAt && (
                         <div className="flex items-center gap-3">
-                          <form action={setDiscountCodeActiveAction}>
+                          <ActionForm action={setDiscountCodeActiveAction}>
                             <input type="hidden" name="discountCodeId" value={d.id} />
                             <input type="hidden" name="active" value={String(d.active)} />
-                            <button type="submit" className="font-sans text-caption text-ordift-gold-pressed underline underline-offset-4">
-                              {d.active ? "Deactivate" : "Activate"}
-                            </button>
-                          </form>
+                            <SubmitButton pendingLabel="Updating…" className="font-sans text-caption text-ordift-gold-pressed underline underline-offset-4">{d.active ? "Deactivate" : "Activate"}</SubmitButton>
+                          </ActionForm>
                           <DeleteDiscountButton id={d.id} code={d.code} redemptionCount={d.redemptionCount} />
                         </div>
                       )}
@@ -1902,12 +1902,12 @@ export default async function AdminPricingPage({
                 ))}
               </ul>
             )}
-            <form action={createDiscountCodeAction} className="grid grid-cols-1 sm:grid-cols-4 gap-3 pt-3 border-t border-black/5">
+            <ActionForm action={createDiscountCodeAction} className="grid grid-cols-1 sm:grid-cols-4 gap-3 pt-3 border-t border-black/5">
               <input name="code" required placeholder="Code, e.g. WELCOME5" className="rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small" />
               <input name="value" type="number" step="0.01" min="0.01" max="100" required placeholder="Percent off" className="rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small" />
               <input name="reason" required placeholder="Reason / campaign" className="rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small sm:col-span-1" />
-              <button type="submit" className="rounded-lg bg-ordift-ink text-white px-4 py-2 font-sans text-body-small">Create (inactive)</button>
-            </form>
+              <SubmitButton pendingLabel="Creating…" className="rounded-lg bg-ordift-ink text-white px-4 py-2 font-sans text-body-small">Create (inactive)</SubmitButton>
+            </ActionForm>
           </section>
 
           <section className="rounded-xl border border-black/10 bg-white p-6 space-y-4">
@@ -1929,13 +1929,11 @@ export default async function AdminPricingPage({
                 <span className={`font-sans text-body-small ${m.active ? "text-ordift-ink" : "text-ordift-ink-muted"}`}>
                   {m.name} {!m.active && <span className="text-caption">(inactive — no approved rates)</span>}
                 </span>
-                <form action={setPricingMarketActiveAction}>
+                <ActionForm action={setPricingMarketActiveAction}>
                   <input type="hidden" name="marketSlug" value={m.slug} />
                   <input type="hidden" name="active" value={String(m.active)} />
-                  <button type="submit" className="font-sans text-caption text-ordift-gold-pressed underline underline-offset-4">
-                    {m.active ? "Deactivate" : "Activate"}
-                  </button>
-                </form>
+                  <SubmitButton pendingLabel="Updating…" className="font-sans text-caption text-ordift-gold-pressed underline underline-offset-4">{m.active ? "Deactivate" : "Activate"}</SubmitButton>
+                </ActionForm>
               </li>
             ))}
           </ul>

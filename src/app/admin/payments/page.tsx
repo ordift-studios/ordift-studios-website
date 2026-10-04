@@ -7,6 +7,8 @@ import { hasCapability } from "@/lib/workflow/engine";
 import { createClient } from "@/lib/supabase/server";
 import { isStaging } from "@/lib/shared/env";
 import { approveBankTransferAction, rejectBankTransferAction } from "./actions";
+import ActionForm from "@/components/admin/ActionForm";
+import SubmitButton from "@/components/admin/SubmitButton";
 
 export const metadata: Metadata = {
   title: "Payments — Ordift Studios Admin",
@@ -104,16 +106,13 @@ export default async function AdminPaymentsPage() {
                     </td>
                     <td className="py-3 px-4">
                       <div className="flex flex-wrap gap-2">
-                        <form action={approveBankTransferAction}>
+                        <ActionForm action={approveBankTransferAction}>
                           <input type="hidden" name="paymentId" value={p.id} />
-                          <button
-                            type="submit"
-                            className="min-h-9 rounded-lg bg-ordift-gold px-3 font-sans text-body-small text-ordift-navy-950 hover:bg-ordift-gold-hover"
-                          >
+                          <SubmitButton pendingLabel="Working…" className="min-h-9 rounded-lg bg-ordift-gold px-3 font-sans text-body-small text-ordift-navy-950 hover:bg-ordift-gold-hover">
                             Approve
-                          </button>
-                        </form>
-                        <form action={rejectBankTransferAction} className="flex items-center gap-2">
+                          </SubmitButton>
+                        </ActionForm>
+                        <ActionForm action={rejectBankTransferAction} className="flex items-center gap-2">
                           <input type="hidden" name="paymentId" value={p.id} />
                           <input
                             type="text"
@@ -122,13 +121,10 @@ export default async function AdminPaymentsPage() {
                             placeholder="Rejection reason"
                             className="min-h-9 rounded-lg border border-black/15 bg-white px-2 font-sans text-body-small text-ordift-ink"
                           />
-                          <button
-                            type="submit"
-                            className="min-h-9 rounded-lg border border-black/20 px-3 font-sans text-body-small text-ordift-ink hover:bg-black/5"
-                          >
+                          <SubmitButton pendingLabel="Working…" className="min-h-9 rounded-lg border border-black/20 px-3 font-sans text-body-small text-ordift-ink hover:bg-black/5">
                             Reject
-                          </button>
-                        </form>
+                          </SubmitButton>
+                        </ActionForm>
                       </div>
                     </td>
                     <td className="py-3 px-4">

@@ -3,6 +3,8 @@ import { redirect } from "next/navigation";
 import { getCurrentUser, hasRole, isSuperAdmin } from "@/lib/portal/roles";
 import { getFeatureFlags } from "@/lib/admin/flags";
 import { toggleFlagAction, createFlagAction } from "./actions";
+import ActionForm from "@/components/admin/ActionForm";
+import SubmitButton from "@/components/admin/SubmitButton";
 
 export const metadata: Metadata = {
   title: "Feature Flags — Ordift Studios Admin",
@@ -55,7 +57,7 @@ export default async function AdminFlagsPage() {
                   Updated {formatDateTime(flag.updatedAt)}
                 </p>
               </div>
-              <form action={toggleFlagAction}>
+              <ActionForm action={toggleFlagAction}>
                 <input type="hidden" name="flagId" value={flag.id} />
                 <input type="hidden" name="nextEnabled" value={(!flag.enabled).toString()} />
                 <button
@@ -66,7 +68,7 @@ export default async function AdminFlagsPage() {
                 >
                   {flag.enabled ? "Enabled" : "Disabled"}
                 </button>
-              </form>
+              </ActionForm>
             </div>
           ))}
         </div>
@@ -74,7 +76,7 @@ export default async function AdminFlagsPage() {
 
       <div className="rounded-xl border border-black/10 bg-white p-6">
         <h2 className="font-serif font-medium text-body text-ordift-ink mb-4">New Flag</h2>
-        <form action={createFlagAction} className="flex flex-wrap gap-3 items-end">
+        <ActionForm action={createFlagAction} className="flex flex-wrap gap-3 items-end">
           <div className="flex-1 min-w-[200px]">
             <label htmlFor="flag-key" className="font-sans text-caption text-ordift-ink-muted block mb-1">
               Key
@@ -99,13 +101,10 @@ export default async function AdminFlagsPage() {
               className="w-full min-h-11 rounded-lg border border-black/15 bg-white px-3 font-sans text-body-small text-ordift-ink"
             />
           </div>
-          <button
-            type="submit"
-            className="min-h-11 px-5 rounded-full bg-ordift-navy-950 text-white font-sans text-body-small"
-          >
+          <SubmitButton pendingLabel="Creating…" className="min-h-11 px-5 rounded-full bg-ordift-navy-950 text-white font-sans text-body-small">
             Create
-          </button>
-        </form>
+          </SubmitButton>
+        </ActionForm>
       </div>
     </div>
   );

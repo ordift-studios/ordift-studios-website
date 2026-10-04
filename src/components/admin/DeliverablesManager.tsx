@@ -1,6 +1,8 @@
 import type { AdminDeliverable, DeliverableCategory, DeliverableEntityType } from "@/lib/admin/deliverables";
 import { createCategoryAction, deleteDeliverableAction } from "@/app/admin/deliverables/actions";
 import PublishDeliverableForm from "./PublishDeliverableForm";
+import ActionForm from "@/components/admin/ActionForm";
+import SubmitButton from "@/components/admin/SubmitButton";
 
 function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
@@ -55,17 +57,14 @@ export default function DeliverablesManager({
                   Open link ↗
                 </a>
               </div>
-              <form action={deleteDeliverableAction}>
+              <ActionForm action={deleteDeliverableAction}>
                 <input type="hidden" name="id" value={d.id} />
                 <input type="hidden" name="entityType" value={entityType} />
                 <input type="hidden" name="entityId" value={entityId} />
-                <button
-                  type="submit"
-                  className="font-sans text-caption text-ordift-ink-muted hover:text-red-700 whitespace-nowrap"
-                >
+                <SubmitButton pendingLabel="Working…" className="font-sans text-caption text-ordift-ink-muted hover:text-red-700 whitespace-nowrap">
                   Remove
-                </button>
-              </form>
+                </SubmitButton>
+              </ActionForm>
             </div>
           ))}
         </div>

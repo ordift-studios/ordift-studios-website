@@ -16,6 +16,7 @@ import {
   setProjectFileRetainAction,
   promoteProjectFileToFinalApprovedAction,
 } from "../../../actions";
+import ActionForm from "@/components/admin/ActionForm";
 
 export const metadata: Metadata = {
   title: "Engagement Media — Payables — Ordift Studios Admin",
@@ -105,7 +106,7 @@ export default async function EngagementMediaPage({ params }: { params: Promise<
               </div>
               <div className="flex flex-wrap gap-2">
                 {f.lifecycleState === "active" && f.fileKind !== "final_approved" && (
-                  <form action={confirmProjectFileBackupAction}>
+                  <ActionForm action={confirmProjectFileBackupAction}>
                     <input type="hidden" name="fileId" value={f.id} />
                     <input type="hidden" name="engagementId" value={id} />
                     <ConfirmSubmitButton
@@ -115,10 +116,10 @@ export default async function EngagementMediaPage({ params }: { params: Promise<
                     >
                       Confirm Backup
                     </ConfirmSubmitButton>
-                  </form>
+                  </ActionForm>
                 )}
                 {canPromoteFileKindToFinalApproved(f.fileKind) && !f.purgedAt && (
-                  <form action={promoteProjectFileToFinalApprovedAction}>
+                  <ActionForm action={promoteProjectFileToFinalApprovedAction}>
                     <input type="hidden" name="fileId" value={f.id} />
                     <input type="hidden" name="engagementId" value={id} />
                     <ConfirmSubmitButton
@@ -128,9 +129,9 @@ export default async function EngagementMediaPage({ params }: { params: Promise<
                     >
                       Mark Final Approved
                     </ConfirmSubmitButton>
-                  </form>
+                  </ActionForm>
                 )}
-                <form action={setProjectFileRetainAction}>
+                <ActionForm action={setProjectFileRetainAction}>
                   <input type="hidden" name="fileId" value={f.id} />
                   <input type="hidden" name="engagementId" value={id} />
                   <input type="hidden" name="retain" value={f.retain ? "false" : "true"} />
@@ -140,7 +141,7 @@ export default async function EngagementMediaPage({ params }: { params: Promise<
                   >
                     {f.retain ? "Remove Retain" : "Retain"}
                   </SubmitButton>
-                </form>
+                </ActionForm>
               </div>
             </li>
           ))}

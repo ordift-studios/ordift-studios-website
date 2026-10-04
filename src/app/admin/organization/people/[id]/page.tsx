@@ -92,6 +92,8 @@ import {
 } from "./actions";
 import { RecordInitialEmploymentTermsForm, RecordEmploymentTransitionForm, WORK_PATTERN_TYPE_OPTIONS } from "./EmploymentTermsForms";
 import { agreementReadinessFieldHref } from "@/lib/legal/agreementReadinessLinks";
+import ActionForm from "@/components/admin/ActionForm";
+import SubmitButton from "@/components/admin/SubmitButton";
 
 export const metadata: Metadata = {
   title: "Person — Ordift Studios Admin",
@@ -350,7 +352,7 @@ export default async function PersonDetailPage({ params }: { params: Promise<{ i
           <p className="font-sans text-body-small text-ordift-ink-muted">
             Employment status: {person.employmentStatus ? (EMPLOYMENT_STATUS_LABELS[person.employmentStatus] ?? person.employmentStatus) : "Not set"}
           </p>
-          <form action={setEmploymentStatusAction} className="flex flex-wrap items-center gap-2">
+          <ActionForm action={setEmploymentStatusAction} className="flex flex-wrap items-center gap-2">
             <input type="hidden" name="profileId" value={id} />
             <select name="status" defaultValue="" required className="rounded-lg border border-black/15 bg-white px-2 py-1 font-sans text-caption">
               <option value="" disabled>Set employment status…</option>
@@ -358,8 +360,8 @@ export default async function PersonDetailPage({ params }: { params: Promise<{ i
                 <option key={slug} value={slug}>{label}</option>
               ))}
             </select>
-            <button type="submit" className="font-sans text-caption font-semibold px-3 py-1 rounded-md bg-ordift-navy-950 text-white">Update</button>
-          </form>
+            <SubmitButton pendingLabel="Updating…" className="font-sans text-caption font-semibold px-3 py-1 rounded-md bg-ordift-navy-950 text-white">Update</SubmitButton>
+          </ActionForm>
         </div>
 
         <div id="section-access" className="rounded-xl border border-black/10 bg-white p-6 space-y-3 scroll-mt-6">
@@ -429,7 +431,7 @@ export default async function PersonDetailPage({ params }: { params: Promise<{ i
               ) : (
                 <p className="font-sans text-caption text-ordift-ink-muted">No screening recorded.</p>
               )}
-              <form action={recordBackgroundScreeningAction} className="grid grid-cols-2 gap-2 mt-2">
+              <ActionForm action={recordBackgroundScreeningAction} className="grid grid-cols-2 gap-2 mt-2">
                 <input type="hidden" name="profileId" value={id} />
                 <select name="category" required defaultValue="" className="rounded-lg border border-black/15 bg-white px-2 py-1 font-sans text-caption">
                   <option value="" disabled>Category…</option>
@@ -445,8 +447,8 @@ export default async function PersonDetailPage({ params }: { params: Promise<{ i
                 </select>
                 <input name="jurisdiction" placeholder="Jurisdiction (e.g. Ghana)" className="rounded-lg border border-black/15 px-2 py-1 font-sans text-caption col-span-2" />
                 <input name="evidenceReference" placeholder="Evidence reference (pointer only)" className="rounded-lg border border-black/15 px-2 py-1 font-sans text-caption col-span-2" />
-                <button type="submit" className="col-span-2 font-sans text-caption font-semibold px-3 py-1 rounded-md bg-ordift-navy-950 text-white">Record Decision</button>
-              </form>
+                <SubmitButton pendingLabel="Working…" className="col-span-2 font-sans text-caption font-semibold px-3 py-1 rounded-md bg-ordift-navy-950 text-white">Record Decision</SubmitButton>
+              </ActionForm>
             </>
           ) : (
             <p className="font-sans text-caption text-ordift-ink-muted">Background screening is Super-Admin-only.</p>
@@ -476,7 +478,7 @@ export default async function PersonDetailPage({ params }: { params: Promise<{ i
             <p className="font-sans text-caption text-ordift-ink-muted">No separation case on record.</p>
           )}
           {!openSeparationCase && (
-            <form action={initiateSeparationCaseAction} className="grid grid-cols-2 gap-2 mt-2">
+            <ActionForm action={initiateSeparationCaseAction} className="grid grid-cols-2 gap-2 mt-2">
               <input type="hidden" name="profileId" value={id} />
               <select name="category" required defaultValue="" className="rounded-lg border border-black/15 bg-white px-2 py-1 font-sans text-caption col-span-2">
                 <option value="" disabled>Separation category…</option>
@@ -501,8 +503,8 @@ export default async function PersonDetailPage({ params }: { params: Promise<{ i
               </select>
               <input type="date" name="proposedLastWorkingDate" className="rounded-lg border border-black/15 px-2 py-1 font-sans text-caption col-span-2" />
               <input name="reasonNotes" placeholder="Notes (optional)" className="rounded-lg border border-black/15 px-2 py-1 font-sans text-caption col-span-2" />
-              <button type="submit" className="col-span-2 font-sans text-caption font-semibold px-3 py-1 rounded-md bg-ordift-navy-950 text-white">Initiate Separation Case</button>
-            </form>
+              <SubmitButton pendingLabel="Working…" className="col-span-2 font-sans text-caption font-semibold px-3 py-1 rounded-md bg-ordift-navy-950 text-white">Initiate Separation Case</SubmitButton>
+            </ActionForm>
           )}
         </div>
       </section>
@@ -527,15 +529,15 @@ export default async function PersonDetailPage({ params }: { params: Promise<{ i
           ) : (
             <p className="font-sans text-caption text-ordift-ink-muted">No performance reviews recorded.</p>
           )}
-          <form action={recordPerformanceReviewAction} className="grid grid-cols-2 gap-2 mt-2">
+          <ActionForm action={recordPerformanceReviewAction} className="grid grid-cols-2 gap-2 mt-2">
             <input type="hidden" name="profileId" value={id} />
             <input type="date" name="reviewPeriodStart" className="rounded-lg border border-black/15 px-2 py-1 font-sans text-caption" placeholder="Period start" />
             <input type="date" name="reviewPeriodEnd" className="rounded-lg border border-black/15 px-2 py-1 font-sans text-caption" placeholder="Period end" />
             <textarea name="competencyNotes" placeholder="Competency notes (optional)" className="col-span-2 rounded-lg border border-black/15 px-2 py-1 font-sans text-caption" rows={2} />
             <textarea name="kpiNotes" placeholder="KPI notes (optional)" className="col-span-2 rounded-lg border border-black/15 px-2 py-1 font-sans text-caption" rows={2} />
             <textarea name="outcomeSummary" required placeholder="Outcome summary" className="col-span-2 rounded-lg border border-black/15 px-2 py-1 font-sans text-caption" rows={2} />
-            <button type="submit" className="col-span-2 justify-self-start font-sans text-caption font-semibold px-3 py-1 rounded-md bg-ordift-navy-950 text-white">Record Review</button>
-          </form>
+            <SubmitButton pendingLabel="Working…" className="col-span-2 justify-self-start font-sans text-caption font-semibold px-3 py-1 rounded-md bg-ordift-navy-950 text-white">Record Review</SubmitButton>
+          </ActionForm>
         </div>
 
         <div className="border-t border-black/5 pt-4">
@@ -550,22 +552,22 @@ export default async function PersonDetailPage({ params }: { params: Promise<{ i
                   </p>
                   {(p.status === "active" || p.status === "extended") && (
                     <div className="pl-3 space-y-2">
-                      <form action={recordPipCheckinAction} className="flex flex-wrap gap-2">
+                      <ActionForm action={recordPipCheckinAction} className="flex flex-wrap gap-2">
                         <input type="hidden" name="profileId" value={id} />
                         <input type="hidden" name="pipId" value={p.id} />
                         <input name="notes" required placeholder="Check-in notes" className="rounded-lg border border-black/15 px-2 py-1 font-sans text-caption flex-1 min-w-[180px]" />
-                        <button type="submit" className="font-sans text-caption font-semibold px-2 py-1 rounded-md bg-ordift-navy-950 text-white">Record Check-in</button>
-                      </form>
+                        <SubmitButton pendingLabel="Working…" className="font-sans text-caption font-semibold px-2 py-1 rounded-md bg-ordift-navy-950 text-white">Record Check-in</SubmitButton>
+                      </ActionForm>
                       {p.status === "active" && (
-                        <form action={extendPipAction} className="flex flex-wrap gap-2">
+                        <ActionForm action={extendPipAction} className="flex flex-wrap gap-2">
                           <input type="hidden" name="profileId" value={id} />
                           <input type="hidden" name="pipId" value={p.id} />
                           <input type="date" name="newEndDate" required className="rounded-lg border border-black/15 px-2 py-1 font-sans text-caption" />
                           <input name="reason" required placeholder="Extension reason" className="rounded-lg border border-black/15 px-2 py-1 font-sans text-caption flex-1 min-w-[180px]" />
-                          <button type="submit" className="font-sans text-caption font-semibold px-2 py-1 rounded-md bg-ordift-gold-pressed text-ordift-navy-950">Extend (once only)</button>
-                        </form>
+                          <SubmitButton pendingLabel="Working…" className="font-sans text-caption font-semibold px-2 py-1 rounded-md bg-ordift-gold-pressed text-ordift-navy-950">Extend (once only)</SubmitButton>
+                        </ActionForm>
                       )}
-                      <form action={decidePipAction} className="flex flex-wrap gap-2">
+                      <ActionForm action={decidePipAction} className="flex flex-wrap gap-2">
                         <input type="hidden" name="profileId" value={id} />
                         <input type="hidden" name="pipId" value={p.id} />
                         <select name="outcome" required defaultValue="" className="rounded-lg border border-black/15 bg-white px-2 py-1 font-sans text-caption">
@@ -574,8 +576,8 @@ export default async function PersonDetailPage({ params }: { params: Promise<{ i
                           <option value="completed_failed_escalated">Completed — failed (escalate separately)</option>
                         </select>
                         <input name="outcomeNotes" required placeholder="Outcome notes" className="rounded-lg border border-black/15 px-2 py-1 font-sans text-caption flex-1 min-w-[180px]" />
-                        <button type="submit" className="font-sans text-caption font-semibold px-2 py-1 rounded-md bg-ordift-navy-950 text-white">Decide Outcome</button>
-                      </form>
+                        <SubmitButton pendingLabel="Working…" className="font-sans text-caption font-semibold px-2 py-1 rounded-md bg-ordift-navy-950 text-white">Decide Outcome</SubmitButton>
+                      </ActionForm>
                     </div>
                   )}
                 </li>
@@ -584,7 +586,7 @@ export default async function PersonDetailPage({ params }: { params: Promise<{ i
           ) : (
             <p className="font-sans text-caption text-ordift-ink-muted">No Performance Improvement Plans on record.</p>
           )}
-          <form action={initiatePipAction} className="grid grid-cols-2 gap-2 mt-3">
+          <ActionForm action={initiatePipAction} className="grid grid-cols-2 gap-2 mt-3">
             <input type="hidden" name="profileId" value={id} />
             <textarea name="deficientStandard" required placeholder="Deficient standard" className="col-span-2 rounded-lg border border-black/15 px-2 py-1 font-sans text-caption" rows={2} />
             <textarea name="requiredImprovement" required placeholder="Required improvement" className="col-span-2 rounded-lg border border-black/15 px-2 py-1 font-sans text-caption" rows={2} />
@@ -595,8 +597,8 @@ export default async function PersonDetailPage({ params }: { params: Promise<{ i
                 <option key={d} value={d}>{d} days</option>
               ))}
             </select>
-            <button type="submit" className="col-span-2 justify-self-start font-sans text-caption font-semibold px-3 py-1 rounded-md bg-ordift-navy-950 text-white">Initiate PIP</button>
-          </form>
+            <SubmitButton pendingLabel="Working…" className="col-span-2 justify-self-start font-sans text-caption font-semibold px-3 py-1 rounded-md bg-ordift-navy-950 text-white">Initiate PIP</SubmitButton>
+          </ActionForm>
         </div>
       </section>
 
@@ -624,15 +626,15 @@ export default async function PersonDetailPage({ params }: { params: Promise<{ i
                         {inv.status === "open" && (
                           <div className="pl-3 space-y-2">
                             {!suspension ? (
-                              <form action={recordInvestigatorySuspensionAction} className="flex flex-wrap gap-2">
+                              <ActionForm action={recordInvestigatorySuspensionAction} className="flex flex-wrap gap-2">
                                 <input type="hidden" name="profileId" value={id} />
                                 <input type="hidden" name="investigationId" value={inv.id} />
                                 <input name="reason" required placeholder="Suspension reason" className="rounded-lg border border-black/15 px-2 py-1 font-sans text-caption flex-1 min-w-[180px]" />
                                 <label className="flex items-center gap-1"><input type="checkbox" name="accessRestricted" value="true" /> Restrict access</label>
-                                <button type="submit" className="font-sans text-caption font-semibold px-2 py-1 rounded-md bg-ordift-navy-950 text-white">Record Investigatory Suspension</button>
-                              </form>
+                                <SubmitButton pendingLabel="Working…" className="font-sans text-caption font-semibold px-2 py-1 rounded-md bg-ordift-navy-950 text-white">Record Investigatory Suspension</SubmitButton>
+                              </ActionForm>
                             ) : !suspension.endedAt ? (
-                              <form action={recordSuspensionReviewAction} className="flex flex-wrap gap-2">
+                              <ActionForm action={recordSuspensionReviewAction} className="flex flex-wrap gap-2">
                                 <input type="hidden" name="profileId" value={id} />
                                 <input type="hidden" name="suspensionId" value={suspension.id} />
                                 <span>Suspended {new Date(suspension.suspendedAt).toLocaleDateString()}, review due {new Date(suspension.initialReviewDueAt).toLocaleDateString()}</span>
@@ -643,12 +645,12 @@ export default async function PersonDetailPage({ params }: { params: Promise<{ i
                                 </select>
                                 <input name="notes" placeholder="Notes (optional)" className="rounded-lg border border-black/15 px-2 py-1 font-sans text-caption flex-1 min-w-[140px]" />
                                 <input type="date" name="nextReviewDueAt" className="rounded-lg border border-black/15 px-2 py-1 font-sans text-caption" />
-                                <button type="submit" className="font-sans text-caption font-semibold px-2 py-1 rounded-md bg-ordift-navy-950 text-white">Record Review</button>
-                              </form>
+                                <SubmitButton pendingLabel="Working…" className="font-sans text-caption font-semibold px-2 py-1 rounded-md bg-ordift-navy-950 text-white">Record Review</SubmitButton>
+                              </ActionForm>
                             ) : (
                               <span>Suspension ended {new Date(suspension.endedAt).toLocaleDateString()}</span>
                             )}
-                            <form action={closeInvestigationAction} className="flex flex-wrap gap-2">
+                            <ActionForm action={closeInvestigationAction} className="flex flex-wrap gap-2">
                               <input type="hidden" name="profileId" value={id} />
                               <input type="hidden" name="investigationId" value={inv.id} />
                               <select name="outcome" required defaultValue="" className="rounded-lg border border-black/15 bg-white px-2 py-1 font-sans text-caption">
@@ -658,8 +660,8 @@ export default async function PersonDetailPage({ params }: { params: Promise<{ i
                                 <option value="closed_resulted_in_separation">Resulted in separation</option>
                               </select>
                               <input name="outcomeNotes" placeholder="Outcome notes (optional)" className="rounded-lg border border-black/15 px-2 py-1 font-sans text-caption flex-1 min-w-[140px]" />
-                              <button type="submit" className="font-sans text-caption font-semibold px-2 py-1 rounded-md bg-ordift-gold-pressed text-ordift-navy-950">Close Investigation</button>
-                            </form>
+                              <SubmitButton pendingLabel="Working…" className="font-sans text-caption font-semibold px-2 py-1 rounded-md bg-ordift-gold-pressed text-ordift-navy-950">Close Investigation</SubmitButton>
+                            </ActionForm>
                           </div>
                         )}
                       </li>
@@ -669,11 +671,11 @@ export default async function PersonDetailPage({ params }: { params: Promise<{ i
               ) : (
                 <p className="font-sans text-caption text-ordift-ink-muted">No investigations on record.</p>
               )}
-              <form action={openInvestigationAction} className="flex flex-wrap gap-2 mt-2">
+              <ActionForm action={openInvestigationAction} className="flex flex-wrap gap-2 mt-2">
                 <input type="hidden" name="profileId" value={id} />
                 <input name="reason" required placeholder="Reason to open an investigation" className="rounded-lg border border-black/15 px-2 py-1 font-sans text-caption flex-1 min-w-[180px]" />
-                <button type="submit" className="font-sans text-caption font-semibold px-2 py-1 rounded-md bg-ordift-navy-950 text-white">Open Investigation</button>
-              </form>
+                <SubmitButton pendingLabel="Working…" className="font-sans text-caption font-semibold px-2 py-1 rounded-md bg-ordift-navy-950 text-white">Open Investigation</SubmitButton>
+              </ActionForm>
             </div>
 
             <div className="border-t border-black/5 pt-4">
@@ -691,7 +693,7 @@ export default async function PersonDetailPage({ params }: { params: Promise<{ i
               ) : (
                 <p className="font-sans text-caption text-ordift-ink-muted mb-2">No disciplinary actions on record.</p>
               )}
-              <form action={issueDisciplinaryActionAction} className="grid grid-cols-2 gap-2">
+              <ActionForm action={issueDisciplinaryActionAction} className="grid grid-cols-2 gap-2">
                 <input type="hidden" name="profileId" value={id} />
                 <select name="actionType" required defaultValue="" className="rounded-lg border border-black/15 bg-white px-2 py-1 font-sans text-caption col-span-2">
                   <option value="" disabled>Action type…</option>
@@ -709,8 +711,8 @@ export default async function PersonDetailPage({ params }: { params: Promise<{ i
                   </select>
                 )}
                 <textarea name="reason" required placeholder="Documented reason" className="col-span-2 rounded-lg border border-black/15 px-2 py-1 font-sans text-caption" rows={2} />
-                <button type="submit" className="col-span-2 justify-self-start font-sans text-caption font-semibold px-3 py-1 rounded-md bg-ordift-navy-950 text-white">Issue Disciplinary Action</button>
-              </form>
+                <SubmitButton pendingLabel="Working…" className="col-span-2 justify-self-start font-sans text-caption font-semibold px-3 py-1 rounded-md bg-ordift-navy-950 text-white">Issue Disciplinary Action</SubmitButton>
+              </ActionForm>
             </div>
           </>
         )}
@@ -734,21 +736,21 @@ export default async function PersonDetailPage({ params }: { params: Promise<{ i
                     {" · "}{new Date(a.createdAt).toLocaleDateString()}
                   </p>
                   {a.status === "requested" && (
-                    <form action={decideSalaryAdvanceAction} className="flex flex-wrap gap-2 pl-3">
+                    <ActionForm action={decideSalaryAdvanceAction} className="flex flex-wrap gap-2 pl-3">
                       <input type="hidden" name="profileId" value={id} />
                       <input type="hidden" name="advanceId" value={a.id} />
                       <input name="decisionNotes" placeholder="Decision notes (optional)" className="rounded-lg border border-black/15 px-2 py-1 font-sans text-caption flex-1 min-w-[160px]" />
-                      <button type="submit" name="decision" value="approved" className="font-sans text-caption font-semibold px-2 py-1 rounded-md bg-ordift-navy-950 text-white">Approve</button>
-                      <button type="submit" name="decision" value="declined" className="font-sans text-caption text-red-700 underline underline-offset-4">Decline</button>
-                    </form>
+                      <SubmitButton pendingLabel="Working…" className="font-sans text-caption font-semibold px-2 py-1 rounded-md bg-ordift-navy-950 text-white">Approve</SubmitButton>
+                      <SubmitButton pendingLabel="Working…" className="font-sans text-caption text-red-700 underline underline-offset-4">Decline</SubmitButton>
+                    </ActionForm>
                   )}
                   {a.status === "approved" && (
-                    <form action={disburseSalaryAdvanceAction} className="flex flex-wrap gap-2 pl-3">
+                    <ActionForm action={disburseSalaryAdvanceAction} className="flex flex-wrap gap-2 pl-3">
                       <input type="hidden" name="profileId" value={id} />
                       <input type="hidden" name="advanceId" value={a.id} />
                       <input name="repaymentTerms" required placeholder="Written repayment terms" className="rounded-lg border border-black/15 px-2 py-1 font-sans text-caption flex-1 min-w-[160px]" />
-                      <button type="submit" className="font-sans text-caption font-semibold px-2 py-1 rounded-md bg-ordift-gold-pressed text-ordift-navy-950">Disburse</button>
-                    </form>
+                      <SubmitButton pendingLabel="Working…" className="font-sans text-caption font-semibold px-2 py-1 rounded-md bg-ordift-gold-pressed text-ordift-navy-950">Disburse</SubmitButton>
+                    </ActionForm>
                   )}
                 </li>
               ))}
@@ -756,11 +758,11 @@ export default async function PersonDetailPage({ params }: { params: Promise<{ i
           ) : (
             <p className="font-sans text-caption text-ordift-ink-muted">No salary advances on record.</p>
           )}
-          <form action={requestSalaryAdvanceAction} className="flex flex-wrap gap-2 mt-2">
+          <ActionForm action={requestSalaryAdvanceAction} className="flex flex-wrap gap-2 mt-2">
             <input type="hidden" name="profileId" value={id} />
             <input name="requestedAmount" type="number" step="0.01" min="0.01" required placeholder="Requested amount" className="rounded-lg border border-black/15 px-2 py-1 font-sans text-caption" />
-            <button type="submit" className="font-sans text-caption font-semibold px-2 py-1 rounded-md bg-ordift-navy-950 text-white">Request Salary Advance</button>
-          </form>
+            <SubmitButton pendingLabel="Working…" className="font-sans text-caption font-semibold px-2 py-1 rounded-md bg-ordift-navy-950 text-white">Request Salary Advance</SubmitButton>
+          </ActionForm>
         </div>
 
         <div className="border-t border-black/5 pt-4">
@@ -777,7 +779,7 @@ export default async function PersonDetailPage({ params }: { params: Promise<{ i
           ) : (
             <p className="font-sans text-caption text-ordift-ink-muted">No staff-benefit transactions on record.</p>
           )}
-          <form action={recordStaffBenefitTransactionAction} className="grid grid-cols-2 gap-2 mt-2">
+          <ActionForm action={recordStaffBenefitTransactionAction} className="grid grid-cols-2 gap-2 mt-2">
             <input type="hidden" name="profileId" value={id} />
             <select name="transactionType" required defaultValue="" className="rounded-lg border border-black/15 bg-white px-2 py-1 font-sans text-caption">
               <option value="" disabled>Type…</option>
@@ -788,8 +790,8 @@ export default async function PersonDetailPage({ params }: { params: Promise<{ i
             <input name="benefitDescription" required placeholder="Benefit description" className="col-span-2 rounded-lg border border-black/15 px-2 py-1 font-sans text-caption" />
             <input name="relatedTransactionId" placeholder="Related transaction ID (required for refunds)" className="col-span-2 rounded-lg border border-black/15 px-2 py-1 font-sans text-caption" />
             <label className="col-span-2 flex items-center gap-1 font-sans text-caption text-ordift-ink-muted"><input type="checkbox" name="payrollRecovery" value="true" /> Recover via payroll</label>
-            <button type="submit" className="col-span-2 justify-self-start font-sans text-caption font-semibold px-3 py-1 rounded-md bg-ordift-navy-950 text-white">Record Transaction</button>
-          </form>
+            <SubmitButton pendingLabel="Working…" className="col-span-2 justify-self-start font-sans text-caption font-semibold px-3 py-1 rounded-md bg-ordift-navy-950 text-white">Record Transaction</SubmitButton>
+          </ActionForm>
         </div>
 
         <div className="border-t border-black/5 pt-4">
@@ -805,7 +807,7 @@ export default async function PersonDetailPage({ params }: { params: Promise<{ i
           ) : (
             <p className="font-sans text-caption text-ordift-ink-muted">No long-service benefit awarded.</p>
           )}
-          <form action={awardLongServiceBenefitAction} className="grid grid-cols-2 gap-2 mt-2">
+          <ActionForm action={awardLongServiceBenefitAction} className="grid grid-cols-2 gap-2 mt-2">
             <input type="hidden" name="profileId" value={id} />
             <select name="milestoneYears" required defaultValue="" className="rounded-lg border border-black/15 bg-white px-2 py-1 font-sans text-caption">
               <option value="" disabled>Milestone…</option>
@@ -815,19 +817,19 @@ export default async function PersonDetailPage({ params }: { params: Promise<{ i
             </select>
             <input type="date" name="eligibleServiceStartDate" required className="rounded-lg border border-black/15 px-2 py-1 font-sans text-caption" />
             <input name="notes" placeholder="Notes (optional)" className="col-span-2 rounded-lg border border-black/15 px-2 py-1 font-sans text-caption" />
-            <button type="submit" className="col-span-2 justify-self-start font-sans text-caption font-semibold px-3 py-1 rounded-md bg-ordift-navy-950 text-white">Award Long-Service Benefit</button>
-          </form>
+            <SubmitButton pendingLabel="Working…" className="col-span-2 justify-self-start font-sans text-caption font-semibold px-3 py-1 rounded-md bg-ordift-navy-950 text-white">Award Long-Service Benefit</SubmitButton>
+          </ActionForm>
         </div>
 
         <div className="border-t border-black/5 pt-4">
           <p className="font-sans text-caption font-semibold text-ordift-ink mb-1">Death-in-Service Benefit</p>
-          <form action={awardDeathInServiceBenefitAction} className="grid grid-cols-2 gap-2">
+          <ActionForm action={awardDeathInServiceBenefitAction} className="grid grid-cols-2 gap-2">
             <input type="hidden" name="profileId" value={id} />
             <label className="col-span-2 flex items-center gap-1 font-sans text-caption text-ordift-ink-muted"><input type="checkbox" name="beneficiaryVerified" value="true" /> Beneficiary/estate verified</label>
             <input name="beneficiaryDetails" placeholder="Beneficiary details" className="col-span-2 rounded-lg border border-black/15 px-2 py-1 font-sans text-caption" />
             <input name="verificationNotes" placeholder="Verification notes" className="col-span-2 rounded-lg border border-black/15 px-2 py-1 font-sans text-caption" />
-            <button type="submit" className="col-span-2 justify-self-start font-sans text-caption font-semibold px-3 py-1 rounded-md bg-ordift-navy-950 text-white">Award Death-in-Service Benefit</button>
-          </form>
+            <SubmitButton pendingLabel="Working…" className="col-span-2 justify-self-start font-sans text-caption font-semibold px-3 py-1 rounded-md bg-ordift-navy-950 text-white">Award Death-in-Service Benefit</SubmitButton>
+          </ActionForm>
         </div>
       </section>
 
@@ -855,18 +857,18 @@ export default async function PersonDetailPage({ params }: { params: Promise<{ i
                     </p>
                     {a.status === "issued" && (
                       <div className="pl-3 flex flex-wrap gap-2">
-                        <form action={acknowledgeAssetAssignmentAction}>
+                        <ActionForm action={acknowledgeAssetAssignmentAction}>
                           <input type="hidden" name="profileId" value={id} />
                           <input type="hidden" name="assignmentId" value={a.id} />
-                          <button type="submit" className="font-sans text-caption font-semibold px-2 py-1 rounded-md bg-ordift-navy-950 text-white">Acknowledge</button>
-                        </form>
-                        <form action={returnAssetAction} className="flex gap-2">
+                          <SubmitButton pendingLabel="Working…" className="font-sans text-caption font-semibold px-2 py-1 rounded-md bg-ordift-navy-950 text-white">Acknowledge</SubmitButton>
+                        </ActionForm>
+                        <ActionForm action={returnAssetAction} className="flex gap-2">
                           <input type="hidden" name="profileId" value={id} />
                           <input type="hidden" name="assignmentId" value={a.id} />
                           <input name="returnCondition" required placeholder="Return condition" className="rounded-lg border border-black/15 px-2 py-1 font-sans text-caption" />
-                          <button type="submit" className="font-sans text-caption font-semibold px-2 py-1 rounded-md bg-ordift-gold-pressed text-ordift-navy-950">Return</button>
-                        </form>
-                        <form action={transferAssetAction} className="flex gap-2">
+                          <SubmitButton pendingLabel="Working…" className="font-sans text-caption font-semibold px-2 py-1 rounded-md bg-ordift-gold-pressed text-ordift-navy-950">Return</SubmitButton>
+                        </ActionForm>
+                        <ActionForm action={transferAssetAction} className="flex gap-2">
                           <input type="hidden" name="profileId" value={id} />
                           <input type="hidden" name="assignmentId" value={a.id} />
                           <select name="newProfileId" required defaultValue="" className="rounded-lg border border-black/15 bg-white px-2 py-1 font-sans text-caption">
@@ -875,15 +877,15 @@ export default async function PersonDetailPage({ params }: { params: Promise<{ i
                               <option key={s.id} value={s.id}>{s.name}</option>
                             ))}
                           </select>
-                          <button type="submit" className="font-sans text-caption font-semibold px-2 py-1 rounded-md bg-ordift-navy-950 text-white">Transfer</button>
-                        </form>
-                        <form action={reportAssetIncidentAction} className="flex flex-wrap gap-2 basis-full">
+                          <SubmitButton pendingLabel="Working…" className="font-sans text-caption font-semibold px-2 py-1 rounded-md bg-ordift-navy-950 text-white">Transfer</SubmitButton>
+                        </ActionForm>
+                        <ActionForm action={reportAssetIncidentAction} className="flex flex-wrap gap-2 basis-full">
                           <input type="hidden" name="profileId" value={id} />
                           <input type="hidden" name="assignmentId" value={a.id} />
                           <input name="incidentType" required placeholder="Incident type (e.g. damage, loss)" className="rounded-lg border border-black/15 px-2 py-1 font-sans text-caption" />
                           <input name="description" required placeholder="Description" className="rounded-lg border border-black/15 px-2 py-1 font-sans text-caption flex-1 min-w-[160px]" />
-                          <button type="submit" className="font-sans text-caption font-semibold px-2 py-1 rounded-md bg-red-800 text-white">Report Incident</button>
-                        </form>
+                          <SubmitButton pendingLabel="Working…" className="font-sans text-caption font-semibold px-2 py-1 rounded-md bg-red-800 text-white">Report Incident</SubmitButton>
+                        </ActionForm>
                       </div>
                     )}
                   </li>
@@ -903,7 +905,7 @@ export default async function PersonDetailPage({ params }: { params: Promise<{ i
                 <li key={i.id} className="font-sans text-caption text-ordift-ink-muted space-y-1">
                   <p>· {i.incidentType} — &ldquo;{i.description}&rdquo; — {i.determination.replace(/_/g, " ")} — {new Date(i.reportedAt).toLocaleDateString()}</p>
                   {i.determination === "pending" && (
-                    <form action={determineAssetIncidentAction} className="pl-3 flex flex-wrap gap-2">
+                    <ActionForm action={determineAssetIncidentAction} className="pl-3 flex flex-wrap gap-2">
                       <input type="hidden" name="profileId" value={id} />
                       <input type="hidden" name="incidentId" value={i.id} />
                       <select name="determination" required defaultValue="" className="rounded-lg border border-black/15 bg-white px-2 py-1 font-sans text-caption">
@@ -914,8 +916,8 @@ export default async function PersonDetailPage({ params }: { params: Promise<{ i
                       <input name="determinationNotes" required placeholder="Determination notes" className="rounded-lg border border-black/15 px-2 py-1 font-sans text-caption flex-1 min-w-[160px]" />
                       <label className="flex items-center gap-1"><input type="checkbox" name="recoveryRequired" value="true" /> Lawful recovery required</label>
                       <input name="recoveryNotes" placeholder="Recovery notes (optional)" className="rounded-lg border border-black/15 px-2 py-1 font-sans text-caption flex-1 min-w-[140px]" />
-                      <button type="submit" className="font-sans text-caption font-semibold px-2 py-1 rounded-md bg-ordift-navy-950 text-white">Record Determination</button>
-                    </form>
+                      <SubmitButton pendingLabel="Working…" className="font-sans text-caption font-semibold px-2 py-1 rounded-md bg-ordift-navy-950 text-white">Record Determination</SubmitButton>
+                    </ActionForm>
                   )}
                 </li>
               ))}
@@ -947,21 +949,21 @@ export default async function PersonDetailPage({ params }: { params: Promise<{ i
                   </p>
                   {t.status === "requested" && (
                     <div className="pl-3 space-y-1">
-                      <form action={approveBusinessTravelAuthorizationAction} className="flex flex-wrap items-center gap-2">
+                      <ActionForm action={approveBusinessTravelAuthorizationAction} className="flex flex-wrap items-center gap-2">
                         <input type="hidden" name="profileId" value={id} />
                         <input type="hidden" name="authorizationId" value={t.id} />
                         <label className="flex items-center gap-1"><input type="checkbox" name="immigrationReviewed" value="true" /> Immigration</label>
                         <label className="flex items-center gap-1"><input type="checkbox" name="workAuthorizationReviewed" value="true" /> Work authorization</label>
                         <label className="flex items-center gap-1"><input type="checkbox" name="safetyReviewed" value="true" /> Safety</label>
                         <label className="flex items-center gap-1"><input type="checkbox" name="jurisdictionReviewed" value="true" /> Jurisdiction</label>
-                        <button type="submit" className="font-sans text-caption font-semibold px-2 py-1 rounded-md bg-ordift-navy-950 text-white">Approve</button>
-                      </form>
-                      <form action={declineBusinessTravelAuthorizationAction} className="flex flex-wrap gap-2">
+                        <SubmitButton pendingLabel="Working…" className="font-sans text-caption font-semibold px-2 py-1 rounded-md bg-ordift-navy-950 text-white">Approve</SubmitButton>
+                      </ActionForm>
+                      <ActionForm action={declineBusinessTravelAuthorizationAction} className="flex flex-wrap gap-2">
                         <input type="hidden" name="profileId" value={id} />
                         <input type="hidden" name="authorizationId" value={t.id} />
                         <input name="decisionNotes" required placeholder="Decision notes" className="rounded-lg border border-black/15 px-2 py-1 font-sans text-caption flex-1 min-w-[160px]" />
-                        <button type="submit" className="font-sans text-caption text-red-700 underline underline-offset-4">Decline</button>
-                      </form>
+                        <SubmitButton pendingLabel="Working…" className="font-sans text-caption text-red-700 underline underline-offset-4">Decline</SubmitButton>
+                      </ActionForm>
                     </div>
                   )}
                 </li>
@@ -970,14 +972,14 @@ export default async function PersonDetailPage({ params }: { params: Promise<{ i
           ) : (
             <p className="font-sans text-caption text-ordift-ink-muted">No travel authorizations on record.</p>
           )}
-          <form action={requestBusinessTravelAuthorizationAction} className="grid grid-cols-2 gap-2 mt-2">
+          <ActionForm action={requestBusinessTravelAuthorizationAction} className="grid grid-cols-2 gap-2 mt-2">
             <input type="hidden" name="profileId" value={id} />
             <input name="destinationCountry" required placeholder="Destination country" className="rounded-lg border border-black/15 px-2 py-1 font-sans text-caption" />
             <input name="purpose" required placeholder="Purpose" className="rounded-lg border border-black/15 px-2 py-1 font-sans text-caption" />
             <input type="date" name="travelStartDate" className="rounded-lg border border-black/15 px-2 py-1 font-sans text-caption" />
             <input type="date" name="travelEndDate" className="rounded-lg border border-black/15 px-2 py-1 font-sans text-caption" />
-            <button type="submit" className="col-span-2 justify-self-start font-sans text-caption font-semibold px-3 py-1 rounded-md bg-ordift-navy-950 text-white">Request Travel Authorization</button>
-          </form>
+            <SubmitButton pendingLabel="Working…" className="col-span-2 justify-self-start font-sans text-caption font-semibold px-3 py-1 rounded-md bg-ordift-navy-950 text-white">Request Travel Authorization</SubmitButton>
+          </ActionForm>
         </div>
 
         <div className="border-t border-black/5 pt-4">
@@ -989,12 +991,12 @@ export default async function PersonDetailPage({ params }: { params: Promise<{ i
                   · {d.licenseClass ?? "License"} {d.licenseNumber ? `#${d.licenseNumber}` : ""}
                   {d.licenseExpiryDate ? ` (expires ${d.licenseExpiryDate})` : ""} — {d.status}
                   {d.status === "active" && (
-                    <form action={revokeDriverAuthorizationAction} className="inline-flex items-center gap-2 ml-2">
+                    <ActionForm action={revokeDriverAuthorizationAction} className="inline-flex items-center gap-2 ml-2">
                       <input type="hidden" name="profileId" value={id} />
                       <input type="hidden" name="authorizationId" value={d.id} />
                       <input name="reason" required placeholder="Revocation reason" className="rounded-lg border border-black/15 px-2 py-0.5 font-sans text-caption" />
-                      <button type="submit" className="font-sans text-caption text-red-700 underline underline-offset-4">Revoke</button>
-                    </form>
+                      <SubmitButton pendingLabel="Working…" className="font-sans text-caption text-red-700 underline underline-offset-4">Revoke</SubmitButton>
+                    </ActionForm>
                   )}
                 </li>
               ))}
@@ -1002,14 +1004,14 @@ export default async function PersonDetailPage({ params }: { params: Promise<{ i
           ) : (
             <p className="font-sans text-caption text-ordift-ink-muted mb-2">No driver authorization on record.</p>
           )}
-          <form action={authorizeDriverAction} className="grid grid-cols-2 gap-2">
+          <ActionForm action={authorizeDriverAction} className="grid grid-cols-2 gap-2">
             <input type="hidden" name="profileId" value={id} />
             <input name="licenseNumber" placeholder="License number" className="rounded-lg border border-black/15 px-2 py-1 font-sans text-caption" />
             <input name="licenseClass" placeholder="License class" className="rounded-lg border border-black/15 px-2 py-1 font-sans text-caption" />
             <input type="date" name="licenseExpiryDate" className="rounded-lg border border-black/15 px-2 py-1 font-sans text-caption" />
             <input name="authorizedVehicleTypes" placeholder="Authorized vehicle types" className="rounded-lg border border-black/15 px-2 py-1 font-sans text-caption" />
-            <button type="submit" className="col-span-2 justify-self-start font-sans text-caption font-semibold px-3 py-1 rounded-md bg-ordift-navy-950 text-white">Authorize Driver</button>
-          </form>
+            <SubmitButton pendingLabel="Working…" className="col-span-2 justify-self-start font-sans text-caption font-semibold px-3 py-1 rounded-md bg-ordift-navy-950 text-white">Authorize Driver</SubmitButton>
+          </ActionForm>
         </div>
 
         <div className="border-t border-black/5 pt-4">
@@ -1022,14 +1024,14 @@ export default async function PersonDetailPage({ params }: { params: Promise<{ i
                   {!v.resolvedAt && (
                     <div className="pl-3 flex flex-wrap gap-2">
                       {v.stage !== VEHICLE_INCIDENT_WORKFLOW_ORDER[VEHICLE_INCIDENT_WORKFLOW_ORDER.length - 1] && (
-                        <form action={advanceVehicleIncidentStageAction}>
+                        <ActionForm action={advanceVehicleIncidentStageAction}>
                           <input type="hidden" name="profileId" value={id} />
                           <input type="hidden" name="incidentId" value={v.id} />
-                          <button type="submit" className="font-sans text-caption font-semibold px-2 py-1 rounded-md bg-ordift-gold-pressed text-ordift-navy-950">Advance Stage</button>
-                        </form>
+                          <SubmitButton pendingLabel="Working…" className="font-sans text-caption font-semibold px-2 py-1 rounded-md bg-ordift-gold-pressed text-ordift-navy-950">Advance Stage</SubmitButton>
+                        </ActionForm>
                       )}
                       {v.stage === "responsibility_determination" && (
-                        <form action={recordVehicleIncidentResponsibilityDeterminationAction} className="flex flex-wrap gap-2">
+                        <ActionForm action={recordVehicleIncidentResponsibilityDeterminationAction} className="flex flex-wrap gap-2">
                           <input type="hidden" name="profileId" value={id} />
                           <input type="hidden" name="incidentId" value={v.id} />
                           <select name="determination" required defaultValue="" className="rounded-lg border border-black/15 bg-white px-2 py-1 font-sans text-caption">
@@ -1040,16 +1042,16 @@ export default async function PersonDetailPage({ params }: { params: Promise<{ i
                             <option value="undetermined">Undetermined</option>
                           </select>
                           <input name="responsibilityNotes" required placeholder="Notes" className="rounded-lg border border-black/15 px-2 py-1 font-sans text-caption flex-1 min-w-[140px]" />
-                          <button type="submit" className="font-sans text-caption font-semibold px-2 py-1 rounded-md bg-ordift-navy-950 text-white">Record Determination</button>
-                        </form>
+                          <SubmitButton pendingLabel="Working…" className="font-sans text-caption font-semibold px-2 py-1 rounded-md bg-ordift-navy-950 text-white">Record Determination</SubmitButton>
+                        </ActionForm>
                       )}
                       {v.stage === "lawful_financial_disciplinary_treatment" && (
-                        <form action={resolveVehicleIncidentAction} className="flex flex-wrap gap-2">
+                        <ActionForm action={resolveVehicleIncidentAction} className="flex flex-wrap gap-2">
                           <input type="hidden" name="profileId" value={id} />
                           <input type="hidden" name="incidentId" value={v.id} />
                           <input name="financialDisciplinaryTreatmentNotes" required placeholder="Financial/disciplinary treatment notes" className="rounded-lg border border-black/15 px-2 py-1 font-sans text-caption flex-1 min-w-[160px]" />
-                          <button type="submit" className="font-sans text-caption font-semibold px-2 py-1 rounded-md bg-ordift-navy-950 text-white">Resolve</button>
-                        </form>
+                          <SubmitButton pendingLabel="Working…" className="font-sans text-caption font-semibold px-2 py-1 rounded-md bg-ordift-navy-950 text-white">Resolve</SubmitButton>
+                        </ActionForm>
                       )}
                     </div>
                   )}
@@ -1059,11 +1061,11 @@ export default async function PersonDetailPage({ params }: { params: Promise<{ i
           ) : (
             <p className="font-sans text-caption text-ordift-ink-muted">No vehicle incidents on record.</p>
           )}
-          <form action={reportVehicleIncidentAction} className="flex flex-wrap gap-2 mt-2">
+          <ActionForm action={reportVehicleIncidentAction} className="flex flex-wrap gap-2 mt-2">
             <input type="hidden" name="profileId" value={id} />
             <input name="description" required placeholder="Describe the incident" className="rounded-lg border border-black/15 px-2 py-1 font-sans text-caption flex-1 min-w-[200px]" />
-            <button type="submit" className="font-sans text-caption font-semibold px-2 py-1 rounded-md bg-red-800 text-white">Report Vehicle Incident</button>
-          </form>
+            <SubmitButton pendingLabel="Working…" className="font-sans text-caption font-semibold px-2 py-1 rounded-md bg-red-800 text-white">Report Vehicle Incident</SubmitButton>
+          </ActionForm>
         </div>
 
         <div className="border-t border-black/5 pt-4">
@@ -1076,27 +1078,27 @@ export default async function PersonDetailPage({ params }: { params: Promise<{ i
                   {!w.resolvedAt && (
                     <div className="pl-3 flex flex-wrap gap-2">
                       {w.stage !== WORKPLACE_INJURY_WORKFLOW_ORDER[WORKPLACE_INJURY_WORKFLOW_ORDER.length - 1] && (
-                        <form action={advanceWorkplaceInjuryStageAction}>
+                        <ActionForm action={advanceWorkplaceInjuryStageAction}>
                           <input type="hidden" name="profileId" value={id} />
                           <input type="hidden" name="reportId" value={w.id} />
-                          <button type="submit" className="font-sans text-caption font-semibold px-2 py-1 rounded-md bg-ordift-gold-pressed text-ordift-navy-950">Advance Stage</button>
-                        </form>
+                          <SubmitButton pendingLabel="Working…" className="font-sans text-caption font-semibold px-2 py-1 rounded-md bg-ordift-gold-pressed text-ordift-navy-950">Advance Stage</SubmitButton>
+                        </ActionForm>
                       )}
                       {w.stage === "absence_pay_classification" && (
-                        <form action={recordWorkplaceInjuryAbsencePayClassificationAction} className="flex flex-wrap gap-2">
+                        <ActionForm action={recordWorkplaceInjuryAbsencePayClassificationAction} className="flex flex-wrap gap-2">
                           <input type="hidden" name="profileId" value={id} />
                           <input type="hidden" name="reportId" value={w.id} />
                           <input name="classification" required placeholder="Absence/pay classification" className="rounded-lg border border-black/15 px-2 py-1 font-sans text-caption flex-1 min-w-[160px]" />
-                          <button type="submit" className="font-sans text-caption font-semibold px-2 py-1 rounded-md bg-ordift-navy-950 text-white">Record Classification</button>
-                        </form>
+                          <SubmitButton pendingLabel="Working…" className="font-sans text-caption font-semibold px-2 py-1 rounded-md bg-ordift-navy-950 text-white">Record Classification</SubmitButton>
+                        </ActionForm>
                       )}
                       {w.stage === "return_to_work" && (
-                        <form action={resolveWorkplaceInjuryReportAction} className="flex flex-wrap gap-2">
+                        <ActionForm action={resolveWorkplaceInjuryReportAction} className="flex flex-wrap gap-2">
                           <input type="hidden" name="profileId" value={id} />
                           <input type="hidden" name="reportId" value={w.id} />
                           <input name="returnToWorkNotes" required placeholder="Return-to-work notes" className="rounded-lg border border-black/15 px-2 py-1 font-sans text-caption flex-1 min-w-[160px]" />
-                          <button type="submit" className="font-sans text-caption font-semibold px-2 py-1 rounded-md bg-ordift-navy-950 text-white">Resolve</button>
-                        </form>
+                          <SubmitButton pendingLabel="Working…" className="font-sans text-caption font-semibold px-2 py-1 rounded-md bg-ordift-navy-950 text-white">Resolve</SubmitButton>
+                        </ActionForm>
                       )}
                     </div>
                   )}
@@ -1106,11 +1108,11 @@ export default async function PersonDetailPage({ params }: { params: Promise<{ i
           ) : (
             <p className="font-sans text-caption text-ordift-ink-muted">No workplace injuries on record.</p>
           )}
-          <form action={reportWorkplaceInjuryAction} className="flex flex-wrap gap-2 mt-2">
+          <ActionForm action={reportWorkplaceInjuryAction} className="flex flex-wrap gap-2 mt-2">
             <input type="hidden" name="profileId" value={id} />
             <input name="description" required placeholder="Describe the injury" className="rounded-lg border border-black/15 px-2 py-1 font-sans text-caption flex-1 min-w-[200px]" />
-            <button type="submit" className="font-sans text-caption font-semibold px-2 py-1 rounded-md bg-red-800 text-white">Report Workplace Injury</button>
-          </form>
+            <SubmitButton pendingLabel="Working…" className="font-sans text-caption font-semibold px-2 py-1 rounded-md bg-red-800 text-white">Report Workplace Injury</SubmitButton>
+          </ActionForm>
         </div>
       </section>
 
@@ -1130,7 +1132,7 @@ export default async function PersonDetailPage({ params }: { params: Promise<{ i
                 </p>
                 {r.status === "requested" && (
                   <div className="pl-3 space-y-1">
-                    <form action={approvePortfolioUseRequestAction} className="flex flex-wrap items-center gap-2">
+                    <ActionForm action={approvePortfolioUseRequestAction} className="flex flex-wrap items-center gap-2">
                       <input type="hidden" name="profileId" value={id} />
                       <input type="hidden" name="requestId" value={r.id} />
                       <label className="flex items-center gap-1"><input type="checkbox" name="confidentialityChecked" value="true" /> Confidentiality</label>
@@ -1141,14 +1143,14 @@ export default async function PersonDetailPage({ params }: { params: Promise<{ i
                       <input name="approvedPlatforms" required placeholder="Platforms (comma-separated)" className="rounded-lg border border-black/15 px-2 py-1 font-sans text-caption" />
                       <input name="approvedTiming" placeholder="Timing (optional)" className="rounded-lg border border-black/15 px-2 py-1 font-sans text-caption" />
                       <input name="approvedConditions" placeholder="Conditions (optional)" className="rounded-lg border border-black/15 px-2 py-1 font-sans text-caption" />
-                      <button type="submit" className="font-sans text-caption font-semibold px-2 py-1 rounded-md bg-ordift-navy-950 text-white">Approve</button>
-                    </form>
-                    <form action={declinePortfolioUseRequestAction} className="flex flex-wrap gap-2">
+                      <SubmitButton pendingLabel="Working…" className="font-sans text-caption font-semibold px-2 py-1 rounded-md bg-ordift-navy-950 text-white">Approve</SubmitButton>
+                    </ActionForm>
+                    <ActionForm action={declinePortfolioUseRequestAction} className="flex flex-wrap gap-2">
                       <input type="hidden" name="profileId" value={id} />
                       <input type="hidden" name="requestId" value={r.id} />
                       <input name="decisionNotes" required placeholder="Decision notes" className="rounded-lg border border-black/15 px-2 py-1 font-sans text-caption flex-1 min-w-[160px]" />
-                      <button type="submit" className="font-sans text-caption text-red-700 underline underline-offset-4">Decline</button>
-                    </form>
+                      <SubmitButton pendingLabel="Working…" className="font-sans text-caption text-red-700 underline underline-offset-4">Decline</SubmitButton>
+                    </ActionForm>
                   </div>
                 )}
               </li>
@@ -1157,11 +1159,11 @@ export default async function PersonDetailPage({ params }: { params: Promise<{ i
         ) : (
           <p className="font-sans text-caption text-ordift-ink-muted">No portfolio-use requests on record.</p>
         )}
-        <form action={submitPortfolioUseRequestAction} className="flex flex-wrap gap-2 mt-2">
+        <ActionForm action={submitPortfolioUseRequestAction} className="flex flex-wrap gap-2 mt-2">
           <input type="hidden" name="profileId" value={id} />
           <input name="description" required placeholder="Describe the requested assets/use" className="rounded-lg border border-black/15 px-2 py-1 font-sans text-caption flex-1 min-w-[200px]" />
-          <button type="submit" className="font-sans text-caption font-semibold px-2 py-1 rounded-md bg-ordift-navy-950 text-white">Submit Portfolio-Use Request</button>
-        </form>
+          <SubmitButton pendingLabel="Working…" className="font-sans text-caption font-semibold px-2 py-1 rounded-md bg-ordift-navy-950 text-white">Submit Portfolio-Use Request</SubmitButton>
+        </ActionForm>
       </section>
 
       {/* Agreement Readiness (Phase B5 Step 10, 2026-09-14). Truthfully
@@ -1283,32 +1285,32 @@ export default async function PersonDetailPage({ params }: { params: Promise<{ i
                 {r.status === "requested" && (
                   <div className="pl-3 space-y-1">
                     {!r.identityAuthorityVerified ? (
-                      <form action={verifyRequesterIdentityAction} className="flex items-center gap-2">
+                      <ActionForm action={verifyRequesterIdentityAction} className="flex items-center gap-2">
                         <input type="hidden" name="profileId" value={id} />
                         <input type="hidden" name="requestId" value={r.id} />
-                        <button type="submit" className="font-sans text-caption font-semibold px-2 py-1 rounded-md bg-ordift-navy-950 text-white">Verify Requester Identity/Authority</button>
-                      </form>
+                        <SubmitButton pendingLabel="Working…" className="font-sans text-caption font-semibold px-2 py-1 rounded-md bg-ordift-navy-950 text-white">Verify Requester Identity/Authority</SubmitButton>
+                      </ActionForm>
                     ) : r.referenceType === "standard_verification" ? (
-                      <form action={issueStandardEmploymentVerificationAction}>
+                      <ActionForm action={issueStandardEmploymentVerificationAction}>
                         <input type="hidden" name="profileId" value={id} />
                         <input type="hidden" name="requestId" value={r.id} />
-                        <button type="submit" className="font-sans text-caption font-semibold px-2 py-1 rounded-md bg-ordift-navy-950 text-white">Issue Standard Verification</button>
-                      </form>
+                        <SubmitButton pendingLabel="Working…" className="font-sans text-caption font-semibold px-2 py-1 rounded-md bg-ordift-navy-950 text-white">Issue Standard Verification</SubmitButton>
+                      </ActionForm>
                     ) : (
-                      <form action={issueDetailedCorporateReferenceAction} className="flex flex-wrap gap-2">
+                      <ActionForm action={issueDetailedCorporateReferenceAction} className="flex flex-wrap gap-2">
                         <input type="hidden" name="profileId" value={id} />
                         <input type="hidden" name="requestId" value={r.id} />
                         <input name="informationAuthorizedForRelease" required placeholder="Information authorized for release" className="rounded-lg border border-black/15 px-2 py-1 font-sans text-caption flex-1 min-w-[180px]" />
                         <textarea name="content" required placeholder="Reference content" className="w-full rounded-lg border border-black/15 px-2 py-1 font-sans text-caption" rows={3} />
-                        <button type="submit" className="font-sans text-caption font-semibold px-2 py-1 rounded-md bg-ordift-navy-950 text-white">Issue Detailed Corporate Reference</button>
-                      </form>
+                        <SubmitButton pendingLabel="Working…" className="font-sans text-caption font-semibold px-2 py-1 rounded-md bg-ordift-navy-950 text-white">Issue Detailed Corporate Reference</SubmitButton>
+                      </ActionForm>
                     )}
-                    <form action={declineReferenceRequestAction} className="flex flex-wrap gap-2">
+                    <ActionForm action={declineReferenceRequestAction} className="flex flex-wrap gap-2">
                       <input type="hidden" name="profileId" value={id} />
                       <input type="hidden" name="requestId" value={r.id} />
                       <input name="decisionNotes" required placeholder="Decline reason" className="rounded-lg border border-black/15 px-2 py-1 font-sans text-caption flex-1 min-w-[160px]" />
-                      <button type="submit" className="font-sans text-caption text-red-700 underline underline-offset-4">Decline</button>
-                    </form>
+                      <SubmitButton pendingLabel="Working…" className="font-sans text-caption text-red-700 underline underline-offset-4">Decline</SubmitButton>
+                    </ActionForm>
                   </div>
                 )}
               </li>
@@ -1317,7 +1319,7 @@ export default async function PersonDetailPage({ params }: { params: Promise<{ i
         ) : (
           <p className="font-sans text-caption text-ordift-ink-muted">No reference requests on record.</p>
         )}
-        <form action={requestEmploymentReferenceAction} className="grid grid-cols-2 gap-2 mt-2">
+        <ActionForm action={requestEmploymentReferenceAction} className="grid grid-cols-2 gap-2 mt-2">
           <input type="hidden" name="profileId" value={id} />
           <input name="requesterName" required placeholder="Requester name" className="rounded-lg border border-black/15 px-2 py-1 font-sans text-caption" />
           <input name="requesterOrganization" placeholder="Requester organization (optional)" className="rounded-lg border border-black/15 px-2 py-1 font-sans text-caption" />
@@ -1332,8 +1334,8 @@ export default async function PersonDetailPage({ params }: { params: Promise<{ i
             <option value="standard_verification">Standard verification</option>
             <option value="detailed_corporate_reference">Detailed corporate reference</option>
           </select>
-          <button type="submit" className="col-span-2 justify-self-start font-sans text-caption font-semibold px-3 py-1 rounded-md bg-ordift-navy-950 text-white">Log Reference Request</button>
-        </form>
+          <SubmitButton pendingLabel="Working…" className="col-span-2 justify-self-start font-sans text-caption font-semibold px-3 py-1 rounded-md bg-ordift-navy-950 text-white">Log Reference Request</SubmitButton>
+        </ActionForm>
       </section>
 
       {/* Controlled Policy / Acknowledgement (Phase B5 Step 12,
@@ -1356,7 +1358,7 @@ export default async function PersonDetailPage({ params }: { params: Promise<{ i
                       Acknowledged {new Date(acknowledgedAt).toLocaleDateString()}
                     </span>
                   ) : (
-                    <form action={recordPolicyAcknowledgementAction} className="flex flex-wrap gap-2">
+                    <ActionForm action={recordPolicyAcknowledgementAction} className="flex flex-wrap gap-2">
                       <input type="hidden" name="profileId" value={id} />
                       <input type="hidden" name="documentVersionId" value={doc.documentVersionId} />
                       <select name="method" required defaultValue="" className="rounded-lg border border-black/15 bg-white px-2 py-1 font-sans text-caption">
@@ -1365,8 +1367,8 @@ export default async function PersonDetailPage({ params }: { params: Promise<{ i
                         <option value="physical_signature">Physical signature</option>
                       </select>
                       <input name="evidenceReference" placeholder="Evidence reference (required for physical signature)" className="rounded-lg border border-black/15 px-2 py-1 font-sans text-caption flex-1 min-w-[180px]" />
-                      <button type="submit" className="font-sans text-caption font-semibold px-2 py-1 rounded-md bg-ordift-navy-950 text-white">Record Acknowledgement</button>
-                    </form>
+                      <SubmitButton pendingLabel="Working…" className="font-sans text-caption font-semibold px-2 py-1 rounded-md bg-ordift-navy-950 text-white">Record Acknowledgement</SubmitButton>
+                    </ActionForm>
                   )}
                 </li>
               );
@@ -1406,13 +1408,13 @@ export default async function PersonDetailPage({ params }: { params: Promise<{ i
                     {reviewCompletedIds.has(t.id) ? (
                       <span className="text-green-700">Enhanced review completed</span>
                     ) : (
-                      <form action={completeEnhancedReviewAction} className="inline-flex flex-wrap items-center gap-2">
+                      <ActionForm action={completeEnhancedReviewAction} className="inline-flex flex-wrap items-center gap-2">
                         <span className="text-amber-700">Enhanced review required —</span>
                         <input type="hidden" name="profileId" value={id} />
                         <input type="hidden" name="employmentTermsHistoryId" value={t.id} />
                         <input name="notes" placeholder="Review notes" className="rounded-lg border border-black/15 px-2 py-0.5 font-sans text-caption" />
-                        <button type="submit" className="font-sans text-caption font-semibold px-2 py-0.5 rounded-md bg-ordift-navy-950 text-white">Mark Reviewed</button>
-                      </form>
+                        <SubmitButton pendingLabel="Working…" className="font-sans text-caption font-semibold px-2 py-0.5 rounded-md bg-ordift-navy-950 text-white">Mark Reviewed</SubmitButton>
+                      </ActionForm>
                     )}
                   </p>
                 )}
@@ -1460,7 +1462,7 @@ export default async function PersonDetailPage({ params }: { params: Promise<{ i
               <li key={a.id} className="font-sans text-caption text-ordift-ink-muted space-y-1">
                 <p>· {a.appealedDecisionType.replace(/_/g, " ")} ({a.appealedDecisionReference}) — {a.status.replace(/_/g, " ")} · {new Date(a.submittedAt).toLocaleDateString()}</p>
                 {(a.status === "submitted" || a.status === "under_review") && (
-                  <form action={decideAppealAction} className="pl-3 flex flex-wrap gap-2">
+                  <ActionForm action={decideAppealAction} className="pl-3 flex flex-wrap gap-2">
                     <input type="hidden" name="profileId" value={id} />
                     <input type="hidden" name="appealId" value={a.id} />
                     <select name="decision" required defaultValue="" className="rounded-lg border border-black/15 bg-white px-2 py-1 font-sans text-caption">
@@ -1470,8 +1472,8 @@ export default async function PersonDetailPage({ params }: { params: Promise<{ i
                       <option value="partially_upheld">Partially upheld</option>
                     </select>
                     <input name="decisionNotes" required placeholder="Decision notes" className="rounded-lg border border-black/15 px-2 py-1 font-sans text-caption flex-1 min-w-[160px]" />
-                    <button type="submit" className="font-sans text-caption font-semibold px-2 py-1 rounded-md bg-ordift-navy-950 text-white">Decide Appeal</button>
-                  </form>
+                    <SubmitButton pendingLabel="Working…" className="font-sans text-caption font-semibold px-2 py-1 rounded-md bg-ordift-navy-950 text-white">Decide Appeal</SubmitButton>
+                  </ActionForm>
                 )}
               </li>
             ))}
@@ -1479,14 +1481,14 @@ export default async function PersonDetailPage({ params }: { params: Promise<{ i
         ) : (
           <p className="font-sans text-caption text-ordift-ink-muted">No appeals on record.</p>
         )}
-        <form action={submitAppealAction} className="grid grid-cols-2 gap-2 mt-2">
+        <ActionForm action={submitAppealAction} className="grid grid-cols-2 gap-2 mt-2">
           <input type="hidden" name="profileId" value={id} />
           <input name="appealedDecisionType" required placeholder="Decision type (e.g. disciplinary_action)" className="rounded-lg border border-black/15 px-2 py-1 font-sans text-caption" />
           <input name="appealedDecisionReference" required placeholder="Decision reference (ID)" className="rounded-lg border border-black/15 px-2 py-1 font-sans text-caption" />
           <input type="date" name="decisionDate" placeholder="Original decision date" className="rounded-lg border border-black/15 px-2 py-1 font-sans text-caption" />
           <textarea name="reason" required placeholder="Reason for appeal" className="col-span-2 rounded-lg border border-black/15 px-2 py-1 font-sans text-caption" rows={2} />
-          <button type="submit" className="col-span-2 justify-self-start font-sans text-caption font-semibold px-3 py-1 rounded-md bg-ordift-navy-950 text-white">File Appeal</button>
-        </form>
+          <SubmitButton pendingLabel="Working…" className="col-span-2 justify-self-start font-sans text-caption font-semibold px-3 py-1 rounded-md bg-ordift-navy-950 text-white">File Appeal</SubmitButton>
+        </ActionForm>
       </section>
 
       <section id="section-history" className="rounded-xl border border-black/10 bg-white p-6 space-y-2 scroll-mt-6">

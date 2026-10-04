@@ -38,6 +38,7 @@ Defined once, centrally, in `src/lib/shared/recordId.ts`:
 | `WSH` | Workshop Registration | **Live** — assigned by `/api/workshop-registration` |
 | `ENQ` | Contact Enquiry | **Live** — assigned by `/api/enquiry` |
 | `PRJ` | Project Request | **Live** — assigned by the client-portal request action (`src/app/portal/(dashboard)/client/projects/[kind]/[id]/requests/actions.ts`); best-effort rather than required (see §7) |
+| `CSR` | Creative Crew Support request | **Live (2026-10-04)** — assigned by `/api/crew-support`; also used as the anchor enquiry's `reference_number` |
 | `BK` | Client Booking | Reserved — no form exists yet |
 | `MDL` | Model Application | Reserved — no form exists yet |
 | `VND` | Vendor Application | Reserved — no form exists yet |

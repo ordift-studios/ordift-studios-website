@@ -11,6 +11,7 @@ import { insertExchangeRate } from "@/lib/payments/currency";
 import { reconcilePendingGatewayPayment } from "@/lib/payments/reconcilePendingPayment";
 import { sendPaymentReceiptEmail } from "@/lib/payments/receipts";
 import { advanceStageOnFullPayment } from "@/lib/payments/crmStageSync";
+import { actionOk, actionFail, type ActionState } from "@/lib/shared/actionState";
 
 async function requireCapability(
   capability:
@@ -34,10 +35,10 @@ async function requireCapability(
 // gateway webhook path uses (src/app/api/payments/webhook/paystack/
 // route.ts's syncEntityPaymentStatus) — one shared mechanism for both
 // payment methods, not two divergent implementations.
-export async function approveBankTransferAction(formData: FormData): Promise<void> {
+export async function approveBankTransferAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const user = await requireCapability("approve_bank_transfer");
   const paymentId = String(formData.get("paymentId") ?? "");
-  if (!paymentId) return;
+  if (!paymentId) return actionFail("Nothing was saved — check the details and try again.");
 
   // Admin/secret-key client, not the session client — public.payments
   // grants UPDATE to service_role only (see migration 0024's RLS
@@ -52,7 +53,7 @@ export async function approveBankTransferAction(formData: FormData): Promise<voi
     .eq("status", "awaiting_verification")
     .maybeSingle();
 
-  if (!payment) return;
+  if (!payment) return actionFail("Nothing was saved — check the details and try again.");
 
   const { error } = await supabase
     .from("payments")
@@ -67,7 +68,7 @@ export async function approveBankTransferAction(formData: FormData): Promise<voi
 
   if (error) {
     console.error("[admin] bank transfer approval failed", error.message);
-    return;
+    return actionFail("Could not save your change. Please try again.");
   }
 
   await syncEntityAfterBankTransferDecision(payment.entity_type, payment.entity_id);
@@ -80,16 +81,17 @@ export async function approveBankTransferAction(formData: FormData): Promise<voi
   });
 
   revalidatePath("/admin/payments");
+  return actionOk("Approved.");
 }
 
-export async function rejectBankTransferAction(formData: FormData): Promise<void> {
+export async function rejectBankTransferAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const user = await requireCapability("reject_bank_transfer");
   const paymentId = String(formData.get("paymentId") ?? "");
   const reason = String(formData.get("reason") ?? "").trim();
   // Every rejection carries a recorded reason — PAYMENT_SECURITY_
   // REVIEW.md §16's "no refund/rejection without a reason" rule,
   // applied here to rejections too.
-  if (!paymentId || !reason) return;
+  if (!paymentId || !reason) return actionFail("Nothing was saved — check the details and try again.");
 
   // Same admin/secret-key client as approveBankTransferAction above,
   // same reason — public.payments grants UPDATE to service_role only.
@@ -107,7 +109,7 @@ export async function rejectBankTransferAction(formData: FormData): Promise<void
 
   if (error) {
     console.error("[admin] bank transfer rejection failed", error.message);
-    return;
+    return actionFail("Could not save your change. Please try again.");
   }
 
   await logActivity({
@@ -119,6 +121,7 @@ export async function rejectBankTransferAction(formData: FormData): Promise<void
   });
 
   revalidatePath("/admin/payments");
+  return actionOk("Rejected.");
 }
 
 // TD-043 — "Reconcile Now": lets staff manually trigger the same
@@ -136,10 +139,10 @@ export async function rejectBankTransferAction(formData: FormData): Promise<void
 // looking for "just mark it Paid," that action does not exist by
 // design (per PAYMENT_SECURITY_REVIEW.md's authoritative-source rule
 // and your explicit instruction on this TD).
-export async function reconcilePaymentAction(formData: FormData): Promise<void> {
+export async function reconcilePaymentAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const user = await requireCapability("reconcile_payment");
   const paymentId = String(formData.get("paymentId") ?? "");
-  if (!paymentId) return;
+  if (!paymentId) return actionFail("Nothing was saved — check the details and try again.");
 
   // Defensive scope check — reconcilePendingGatewayPayment() already
   // no-ops safely on a non-gateway or already-resolved row, but
@@ -154,7 +157,7 @@ export async function reconcilePaymentAction(formData: FormData): Promise<void> 
     .maybeSingle();
 
   if (!payment || payment.payment_method !== "gateway" || payment.status !== "pending") {
-    return;
+    return actionFail("Nothing was saved — check the details and try again.");
   }
 
   const resolvedStatus = await reconcilePendingGatewayPayment(paymentId);
@@ -172,6 +175,7 @@ export async function reconcilePaymentAction(formData: FormData): Promise<void> 
   // page; revalidate it too so the resulting status (completed/
   // failed/still-pending) shows immediately without a manual refresh.
   revalidatePath(`/admin/payments/${paymentId}`);
+  return actionOk("Reconciled.");
 }
 
 // TD-043 completion-idempotency remediation — retries a stuck/failed
@@ -194,10 +198,10 @@ export async function reconcilePaymentAction(formData: FormData): Promise<void> 
 // job that's really still in flight (processing, not yet stale) or
 // already 'sent' matches none of that function's branches and this
 // action correctly no-ops, exactly as before this change.
-export async function retryReceiptJobAction(formData: FormData): Promise<void> {
+export async function retryReceiptJobAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const user = await requireCapability("reconcile_payment");
   const paymentId = String(formData.get("paymentId") ?? "");
-  if (!paymentId) return;
+  if (!paymentId) return actionFail("Nothing was saved — check the details and try again.");
 
   const supabase = createAdminClient();
   const { data: job } = await supabase
@@ -207,17 +211,17 @@ export async function retryReceiptJobAction(formData: FormData): Promise<void> {
     .eq("outcome", "completed")
     .maybeSingle();
 
-  if (!job || job.status === "sent") return; // nothing to retry, or already confirmed sent
+  if (!job || job.status === "sent") return actionFail("Nothing was saved — check the details and try again."); // nothing to retry, or already confirmed sent
 
   const { data: claimedRows, error: claimError } = await supabase.rpc("reclaim_stale_receipt_job", {
     p_job_id: job.id,
   });
   if (claimError) {
     console.error("[admin] reclaim_stale_receipt_job failed", claimError.message);
-    return;
+    return actionFail("Could not save your change. Please try again.");
   }
   const claimed = Array.isArray(claimedRows) && claimedRows.length > 0 ? claimedRows[0] : null;
-  if (!claimed) return; // lost a race, or genuinely not yet eligible (fresh processing / already sent)
+  if (!claimed) return actionFail("Nothing was saved — check the details and try again."); // lost a race, or genuinely not yet eligible (fresh processing / already sent)
 
   const result = await sendPaymentReceiptEmail(paymentId);
 
@@ -240,6 +244,7 @@ export async function retryReceiptJobAction(formData: FormData): Promise<void> {
 
   revalidatePath("/admin/payments");
   revalidatePath(`/admin/payments/${paymentId}`);
+  return actionOk("Retried.");
 }
 
 // Ghana-only today, same as every other payments module file — see

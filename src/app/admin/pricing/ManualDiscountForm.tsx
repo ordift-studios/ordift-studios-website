@@ -1,7 +1,10 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import type { ActionState } from "@/lib/shared/actionState";
 import { applyDiscount } from "@/lib/pricing/discountMath";
+import ActionForm from "@/components/admin/ActionForm";
+import SubmitButton from "@/components/admin/SubmitButton";
 
 // Admin Pricing UX Refinement (2026-09-06) — reuses the existing,
 // already-tested applyDiscount() pure function from discounts.ts
@@ -11,7 +14,7 @@ import { applyDiscount } from "@/lib/pricing/discountMath";
 // "Apply & Record", which submits the real <form> below to the
 // existing applyManualDiscountAction (unchanged authorization/audit
 // behavior).
-export default function ManualDiscountForm({ action }: { action: (formData: FormData) => void }) {
+export default function ManualDiscountForm({ action }: { action: (prev: ActionState, formData: FormData) => Promise<ActionState> }) {
   const [originalAmountUsd, setOriginalAmountUsd] = useState("");
   const [value, setValue] = useState("");
 
@@ -24,7 +27,7 @@ export default function ManualDiscountForm({ action }: { action: (formData: Form
   }, [originalAmountUsd, value]);
 
   return (
-    <form action={action} className="space-y-4">
+    <ActionForm action={action} className="space-y-4">
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div>
           <label className="block font-sans text-caption text-ordift-ink-muted mb-1">Original Amount (USD)</label>
@@ -73,8 +76,8 @@ export default function ManualDiscountForm({ action }: { action: (formData: Form
         </div>
       )}
 
-      <button type="submit" className="rounded-lg bg-ordift-ink text-white px-4 py-2 font-sans text-body-small">Apply &amp; Record</button>
+      <SubmitButton pendingLabel="Applying…" className="rounded-lg bg-ordift-ink text-white px-4 py-2 font-sans text-body-small">Apply &amp; Record</SubmitButton>
       <p className="font-sans text-caption text-ordift-ink-muted">This preview is calculated in your browser only — nothing is saved or audited until you click Apply &amp; Record.</p>
-    </form>
+    </ActionForm>
   );
 }

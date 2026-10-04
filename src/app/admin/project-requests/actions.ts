@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getCurrentUser, isStaffOrAdmin } from "@/lib/portal/roles";
 import { logActivity } from "@/lib/admin/activityLog";
 import { PROJECT_REQUEST_STATUSES, type ProjectRequestStatus } from "@/lib/admin/projectRequests";
+import { actionOk, actionFail, type ActionState } from "@/lib/shared/actionState";
 
 async function requireStaffOrAdmin() {
   const user = await getCurrentUser();
@@ -22,7 +23,7 @@ function isProjectRequestStatus(value: string): value is ProjectRequestStatus {
   return (PROJECT_REQUEST_STATUSES as readonly string[]).includes(value);
 }
 
-export async function decideProjectRequestAction(formData: FormData): Promise<void> {
+export async function decideProjectRequestAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const user = await requireStaffOrAdmin();
 
   const id = String(formData.get("id") ?? "");
@@ -30,7 +31,7 @@ export async function decideProjectRequestAction(formData: FormData): Promise<vo
   const entityId = String(formData.get("entityId") ?? "");
   const status = String(formData.get("status") ?? "");
   const staffResponse = String(formData.get("staffResponse") ?? "").trim();
-  if (!id || !isProjectRequestStatus(status)) return;
+  if (!id || !isProjectRequestStatus(status)) return actionFail("Nothing was saved — check the details and try again.");
 
   const supabase = await createClient();
 
@@ -58,7 +59,7 @@ export async function decideProjectRequestAction(formData: FormData): Promise<vo
   const { error } = await supabase.from("project_requests").update(update).eq("id", id);
   if (error) {
     console.error("[admin] project request decide failed", error.message);
-    return;
+    return actionFail("Could not save your change. Please try again.");
   }
 
   await logActivity({
@@ -103,4 +104,5 @@ export async function decideProjectRequestAction(formData: FormData): Promise<vo
   }
 
   revalidatePath(`${entityBasePath(entityType)}/${entityId}`);
+  return actionOk("Decision recorded.");
 }

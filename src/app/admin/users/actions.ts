@@ -30,6 +30,7 @@ import { assignStaffPosition } from "@/lib/organization/assignPosition";
 import { hasJurisdictionAuthority, authorizeWithSuperAdminOverride, PEOPLE_CAPABILITIES } from "@/lib/organization/authority";
 import { startStaffOnboarding, completeStaffOnboarding } from "@/lib/organization/onboarding";
 import { createAndApproveStandardHireRequisition, createAndApproveExistingAccountConversion, getSourceRecruitmentApplicationId } from "@/lib/recruitment/requisitions";
+import { actionOk, actionFail, type ActionState } from "@/lib/shared/actionState";
 
 // ============================================================
 // Read-only data fetchers — thin server-action wrappers so the client
@@ -192,16 +193,16 @@ export async function setTemporaryPasswordAction(_prevState: SetTemporaryPasswor
   return { ok: true, temporaryPassword };
 }
 
-export async function revokeRoleAction(formData: FormData): Promise<void> {
+export async function revokeRoleAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const currentUser = await requireAdmin();
 
   const userId = String(formData.get("userId") ?? "");
   const roleSlug = String(formData.get("role") ?? "");
-  if (!userId || !isGrantableRole(roleSlug)) return;
+  if (!userId || !isGrantableRole(roleSlug)) return actionFail("Nothing was saved — check the details and try again.");
 
   if (requiresSuperAdmin(roleSlug) && !isSuperAdmin(currentUser)) {
     console.warn("[admin] non-super-admin attempted to revoke", roleSlug);
-    return;
+    return actionFail("Nothing was saved — check the details and try again.");
   }
 
   // Refuse to let an admin remove their own admin access from this
@@ -210,7 +211,7 @@ export async function revokeRoleAction(formData: FormData): Promise<void> {
   // that happens (the Admin platform itself requires the admin role).
   if ((roleSlug === "admin" || roleSlug === "super_admin") && userId === currentUser.id) {
     console.warn("[admin] refused self-revoke of admin-tier role", currentUser.id, roleSlug);
-    return;
+    return actionFail("Nothing was saved — check the details and try again.");
   }
 
   // Lockout protection: removing super_admin from anyone must never
@@ -221,17 +222,18 @@ export async function revokeRoleAction(formData: FormData): Promise<void> {
     const activeCount = await getActiveSuperAdminCount();
     if (activeCount <= 1) {
       console.warn("[admin] refused to remove the last active Super Admin", userId);
-      return;
+      return actionFail("Nothing was saved — check the details and try again.");
     }
   }
 
   const admin = createAdminClient();
   const { data: role } = await admin.from("roles").select("id").eq("slug", roleSlug).single();
-  if (!role) return;
+  if (!role) return actionFail("Nothing was saved — check the details and try again.");
 
   const { error } = await admin.from("user_roles").delete().eq("user_id", userId).eq("role_id", role.id);
   if (error) {
     console.error("[admin] revoke role failed", error.message);
+    return actionFail("Could not save your change. Please try again.");
   } else {
     await logActivity({
       actorUserId: currentUser.id,
@@ -243,6 +245,7 @@ export async function revokeRoleAction(formData: FormData): Promise<void> {
   }
 
   revalidatePath("/admin/users");
+  return actionOk("Revoked.");
 }
 
 // ============================================================

@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { getCurrentUser } from "@/lib/portal/roles";
 import { createPaymentInstruction, setPaymentInstructionActive } from "@/lib/payments/payeeInstructions";
+import { actionOk, actionFail, type ActionState } from "@/lib/shared/actionState";
 
 // Payee self-service (2026-09-04) — the desired eventual workflow:
 // Ordift account -> classified as payee -> signs into their own
@@ -56,15 +57,19 @@ export async function createOwnPaymentInstructionAction(_prevState: PaymentDesti
   return { ok: true };
 }
 
-export async function deactivateOwnPaymentInstructionAction(formData: FormData): Promise<void> {
+export async function deactivateOwnPaymentInstructionAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const user = await getCurrentUser();
-  if (!user) return;
+  if (!user) return actionFail("You must be signed in.");
 
   const instructionId = String(formData.get("instructionId") ?? "").trim();
-  if (!instructionId) return;
+  if (!instructionId) return actionFail("Missing or invalid input — nothing was saved.");
 
   const result = await setPaymentInstructionActive({ instructionId, active: false, actorUserId: user.id });
-  if (!result.ok) console.error("[portal payment-details] deactivate failed", result.error);
+  if (!result.ok) {
+    console.error("[portal payment-details] deactivate failed", result.error);
+    return actionFail(result.error);
+  }
 
   revalidatePath("/portal/payment-details");
+  return actionOk("Saved.");
 }

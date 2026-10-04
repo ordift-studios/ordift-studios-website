@@ -7,6 +7,8 @@ import { listSuppliersForAdmin, type ProductionSupplierType } from "@/lib/produc
 import { listActivePricingMarkets } from "@/lib/pricing/personalSessionPricing";
 import ProductionSubNav from "../ProductionSubNav";
 import { createSupplierAction } from "../actions";
+import ActionForm from "@/components/admin/ActionForm";
+import SubmitButton from "@/components/admin/SubmitButton";
 
 export const metadata: Metadata = {
   title: "Suppliers — Production Operations — Ordift Studios Admin",
@@ -64,7 +66,7 @@ export default async function ProductionSuppliersPage({ searchParams }: { search
 
       <section className="rounded-xl border border-black/10 bg-white p-6 space-y-4">
         <h2 className="font-serif font-medium text-body text-ordift-ink">Add a Supplier</h2>
-        <form action={createSupplierAction} className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <ActionForm action={createSupplierAction} className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <input name="supplierName" required placeholder="Supplier name" className="rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small" />
           <select name="supplierType" required defaultValue="" className="rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small">
             <option value="" disabled>Supplier type</option>
@@ -90,8 +92,8 @@ export default async function ProductionSuppliersPage({ searchParams }: { search
           <input name="paymentTerms" placeholder="Payment terms (optional)" className="rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small" />
           <input name="availabilityNotes" placeholder="Availability notes (optional)" className="rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small" />
           <textarea name="internalNotes" placeholder="Internal notes (optional, never public)" rows={2} className="rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small sm:col-span-2" />
-          <button type="submit" className="rounded-lg bg-ordift-ink text-white px-4 py-2 font-sans text-body-small sm:col-span-2">Add Supplier</button>
-        </form>
+          <SubmitButton pendingLabel="Adding…" className="rounded-lg bg-ordift-ink text-white px-4 py-2 font-sans text-body-small sm:col-span-2">Add Supplier</SubmitButton>
+        </ActionForm>
       </section>
 
       <section className="rounded-xl border border-black/10 bg-white p-6 space-y-4">

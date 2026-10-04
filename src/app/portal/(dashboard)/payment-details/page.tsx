@@ -8,6 +8,7 @@ import { countryName, verificationStatusLabel } from "@/lib/payables/paymentDest
 import PaymentDestinationForm from "@/components/payables/PaymentDestinationForm";
 import SubmitButton from "@/components/admin/SubmitButton";
 import { createOwnPaymentInstructionAction, deactivateOwnPaymentInstructionAction } from "./actions";
+import ActionForm from "@/components/admin/ActionForm";
 
 export const metadata: Metadata = {
   title: "Payment Details — Ordift Studios Portal",
@@ -72,12 +73,12 @@ export default async function PaymentDetailsPage() {
                   {i.isDefault ? "· default" : ""}
                 </p>
                 {i.active && (
-                  <form action={deactivateOwnPaymentInstructionAction}>
+                  <ActionForm action={deactivateOwnPaymentInstructionAction}>
                     <input type="hidden" name="instructionId" value={i.id} />
                     <SubmitButton pendingLabel="Deactivating…" className="rounded border border-black/15 px-2 py-1 font-sans text-caption hover:border-black/30">
                       Deactivate
                     </SubmitButton>
-                  </form>
+                  </ActionForm>
                 )}
               </li>
             ))}

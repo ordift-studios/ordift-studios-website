@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getCurrentUser, isSuperAdmin } from "@/lib/portal/roles";
 import { logActivity } from "@/lib/admin/activityLog";
+import { actionOk, actionFail, type ActionState } from "@/lib/shared/actionState";
 
 async function requireSuperAdmin() {
   const user = await getCurrentUser();
@@ -101,17 +102,18 @@ export async function updateClassificationAction(formData: FormData): Promise<{ 
 // classification (see assignClassification() in
 // src/lib/portal/memberNumbers.ts) — it never touches anyone who
 // already has a number under it.
-export async function toggleClassificationAction(formData: FormData): Promise<void> {
+export async function toggleClassificationAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const currentUser = await requireSuperAdmin();
 
   const id = String(formData.get("id") ?? "");
   const active = formData.get("active") === "true";
-  if (!id) return;
+  if (!id) return actionFail("Nothing was saved — check the details and try again.");
 
   const admin = createAdminClient();
   const { error } = await admin.from("member_number_classifications").update({ active: !active }).eq("id", id);
   if (error) {
     console.error("[admin] failed to toggle classification", error.message);
+    return actionFail("Could not save your change. Please try again.");
   } else {
     await logActivity({
       actorUserId: currentUser.id,
@@ -123,4 +125,5 @@ export async function toggleClassificationAction(formData: FormData): Promise<vo
   }
 
   revalidatePath("/admin/lookups");
+  return actionOk("Updated.");
 }

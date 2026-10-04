@@ -10,6 +10,8 @@ import DeliverablesManager from "@/components/admin/DeliverablesManager";
 import { getProjectRequestsForEntity } from "@/lib/admin/projectRequests";
 import ProjectRequestsManager from "@/components/admin/ProjectRequestsManager";
 import { updateBookingStatusAction, setAmountDueAction, updateAttendanceStatusAction } from "../actions";
+import ActionForm from "@/components/admin/ActionForm";
+import SubmitButton from "@/components/admin/SubmitButton";
 
 function formatUsd(amount: number): string {
   return `$${amount.toFixed(2)}`;
@@ -126,7 +128,7 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
               </p>
             </div>
             {canManageAmount ? (
-              <form action={setAmountDueAction} className="space-y-3">
+              <ActionForm action={setAmountDueAction} className="space-y-3">
                 <input type="hidden" name="registrationId" value={registration.id} />
                 <div>
                   <label htmlFor="amount-due" className="font-sans text-caption text-ordift-ink-muted block mb-1">
@@ -145,13 +147,10 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
                     className="w-full min-h-11 rounded-lg border border-black/15 bg-white px-3 font-sans text-body-small text-ordift-ink"
                   />
                 </div>
-                <button
-                  type="submit"
-                  className="w-full min-h-11 rounded-full bg-ordift-gold text-ordift-navy-950 font-sans font-semibold text-body-small"
-                >
+                <SubmitButton pendingLabel="Working…" className="w-full min-h-11 rounded-full bg-ordift-gold text-ordift-navy-950 font-sans font-semibold text-body-small">
                   {registration.amountDue != null ? "Update Amount Due" : "Set Amount Due"}
-                </button>
-              </form>
+                </SubmitButton>
+              </ActionForm>
             ) : (
               <p className="font-sans text-caption text-ordift-ink-muted">
                 Only Admin/Super Admin can set the payable amount.
@@ -163,7 +162,7 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
             <p className="font-sans text-caption uppercase tracking-wide text-ordift-ink-muted mb-3">
               Status
             </p>
-            <form action={updateBookingStatusAction} className="space-y-4">
+            <ActionForm action={updateBookingStatusAction} className="space-y-4">
               <input type="hidden" name="registrationId" value={registration.id} />
               <div>
                 <label htmlFor="registration-status" className="font-sans text-caption text-ordift-ink-muted block mb-1">
@@ -199,13 +198,10 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
                   ))}
                 </select>
               </div>
-              <button
-                type="submit"
-                className="w-full min-h-11 rounded-full bg-ordift-gold text-ordift-navy-950 font-sans font-semibold text-body-small"
-              >
+              <SubmitButton pendingLabel="Updating…" className="w-full min-h-11 rounded-full bg-ordift-gold text-ordift-navy-950 font-sans font-semibold text-body-small">
                 Update
-              </button>
-            </form>
+              </SubmitButton>
+            </ActionForm>
           </div>
 
           <div className="rounded-xl border border-black/10 bg-white p-6">
@@ -215,7 +211,7 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
             <p className="font-sans text-caption text-ordift-ink-muted mb-3">
               Separate from Registration status above — this tracks what happened on the day.
             </p>
-            <form action={updateAttendanceStatusAction} className="space-y-4">
+            <ActionForm action={updateAttendanceStatusAction} className="space-y-4">
               <input type="hidden" name="registrationId" value={registration.id} />
               <select
                 name="attendanceStatus"
@@ -227,13 +223,10 @@ export default async function AdminBookingDetailPage({ params }: { params: Promi
                 <option value="no_show">No-show</option>
                 <option value="cancelled">Cancelled</option>
               </select>
-              <button
-                type="submit"
-                className="w-full min-h-11 rounded-full border border-ordift-ink/30 text-ordift-ink font-sans font-semibold text-body-small"
-              >
+              <SubmitButton pendingLabel="Updating…" className="w-full min-h-11 rounded-full border border-ordift-ink/30 text-ordift-ink font-sans font-semibold text-body-small">
                 Update Attendance
-              </button>
-            </form>
+              </SubmitButton>
+            </ActionForm>
           </div>
         </div>
       </div>

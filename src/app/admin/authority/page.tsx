@@ -15,6 +15,8 @@ import {
   createActingAssignmentAction,
   endActingAssignmentEarlyAction,
 } from "./actions";
+import ActionForm from "@/components/admin/ActionForm";
+import SubmitButton from "@/components/admin/SubmitButton";
 
 export const metadata: Metadata = {
   title: "Authority — Ordift Studios Admin",
@@ -100,12 +102,12 @@ export default async function AdminAuthorityPage() {
             {grant.reason ? ` · ${grant.reason}` : ""}
           </p>
         </div>
-        <form action={revokeAuthorityGrantAction}>
+        <ActionForm action={revokeAuthorityGrantAction}>
           <input type="hidden" name="grantId" value={grant.id} />
-          <button type="submit" className="font-sans text-caption text-ordift-gold-pressed underline underline-offset-4 whitespace-nowrap">
+          <SubmitButton pendingLabel="Working…" className="font-sans text-caption text-ordift-gold-pressed underline underline-offset-4 whitespace-nowrap">
             Revoke
-          </button>
-        </form>
+          </SubmitButton>
+        </ActionForm>
       </li>
     );
   }
@@ -180,7 +182,7 @@ export default async function AdminAuthorityPage() {
           ))}
           {executiveAdmins.length === 0 && <p className="font-sans text-body-small text-ordift-ink-muted">None currently active.</p>}
         </ul>
-        <form action={grantExecutiveAdminAction} className="flex flex-wrap items-end gap-2 pt-2 border-t border-black/5">
+        <ActionForm action={grantExecutiveAdminAction} className="flex flex-wrap items-end gap-2 pt-2 border-t border-black/5">
           <select name="profileId" required defaultValue="" className="min-h-9 rounded-lg border border-black/15 bg-white px-2 font-sans text-body-small">
             <option value="" disabled>Choose a person…</option>
             {people.map((p) => (
@@ -188,10 +190,10 @@ export default async function AdminAuthorityPage() {
             ))}
           </select>
           <input type="text" name="reason" placeholder="Reason (optional)" className="min-w-56 rounded-lg border border-black/15 px-3 py-1.5 font-sans text-body-small" />
-          <button type="submit" className="font-sans text-body-small font-semibold px-4 py-1.5 rounded-md bg-ordift-navy-950 text-white">
+          <SubmitButton pendingLabel="Working…" className="font-sans text-body-small font-semibold px-4 py-1.5 rounded-md bg-ordift-navy-950 text-white">
             Grant Executive Admin
-          </button>
-        </form>
+          </SubmitButton>
+        </ActionForm>
       </section>
 
       <section className="rounded-xl border border-black/10 bg-white p-6 space-y-4 mb-8">
@@ -207,7 +209,7 @@ export default async function AdminAuthorityPage() {
           ))}
           {departmentAdmins.length === 0 && <p className="font-sans text-body-small text-ordift-ink-muted">None currently active.</p>}
         </ul>
-        <form action={grantDepartmentAuthorityAction} className="flex flex-wrap items-end gap-2 pt-2 border-t border-black/5">
+        <ActionForm action={grantDepartmentAuthorityAction} className="flex flex-wrap items-end gap-2 pt-2 border-t border-black/5">
           <select name="profileId" required defaultValue="" className="min-h-9 rounded-lg border border-black/15 bg-white px-2 font-sans text-body-small">
             <option value="" disabled>Choose a person…</option>
             {people.map((p) => (
@@ -221,10 +223,10 @@ export default async function AdminAuthorityPage() {
             ))}
           </select>
           <input type="text" name="reason" placeholder="Reason (optional)" className="min-w-56 rounded-lg border border-black/15 px-3 py-1.5 font-sans text-body-small" />
-          <button type="submit" className="font-sans text-body-small font-semibold px-4 py-1.5 rounded-md bg-ordift-navy-950 text-white">
+          <SubmitButton pendingLabel="Working…" className="font-sans text-body-small font-semibold px-4 py-1.5 rounded-md bg-ordift-navy-950 text-white">
             Grant Department Authority
-          </button>
-        </form>
+          </SubmitButton>
+        </ActionForm>
       </section>
 
       <section className="rounded-xl border border-black/10 bg-white p-6 space-y-4 mb-8">
@@ -242,7 +244,7 @@ export default async function AdminAuthorityPage() {
           ))}
           {delegations.length === 0 && <p className="font-sans text-body-small text-ordift-ink-muted">None currently active.</p>}
         </ul>
-        <form action={createDelegationAction} className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-4 border-t border-black/5">
+        <ActionForm action={createDelegationAction} className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-4 border-t border-black/5">
           <select name="profileId" required defaultValue="" className="rounded-lg border border-black/15 bg-white px-2 py-1.5 font-sans text-body-small">
             <option value="" disabled>Receiving person…</option>
             {people.map((p) => (
@@ -258,10 +260,10 @@ export default async function AdminAuthorityPage() {
           </select>
           <input type="datetime-local" name="expiresAt" required className="rounded-lg border border-black/15 px-3 py-1.5 font-sans text-body-small" />
           <input type="text" name="reason" placeholder="Reason (required)" required className="rounded-lg border border-black/15 px-3 py-1.5 font-sans text-body-small sm:col-span-2" />
-          <button type="submit" className="sm:col-span-2 justify-self-start font-sans text-body-small font-semibold px-4 py-2 rounded-md bg-ordift-gold text-ordift-navy-950">
+          <SubmitButton pendingLabel="Creating…" className="sm:col-span-2 justify-self-start font-sans text-body-small font-semibold px-4 py-2 rounded-md bg-ordift-gold text-ordift-navy-950">
             Create Delegation
-          </button>
-        </form>
+          </SubmitButton>
+        </ActionForm>
       </section>
 
       <section className="rounded-xl border border-black/10 bg-white p-6 space-y-4 mb-8">
@@ -279,7 +281,7 @@ export default async function AdminAuthorityPage() {
           ))}
           {financialAuthorityGrants.length === 0 && <p className="font-sans text-body-small text-ordift-ink-muted">None currently active.</p>}
         </ul>
-        <form action={grantFinancialAuthorityLevelAction} className="flex flex-wrap items-end gap-2 pt-2 border-t border-black/5">
+        <ActionForm action={grantFinancialAuthorityLevelAction} className="flex flex-wrap items-end gap-2 pt-2 border-t border-black/5">
           <select name="profileId" required defaultValue="" className="min-h-9 rounded-lg border border-black/15 bg-white px-2 font-sans text-body-small">
             <option value="" disabled>Choose a person…</option>
             {people.map((p) => (
@@ -299,10 +301,10 @@ export default async function AdminAuthorityPage() {
             ))}
           </select>
           <input type="text" name="reason" placeholder="Reason (optional)" className="min-w-56 rounded-lg border border-black/15 px-3 py-1.5 font-sans text-body-small" />
-          <button type="submit" className="font-sans text-body-small font-semibold px-4 py-1.5 rounded-md bg-ordift-navy-950 text-white">
+          <SubmitButton pendingLabel="Working…" className="font-sans text-body-small font-semibold px-4 py-1.5 rounded-md bg-ordift-navy-950 text-white">
             Grant Financial Authority Level
-          </button>
-        </form>
+          </SubmitButton>
+        </ActionForm>
       </section>
 
       <section className="rounded-xl border border-black/10 bg-white p-6 space-y-4 mb-8">
@@ -327,19 +329,19 @@ export default async function AdminAuthorityPage() {
                   </p>
                 </div>
                 {isActive && (
-                  <form action={endActingAssignmentEarlyAction}>
+                  <ActionForm action={endActingAssignmentEarlyAction}>
                     <input type="hidden" name="assignmentId" value={a.id} />
-                    <button type="submit" className="font-sans text-caption text-ordift-gold-pressed underline underline-offset-4 whitespace-nowrap">
+                    <SubmitButton pendingLabel="Working…" className="font-sans text-caption text-ordift-gold-pressed underline underline-offset-4 whitespace-nowrap">
                       End Early
-                    </button>
-                  </form>
+                    </SubmitButton>
+                  </ActionForm>
                 )}
               </li>
             );
           })}
           {actingAssignments.length === 0 && <p className="font-sans text-body-small text-ordift-ink-muted">None currently recorded.</p>}
         </ul>
-        <form action={createActingAssignmentAction} className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-4 border-t border-black/5">
+        <ActionForm action={createActingAssignmentAction} className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-4 border-t border-black/5">
           <select name="profileId" required defaultValue="" className="rounded-lg border border-black/15 bg-white px-2 py-1.5 font-sans text-body-small">
             <option value="" disabled>Person…</option>
             {people.map((p) => (
@@ -356,10 +358,10 @@ export default async function AdminAuthorityPage() {
             ))}
           </select>
           <input type="text" name="reason" placeholder="Reason (required)" required className="rounded-lg border border-black/15 px-3 py-1.5 font-sans text-body-small sm:col-span-2" />
-          <button type="submit" className="sm:col-span-2 justify-self-start font-sans text-body-small font-semibold px-4 py-2 rounded-md bg-ordift-gold text-ordift-navy-950">
+          <SubmitButton pendingLabel="Creating…" className="sm:col-span-2 justify-self-start font-sans text-body-small font-semibold px-4 py-2 rounded-md bg-ordift-gold text-ordift-navy-950">
             Create Acting Assignment
-          </button>
-        </form>
+          </SubmitButton>
+        </ActionForm>
       </section>
 
       <section className="rounded-xl border border-black/10 bg-white p-6 space-y-3">

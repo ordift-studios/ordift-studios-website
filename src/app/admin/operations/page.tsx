@@ -14,6 +14,8 @@ import { reserveCorporateIdentityAction, createDepartmentRequestAction, createRe
 import { CorporateIdentityCorrection } from "./CorporateIdentityCorrection";
 import { CorporateIdentityProvisioning } from "./CorporateIdentityProvisioning";
 import { FounderDirectHireForm } from "./FounderDirectHireForm";
+import ActionForm from "@/components/admin/ActionForm";
+import SubmitButton from "@/components/admin/SubmitButton";
 
 export const metadata: Metadata = {
   title: "Operations — Ordift Studios Admin",
@@ -108,7 +110,7 @@ export default async function AdminOperationsPage() {
           ))}
           {identities.length === 0 && <li className="px-4 py-3 font-sans text-body-small text-ordift-ink-muted">None reserved yet.</li>}
         </ul>
-        <form action={reserveCorporateIdentityAction} className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-4 border-t border-black/5">
+        <ActionForm action={reserveCorporateIdentityAction} className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-4 border-t border-black/5">
           <select name="profileId" required defaultValue="" className="rounded-lg border border-black/15 bg-white px-2 py-1.5 font-sans text-body-small sm:col-span-2">
             <option value="" disabled>Choose a person…</option>
             {people.map((p) => (
@@ -119,10 +121,10 @@ export default async function AdminOperationsPage() {
           <input type="text" name="middleNames" placeholder="Middle name(s), space-separated (optional)" className="rounded-lg border border-black/15 px-3 py-1.5 font-sans text-body-small" />
           <input type="text" name="surname" placeholder="Surname" required className="rounded-lg border border-black/15 px-3 py-1.5 font-sans text-body-small" />
           <input type="text" name="additionalVerifiedNames" placeholder="Additional verified name(s) for collisions (optional)" className="rounded-lg border border-black/15 px-3 py-1.5 font-sans text-body-small" />
-          <button type="submit" className="sm:col-span-2 justify-self-start font-sans text-body-small font-semibold px-4 py-2 rounded-md bg-ordift-navy-950 text-white">
+          <SubmitButton pendingLabel="Working…" className="sm:col-span-2 justify-self-start font-sans text-body-small font-semibold px-4 py-2 rounded-md bg-ordift-navy-950 text-white">
             Reserve Corporate Identity
-          </button>
-        </form>
+          </SubmitButton>
+        </ActionForm>
       </section>
 
       <section className="rounded-xl border border-black/10 bg-white p-6 space-y-4">
@@ -138,7 +140,7 @@ export default async function AdminOperationsPage() {
           ))}
           {requests.length === 0 && <li className="px-4 py-3 font-sans text-body-small text-ordift-ink-muted">None yet.</li>}
         </ul>
-        <form action={createDepartmentRequestAction} className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-4 border-t border-black/5">
+        <ActionForm action={createDepartmentRequestAction} className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-4 border-t border-black/5">
           <input type="text" name="title" placeholder="Request title" required className="rounded-lg border border-black/15 px-3 py-1.5 font-sans text-body-small sm:col-span-2" />
           <input type="text" name="requestType" placeholder="Request type (e.g. identity_provisioning)" required className="rounded-lg border border-black/15 px-3 py-1.5 font-sans text-body-small sm:col-span-2" />
           <select name="requestingJurisdiction" defaultValue="" className="rounded-lg border border-black/15 bg-white px-2 py-1.5 font-sans text-body-small">
@@ -154,10 +156,10 @@ export default async function AdminOperationsPage() {
             ))}
           </select>
           <textarea name="description" placeholder="Description (optional)" className="rounded-lg border border-black/15 px-3 py-1.5 font-sans text-body-small sm:col-span-2" />
-          <button type="submit" className="sm:col-span-2 justify-self-start font-sans text-body-small font-semibold px-4 py-2 rounded-md bg-ordift-navy-950 text-white">
+          <SubmitButton pendingLabel="Creating…" className="sm:col-span-2 justify-self-start font-sans text-body-small font-semibold px-4 py-2 rounded-md bg-ordift-navy-950 text-white">
             Create Request
-          </button>
-        </form>
+          </SubmitButton>
+        </ActionForm>
       </section>
 
       <section className="rounded-xl border border-black/10 bg-white p-6 space-y-4">
@@ -184,7 +186,7 @@ export default async function AdminOperationsPage() {
           ))}
           {requisitions.length === 0 && <li className="px-4 py-3 font-sans text-body-small text-ordift-ink-muted">None yet.</li>}
         </ul>
-        <form action={createRecruitmentRequisitionAction} className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-4 border-t border-black/5">
+        <ActionForm action={createRecruitmentRequisitionAction} className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-4 border-t border-black/5">
           <input type="text" name="title" placeholder="Requisition title (e.g. Finance Associate)" required className="rounded-lg border border-black/15 px-3 py-1.5 font-sans text-body-small sm:col-span-2" />
           <select name="departmentId" defaultValue="" className="rounded-lg border border-black/15 bg-white px-2 py-1.5 font-sans text-body-small">
             <option value="">Department (optional)…</option>
@@ -200,10 +202,10 @@ export default async function AdminOperationsPage() {
           </select>
           <input type="number" name="headcount" min={1} defaultValue={1} className="rounded-lg border border-black/15 px-3 py-1.5 font-sans text-body-small" />
           <textarea name="justification" placeholder="Justification (optional)" className="rounded-lg border border-black/15 px-3 py-1.5 font-sans text-body-small sm:col-span-2" />
-          <button type="submit" className="sm:col-span-2 justify-self-start font-sans text-body-small font-semibold px-4 py-2 rounded-md bg-ordift-navy-950 text-white">
+          <SubmitButton pendingLabel="Creating…" className="sm:col-span-2 justify-self-start font-sans text-body-small font-semibold px-4 py-2 rounded-md bg-ordift-navy-950 text-white">
             Create Requisition
-          </button>
-        </form>
+          </SubmitButton>
+        </ActionForm>
       </section>
 
       {/* Founder Direct Hire (E.5 Stage 2M, Part 2) — a legitimate

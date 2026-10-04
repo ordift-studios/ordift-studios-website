@@ -61,6 +61,7 @@ export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
     items: [
       { label: "Enquiries", href: "/admin/enquiries", adminOnly: true },
       { label: "Bookings", href: "/admin/bookings", adminOnly: true },
+      { label: "Crew Support", href: "/admin/crew-support", adminOnly: true },
     ],
   },
   {

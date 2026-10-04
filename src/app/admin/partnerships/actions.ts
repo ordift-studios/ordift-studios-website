@@ -11,19 +11,20 @@ import { createReferralTerms, approveReferralTerms, createReferralLead, disputeR
 import { recordCommissionEvent, setCommissionEventStatus, approveReferralCommissionForPayment } from "@/lib/partnerships/referralCommissions";
 import { createOutcomeReview, type WouldCollaborateAgain } from "@/lib/partnerships/outcomeReviews";
 import type { ReferralDurationPreset } from "@/lib/partnerships/referralMath";
+import { actionOk, actionFail, type ActionState } from "@/lib/shared/actionState";
 
 // Partnerships & Collaborations V1 (2026-09-07) — thin Server Action
 // wrappers, same established pattern as every other Admin actions.ts:
 // resolve the actor, call the governed lib function (which re-checks
 // authorization and writes the audit log itself), revalidate.
 
-export async function createOpportunityAction(formData: FormData): Promise<void> {
+export async function createOpportunityAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const user = await getCurrentUser();
-  if (!user) return;
+  if (!user) return actionFail("You must be signed in.");
 
   const partnershipTypeId = String(formData.get("partnershipTypeId") ?? "");
   const counterpartName = String(formData.get("counterpartName") ?? "");
-  if (!partnershipTypeId || !counterpartName.trim()) return;
+  if (!partnershipTypeId || !counterpartName.trim()) return actionFail("Missing or invalid input — nothing was saved.");
 
   const result = await createOpportunity({
     partnershipTypeId,
@@ -36,26 +37,34 @@ export async function createOpportunityAction(formData: FormData): Promise<void>
     notes: (formData.get("notes") as string) || null,
     actorUserId: user.id,
   });
-  if (!result.ok) console.error("[admin] failed to create partnership opportunity", result.error);
+  if (!result.ok) {
+    console.error("[admin] failed to create partnership opportunity", result.error);
+    return actionFail(result.error);
+  }
 
   revalidatePath("/admin/partnerships/opportunities");
   revalidatePath("/admin/partnerships");
+  return actionOk("Created.");
 }
 
-export async function setOpportunityStatusAction(formData: FormData): Promise<void> {
+export async function setOpportunityStatusAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const user = await getCurrentUser();
-  if (!user) return;
+  if (!user) return actionFail("You must be signed in.");
 
   const opportunityId = String(formData.get("opportunityId") ?? "");
   const status = String(formData.get("status") ?? "") as PartnershipOpportunityStatus;
   const decisionOutcome = (formData.get("decisionOutcome") as string) || undefined;
-  if (!opportunityId || !status) return;
+  if (!opportunityId || !status) return actionFail("Missing or invalid input — nothing was saved.");
 
   const result = await setOpportunityStatus({ opportunityId, status, decisionOutcome: decisionOutcome as PartnershipDecisionOutcome | undefined, actorUserId: user.id });
-  if (!result.ok) console.error("[admin] failed to update opportunity status", result.error);
+  if (!result.ok) {
+    console.error("[admin] failed to update opportunity status", result.error);
+    return actionFail(result.error);
+  }
 
   revalidatePath(`/admin/partnerships/opportunities/${opportunityId}`);
   revalidatePath("/admin/partnerships/opportunities");
+  return actionOk("Saved.");
 }
 
 export async function createValueAssessmentAction(formData: FormData): Promise<{ ok: true } | { ok: false; error: string }> {
@@ -93,40 +102,48 @@ export async function createValueAssessmentAction(formData: FormData): Promise<{
   return { ok: true };
 }
 
-export async function approveConcessionAction(formData: FormData): Promise<void> {
+export async function approveConcessionAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const user = await getCurrentUser();
-  if (!user) return;
+  if (!user) return actionFail("You must be signed in.");
 
   const assessmentId = String(formData.get("assessmentId") ?? "");
   const opportunityId = String(formData.get("opportunityId") ?? "");
-  if (!assessmentId) return;
+  if (!assessmentId) return actionFail("Nothing was saved — check the details and try again.");
 
   const result = await approveConcessionAssessment({ assessmentId, actorUserId: user.id });
-  if (!result.ok) console.error("[admin] failed to approve concession", result.error);
+  if (!result.ok) {
+    console.error("[admin] failed to approve concession", result.error);
+    return actionFail(result.error);
+  }
 
   if (opportunityId) revalidatePath(`/admin/partnerships/opportunities/${opportunityId}`);
+  return actionOk("Approved.");
 }
 
-export async function rejectValueAssessmentAction(formData: FormData): Promise<void> {
+export async function rejectValueAssessmentAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const user = await getCurrentUser();
-  if (!user) return;
+  if (!user) return actionFail("You must be signed in.");
 
   const assessmentId = String(formData.get("assessmentId") ?? "");
   const opportunityId = String(formData.get("opportunityId") ?? "");
-  if (!assessmentId) return;
+  if (!assessmentId) return actionFail("Nothing was saved — check the details and try again.");
 
   const result = await rejectValueAssessment({ assessmentId, actorUserId: user.id, reason: (formData.get("reason") as string) || undefined });
-  if (!result.ok) console.error("[admin] failed to reject value assessment", result.error);
+  if (!result.ok) {
+    console.error("[admin] failed to reject value assessment", result.error);
+    return actionFail(result.error);
+  }
 
   if (opportunityId) revalidatePath(`/admin/partnerships/opportunities/${opportunityId}`);
+  return actionOk("Rejected.");
 }
 
-export async function createStrategicAssessmentAction(formData: FormData): Promise<void> {
+export async function createStrategicAssessmentAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const user = await getCurrentUser();
-  if (!user) return;
+  if (!user) return actionFail("You must be signed in.");
 
   const opportunityId = String(formData.get("opportunityId") ?? "");
-  if (!opportunityId) return;
+  if (!opportunityId) return actionFail("Missing or invalid input — nothing was saved.");
 
   const numField = (name: string) => (formData.get(name) ? Number(formData.get(name)) : 0);
 
@@ -152,18 +169,22 @@ export async function createStrategicAssessmentAction(formData: FormData): Promi
     notes: (formData.get("notes") as string) || null,
     actorUserId: user.id,
   });
-  if (!result.ok) console.error("[admin] failed to create strategic assessment", result.error);
+  if (!result.ok) {
+    console.error("[admin] failed to create strategic assessment", result.error);
+    return actionFail(result.error);
+  }
 
   revalidatePath(`/admin/partnerships/opportunities/${opportunityId}`);
+  return actionOk("Created.");
 }
 
-export async function createAgreementVersionAction(formData: FormData): Promise<void> {
+export async function createAgreementVersionAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const user = await getCurrentUser();
-  if (!user) return;
+  if (!user) return actionFail("You must be signed in.");
 
   const opportunityId = String(formData.get("opportunityId") ?? "");
   const status = String(formData.get("status") ?? "") as PartnershipAgreementStatus;
-  if (!opportunityId || !status) return;
+  if (!opportunityId || !status) return actionFail("Missing or invalid input — nothing was saved.");
 
   const result = await createAgreementVersion({
     opportunityId,
@@ -187,17 +208,21 @@ export async function createAgreementVersionAction(formData: FormData): Promise<
     signatureReference: (formData.get("signatureReference") as string) || null,
     actorUserId: user.id,
   });
-  if (!result.ok) console.error("[admin] failed to create agreement version", result.error);
+  if (!result.ok) {
+    console.error("[admin] failed to create agreement version", result.error);
+    return actionFail(result.error);
+  }
 
   revalidatePath(`/admin/partnerships/opportunities/${opportunityId}`);
+  return actionOk("Created.");
 }
 
-export async function createReferralTermsAction(formData: FormData): Promise<void> {
+export async function createReferralTermsAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const user = await getCurrentUser();
-  if (!user) return;
+  if (!user) return actionFail("You must be signed in.");
 
   const opportunityId = String(formData.get("opportunityId") ?? "");
-  if (!opportunityId) return;
+  if (!opportunityId) return actionFail("Missing or invalid input — nothing was saved.");
 
   const result = await createReferralTerms({
     opportunityId,
@@ -207,33 +232,41 @@ export async function createReferralTermsAction(formData: FormData): Promise<voi
     reasonForElevatedRate: (formData.get("reasonForElevatedRate") as string) || null,
     actorUserId: user.id,
   });
-  if (!result.ok) console.error("[admin] failed to create referral terms", result.error);
+  if (!result.ok) {
+    console.error("[admin] failed to create referral terms", result.error);
+    return actionFail(result.error);
+  }
 
   revalidatePath(`/admin/partnerships/opportunities/${opportunityId}`);
   revalidatePath("/admin/partnerships/referrals");
+  return actionOk("Created.");
 }
 
-export async function approveReferralTermsAction(formData: FormData): Promise<void> {
+export async function approveReferralTermsAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const user = await getCurrentUser();
-  if (!user) return;
+  if (!user) return actionFail("You must be signed in.");
 
   const referralId = String(formData.get("referralId") ?? "");
-  if (!referralId) return;
+  if (!referralId) return actionFail("Missing or invalid input — nothing was saved.");
 
   const result = await approveReferralTerms({ referralId, actorUserId: user.id });
-  if (!result.ok) console.error("[admin] failed to approve referral terms", result.error);
+  if (!result.ok) {
+    console.error("[admin] failed to approve referral terms", result.error);
+    return actionFail(result.error);
+  }
 
   revalidatePath("/admin/partnerships/referrals");
+  return actionOk("Approved.");
 }
 
-export async function createReferralLeadAction(formData: FormData): Promise<void> {
+export async function createReferralLeadAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const user = await getCurrentUser();
-  if (!user) return;
+  if (!user) return actionFail("You must be signed in.");
 
   const referralId = String(formData.get("referralId") ?? "");
   const prospectName = String(formData.get("prospectName") ?? "");
   const attributionWindowDays = Number(formData.get("attributionWindowDays") ?? 90);
-  if (!referralId || !prospectName.trim()) return;
+  if (!referralId || !prospectName.trim()) return actionFail("Missing or invalid input — nothing was saved.");
 
   const result = await createReferralLead({
     referralId,
@@ -255,33 +288,41 @@ export async function createReferralLeadAction(formData: FormData): Promise<void
     },
     actorUserId: user.id,
   });
-  if (!result.ok) console.error("[admin] failed to create referral lead", result.error);
+  if (!result.ok) {
+    console.error("[admin] failed to create referral lead", result.error);
+    return actionFail(result.error);
+  }
 
   revalidatePath("/admin/partnerships/referrals");
+  return actionOk("Created.");
 }
 
-export async function disputeReferralLeadAction(formData: FormData): Promise<void> {
+export async function disputeReferralLeadAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const user = await getCurrentUser();
-  if (!user) return;
+  if (!user) return actionFail("You must be signed in.");
 
   const leadId = String(formData.get("leadId") ?? "");
   const disputeNotes = String(formData.get("disputeNotes") ?? "");
-  if (!leadId || !disputeNotes.trim()) return;
+  if (!leadId || !disputeNotes.trim()) return actionFail("Missing or invalid input — nothing was saved.");
 
   const result = await disputeReferralLead({ leadId, disputeNotes, actorUserId: user.id });
-  if (!result.ok) console.error("[admin] failed to dispute referral lead", result.error);
+  if (!result.ok) {
+    console.error("[admin] failed to dispute referral lead", result.error);
+    return actionFail(result.error);
+  }
 
   revalidatePath("/admin/partnerships/referrals");
+  return actionOk("Saved.");
 }
 
-export async function recordCommissionEventAction(formData: FormData): Promise<void> {
+export async function recordCommissionEventAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const user = await getCurrentUser();
-  if (!user) return;
+  if (!user) return actionFail("You must be signed in.");
 
   const referralLeadId = String(formData.get("referralLeadId") ?? "");
   const grossCollectedAmount = Number(formData.get("grossCollectedAmount"));
   const commissionPercentage = Number(formData.get("commissionPercentage"));
-  if (!referralLeadId || !Number.isFinite(grossCollectedAmount) || !Number.isFinite(commissionPercentage)) return;
+  if (!referralLeadId || !Number.isFinite(grossCollectedAmount) || !Number.isFinite(commissionPercentage)) return actionFail("Missing or invalid input — nothing was saved.");
 
   const result = await recordCommissionEvent({
     referralLeadId,
@@ -292,9 +333,13 @@ export async function recordCommissionEventAction(formData: FormData): Promise<v
     collectedReferenceId: (formData.get("collectedReferenceId") as string) || null,
     actorUserId: user.id,
   });
-  if (!result.ok) console.error("[admin] failed to record commission event", result.error);
+  if (!result.ok) {
+    console.error("[admin] failed to record commission event", result.error);
+    return actionFail(result.error);
+  }
 
   revalidatePath("/admin/partnerships/referrals");
+  return actionOk("Recorded.");
 }
 
 // Only ever moves a commission between "calculated" and "earned" — see
@@ -302,26 +347,30 @@ export async function recordCommissionEventAction(formData: FormData): Promise<v
 // is reachable ONLY through approveReferralCommissionForPaymentAction
 // below; "paid" is never set by any action at all (it is read live
 // from the linked payment_obligations row).
-export async function setCommissionEventStatusAction(formData: FormData): Promise<void> {
+export async function setCommissionEventStatusAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const user = await getCurrentUser();
-  if (!user) return;
+  if (!user) return actionFail("You must be signed in.");
 
   const eventId = String(formData.get("eventId") ?? "");
   const status = String(formData.get("status") ?? "");
-  if (!eventId || (status !== "calculated" && status !== "earned")) return;
+  if (!eventId || (status !== "calculated" && status !== "earned")) return actionFail("Missing or invalid input — nothing was saved.");
 
   const result = await setCommissionEventStatus({ eventId, status, actorUserId: user.id });
-  if (!result.ok) console.error("[admin] failed to update commission event status", result.error);
+  if (!result.ok) {
+    console.error("[admin] failed to update commission event status", result.error);
+    return actionFail(result.error);
+  }
 
   revalidatePath("/admin/partnerships/referrals");
+  return actionOk("Saved.");
 }
 
-export async function createOutcomeReviewAction(formData: FormData): Promise<void> {
+export async function createOutcomeReviewAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const user = await getCurrentUser();
-  if (!user) return;
+  if (!user) return actionFail("You must be signed in.");
 
   const opportunityId = String(formData.get("opportunityId") ?? "");
-  if (!opportunityId) return;
+  if (!opportunityId) return actionFail("Missing or invalid input — nothing was saved.");
 
   const result = await createOutcomeReview({
     opportunityId,
@@ -340,9 +389,13 @@ export async function createOutcomeReviewAction(formData: FormData): Promise<voi
     wouldCollaborateAgain: (formData.get("wouldCollaborateAgain") as WouldCollaborateAgain) || null,
     actorUserId: user.id,
   });
-  if (!result.ok) console.error("[admin] failed to create outcome review", result.error);
+  if (!result.ok) {
+    console.error("[admin] failed to create outcome review", result.error);
+    return actionFail(result.error);
+  }
 
   revalidatePath(`/admin/partnerships/opportunities/${opportunityId}`);
+  return actionOk("Created.");
 }
 
 // "Convert to Paid Proposal" — preserves the original opportunity/
@@ -350,35 +403,43 @@ export async function createOutcomeReviewAction(formData: FormData): Promise<voi
 // scope into the normal enquiry/quote/booking process, and any actual
 // booking, remains a separate, explicit, client-accepted action outside
 // this function's scope — this only records the internal decision.
-export async function convertToPaidProposalAction(formData: FormData): Promise<void> {
+export async function convertToPaidProposalAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const user = await getCurrentUser();
-  if (!user) return;
+  if (!user) return actionFail("You must be signed in.");
 
   const opportunityId = String(formData.get("opportunityId") ?? "");
-  if (!opportunityId) return;
+  if (!opportunityId) return actionFail("Missing or invalid input — nothing was saved.");
 
   const result = await setOpportunityStatus({ opportunityId, status: "decision", decisionOutcome: "convert_to_paid_proposal", actorUserId: user.id });
-  if (!result.ok) console.error("[admin] failed to convert opportunity to paid proposal", result.error);
+  if (!result.ok) {
+    console.error("[admin] failed to convert opportunity to paid proposal", result.error);
+    return actionFail(result.error);
+  }
 
   revalidatePath(`/admin/partnerships/opportunities/${opportunityId}`);
+  return actionOk("Saved.");
 }
 
 // Referral Payable Bridge (2026-09-07) — links (or clears) the
 // opportunity's counterpart to an existing payee profile. Never
 // creates a payee itself.
-export async function setOpportunityPayeeProfileAction(formData: FormData): Promise<void> {
+export async function setOpportunityPayeeProfileAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const user = await getCurrentUser();
-  if (!user) return;
+  if (!user) return actionFail("You must be signed in.");
 
   const opportunityId = String(formData.get("opportunityId") ?? "");
-  if (!opportunityId) return;
+  if (!opportunityId) return actionFail("Missing or invalid input — nothing was saved.");
 
   const payeeProfileId = (formData.get("payeeProfileId") as string) || null;
   const result = await setOpportunityPayeeProfile({ opportunityId, payeeProfileId, actorUserId: user.id });
-  if (!result.ok) console.error("[admin] failed to set opportunity payee profile", result.error);
+  if (!result.ok) {
+    console.error("[admin] failed to set opportunity payee profile", result.error);
+    return actionFail(result.error);
+  }
 
   revalidatePath(`/admin/partnerships/opportunities/${opportunityId}`);
   revalidatePath("/admin/partnerships/referrals");
+  return actionOk("Saved.");
 }
 
 // The ONLY path from an Earned referral commission into the existing

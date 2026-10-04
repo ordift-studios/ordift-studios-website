@@ -16,6 +16,8 @@ import { addNoteAction } from "../actions";
 import SetAmountDueForm from "./SetAmountDueForm";
 import UpdateStageForm from "./UpdateStageForm";
 import StartHandlingButton from "./StartHandlingButton";
+import ActionForm from "@/components/admin/ActionForm";
+import SubmitButton from "@/components/admin/SubmitButton";
 
 function formatUsd(amount: number): string {
   return `$${amount.toFixed(2)}`;
@@ -88,7 +90,7 @@ export default async function AdminEnquiryDetailPage({ params }: { params: Promi
 
           <div>
             <h2 className="font-serif font-medium text-body text-ordift-ink mb-4">Notes &amp; Updates</h2>
-            <form action={addNoteAction} className="mb-6 space-y-3">
+            <ActionForm action={addNoteAction} className="mb-6 space-y-3">
               <input type="hidden" name="enquiryId" value={enquiry.id} />
               <textarea
                 name="note"
@@ -109,13 +111,10 @@ export default async function AdminEnquiryDetailPage({ params }: { params: Promi
                   <span className="text-caption text-ordift-ink-muted">— visible to this client</span>
                 </label>
               </fieldset>
-              <button
-                type="submit"
-                className="min-h-11 px-5 rounded-full bg-ordift-navy-950 text-white font-sans text-body-small"
-              >
+              <SubmitButton pendingLabel="Adding…" className="min-h-11 px-5 rounded-full bg-ordift-navy-950 text-white font-sans text-body-small">
                 Add
-              </button>
-            </form>
+              </SubmitButton>
+            </ActionForm>
 
             {notes.length === 0 ? (
               <p className="font-sans text-body-small text-ordift-ink-muted">No notes yet.</p>

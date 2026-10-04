@@ -9,6 +9,7 @@ import type { DeliverableEntityType } from "@/lib/admin/deliverables";
 import { sendFilesReadyEmail } from "@/lib/enquiry/lifecycleEmails";
 import { pathwayLabel } from "@/lib/enquiry/pathways";
 import type { CrmStage } from "@/lib/admin/enquiries";
+import { actionOk, actionFail, type ActionState } from "@/lib/shared/actionState";
 
 async function requireStaffOrAdmin() {
   const user = await getCurrentUser();
@@ -211,19 +212,19 @@ export async function createDeliverableAction(
   return { ok: true };
 }
 
-export async function deleteDeliverableAction(formData: FormData): Promise<void> {
+export async function deleteDeliverableAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const user = await requireStaffOrAdmin();
 
   const id = String(formData.get("id") ?? "");
   const entityType = String(formData.get("entityType") ?? "");
   const entityId = String(formData.get("entityId") ?? "");
-  if (!id) return;
+  if (!id) return actionFail("Nothing was saved — check the details and try again.");
 
   const supabase = await createClient();
   const { error } = await supabase.from("deliverables").delete().eq("id", id);
   if (error) {
     console.error("[admin] deliverable delete failed", error.message);
-    return;
+    return actionFail("Could not save your change. Please try again.");
   }
 
   await logActivity({
@@ -234,6 +235,7 @@ export async function deleteDeliverableAction(formData: FormData): Promise<void>
   });
 
   revalidatePath(`${entityBasePath(entityType)}/${entityId}`);
+  return actionOk("Deleted.");
 }
 
 export async function createCategoryAction(formData: FormData): Promise<void> {

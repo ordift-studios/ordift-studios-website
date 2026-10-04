@@ -8,6 +8,7 @@ import { validateDelegationAuthority } from "@/lib/organization/authority";
 import { grantStandingFinancialAuthorityLevel } from "@/lib/organization/financialAuthorityGrants";
 import type { FinancialAuthorityLevel } from "@/lib/organization/financialAuthority";
 import { createActingAssignment, endActingAssignmentEarly } from "@/lib/organization/actingAssignments";
+import { actionOk, actionFail, type ActionState } from "@/lib/shared/actionState";
 
 // Ordift Organizational & Administrative Architecture V1, Phase 3, Parts
 // B and D (2026-08-25). Every write to authority_grants goes through
@@ -27,12 +28,12 @@ async function requireSuperAdmin() {
   return user;
 }
 
-export async function grantExecutiveAdminAction(formData: FormData): Promise<void> {
+export async function grantExecutiveAdminAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const currentUser = await requireSuperAdmin();
 
   const profileId = String(formData.get("profileId") ?? "").trim();
   const reason = String(formData.get("reason") ?? "").trim() || null;
-  if (!profileId) return;
+  if (!profileId) return actionFail("Nothing was saved — check the details and try again.");
 
   const admin = createAdminClient();
   const { error } = await admin.from("authority_grants").insert({
@@ -45,7 +46,7 @@ export async function grantExecutiveAdminAction(formData: FormData): Promise<voi
   });
   if (error) {
     console.error("[admin authority] failed to grant executive admin", error.message);
-    return;
+    return actionFail("Could not save your change. Please try again.");
   }
 
   await logActivity({
@@ -57,15 +58,16 @@ export async function grantExecutiveAdminAction(formData: FormData): Promise<voi
   });
 
   revalidatePath("/admin/authority");
+  return actionOk("Granted.");
 }
 
-export async function grantDepartmentAuthorityAction(formData: FormData): Promise<void> {
+export async function grantDepartmentAuthorityAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const currentUser = await requireSuperAdmin();
 
   const profileId = String(formData.get("profileId") ?? "").trim();
   const departmentId = String(formData.get("departmentId") ?? "").trim();
   const reason = String(formData.get("reason") ?? "").trim() || null;
-  if (!profileId || !departmentId) return;
+  if (!profileId || !departmentId) return actionFail("Nothing was saved — check the details and try again.");
 
   const admin = createAdminClient();
   const { error } = await admin.from("authority_grants").insert({
@@ -78,7 +80,7 @@ export async function grantDepartmentAuthorityAction(formData: FormData): Promis
   });
   if (error) {
     console.error("[admin authority] failed to grant department authority", error.message);
-    return;
+    return actionFail("Could not save your change. Please try again.");
   }
 
   await logActivity({
@@ -90,6 +92,7 @@ export async function grantDepartmentAuthorityAction(formData: FormData): Promis
   });
 
   revalidatePath("/admin/authority");
+  return actionOk("Granted.");
 }
 
 // A delegation is the same table, distinguished only by having an
@@ -105,21 +108,21 @@ export async function grantDepartmentAuthorityAction(formData: FormData): Promis
 // remains Super-Admin-only-visible for now (no GR.9/Director position
 // is occupied yet), but the enforcement itself is real and independent
 // of that — see authority.test.ts for the invariant proven directly.
-export async function createDelegationAction(formData: FormData): Promise<void> {
+export async function createDelegationAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const currentUser = await getCurrentUser();
-  if (!currentUser || !isStaffOrAdmin(currentUser)) return;
+  if (!currentUser || !isStaffOrAdmin(currentUser)) return actionFail("Nothing was saved — check the details and try again.");
 
   const profileId = String(formData.get("profileId") ?? "").trim();
   const authority = String(formData.get("authority") ?? "").trim();
   const departmentId = String(formData.get("departmentId") ?? "").trim() || null;
   const reason = String(formData.get("reason") ?? "").trim();
   const expiresAtRaw = String(formData.get("expiresAt") ?? "").trim();
-  if (!profileId || !authority || !reason || !expiresAtRaw) return;
+  if (!profileId || !authority || !reason || !expiresAtRaw) return actionFail("Nothing was saved — check the details and try again.");
 
   const expiresAt = new Date(expiresAtRaw);
   if (Number.isNaN(expiresAt.getTime()) || expiresAt.getTime() <= Date.now()) {
     console.error("[admin authority] delegation expiry must be a valid future date", expiresAtRaw);
-    return;
+    return actionFail("Could not save your change. Please try again.");
   }
 
   const validation = await validateDelegationAuthority({
@@ -129,7 +132,7 @@ export async function createDelegationAction(formData: FormData): Promise<void> 
   });
   if (!validation.ok) {
     console.error("[admin authority] delegation refused", validation.error);
-    return;
+    return actionFail("Could not save your change. Please try again.");
   }
 
   const admin = createAdminClient();
@@ -143,7 +146,7 @@ export async function createDelegationAction(formData: FormData): Promise<void> 
   });
   if (error) {
     console.error("[admin authority] failed to create delegation", error.message);
-    return;
+    return actionFail("Could not save your change. Please try again.");
   }
 
   await logActivity({
@@ -155,14 +158,15 @@ export async function createDelegationAction(formData: FormData): Promise<void> 
   });
 
   revalidatePath("/admin/authority");
+  return actionOk("Created.");
 }
 
-export async function revokeAuthorityGrantAction(formData: FormData): Promise<void> {
+export async function revokeAuthorityGrantAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const currentUser = await requireSuperAdmin();
 
   const grantId = String(formData.get("grantId") ?? "").trim();
   const reason = String(formData.get("reason") ?? "").trim() || null;
-  if (!grantId) return;
+  if (!grantId) return actionFail("Nothing was saved — check the details and try again.");
 
   const admin = createAdminClient();
   const { data: grant, error: fetchError } = await admin
@@ -170,7 +174,7 @@ export async function revokeAuthorityGrantAction(formData: FormData): Promise<vo
     .select("profile_id, authority, revoked_at")
     .eq("id", grantId)
     .maybeSingle();
-  if (fetchError || !grant || grant.revoked_at) return;
+  if (fetchError || !grant || grant.revoked_at) return actionFail("Nothing was saved — check the details and try again.");
 
   const { error } = await admin
     .from("authority_grants")
@@ -178,7 +182,7 @@ export async function revokeAuthorityGrantAction(formData: FormData): Promise<vo
     .eq("id", grantId);
   if (error) {
     console.error("[admin authority] failed to revoke grant", error.message);
-    return;
+    return actionFail("Could not save your change. Please try again.");
   }
 
   const actionByAuthority: Record<string, string> = {
@@ -195,6 +199,7 @@ export async function revokeAuthorityGrantAction(formData: FormData): Promise<vo
   });
 
   revalidatePath("/admin/authority");
+  return actionOk("Revoked.");
 }
 
 // Organizational Structure, Authority Grants, Onboarding & Work Email
@@ -207,7 +212,7 @@ export async function revokeAuthorityGrantAction(formData: FormData): Promise<vo
 // field is free text, so typing "financial_authority_level_3" there is
 // delegated through the exact same self-scoping safeguard as any other
 // capability, with zero new code needed for that case.
-export async function grantFinancialAuthorityLevelAction(formData: FormData): Promise<void> {
+export async function grantFinancialAuthorityLevelAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const currentUser = await requireSuperAdmin();
 
   const profileId = String(formData.get("profileId") ?? "").trim();
@@ -215,7 +220,7 @@ export async function grantFinancialAuthorityLevelAction(formData: FormData): Pr
   const departmentId = String(formData.get("departmentId") ?? "").trim() || null;
   const reason = String(formData.get("reason") ?? "").trim() || null;
   const level = Number(levelRaw) as FinancialAuthorityLevel;
-  if (!profileId || Number.isNaN(level) || level < 0 || level > 5) return;
+  if (!profileId || Number.isNaN(level) || level < 0 || level > 5) return actionFail("Missing or invalid input — nothing was saved.");
 
   const result = await grantStandingFinancialAuthorityLevel({
     profileId,
@@ -224,9 +229,13 @@ export async function grantFinancialAuthorityLevelAction(formData: FormData): Pr
     reason,
     grantedBy: currentUser.id,
   });
-  if (!result.ok) console.error("[admin authority] failed to grant financial authority level", result.error);
+  if (!result.ok) {
+    console.error("[admin authority] failed to grant financial authority level", result.error);
+    return actionFail(result.error);
+  }
 
   revalidatePath("/admin/authority");
+  return actionOk("Granted.");
 }
 
 // Acting Assignments — same staff/admin tier as ordinary organizational
@@ -234,9 +243,9 @@ export async function grantFinancialAuthorityLevelAction(formData: FormData): Pr
 // Super Admin or the people.administer/operations.administer
 // jurisdiction authority), never Super-Admin-only at the page/action
 // layer, matching Delegation's boundary above.
-export async function createActingAssignmentAction(formData: FormData): Promise<void> {
+export async function createActingAssignmentAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const currentUser = await getCurrentUser();
-  if (!currentUser || !isStaffOrAdmin(currentUser)) return;
+  if (!currentUser || !isStaffOrAdmin(currentUser)) return actionFail("Missing or invalid input — nothing was saved.");
 
   const profileId = String(formData.get("profileId") ?? "").trim();
   const actingTitle = String(formData.get("actingTitle") ?? "").trim();
@@ -244,7 +253,7 @@ export async function createActingAssignmentAction(formData: FormData): Promise<
   const endDate = String(formData.get("endDate") ?? "").trim();
   const reason = String(formData.get("reason") ?? "").trim();
   const departmentId = String(formData.get("departmentId") ?? "").trim() || null;
-  if (!profileId || !actingTitle || !startDate || !endDate || !reason) return;
+  if (!profileId || !actingTitle || !startDate || !endDate || !reason) return actionFail("Missing or invalid input — nothing was saved.");
 
   const result = await createActingAssignment({
     profileId,
@@ -255,20 +264,28 @@ export async function createActingAssignmentAction(formData: FormData): Promise<
     reason,
     approvedBy: currentUser.id,
   });
-  if (!result.ok) console.error("[admin authority] failed to create acting assignment", result.error);
+  if (!result.ok) {
+    console.error("[admin authority] failed to create acting assignment", result.error);
+    return actionFail(result.error);
+  }
 
   revalidatePath("/admin/authority");
+  return actionOk("Created.");
 }
 
-export async function endActingAssignmentEarlyAction(formData: FormData): Promise<void> {
+export async function endActingAssignmentEarlyAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const currentUser = await getCurrentUser();
-  if (!currentUser || !isStaffOrAdmin(currentUser)) return;
+  if (!currentUser || !isStaffOrAdmin(currentUser)) return actionFail("Missing or invalid input — nothing was saved.");
 
   const assignmentId = String(formData.get("assignmentId") ?? "").trim();
-  if (!assignmentId) return;
+  if (!assignmentId) return actionFail("Missing or invalid input — nothing was saved.");
 
   const result = await endActingAssignmentEarly({ assignmentId, actorUserId: currentUser.id });
-  if (!result.ok) console.error("[admin authority] failed to end acting assignment early", result.error);
+  if (!result.ok) {
+    console.error("[admin authority] failed to end acting assignment early", result.error);
+    return actionFail(result.error);
+  }
 
   revalidatePath("/admin/authority");
+  return actionOk("Saved.");
 }

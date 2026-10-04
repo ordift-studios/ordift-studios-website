@@ -10,6 +10,7 @@ import { sendQuotationReadyEmail } from "@/lib/enquiry/lifecycleEmails";
 import { logActivity } from "@/lib/admin/activityLog";
 import { CRM_STAGES, type CrmStage } from "@/lib/admin/enquiries";
 import { crmStageLabel } from "@/lib/portal/data";
+import { actionOk, actionFail, type ActionState } from "@/lib/shared/actionState";
 
 async function requireStaffOrAdmin() {
   const user = await getCurrentUser();
@@ -313,7 +314,7 @@ function isNoteAudience(value: string): value is NoteAudience {
   return (NOTE_AUDIENCES as readonly string[]).includes(value);
 }
 
-export async function addNoteAction(formData: FormData): Promise<void> {
+export async function addNoteAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const user = await requireStaffOrAdmin();
 
   const enquiryId = String(formData.get("enquiryId") ?? "");
@@ -322,7 +323,7 @@ export async function addNoteAction(formData: FormData): Promise<void> {
   // Defaults to "internal" on anything unrecognized — a note only ever
   // becomes client-visible when explicitly marked, never by omission.
   const audience: NoteAudience = isNoteAudience(audienceInput) ? audienceInput : "internal";
-  if (!enquiryId || !note) return;
+  if (!enquiryId || !note) return actionFail("Nothing was saved — check the details and try again.");
 
   const supabase = await createClient();
   const { error } = await supabase
@@ -330,7 +331,7 @@ export async function addNoteAction(formData: FormData): Promise<void> {
     .insert({ enquiry_id: enquiryId, author_user_id: user.id, note, audience });
   if (error) {
     console.error("[admin] enquiry note insert failed", error.message);
-    return;
+    return actionFail("Could not save your change. Please try again.");
   }
 
   await logActivity({
@@ -342,4 +343,5 @@ export async function addNoteAction(formData: FormData): Promise<void> {
   });
 
   revalidatePath(`/admin/enquiries/${enquiryId}`);
+  return actionOk("Added.");
 }

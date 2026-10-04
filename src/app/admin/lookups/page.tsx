@@ -5,6 +5,8 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { addLookupOptionAction, toggleLookupOptionAction } from "./actions";
 import { listClassifications } from "@/lib/portal/memberNumbers";
 import ClassificationManager from "./ClassificationManager";
+import ActionForm from "@/components/admin/ActionForm";
+import SubmitButton from "@/components/admin/SubmitButton";
 
 export const metadata: Metadata = {
   title: "Titles, Engagement Types & Classifications — Ordift Studios Admin",
@@ -33,19 +35,19 @@ function LookupTable({ table, title, rows }: { table: "operational_titles" | "en
             <span className={`font-sans text-body-small ${r.active ? "text-ordift-ink" : "text-ordift-ink-muted line-through"}`}>
               {r.name}
             </span>
-            <form action={toggleLookupOptionAction}>
+            <ActionForm action={toggleLookupOptionAction}>
               <input type="hidden" name="table" value={table} />
               <input type="hidden" name="id" value={r.id} />
               <input type="hidden" name="active" value={String(r.active)} />
-              <button type="submit" className="font-sans text-caption text-ordift-gold-pressed underline underline-offset-4">
+              <SubmitButton pendingLabel="Working…" className="font-sans text-caption text-ordift-gold-pressed underline underline-offset-4">
                 {r.active ? "Deactivate" : "Reactivate"}
-              </button>
-            </form>
+              </SubmitButton>
+            </ActionForm>
           </li>
         ))}
         {rows.length === 0 && <p className="font-sans text-body-small text-ordift-ink-muted py-2">None yet.</p>}
       </ul>
-      <form action={addLookupOptionAction} className="flex items-center gap-2 pt-2 border-t border-black/5">
+      <ActionForm action={addLookupOptionAction} className="flex items-center gap-2 pt-2 border-t border-black/5">
         <input type="hidden" name="table" value={table} />
         <input
           type="text"
@@ -55,10 +57,10 @@ function LookupTable({ table, title, rows }: { table: "operational_titles" | "en
           required
           className="flex-1 rounded-lg border border-black/15 px-3 py-1.5 font-sans text-body-small"
         />
-        <button type="submit" className="font-sans text-body-small font-semibold px-3 py-1.5 rounded-md bg-ordift-navy-950 text-white">
+        <SubmitButton pendingLabel="Adding…" className="font-sans text-body-small font-semibold px-3 py-1.5 rounded-md bg-ordift-navy-950 text-white">
           Add
-        </button>
-      </form>
+        </SubmitButton>
+      </ActionForm>
     </section>
   );
 }

@@ -22,6 +22,7 @@ import {
   cancelPaymentObligationAction,
   reversePaymentObligationAction,
 } from "../actions";
+import ActionForm from "@/components/admin/ActionForm";
 
 export const metadata: Metadata = {
   title: "Payable — Payables — Ordift Studios Admin",
@@ -102,7 +103,7 @@ export default async function AdminPayableDetailPage({ params }: { params: Promi
         {obligation.status === "pending_approval" && (
           <details className="rounded-lg border border-black/10 p-4">
             <summary className="font-sans text-body-small text-ordift-ink cursor-pointer">Add a line item</summary>
-            <form action={addPayableItemAction} className="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-4">
+            <ActionForm action={addPayableItemAction} className="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-4">
               <input type="hidden" name="paymentObligationId" value={obligation.id} />
               <label className="flex flex-col gap-1">
                 <span className="font-sans text-caption text-ordift-ink-muted">Kind</span>
@@ -127,7 +128,7 @@ export default async function AdminPayableDetailPage({ params }: { params: Promi
                   Add Item
                 </SubmitButton>
               </div>
-            </form>
+            </ActionForm>
           </details>
         )}
       </section>
@@ -137,7 +138,7 @@ export default async function AdminPayableDetailPage({ params }: { params: Promi
         <section className="rounded-xl border border-black/10 bg-white p-6">
           <h2 className="font-serif font-medium text-body text-ordift-ink mb-3">Approval</h2>
           <p className="font-sans text-caption text-ordift-ink-muted mb-3">Approving confirms the record only — it never moves money.</p>
-          <form action={approvePayableAction}>
+          <ActionForm action={approvePayableAction}>
             <input type="hidden" name="obligationId" value={obligation.id} />
             <ConfirmSubmitButton
               confirmMessage={`Approve this payable (${obligation.currency} ${obligation.amount})? This confirms the record only — it does not move money — and is recorded in the audit trail.`}
@@ -146,7 +147,7 @@ export default async function AdminPayableDetailPage({ params }: { params: Promi
             >
               Approve
             </ConfirmSubmitButton>
-          </form>
+          </ActionForm>
         </section>
       )}
 
@@ -175,7 +176,7 @@ export default async function AdminPayableDetailPage({ params }: { params: Promi
             No integrated payout provider is connected — record the payment made outside Ordift (bank transfer,
             mobile money, or another approved method). Amount and currency must match this payable exactly.
           </p>
-          <form action={recordManualPaymentAction} className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <ActionForm action={recordManualPaymentAction} className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <input type="hidden" name="obligationId" value={obligation.id} />
             <label className="flex flex-col gap-1">
               <span className="font-sans text-caption text-ordift-ink-muted">Method</span>
@@ -208,7 +209,7 @@ export default async function AdminPayableDetailPage({ params }: { params: Promi
                 Record Payment
               </ConfirmSubmitButton>
             </div>
-          </form>
+          </ActionForm>
         </section>
       )}
 
@@ -268,7 +269,7 @@ export default async function AdminPayableDetailPage({ params }: { params: Promi
         </ul>
         <details className="rounded-lg border border-black/10 p-4">
           <summary className="font-sans text-body-small text-ordift-ink cursor-pointer">Attach evidence</summary>
-          <form action={addPaymentEvidenceAction} encType="multipart/form-data" className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4">
+          <ActionForm action={addPaymentEvidenceAction} encType="multipart/form-data" className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4">
             <input type="hidden" name="paymentObligationId" value={obligation.id} />
             <label className="flex flex-col gap-1">
               <span className="font-sans text-caption text-ordift-ink-muted">Type</span>
@@ -296,7 +297,7 @@ export default async function AdminPayableDetailPage({ params }: { params: Promi
                 Save Evidence
               </SubmitButton>
             </div>
-          </form>
+          </ActionForm>
         </details>
       </section>
 

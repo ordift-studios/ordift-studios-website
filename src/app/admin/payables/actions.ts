@@ -24,6 +24,7 @@ import {
   selectPayableDestination,
 } from "@/lib/payments/payoutObligations";
 import { createPaymentInstruction, updatePaymentInstruction, verifyPaymentInstruction, setPaymentInstructionActive } from "@/lib/payments/payeeInstructions";
+import { actionOk, actionFail, type ActionState } from "@/lib/shared/actionState";
 
 // Universal Payables System (2026-09-03) — plain FormData server
 // actions, matching the established convention already used by
@@ -84,18 +85,22 @@ export async function createPayeeProfileAction(_prevState: CreatePayeeProfileSta
   redirect(`/admin/payables/payees/${profileId}`);
 }
 
-export async function setPayeeProfileStatusAction(formData: FormData): Promise<void> {
+export async function setPayeeProfileStatusAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const user = await getCurrentUser();
-  if (!user) return;
+  if (!user) return actionFail("You must be signed in.");
 
   const payeeProfileId = str(formData, "payeeProfileId");
   const status = str(formData, "status") as "active" | "inactive" | "suspended";
-  if (!payeeProfileId || !status) return;
+  if (!payeeProfileId || !status) return actionFail("Missing or invalid input — nothing was saved.");
 
   const result = await setPayeeProfileStatus({ payeeProfileId, status, actorUserId: user.id });
-  if (!result.ok) console.error("[admin payables] setPayeeProfileStatus failed", result.error);
+  if (!result.ok) {
+    console.error("[admin payables] setPayeeProfileStatus failed", result.error);
+    return actionFail(result.error);
+  }
 
   revalidatePath(`/admin/payables/payees/${payeeProfileId}`);
+  return actionOk("Saved.");
 }
 
 // Mutation feedback (2026-09-04) — same useActionState pattern as
@@ -159,34 +164,42 @@ export async function updatePaymentInstructionAction(_prevState: PaymentDestinat
   return { ok: true };
 }
 
-export async function verifyPaymentInstructionAction(formData: FormData): Promise<void> {
+export async function verifyPaymentInstructionAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const user = await getCurrentUser();
-  if (!user) return;
+  if (!user) return actionFail("You must be signed in.");
 
   const instructionId = str(formData, "instructionId");
   const profileId = str(formData, "profileId");
   const verified = formData.get("verified") === "true";
-  if (!instructionId) return;
+  if (!instructionId) return actionFail("Nothing was saved — check the details and try again.");
 
   const result = await verifyPaymentInstruction({ instructionId, verified, actorUserId: user.id });
-  if (!result.ok) console.error("[admin payables] verifyPaymentInstruction failed", result.error);
+  if (!result.ok) {
+    console.error("[admin payables] verifyPaymentInstruction failed", result.error);
+    return actionFail(result.error);
+  }
 
   if (profileId) revalidatePath(`/admin/payables/payees/${profileId}`);
+  return actionOk("Verified.");
 }
 
-export async function setPaymentInstructionActiveAction(formData: FormData): Promise<void> {
+export async function setPaymentInstructionActiveAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const user = await getCurrentUser();
-  if (!user) return;
+  if (!user) return actionFail("You must be signed in.");
 
   const instructionId = str(formData, "instructionId");
   const profileId = str(formData, "profileId");
   const active = formData.get("active") === "true";
-  if (!instructionId) return;
+  if (!instructionId) return actionFail("Nothing was saved — check the details and try again.");
 
   const result = await setPaymentInstructionActive({ instructionId, active, actorUserId: user.id });
-  if (!result.ok) console.error("[admin payables] setPaymentInstructionActive failed", result.error);
+  if (!result.ok) {
+    console.error("[admin payables] setPaymentInstructionActive failed", result.error);
+    return actionFail(result.error);
+  }
 
   if (profileId) revalidatePath(`/admin/payables/payees/${profileId}`);
+  return actionOk("Saved.");
 }
 
 // Phase F.1 (2026-09-04) — converted from a void action to the
@@ -227,49 +240,57 @@ export async function createEngagementAction(_prevState: CreateEngagementState, 
   return { ok: true };
 }
 
-export async function setEngagementStatusAction(formData: FormData): Promise<void> {
+export async function setEngagementStatusAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const user = await getCurrentUser();
-  if (!user) return;
+  if (!user) return actionFail("You must be signed in.");
 
   const engagementId = str(formData, "engagementId");
   const status = str(formData, "status") as Parameters<typeof setEngagementStatus>[0]["status"];
   const payeeProfileId = optStr(formData, "payeeProfileId");
-  if (!engagementId || !status) return;
+  if (!engagementId || !status) return actionFail("Nothing was saved — check the details and try again.");
 
   const result = await setEngagementStatus({ engagementId, status, actorUserId: user.id });
-  if (!result.ok) console.error("[admin payables] setEngagementStatus failed", result.error);
+  if (!result.ok) {
+    console.error("[admin payables] setEngagementStatus failed", result.error);
+    return actionFail(result.error);
+  }
 
   if (payeeProfileId) revalidatePath(`/admin/payables/payees/${payeeProfileId}`);
+  return actionOk("Saved.");
 }
 
-export async function createEngagementPayableAction(formData: FormData): Promise<void> {
+export async function createEngagementPayableAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const user = await getCurrentUser();
-  if (!user) return;
+  if (!user) return actionFail("You must be signed in.");
 
   const engagementId = str(formData, "engagementId");
   const description = str(formData, "description");
   const payeeProfileId = optStr(formData, "payeeProfileId");
-  if (!engagementId || !description) return;
+  if (!engagementId || !description) return actionFail("Missing or invalid input — nothing was saved.");
 
   const result = await createEngagementPayable({ engagementId, description, actorUserId: user.id });
-  if (!result.ok) console.error("[admin payables] createEngagementPayable failed", result.error);
+  if (!result.ok) {
+    console.error("[admin payables] createEngagementPayable failed", result.error);
+    return actionFail(result.error);
+  }
 
   if (payeeProfileId) revalidatePath(`/admin/payables/payees/${payeeProfileId}`);
   revalidatePath("/admin/payables");
+  return actionOk("Created.");
 }
 
 // Standalone Payable creation (no linked engagement) — e.g. a one-off
 // payment not tied to a tracked engagement. Reuses createPaymentObligation()
 // directly, exactly as createEngagementPayable() does.
-export async function createStandalonePayableAction(formData: FormData): Promise<void> {
+export async function createStandalonePayableAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const user = await getCurrentUser();
-  if (!user) return;
+  if (!user) return actionFail("You must be signed in.");
 
   const payeeProfileId = str(formData, "payeeProfileId");
   const description = str(formData, "description");
   const currency = str(formData, "currency");
   const amount = num(formData, "amount");
-  if (!payeeProfileId || !description || !currency || amount <= 0) return;
+  if (!payeeProfileId || !description || !currency || amount <= 0) return actionFail("Missing or invalid input — nothing was saved.");
 
   const result = await createPaymentObligation({
     payeeProfileId,
@@ -279,40 +300,52 @@ export async function createStandalonePayableAction(formData: FormData): Promise
     amount,
     actorUserId: user.id,
   });
-  if (!result.ok) console.error("[admin payables] createStandalonePayable failed", result.error);
+  if (!result.ok) {
+    console.error("[admin payables] createStandalonePayable failed", result.error);
+    return actionFail(result.error);
+  }
 
   revalidatePath(`/admin/payables/payees/${payeeProfileId}`);
   revalidatePath("/admin/payables");
+  return actionOk("Created.");
 }
 
-export async function addPayableItemAction(formData: FormData): Promise<void> {
+export async function addPayableItemAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const user = await getCurrentUser();
-  if (!user) return;
+  if (!user) return actionFail("You must be signed in.");
 
   const paymentObligationId = str(formData, "paymentObligationId");
   const kind = str(formData, "kind");
   const description = str(formData, "description");
   const amount = num(formData, "amount");
-  if (!paymentObligationId || !kind || !description || amount <= 0) return;
+  if (!paymentObligationId || !kind || !description || amount <= 0) return actionFail("Missing or invalid input — nothing was saved.");
 
   const result = await addPayableItem({ paymentObligationId, kind, description, amount, actorUserId: user.id });
-  if (!result.ok) console.error("[admin payables] addPayableItem failed", result.error);
+  if (!result.ok) {
+    console.error("[admin payables] addPayableItem failed", result.error);
+    return actionFail(result.error);
+  }
 
   revalidatePath(`/admin/payables/${paymentObligationId}`);
+  return actionOk("Added.");
 }
 
-export async function approvePayableAction(formData: FormData): Promise<void> {
+export async function approvePayableAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const user = await getCurrentUser();
-  if (!user) return;
+  if (!user) return actionFail("You must be signed in.");
 
   const obligationId = str(formData, "obligationId");
-  if (!obligationId) return;
+  if (!obligationId) return actionFail("Missing or invalid input — nothing was saved.");
 
   const result = await approvePaymentObligation({ obligationId, actorUserId: user.id });
-  if (!result.ok) console.error("[admin payables] approvePaymentObligation failed", result.error);
+  if (!result.ok) {
+    console.error("[admin payables] approvePaymentObligation failed", result.error);
+    return actionFail(result.error);
+  }
 
   revalidatePath(`/admin/payables/${obligationId}`);
   revalidatePath("/admin/payables");
+  return actionOk("Approved.");
 }
 
 // Phase G.4A (2026-09-04) — useActionState feedback, matching the
@@ -337,9 +370,9 @@ export async function selectPayableDestinationAction(_prevState: SelectDestinati
   return { ok: true };
 }
 
-export async function recordManualPaymentAction(formData: FormData): Promise<void> {
+export async function recordManualPaymentAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const user = await getCurrentUser();
-  if (!user) return;
+  if (!user) return actionFail("You must be signed in.");
 
   const obligationId = str(formData, "obligationId");
   const method = str(formData, "method");
@@ -347,33 +380,41 @@ export async function recordManualPaymentAction(formData: FormData): Promise<voi
   const currency = str(formData, "currency");
   const paidAt = str(formData, "paidAt");
   const reference = str(formData, "reference");
-  if (!obligationId || !method || amount <= 0 || !currency || !paidAt || !reference) return;
+  if (!obligationId || !method || amount <= 0 || !currency || !paidAt || !reference) return actionFail("Missing or invalid input — nothing was saved.");
 
   const result = await recordManualPayment({ obligationId, method, amount, currency, paidAt, reference, actorUserId: user.id });
-  if (!result.ok) console.error("[admin payables] recordManualPayment failed", result.error);
+  if (!result.ok) {
+    console.error("[admin payables] recordManualPayment failed", result.error);
+    return actionFail(result.error);
+  }
 
   revalidatePath(`/admin/payables/${obligationId}`);
   revalidatePath("/admin/payables");
+  return actionOk("Recorded.");
 }
 
-export async function addPaymentEvidenceAction(formData: FormData): Promise<void> {
+export async function addPaymentEvidenceAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const user = await getCurrentUser();
-  if (!user) return;
+  if (!user) return actionFail("You must be signed in.");
 
   const paymentObligationId = str(formData, "paymentObligationId");
   const evidenceType = str(formData, "evidenceType");
   const reference = optStr(formData, "reference");
   const notes = optStr(formData, "notes");
   const file = formData.get("file");
-  if (!paymentObligationId || !evidenceType) return;
+  if (!paymentObligationId || !evidenceType) return actionFail("Missing or invalid input — nothing was saved.");
 
   const result =
     file instanceof File && file.size > 0
       ? await addPaymentEvidenceFile({ paymentObligationId, evidenceType, file, reference, notes, actorUserId: user.id })
       : await addPaymentEvidenceReference({ paymentObligationId, evidenceType, reference, notes, actorUserId: user.id });
-  if (!result.ok) console.error("[admin payables] addPaymentEvidence failed", result.error);
+  if (!result.ok) {
+    console.error("[admin payables] addPaymentEvidence failed", result.error);
+    return actionFail(result.error);
+  }
 
   revalidatePath(`/admin/payables/${paymentObligationId}`);
+  return actionOk("Added.");
 }
 
 // Payable Safety Hardening (2026-09-04), Part B — engagement
@@ -478,38 +519,50 @@ export async function recordStaffUploadedFileAction(params: {
   return result;
 }
 
-export async function confirmProjectFileBackupAction(formData: FormData): Promise<void> {
+export async function confirmProjectFileBackupAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const user = await getCurrentUser();
-  if (!user) return;
+  if (!user) return actionFail("You must be signed in.");
   const fileId = str(formData, "fileId");
   const engagementId = str(formData, "engagementId");
-  if (!fileId) return;
+  if (!fileId) return actionFail("Nothing was saved — check the details and try again.");
   const result = await confirmProjectFilesBackup({ fileIds: [fileId], actorUserId: user.id });
-  if (!result.ok) console.error("[admin payables] confirmProjectFilesBackup failed", result.error);
+  if (!result.ok) {
+    console.error("[admin payables] confirmProjectFilesBackup failed", result.error);
+    return actionFail(result.error);
+  }
   if (engagementId) revalidatePath(`/admin/payables/engagements/${engagementId}/media`);
+  return actionOk("Confirmed.");
 }
 
-export async function setProjectFileRetainAction(formData: FormData): Promise<void> {
+export async function setProjectFileRetainAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const user = await getCurrentUser();
-  if (!user) return;
+  if (!user) return actionFail("You must be signed in.");
   const fileId = str(formData, "fileId");
   const engagementId = str(formData, "engagementId");
   const retain = formData.get("retain") === "true";
-  if (!fileId) return;
+  if (!fileId) return actionFail("Nothing was saved — check the details and try again.");
   const result = await setProjectFileRetain({ fileId, retain, actorUserId: user.id });
-  if (!result.ok) console.error("[admin payables] setProjectFileRetain failed", result.error);
+  if (!result.ok) {
+    console.error("[admin payables] setProjectFileRetain failed", result.error);
+    return actionFail(result.error);
+  }
   if (engagementId) revalidatePath(`/admin/payables/engagements/${engagementId}/media`);
+  return actionOk("Saved.");
 }
 
-export async function promoteProjectFileToFinalApprovedAction(formData: FormData): Promise<void> {
+export async function promoteProjectFileToFinalApprovedAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const user = await getCurrentUser();
-  if (!user) return;
+  if (!user) return actionFail("You must be signed in.");
   const fileId = str(formData, "fileId");
   const engagementId = str(formData, "engagementId");
-  if (!fileId) return;
+  if (!fileId) return actionFail("Nothing was saved — check the details and try again.");
   const result = await promoteProjectFileToFinalApproved({ fileId, actorUserId: user.id });
-  if (!result.ok) console.error("[admin payables] promoteProjectFileToFinalApproved failed", result.error);
+  if (!result.ok) {
+    console.error("[admin payables] promoteProjectFileToFinalApproved failed", result.error);
+    return actionFail(result.error);
+  }
   if (engagementId) revalidatePath(`/admin/payables/engagements/${engagementId}/media`);
+  return actionOk("Promoted.");
 }
 
 // Manual trigger only — no pg_cron/Vercel Cron infrastructure exists

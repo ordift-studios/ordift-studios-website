@@ -78,6 +78,7 @@ import {
 } from "@/lib/organization/employmentReferences";
 import { recordPolicyAcknowledgement, type PolicyAcknowledgementMethod } from "@/lib/organization/policyAcknowledgements";
 import { resolveDeferredRequirementForProfile } from "@/lib/organization/onboardingRequirements";
+import { actionOk, actionFail, type ActionState } from "@/lib/shared/actionState";
 import {
   recordEmploymentTransition,
   completeEnhancedReview,
@@ -111,12 +112,12 @@ async function requireAdmin() {
   return user;
 }
 
-export async function setEmploymentStatusAction(formData: FormData): Promise<void> {
+export async function setEmploymentStatusAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const currentUser = await requireAdmin();
 
   const profileId = String(formData.get("profileId") ?? "").trim();
   const status = String(formData.get("status") ?? "").trim();
-  if (!profileId || !(EMPLOYMENT_STATUSES as readonly string[]).includes(status)) return;
+  if (!profileId || !(EMPLOYMENT_STATUSES as readonly string[]).includes(status)) return actionFail("Nothing was saved — check the details and try again.");
 
   const admin = createAdminClient();
   const { data: previous } = await admin.from("staff_details").select("employment_status").eq("id", profileId).maybeSingle();
@@ -131,7 +132,7 @@ export async function setEmploymentStatusAction(formData: FormData): Promise<voi
     .eq("id", profileId);
   if (error) {
     console.error("[admin organization] failed to update employment_status", error.message);
-    return;
+    return actionFail("Could not save your change. Please try again.");
   }
 
   await logActivity({
@@ -143,14 +144,15 @@ export async function setEmploymentStatusAction(formData: FormData): Promise<voi
   });
 
   revalidatePath(`/admin/organization/people/${profileId}`);
+  return actionOk("Saved.");
 }
 
 // Background screening decision — recordBackgroundScreening() itself
 // independently enforces Super-Admin-only; this action is just the
 // form entry point.
-export async function recordBackgroundScreeningAction(formData: FormData): Promise<void> {
+export async function recordBackgroundScreeningAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const currentUser = await getCurrentUser();
-  if (!currentUser) return;
+  if (!currentUser) return actionFail("You must be signed in.");
 
   const profileId = String(formData.get("profileId") ?? "").trim();
   const category = String(formData.get("category") ?? "").trim();
@@ -158,8 +160,8 @@ export async function recordBackgroundScreeningAction(formData: FormData): Promi
   const jurisdiction = String(formData.get("jurisdiction") ?? "").trim() || null;
   const evidenceReference = String(formData.get("evidenceReference") ?? "").trim() || null;
   const notes = String(formData.get("notes") ?? "").trim() || null;
-  if (!profileId || !(BACKGROUND_SCREENING_CATEGORIES as readonly string[]).includes(category)) return;
-  if (!(BACKGROUND_SCREENING_STATUSES as readonly string[]).includes(status)) return;
+  if (!profileId || !(BACKGROUND_SCREENING_CATEGORIES as readonly string[]).includes(category)) return actionFail("Missing or invalid input — nothing was saved.");
+  if (!(BACKGROUND_SCREENING_STATUSES as readonly string[]).includes(status)) return actionFail("Missing or invalid input — nothing was saved.");
 
   const result = await recordBackgroundScreening({
     profileId,
@@ -170,9 +172,13 @@ export async function recordBackgroundScreeningAction(formData: FormData): Promi
     notes,
     actorUserId: currentUser.id,
   });
-  if (!result.ok) console.error("[admin organization] failed to record background screening", result.error);
+  if (!result.ok) {
+    console.error("[admin organization] failed to record background screening", result.error);
+    return actionFail(result.error);
+  }
 
   revalidatePath(`/admin/organization/people/${profileId}`);
+  return actionOk("Recorded.");
 }
 
 // Thin wrapper so the existing updateAccessStatusAction (which returns
@@ -198,17 +204,17 @@ export async function updateAccessStatusFormAction(formData: FormData): Promise<
 // separation action, deliberately not this file's own
 // PEOPLE_CAPABILITIES.workforceAdminister gate, so the whole
 // separation feature shares one consistent authorization boundary.
-export async function initiateSeparationCaseAction(formData: FormData): Promise<void> {
+export async function initiateSeparationCaseAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const currentUser = await getCurrentUser();
-  if (!currentUser) return;
+  if (!currentUser) return actionFail("You must be signed in.");
 
   const profileId = String(formData.get("profileId") ?? "").trim();
   const category = String(formData.get("category") ?? "").trim() as SeparationCategory;
   const reasonType = String(formData.get("reasonType") ?? "").trim();
   const reasonNotes = String(formData.get("reasonNotes") ?? "").trim() || null;
   const proposedLastWorkingDate = String(formData.get("proposedLastWorkingDate") ?? "").trim() || null;
-  if (!profileId || !(SEPARATION_CATEGORIES as readonly string[]).includes(category)) return;
-  if (!(SEPARATION_REASON_TYPES[category] as readonly string[]).includes(reasonType)) return;
+  if (!profileId || !(SEPARATION_CATEGORIES as readonly string[]).includes(category)) return actionFail("Nothing was saved — check the details and try again.");
+  if (!(SEPARATION_REASON_TYPES[category] as readonly string[]).includes(reasonType)) return actionFail("Nothing was saved — check the details and try again.");
 
   const result = await createSeparationCase({
     profileId,
@@ -220,10 +226,11 @@ export async function initiateSeparationCaseAction(formData: FormData): Promise<
   });
   if (!result.ok) {
     console.error("[admin organization] failed to create separation case", result.error);
-    return;
+    return actionFail("Could not save your change. Please try again.");
   }
 
   revalidatePath(`/admin/organization/people/${profileId}`);
+  return actionOk("Initiated.");
 }
 
 // Performance Reviews / Performance Improvement Plans (Phase B5 Step 2,
@@ -232,9 +239,9 @@ export async function initiateSeparationCaseAction(formData: FormData): Promise<
 // Authorization is enforced inside each lib function
 // (canManagePerformance) exactly as the Separation forms above already
 // rely on their own lib-level gate.
-export async function recordPerformanceReviewAction(formData: FormData): Promise<void> {
+export async function recordPerformanceReviewAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const currentUser = await getCurrentUser();
-  if (!currentUser) return;
+  if (!currentUser) return actionFail("You must be signed in.");
 
   const profileId = String(formData.get("profileId") ?? "").trim();
   const outcomeSummary = String(formData.get("outcomeSummary") ?? "").trim();
@@ -242,7 +249,7 @@ export async function recordPerformanceReviewAction(formData: FormData): Promise
   const reviewPeriodEnd = String(formData.get("reviewPeriodEnd") ?? "").trim() || null;
   const competencyNotes = String(formData.get("competencyNotes") ?? "").trim() || null;
   const kpiNotes = String(formData.get("kpiNotes") ?? "").trim() || null;
-  if (!profileId || !outcomeSummary) return;
+  if (!profileId || !outcomeSummary) return actionFail("Missing or invalid input — nothing was saved.");
 
   const result = await recordPerformanceReview({
     profileId,
@@ -254,14 +261,18 @@ export async function recordPerformanceReviewAction(formData: FormData): Promise
     outcomeSummary,
     actorUserId: currentUser.id,
   });
-  if (!result.ok) console.error("[admin organization] failed to record performance review", result.error);
+  if (!result.ok) {
+    console.error("[admin organization] failed to record performance review", result.error);
+    return actionFail(result.error);
+  }
 
   revalidatePath(`/admin/organization/people/${profileId}`);
+  return actionOk("Recorded.");
 }
 
-export async function initiatePipAction(formData: FormData): Promise<void> {
+export async function initiatePipAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const currentUser = await getCurrentUser();
-  if (!currentUser) return;
+  if (!currentUser) return actionFail("You must be signed in.");
 
   const profileId = String(formData.get("profileId") ?? "").trim();
   const deficientStandard = String(formData.get("deficientStandard") ?? "").trim();
@@ -273,7 +284,7 @@ export async function initiatePipAction(formData: FormData): Promise<void> {
   const supportResources = String(formData.get("supportResources") ?? "").trim() || null;
   const durationRaw = Number(formData.get("plannedDurationDays") ?? "");
   const plannedDurationDays = (PIP_ALLOWED_DURATIONS_DAYS as readonly number[]).includes(durationRaw) ? (durationRaw as PipDurationDays) : undefined;
-  if (!profileId || !deficientStandard || !requiredImprovement || measurableObjectives.length === 0) return;
+  if (!profileId || !deficientStandard || !requiredImprovement || measurableObjectives.length === 0) return actionFail("Missing or invalid input — nothing was saved.");
 
   const result = await initiatePip({
     profileId,
@@ -284,57 +295,73 @@ export async function initiatePipAction(formData: FormData): Promise<void> {
     plannedDurationDays,
     actorUserId: currentUser.id,
   });
-  if (!result.ok) console.error("[admin organization] failed to initiate PIP", result.error);
+  if (!result.ok) {
+    console.error("[admin organization] failed to initiate PIP", result.error);
+    return actionFail(result.error);
+  }
 
   revalidatePath(`/admin/organization/people/${profileId}`);
+  return actionOk("Saved.");
 }
 
-export async function recordPipCheckinAction(formData: FormData): Promise<void> {
+export async function recordPipCheckinAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const currentUser = await getCurrentUser();
-  if (!currentUser) return;
+  if (!currentUser) return actionFail("You must be signed in.");
 
   const profileId = String(formData.get("profileId") ?? "").trim();
   const pipId = String(formData.get("pipId") ?? "").trim();
   const notes = String(formData.get("notes") ?? "").trim();
-  if (!profileId || !pipId || !notes) return;
+  if (!profileId || !pipId || !notes) return actionFail("Missing or invalid input — nothing was saved.");
 
   const result = await recordPipCheckin({ pipId, notes, actorUserId: currentUser.id });
-  if (!result.ok) console.error("[admin organization] failed to record PIP check-in", result.error);
+  if (!result.ok) {
+    console.error("[admin organization] failed to record PIP check-in", result.error);
+    return actionFail(result.error);
+  }
 
   revalidatePath(`/admin/organization/people/${profileId}`);
+  return actionOk("Recorded.");
 }
 
-export async function extendPipAction(formData: FormData): Promise<void> {
+export async function extendPipAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const currentUser = await getCurrentUser();
-  if (!currentUser) return;
+  if (!currentUser) return actionFail("You must be signed in.");
 
   const profileId = String(formData.get("profileId") ?? "").trim();
   const pipId = String(formData.get("pipId") ?? "").trim();
   const newEndDate = String(formData.get("newEndDate") ?? "").trim();
   const reason = String(formData.get("reason") ?? "").trim();
-  if (!profileId || !pipId || !newEndDate || !reason) return;
+  if (!profileId || !pipId || !newEndDate || !reason) return actionFail("Missing or invalid input — nothing was saved.");
 
   const result = await extendPip({ pipId, newEndDate, reason, actorUserId: currentUser.id });
-  if (!result.ok) console.error("[admin organization] failed to extend PIP", result.error);
+  if (!result.ok) {
+    console.error("[admin organization] failed to extend PIP", result.error);
+    return actionFail(result.error);
+  }
 
   revalidatePath(`/admin/organization/people/${profileId}`);
+  return actionOk("Extended.");
 }
 
-export async function decidePipAction(formData: FormData): Promise<void> {
+export async function decidePipAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const currentUser = await getCurrentUser();
-  if (!currentUser) return;
+  if (!currentUser) return actionFail("You must be signed in.");
 
   const profileId = String(formData.get("profileId") ?? "").trim();
   const pipId = String(formData.get("pipId") ?? "").trim();
   const outcome = String(formData.get("outcome") ?? "").trim();
   const outcomeNotes = String(formData.get("outcomeNotes") ?? "").trim();
-  if (!profileId || !pipId || !outcomeNotes) return;
-  if (outcome !== "completed_improved" && outcome !== "completed_failed_escalated") return;
+  if (!profileId || !pipId || !outcomeNotes) return actionFail("Missing or invalid input — nothing was saved.");
+  if (outcome !== "completed_improved" && outcome !== "completed_failed_escalated") return actionFail("Missing or invalid input — nothing was saved.");
 
   const result = await decidePip({ pipId, outcome: outcome as PipOutcome, outcomeNotes, actorUserId: currentUser.id });
-  if (!result.ok) console.error("[admin organization] failed to decide PIP outcome", result.error);
+  if (!result.ok) {
+    console.error("[admin organization] failed to decide PIP outcome", result.error);
+    return actionFail(result.error);
+  }
 
   revalidatePath(`/admin/organization/people/${profileId}`);
+  return actionOk("Decision recorded.");
 }
 
 // Employee Relations — Discipline / Investigation (Phase B5 Step 3,
@@ -343,16 +370,16 @@ export async function decidePipAction(formData: FormData): Promise<void> {
 // pattern already used for Background Screening on this page);
 // issueDisciplinaryAction/openInvestigation/etc. carry their own
 // independent authorization gate regardless.
-export async function issueDisciplinaryActionAction(formData: FormData): Promise<void> {
+export async function issueDisciplinaryActionAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const currentUser = await getCurrentUser();
-  if (!currentUser) return;
+  if (!currentUser) return actionFail("You must be signed in.");
 
   const profileId = String(formData.get("profileId") ?? "").trim();
   const actionType = String(formData.get("actionType") ?? "").trim();
   const reason = String(formData.get("reason") ?? "").trim();
   const incidentDate = String(formData.get("incidentDate") ?? "").trim() || null;
   const investigationId = String(formData.get("investigationId") ?? "").trim() || null;
-  if (!profileId || !reason || !(DISCIPLINARY_ACTION_TYPES as readonly string[]).includes(actionType)) return;
+  if (!profileId || !reason || !(DISCIPLINARY_ACTION_TYPES as readonly string[]).includes(actionType)) return actionFail("Missing or invalid input — nothing was saved.");
 
   const result = await issueDisciplinaryAction({
     profileId,
@@ -362,45 +389,57 @@ export async function issueDisciplinaryActionAction(formData: FormData): Promise
     investigationId,
     actorUserId: currentUser.id,
   });
-  if (!result.ok) console.error("[admin organization] failed to issue disciplinary action", result.error);
+  if (!result.ok) {
+    console.error("[admin organization] failed to issue disciplinary action", result.error);
+    return actionFail(result.error);
+  }
 
   revalidatePath(`/admin/organization/people/${profileId}`);
+  return actionOk("Issued.");
 }
 
-export async function openInvestigationAction(formData: FormData): Promise<void> {
+export async function openInvestigationAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const currentUser = await getCurrentUser();
-  if (!currentUser) return;
+  if (!currentUser) return actionFail("You must be signed in.");
 
   const profileId = String(formData.get("profileId") ?? "").trim();
   const reason = String(formData.get("reason") ?? "").trim();
-  if (!profileId || !reason) return;
+  if (!profileId || !reason) return actionFail("Missing or invalid input — nothing was saved.");
 
   const result = await openInvestigation({ profileId, reason, actorUserId: currentUser.id });
-  if (!result.ok) console.error("[admin organization] failed to open investigation", result.error);
+  if (!result.ok) {
+    console.error("[admin organization] failed to open investigation", result.error);
+    return actionFail(result.error);
+  }
 
   revalidatePath(`/admin/organization/people/${profileId}`);
+  return actionOk("Opened.");
 }
 
-export async function closeInvestigationAction(formData: FormData): Promise<void> {
+export async function closeInvestigationAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const currentUser = await getCurrentUser();
-  if (!currentUser) return;
+  if (!currentUser) return actionFail("You must be signed in.");
 
   const profileId = String(formData.get("profileId") ?? "").trim();
   const investigationId = String(formData.get("investigationId") ?? "").trim();
   const outcome = String(formData.get("outcome") ?? "").trim();
   const outcomeNotes = String(formData.get("outcomeNotes") ?? "").trim() || null;
   const validOutcomes: InvestigationOutcome[] = ["closed_no_action", "closed_resulted_in_discipline", "closed_resulted_in_separation"];
-  if (!profileId || !investigationId || !(validOutcomes as string[]).includes(outcome)) return;
+  if (!profileId || !investigationId || !(validOutcomes as string[]).includes(outcome)) return actionFail("Missing or invalid input — nothing was saved.");
 
   const result = await closeInvestigation({ investigationId, outcome: outcome as InvestigationOutcome, outcomeNotes, actorUserId: currentUser.id });
-  if (!result.ok) console.error("[admin organization] failed to close investigation", result.error);
+  if (!result.ok) {
+    console.error("[admin organization] failed to close investigation", result.error);
+    return actionFail(result.error);
+  }
 
   revalidatePath(`/admin/organization/people/${profileId}`);
+  return actionOk("Closed.");
 }
 
-export async function recordInvestigatorySuspensionAction(formData: FormData): Promise<void> {
+export async function recordInvestigatorySuspensionAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const currentUser = await getCurrentUser();
-  if (!currentUser) return;
+  if (!currentUser) return actionFail("You must be signed in.");
 
   const profileId = String(formData.get("profileId") ?? "").trim();
   const investigationId = String(formData.get("investigationId") ?? "").trim();
@@ -408,29 +447,37 @@ export async function recordInvestigatorySuspensionAction(formData: FormData): P
   const fullBasicPay = formData.get("fullBasicPay") !== "false";
   const normalBenefits = formData.get("normalBenefits") !== "false";
   const accessRestricted = formData.get("accessRestricted") === "true";
-  if (!profileId || !investigationId || !reason) return;
+  if (!profileId || !investigationId || !reason) return actionFail("Missing or invalid input — nothing was saved.");
 
   const result = await recordInvestigatorySuspension({ investigationId, profileId, reason, fullBasicPay, normalBenefits, accessRestricted, actorUserId: currentUser.id });
-  if (!result.ok) console.error("[admin organization] failed to record investigatory suspension", result.error);
+  if (!result.ok) {
+    console.error("[admin organization] failed to record investigatory suspension", result.error);
+    return actionFail(result.error);
+  }
 
   revalidatePath(`/admin/organization/people/${profileId}`);
+  return actionOk("Recorded.");
 }
 
-export async function recordSuspensionReviewAction(formData: FormData): Promise<void> {
+export async function recordSuspensionReviewAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const currentUser = await getCurrentUser();
-  if (!currentUser) return;
+  if (!currentUser) return actionFail("You must be signed in.");
 
   const profileId = String(formData.get("profileId") ?? "").trim();
   const suspensionId = String(formData.get("suspensionId") ?? "").trim();
   const decision = String(formData.get("decision") ?? "").trim();
   const notes = String(formData.get("notes") ?? "").trim() || null;
   const nextReviewDueAt = String(formData.get("nextReviewDueAt") ?? "").trim() || null;
-  if (!profileId || !suspensionId || (decision !== "continue_suspension" && decision !== "end_suspension")) return;
+  if (!profileId || !suspensionId || (decision !== "continue_suspension" && decision !== "end_suspension")) return actionFail("Missing or invalid input — nothing was saved.");
 
   const result = await recordSuspensionReview({ suspensionId, decision, notes, nextReviewDueAt, actorUserId: currentUser.id });
-  if (!result.ok) console.error("[admin organization] failed to record suspension review", result.error);
+  if (!result.ok) {
+    console.error("[admin organization] failed to record suspension review", result.error);
+    return actionFail(result.error);
+  }
 
   revalidatePath(`/admin/organization/people/${profileId}`);
+  return actionOk("Recorded.");
 }
 
 // Compensation & Benefits (Phase B5 Step 5, 2026-09-14) — salary
@@ -439,54 +486,66 @@ export async function recordSuspensionReviewAction(formData: FormData): Promise<
 // like Performance; each lib function carries its own authorization
 // gate (canManageCompensation, or the exceeds-cap Super-Admin-only
 // routing for salary advances) independent of this file.
-export async function requestSalaryAdvanceAction(formData: FormData): Promise<void> {
+export async function requestSalaryAdvanceAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const currentUser = await getCurrentUser();
-  if (!currentUser) return;
+  if (!currentUser) return actionFail("You must be signed in.");
 
   const profileId = String(formData.get("profileId") ?? "").trim();
   const requestedAmount = Number(formData.get("requestedAmount") ?? "");
-  if (!profileId || !(requestedAmount > 0)) return;
+  if (!profileId || !(requestedAmount > 0)) return actionFail("Missing or invalid input — nothing was saved.");
 
   const result = await requestSalaryAdvance({ profileId, requestedAmount, actorUserId: currentUser.id });
-  if (!result.ok) console.error("[admin organization] failed to request salary advance", result.error);
+  if (!result.ok) {
+    console.error("[admin organization] failed to request salary advance", result.error);
+    return actionFail(result.error);
+  }
 
   revalidatePath(`/admin/organization/people/${profileId}`);
+  return actionOk("Requested.");
 }
 
-export async function decideSalaryAdvanceAction(formData: FormData): Promise<void> {
+export async function decideSalaryAdvanceAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const currentUser = await getCurrentUser();
-  if (!currentUser) return;
+  if (!currentUser) return actionFail("You must be signed in.");
 
   const profileId = String(formData.get("profileId") ?? "").trim();
   const advanceId = String(formData.get("advanceId") ?? "").trim();
   const decision = String(formData.get("decision") ?? "").trim();
   const decisionNotes = String(formData.get("decisionNotes") ?? "").trim() || null;
-  if (!profileId || !advanceId || (decision !== "approved" && decision !== "declined")) return;
+  if (!profileId || !advanceId || (decision !== "approved" && decision !== "declined")) return actionFail("Missing or invalid input — nothing was saved.");
 
   const result = await decideSalaryAdvance({ advanceId, decision: decision as SalaryAdvanceDecision, decisionNotes, actorUserId: currentUser.id });
-  if (!result.ok) console.error("[admin organization] failed to decide salary advance", result.error);
+  if (!result.ok) {
+    console.error("[admin organization] failed to decide salary advance", result.error);
+    return actionFail(result.error);
+  }
 
   revalidatePath(`/admin/organization/people/${profileId}`);
+  return actionOk("Decision recorded.");
 }
 
-export async function disburseSalaryAdvanceAction(formData: FormData): Promise<void> {
+export async function disburseSalaryAdvanceAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const currentUser = await getCurrentUser();
-  if (!currentUser) return;
+  if (!currentUser) return actionFail("You must be signed in.");
 
   const profileId = String(formData.get("profileId") ?? "").trim();
   const advanceId = String(formData.get("advanceId") ?? "").trim();
   const repaymentTerms = String(formData.get("repaymentTerms") ?? "").trim();
-  if (!profileId || !advanceId || !repaymentTerms) return;
+  if (!profileId || !advanceId || !repaymentTerms) return actionFail("Missing or invalid input — nothing was saved.");
 
   const result = await disburseSalaryAdvance({ advanceId, repaymentTerms, actorUserId: currentUser.id });
-  if (!result.ok) console.error("[admin organization] failed to disburse salary advance", result.error);
+  if (!result.ok) {
+    console.error("[admin organization] failed to disburse salary advance", result.error);
+    return actionFail(result.error);
+  }
 
   revalidatePath(`/admin/organization/people/${profileId}`);
+  return actionOk("Disbursed.");
 }
 
-export async function recordStaffBenefitTransactionAction(formData: FormData): Promise<void> {
+export async function recordStaffBenefitTransactionAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const currentUser = await getCurrentUser();
-  if (!currentUser) return;
+  if (!currentUser) return actionFail("You must be signed in.");
 
   const profileId = String(formData.get("profileId") ?? "").trim();
   const transactionType = String(formData.get("transactionType") ?? "").trim();
@@ -494,7 +553,7 @@ export async function recordStaffBenefitTransactionAction(formData: FormData): P
   const amount = Number(formData.get("amount") ?? "");
   const payrollRecovery = formData.get("payrollRecovery") === "true";
   const relatedTransactionId = String(formData.get("relatedTransactionId") ?? "").trim() || null;
-  if (!profileId || !benefitDescription || !(amount > 0) || (transactionType !== "purchase" && transactionType !== "refund")) return;
+  if (!profileId || !benefitDescription || !(amount > 0) || (transactionType !== "purchase" && transactionType !== "refund")) return actionFail("Missing or invalid input — nothing was saved.");
 
   const result = await recordStaffBenefitTransaction({
     profileId,
@@ -505,20 +564,24 @@ export async function recordStaffBenefitTransactionAction(formData: FormData): P
     relatedTransactionId,
     actorUserId: currentUser.id,
   });
-  if (!result.ok) console.error("[admin organization] failed to record staff benefit transaction", result.error);
+  if (!result.ok) {
+    console.error("[admin organization] failed to record staff benefit transaction", result.error);
+    return actionFail(result.error);
+  }
 
   revalidatePath(`/admin/organization/people/${profileId}`);
+  return actionOk("Recorded.");
 }
 
-export async function awardLongServiceBenefitAction(formData: FormData): Promise<void> {
+export async function awardLongServiceBenefitAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const currentUser = await getCurrentUser();
-  if (!currentUser) return;
+  if (!currentUser) return actionFail("You must be signed in.");
 
   const profileId = String(formData.get("profileId") ?? "").trim();
   const milestoneYearsRaw = Number(formData.get("milestoneYears") ?? "");
   const eligibleServiceStartDate = String(formData.get("eligibleServiceStartDate") ?? "").trim();
   const notes = String(formData.get("notes") ?? "").trim() || null;
-  if (!profileId || !eligibleServiceStartDate || !(milestoneYearsRaw in LONG_SERVICE_MILESTONE_PERCENTAGES)) return;
+  if (!profileId || !eligibleServiceStartDate || !(milestoneYearsRaw in LONG_SERVICE_MILESTONE_PERCENTAGES)) return actionFail("Missing or invalid input — nothing was saved.");
 
   const result = await awardLongServiceBenefit({
     profileId,
@@ -527,25 +590,33 @@ export async function awardLongServiceBenefitAction(formData: FormData): Promise
     notes,
     actorUserId: currentUser.id,
   });
-  if (!result.ok) console.error("[admin organization] failed to award long-service benefit", result.error);
+  if (!result.ok) {
+    console.error("[admin organization] failed to award long-service benefit", result.error);
+    return actionFail(result.error);
+  }
 
   revalidatePath(`/admin/organization/people/${profileId}`);
+  return actionOk("Awarded.");
 }
 
-export async function awardDeathInServiceBenefitAction(formData: FormData): Promise<void> {
+export async function awardDeathInServiceBenefitAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const currentUser = await getCurrentUser();
-  if (!currentUser) return;
+  if (!currentUser) return actionFail("You must be signed in.");
 
   const profileId = String(formData.get("profileId") ?? "").trim();
   const beneficiaryVerified = formData.get("beneficiaryVerified") === "true";
   const beneficiaryDetails = String(formData.get("beneficiaryDetails") ?? "").trim() || null;
   const verificationNotes = String(formData.get("verificationNotes") ?? "").trim() || null;
-  if (!profileId) return;
+  if (!profileId) return actionFail("Missing or invalid input — nothing was saved.");
 
   const result = await awardDeathInServiceBenefit({ profileId, beneficiaryVerified, beneficiaryDetails, verificationNotes, actorUserId: currentUser.id });
-  if (!result.ok) console.error("[admin organization] failed to award death-in-service benefit", result.error);
+  if (!result.ok) {
+    console.error("[admin organization] failed to award death-in-service benefit", result.error);
+    return actionFail(result.error);
+  }
 
   revalidatePath(`/admin/organization/people/${profileId}`);
+  return actionOk("Awarded.");
 }
 
 // Assets & Equipment — per-person assignments and incidents (Phase B5
@@ -555,70 +626,86 @@ export async function awardDeathInServiceBenefitAction(formData: FormData): Prom
 // assignments. Loss/damage always routes to determineAssetIncidentAction
 // (and, where warranted, an investigation) — never directly to a
 // deduction.
-export async function acknowledgeAssetAssignmentAction(formData: FormData): Promise<void> {
+export async function acknowledgeAssetAssignmentAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const currentUser = await getCurrentUser();
-  if (!currentUser) return;
+  if (!currentUser) return actionFail("You must be signed in.");
 
   const profileId = String(formData.get("profileId") ?? "").trim();
   const assignmentId = String(formData.get("assignmentId") ?? "").trim();
-  if (!profileId || !assignmentId) return;
+  if (!profileId || !assignmentId) return actionFail("Missing or invalid input — nothing was saved.");
 
   const result = await acknowledgeAssetAssignment({ assignmentId, actorUserId: currentUser.id });
-  if (!result.ok) console.error("[admin organization] failed to acknowledge asset assignment", result.error);
+  if (!result.ok) {
+    console.error("[admin organization] failed to acknowledge asset assignment", result.error);
+    return actionFail(result.error);
+  }
 
   revalidatePath(`/admin/organization/people/${profileId}`);
+  return actionOk("Saved.");
 }
 
-export async function returnAssetAction(formData: FormData): Promise<void> {
+export async function returnAssetAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const currentUser = await getCurrentUser();
-  if (!currentUser) return;
+  if (!currentUser) return actionFail("You must be signed in.");
 
   const profileId = String(formData.get("profileId") ?? "").trim();
   const assignmentId = String(formData.get("assignmentId") ?? "").trim();
   const returnCondition = String(formData.get("returnCondition") ?? "").trim();
-  if (!profileId || !assignmentId || !returnCondition) return;
+  if (!profileId || !assignmentId || !returnCondition) return actionFail("Missing or invalid input — nothing was saved.");
 
   const result = await returnAsset({ assignmentId, returnCondition, actorUserId: currentUser.id });
-  if (!result.ok) console.error("[admin organization] failed to return asset", result.error);
+  if (!result.ok) {
+    console.error("[admin organization] failed to return asset", result.error);
+    return actionFail(result.error);
+  }
 
   revalidatePath(`/admin/organization/people/${profileId}`);
+  return actionOk("Saved.");
 }
 
-export async function transferAssetAction(formData: FormData): Promise<void> {
+export async function transferAssetAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const currentUser = await getCurrentUser();
-  if (!currentUser) return;
+  if (!currentUser) return actionFail("You must be signed in.");
 
   const profileId = String(formData.get("profileId") ?? "").trim();
   const assignmentId = String(formData.get("assignmentId") ?? "").trim();
   const newProfileId = String(formData.get("newProfileId") ?? "").trim();
   const transferCondition = String(formData.get("transferCondition") ?? "").trim() || null;
-  if (!profileId || !assignmentId || !newProfileId) return;
+  if (!profileId || !assignmentId || !newProfileId) return actionFail("Missing or invalid input — nothing was saved.");
 
   const result = await transferAsset({ assignmentId, newProfileId, transferCondition, actorUserId: currentUser.id });
-  if (!result.ok) console.error("[admin organization] failed to transfer asset", result.error);
+  if (!result.ok) {
+    console.error("[admin organization] failed to transfer asset", result.error);
+    return actionFail(result.error);
+  }
 
   revalidatePath(`/admin/organization/people/${profileId}`);
+  return actionOk("Saved.");
 }
 
-export async function reportAssetIncidentAction(formData: FormData): Promise<void> {
+export async function reportAssetIncidentAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const currentUser = await getCurrentUser();
-  if (!currentUser) return;
+  if (!currentUser) return actionFail("You must be signed in.");
 
   const profileId = String(formData.get("profileId") ?? "").trim();
   const assignmentId = String(formData.get("assignmentId") ?? "").trim();
   const incidentType = String(formData.get("incidentType") ?? "").trim();
   const description = String(formData.get("description") ?? "").trim();
-  if (!profileId || !assignmentId || !incidentType || !description) return;
+  if (!profileId || !assignmentId || !incidentType || !description) return actionFail("Missing or invalid input — nothing was saved.");
 
   const result = await reportAssetIncident({ assignmentId, profileId, incidentType, description, actorUserId: currentUser.id });
-  if (!result.ok) console.error("[admin organization] failed to report asset incident", result.error);
+  if (!result.ok) {
+    console.error("[admin organization] failed to report asset incident", result.error);
+    return actionFail(result.error);
+  }
 
   revalidatePath(`/admin/organization/people/${profileId}`);
+  return actionOk("Saved.");
 }
 
-export async function determineAssetIncidentAction(formData: FormData): Promise<void> {
+export async function determineAssetIncidentAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const currentUser = await getCurrentUser();
-  if (!currentUser) return;
+  if (!currentUser) return actionFail("You must be signed in.");
 
   const profileId = String(formData.get("profileId") ?? "").trim();
   const incidentId = String(formData.get("incidentId") ?? "").trim();
@@ -626,8 +713,8 @@ export async function determineAssetIncidentAction(formData: FormData): Promise<
   const determinationNotes = String(formData.get("determinationNotes") ?? "").trim();
   const recoveryRequired = formData.get("recoveryRequired") === "true";
   const recoveryNotes = String(formData.get("recoveryNotes") ?? "").trim() || null;
-  if (!profileId || !incidentId || !determinationNotes) return;
-  if (determination !== "company_matter" && determination !== "proven_deliberate_or_negligent") return;
+  if (!profileId || !incidentId || !determinationNotes) return actionFail("Missing or invalid input — nothing was saved.");
+  if (determination !== "company_matter" && determination !== "proven_deliberate_or_negligent") return actionFail("Missing or invalid input — nothing was saved.");
 
   const result = await determineAssetIncident({
     incidentId,
@@ -637,35 +724,43 @@ export async function determineAssetIncidentAction(formData: FormData): Promise<
     recoveryNotes,
     actorUserId: currentUser.id,
   });
-  if (!result.ok) console.error("[admin organization] failed to determine asset incident", result.error);
+  if (!result.ok) {
+    console.error("[admin organization] failed to determine asset incident", result.error);
+    return actionFail(result.error);
+  }
 
   revalidatePath(`/admin/organization/people/${profileId}`);
+  return actionOk("Saved.");
 }
 
 // Business Travel, Driving & Production Safety (Phase B5 Step 7,
 // 2026-09-14). Vehicle incidents and workplace injuries are
 // deliberately separate workflows with their own stage sequences —
 // never merged into one generic "incident" concept.
-export async function requestBusinessTravelAuthorizationAction(formData: FormData): Promise<void> {
+export async function requestBusinessTravelAuthorizationAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const currentUser = await getCurrentUser();
-  if (!currentUser) return;
+  if (!currentUser) return actionFail("You must be signed in.");
 
   const profileId = String(formData.get("profileId") ?? "").trim();
   const destinationCountry = String(formData.get("destinationCountry") ?? "").trim();
   const purpose = String(formData.get("purpose") ?? "").trim();
   const travelStartDate = String(formData.get("travelStartDate") ?? "").trim() || null;
   const travelEndDate = String(formData.get("travelEndDate") ?? "").trim() || null;
-  if (!profileId || !destinationCountry || !purpose) return;
+  if (!profileId || !destinationCountry || !purpose) return actionFail("Missing or invalid input — nothing was saved.");
 
   const result = await requestBusinessTravelAuthorization({ profileId, destinationCountry, purpose, travelStartDate, travelEndDate, actorUserId: currentUser.id });
-  if (!result.ok) console.error("[admin organization] failed to request business travel authorization", result.error);
+  if (!result.ok) {
+    console.error("[admin organization] failed to request business travel authorization", result.error);
+    return actionFail(result.error);
+  }
 
   revalidatePath(`/admin/organization/people/${profileId}`);
+  return actionOk("Requested.");
 }
 
-export async function approveBusinessTravelAuthorizationAction(formData: FormData): Promise<void> {
+export async function approveBusinessTravelAuthorizationAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const currentUser = await getCurrentUser();
-  if (!currentUser) return;
+  if (!currentUser) return actionFail("You must be signed in.");
 
   const profileId = String(formData.get("profileId") ?? "").trim();
   const authorizationId = String(formData.get("authorizationId") ?? "").trim();
@@ -676,99 +771,123 @@ export async function approveBusinessTravelAuthorizationAction(formData: FormDat
     safetyReviewed: formData.get("safetyReviewed") === "true",
     jurisdictionReviewed: formData.get("jurisdictionReviewed") === "true",
   };
-  if (!profileId || !authorizationId) return;
+  if (!profileId || !authorizationId) return actionFail("Missing or invalid input — nothing was saved.");
 
   const result = await approveBusinessTravelAuthorization({ authorizationId, checks, decisionNotes, actorUserId: currentUser.id });
-  if (!result.ok) console.error("[admin organization] failed to approve business travel authorization", result.error);
+  if (!result.ok) {
+    console.error("[admin organization] failed to approve business travel authorization", result.error);
+    return actionFail(result.error);
+  }
 
   revalidatePath(`/admin/organization/people/${profileId}`);
+  return actionOk("Approved.");
 }
 
-export async function declineBusinessTravelAuthorizationAction(formData: FormData): Promise<void> {
+export async function declineBusinessTravelAuthorizationAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const currentUser = await getCurrentUser();
-  if (!currentUser) return;
+  if (!currentUser) return actionFail("You must be signed in.");
 
   const profileId = String(formData.get("profileId") ?? "").trim();
   const authorizationId = String(formData.get("authorizationId") ?? "").trim();
   const decisionNotes = String(formData.get("decisionNotes") ?? "").trim();
-  if (!profileId || !authorizationId || !decisionNotes) return;
+  if (!profileId || !authorizationId || !decisionNotes) return actionFail("Missing or invalid input — nothing was saved.");
 
   const result = await declineBusinessTravelAuthorization({ authorizationId, decisionNotes, actorUserId: currentUser.id });
-  if (!result.ok) console.error("[admin organization] failed to decline business travel authorization", result.error);
+  if (!result.ok) {
+    console.error("[admin organization] failed to decline business travel authorization", result.error);
+    return actionFail(result.error);
+  }
 
   revalidatePath(`/admin/organization/people/${profileId}`);
+  return actionOk("Saved.");
 }
 
-export async function authorizeDriverAction(formData: FormData): Promise<void> {
+export async function authorizeDriverAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const currentUser = await getCurrentUser();
-  if (!currentUser) return;
+  if (!currentUser) return actionFail("You must be signed in.");
 
   const profileId = String(formData.get("profileId") ?? "").trim();
   const licenseNumber = String(formData.get("licenseNumber") ?? "").trim() || null;
   const licenseClass = String(formData.get("licenseClass") ?? "").trim() || null;
   const licenseExpiryDate = String(formData.get("licenseExpiryDate") ?? "").trim() || null;
   const authorizedVehicleTypes = String(formData.get("authorizedVehicleTypes") ?? "").trim() || null;
-  if (!profileId) return;
+  if (!profileId) return actionFail("Missing or invalid input — nothing was saved.");
 
   const result = await authorizeDriver({ profileId, licenseNumber, licenseClass, licenseExpiryDate, authorizedVehicleTypes, actorUserId: currentUser.id });
-  if (!result.ok) console.error("[admin organization] failed to authorize driver", result.error);
+  if (!result.ok) {
+    console.error("[admin organization] failed to authorize driver", result.error);
+    return actionFail(result.error);
+  }
 
   revalidatePath(`/admin/organization/people/${profileId}`);
+  return actionOk("Saved.");
 }
 
-export async function revokeDriverAuthorizationAction(formData: FormData): Promise<void> {
+export async function revokeDriverAuthorizationAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const currentUser = await getCurrentUser();
-  if (!currentUser) return;
+  if (!currentUser) return actionFail("You must be signed in.");
 
   const profileId = String(formData.get("profileId") ?? "").trim();
   const authorizationId = String(formData.get("authorizationId") ?? "").trim();
   const reason = String(formData.get("reason") ?? "").trim();
-  if (!profileId || !authorizationId || !reason) return;
+  if (!profileId || !authorizationId || !reason) return actionFail("Missing or invalid input — nothing was saved.");
 
   const result = await revokeDriverAuthorization({ authorizationId, reason, actorUserId: currentUser.id });
-  if (!result.ok) console.error("[admin organization] failed to revoke driver authorization", result.error);
+  if (!result.ok) {
+    console.error("[admin organization] failed to revoke driver authorization", result.error);
+    return actionFail(result.error);
+  }
 
   revalidatePath(`/admin/organization/people/${profileId}`);
+  return actionOk("Revoked.");
 }
 
-export async function reportVehicleIncidentAction(formData: FormData): Promise<void> {
+export async function reportVehicleIncidentAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const currentUser = await getCurrentUser();
-  if (!currentUser) return;
+  if (!currentUser) return actionFail("You must be signed in.");
 
   const profileId = String(formData.get("profileId") ?? "").trim();
   const description = String(formData.get("description") ?? "").trim();
-  if (!profileId || !description) return;
+  if (!profileId || !description) return actionFail("Missing or invalid input — nothing was saved.");
 
   const result = await reportVehicleIncident({ profileId, description, actorUserId: currentUser.id });
-  if (!result.ok) console.error("[admin organization] failed to report vehicle incident", result.error);
+  if (!result.ok) {
+    console.error("[admin organization] failed to report vehicle incident", result.error);
+    return actionFail(result.error);
+  }
 
   revalidatePath(`/admin/organization/people/${profileId}`);
+  return actionOk("Saved.");
 }
 
-export async function advanceVehicleIncidentStageAction(formData: FormData): Promise<void> {
+export async function advanceVehicleIncidentStageAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const currentUser = await getCurrentUser();
-  if (!currentUser) return;
+  if (!currentUser) return actionFail("You must be signed in.");
 
   const profileId = String(formData.get("profileId") ?? "").trim();
   const incidentId = String(formData.get("incidentId") ?? "").trim();
-  if (!profileId || !incidentId) return;
+  if (!profileId || !incidentId) return actionFail("Missing or invalid input — nothing was saved.");
 
   const result = await advanceVehicleIncidentStage({ incidentId, actorUserId: currentUser.id });
-  if (!result.ok) console.error("[admin organization] failed to advance vehicle incident stage", result.error);
+  if (!result.ok) {
+    console.error("[admin organization] failed to advance vehicle incident stage", result.error);
+    return actionFail(result.error);
+  }
 
   revalidatePath(`/admin/organization/people/${profileId}`);
+  return actionOk("Saved.");
 }
 
-export async function recordVehicleIncidentResponsibilityDeterminationAction(formData: FormData): Promise<void> {
+export async function recordVehicleIncidentResponsibilityDeterminationAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const currentUser = await getCurrentUser();
-  if (!currentUser) return;
+  if (!currentUser) return actionFail("You must be signed in.");
 
   const profileId = String(formData.get("profileId") ?? "").trim();
   const incidentId = String(formData.get("incidentId") ?? "").trim();
   const determination = String(formData.get("determination") ?? "").trim();
   const responsibilityNotes = String(formData.get("responsibilityNotes") ?? "").trim();
   const validDeterminations: VehicleIncidentResponsibilityDetermination[] = ["employee_responsible", "not_employee_responsible", "shared", "undetermined"];
-  if (!profileId || !incidentId || !responsibilityNotes || !(validDeterminations as string[]).includes(determination)) return;
+  if (!profileId || !incidentId || !responsibilityNotes || !(validDeterminations as string[]).includes(determination)) return actionFail("Missing or invalid input — nothing was saved.");
 
   const result = await recordVehicleIncidentResponsibilityDetermination({
     incidentId,
@@ -776,82 +895,106 @@ export async function recordVehicleIncidentResponsibilityDeterminationAction(for
     responsibilityNotes,
     actorUserId: currentUser.id,
   });
-  if (!result.ok) console.error("[admin organization] failed to record vehicle incident responsibility determination", result.error);
+  if (!result.ok) {
+    console.error("[admin organization] failed to record vehicle incident responsibility determination", result.error);
+    return actionFail(result.error);
+  }
 
   revalidatePath(`/admin/organization/people/${profileId}`);
+  return actionOk("Recorded.");
 }
 
-export async function resolveVehicleIncidentAction(formData: FormData): Promise<void> {
+export async function resolveVehicleIncidentAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const currentUser = await getCurrentUser();
-  if (!currentUser) return;
+  if (!currentUser) return actionFail("You must be signed in.");
 
   const profileId = String(formData.get("profileId") ?? "").trim();
   const incidentId = String(formData.get("incidentId") ?? "").trim();
   const financialDisciplinaryTreatmentNotes = String(formData.get("financialDisciplinaryTreatmentNotes") ?? "").trim();
-  if (!profileId || !incidentId || !financialDisciplinaryTreatmentNotes) return;
+  if (!profileId || !incidentId || !financialDisciplinaryTreatmentNotes) return actionFail("Missing or invalid input — nothing was saved.");
 
   const result = await resolveVehicleIncident({ incidentId, financialDisciplinaryTreatmentNotes, actorUserId: currentUser.id });
-  if (!result.ok) console.error("[admin organization] failed to resolve vehicle incident", result.error);
+  if (!result.ok) {
+    console.error("[admin organization] failed to resolve vehicle incident", result.error);
+    return actionFail(result.error);
+  }
 
   revalidatePath(`/admin/organization/people/${profileId}`);
+  return actionOk("Saved.");
 }
 
-export async function reportWorkplaceInjuryAction(formData: FormData): Promise<void> {
+export async function reportWorkplaceInjuryAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const currentUser = await getCurrentUser();
-  if (!currentUser) return;
+  if (!currentUser) return actionFail("You must be signed in.");
 
   const profileId = String(formData.get("profileId") ?? "").trim();
   const description = String(formData.get("description") ?? "").trim();
-  if (!profileId || !description) return;
+  if (!profileId || !description) return actionFail("Missing or invalid input — nothing was saved.");
 
   const result = await reportWorkplaceInjury({ profileId, description, actorUserId: currentUser.id });
-  if (!result.ok) console.error("[admin organization] failed to report workplace injury", result.error);
+  if (!result.ok) {
+    console.error("[admin organization] failed to report workplace injury", result.error);
+    return actionFail(result.error);
+  }
 
   revalidatePath(`/admin/organization/people/${profileId}`);
+  return actionOk("Saved.");
 }
 
-export async function advanceWorkplaceInjuryStageAction(formData: FormData): Promise<void> {
+export async function advanceWorkplaceInjuryStageAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const currentUser = await getCurrentUser();
-  if (!currentUser) return;
+  if (!currentUser) return actionFail("You must be signed in.");
 
   const profileId = String(formData.get("profileId") ?? "").trim();
   const reportId = String(formData.get("reportId") ?? "").trim();
-  if (!profileId || !reportId) return;
+  if (!profileId || !reportId) return actionFail("Missing or invalid input — nothing was saved.");
 
   const result = await advanceWorkplaceInjuryStage({ reportId, actorUserId: currentUser.id });
-  if (!result.ok) console.error("[admin organization] failed to advance workplace injury stage", result.error);
+  if (!result.ok) {
+    console.error("[admin organization] failed to advance workplace injury stage", result.error);
+    return actionFail(result.error);
+  }
 
   revalidatePath(`/admin/organization/people/${profileId}`);
+  return actionOk("Saved.");
 }
 
-export async function recordWorkplaceInjuryAbsencePayClassificationAction(formData: FormData): Promise<void> {
+export async function recordWorkplaceInjuryAbsencePayClassificationAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const currentUser = await getCurrentUser();
-  if (!currentUser) return;
+  if (!currentUser) return actionFail("You must be signed in.");
 
   const profileId = String(formData.get("profileId") ?? "").trim();
   const reportId = String(formData.get("reportId") ?? "").trim();
   const classification = String(formData.get("classification") ?? "").trim();
-  if (!profileId || !reportId || !classification) return;
+  if (!profileId || !reportId || !classification) return actionFail("Missing or invalid input — nothing was saved.");
 
   const result = await recordWorkplaceInjuryAbsencePayClassification({ reportId, classification, actorUserId: currentUser.id });
-  if (!result.ok) console.error("[admin organization] failed to record workplace injury absence/pay classification", result.error);
+  if (!result.ok) {
+    console.error("[admin organization] failed to record workplace injury absence/pay classification", result.error);
+    return actionFail(result.error);
+  }
 
   revalidatePath(`/admin/organization/people/${profileId}`);
+  return actionOk("Recorded.");
 }
 
-export async function resolveWorkplaceInjuryReportAction(formData: FormData): Promise<void> {
+export async function resolveWorkplaceInjuryReportAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const currentUser = await getCurrentUser();
-  if (!currentUser) return;
+  if (!currentUser) return actionFail("You must be signed in.");
 
   const profileId = String(formData.get("profileId") ?? "").trim();
   const reportId = String(formData.get("reportId") ?? "").trim();
   const returnToWorkNotes = String(formData.get("returnToWorkNotes") ?? "").trim();
-  if (!profileId || !reportId || !returnToWorkNotes) return;
+  if (!profileId || !reportId || !returnToWorkNotes) return actionFail("Missing or invalid input — nothing was saved.");
 
   const result = await resolveWorkplaceInjuryReport({ reportId, returnToWorkNotes, actorUserId: currentUser.id });
-  if (!result.ok) console.error("[admin organization] failed to resolve workplace injury report", result.error);
+  if (!result.ok) {
+    console.error("[admin organization] failed to resolve workplace injury report", result.error);
+    return actionFail(result.error);
+  }
 
   revalidatePath(`/admin/organization/people/${profileId}`);
+  return actionOk("Saved.");
 }
 
 // Portfolio / Personal-Use IP (Phase B5 Step 8, 2026-09-14). Employees
@@ -859,23 +1002,27 @@ export async function resolveWorkplaceInjuryReportAction(formData: FormData): Pr
 // itself enforces the four required checks (confidentiality, embargo,
 // contractual restrictions, client/model release rights) before any
 // row can be approved.
-export async function submitPortfolioUseRequestAction(formData: FormData): Promise<void> {
+export async function submitPortfolioUseRequestAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const currentUser = await getCurrentUser();
-  if (!currentUser) return;
+  if (!currentUser) return actionFail("You must be signed in.");
 
   const profileId = String(formData.get("profileId") ?? "").trim();
   const description = String(formData.get("description") ?? "").trim();
-  if (!profileId || !description) return;
+  if (!profileId || !description) return actionFail("Missing or invalid input — nothing was saved.");
 
   const result = await submitPortfolioUseRequest({ profileId, description, actorUserId: currentUser.id });
-  if (!result.ok) console.error("[admin organization] failed to submit portfolio-use request", result.error);
+  if (!result.ok) {
+    console.error("[admin organization] failed to submit portfolio-use request", result.error);
+    return actionFail(result.error);
+  }
 
   revalidatePath(`/admin/organization/people/${profileId}`);
+  return actionOk("Submitted.");
 }
 
-export async function approvePortfolioUseRequestAction(formData: FormData): Promise<void> {
+export async function approvePortfolioUseRequestAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const currentUser = await getCurrentUser();
-  if (!currentUser) return;
+  if (!currentUser) return actionFail("You must be signed in.");
 
   const profileId = String(formData.get("profileId") ?? "").trim();
   const requestId = String(formData.get("requestId") ?? "").trim();
@@ -892,27 +1039,35 @@ export async function approvePortfolioUseRequestAction(formData: FormData): Prom
     contractualRestrictionsChecked: formData.get("contractualRestrictionsChecked") === "true",
     releaseRightsChecked: formData.get("releaseRightsChecked") === "true",
   };
-  if (!profileId || !requestId || !approvedAssets || approvedPlatforms.length === 0) return;
+  if (!profileId || !requestId || !approvedAssets || approvedPlatforms.length === 0) return actionFail("Missing or invalid input — nothing was saved.");
 
   const result = await approvePortfolioUseRequest({ requestId, checks, approvedAssets, approvedPlatforms, approvedTiming, approvedConditions, actorUserId: currentUser.id });
-  if (!result.ok) console.error("[admin organization] failed to approve portfolio-use request", result.error);
+  if (!result.ok) {
+    console.error("[admin organization] failed to approve portfolio-use request", result.error);
+    return actionFail(result.error);
+  }
 
   revalidatePath(`/admin/organization/people/${profileId}`);
+  return actionOk("Approved.");
 }
 
-export async function declinePortfolioUseRequestAction(formData: FormData): Promise<void> {
+export async function declinePortfolioUseRequestAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const currentUser = await getCurrentUser();
-  if (!currentUser) return;
+  if (!currentUser) return actionFail("You must be signed in.");
 
   const profileId = String(formData.get("profileId") ?? "").trim();
   const requestId = String(formData.get("requestId") ?? "").trim();
   const decisionNotes = String(formData.get("decisionNotes") ?? "").trim();
-  if (!profileId || !requestId || !decisionNotes) return;
+  if (!profileId || !requestId || !decisionNotes) return actionFail("Missing or invalid input — nothing was saved.");
 
   const result = await declinePortfolioUseRequest({ requestId, decisionNotes, actorUserId: currentUser.id });
-  if (!result.ok) console.error("[admin organization] failed to decline portfolio-use request", result.error);
+  if (!result.ok) {
+    console.error("[admin organization] failed to decline portfolio-use request", result.error);
+    return actionFail(result.error);
+  }
 
   revalidatePath(`/admin/organization/people/${profileId}`);
+  return actionOk("Saved.");
 }
 
 // Agreement Readiness (Phase B5 Step 10, 2026-09-14). The readiness
@@ -962,9 +1117,9 @@ export async function createEmployeeEmploymentAgreementDraftAction(
 // authority verification is the real gate before any issuance — both
 // issue actions carry their own independent check of it, matching the
 // two issue functions' own atomic guards.
-export async function requestEmploymentReferenceAction(formData: FormData): Promise<void> {
+export async function requestEmploymentReferenceAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const currentUser = await getCurrentUser();
-  if (!currentUser) return;
+  if (!currentUser) return actionFail("You must be signed in.");
 
   const profileId = String(formData.get("profileId") ?? "").trim();
   const requesterName = String(formData.get("requesterName") ?? "").trim();
@@ -972,9 +1127,9 @@ export async function requestEmploymentReferenceAction(formData: FormData): Prom
   const requesterContact = String(formData.get("requesterContact") ?? "").trim() || null;
   const employeeOrFormerEmployee = String(formData.get("employeeOrFormerEmployee") ?? "").trim();
   const referenceType = String(formData.get("referenceType") ?? "").trim();
-  if (!profileId || !requesterName) return;
-  if (employeeOrFormerEmployee !== "employee" && employeeOrFormerEmployee !== "former_employee") return;
-  if (referenceType !== "standard_verification" && referenceType !== "detailed_corporate_reference") return;
+  if (!profileId || !requesterName) return actionFail("Missing or invalid input — nothing was saved.");
+  if (employeeOrFormerEmployee !== "employee" && employeeOrFormerEmployee !== "former_employee") return actionFail("Missing or invalid input — nothing was saved.");
+  if (referenceType !== "standard_verification" && referenceType !== "detailed_corporate_reference") return actionFail("Missing or invalid input — nothing was saved.");
 
   const result = await requestEmploymentReference({
     profileId,
@@ -985,84 +1140,107 @@ export async function requestEmploymentReferenceAction(formData: FormData): Prom
     referenceType: referenceType as ReferenceType,
     actorUserId: currentUser.id,
   });
-  if (!result.ok) console.error("[admin organization] failed to log reference request", result.error);
+  if (!result.ok) {
+    console.error("[admin organization] failed to log reference request", result.error);
+    return actionFail(result.error);
+  }
 
   revalidatePath(`/admin/organization/people/${profileId}`);
+  return actionOk("Requested.");
 }
 
-export async function verifyRequesterIdentityAction(formData: FormData): Promise<void> {
+export async function verifyRequesterIdentityAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const currentUser = await getCurrentUser();
-  if (!currentUser) return;
+  if (!currentUser) return actionFail("You must be signed in.");
 
   const profileId = String(formData.get("profileId") ?? "").trim();
   const requestId = String(formData.get("requestId") ?? "").trim();
-  if (!profileId || !requestId) return;
+  if (!profileId || !requestId) return actionFail("Missing or invalid input — nothing was saved.");
 
   const result = await verifyRequesterIdentity({ requestId, actorUserId: currentUser.id });
-  if (!result.ok) console.error("[admin organization] failed to verify requester identity", result.error);
+  if (!result.ok) {
+    console.error("[admin organization] failed to verify requester identity", result.error);
+    return actionFail(result.error);
+  }
 
   revalidatePath(`/admin/organization/people/${profileId}`);
+  return actionOk("Verified.");
 }
 
-export async function declineReferenceRequestAction(formData: FormData): Promise<void> {
+export async function declineReferenceRequestAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const currentUser = await getCurrentUser();
-  if (!currentUser) return;
+  if (!currentUser) return actionFail("You must be signed in.");
 
   const profileId = String(formData.get("profileId") ?? "").trim();
   const requestId = String(formData.get("requestId") ?? "").trim();
   const decisionNotes = String(formData.get("decisionNotes") ?? "").trim();
-  if (!profileId || !requestId || !decisionNotes) return;
+  if (!profileId || !requestId || !decisionNotes) return actionFail("Missing or invalid input — nothing was saved.");
 
   const result = await declineReferenceRequest({ requestId, decisionNotes, actorUserId: currentUser.id });
-  if (!result.ok) console.error("[admin organization] failed to decline reference request", result.error);
+  if (!result.ok) {
+    console.error("[admin organization] failed to decline reference request", result.error);
+    return actionFail(result.error);
+  }
 
   revalidatePath(`/admin/organization/people/${profileId}`);
+  return actionOk("Saved.");
 }
 
-export async function issueStandardEmploymentVerificationAction(formData: FormData): Promise<void> {
+export async function issueStandardEmploymentVerificationAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const currentUser = await getCurrentUser();
-  if (!currentUser) return;
+  if (!currentUser) return actionFail("You must be signed in.");
 
   const profileId = String(formData.get("profileId") ?? "").trim();
   const requestId = String(formData.get("requestId") ?? "").trim();
-  if (!profileId || !requestId) return;
+  if (!profileId || !requestId) return actionFail("Missing or invalid input — nothing was saved.");
 
   const result = await issueStandardEmploymentVerification({ requestId, actorUserId: currentUser.id });
-  if (!result.ok) console.error("[admin organization] failed to issue standard employment verification", result.error);
+  if (!result.ok) {
+    console.error("[admin organization] failed to issue standard employment verification", result.error);
+    return actionFail(result.error);
+  }
 
   revalidatePath(`/admin/organization/people/${profileId}`);
+  return actionOk("Issued.");
 }
 
-export async function issueDetailedCorporateReferenceAction(formData: FormData): Promise<void> {
+export async function issueDetailedCorporateReferenceAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const currentUser = await getCurrentUser();
-  if (!currentUser) return;
+  if (!currentUser) return actionFail("You must be signed in.");
 
   const profileId = String(formData.get("profileId") ?? "").trim();
   const requestId = String(formData.get("requestId") ?? "").trim();
   const informationAuthorizedForRelease = String(formData.get("informationAuthorizedForRelease") ?? "").trim();
   const content = String(formData.get("content") ?? "").trim();
-  if (!profileId || !requestId || !informationAuthorizedForRelease || !content) return;
+  if (!profileId || !requestId || !informationAuthorizedForRelease || !content) return actionFail("Missing or invalid input — nothing was saved.");
 
   const result = await issueDetailedCorporateReference({ requestId, informationAuthorizedForRelease, content, actorUserId: currentUser.id });
-  if (!result.ok) console.error("[admin organization] failed to issue detailed corporate reference", result.error);
+  if (!result.ok) {
+    console.error("[admin organization] failed to issue detailed corporate reference", result.error);
+    return actionFail(result.error);
+  }
 
   revalidatePath(`/admin/organization/people/${profileId}`);
+  return actionOk("Issued.");
 }
 
 // Controlled Policy / Acknowledgement (Phase B5 Step 12, 2026-09-14).
-export async function recordPolicyAcknowledgementAction(formData: FormData): Promise<void> {
+export async function recordPolicyAcknowledgementAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const currentUser = await getCurrentUser();
-  if (!currentUser) return;
+  if (!currentUser) return actionFail("You must be signed in.");
 
   const profileId = String(formData.get("profileId") ?? "").trim();
   const documentVersionId = String(formData.get("documentVersionId") ?? "").trim();
   const method = String(formData.get("method") ?? "").trim();
   const evidenceReference = String(formData.get("evidenceReference") ?? "").trim() || null;
-  if (!profileId || !documentVersionId) return;
-  if (method !== "digital_click_through" && method !== "physical_signature") return;
+  if (!profileId || !documentVersionId) return actionFail("Missing or invalid input — nothing was saved.");
+  if (method !== "digital_click_through" && method !== "physical_signature") return actionFail("Missing or invalid input — nothing was saved.");
 
   const result = await recordPolicyAcknowledgement({ profileId, documentVersionId, method: method as PolicyAcknowledgementMethod, evidenceReference, actorUserId: currentUser.id });
-  if (!result.ok) console.error("[admin organization] failed to record policy acknowledgement", result.error);
+  if (!result.ok) {
+    console.error("[admin organization] failed to record policy acknowledgement", result.error);
+    return actionFail(result.error);
+  }
   else {
     // Best-effort, same reasoning as the self-acknowledgement path in
     // admin/me/actions.ts — never blocks the genuine evidence already
@@ -1076,6 +1254,7 @@ export async function recordPolicyAcknowledgementAction(formData: FormData): Pro
   }
 
   revalidatePath(`/admin/organization/people/${profileId}`);
+  return actionOk("Recorded.");
 }
 
 // International & Employment Transitions (Phase B6 Step 2, 2026-09-15).
@@ -1197,53 +1376,65 @@ export async function recordInitialEmploymentTermsAction(_prev: EmploymentTermsA
   return { ok: true };
 }
 
-export async function completeEnhancedReviewAction(formData: FormData): Promise<void> {
+export async function completeEnhancedReviewAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const currentUser = await getCurrentUser();
-  if (!currentUser) return;
+  if (!currentUser) return actionFail("You must be signed in.");
 
   const profileId = String(formData.get("profileId") ?? "").trim();
   const employmentTermsHistoryId = String(formData.get("employmentTermsHistoryId") ?? "").trim();
   const notes = String(formData.get("notes") ?? "").trim() || null;
-  if (!profileId || !employmentTermsHistoryId) return;
+  if (!profileId || !employmentTermsHistoryId) return actionFail("Missing or invalid input — nothing was saved.");
 
   const result = await completeEnhancedReview({ employmentTermsHistoryId, notes, actorUserId: currentUser.id });
-  if (!result.ok) console.error("[admin organization] failed to complete enhanced review", result.error);
+  if (!result.ok) {
+    console.error("[admin organization] failed to complete enhanced review", result.error);
+    return actionFail(result.error);
+  }
 
   revalidatePath(`/admin/organization/people/${profileId}`);
+  return actionOk("Completed.");
 }
 
 // Appeals (Phase B6 Step 6, 2026-09-15) — against a decided
 // disciplinary action, grievance resolution, or other decided outcome.
-export async function submitAppealAction(formData: FormData): Promise<void> {
+export async function submitAppealAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const currentUser = await getCurrentUser();
-  if (!currentUser) return;
+  if (!currentUser) return actionFail("You must be signed in.");
 
   const profileId = String(formData.get("profileId") ?? "").trim();
   const appealedDecisionType = String(formData.get("appealedDecisionType") ?? "").trim();
   const appealedDecisionReference = String(formData.get("appealedDecisionReference") ?? "").trim();
   const reason = String(formData.get("reason") ?? "").trim();
   const decisionDate = String(formData.get("decisionDate") ?? "").trim() || null;
-  if (!profileId || !appealedDecisionType || !appealedDecisionReference || !reason) return;
+  if (!profileId || !appealedDecisionType || !appealedDecisionReference || !reason) return actionFail("Missing or invalid input — nothing was saved.");
 
   const result = await submitAppeal({ profileId, appealedDecisionType, appealedDecisionReference, reason, decisionDate, actorUserId: currentUser.id });
-  if (!result.ok) console.error("[admin organization] failed to submit appeal", result.error);
+  if (!result.ok) {
+    console.error("[admin organization] failed to submit appeal", result.error);
+    return actionFail(result.error);
+  }
 
   revalidatePath(`/admin/organization/people/${profileId}`);
+  return actionOk("Submitted.");
 }
 
-export async function decideAppealAction(formData: FormData): Promise<void> {
+export async function decideAppealAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const currentUser = await getCurrentUser();
-  if (!currentUser) return;
+  if (!currentUser) return actionFail("You must be signed in.");
 
   const profileId = String(formData.get("profileId") ?? "").trim();
   const appealId = String(formData.get("appealId") ?? "").trim();
   const decision = String(formData.get("decision") ?? "").trim();
   const decisionNotes = String(formData.get("decisionNotes") ?? "").trim();
-  if (!profileId || !appealId || !decisionNotes) return;
-  if (decision !== "upheld" && decision !== "overturned" && decision !== "partially_upheld") return;
+  if (!profileId || !appealId || !decisionNotes) return actionFail("Missing or invalid input — nothing was saved.");
+  if (decision !== "upheld" && decision !== "overturned" && decision !== "partially_upheld") return actionFail("Missing or invalid input — nothing was saved.");
 
   const result = await decideAppeal({ appealId, decision: decision as AppealDecision, decisionNotes, actorUserId: currentUser.id });
-  if (!result.ok) console.error("[admin organization] failed to decide appeal", result.error);
+  if (!result.ok) {
+    console.error("[admin organization] failed to decide appeal", result.error);
+    return actionFail(result.error);
+  }
 
   revalidatePath(`/admin/organization/people/${profileId}`);
+  return actionOk("Decision recorded.");
 }

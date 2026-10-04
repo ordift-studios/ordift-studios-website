@@ -8,7 +8,7 @@ import type { LegalPageSlug } from "@/lib/content/types";
 // file) auto-generates /sitemap.xml with zero extra config.
 const LEGAL_SLUGS: LegalPageSlug[] = ["privacy", "terms", "cookies", "booking"];
 
-const STATIC_ROUTES = ["", "/about", "/about/founder", "/services", "/work", "/workshops", "/journal", "/book"];
+const STATIC_ROUTES = ["", "/about", "/about/founder", "/services", "/work", "/workshops", "/journal", "/book", "/crew-support"];
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "https://ordiftstudios.com";

@@ -6,6 +6,8 @@ import { authorizeWithSuperAdminOverride, OPERATIONS_CAPABILITIES } from "@/lib/
 import { listRecentBudgetChanges } from "@/lib/production/budgets";
 import ProductionSubNav from "../ProductionSubNav";
 import { setChangeClientApprovalStatusAction } from "../actions";
+import ActionForm from "@/components/admin/ActionForm";
+import SubmitButton from "@/components/admin/SubmitButton";
 
 export const metadata: Metadata = {
   title: "Changes / Variations — Production Operations — Ordift Studios Admin",
@@ -64,16 +66,16 @@ export default async function ProductionChangesPage() {
                 </div>
                 {c.clientApprovalStatus === "pending" && (
                   <div className="flex gap-2">
-                    <form action={setChangeClientApprovalStatusAction}>
+                    <ActionForm action={setChangeClientApprovalStatusAction}>
                       <input type="hidden" name="changeId" value={c.id} />
                       <input type="hidden" name="status" value="approved" />
-                      <button type="submit" className="rounded-lg border border-green-600 text-green-700 px-3 py-1 font-sans text-caption">Mark Client Approved</button>
-                    </form>
-                    <form action={setChangeClientApprovalStatusAction}>
+                      <SubmitButton pendingLabel="Working…" className="rounded-lg border border-green-600 text-green-700 px-3 py-1 font-sans text-caption">Mark Client Approved</SubmitButton>
+                    </ActionForm>
+                    <ActionForm action={setChangeClientApprovalStatusAction}>
                       <input type="hidden" name="changeId" value={c.id} />
                       <input type="hidden" name="status" value="rejected" />
-                      <button type="submit" className="rounded-lg border border-red-600 text-red-700 px-3 py-1 font-sans text-caption">Mark Rejected</button>
-                    </form>
+                      <SubmitButton pendingLabel="Working…" className="rounded-lg border border-red-600 text-red-700 px-3 py-1 font-sans text-caption">Mark Rejected</SubmitButton>
+                    </ActionForm>
                   </div>
                 )}
               </li>

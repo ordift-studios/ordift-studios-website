@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getCurrentUser, isSuperAdmin } from "@/lib/portal/roles";
 import { logActivity } from "@/lib/admin/activityLog";
+import { actionOk, actionFail, type ActionState } from "@/lib/shared/actionState";
 
 type LookupTable = "operational_titles" | "engagement_types";
 
@@ -27,12 +28,12 @@ function slugify(name: string): string {
 // forms (full-page revalidate, no client-side error display), same
 // shape React expects for a bare <form action={...}>. Failures are
 // still logged server-side.
-export async function addLookupOptionAction(formData: FormData): Promise<void> {
+export async function addLookupOptionAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const currentUser = await requireSuperAdmin();
 
   const table = String(formData.get("table") ?? "") as LookupTable;
   const name = String(formData.get("name") ?? "").trim();
-  if ((table !== "operational_titles" && table !== "engagement_types") || !name) return;
+  if ((table !== "operational_titles" && table !== "engagement_types") || !name) return actionFail("Nothing was saved — check the details and try again.");
 
   const admin = createAdminClient();
   // business_id is left unset — the column default (ordift_studios_business_id())
@@ -40,6 +41,7 @@ export async function addLookupOptionAction(formData: FormData): Promise<void> {
   const { error } = await admin.from(table).insert({ slug: slugify(name), name, sort_order: 500 });
   if (error) {
     console.error(`[admin] failed to add ${table} option`, error.message);
+    return actionFail("Could not save your change. Please try again.");
   } else {
     await logActivity({
       actorUserId: currentUser.id,
@@ -50,20 +52,22 @@ export async function addLookupOptionAction(formData: FormData): Promise<void> {
   }
 
   revalidatePath("/admin/lookups");
+  return actionOk("Added.");
 }
 
-export async function toggleLookupOptionAction(formData: FormData): Promise<void> {
+export async function toggleLookupOptionAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const currentUser = await requireSuperAdmin();
 
   const table = String(formData.get("table") ?? "") as LookupTable;
   const id = String(formData.get("id") ?? "");
   const active = formData.get("active") === "true";
-  if ((table !== "operational_titles" && table !== "engagement_types") || !id) return;
+  if ((table !== "operational_titles" && table !== "engagement_types") || !id) return actionFail("Nothing was saved — check the details and try again.");
 
   const admin = createAdminClient();
   const { error } = await admin.from(table).update({ active: !active }).eq("id", id);
   if (error) {
     console.error(`[admin] failed to toggle ${table} option`, error.message);
+    return actionFail("Could not save your change. Please try again.");
   } else {
     await logActivity({
       actorUserId: currentUser.id,
@@ -75,4 +79,5 @@ export async function toggleLookupOptionAction(formData: FormData): Promise<void
   }
 
   revalidatePath("/admin/lookups");
+  return actionOk("Updated.");
 }

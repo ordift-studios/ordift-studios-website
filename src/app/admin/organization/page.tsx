@@ -11,6 +11,8 @@ import {
   listRoleOptions,
 } from "@/lib/organization/adminData";
 import { addDepartmentAction, toggleDepartmentAction, addPositionAction, togglePositionAction } from "./actions";
+import ActionForm from "@/components/admin/ActionForm";
+import SubmitButton from "@/components/admin/SubmitButton";
 
 export const metadata: Metadata = {
   title: "Organization — Ordift Studios Admin",
@@ -79,18 +81,18 @@ export default async function AdminOrganizationPage() {
                 </span>
                 {d.description && <p className="font-sans text-caption text-ordift-ink-muted">{d.description}</p>}
               </div>
-              <form action={toggleDepartmentAction}>
+              <ActionForm action={toggleDepartmentAction}>
                 <input type="hidden" name="id" value={d.id} />
                 <input type="hidden" name="active" value={String(d.active)} />
-                <button type="submit" className="font-sans text-caption text-ordift-gold-pressed underline underline-offset-4">
+                <SubmitButton pendingLabel="Working…" className="font-sans text-caption text-ordift-gold-pressed underline underline-offset-4">
                   {d.active ? "Deactivate" : "Reactivate"}
-                </button>
-              </form>
+                </SubmitButton>
+              </ActionForm>
             </li>
           ))}
           {departments.length === 0 && <p className="font-sans text-body-small text-ordift-ink-muted py-2">None yet.</p>}
         </ul>
-        <form action={addDepartmentAction} className="flex flex-wrap items-center gap-2 pt-2 border-t border-black/5">
+        <ActionForm action={addDepartmentAction} className="flex flex-wrap items-center gap-2 pt-2 border-t border-black/5">
           <input
             type="text"
             name="name"
@@ -106,10 +108,10 @@ export default async function AdminOrganizationPage() {
             aria-label="New department description"
             className="flex-1 min-w-[12rem] rounded-lg border border-black/15 px-3 py-1.5 font-sans text-body-small"
           />
-          <button type="submit" className="font-sans text-body-small font-semibold px-3 py-1.5 rounded-md bg-ordift-navy-950 text-white">
+          <SubmitButton pendingLabel="Adding…" className="font-sans text-body-small font-semibold px-3 py-1.5 rounded-md bg-ordift-navy-950 text-white">
             Add Department
-          </button>
-        </form>
+          </SubmitButton>
+        </ActionForm>
       </section>
 
       <section className="rounded-xl border border-black/10 bg-white p-6 space-y-6">
@@ -140,20 +142,20 @@ export default async function AdminOrganizationPage() {
                       {p.reportsToPositionName ? ` · Reports to: ${p.reportsToPositionName}` : ""}
                     </p>
                   </div>
-                  <form action={togglePositionAction}>
+                  <ActionForm action={togglePositionAction}>
                     <input type="hidden" name="id" value={p.id} />
                     <input type="hidden" name="active" value={String(p.active)} />
-                    <button type="submit" className="font-sans text-caption text-ordift-gold-pressed underline underline-offset-4 whitespace-nowrap">
+                    <SubmitButton pendingLabel="Working…" className="font-sans text-caption text-ordift-gold-pressed underline underline-offset-4 whitespace-nowrap">
                       {p.active ? "Deactivate" : "Reactivate"}
-                    </button>
-                  </form>
+                    </SubmitButton>
+                  </ActionForm>
                 </li>
               ))}
             </ul>
           </div>
         ))}
 
-        <form action={addPositionAction} className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-4 border-t border-black/5">
+        <ActionForm action={addPositionAction} className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-4 border-t border-black/5">
           <input
             type="text"
             name="name"
@@ -247,13 +249,10 @@ export default async function AdminOrganizationPage() {
             aria-label="New position description"
             className="rounded-lg border border-black/15 px-3 py-1.5 font-sans text-body-small sm:col-span-2"
           />
-          <button
-            type="submit"
-            className="sm:col-span-2 justify-self-start font-sans text-body-small font-semibold px-4 py-2 rounded-md bg-ordift-navy-950 text-white"
-          >
+          <SubmitButton pendingLabel="Adding…" className="sm:col-span-2 justify-self-start font-sans text-body-small font-semibold px-4 py-2 rounded-md bg-ordift-navy-950 text-white">
             Add Position
-          </button>
-        </form>
+          </SubmitButton>
+        </ActionForm>
       </section>
     </div>
   );

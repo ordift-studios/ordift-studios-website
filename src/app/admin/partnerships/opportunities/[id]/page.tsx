@@ -24,6 +24,8 @@ import {
 } from "../../actions";
 import ValueAssessmentForm from "./ValueAssessmentForm";
 import ConcessionApprovalControls from "./ConcessionApprovalControls";
+import ActionForm from "@/components/admin/ActionForm";
+import SubmitButton from "@/components/admin/SubmitButton";
 
 export const metadata: Metadata = {
   title: "Opportunity — Partnerships — Ordift Studios Admin",
@@ -85,7 +87,7 @@ export default async function PartnershipOpportunityDetailPage({ params }: { par
         ) : (
           <p className="font-sans text-body-small text-amber-800">Not linked — a referral commission for this partner cannot be approved for payment until this is set.</p>
         )}
-        <form action={setOpportunityPayeeProfileAction} className="flex flex-wrap gap-2">
+        <ActionForm action={setOpportunityPayeeProfileAction} className="flex flex-wrap gap-2">
           <input type="hidden" name="opportunityId" value={opportunity.id} />
           {payees.length > 0 ? (
             <select name="payeeProfileId" defaultValue={opportunity.payeeProfileId ?? ""} className="rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small">
@@ -97,13 +99,13 @@ export default async function PartnershipOpportunityDetailPage({ params }: { par
           ) : (
             <input name="payeeProfileId" defaultValue={opportunity.payeeProfileId ?? ""} placeholder="Existing payee profile ID (create one under Payables → Payees first)" className="rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small w-full sm:w-auto" />
           )}
-          <button type="submit" className="rounded-lg bg-ordift-ink text-white px-4 py-2 font-sans text-body-small">Save</button>
-        </form>
+          <SubmitButton pendingLabel="Saving…" className="rounded-lg bg-ordift-ink text-white px-4 py-2 font-sans text-body-small">Save</SubmitButton>
+        </ActionForm>
       </section>
 
       <section className="rounded-xl border border-black/10 bg-white p-6 space-y-4">
         <h2 className="font-serif font-medium text-body text-ordift-ink">Lifecycle Stage</h2>
-        <form action={setOpportunityStatusAction} className="flex flex-wrap items-center gap-3">
+        <ActionForm action={setOpportunityStatusAction} className="flex flex-wrap items-center gap-3">
           <input type="hidden" name="opportunityId" value={opportunity.id} />
           <select name="status" defaultValue={opportunity.status} className="rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small">
             {STATUS_OPTIONS.map((s) => (
@@ -117,15 +119,15 @@ export default async function PartnershipOpportunityDetailPage({ params }: { par
             <option value="convert_to_paid_proposal">Convert to Paid Proposal</option>
             <option value="declined">Declined</option>
           </select>
-          <button type="submit" className="rounded-lg bg-ordift-ink text-white px-4 py-2 font-sans text-body-small">Update</button>
-        </form>
+          <SubmitButton pendingLabel="Updating…" className="rounded-lg bg-ordift-ink text-white px-4 py-2 font-sans text-body-small">Update</SubmitButton>
+        </ActionForm>
         <p className="font-sans text-caption text-ordift-ink-muted">Moving the stage forward records an internal decision only — it never fabricates external client/partner acceptance. That happens in the Agreement section below.</p>
-        <form action={convertToPaidProposalAction}>
+        <ActionForm action={convertToPaidProposalAction}>
           <input type="hidden" name="opportunityId" value={opportunity.id} />
           <ConfirmSubmitButton confirmMessage="Convert this to a Paid Proposal? This preserves the full opportunity history and only records the internal decision — it does not create a booking or charge the client automatically." pendingLabel="Converting…" className="rounded-lg border border-ordift-ink px-3 py-1.5 font-sans text-caption text-ordift-ink">
             Convert to Paid Proposal
           </ConfirmSubmitButton>
-        </form>
+        </ActionForm>
       </section>
 
       <section className="rounded-xl border border-black/10 bg-white p-6 space-y-4">
@@ -178,7 +180,7 @@ export default async function PartnershipOpportunityDetailPage({ params }: { par
         )}
         <details className="rounded-lg border border-black/10 px-4 py-3">
           <summary className="cursor-pointer font-sans text-body-small font-medium text-ordift-ink select-none">Record a strategic score</summary>
-          <form action={createStrategicAssessmentAction} className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">
+          <ActionForm action={createStrategicAssessmentAction} className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">
             <input type="hidden" name="opportunityId" value={opportunity.id} />
             {[
               ["targetClientAlignment", "Target-client alignment (0-20)"],
@@ -202,8 +204,8 @@ export default async function PartnershipOpportunityDetailPage({ params }: { par
               <input key={name} name={name} type="number" min="0" placeholder={label} className="rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small" />
             ))}
             <textarea name="notes" placeholder="Notes" rows={2} className="rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small sm:col-span-2" />
-            <button type="submit" className="rounded-lg bg-ordift-ink text-white px-4 py-2 font-sans text-body-small sm:col-span-2">Save Score</button>
-          </form>
+            <SubmitButton pendingLabel="Saving…" className="rounded-lg bg-ordift-ink text-white px-4 py-2 font-sans text-body-small sm:col-span-2">Save Score</SubmitButton>
+          </ActionForm>
         </details>
       </section>
 
@@ -220,7 +222,7 @@ export default async function PartnershipOpportunityDetailPage({ params }: { par
         )}
         <details className="rounded-lg border border-black/10 px-4 py-3">
           <summary className="cursor-pointer font-sans text-body-small font-medium text-ordift-ink select-none">Create / amend agreement</summary>
-          <form action={createAgreementVersionAction} className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">
+          <ActionForm action={createAgreementVersionAction} className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">
             <input type="hidden" name="opportunityId" value={opportunity.id} />
             <select name="status" defaultValue="draft" className="rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small">
               <option value="draft">Draft</option>
@@ -244,8 +246,8 @@ export default async function PartnershipOpportunityDetailPage({ params }: { par
             <label className="flex items-center gap-2 font-sans text-body-small text-ordift-ink sm:col-span-2">
               <input type="checkbox" name="acceptanceRecorded" value="true" className="w-4 h-4" /> Record acceptance now (only check this if genuine client/partner acceptance has actually occurred)
             </label>
-            <button type="submit" className="rounded-lg bg-ordift-ink text-white px-4 py-2 font-sans text-body-small sm:col-span-2">Save Agreement Version</button>
-          </form>
+            <SubmitButton pendingLabel="Saving…" className="rounded-lg bg-ordift-ink text-white px-4 py-2 font-sans text-body-small sm:col-span-2">Save Agreement Version</SubmitButton>
+          </ActionForm>
         </details>
       </section>
 
@@ -261,7 +263,7 @@ export default async function PartnershipOpportunityDetailPage({ params }: { par
         )}
         <details className="rounded-lg border border-black/10 px-4 py-3">
           <summary className="cursor-pointer font-sans text-body-small font-medium text-ordift-ink select-none">Set referral terms</summary>
-          <form action={createReferralTermsAction} className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">
+          <ActionForm action={createReferralTermsAction} className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">
             <input type="hidden" name="opportunityId" value={opportunity.id} />
             <select name="commissionPercentage" defaultValue="10" className="rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small">
               {[5, 7.5, 10, 12.5, 15, 20].map((p) => (
@@ -274,8 +276,8 @@ export default async function PartnershipOpportunityDetailPage({ params }: { par
               <option value="twelve_months">Eligible revenue for 12 months</option>
             </select>
             <input name="reasonForElevatedRate" placeholder="Reason (required at 15%+)" className="rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small sm:col-span-2" />
-            <button type="submit" className="rounded-lg bg-ordift-ink text-white px-4 py-2 font-sans text-body-small sm:col-span-2">Save Referral Terms</button>
-          </form>
+            <SubmitButton pendingLabel="Saving…" className="rounded-lg bg-ordift-ink text-white px-4 py-2 font-sans text-body-small sm:col-span-2">Save Referral Terms</SubmitButton>
+          </ActionForm>
         </details>
         <p className="font-sans text-caption text-ordift-ink-muted">Manage the individual referred leads and earned-commission events on the <Link href="/admin/partnerships/referrals" className="underline underline-offset-4">Referrals</Link> page.</p>
       </section>
@@ -296,7 +298,7 @@ export default async function PartnershipOpportunityDetailPage({ params }: { par
         )}
         <details className="rounded-lg border border-black/10 px-4 py-3">
           <summary className="cursor-pointer font-sans text-body-small font-medium text-ordift-ink select-none">Record outcome review</summary>
-          <form action={createOutcomeReviewAction} className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">
+          <ActionForm action={createOutcomeReviewAction} className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">
             <input type="hidden" name="opportunityId" value={opportunity.id} />
             <input name="cashActuallyReceivedAmount" type="number" step="0.01" placeholder="Cash actually received" className="rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small" />
             <input name="actualOrdiftDirectCost" type="number" step="0.01" placeholder="Actual Ordift direct cost" className="rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small" />
@@ -313,8 +315,8 @@ export default async function PartnershipOpportunityDetailPage({ params }: { par
             <textarea name="portfolioValueOutcome" placeholder="Portfolio value outcome" rows={1} className="rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small sm:col-span-2" />
             <textarea name="relationshipOutcome" placeholder="Relationship outcome" rows={1} className="rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small sm:col-span-2" />
             <textarea name="notes" placeholder="Notes" rows={2} className="rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small sm:col-span-2" />
-            <button type="submit" className="rounded-lg bg-ordift-ink text-white px-4 py-2 font-sans text-body-small sm:col-span-2">Save Outcome Review</button>
-          </form>
+            <SubmitButton pendingLabel="Saving…" className="rounded-lg bg-ordift-ink text-white px-4 py-2 font-sans text-body-small sm:col-span-2">Save Outcome Review</SubmitButton>
+          </ActionForm>
         </details>
       </section>
 

@@ -7,6 +7,8 @@ import { listOpportunitiesForAdmin, listPartnershipTypes, type PartnershipOpport
 import { listActivePricingMarkets } from "@/lib/pricing/personalSessionPricing";
 import PartnershipsSubNav from "../PartnershipsSubNav";
 import { createOpportunityAction } from "../actions";
+import ActionForm from "@/components/admin/ActionForm";
+import SubmitButton from "@/components/admin/SubmitButton";
 
 export const metadata: Metadata = {
   title: "Opportunities — Partnerships — Ordift Studios Admin",
@@ -55,7 +57,7 @@ export default async function PartnershipOpportunitiesPage({ searchParams }: { s
 
       <section className="rounded-xl border border-black/10 bg-white p-6 space-y-4">
         <h2 className="font-serif font-medium text-body text-ordift-ink">New Opportunity</h2>
-        <form action={createOpportunityAction} className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <ActionForm action={createOpportunityAction} className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <select name="partnershipTypeId" required defaultValue="" className="rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small">
             <option value="" disabled>Partnership type</option>
             {types.map((t) => (
@@ -74,8 +76,8 @@ export default async function PartnershipOpportunitiesPage({ searchParams }: { s
           <input name="counterpartContactPhone" placeholder="Contact phone (optional)" className="rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small" />
           <textarea name="summary" placeholder="Collaboration idea / summary" rows={2} className="rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small sm:col-span-2" />
           <textarea name="notes" placeholder="Internal notes (never public)" rows={2} className="rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small sm:col-span-2" />
-          <button type="submit" className="rounded-lg bg-ordift-ink text-white px-4 py-2 font-sans text-body-small sm:col-span-2">Create Opportunity</button>
-        </form>
+          <SubmitButton pendingLabel="Creating…" className="rounded-lg bg-ordift-ink text-white px-4 py-2 font-sans text-body-small sm:col-span-2">Create Opportunity</SubmitButton>
+        </ActionForm>
       </section>
 
       <section className="rounded-xl border border-black/10 bg-white p-6 space-y-4">

@@ -7,6 +7,8 @@ import { listAllSupplierQuotes, type ProductionSupplierQuoteStatus } from "@/lib
 import { listSuppliersForAdmin } from "@/lib/production/suppliers";
 import ProductionSubNav from "../ProductionSubNav";
 import { createSupplierQuoteAction } from "../actions";
+import ActionForm from "@/components/admin/ActionForm";
+import SubmitButton from "@/components/admin/SubmitButton";
 
 export const metadata: Metadata = {
   title: "Supplier Quotes — Production Operations — Ordift Studios Admin",
@@ -61,7 +63,7 @@ export default async function ProductionQuotesPage({ searchParams }: { searchPar
             No active suppliers yet — <Link href="/admin/production/suppliers" className="underline underline-offset-4">add a supplier first</Link>.
           </p>
         ) : (
-          <form action={createSupplierQuoteAction} className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <ActionForm action={createSupplierQuoteAction} className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <select name="supplierId" required defaultValue="" className="rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small">
               <option value="" disabled>Supplier</option>
               {suppliers.map((s) => (
@@ -88,8 +90,8 @@ export default async function ProductionQuotesPage({ searchParams }: { searchPar
             <input name="cancellationTerms" placeholder="Cancellation terms (optional)" className="rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small sm:col-span-2" />
             <input name="sourceReference" placeholder="Supporting reference/evidence (file link, email ref, etc.)" className="rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small sm:col-span-2" />
             <textarea name="internalNotes" placeholder="Internal notes (never public)" rows={2} className="rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small sm:col-span-2" />
-            <button type="submit" className="rounded-lg bg-ordift-ink text-white px-4 py-2 font-sans text-body-small sm:col-span-2">Record Quote (Draft)</button>
-          </form>
+            <SubmitButton pendingLabel="Working…" className="rounded-lg bg-ordift-ink text-white px-4 py-2 font-sans text-body-small sm:col-span-2">Record Quote (Draft)</SubmitButton>
+          </ActionForm>
         )}
       </section>
 

@@ -27,6 +27,7 @@ export const RECORD_PREFIXES = [
   "INV", // Invoice
   "PRJ", // Project
   "PAY", // Payment (Payments & Finance Module, 2026-08-06)
+  "CSR", // Creative Crew Support request (2026-10-04)
 ] as const;
 
 export type RecordPrefix = (typeof RECORD_PREFIXES)[number];

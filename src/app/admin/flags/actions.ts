@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentUser, hasRole, isSuperAdmin } from "@/lib/portal/roles";
 import { logActivity } from "@/lib/admin/activityLog";
+import { actionOk, actionFail, type ActionState } from "@/lib/shared/actionState";
 
 async function requireAdmin() {
   const user = await getCurrentUser();
@@ -13,12 +14,12 @@ async function requireAdmin() {
   return user;
 }
 
-export async function toggleFlagAction(formData: FormData): Promise<void> {
+export async function toggleFlagAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const user = await requireAdmin();
 
   const flagId = String(formData.get("flagId") ?? "");
   const nextEnabled = formData.get("nextEnabled") === "true";
-  if (!flagId) return;
+  if (!flagId) return actionFail("Nothing was saved — check the details and try again.");
 
   const supabase = await createClient();
   const { data, error } = await supabase
@@ -29,7 +30,7 @@ export async function toggleFlagAction(formData: FormData): Promise<void> {
     .single();
   if (error) {
     console.error("[admin] flag toggle failed", error.message);
-    return;
+    return actionFail("Could not save your change. Please try again.");
   }
 
   await logActivity({
@@ -41,14 +42,15 @@ export async function toggleFlagAction(formData: FormData): Promise<void> {
   });
 
   revalidatePath("/admin/flags");
+  return actionOk("Updated.");
 }
 
-export async function createFlagAction(formData: FormData): Promise<void> {
+export async function createFlagAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const user = await requireAdmin();
 
   const key = String(formData.get("key") ?? "").trim();
   const description = String(formData.get("description") ?? "").trim();
-  if (!key) return;
+  if (!key) return actionFail("Nothing was saved — check the details and try again.");
 
   const supabase = await createClient();
   const { error } = await supabase
@@ -56,7 +58,7 @@ export async function createFlagAction(formData: FormData): Promise<void> {
     .insert({ key, description: description || null, enabled: false, updated_by: user.id });
   if (error) {
     console.error("[admin] flag create failed", error.message);
-    return;
+    return actionFail("Could not save your change. Please try again.");
   }
 
   await logActivity({
@@ -67,4 +69,5 @@ export async function createFlagAction(formData: FormData): Promise<void> {
   });
 
   revalidatePath("/admin/flags");
+  return actionOk("Created.");
 }

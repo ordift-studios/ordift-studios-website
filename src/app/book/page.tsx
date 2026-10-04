@@ -93,7 +93,13 @@ export default async function BookPage({
         )}
       </section>
 
-      <section className="bg-ordift-offwhite px-4 sm:px-8 py-10 text-center">
+      <section className="bg-ordift-offwhite px-4 sm:px-8 py-10 text-center space-y-3">
+        <p className="font-sans text-body-small text-ordift-ink-muted">
+          Leading your own project and need an extra pair of hands?{" "}
+          <Link href="/crew-support" className="text-ordift-gold-pressed underline underline-offset-4">
+            Request Creative Crew Support
+          </Link>
+        </p>
         <p className="font-sans text-body-small text-ordift-ink-muted">
           Prefer to reach us directly?{" "}
           <a

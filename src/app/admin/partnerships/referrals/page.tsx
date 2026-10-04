@@ -16,6 +16,8 @@ import {
   recordCommissionEventAction,
   setCommissionEventStatusAction,
 } from "../actions";
+import ActionForm from "@/components/admin/ActionForm";
+import SubmitButton from "@/components/admin/SubmitButton";
 
 export const metadata: Metadata = {
   title: "Referrals — Partnerships — Ordift Studios Admin",
@@ -81,16 +83,16 @@ export default async function PartnershipReferralsPage() {
                 </p>
               </div>
               {referral.approvalStatus === "pending" && (
-                <form action={approveReferralTermsAction}>
+                <ActionForm action={approveReferralTermsAction}>
                   <input type="hidden" name="referralId" value={referral.id} />
-                  <button type="submit" className="rounded-lg border border-green-600 text-green-700 px-3 py-1.5 font-sans text-caption shrink-0">Approve Terms</button>
-                </form>
+                  <SubmitButton pendingLabel="Working…" className="rounded-lg border border-green-600 text-green-700 px-3 py-1.5 font-sans text-caption shrink-0">Approve Terms</SubmitButton>
+                </ActionForm>
               )}
             </div>
 
             <details className="rounded-lg border border-black/10 px-4 py-3">
               <summary className="cursor-pointer font-sans text-caption font-medium text-ordift-ink select-none">Record a referred lead</summary>
-              <form action={createReferralLeadAction} className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">
+              <ActionForm action={createReferralLeadAction} className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">
                 <input type="hidden" name="referralId" value={referral.id} />
                 <input type="hidden" name="attributionWindowDays" value={referral.attributionWindowDays} />
                 <input name="prospectName" required placeholder="Prospect name" className="rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small" />
@@ -113,8 +115,8 @@ export default async function PartnershipReferralsPage() {
                     </label>
                   ))}
                 </div>
-                <button type="submit" className="rounded-lg bg-ordift-ink text-white px-4 py-2 font-sans text-body-small sm:col-span-2">Record Lead</button>
-              </form>
+                <SubmitButton pendingLabel="Working…" className="rounded-lg bg-ordift-ink text-white px-4 py-2 font-sans text-body-small sm:col-span-2">Record Lead</SubmitButton>
+              </ActionForm>
             </details>
 
             {leadsWithEvents.length > 0 && (
@@ -140,11 +142,11 @@ export default async function PartnershipReferralsPage() {
                             <li key={e.id} className="py-1.5 flex flex-wrap items-center justify-between gap-2 font-sans text-caption text-ordift-ink border-t border-black/5 pt-2 first:border-t-0 first:pt-0">
                               <span>Rate {e.commissionPercentage}% · Eligible ${e.eligibleCollectedRevenue.toFixed(2)} · Earned ${e.commissionEarnedAmount.toFixed(2)} — {e.status}</span>
                               {e.status === "calculated" && (
-                                <form action={setCommissionEventStatusAction} className="inline">
+                                <ActionForm action={setCommissionEventStatusAction} className="inline">
                                   <input type="hidden" name="eventId" value={e.id} />
                                   <input type="hidden" name="status" value="earned" />
-                                  <button type="submit" className="text-ordift-gold-pressed underline underline-offset-4">Mark Earned</button>
-                                </form>
+                                  <SubmitButton pendingLabel="Working…" className="text-ordift-gold-pressed underline underline-offset-4">Mark Earned</SubmitButton>
+                                </ActionForm>
                               )}
                               {e.status === "earned" && !e.paymentObligationId && (
                                 opportunity?.payeeProfileId ? (
@@ -169,18 +171,18 @@ export default async function PartnershipReferralsPage() {
 
                     <details>
                       <summary className="cursor-pointer font-sans text-caption text-ordift-ink-muted select-none">Record collected revenue / dispute this lead</summary>
-                      <form action={recordCommissionEventAction} className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-2">
+                      <ActionForm action={recordCommissionEventAction} className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-2">
                         <input type="hidden" name="referralLeadId" value={lead.id} />
                         <input name="grossCollectedAmount" type="number" step="0.01" min="0" required placeholder="Gross collected" className="rounded-lg border border-black/15 px-3 py-1.5 font-sans text-caption" />
                         <input name="excludedAmount" type="number" step="0.01" min="0" placeholder="Excluded (tax/refunds/pass-through)" className="rounded-lg border border-black/15 px-3 py-1.5 font-sans text-caption" />
                         <input type="hidden" name="commissionPercentage" value={referral.commissionPercentage} />
-                        <button type="submit" className="rounded-lg bg-ordift-ink text-white px-3 py-1.5 font-sans text-caption sm:col-span-2">Calculate Commission</button>
-                      </form>
-                      <form action={disputeReferralLeadAction} className="grid grid-cols-1 gap-2 mt-2">
+                        <SubmitButton pendingLabel="Working…" className="rounded-lg bg-ordift-ink text-white px-3 py-1.5 font-sans text-caption sm:col-span-2">Calculate Commission</SubmitButton>
+                      </ActionForm>
+                      <ActionForm action={disputeReferralLeadAction} className="grid grid-cols-1 gap-2 mt-2">
                         <input type="hidden" name="leadId" value={lead.id} />
                         <input name="disputeNotes" placeholder="Dispute notes" className="rounded-lg border border-black/15 px-3 py-1.5 font-sans text-caption" />
-                        <button type="submit" className="rounded-lg border border-red-600 text-red-700 px-3 py-1.5 font-sans text-caption">Dispute This Lead</button>
-                      </form>
+                        <SubmitButton pendingLabel="Working…" className="rounded-lg border border-red-600 text-red-700 px-3 py-1.5 font-sans text-caption">Dispute This Lead</SubmitButton>
+                      </ActionForm>
                     </details>
                   </div>
                 ))}

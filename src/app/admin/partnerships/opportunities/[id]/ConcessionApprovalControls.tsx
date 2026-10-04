@@ -2,6 +2,8 @@
 
 import ConfirmSubmitButton from "@/components/admin/ConfirmSubmitButton";
 import { approveConcessionAction, rejectValueAssessmentAction } from "../../actions";
+import ActionForm from "@/components/admin/ActionForm";
+import SubmitButton from "@/components/admin/SubmitButton";
 
 // Partnerships & Collaborations V1 (2026-09-07) — concession approval
 // is the single most safety-critical action in this system: it is the
@@ -14,7 +16,7 @@ import { approveConcessionAction, rejectValueAssessmentAction } from "../../acti
 export default function ConcessionApprovalControls({ assessmentId, opportunityId }: { assessmentId: string; opportunityId: string }) {
   return (
     <div className="flex gap-2 mt-2">
-      <form action={approveConcessionAction}>
+      <ActionForm action={approveConcessionAction}>
         <input type="hidden" name="assessmentId" value={assessmentId} />
         <input type="hidden" name="opportunityId" value={opportunityId} />
         <ConfirmSubmitButton
@@ -24,12 +26,12 @@ export default function ConcessionApprovalControls({ assessmentId, opportunityId
         >
           Approve
         </ConfirmSubmitButton>
-      </form>
-      <form action={rejectValueAssessmentAction}>
+      </ActionForm>
+      <ActionForm action={rejectValueAssessmentAction}>
         <input type="hidden" name="assessmentId" value={assessmentId} />
         <input type="hidden" name="opportunityId" value={opportunityId} />
-        <button type="submit" className="rounded-lg border border-red-600 text-red-700 px-3 py-1.5 font-sans text-caption">Reject</button>
-      </form>
+        <SubmitButton pendingLabel="Working…" className="rounded-lg border border-red-600 text-red-700 px-3 py-1.5 font-sans text-caption">Reject</SubmitButton>
+      </ActionForm>
     </div>
   );
 }

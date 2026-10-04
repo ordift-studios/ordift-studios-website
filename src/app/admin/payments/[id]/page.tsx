@@ -6,6 +6,8 @@ import { canAccessPaymentsAdmin, PAYMENT_CAPABILITIES } from "@/lib/payments/pay
 import { hasCapability } from "@/lib/workflow/engine";
 import { createClient } from "@/lib/supabase/server";
 import { reconcilePaymentAction, retryReceiptJobAction } from "../actions";
+import ActionForm from "@/components/admin/ActionForm";
+import SubmitButton from "@/components/admin/SubmitButton";
 
 export const metadata: Metadata = {
   title: "Payment Details — Ordift Studios Admin",
@@ -212,15 +214,12 @@ export default async function AdminPaymentDetailPage({ params }: { params: Promi
             This payment is still showing as Pending. Reconcile Now checks Paystack&apos;s own record for this transaction —
             it never sets a status directly; the result you see afterward is exactly what Paystack reports.
           </p>
-          <form action={reconcilePaymentAction}>
+          <ActionForm action={reconcilePaymentAction}>
             <input type="hidden" name="paymentId" value={payment.id} />
-            <button
-              type="submit"
-              className="min-h-10 rounded-lg bg-ordift-gold px-4 font-sans text-body-small font-medium text-ordift-navy-950 hover:bg-ordift-gold-hover"
-            >
+            <SubmitButton pendingLabel="Working…" className="min-h-10 rounded-lg bg-ordift-gold px-4 font-sans text-body-small font-medium text-ordift-navy-950 hover:bg-ordift-gold-hover">
               Reconcile Now
-            </button>
-          </form>
+            </SubmitButton>
+          </ActionForm>
         </section>
       )}
 
@@ -261,15 +260,12 @@ export default async function AdminPaymentDetailPage({ params }: { params: Promi
             )}
           </dl>
           {eligibleForReceiptRetry ? (
-            <form action={retryReceiptJobAction}>
+            <ActionForm action={retryReceiptJobAction}>
               <input type="hidden" name="paymentId" value={payment.id} />
-              <button
-                type="submit"
-                className="min-h-10 rounded-lg border border-black/20 px-4 font-sans text-body-small font-medium text-ordift-ink hover:bg-black/5"
-              >
+              <SubmitButton pendingLabel="Working…" className="min-h-10 rounded-lg border border-black/20 px-4 font-sans text-body-small font-medium text-ordift-ink hover:bg-black/5">
                 {isStaleReceiptJob ? "Recover Stuck Receipt" : "Retry Receipt"}
-              </button>
-            </form>
+              </SubmitButton>
+            </ActionForm>
           ) : receiptJob.status === "sent" ? (
             <p className="font-sans text-caption text-ordift-ink-muted">Confirmed sent — not re-dispatched from here.</p>
           ) : receiptJob.status === "processing" ? (

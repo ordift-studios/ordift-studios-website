@@ -11,6 +11,8 @@ import {
   moveEntryAction,
   updateShowcaseFieldsAction,
 } from "./actions";
+import ActionForm from "@/components/admin/ActionForm";
+import SubmitButton from "@/components/admin/SubmitButton";
 
 export const metadata: Metadata = {
   title: "Meet the Team — Ordift Studios Admin",
@@ -94,15 +96,15 @@ export default async function AdminTeamPage() {
                     Edit Public Profile
                   </Link>
 
-                  <form action={toggleVisibleAction}>
+                  <ActionForm action={toggleVisibleAction}>
                     <input type="hidden" name="profileId" value={entry.id} />
                     <input type="hidden" name="nextVisible" value={(!entry.visible).toString()} />
-                    <button type="submit" className="font-sans text-caption text-ordift-ink underline underline-offset-4">
+                    <SubmitButton pendingLabel="Working…" className="font-sans text-caption text-ordift-ink underline underline-offset-4">
                       {entry.visible ? "Hide" : "Show"}
-                    </button>
-                  </form>
+                    </SubmitButton>
+                  </ActionForm>
 
-                  <form action={moveEntryAction}>
+                  <ActionForm action={moveEntryAction}>
                     <input type="hidden" name="profileId" value={entry.id} />
                     <input type="hidden" name="direction" value="up" />
                     <button
@@ -112,9 +114,9 @@ export default async function AdminTeamPage() {
                     >
                       Move Up
                     </button>
-                  </form>
+                  </ActionForm>
 
-                  <form action={moveEntryAction}>
+                  <ActionForm action={moveEntryAction}>
                     <input type="hidden" name="profileId" value={entry.id} />
                     <input type="hidden" name="direction" value="down" />
                     <button
@@ -124,21 +126,21 @@ export default async function AdminTeamPage() {
                     >
                       Move Down
                     </button>
-                  </form>
+                  </ActionForm>
 
-                  <form action={removeFromTeamAction}>
+                  <ActionForm action={removeFromTeamAction}>
                     <input type="hidden" name="profileId" value={entry.id} />
-                    <button type="submit" className="font-sans text-caption text-red-700 underline underline-offset-4">
+                    <SubmitButton pendingLabel="Working…" className="font-sans text-caption text-red-700 underline underline-offset-4">
                       Remove from Team
-                    </button>
-                  </form>
+                    </SubmitButton>
+                  </ActionForm>
                 </div>
 
                 <details className="mt-3">
                   <summary className="font-sans text-caption text-ordift-ink-muted cursor-pointer">
                     Which details show publicly
                   </summary>
-                  <form action={updateShowcaseFieldsAction} className="mt-3 space-y-2">
+                  <ActionForm action={updateShowcaseFieldsAction} className="mt-3 space-y-2">
                     <input type="hidden" name="profileId" value={entry.id} />
                     <label className="block">
                       <span className="font-sans text-caption text-ordift-ink-muted">
@@ -171,13 +173,10 @@ export default async function AdminTeamPage() {
                         <span className="font-sans text-caption text-ordift-ink">Mark as Collaborator (not staff)</span>
                       </label>
                     </div>
-                    <button
-                      type="submit"
-                      className="rounded-full border border-ordift-ink/30 text-ordift-ink font-sans text-caption font-semibold px-4 py-1.5 hover:border-ordift-ink/60 transition-colors"
-                    >
+                    <SubmitButton pendingLabel="Saving…" className="rounded-full border border-ordift-ink/30 text-ordift-ink font-sans text-caption font-semibold px-4 py-1.5 hover:border-ordift-ink/60 transition-colors">
                       Save
-                    </button>
-                  </form>
+                    </SubmitButton>
+                  </ActionForm>
                 </details>
               </div>
             </div>
@@ -201,15 +200,12 @@ export default async function AdminTeamPage() {
                     {[person.jobTitle, person.department].filter(Boolean).join(" · ") || person.roles.join(", ")}
                   </p>
                 </div>
-                <form action={addToTeamAction}>
+                <ActionForm action={addToTeamAction}>
                   <input type="hidden" name="profileId" value={person.id} />
-                  <button
-                    type="submit"
-                    className="rounded-full bg-ordift-navy-950 text-white font-sans text-caption font-semibold px-4 py-1.5 hover:bg-ordift-navy-900 transition-colors shrink-0"
-                  >
+                  <SubmitButton pendingLabel="Adding…" className="rounded-full bg-ordift-navy-950 text-white font-sans text-caption font-semibold px-4 py-1.5 hover:bg-ordift-navy-900 transition-colors shrink-0">
                     Add to Team
-                  </button>
-                </form>
+                  </SubmitButton>
+                </ActionForm>
               </div>
             ))}
           </div>

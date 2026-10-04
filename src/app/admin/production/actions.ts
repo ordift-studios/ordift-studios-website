@@ -5,6 +5,7 @@ import { getCurrentUser } from "@/lib/portal/roles";
 import { createSupplier, updateSupplier, setSupplierActive, type ProductionSupplierType } from "@/lib/production/suppliers";
 import { createSupplierQuote, setSupplierQuoteStatus, type ProductionSupplierQuoteStatus } from "@/lib/production/supplierQuotes";
 import { createBudgetVersion, setChangeClientApprovalStatus, type ProductionBudgetStatus, type ProductionBudgetLineItem } from "@/lib/production/budgets";
+import { actionOk, actionFail, type ActionState } from "@/lib/shared/actionState";
 
 // Production Operations Admin UI (2026-09-07) — thin Server Action
 // wrappers over the governed lib functions built in Production
@@ -13,13 +14,13 @@ import { createBudgetVersion, setChangeClientApprovalStatus, type ProductionBudg
 // function (which re-checks authorization and writes the audit log
 // itself), revalidate, done. No new authorization logic here.
 
-export async function createSupplierAction(formData: FormData): Promise<void> {
+export async function createSupplierAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const user = await getCurrentUser();
-  if (!user) return;
+  if (!user) return actionFail("You must be signed in.");
 
   const supplierName = String(formData.get("supplierName") ?? "");
   const supplierType = String(formData.get("supplierType") ?? "") as ProductionSupplierType;
-  if (!supplierName.trim() || !supplierType) return;
+  if (!supplierName.trim() || !supplierType) return actionFail("Missing or invalid input — nothing was saved.");
 
   const capabilitiesRaw = String(formData.get("capabilities") ?? "");
   const capabilities = capabilitiesRaw
@@ -43,18 +44,22 @@ export async function createSupplierAction(formData: FormData): Promise<void> {
     paymentTerms: (formData.get("paymentTerms") as string) || null,
     actorUserId: user.id,
   });
-  if (!result.ok) console.error("[admin] failed to create production supplier", result.error);
+  if (!result.ok) {
+    console.error("[admin] failed to create production supplier", result.error);
+    return actionFail(result.error);
+  }
 
   revalidatePath("/admin/production/suppliers");
   revalidatePath("/admin/production");
+  return actionOk("Created.");
 }
 
-export async function updateSupplierAction(formData: FormData): Promise<void> {
+export async function updateSupplierAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const user = await getCurrentUser();
-  if (!user) return;
+  if (!user) return actionFail("You must be signed in.");
 
   const supplierId = String(formData.get("supplierId") ?? "");
-  if (!supplierId) return;
+  if (!supplierId) return actionFail("Missing or invalid input — nothing was saved.");
 
   const result = await updateSupplier({
     supplierId,
@@ -74,30 +79,38 @@ export async function updateSupplierAction(formData: FormData): Promise<void> {
     markVerifiedNow: formData.get("markVerifiedNow") === "true",
     actorUserId: user.id,
   });
-  if (!result.ok) console.error("[admin] failed to update production supplier", result.error);
+  if (!result.ok) {
+    console.error("[admin] failed to update production supplier", result.error);
+    return actionFail(result.error);
+  }
 
   revalidatePath(`/admin/production/suppliers/${supplierId}`);
   revalidatePath("/admin/production/suppliers");
+  return actionOk("Updated.");
 }
 
-export async function setSupplierActiveAction(formData: FormData): Promise<void> {
+export async function setSupplierActiveAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const user = await getCurrentUser();
-  if (!user) return;
+  if (!user) return actionFail("You must be signed in.");
 
   const supplierId = String(formData.get("supplierId") ?? "");
   const active = formData.get("active") === "true";
-  if (!supplierId) return;
+  if (!supplierId) return actionFail("Missing or invalid input — nothing was saved.");
 
   const result = await setSupplierActive({ supplierId, active: !active, actorUserId: user.id });
-  if (!result.ok) console.error("[admin] failed to update production supplier active state", result.error);
+  if (!result.ok) {
+    console.error("[admin] failed to update production supplier active state", result.error);
+    return actionFail(result.error);
+  }
 
   revalidatePath(`/admin/production/suppliers/${supplierId}`);
   revalidatePath("/admin/production/suppliers");
+  return actionOk("Saved.");
 }
 
-export async function createSupplierQuoteAction(formData: FormData): Promise<void> {
+export async function createSupplierQuoteAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const user = await getCurrentUser();
-  if (!user) return;
+  if (!user) return actionFail("You must be signed in.");
 
   const supplierId = String(formData.get("supplierId") ?? "");
   const referenceType = String(formData.get("referenceType") ?? "");
@@ -105,7 +118,7 @@ export async function createSupplierQuoteAction(formData: FormData): Promise<voi
   const description = String(formData.get("description") ?? "");
   const originalCurrencyCode = String(formData.get("originalCurrencyCode") ?? "");
   const supplierSubtotal = Number(formData.get("supplierSubtotal"));
-  if (!supplierId || !referenceType || !referenceId || !description || !originalCurrencyCode || !Number.isFinite(supplierSubtotal)) return;
+  if (!supplierId || !referenceType || !referenceId || !description || !originalCurrencyCode || !Number.isFinite(supplierSubtotal)) return actionFail("Missing or invalid input — nothing was saved.");
 
   const result = await createSupplierQuote({
     supplierId,
@@ -124,25 +137,33 @@ export async function createSupplierQuoteAction(formData: FormData): Promise<voi
     internalNotes: (formData.get("internalNotes") as string) || null,
     actorUserId: user.id,
   });
-  if (!result.ok) console.error("[admin] failed to create production supplier quote", result.error);
+  if (!result.ok) {
+    console.error("[admin] failed to create production supplier quote", result.error);
+    return actionFail(result.error);
+  }
 
   revalidatePath("/admin/production/quotes");
   revalidatePath("/admin/production");
+  return actionOk("Created.");
 }
 
-export async function setSupplierQuoteStatusAction(formData: FormData): Promise<void> {
+export async function setSupplierQuoteStatusAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const user = await getCurrentUser();
-  if (!user) return;
+  if (!user) return actionFail("You must be signed in.");
 
   const quoteId = String(formData.get("quoteId") ?? "");
   const status = String(formData.get("status") ?? "") as ProductionSupplierQuoteStatus;
-  if (!quoteId || !status) return;
+  if (!quoteId || !status) return actionFail("Missing or invalid input — nothing was saved.");
 
   const result = await setSupplierQuoteStatus({ quoteId, status, actorUserId: user.id });
-  if (!result.ok) console.error("[admin] failed to update production supplier quote status", result.error);
+  if (!result.ok) {
+    console.error("[admin] failed to update production supplier quote status", result.error);
+    return actionFail(result.error);
+  }
 
   revalidatePath(`/admin/production/quotes/${quoteId}`);
   revalidatePath("/admin/production/quotes");
+  return actionOk("Saved.");
 }
 
 export async function createBudgetVersionAction(formData: FormData): Promise<{ ok: true } | { ok: false; error: string; requiresChangeReason?: boolean }> {
@@ -188,17 +209,21 @@ export async function createBudgetVersionAction(formData: FormData): Promise<{ o
   return { ok: true };
 }
 
-export async function setChangeClientApprovalStatusAction(formData: FormData): Promise<void> {
+export async function setChangeClientApprovalStatusAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const user = await getCurrentUser();
-  if (!user) return;
+  if (!user) return actionFail("You must be signed in.");
 
   const changeId = String(formData.get("changeId") ?? "");
   const status = String(formData.get("status") ?? "") as "approved" | "rejected";
-  if (!changeId || (status !== "approved" && status !== "rejected")) return;
+  if (!changeId || (status !== "approved" && status !== "rejected")) return actionFail("Missing or invalid input — nothing was saved.");
 
   const result = await setChangeClientApprovalStatus({ changeId, status, actorUserId: user.id });
-  if (!result.ok) console.error("[admin] failed to update budget change approval status", result.error);
+  if (!result.ok) {
+    console.error("[admin] failed to update budget change approval status", result.error);
+    return actionFail(result.error);
+  }
 
   revalidatePath("/admin/production/changes");
   revalidatePath("/admin/production/budgets");
+  return actionOk("Saved.");
 }

@@ -50,7 +50,10 @@ export default function ClassificationManager({ classifications }: { classificat
     const fd = new FormData();
     fd.set("id", c.id);
     fd.set("active", String(c.active));
-    startTransition(() => toggleClassificationAction(fd));
+    startTransition(async () => {
+      const result = await toggleClassificationAction(null, fd);
+      if (result?.ok === false) setError(result.error);
+    });
   }
 
   function addNew() {

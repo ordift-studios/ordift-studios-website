@@ -5,6 +5,8 @@ import type {
 } from "@/lib/admin/projectRequests";
 import { PROJECT_REQUEST_STATUSES, PROJECT_REQUEST_STATUS_LABELS } from "@/lib/admin/projectRequests";
 import { decideProjectRequestAction } from "@/app/admin/project-requests/actions";
+import ActionForm from "@/components/admin/ActionForm";
+import SubmitButton from "@/components/admin/SubmitButton";
 
 function formatDateTime(iso: string): string {
   return new Date(iso).toLocaleString("en-GB", {
@@ -68,7 +70,7 @@ export default function ProjectRequestsManager({
                 <p className="font-sans text-caption text-ordift-ink-muted">Decided {formatDateTime(r.decidedAt)}</p>
               )}
 
-              <form
+              <ActionForm
                 action={decideProjectRequestAction}
                 className="flex flex-wrap items-end gap-3 pt-3 border-t border-black/5"
               >
@@ -104,13 +106,10 @@ export default function ProjectRequestsManager({
                     className="w-full min-h-11 rounded-lg border border-black/15 bg-white px-3 font-sans text-body-small text-ordift-ink"
                   />
                 </div>
-                <button
-                  type="submit"
-                  className="min-h-11 px-5 rounded-full bg-ordift-navy-950 text-white font-sans text-body-small"
-                >
+                <SubmitButton pendingLabel="Updating…" className="min-h-11 px-5 rounded-full bg-ordift-navy-950 text-white font-sans text-body-small">
                   Update
-                </button>
-              </form>
+                </SubmitButton>
+              </ActionForm>
             </div>
           ))}
         </div>

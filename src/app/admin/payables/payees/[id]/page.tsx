@@ -28,6 +28,7 @@ import {
   setPayeeProfileStatusAction,
   updateEngagementAction,
 } from "../../actions";
+import ActionForm from "@/components/admin/ActionForm";
 
 export const metadata: Metadata = {
   title: "Payee — Payables — Ordift Studios Admin",
@@ -63,7 +64,7 @@ export default async function AdminPayeeDetailPage({ params }: { params: Promise
             {payee.category} {payee.operationalTitleName ? `· ${payee.operationalTitleName}` : ""} {payee.companyName ? `· ${payee.companyName}` : ""} · status: {payee.status}
           </p>
         </div>
-        <form action={setPayeeProfileStatusAction} className="flex items-center gap-2">
+        <ActionForm action={setPayeeProfileStatusAction} className="flex items-center gap-2">
           <input type="hidden" name="payeeProfileId" value={payee.id} />
           <select name="status" defaultValue={payee.status} className="rounded-lg border border-black/15 px-3 py-2 font-sans text-caption">
             <option value="active">active</option>
@@ -73,7 +74,7 @@ export default async function AdminPayeeDetailPage({ params }: { params: Promise
           <SubmitButton pendingLabel="Updating…" className="rounded-lg border border-black/15 px-3 py-2 font-sans text-caption hover:border-black/30">
             Update Status
           </SubmitButton>
-        </form>
+        </ActionForm>
       </div>
 
       {/* Payment destinations */}
@@ -93,23 +94,23 @@ export default async function AdminPayeeDetailPage({ params }: { params: Promise
                 {countryName(i.country)} · {i.currency} · {verificationStatusLabel(i.verificationStatus)} · {i.active ? "active" : "deactivated"} {i.isDefault ? "· default" : ""}
               </p>
               <div className="flex flex-wrap gap-2">
-                <form action={verifyPaymentInstructionAction}>
+                <ActionForm action={verifyPaymentInstructionAction}>
                   <input type="hidden" name="instructionId" value={i.id} />
                   <input type="hidden" name="profileId" value={payee.id} />
                   <input type="hidden" name="verified" value="true" />
                   <SubmitButton pendingLabel="Verifying…" className="rounded border border-black/15 px-2 py-1 font-sans text-caption hover:border-black/30">
                     Verify
                   </SubmitButton>
-                </form>
-                <form action={verifyPaymentInstructionAction}>
+                </ActionForm>
+                <ActionForm action={verifyPaymentInstructionAction}>
                   <input type="hidden" name="instructionId" value={i.id} />
                   <input type="hidden" name="profileId" value={payee.id} />
                   <input type="hidden" name="verified" value="false" />
                   <SubmitButton pendingLabel="Rejecting…" className="rounded border border-black/15 px-2 py-1 font-sans text-caption hover:border-black/30">
                     Reject
                   </SubmitButton>
-                </form>
-                <form action={setPaymentInstructionActiveAction}>
+                </ActionForm>
+                <ActionForm action={setPaymentInstructionActiveAction}>
                   <input type="hidden" name="instructionId" value={i.id} />
                   <input type="hidden" name="profileId" value={payee.id} />
                   <input type="hidden" name="active" value={i.active ? "false" : "true"} />
@@ -119,7 +120,7 @@ export default async function AdminPayeeDetailPage({ params }: { params: Promise
                   >
                     {i.active ? "Deactivate" : "Reactivate"}
                   </SubmitButton>
-                </form>
+                </ActionForm>
               </div>
             </li>
           ))}
@@ -153,7 +154,7 @@ export default async function AdminPayeeDetailPage({ params }: { params: Promise
               </p>
               <div className="flex flex-wrap gap-2 mb-2">
                 {getValidEngagementTransitions(e.status).map((t) => (
-                  <form key={t.to} action={setEngagementStatusAction}>
+                  <ActionForm key={t.to} action={setEngagementStatusAction}>
                     <input type="hidden" name="engagementId" value={e.id} />
                     <input type="hidden" name="payeeProfileId" value={payee.id} />
                     <input type="hidden" name="status" value={t.to} />
@@ -170,11 +171,11 @@ export default async function AdminPayeeDetailPage({ params }: { params: Promise
                         {t.label}
                       </SubmitButton>
                     )}
-                  </form>
+                  </ActionForm>
                 ))}
               </div>
               {!e.paymentObligationId && e.agreedAmount && (
-                <form action={createEngagementPayableAction} className="flex flex-wrap items-center gap-2">
+                <ActionForm action={createEngagementPayableAction} className="flex flex-wrap items-center gap-2">
                   <input type="hidden" name="engagementId" value={e.id} />
                   <input type="hidden" name="payeeProfileId" value={payee.id} />
                   <input
@@ -190,7 +191,7 @@ export default async function AdminPayeeDetailPage({ params }: { params: Promise
                   >
                     Create Payable
                   </ConfirmSubmitButton>
-                </form>
+                </ActionForm>
               )}
               {e.paymentObligationId && (
                 <Link href={`/admin/payables/${e.paymentObligationId}`} className="font-sans text-caption underline text-ordift-ink">

@@ -9,6 +9,7 @@ import { createRecruitmentRequisition, createAndApproveFounderDirectHire } from 
 import type { Jurisdiction } from "@/lib/organization/authority";
 import { requestCorporateIdentityProvisioning, provisionCorporateIdentity } from "@/lib/organization/corporateProvisioning";
 import { mockProvisioningProvider } from "@/lib/organization/provisioningProvider";
+import { actionOk, actionFail, type ActionState } from "@/lib/shared/actionState";
 
 // Ordift Organizational & Administrative Architecture V1, Phase 3.3
 // (2026-08-25). Super-Admin-only, matching this whole foundation's
@@ -25,7 +26,7 @@ async function requireSuperAdmin() {
   return user;
 }
 
-export async function reserveCorporateIdentityAction(formData: FormData): Promise<void> {
+export async function reserveCorporateIdentityAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const currentUser = await requireSuperAdmin();
 
   const profileId = String(formData.get("profileId") ?? "").trim();
@@ -33,7 +34,7 @@ export async function reserveCorporateIdentityAction(formData: FormData): Promis
   const middleNamesRaw = String(formData.get("middleNames") ?? "").trim();
   const surname = String(formData.get("surname") ?? "").trim();
   const additionalRaw = String(formData.get("additionalVerifiedNames") ?? "").trim();
-  if (!profileId || !firstName || !surname) return;
+  if (!profileId || !firstName || !surname) return actionFail("Nothing was saved — check the details and try again.");
 
   const result = await reserveCorporateIdentity({
     profileId,
@@ -47,9 +48,11 @@ export async function reserveCorporateIdentityAction(formData: FormData): Promis
   });
   if (!result.ok) {
     console.error("[admin operations] failed to reserve corporate identity", result.error);
+    return actionFail(result.error);
   }
 
   revalidatePath("/admin/operations");
+  return actionOk("Reserved.");
 }
 
 // Founder/Super-Admin direct typo-correction capability (2026-09-10) —
@@ -125,7 +128,7 @@ export async function provisionCorporateIdentityMockAction(params: { identityId:
   return result;
 }
 
-export async function createDepartmentRequestAction(formData: FormData): Promise<void> {
+export async function createDepartmentRequestAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const currentUser = await requireSuperAdmin();
 
   const title = String(formData.get("title") ?? "").trim();
@@ -135,7 +138,7 @@ export async function createDepartmentRequestAction(formData: FormData): Promise
   const requestingJurisdiction = (String(formData.get("requestingJurisdiction") ?? "").trim() || null) as Jurisdiction | null;
   const servicingDepartmentId = String(formData.get("servicingDepartmentId") ?? "").trim() || null;
   const servicingJurisdiction = (String(formData.get("servicingJurisdiction") ?? "").trim() || null) as Jurisdiction | null;
-  if (!title || !requestType) return;
+  if (!title || !requestType) return actionFail("Nothing was saved — check the details and try again.");
 
   const result = await createDepartmentRequest({
     title,
@@ -149,12 +152,14 @@ export async function createDepartmentRequestAction(formData: FormData): Promise
   });
   if (!result.ok) {
     console.error("[admin operations] failed to create department request", result.error);
+    return actionFail(result.error);
   }
 
   revalidatePath("/admin/operations");
+  return actionOk("Created.");
 }
 
-export async function createRecruitmentRequisitionAction(formData: FormData): Promise<void> {
+export async function createRecruitmentRequisitionAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const currentUser = await requireSuperAdmin();
 
   const title = String(formData.get("title") ?? "").trim();
@@ -162,7 +167,7 @@ export async function createRecruitmentRequisitionAction(formData: FormData): Pr
   const gradeId = String(formData.get("gradeId") ?? "").trim() || null;
   const headcountRaw = String(formData.get("headcount") ?? "1").trim();
   const justification = String(formData.get("justification") ?? "").trim() || null;
-  if (!title) return;
+  if (!title) return actionFail("Nothing was saved — check the details and try again.");
 
   const result = await createRecruitmentRequisition({
     title,
@@ -175,9 +180,11 @@ export async function createRecruitmentRequisitionAction(formData: FormData): Pr
   });
   if (!result.ok) {
     console.error("[admin operations] failed to create recruitment requisition", result.error);
+    return actionFail(result.error);
   }
 
   revalidatePath("/admin/operations");
+  return actionOk("Created.");
 }
 
 // Founder Direct Hire (E.5 Stage 2M, Part 2) — requireSuperAdmin() here

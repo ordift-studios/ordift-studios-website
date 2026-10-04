@@ -3,6 +3,8 @@
 import { useState } from "react";
 import type { CurrencyOption } from "@/lib/payments/currency";
 import SubmitButton from "@/components/admin/SubmitButton";
+import ActionForm from "@/components/admin/ActionForm";
+import type { ActionState } from "@/lib/shared/actionState";
 
 // Payable Safety Hardening (2026-09-04), Parts E/F — the standalone
 // (no-engagement) payable creation form. Part E: currency is now a
@@ -21,13 +23,13 @@ export default function StandalonePayableForm({
 }: {
   payeeProfileId: string;
   currencies: CurrencyOption[];
-  createAction: (formData: FormData) => Promise<void>;
+  createAction: (prev: ActionState, formData: FormData) => Promise<ActionState>;
 }) {
   const [amount, setAmount] = useState("");
   const [currency, setCurrency] = useState("");
 
   return (
-    <form
+    <ActionForm
       action={createAction}
       onSubmit={(e) => {
         const confirmed = window.confirm(`Create a payable for ${currency || "(no currency selected)"} ${amount || "0"}? This is a real financial obligation.`);
@@ -77,6 +79,6 @@ export default function StandalonePayableForm({
           Create Payable
         </SubmitButton>
       </div>
-    </form>
+    </ActionForm>
   );
 }

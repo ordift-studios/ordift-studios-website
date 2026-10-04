@@ -5,6 +5,8 @@ import { getCurrentUser } from "@/lib/portal/roles";
 import { authorizeWithSuperAdminOverride, OPERATIONS_CAPABILITIES } from "@/lib/organization/authority";
 import { getSupplierQuoteById } from "@/lib/production/supplierQuotes";
 import { getSupplierById } from "@/lib/production/suppliers";
+import ActionForm from "@/components/admin/ActionForm";
+import SubmitButton from "@/components/admin/SubmitButton";
 import ConfirmSubmitButton from "@/components/admin/ConfirmSubmitButton";
 import { setSupplierQuoteStatusAction } from "../../actions";
 import { QUOTE_STATUS_OPTIONS, quoteStatusLabel } from "../page";
@@ -68,7 +70,7 @@ export default async function ProductionSupplierQuoteDetailPage({ params }: { pa
         <div className="flex flex-wrap gap-2">
           {QUOTE_STATUS_OPTIONS.filter((s) => s.slug !== quote.status).map((s) =>
             HIGH_CONSEQUENCE_STATUSES.has(s.slug) ? (
-              <form key={s.slug} action={setSupplierQuoteStatusAction}>
+              <ActionForm key={s.slug} action={setSupplierQuoteStatusAction}>
                 <input type="hidden" name="quoteId" value={quote.id} />
                 <input type="hidden" name="status" value={s.slug} />
                 <ConfirmSubmitButton
@@ -78,15 +80,15 @@ export default async function ProductionSupplierQuoteDetailPage({ params }: { pa
                 >
                   Mark {s.label}
                 </ConfirmSubmitButton>
-              </form>
+              </ActionForm>
             ) : (
-              <form key={s.slug} action={setSupplierQuoteStatusAction}>
+              <ActionForm key={s.slug} action={setSupplierQuoteStatusAction}>
                 <input type="hidden" name="quoteId" value={quote.id} />
                 <input type="hidden" name="status" value={s.slug} />
-                <button type="submit" className="rounded-lg border border-black/15 px-3 py-1.5 font-sans text-caption text-ordift-ink-muted hover:text-ordift-ink">
+                <SubmitButton pendingLabel="Working…" className="rounded-lg border border-black/15 px-3 py-1.5 font-sans text-caption text-ordift-ink-muted hover:text-ordift-ink">
                   Mark {s.label}
-                </button>
-              </form>
+                </SubmitButton>
+              </ActionForm>
             )
           )}
         </div>

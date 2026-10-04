@@ -5,6 +5,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { getCurrentUser, hasRole, isSuperAdmin } from "@/lib/portal/roles";
 import { logActivity } from "@/lib/admin/activityLog";
 import { hasAuthority } from "@/lib/organization/authority";
+import { actionOk, actionFail, type ActionState } from "@/lib/shared/actionState";
 
 // Ordift Organizational & Administrative Architecture V1, Phase 1
 // (2026-08-25). Gated to Admin or Super Admin, matching the RLS policies
@@ -51,12 +52,12 @@ function slugify(name: string): string {
     .replace(/^-+|-+$/g, "");
 }
 
-export async function addDepartmentAction(formData: FormData): Promise<void> {
+export async function addDepartmentAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const currentUser = await requireOrgAdmin();
 
   const name = String(formData.get("name") ?? "").trim();
   const description = String(formData.get("description") ?? "").trim();
-  if (!name) return;
+  if (!name) return actionFail("Nothing was saved — check the details and try again.");
 
   const admin = createAdminClient();
   const { data, error } = await admin
@@ -67,6 +68,7 @@ export async function addDepartmentAction(formData: FormData): Promise<void> {
 
   if (error) {
     console.error("[organization] failed to add department", error.message);
+    return actionFail("Could not save your change. Please try again.");
   } else {
     await logActivity({
       actorUserId: currentUser.id,
@@ -78,19 +80,21 @@ export async function addDepartmentAction(formData: FormData): Promise<void> {
   }
 
   revalidatePath("/admin/organization");
+  return actionOk("Added.");
 }
 
-export async function toggleDepartmentAction(formData: FormData): Promise<void> {
+export async function toggleDepartmentAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const currentUser = await requireOrgAdmin();
 
   const id = String(formData.get("id") ?? "");
   const active = formData.get("active") === "true";
-  if (!id) return;
+  if (!id) return actionFail("Nothing was saved — check the details and try again.");
 
   const admin = createAdminClient();
   const { error } = await admin.from("departments").update({ active: !active }).eq("id", id);
   if (error) {
     console.error("[organization] failed to toggle department", error.message);
+    return actionFail("Could not save your change. Please try again.");
   } else {
     await logActivity({
       actorUserId: currentUser.id,
@@ -102,9 +106,10 @@ export async function toggleDepartmentAction(formData: FormData): Promise<void> 
   }
 
   revalidatePath("/admin/organization");
+  return actionOk("Updated.");
 }
 
-export async function addPositionAction(formData: FormData): Promise<void> {
+export async function addPositionAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const name = String(formData.get("name") ?? "").trim();
   const departmentId = String(formData.get("departmentId") ?? "").trim();
   const operationalTitleId = String(formData.get("operationalTitleId") ?? "").trim() || null;
@@ -114,7 +119,7 @@ export async function addPositionAction(formData: FormData): Promise<void> {
   // Phase 3, Parts A and C (2026-08-25) — both optional.
   const callSign = String(formData.get("callSign") ?? "").trim().toUpperCase() || null;
   const reportsToPositionId = String(formData.get("reportsToPositionId") ?? "").trim() || null;
-  if (!name || !departmentId || !defaultGradeId) return;
+  if (!name || !departmentId || !defaultGradeId) return actionFail("Nothing was saved — check the details and try again.");
 
   const currentUser = await requireOrgAdminOrDepartmentAdmin(departmentId);
 
@@ -138,6 +143,7 @@ export async function addPositionAction(formData: FormData): Promise<void> {
 
   if (error) {
     console.error("[organization] failed to add position", error.message);
+    return actionFail("Could not save your change. Please try again.");
   } else {
     await logActivity({
       actorUserId: currentUser.id,
@@ -149,22 +155,24 @@ export async function addPositionAction(formData: FormData): Promise<void> {
   }
 
   revalidatePath("/admin/organization");
+  return actionOk("Added.");
 }
 
-export async function togglePositionAction(formData: FormData): Promise<void> {
+export async function togglePositionAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const id = String(formData.get("id") ?? "");
   const active = formData.get("active") === "true";
-  if (!id) return;
+  if (!id) return actionFail("Nothing was saved — check the details and try again.");
 
   const admin = createAdminClient();
   const { data: position } = await admin.from("positions").select("department_id").eq("id", id).maybeSingle();
-  if (!position) return;
+  if (!position) return actionFail("Nothing was saved — check the details and try again.");
 
   const currentUser = await requireOrgAdminOrDepartmentAdmin(position.department_id);
 
   const { error } = await admin.from("positions").update({ active: !active }).eq("id", id);
   if (error) {
     console.error("[organization] failed to toggle position", error.message);
+    return actionFail("Could not save your change. Please try again.");
   } else {
     await logActivity({
       actorUserId: currentUser.id,
@@ -176,4 +184,5 @@ export async function togglePositionAction(formData: FormData): Promise<void> {
   }
 
   revalidatePath("/admin/organization");
+  return actionOk("Updated.");
 }

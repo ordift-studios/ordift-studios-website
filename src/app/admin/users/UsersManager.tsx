@@ -36,6 +36,7 @@ import {
   getAccessHistoryForUserAction,
   setNewBookingAlertsAction,
 } from "./actions";
+import ActionForm from "@/components/admin/ActionForm";
 
 const ROLE_LABELS: Record<RoleSlug, string> = {
   client: "Client",
@@ -599,7 +600,7 @@ function UserDetail({
               >
                 {ROLE_LABELS[role]}
                 {!disallowed && (
-                  <form action={revokeRoleAction}>
+                  <ActionForm action={revokeRoleAction}>
                     <input type="hidden" name="userId" value={user.id} />
                     <input type="hidden" name="role" value={role} />
                     <button
@@ -609,7 +610,7 @@ function UserDetail({
                     >
                       ×
                     </button>
-                  </form>
+                  </ActionForm>
                 )}
               </span>
             );

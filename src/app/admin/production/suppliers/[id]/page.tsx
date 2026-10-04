@@ -9,6 +9,8 @@ import { listPayeeProfiles } from "@/lib/payables/payeeProfiles";
 import { listActivePricingMarkets } from "@/lib/pricing/personalSessionPricing";
 import { updateSupplierAction, setSupplierActiveAction } from "../../actions";
 import { SUPPLIER_TYPE_OPTIONS } from "../page";
+import ActionForm from "@/components/admin/ActionForm";
+import SubmitButton from "@/components/admin/SubmitButton";
 
 export const metadata: Metadata = {
   title: "Supplier — Production Operations — Ordift Studios Admin",
@@ -51,13 +53,13 @@ export default async function ProductionSupplierDetailPage({ params }: { params:
       <section className="rounded-xl border border-black/10 bg-white p-6 space-y-4">
         <div className="flex items-center justify-between">
           <h2 className="font-serif font-medium text-body text-ordift-ink">Status</h2>
-          <form action={setSupplierActiveAction}>
+          <ActionForm action={setSupplierActiveAction}>
             <input type="hidden" name="supplierId" value={supplier.id} />
             <input type="hidden" name="active" value={String(supplier.active)} />
-            <button type="submit" className="font-sans text-caption text-ordift-gold-pressed underline underline-offset-4">
+            <SubmitButton pendingLabel="Working…" className="font-sans text-caption text-ordift-gold-pressed underline underline-offset-4">
               {supplier.active ? "Deactivate" : "Activate"}
-            </button>
-          </form>
+            </SubmitButton>
+          </ActionForm>
         </div>
         <p className="font-sans text-caption text-ordift-ink-muted">
           Deactivating hides this supplier from new sourcing without deleting the record — every historical quote and budget line referencing it remains fully intact and auditable. Suppliers are never physically deleted in this Admin area.
@@ -66,7 +68,7 @@ export default async function ProductionSupplierDetailPage({ params }: { params:
 
       <section className="rounded-xl border border-black/10 bg-white p-6 space-y-4">
         <h2 className="font-serif font-medium text-body text-ordift-ink">Details</h2>
-        <form action={updateSupplierAction} className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <ActionForm action={updateSupplierAction} className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <input type="hidden" name="supplierId" value={supplier.id} />
           <select name="marketSlug" defaultValue={supplier.marketSlug ?? ""} className="rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small">
             <option value="">Market (none set)</option>
@@ -107,8 +109,8 @@ export default async function ProductionSupplierDetailPage({ params }: { params:
             Mark as verified today {supplier.lastVerifiedAt && <span className="font-sans text-caption text-ordift-ink-muted">(last verified {new Date(supplier.lastVerifiedAt).toLocaleDateString()})</span>}
           </label>
 
-          <button type="submit" className="rounded-lg bg-ordift-ink text-white px-4 py-2 font-sans text-body-small sm:col-span-2">Save changes</button>
-        </form>
+          <SubmitButton pendingLabel="Saving…" className="rounded-lg bg-ordift-ink text-white px-4 py-2 font-sans text-body-small sm:col-span-2">Save changes</SubmitButton>
+        </ActionForm>
       </section>
 
       <section className="rounded-xl border border-black/10 bg-white p-6 space-y-4">
