@@ -68,10 +68,10 @@ import {
   createWeddingEventAddonRateVersion,
   createWeddingEventPercentageRateVersion,
   type WeddingEventCategory,
-  type ServiceMode,
   type AddonSlug,
   type PercentageSlug,
 } from "@/lib/pricing/weddingEventPricing";
+import { saveTierRate, type TierRateSaveState } from "./tierRateSave";
 
 // Ordift Pricing Engine V1 (2026-09-06) — thin Server Action wrappers.
 // All real authorization/validation/audit logic lives in
@@ -409,28 +409,9 @@ export async function createCorporatePriorityDeliveryVersionAction(formData: For
 // Weddings & Events Pricing V1 (2026-09-06)
 // ============================================================
 
-export async function createWeddingEventTierRateVersionAction(formData: FormData): Promise<void> {
+export async function createWeddingEventTierRateVersionAction(_prev: TierRateSaveState, formData: FormData): Promise<TierRateSaveState> {
   const user = await getCurrentUser();
-  if (!user) return;
-
-  const marketSlug = String(formData.get("marketSlug") ?? "");
-  const category = String(formData.get("category") ?? "");
-  const serviceMode = String(formData.get("serviceMode") ?? "");
-  const tierSlug = String(formData.get("tierSlug") ?? "");
-  const priceUsd = Number(formData.get("priceUsd"));
-  if (!marketSlug || (category !== "wedding" && category !== "event") || !tierSlug || !Number.isFinite(priceUsd)) return;
-
-  const result = await createWeddingEventTierRateVersion({
-    marketSlug,
-    category: category as WeddingEventCategory,
-    serviceMode: serviceMode as ServiceMode,
-    tierSlug,
-    priceUsd,
-    actorUserId: user.id,
-  });
-  if (!result.ok) console.error("[admin] failed to create wedding/event tier rate version", result.error);
-
-  revalidatePath("/admin/pricing");
+  return saveTierRate(formData, user?.id ?? null, createWeddingEventTierRateVersion, () => revalidatePath("/admin/pricing"));
 }
 
 export async function createWeddingEventPriorityDeliveryVersionAction(formData: FormData): Promise<void> {

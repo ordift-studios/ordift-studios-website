@@ -81,7 +81,6 @@ import {
   createCorporateMinimumBookingVersionAction,
   createCorporateRetouchRateVersionAction,
   createCorporatePriorityDeliveryVersionAction,
-  createWeddingEventTierRateVersionAction,
   createWeddingEventPriorityDeliveryVersionAction,
   createWeddingEventAddonRateVersionAction,
   createWeddingEventPercentageRateVersionAction,
@@ -108,6 +107,7 @@ import {
 } from "./actions";
 import ManualDiscountForm from "./ManualDiscountForm";
 import DeleteDiscountButton from "./DeleteDiscountButton";
+import TierRateEditForm from "./TierRateEditForm";
 import { TABS, TAB_GROUPS } from "./tabsConfig";
 
 export const metadata: Metadata = {
@@ -1091,14 +1091,7 @@ export default async function AdminPricingPage({
                             // resolution key.
                             <details key={`${category}-${selectedMarket.slug}-${mode}-${t.slug}`} className="rounded-lg border border-black/10 px-4 py-2">
                               <summary className="cursor-pointer font-sans text-body-small text-ordift-ink select-none">Edit {t.label} rate</summary>
-                              <form action={createWeddingEventTierRateVersionAction} className="grid grid-cols-1 sm:grid-cols-4 gap-3 mt-3">
-                                <input type="hidden" name="marketSlug" value={selectedMarket.slug} />
-                                <input type="hidden" name="category" value={category} />
-                                <input type="hidden" name="serviceMode" value={mode} />
-                                <input type="hidden" name="tierSlug" value={t.slug} />
-                                <input name="priceUsd" type="number" step="0.01" min="0.01" required defaultValue={rate?.priceUsd} placeholder="Price USD" className="rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small" />
-                                <button type="submit" className="rounded-lg bg-ordift-ink text-white px-4 py-2 font-sans text-body-small">Save new version</button>
-                              </form>
+                              <TierRateEditForm marketSlug={selectedMarket.slug} category={category} serviceMode={mode} tierSlug={t.slug} currentPriceUsd={rate?.priceUsd} />
                             </details>
                           );
                         })}
