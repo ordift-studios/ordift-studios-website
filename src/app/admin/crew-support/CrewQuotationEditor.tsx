@@ -1,0 +1,78 @@
+"use client";
+
+import { useActionState, useMemo, useState } from "react";
+import SubmitButton from "@/components/admin/SubmitButton";
+import type { ActionState } from "@/lib/shared/actionState";
+import type { EditableLine } from "@/lib/crewSupport/quotationRules";
+import { saveQuotationDraftAction } from "./quotationActions";
+
+type Line = EditableLine & { key: string };
+const UNITS = ["hour", "half_day", "full_day", "item", "service", "other"];
+const field = "rounded-lg border border-black/15 bg-white px-2 py-1.5 font-sans text-body-small text-ordift-ink w-full";
+
+function money(n: number) {
+  return (Math.round(n * 100) / 100).toFixed(2);
+}
+
+export default function CrewQuotationEditor({
+  quotationId, requestId, initialLines, validUntil, terms, internalNotes, fxCurrency, currencies,
+}: {
+  quotationId: string; requestId: string; initialLines: EditableLine[]; validUntil: string | null; terms: string | null; internalNotes: string | null; fxCurrency: string | null; currencies: { code: string; name: string }[];
+}) {
+  const [lines, setLines] = useState<Line[]>(() => initialLines.map((l, i) => ({ ...l, key: `l${i}` })));
+  const [state, formAction] = useActionState<ActionState, FormData>(saveQuotationDraftAction, null);
+  const patch = (key: string, p: Partial<Line>) => setLines((ls) => ls.map((l) => (l.key === key ? { ...l, ...p } : l)));
+  const total = useMemo(() => lines.reduce((sum, l) => { const gross = (Number(l.quantity) || 0) * (Number(l.sellingRate) || 0); const afterDiscount = gross - (l.discountPercent ? gross * (l.discountPercent / 100) : 0); return sum + afterDiscount + (l.taxPercent ? afterDiscount * (l.taxPercent / 100) : 0); }, 0), [lines]);
+
+  return (
+    <form action={formAction} className="space-y-4">
+      <input type="hidden" name="quotationId" value={quotationId} />
+      <input type="hidden" name="requestId" value={requestId} />
+      <input type="hidden" name="lines" value={JSON.stringify(lines.map(({ key, ...rest }) => { void key; return rest; }))} />
+
+      <div className="space-y-3">
+        {lines.map((l, i) => {
+          const governed = l.governedUnitPrice;
+          const overridden = governed !== null && Number(l.sellingRate) !== governed;
+          return (
+            <div key={l.key} className="rounded-lg border border-black/10 p-3 space-y-2">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="font-sans text-caption text-ordift-ink-muted">
+                  Line {i + 1} · {governed === null ? <span className="text-amber-800">Manual — no governed rate</span> : overridden ? <span className="text-amber-800">Adjusted (governed rate USD {money(governed)})</span> : <span className="text-green-700">Governed rate</span>}
+                </p>
+                <button type="button" onClick={() => setLines((ls) => ls.filter((x) => x.key !== l.key))} className="font-sans text-caption text-red-700 underline underline-offset-4">Remove</button>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-6 gap-2">
+                <label className="sm:col-span-2 font-sans text-caption text-ordift-ink-muted">Item<input className={field} value={l.serviceItem} onChange={(e) => patch(l.key, { serviceItem: e.target.value })} /></label>
+                <label className="sm:col-span-2 font-sans text-caption text-ordift-ink-muted">Description (client-visible)<input className={field} value={l.description} onChange={(e) => patch(l.key, { description: e.target.value })} /></label>
+                <label className="font-sans text-caption text-ordift-ink-muted">Quantity<input type="number" min="0" step="0.01" className={field} value={l.quantity} onChange={(e) => patch(l.key, { quantity: Number(e.target.value) })} /></label>
+                <label className="font-sans text-caption text-ordift-ink-muted">Unit<select className={field} value={l.unitBasis} onChange={(e) => patch(l.key, { unitBasis: e.target.value })}>{UNITS.map((u) => <option key={u} value={u}>{u.replace("_", " ")}</option>)}</select></label>
+                <label className="font-sans text-caption text-ordift-ink-muted">Price (USD)<input type="number" min="0" step="0.01" className={field} value={l.sellingRate} onChange={(e) => patch(l.key, { sellingRate: Number(e.target.value) })} /></label>
+                <label className="font-sans text-caption text-ordift-ink-muted">Discount %<input type="number" min="0" max="100" step="0.01" className={field} value={l.discountPercent ?? ""} onChange={(e) => patch(l.key, { discountPercent: e.target.value === "" ? null : Number(e.target.value) })} /></label>
+                <label className="font-sans text-caption text-ordift-ink-muted">Tax %<input type="number" min="0" step="0.01" className={field} value={l.taxPercent ?? ""} onChange={(e) => patch(l.key, { taxPercent: e.target.value === "" ? null : Number(e.target.value) })} /></label>
+                {overridden && (
+                  <label className="sm:col-span-3 font-sans text-caption text-ordift-ink-muted">Adjustment reason (required, internal)<input className={field} value={l.adjustmentReason} onChange={(e) => patch(l.key, { adjustmentReason: e.target.value })} /></label>
+                )}
+              </div>
+            </div>
+          );
+        })}
+        <button type="button" onClick={() => setLines((ls) => [...ls, { key: `n${Date.now()}`, requirementId: null, serviceItem: "", description: "", quantity: 1, unitBasis: "item", sellingRate: 0, discountPercent: null, taxPercent: null, governedUnitPrice: null, adjustmentReason: "", sourceReference: null }])} className="font-sans text-body-small text-ordift-gold-pressed underline underline-offset-4">+ Add manual line (equipment, travel, extra)</button>
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <label className="font-sans text-caption text-ordift-ink-muted">Valid until<input type="date" name="validUntil" defaultValue={validUntil ?? ""} className={field} /></label>
+        <label className="font-sans text-caption text-ordift-ink-muted">Show local-currency equivalent<select name="fxCurrency" defaultValue={fxCurrency ?? ""} className={field}><option value="">USD only</option>{currencies.filter((c) => c.code !== "USD").map((c) => <option key={c.code} value={c.code}>{c.code} — {c.name}</option>)}</select></label>
+        <p className="font-sans text-body-small text-ordift-ink self-end">Total: <strong>USD {money(total)}</strong></p>
+      </div>
+      <label className="block font-sans text-caption text-ordift-ink-muted">Terms shown to the client (payment / booking terms)<textarea name="terms" rows={3} defaultValue={terms ?? ""} className={field} /></label>
+      <label className="block font-sans text-caption text-ordift-ink-muted">Internal notes (never shown to the client)<textarea name="internalNotes" rows={2} defaultValue={internalNotes ?? ""} className={field} /></label>
+
+      <div className="flex flex-wrap items-center gap-3">
+        <SubmitButton pendingLabel="Saving…" className="rounded-lg bg-ordift-ink text-white px-4 py-2 font-sans text-body-small">Save draft</SubmitButton>
+        {state?.ok === true && <p role="status" className="font-sans text-caption text-green-700">{state.message}</p>}
+        {state?.ok === false && <p role="alert" className="font-sans text-caption text-red-700">{state.error}</p>}
+      </div>
+    </form>
+  );
+}

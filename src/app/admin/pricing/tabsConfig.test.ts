@@ -6,9 +6,9 @@ import { TABS, TAB_GROUPS } from "./tabsConfig";
 // spec requires is directly unit-testable rather than only verifiable
 // by reading the Server Component.
 
-describe("14. Pricing navigation has all eight families, in the approved order", () => {
-  it("lists exactly the eight pricing/service families first, in order", () => {
-    const familyKeys = TABS.slice(0, 8).map((t) => t.key);
+describe("14. Pricing navigation has all nine families (Creative Crew Support added 2026-10-07), in the approved order", () => {
+  it("lists exactly the nine pricing/service families first, in order", () => {
+    const familyKeys = TABS.slice(0, 9).map((t) => t.key);
     expect(familyKeys).toEqual([
       "personal-sessions",
       "corporate",
@@ -18,25 +18,26 @@ describe("14. Pricing navigation has all eight families, in the approved order",
       "content_creation",
       "branding",
       "production_services",
+      "crew_support",
     ]);
   });
 });
 
 describe("15. Shared configuration follows the pricing families, in order", () => {
-  it("lists Subjects/Add-Ons/Discounts/Markets after the eight families, in order", () => {
-    const sharedKeys = TABS.slice(8).map((t) => t.key);
+  it("lists Subjects/Add-Ons/Discounts/Markets after the nine families, in order", () => {
+    const sharedKeys = TABS.slice(9).map((t) => t.key);
     expect(sharedKeys).toEqual(["subjects", "addons", "discounts", "markets"]);
   });
 
-  it("has exactly twelve tabs total — no route key was added, removed, or renamed by this consolidation", () => {
-    expect(TABS.length).toBe(12);
+  it("has exactly thirteen tabs total — the only addition since the consolidation is the Creative Crew Support family", () => {
+    expect(TABS.length).toBe(13);
   });
 });
 
 describe("TAB_GROUPS — visual grouping only, never a merge of underlying keys", () => {
-  it("Service Pricing group matches the eight-family order exactly", () => {
+  it("Service Pricing group matches the nine-family order exactly", () => {
     const group = TAB_GROUPS.find((g) => g.title === "Service Pricing");
-    expect(group?.keys).toEqual(["personal-sessions", "corporate", "wedding_event", "commercial", "graphic_design", "content_creation", "branding", "production_services"]);
+    expect(group?.keys).toEqual(["personal-sessions", "corporate", "wedding_event", "commercial", "graphic_design", "content_creation", "branding", "production_services", "crew_support"]);
   });
 
   it("Shared Configuration group matches the four-item order exactly", () => {

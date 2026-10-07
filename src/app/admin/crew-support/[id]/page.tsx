@@ -3,7 +3,14 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/portal/roles";
 import { canManageCrewSupport } from "@/lib/crewSupport/permissions";
-import { getCrewSupportDetail } from "@/lib/crewSupport/admin";
+import { getCrewSupportDetail, getQuotationFlags } from "@/lib/crewSupport/admin";
+import { getCrewSupportQuotation } from "@/lib/crewSupport/quotation";
+import { listNotificationEvents } from "@/lib/crewSupport/notifications";
+import { listActivePricingMarkets } from "@/lib/commercial/pricingCatalog";
+import { listActiveCurrencies } from "@/lib/payments/currency";
+import { createAdminClient } from "@/lib/supabase/admin";
+import QuotationPanel from "../QuotationPanel";
+import NotificationsPanel from "../NotificationsPanel";
 import { loadCandidatesForRequirements } from "@/lib/crewSupport/candidates";
 import { candidateLabel } from "@/lib/crewSupport/matching";
 import { validateStatusChange } from "@/lib/crewSupport/rules";
@@ -46,9 +53,18 @@ export default async function CrewSupportDetailPage({ params }: { params: Promis
   const family = SERVICE_FAMILIES.find((f) => f.value === r.service_family);
   const details = (detail.request.service_details ?? {}) as Record<string, string>;
   const questions = detailQuestionsFor(String(r.service_family));
+  const [quotation, notificationEvents, markets, currencies, flags, enquiryRow] = await Promise.all([
+    getCrewSupportQuotation(id),
+    listNotificationEvents(id),
+    listActivePricingMarkets(),
+    listActiveCurrencies(),
+    getQuotationFlags(id),
+    createAdminClient().from("enquiries").select("id, crm_stage, amount_due").eq("id", r.enquiry_id).maybeSingle(),
+  ]);
+  const enquiry = { id: String(r.enquiry_id), crmStage: String(enquiryRow.data?.crm_stage ?? "unknown"), amountDue: enquiryRow.data?.amount_due == null ? null : Number(enquiryRow.data.amount_due) };
   const nextStatuses = allowedStatusTransitions(r.status);
   const slotRules = detail.slots.map((sl) => ({ status: sl.status, assigneeProfileId: sl.assignee_profile_id }));
-  const statusOptions = nextStatuses.map((to) => ({ to, check: validateStatusChange(r.status, to, slotRules) }));
+  const statusOptions = nextStatuses.map((to) => ({ to, check: validateStatusChange(r.status, to, slotRules, flags) }));
   const firstAllowed = statusOptions.find((o) => o.check.ok)?.to ?? nextStatuses[0];
   const closed = r.status === "declined" || r.status === "cancelled";
 
@@ -128,6 +144,10 @@ export default async function CrewSupportDetailPage({ params }: { params: Promis
         })}
       </section>
 
+      <QuotationPanel requestId={r.id} requestStatus={r.status} quotation={quotation} markets={markets} currencies={currencies} enquiry={enquiry} canPrepare={r.status === "availability_review" || r.status === "quote_preparation"} />
+
+      <NotificationsPanel requestId={r.id} events={notificationEvents} isTest={Boolean(detail.request.is_test)} />
+
       {nextStatuses.length > 0 && (
         <section className="rounded-xl border border-black/10 bg-white p-6 space-y-3">
           <h2 className="font-serif font-medium text-body text-ordift-ink">Move this request forward</h2>
@@ -139,7 +159,8 @@ export default async function CrewSupportDetailPage({ params }: { params: Promis
             <SubmitButton pendingLabel="Updating…" className="rounded-lg bg-ordift-ink text-white px-4 py-2 font-sans text-body-small">Update status</SubmitButton>
           </ActionForm>
           <ul className="font-sans text-caption text-ordift-ink-muted list-disc pl-5 space-y-1">
-            <li>“Quote issued” requires an actual issued quotation linked to this request (not available until quotation linking ships).</li>
+            <li>“Quote preparation” and “Quote issued” follow the quotation workspace above (prepare, mark ready, issue) — they can&apos;t be picked by hand.</li>
+            <li>“Agreement pending” follows the client accepting the quotation.</li>
             <li>“Confirmed” requires at least one assigned crew member and no open slots.</li>
           </ul>
         </section>

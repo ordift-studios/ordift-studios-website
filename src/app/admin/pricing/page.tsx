@@ -110,6 +110,7 @@ import DeleteDiscountButton from "./DeleteDiscountButton";
 import TierRateEditForm from "./TierRateEditForm";
 import { TABS, TAB_GROUPS } from "./tabsConfig";
 import ActionForm from "@/components/admin/ActionForm";
+import CrewSupportRatesSection from "./CrewSupportRatesSection";
 import SubmitButton from "@/components/admin/SubmitButton";
 
 export const metadata: Metadata = {
@@ -1764,6 +1765,13 @@ export default async function AdminPricingPage({
               </section>
             </div>
           )}
+        </div>
+      )}
+
+      {tab === "crew_support" && selectedMarket && (
+        <div className="space-y-6">
+          <MarketPills tab="crew_support" markets={activeMarkets} active={selectedMarket.slug} />
+          <CrewSupportRatesSection marketSlug={selectedMarket.slug} marketName={selectedMarket.name} />
         </div>
       )}
 

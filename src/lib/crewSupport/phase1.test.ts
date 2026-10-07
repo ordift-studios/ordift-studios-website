@@ -128,12 +128,12 @@ describe("Quote Preparation state and the Quote Issued guard", () => {
   it("Quote Issued is impossible without an actually issued quotation, and allowed once one exists", () => {
     expect(allowedStatusTransitions("quote_preparation")).toContain("quoted");
     expect(validateStatusChange("quote_preparation", "quoted", []).ok).toBe(false);
-    expect(validateStatusChange("quote_preparation", "quoted", [], { hasIssuedQuotation: false }).ok).toBe(false);
-    expect(validateStatusChange("quote_preparation", "quoted", [], { hasIssuedQuotation: true }).ok).toBe(true);
+    expect(validateStatusChange("quote_preparation", "quoted", [], { hasLiveQuotation: false, hasIssuedQuotation: false, hasAcceptedQuotation: false }).ok).toBe(false);
+    expect(validateStatusChange("quote_preparation", "quoted", [], { hasLiveQuotation: true, hasIssuedQuotation: true, hasAcceptedQuotation: false }).ok).toBe(true);
   });
 
   it("the old shortcut (availability_review → quoted) is rejected outright", () => {
-    expect(validateStatusChange("availability_review", "quoted", [], { hasIssuedQuotation: true }).ok).toBe(false);
+    expect(validateStatusChange("availability_review", "quoted", [], { hasLiveQuotation: true, hasIssuedQuotation: true, hasAcceptedQuotation: false }).ok).toBe(false);
   });
 });
 

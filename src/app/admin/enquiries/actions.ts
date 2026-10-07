@@ -223,9 +223,17 @@ export async function setAmountDueAction(
 
   const { data: current } = await supabase
     .from("enquiries")
-    .select("crm_stage, email, full_name, service, reference_number")
+    .select("crm_stage, email, full_name, service, reference_number, commercial_intent")
     .eq("id", enquiryId)
     .maybeSingle();
+
+  // Creative Crew Support enquiries have ONE authoritative writer of
+  // amount_due: the accepted Crew Support quotation (Phase 2, 2026-10-07).
+  // A hand-typed amount here could diverge from the quotation, so it is
+  // refused. Every other enquiry keeps this manual action unchanged.
+  if (current?.commercial_intent === "creative_crew_support") {
+    return { ok: false, error: "For Creative Crew Support, the amount due is set automatically when the quotation is accepted — it can't be typed in here." };
+  }
 
   const updates: { amount_due: number; crm_stage?: CrmStage } = {
     amount_due: roundedAmount,

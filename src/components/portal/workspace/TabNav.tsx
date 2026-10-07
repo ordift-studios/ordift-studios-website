@@ -5,9 +5,9 @@ import { usePathname } from "next/navigation";
 import { workspaceTabsForKind } from "@/lib/portal/workspaceTabs";
 import type { ProjectKind } from "@/lib/portal/workspace";
 
-export default function TabNav({ basePath, kind }: { basePath: string; kind: ProjectKind }) {
+export default function TabNav({ basePath, kind, features = [] }: { basePath: string; kind: ProjectKind; features?: string[] }) {
   const pathname = usePathname();
-  const tabs = workspaceTabsForKind(kind);
+  const tabs = workspaceTabsForKind(kind, features);
 
   return (
     <nav className="flex gap-1 overflow-x-auto border-b border-black/10 mb-8">

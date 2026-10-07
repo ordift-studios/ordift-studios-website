@@ -1,6 +1,6 @@
 import type { ProjectKind } from "@/lib/portal/workspace";
 
-export type WorkspaceTab = { slug: string; label: string; kinds?: ProjectKind[] };
+export type WorkspaceTab = { slug: string; label: string; kinds?: ProjectKind[]; requires?: string };
 
 // The whole reusable-tabs contract lives in this one array. Adding a
 // future tab (Payments, Contracts, Messages, Document Vault, Feedback,
@@ -17,11 +17,14 @@ export const WORKSPACE_TABS: WorkspaceTab[] = [
   { slug: "briefs", label: "Creative Briefs", kinds: ["workshop"] },
   { slug: "deliverables", label: "Deliverables" },
   { slug: "booking-details", label: "Booking Details" },
+  // Shown only when the project actually has an issued quotation
+  // (Creative Crew Support, 2026-10-07) — never for legacy enquiries.
+  { slug: "quotation", label: "Quotation", kinds: ["enquiry"], requires: "quotation" },
   { slug: "payments", label: "Payments" },
   { slug: "requests", label: "Requests" },
   { slug: "updates", label: "Updates" },
 ];
 
-export function workspaceTabsForKind(kind: ProjectKind): WorkspaceTab[] {
-  return WORKSPACE_TABS.filter((t) => !t.kinds || t.kinds.includes(kind));
+export function workspaceTabsForKind(kind: ProjectKind, features: string[] = []): WorkspaceTab[] {
+  return WORKSPACE_TABS.filter((t) => (!t.kinds || t.kinds.includes(kind)) && (!t.requires || features.includes(t.requires)));
 }

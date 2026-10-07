@@ -4,6 +4,7 @@ import { getCurrentUser } from "@/lib/portal/roles";
 import { getWorkspaceOverview, isProjectKind } from "@/lib/portal/workspace";
 import WorkspaceHeader from "@/components/portal/workspace/WorkspaceHeader";
 import TabNav from "@/components/portal/workspace/TabNav";
+import { getClientQuotationIdForEnquiry } from "@/lib/crewSupport/quotation";
 
 export const metadata: Metadata = {
   title: "Project Workspace — Ordift Studios Portal",
@@ -33,10 +34,12 @@ export default async function ProjectWorkspaceLayout({
   const overview = await getWorkspaceOverview(kind, id, user.id);
   if (!overview) notFound();
 
+  const features = kind === "enquiry" && (await getClientQuotationIdForEnquiry(id, user.id)) ? ["quotation"] : [];
+
   return (
     <div>
       <WorkspaceHeader overview={overview} />
-      <TabNav basePath={`/portal/client/projects/${kind}/${id}`} kind={kind} />
+      <TabNav basePath={`/portal/client/projects/${kind}/${id}`} kind={kind} features={features} />
       {children}
     </div>
   );

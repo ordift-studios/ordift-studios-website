@@ -15,6 +15,8 @@ export const TABS = [
   { key: "content_creation", label: "Content Creation" },
   { key: "branding", label: "Branding & Creative Strategy" },
   { key: "production_services", label: "Production Services" },
+  // Creative Crew Support rate card (2026-10-07) — a ninth service family.
+  { key: "crew_support", label: "Creative Crew Support" },
   { key: "subjects", label: "Subjects / Groups" },
   { key: "addons", label: "Add-Ons" },
   { key: "discounts", label: "Discounts" },
@@ -24,6 +26,6 @@ export const TABS = [
 export type AdminPricingTabKey = (typeof TABS)[number]["key"];
 
 export const TAB_GROUPS: { title: string; keys: AdminPricingTabKey[] }[] = [
-  { title: "Service Pricing", keys: ["personal-sessions", "corporate", "wedding_event", "commercial", "graphic_design", "content_creation", "branding", "production_services"] },
+  { title: "Service Pricing", keys: ["personal-sessions", "corporate", "wedding_event", "commercial", "graphic_design", "content_creation", "branding", "production_services", "crew_support"] },
   { title: "Shared Configuration", keys: ["subjects", "addons", "discounts", "markets"] },
 ];

@@ -13,21 +13,31 @@ export function canConfirm(slots: SlotLike[]): { ok: true } | { ok: false; reaso
 }
 
 export type StatusChangeContext = {
-  // True only when a quotation linked to this request has actually been
-  // issued (sent). Until quotations can be linked to a request, this is
-  // always false, so "Quote issued" can never be set by hand.
-  hasIssuedQuotation: boolean;
+  // Facts about the request's linked quotation, supplied by the caller
+  // from real data. A status that asserts a business event is only
+  // reachable when that event actually happened.
+  hasLiveQuotation: boolean; // a draft/ready/sent/accepted quotation is linked
+  hasIssuedQuotation: boolean; // a linked quotation has been issued (sent) or accepted
+  hasAcceptedQuotation: boolean; // the linked quotation has been accepted
 };
+
+export const NO_QUOTATION: StatusChangeContext = { hasLiveQuotation: false, hasIssuedQuotation: false, hasAcceptedQuotation: false };
 
 export function validateStatusChange(
   from: CrewSupportStatus,
   to: CrewSupportStatus,
   slots: SlotLike[],
-  context: StatusChangeContext = { hasIssuedQuotation: false }
+  context: StatusChangeContext = NO_QUOTATION
 ): { ok: true } | { ok: false; reason: string } {
   if (!allowedStatusTransitions(from).includes(to)) return { ok: false, reason: "That status change isn't allowed from the current status." };
+  if (to === "quote_preparation" && !context.hasLiveQuotation) {
+    return { ok: false, reason: "Quote preparation starts when you use “Prepare quotation” — it can't be selected by hand." };
+  }
   if (to === "quoted" && !context.hasIssuedQuotation) {
-    return { ok: false, reason: "Quote issued needs an actual issued quotation linked to this request. Prepare the quote first — quotation linking is the next release." };
+    return { ok: false, reason: "Quote issued happens when a prepared quotation is actually issued — it can't be selected by hand." };
+  }
+  if ((to === "agreement_pending" || to === "payment_pending") && !context.hasAcceptedQuotation) {
+    return { ok: false, reason: "The client must accept the quotation first (or acceptance must be recorded)." };
   }
   if (to === "confirmed") return canConfirm(slots);
   return { ok: true };
