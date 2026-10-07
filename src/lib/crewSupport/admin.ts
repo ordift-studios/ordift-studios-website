@@ -2,6 +2,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { logActivity } from "@/lib/admin/activityLog";
 import type { CrewSupportStatus, SlotStatus } from "./config";
 import { validateSlotChange, validateStatusChange, type SlotLike } from "./rules";
+import { loadCandidatesForRequirements } from "./candidates";
 
 // Server-only reads/writes for the internal Creative Crew Support
 // workflow. Callers MUST have checked canManageCrewSupport() — this
@@ -24,13 +25,14 @@ export type CrewSupportListRow = {
   submittedAt: string;
   slotsTotal: number;
   slotsAssigned: number;
+  isTest: boolean;
 };
 
 export async function listCrewSupportRequests(status?: string): Promise<CrewSupportListRow[]> {
   const admin = createAdminClient();
   let query = admin
     .from("crew_support_requests")
-    .select("id, reference_number, status, requester_name, requester_company, lead_company, service_family, project_name, start_date, end_date, location, urgency, submitted_at")
+    .select("id, reference_number, status, requester_name, requester_company, lead_company, service_family, project_name, start_date, end_date, location, urgency, submitted_at, is_test")
     .order("submitted_at", { ascending: false })
     .limit(200);
   if (status) query = query.eq("status", status);
@@ -66,12 +68,13 @@ export async function listCrewSupportRequests(status?: string): Promise<CrewSupp
     submittedAt: r.submitted_at as string,
     slotsTotal: counts.get(r.id as string)?.total ?? 0,
     slotsAssigned: counts.get(r.id as string)?.assigned ?? 0,
+    isTest: Boolean(r.is_test),
   }));
 }
 
 export type CrewSupportDetail = {
   request: Record<string, unknown> & { id: string; status: CrewSupportStatus; enquiry_id: string };
-  requirements: { id: string; role_label: string; custom_role: string | null; quantity: number; responsibilities: string | null }[];
+  requirements: { id: string; operational_title_id: string | null; role_label: string; custom_role: string | null; quantity: number; responsibilities: string | null }[];
   slots: { id: string; requirement_id: string; slot_number: number; status: SlotStatus; assignee_profile_id: string | null; assigneeName: string | null; note: string | null }[];
 };
 
@@ -80,7 +83,7 @@ export async function getCrewSupportDetail(id: string): Promise<CrewSupportDetai
   const { data: request, error } = await admin.from("crew_support_requests").select("*").eq("id", id).maybeSingle();
   if (error || !request) return null;
   const [{ data: requirements }, { data: slots }] = await Promise.all([
-    admin.from("crew_support_requirements").select("id, role_label, custom_role, quantity, responsibilities").eq("request_id", id).order("sort_order"),
+    admin.from("crew_support_requirements").select("id, operational_title_id, role_label, custom_role, quantity, responsibilities").eq("request_id", id).order("sort_order"),
     admin.from("crew_support_slots").select("id, requirement_id, slot_number, status, assignee_profile_id, note").eq("request_id", id).order("slot_number"),
   ]);
   const profileIds = [...new Set((slots ?? []).map((s) => s.assignee_profile_id as string | null).filter((p): p is string => Boolean(p)))];
@@ -104,27 +107,19 @@ export async function getCrewSupportDetail(id: string): Promise<CrewSupportDetai
   };
 }
 
-// Anyone legitimately able to fulfil a production role — staff, admin,
-// super admin (so the Founder is never excluded) and vendors/contractors.
-// Eligibility is a human decision at assignment time; this list only
-// populates the picker and nothing is auto-assigned.
-export async function listAssignableProfiles(): Promise<{ id: string; name: string }[]> {
-  const admin = createAdminClient();
-  const { data: roles } = await admin.from("roles").select("id").in("slug", ["staff", "admin", "super_admin", "vendor"]);
-  const roleIds = (roles ?? []).map((r) => r.id as string);
-  if (!roleIds.length) return [];
-  const { data: links } = await admin.from("user_roles").select("user_id").in("role_id", roleIds);
-  const userIds = [...new Set((links ?? []).map((l) => l.user_id as string))];
-  if (!userIds.length) return [];
-  const { data: profiles } = await admin.from("profiles").select("id, full_name").in("id", userIds).order("full_name");
-  return (profiles ?? []).map((p) => ({ id: p.id as string, name: (p.full_name as string | null) ?? "Unnamed profile" }));
+// Quotations cannot yet be linked to a Crew Support request (the link
+// column arrives with quotation integration), so no request can have an
+// issued quotation today. Kept as a function so the guard in
+// validateStatusChange has a single, honest source to switch over later.
+async function requestHasIssuedQuotation(_requestId: string): Promise<boolean> {
+  return false;
 }
 
 export async function setCrewSupportStatus(params: { requestId: string; to: CrewSupportStatus; actorUserId: string }): Promise<{ ok: true } | { ok: false; error: string }> {
   const detail = await getCrewSupportDetail(params.requestId);
   if (!detail) return { ok: false, error: "Request not found." };
   const slots: SlotLike[] = detail.slots.map((s) => ({ status: s.status, assigneeProfileId: s.assignee_profile_id }));
-  const check = validateStatusChange(detail.request.status, params.to, slots);
+  const check = validateStatusChange(detail.request.status, params.to, slots, { hasIssuedQuotation: await requestHasIssuedQuotation(params.requestId) });
   if (!check.ok) return { ok: false, error: check.reason };
 
   const admin = createAdminClient();
@@ -156,7 +151,7 @@ export async function setCrewSupportSlot(params: {
   actorUserId: string;
 }): Promise<{ ok: true } | { ok: false; error: string }> {
   const admin = createAdminClient();
-  const { data: slot, error: slotError } = await admin.from("crew_support_slots").select("id, request_id, status, assignee_profile_id").eq("id", params.slotId).maybeSingle();
+  const { data: slot, error: slotError } = await admin.from("crew_support_slots").select("id, request_id, requirement_id, status, assignee_profile_id").eq("id", params.slotId).maybeSingle();
   if (slotError || !slot) return { ok: false, error: "Crew slot not found." };
   const { data: request } = await admin.from("crew_support_requests").select("status, reference_number").eq("id", slot.request_id).maybeSingle();
   if (!request) return { ok: false, error: "Request not found." };
@@ -165,6 +160,13 @@ export async function setCrewSupportSlot(params: {
   const assignee = clearsAssignee ? null : params.assigneeProfileId;
   const check = validateSlotChange({ requestStatus: request.status as CrewSupportStatus, status: params.status, assigneeProfileId: assignee });
   if (!check.ok) return { ok: false, error: check.reason };
+
+  // Server-side eligibility: a crafted form cannot propose/assign someone
+  // who lacks a matching capability for this role.
+  if (assignee && (params.status === "proposed" || params.status === "assigned")) {
+    const eligible = await isEligibleAssignee({ requestId: slot.request_id as string, requirementId: slot.requirement_id as string, profileId: assignee });
+    if (!eligible) return { ok: false, error: "This person has no matching, active capability for this role. Add or verify the capability first (Crew Support → Capabilities)." };
+  }
 
   const { error } = await admin
     .from("crew_support_slots")
@@ -187,4 +189,20 @@ export async function setCrewSupportSlot(params: {
     metadata: { slotId: params.slotId, from: slot.status, to: params.status, assigneeProfileId: assignee, reference: request.reference_number },
   });
   return { ok: true };
+}
+
+async function isEligibleAssignee(params: { requestId: string; requirementId: string; profileId: string }): Promise<boolean> {
+  const admin = createAdminClient();
+  const [{ data: request }, { data: requirement }] = await Promise.all([
+    admin.from("crew_support_requests").select("start_date, end_date, is_test").eq("id", params.requestId).maybeSingle(),
+    admin.from("crew_support_requirements").select("id, operational_title_id").eq("id", params.requirementId).maybeSingle(),
+  ]);
+  if (!request || !requirement) return false;
+  const result = await loadCandidatesForRequirements({
+    requestId: params.requestId,
+    isTest: Boolean(request.is_test),
+    range: { start: request.start_date as string, end: request.end_date as string },
+    requirements: [{ id: requirement.id as string, operationalTitleId: (requirement.operational_title_id as string | null) ?? null }],
+  });
+  return result[requirement.id as string]?.candidates.some((c) => c.profileId === params.profileId) ?? false;
 }

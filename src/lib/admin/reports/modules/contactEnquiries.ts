@@ -1,6 +1,6 @@
 import { getAllEnquiries, crmStageLabel, REPORT_LIMIT } from "@/lib/portal/data";
 import { CRM_STAGES } from "@/lib/admin/enquiries";
-import { PATHWAYS } from "@/lib/enquiry/pathways";
+import { PATHWAYS, EXTRA_ENQUIRY_SERVICES } from "@/lib/enquiry/pathways";
 import type { ReportModule } from "../types";
 
 export const contactEnquiriesModule: ReportModule = {
@@ -21,7 +21,7 @@ export const contactEnquiriesModule: ReportModule = {
   ],
   statusOptions: CRM_STAGES.map((stage) => ({ value: stage, label: crmStageLabel(stage) })),
   workshopOrServiceLabel: "Service",
-  workshopOrServiceOptions: PATHWAYS.map((p) => ({ value: p.value, label: p.label })),
+  workshopOrServiceOptions: [...PATHWAYS, ...EXTRA_ENQUIRY_SERVICES].map((p) => ({ value: p.value, label: p.label })),
   async fetchRows(filters) {
     const rows = await getAllEnquiries(
       {
@@ -31,6 +31,7 @@ export const contactEnquiriesModule: ReportModule = {
         service: filters.workshopOrService,
         dateFrom: filters.dateFrom,
         dateTo: filters.dateTo,
+        excludeTest: true,
       },
       REPORT_LIMIT
     );

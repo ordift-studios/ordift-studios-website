@@ -77,13 +77,14 @@ export function detailQuestionsFor(family: string): DetailQuestion[] {
   return GENERAL_QUESTIONS;
 }
 
-export const CREW_SUPPORT_STATUSES = ["received", "under_review", "availability_review", "quoted", "agreement_pending", "payment_pending", "confirmed", "declined", "cancelled"] as const;
+export const CREW_SUPPORT_STATUSES = ["received", "under_review", "availability_review", "quote_preparation", "quoted", "agreement_pending", "payment_pending", "confirmed", "declined", "cancelled"] as const;
 export type CrewSupportStatus = (typeof CREW_SUPPORT_STATUSES)[number];
 
 export const STATUS_LABELS: Record<CrewSupportStatus, string> = {
   received: "Request received",
   under_review: "Under review",
   availability_review: "Availability review",
+  quote_preparation: "Quote preparation",
   quoted: "Quote issued",
   agreement_pending: "Agreement pending",
   payment_pending: "Payment pending",
@@ -95,7 +96,8 @@ export const STATUS_LABELS: Record<CrewSupportStatus, string> = {
 const FORWARD: Record<CrewSupportStatus, CrewSupportStatus[]> = {
   received: ["under_review", "declined", "cancelled"],
   under_review: ["availability_review", "declined", "cancelled"],
-  availability_review: ["quoted", "declined", "cancelled"],
+  availability_review: ["quote_preparation", "declined", "cancelled"],
+  quote_preparation: ["quoted", "availability_review", "declined", "cancelled"],
   quoted: ["agreement_pending", "declined", "cancelled"],
   agreement_pending: ["payment_pending", "confirmed", "declined", "cancelled"],
   payment_pending: ["confirmed", "declined", "cancelled"],
@@ -116,3 +118,11 @@ export const SLOT_STATUS_LABELS: Record<SlotStatus, string> = { unfilled: "Unfil
 // never says "booked"/"confirmed" and never promises crew.
 export const SUBMITTED_MESSAGE =
   "Request received. Ordift will review your scope and crew requirements and confirm availability, pricing and next steps.";
+
+export const PROFICIENCIES = ["primary", "secondary", "supporting"] as const;
+export type Proficiency = (typeof PROFICIENCIES)[number];
+export const PROFICIENCY_LABELS: Record<Proficiency, string> = { primary: "Primary", secondary: "Secondary", supporting: "Supporting" };
+
+export const VERIFICATION_STATUSES = ["self_declared", "verified", "revoked"] as const;
+export type VerificationStatus = (typeof VERIFICATION_STATUSES)[number];
+export const VERIFICATION_LABELS: Record<VerificationStatus, string> = { self_declared: "Self-declared (unverified)", verified: "Verified", revoked: "Revoked" };

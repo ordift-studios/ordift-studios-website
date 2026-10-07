@@ -20,6 +20,11 @@ export function isPathwayValue(value: string): value is PathwayValue {
   return PATHWAYS.some((p) => p.value === value);
 }
 
+// Services that create enquiries but are deliberately NOT offered in the
+// main /book service selector (so the primary booking pathways stay
+// uncluttered). Used for display, filtering and reports only.
+export const EXTRA_ENQUIRY_SERVICES = [{ value: "crew-support", label: "Creative Crew Support" }] as const;
+
 export function pathwayLabel(value: string): string {
-  return PATHWAYS.find((p) => p.value === value)?.label ?? value;
+  return PATHWAYS.find((p) => p.value === value)?.label ?? EXTRA_ENQUIRY_SERVICES.find((p) => p.value === value)?.label ?? value;
 }

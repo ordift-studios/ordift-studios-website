@@ -48,6 +48,7 @@ export async function getOverviewStats(): Promise<OverviewStats> {
     supabase
       .from("enquiries")
       .select("id", { count: "exact", head: true })
+      .eq("is_test", false)
       .gte("submitted_at", sinceIso),
     supabase
       .from("model_profiles")

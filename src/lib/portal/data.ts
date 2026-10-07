@@ -17,6 +17,8 @@ export type PortalEnquiry = {
   amountDue: number | null;
   amountPaid: number | null;
   submittedAt: string;
+  // QA/test record (e.g. the anchor enquiry of a QA Crew Support request).
+  isTest?: boolean;
 };
 
 export async function getEnquiriesForUser(userId: string): Promise<PortalEnquiry[]> {
@@ -199,6 +201,8 @@ export type EnquiryQueryFilters = {
   service?: string;
   dateFrom?: string; // inclusive, ISO date or datetime
   dateTo?: string; // inclusive, ISO date or datetime
+  // Reports and counts must never include QA/test records.
+  excludeTest?: boolean;
 };
 
 export async function getAllEnquiries(
@@ -209,11 +213,12 @@ export async function getAllEnquiries(
   let query = supabase
     .from("enquiries")
     .select(
-      "id, reference_number, email, full_name, phone, service, crm_stage, payment_status, amount_due, amount_paid, submitted_at"
+      "id, reference_number, email, full_name, phone, service, crm_stage, payment_status, amount_due, amount_paid, submitted_at, is_test"
     )
     .order("submitted_at", { ascending: false })
     .limit(limit);
 
+  if (filters.excludeTest) query = query.eq("is_test", false);
   if (filters.stage) query = query.eq("crm_stage", filters.stage);
   if (filters.paymentStatus) query = query.eq("payment_status", filters.paymentStatus);
   if (filters.service) query = query.eq("service", filters.service);
@@ -246,6 +251,7 @@ export async function getAllEnquiries(
     amountDue: row.amount_due,
     amountPaid: row.amount_paid,
     submittedAt: row.submitted_at,
+    isTest: row.is_test,
   }));
 }
 

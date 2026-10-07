@@ -32,3 +32,22 @@ Three commercial intents are recorded on the anchor enquiry (`enquiries.commerci
 ## Action-feedback standard (platform-wide)
 
 Form-driven mutations return `ActionState` and render through `ActionForm` + `SubmitButton`: pending label, duplicate-submit blocked, success only after the action returns ok, a visible error on failure. See TDR-020 and `src/lib/shared/actionState.test.ts`.
+
+## Phase 1 (2026-10-07): capabilities, role-aware matching, Quote Preparation, QA flag
+
+- **Capabilities** (`person_capabilities`, migration 0141): who can do what, independent of job title — `operational_titles` is the vocabulary; each row has proficiency (primary/secondary/supporting) and verification (self-declared/verified/revoked, revoked kept for history). Managed at Crew Support → Capabilities (admin/super_admin; every change attributed). Seeded only from unambiguous craft staff titles; the Founder and everyone else are set by admins, never hard-coded.
+- **Matching** (`matching.ts`, pure): candidates for a role are people with a matching, non-revoked capability and an active relationship (access active, vendor active if a vendor, payee not suspended). Ranking: relevance, verified, then internal preference; known leave/crew conflicts are flagged and ranked lower but listed; unknown availability never disqualifies. **Attendance is never read.** A person or account with no capability (e.g. the backup Super Admin account) never appears. Assignment is also enforced server-side.
+- **Capability is not willingness.** Availability offers (Available/Willing, Unavailable, Available-but-unwilling) arrive in a later phase; today nothing says a person has agreed.
+- **Status**: `quote_preparation` sits between Availability Review and Quote Issued. Quote Issued is guarded and cannot be set until a quotation can be linked and issued.
+- **QA flag**: `is_test` on requests and enquiries (set only by migration, never from the UI). Test records are excluded from reports and dashboard counts, labelled TEST in lists, and are the only records any future QA-only tooling may act on. CSR-2026-000001 is the designated QA request; live requests (CSR-2026-000002 onward) must always use the real workflow.
+- `crew-support` is a display/filter/report label ("Creative Crew Support") but deliberately not a `/book` pathway.
+
+## Approved design for later phases (not built yet)
+
+- **Commercial confirmation ("Booking Secured") and crew assignment are separate states.** Payment never implies a named crew member. Far-future work may be secured while crew is pending when a viable internal/external fulfilment path exists; urgent work requires actual crew confirmation first. The urgency/time-to-job rule is configurable (no fixed SLA numbers).
+- **Confirmation policy is configurable** (executed agreement plus required deposit/payment per service, urgency or client) — no hard-coded percentage.
+- **Pricing**: governed Crew Support selling rates (a Rate Card family, USD reference) feeding system-generated quotations; manual lines remain an authorized fallback. No rates are populated until separately researched and approved. The FX rate is snapshotted when a quotation is issued. The accepted quotation establishes the receivable through the canonical enquiry/payments path (no second receivable); client price and crew compensation stay strictly separate.
+- **Crew cost** lives in `engagements` (created at assignment, no payable until the existing explicit step); bookings stay workshop-specific.
+- **Client lifecycle emails** for client-facing statuses only (never internal notes, shortlist changes, declines while sourcing, costs or margins): templates central, idempotent, activity-logged, delivery/failure recorded with authorized retry, and a failed email never corrupts a status change. "Booking secured" must never imply crew is assigned.
+- **Payments guard**: the existing auto-"booked"/"booking confirmed" on full payment must become intent-aware for crew-support enquiries.
+- **QA payment boundary**: a controlled, audit-logged QA-only transition for `is_test` records may bypass the payment prerequisite without ever creating a payment, touching reporting, receivables or gateway records, or applying to live requests.

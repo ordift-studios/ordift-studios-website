@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
 import { getCurrentUser, hasRole, isSuperAdmin } from "@/lib/portal/roles";
 import { getAllEnquiries, crmStageLabel, paymentStatusLabel } from "@/lib/portal/data";
 import { CRM_STAGES } from "@/lib/admin/enquiries";
-import { PATHWAYS, pathwayLabel } from "@/lib/enquiry/pathways";
+import { PATHWAYS, EXTRA_ENQUIRY_SERVICES, pathwayLabel } from "@/lib/enquiry/pathways";
 import ReportExportLinks from "@/components/admin/ReportExportLinks";
 
 export const metadata: Metadata = {
@@ -114,7 +114,7 @@ export default async function AdminEnquiriesPage({
             className="min-h-11 rounded-lg border border-black/15 bg-white px-3 font-sans text-body-small text-ordift-ink"
           >
             <option value="">All services</option>
-            {PATHWAYS.map((p) => (
+            {[...PATHWAYS, ...EXTRA_ENQUIRY_SERVICES].map((p) => (
               <option key={p.value} value={p.value}>
                 {p.label}
               </option>
@@ -221,7 +221,7 @@ export default async function AdminEnquiriesPage({
                       <p className="font-sans text-body-small text-ordift-ink font-medium">{e.fullName}</p>
                       <p className="font-sans text-caption text-ordift-ink-muted">{e.email}</p>
                       {e.phone && <p className="font-sans text-caption text-ordift-ink-muted">{e.phone}</p>}
-                      <p className="font-sans text-caption text-ordift-ink-muted">{e.referenceNumber}</p>
+                      <p className="font-sans text-caption text-ordift-ink-muted">{e.referenceNumber}{e.isTest ? <span className="ml-2 rounded-full bg-amber-100 px-2 py-0.5 text-amber-900">TEST</span> : null}</p>
                     </Link>
                   </td>
                   <td className="py-3 px-4 font-sans text-body-small text-ordift-ink">

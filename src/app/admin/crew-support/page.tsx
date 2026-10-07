@@ -29,6 +29,8 @@ export default async function AdminCrewSupportPage({ searchParams }: { searchPar
         </p>
       </div>
 
+      <p className="font-sans text-body-small"><Link href="/admin/crew-support/capabilities" className="text-ordift-gold-pressed underline underline-offset-4">Manage crew capabilities</Link></p>
+
       <div className="flex flex-wrap gap-2">
         <Link href="/admin/crew-support" className={`rounded-full border px-3 py-1 font-sans text-caption ${!activeStatus ? "border-ordift-ink bg-ordift-ink text-white" : "border-black/15 text-ordift-ink-muted"}`}>All</Link>
         {CREW_SUPPORT_STATUSES.map((s) => (
@@ -49,7 +51,7 @@ export default async function AdminCrewSupportPage({ searchParams }: { searchPar
             <tbody className="divide-y divide-black/5">
               {rows.map((r) => (
                 <tr key={r.id} className="font-sans text-body-small text-ordift-ink align-top">
-                  <td className="py-2 pr-4"><Link href={`/admin/crew-support/${r.id}`} className="text-ordift-gold-pressed underline underline-offset-4">{r.referenceNumber}</Link></td>
+                  <td className="py-2 pr-4"><Link href={`/admin/crew-support/${r.id}`} className="text-ordift-gold-pressed underline underline-offset-4">{r.referenceNumber}</Link>{r.isTest ? <span className="ml-2 rounded-full bg-amber-100 px-2 py-0.5 text-caption text-amber-900">TEST</span> : null}</td>
                   <td className="py-2 pr-4">{r.requesterName}{r.requesterCompany ? ` · ${r.requesterCompany}` : ""}{r.leadCompany ? <span className="block text-caption text-ordift-ink-muted">Lead: {r.leadCompany}</span> : null}</td>
                   <td className="py-2 pr-4">{r.projectName}<span className="block text-caption text-ordift-ink-muted">{SERVICE_FAMILIES.find((f) => f.value === r.serviceFamily)?.label ?? r.serviceFamily} · {r.location}</span></td>
                   <td className="py-2 pr-4 whitespace-nowrap">{dateRange(r.startDate, r.endDate)}</td>

@@ -73,7 +73,7 @@ export default async function AdminEnquiryDetailPage({ params }: { params: Promi
               {enquiry.fullName}
             </h1>
             <p className="font-sans text-body-small text-ordift-ink-muted mt-1">
-              {enquiry.email} · {enquiry.referenceNumber}
+              {enquiry.email} · {enquiry.referenceNumber}{enquiry.isTest ? <span className="ml-2 rounded-full bg-amber-100 px-2 py-0.5 text-caption text-amber-900">TEST / QA record</span> : null}
             </p>
           </div>
 

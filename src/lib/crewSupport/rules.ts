@@ -12,8 +12,23 @@ export function canConfirm(slots: SlotLike[]): { ok: true } | { ok: false; reaso
   return { ok: true };
 }
 
-export function validateStatusChange(from: CrewSupportStatus, to: CrewSupportStatus, slots: SlotLike[]): { ok: true } | { ok: false; reason: string } {
+export type StatusChangeContext = {
+  // True only when a quotation linked to this request has actually been
+  // issued (sent). Until quotations can be linked to a request, this is
+  // always false, so "Quote issued" can never be set by hand.
+  hasIssuedQuotation: boolean;
+};
+
+export function validateStatusChange(
+  from: CrewSupportStatus,
+  to: CrewSupportStatus,
+  slots: SlotLike[],
+  context: StatusChangeContext = { hasIssuedQuotation: false }
+): { ok: true } | { ok: false; reason: string } {
   if (!allowedStatusTransitions(from).includes(to)) return { ok: false, reason: "That status change isn't allowed from the current status." };
+  if (to === "quoted" && !context.hasIssuedQuotation) {
+    return { ok: false, reason: "Quote issued needs an actual issued quotation linked to this request. Prepare the quote first — quotation linking is the next release." };
+  }
   if (to === "confirmed") return canConfirm(slots);
   return { ok: true };
 }
