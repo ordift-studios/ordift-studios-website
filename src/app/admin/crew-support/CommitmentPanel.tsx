@@ -17,7 +17,6 @@ export default function CommitmentPanel({ snapshot, currencies, canMarkTest }: {
   const confirmed = status === "confirmed";
   const assigned = snapshot.slots.filter((s) => s.status === "assigned" && s.assigneeProfileId);
   const ready = snapshot.blockers.length === 0;
-  const a = snapshot.agreementAssessment;
 
   return (
     <section className="rounded-xl border border-black/10 bg-white p-6 space-y-5">
@@ -44,11 +43,10 @@ export default function CommitmentPanel({ snapshot, currencies, canMarkTest }: {
 
       <div className="border-t border-black/5 pt-4 space-y-3">
         <p className="font-sans text-body-small font-medium text-ordift-ink">Contract basis</p>
-        <p className="font-sans text-body-small text-ordift-ink-muted">
-          {snapshot.agreementRequired
-            ? <>A separate agreement is <strong>required</strong>{snapshot.agreementReason ? ` — ${snapshot.agreementReason}` : ""}. {a.satisfied ? "It is fully executed." : "It is not fully executed yet."}</>
-            : <>No separate agreement is required — the accepted quotation and its terms are the contract. {snapshot.hasAcceptedQuotation ? (a.satisfied ? "The accepted quotation carries its terms." : "The accepted quotation has no terms text.") : "Applies once the quotation is accepted."}</>}
-        </p>
+        <div className={`rounded-lg border px-3 py-2 ${snapshot.contractBasis.tone === "incomplete" ? "border-amber-300 bg-amber-50" : "border-black/10"}`}>
+          <p className={`font-sans text-body-small font-medium ${snapshot.contractBasis.tone === "incomplete" ? "text-amber-900" : snapshot.contractBasis.tone === "ok" ? "text-green-700" : "text-ordift-ink"}`}>{snapshot.contractBasis.headline}</p>
+          {snapshot.contractBasis.detail && <p className="font-sans text-caption text-ordift-ink-muted mt-0.5">{snapshot.contractBasis.detail}</p>}
+        </div>
         {!confirmed && !closed && (
           <div className="flex flex-wrap gap-4">
             {!snapshot.agreementRequired ? (

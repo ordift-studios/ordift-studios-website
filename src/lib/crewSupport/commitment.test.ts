@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
-import { accessExpiryFor, assessAgreement, clearsCrewAcceptance, COLLABORATOR_ACCESS_GRACE_DAYS, confirmationBlockers, statusAfterCommercialAcceptance, validateAgreementRequirementChange, validateCrewAcceptanceInput, type SlotCommitment } from "./commitmentRules";
+import { accessExpiryFor, assessAgreement, describeContractBasis, hasUsableTerms, clearsCrewAcceptance, COLLABORATOR_ACCESS_GRACE_DAYS, confirmationBlockers, statusAfterCommercialAcceptance, validateAgreementRequirementChange, validateCrewAcceptanceInput, type SlotCommitment } from "./commitmentRules";
 import { classifyConflicts, firmConflicts } from "./conflicts";
 import { NO_QUOTATION, validateSlotChange, validateStatusChange } from "./rules";
 import { allowedStatusTransitions } from "./config";
@@ -170,5 +170,37 @@ describe("commitments reuse existing infrastructure and only arise at confirmati
     const admin = readFileSync("src/lib/crewSupport/admin.ts", "utf8");
     const slotFn = admin.slice(admin.indexOf("export async function setCrewSupportSlot"), admin.indexOf("async function isEligibleAssignee"));
     expect(slotFn).not.toMatch(/createEngagement|createEngagementPayable/);
+  });
+});
+
+describe("Contract basis wording never claims a contract that has no terms", () => {
+  const base = { required: false, reason: null, hasExecutedAgreement: false };
+  it("legacy quotation with NO terms (issued, not accepted) is reported incomplete — not 'terms are the contract'", () => {
+    const v = describeContractBasis({ ...base, quotation: "pending", quotationTerms: null });
+    expect(v.tone).toBe("incomplete");
+    expect(v.headline).toBe("Contract basis incomplete");
+    expect(v.detail).toMatch(/contains no terms/);
+    expect(v.detail).toMatch(/require a separate agreement/);
+    expect(`${v.headline} ${v.detail}`).not.toMatch(/are the contract/);
+  });
+  it("whitespace-only or trivially short terms count as no terms; the gate and the display agree", () => {
+    expect(hasUsableTerms("   ")).toBe(false);
+    expect(hasUsableTerms("ok")).toBe(false);
+    expect(describeContractBasis({ ...base, quotation: "accepted", quotationTerms: "  " }).tone).toBe("incomplete");
+    expect(assessAgreement({ ...base, quotationTerms: "  " }).satisfied).toBe(false);
+  });
+  it("accepted quotation WITH terms: the contract; issued-with-terms: will be the contract once accepted; no quotation: neutral", () => {
+    expect(describeContractBasis({ ...base, quotation: "accepted", quotationTerms: terms })).toMatchObject({ tone: "ok", detail: "The accepted quotation and its terms are the contract." });
+    expect(describeContractBasis({ ...base, quotation: "pending", quotationTerms: terms }).detail).toMatch(/Once the client accepts/);
+    expect(describeContractBasis({ ...base, quotation: "none", quotationTerms: null }).tone).toBe("neutral");
+  });
+  it("a required agreement is reported by its execution state, regardless of quotation terms", () => {
+    expect(describeContractBasis({ required: true, reason: "IP", hasExecutedAgreement: false, quotation: "pending", quotationTerms: terms }).tone).toBe("incomplete");
+    expect(describeContractBasis({ required: true, reason: "IP", hasExecutedAgreement: true, quotation: "accepted", quotationTerms: null }).tone).toBe("ok");
+  });
+  it("the panel renders the computed view, not a hard-coded 'no agreement' sentence", () => {
+    const panel = readFileSync("src/app/admin/crew-support/CommitmentPanel.tsx", "utf8");
+    expect(panel).toContain("snapshot.contractBasis.headline");
+    expect(panel).not.toContain("the accepted quotation and its terms are the contract.");
   });
 });

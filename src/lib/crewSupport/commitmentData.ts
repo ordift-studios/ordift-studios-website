@@ -1,7 +1,7 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { SlotStatus } from "./config";
 import { loadConflicts, firmConflicts } from "./conflicts";
-import { assessAgreement, confirmationBlockers, type AgreementAssessment, type AgreementFacts, type SlotCommitment } from "./commitmentRules";
+import { assessAgreement, confirmationBlockers, describeContractBasis, type AgreementAssessment, type ContractBasisView, type AgreementFacts, type SlotCommitment } from "./commitmentRules";
 import type { StatusChangeContext } from "./rules";
 
 // Server-only loaders for the commitment layer. Read-only. Callers must
@@ -20,6 +20,7 @@ export type CommitmentSnapshot = {
   agreementReason: string | null;
   agreement: AgreementFacts;
   agreementAssessment: AgreementAssessment;
+  contractBasis: ContractBasisView;
   hasAcceptedQuotation: boolean;
   slots: (SlotCommitment & { slotId: string; requirementId: string; roleLabel: string; slotNumber: number; crewAcceptedAt: string | null; assigneeName: string | null })[];
   blockers: string[];
@@ -49,6 +50,16 @@ export async function getCommitmentSnapshot(requestId: string): Promise<Commitme
     quotationTerms: (accepted?.payment_booking_terms as string | null) ?? null,
   };
   const agreementAssessment = assessAgreement(agreement);
+  // For DISPLAY, judge the terms on the quotation the client sees: the
+  // accepted one, else the live issued/ready/draft one.
+  const live = accepted ?? (quotes ?? []).find((q) => q.status === "sent") ?? (quotes ?? []).find((q) => q.status === "ready") ?? (quotes ?? [])[0];
+  const contractBasis = describeContractBasis({
+    required: agreement.required,
+    reason: agreement.reason,
+    hasExecutedAgreement: agreement.hasExecutedAgreement,
+    quotation: accepted ? "accepted" : live ? "pending" : "none",
+    quotationTerms: (live?.payment_booking_terms as string | null) ?? null,
+  });
 
   const assigneeIds = [...new Set((slotRows ?? []).map((s) => s.assignee_profile_id as string | null).filter((p): p is string => Boolean(p)))];
   const slotIds = (slotRows ?? []).map((s) => s.id as string);
@@ -97,6 +108,7 @@ export async function getCommitmentSnapshot(requestId: string): Promise<Commitme
     agreementReason: agreement.reason,
     agreement,
     agreementAssessment,
+    contractBasis,
     hasAcceptedQuotation,
     slots,
     blockers: confirmationBlockers({ hasAcceptedQuotation, agreement: agreementAssessment, slots, isTest: Boolean(request.is_test) }),

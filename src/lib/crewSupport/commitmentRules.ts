@@ -27,11 +27,42 @@ export function assessAgreement(f: AgreementFacts): AgreementAssessment {
       blocker: `A separate agreement is required${f.reason ? ` (${f.reason})` : ""} and none is fully executed yet. Issue it through Legal → Agreements with context “Crew Support request”, or clear the requirement if it no longer applies.`,
     };
   }
-  if ((f.quotationTerms ?? "").trim().length >= 10) return { satisfied: true, basis: "quotation_terms" };
+  if (hasUsableTerms(f.quotationTerms)) return { satisfied: true, basis: "quotation_terms" };
   return {
     satisfied: false,
     blocker: "No separate agreement is required, so the accepted quotation's own terms are the contract — but this quotation carries no terms text. Mark “Agreement required” or have the quotation's terms completed.",
   };
+}
+
+// What the "Contract basis" section tells staff. Presentation only — the
+// gate itself is assessAgreement(). Terms are judged on the quotation the
+// client sees (accepted, or the live issued/ready/draft one), so a legacy
+// quotation with NO terms is reported as incomplete instead of being
+// described as a contract.
+export type QuotationBasisState = "none" | "pending" | "accepted";
+export const MIN_TERMS_LENGTH = 10;
+
+export function hasUsableTerms(terms: string | null): boolean {
+  return (terms ?? "").trim().length >= MIN_TERMS_LENGTH;
+}
+
+export type ContractBasisView = { tone: "ok" | "incomplete" | "neutral"; headline: string; detail: string };
+
+export function describeContractBasis(params: { required: boolean; reason: string | null; hasExecutedAgreement: boolean; quotation: QuotationBasisState; quotationTerms: string | null }): ContractBasisView {
+  if (params.required) {
+    return params.hasExecutedAgreement
+      ? { tone: "ok", headline: "Separate agreement required — fully executed", detail: params.reason ? `Reason: ${params.reason}.` : "" }
+      : { tone: "incomplete", headline: "Separate agreement required — not fully executed yet", detail: `${params.reason ? `Reason: ${params.reason}. ` : ""}Confirmation is blocked until it is fully executed.` };
+  }
+  if (params.quotation === "none") {
+    return { tone: "neutral", headline: "No quotation yet", detail: "With no separate agreement required, the accepted quotation and its terms will be the contract." };
+  }
+  if (!hasUsableTerms(params.quotationTerms)) {
+    return { tone: "incomplete", headline: "Contract basis incomplete", detail: "This quotation contains no terms. Complete the quotation terms where permitted, or require a separate agreement, before confirmation." };
+  }
+  return params.quotation === "accepted"
+    ? { tone: "ok", headline: "No separate agreement required", detail: "The accepted quotation and its terms are the contract." }
+    : { tone: "neutral", headline: "No separate agreement required", detail: "Once the client accepts, the quotation and its terms will be the contract." };
 }
 
 export function validateAgreementRequirementChange(params: { required: boolean; reason: string; requestStatus: string }): { ok: true } | { ok: false; reason: string } {
