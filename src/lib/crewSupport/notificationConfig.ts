@@ -6,11 +6,12 @@ import type { CrewSupportStatus } from "./config";
 // client-facing and what the client is told. Internal-only states
 // (quote preparation, slot/candidate changes, notes, costs) are absent on
 // purpose. Templates contain client-safe content only.
-export type ClientTemplate = "under_review" | "availability_review" | "quote_issued" | "quote_accepted" | "declined" | "cancelled";
+export type ClientTemplate = "under_review" | "availability_review" | "quote_issued" | "quote_accepted" | "confirmed" | "declined" | "cancelled";
 
 export const STATUS_NOTIFICATIONS: Partial<Record<CrewSupportStatus, ClientTemplate>> = {
   under_review: "under_review",
   availability_review: "availability_review",
+  confirmed: "confirmed",
   declined: "declined",
   cancelled: "cancelled",
 };
@@ -56,7 +57,14 @@ const COPY: Record<ClientTemplate, { subject: (v: ClientTemplateVars) => string;
   quote_accepted: {
     subject: (v) => `We've recorded your acceptance — ${v.reference}`,
     heading: "Thank you — your acceptance is recorded.",
-    body: (v) => `We've recorded your acceptance of quotation ${v.quotationReference ?? ""} for ${v.projectName}. Ordift will now send the agreement and payment details. This is not yet a booking confirmation, and crew availability and assignment are confirmed separately.`,
+    body: (v) => `We've recorded your acceptance of quotation ${v.quotationReference ?? ""} for ${v.projectName}. Ordift will follow up with the next steps, including any agreement or payment details that apply. This is not yet a booking confirmation, and crew availability and assignment are confirmed separately.`,
+    action: false,
+    notBooking: false,
+  },
+  confirmed: {
+    subject: (v) => `Your Creative Crew Support request is confirmed — ${v.reference}`,
+    heading: "Your request is confirmed.",
+    body: (v) => `Ordift has confirmed the crew for ${v.projectName}. We'll be in touch with the practical details closer to the date. If anything about your plans changes, please reply to this email quoting your reference number.`,
     action: false,
     notBooking: false,
   },

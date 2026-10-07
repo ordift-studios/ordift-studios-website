@@ -7,6 +7,8 @@ import { commitCrewSupportStatus, getCrewSupportDetail, syncEnquiryStage } from 
 import { proposeQuoteLines, inclusiveDays, type ProposalRequirement } from "./quotePricing";
 import { getActiveCrewSupportRates, getActiveModifierPercent } from "./rates";
 import { notifyCrewSupportEvent } from "./notifications";
+import { getCommitmentSnapshot } from "./commitmentData";
+import { statusAfterCommercialAcceptance } from "./commitmentRules";
 import { canMarkReady, toClientQuotationView, validateAcceptance, validateAndResolveLines, validateStaffAcceptance, type ClientQuotationView, type EditableLine, type ResolvedLine } from "./quotationRules";
 
 // Crew Support quotation workflow (Phase 2). Callers MUST have checked
@@ -235,7 +237,7 @@ export async function discardCrewSupportQuotationDraft(params: { quotationId: st
 export async function markQuotationReady(params: { quotationId: string; actorUserId: string }): Promise<Result> {
   const quote = await adminQuotationById(params.quotationId);
   if (!quote) return { ok: false, error: "Quotation not found." };
-  const check = canMarkReady({ status: quote.status, total: quote.total, lineCount: quote.lines.length });
+  const check = canMarkReady({ status: quote.status, total: quote.total, lineCount: quote.lines.length, validUntil: quote.validUntil, today: new Date().toISOString().slice(0, 10) });
   if (!check.ok) return { ok: false, error: check.reason };
   const resolved = validateAndResolveLines(quote.lines);
   if (!resolved.ok) return resolved;
@@ -349,8 +351,11 @@ export async function recordStaffAcceptance(params: { quotationId: string; chann
 }
 
 // THE single writer of amount_due for Crew Support enquiries: the accepted
-// quotation's USD total. Idempotent and safe to re-run (a retry after a
-// partial failure converges to the same state).
+// quotation's USD total, recorded WITH its provenance (amount_due_source =
+// accepted_quotation, amount_due_quotation_id = this quotation). Idempotent:
+// a retry converges to the same state, never overwrites the amount of a
+// different quotation, and never creates a second receivable (amount_due is
+// one value on the enquiry, written only by a conditional update).
 export async function completeAcceptance(params: { quotationId: string; actorUserId: string | null }): Promise<Result> {
   const quote = await adminQuotationById(params.quotationId);
   if (!quote || quote.status !== "accepted") return { ok: false, error: "This quotation hasn't been accepted." };
@@ -358,15 +363,33 @@ export async function completeAcceptance(params: { quotationId: string; actorUse
   const admin = createAdminClient();
   const warnings: string[] = [];
 
-  const { data: changed, error } = await admin.from("enquiries").update({ amount_due: quote.usdTotal }).eq("id", quote.enquiryId).or(`amount_due.is.null,amount_due.neq.${quote.usdTotal}`).select("id");
-  if (error) return { ok: false, error: "The quotation was accepted but the amount due could not be set. Use “Complete acceptance” to retry." };
-  if (changed?.length) {
-    await logActivity({ actorUserId: params.actorUserId, action: "enquiry.amount_due_set", entityType: "enquiry", entityId: quote.enquiryId, metadata: { amountDue: quote.usdTotal, source: "crew_support_quotation", quotationId: quote.id, quotationReference: quote.reference } });
+  const { data: current } = await admin.from("enquiries").select("amount_due, amount_due_quotation_id").eq("id", quote.enquiryId).maybeSingle();
+  if (current?.amount_due_quotation_id && current.amount_due_quotation_id !== quote.id) {
+    warnings.push("The amount due is already established by a different accepted quotation and was left unchanged.");
+  } else {
+    const { data: changed, error } = await admin
+      .from("enquiries")
+      .update({ amount_due: quote.usdTotal, amount_due_source: "accepted_quotation", amount_due_quotation_id: quote.id })
+      .eq("id", quote.enquiryId)
+      .or(`amount_due_quotation_id.is.null,amount_due_quotation_id.eq.${quote.id}`)
+      .or(`amount_due.is.null,amount_due.neq.${quote.usdTotal},amount_due_quotation_id.is.null`)
+      .select("id");
+    if (error) return { ok: false, error: "The quotation was accepted but the amount due could not be set. Use “Complete acceptance” to retry." };
+    if (changed?.length) {
+      await logActivity({ actorUserId: params.actorUserId, action: "enquiry.amount_due_set", entityType: "enquiry", entityId: quote.enquiryId, metadata: { amountDue: quote.usdTotal, source: "accepted_quotation", quotationId: quote.id, quotationReference: quote.reference } });
+    }
   }
 
+  // Where does the request go next? Conditional agreement: with no separate
+  // agreement required, the accepted quotation + its terms are the contract
+  // and the request moves straight on to payment; if an agreement is
+  // required it waits in agreement_pending until that agreement is executed.
   const detail = await getCrewSupportDetail(quote.requestId);
   if (detail?.request.status === "quoted") {
-    const moved = await commitCrewSupportStatus({ requestId: quote.requestId, from: "quoted", to: "agreement_pending", actorUserId: params.actorUserId, automatic: true, reason: `Quotation ${quote.reference} accepted` });
+    const snapshot = await getCommitmentSnapshot(quote.requestId);
+    const target = snapshot ? statusAfterCommercialAcceptance(snapshot.agreementAssessment) : "agreement_pending";
+    const reason = target === "payment_pending" ? `Quotation ${quote.reference} accepted; no separate agreement required — the accepted quotation and its terms are the contract` : `Quotation ${quote.reference} accepted; a separate agreement is required`;
+    const moved = await commitCrewSupportStatus({ requestId: quote.requestId, from: "quoted", to: target, actorUserId: params.actorUserId, automatic: true, reason });
     if (!moved.ok) warnings.push(`Request status: ${moved.error}`);
   }
   await notifyCrewSupportEvent({ requestId: quote.requestId, eventKey: `quote_accepted:${quote.id}`, template: "quote_accepted", triggeredBy: params.actorUserId, extraVars: { quotationReference: quote.reference } });
@@ -395,3 +418,26 @@ export async function getClientQuotationIdForEnquiry(enquiryId: string, userId: 
   return (q?.id as string | undefined) ?? null;
 }
 
+
+// Quotations issued to this client that are still waiting for them. The
+// portal surfaces these on the dashboard and inside the project, because
+// a quotation tab nobody is pointed at is a quotation nobody accepts
+// (Crew Support QA, 2026-10-07: the client could not find it). Ownership
+// is the enquiry's user_id, checked server-side; only whitelisted fields
+// are returned.
+export type AwaitingQuotation = { enquiryId: string; reference: string; currency: string; total: number; validUntil: string | null };
+
+export async function listQuotationsAwaitingAcceptance(userId: string): Promise<AwaitingQuotation[]> {
+  const admin = createAdminClient();
+  const { data: enquiries } = await admin.from("enquiries").select("id").eq("user_id", userId);
+  const ids = (enquiries ?? []).map((e) => e.id as string);
+  if (ids.length === 0) return [];
+  const { data: quotes } = await admin
+    .from("client_quotations")
+    .select("enquiry_id, quotation_reference, currency, total, valid_until")
+    .in("enquiry_id", ids).not("crew_support_request_id", "is", null).eq("status", "sent").order("issued_at", { ascending: false });
+  const today = new Date().toISOString().slice(0, 10);
+  return (quotes ?? [])
+    .filter((q) => !q.valid_until || (q.valid_until as string) >= today)
+    .map((q) => ({ enquiryId: q.enquiry_id as string, reference: q.quotation_reference as string, currency: q.currency as string, total: Number(q.total), validUntil: (q.valid_until as string | null) ?? null }));
+}

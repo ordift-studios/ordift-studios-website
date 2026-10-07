@@ -19,7 +19,8 @@ export async function updateCrewSupportStatusAction(_prev: ActionState, formData
     if (!result.ok) return actionFail(result.error);
     revalidatePath(`/admin/crew-support/${requestId}`);
     revalidatePath("/admin/crew-support");
-    return actionOk(`Status updated to “${STATUS_LABELS[to as CrewSupportStatus]}”.`);
+    const note = result.warnings?.length ? ` Note: ${result.warnings.join(" ")}` : "";
+    return actionOk(`Status updated to “${STATUS_LABELS[to as CrewSupportStatus]}”.${note}`);
   }, "crew support status");
 }
 

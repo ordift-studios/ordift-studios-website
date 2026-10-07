@@ -17,7 +17,7 @@ export type PersonFacts = {
   engagementTypeName: string | null;
   isInternal: boolean | null;
   capabilities: { titleId: string; titleName: string; proficiency: Proficiency; verification: VerificationStatus }[];
-  conflicts: { kind: "crew_slot" | "leave"; label: string }[];
+  conflicts: { kind: "crew_slot" | "leave"; label: string; firm?: boolean }[];
 };
 
 export type Availability = "unknown" | "conflict" | "on_leave";

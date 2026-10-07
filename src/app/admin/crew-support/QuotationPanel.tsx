@@ -1,9 +1,12 @@
 import Link from "next/link";
+import LocalDateTimeField from "@/components/admin/LocalDateTimeField";
+import { QUOTATION_STATUS_DETAIL } from "@/lib/commercial/quotationStatusLabels";
+import LocalTime from "@/components/admin/LocalTime";
 import ActionForm from "@/components/admin/ActionForm";
 import SubmitButton from "@/components/admin/SubmitButton";
 import ConfirmSubmitButton from "@/components/admin/ConfirmSubmitButton";
 import type { QuotationAdminView } from "@/lib/crewSupport/quotation";
-import { ACCEPTANCE_CHANNELS } from "@/lib/crewSupport/quotationRules";
+import { ACCEPTANCE_CHANNELS, defaultValidUntil } from "@/lib/crewSupport/quotationRules";
 import type { CrewSupportStatus } from "@/lib/crewSupport/config";
 import CrewQuotationEditor from "./CrewQuotationEditor";
 import { completeAcceptanceAction, completeIssueAction, discardQuotationDraftAction, issueQuotationAction, markQuotationReadyAction, prepareQuotationAction, recordAcceptanceAction, returnQuotationToDraftAction } from "./quotationActions";
@@ -11,7 +14,7 @@ import { completeAcceptanceAction, completeIssueAction, discardQuotationDraftAct
 const btn = "rounded-lg bg-ordift-ink text-white px-4 py-2 font-sans text-body-small";
 const btn2 = "rounded-lg border border-black/20 px-4 py-2 font-sans text-body-small text-ordift-ink";
 const field = "rounded-lg border border-black/15 bg-white px-3 py-2 font-sans text-body-small text-ordift-ink";
-const STATUS_TEXT: Record<string, string> = { draft: "Draft", ready: "Ready to issue", sent: "Issued — awaiting client acceptance", accepted: "Accepted" };
+const STATUS_TEXT = QUOTATION_STATUS_DETAIL;
 
 function Summary({ q }: { q: QuotationAdminView }) {
   return (
@@ -72,7 +75,7 @@ export default function QuotationPanel({
 
           {q.status === "draft" && (
             <>
-              <CrewQuotationEditor quotationId={q.id} requestId={requestId} initialLines={q.lines} validUntil={q.validUntil} terms={q.terms} internalNotes={q.internalNotes} fxCurrency={q.fxCurrency} currencies={currencies} />
+              <CrewQuotationEditor quotationId={q.id} requestId={requestId} initialLines={q.lines} validUntil={q.validUntil ?? defaultValidUntil(new Date())} terms={q.terms} internalNotes={q.internalNotes} fxCurrency={q.fxCurrency} currencies={currencies} />
               <div className="flex flex-wrap gap-3 border-t border-black/5 pt-3">
                 <ActionForm action={markQuotationReadyAction}><input type="hidden" name="quotationId" value={q.id} /><input type="hidden" name="requestId" value={requestId} /><SubmitButton pendingLabel="Checking…" className={btn}>Mark ready for issue</SubmitButton></ActionForm>
                 <ActionForm action={discardQuotationDraftAction}><input type="hidden" name="quotationId" value={q.id} /><input type="hidden" name="requestId" value={requestId} /><ConfirmSubmitButton confirmMessage="Discard this draft quotation? It was never issued." pendingLabel="Discarding…" className={btn2}>Discard draft</ConfirmSubmitButton></ActionForm>
@@ -105,7 +108,7 @@ export default function QuotationPanel({
                   <input type="hidden" name="quotationId" value={q.id} /><input type="hidden" name="requestId" value={requestId} />
                   <label className="font-sans text-caption text-ordift-ink-muted">How was it received?<select name="channel" className={`${field} block w-full mt-1`} defaultValue="">{<option value="" disabled>Choose…</option>}{ACCEPTANCE_CHANNELS.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}</select></label>
                   <label className="font-sans text-caption text-ordift-ink-muted">Who accepted (client side)<input name="acceptedByName" className={`${field} block w-full mt-1`} /></label>
-                  <label className="font-sans text-caption text-ordift-ink-muted">When was it received?<input type="datetime-local" name="receivedAt" className={`${field} block w-full mt-1`} /></label>
+                  <label className="font-sans text-caption text-ordift-ink-muted">When was it received?<LocalDateTimeField name="receivedAt" className={`${field} block w-full mt-1`} /></label>
                   <label className="sm:col-span-2 font-sans text-caption text-ordift-ink-muted">Evidence / reference (required)<textarea name="evidence" rows={2} className={`${field} block w-full mt-1`} placeholder="e.g. Email from the client dated 8 Oct, 'Happy to proceed'" /></label>
                   <div className="sm:col-span-2"><ConfirmSubmitButton confirmMessage="Record this acceptance on the client's behalf? It is audited under your name and sets the amount due." pendingLabel="Recording…" className={btn}>Record acceptance</ConfirmSubmitButton></div>
                 </ActionForm>
@@ -116,7 +119,7 @@ export default function QuotationPanel({
           {q.status === "accepted" && (
             <div className="space-y-2 border-t border-black/5 pt-3">
               <p className="font-sans text-body-small text-ordift-ink">
-                {q.acceptedVia === "client_portal" ? "Accepted directly by the client in the portal" : `Acceptance recorded by staff on behalf of the client (${ACCEPTANCE_CHANNELS.find((c) => c.value === q.acceptanceChannel)?.label ?? q.acceptanceChannel}) — accepted by ${q.acceptedByName}, received ${q.acceptanceReceivedAt?.slice(0, 16).replace("T", " ")} UTC. Evidence: ${q.acceptanceEvidence}`} · {q.acceptedAt?.slice(0, 10)}
+                {q.acceptedVia === "client_portal" ? "Accepted directly by the client in the portal" : <>Acceptance recorded by staff on behalf of the client ({ACCEPTANCE_CHANNELS.find((c) => c.value === q.acceptanceChannel)?.label ?? q.acceptanceChannel}) — accepted by {q.acceptedByName}, received {q.acceptanceReceivedAt ? <LocalTime iso={q.acceptanceReceivedAt} /> : "—"}. Evidence: {q.acceptanceEvidence}</>} · {q.acceptedAt?.slice(0, 10)}
               </p>
               {(requestStatus === "quoted" || enquiry.amountDue === null || Number(enquiry.amountDue) !== q.usdTotal) && (
                 <ActionForm action={completeAcceptanceAction} className="flex items-center gap-3"><input type="hidden" name="quotationId" value={q.id} /><input type="hidden" name="requestId" value={requestId} /><SubmitButton pendingLabel="Completing…" className={btn2}>Complete acceptance</SubmitButton><span className="font-sans text-caption text-amber-800">Amount due or request status hasn&apos;t finished updating.</span></ActionForm>

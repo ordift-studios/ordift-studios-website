@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { candidateLabel, rankCandidates, type PersonFacts } from "./matching";
-import { validateStatusChange } from "./rules";
+import { NO_QUOTATION, validateStatusChange } from "./rules";
 import { allowedStatusTransitions, STATUS_LABELS } from "./config";
 import { pathwayLabel } from "@/lib/enquiry/pathways";
 
@@ -128,12 +128,12 @@ describe("Quote Preparation state and the Quote Issued guard", () => {
   it("Quote Issued is impossible without an actually issued quotation, and allowed once one exists", () => {
     expect(allowedStatusTransitions("quote_preparation")).toContain("quoted");
     expect(validateStatusChange("quote_preparation", "quoted", []).ok).toBe(false);
-    expect(validateStatusChange("quote_preparation", "quoted", [], { hasLiveQuotation: false, hasIssuedQuotation: false, hasAcceptedQuotation: false }).ok).toBe(false);
-    expect(validateStatusChange("quote_preparation", "quoted", [], { hasLiveQuotation: true, hasIssuedQuotation: true, hasAcceptedQuotation: false }).ok).toBe(true);
+    expect(validateStatusChange("quote_preparation", "quoted", [], { ...NO_QUOTATION, hasLiveQuotation: false, hasIssuedQuotation: false, hasAcceptedQuotation: false }).ok).toBe(false);
+    expect(validateStatusChange("quote_preparation", "quoted", [], { ...NO_QUOTATION, hasLiveQuotation: true, hasIssuedQuotation: true, hasAcceptedQuotation: false }).ok).toBe(true);
   });
 
   it("the old shortcut (availability_review → quoted) is rejected outright", () => {
-    expect(validateStatusChange("availability_review", "quoted", [], { hasLiveQuotation: true, hasIssuedQuotation: true, hasAcceptedQuotation: false }).ok).toBe(false);
+    expect(validateStatusChange("availability_review", "quoted", [], { ...NO_QUOTATION, hasLiveQuotation: true, hasIssuedQuotation: true, hasAcceptedQuotation: false }).ok).toBe(false);
   });
 });
 

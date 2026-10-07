@@ -76,6 +76,17 @@ export async function updateStageAction(
 
   const supabase = await createClient();
 
+  // A Creative Crew Support enquiry is Booked only when Ordift confirms the
+  // crew (the Crew Support request reaches Confirmed). Typing the stage by
+  // hand would put the CRM and the request out of step.
+  if (stage === "booked") {
+    const { data: anchor } = await supabase.from("enquiries").select("commercial_intent").eq("id", enquiryId).maybeSingle();
+    if (anchor?.commercial_intent === "creative_crew_support") {
+      const { data: crew } = await supabase.from("crew_support_requests").select("status").eq("enquiry_id", enquiryId).maybeSingle();
+      if (crew?.status !== "confirmed") return { ok: false, error: "For Creative Crew Support, “Booked” is set automatically when the Crew Support request is Confirmed — it can't be chosen here." };
+    }
+  }
+
   // Atomic conditional UPDATE, not a prior read-then-write — the same
   // guard shape proven necessary by setAmountDueAction's own double-
   // submit fix. A double-click or slow-network retry submitting the
@@ -235,8 +246,12 @@ export async function setAmountDueAction(
     return { ok: false, error: "For Creative Crew Support, the amount due is set automatically when the quotation is accepted — it can't be typed in here." };
   }
 
-  const updates: { amount_due: number; crm_stage?: CrmStage } = {
+  const updates: { amount_due: number; amount_due_source: "manual"; amount_due_quotation_id: null; crm_stage?: CrmStage } = {
     amount_due: roundedAmount,
+    // Provenance (0144): a hand-typed amount is recorded as manual and no
+    // longer points at any quotation.
+    amount_due_source: "manual",
+    amount_due_quotation_id: null,
   };
   if (current && PRE_QUOTATION_STAGES.includes(current.crm_stage as CrmStage)) {
     updates.crm_stage = "quotation_sent";

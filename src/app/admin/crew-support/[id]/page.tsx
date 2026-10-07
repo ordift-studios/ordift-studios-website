@@ -1,9 +1,10 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
-import { getCurrentUser } from "@/lib/portal/roles";
+import { getCurrentUser, isSuperAdmin } from "@/lib/portal/roles";
 import { canManageCrewSupport } from "@/lib/crewSupport/permissions";
-import { getCrewSupportDetail, getQuotationFlags } from "@/lib/crewSupport/admin";
+import { getCrewSupportDetail } from "@/lib/crewSupport/admin";
+import { getCommitmentSnapshot, getStatusContext } from "@/lib/crewSupport/commitmentData";
 import { getCrewSupportQuotation } from "@/lib/crewSupport/quotation";
 import { listNotificationEvents } from "@/lib/crewSupport/notifications";
 import { listActivePricingMarkets } from "@/lib/commercial/pricingCatalog";
@@ -11,6 +12,7 @@ import { listActiveCurrencies } from "@/lib/payments/currency";
 import { createAdminClient } from "@/lib/supabase/admin";
 import QuotationPanel from "../QuotationPanel";
 import NotificationsPanel from "../NotificationsPanel";
+import CommitmentPanel from "../CommitmentPanel";
 import { loadCandidatesForRequirements } from "@/lib/crewSupport/candidates";
 import { candidateLabel } from "@/lib/crewSupport/matching";
 import { validateStatusChange } from "@/lib/crewSupport/rules";
@@ -53,19 +55,19 @@ export default async function CrewSupportDetailPage({ params }: { params: Promis
   const family = SERVICE_FAMILIES.find((f) => f.value === r.service_family);
   const details = (detail.request.service_details ?? {}) as Record<string, string>;
   const questions = detailQuestionsFor(String(r.service_family));
-  const [quotation, notificationEvents, markets, currencies, flags, enquiryRow] = await Promise.all([
+  const [quotation, notificationEvents, markets, currencies, flags, commitment, enquiryRow] = await Promise.all([
     getCrewSupportQuotation(id),
     listNotificationEvents(id),
     listActivePricingMarkets(),
     listActiveCurrencies(),
-    getQuotationFlags(id),
+    getStatusContext(id),
+    getCommitmentSnapshot(id),
     createAdminClient().from("enquiries").select("id, crm_stage, amount_due").eq("id", r.enquiry_id).maybeSingle(),
   ]);
   const enquiry = { id: String(r.enquiry_id), crmStage: String(enquiryRow.data?.crm_stage ?? "unknown"), amountDue: enquiryRow.data?.amount_due == null ? null : Number(enquiryRow.data.amount_due) };
   const nextStatuses = allowedStatusTransitions(r.status);
   const slotRules = detail.slots.map((sl) => ({ status: sl.status, assigneeProfileId: sl.assignee_profile_id }));
   const statusOptions = nextStatuses.map((to) => ({ to, check: validateStatusChange(r.status, to, slotRules, flags) }));
-  const firstAllowed = statusOptions.find((o) => o.check.ok)?.to ?? nextStatuses[0];
   const closed = r.status === "declined" || r.status === "cancelled";
 
   return (
@@ -146,6 +148,8 @@ export default async function CrewSupportDetailPage({ params }: { params: Promis
 
       <QuotationPanel requestId={r.id} requestStatus={r.status} quotation={quotation} markets={markets} currencies={currencies} enquiry={enquiry} canPrepare={r.status === "availability_review" || r.status === "quote_preparation"} />
 
+      {commitment && <CommitmentPanel snapshot={commitment} currencies={currencies} canMarkTest={isSuperAdmin(user)} />}
+
       <NotificationsPanel requestId={r.id} events={notificationEvents} isTest={Boolean(detail.request.is_test)} />
 
       {nextStatuses.length > 0 && (
@@ -153,15 +157,16 @@ export default async function CrewSupportDetailPage({ params }: { params: Promis
           <h2 className="font-serif font-medium text-body text-ordift-ink">Move this request forward</h2>
           <ActionForm action={updateCrewSupportStatusAction} className="flex flex-wrap items-center gap-3">
             <input type="hidden" name="requestId" value={r.id} />
-            <select name="status" aria-label="New status" className={selectClasses} defaultValue={firstAllowed}>
+            <select name="status" aria-label="New status" className={selectClasses} defaultValue="" required>
+              <option value="" disabled>Choose a new status…</option>
               {statusOptions.map((o) => <option key={o.to} value={o.to} disabled={!o.check.ok}>{STATUS_LABELS[o.to]}{o.check.ok ? "" : " — not available yet"}</option>)}
             </select>
             <SubmitButton pendingLabel="Updating…" className="rounded-lg bg-ordift-ink text-white px-4 py-2 font-sans text-body-small">Update status</SubmitButton>
           </ActionForm>
           <ul className="font-sans text-caption text-ordift-ink-muted list-disc pl-5 space-y-1">
             <li>“Quote preparation” and “Quote issued” follow the quotation workspace above (prepare, mark ready, issue) — they can&apos;t be picked by hand.</li>
-            <li>“Agreement pending” follows the client accepting the quotation.</li>
-            <li>“Confirmed” requires at least one assigned crew member and no open slots.</li>
+            <li>After the client accepts, the request moves to “Payment pending” — or to “Agreement pending” only when a separate agreement is required and not yet executed.</li>
+            <li>“Confirmed” requires an accepted quotation, a contract basis, accepted crew with agreed compensation, no open slots and no firm double-booking — see Commitment readiness above.</li>
           </ul>
         </section>
       )}

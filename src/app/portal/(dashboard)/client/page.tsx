@@ -1,4 +1,6 @@
 import type { Metadata } from "next";
+import QuotationAwaitingBanner from "@/components/portal/QuotationAwaitingBanner";
+import { listQuotationsAwaitingAcceptance } from "@/lib/crewSupport/quotation";
 import { getCurrentUser } from "@/lib/portal/roles";
 import { getEnquiriesForUser, getWorkshopRegistrationsForUser } from "@/lib/portal/data";
 import {
@@ -38,6 +40,7 @@ export default async function ClientPortalPage() {
     ? await Promise.all([getEnquiriesForUser(user.id), getWorkshopRegistrationsForUser(user.id)])
     : [[], []];
 
+  const awaitingQuotations = user ? await listQuotationsAwaitingAcceptance(user.id) : [];
   const deliverablesSummary = await getDeliverablesSummary(enquiries, registrations);
   const activeProjects = getActiveProjects(enquiries, deliverablesSummary.countByEntityId);
   const latestUpdates = getLatestProjectUpdates(enquiries, deliverablesSummary.countByEntityId);
@@ -50,6 +53,11 @@ export default async function ClientPortalPage() {
       <div className="lg:col-span-3">
         <WelcomeBanner name={user?.fullName ?? null} />
       </div>
+      {awaitingQuotations.length > 0 && (
+        <div className="lg:col-span-3">
+          <QuotationAwaitingBanner quotations={awaitingQuotations} />
+        </div>
+      )}
 
       <ActiveProjectsWidget projects={activeProjects} />
       <UpcomingSessionsWidget sessions={upcomingSessions} />

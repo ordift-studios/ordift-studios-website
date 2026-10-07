@@ -19,9 +19,17 @@ export type StatusChangeContext = {
   hasLiveQuotation: boolean; // a draft/ready/sent/accepted quotation is linked
   hasIssuedQuotation: boolean; // a linked quotation has been issued (sent) or accepted
   hasAcceptedQuotation: boolean; // the linked quotation has been accepted
+  // Conditional agreement (see commitmentRules.ts): is a separate signed
+  // agreement required, and is the contractual basis satisfied (executed
+  // agreement, or — when none is required — the accepted quotation's terms)?
+  agreementRequired: boolean;
+  agreementSatisfied: boolean;
+  // Everything still blocking confirmation (accepted crew, known
+  // compensation, firm double-bookings, ...). Empty = ready to confirm.
+  confirmationBlockers: string[];
 };
 
-export const NO_QUOTATION: StatusChangeContext = { hasLiveQuotation: false, hasIssuedQuotation: false, hasAcceptedQuotation: false };
+export const NO_QUOTATION: StatusChangeContext = { hasLiveQuotation: false, hasIssuedQuotation: false, hasAcceptedQuotation: false, agreementRequired: false, agreementSatisfied: false, confirmationBlockers: [] };
 
 export function validateStatusChange(
   from: CrewSupportStatus,
@@ -39,7 +47,18 @@ export function validateStatusChange(
   if ((to === "agreement_pending" || to === "payment_pending") && !context.hasAcceptedQuotation) {
     return { ok: false, reason: "The client must accept the quotation first (or acceptance must be recorded)." };
   }
-  if (to === "confirmed") return canConfirm(slots);
+  if (to === "agreement_pending" && !(context.agreementRequired && !context.agreementSatisfied)) {
+    return { ok: false, reason: "No separate agreement is outstanding — Agreement pending only applies when an agreement is required and not yet executed." };
+  }
+  if (to === "payment_pending" && !context.agreementSatisfied) {
+    return { ok: false, reason: "The contractual basis isn't satisfied yet — a required agreement must be fully executed, or the accepted quotation must carry its terms." };
+  }
+  if (to === "confirmed") {
+    const base = canConfirm(slots);
+    if (!base.ok) return base;
+    if (context.confirmationBlockers.length > 0) return { ok: false, reason: context.confirmationBlockers[0] };
+    return { ok: true };
+  }
   return { ok: true };
 }
 
@@ -49,6 +68,7 @@ export function validateSlotChange(params: {
   assigneeProfileId: string | null;
 }): { ok: true } | { ok: false; reason: string } {
   if (params.requestStatus === "declined" || params.requestStatus === "cancelled") return { ok: false, reason: "This request is closed — crew can no longer be changed." };
+  if (params.requestStatus === "confirmed") return { ok: false, reason: "This request is confirmed — crew engagements and payables now exist, so crew can't be changed here. Cancel the request or handle the replacement through the engagement." };
   if ((params.status === "proposed" || params.status === "assigned") && !params.assigneeProfileId) return { ok: false, reason: "Choose a person to propose or assign." };
   return { ok: true };
 }

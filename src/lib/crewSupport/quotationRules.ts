@@ -1,5 +1,7 @@
 // Crew Support quotation rules (Phase 2) — pure and directly testable.
 
+import { parseInstant } from "@/lib/shared/instant";
+
 export const ACCEPTANCE_CHANNELS = [
   { value: "email", label: "Email" },
   { value: "whatsapp_message", label: "WhatsApp / message" },
@@ -56,10 +58,26 @@ export function validateAndResolveLines(lines: EditableLine[]): { ok: true; line
   return { ok: true, lines: resolved };
 }
 
-export function canMarkReady(params: { status: string; total: number; lineCount: number }): { ok: true } | { ok: false; reason: string } {
+// Quotation validity. The pre-filled DEFAULT is 14 calendar days (set by
+// the business owner, 2026-10-07) — a convenience, not a fixed policy:
+// authorized staff can choose any future date per quotation, and an
+// issued quotation must always carry one (the register's "Valid until"
+// column was blank in QA). This single constant is the only place the
+// period is defined; nothing else hard-codes it. Existing quotations
+// without a date are never back-filled by a migration.
+export const DEFAULT_QUOTATION_VALIDITY_DAYS = 14;
+
+export function defaultValidUntil(now: Date, days = DEFAULT_QUOTATION_VALIDITY_DAYS): string {
+  const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + days));
+  return d.toISOString().slice(0, 10);
+}
+
+export function canMarkReady(params: { status: string; total: number; lineCount: number; validUntil: string | null; today: string }): { ok: true } | { ok: false; reason: string } {
   if (params.status !== "draft") return { ok: false, reason: "Only a draft quotation can be marked ready." };
   if (params.lineCount === 0) return { ok: false, reason: "Add at least one line first." };
   if (!(params.total > 0)) return { ok: false, reason: "The total must be greater than zero — enter prices for every line (no governed rate exists for manual lines)." };
+  if (!params.validUntil) return { ok: false, reason: "Set a “Valid until” date before marking the quotation ready." };
+  if (params.validUntil < params.today) return { ok: false, reason: "The “Valid until” date is already in the past — choose a future date." };
   return { ok: true };
 }
 
@@ -81,9 +99,10 @@ export function validateStaffAcceptance(params: {
   if (!ACCEPTANCE_CHANNELS.some((c) => c.value === params.channel)) return { ok: false, reason: "Choose how the acceptance was received." };
   if (params.acceptedByName.trim().length < 2) return { ok: false, reason: "Enter who accepted on the client's side." };
   if (params.evidence.trim().length < 10) return { ok: false, reason: "Describe the evidence or reference (for example the email date or message), at least 10 characters." };
-  const received = new Date(params.receivedAt);
-  if (Number.isNaN(received.getTime())) return { ok: false, reason: "Enter when the acceptance was received." };
-  if (received.getTime() > params.now.getTime() + 5 * 60_000) return { ok: false, reason: "The acceptance can't be dated in the future." };
+  if (!params.receivedAt.trim()) return { ok: false, reason: "Enter when the acceptance was received." };
+  const received = parseInstant(params.receivedAt);
+  if (!received) return { ok: false, reason: "The received time wasn't understood — pick it again from the date/time field." };
+  if (received.getTime() > params.now.getTime() + 5 * 60_000) return { ok: false, reason: "The acceptance can't be dated in the future (compared as an exact moment, in your own timezone)." };
   if (params.issuedAt && received.getTime() < new Date(params.issuedAt).getTime() - 60_000) return { ok: false, reason: "The acceptance can't pre-date the quotation being issued." };
   return { ok: true, receivedAtIso: received.toISOString() };
 }

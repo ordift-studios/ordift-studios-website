@@ -72,9 +72,9 @@ describe("price-source tracking and overrides", () => {
   });
 
   it("a quotation can't be marked Ready with a zero total (unpriced manual lines) or when not a draft", () => {
-    expect(canMarkReady({ status: "draft", total: 0, lineCount: 2 }).ok).toBe(false);
-    expect(canMarkReady({ status: "ready", total: 100, lineCount: 1 }).ok).toBe(false);
-    expect(canMarkReady({ status: "draft", total: 100, lineCount: 1 }).ok).toBe(true);
+    expect(canMarkReady({ status: "draft", total: 0, lineCount: 2, validUntil: "2026-11-01", today: "2026-10-08" }).ok).toBe(false);
+    expect(canMarkReady({ status: "ready", total: 100, lineCount: 1, validUntil: "2026-11-01", today: "2026-10-08" }).ok).toBe(false);
+    expect(canMarkReady({ status: "draft", total: 100, lineCount: 1, validUntil: "2026-11-01", today: "2026-10-08" }).ok).toBe(true);
   });
 });
 
@@ -82,10 +82,10 @@ describe("status automation — no status manufactures a business event", () => 
   it("Quote preparation needs a linked quotation; Quote issued needs an ISSUED quotation; Agreement/Payment pending need an ACCEPTED one", () => {
     expect(validateStatusChange("availability_review", "quote_preparation", [], NO_QUOTATION).ok).toBe(false);
     expect(validateStatusChange("availability_review", "quote_preparation", [], { ...NO_QUOTATION, hasLiveQuotation: true }).ok).toBe(true);
-    expect(validateStatusChange("quote_preparation", "quoted", [], { hasLiveQuotation: true, hasIssuedQuotation: false, hasAcceptedQuotation: false }).ok).toBe(false);
-    expect(validateStatusChange("quote_preparation", "quoted", [], { hasLiveQuotation: true, hasIssuedQuotation: true, hasAcceptedQuotation: false }).ok).toBe(true);
-    expect(validateStatusChange("quoted", "agreement_pending", [], { hasLiveQuotation: true, hasIssuedQuotation: true, hasAcceptedQuotation: false }).ok).toBe(false);
-    expect(validateStatusChange("quoted", "agreement_pending", [], { hasLiveQuotation: true, hasIssuedQuotation: true, hasAcceptedQuotation: true }).ok).toBe(true);
+    expect(validateStatusChange("quote_preparation", "quoted", [], { ...NO_QUOTATION, hasLiveQuotation: true, hasIssuedQuotation: false, hasAcceptedQuotation: false }).ok).toBe(false);
+    expect(validateStatusChange("quote_preparation", "quoted", [], { ...NO_QUOTATION, hasLiveQuotation: true, hasIssuedQuotation: true, hasAcceptedQuotation: false }).ok).toBe(true);
+    expect(validateStatusChange("quoted", "agreement_pending", [], { ...NO_QUOTATION, hasLiveQuotation: true, hasIssuedQuotation: true, hasAcceptedQuotation: false }).ok).toBe(false);
+    expect(validateStatusChange("quoted", "agreement_pending", [], { ...NO_QUOTATION, hasLiveQuotation: true, hasIssuedQuotation: true, hasAcceptedQuotation: true, agreementRequired: true, agreementSatisfied: false }).ok).toBe(true);
     expect(validateStatusChange("agreement_pending", "payment_pending", [], NO_QUOTATION).ok).toBe(false);
   });
 
@@ -153,10 +153,11 @@ describe("client view never exposes internal data", () => {
 });
 
 describe("enquiry synchronisation is explicit and one-way", () => {
-  it("quote issued → Quotation sent; accepted is an explicit no-op; 'booked' is unreachable from any Crew Support event", () => {
+  it("quote issued → Quotation sent; accepted is an explicit no-op; 'booked' is reachable ONLY from the confirmed event", () => {
     expect(ENQUIRY_STAGE_SYNC.quote_issued.to).toBe("quotation_sent");
     expect(ENQUIRY_STAGE_SYNC.quote_accepted.to).toBeNull();
-    for (const rule of Object.values(ENQUIRY_STAGE_SYNC)) expect(rule.to).not.toBe("booked");
+    expect(ENQUIRY_STAGE_SYNC.confirmed.to).toBe("booked");
+    for (const [event, rule] of Object.entries(ENQUIRY_STAGE_SYNC)) if (event !== "confirmed") expect(rule.to).not.toBe("booked");
   });
   it("never moves an enquiry backwards or out of a later stage (only from earlier/open stages)", () => {
     expect(ENQUIRY_STAGE_SYNC.quote_issued.from).not.toContain("booked");
@@ -180,13 +181,13 @@ describe("client notifications", () => {
   const vars: ClientTemplateVars = { firstName: "Ama", reference: "CSR-2026-000009", projectName: "Mensah wedding", serviceLabel: "Creative Crew Support — Photography", enquiryId: "enq-1", quotationReference: "ORD-QUO-2026-000001", totalText: "USD 500.00", validUntil: "2026-11-01" };
 
   it("only meaningful client-facing transitions map to a template; internal states (quote preparation, slots, notes) never do", () => {
-    expect(Object.keys(STATUS_NOTIFICATIONS).sort()).toEqual(["availability_review", "cancelled", "declined", "under_review"]);
+    expect(Object.keys(STATUS_NOTIFICATIONS).sort()).toEqual(["availability_review", "cancelled", "confirmed", "declined", "under_review"]);
     expect(STATUS_NOTIFICATIONS.quote_preparation).toBeUndefined();
     for (const s of CREW_SUPPORT_STATUSES) if (STATUS_NOTIFICATIONS[s]) expect(isClientFacingTemplate(STATUS_NOTIFICATIONS[s]!)).toBe(true);
   });
 
   it("every email carries the reference and project, and never leaks cost/margin/internal wording", () => {
-    for (const t of ["under_review", "availability_review", "quote_issued", "quote_accepted", "declined", "cancelled"] as const) {
+    for (const t of ["under_review", "availability_review", "quote_issued", "quote_accepted", "confirmed", "declined", "cancelled"] as const) {
       const mail = buildClientEmail(t, vars);
       const blob = `${mail.subject} ${mail.text} ${mail.html.replace(/<[^>]+>/g, " ")}`;
       expect(blob).toContain("CSR-2026-000009");

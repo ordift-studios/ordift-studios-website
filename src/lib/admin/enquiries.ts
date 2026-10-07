@@ -84,3 +84,35 @@ export const CRM_STAGES = [
 ] as const;
 
 export type CrmStage = (typeof CRM_STAGES)[number];
+
+// Where the enquiry's amount_due came from (0144). A missing/errored read
+// degrades to "legacy" — it must never break the enquiry page.
+export type AmountDueProvenance =
+  | { kind: "accepted_quotation"; quotationId: string; quotationReference: string | null }
+  | { kind: "manual" }
+  | { kind: "other" }
+  | { kind: "legacy" };
+
+export async function getAmountDueProvenance(enquiryId: string): Promise<AmountDueProvenance> {
+  const supabase = await createClient();
+  const { data, error } = await supabase.from("enquiries").select("amount_due_source, amount_due_quotation_id").eq("id", enquiryId).maybeSingle();
+  if (error || !data?.amount_due_source) return { kind: "legacy" };
+  if (data.amount_due_source === "accepted_quotation" && data.amount_due_quotation_id) {
+    const { data: q } = await supabase.from("client_quotations").select("quotation_reference").eq("id", data.amount_due_quotation_id).maybeSingle();
+    return { kind: "accepted_quotation", quotationId: data.amount_due_quotation_id as string, quotationReference: (q?.quotation_reference as string | null) ?? null };
+  }
+  return data.amount_due_source === "manual" ? { kind: "manual" } : { kind: "other" };
+}
+
+export function describeAmountDueProvenance(p: AmountDueProvenance): string {
+  switch (p.kind) {
+    case "accepted_quotation":
+      return `Accepted quotation ${p.quotationReference ?? ""}`.trim();
+    case "manual":
+      return "Entered manually by staff";
+    case "other":
+      return "Other recorded source";
+    default:
+      return "Not recorded (set before source tracking)";
+  }
+}

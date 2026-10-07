@@ -1,7 +1,10 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { logActivity } from "@/lib/admin/activityLog";
 import type { CrewSupportStatus, SlotStatus } from "./config";
-import { validateSlotChange, validateStatusChange, type SlotLike, type StatusChangeContext } from "./rules";
+import { validateSlotChange, validateStatusChange, type SlotLike } from "./rules";
+import { getStatusContext } from "./commitmentData";
+import { cancelSlotEngagement, establishCommitments } from "./commitmentEstablish";
+import { clearsCrewAcceptance } from "./commitmentRules";
 import { ENQUIRY_STAGE_SYNC, type CrewSyncEvent } from "./enquirySync";
 import { STATUS_NOTIFICATIONS } from "./notificationConfig";
 import { notifyCrewSupportEvent } from "./notifications";
@@ -110,16 +113,6 @@ export async function getCrewSupportDetail(id: string): Promise<CrewSupportDetai
   };
 }
 
-export async function getQuotationFlags(requestId: string): Promise<StatusChangeContext> {
-  const { data } = await createAdminClient().from("client_quotations").select("status").eq("crew_support_request_id", requestId).in("status", ["draft", "ready", "sent", "accepted"]);
-  const statuses = (data ?? []).map((q) => q.status as string);
-  return {
-    hasLiveQuotation: statuses.length > 0,
-    hasIssuedQuotation: statuses.some((x) => x === "sent" || x === "accepted"),
-    hasAcceptedQuotation: statuses.includes("accepted"),
-  };
-}
-
 // One-way CRM sync (explicit mapping in enquirySync.ts). Atomic
 // conditional update so a repeat call is a no-op; best-effort and logged.
 export async function syncEnquiryStage(params: { enquiryId: string; event: CrewSyncEvent; actorUserId: string | null; requestId: string }): Promise<void> {
@@ -138,7 +131,7 @@ export async function syncEnquiryStage(params: { enquiryId: string; event: CrewS
 // The single place a Crew Support status is written. `automatic` marks a
 // transition caused by a real event (quote issued/accepted) rather than a
 // person choosing from the dropdown; both are attributed and audited.
-export async function commitCrewSupportStatus(params: { requestId: string; from: CrewSupportStatus; to: CrewSupportStatus; actorUserId: string | null; automatic: boolean; reason?: string }): Promise<{ ok: true } | { ok: false; error: string }> {
+export async function commitCrewSupportStatus(params: { requestId: string; from: CrewSupportStatus; to: CrewSupportStatus; actorUserId: string | null; automatic: boolean; reason?: string }): Promise<{ ok: true; warnings?: string[] } | { ok: false; error: string }> {
   const admin = createAdminClient();
   const { data, error } = await admin.from("crew_support_requests").update({ status: params.to, updated_at: new Date().toISOString() }).eq("id", params.requestId).eq("status", params.from).select("id, reference_number, enquiry_id");
   if (error) return { ok: false, error: "Could not update the status. Please try again." };
@@ -146,23 +139,33 @@ export async function commitCrewSupportStatus(params: { requestId: string; from:
   await logActivity({ actorUserId: params.actorUserId, action: "crew_support.status_changed", entityType: "crew_support_request", entityId: params.requestId, metadata: { from: params.from, to: params.to, reference: data[0].reference_number, automatic: params.automatic, reason: params.reason ?? null } });
 
   // Coordinated side effects — never allowed to undo or fail the committed status.
+  const warnings: string[] = [];
   try {
     const enquiryId = data[0].enquiry_id as string;
-    const event: CrewSyncEvent | null = params.to === "under_review" ? "under_review" : params.to === "declined" ? "declined" : params.to === "cancelled" ? "cancelled" : null;
+    const event: CrewSyncEvent | null = params.to === "under_review" ? "under_review" : params.to === "declined" ? "declined" : params.to === "cancelled" ? "cancelled" : params.to === "confirmed" ? "confirmed" : null;
     if (event) await syncEnquiryStage({ enquiryId, event, actorUserId: params.actorUserId, requestId: params.requestId });
     const template = STATUS_NOTIFICATIONS[params.to];
     if (template) await notifyCrewSupportEvent({ requestId: params.requestId, eventKey: `status:${params.to}`, template, triggeredBy: params.actorUserId });
+    // Confirmed is the hard-commitment point: engagements, project access
+    // and crew payables are established here (idempotently; test records
+    // are suppressed inside).
+    if (params.to === "confirmed") {
+      const established = await establishCommitments({ requestId: params.requestId, actorUserId: params.actorUserId });
+      if (!established.ok) warnings.push(`Crew commitments: ${established.error}`);
+      else warnings.push(...established.warnings);
+    }
   } catch (sideEffectError) {
     console.error("[crew-support] status side effects failed", params.to, sideEffectError);
+    warnings.push("Some follow-up steps failed — use “Complete confirmation” on this request to retry them.");
   }
-  return { ok: true };
+  return { ok: true, warnings };
 }
 
-export async function setCrewSupportStatus(params: { requestId: string; to: CrewSupportStatus; actorUserId: string }): Promise<{ ok: true } | { ok: false; error: string }> {
+export async function setCrewSupportStatus(params: { requestId: string; to: CrewSupportStatus; actorUserId: string }): Promise<{ ok: true; warnings?: string[] } | { ok: false; error: string }> {
   const detail = await getCrewSupportDetail(params.requestId);
   if (!detail) return { ok: false, error: "Request not found." };
   const slots: SlotLike[] = detail.slots.map((s) => ({ status: s.status, assigneeProfileId: s.assignee_profile_id }));
-  const check = validateStatusChange(detail.request.status, params.to, slots, await getQuotationFlags(params.requestId));
+  const check = validateStatusChange(detail.request.status, params.to, slots, await getStatusContext(params.requestId));
   if (!check.ok) return { ok: false, error: check.reason };
   return commitCrewSupportStatus({ requestId: params.requestId, from: detail.request.status, to: params.to, actorUserId: params.actorUserId, automatic: false });
 }
@@ -192,6 +195,16 @@ export async function setCrewSupportSlot(params: {
     if (!eligible) return { ok: false, error: "This person has no matching, active capability for this role. Add or verify the capability first (Crew Support → Capabilities)." };
   }
 
+  // Crew acceptance belongs to ONE person in the assigned state. Changing
+  // the person or the status clears it, and the draft engagement carrying
+  // their compensation is cancelled first (aborting this change if that
+  // can't be done) so an engagement never points at the wrong person.
+  const clears = clearsCrewAcceptance({ previousAssigneeId: (slot.assignee_profile_id as string | null) ?? null, previousStatus: slot.status as string, nextAssigneeId: assignee, nextStatus: params.status });
+  if (clears && slot.status === "assigned") {
+    const cancelled = await cancelSlotEngagement({ slotId: params.slotId, actorUserId: params.actorUserId, reason: `Slot changed to ${params.status}` });
+    if (!cancelled.ok) return { ok: false, error: cancelled.error };
+  }
+
   const { error } = await admin
     .from("crew_support_slots")
     .update({
@@ -200,6 +213,7 @@ export async function setCrewSupportSlot(params: {
       note: params.note,
       assigned_by: params.actorUserId,
       assigned_at: params.status === "assigned" || params.status === "proposed" ? new Date().toISOString() : null,
+      ...(clears ? { crew_accepted_at: null, crew_accepted_via: null, crew_accepted_recorded_by: null, crew_acceptance_note: null } : {}),
       updated_at: new Date().toISOString(),
     })
     .eq("id", params.slotId);

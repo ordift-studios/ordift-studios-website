@@ -46,6 +46,15 @@ export async function advanceStageOnFullPayment(
 ): Promise<void> {
   if (entityType !== "enquiry" || paymentStatus !== "Paid") return;
 
+  // Creative Crew Support enquiries are NOT booked by a payment. "Booked"
+  // there means Ordift has confirmed crew (accepted quotation, agreement
+  // basis, accepted crew with agreed compensation, no double-booking), and
+  // only the Crew Support confirmation sets it — otherwise a client paying
+  // early would flip the enquiry to Booked and send a "Booking Confirmed"
+  // email for a job with no crew. The payment itself is recorded normally.
+  const { data: intent } = await admin.from("enquiries").select("commercial_intent").eq("id", entityId).maybeSingle();
+  if (intent?.commercial_intent === "creative_crew_support") return;
+
   // Every stage at or after "booked" in the canonical pipeline order —
   // none of these may ever be overwritten back to "booked".
   const bookedIndex = CRM_STAGES.indexOf("booked");

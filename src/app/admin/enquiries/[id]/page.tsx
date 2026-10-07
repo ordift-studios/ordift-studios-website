@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import { crmStageLabel } from "@/lib/portal/data";
 import { pathwayLabel } from "@/lib/enquiry/pathways";
-import { getEnquiryById, getEnquiryNotes, CRM_STAGES } from "@/lib/admin/enquiries";
+import { getEnquiryById, getEnquiryNotes, getAmountDueProvenance, describeAmountDueProvenance, CRM_STAGES } from "@/lib/admin/enquiries";
 import { getCurrentUser, hasRole, isSuperAdmin } from "@/lib/portal/roles";
 import { hasCapability } from "@/lib/workflow/engine";
 import { PAYMENT_CAPABILITIES } from "@/lib/payments/paymentPermissions";
@@ -41,13 +41,14 @@ function formatDateTime(iso: string): string {
 export default async function AdminEnquiryDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
 
-  const [enquiry, notes, categories, deliverables, requests, user] = await Promise.all([
+  const [enquiry, notes, categories, deliverables, requests, user, amountDueSource] = await Promise.all([
     getEnquiryById(id),
     getEnquiryNotes(id),
     getDeliverableCategories(),
     getDeliverablesForEntity("enquiry", id),
     getProjectRequestsForEntity("enquiry", id),
     getCurrentUser(),
+    getAmountDueProvenance(id),
   ]);
 
   if (!enquiry) notFound();
@@ -166,6 +167,16 @@ export default async function AdminEnquiryDetailPage({ params }: { params: Promi
                   {enquiry.amountDue != null ? formatUsd(enquiry.amountDue) : "Not set"}
                 </span>
               </p>
+              {enquiry.amountDue != null && (
+                <p className="font-sans text-caption text-ordift-ink-muted">
+                  Source:{" "}
+                  {amountDueSource.kind === "accepted_quotation" ? (
+                    <Link href={`/admin/pricing/quotations/${amountDueSource.quotationId}`} className="text-ordift-gold-pressed underline underline-offset-4">{describeAmountDueProvenance(amountDueSource)}</Link>
+                  ) : (
+                    describeAmountDueProvenance(amountDueSource)
+                  )}
+                </p>
+              )}
               <p className="font-sans text-body-small text-ordift-ink-muted">
                 Amount Paid: <span className="font-medium text-ordift-ink">{formatUsd(enquiry.amountPaid ?? 0)}</span>
               </p>

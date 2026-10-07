@@ -1,7 +1,6 @@
 "use client";
 
-import { useActionState, useMemo, useState } from "react";
-import SubmitButton from "@/components/admin/SubmitButton";
+import { useActionState, useMemo, useState, useTransition } from "react";
 import type { ActionState } from "@/lib/shared/actionState";
 import type { EditableLine } from "@/lib/crewSupport/quotationRules";
 import { saveQuotationDraftAction } from "./quotationActions";
@@ -21,11 +20,22 @@ export default function CrewQuotationEditor({
 }) {
   const [lines, setLines] = useState<Line[]>(() => initialLines.map((l, i) => ({ ...l, key: `l${i}` })));
   const [state, formAction] = useActionState<ActionState, FormData>(saveQuotationDraftAction, null);
+  // The form is submitted through a transition instead of <form action>:
+  // React 19 resets a <form action> after it settles, and a reset puts
+  // every <select> back on its first <option> ("hour") even though the
+  // saved/controlled value is "full day" (QA 2026-10-07). onSubmit has
+  // no reset, so what the editor shows always equals what is stored.
+  const [pending, startTransition] = useTransition();
+  const submit = (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    const data = new FormData(e.currentTarget);
+    startTransition(() => formAction(data));
+  };
   const patch = (key: string, p: Partial<Line>) => setLines((ls) => ls.map((l) => (l.key === key ? { ...l, ...p } : l)));
   const total = useMemo(() => lines.reduce((sum, l) => { const gross = (Number(l.quantity) || 0) * (Number(l.sellingRate) || 0); const afterDiscount = gross - (l.discountPercent ? gross * (l.discountPercent / 100) : 0); return sum + afterDiscount + (l.taxPercent ? afterDiscount * (l.taxPercent / 100) : 0); }, 0), [lines]);
 
   return (
-    <form action={formAction} className="space-y-4">
+    <form onSubmit={submit} className="space-y-4">
       <input type="hidden" name="quotationId" value={quotationId} />
       <input type="hidden" name="requestId" value={requestId} />
       <input type="hidden" name="lines" value={JSON.stringify(lines.map(({ key, ...rest }) => { void key; return rest; }))} />
@@ -61,7 +71,7 @@ export default function CrewQuotationEditor({
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-        <label className="font-sans text-caption text-ordift-ink-muted">Valid until<input type="date" name="validUntil" defaultValue={validUntil ?? ""} className={field} /></label>
+        <label className="font-sans text-caption text-ordift-ink-muted">Valid until (required to issue)<input type="date" name="validUntil" defaultValue={validUntil ?? ""} required className={field} /></label>
         <label className="font-sans text-caption text-ordift-ink-muted">Show local-currency equivalent<select name="fxCurrency" defaultValue={fxCurrency ?? ""} className={field}><option value="">USD only</option>{currencies.filter((c) => c.code !== "USD").map((c) => <option key={c.code} value={c.code}>{c.code} — {c.name}</option>)}</select></label>
         <p className="font-sans text-body-small text-ordift-ink self-end">Total: <strong>USD {money(total)}</strong></p>
       </div>
@@ -69,7 +79,7 @@ export default function CrewQuotationEditor({
       <label className="block font-sans text-caption text-ordift-ink-muted">Internal notes (never shown to the client)<textarea name="internalNotes" rows={2} defaultValue={internalNotes ?? ""} className={field} /></label>
 
       <div className="flex flex-wrap items-center gap-3">
-        <SubmitButton pendingLabel="Saving…" className="rounded-lg bg-ordift-ink text-white px-4 py-2 font-sans text-body-small">Save draft</SubmitButton>
+        <button type="submit" disabled={pending} aria-busy={pending} className="rounded-lg bg-ordift-ink text-white px-4 py-2 font-sans text-body-small disabled:opacity-60">{pending ? "Saving…" : "Save draft"}</button>
         {state?.ok === true && <p role="status" className="font-sans text-caption text-green-700">{state.message}</p>}
         {state?.ok === false && <p role="alert" className="font-sans text-caption text-red-700">{state.error}</p>}
       </div>

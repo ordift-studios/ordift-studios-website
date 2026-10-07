@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { quotationStatusLabel } from "@/lib/commercial/quotationStatusLabels";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getCurrentUser, hasRole, isSuperAdmin } from "@/lib/portal/roles";
@@ -73,7 +74,7 @@ export default async function ClientQuotationsPage() {
                   </td>
                   <td className="px-4 py-2 font-sans text-body-small text-ordift-ink tabular-nums">{q.currency} {q.total.toFixed(2)}</td>
                   <td className="px-4 py-2">
-                    <span className={`px-2 py-0.5 rounded-full font-sans text-caption ${STATUS_STYLES[q.status] ?? "bg-black/5"}`}>{q.status}</span>
+                    <span className={`px-2 py-0.5 rounded-full font-sans text-caption ${STATUS_STYLES[q.status] ?? "bg-black/5"}`}>{quotationStatusLabel(q.status)}</span>
                   </td>
                   <td className="px-4 py-2 font-sans text-body-small text-ordift-ink-muted">{q.validUntil ?? "—"}</td>
                   <td className="px-4 py-2 whitespace-nowrap">
