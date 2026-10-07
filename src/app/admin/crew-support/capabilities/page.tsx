@@ -1,10 +1,10 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/portal/roles";
 import { canManageCrewSupport } from "@/lib/crewSupport/permissions";
 import { listCapabilityPeople, listCapabilityTitles } from "@/lib/crewSupport/capabilities";
 import { PROFICIENCIES, PROFICIENCY_LABELS, VERIFICATION_LABELS } from "@/lib/crewSupport/config";
+import CrewSupportSubNav from "../CrewSupportSubNav";
 import ActionForm from "@/components/admin/ActionForm";
 import SubmitButton from "@/components/admin/SubmitButton";
 import { revokeCapabilityAction, setCapabilityAction } from "./actions";
@@ -21,8 +21,8 @@ export default async function CapabilitiesPage() {
   return (
     <div className="space-y-6">
       <div>
-        <Link href="/admin/crew-support" className="font-sans text-caption text-ordift-gold-pressed underline underline-offset-4">← Crew Support</Link>
-        <h1 className="font-serif font-medium text-section-heading text-ordift-ink mt-2">Crew capabilities</h1>
+        <CrewSupportSubNav active="capabilities" />
+        <h1 className="font-serif font-medium text-section-heading text-ordift-ink mt-4">Crew capabilities</h1>
         <p className="font-sans text-body-small text-ordift-ink-muted mt-2 max-w-3xl">
           Who can fulfil which kind of crew role, independent of job title. Only people with a matching, non-revoked capability appear as candidates for a role; a person with no capability (including backup or system accounts) never does. A capability is not availability or willingness, and attendance has no effect. Self-declared capabilities are not treated as verified.
         </p>
@@ -34,7 +34,9 @@ export default async function CapabilitiesPage() {
         <section key={p.profileId} className="rounded-xl border border-black/10 bg-white p-5 space-y-3">
           <div>
             <h2 className="font-serif font-medium text-body text-ordift-ink">{p.name}{p.memberNumber ? ` (${p.memberNumber})` : " (no member number)"}</h2>
-            <p className="font-sans text-caption text-ordift-ink-muted">{[p.engagementType, p.roles.filter(Boolean).join(", ")].filter(Boolean).join(" · ") || "No engagement details"}</p>
+            <p className="font-sans text-caption text-ordift-ink-muted">
+              {p.organizationalTitle ? `Organizational title: ${p.organizationalTitle} · ` : ""}{[p.engagementType, `Account roles: ${p.roles.filter(Boolean).join(", ") || "none"}`].filter(Boolean).join(" · ")}
+            </p>
           </div>
 
           {p.capabilities.length === 0 ? (
@@ -44,7 +46,7 @@ export default async function CapabilitiesPage() {
               {p.capabilities.map((c) => (
                 <li key={c.id} className="flex flex-wrap items-center justify-between gap-3 py-2">
                   <p className={`font-sans text-body-small ${c.verification === "revoked" ? "text-ordift-ink-muted line-through" : "text-ordift-ink"}`}>
-                    {c.titleName} — {PROFICIENCY_LABELS[c.proficiency]} · {VERIFICATION_LABELS[c.verification]}{c.source === "seeded_from_title" ? " · seeded from staff title" : ""}{c.notes ? ` · ${c.notes}` : ""}
+                    {c.titleName} — {PROFICIENCY_LABELS[c.proficiency]} · {VERIFICATION_LABELS[c.verification]}{c.source === "seeded_from_title" ? " · seeded from staff title" : ""}{c.verification === "verified" && c.verifiedAt ? ` · verified ${c.verifiedAt.slice(0, 10)}${c.verifiedByLabel ? ` by ${c.verifiedByLabel}` : ""}` : ""}{c.notes ? ` · ${c.notes}` : ""}
                   </p>
                   {c.verification !== "revoked" && (
                     <ActionForm action={revokeCapabilityAction}>
@@ -55,6 +57,15 @@ export default async function CapabilitiesPage() {
                 </li>
               ))}
             </ul>
+          )}
+
+          {p.history.length > 0 && (
+            <details className="font-sans text-caption text-ordift-ink-muted">
+              <summary className="cursor-pointer select-none">Change history ({p.history.length})</summary>
+              <ul className="mt-2 space-y-1">
+                {p.history.map((h, i) => <li key={i}>{h.at.slice(0, 16).replace("T", " ")} UTC — {h.actorLabel}: {h.summary}</li>)}
+              </ul>
+            </details>
           )}
 
           <ActionForm action={setCapabilityAction} className="grid grid-cols-1 sm:grid-cols-5 gap-2 items-center border-t border-black/5 pt-3">

@@ -174,3 +174,33 @@ describe("pathway labelling and QA/test-data handling", () => {
     expect(readFileSync("src/lib/crewSupport/capabilities.ts", "utf8").match(/logActivity\(/g)?.length).toBe(2);
   });
 });
+
+describe("Capabilities page is discoverable and complete (2026-10-07 follow-up)", () => {
+  it("is reachable from the sidebar (admin-only) and from an in-section sub-navigation on the list, detail and capabilities pages", () => {
+    expect(readFileSync("src/lib/portal/adminNavigation.ts", "utf8")).toMatch(/label: "Crew Capabilities", href: "\/admin\/crew-support\/capabilities", adminOnly: true/);
+    for (const f of ["src/app/admin/crew-support/page.tsx", "src/app/admin/crew-support/[id]/page.tsx", "src/app/admin/crew-support/capabilities/page.tsx"]) {
+      expect(readFileSync(f, "utf8")).toMatch(/<CrewSupportSubNav active=/);
+    }
+    expect(readFileSync("src/app/admin/crew-support/CrewSupportSubNav.tsx", "utf8")).toMatch(/\/admin\/crew-support\/capabilities/);
+  });
+
+  it("revoking keeps the row for history (an update to 'revoked'), never a delete", () => {
+    const src = readFileSync("src/lib/crewSupport/capabilities.ts", "utf8").replace(/\/\/.*$/gm, "");
+    expect(src).toMatch(/verification_status: "revoked"/);
+    expect(src).not.toMatch(/\.delete\(\)/);
+  });
+
+  it("every capability change is attributed and surfaced as history, with verifier attribution, independent of organizational title", () => {
+    const src = readFileSync("src/lib/crewSupport/capabilities.ts", "utf8");
+    expect(src).toMatch(/person_capability\.set/);
+    expect(src).toMatch(/person_capability\.revoked/);
+    expect(src).toMatch(/verifiedByLabel/);
+    expect(src).toMatch(/organizationalTitle/);
+  });
+
+  it("no individual is hard-coded anywhere in the capability system", () => {
+    for (const f of ["src/lib/crewSupport/capabilities.ts", "src/lib/crewSupport/matching.ts", "src/lib/crewSupport/candidates.ts", "src/app/admin/crew-support/capabilities/page.tsx", "src/app/admin/crew-support/capabilities/actions.ts"]) {
+      expect(readFileSync(f, "utf8").replace(/\/\/.*$/gm, "")).not.toMatch(/Kelvin|Myredlive|Founder|966bf3f7|2bf593f7|Eugene|Mishael/);
+    }
+  });
+});

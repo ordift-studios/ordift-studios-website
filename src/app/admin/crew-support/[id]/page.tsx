@@ -8,6 +8,7 @@ import { loadCandidatesForRequirements } from "@/lib/crewSupport/candidates";
 import { candidateLabel } from "@/lib/crewSupport/matching";
 import { validateStatusChange } from "@/lib/crewSupport/rules";
 import { REQUESTER_TYPES, SERVICE_FAMILIES, SLOT_STATUSES, SLOT_STATUS_LABELS, STATUS_LABELS, allowedStatusTransitions, detailQuestionsFor, type CrewSupportStatus } from "@/lib/crewSupport/config";
+import CrewSupportSubNav from "../CrewSupportSubNav";
 import ActionForm from "@/components/admin/ActionForm";
 import SubmitButton from "@/components/admin/SubmitButton";
 import { updateCrewSupportSlotAction, updateCrewSupportStatusAction } from "../actions";
@@ -54,7 +55,8 @@ export default async function CrewSupportDetailPage({ params }: { params: Promis
   return (
     <div className="space-y-6">
       <div>
-        <Link href="/admin/crew-support" className="font-sans text-caption text-ordift-gold-pressed underline underline-offset-4">← All Crew Support requests</Link>
+        <CrewSupportSubNav active="requests" />
+        <Link href="/admin/crew-support" className="mt-3 inline-block font-sans text-caption text-ordift-gold-pressed underline underline-offset-4">← All Crew Support requests</Link>
         <h1 className="font-serif font-medium text-section-heading text-ordift-ink mt-2">{r.reference_number} — {r.project_name}{detail.request.is_test ? <span className="ml-3 align-middle rounded-full bg-amber-100 px-3 py-1 font-sans text-caption text-amber-900">TEST / QA record</span> : null}</h1>
         <p className="font-sans text-body-small text-ordift-ink-muted mt-1">
           Status: <strong className="text-ordift-ink">{STATUS_LABELS[r.status]}</strong> · Ordift is the <strong>supporting</strong> party — the requester leads this engagement. Availability is not guaranteed until confirmed here.

@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/portal/roles";
 import { canManageCrewSupport } from "@/lib/crewSupport/permissions";
 import { listCrewSupportRequests } from "@/lib/crewSupport/admin";
+import CrewSupportSubNav from "./CrewSupportSubNav";
 import { CREW_SUPPORT_STATUSES, SERVICE_FAMILIES, STATUS_LABELS } from "@/lib/crewSupport/config";
 
 export const metadata: Metadata = { title: "Crew Support — Ordift Studios Admin", robots: { index: false, follow: false } };
@@ -29,7 +30,7 @@ export default async function AdminCrewSupportPage({ searchParams }: { searchPar
         </p>
       </div>
 
-      <p className="font-sans text-body-small"><Link href="/admin/crew-support/capabilities" className="text-ordift-gold-pressed underline underline-offset-4">Manage crew capabilities</Link></p>
+      <CrewSupportSubNav active="requests" />
 
       <div className="flex flex-wrap gap-2">
         <Link href="/admin/crew-support" className={`rounded-full border px-3 py-1 font-sans text-caption ${!activeStatus ? "border-ordift-ink bg-ordift-ink text-white" : "border-black/15 text-ordift-ink-muted"}`}>All</Link>

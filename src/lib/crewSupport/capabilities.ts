@@ -1,5 +1,6 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { logActivity } from "@/lib/admin/activityLog";
+import { formatActorLabel, resolveActorIdentities } from "@/lib/portal/actorIdentity";
 import type { Proficiency, VerificationStatus } from "./config";
 
 // Capability management for Crew Support matching. Callers MUST have
@@ -9,8 +10,9 @@ import type { Proficiency, VerificationStatus } from "./config";
 
 const WORKFORCE_ROLES = ["staff", "admin", "super_admin", "vendor", "contractor", "model"];
 
-export type CapabilityRow = { id: string; titleId: string; titleName: string; proficiency: Proficiency; verification: VerificationStatus; source: string; notes: string | null };
-export type CapabilityPerson = { profileId: string; name: string; memberNumber: string | null; roles: string[]; engagementType: string | null; capabilities: CapabilityRow[] };
+export type CapabilityRow = { id: string; titleId: string; titleName: string; proficiency: Proficiency; verification: VerificationStatus; source: string; notes: string | null; verifiedAt: string | null; verifiedByLabel: string | null };
+export type CapabilityPerson = { profileId: string; name: string; memberNumber: string | null; roles: string[]; engagementType: string | null; organizationalTitle: string | null; capabilities: CapabilityRow[]; history: CapabilityHistoryEntry[] };
+export type CapabilityHistoryEntry = { at: string; actorLabel: string; summary: string };
 
 export async function listCapabilityTitles(): Promise<{ id: string; name: string }[]> {
   const { data } = await createAdminClient().from("operational_titles").select("id, name").eq("active", true).order("sort_order");
@@ -24,17 +26,37 @@ export async function listCapabilityPeople(): Promise<CapabilityPerson[]> {
   const slugById = new Map((roleRows ?? []).map((r) => [r.id as string, r.slug as string]));
   const [{ data: links }, { data: caps }] = await Promise.all([
     roleIds.length ? admin.from("user_roles").select("user_id, role_id").in("role_id", roleIds) : Promise.resolve({ data: [] as { user_id: string; role_id: string }[] }),
-    admin.from("person_capabilities").select("id, profile_id, operational_title_id, proficiency, verification_status, source, notes, title:operational_titles(name)").order("created_at"),
+    admin.from("person_capabilities").select("id, profile_id, operational_title_id, proficiency, verification_status, source, notes, verified_by, verified_at, title:operational_titles(name)").order("created_at"),
   ]);
   const rolesByUser = new Map<string, string[]>();
   for (const l of links ?? []) rolesByUser.set(l.user_id as string, [...(rolesByUser.get(l.user_id as string) ?? []), slugById.get(l.role_id as string) ?? ""]);
   const ids = [...new Set([...rolesByUser.keys(), ...(caps ?? []).map((c) => c.profile_id as string)])];
   if (!ids.length) return [];
-  const [{ data: profiles }, { data: staff }] = await Promise.all([
+  const [{ data: profiles }, { data: staff }, { data: titles }, { data: log }] = await Promise.all([
     admin.from("profiles").select("id, full_name, member_number").in("id", ids),
-    admin.from("staff_details").select("id, engagement_type:engagement_types(name)").in("id", ids),
+    admin.from("staff_details").select("id, job_title, operational_title:operational_titles(name), engagement_type:engagement_types(name)").in("id", ids),
+    admin.from("operational_titles").select("id, name"),
+    admin.from("activity_log").select("actor_user_id, action, entity_id, metadata, created_at").in("action", ["person_capability.set", "person_capability.revoked"]).in("entity_id", ids).order("created_at", { ascending: false }).limit(400),
   ]);
   const engagement = new Map((staff ?? []).map((s) => [s.id as string, ((s.engagement_type as unknown as { name: string } | null)?.name) ?? null]));
+  // Organizational title is context only (independent of capabilities).
+  const orgTitle = new Map(
+    (staff ?? []).map((s) => {
+      const opTitle = (s.operational_title as unknown as { name: string } | null)?.name ?? null;
+      const job = (s.job_title as string | null) ?? null;
+      return [s.id as string, [job, opTitle && opTitle !== job && opTitle !== "Other" ? opTitle : null].filter(Boolean).join(" · ") || null] as const;
+    })
+  );
+  const titleName = new Map((titles ?? []).map((t) => [t.id as string, t.name as string]));
+  const actorIds = [...new Set([...(log ?? []).map((l) => l.actor_user_id as string | null), ...(caps ?? []).map((c) => c.verified_by as string | null)].filter((x): x is string => Boolean(x)))];
+  const identities = await resolveActorIdentities(actorIds);
+  const labelFor = (id: string | null) => (id ? formatActorLabel(identities.get(id)) : null);
+  const describe = (l: { action: string; metadata: unknown }) => {
+    const m = (l.metadata ?? {}) as { titleId?: string; to?: { proficiency?: string; verification?: string }; from?: unknown };
+    const name = (m.titleId && titleName.get(m.titleId)) || "capability";
+    if (l.action === "person_capability.revoked") return `Revoked ${name}`;
+    return `${m.from ? "Updated" : "Added"} ${name} (${m.to?.proficiency ?? "?"}, ${m.to?.verification === "verified" ? "verified" : "self-declared"})`;
+  };
   return (profiles ?? [])
     .map((p) => ({
       profileId: p.id as string,
@@ -42,6 +64,8 @@ export async function listCapabilityPeople(): Promise<CapabilityPerson[]> {
       memberNumber: (p.member_number as string | null) ?? null,
       roles: rolesByUser.get(p.id as string) ?? [],
       engagementType: engagement.get(p.id as string) ?? null,
+      organizationalTitle: orgTitle.get(p.id as string) ?? null,
+      history: (log ?? []).filter((l) => l.entity_id === p.id).slice(0, 15).map((l) => ({ at: l.created_at as string, actorLabel: labelFor(l.actor_user_id as string | null) ?? "System", summary: describe(l) })),
       capabilities: (caps ?? [])
         .filter((c) => c.profile_id === p.id)
         .map((c) => ({
@@ -52,6 +76,8 @@ export async function listCapabilityPeople(): Promise<CapabilityPerson[]> {
           verification: c.verification_status as VerificationStatus,
           source: c.source as string,
           notes: (c.notes as string | null) ?? null,
+          verifiedAt: (c.verified_at as string | null) ?? null,
+          verifiedByLabel: labelFor(c.verified_by as string | null),
         })),
     }))
     .sort((a, b) => a.name.localeCompare(b.name) || (a.memberNumber ?? "~").localeCompare(b.memberNumber ?? "~"));
