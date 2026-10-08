@@ -20,6 +20,9 @@ Last updated 2026-10-08.
 
 Also corroborated: the acceptance notification was recorded `suppressed_test` (TEST designation active); no email can leave Staging (no provider key outside Production).
 
+### Release decision (2026-10-08)
+The Founder closed Staging QA and authorised the Production release on this evidence. **Deferred, NOT passed:** a real-browser external-acceptance test (record an acceptance received outside the portal, past and future local times, values kept after a refusal) and the crew-portal / offer pages viewed by a person. These remain open items; the timezone logic itself is covered by DOM and end-to-end tests only.
+
 ## 2. Automated evidence
 - Unit suite: 3,591 tests, 209 files — pass (`npx vitest run`).
 - Isolated end-to-end suite — **26 scenarios pass** (`npx vitest run --config vitest.localdb.config.ts`; see `scripts/crew-support-e2e.md`): real server code on a throwaway Postgres built from the full migration chain, email captured, localhost-only.
