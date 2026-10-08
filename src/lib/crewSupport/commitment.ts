@@ -16,7 +16,7 @@ type Result = { ok: true; warnings?: string[] } | { ok: false; error: string };
 export async function setAgreementRequired(params: { requestId: string; required: boolean; reason: string; actorUserId: string }): Promise<Result> {
   const snapshot = await getCommitmentSnapshot(params.requestId);
   if (!snapshot) return { ok: false, error: "Request not found." };
-  const check = validateAgreementRequirementChange({ required: params.required, reason: params.reason, requestStatus: snapshot.status });
+  const check = validateAgreementRequirementChange({ required: params.required, reason: params.reason, requestStatus: snapshot.status, workflowUnavailableReason: snapshot.agreement.workflowUnavailableReason ?? null });
   if (!check.ok) return { ok: false, error: check.reason };
   if (snapshot.agreementRequired === params.required && (!params.required || snapshot.agreementReason === params.reason.trim())) return { ok: true };
 

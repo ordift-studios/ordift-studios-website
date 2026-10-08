@@ -8,6 +8,7 @@ import { proposeQuoteLines, inclusiveDays, type ProposalRequirement } from "./qu
 import { getActiveCrewSupportRates, getActiveModifierPercent } from "./rates";
 import { notifyCrewSupportEvent } from "./notifications";
 import { getCommitmentSnapshot } from "./commitmentData";
+import { getAgreementWorkflowStatus } from "./agreementTemplates";
 import { statusAfterCommercialAcceptance } from "./commitmentRules";
 import { describePaymentCondition, validatePaymentCondition, type PaymentCondition } from "./paymentCondition";
 import { buildProjectSnapshot, isProjectSnapshot, snapshotGap, type ProjectSnapshot } from "./quotationSnapshot";
@@ -278,9 +279,22 @@ export async function projectSnapshotForRequest(requestId: string): Promise<Proj
   return buildProjectSnapshot(detail.request, detail.requirements, `Creative Crew Support — ${family?.label ?? String(detail.request.service_family)}`);
 }
 
+// A quotation must not be sent to a client while the request depends on a
+// separate agreement that the platform cannot produce — the client would
+// accept into a dead end. Returns the reason, or null if it is fine.
+async function agreementDeadEnd(requestId: string): Promise<string | null> {
+  const { data } = await createAdminClient().from("crew_support_requests").select("agreement_required, agreement_required_reason").eq("id", requestId).maybeSingle();
+  if (!data?.agreement_required) return null;
+  const workflow = await getAgreementWorkflowStatus().catch(() => null);
+  if (workflow && workflow.available) return null;
+  return `This request is marked as needing a separate agreement${data.agreement_required_reason ? ` (${data.agreement_required_reason})` : ""}, but ${workflow ? workflow.explanation : "the agreement templates could not be checked."} Clear the requirement (Commitment readiness) before issuing.`;
+}
+
 export async function markQuotationReady(params: { quotationId: string; actorUserId: string }): Promise<Result> {
   const quote = await adminQuotationById(params.quotationId);
   if (!quote) return { ok: false, error: "Quotation not found." };
+  const deadEnd = await agreementDeadEnd(quote.requestId);
+  if (deadEnd) return { ok: false, error: deadEnd };
   const snapshot = await projectSnapshotForRequest(quote.requestId);
   const check = canMarkReady({ status: quote.status, total: quote.total, lineCount: quote.lines.length, validUntil: quote.validUntil, today: new Date().toISOString().slice(0, 10), terms: quote.terms, eventGap: snapshot ? snapshotGap(snapshot) : "the request details could not be loaded" });
   if (!check.ok) return { ok: false, error: check.reason };
@@ -384,6 +398,8 @@ export async function issueCrewSupportQuotation(params: { quotationId: string; a
     fxRate = await getCurrentRate(quote.fxCurrency);
     if (!fxRate) return { ok: false, error: `No exchange rate is configured for ${quote.fxCurrency}. Remove the local-currency display or add a rate first.` };
   }
+  const deadEnd = await agreementDeadEnd(quote.requestId);
+  if (deadEnd) return { ok: false, error: deadEnd };
   // Freeze the event details being quoted for. Issuing is blocked if the
   // request no longer carries them (a gap must be fixed, not guessed).
   const projectSnapshot = await projectSnapshotForRequest(quote.requestId);

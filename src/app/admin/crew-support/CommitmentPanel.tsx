@@ -49,11 +49,17 @@ export default function CommitmentPanel({ snapshot, canMarkTest, canCancelConfir
         {!confirmed && !closed && (
           <div className="flex flex-wrap gap-4">
             {!snapshot.agreementRequired ? (
+              !snapshot.agreementWorkflowAvailable ? (
+                <p role="status" className="font-sans text-caption text-amber-900 max-w-2xl">
+                  “Require a separate agreement” is unavailable. {snapshot.agreementWorkflowExplanation}
+                </p>
+              ) : (
               <ActionForm action={setAgreementRequiredAction} className="flex flex-wrap items-end gap-2">
                 <input type="hidden" name="requestId" value={requestId} /><input type="hidden" name="required" value="true" />
                 <label className="font-sans text-caption text-ordift-ink-muted">Why is a separate agreement needed?<input name="reason" required minLength={5} maxLength={300} aria-describedby="agreement-reason-help" className={`${field} block w-72 mt-1`} placeholder="e.g. bespoke licensing / IP terms" /><span id="agreement-reason-help" className="block mt-1 text-ordift-ink-muted">Required — recorded with your name and the time.</span></label>
                 <ConfirmSubmitButton confirmMessage="Require a separate signed agreement for this request? It will hold the request in Agreement pending until it is fully executed." pendingLabel="Saving…" className={btn2}>Require an agreement</ConfirmSubmitButton>
               </ActionForm>
+              )
             ) : (
               <>
                 <ActionForm action={setAgreementRequiredAction} className="flex items-center gap-2">

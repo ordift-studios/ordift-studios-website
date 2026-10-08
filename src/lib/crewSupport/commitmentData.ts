@@ -1,6 +1,7 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { SlotStatus } from "./config";
 import { loadConflicts, firmConflicts } from "./conflicts";
+import { getAgreementWorkflowStatus } from "./agreementTemplates";
 import { paymentBlocker, requiredPaymentUsd, type PaymentCondition } from "./paymentCondition";
 import { assessAgreement, completionBlockers, confirmationBlockers, describeContractBasis, type AgreementAssessment, type ContractBasisView, type AgreementFacts, type SlotCommitment } from "./commitmentRules";
 import type { StatusChangeContext } from "./rules";
@@ -21,6 +22,8 @@ export type CommitmentSnapshot = {
   agreementReason: string | null;
   agreement: AgreementFacts;
   agreementAssessment: AgreementAssessment;
+  agreementWorkflowAvailable: boolean;
+  agreementWorkflowExplanation: string | null;
   contractBasis: ContractBasisView;
   hasAcceptedQuotation: boolean;
   payment: { condition: PaymentCondition; depositPercent: number | null; requiredUsd: number; amountDueUsd: number; amountPaidUsd: number; blocker: string | null };
@@ -47,11 +50,13 @@ export async function getCommitmentSnapshot(requestId: string): Promise<Commitme
   ]);
 
   const accepted = (quotes ?? []).find((q) => q.status === "accepted");
+  const workflow = await getAgreementWorkflowStatus().catch(() => ({ available: false as const, missing: [], explanation: "The agreement templates could not be checked right now." }));
   const agreement: AgreementFacts = {
     required: Boolean(request.agreement_required),
     reason: (request.agreement_required_reason as string | null) ?? null,
     hasExecutedAgreement: (executed ?? []).length > 0,
     quotationTerms: (accepted?.payment_booking_terms as string | null) ?? null,
+    workflowUnavailableReason: workflow.available ? null : workflow.explanation,
   };
   const agreementAssessment = assessAgreement(agreement);
   // For DISPLAY, judge the terms on the quotation the client sees: the
@@ -63,6 +68,7 @@ export async function getCommitmentSnapshot(requestId: string): Promise<Commitme
     hasExecutedAgreement: agreement.hasExecutedAgreement,
     quotation: accepted ? "accepted" : live ? "pending" : "none",
     quotationTerms: (live?.payment_booking_terms as string | null) ?? null,
+    workflowUnavailableReason: agreement.workflowUnavailableReason,
   });
 
   const assigneeIds = [...new Set((slotRows ?? []).map((s) => s.assignee_profile_id as string | null).filter((p): p is string => Boolean(p)))];
@@ -119,6 +125,8 @@ export async function getCommitmentSnapshot(requestId: string): Promise<Commitme
     agreementReason: agreement.reason,
     agreement,
     agreementAssessment,
+    agreementWorkflowAvailable: workflow.available,
+    agreementWorkflowExplanation: workflow.available ? null : workflow.explanation,
     contractBasis,
     hasAcceptedQuotation,
     payment: { condition, depositPercent, requiredUsd: requiredPaymentUsd(condition, depositPercent, amountDueUsd), amountDueUsd, amountPaidUsd, blocker: payBlocker },

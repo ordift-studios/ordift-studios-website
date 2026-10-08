@@ -15,6 +15,9 @@ export type AgreementFacts = {
   hasExecutedAgreement: boolean;
   // The terms text on the ACCEPTED quotation (payment_booking_terms).
   quotationTerms: string | null;
+  // When a separate agreement is required but the platform cannot produce one
+  // (no designated approved template / no issuance flow): why, in words.
+  workflowUnavailableReason?: string | null;
 };
 
 export type AgreementAssessment = { satisfied: true; basis: "agreement_executed" | "quotation_terms" } | { satisfied: false; blocker: string };
@@ -22,6 +25,9 @@ export type AgreementAssessment = { satisfied: true; basis: "agreement_executed"
 export function assessAgreement(f: AgreementFacts): AgreementAssessment {
   if (f.required) {
     if (f.hasExecutedAgreement) return { satisfied: true, basis: "agreement_executed" };
+    if (f.workflowUnavailableReason) {
+      return { satisfied: false, blocker: `A separate agreement is required${f.reason ? ` (${f.reason})` : ""} but none can be produced: ${f.workflowUnavailableReason} Clear the requirement to use the standard quotation terms, or resolve what is missing.` };
+    }
     return {
       satisfied: false,
       blocker: `A separate agreement is required${f.reason ? ` (${f.reason})` : ""} and none is fully executed yet. Issue it through Legal → Agreements with context “Crew Support request”, or clear the requirement if it no longer applies.`,
@@ -48,8 +54,11 @@ export function hasUsableTerms(terms: string | null): boolean {
 
 export type ContractBasisView = { tone: "ok" | "incomplete" | "neutral"; headline: string; detail: string };
 
-export function describeContractBasis(params: { required: boolean; reason: string | null; hasExecutedAgreement: boolean; quotation: QuotationBasisState; quotationTerms: string | null }): ContractBasisView {
+export function describeContractBasis(params: { required: boolean; reason: string | null; hasExecutedAgreement: boolean; quotation: QuotationBasisState; quotationTerms: string | null; workflowUnavailableReason?: string | null }): ContractBasisView {
   if (params.required) {
+    if (!params.hasExecutedAgreement && params.workflowUnavailableReason) {
+      return { tone: "incomplete", headline: "Separate agreement required — cannot be produced yet", detail: `${params.reason ? `Reason: ${params.reason}. ` : ""}${params.workflowUnavailableReason} Confirmation is blocked; clear the requirement to use the standard quotation terms.` };
+    }
     return params.hasExecutedAgreement
       ? { tone: "ok", headline: "Separate agreement required — fully executed", detail: params.reason ? `Reason: ${params.reason}.` : "" }
       : { tone: "incomplete", headline: "Separate agreement required — not fully executed yet", detail: `${params.reason ? `Reason: ${params.reason}. ` : ""}Confirmation is blocked until it is fully executed.` };
@@ -65,8 +74,9 @@ export function describeContractBasis(params: { required: boolean; reason: strin
     : { tone: "neutral", headline: "No separate agreement required", detail: "Once the client accepts, the quotation and its terms will be the contract." };
 }
 
-export function validateAgreementRequirementChange(params: { required: boolean; reason: string; requestStatus: string }): { ok: true } | { ok: false; reason: string } {
+export function validateAgreementRequirementChange(params: { required: boolean; reason: string; requestStatus: string; workflowUnavailableReason?: string | null }): { ok: true } | { ok: false; reason: string } {
   if (["declined", "cancelled", "confirmed"].includes(params.requestStatus)) return { ok: false, reason: "The agreement requirement can't be changed once the request is confirmed or closed." };
+  if (params.required && params.workflowUnavailableReason) return { ok: false, reason: `A separate agreement can't be required yet: ${params.workflowUnavailableReason}` };
   if (params.required && params.reason.trim().length < 5) return { ok: false, reason: "Say why a separate agreement is needed (for example bespoke terms, licensing/IP, unusual cancellation, higher risk or value)." };
   return { ok: true };
 }
