@@ -52,7 +52,7 @@ export default function CommitmentPanel({ snapshot, currencies, canMarkTest }: {
             {!snapshot.agreementRequired ? (
               <ActionForm action={setAgreementRequiredAction} className="flex flex-wrap items-end gap-2">
                 <input type="hidden" name="requestId" value={requestId} /><input type="hidden" name="required" value="true" />
-                <label className="font-sans text-caption text-ordift-ink-muted">Why is a separate agreement needed?<input name="reason" className={`${field} block w-72 mt-1`} placeholder="e.g. bespoke licensing / IP terms" /></label>
+                <label className="font-sans text-caption text-ordift-ink-muted">Why is a separate agreement needed?<input name="reason" required minLength={5} maxLength={300} aria-describedby="agreement-reason-help" className={`${field} block w-72 mt-1`} placeholder="e.g. bespoke licensing / IP terms" /><span id="agreement-reason-help" className="block mt-1 text-ordift-ink-muted">Required — recorded with your name and the time.</span></label>
                 <ConfirmSubmitButton confirmMessage="Require a separate signed agreement for this request? It will hold the request in Agreement pending until it is fully executed." pendingLabel="Saving…" className={btn2}>Require an agreement</ConfirmSubmitButton>
               </ActionForm>
             ) : (
@@ -111,7 +111,7 @@ export default function CommitmentPanel({ snapshot, currencies, canMarkTest }: {
       {canMarkTest && !snapshot.isTest && ["received", "under_review", "availability_review", "quote_preparation"].includes(status) && (
         <ActionForm action={markAsTestAction} className="flex flex-wrap items-end gap-2 border-t border-black/5 pt-4">
           <input type="hidden" name="requestId" value={requestId} />
-          <label className="font-sans text-caption text-ordift-ink-muted">Super Admin: mark as QA/test record (one-way)<input name="reason" className={`${field} block w-80 mt-1`} placeholder="Why is this a test record?" /></label>
+          <label className="font-sans text-caption text-ordift-ink-muted">Super Admin: mark as QA/test record (one-way)<input name="reason" required minLength={5} maxLength={300} className={`${field} block w-80 mt-1`} placeholder="Why is this a test record?" /></label>
           <ConfirmSubmitButton confirmMessage="Mark this request as a QA/test record? It can't be undone. No client/crew emails, engagements or payables will ever be created from it." pendingLabel="Marking…" className={btn2}>Mark as test</ConfirmSubmitButton>
         </ActionForm>
       )}

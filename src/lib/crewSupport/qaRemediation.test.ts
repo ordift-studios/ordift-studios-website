@@ -94,7 +94,7 @@ describe("quotation validity and one status vocabulary", () => {
     expect(defaultValidUntil(new Date("2026-10-07T23:30:00Z"))).toBe("2026-10-21");
     expect(defaultValidUntil(new Date("2026-12-25T10:00:00Z"))).toBe("2027-01-08");
     expect(defaultValidUntil(new Date("2026-10-07T10:00:00Z"), 30)).toBe("2026-11-06");
-    const ok = { status: "draft", total: 100, lineCount: 1, today: "2026-10-08" };
+    const ok = { status: "draft", total: 100, lineCount: 1, today: "2026-10-08", terms: "50% deposit on acceptance; cancellation within 48 hours incurs a fee.", eventGap: null };
     expect(canMarkReady({ ...ok, validUntil: null }).ok).toBe(false);
     expect(canMarkReady({ ...ok, validUntil: "2026-10-01" }).ok).toBe(false);
     expect(canMarkReady({ ...ok, validUntil: "2026-10-08" }).ok).toBe(true);

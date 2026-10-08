@@ -3,6 +3,8 @@ import { redirect, notFound } from "next/navigation";
 import { getCurrentUser, hasRole, isSuperAdmin } from "@/lib/portal/roles";
 import { getClientQuotation } from "@/lib/commercial/clientQuotations";
 import { PrintButton } from "@/components/admin/PrintButton";
+import { getCrewQuotationPrintExtras } from "@/lib/crewSupport/quotation";
+import { snapshotScheduleText } from "@/lib/crewSupport/quotationSnapshot";
 
 export const metadata: Metadata = {
   title: "Quotation PDF — Ordift Studios",
@@ -28,6 +30,9 @@ export default async function QuotationPdfPage({ params }: { params: Promise<{ i
 
   const quotation = await getClientQuotation(id);
   if (!quotation) notFound();
+  // Creative Crew Support quotations also print the event details quoted for
+  // (frozen at issue). null for every other quotation — unchanged output.
+  const crew = await getCrewQuotationPrintExtras(id);
 
   return (
     <div className="print-page">
@@ -65,8 +70,10 @@ export default async function QuotationPdfPage({ params }: { params: Promise<{ i
       <PrintButton />
 
       <div style={{ textAlign: "right", fontSize: 11, marginBottom: 24 }}>
-        <div>{quotation.quotationReference}</div>
-        <div>{new Date(quotation.createdAt).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" })}</div>
+        <div>{quotation.quotationReference}{crew && crew.version > 1 ? ` (version ${crew.version})` : ""}</div>
+        <div>{new Date(crew?.issuedAt ?? quotation.createdAt).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" })}</div>
+        {crew?.requestReference && <div>Request {crew.requestReference}</div>}
+        {crew && crew.status === "draft" && <div style={{ color: "#a33" }}>DRAFT — not yet issued</div>}
       </div>
 
       <div style={{ marginBottom: 24, fontSize: 12 }}>
@@ -76,6 +83,20 @@ export default async function QuotationPdfPage({ params }: { params: Promise<{ i
         {quotation.prospectEmail && <div>{quotation.prospectEmail}</div>}
         {quotation.prospectPhone && <div>{quotation.prospectPhone}</div>}
       </div>
+
+      {crew?.project && (
+        <div style={{ marginBottom: 20, fontSize: 11 }}>
+          <div style={{ textTransform: "uppercase", letterSpacing: "0.08em", fontSize: 9, color: "#888" }}>Project</div>
+          <div style={{ fontWeight: "bold", fontSize: 13 }}>{crew.project.projectName}{crew.project.projectType ? ` — ${crew.project.projectType}` : ""}</div>
+          <div>{crew.project.serviceLabel}</div>
+          <div>Date and schedule: {snapshotScheduleText(crew.project)}</div>
+          <div>Location: {crew.project.location}</div>
+          <div>Equipment: {crew.project.equipment ?? "To be confirmed"}</div>
+          {crew.project.roles.map((r, i) => (
+            <div key={i}>Crew: {r.quantity} × {r.role}{r.responsibilities ? ` — ${r.responsibilities}` : ""}</div>
+          ))}
+        </div>
+      )}
 
       <table>
         <thead>
@@ -118,6 +139,9 @@ export default async function QuotationPdfPage({ params }: { params: Promise<{ i
           <div style={{ textTransform: "uppercase", letterSpacing: "0.08em", fontSize: 9, color: "#888" }}>Payment / Booking Terms</div>
           <div style={{ whiteSpace: "pre-line" }}>{quotation.paymentBookingTerms}</div>
         </div>
+      )}
+      {crew && (
+        <p style={{ fontSize: 11, marginTop: 16 }}>To accept this quotation, sign in to your Ordift client portal and accept it there, or reply to the email it came with so your acceptance can be recorded.</p>
       )}
     </div>
   );

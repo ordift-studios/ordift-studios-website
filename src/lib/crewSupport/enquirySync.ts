@@ -6,7 +6,7 @@ import type { CrmStage } from "@/lib/admin/enquiries";
 // null` is a deliberate, documented no-op. "Booked" is reachable ONLY
 // from the confirmed event: never from quotation acceptance or payment
 // alone.
-export type CrewSyncEvent = "under_review" | "quote_issued" | "quote_accepted" | "confirmed" | "declined" | "cancelled";
+export type CrewSyncEvent = "under_review" | "quote_issued" | "quote_accepted" | "confirmed" | "in_production" | "completed" | "declined" | "cancelled";
 
 const OPEN_STAGES: CrmStage[] = ["new_lead", "contacted", "discovery_meeting", "quotation_sent", "negotiation"];
 
@@ -19,6 +19,10 @@ export const ENQUIRY_STAGE_SYNC: Record<CrewSyncEvent, { to: CrmStage | null; fr
   // a Crew Support enquiry (a full payment no longer books it — see
   // crmStageSync.ts).
   confirmed: { to: "booked", from: OPEN_STAGES },
+  in_production: { to: "in_progress", from: ["booked"] },
+  completed: { to: "completed", from: ["booked", "in_progress", "delivered"] },
   declined: { to: "declined", from: OPEN_STAGES },
-  cancelled: { to: "closed", from: OPEN_STAGES },
+  // A job cancelled after booking also closes its enquiry (no contradictory
+  // "Booked" on a cancelled request); the receivable is untouched.
+  cancelled: { to: "closed", from: [...OPEN_STAGES, "booked", "in_progress"] },
 };

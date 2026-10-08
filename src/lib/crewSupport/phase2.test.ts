@@ -55,8 +55,8 @@ describe("price-source tracking and overrides", () => {
   });
 
   it("a line with no governed rate is a manual fallback flagged noGovernedRate", () => {
-    const r = validateAndResolveLines([line({ governedUnitPrice: null, sellingRate: 400 })]);
-    expect(r.ok && r.lines[0]).toMatchObject({ sourceType: "manual", noGovernedRate: true });
+    const r = validateAndResolveLines([line({ governedUnitPrice: null, sellingRate: 400, adjustmentReason: "Rate agreed by phone with the client on 8 Oct" })]);
+    expect(r.ok && r.lines[0]).toMatchObject({ sourceType: "manual", noGovernedRate: true, adjustmentReason: "Rate agreed by phone with the client on 8 Oct" });
   });
 
   it("client-visible text can't mention internal costs, margins or payables", () => {
@@ -72,9 +72,9 @@ describe("price-source tracking and overrides", () => {
   });
 
   it("a quotation can't be marked Ready with a zero total (unpriced manual lines) or when not a draft", () => {
-    expect(canMarkReady({ status: "draft", total: 0, lineCount: 2, validUntil: "2026-11-01", today: "2026-10-08" }).ok).toBe(false);
-    expect(canMarkReady({ status: "ready", total: 100, lineCount: 1, validUntil: "2026-11-01", today: "2026-10-08" }).ok).toBe(false);
-    expect(canMarkReady({ status: "draft", total: 100, lineCount: 1, validUntil: "2026-11-01", today: "2026-10-08" }).ok).toBe(true);
+    expect(canMarkReady({ status: "draft", total: 0, lineCount: 2, validUntil: "2026-11-01", today: "2026-10-08", terms: "50% deposit on acceptance; cancellation within 48 hours incurs a fee.", eventGap: null }).ok).toBe(false);
+    expect(canMarkReady({ status: "ready", total: 100, lineCount: 1, validUntil: "2026-11-01", today: "2026-10-08", terms: "50% deposit on acceptance; cancellation within 48 hours incurs a fee.", eventGap: null }).ok).toBe(false);
+    expect(canMarkReady({ status: "draft", total: 100, lineCount: 1, validUntil: "2026-11-01", today: "2026-10-08", terms: "50% deposit on acceptance; cancellation within 48 hours incurs a fee.", eventGap: null }).ok).toBe(true);
   });
 });
 
@@ -181,7 +181,7 @@ describe("client notifications", () => {
   const vars: ClientTemplateVars = { firstName: "Ama", reference: "CSR-2026-000009", projectName: "Mensah wedding", serviceLabel: "Creative Crew Support — Photography", enquiryId: "enq-1", quotationReference: "ORD-QUO-2026-000001", totalText: "USD 500.00", validUntil: "2026-11-01" };
 
   it("only meaningful client-facing transitions map to a template; internal states (quote preparation, slots, notes) never do", () => {
-    expect(Object.keys(STATUS_NOTIFICATIONS).sort()).toEqual(["availability_review", "cancelled", "confirmed", "declined", "under_review"]);
+    expect(Object.keys(STATUS_NOTIFICATIONS).sort()).toEqual(["agreement_pending", "availability_review", "cancelled", "confirmed", "declined", "payment_pending", "under_review"]);
     expect(STATUS_NOTIFICATIONS.quote_preparation).toBeUndefined();
     for (const s of CREW_SUPPORT_STATUSES) if (STATUS_NOTIFICATIONS[s]) expect(isClientFacingTemplate(STATUS_NOTIFICATIONS[s]!)).toBe(true);
   });

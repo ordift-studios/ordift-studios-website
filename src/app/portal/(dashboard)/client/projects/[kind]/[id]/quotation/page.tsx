@@ -2,6 +2,7 @@ import { notFound, redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/portal/roles";
 import { getClientQuotationViewForEnquiry } from "@/lib/crewSupport/quotation";
 import { PrintButton } from "@/components/admin/PrintButton";
+import { snapshotScheduleText } from "@/lib/crewSupport/quotationSnapshot";
 import AcceptQuotationForm from "./AcceptQuotationForm";
 
 // Client-facing quotation (Creative Crew Support). Reads a strict
@@ -32,6 +33,18 @@ export default async function ClientQuotationPage({ params }: { params: Promise<
         <PrintButton />
       </div>
 
+      {q.project && (
+        <div className="rounded-xl border border-black/10 bg-white p-6 space-y-1 font-sans text-body-small text-ordift-ink">
+          <p className="font-sans text-caption uppercase tracking-wide text-ordift-ink-muted">Project</p>
+          <p className="font-medium">{q.project.projectName}{q.project.projectType ? ` — ${q.project.projectType}` : ""}</p>
+          <p>{q.project.serviceLabel}</p>
+          <p>Date and schedule: {snapshotScheduleText(q.project)}</p>
+          <p>Location: {q.project.location}</p>
+          <p>Equipment: {q.project.equipment ?? "To be confirmed"}</p>
+          {q.project.roles.map((r, i) => <p key={i}>Crew: {r.quantity} × {r.role}{r.responsibilities ? ` — ${r.responsibilities}` : ""}</p>)}
+        </div>
+      )}
+
       <div className="rounded-xl border border-black/10 bg-white p-6 space-y-4 overflow-x-auto">
         <table className="w-full text-left">
           <thead>
@@ -61,7 +74,7 @@ export default async function ClientQuotationPage({ params }: { params: Promise<
 
       {q.status === "accepted" ? (
         <div role="status" className="rounded-xl border border-green-200 bg-green-50 p-5 font-sans text-body-small text-ordift-ink">
-          Accepted{q.acceptedAt ? ` on ${q.acceptedAt.slice(0, 10)}` : ""}. Ordift will be in touch with the agreement and payment details. This is not yet a booking confirmation; crew availability and assignment are confirmed separately.
+          Accepted{q.acceptedAt ? ` on ${q.acceptedAt.slice(0, 10)}` : ""}. Ordift will follow up with the next steps, including any agreement or payment details that apply. This is not yet a booking confirmation; crew availability and assignment are confirmed separately.
         </div>
       ) : expired ? (
         <p className="font-sans text-body-small text-red-700">This quotation has expired. Please contact Ordift for an updated quotation.</p>

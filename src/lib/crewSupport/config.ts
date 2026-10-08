@@ -77,7 +77,7 @@ export function detailQuestionsFor(family: string): DetailQuestion[] {
   return GENERAL_QUESTIONS;
 }
 
-export const CREW_SUPPORT_STATUSES = ["received", "under_review", "availability_review", "quote_preparation", "quoted", "agreement_pending", "payment_pending", "confirmed", "declined", "cancelled"] as const;
+export const CREW_SUPPORT_STATUSES = ["received", "under_review", "availability_review", "quote_preparation", "quoted", "agreement_pending", "payment_pending", "confirmed", "in_production", "completed", "declined", "cancelled"] as const;
 export type CrewSupportStatus = (typeof CREW_SUPPORT_STATUSES)[number];
 
 export const STATUS_LABELS: Record<CrewSupportStatus, string> = {
@@ -89,6 +89,8 @@ export const STATUS_LABELS: Record<CrewSupportStatus, string> = {
   agreement_pending: "Agreement pending",
   payment_pending: "Payment pending",
   confirmed: "Confirmed",
+  in_production: "In production",
+  completed: "Completed",
   declined: "Declined",
   cancelled: "Cancelled",
 };
@@ -98,10 +100,12 @@ const FORWARD: Record<CrewSupportStatus, CrewSupportStatus[]> = {
   under_review: ["availability_review", "declined", "cancelled"],
   availability_review: ["quote_preparation", "declined", "cancelled"],
   quote_preparation: ["quoted", "availability_review", "declined", "cancelled"],
-  quoted: ["agreement_pending", "payment_pending", "declined", "cancelled"],
+  quoted: ["agreement_pending", "payment_pending", "quote_preparation", "declined", "cancelled"],
   agreement_pending: ["payment_pending", "confirmed", "declined", "cancelled"],
   payment_pending: ["agreement_pending", "confirmed", "declined", "cancelled"],
-  confirmed: ["cancelled"],
+  confirmed: ["in_production", "cancelled"],
+  in_production: ["completed", "cancelled"],
+  completed: [],
   declined: [],
   cancelled: [],
 };

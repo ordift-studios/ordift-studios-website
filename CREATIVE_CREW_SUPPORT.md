@@ -77,3 +77,16 @@ Built locally; migrations 0142/0143 prepared but NOT applied or deployed until a
 - Confirmation gate (`confirmationBlockers`): accepted quotation, agreement basis, every open slot resolved, each assigned person has accepted, compensation recorded, no FIRM double-booking (approved leave, or a slot on another Confirmed request). `conflicts.ts` is the single definition of conflict shared with Availability Review.
 - At Confirmed (`establishCommitments`, idempotent): engagements activated, `project_assignments` access granted (expires 7 days after the job), payables created, enquiry → Booked, client "confirmed" email. A payment never books a Crew Support enquiry (`crmStageSync.ts`), and a hand-chosen "Booked" stage is refused unless the request is Confirmed.
 - QA/test requests (`is_test`, Super Admin one-way mark before issue) never create engagements, payables, project access or emails.
+
+## Workflow repair round (2026-10-08, branch `crew-support-workflow-repair`, NOT deployed)
+
+Migration 0146 (additive): widens the request status check (adds `in_production`, `completed`), `client_quotations.project_snapshot jsonb`, and the slot override record (`assignment_override_reason/by/at`).
+
+- **Quotations:** Mark-ready now requires payment/booking terms, a future Valid-until and complete event information. The client-visible event details (project, dates, schedule, location, roles, equipment responsibility) are built from the request and frozen into `project_snapshot` at issue; the printable quotation and the client portal render that snapshot. Ordift's approved Master Booking Terms (OS-LGL-004) can be referenced by an explicit "Insert reference" click only — nothing legal is ever generated or added silently.
+- **Manual pricing:** a priced line with no governed rate needs a recorded justification (internal).
+- **Versions:** an issued, unaccepted quotation is revised into a NEW version (`version` + 1, `supersedes_id`); the issued row stays as `superseded`; the request returns to Quote preparation. Accepted quotations are never revised here.
+- **Agreement control:** `ConfirmSubmitButton` validates the form before asking for confirmation; the reason is a required field (and still enforced server-side).
+- **Overrides:** assigning someone with no matching capability needs a justification (≥10 chars), is limited to active workforce identities, and is kept on the slot and in the audit log.
+- **Lifecycle:** Confirmed → In production → Completed (Completed requires every crew engagement finished). CRM follows: In progress / Completed; a cancelled booked job closes its enquiry. Crew slots lock once confirmed.
+- **Cancel/decline:** payable-free crew engagements are cancelled, this request's project access is removed, engagements with payables are flagged for Finance; the client's receivable is never touched.
+- **Client emails:** `agreement_required` (on Agreement pending) and `payment_requested` (on Payment pending) join the existing templates; idempotent per request, suppressed for test records.

@@ -2,7 +2,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { logActivity } from "@/lib/admin/activityLog";
 import { authorizeWithSuperAdminOverride, FINANCE_CAPABILITIES } from "@/lib/organization/authority";
 import { createEngagement, createEngagementPayable, setEngagementStatus } from "@/lib/payables/engagements";
-import { assignUserToProject } from "@/lib/admin/projectAssignments";
+import { assignUserToProject, updateAssignmentStatus } from "@/lib/admin/projectAssignments";
 import { accessExpiryFor, validateCrewAcceptanceInput } from "./commitmentRules";
 import { getCommitmentSnapshot } from "./commitmentData";
 
@@ -158,4 +158,49 @@ export async function establishCommitments(params: { requestId: string; actorUse
 async function enquiryIdFor(requestId: string): Promise<string> {
   const { data } = await createAdminClient().from("crew_support_requests").select("enquiry_id").eq("id", requestId).maybeSingle();
   return (data?.enquiry_id as string) ?? "";
+}
+
+// ------------------------------------------------- unwind on cancel/decline
+// When a request that already has crew commitments is cancelled or
+// declined, undo what is SAFE to undo and flag the rest — never delete:
+//   - a crew engagement with no payable is cancelled (history kept)
+//   - project access granted by THIS request is removed
+//   - an engagement that already has a payable (or finished work) is left
+//     exactly as it is and reported for Finance to resolve; money owed to
+//     crew is never silently dropped
+//   - the client's receivable (amount due + accepted quotation) is NOT
+//     touched: any cancellation fee, refund or write-off is a deliberate
+//     finance decision recorded through the existing payment controls.
+// Idempotent; test records have nothing to unwind.
+export async function unwindCommitments(params: { requestId: string; actorUserId: string | null; reason: string }): Promise<Result<{ warnings: string[]; cancelledEngagements: number; removedAssignments: number }>> {
+  const snapshot = await getCommitmentSnapshot(params.requestId);
+  if (!snapshot) return { ok: false, error: "Request not found." };
+  const warnings: string[] = [];
+  let cancelledEngagements = 0;
+  let removedAssignments = 0;
+  if (snapshot.isTest) return { ok: true, warnings, cancelledEngagements, removedAssignments };
+  const admin = createAdminClient();
+
+  for (const slot of snapshot.slots) {
+    const e = slot.engagement;
+    if (!e) continue;
+    const { data: row } = await admin.from("engagements").select("payment_obligation_id").eq("id", e.id).maybeSingle();
+    if (row?.payment_obligation_id) { warnings.push(`${slot.label}: a crew payable exists — Finance must review it (cancel or settle). The engagement was left as is.`); continue; }
+    if (e.status === "completed") { warnings.push(`${slot.label}: the engagement is already completed and was left as is.`); continue; }
+    if (!params.actorUserId) { warnings.push(`${slot.label}: engagement not cancelled (no signed-in administrator).`); continue; }
+    const r = await setEngagementStatus({ engagementId: e.id, status: "cancelled", actorUserId: params.actorUserId });
+    if (r.ok) cancelledEngagements += 1; else warnings.push(`${slot.label}: engagement not cancelled (${r.error}).`);
+  }
+
+  if (params.actorUserId) {
+    const enquiryId = await enquiryIdFor(params.requestId);
+    const { data: assignments } = await admin.from("project_assignments").select("id, role_note, status").eq("entity_type", "enquiry").eq("entity_id", enquiryId).in("status", ["invited", "active"]);
+    for (const a of (assignments ?? []).filter((x) => String(x.role_note ?? "").startsWith(`Crew Support ${snapshot.reference}`))) {
+      const r = await updateAssignmentStatus({ assignmentId: a.id as string, status: "removed", actorUserId: params.actorUserId, reason: params.reason });
+      if (r.ok) removedAssignments += 1; else warnings.push(`A project assignment could not be removed (${r.error}).`);
+    }
+  }
+
+  await logActivity({ actorUserId: params.actorUserId, action: "crew_support.commitments_unwound", entityType: "crew_support_request", entityId: params.requestId, metadata: { reference: snapshot.reference, reason: params.reason, cancelledEngagements, removedAssignments, warnings, receivableUntouched: true } });
+  return { ok: true, warnings, cancelledEngagements, removedAssignments };
 }

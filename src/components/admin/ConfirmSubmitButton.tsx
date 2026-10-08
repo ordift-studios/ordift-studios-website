@@ -42,6 +42,18 @@ export default function ConfirmSubmitButton({
       aria-busy={pending}
       className={`${className ?? ""} disabled:opacity-50 disabled:cursor-not-allowed`}
       onClick={(e) => {
+        // Validate FIRST. If a required field is empty or invalid, skip the
+        // confirmation entirely and let the browser show its inline
+        // validation on the offending field (nothing is submitted, and the
+        // values the user already typed stay put). Only a valid form earns
+        // a "are you sure?" prompt (QA 2026-10-08: the dialog used to pop
+        // up before the mandatory reason had been checked).
+        const form = e.currentTarget.form;
+        if (form && !form.checkValidity()) {
+          form.reportValidity();
+          e.preventDefault();
+          return;
+        }
         if (!window.confirm(confirmMessage)) e.preventDefault();
       }}
     >

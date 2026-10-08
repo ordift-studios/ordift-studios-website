@@ -1,7 +1,7 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { SlotStatus } from "./config";
 import { loadConflicts, firmConflicts } from "./conflicts";
-import { assessAgreement, confirmationBlockers, describeContractBasis, type AgreementAssessment, type ContractBasisView, type AgreementFacts, type SlotCommitment } from "./commitmentRules";
+import { assessAgreement, completionBlockers, confirmationBlockers, describeContractBasis, type AgreementAssessment, type ContractBasisView, type AgreementFacts, type SlotCommitment } from "./commitmentRules";
 import type { StatusChangeContext } from "./rules";
 
 // Server-only loaders for the commitment layer. Read-only. Callers must
@@ -24,6 +24,7 @@ export type CommitmentSnapshot = {
   hasAcceptedQuotation: boolean;
   slots: (SlotCommitment & { slotId: string; requirementId: string; roleLabel: string; slotNumber: number; crewAcceptedAt: string | null; assigneeName: string | null })[];
   blockers: string[];
+  completionBlockers: string[];
 };
 
 export async function getCommitmentSnapshot(requestId: string): Promise<CommitmentSnapshot | null> {
@@ -112,6 +113,7 @@ export async function getCommitmentSnapshot(requestId: string): Promise<Commitme
     hasAcceptedQuotation,
     slots,
     blockers: confirmationBlockers({ hasAcceptedQuotation, agreement: agreementAssessment, slots, isTest: Boolean(request.is_test) }),
+    completionBlockers: completionBlockers({ slots, isTest: Boolean(request.is_test) }),
   };
 }
 
@@ -127,5 +129,6 @@ export async function getStatusContext(requestId: string): Promise<StatusChangeC
     agreementRequired: snapshot?.agreementRequired ?? false,
     agreementSatisfied: snapshot?.agreementAssessment.satisfied ?? false,
     confirmationBlockers: snapshot?.blockers ?? [],
+    completionBlockers: snapshot?.completionBlockers ?? [],
   };
 }

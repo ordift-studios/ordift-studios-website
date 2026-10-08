@@ -8,8 +8,9 @@ import ConfirmSubmitButton from "@/components/admin/ConfirmSubmitButton";
 import type { QuotationAdminView } from "@/lib/crewSupport/quotation";
 import { ACCEPTANCE_CHANNELS, defaultValidUntil } from "@/lib/crewSupport/quotationRules";
 import type { CrewSupportStatus } from "@/lib/crewSupport/config";
+import { approvedBookingTermsReference } from "@/lib/crewSupport/standardTerms";
 import CrewQuotationEditor from "./CrewQuotationEditor";
-import { completeAcceptanceAction, completeIssueAction, discardQuotationDraftAction, issueQuotationAction, markQuotationReadyAction, prepareQuotationAction, recordAcceptanceAction, returnQuotationToDraftAction } from "./quotationActions";
+import { reviseQuotationAction, completeAcceptanceAction, completeIssueAction, discardQuotationDraftAction, issueQuotationAction, markQuotationReadyAction, prepareQuotationAction, recordAcceptanceAction, returnQuotationToDraftAction } from "./quotationActions";
 
 const btn = "rounded-lg bg-ordift-ink text-white px-4 py-2 font-sans text-body-small";
 const btn2 = "rounded-lg border border-black/20 px-4 py-2 font-sans text-body-small text-ordift-ink";
@@ -71,11 +72,11 @@ export default function QuotationPanel({
 
       {q && (
         <>
-          <p className="font-sans text-body-small text-ordift-ink"><strong>{q.reference}</strong> — {STATUS_TEXT[q.status] ?? q.status}{q.isTest ? " · TEST record (no real emails or receivables)" : ""}</p>
+          <p className="font-sans text-body-small text-ordift-ink"><strong>{q.reference}</strong>{q.version > 1 ? ` (version ${q.version})` : ""} — {STATUS_TEXT[q.status] ?? q.status}{q.isTest ? " · TEST record (no real emails or receivables)" : ""}</p>
 
           {q.status === "draft" && (
             <>
-              <CrewQuotationEditor quotationId={q.id} requestId={requestId} initialLines={q.lines} validUntil={q.validUntil ?? defaultValidUntil(new Date())} terms={q.terms} internalNotes={q.internalNotes} fxCurrency={q.fxCurrency} currencies={currencies} />
+              <CrewQuotationEditor quotationId={q.id} requestId={requestId} initialLines={q.lines} validUntil={q.validUntil ?? defaultValidUntil(new Date())} terms={q.terms} internalNotes={q.internalNotes} fxCurrency={q.fxCurrency} currencies={currencies} termsReference={approvedBookingTermsReference()} />
               <div className="flex flex-wrap gap-3 border-t border-black/5 pt-3">
                 <ActionForm action={markQuotationReadyAction}><input type="hidden" name="quotationId" value={q.id} /><input type="hidden" name="requestId" value={requestId} /><SubmitButton pendingLabel="Checking…" className={btn}>Mark ready for issue</SubmitButton></ActionForm>
                 <ActionForm action={discardQuotationDraftAction}><input type="hidden" name="quotationId" value={q.id} /><input type="hidden" name="requestId" value={requestId} /><ConfirmSubmitButton confirmMessage="Discard this draft quotation? It was never issued." pendingLabel="Discarding…" className={btn2}>Discard draft</ConfirmSubmitButton></ActionForm>
@@ -99,6 +100,9 @@ export default function QuotationPanel({
           {q.status === "sent" && (
             <div className="space-y-3 border-t border-black/5 pt-3">
               <p className="font-sans text-caption text-ordift-ink-muted">Issued {q.issuedAt?.slice(0, 10)}. The client can accept in their portal (preferred). <Link href={`/admin/pricing/quotations/${q.id}/pdf`} className="text-ordift-gold-pressed underline underline-offset-4">Open printable quotation</Link></p>
+              {requestStatus === "quoted" && (
+                <ActionForm action={reviseQuotationAction} className="flex items-center gap-3"><input type="hidden" name="quotationId" value={q.id} /><input type="hidden" name="requestId" value={requestId} /><ConfirmSubmitButton confirmMessage="Create a new version of this quotation? The issued version stays on record as superseded and the client can't accept it until you issue the new one." pendingLabel="Creating…" className={btn2}>Revise quotation (new version)</ConfirmSubmitButton></ActionForm>
+              )}
               {requestStatus === "quote_preparation" && (
                 <ActionForm action={completeIssueAction} className="flex items-center gap-3"><input type="hidden" name="quotationId" value={q.id} /><input type="hidden" name="requestId" value={requestId} /><SubmitButton pendingLabel="Syncing…" className={btn2}>Complete issue synchronisation</SubmitButton><span className="font-sans text-caption text-amber-800">The quotation is issued but the request status didn&apos;t finish updating.</span></ActionForm>
               )}

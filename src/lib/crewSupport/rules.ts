@@ -27,9 +27,11 @@ export type StatusChangeContext = {
   // Everything still blocking confirmation (accepted crew, known
   // compensation, firm double-bookings, ...). Empty = ready to confirm.
   confirmationBlockers: string[];
+  // Everything still blocking Completed (crew engagements not finished).
+  completionBlockers: string[];
 };
 
-export const NO_QUOTATION: StatusChangeContext = { hasLiveQuotation: false, hasIssuedQuotation: false, hasAcceptedQuotation: false, agreementRequired: false, agreementSatisfied: false, confirmationBlockers: [] };
+export const NO_QUOTATION: StatusChangeContext = { hasLiveQuotation: false, hasIssuedQuotation: false, hasAcceptedQuotation: false, agreementRequired: false, agreementSatisfied: false, confirmationBlockers: [], completionBlockers: [] };
 
 export function validateStatusChange(
   from: CrewSupportStatus,
@@ -40,6 +42,9 @@ export function validateStatusChange(
   if (!allowedStatusTransitions(from).includes(to)) return { ok: false, reason: "That status change isn't allowed from the current status." };
   if (to === "quote_preparation" && !context.hasLiveQuotation) {
     return { ok: false, reason: "Quote preparation starts when you use “Prepare quotation” — it can't be selected by hand." };
+  }
+  if (from === "quoted" && to === "quote_preparation" && context.hasIssuedQuotation) {
+    return { ok: false, reason: "An issued quotation can't be pulled back by hand — use “Revise quotation” to create a new version (the issued one is kept as superseded)." };
   }
   if (to === "quoted" && !context.hasIssuedQuotation) {
     return { ok: false, reason: "Quote issued happens when a prepared quotation is actually issued — it can't be selected by hand." };
@@ -52,6 +57,9 @@ export function validateStatusChange(
   }
   if (to === "payment_pending" && !context.agreementSatisfied) {
     return { ok: false, reason: "The contractual basis isn't satisfied yet — a required agreement must be fully executed, or the accepted quotation must carry its terms." };
+  }
+  if (to === "completed" && context.completionBlockers.length > 0) {
+    return { ok: false, reason: context.completionBlockers[0] };
   }
   if (to === "confirmed") {
     const base = canConfirm(slots);
@@ -68,7 +76,7 @@ export function validateSlotChange(params: {
   assigneeProfileId: string | null;
 }): { ok: true } | { ok: false; reason: string } {
   if (params.requestStatus === "declined" || params.requestStatus === "cancelled") return { ok: false, reason: "This request is closed — crew can no longer be changed." };
-  if (params.requestStatus === "confirmed") return { ok: false, reason: "This request is confirmed — crew engagements and payables now exist, so crew can't be changed here. Cancel the request or handle the replacement through the engagement." };
+  if (["confirmed", "in_production", "completed"].includes(params.requestStatus)) return { ok: false, reason: "This request is confirmed — crew engagements and payables now exist, so crew can't be changed here. Cancel the request or handle the replacement through the engagement." };
   if ((params.status === "proposed" || params.status === "assigned") && !params.assigneeProfileId) return { ok: false, reason: "Choose a person to propose or assign." };
   return { ok: true };
 }

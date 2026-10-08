@@ -13,7 +13,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import QuotationPanel from "../QuotationPanel";
 import NotificationsPanel from "../NotificationsPanel";
 import CommitmentPanel from "../CommitmentPanel";
-import { loadCandidatesForRequirements } from "@/lib/crewSupport/candidates";
+import { loadCandidatesForRequirements, listOverridePool } from "@/lib/crewSupport/candidates";
 import { candidateLabel } from "@/lib/crewSupport/matching";
 import { validateStatusChange } from "@/lib/crewSupport/rules";
 import { REQUESTER_TYPES, SERVICE_FAMILIES, SLOT_STATUSES, SLOT_STATUS_LABELS, STATUS_LABELS, allowedStatusTransitions, detailQuestionsFor, type CrewSupportStatus } from "@/lib/crewSupport/config";
@@ -51,6 +51,8 @@ export default async function CrewSupportDetailPage({ params }: { params: Promis
     console.error("[crew-support] candidate matching failed", error);
     return null;
   });
+  const allCandidateIds = [...new Set(Object.values(candidatesByRequirement ?? {}).flatMap((c) => c.candidates.map((x) => x.profileId)))];
+  const overridePool = await listOverridePool(allCandidateIds).catch(() => []);
   const r = detail.request as Record<string, string | null> & { id: string; status: CrewSupportStatus; enquiry_id: string };
   const family = SERVICE_FAMILIES.find((f) => f.value === r.service_family);
   const details = (detail.request.service_details ?? {}) as Record<string, string>;
@@ -68,7 +70,7 @@ export default async function CrewSupportDetailPage({ params }: { params: Promis
   const nextStatuses = allowedStatusTransitions(r.status);
   const slotRules = detail.slots.map((sl) => ({ status: sl.status, assigneeProfileId: sl.assignee_profile_id }));
   const statusOptions = nextStatuses.map((to) => ({ to, check: validateStatusChange(r.status, to, slotRules, flags) }));
-  const closed = r.status === "declined" || r.status === "cancelled";
+  const closed = ["declined", "cancelled", "confirmed", "in_production", "completed"].includes(r.status);
 
   return (
     <div className="space-y-6">
@@ -139,6 +141,19 @@ export default async function CrewSupportDetailPage({ params }: { params: Promis
                   </select>
                   <input name="note" defaultValue={s.note ?? ""} disabled={closed} placeholder="Note (optional)" aria-label="Note" className={selectClasses} />
                   {!closed && <SubmitButton pendingLabel="Saving…" className="rounded-lg bg-ordift-ink text-white px-4 py-2 font-sans text-body-small">Save slot</SubmitButton>}
+                  {!closed && s.status !== "declined" && (
+                    <details className="sm:col-span-5 text-ordift-ink-muted">
+                      <summary className="cursor-pointer font-sans text-caption">Assign someone without a matching capability (authorised override)</summary>
+                      <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        <select name="overrideProfileId" defaultValue="" aria-label={`Override person for ${req.role_label} ${s.slot_number}`} className={selectClasses}>
+                          <option value="">No override</option>
+                          {overridePool.map((p) => <option key={p.profileId} value={p.profileId}>{p.name}{p.memberNumber ? ` (${p.memberNumber})` : ""}</option>)}
+                        </select>
+                        <input name="overrideReason" minLength={10} maxLength={300} placeholder="Justification (required with an override)" aria-label="Override justification" className={selectClasses} />
+                      </div>
+                    </details>
+                  )}
+                  {s.overrideReason && <p className="sm:col-span-5 font-sans text-caption text-amber-800">Assigned by override — {s.overrideReason}</p>}
                 </ActionForm>
               ))}
             </div>

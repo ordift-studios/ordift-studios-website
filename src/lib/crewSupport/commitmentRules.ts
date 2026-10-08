@@ -135,6 +135,26 @@ export function confirmationBlockers(input: ConfirmationInput): string[] {
   return out;
 }
 
+// Authorised manual override: assigning someone WITHOUT a matching active
+// capability. Allowed only with a recorded justification (kept on the slot
+// with who/when, and in the audit log).
+export function validateOverrideReason(reason: string): { ok: true } | { ok: false; reason: string } {
+  if (reason.trim().length < 10) return { ok: false, reason: "Assigning someone without a matching capability needs a recorded justification (at least a short sentence — it is kept on the slot and in the audit log)." };
+  return { ok: true };
+}
+
+// Completed means the crew work is done: every crew member's engagement is
+// finished (or was cancelled). QA/test requests never have engagements.
+export function completionBlockers(input: { slots: SlotCommitment[]; isTest: boolean }): string[] {
+  if (input.isTest) return [];
+  const out: string[] = [];
+  for (const s of input.slots.filter((x) => x.status === "assigned" && x.assigneeProfileId)) {
+    if (!s.engagement) out.push(`${s.label} has no engagement record.`);
+    else if (s.engagement.status !== "completed") out.push(`${s.label}: the engagement is “${s.engagement.status.replace(/_/g, " ")}” — finish it (Finance → Payables → Engagements) before completing.`);
+  }
+  return out;
+}
+
 // Whether a slot's crew acceptance must be cleared by this slot change.
 export function clearsCrewAcceptance(params: { previousAssigneeId: string | null; previousStatus: string; nextAssigneeId: string | null; nextStatus: string }): boolean {
   return params.previousAssigneeId !== params.nextAssigneeId || params.nextStatus !== "assigned" || params.previousStatus !== "assigned";

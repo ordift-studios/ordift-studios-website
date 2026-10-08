@@ -3,12 +3,12 @@ import { logActivity } from "@/lib/admin/activityLog";
 import type { CrewSupportStatus, SlotStatus } from "./config";
 import { validateSlotChange, validateStatusChange, type SlotLike } from "./rules";
 import { getStatusContext } from "./commitmentData";
-import { cancelSlotEngagement, establishCommitments } from "./commitmentEstablish";
-import { clearsCrewAcceptance } from "./commitmentRules";
+import { cancelSlotEngagement, establishCommitments, unwindCommitments } from "./commitmentEstablish";
+import { clearsCrewAcceptance, validateOverrideReason } from "./commitmentRules";
 import { ENQUIRY_STAGE_SYNC, type CrewSyncEvent } from "./enquirySync";
 import { STATUS_NOTIFICATIONS } from "./notificationConfig";
 import { notifyCrewSupportEvent } from "./notifications";
-import { loadCandidatesForRequirements } from "./candidates";
+import { loadCandidatesForRequirements, isWorkforceProfile } from "./candidates";
 
 // Server-only reads/writes for the internal Creative Crew Support
 // workflow. Callers MUST have checked canManageCrewSupport() — this
@@ -81,7 +81,7 @@ export async function listCrewSupportRequests(status?: string): Promise<CrewSupp
 export type CrewSupportDetail = {
   request: Record<string, unknown> & { id: string; status: CrewSupportStatus; enquiry_id: string };
   requirements: { id: string; operational_title_id: string | null; role_label: string; custom_role: string | null; quantity: number; responsibilities: string | null }[];
-  slots: { id: string; requirement_id: string; slot_number: number; status: SlotStatus; assignee_profile_id: string | null; assigneeName: string | null; note: string | null }[];
+  slots: { id: string; requirement_id: string; slot_number: number; status: SlotStatus; assignee_profile_id: string | null; assigneeName: string | null; note: string | null; overrideReason: string | null }[];
 };
 
 export async function getCrewSupportDetail(id: string): Promise<CrewSupportDetail | null> {
@@ -90,7 +90,7 @@ export async function getCrewSupportDetail(id: string): Promise<CrewSupportDetai
   if (error || !request) return null;
   const [{ data: requirements }, { data: slots }] = await Promise.all([
     admin.from("crew_support_requirements").select("id, operational_title_id, role_label, custom_role, quantity, responsibilities").eq("request_id", id).order("sort_order"),
-    admin.from("crew_support_slots").select("id, requirement_id, slot_number, status, assignee_profile_id, note").eq("request_id", id).order("slot_number"),
+    admin.from("crew_support_slots").select("id, requirement_id, slot_number, status, assignee_profile_id, note, assignment_override_reason").eq("request_id", id).order("slot_number"),
   ]);
   const profileIds = [...new Set((slots ?? []).map((s) => s.assignee_profile_id as string | null).filter((p): p is string => Boolean(p)))];
   const names = new Map<string, string>();
@@ -109,6 +109,7 @@ export async function getCrewSupportDetail(id: string): Promise<CrewSupportDetai
       assignee_profile_id: (s.assignee_profile_id as string | null) ?? null,
       assigneeName: s.assignee_profile_id ? names.get(s.assignee_profile_id as string) ?? null : null,
       note: (s.note as string | null) ?? null,
+      overrideReason: (s.assignment_override_reason as string | null) ?? null,
     })),
   };
 }
@@ -142,13 +143,20 @@ export async function commitCrewSupportStatus(params: { requestId: string; from:
   const warnings: string[] = [];
   try {
     const enquiryId = data[0].enquiry_id as string;
-    const event: CrewSyncEvent | null = params.to === "under_review" ? "under_review" : params.to === "declined" ? "declined" : params.to === "cancelled" ? "cancelled" : params.to === "confirmed" ? "confirmed" : null;
+    const event: CrewSyncEvent | null = params.to === "under_review" ? "under_review" : params.to === "declined" ? "declined" : params.to === "cancelled" ? "cancelled" : params.to === "confirmed" ? "confirmed" : params.to === "in_production" ? "in_production" : params.to === "completed" ? "completed" : null;
     if (event) await syncEnquiryStage({ enquiryId, event, actorUserId: params.actorUserId, requestId: params.requestId });
     const template = STATUS_NOTIFICATIONS[params.to];
     if (template) await notifyCrewSupportEvent({ requestId: params.requestId, eventKey: `status:${params.to}`, template, triggeredBy: params.actorUserId });
     // Confirmed is the hard-commitment point: engagements, project access
     // and crew payables are established here (idempotently; test records
     // are suppressed inside).
+    // Cancelling/declining a request that already carries crew commitments
+    // unwinds the safe parts and reports the rest (receivable untouched).
+    if (params.to === "cancelled" || params.to === "declined") {
+      const unwound = await unwindCommitments({ requestId: params.requestId, actorUserId: params.actorUserId, reason: params.reason ?? `Request ${params.to}` });
+      if (!unwound.ok) warnings.push(`Crew commitments: ${unwound.error}`);
+      else warnings.push(...unwound.warnings);
+    }
     if (params.to === "confirmed") {
       const established = await establishCommitments({ requestId: params.requestId, actorUserId: params.actorUserId });
       if (!established.ok) warnings.push(`Crew commitments: ${established.error}`);
@@ -176,9 +184,11 @@ export async function setCrewSupportSlot(params: {
   assigneeProfileId: string | null;
   note: string | null;
   actorUserId: string;
+  // Assigning someone with no matching capability: the justification.
+  overrideReason?: string | null;
 }): Promise<{ ok: true } | { ok: false; error: string }> {
   const admin = createAdminClient();
-  const { data: slot, error: slotError } = await admin.from("crew_support_slots").select("id, request_id, requirement_id, status, assignee_profile_id").eq("id", params.slotId).maybeSingle();
+  const { data: slot, error: slotError } = await admin.from("crew_support_slots").select("id, request_id, requirement_id, status, assignee_profile_id, assignment_override_reason").eq("id", params.slotId).maybeSingle();
   if (slotError || !slot) return { ok: false, error: "Crew slot not found." };
   const { data: request } = await admin.from("crew_support_requests").select("status, reference_number").eq("id", slot.request_id).maybeSingle();
   if (!request) return { ok: false, error: "Request not found." };
@@ -190,9 +200,23 @@ export async function setCrewSupportSlot(params: {
 
   // Server-side eligibility: a crafted form cannot propose/assign someone
   // who lacks a matching capability for this role.
+  // An authorised override (no matching capability) is allowed only with a
+  // recorded justification and only for a genuine workforce identity.
+  let override: string | null = null;
   if (assignee && (params.status === "proposed" || params.status === "assigned")) {
     const eligible = await isEligibleAssignee({ requestId: slot.request_id as string, requirementId: slot.requirement_id as string, profileId: assignee });
-    if (!eligible) return { ok: false, error: "This person has no matching, active capability for this role. Add or verify the capability first (Crew Support → Capabilities)." };
+    if (!eligible) {
+      const unchanged = assignee === slot.assignee_profile_id && slot.assignment_override_reason;
+      if (unchanged) override = slot.assignment_override_reason as string;
+      else {
+        const reason = (params.overrideReason ?? "").trim();
+        if (!reason) return { ok: false, error: "This person has no matching, active capability for this role. Add or verify the capability (Crew Support → Capabilities), or assign them by override with a recorded justification." };
+        const valid = validateOverrideReason(reason);
+        if (!valid.ok) return { ok: false, error: valid.reason };
+        if (!(await isWorkforceProfile(assignee))) return { ok: false, error: "Only an active member of the workforce (staff, approved vendor or payee) can be assigned by override." };
+        override = reason;
+      }
+    }
   }
 
   // Crew acceptance belongs to ONE person in the assigned state. Changing
@@ -213,6 +237,9 @@ export async function setCrewSupportSlot(params: {
       note: params.note,
       assigned_by: params.actorUserId,
       assigned_at: params.status === "assigned" || params.status === "proposed" ? new Date().toISOString() : null,
+      assignment_override_reason: override,
+      assignment_override_by: override ? (override === slot.assignment_override_reason ? undefined : params.actorUserId) : null,
+      assignment_override_at: override ? (override === slot.assignment_override_reason ? undefined : new Date().toISOString()) : null,
       ...(clears ? { crew_accepted_at: null, crew_accepted_via: null, crew_accepted_recorded_by: null, crew_acceptance_note: null } : {}),
       updated_at: new Date().toISOString(),
     })
@@ -224,7 +251,7 @@ export async function setCrewSupportSlot(params: {
     action: "crew_support.slot_updated",
     entityType: "crew_support_request",
     entityId: slot.request_id as string,
-    metadata: { slotId: params.slotId, from: slot.status, to: params.status, assigneeProfileId: assignee, reference: request.reference_number },
+    metadata: { slotId: params.slotId, from: slot.status, to: params.status, assigneeProfileId: assignee, reference: request.reference_number, ...(override ? { override: true, overrideReason: override } : {}) },
   });
   return { ok: true };
 }

@@ -30,12 +30,14 @@ export async function updateCrewSupportSlotAction(_prev: ActionState, formData: 
   const slotId = String(formData.get("slotId") ?? "");
   const requestId = String(formData.get("requestId") ?? "");
   const status = String(formData.get("status") ?? "");
-  const profileId = String(formData.get("assigneeProfileId") ?? "") || null;
+  const overrideProfileId = String(formData.get("overrideProfileId") ?? "") || null;
+  const profileId = overrideProfileId ?? (String(formData.get("assigneeProfileId") ?? "") || null);
+  const overrideReason = String(formData.get("overrideReason") ?? "").trim() || null;
   const note = String(formData.get("note") ?? "").trim() || null;
   if (!slotId || !(SLOT_STATUSES as readonly string[]).includes(status)) return actionFail("Choose a valid slot status.");
 
   return runAction(async () => {
-    const result = await setCrewSupportSlot({ slotId, status: status as SlotStatus, assigneeProfileId: profileId, note, actorUserId: user.id });
+    const result = await setCrewSupportSlot({ slotId, status: status as SlotStatus, assigneeProfileId: profileId, note, actorUserId: user.id, overrideReason: overrideProfileId ? overrideReason : null });
     if (!result.ok) return actionFail(result.error);
     if (requestId) revalidatePath(`/admin/crew-support/${requestId}`);
     revalidatePath("/admin/crew-support");

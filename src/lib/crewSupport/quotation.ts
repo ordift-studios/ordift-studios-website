@@ -9,6 +9,8 @@ import { getActiveCrewSupportRates, getActiveModifierPercent } from "./rates";
 import { notifyCrewSupportEvent } from "./notifications";
 import { getCommitmentSnapshot } from "./commitmentData";
 import { statusAfterCommercialAcceptance } from "./commitmentRules";
+import { buildProjectSnapshot, isProjectSnapshot, snapshotGap, type ProjectSnapshot } from "./quotationSnapshot";
+import { SERVICE_FAMILIES } from "./config";
 import { canMarkReady, toClientQuotationView, validateAcceptance, validateAndResolveLines, validateStaffAcceptance, type ClientQuotationView, type EditableLine, type ResolvedLine } from "./quotationRules";
 
 // Crew Support quotation workflow (Phase 2). Callers MUST have checked
@@ -41,13 +43,14 @@ export type QuotationAdminView = {
   acceptedByName: string | null;
   acceptanceReceivedAt: string | null;
   isTest: boolean;
+  version: number;
   enquiryId: string;
   requestId: string;
   lines: (EditableLine & { id: string; sourceType: string; noGovernedRate: boolean; lineTotal: number })[];
 };
 
 const QUOTE_COLUMNS =
-  "id, quotation_reference, status, currency, subtotal, discount_total, tax_total, total, valid_until, payment_booking_terms, commercial_notes, fx_currency, fx_rate_to_usd, fx_locked_at, usd_total, issued_at, accepted_at, accepted_via, acceptance_channel, acceptance_evidence, accepted_by_name, acceptance_received_at, is_test, enquiry_id, crew_support_request_id";
+  "id, quotation_reference, status, currency, subtotal, discount_total, tax_total, total, valid_until, payment_booking_terms, commercial_notes, fx_currency, fx_rate_to_usd, fx_locked_at, usd_total, issued_at, accepted_at, accepted_via, acceptance_channel, acceptance_evidence, accepted_by_name, acceptance_received_at, is_test, enquiry_id, crew_support_request_id, version";
 
 export async function getCrewSupportQuotation(requestId: string): Promise<QuotationAdminView | null> {
   const admin = createAdminClient();
@@ -82,6 +85,7 @@ export async function getCrewSupportQuotation(requestId: string): Promise<Quotat
     acceptedByName: (q.accepted_by_name as string | null) ?? null,
     acceptanceReceivedAt: (q.acceptance_received_at as string | null) ?? null,
     isTest: Boolean(q.is_test),
+    version: Number(q.version ?? 1),
     enquiryId: q.enquiry_id as string,
     requestId: q.crew_support_request_id as string,
     lines: (items ?? []).map((i) => ({
@@ -234,10 +238,21 @@ export async function discardCrewSupportQuotationDraft(params: { quotationId: st
 }
 
 // ------------------------------------------------------------ ready/issue
+// The client-visible event details for this request, built from the
+// request itself (so nothing is typed twice). Frozen onto the quotation at
+// issue; also used live while the quotation is still a draft.
+export async function projectSnapshotForRequest(requestId: string): Promise<ProjectSnapshot | null> {
+  const detail = await getCrewSupportDetail(requestId);
+  if (!detail) return null;
+  const family = SERVICE_FAMILIES.find((f) => f.value === String(detail.request.service_family));
+  return buildProjectSnapshot(detail.request, detail.requirements, `Creative Crew Support — ${family?.label ?? String(detail.request.service_family)}`);
+}
+
 export async function markQuotationReady(params: { quotationId: string; actorUserId: string }): Promise<Result> {
   const quote = await adminQuotationById(params.quotationId);
   if (!quote) return { ok: false, error: "Quotation not found." };
-  const check = canMarkReady({ status: quote.status, total: quote.total, lineCount: quote.lines.length, validUntil: quote.validUntil, today: new Date().toISOString().slice(0, 10) });
+  const snapshot = await projectSnapshotForRequest(quote.requestId);
+  const check = canMarkReady({ status: quote.status, total: quote.total, lineCount: quote.lines.length, validUntil: quote.validUntil, today: new Date().toISOString().slice(0, 10), terms: quote.terms, eventGap: snapshot ? snapshotGap(snapshot) : "the request details could not be loaded" });
   if (!check.ok) return { ok: false, error: check.reason };
   const resolved = validateAndResolveLines(quote.lines);
   if (!resolved.ok) return resolved;
@@ -245,6 +260,59 @@ export async function markQuotationReady(params: { quotationId: string; actorUse
   if (error || !data?.length) return { ok: false, error: "The quotation changed — refresh and try again." };
   await logActivity({ actorUserId: params.actorUserId, action: "crew_support.quotation_ready", entityType: "crew_support_request", entityId: quote.requestId, metadata: { quotationId: quote.id, quotationReference: quote.reference, total: quote.total } });
   return { ok: true };
+}
+
+// A material change to an ISSUED (not yet accepted) quotation is a NEW
+// VERSION, never an edit: the issued row is kept as 'superseded' (with its
+// frozen terms and event details), a new draft is created copying its
+// lines/terms with version + 1 and supersedes_id set, and the request goes
+// back to Quote preparation until the new version is issued. An accepted
+// quotation is never revised here — it is a signed-off commercial record.
+export async function reviseCrewSupportQuotation(params: { quotationId: string; actorUserId: string }): Promise<Result<{ quotationId: string; reference: string }>> {
+  const quote = await adminQuotationById(params.quotationId);
+  if (!quote) return { ok: false, error: "Quotation not found." };
+  if (quote.status === "accepted") return { ok: false, error: "This quotation has been accepted and can't be revised. Cancel the request and start a new one, or have Finance handle an adjustment — the accepted record is preserved." };
+  if (quote.status !== "sent") return { ok: false, error: quote.status === "draft" || quote.status === "ready" ? "This quotation hasn't been issued — edit it directly." : `A ${quote.status} quotation can't be revised.` };
+  const detail = await getCrewSupportDetail(quote.requestId);
+  if (!detail || detail.request.status !== "quoted") return { ok: false, error: "Only a request in “Quote issued” can have its quotation revised." };
+
+  const admin = createAdminClient();
+  const { data: original } = await admin.from("client_quotations").select("client_profile_id, prospect_name, prospect_email, prospect_phone, prospect_company, currency, version, is_test").eq("id", quote.id).maybeSingle();
+  if (!original) return { ok: false, error: "Quotation not found." };
+  const { data: seq, error: seqError } = await admin.rpc("next_client_quotation_reference_seq");
+  if (seqError || seq === null || seq === undefined) return { ok: false, error: "Failed to generate a quotation reference." };
+  const reference = formatQuotationReference(new Date().getFullYear(), Number(seq));
+
+  // Supersede the issued version FIRST (only one live quotation may exist per request).
+  const now = new Date().toISOString();
+  const { data: superseded, error: supError } = await admin.from("client_quotations").update({ status: "superseded", updated_at: now }).eq("id", quote.id).eq("status", "sent").select("id");
+  if (supError || !superseded?.length) return { ok: false, error: "The quotation changed — refresh and try again." };
+
+  const items: QuotationLineItemInput[] = quote.lines.map((l) => ({
+    serviceItem: l.serviceItem, description: l.description, quantity: l.quantity, unitBasis: l.unitBasis, sellingRate: l.sellingRate, discountPercent: l.discountPercent, taxPercent: l.taxPercent,
+    sourceType: l.sourceType as QuotationLineItemInput["sourceType"], sourceReference: l.sourceReference, requirementId: l.requirementId, governedUnitPrice: l.governedUnitPrice, adjustmentReason: l.adjustmentReason || null, noGovernedRate: l.noGovernedRate,
+  }));
+  const totals = computeQuotationTotals(items);
+  const { data: revision, error } = await admin.from("client_quotations").insert({
+    quotation_reference: reference,
+    client_profile_id: original.client_profile_id, prospect_name: original.prospect_name, prospect_email: original.prospect_email, prospect_phone: original.prospect_phone, prospect_company: original.prospect_company,
+    currency: original.currency, subtotal: totals.subtotal, discount_total: totals.discountTotal, tax_total: totals.taxTotal, total: totals.total,
+    valid_until: null, payment_booking_terms: quote.terms, commercial_notes: quote.internalNotes,
+    version: Number(original.version) + 1, supersedes_id: quote.id,
+    enquiry_id: quote.enquiryId, crew_support_request_id: quote.requestId, is_test: Boolean(original.is_test), created_by: params.actorUserId,
+  }).select("id").single();
+  const itemsResult = revision ? await insertQuotationItems(admin, revision.id as string, items, totals) : ({ ok: false, error: "insert failed" } as const);
+  if (error || !revision || !itemsResult.ok) {
+    // Compensate: put the issued version back so the client's quotation is not lost.
+    if (revision) await admin.from("client_quotations").delete().eq("id", revision.id).eq("status", "draft");
+    await admin.from("client_quotations").update({ status: "sent", updated_at: new Date().toISOString() }).eq("id", quote.id).eq("status", "superseded");
+    console.error("[crew-support] failed to create quotation revision", error?.message);
+    return { ok: false, error: "Could not create the new version; the issued quotation was left unchanged." };
+  }
+
+  const moved = await commitCrewSupportStatus({ requestId: quote.requestId, from: "quoted", to: "quote_preparation", actorUserId: params.actorUserId, automatic: true, reason: `Quotation ${quote.reference} revised as ${reference}` });
+  await logActivity({ actorUserId: params.actorUserId, action: "crew_support.quotation_revised", entityType: "crew_support_request", entityId: quote.requestId, metadata: { supersededQuotationId: quote.id, supersededReference: quote.reference, newQuotationId: revision.id, newReference: reference, version: Number(original.version) + 1 } });
+  return { ok: true, quotationId: revision.id as string, reference, warnings: moved.ok ? [] : [`Request status: ${moved.error}`] };
 }
 
 export async function returnQuotationToDraft(params: { quotationId: string; actorUserId: string }): Promise<Result> {
@@ -273,9 +341,14 @@ export async function issueCrewSupportQuotation(params: { quotationId: string; a
     fxRate = await getCurrentRate(quote.fxCurrency);
     if (!fxRate) return { ok: false, error: `No exchange rate is configured for ${quote.fxCurrency}. Remove the local-currency display or add a rate first.` };
   }
+  // Freeze the event details being quoted for. Issuing is blocked if the
+  // request no longer carries them (a gap must be fixed, not guessed).
+  const projectSnapshot = await projectSnapshotForRequest(quote.requestId);
+  const gap = projectSnapshot ? snapshotGap(projectSnapshot) : "the request details could not be loaded";
+  if (gap) return { ok: false, error: `The quotation can't be issued because ${gap} on the request.` };
   const now = new Date().toISOString();
   const { data, error } = await createAdminClient().from("client_quotations").update({
-    status: "sent", issued_at: now, issued_by: params.actorUserId, usd_total: quote.total, fx_rate_to_usd: fxRate, fx_locked_at: fxRate ? now : null, updated_at: now,
+    status: "sent", issued_at: now, issued_by: params.actorUserId, usd_total: quote.total, fx_rate_to_usd: fxRate, fx_locked_at: fxRate ? now : null, project_snapshot: projectSnapshot, updated_at: now,
   }).eq("id", params.quotationId).eq("status", "ready").select("id");
   if (error || !data?.length) return { ok: false, error: "The quotation changed — refresh and try again." };
   await logActivity({ actorUserId: params.actorUserId, action: "crew_support.quotation_issued", entityType: "crew_support_request", entityId: quote.requestId, metadata: { quotationId: quote.id, quotationReference: quote.reference, total: quote.total, fxCurrency: quote.fxCurrency, fxRate } });
@@ -403,7 +476,7 @@ export async function getClientQuotationViewForEnquiry(enquiryId: string, userId
   if (!enquiry || enquiry.user_id !== userId) return null;
   const { data: q } = await admin
     .from("client_quotations")
-    .select("id, quotation_reference, status, currency, subtotal, discount_total, tax_total, total, valid_until, payment_booking_terms, issued_at, accepted_at, usd_total, fx_currency, fx_rate_to_usd, fx_locked_at")
+    .select("id, quotation_reference, status, currency, subtotal, discount_total, tax_total, total, valid_until, payment_booking_terms, issued_at, accepted_at, usd_total, fx_currency, fx_rate_to_usd, fx_locked_at, project_snapshot")
     .eq("enquiry_id", enquiryId).not("crew_support_request_id", "is", null).in("status", ["sent", "accepted"]).order("created_at", { ascending: false }).limit(1).maybeSingle();
   if (!q) return null;
   const { data: items } = await admin.from("client_quotation_items").select("service_item, description, quantity, unit_basis, selling_rate, discount_percent, tax_percent, line_total").eq("quotation_id", q.id).order("sort_order");
@@ -440,4 +513,19 @@ export async function listQuotationsAwaitingAcceptance(userId: string): Promise<
   return (quotes ?? [])
     .filter((q) => !q.valid_until || (q.valid_until as string) >= today)
     .map((q) => ({ enquiryId: q.enquiry_id as string, reference: q.quotation_reference as string, currency: q.currency as string, total: Number(q.total), validUntil: (q.valid_until as string | null) ?? null }));
+}
+
+// Extra, client-visible context for the PRINTABLE quotation of a Crew
+// Support quotation (null for any other quotation, so the generic printout
+// is unchanged). Issued quotations print the snapshot frozen at issue; a
+// draft previews the request's current details.
+export type CrewQuotationPrintExtras = { issuedAt: string | null; version: number; requestReference: string; project: ProjectSnapshot | null; status: string };
+
+export async function getCrewQuotationPrintExtras(quotationId: string): Promise<CrewQuotationPrintExtras | null> {
+  const admin = createAdminClient();
+  const { data: q } = await admin.from("client_quotations").select("crew_support_request_id, issued_at, version, status, project_snapshot").eq("id", quotationId).maybeSingle();
+  if (!q?.crew_support_request_id) return null;
+  const { data: request } = await admin.from("crew_support_requests").select("reference_number").eq("id", q.crew_support_request_id).maybeSingle();
+  const project = isProjectSnapshot(q.project_snapshot) ? q.project_snapshot : await projectSnapshotForRequest(q.crew_support_request_id as string);
+  return { issuedAt: (q.issued_at as string | null) ?? null, version: Number(q.version ?? 1), requestReference: (request?.reference_number as string | undefined) ?? "", project, status: q.status as string };
 }

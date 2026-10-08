@@ -1,6 +1,8 @@
 // Crew Support quotation rules (Phase 2) — pure and directly testable.
 
 import { parseInstant } from "@/lib/shared/instant";
+import { isProjectSnapshot, type ProjectSnapshot } from "./quotationSnapshot";
+import { hasUsableTerms } from "./commitmentRules";
 
 export const ACCEPTANCE_CHANNELS = [
   { value: "email", label: "Email" },
@@ -52,7 +54,12 @@ export function validateAndResolveLines(lines: EditableLine[]): { ok: true; line
         resolved.push({ ...l, adjustmentReason: "", sourceType: "pricing", noGovernedRate: false });
       }
     } else {
-      resolved.push({ ...l, adjustmentReason: "", sourceType: "manual", noGovernedRate: true });
+      // No governed rate applies, so this price is a human judgement. It
+      // must be intentional and attributable: a recorded justification
+      // (internal, never shown to the client). A zero-priced line (for
+      // example a note line) needs none.
+      if (l.sellingRate > 0 && l.adjustmentReason.trim().length < 5) return { ok: false, error: `Line ${n}: no governed rate applies, so a manual price needs a recorded justification (internal — for example “agreed by phone with the client on 8 Oct”).` };
+      resolved.push({ ...l, adjustmentReason: l.adjustmentReason.trim(), sourceType: "manual", noGovernedRate: true });
     }
   }
   return { ok: true, lines: resolved };
@@ -72,10 +79,12 @@ export function defaultValidUntil(now: Date, days = DEFAULT_QUOTATION_VALIDITY_D
   return d.toISOString().slice(0, 10);
 }
 
-export function canMarkReady(params: { status: string; total: number; lineCount: number; validUntil: string | null; today: string }): { ok: true } | { ok: false; reason: string } {
+export function canMarkReady(params: { status: string; total: number; lineCount: number; validUntil: string | null; today: string; terms: string | null; eventGap: string | null }): { ok: true } | { ok: false; reason: string } {
   if (params.status !== "draft") return { ok: false, reason: "Only a draft quotation can be marked ready." };
   if (params.lineCount === 0) return { ok: false, reason: "Add at least one line first." };
   if (!(params.total > 0)) return { ok: false, reason: "The total must be greater than zero — enter prices for every line (no governed rate exists for manual lines)." };
+  if (params.eventGap) return { ok: false, reason: `The quotation can't be issued because ${params.eventGap} on the request.` };
+  if (!hasUsableTerms(params.terms)) return { ok: false, reason: "Add the payment / booking terms the client is accepting (at least a short statement of deposit/payment conditions and cancellation/rescheduling) before marking the quotation ready." };
   if (!params.validUntil) return { ok: false, reason: "Set a “Valid until” date before marking the quotation ready." };
   if (params.validUntil < params.today) return { ok: false, reason: "The “Valid until” date is already in the past — choose a future date." };
   return { ok: true };
@@ -111,6 +120,7 @@ export function validateStaffAcceptance(params: {
 // copied by spreading the database row, so a future internal column can
 // never leak by accident.
 export type QuotationRowForClient = {
+  project_snapshot?: unknown;
   quotation_reference: string;
   status: string;
   currency: string;
@@ -143,6 +153,7 @@ export type ClientQuotationView = {
   issuedAt: string | null;
   acceptedAt: string | null;
   localEquivalent: { currency: string; amount: number; rate: number; lockedAt: string | null } | null;
+  project: ProjectSnapshot | null;
 };
 
 export function toClientQuotationView(q: QuotationRowForClient, items: QuotationItemRowForClient[]): ClientQuotationView {
@@ -161,5 +172,6 @@ export function toClientQuotationView(q: QuotationRowForClient, items: Quotation
     issuedAt: q.issued_at,
     acceptedAt: q.accepted_at,
     localEquivalent: local,
+    project: isProjectSnapshot(q.project_snapshot) ? q.project_snapshot : null,
   };
 }

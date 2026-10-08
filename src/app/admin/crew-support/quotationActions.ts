@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { getCurrentUser } from "@/lib/portal/roles";
 import { canManageCrewSupport } from "@/lib/crewSupport/permissions";
-import { completeAcceptance, completeIssue, discardCrewSupportQuotationDraft, issueCrewSupportQuotation, markQuotationReady, prepareCrewSupportQuotation, recordStaffAcceptance, returnQuotationToDraft, saveCrewSupportQuotationDraft } from "@/lib/crewSupport/quotation";
+import { reviseCrewSupportQuotation, completeAcceptance, completeIssue, discardCrewSupportQuotationDraft, issueCrewSupportQuotation, markQuotationReady, prepareCrewSupportQuotation, recordStaffAcceptance, returnQuotationToDraft, saveCrewSupportQuotationDraft } from "@/lib/crewSupport/quotation";
 import { retryNotificationEvent } from "@/lib/crewSupport/notifications";
 import type { EditableLine } from "@/lib/crewSupport/quotationRules";
 import { actionFail, actionOk, runAction, type ActionState } from "@/lib/shared/actionState";
@@ -91,6 +91,7 @@ export const markQuotationReadyAction = simple("mark ready", (id, u) => markQuot
 export const returnQuotationToDraftAction = simple("return to draft", (id, u) => returnQuotationToDraft({ quotationId: id, actorUserId: u }), "Returned to draft.");
 export const discardQuotationDraftAction = simple("discard draft", (id, u) => discardCrewSupportQuotationDraft({ quotationId: id, actorUserId: u }), "Draft discarded.");
 export const issueQuotationAction = simple("issue quotation", (id, u) => issueCrewSupportQuotation({ quotationId: id, actorUserId: u }), "Quotation issued. The request, enquiry and client notification have been updated.");
+export const reviseQuotationAction = simple("revise quotation", (id, u) => reviseCrewSupportQuotation({ quotationId: id, actorUserId: u }), "A new version was created as a draft. The issued version is kept as superseded; issue the new one when it is ready.");
 export const completeIssueAction = simple("complete issue", (id, u) => completeIssue({ quotationId: id, actorUserId: u }), "Synchronisation completed.");
 export const completeAcceptanceAction = simple("complete acceptance", (id, u) => completeAcceptance({ quotationId: id, actorUserId: u }), "Acceptance completed: amount due, request status and notification are up to date.");
 

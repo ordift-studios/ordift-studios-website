@@ -6,11 +6,13 @@ import type { CrewSupportStatus } from "./config";
 // client-facing and what the client is told. Internal-only states
 // (quote preparation, slot/candidate changes, notes, costs) are absent on
 // purpose. Templates contain client-safe content only.
-export type ClientTemplate = "under_review" | "availability_review" | "quote_issued" | "quote_accepted" | "confirmed" | "declined" | "cancelled";
+export type ClientTemplate = "under_review" | "availability_review" | "quote_issued" | "quote_accepted" | "agreement_required" | "payment_requested" | "confirmed" | "declined" | "cancelled";
 
 export const STATUS_NOTIFICATIONS: Partial<Record<CrewSupportStatus, ClientTemplate>> = {
   under_review: "under_review",
   availability_review: "availability_review",
+  agreement_pending: "agreement_required",
+  payment_pending: "payment_requested",
   confirmed: "confirmed",
   declined: "declined",
   cancelled: "cancelled",
@@ -60,6 +62,20 @@ const COPY: Record<ClientTemplate, { subject: (v: ClientTemplateVars) => string;
     body: (v) => `We've recorded your acceptance of quotation ${v.quotationReference ?? ""} for ${v.projectName}. Ordift will follow up with the next steps, including any agreement or payment details that apply. This is not yet a booking confirmation, and crew availability and assignment are confirmed separately.`,
     action: false,
     notBooking: false,
+  },
+  agreement_required: {
+    subject: (v) => `Next step: an agreement for your crew request — ${v.reference}`,
+    heading: "An agreement is needed for your request.",
+    body: (v) => `For ${v.projectName}, Ordift will send a separate agreement for you to review and sign before the request can be confirmed. We'll be in touch with it directly — nothing is needed from you in the meantime.`,
+    action: false,
+    notBooking: true,
+  },
+  payment_requested: {
+    subject: (v) => `Next step: payment for your crew request — ${v.reference}`,
+    heading: "Your request is ready for payment.",
+    body: (v) => `Your acceptance for ${v.projectName} is recorded and the terms are in place. The next step is payment, which you can make from the Payments section of your client portal using the details shown there. Your request is confirmed once Ordift has confirmed the crew.`,
+    action: false,
+    notBooking: true,
   },
   confirmed: {
     subject: (v) => `Your Creative Crew Support request is confirmed — ${v.reference}`,

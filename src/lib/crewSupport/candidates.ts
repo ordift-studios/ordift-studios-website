@@ -79,3 +79,30 @@ export async function loadCandidatesForRequirements(params: {
   }
   return out;
 }
+
+// People an administrator may assign by explicit OVERRIDE (no matching
+// capability). Limited to genuine workforce identities — a profile with a
+// staff, payee or vendor record and active access — so authentication-only
+// accounts (backup/system) never appear. Candidates already eligible for
+// the role are not repeated here.
+export async function listOverridePool(excludeProfileIds: string[]): Promise<{ profileId: string; name: string; memberNumber: string | null }[]> {
+  const admin = createAdminClient();
+  const [staff, payees, vendors] = await Promise.all([
+    admin.from("staff_details").select("id"),
+    admin.from("payee_profiles").select("id").eq("status", "active"),
+    admin.from("vendor_profiles").select("id"),
+  ]);
+  const ids = [...new Set([...(staff.data ?? []), ...(payees.data ?? []), ...(vendors.data ?? [])].map((r) => r.id as string))].filter((id) => !excludeProfileIds.includes(id));
+  if (ids.length === 0) return [];
+  const { data: profiles } = await admin.from("profiles").select("id, full_name, member_number, access_status, access_expires_at").in("id", ids);
+  const now = Date.now();
+  return (profiles ?? [])
+    .filter((p) => p.access_status === "active" && !(p.access_expires_at && new Date(p.access_expires_at as string).getTime() <= now))
+    .map((p) => ({ profileId: p.id as string, name: (p.full_name as string | null) ?? "Unnamed profile", memberNumber: (p.member_number as string | null) ?? null }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+export async function isWorkforceProfile(profileId: string): Promise<boolean> {
+  const pool = await listOverridePool([]);
+  return pool.some((p) => p.profileId === profileId);
+}
