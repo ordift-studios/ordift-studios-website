@@ -464,3 +464,64 @@ describe("Scenario G — governed Crew Support pricing is configurable through t
     expect(await count("crew_support_requests", {})).toBeGreaterThan(0);
   });
 });
+
+// ============================================================================
+describe("Scenario D — double-booking and leave are enforced by the real code at the commitment boundary", () => {
+  async function confirmedFor(crew: string) {
+    const x = await newRequest({ test: false });
+    await toAvailability(x.requestId);
+    const quoteId = await issued(x.requestId, { price: 900 });
+    must(await acceptQuotationAsClient({ quotationId: quoteId, userId: CLIENT }));
+    must(await sendCrewOffer({ slotId: x.slotId, assigneeProfileId: crew, amount: 250, currency: "GHS", message: "", overrideReason: null, actorUserId: ADMIN }));
+    must(await respondToCrewOffer({ slotId: x.slotId, userId: crew, response: "accept", note: "" }));
+    must(await setCrewSupportStatus({ requestId: x.requestId, to: "confirmed", actorUserId: ADMIN }), "confirm");
+    return x;
+  }
+  async function readyToOffer() {
+    const x = await newRequest({ test: false });
+    await toAvailability(x.requestId);
+    const quoteId = await issued(x.requestId, { price: 900 });
+    must(await acceptQuotationAsClient({ quotationId: quoteId, userId: CLIENT }));
+    return x;
+  }
+
+  it("D1 someone already on a CONFIRMED job that day can be offered (with a clear warning) but cannot accept a second one", async () => {
+    await confirmedFor(CREW2);
+    const b = await readyToOffer();
+    const offer = must(await sendCrewOffer({ slotId: b.slotId, assigneeProfileId: CREW2, amount: 250, currency: "GHS", message: "", overrideReason: null, actorUserId: ADMIN }), "offer");
+    expect(offer.warnings.join(" ")).toMatch(/Conflict: .*confirmed/);
+    expect(mustFail(await respondToCrewOffer({ slotId: b.slotId, userId: CREW2, response: "accept", note: "" }))).toMatch(/already have a commitment/);
+    expect((await db().from("crew_support_slots").select("status, crew_accepted_at").eq("id", b.slotId).single()).data).toMatchObject({ status: "proposed", crew_accepted_at: null });
+    expect(await count("engagements", { entity_id: b.slotId })).toBe(0); // the refused acceptance created nothing
+    expect(mustFail(await setCrewSupportStatus({ requestId: b.requestId, to: "confirmed", actorUserId: ADMIN }))).toMatch(/Assign at least one crew member/);
+  });
+
+  it("D2 approved leave blocks acceptance the same way", async () => {
+    const leaveType = sql("select id from public.leave_types limit 1").trim();
+    sql(`insert into public.leave_requests (profile_id, leave_type_id, start_date, end_date, days_requested, status) values ('${CREW1}', '${leaveType}', '2026-10-14', '2026-10-16', 3, 'approved')`);
+    const c = await readyToOffer();
+    const offer = must(await sendCrewOffer({ slotId: c.slotId, assigneeProfileId: CREW1, amount: 250, currency: "GHS", message: "", overrideReason: null, actorUserId: ADMIN }));
+    expect(offer.warnings.join(" ")).toMatch(/approved leave/);
+    expect(mustFail(await respondToCrewOffer({ slotId: c.slotId, userId: CREW1, response: "accept", note: "" }))).toMatch(/already have a commitment/);
+    sql(`delete from public.leave_requests where profile_id = '${CREW1}' and start_date = '2026-10-14'`);
+  });
+
+  it("D3 an offer on another UNCONFIRMED request is only a soft warning — nobody is reserved by being considered — and acceptance is allowed", async () => {
+    const pending = await readyToOffer();
+    must(await sendCrewOffer({ slotId: pending.slotId, assigneeProfileId: CREW1, amount: 250, currency: "GHS", message: "", overrideReason: null, actorUserId: ADMIN }));
+    const other = await readyToOffer();
+    const offer = must(await sendCrewOffer({ slotId: other.slotId, assigneeProfileId: CREW1, amount: 250, currency: "GHS", message: "", overrideReason: null, actorUserId: ADMIN }));
+    expect(offer.warnings.join(" ")).toMatch(/Possible clash/);
+    must(await respondToCrewOffer({ slotId: other.slotId, userId: CREW1, response: "accept", note: "" }));
+    expect((await db().from("crew_support_slots").select("status").eq("id", other.slotId).single()).data!.status).toBe("assigned");
+  });
+
+  it("D4 an authorised override needs a justification and is limited to workforce identities; the capability gate holds without it", async () => {
+    const stranger = "00000000-0000-4000-8000-0000000000a5";
+    sql(`insert into auth.users (id, email) values ('${stranger}','nocap@e2e.test') on conflict do nothing; insert into public.profiles (id, full_name, access_status) values ('${stranger}','No Capability','active') on conflict (id) do update set access_status='active';`);
+    const e = await readyToOffer();
+    expect(mustFail(await sendCrewOffer({ slotId: e.slotId, assigneeProfileId: stranger, amount: 100, currency: "GHS", message: "", overrideReason: null, actorUserId: ADMIN }))).toMatch(/no matching, active capability/);
+    expect(mustFail(await sendCrewOffer({ slotId: e.slotId, assigneeProfileId: stranger, amount: 100, currency: "GHS", message: "", overrideReason: "Founder asked for this person", actorUserId: ADMIN }))).toMatch(/workforce/); // not a staff/payee/vendor identity
+    expect(await count("crew_support_slots", { id: e.slotId, status: "unfilled" })).toBe(1);
+  });
+});
