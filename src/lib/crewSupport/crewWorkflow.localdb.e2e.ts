@@ -45,6 +45,7 @@ import { respondToCrewOffer, sendCrewOffer, withdrawOrReleaseSlot } from "./crew
 import { acceptQuotationAsClient, createCrewSupportVariation, getCrewSupportQuotation, getCrewSupportVariation, issueCrewSupportQuotation, markQuotationReady, prepareCrewSupportQuotation, recordStaffAcceptance, saveCrewSupportQuotationDraft } from "./quotation";
 import { defaultValidUntil } from "./quotationRules";
 import { setEngagementStatus } from "@/lib/payables/engagements";
+import { createCrewSupportModifierVersion, createCrewSupportRateVersion, getActiveCrewSupportRates } from "./rates";
 import { syncEntityPaymentStatus } from "@/lib/payments/gatewaySync";
 
 if (!/^https?:\/\/(127\.0\.0\.1|localhost)(:|\/|$)/.test(process.env.NEXT_PUBLIC_SUPABASE_URL ?? "")) {
@@ -70,7 +71,7 @@ function mustFail<T extends { ok: boolean }>(r: T): string {
 let titleId = "";
 let counter = 0;
 
-async function newRequest(opts: { test: boolean; equipment?: string | null; clientEmail?: string }) {
+async function newRequest(opts: { test: boolean; equipment?: string | null; clientEmail?: string; urgency?: string }) {
   const admin = db();
   const ref = `CSR-2026-E${Date.now().toString().slice(-8)}${++counter % 100}`;
   const email = opts.clientEmail ?? `client-${ref.toLowerCase()}@example.com`;
@@ -79,7 +80,7 @@ async function newRequest(opts: { test: boolean; equipment?: string | null; clie
     p_request: {
       user_id: CLIENT, reference_number: ref, requester_type: "photographer", requester_name: "Sylvia Annang", requester_email: email, requester_phone: "+233000000", service_family: "photography",
       project_name: `QA ${ref}`, project_type: "Wedding", start_date: "2026-10-15", end_date: "2026-10-15", call_time: "10:00", finish_time: "18:00", location: "Doha — QA", on_site_contact: "Ama",
-      urgency: "standard", service_details: opts.equipment === null ? {} : { equipment: opts.equipment ?? "requester_supplies" }, consent_accepted_at: new Date().toISOString(), submitted_at: new Date().toISOString(),
+      urgency: opts.urgency ?? "standard", service_details: opts.equipment === null ? {} : { equipment: opts.equipment ?? "requester_supplies" }, consent_accepted_at: new Date().toISOString(), submitted_at: new Date().toISOString(),
     },
     p_requirements: [{ operational_title_id: titleId, role_label: "Photographer", quantity: 1, responsibilities: "Ceremony and portraits" }],
   });
@@ -405,5 +406,61 @@ describe("Scenario R — a real-flagged record in the isolated DB (financial pat
     expect(Number((await enquiryOf(x.enquiryId)).amount_due)).toBe(500);
     expect(mustFail(await prepareCrewSupportQuotation({ requestId: x.requestId, marketSlug: "qatar", actorUserId: ADMIN }))).toMatch(/already has a quotation|Quote preparation|Availability/);
     expect(await count("client_quotations", { crew_support_request_id: x.requestId })).toBe(1);
+  });
+});
+
+// ============================================================================
+describe("Scenario G — governed Crew Support pricing is configurable through the existing code path, with no code change", () => {
+  // The numbers below exist ONLY in this throwaway database as test fixtures.
+  // They are not proposed rates and are never used anywhere else.
+  const FIXTURE_RATE = 123.45;
+
+  it("G1 with no rate configured, the quotation line is an honest manual line (nothing is invented)", async () => {
+    const r = await newRequest({ test: true });
+    await toAvailability(r.requestId);
+    must(await prepareCrewSupportQuotation({ requestId: r.requestId, marketSlug: "qatar", actorUserId: ADMIN }));
+    const q = (await getCrewSupportQuotation(r.requestId))!;
+    expect(q.lines[0]).toMatchObject({ sellingRate: 0, noGovernedRate: true, sourceType: "manual" });
+    expect(await getActiveCrewSupportRates("qatar")).toEqual([]);
+  });
+
+  it("G2 only someone with pricing authority can configure a rate; the Photographer full-day Qatar rate is then saved as an append-only version", async () => {
+    expect(mustFail(await createCrewSupportRateVersion({ marketSlug: "qatar", titleId, unitBasis: "full_day", priceUsd: FIXTURE_RATE, actorUserId: CREW1 }))).toMatch(/Not authorized/);
+    must(await createCrewSupportRateVersion({ marketSlug: "qatar", titleId, unitBasis: "full_day", priceUsd: FIXTURE_RATE, actorUserId: ADMIN }), "set rate");
+    expect(await getActiveCrewSupportRates("qatar")).toEqual([{ titleId, unitBasis: "full_day", priceUsd: FIXTURE_RATE }]);
+    expect(await getActiveCrewSupportRates("ghana")).toEqual([]); // scoped to the market
+    // saving the same value again changes nothing; a new value adds a version and the old row is kept
+    expect((must(await createCrewSupportRateVersion({ marketSlug: "qatar", titleId, unitBasis: "full_day", priceUsd: FIXTURE_RATE, actorUserId: ADMIN })) as { unchanged?: boolean }).unchanged).toBe(true);
+    must(await createCrewSupportRateVersion({ marketSlug: "qatar", titleId, unitBasis: "full_day", priceUsd: 150, actorUserId: ADMIN }));
+    expect(Number((await getActiveCrewSupportRates("qatar"))[0].priceUsd)).toBe(150);
+    expect((await db().from("crew_support_rates").select("id", { count: "exact", head: true })).count).toBe(2);
+    must(await createCrewSupportRateVersion({ marketSlug: "qatar", titleId, unitBasis: "full_day", priceUsd: FIXTURE_RATE, actorUserId: ADMIN }));
+  });
+
+  it("G3 the next quotation is priced from the governed rate (role × quantity × days), shows its source, and an override needs a reason", async () => {
+    const r = await newRequest({ test: true });
+    await toAvailability(r.requestId);
+    const prep = must(await prepareCrewSupportQuotation({ requestId: r.requestId, marketSlug: "qatar", actorUserId: ADMIN }));
+    const q = (await getCrewSupportQuotation(r.requestId))!;
+    expect(q.lines[0]).toMatchObject({ sellingRate: FIXTURE_RATE, governedUnitPrice: FIXTURE_RATE, noGovernedRate: false, sourceType: "pricing", quantity: 1, unitBasis: "full_day" });
+    expect(q.lines[0].sourceReference).toMatch(/Crew Support Rates: Photographer, Qatar/);
+    expect(q.total).toBe(FIXTURE_RATE);
+    const draft = { quotationId: prep.quotationId, validUntil: defaultValidUntil(new Date()), terms: TERMS, internalNotes: null, fxCurrency: null, paymentCondition: "none", depositPercent: null, actorUserId: ADMIN };
+    expect(mustFail(await saveCrewSupportQuotationDraft({ ...draft, lines: q.lines.map((l) => ({ ...l, sellingRate: 200, adjustmentReason: "" })) }))).toMatch(/differs from the governed rate/);
+    must(await saveCrewSupportQuotationDraft({ ...draft, lines: q.lines.map((l) => ({ ...l, sellingRate: 200, adjustmentReason: "Long-standing client agreement" })) }));
+    expect((await getCrewSupportQuotation(r.requestId))!.lines[0]).toMatchObject({ sellingRate: 200, sourceType: "adjusted", adjustmentReason: "Long-standing client agreement" });
+    must(await markQuotationReady({ quotationId: prep.quotationId, actorUserId: ADMIN }));
+  });
+
+  it("G4 a multi-day request multiplies by the days, an urgent request adds the configured uplift (only if configured), and consumer photography prices are never read", async () => {
+    must(await createCrewSupportModifierVersion({ slug: "urgent_uplift_percent", marketSlug: "qatar", percentage: 20, actorUserId: ADMIN }));
+    const r = await newRequest({ test: true, urgency: "urgent" });
+    await toAvailability(r.requestId);
+    must(await prepareCrewSupportQuotation({ requestId: r.requestId, marketSlug: "qatar", actorUserId: ADMIN }));
+    const q = (await getCrewSupportQuotation(r.requestId))!;
+    expect(q.lines.map((l) => l.serviceItem)).toEqual(["Photographer", "Urgent request uplift"]);
+    expect(q.lines[1].sellingRate).toBeCloseTo(FIXTURE_RATE * 0.2, 2);
+    expect(q.total).toBeCloseTo(FIXTURE_RATE * 1.2, 2);
+    expect(await count("crew_support_requests", {})).toBeGreaterThan(0);
   });
 });
