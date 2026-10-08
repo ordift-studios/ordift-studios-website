@@ -23,6 +23,7 @@ function valid(overrides: Record<string, unknown> = {}) {
     endDate: "2099-10-10",
     location: "Accra",
     requirements: [{ titleId: TITLE_ID, quantity: 1 }],
+    serviceDetails: { equipment: "requester_supplies" },
     consent: true,
     ...overrides,
   };

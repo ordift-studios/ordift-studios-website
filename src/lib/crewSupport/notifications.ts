@@ -4,6 +4,7 @@ import { dispatchNotification } from "@/lib/notifications/dispatch";
 import { SERVICE_FAMILIES } from "./config";
 import { runNotification } from "./notificationFlow";
 import { buildClientEmail, isClientFacingTemplate, type ClientTemplate, type ClientTemplateVars } from "./notificationConfig";
+import { buildCrewEmail, isCrewTemplate, type CrewTemplateVars } from "./crewNotifications";
 
 // Client-facing Crew Support notifications (Phase 2). Idempotent via the
 // unique (request_id, event_key) row: the claim insert either wins (we
@@ -99,12 +100,12 @@ export async function retryNotificationEvent(params: { eventId: string; actorUse
   const { data: row } = await admin.from("crew_support_notification_events").select("id, request_id, event_key, template, recipient_email, template_vars, status, attempts").eq("id", params.eventId).maybeSingle();
   if (!row) return { ok: false, error: "Notification not found." };
   if (row.status !== "failed") return { ok: false, error: "Only a failed notification can be retried." };
-  if (!isClientFacingTemplate(row.template as string)) return { ok: false, error: "Unknown notification template." };
+  if (!isClientFacingTemplate(row.template as string) && !isCrewTemplate(row.template as string)) return { ok: false, error: "Unknown notification template." };
   const request = await loadRequest(row.request_id as string);
   if (!request) return { ok: false, error: "Request not found." };
   if (request.is_test) return { ok: false, error: "This is a test record — notifications are never delivered." };
 
-  const email = buildClientEmail(row.template as ClientTemplate, row.template_vars as ClientTemplateVars);
+  const email = isCrewTemplate(row.template as string) ? buildCrewEmail(row.template as never, row.template_vars as CrewTemplateVars) : buildClientEmail(row.template as ClientTemplate, row.template_vars as ClientTemplateVars);
   const result = await dispatchNotification({ channels: ["email"], email: { to: row.recipient_email as string, subject: email.subject, html: email.html, text: email.text, logPrefix: "[crew-support]", emailType: `crew-support-${row.template}`, referenceNumber: request.reference_number as string } });
   const sent = result.email;
   const status = !sent ? "failed" : sent.ok ? (sent.mode === "sent" ? "sent" : "logged") : "failed";

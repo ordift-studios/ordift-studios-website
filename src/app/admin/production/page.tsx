@@ -83,7 +83,7 @@ export default async function ProductionOperationsOverviewPage() {
                         <div>
                           <p className="font-sans text-body-small text-ordift-ink">{job.clientName} — {job.service}</p>
                           <p className="font-sans text-caption text-ordift-ink-muted">
-                            {job.referenceNumber} · Assigned: {job.assignedStaffNames.length > 0 ? job.assignedStaffNames.join(", ") : "Unassigned"}
+                            {job.referenceNumber} · Assigned: {job.assignedStaffNames.length > 0 ? job.assignedStaffNames.join(", ") : "Unassigned"}{job.crewSupport ? ` · Crew Support ${job.crewSupport.startDate === job.crewSupport.endDate ? job.crewSupport.startDate : `${job.crewSupport.startDate} → ${job.crewSupport.endDate}`} · ${job.crewSupport.location}` : ""}
                           </p>
                         </div>
                         <span className="font-sans text-caption text-ordift-ink-muted whitespace-nowrap">

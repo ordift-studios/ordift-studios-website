@@ -51,6 +51,14 @@ export const crewSupportSchema = z
     if (data.startDate && data.startDate < today) {
       ctx.addIssue({ code: "custom", message: "The start date can't be in the past.", path: ["startDate"] });
     }
+    // Questions that carry a commercial responsibility (for example who
+    // supplies equipment) are mandatory: left blank they silently dropped
+    // out of the request and the quotation (QA 2026-10-08, CSR-2026-000003).
+    for (const q of detailQuestionsFor(data.serviceFamily)) {
+      if (q.required && !(data.serviceDetails?.[q.id] ?? "").trim()) {
+        ctx.addIssue({ code: "custom", message: "Please choose an option.", path: ["serviceDetails", q.id] });
+      }
+    }
     const total = data.requirements.reduce((sum, r) => sum + r.quantity, 0);
     if (total > 100) ctx.addIssue({ code: "custom", message: "Please contact us directly for requests this large.", path: ["requirements"] });
   });

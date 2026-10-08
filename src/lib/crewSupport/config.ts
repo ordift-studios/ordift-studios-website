@@ -54,10 +54,10 @@ export function isServiceFamily(value: string): boolean {
   return SERVICE_FAMILIES.some((f) => f.value === value);
 }
 
-export type DetailQuestion = { id: string; label: string; kind: "text" | "textarea" | "select"; options?: { value: string; label: string }[] };
+export type DetailQuestion = { id: string; label: string; kind: "text" | "textarea" | "select"; options?: { value: string; label: string }[]; required?: boolean };
 
 const MEDIA_QUESTIONS: DetailQuestion[] = [
-  { id: "equipment", label: "Equipment", kind: "select", options: [{ value: "crew_brings", label: "Ordift crew brings their own" }, { value: "requester_supplies", label: "I will supply equipment" }, { value: "to_discuss", label: "To discuss" }] },
+  { id: "equipment", label: "Equipment — who supplies it?", kind: "select", required: true, options: [{ value: "crew_brings", label: "Ordift crew brings their own" }, { value: "requester_supplies", label: "I will supply equipment" }, { value: "to_discuss", label: "To discuss" }] },
   { id: "coverageResponsibilities", label: "Coverage responsibilities", kind: "textarea" },
   { id: "mediaHandoff", label: "File / media handoff expectations", kind: "textarea" },
   { id: "rawRequired", label: "Are RAW / original files required?", kind: "select", options: [{ value: "yes", label: "Yes" }, { value: "no", label: "No" }, { value: "to_discuss", label: "To discuss" }] },

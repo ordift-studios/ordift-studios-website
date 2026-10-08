@@ -31,6 +31,10 @@ export type LiveProductionJob = {
   stageGroupLabel: string;
   submittedAt: string;
   assignedStaffNames: string[];
+  // Creative Crew Support jobs: the real dates/place from the request and
+  // the crew who ACCEPTED (from the slots), so the board shows them without
+  // a second project record. Undefined for every other job.
+  crewSupport?: { requestId: string; startDate: string; endDate: string; location: string; crewNames: string[] };
 };
 
 export async function listLiveProductionJobs(): Promise<LiveProductionJob[]> {
@@ -56,6 +60,16 @@ export async function listLiveProductionJobs(): Promise<LiveProductionJob[]> {
     namesByEntityId.set(row.entity_id, list);
   }
 
+  const crewByEnquiry = new Map<string, NonNullable<LiveProductionJob["crewSupport"]>>();
+  const { data: crewRequests } = await admin.from("crew_support_requests").select("id, enquiry_id, start_date, end_date, location").in("enquiry_id", ids);
+  if (crewRequests?.length) {
+    const { data: slots } = await admin.from("crew_support_slots").select("request_id, assignee:profiles!crew_support_slots_assignee_profile_id_fkey(full_name)").in("request_id", crewRequests.map((r) => r.id as string)).eq("status", "assigned");
+    for (const r of crewRequests) {
+      const names = ((slots ?? []) as unknown as { request_id: string; assignee: { full_name: string | null } | null }[]).filter((x) => x.request_id === r.id).map((x) => x.assignee?.full_name).filter((n): n is string => Boolean(n));
+      crewByEnquiry.set(r.enquiry_id as string, { requestId: r.id as string, startDate: r.start_date as string, endDate: r.end_date as string, location: r.location as string, crewNames: names });
+    }
+  }
+
   return active
     .map((e) => ({
       id: e.id,
@@ -65,7 +79,8 @@ export async function listLiveProductionJobs(): Promise<LiveProductionJob[]> {
       stage: e.crmStage,
       stageGroupLabel: STAGE_GROUP_LABEL[e.crmStage] ?? e.crmStage,
       submittedAt: e.submittedAt,
-      assignedStaffNames: namesByEntityId.get(e.id) ?? [],
+      assignedStaffNames: [...(namesByEntityId.get(e.id) ?? []), ...(crewByEnquiry.get(e.id)?.crewNames ?? [])],
+      crewSupport: crewByEnquiry.get(e.id),
     }))
     .sort((a, b) => a.submittedAt.localeCompare(b.submittedAt));
 }

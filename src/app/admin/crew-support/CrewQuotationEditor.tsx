@@ -14,13 +14,14 @@ function money(n: number) {
 }
 
 export default function CrewQuotationEditor({
-  quotationId, requestId, initialLines, validUntil, terms, internalNotes, fxCurrency, currencies, termsReference,
+  quotationId, requestId, initialLines, validUntil, terms, internalNotes, fxCurrency, currencies, termsReference, termsCitation, paymentCondition, depositPercent,
 }: {
-  quotationId: string; requestId: string; initialLines: EditableLine[]; validUntil: string | null; terms: string | null; internalNotes: string | null; fxCurrency: string | null; currencies: { code: string; name: string }[]; termsReference: string | null;
+  quotationId: string; requestId: string; initialLines: EditableLine[]; validUntil: string | null; terms: string | null; internalNotes: string | null; fxCurrency: string | null; currencies: { code: string; name: string }[]; termsReference: string | null; termsCitation: string | null; paymentCondition: "none" | "deposit" | "full"; depositPercent: number | null;
 }) {
   const [lines, setLines] = useState<Line[]>(() => initialLines.map((l, i) => ({ ...l, key: `l${i}` })));
   const [state, formAction] = useActionState<ActionState, FormData>(saveQuotationDraftAction, null);
   const [termsText, setTermsText] = useState(terms ?? "");
+  const [condition, setCondition] = useState(paymentCondition);
   // The form is submitted through a transition instead of <form action>:
   // React 19 resets a <form action> after it settles, and a reset puts
   // every <select> back on its first <option> ("hour") even though the
@@ -76,11 +77,26 @@ export default function CrewQuotationEditor({
         <label className="font-sans text-caption text-ordift-ink-muted">Show local-currency equivalent<select name="fxCurrency" defaultValue={fxCurrency ?? ""} className={field}><option value="">USD only</option>{currencies.filter((c) => c.code !== "USD").map((c) => <option key={c.code} value={c.code}>{c.code} — {c.name}</option>)}</select></label>
         <p className="font-sans text-body-small text-ordift-ink self-end">Total: <strong>USD {money(total)}</strong></p>
       </div>
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <label className="sm:col-span-2 font-sans text-caption text-ordift-ink-muted">Payment condition before confirmation
+          <select name="paymentCondition" value={condition} onChange={(e) => setCondition(e.target.value as typeof condition)} className={field}>
+            <option value="none">No payment required before confirmation</option>
+            <option value="deposit">Deposit required before confirmation</option>
+            <option value="full">Full payment required before confirmation</option>
+          </select>
+        </label>
+        {condition === "deposit" && (
+          <label className="font-sans text-caption text-ordift-ink-muted">Deposit (% of total)<input type="number" name="depositPercent" min="1" max="100" step="0.01" required defaultValue={depositPercent ?? ""} className={field} /></label>
+        )}
+        <p className="sm:col-span-3 font-sans text-caption text-ordift-ink-muted">When a payment is required, the request can&apos;t be confirmed until that amount has been received (card payment or a verified manual transfer). With no payment required, confirmation is not held up by payment. Shown to the client on the quotation.</p>
+      </div>
       <div className="space-y-1">
         <label className="block font-sans text-caption text-ordift-ink-muted">Terms shown to the client — payment / deposit conditions, cancellation and rescheduling (required to issue)<textarea name="terms" rows={4} value={termsText} onChange={(e) => setTermsText(e.target.value)} className={field} /></label>
         {termsReference && !termsText.includes(termsReference) && (
           <button type="button" onClick={() => setTermsText((t) => (t.trim() ? `${t.trim()}\n\n${termsReference}` : termsReference))} className="font-sans text-caption text-ordift-gold-pressed underline underline-offset-4">Insert reference to Ordift&apos;s approved Booking Terms (OS-LGL-004)</button>
         )}
+        {termsReference && termsCitation && <p className="font-sans text-caption text-ordift-ink-muted">Applicability: {termsCitation}</p>}
+        {!termsReference && <p className="font-sans text-caption text-amber-800">The approved Master Booking Terms can&apos;t be referenced here because their own scope clause doesn&apos;t demonstrably cover this service. State the terms for this engagement explicitly.</p>}
         <p className="font-sans text-caption text-ordift-ink-muted">Only the terms you or the approved Booking Terms state appear here — nothing is added automatically. Event details (date, location, schedule, roles, equipment) are filled in from the request when the quotation is issued.</p>
       </div>
       <label className="block font-sans text-caption text-ordift-ink-muted">Internal notes (never shown to the client)<textarea name="internalNotes" rows={2} defaultValue={internalNotes ?? ""} className={field} /></label>

@@ -29,6 +29,7 @@ export default async function ClientQuotationPage({ params }: { params: Promise<
         <div>
           <p className="font-sans text-caption uppercase tracking-wide text-ordift-ink-muted">Quotation</p>
           <h2 className="font-serif font-medium text-section-heading text-ordift-ink">{q.reference}</h2>
+          {q.isVariation && <p className="font-sans text-body-small text-ordift-ink-muted mt-1">This is a proposed change to your accepted quotation{q.replacesReference ? ` ${q.replacesReference}` : ""}. Your accepted quotation stays in force until you accept this one.</p>}
         </div>
         <PrintButton />
       </div>
@@ -69,6 +70,7 @@ export default async function ClientQuotationPage({ params }: { params: Promise<
           {q.localEquivalent && <p className="text-caption text-ordift-ink-muted pt-1">Approximately {money(q.localEquivalent.currency, q.localEquivalent.amount)} at an exchange rate fixed when this quotation was issued. The quotation total is in {q.currency}.</p>}
         </dl>
         {q.validUntil && <p className="font-sans text-caption text-ordift-ink-muted">Valid until {q.validUntil}.</p>}
+        {q.paymentConditionText && <p className="font-sans text-body-small font-medium text-ordift-ink">{q.paymentConditionText}</p>}
         {q.terms && <div><p className="font-sans text-caption uppercase tracking-wide text-ordift-ink-muted">Payment / booking terms</p><p className="font-sans text-body-small text-ordift-ink whitespace-pre-line mt-1">{q.terms}</p></div>}
       </div>
 

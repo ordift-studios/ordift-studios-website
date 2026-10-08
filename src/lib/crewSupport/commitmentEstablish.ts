@@ -1,15 +1,14 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { logActivity } from "@/lib/admin/activityLog";
-import { authorizeWithSuperAdminOverride, FINANCE_CAPABILITIES } from "@/lib/organization/authority";
-import { createEngagement, createEngagementPayable, setEngagementStatus } from "@/lib/payables/engagements";
-import { assignUserToProject, updateAssignmentStatus } from "@/lib/admin/projectAssignments";
-import { accessExpiryFor, validateCrewAcceptanceInput } from "./commitmentRules";
+import { createEngagementPayable, setEngagementStatus } from "@/lib/payables/engagements";
 import { getCommitmentSnapshot } from "./commitmentData";
 
 // Crew commitments — built ONLY on the existing finance/work records:
-//   per-person   engagements (agreed compensation, currency, who/when)
+//   per-person   engagements (agreed compensation, currency, who/when),
+//                created when the crew member ACCEPTS their offer
 //   payable      payment_obligations via createEngagementPayable()
-//   access       project_assignments (collaborator workspace)
+// Crew do NOT get access to the client's project workspace: their scoped
+// view is their own assignment page and engagement (crewOffers.ts).
 // No Crew Support payout table exists or is created. The client selling
 // price lives on the quotation and is never read here.
 //
@@ -21,76 +20,6 @@ import { getCommitmentSnapshot } from "./commitmentData";
 const SLOT_ENTITY = "crew_support_slot";
 
 type Result<T = object> = ({ ok: true } & T) | { ok: false; error: string };
-
-// ------------------------------------------------- record crew acceptance
-// Staff records that the assigned person AGREED to the job, with the
-// compensation Ordift agreed to pay them. The slot keeps the operational
-// fact (accepted, when, how, by whom); the money lives on the engagement.
-export async function recordCrewAcceptance(params: { slotId: string; amount: number; currency: string; note: string; actorUserId: string }): Promise<Result<{ suppressedTest?: boolean; alreadyRecorded?: boolean }>> {
-  const input = validateCrewAcceptanceInput({ amount: params.amount, currency: params.currency, note: params.note });
-  if (!input.ok) return { ok: false, error: input.reason };
-
-  const admin = createAdminClient();
-  const { data: slot } = await admin.from("crew_support_slots").select("id, request_id, requirement_id, status, assignee_profile_id, crew_accepted_at").eq("id", params.slotId).maybeSingle();
-  if (!slot) return { ok: false, error: "Crew slot not found." };
-  if (slot.status !== "assigned" || !slot.assignee_profile_id) return { ok: false, error: "Assign a person to this slot first — acceptance is recorded for an assigned person." };
-
-  const { data: request } = await admin.from("crew_support_requests").select("id, reference_number, status, is_test, start_date, end_date, enquiry_id").eq("id", slot.request_id).maybeSingle();
-  if (!request) return { ok: false, error: "Request not found." };
-  if (["declined", "cancelled", "confirmed"].includes(request.status as string)) return { ok: false, error: "This request is closed or already confirmed — crew acceptance can no longer be changed." };
-
-  const { data: requirement } = await admin.from("crew_support_requirements").select("role_label, operational_title_id").eq("id", slot.requirement_id).maybeSingle();
-  const roleLabel = (requirement?.role_label as string | undefined) ?? "Crew";
-  const isTest = Boolean(request.is_test);
-
-  let engagementId: string | null = null;
-  if (!isTest) {
-    const authorized = await authorizeWithSuperAdminOverride(params.actorUserId, FINANCE_CAPABILITIES.payeeAdminister);
-    if (!authorized.ok) return { ok: false, error: "Recording crew compensation needs finance (payee administration) authority. Ask a finance administrator, or a Super Admin." };
-
-    const { data: existing } = await admin.from("engagements").select("id, payee_profile_id, agreed_amount, currency, status").eq("entity_type", SLOT_ENTITY).eq("entity_id", params.slotId).neq("status", "cancelled").maybeSingle();
-    if (existing) {
-      const same = existing.payee_profile_id === slot.assignee_profile_id && Number(existing.agreed_amount) === params.amount && existing.currency === params.currency;
-      if (same && slot.crew_accepted_at) return { ok: true, alreadyRecorded: true };
-      if (existing.status !== "draft") return { ok: false, error: "This crew member's engagement is already active — change compensation through the engagement, not here." };
-      const { error } = await admin.from("engagements").update({ payee_profile_id: slot.assignee_profile_id, agreed_amount: params.amount, currency: params.currency, notes: params.note.trim() }).eq("id", existing.id);
-      if (error) return { ok: false, error: "Could not update the agreed compensation. Please try again." };
-      engagementId = existing.id as string;
-    } else {
-      const created = await createEngagement({
-        payeeProfileId: slot.assignee_profile_id as string,
-        operationalTitleId: (requirement?.operational_title_id as string | null) ?? null,
-        roleNote: `Crew Support ${request.reference_number} — ${roleLabel}`,
-        entityType: SLOT_ENTITY,
-        entityId: params.slotId,
-        currency: params.currency,
-        agreedAmount: params.amount,
-        startsAt: request.start_date as string,
-        endsAt: request.end_date as string,
-        notes: params.note.trim(),
-        actorUserId: params.actorUserId,
-      });
-      if (!created.ok) return { ok: false, error: created.error };
-      engagementId = created.id;
-    }
-  }
-
-  const { data: marked, error } = await admin
-    .from("crew_support_slots")
-    .update({ crew_accepted_at: new Date().toISOString(), crew_accepted_via: "staff_recorded", crew_accepted_recorded_by: params.actorUserId, crew_acceptance_note: params.note.trim(), updated_at: new Date().toISOString() })
-    .eq("id", params.slotId).eq("status", "assigned").eq("assignee_profile_id", slot.assignee_profile_id as string)
-    .select("id");
-  if (error || !marked?.length) return { ok: false, error: "The slot changed while recording — refresh and try again." };
-
-  await logActivity({
-    actorUserId: params.actorUserId,
-    action: "crew_support.crew_accepted",
-    entityType: "crew_support_request",
-    entityId: request.id as string,
-    metadata: { slotId: params.slotId, assigneeProfileId: slot.assignee_profile_id, role: roleLabel, agreedAmount: params.amount, currency: params.currency, note: params.note.trim(), engagementId, via: "staff_recorded", suppressedTest: isTest, summary: isTest ? "QA/test record: acceptance recorded; engagement, payable and crew email suppressed" : "Crew acceptance and agreed compensation recorded" },
-  });
-  return { ok: true, suppressedTest: isTest };
-}
 
 // Cancels the (draft) engagement behind a slot when the person assigned
 // to it changes. Called BEFORE the slot is updated; a failure aborts the
@@ -115,12 +44,12 @@ export async function cancelSlotEngagement(params: { slotId: string; actorUserId
 //                   so an admin's removal is respected)
 //   3. payable      createEngagementPayable() — starts pending_approval;
 //                   creating or approving it never moves money
-export async function establishCommitments(params: { requestId: string; actorUserId: string | null }): Promise<Result<{ warnings: string[]; created: { engagements: number; assignments: number; payables: number }; suppressedTest: boolean }>> {
+export async function establishCommitments(params: { requestId: string; actorUserId: string | null }): Promise<Result<{ warnings: string[]; created: { engagements: number; payables: number }; suppressedTest: boolean }>> {
   const snapshot = await getCommitmentSnapshot(params.requestId);
   if (!snapshot) return { ok: false, error: "Request not found." };
   if (snapshot.status !== "confirmed") return { ok: false, error: "Commitments are only established for a confirmed request." };
   const warnings: string[] = [];
-  const created = { engagements: 0, assignments: 0, payables: 0 };
+  const created = { engagements: 0, payables: 0 };
 
   if (snapshot.isTest) {
     await logActivity({ actorUserId: params.actorUserId, action: "crew_support.commitments_suppressed_test", entityType: "crew_support_request", entityId: params.requestId, metadata: { reference: snapshot.reference, wouldCreate: snapshot.slots.filter((s) => s.status === "assigned").map((s) => s.label), summary: "QA/test record: no engagements, project assignments, payables or crew emails were created" } });
@@ -138,12 +67,6 @@ export async function establishCommitments(params: { requestId: string; actorUse
       if (r.ok) created.engagements += 1; else warnings.push(`${slot.label}: could not activate the engagement (${r.error}).`);
     }
 
-    const { data: existingAssignment } = await admin.from("project_assignments").select("id").eq("user_id", slot.assigneeProfileId as string).eq("entity_type", "enquiry").eq("entity_id", await enquiryIdFor(params.requestId)).maybeSingle();
-    if (!existingAssignment) {
-      const a = await assignUserToProject({ userId: slot.assigneeProfileId as string, entityType: "enquiry", entityId: await enquiryIdFor(params.requestId), assignedBy: params.actorUserId, roleNote: `Crew Support ${snapshot.reference} — ${slot.roleLabel}`, accessExpiresAt: accessExpiryFor(snapshot.endDate) });
-      if (a.ok) created.assignments += 1; else warnings.push(`${slot.label}: could not grant project access (${a.error}).`);
-    }
-
     const { data: fresh } = await admin.from("engagements").select("payment_obligation_id").eq("id", engagement.id).maybeSingle();
     if (!fresh?.payment_obligation_id) {
       const p = await createEngagementPayable({ engagementId: engagement.id, description: `Crew Support ${snapshot.reference} — ${slot.roleLabel}`, actorUserId: params.actorUserId });
@@ -155,16 +78,10 @@ export async function establishCommitments(params: { requestId: string; actorUse
   return { ok: true, warnings, created, suppressedTest: false };
 }
 
-async function enquiryIdFor(requestId: string): Promise<string> {
-  const { data } = await createAdminClient().from("crew_support_requests").select("enquiry_id").eq("id", requestId).maybeSingle();
-  return (data?.enquiry_id as string) ?? "";
-}
-
 // ------------------------------------------------- unwind on cancel/decline
 // When a request that already has crew commitments is cancelled or
 // declined, undo what is SAFE to undo and flag the rest — never delete:
 //   - a crew engagement with no payable is cancelled (history kept)
-//   - project access granted by THIS request is removed
 //   - an engagement that already has a payable (or finished work) is left
 //     exactly as it is and reported for Finance to resolve; money owed to
 //     crew is never silently dropped
@@ -172,13 +89,12 @@ async function enquiryIdFor(requestId: string): Promise<string> {
 //     touched: any cancellation fee, refund or write-off is a deliberate
 //     finance decision recorded through the existing payment controls.
 // Idempotent; test records have nothing to unwind.
-export async function unwindCommitments(params: { requestId: string; actorUserId: string | null; reason: string }): Promise<Result<{ warnings: string[]; cancelledEngagements: number; removedAssignments: number }>> {
+export async function unwindCommitments(params: { requestId: string; actorUserId: string | null; reason: string }): Promise<Result<{ warnings: string[]; cancelledEngagements: number }>> {
   const snapshot = await getCommitmentSnapshot(params.requestId);
   if (!snapshot) return { ok: false, error: "Request not found." };
   const warnings: string[] = [];
   let cancelledEngagements = 0;
-  let removedAssignments = 0;
-  if (snapshot.isTest) return { ok: true, warnings, cancelledEngagements, removedAssignments };
+  if (snapshot.isTest) return { ok: true, warnings, cancelledEngagements };
   const admin = createAdminClient();
 
   for (const slot of snapshot.slots) {
@@ -192,15 +108,6 @@ export async function unwindCommitments(params: { requestId: string; actorUserId
     if (r.ok) cancelledEngagements += 1; else warnings.push(`${slot.label}: engagement not cancelled (${r.error}).`);
   }
 
-  if (params.actorUserId) {
-    const enquiryId = await enquiryIdFor(params.requestId);
-    const { data: assignments } = await admin.from("project_assignments").select("id, role_note, status").eq("entity_type", "enquiry").eq("entity_id", enquiryId).in("status", ["invited", "active"]);
-    for (const a of (assignments ?? []).filter((x) => String(x.role_note ?? "").startsWith(`Crew Support ${snapshot.reference}`))) {
-      const r = await updateAssignmentStatus({ assignmentId: a.id as string, status: "removed", actorUserId: params.actorUserId, reason: params.reason });
-      if (r.ok) removedAssignments += 1; else warnings.push(`A project assignment could not be removed (${r.error}).`);
-    }
-  }
-
-  await logActivity({ actorUserId: params.actorUserId, action: "crew_support.commitments_unwound", entityType: "crew_support_request", entityId: params.requestId, metadata: { reference: snapshot.reference, reason: params.reason, cancelledEngagements, removedAssignments, warnings, receivableUntouched: true } });
-  return { ok: true, warnings, cancelledEngagements, removedAssignments };
+  await logActivity({ actorUserId: params.actorUserId, action: "crew_support.commitments_unwound", entityType: "crew_support_request", entityId: params.requestId, metadata: { reference: snapshot.reference, reason: params.reason, cancelledEngagements, warnings, receivableUntouched: true } });
+  return { ok: true, warnings, cancelledEngagements };
 }

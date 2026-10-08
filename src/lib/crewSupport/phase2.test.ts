@@ -172,7 +172,8 @@ describe("enquiry synchronisation is explicit and one-way", () => {
   });
   it("amount_due for Crew Support is written only from the accepted quotation's USD total", () => {
     const src = readFileSync("src/lib/crewSupport/quotation.ts", "utf8");
-    expect(src.match(/amount_due: quote\.usdTotal/g)?.length).toBe(1);
+    // Only two places write it: the original's acceptance and a client-accepted variation's re-point.
+    expect(src.match(/amount_due: quote\.usdTotal/g)?.length).toBe(2);
     expect(src).toMatch(/quote\.status !== "accepted"/);
   });
 });

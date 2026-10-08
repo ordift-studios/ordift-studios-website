@@ -28,6 +28,7 @@ export type ClientTemplateVars = {
   totalText?: string;
   localEquivalentText?: string;
   validUntil?: string | null;
+  variation?: boolean;
 };
 
 export function quotationPortalUrl(enquiryId: string): string {
@@ -59,7 +60,9 @@ const COPY: Record<ClientTemplate, { subject: (v: ClientTemplateVars) => string;
   quote_accepted: {
     subject: (v) => `We've recorded your acceptance — ${v.reference}`,
     heading: "Thank you — your acceptance is recorded.",
-    body: (v) => `We've recorded your acceptance of quotation ${v.quotationReference ?? ""} for ${v.projectName}. Ordift will follow up with the next steps, including any agreement or payment details that apply. This is not yet a booking confirmation, and crew availability and assignment are confirmed separately.`,
+    body: (v) => v.variation
+      ? `We've recorded your acceptance of the revised quotation ${v.quotationReference ?? ""} for ${v.projectName}. It replaces your previous quotation, and Ordift will confirm any resulting change to payment or arrangements with you directly.`
+      : `We've recorded your acceptance of quotation ${v.quotationReference ?? ""} for ${v.projectName}. Ordift will follow up with the next steps, including any agreement or payment details that apply. This is not yet a booking confirmation, and crew availability and assignment are confirmed separately.`,
     action: false,
     notBooking: false,
   },

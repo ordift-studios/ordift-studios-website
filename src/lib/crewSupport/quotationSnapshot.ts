@@ -18,13 +18,14 @@ export type ProjectSnapshot = {
   onSiteContact: string | null;
   urgency: string;
   equipment: string | null; // who supplies equipment, in words; null = not specified
+  equipmentRequired: boolean; // the service family asks this question as mandatory
   roles: { role: string; quantity: number; responsibilities: string | null }[];
 };
 
 type RequestLike = Record<string, unknown>;
 type RequirementLike = { role_label: string; custom_role?: string | null; quantity: number; responsibilities?: string | null };
 
-function equipmentLabel(request: RequestLike): string | null {
+export function equipmentLabel(request: RequestLike): string | null {
   const family = String(request.service_family ?? "");
   const answer = ((request.service_details ?? {}) as Record<string, string>).equipment;
   if (!answer) return null;
@@ -47,6 +48,7 @@ export function buildProjectSnapshot(request: RequestLike, requirements: Require
     onSiteContact: s("on_site_contact"),
     urgency: String(request.urgency ?? "standard"),
     equipment: equipmentLabel(request),
+    equipmentRequired: detailQuestionsFor(String(request.service_family ?? "")).some((q) => q.id === "equipment" && q.required),
     roles: requirements.map((r) => ({ role: r.custom_role && r.custom_role !== r.role_label ? `${r.role_label} (${r.custom_role})` : r.role_label, quantity: Number(r.quantity), responsibilities: r.responsibilities ? String(r.responsibilities) : null })),
   };
 }
@@ -58,6 +60,7 @@ export function snapshotGap(s: ProjectSnapshot): string | null {
   if (!s.startDate || !s.endDate) return "the event date is missing";
   if (!s.location.trim()) return "the event location is missing";
   if (s.roles.length === 0) return "no crew roles are listed";
+  if (s.equipmentRequired && !s.equipment) return "the equipment responsibility (who supplies equipment) isn't recorded — set it on the request first";
   return null;
 }
 

@@ -88,7 +88,7 @@ export type SlotCommitment = {
   crewAccepted: boolean;
   // The per-person engagement that carries the agreed compensation. Null
   // before one is recorded.
-  engagement: { id: string; agreedAmount: number | null; currency: string | null; status: string } | null;
+  engagement: { id: string; agreedAmount: number | null; currency: string | null; status: string; paymentObligationId?: string | null } | null;
   firmConflicts: string[];
 };
 
@@ -113,6 +113,8 @@ export type ConfirmationInput = {
   agreement: AgreementAssessment;
   slots: SlotCommitment[];
   isTest: boolean;
+  // From paymentCondition.paymentBlocker(); null/undefined = nothing outstanding.
+  paymentBlocker?: string | null;
 };
 
 // Every reason this request cannot be confirmed yet. Empty = ready.
@@ -123,6 +125,8 @@ export function confirmationBlockers(input: ConfirmationInput): string[] {
   const out: string[] = [];
   if (!input.hasAcceptedQuotation) out.push("The client must accept the quotation first (or acceptance must be recorded).");
   if (!input.agreement.satisfied) out.push(input.agreement.blocker);
+  // Only a payment the accepted quotation CONTRACTUALLY requires blocks confirmation.
+  if (input.paymentBlocker) out.push(input.paymentBlocker);
 
   const assigned = input.slots.filter((s) => s.status === "assigned" && s.assigneeProfileId);
   if (assigned.length === 0) out.push("Assign at least one crew member before confirming.");
@@ -168,4 +172,19 @@ export function accessExpiryFor(endDate: string): string {
   const d = new Date(`${endDate}T00:00:00Z`);
   d.setUTCDate(d.getUTCDate() + COLLABORATOR_ACCESS_GRACE_DAYS);
   return d.toISOString();
+}
+
+// Post-confirmation cancellation (management only, justified, reviewed).
+export function validateCancellationReason(reason: string): { ok: true } | { ok: false; reason: string } {
+  if (reason.trim().length < 10) return { ok: false, reason: "Cancelling a confirmed request needs a recorded justification (at least a short sentence)." };
+  return { ok: true };
+}
+
+export function isPostCommitmentStatus(status: string): boolean {
+  return status === "confirmed" || status === "in_production";
+}
+
+export function validateReviewNote(note: string): { ok: true } | { ok: false; reason: string } {
+  if (note.trim().length < 10) return { ok: false, reason: "Record what the financial review decided (receivable, payments, crew payables) — at least a short sentence." };
+  return { ok: true };
 }

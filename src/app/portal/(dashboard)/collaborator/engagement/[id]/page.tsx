@@ -7,6 +7,8 @@ import { isTerminalEngagementStatus } from "@/lib/payables/engagements";
 import { PAYABLE_STATUS_LABELS } from "@/lib/payments/payoutObligations";
 import { isInstructorEngagement } from "@/lib/portal/externalWorkforce";
 import { getMyPortalModules } from "@/lib/portal/portalModules";
+import { getCrewAssignmentForEngagement } from "@/lib/crewSupport/crewOffers";
+import CrewJobDetails from "@/components/portal/CrewJobDetails";
 import MediaFileUploader from "@/components/payables/MediaFileUploader";
 import EngagementFileList from "@/components/portal/EngagementFileList";
 import { postEngagementUpdateAction, requestFileUploadAuthorizationAction, recordUploadedFileAction } from "../../actions";
@@ -43,7 +45,8 @@ export default async function CollaboratorEngagementPage({ params }: { params: P
   const engagement = await getMyEngagement(id, user.id);
   if (!engagement) notFound();
 
-  const [payable, updates, filesResult, { modules }] = await Promise.all([
+  const [crewJob, payable, updates, filesResult, { modules }] = await Promise.all([
+    getCrewAssignmentForEngagement(id, user.id),
     engagement.paymentObligationId ? getMyPayableStatus(engagement.paymentObligationId) : Promise.resolve(null),
     getEngagementUpdates(id),
     listMyProjectFiles(id, user.id),
@@ -72,6 +75,8 @@ export default async function CollaboratorEngagementPage({ params }: { params: P
           {engagement.dueDate && <> · Due {new Date(engagement.dueDate).toLocaleDateString()}</>}
         </p>
       </div>
+
+      {crewJob && <CrewJobDetails job={crewJob} />}
 
       <section className="bg-white border border-black/10 rounded-2xl p-6 space-y-2">
         <h2 className="font-serif font-medium text-body text-ordift-ink mb-2">Brief</h2>

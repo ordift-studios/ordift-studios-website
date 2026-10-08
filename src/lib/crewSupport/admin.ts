@@ -1,10 +1,10 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { logActivity } from "@/lib/admin/activityLog";
-import type { CrewSupportStatus, SlotStatus } from "./config";
-import { validateSlotChange, validateStatusChange, type SlotLike } from "./rules";
+import { detailQuestionsFor, type CrewSupportStatus, type SlotStatus } from "./config";
+import { validateStatusChange, type SlotLike } from "./rules";
 import { getStatusContext } from "./commitmentData";
-import { cancelSlotEngagement, establishCommitments, unwindCommitments } from "./commitmentEstablish";
-import { clearsCrewAcceptance, validateOverrideReason } from "./commitmentRules";
+import { establishCommitments, unwindCommitments } from "./commitmentEstablish";
+import { isPostCommitmentStatus, validateOverrideReason } from "./commitmentRules";
 import { ENQUIRY_STAGE_SYNC, type CrewSyncEvent } from "./enquirySync";
 import { STATUS_NOTIFICATIONS } from "./notificationConfig";
 import { notifyCrewSupportEvent } from "./notifications";
@@ -81,7 +81,7 @@ export async function listCrewSupportRequests(status?: string): Promise<CrewSupp
 export type CrewSupportDetail = {
   request: Record<string, unknown> & { id: string; status: CrewSupportStatus; enquiry_id: string };
   requirements: { id: string; operational_title_id: string | null; role_label: string; custom_role: string | null; quantity: number; responsibilities: string | null }[];
-  slots: { id: string; requirement_id: string; slot_number: number; status: SlotStatus; assignee_profile_id: string | null; assigneeName: string | null; note: string | null; overrideReason: string | null }[];
+  slots: { id: string; requirement_id: string; slot_number: number; status: SlotStatus; assignee_profile_id: string | null; assigneeName: string | null; note: string | null; overrideReason: string | null; offerAmount: number | null; offerCurrency: string | null; offeredAt: string | null; responseAt: string | null; responseNote: string | null; acceptedAt: string | null; instructions: string | null }[];
 };
 
 export async function getCrewSupportDetail(id: string): Promise<CrewSupportDetail | null> {
@@ -90,7 +90,7 @@ export async function getCrewSupportDetail(id: string): Promise<CrewSupportDetai
   if (error || !request) return null;
   const [{ data: requirements }, { data: slots }] = await Promise.all([
     admin.from("crew_support_requirements").select("id, operational_title_id, role_label, custom_role, quantity, responsibilities").eq("request_id", id).order("sort_order"),
-    admin.from("crew_support_slots").select("id, requirement_id, slot_number, status, assignee_profile_id, note, assignment_override_reason").eq("request_id", id).order("slot_number"),
+    admin.from("crew_support_slots").select("id, requirement_id, slot_number, status, assignee_profile_id, note, assignment_override_reason, offer_amount, offer_currency, offered_at, crew_response_at, crew_response_note, crew_accepted_at, crew_instructions").eq("request_id", id).order("slot_number"),
   ]);
   const profileIds = [...new Set((slots ?? []).map((s) => s.assignee_profile_id as string | null).filter((p): p is string => Boolean(p)))];
   const names = new Map<string, string>();
@@ -110,6 +110,13 @@ export async function getCrewSupportDetail(id: string): Promise<CrewSupportDetai
       assigneeName: s.assignee_profile_id ? names.get(s.assignee_profile_id as string) ?? null : null,
       note: (s.note as string | null) ?? null,
       overrideReason: (s.assignment_override_reason as string | null) ?? null,
+      offerAmount: s.offer_amount == null ? null : Number(s.offer_amount),
+      offerCurrency: (s.offer_currency as string | null) ?? null,
+      offeredAt: (s.offered_at as string | null) ?? null,
+      responseAt: (s.crew_response_at as string | null) ?? null,
+      responseNote: (s.crew_response_note as string | null) ?? null,
+      acceptedAt: (s.crew_accepted_at as string | null) ?? null,
+      instructions: (s.crew_instructions as string | null) ?? null,
     })),
   };
 }
@@ -134,7 +141,13 @@ export async function syncEnquiryStage(params: { enquiryId: string; event: CrewS
 // person choosing from the dropdown; both are attributed and audited.
 export async function commitCrewSupportStatus(params: { requestId: string; from: CrewSupportStatus; to: CrewSupportStatus; actorUserId: string | null; automatic: boolean; reason?: string }): Promise<{ ok: true; warnings?: string[] } | { ok: false; error: string }> {
   const admin = createAdminClient();
-  const { data, error } = await admin.from("crew_support_requests").update({ status: params.to, updated_at: new Date().toISOString() }).eq("id", params.requestId).eq("status", params.from).select("id, reference_number, enquiry_id");
+  // Who/when/why of a cancellation is part of the same atomic update. A
+  // cancellation after confirmation also raises a FINANCIAL REVIEW (the
+  // receivable, payments and crew payables need a finance decision).
+  const cancellation = params.to === "cancelled"
+    ? { cancellation_reason: params.reason ?? null, cancelled_by: params.actorUserId, cancelled_at: new Date().toISOString(), cancellation_review_status: isPostCommitmentStatus(params.from) ? "pending" : "not_required" }
+    : {};
+  const { data, error } = await admin.from("crew_support_requests").update({ status: params.to, updated_at: new Date().toISOString(), ...cancellation }).eq("id", params.requestId).eq("status", params.from).select("id, reference_number, enquiry_id");
   if (error) return { ok: false, error: "Could not update the status. Please try again." };
   if (!data?.length) return { ok: false, error: "The request changed while you were editing — refresh and try again." };
   await logActivity({ actorUserId: params.actorUserId, action: "crew_support.status_changed", entityType: "crew_support_request", entityId: params.requestId, metadata: { from: params.from, to: params.to, reference: data[0].reference_number, automatic: params.automatic, reason: params.reason ?? null } });
@@ -145,7 +158,13 @@ export async function commitCrewSupportStatus(params: { requestId: string; from:
     const enquiryId = data[0].enquiry_id as string;
     const event: CrewSyncEvent | null = params.to === "under_review" ? "under_review" : params.to === "declined" ? "declined" : params.to === "cancelled" ? "cancelled" : params.to === "confirmed" ? "confirmed" : params.to === "in_production" ? "in_production" : params.to === "completed" ? "completed" : null;
     if (event) await syncEnquiryStage({ enquiryId, event, actorUserId: params.actorUserId, requestId: params.requestId });
-    const template = STATUS_NOTIFICATIONS[params.to];
+    let template = STATUS_NOTIFICATIONS[params.to];
+    // "Payment requested" is only sent when the accepted quotation actually
+    // requires a payment before confirmation — never a pointless nudge.
+    if (params.to === "payment_pending") {
+      const { data: accepted } = await admin.from("client_quotations").select("payment_condition").eq("crew_support_request_id", params.requestId).eq("status", "accepted").maybeSingle();
+      if (!accepted || accepted.payment_condition === "none") template = undefined;
+    }
     if (template) await notifyCrewSupportEvent({ requestId: params.requestId, eventKey: `status:${params.to}`, template, triggeredBy: params.actorUserId });
     // Confirmed is the hard-commitment point: engagements, project access
     // and crew payables are established here (idempotently; test records
@@ -178,82 +197,18 @@ export async function setCrewSupportStatus(params: { requestId: string; to: Crew
   return commitCrewSupportStatus({ requestId: params.requestId, from: detail.request.status, to: params.to, actorUserId: params.actorUserId, automatic: false });
 }
 
-export async function setCrewSupportSlot(params: {
-  slotId: string;
-  status: SlotStatus;
-  assigneeProfileId: string | null;
-  note: string | null;
-  actorUserId: string;
-  // Assigning someone with no matching capability: the justification.
-  overrideReason?: string | null;
-}): Promise<{ ok: true } | { ok: false; error: string }> {
-  const admin = createAdminClient();
-  const { data: slot, error: slotError } = await admin.from("crew_support_slots").select("id, request_id, requirement_id, status, assignee_profile_id, assignment_override_reason").eq("id", params.slotId).maybeSingle();
-  if (slotError || !slot) return { ok: false, error: "Crew slot not found." };
-  const { data: request } = await admin.from("crew_support_requests").select("status, reference_number").eq("id", slot.request_id).maybeSingle();
-  if (!request) return { ok: false, error: "Request not found." };
-
-  const clearsAssignee = params.status === "unfilled";
-  const assignee = clearsAssignee ? null : params.assigneeProfileId;
-  const check = validateSlotChange({ requestStatus: request.status as CrewSupportStatus, status: params.status, assigneeProfileId: assignee });
-  if (!check.ok) return { ok: false, error: check.reason };
-
-  // Server-side eligibility: a crafted form cannot propose/assign someone
-  // who lacks a matching capability for this role.
-  // An authorised override (no matching capability) is allowed only with a
-  // recorded justification and only for a genuine workforce identity.
-  let override: string | null = null;
-  if (assignee && (params.status === "proposed" || params.status === "assigned")) {
-    const eligible = await isEligibleAssignee({ requestId: slot.request_id as string, requirementId: slot.requirement_id as string, profileId: assignee });
-    if (!eligible) {
-      const unchanged = assignee === slot.assignee_profile_id && slot.assignment_override_reason;
-      if (unchanged) override = slot.assignment_override_reason as string;
-      else {
-        const reason = (params.overrideReason ?? "").trim();
-        if (!reason) return { ok: false, error: "This person has no matching, active capability for this role. Add or verify the capability (Crew Support → Capabilities), or assign them by override with a recorded justification." };
-        const valid = validateOverrideReason(reason);
-        if (!valid.ok) return { ok: false, error: valid.reason };
-        if (!(await isWorkforceProfile(assignee))) return { ok: false, error: "Only an active member of the workforce (staff, approved vendor or payee) can be assigned by override." };
-        override = reason;
-      }
-    }
-  }
-
-  // Crew acceptance belongs to ONE person in the assigned state. Changing
-  // the person or the status clears it, and the draft engagement carrying
-  // their compensation is cancelled first (aborting this change if that
-  // can't be done) so an engagement never points at the wrong person.
-  const clears = clearsCrewAcceptance({ previousAssigneeId: (slot.assignee_profile_id as string | null) ?? null, previousStatus: slot.status as string, nextAssigneeId: assignee, nextStatus: params.status });
-  if (clears && slot.status === "assigned") {
-    const cancelled = await cancelSlotEngagement({ slotId: params.slotId, actorUserId: params.actorUserId, reason: `Slot changed to ${params.status}` });
-    if (!cancelled.ok) return { ok: false, error: cancelled.error };
-  }
-
-  const { error } = await admin
-    .from("crew_support_slots")
-    .update({
-      status: params.status,
-      assignee_profile_id: assignee,
-      note: params.note,
-      assigned_by: params.actorUserId,
-      assigned_at: params.status === "assigned" || params.status === "proposed" ? new Date().toISOString() : null,
-      assignment_override_reason: override,
-      assignment_override_by: override ? (override === slot.assignment_override_reason ? undefined : params.actorUserId) : null,
-      assignment_override_at: override ? (override === slot.assignment_override_reason ? undefined : new Date().toISOString()) : null,
-      ...(clears ? { crew_accepted_at: null, crew_accepted_via: null, crew_accepted_recorded_by: null, crew_acceptance_note: null } : {}),
-      updated_at: new Date().toISOString(),
-    })
-    .eq("id", params.slotId);
-  if (error) return { ok: false, error: "Could not update this crew slot. Please try again." };
-
-  await logActivity({
-    actorUserId: params.actorUserId,
-    action: "crew_support.slot_updated",
-    entityType: "crew_support_request",
-    entityId: slot.request_id as string,
-    metadata: { slotId: params.slotId, from: slot.status, to: params.status, assigneeProfileId: assignee, reference: request.reference_number, ...(override ? { override: true, overrideReason: override } : {}) },
-  });
-  return { ok: true };
+// Whether this person may be offered this slot: matched capability, or an
+// authorised override with a recorded justification (workforce identities
+// only). Shared by the offer flow so there is one definition.
+export async function resolveAssignmentEligibility(params: { requestId: string; requirementId: string; profileId: string; overrideReason: string | null }): Promise<{ ok: true; override: string | null } | { ok: false; error: string }> {
+  const eligible = await isEligibleAssignee({ requestId: params.requestId, requirementId: params.requirementId, profileId: params.profileId });
+  if (eligible) return { ok: true, override: null };
+  const reason = (params.overrideReason ?? "").trim();
+  if (!reason) return { ok: false, error: "This person has no matching, active capability for this role. Add or verify the capability (Crew Support → Capabilities), or offer it by override with a recorded justification." };
+  const valid = validateOverrideReason(reason);
+  if (!valid.ok) return { ok: false, error: valid.reason };
+  if (!(await isWorkforceProfile(params.profileId))) return { ok: false, error: "Only an active member of the workforce (staff, approved vendor or payee) can be offered a job by override." };
+  return { ok: true, override: reason };
 }
 
 async function isEligibleAssignee(params: { requestId: string; requirementId: string; profileId: string }): Promise<boolean> {
@@ -270,4 +225,26 @@ async function isEligibleAssignee(params: { requestId: string; requirementId: st
     requirements: [{ id: requirement.id as string, operationalTitleId: (requirement.operational_title_id as string | null) ?? null }],
   });
   return result[requirement.id as string]?.candidates.some((c) => c.profileId === params.profileId) ?? false;
+}
+
+// Sets who supplies equipment on a request that doesn't have the answer
+// (older requests, or one submitted before the question became mandatory).
+// Admin-only (callers check canManageCrewSupport), audited, and refused
+// once a quotation has been issued — after that, change it through a
+// revised quotation so what the client was quoted stays frozen.
+export async function setRequestEquipment(params: { requestId: string; value: string; actorUserId: string }): Promise<{ ok: true } | { ok: false; error: string }> {
+  const admin = createAdminClient();
+  const { data: request } = await admin.from("crew_support_requests").select("id, reference_number, service_family, service_details, status").eq("id", params.requestId).maybeSingle();
+  if (!request) return { ok: false, error: "Request not found." };
+  if (["declined", "cancelled", "confirmed", "in_production", "completed"].includes(request.status as string)) return { ok: false, error: "This request is closed or already confirmed." };
+  const question = detailQuestionsFor(request.service_family as string).find((q) => q.id === "equipment");
+  if (!question?.options?.some((o) => o.value === params.value)) return { ok: false, error: "Choose one of the listed options." };
+  const { count } = await admin.from("client_quotations").select("id", { count: "exact", head: true }).eq("crew_support_request_id", params.requestId).in("status", ["sent", "accepted"]);
+  if ((count ?? 0) > 0) return { ok: false, error: "A quotation has been issued — revise the quotation to change what the client was quoted." };
+  const previous = ((request.service_details ?? {}) as Record<string, string>).equipment ?? null;
+  const next = { ...((request.service_details ?? {}) as Record<string, string>), equipment: params.value };
+  const { error } = await admin.from("crew_support_requests").update({ service_details: next, updated_at: new Date().toISOString() }).eq("id", params.requestId);
+  if (error) return { ok: false, error: "Could not save. Please try again." };
+  await logActivity({ actorUserId: params.actorUserId, action: "crew_support.equipment_set", entityType: "crew_support_request", entityId: params.requestId, metadata: { reference: request.reference_number, previous, value: params.value } });
+  return { ok: true };
 }

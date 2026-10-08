@@ -37,7 +37,9 @@ describe("receivable provenance: amount due is traceable to its accepted quotati
     expect(generic).toContain("crewManagedRefusal");
   });
   it("acceptance never creates a payment record", () => {
-    expect(complete).not.toMatch(/from\("payments"\)|payment_status|amount_paid/);
+    expect(complete).not.toMatch(/from\("payments"\)|payment_type|reference_amount_usd/);
+    // The only payment interaction is the existing module recomputing status after a variation.
+    expect(complete.match(/syncEntityPaymentStatus/g)?.length ?? 0).toBeLessThanOrEqual(2); // dynamic import + one call
   });
 });
 

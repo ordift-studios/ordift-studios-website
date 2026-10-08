@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { getCurrentUser } from "@/lib/portal/roles";
 import { canManageCrewSupport } from "@/lib/crewSupport/permissions";
-import { reviseCrewSupportQuotation, completeAcceptance, completeIssue, discardCrewSupportQuotationDraft, issueCrewSupportQuotation, markQuotationReady, prepareCrewSupportQuotation, recordStaffAcceptance, returnQuotationToDraft, saveCrewSupportQuotationDraft } from "@/lib/crewSupport/quotation";
+import { createCrewSupportVariation, reviseCrewSupportQuotation, completeAcceptance, completeIssue, discardCrewSupportQuotationDraft, issueCrewSupportQuotation, markQuotationReady, prepareCrewSupportQuotation, recordStaffAcceptance, returnQuotationToDraft, saveCrewSupportQuotationDraft } from "@/lib/crewSupport/quotation";
 import { retryNotificationEvent } from "@/lib/crewSupport/notifications";
 import type { EditableLine } from "@/lib/crewSupport/quotationRules";
 import { actionFail, actionOk, runAction, type ActionState } from "@/lib/shared/actionState";
@@ -63,7 +63,7 @@ export async function saveQuotationDraftAction(_prev: ActionState, formData: For
   return runAction(async () => {
     const r = await saveCrewSupportQuotationDraft({
       quotationId, lines, validUntil: String(formData.get("validUntil") ?? "") || null, terms: String(formData.get("terms") ?? "") || null,
-      internalNotes: String(formData.get("internalNotes") ?? "") || null, fxCurrency: String(formData.get("fxCurrency") ?? "") || null, actorUserId: user.id,
+      internalNotes: String(formData.get("internalNotes") ?? "") || null, fxCurrency: String(formData.get("fxCurrency") ?? "") || null, paymentCondition: String(formData.get("paymentCondition") ?? "none"), depositPercent: formData.get("depositPercent") ? Number(formData.get("depositPercent")) : null, actorUserId: user.id,
     });
     if (!r.ok) return actionFail(r.error);
     refresh(requestId);
@@ -121,4 +121,16 @@ export async function retryNotificationAction(_prev: ActionState, formData: Form
     if (requestId) refresh(requestId);
     return actionOk("Notification sent.");
   }, "retry notification");
+}
+
+export async function createVariationAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  const user = await authorize();
+  if (!user) return actionFail(DENIED);
+  const requestId = String(formData.get("requestId") ?? "");
+  return runAction(async () => {
+    const r = await createCrewSupportVariation({ requestId, actorUserId: user.id });
+    if (!r.ok) return actionFail(r.error);
+    refresh(requestId);
+    return done(`Variation ${r.reference} created as a draft. The accepted quotation stays in force until the client accepts the variation.`, r.warnings);
+  }, "create variation");
 }

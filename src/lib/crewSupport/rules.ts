@@ -40,6 +40,9 @@ export function validateStatusChange(
   context: StatusChangeContext = NO_QUOTATION
 ): { ok: true } | { ok: false; reason: string } {
   if (!allowedStatusTransitions(from).includes(to)) return { ok: false, reason: "That status change isn't allowed from the current status." };
+  if (to === "cancelled" && (from === "confirmed" || from === "in_production")) {
+    return { ok: false, reason: "Cancelling a confirmed request needs authorised management with a recorded justification and triggers a financial review — use “Cancel confirmed request” in Commitment readiness." };
+  }
   if (to === "quote_preparation" && !context.hasLiveQuotation) {
     return { ok: false, reason: "Quote preparation starts when you use “Prepare quotation” — it can't be selected by hand." };
   }

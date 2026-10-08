@@ -200,11 +200,11 @@ export default function CrewSupportForm({ roles }: { roles: RoleOption[] }) {
         <fieldset className={fieldset}>
           <legend className={legend}>A few details</legend>
           {questions.map((q) => (
-            <Field key={q.id} id={`detail-${q.id}`} label={q.label} optional>
+            <Field key={q.id} id={`detail-${q.id}`} label={q.label} optional={!q.required} error={errors[`serviceDetails.${q.id}`]}>
               {q.kind === "textarea" ? (
                 <textarea id={`detail-${q.id}`} rows={3} className={inputClasses} value={details[q.id] ?? ""} onChange={(e) => setDetails((d) => ({ ...d, [q.id]: e.target.value }))} />
               ) : q.kind === "select" ? (
-                <select id={`detail-${q.id}`} className={inputClasses} value={details[q.id] ?? ""} onChange={(e) => setDetails((d) => ({ ...d, [q.id]: e.target.value }))}>
+                <select id={`detail-${q.id}`} required={q.required} className={inputClasses} value={details[q.id] ?? ""} onChange={(e) => setDetails((d) => ({ ...d, [q.id]: e.target.value }))}>
                   <option value="">Choose…</option>
                   {q.options?.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
                 </select>

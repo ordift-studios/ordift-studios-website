@@ -70,7 +70,7 @@ export default async function QuotationPdfPage({ params }: { params: Promise<{ i
       <PrintButton />
 
       <div style={{ textAlign: "right", fontSize: 11, marginBottom: 24 }}>
-        <div>{quotation.quotationReference}{crew && crew.version > 1 ? ` (version ${crew.version})` : ""}</div>
+        <div>{quotation.quotationReference}{crew && crew.version > 1 ? ` (version ${crew.version})` : ""}{crew?.isVariation ? " — variation" : ""}</div>
         <div>{new Date(crew?.issuedAt ?? quotation.createdAt).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" })}</div>
         {crew?.requestReference && <div>Request {crew.requestReference}</div>}
         {crew && crew.status === "draft" && <div style={{ color: "#a33" }}>DRAFT — not yet issued</div>}
@@ -133,6 +133,9 @@ export default async function QuotationPdfPage({ params }: { params: Promise<{ i
 
       {quotation.validUntil && (
         <p style={{ fontSize: 11, marginTop: 24 }}>This quotation is valid until {new Date(quotation.validUntil).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" })}.</p>
+      )}
+      {crew?.paymentConditionText && (
+        <p style={{ fontSize: 11, marginTop: 16, fontWeight: "bold" }}>{crew.paymentConditionText}</p>
       )}
       {quotation.paymentBookingTerms && (
         <div style={{ fontSize: 11, marginTop: 16 }}>

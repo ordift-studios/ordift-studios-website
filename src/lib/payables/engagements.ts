@@ -258,6 +258,9 @@ export type CreateEngagementParams = {
   dueDate?: string | null;
   notes?: string | null;
   actorUserId: string;
+  // The caller sends its own, more specific message (for example a Crew
+  // Support acceptance), so the generic "New Assignment" email is skipped.
+  suppressNotification?: boolean;
 };
 
 export async function createEngagement(params: CreateEngagementParams): Promise<{ ok: true; id: string } | { ok: false; error: string }> {
@@ -334,7 +337,7 @@ export async function createEngagement(params: CreateEngagementParams): Promise<
   // Phase H.1/H.2 (2026-09-04) — fire-and-forget, only when there's a
   // real portal recipient to notify (an external payee, not an
   // external-payee-name-only engagement with no account at all).
-  if (params.payeeProfileId) {
+  if (params.payeeProfileId && !params.suppressNotification) {
     await sendEngagementNotification({ engagementId: data.id, event: "assignment_created" });
   }
 

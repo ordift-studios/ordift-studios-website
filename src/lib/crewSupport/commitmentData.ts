@@ -1,6 +1,7 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { SlotStatus } from "./config";
 import { loadConflicts, firmConflicts } from "./conflicts";
+import { paymentBlocker, requiredPaymentUsd, type PaymentCondition } from "./paymentCondition";
 import { assessAgreement, completionBlockers, confirmationBlockers, describeContractBasis, type AgreementAssessment, type ContractBasisView, type AgreementFacts, type SlotCommitment } from "./commitmentRules";
 import type { StatusChangeContext } from "./rules";
 
@@ -22,22 +23,24 @@ export type CommitmentSnapshot = {
   agreementAssessment: AgreementAssessment;
   contractBasis: ContractBasisView;
   hasAcceptedQuotation: boolean;
+  payment: { condition: PaymentCondition; depositPercent: number | null; requiredUsd: number; amountDueUsd: number; amountPaidUsd: number; blocker: string | null };
   slots: (SlotCommitment & { slotId: string; requirementId: string; roleLabel: string; slotNumber: number; crewAcceptedAt: string | null; assigneeName: string | null })[];
   blockers: string[];
   completionBlockers: string[];
+  cancellation: { reason: string | null; at: string | null; reviewStatus: "not_required" | "pending" | "resolved"; reviewNote: string | null; reviewAt: string | null };
 };
 
 export async function getCommitmentSnapshot(requestId: string): Promise<CommitmentSnapshot | null> {
   const admin = createAdminClient();
   const { data: request } = await admin
     .from("crew_support_requests")
-    .select("id, reference_number, status, is_test, start_date, end_date, agreement_required, agreement_required_reason")
+    .select("id, reference_number, status, is_test, start_date, end_date, agreement_required, agreement_required_reason, enquiry_id, cancellation_reason, cancelled_at, cancellation_review_status, cancellation_review_note, cancellation_review_at")
     .eq("id", requestId)
     .maybeSingle();
   if (!request) return null;
 
   const [{ data: quotes }, { data: executed }, { data: slotRows }, { data: requirements }] = await Promise.all([
-    admin.from("client_quotations").select("status, payment_booking_terms").eq("crew_support_request_id", requestId).in("status", ["draft", "ready", "sent", "accepted"]),
+    admin.from("client_quotations").select("status, payment_booking_terms, payment_condition, deposit_percent").eq("crew_support_request_id", requestId).in("status", ["draft", "ready", "sent", "accepted"]),
     admin.from("agreements").select("id").eq("primary_context_type", "crew_support_request").eq("primary_context_reference", request.reference_number).in("status", EXECUTED_AGREEMENT_STATUSES).limit(1),
     admin.from("crew_support_slots").select("id, requirement_id, slot_number, status, assignee_profile_id, crew_accepted_at").eq("request_id", requestId).order("slot_number"),
     admin.from("crew_support_requirements").select("id, role_label").eq("request_id", requestId),
@@ -70,10 +73,10 @@ export async function getCommitmentSnapshot(requestId: string): Promise<Commitme
     const { data: profiles } = await admin.from("profiles").select("id, full_name").in("id", assigneeIds);
     for (const p of profiles ?? []) names.set(p.id as string, (p.full_name as string | null) ?? "Unnamed profile");
   }
-  const engagements = new Map<string, { id: string; agreedAmount: number | null; currency: string | null; status: string }>();
+  const engagements = new Map<string, { id: string; agreedAmount: number | null; currency: string | null; status: string; paymentObligationId: string | null }>();
   if (slotIds.length) {
-    const { data: eng } = await admin.from("engagements").select("id, entity_id, agreed_amount, currency, status").eq("entity_type", "crew_support_slot").in("entity_id", slotIds).neq("status", "cancelled");
-    for (const e of eng ?? []) engagements.set(e.entity_id as string, { id: e.id as string, agreedAmount: e.agreed_amount == null ? null : Number(e.agreed_amount), currency: (e.currency as string | null) ?? null, status: e.status as string });
+    const { data: eng } = await admin.from("engagements").select("id, entity_id, agreed_amount, currency, status, payment_obligation_id").eq("entity_type", "crew_support_slot").in("entity_id", slotIds).neq("status", "cancelled");
+    for (const e of eng ?? []) engagements.set(e.entity_id as string, { id: e.id as string, agreedAmount: e.agreed_amount == null ? null : Number(e.agreed_amount), currency: (e.currency as string | null) ?? null, status: e.status as string, paymentObligationId: (e.payment_obligation_id as string | null) ?? null });
   }
   const roleById = new Map((requirements ?? []).map((r) => [r.id as string, r.role_label as string]));
 
@@ -98,6 +101,13 @@ export async function getCommitmentSnapshot(requestId: string): Promise<Commitme
   });
 
   const hasAcceptedQuotation = Boolean(accepted);
+  const { data: enquiryRow } = await admin.from("enquiries").select("amount_due, amount_paid").eq("id", request.enquiry_id as string).maybeSingle();
+  const condition = ((accepted?.payment_condition as string | undefined) ?? "none") as PaymentCondition;
+  const depositPercent = accepted?.deposit_percent == null ? null : Number(accepted.deposit_percent);
+  const amountDueUsd = Number(enquiryRow?.amount_due ?? 0);
+  const amountPaidUsd = Number(enquiryRow?.amount_paid ?? 0);
+  // QA/test records can never create a payment, so a required payment is not enforced for them (shown as bypassed in the panel).
+  const payBlocker = hasAcceptedQuotation && !request.is_test ? paymentBlocker({ condition, depositPercent, amountDueUsd, amountPaidUsd }) : null;
   return {
     requestId,
     reference: request.reference_number as string,
@@ -111,9 +121,17 @@ export async function getCommitmentSnapshot(requestId: string): Promise<Commitme
     agreementAssessment,
     contractBasis,
     hasAcceptedQuotation,
+    payment: { condition, depositPercent, requiredUsd: requiredPaymentUsd(condition, depositPercent, amountDueUsd), amountDueUsd, amountPaidUsd, blocker: payBlocker },
     slots,
-    blockers: confirmationBlockers({ hasAcceptedQuotation, agreement: agreementAssessment, slots, isTest: Boolean(request.is_test) }),
+    blockers: confirmationBlockers({ hasAcceptedQuotation, agreement: agreementAssessment, slots, isTest: Boolean(request.is_test), paymentBlocker: payBlocker }),
     completionBlockers: completionBlockers({ slots, isTest: Boolean(request.is_test) }),
+    cancellation: {
+      reason: (request.cancellation_reason as string | null) ?? null,
+      at: (request.cancelled_at as string | null) ?? null,
+      reviewStatus: ((request.cancellation_review_status as string | undefined) ?? "not_required") as "not_required" | "pending" | "resolved",
+      reviewNote: (request.cancellation_review_note as string | null) ?? null,
+      reviewAt: (request.cancellation_review_at as string | null) ?? null,
+    },
   };
 }
 

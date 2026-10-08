@@ -3,6 +3,7 @@
 import { parseInstant } from "@/lib/shared/instant";
 import { isProjectSnapshot, type ProjectSnapshot } from "./quotationSnapshot";
 import { hasUsableTerms } from "./commitmentRules";
+import { describePaymentCondition, isPaymentCondition } from "./paymentCondition";
 
 export const ACCEPTANCE_CHANNELS = [
   { value: "email", label: "Email" },
@@ -121,6 +122,10 @@ export function validateStaffAcceptance(params: {
 // never leak by accident.
 export type QuotationRowForClient = {
   project_snapshot?: unknown;
+  payment_condition?: string | null;
+  deposit_percent?: number | string | null;
+  replaces_reference?: string | null;
+  is_variation?: boolean | null;
   quotation_reference: string;
   status: string;
   currency: string;
@@ -154,6 +159,10 @@ export type ClientQuotationView = {
   acceptedAt: string | null;
   localEquivalent: { currency: string; amount: number; rate: number; lockedAt: string | null } | null;
   project: ProjectSnapshot | null;
+  // Plain-language payment condition ("A 50% deposit (USD 500.00) is required…"), or null.
+  paymentConditionText: string | null;
+  isVariation: boolean;
+  replacesReference: string | null;
 };
 
 export function toClientQuotationView(q: QuotationRowForClient, items: QuotationItemRowForClient[]): ClientQuotationView {
@@ -173,5 +182,8 @@ export function toClientQuotationView(q: QuotationRowForClient, items: Quotation
     acceptedAt: q.accepted_at,
     localEquivalent: local,
     project: isProjectSnapshot(q.project_snapshot) ? q.project_snapshot : null,
+    paymentConditionText: q.payment_condition && isPaymentCondition(q.payment_condition) ? describePaymentCondition(q.payment_condition, q.deposit_percent == null ? null : Number(q.deposit_percent), q.usd_total) : null,
+    isVariation: Boolean(q.is_variation),
+    replacesReference: q.replaces_reference ?? null,
   };
 }

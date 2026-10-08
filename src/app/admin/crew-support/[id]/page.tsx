@@ -5,7 +5,7 @@ import { getCurrentUser, isSuperAdmin } from "@/lib/portal/roles";
 import { canManageCrewSupport } from "@/lib/crewSupport/permissions";
 import { getCrewSupportDetail } from "@/lib/crewSupport/admin";
 import { getCommitmentSnapshot, getStatusContext } from "@/lib/crewSupport/commitmentData";
-import { getCrewSupportQuotation } from "@/lib/crewSupport/quotation";
+import { getCrewSupportQuotation, getCrewSupportVariation } from "@/lib/crewSupport/quotation";
 import { listNotificationEvents } from "@/lib/crewSupport/notifications";
 import { listActivePricingMarkets } from "@/lib/commercial/pricingCatalog";
 import { listActiveCurrencies } from "@/lib/payments/currency";
@@ -13,14 +13,18 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import QuotationPanel from "../QuotationPanel";
 import NotificationsPanel from "../NotificationsPanel";
 import CommitmentPanel from "../CommitmentPanel";
+import ProductionPanel from "../ProductionPanel";
+import { getDeliverablesForEntity } from "@/lib/admin/deliverables";
+import { isManagementUser } from "@/lib/crewSupport/management";
+import { authorizeWithSuperAdminOverride, FINANCE_CAPABILITIES } from "@/lib/organization/authority";
 import { loadCandidatesForRequirements, listOverridePool } from "@/lib/crewSupport/candidates";
-import { candidateLabel } from "@/lib/crewSupport/matching";
 import { validateStatusChange } from "@/lib/crewSupport/rules";
-import { REQUESTER_TYPES, SERVICE_FAMILIES, SLOT_STATUSES, SLOT_STATUS_LABELS, STATUS_LABELS, allowedStatusTransitions, detailQuestionsFor, type CrewSupportStatus } from "@/lib/crewSupport/config";
+import { REQUESTER_TYPES, SERVICE_FAMILIES, STATUS_LABELS, allowedStatusTransitions, detailQuestionsFor, type CrewSupportStatus } from "@/lib/crewSupport/config";
 import CrewSupportSubNav from "../CrewSupportSubNav";
 import ActionForm from "@/components/admin/ActionForm";
 import SubmitButton from "@/components/admin/SubmitButton";
-import { updateCrewSupportSlotAction, updateCrewSupportStatusAction } from "../actions";
+import { setRequestEquipmentAction, updateCrewSupportStatusAction } from "../actions";
+import SlotOffer from "../SlotOffer";
 
 export const metadata: Metadata = { title: "Crew Support Request — Ordift Studios Admin", robots: { index: false, follow: false } };
 
@@ -57,14 +61,16 @@ export default async function CrewSupportDetailPage({ params }: { params: Promis
   const family = SERVICE_FAMILIES.find((f) => f.value === r.service_family);
   const details = (detail.request.service_details ?? {}) as Record<string, string>;
   const questions = detailQuestionsFor(String(r.service_family));
-  const [quotation, notificationEvents, markets, currencies, flags, commitment, enquiryRow] = await Promise.all([
+  const [quotation, variation, notificationEvents, markets, currencies, flags, commitment, enquiryRow, deliverables] = await Promise.all([
     getCrewSupportQuotation(id),
+    getCrewSupportVariation(id),
     listNotificationEvents(id),
     listActivePricingMarkets(),
     listActiveCurrencies(),
     getStatusContext(id),
     getCommitmentSnapshot(id),
     createAdminClient().from("enquiries").select("id, crm_stage, amount_due").eq("id", r.enquiry_id).maybeSingle(),
+    getDeliverablesForEntity("enquiry", r.enquiry_id),
   ]);
   const enquiry = { id: String(r.enquiry_id), crmStage: String(enquiryRow.data?.crm_stage ?? "unknown"), amountDue: enquiryRow.data?.amount_due == null ? null : Number(enquiryRow.data.amount_due) };
   const nextStatuses = allowedStatusTransitions(r.status);
@@ -101,6 +107,18 @@ export default async function CrewSupportDetailPage({ params }: { params: Promis
           <Row label="Requester notes" value={r.requester_notes} />
           {questions.filter((q) => details[q.id]).map((q) => <Row key={q.id} label={q.label} value={details[q.id]} />)}
         </dl>
+        {questions.some((q) => q.id === "equipment" && q.required) && !details.equipment && !["declined", "cancelled", "confirmed", "in_production", "completed"].includes(r.status) && (
+          <ActionForm action={setRequestEquipmentAction} className="mt-4 flex flex-wrap items-end gap-2 rounded-lg border border-amber-300 bg-amber-50 p-3">
+            <input type="hidden" name="requestId" value={r.id} />
+            <label className="font-sans text-caption text-amber-900">Equipment responsibility isn&apos;t recorded on this request — who supplies it?
+              <select name="equipment" required defaultValue="" className={`${selectClasses} block mt-1`}>
+                <option value="" disabled>Choose…</option>
+                {questions.find((q) => q.id === "equipment")?.options?.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+              </select>
+            </label>
+            <SubmitButton pendingLabel="Saving…" className="rounded-lg bg-ordift-ink text-white px-4 py-2 font-sans text-body-small">Save</SubmitButton>
+          </ActionForm>
+        )}
         <p className="font-sans text-caption text-ordift-ink-muted mt-4">
           Quote, agreement and payment run through the linked enquiry:{" "}
           <Link href={`/admin/enquiries/${r.enquiry_id}`} className="text-ordift-gold-pressed underline underline-offset-4">open enquiry</Link>.
@@ -125,45 +143,19 @@ export default async function CrewSupportDetailPage({ params }: { params: Promis
                 </p>
               )}
               {slots.map((s) => (
-                <ActionForm key={`${s.id}-${s.status}-${s.assignee_profile_id}`} action={updateCrewSupportSlotAction} className="grid grid-cols-1 sm:grid-cols-5 gap-2 items-center border-t border-black/5 pt-3">
-                  <input type="hidden" name="slotId" value={s.id} />
-                  <input type="hidden" name="requestId" value={r.id} />
-                  <p className="font-sans text-body-small text-ordift-ink">{req.role_label} {s.slot_number} — <strong>{SLOT_STATUS_LABELS[s.status]}</strong>{s.assigneeName ? ` · ${s.assigneeName}` : ""}</p>
-                  <select name="assigneeProfileId" defaultValue={s.assignee_profile_id ?? ""} disabled={closed} aria-label={`Person for ${req.role_label} ${s.slot_number}`} className={selectClasses}>
-                    <option value="">No one selected</option>
-                    {s.assignee_profile_id && !cands?.candidates.some((c) => c.profileId === s.assignee_profile_id) && (
-                      <option value={s.assignee_profile_id}>{s.assigneeName ?? "Assigned person"} (no longer matches this role)</option>
-                    )}
-                    {cands?.candidates.map((c) => <option key={c.profileId} value={c.profileId}>{candidateLabel(c)}</option>)}
-                  </select>
-                  <select name="status" defaultValue={s.status} disabled={closed} aria-label={`Slot status for ${req.role_label} ${s.slot_number}`} className={selectClasses}>
-                    {SLOT_STATUSES.map((st) => <option key={st} value={st}>{SLOT_STATUS_LABELS[st]}</option>)}
-                  </select>
-                  <input name="note" defaultValue={s.note ?? ""} disabled={closed} placeholder="Note (optional)" aria-label="Note" className={selectClasses} />
-                  {!closed && <SubmitButton pendingLabel="Saving…" className="rounded-lg bg-ordift-ink text-white px-4 py-2 font-sans text-body-small">Save slot</SubmitButton>}
-                  {!closed && s.status !== "declined" && (
-                    <details className="sm:col-span-5 text-ordift-ink-muted">
-                      <summary className="cursor-pointer font-sans text-caption">Assign someone without a matching capability (authorised override)</summary>
-                      <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-2">
-                        <select name="overrideProfileId" defaultValue="" aria-label={`Override person for ${req.role_label} ${s.slot_number}`} className={selectClasses}>
-                          <option value="">No override</option>
-                          {overridePool.map((p) => <option key={p.profileId} value={p.profileId}>{p.name}{p.memberNumber ? ` (${p.memberNumber})` : ""}</option>)}
-                        </select>
-                        <input name="overrideReason" minLength={10} maxLength={300} placeholder="Justification (required with an override)" aria-label="Override justification" className={selectClasses} />
-                      </div>
-                    </details>
-                  )}
-                  {s.overrideReason && <p className="sm:col-span-5 font-sans text-caption text-amber-800">Assigned by override — {s.overrideReason}</p>}
-                </ActionForm>
+                <SlotOffer key={s.id} requestId={r.id} role={req.role_label} locked={closed} candidates={cands?.candidates ?? []} overridePool={overridePool} currencies={currencies}
+                  slot={{ id: s.id, slotNumber: s.slot_number, status: s.status, assigneeProfileId: s.assignee_profile_id, assigneeName: s.assigneeName, overrideReason: s.overrideReason, offerAmount: s.offerAmount, offerCurrency: s.offerCurrency, offeredAt: s.offeredAt, responseAt: s.responseAt, responseNote: s.responseNote, acceptedAt: s.acceptedAt, instructions: s.instructions }} />
               ))}
             </div>
           );
         })}
       </section>
 
-      <QuotationPanel requestId={r.id} requestStatus={r.status} quotation={quotation} markets={markets} currencies={currencies} enquiry={enquiry} canPrepare={r.status === "availability_review" || r.status === "quote_preparation"} />
+      <QuotationPanel requestId={r.id} requestStatus={r.status} quotation={quotation} variation={variation} markets={markets} currencies={currencies} enquiry={enquiry} canPrepare={r.status === "availability_review" || r.status === "quote_preparation"} />
 
-      {commitment && <CommitmentPanel snapshot={commitment} currencies={currencies} canMarkTest={isSuperAdmin(user)} />}
+      {commitment && <CommitmentPanel snapshot={commitment} canMarkTest={isSuperAdmin(user)} canCancelConfirmed={user ? await isManagementUser(user) : false} canReviewCancellation={user ? (await authorizeWithSuperAdminOverride(user.id, FINANCE_CAPABILITIES.paymentObligationApprove)).ok : false} />}
+
+      {commitment && <ProductionPanel snapshot={commitment} enquiryId={r.enquiry_id} deliverables={deliverables} handoff={{ media: details.mediaHandoff ?? null, raw: details.rawRequired ?? null }} />}
 
       <NotificationsPanel requestId={r.id} events={notificationEvents} isTest={Boolean(detail.request.is_test)} />
 

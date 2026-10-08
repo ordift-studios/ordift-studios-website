@@ -5,6 +5,7 @@ import { getCurrentUser } from "@/lib/portal/roles";
 import { getOwnPayeeProfile } from "@/lib/payables/payeeProfiles";
 import { isWorkshopInstructor } from "@/lib/workshops/instructorEngagements";
 import { resolveVisibleNavItems } from "@/lib/portal/navigation";
+import { userHasCrewJobs } from "@/lib/crewSupport/crewOffers";
 import { signOutAction } from "../login/actions";
 
 // Defense in depth: proxy.ts already redirects unauthenticated /portal/**
@@ -28,11 +29,14 @@ export default async function PortalDashboardLayout({
   // both real capability facts, not roles (public.payee_profiles /
   // workshop_instructor_engagements ownership), resolved here and
   // passed into the pure function above.
-  const [isPayee, isInstructor] = await Promise.all([
+  const [isPayee, isInstructor, hasCrewJobs] = await Promise.all([
     getOwnPayeeProfile(user.id).then(Boolean),
     isWorkshopInstructor(user.id),
+    userHasCrewJobs(user.id).catch(() => false),
   ]);
-  const visibleNavItems = resolveVisibleNavItems(user, isPayee, isInstructor);
+  // A "Crew jobs" entry appears only for people who have been offered (or
+  // accepted) a Creative Crew Support job — a real fact about the account.
+  const visibleNavItems = [...resolveVisibleNavItems(user, isPayee, isInstructor), ...(hasCrewJobs ? [{ label: "Crew jobs", href: "/portal/crew-offers" }] : [])];
 
   return (
     <div className="min-h-screen flex flex-col">

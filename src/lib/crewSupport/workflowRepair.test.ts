@@ -102,9 +102,11 @@ describe("authorised assignment override needs a justification", () => {
   });
   it("is recorded on the slot with actor and time, limited to genuine workforce identities, and audited", () => {
     const admin = readFileSync("src/lib/crewSupport/admin.ts", "utf8");
-    expect(admin).toContain("assignment_override_reason: override");
-    expect(admin).toContain("isWorkforceProfile(assignee)");
-    expect(admin).toContain("overrideReason: override");
+    const offers = readFileSync("src/lib/crewSupport/crewOffers.ts", "utf8");
+    expect(admin).toContain("isWorkforceProfile(params.profileId)");
+    expect(offers).toContain("assignment_override_reason: eligibility.override");
+    expect(offers).toContain("assignment_override_by: eligibility.override ? params.actorUserId : null");
+    expect(offers).toContain("overrideReason: eligibility.override");
     const pool = readFileSync("src/lib/crewSupport/candidates.ts", "utf8");
     expect(pool).toContain('from("staff_details")');
     expect(pool.replace(/\/\/.*$/gm, "")).not.toMatch(/attendance_records/);
@@ -150,7 +152,8 @@ describe("quotation versions are preserved, never silently edited", () => {
   const revise = src.slice(src.indexOf("export async function reviseCrewSupportQuotation"), src.indexOf("export async function returnQuotationToDraft"));
   it("revision supersedes the issued row, inserts a new draft with version + 1 and supersedes_id, and restores the issued one if anything fails", () => {
     expect(revise).toContain('status: "superseded"');
-    expect(revise).toContain("version: Number(original.version) + 1, supersedes_id: quote.id");
+    expect(revise).toContain("version: Number(original.version) + 1");
+    expect(revise).toContain("supersedes_id: quote.isVariation ? quote.supersedesId : quote.id");
     expect(revise).toContain('status: "sent", updated_at');
     expect(revise).toContain("quote.status === \"accepted\"");
   });
@@ -163,10 +166,9 @@ describe("quotation versions are preserved, never silently edited", () => {
 describe("cancel/decline unwinds safely and never touches the receivable", () => {
   const src = readFileSync("src/lib/crewSupport/commitmentEstablish.ts", "utf8");
   const unwind = src.slice(src.indexOf("export async function unwindCommitments"));
-  it("cancels only payable-free engagements, flags the rest for Finance, removes only this request's project access", () => {
+  it("cancels only payable-free engagements and flags the rest for Finance", () => {
     expect(unwind).toContain("a crew payable exists");
     expect(unwind).toContain('status: "cancelled"');
-    expect(unwind).toContain('startsWith(`Crew Support ${snapshot.reference}`)');
     expect(unwind).toContain("receivableUntouched: true");
     expect(unwind).not.toMatch(/\.from\("(enquiries|payments|payment_obligations|client_quotations)"\)/);
   });

@@ -8,9 +8,9 @@ import ConfirmSubmitButton from "@/components/admin/ConfirmSubmitButton";
 import type { QuotationAdminView } from "@/lib/crewSupport/quotation";
 import { ACCEPTANCE_CHANNELS, defaultValidUntil } from "@/lib/crewSupport/quotationRules";
 import type { CrewSupportStatus } from "@/lib/crewSupport/config";
-import { approvedBookingTermsReference } from "@/lib/crewSupport/standardTerms";
+import { approvedBookingTermsReference, bookingTermsApplicability } from "@/lib/crewSupport/standardTerms";
 import CrewQuotationEditor from "./CrewQuotationEditor";
-import { reviseQuotationAction, completeAcceptanceAction, completeIssueAction, discardQuotationDraftAction, issueQuotationAction, markQuotationReadyAction, prepareQuotationAction, recordAcceptanceAction, returnQuotationToDraftAction } from "./quotationActions";
+import { createVariationAction, reviseQuotationAction, completeAcceptanceAction, completeIssueAction, discardQuotationDraftAction, issueQuotationAction, markQuotationReadyAction, prepareQuotationAction, recordAcceptanceAction, returnQuotationToDraftAction } from "./quotationActions";
 
 const btn = "rounded-lg bg-ordift-ink text-white px-4 py-2 font-sans text-body-small";
 const btn2 = "rounded-lg border border-black/20 px-4 py-2 font-sans text-body-small text-ordift-ink";
@@ -34,15 +34,16 @@ function Summary({ q }: { q: QuotationAdminView }) {
           ))}
         </tbody>
       </table>
+      {q.paymentCondition !== "none" && <p className="font-sans text-body-small text-ordift-ink">{q.paymentCondition === "full" ? "Full payment required before confirmation." : `${q.depositPercent}% deposit required before confirmation.`}</p>}
       <p className="font-sans text-body-small text-ordift-ink">Total: <strong>{q.currency} {q.total.toFixed(2)}</strong>{q.validUntil ? ` · valid until ${q.validUntil}` : ""}{q.fxCurrency ? ` · local equivalent shown in ${q.fxCurrency}${q.fxRate ? ` (rate ${q.fxRate} locked ${q.fxLockedAt?.slice(0, 10)})` : " (rate locks when issued)"}` : ""}</p>
     </div>
   );
 }
 
 export default function QuotationPanel({
-  requestId, requestStatus, quotation, markets, currencies, enquiry, canPrepare,
+  requestId, requestStatus, quotation, variation, markets, currencies, enquiry, canPrepare,
 }: {
-  requestId: string; requestStatus: CrewSupportStatus; quotation: QuotationAdminView | null; markets: { slug: string; name: string }[]; currencies: { code: string; name: string }[];
+  requestId: string; requestStatus: CrewSupportStatus; quotation: QuotationAdminView | null; variation: QuotationAdminView | null; markets: { slug: string; name: string }[]; currencies: { code: string; name: string }[];
   enquiry: { id: string; crmStage: string; amountDue: number | null }; canPrepare: boolean;
 }) {
   const q = quotation;
@@ -70,13 +71,34 @@ export default function QuotationPanel({
         )
       )}
 
-      {q && (
-        <>
-          <p className="font-sans text-body-small text-ordift-ink"><strong>{q.reference}</strong>{q.version > 1 ? ` (version ${q.version})` : ""} — {STATUS_TEXT[q.status] ?? q.status}{q.isTest ? " · TEST record (no real emails or receivables)" : ""}</p>
+      {q && <QuotationBody q={q} requestId={requestId} requestStatus={requestStatus} currencies={currencies} enquiry={enquiry} />}
+
+      {q && q.status === "accepted" && !variation && !["declined", "cancelled", "completed"].includes(requestStatus) && (
+        <div className="border-t border-black/5 pt-4 space-y-2">
+          <p className="font-sans text-body-small font-medium text-ordift-ink">Need to change what was agreed?</p>
+          <p className="font-sans text-caption text-ordift-ink-muted">The accepted quotation is never edited. A variation is a complete replacement quotation that goes through the same steps and takes effect only if the client accepts it; until then the accepted one stays in force.</p>
+          <ActionForm action={createVariationAction} className="flex items-center gap-3"><input type="hidden" name="requestId" value={requestId} /><ConfirmSubmitButton confirmMessage="Create a variation (replacement quotation) as a draft? Nothing changes for the client until it is issued and they accept it." pendingLabel="Creating…" className={btn2}>Create variation</ConfirmSubmitButton></ActionForm>
+        </div>
+      )}
+
+      {variation && (
+        <div className="border-t border-black/5 pt-4 space-y-3" aria-label="Variation">
+          <p className="font-sans text-body-small font-medium text-ordift-ink">Variation — proposed replacement quotation</p>
+          <QuotationBody q={variation} requestId={requestId} requestStatus={requestStatus} currencies={currencies} enquiry={enquiry} />
+        </div>
+      )}
+    </section>
+  );
+}
+
+function QuotationBody({ q, requestId, requestStatus, currencies, enquiry }: { q: QuotationAdminView; requestId: string; requestStatus: CrewSupportStatus; currencies: { code: string; name: string }[]; enquiry: { id: string; crmStage: string; amountDue: number | null } }) {
+  return (
+    <>
+          <p className="font-sans text-body-small text-ordift-ink"><strong>{q.reference}</strong>{q.version > 1 ? ` (version ${q.version})` : ""}{q.isVariation ? " · variation" : ""} — {STATUS_TEXT[q.status] ?? q.status}{q.isTest ? " · TEST record (no real emails or receivables)" : ""}</p>
 
           {q.status === "draft" && (
             <>
-              <CrewQuotationEditor quotationId={q.id} requestId={requestId} initialLines={q.lines} validUntil={q.validUntil ?? defaultValidUntil(new Date())} terms={q.terms} internalNotes={q.internalNotes} fxCurrency={q.fxCurrency} currencies={currencies} termsReference={approvedBookingTermsReference()} />
+              <CrewQuotationEditor quotationId={q.id} requestId={requestId} initialLines={q.lines} validUntil={q.validUntil ?? defaultValidUntil(new Date())} terms={q.terms} internalNotes={q.internalNotes} fxCurrency={q.fxCurrency} currencies={currencies} paymentCondition={q.paymentCondition} depositPercent={q.depositPercent} termsReference={approvedBookingTermsReference()} termsCitation={(() => { const a = bookingTermsApplicability(); return a.applies ? a.citation : null; })()} />
               <div className="flex flex-wrap gap-3 border-t border-black/5 pt-3">
                 <ActionForm action={markQuotationReadyAction}><input type="hidden" name="quotationId" value={q.id} /><input type="hidden" name="requestId" value={requestId} /><SubmitButton pendingLabel="Checking…" className={btn}>Mark ready for issue</SubmitButton></ActionForm>
                 <ActionForm action={discardQuotationDraftAction}><input type="hidden" name="quotationId" value={q.id} /><input type="hidden" name="requestId" value={requestId} /><ConfirmSubmitButton confirmMessage="Discard this draft quotation? It was never issued." pendingLabel="Discarding…" className={btn2}>Discard draft</ConfirmSubmitButton></ActionForm>
@@ -89,7 +111,7 @@ export default function QuotationPanel({
             <>
               <Summary q={q} />
               <div className="flex flex-wrap gap-3">
-                <ActionForm action={issueQuotationAction}><input type="hidden" name="quotationId" value={q.id} /><input type="hidden" name="requestId" value={requestId} /><ConfirmSubmitButton confirmMessage="Issue this quotation to the client? The request becomes “Quote issued”, the enquiry becomes “Quotation sent”, and the client is notified." pendingLabel="Issuing…" className={btn}>Issue quotation</ConfirmSubmitButton></ActionForm>
+                <ActionForm action={issueQuotationAction}><input type="hidden" name="quotationId" value={q.id} /><input type="hidden" name="requestId" value={requestId} /><ConfirmSubmitButton confirmMessage={q.isVariation ? "Issue this variation to the client? Your accepted quotation stays in force until they accept it. The client is notified." : "Issue this quotation to the client? The request becomes “Quote issued”, the enquiry becomes “Quotation sent”, and the client is notified."} pendingLabel="Issuing…" className={btn}>Issue quotation</ConfirmSubmitButton></ActionForm>
                 <ActionForm action={returnQuotationToDraftAction}><input type="hidden" name="quotationId" value={q.id} /><input type="hidden" name="requestId" value={requestId} /><SubmitButton pendingLabel="Returning…" className={btn2}>Return to draft</SubmitButton></ActionForm>
               </div>
             </>
@@ -100,10 +122,10 @@ export default function QuotationPanel({
           {q.status === "sent" && (
             <div className="space-y-3 border-t border-black/5 pt-3">
               <p className="font-sans text-caption text-ordift-ink-muted">Issued {q.issuedAt?.slice(0, 10)}. The client can accept in their portal (preferred). <Link href={`/admin/pricing/quotations/${q.id}/pdf`} className="text-ordift-gold-pressed underline underline-offset-4">Open printable quotation</Link></p>
-              {requestStatus === "quoted" && (
+              {(requestStatus === "quoted" || q.isVariation) && (
                 <ActionForm action={reviseQuotationAction} className="flex items-center gap-3"><input type="hidden" name="quotationId" value={q.id} /><input type="hidden" name="requestId" value={requestId} /><ConfirmSubmitButton confirmMessage="Create a new version of this quotation? The issued version stays on record as superseded and the client can't accept it until you issue the new one." pendingLabel="Creating…" className={btn2}>Revise quotation (new version)</ConfirmSubmitButton></ActionForm>
               )}
-              {requestStatus === "quote_preparation" && (
+              {!q.isVariation && requestStatus === "quote_preparation" && (
                 <ActionForm action={completeIssueAction} className="flex items-center gap-3"><input type="hidden" name="quotationId" value={q.id} /><input type="hidden" name="requestId" value={requestId} /><SubmitButton pendingLabel="Syncing…" className={btn2}>Complete issue synchronisation</SubmitButton><span className="font-sans text-caption text-amber-800">The quotation is issued but the request status didn&apos;t finish updating.</span></ActionForm>
               )}
               <details className="rounded-lg border border-black/10 p-4">
@@ -130,8 +152,6 @@ export default function QuotationPanel({
               )}
             </div>
           )}
-        </>
-      )}
-    </section>
+    </>
   );
 }

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
-import { accessExpiryFor, assessAgreement, describeContractBasis, hasUsableTerms, clearsCrewAcceptance, COLLABORATOR_ACCESS_GRACE_DAYS, confirmationBlockers, statusAfterCommercialAcceptance, validateAgreementRequirementChange, validateCrewAcceptanceInput, type SlotCommitment } from "./commitmentRules";
+import { assessAgreement, describeContractBasis, hasUsableTerms, clearsCrewAcceptance, confirmationBlockers, statusAfterCommercialAcceptance, validateAgreementRequirementChange, validateCrewAcceptanceInput, type SlotCommitment } from "./commitmentRules";
 import { classifyConflicts, firmConflicts } from "./conflicts";
 import { NO_QUOTATION, validateSlotChange, validateStatusChange } from "./rules";
 import { allowedStatusTransitions } from "./config";
@@ -133,32 +133,33 @@ describe("double-booking uses ONE definition of conflict", () => {
 
 describe("commitments reuse existing infrastructure and only arise at confirmation", () => {
   const src = readFileSync("src/lib/crewSupport/commitmentEstablish.ts", "utf8");
+  const offers = readFileSync("src/lib/crewSupport/crewOffers.ts", "utf8");
   it("compensation, engagement and payable go through payables/engagements.ts (no Crew Support payout table)", () => {
-    expect(src).toContain("createEngagement(");
+    expect(offers).toContain("createEngagement(");
     expect(src).toContain("createEngagementPayable(");
-    expect(src).toContain("assignUserToProject(");
-    expect(src).not.toMatch(/from\("payment_obligations"\)|from\("payable_items"\)|insert\(/);
-    expect(src).not.toMatch(/client_quotations|usd_total|selling_rate/); // the client's price is never read here
+    for (const f of [src, offers]) {
+      expect(f).not.toMatch(/from\("payment_obligations"\)|from\("payable_items"\)/);
+      expect(f).not.toMatch(/client_quotations|usd_total|selling_rate/); // the client's price is never read here
+    }
   });
-  it("a payable is created only inside establishCommitments (confirmed), never when recording acceptance", () => {
-    const record = src.slice(src.indexOf("export async function recordCrewAcceptance"), src.indexOf("export async function cancelSlotEngagement"));
-    expect(record).not.toContain("createEngagementPayable");
-    const establish = src.slice(src.indexOf("export async function establishCommitments"));
+  it("a payable is created only inside establishCommitments (confirmed), never when a crew member accepts", () => {
+    expect(offers).not.toContain("createEngagementPayable");
+    const establish = src.slice(src.indexOf("export async function establishCommitments"), src.indexOf("export async function unwindCommitments"));
     expect(establish).toContain('snapshot.status !== "confirmed"');
     expect(establish).toContain("payment_obligation_id");
   });
   it("engagement creation is idempotent by slot (existing-engagement check + DB unique index)", () => {
-    expect(src).toContain('.eq("entity_type", SLOT_ENTITY).eq("entity_id", params.slotId).neq("status", "cancelled")');
+    expect(offers).toContain('.eq("entity_type", SLOT_ENTITY).eq("entity_id", params.slotId).neq("status", "cancelled")');
     expect(readFileSync("supabase/migrations/0145_crew_support_commitments.sql", "utf8")).toMatch(/create unique index engagements_one_live_per_crew_slot[\s\S]*entity_type = 'crew_support_slot'/);
   });
-  it("test records create no engagement, assignment, payable or crew email", () => {
-    expect(src).toContain("if (!isTest) {");
+  it("test records create no engagement, payable or crew email", () => {
+    expect(offers).toContain("if (!isTest) {");
     expect(src).toContain("if (snapshot.isTest)");
     expect(src.indexOf("commitments_suppressed_test")).toBeLessThan(src.indexOf("createEngagementPayable({"));
+    expect(offers).toContain("isTest, triggeredBy");
   });
-  it("project access expires a fixed window after the job's last day", () => {
-    expect(COLLABORATOR_ACCESS_GRACE_DAYS).toBe(7);
-    expect(accessExpiryFor("2026-10-15")).toBe("2026-10-22T00:00:00.000Z");
+  it("crew get NO access to the client's project workspace — no project_assignments grant anywhere in Crew Support", () => {
+    for (const f of ["commitmentEstablish", "crewOffers", "commitment", "admin"]) expect(readFileSync(`src/lib/crewSupport/${f}.ts`, "utf8")).not.toContain("assignUserToProject");
   });
   it("confirmation books the enquiry (CRM) and a payment alone never does", () => {
     expect(ENQUIRY_STAGE_SYNC.confirmed.to).toBe("booked");
@@ -166,10 +167,9 @@ describe("commitments reuse existing infrastructure and only arise at confirmati
     expect(guard).toContain('intent?.commercial_intent === "creative_crew_support"');
     expect(guard.indexOf('creative_crew_support')).toBeLessThan(guard.indexOf('.update({ crm_stage: "booked" })'));
   });
-  it("an Availability Review proposal never creates an engagement or payable (slot saves don't call the finance layer except to CANCEL a draft)", () => {
-    const admin = readFileSync("src/lib/crewSupport/admin.ts", "utf8");
-    const slotFn = admin.slice(admin.indexOf("export async function setCrewSupportSlot"), admin.indexOf("async function isEligibleAssignee"));
-    expect(slotFn).not.toMatch(/createEngagement|createEngagementPayable/);
+  it("an Availability Review proposal never creates an engagement or payable (an offer only records the proposal)", () => {
+    const send = offers.slice(offers.indexOf("export async function sendCrewOffer"), offers.indexOf("export async function withdrawOrReleaseSlot"));
+    expect(send).not.toMatch(/createEngagement|createEngagementPayable/);
   });
 });
 

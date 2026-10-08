@@ -3,8 +3,9 @@
 import { revalidatePath } from "next/cache";
 import { getCurrentUser, isSuperAdmin } from "@/lib/portal/roles";
 import { canManageCrewSupport } from "@/lib/crewSupport/permissions";
-import { recordCrewAcceptance, establishCommitments } from "@/lib/crewSupport/commitmentEstablish";
-import { markRequestAsTest, reevaluateAgreementStage, setAgreementRequired } from "@/lib/crewSupport/commitment";
+import { establishCommitments } from "@/lib/crewSupport/commitmentEstablish";
+import { cancelConfirmedRequest, markRequestAsTest, reevaluateAgreementStage, resolveCancellationReview, setAgreementRequired } from "@/lib/crewSupport/commitment";
+import { isManagementUser } from "@/lib/crewSupport/management";
 import { actionFail, actionOk, runAction, type ActionState } from "@/lib/shared/actionState";
 
 async function authorize() {
@@ -19,25 +20,6 @@ function refresh(requestId: string) {
 }
 function withWarnings(message: string, warnings?: string[]): ActionState {
   return actionOk(warnings?.length ? `${message} Note: ${warnings.join(" ")}` : message);
-}
-
-export async function recordCrewAcceptanceAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
-  const user = await authorize();
-  if (!user) return actionFail(DENIED);
-  const requestId = String(formData.get("requestId") ?? "");
-  return runAction(async () => {
-    const r = await recordCrewAcceptance({
-      slotId: String(formData.get("slotId") ?? ""),
-      amount: Number(String(formData.get("amount") ?? "")),
-      currency: String(formData.get("currency") ?? "").toUpperCase(),
-      note: String(formData.get("note") ?? ""),
-      actorUserId: user.id,
-    });
-    if (!r.ok) return actionFail(r.error);
-    refresh(requestId);
-    if (r.alreadyRecorded) return actionOk("This acceptance and compensation were already recorded — nothing changed.");
-    return actionOk(r.suppressedTest ? "Crew acceptance recorded. This is a QA/test record, so no engagement, payable or crew email was created." : "Crew acceptance and agreed compensation recorded. No payable exists yet — it is created when the request is confirmed.");
-  }, "record crew acceptance");
 }
 
 export async function setAgreementRequiredAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
@@ -73,8 +55,8 @@ export async function completeConfirmationAction(_prev: ActionState, formData: F
     const r = await establishCommitments({ requestId, actorUserId: user.id });
     if (!r.ok) return actionFail(r.error);
     refresh(requestId);
-    if (r.suppressedTest) return actionOk("QA/test record: no engagements, project access, payables or crew emails were created.");
-    return withWarnings(`Commitments are in place (new this run: ${r.created.engagements} engagement activations, ${r.created.assignments} project assignments, ${r.created.payables} payables).`, r.warnings);
+    if (r.suppressedTest) return actionOk("QA/test record: no engagements, payables or crew emails were created.");
+    return withWarnings(`Commitments are in place (new this run: ${r.created.engagements} engagement activations, ${r.created.payables} payables).`, r.warnings);
   }, "complete confirmation");
 }
 
@@ -88,4 +70,29 @@ export async function markAsTestAction(_prev: ActionState, formData: FormData): 
     refresh(requestId);
     return actionOk("Marked as a QA/test record. No client or crew emails, engagements or payables will be created from it.");
   }, "mark as test");
+}
+
+export async function cancelConfirmedRequestAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  const user = await authorize();
+  if (!user) return actionFail(DENIED);
+  if (!(await isManagementUser(user))) return actionFail("Only authorised management (Super Admin or an executive administrator) can cancel a confirmed request.");
+  const requestId = String(formData.get("requestId") ?? "");
+  return runAction(async () => {
+    const r = await cancelConfirmedRequest({ requestId, reason: String(formData.get("reason") ?? ""), actorUserId: user.id });
+    if (!r.ok) return actionFail(r.error);
+    refresh(requestId);
+    return withWarnings("Request cancelled. A financial review is now pending — nothing was refunded or written off automatically.", r.warnings);
+  }, "cancel confirmed request");
+}
+
+export async function resolveCancellationReviewAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  const user = await authorize();
+  if (!user) return actionFail(DENIED);
+  const requestId = String(formData.get("requestId") ?? "");
+  return runAction(async () => {
+    const r = await resolveCancellationReview({ requestId, note: String(formData.get("note") ?? ""), actorUserId: user.id });
+    if (!r.ok) return actionFail(r.error);
+    refresh(requestId);
+    return actionOk("Financial review recorded.");
+  }, "resolve cancellation review");
 }
