@@ -53,3 +53,24 @@ describe("reference tables are accessed with the session client, not the admin c
     expect(route).toMatch(/session\s*\n?\s*\.from\("current_exchange_rates"\)/);
   });
 });
+
+describe("exchange-rate save feedback and duplicate protection (2026-10-11)", () => {
+  const actions = readFileSync("src/app/admin/payments/actions.ts", "utf8");
+  const form = readFileSync("src/app/admin/payments/exchange-rates/AddExchangeRateForm.tsx", "utf8");
+  it("the form uses the result-returning action, disables the confirm button while saving and shows success and failure", () => {
+    expect(form).toContain("saveExchangeRateAction");
+    expect(form).toContain("useActionState(saveExchangeRateAction");
+    expect(form).toContain("disabled={pending}");
+    expect(form).toContain('role="status"');
+    expect(form).toContain('role="alert"');
+    expect(form).not.toContain("addExchangeRateAction");
+  });
+  it("an identical rate for the same currency within a minute is not inserted twice, and the history is never rewritten", () => {
+    const body = actions.slice(actions.indexOf("export async function saveExchangeRateAction"), actions.indexOf("// Exported so it can be exercised directly"));
+    expect(body).toContain("DUPLICATE_RATE_WINDOW_MS");
+    expect(body).toContain("no duplicate entry was added");
+    expect(body.replace(/\/\/.*$/gm, "")).not.toMatch(/\.(update|delete|upsert)\(/);
+    expect(body).toContain("insertExchangeRate(");
+    expect(body).toContain("payment.exchange_rate_added");
+  });
+});

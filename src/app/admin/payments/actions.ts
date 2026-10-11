@@ -7,13 +7,13 @@ import { getCurrentUser } from "@/lib/portal/roles";
 import { hasCapability } from "@/lib/workflow/engine";
 import { PAYMENT_CAPABILITIES } from "@/lib/payments/paymentPermissions";
 import { logActivity } from "@/lib/admin/activityLog";
-import { insertExchangeRate } from "@/lib/payments/currency";
+import { getExchangeRateHistory, insertExchangeRate } from "@/lib/payments/currency";
 import { reconcilePendingGatewayPayment } from "@/lib/payments/reconcilePendingPayment";
 import { getProvider } from "@/lib/payments/providerRegistry";
 import { assessPaystackStatus, formatAssessment } from "@/lib/payments/paystackStatusCheck";
 import { sendPaymentReceiptEmail } from "@/lib/payments/receipts";
 import { advanceStageOnFullPayment } from "@/lib/payments/crmStageSync";
-import { actionOk, actionFail, type ActionState } from "@/lib/shared/actionState";
+import { actionOk, actionFail, runAction, type ActionState } from "@/lib/shared/actionState";
 
 async function requireCapability(
   capability:
@@ -232,6 +232,36 @@ export async function addExchangeRateAction(formData: FormData): Promise<void> {
 
   revalidatePath("/admin/payments/exchange-rates");
   redirect(back);
+}
+
+// Exchange-rate save with visible feedback and duplicate protection (2026-10-11). The earlier
+// redirect-based action above gave no confirmation on a redirect back to the SAME page and nothing
+// stopped a second click, which saved the same QAR rate twice within seconds. This one returns an
+// explicit result, is pending-disabled in the form, and refuses to add an IDENTICAL rate for the same
+// currency within a minute of the last one. The history stays append-only and locked historical rates
+// are never touched.
+export const DUPLICATE_RATE_WINDOW_MS = 60_000;
+
+export async function saveExchangeRateAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  const user = await getCurrentUser();
+  if (!user || !hasCapability(user, PAYMENT_CAPABILITIES, "manage_currencies")) return actionFail("You're not authorised to change exchange rates.");
+  const currency = String(formData.get("currencyCode") ?? "");
+  if (!MANAGED_CURRENCIES.includes(currency)) return actionFail("Choose a currency that has a managed rate (GHS or QAR).");
+  const rate = Number(formData.get("rateToUsd"));
+  if (!Number.isFinite(rate) || rate <= 0) return actionFail("Enter a valid rate greater than zero. Nothing was saved.");
+  const reason = String(formData.get("reason") ?? "").trim() || null;
+
+  return runAction(async () => {
+    const latest = (await getExchangeRateHistory(currency))[0];
+    if (latest && latest.rateToUsd === rate && Date.now() - new Date(latest.effectiveFrom).getTime() < DUPLICATE_RATE_WINDOW_MS) {
+      return actionOk(`1 USD = ${rate.toFixed(4)} ${currency} was already saved a moment ago — no duplicate entry was added.`);
+    }
+    const result = await insertExchangeRate({ currencyCode: currency, rateToUsd: rate, reason, actorUserId: user.id });
+    if (!result.ok) return actionFail("The rate could not be saved. Nothing was changed — please try again.");
+    await logActivity({ actorUserId: user.id, action: "payment.exchange_rate_added", entityType: "exchange_rate", entityId: currency, metadata: { currencyCode: currency, rateToUsd: rate, reason } });
+    revalidatePath("/admin/payments/exchange-rates");
+    return actionOk(`Saved: 1 USD = ${rate.toFixed(4)} ${currency}. New payments use this rate from now; payments that already locked a rate keep theirs.`);
+  }, "save exchange rate");
 }
 
 // Exported so it can be exercised directly by integration tests, the

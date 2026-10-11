@@ -1,7 +1,7 @@
 "use client";
 
-import { useId, useState } from "react";
-import { addExchangeRateAction } from "../actions";
+import { useActionState, useId, useState } from "react";
+import { saveExchangeRateAction } from "../actions";
 
 type Step = "input" | "confirm";
 
@@ -32,6 +32,18 @@ export default function AddExchangeRateForm({
     initialError ? (ERROR_MESSAGES[initialError] ?? "Something went wrong — please try again.") : null
   );
 
+  const [result, formAction, pending] = useActionState(saveExchangeRateAction, null);
+  // When a save succeeds, return to a clean "add" step so the form can't be submitted again by accident.
+  const [seenResult, setSeenResult] = useState(result);
+  if (result !== seenResult) {
+    setSeenResult(result);
+    if (result?.ok) {
+      setStep("input");
+      setRateInput("");
+      setReason("");
+    }
+  }
+
   const newRate = Number(rateInput);
   const rateValid = Number.isFinite(newRate) && newRate > 0;
 
@@ -47,6 +59,17 @@ export default function AddExchangeRateForm({
   return (
     <div className="rounded-xl border border-black/10 bg-white p-6 space-y-5">
       <h2 className="font-serif font-medium text-lg text-ordift-ink">Add New Rate</h2>
+
+      {result?.ok && (
+        <p role="status" className="font-sans text-body-small text-green-800 bg-green-50 border border-green-200 rounded-lg px-4 py-3">
+          ✓ {result.message}
+        </p>
+      )}
+      {result && !result.ok && (
+        <p role="alert" className="font-sans text-body-small text-red-700 bg-red-50 rounded-lg px-4 py-3">
+          {result.error}
+        </p>
+      )}
 
       {error && (
         <p role="alert" aria-live="assertive" className="font-sans text-body-small text-red-700 bg-red-50 rounded-lg px-4 py-3">
@@ -132,20 +155,23 @@ export default function AddExchangeRateForm({
             checkouts, payments, or receipts.
           </p>
 
-          <form action={addExchangeRateAction} className="flex flex-col sm:flex-row gap-3">
+          <form action={formAction} className="flex flex-col sm:flex-row gap-3">
             <input type="hidden" name="currencyCode" value={currencyCode} />
             <input type="hidden" name="rateToUsd" value={rateInput} />
             <input type="hidden" name="reason" value={reason} />
             <button
               type="submit"
-              className="flex-1 inline-flex items-center justify-center min-h-11 px-6 rounded-full font-sans font-semibold text-button bg-ordift-gold text-ordift-navy-950 hover:bg-ordift-gold-hover"
+              disabled={pending}
+              aria-busy={pending}
+              className="flex-1 inline-flex items-center justify-center min-h-11 px-6 rounded-full font-sans font-semibold text-button bg-ordift-gold text-ordift-navy-950 hover:bg-ordift-gold-hover disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              Confirm &amp; Activate New Rate
+              {pending ? "Saving…" : "Confirm & Activate New Rate"}
             </button>
             <button
               type="button"
+              disabled={pending}
               onClick={() => setStep("input")}
-              className="inline-flex items-center justify-center min-h-11 px-6 rounded-full font-sans font-semibold text-button border border-ordift-ink/30 text-ordift-ink hover:border-ordift-ink/60"
+              className="inline-flex items-center justify-center min-h-11 px-6 rounded-full font-sans font-semibold text-button border border-ordift-ink/30 text-ordift-ink hover:border-ordift-ink/60 disabled:opacity-50"
             >
               Edit
             </button>

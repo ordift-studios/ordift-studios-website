@@ -2,6 +2,7 @@
 
 import Script from "next/script";
 import { useEffect, useId, useRef, useState } from "react";
+import { resetTurnstile } from "@/lib/turnstileReset";
 
 declare global {
   interface Window {
@@ -80,7 +81,9 @@ export default function TurnstileWidget({ onVerify, onExpire, resetSignal }: Pro
       hasMounted.current = true;
       return;
     }
-    window.turnstile?.reset(containerId);
+    // Never throws (see turnstileReset.ts); a failed reset is logged there and the in-widget
+    // "Try again" control (below) still lets the visitor request a fresh challenge in place.
+    resetTurnstile(containerId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [resetSignal]);
 
@@ -118,8 +121,8 @@ export default function TurnstileWidget({ onVerify, onExpire, resetSignal }: Pro
               // so a documented-retryable Cloudflare-side failure (see the
               // verifyName comment) doesn't strand a real visitor behind a
               // full manual page reload.
-              window.turnstile?.reset(containerId);
-              setErroredToLoad(false);
+              // resetTurnstile() hands Cloudflare the container ELEMENT (a bare id string throws).
+              if (resetTurnstile(containerId)) setErroredToLoad(false);
             }}
             className="mt-1 font-sans text-caption font-medium text-ordift-gold-pressed underline underline-offset-4"
           >
