@@ -6,7 +6,7 @@ import { getMyCrewJob } from "@/lib/crewSupport/crewOffers";
 import CrewJobDetails from "@/components/portal/CrewJobDetails";
 import RespondForm from "./RespondForm";
 
-export const metadata: Metadata = { title: "Crew Job — Ordift Studios Portal", robots: { index: false, follow: false } };
+export const metadata: Metadata = { title: "Assignment — Ordift Studios Portal", robots: { index: false, follow: false } };
 
 export default async function CrewOfferPage({ params }: { params: Promise<{ slotId: string }> }) {
   const { slotId } = await params;
@@ -17,7 +17,7 @@ export default async function CrewOfferPage({ params }: { params: Promise<{ slot
 
   return (
     <div className="space-y-6 max-w-3xl">
-      <Link href="/portal/crew-offers" className="font-sans text-caption text-ordift-gold-pressed underline underline-offset-4">← My crew jobs</Link>
+      <Link href="/portal/crew-offers" className="font-sans text-caption text-ordift-gold-pressed underline underline-offset-4">← My Assignments</Link>
       <CrewJobDetails job={job} />
       {job.state === "offered" && !job.jobClosed && (
         <div className="rounded-xl border border-black/10 bg-ordift-offwhite p-5 space-y-3">

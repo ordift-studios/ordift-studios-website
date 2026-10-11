@@ -6,6 +6,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { getCurrentUser, hasRole, isStaffOrAdmin, isSuperAdmin } from "@/lib/portal/roles";
 import { logActivity } from "@/lib/admin/activityLog";
 import type { DeliverableEntityType } from "@/lib/admin/deliverables";
+import { shouldAdvanceToDelivered } from "@/lib/admin/deliverableStage";
 import { sendFilesReadyEmail } from "@/lib/enquiry/lifecycleEmails";
 import { pathwayLabel } from "@/lib/enquiry/pathways";
 import type { CrmStage } from "@/lib/admin/enquiries";
@@ -133,7 +134,21 @@ export async function createDeliverableAction(
   // under concurrency and naturally idempotent: a repeat call (e.g. a
   // later deliverable published against an already-"delivered"
   // enquiry) always affects zero rows.
+  // 2026-10-11: whether a publish may advance the stage is decided by shouldAdvanceToDelivered() —
+  // final-output categories only, and never for a Creative Crew Support job (see deliverableStage.ts).
+  let advanceStage = false;
   if (entityType === "enquiry") {
+    try {
+      const [{ data: category }, { data: crewRequest }] = await Promise.all([
+        supabase.from("deliverable_categories").select("key").eq("id", categoryId).maybeSingle(),
+        supabase.from("crew_support_requests").select("id").eq("enquiry_id", entityId).maybeSingle(),
+      ]);
+      advanceStage = shouldAdvanceToDelivered({ entityType, categoryKey: (category?.key as string | undefined) ?? null, isCrewSupportEnquiry: Boolean(crewRequest) });
+    } catch (err) {
+      console.error("[admin] deliverable stage-advance check failed — leaving the stage unchanged", { entityId, err });
+    }
+  }
+  if (advanceStage) {
     try {
       const { data: updatedRows, error: stageError } = await supabase
         .from("enquiries")

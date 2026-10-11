@@ -133,3 +133,16 @@ describe("resolveVisibleAdminPortalLinks — dual-role staff cross-link (fixture
     expect(resolveVisibleAdminPortalLinks(userWith(["staff", "vendor"]))).toEqual([{ label: "Vendor Portal", href: "/portal/vendor" }]);
   });
 });
+
+describe("My Assignments (Crew Support) in the Admin Platform's My Workspace", () => {
+  const base = { isAdmin: false, isSuper: false, isExecutive: false, isWorkforceAdmin: false, canCoordinateOperations: false, canAdministerPartnerships: false };
+  const items = (flags: Parameters<typeof resolveVisibleAdminNavGroups>[0]) => resolveVisibleAdminNavGroups(flags).flatMap((g) => g.items.map((i) => i.href));
+  it("appears for someone who actually has assignments, at any role", () => {
+    expect(items({ ...base, hasAssignments: true })).toContain("/admin/me/assignments");
+    expect(items({ ...base, isAdmin: true, isSuper: true, hasAssignments: true })).toContain("/admin/me/assignments");
+  });
+  it("is absent when the person has no assignments — even for a Super Admin (access comes from being the assignee, not the role)", () => {
+    expect(items({ ...base })).not.toContain("/admin/me/assignments");
+    expect(items({ ...base, isAdmin: true, isSuper: true })).not.toContain("/admin/me/assignments");
+  });
+});

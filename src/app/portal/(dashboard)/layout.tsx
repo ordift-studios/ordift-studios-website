@@ -34,9 +34,9 @@ export default async function PortalDashboardLayout({
     isWorkshopInstructor(user.id),
     userHasCrewJobs(user.id).catch(() => false),
   ]);
-  // A "Crew jobs" entry appears only for people who have been offered (or
+  // A "My Assignments" entry appears only for people who have been offered (or
   // accepted) a Creative Crew Support job — a real fact about the account.
-  const visibleNavItems = [...resolveVisibleNavItems(user, isPayee, isInstructor), ...(hasCrewJobs ? [{ label: "Crew jobs", href: "/portal/crew-offers" }] : [])];
+  const visibleNavItems = [...resolveVisibleNavItems(user, isPayee, isInstructor), ...(hasCrewJobs ? [{ label: "My Assignments", href: "/portal/crew-offers" }] : [])];
 
   return (
     <div className="min-h-screen flex flex-col">

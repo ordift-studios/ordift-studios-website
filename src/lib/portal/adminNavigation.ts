@@ -22,6 +22,8 @@ export type AdminNavItem = {
   workforceAdminOnly?: boolean;
   operationsCoordinateOnly?: boolean;
   partnershipAdministerOnly?: boolean;
+  // Shown only to a person who actually has Creative Crew Support offers/assignments.
+  assignmentsOnly?: boolean;
 };
 export type AdminNavGroup = { label: string; items: AdminNavItem[] };
 
@@ -33,6 +35,7 @@ export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
     label: "My Workspace",
     items: [
       { label: "My Workspace", href: "/admin/me" },
+      { label: "My Assignments", href: "/admin/me/assignments", assignmentsOnly: true },
       { label: "My Leave", href: "/admin/me/leave" },
       { label: "My Attendance", href: "/admin/me/attendance" },
       { label: "My Compensation", href: "/admin/me/compensation" },
@@ -145,6 +148,8 @@ export type AdminNavFlags = {
   isWorkforceAdmin: boolean;
   canCoordinateOperations: boolean;
   canAdministerPartnerships: boolean;
+  // optional so existing callers/fixtures are unaffected; absent = no assignments link
+  hasAssignments?: boolean;
 };
 
 function adminNavItemVisible(item: AdminNavItem, flags: AdminNavFlags): boolean {
@@ -154,7 +159,8 @@ function adminNavItemVisible(item: AdminNavItem, flags: AdminNavFlags): boolean 
     (!item.executiveOnly || flags.isExecutive) &&
     (!item.workforceAdminOnly || flags.isWorkforceAdmin) &&
     (!item.operationsCoordinateOnly || flags.canCoordinateOperations) &&
-    (!item.partnershipAdministerOnly || flags.canAdministerPartnerships)
+    (!item.partnershipAdministerOnly || flags.canAdministerPartnerships) &&
+    (!item.assignmentsOnly || Boolean(flags.hasAssignments))
   );
 }
 

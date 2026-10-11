@@ -9,6 +9,7 @@ import { PresenceProvider } from "@/components/admin/PresenceProvider";
 import AdminNavDropdown from "@/components/admin/AdminNavDropdown";
 import { isExecutiveAdmin, hasAuthority, PEOPLE_CAPABILITIES, OPERATIONS_CAPABILITIES, STRATEGY_CAPABILITIES } from "@/lib/organization/authority";
 import { resolveVisibleAdminNavGroups, resolveVisibleAdminPortalLinks } from "@/lib/portal/adminNavigation";
+import { userHasCrewJobs } from "@/lib/crewSupport/crewOffers";
 
 // Internal operations console — separate from the customer/partner-facing
 // /portal, but built on the exact same auth/role foundation (Supabase Auth
@@ -46,7 +47,9 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   // dropped entirely rather than showing an empty heading. This is
   // display-only — every destination page re-checks its own real
   // authorization; a hidden group is never the security boundary.
+  const hasAssignments = await userHasCrewJobs(user.id).catch(() => false);
   const visibleNavGroups = resolveVisibleAdminNavGroups({
+    hasAssignments,
     isAdmin,
     isSuper,
     isExecutive,
