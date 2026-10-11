@@ -133,6 +133,7 @@ export default function AddExchangeRateForm({
           </p>
 
           <form action={addExchangeRateAction} className="flex flex-col sm:flex-row gap-3">
+            <input type="hidden" name="currencyCode" value={currencyCode} />
             <input type="hidden" name="rateToUsd" value={rateInput} />
             <input type="hidden" name="reason" value={reason} />
             <button

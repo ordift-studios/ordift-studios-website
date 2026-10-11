@@ -321,6 +321,11 @@ export const FINANCE_CAPABILITIES = {
   // duty being modeled here yet; that split can be added later if a
   // real need for it arises.
   pricingAdminister: "finance.pricing.administer", // WIRED — src/lib/pricing/*
+  // Direct Bank Transfer (2026-10): verifying that a client's bank transfer actually arrived and
+  // posting it to the receivable. Held by Super Admin implicitly, and by named Finance personnel
+  // only through an explicit, revocable grant — never through a general admin/staff role. Also
+  // enforced inside verify_bank_transfer_payment() (migration 0151).
+  bankTransferVerify: "finance.bank_transfer.verify", // WIRED — src/lib/payments/bankTransferAccess.ts
 } as const;
 
 // strategy.* — ARCHITECT. planningAdminister/initiativeManage/report

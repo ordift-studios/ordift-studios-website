@@ -521,3 +521,38 @@ export async function syncEntityPaymentStatus(entityType: string, entityId: stri
     }
   }
 }
+
+// Direct Bank Transfer (migration 0151) — the completion side effects for a payment that a
+// verifier has just approved through verify_bank_transfer_payment(). Reuses EXACTLY the machinery
+// above (completion claim, claim-and-log activity, receipt outbox, entity sync) so a verified bank
+// transfer posts to the receivable once, logs once and sends one receipt — however many times this
+// is called (crash recovery included). It never changes a payment's status or amounts: those were
+// already decided atomically by the database function.
+export async function finalizeVerifiedBankTransfer(paymentId: string): Promise<{ outcome: "completed" | "already-handled" | "ignored" }> {
+  const admin = createAdminClient();
+  const { data: payment } = await admin
+    .from("payments")
+    .select("id, entity_type, entity_id, status, payment_method, amount_collected, settlement_currency, reference_amount_usd")
+    .eq("id", paymentId)
+    .maybeSingle();
+  if (!payment || payment.payment_method !== "bank_transfer" || payment.status !== "completed") return { outcome: "ignored" };
+
+  const claim = await acquireCompletionClaim(admin, payment.id as string, "completed", "verify");
+  if (!claim) return { outcome: "already-handled" };
+
+  await syncEntityPaymentStatus(payment.entity_type as string, payment.entity_id as string);
+  await markClaimStep(admin, payment.id as string, "completed", "entity_synced_at");
+
+  await logPaymentActivity(admin, payment.id as string, "completed", "payment.completed", "payment", payment.id as string, {
+    amount: payment.amount_collected,
+    currency: payment.settlement_currency,
+    creditedReferenceUsd: payment.reference_amount_usd,
+    method: "bank_transfer",
+    source: "bank_transfer_verification",
+  });
+
+  await dispatchReceiptJob(admin, payment.id as string);
+  await markClaimStep(admin, payment.id as string, "completed", "receipt_dispatched_at");
+  await markClaimStep(admin, payment.id as string, "completed", "completed_at");
+  return { outcome: "completed" };
+}

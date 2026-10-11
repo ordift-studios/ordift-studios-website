@@ -9,6 +9,9 @@ import { convertedAmountsMatch } from "@/lib/payments/currency";
 import type { PaymentEntityType, PaymentType } from "@/lib/payments/types";
 import { logActivityAsSystem } from "@/lib/admin/activityLog";
 import { detectFileMimeType } from "@/lib/shared/fileContentSniff";
+import { getActiveBankAccount } from "@/lib/payments/bankAccounts";
+import { getEntityPaymentCountry } from "@/lib/payments/paymentMarket";
+import { buildReceivingSnapshot, canSubmitProof } from "@/lib/payments/bankTransferRules";
 
 // Bank-transfer proof-of-payment submission (Ghana Phase 3, sandbox —
 // real Ghana banking details are not populated until go-live per your
@@ -53,6 +56,17 @@ export async function POST(request: NextRequest) {
   const file = formData.get("file");
   const paymentId = formData.get("paymentId"); // existing pending bank-transfer payment, created client-side before this call
   const referenceNote = formData.get("referenceNote");
+  const bankReferenceRaw = formData.get("bankReference");
+  const transferDateRaw = formData.get("transferDate");
+  const clientBankReference = typeof bankReferenceRaw === "string" && bankReferenceRaw.trim() ? bankReferenceRaw.trim().slice(0, 120) : null;
+  let clientTransferDate: string | null = null;
+  if (typeof transferDateRaw === "string" && transferDateRaw) {
+    const latest = new Date(Date.now() + 2 * 86_400_000).toISOString().slice(0, 10); // Qatar is UTC+3; allow its "today"
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(transferDateRaw) || Number.isNaN(Date.parse(`${transferDateRaw}T00:00:00Z`)) || transferDateRaw > latest) {
+      return NextResponse.json({ ok: false, error: "invalid-transfer-date" }, { status: 422 });
+    }
+    clientTransferDate = transferDateRaw;
+  }
 
   if (!(file instanceof File) || typeof paymentId !== "string" || !paymentId) {
     return NextResponse.json({ ok: false, error: "missing-file-or-payment" }, { status: 400 });
@@ -79,7 +93,7 @@ export async function POST(request: NextRequest) {
   if (!payment || payment.payment_method !== "bank_transfer" || (!isOwner && !isStaffOrAdmin(user))) {
     return NextResponse.json({ ok: false, error: "not-found-or-unauthorized" }, { status: 404 });
   }
-  if (payment.status !== "pending" && payment.status !== "rejected") {
+  if (!canSubmitProof(payment.status as string)) {
     return NextResponse.json({ ok: false, error: "payment-not-open-for-submission" }, { status: 409 });
   }
 
@@ -114,10 +128,14 @@ export async function POST(request: NextRequest) {
       submitted_at: new Date().toISOString(),
       status: "awaiting_verification",
       review_notes: typeof referenceNote === "string" && referenceNote ? referenceNote : null,
+      client_bank_reference: clientBankReference,
+      client_transfer_date: clientTransferDate,
+      client_visible_note: null,
       reviewed_by: null,
       reviewed_at: null,
     })
-    .eq("id", payment.id);
+    .eq("id", payment.id)
+    .in("status", ["pending", "rejected", "additional_info_required"]);
 
   // TD-033: audited via logActivityAsSystem() (service-role client),
   // not logActivity() — activity_log's only insert policy is
@@ -131,6 +149,7 @@ export async function POST(request: NextRequest) {
     action: "payment.bank_transfer_submitted",
     entityType: "payment",
     entityId: payment.id,
+    metadata: { clientBankReference, clientTransferDate, previousStatus: payment.status, note: "Evidence uploaded — this does NOT confirm the payment; a verifier must confirm receipt in the bank account." },
   });
 
   return NextResponse.json({ ok: true, paymentId: payment.id });
@@ -163,7 +182,7 @@ export async function PUT(request: NextRequest) {
     entityType?: string;
     entityId?: string;
     paymentType?: string;
-    country?: string;
+    country?: string; // ignored: the market is resolved server-side from the entity
     amountUsd?: number;
     // TD-036 — the converted amount the customer actually saw on the
     // checkout page immediately before clicking "I've Sent This
@@ -177,7 +196,6 @@ export async function PUT(request: NextRequest) {
     !body?.entityType ||
     !body.entityId ||
     !body.paymentType ||
-    !body.country ||
     !body.amountUsd ||
     !Number.isFinite(body.quotedConvertedAmount)
   ) {
@@ -210,16 +228,29 @@ export async function PUT(request: NextRequest) {
     return NextResponse.json({ ok: false, error: "invalid-amount" }, { status: 422 });
   }
 
+  // The payment market comes from the entity itself — never from a client-supplied value.
+  const country = await getEntityPaymentCountry(entityType, body.entityId);
+
   const admin = createAdminClient();
   const { data: countryConfig } = await admin
     .from("payment_country_config")
     .select("default_currency_code")
-    .eq("country", body.country)
+    .eq("country", country)
     .eq("is_active", true)
     .maybeSingle();
 
   if (!countryConfig) {
     return NextResponse.json({ ok: false, error: "no-active-payment-config-for-country" }, { status: 422 });
+  }
+
+  // The designated receiving account for this market, resolved server-side. No active default
+  // account means there is nowhere to tell the client to pay, so nothing is created.
+  const receivingAccount = await getActiveBankAccount(country);
+  if (!receivingAccount) {
+    return NextResponse.json({ ok: false, error: "no-active-bank-account" }, { status: 422 });
+  }
+  if (receivingAccount.currencyCode !== countryConfig.default_currency_code) {
+    return NextResponse.json({ ok: false, error: "bank-account-currency-mismatch" }, { status: 422 });
   }
 
   // Reads current_exchange_rates (a view over the append-only
@@ -256,6 +287,41 @@ export async function PUT(request: NextRequest) {
     );
   }
 
+  const snapshot = buildReceivingSnapshot({
+    bankAccountId: receivingAccount.id, bankName: receivingAccount.bankName, beneficiaryName: receivingAccount.accountName, accountNumber: receivingAccount.accountNumber,
+    iban: receivingAccount.iban, swiftCode: receivingAccount.swiftCode, currencyCode: receivingAccount.currencyCode, country: receivingAccount.country, classification: receivingAccount.classification,
+  });
+  const lockedAt = new Date().toISOString();
+
+  // One open "awaiting transfer" instruction per client + record + type: reuse it (refreshing the
+  // amount, rate lock and receiving account) rather than piling up duplicates that could each be paid.
+  const { data: openInstruction } = await admin
+    .from("payments")
+    .select("id, record_id")
+    .eq("entity_type", entityType)
+    .eq("entity_id", body.entityId)
+    .eq("user_id", user.id)
+    .eq("payment_method", "bank_transfer")
+    .eq("payment_type", body.paymentType)
+    .eq("status", "pending")
+    .is("proof_of_payment_asset_path", null)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (openInstruction) {
+    const { error: refreshError } = await admin
+      .from("payments")
+      .update({
+        reference_amount_usd: validatedAmountUsd, payment_currency: countryConfig.default_currency_code, exchange_rate: rateToUsd, exchange_rate_locked_at: lockedAt,
+        converted_amount: convertedAmount, receiving_bank_account_id: receivingAccount.id, receiving_account_snapshot: snapshot,
+      })
+      .eq("id", openInstruction.id)
+      .eq("status", "pending");
+    if (!refreshError) {
+      return NextResponse.json({ ok: true, paymentId: openInstruction.id, recordId: openInstruction.record_id, convertedAmount, currencyCode: countryConfig.default_currency_code, rateToUsd, rateLockedAt: lockedAt, receivingAccount: snapshot });
+    }
+  }
+
   const recordId = await generateRecordId("PAY");
 
   const { data: payment, error } = await admin
@@ -269,14 +335,16 @@ export async function PUT(request: NextRequest) {
       payment_currency: countryConfig.default_currency_code,
       exchange_rate: rateToUsd,
       exchange_rate_source: "ordift",
-      exchange_rate_locked_at: new Date().toISOString(),
+      exchange_rate_locked_at: lockedAt,
       converted_amount: convertedAmount,
       payment_type: body.paymentType,
       payment_method: "bank_transfer",
       status: "pending",
       provider: "bank_transfer",
+      receiving_bank_account_id: receivingAccount.id,
+      receiving_account_snapshot: snapshot,
     })
-    .select("id")
+    .select("id, record_id")
     .single();
 
   if (error || !payment) {
@@ -295,5 +363,5 @@ export async function PUT(request: NextRequest) {
     entityId: payment.id,
   });
 
-  return NextResponse.json({ ok: true, paymentId: payment.id });
+  return NextResponse.json({ ok: true, paymentId: payment.id, recordId: payment.record_id, convertedAmount, currencyCode: countryConfig.default_currency_code, rateToUsd, rateLockedAt: lockedAt, receivingAccount: snapshot });
 }

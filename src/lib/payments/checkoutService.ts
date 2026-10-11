@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
+import { getEntityPaymentCountry } from "@/lib/payments/paymentMarket";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { generateRecordId } from "@/lib/shared/recordId";
 import { lockExchangeRate, convertedAmountsMatch } from "@/lib/payments/currency";
@@ -206,6 +207,12 @@ export async function initiateGatewayCheckout(
   const countryConfig = await getActiveCountryConfig(params.country);
   if (!countryConfig) {
     return { ok: false, error: "no-active-payment-config-for-country" };
+  }
+
+  // A market that is bank-transfer only (Qatar) must never be routed through the Ghana Paystack
+  // merchant account, whatever the client submits: the entity's own stored market decides.
+  if (params.entityType === "enquiry" && (await getEntityPaymentCountry(params.entityType, params.entityId)) !== "GH") {
+    return { ok: false, error: "gateway-not-available-for-market" };
   }
 
   const amounts = await resolveEntityAmounts(params.entityType, params.entityId);

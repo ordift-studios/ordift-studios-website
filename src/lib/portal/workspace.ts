@@ -496,7 +496,7 @@ export async function getWorkspacePaymentById(
   const { data: row, error } = await supabase
     .from("payments")
     .select(
-      "id, business_id, record_id, entity_type, entity_id, related_type, related_id, business_unit, user_id, reference_amount_usd, payment_currency, exchange_rate, exchange_rate_source, exchange_rate_locked_at, converted_amount, amount_collected, settlement_currency, gateway_fee, net_amount_received, conversion_performed_by, tax_amount_usd, payment_type, payment_method, status, provider, gateway_reference, idempotency_key, channel, card_brand, card_last4, proof_of_payment_asset_path, submitted_by, submitted_at, reviewed_by, reviewed_at, review_notes, posted_at, created_at, updated_at"
+      "id, business_id, record_id, entity_type, entity_id, related_type, related_id, business_unit, user_id, reference_amount_usd, payment_currency, exchange_rate, exchange_rate_source, exchange_rate_locked_at, converted_amount, amount_collected, settlement_currency, gateway_fee, net_amount_received, conversion_performed_by, tax_amount_usd, payment_type, payment_method, status, provider, gateway_reference, idempotency_key, channel, card_brand, card_last4, proof_of_payment_asset_path, submitted_by, submitted_at, reviewed_by, reviewed_at, review_notes, client_visible_note, client_bank_reference, client_transfer_date, receiving_account_snapshot, posted_at, created_at, updated_at"
     )
     .eq("id", paymentId)
     .eq("entity_type", toPaymentEntityType(kind))
@@ -543,6 +543,10 @@ export async function getWorkspacePaymentById(
     reviewedBy: row.reviewed_by,
     reviewedAt: row.reviewed_at,
     reviewNotes: row.review_notes,
+    clientVisibleNote: row.client_visible_note ?? null,
+    clientBankReference: row.client_bank_reference ?? null,
+    clientTransferDate: row.client_transfer_date ?? null,
+    receivingAccountSnapshot: (row.receiving_account_snapshot ?? null) as Payment["receivingAccountSnapshot"],
     postedAt: row.posted_at,
     createdAt: row.created_at,
     updatedAt: row.updated_at,

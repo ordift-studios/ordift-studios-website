@@ -117,6 +117,8 @@ describe("six-jurisdiction capability taxonomy — no cross-jurisdiction overlap
       paymentObligationRecordPayment: "finance.payment_obligation.record_payment",
       paymentObligationReverse: "finance.payment_obligation.reverse",
       pricingAdminister: "finance.pricing.administer",
+      // Direct Bank Transfer (2026-10): verifying a bank transfer — Super Admin or an explicit grant only
+      bankTransferVerify: "finance.bank_transfer.verify",
     });
   });
 });

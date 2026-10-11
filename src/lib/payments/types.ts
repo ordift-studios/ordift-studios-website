@@ -13,6 +13,7 @@ export type PaymentMethod = "gateway" | "bank_transfer";
 export type PaymentStatus =
   | "pending"
   | "awaiting_verification"
+  | "additional_info_required"
   | "completed"
   | "failed"
   | "refunded"
@@ -69,6 +70,13 @@ export type Payment = {
   reviewedBy: string | null;
   reviewedAt: string | null;
   reviewNotes: string | null;
+  // Direct Bank Transfer (migration 0151): the message the verifier chose to show the client (the
+  // internal review notes above are never shown to them), what the client entered, and the receiving
+  // account exactly as it was issued to them.
+  clientVisibleNote: string | null;
+  clientBankReference: string | null;
+  clientTransferDate: string | null;
+  receivingAccountSnapshot: import("./bankTransferRules").ReceivingAccountSnapshot | null;
   postedAt: string | null; // reserved for a future general-ledger integration — see migration 0024's bottom section
   createdAt: string;
   updatedAt: string;

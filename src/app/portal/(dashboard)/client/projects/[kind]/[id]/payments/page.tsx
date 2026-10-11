@@ -1,3 +1,4 @@
+import { bankTransferStatusLabel } from "@/lib/payments/bankTransferRules";
 import Link from "next/link";
 import { getCurrentUser } from "@/lib/portal/roles";
 import { getWorkspacePaymentSummary, getWorkspacePaymentHistory, isProjectKind } from "@/lib/portal/workspace";
@@ -13,6 +14,7 @@ function formatDate(iso: string): string {
 const STATUS_LABELS: Record<string, string> = {
   pending: "Pending",
   awaiting_verification: "Pending Verification",
+  additional_info_required: "Additional Information Required",
   completed: "Completed",
   failed: "Failed",
   refunded: "Refunded",
@@ -23,6 +25,7 @@ const STATUS_STYLES: Record<string, string> = {
   completed: "bg-green-50 text-green-800",
   pending: "bg-ordift-offwhite text-ordift-ink-muted",
   awaiting_verification: "bg-amber-50 text-amber-800",
+  additional_info_required: "bg-amber-50 text-amber-800",
   failed: "bg-red-50 text-red-700",
   rejected: "bg-red-50 text-red-700",
   refunded: "bg-ordift-offwhite text-ordift-ink-muted",
@@ -40,7 +43,8 @@ export default async function PaymentsTabPage({ params }: { params: Promise<{ ki
   ]);
   if (!summary) return null;
 
-  const hasPendingBankTransfer = history.some((p) => p.paymentMethod === "bank_transfer" && p.status === "awaiting_verification");
+  const openBankTransfer = history.find((p) => p.paymentMethod === "bank_transfer" && ["pending", "awaiting_verification", "additional_info_required"].includes(p.status));
+  const hasPendingBankTransfer = openBankTransfer?.status === "awaiting_verification";
 
   return (
     <div className="space-y-8">
@@ -86,6 +90,12 @@ export default async function PaymentsTabPage({ params }: { params: Promise<{ ki
             A bank transfer is awaiting verification by our team — you don&apos;t need to submit another payment while this is pending.
           </p>
         )}
+        {openBankTransfer && !hasPendingBankTransfer && (
+          <p className="font-sans text-body-small text-amber-800 bg-amber-50 rounded-lg px-4 py-3 mt-5">
+            {openBankTransfer.status === "additional_info_required" ? "We need a little more information about your bank transfer. " : "You have bank transfer details waiting for your payment and proof. "}
+            <Link href={`/portal/client/projects/${kind}/${id}/payments/${openBankTransfer.id}/status`} className="underline underline-offset-4">Open it</Link>
+          </p>
+        )}
       </div>
 
       <div>
@@ -122,7 +132,7 @@ export default async function PaymentsTabPage({ params }: { params: Promise<{ ki
                       <span
                         className={`inline-flex items-center px-2.5 py-1 rounded-full font-sans text-caption font-medium ${STATUS_STYLES[p.status] ?? "bg-ordift-offwhite text-ordift-ink-muted"}`}
                       >
-                        {STATUS_LABELS[p.status] ?? p.status}
+                        {p.paymentMethod === "bank_transfer" ? bankTransferStatusLabel(p.status) : (STATUS_LABELS[p.status] ?? p.status)}
                       </span>
                     </td>
                     <td className="py-3 px-4 font-sans text-body-small text-ordift-ink-muted whitespace-nowrap">

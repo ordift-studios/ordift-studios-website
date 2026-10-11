@@ -1,13 +1,15 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
+import { canVerifyBankTransfers } from "@/lib/payments/bankTransferAccess";
 import { getCurrentUser } from "@/lib/portal/roles";
 import { canAccessPaymentsAdmin, PAYMENT_CAPABILITIES } from "@/lib/payments/paymentPermissions";
 import { hasCapability } from "@/lib/workflow/engine";
 import { createClient } from "@/lib/supabase/server";
-import { reconcilePaymentAction, retryReceiptJobAction } from "../actions";
+import { checkPaystackStatusAction, reconcilePaymentAction, retryReceiptJobAction } from "../actions";
 import ActionForm from "@/components/admin/ActionForm";
 import SubmitButton from "@/components/admin/SubmitButton";
+import BankTransferReview from "../BankTransferReview";
 
 export const metadata: Metadata = {
   title: "Payment Details — Ordift Studios Admin",
@@ -63,6 +65,8 @@ function statusLabel(status: string): { label: string; tone: string } {
       return { label: "Refunded", tone: "text-ordift-ink-muted bg-black/5 border-black/10" };
     case "awaiting_verification":
       return { label: "Awaiting Verification", tone: "text-amber-800 bg-amber-50 border-amber-200" };
+    case "additional_info_required":
+      return { label: "Additional Information Required", tone: "text-amber-800 bg-amber-50 border-amber-200" };
     case "pending":
     default:
       return { label: "Pending", tone: "text-amber-800 bg-amber-50 border-amber-200" };
@@ -72,8 +76,9 @@ function statusLabel(status: string): { label: string; tone: string } {
 export default async function AdminPaymentDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const user = await getCurrentUser();
-  if (!user || !canAccessPaymentsAdmin(user)) redirect("/portal");
+  if (!user || !(canAccessPaymentsAdmin(user) || (await canVerifyBankTransfers(user.id)))) redirect("/portal");
   const canReconcile = hasCapability(user, PAYMENT_CAPABILITIES, "reconcile_payment");
+  const canVerify = await canVerifyBankTransfers(user.id);
 
   const supabase = await createClient();
   const { data: payment } = await supabase.from("payments").select("*").eq("id", id).maybeSingle();
@@ -201,6 +206,8 @@ export default async function AdminPaymentDetailPage({ params }: { params: Promi
         </dl>
       </section>
 
+      {payment.payment_method === "bank_transfer" && <BankTransferReview payment={payment} canVerify={canVerify} />}
+
       {/* TD-043 — Reconcile Now, relocated here from the Recent Payments
           list row. Only ever visible for a gateway payment genuinely
           still pending; the form posts to the same, unmodified
@@ -214,6 +221,12 @@ export default async function AdminPaymentDetailPage({ params }: { params: Promi
             This payment is still showing as Pending. Reconcile Now checks Paystack&apos;s own record for this transaction —
             it never sets a status directly; the result you see afterward is exactly what Paystack reports.
           </p>
+          <ActionForm action={checkPaystackStatusAction}>
+            <input type="hidden" name="paymentId" value={payment.id} />
+            <SubmitButton pendingLabel="Checking…" className="mb-4 min-h-10 rounded-lg border border-black/20 px-4 font-sans text-body-small font-medium text-ordift-ink hover:bg-black/5">
+              Check Paystack status (read-only)
+            </SubmitButton>
+          </ActionForm>
           <ActionForm action={reconcilePaymentAction}>
             <input type="hidden" name="paymentId" value={payment.id} />
             <SubmitButton pendingLabel="Working…" className="min-h-10 rounded-lg bg-ordift-gold px-4 font-sans text-body-small font-medium text-ordift-navy-950 hover:bg-ordift-gold-hover">

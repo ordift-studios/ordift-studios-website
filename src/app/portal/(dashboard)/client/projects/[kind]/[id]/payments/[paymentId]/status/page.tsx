@@ -4,6 +4,8 @@ import { getCurrentUser } from "@/lib/portal/roles";
 import { getWorkspacePaymentById, isProjectKind } from "@/lib/portal/workspace";
 import { reconcilePendingGatewayPayment } from "@/lib/payments/reconcilePendingPayment";
 import PendingAutoRefresh from "./PendingAutoRefresh";
+import { ProofUploadForm, TransferInstructionsCard } from "@/components/payments/BankTransferPanels";
+import { bankTransferStatusLabel } from "@/lib/payments/bankTransferRules";
 
 function formatUsd(amount: number): string {
   return `$${amount.toFixed(2)}`;
@@ -51,7 +53,7 @@ export default async function PaymentStatusPage({
   // verify with the gateway here so this page doesn't say "Confirming
   // Your Payment" forever; PendingAutoRefresh re-runs this on every
   // reload while still pending.
-  if (payment.status === "pending") {
+  if (payment.status === "pending" && payment.paymentMethod !== "bank_transfer") {
     const resolvedStatus = await reconcilePendingGatewayPayment(paymentId);
     if (resolvedStatus !== "pending") {
       payment = (await getWorkspacePaymentById(kind, id, paymentId, user.id)) ?? payment;
@@ -61,6 +63,9 @@ export default async function PaymentStatusPage({
   const paymentsHref = `/portal/client/projects/${kind}/${id}/payments`;
   const checkoutHref = `/portal/client/projects/${kind}/${id}/payments/checkout`;
   const receiptHref = `/portal/client/projects/${kind}/${id}/payments/${payment.id}/receipt`;
+
+  const isBank = payment.paymentMethod === "bank_transfer";
+  const snapshot = payment.receivingAccountSnapshot;
 
   const backButton = (
     <Link
@@ -84,9 +89,43 @@ export default async function PaymentStatusPage({
         {methodLabel(payment.paymentMethod, payment.channel)} · {formatDateTime(payment.createdAt)}
       </p>
 
+      {isBank && (
+        <p className="text-center font-sans text-caption font-medium text-ordift-ink">Status: {bankTransferStatusLabel(payment.status)}</p>
+      )}
+
+      {isBank && (payment.status === "pending" || payment.status === "additional_info_required") && (
+        <div className="space-y-6 rounded-xl border border-black/10 bg-white p-6 sm:p-8">
+          {payment.status === "additional_info_required" && (
+            <p role="status" className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 font-sans text-body-small text-amber-900">
+              We need a little more information{payment.clientVisibleNote ? `: ${payment.clientVisibleNote}` : "."} Please check your transfer details below and resubmit your proof.
+            </p>
+          )}
+          {snapshot ? (
+            <TransferInstructionsCard account={snapshot} amount={payment.convertedAmount} currency={payment.paymentCurrency} reference={payment.recordId ?? ""} usdAmount={payment.referenceAmountUsd} rateToUsd={payment.exchangeRate} rateLockedAt={payment.exchangeRateLockedAt} />
+          ) : (
+            <p className="font-sans text-body-small text-ordift-ink-muted">Please contact us for the transfer details for this payment.</p>
+          )}
+          <ProofUploadForm paymentId={payment.id} resubmit={payment.status === "additional_info_required"} />
+          {backButton}
+        </div>
+      )}
+
+      {isBank && payment.status === "rejected" && (
+        <div className="space-y-4 rounded-xl border border-red-200 bg-red-50 p-6 text-center sm:p-8">
+          <p className="font-serif text-xl font-medium text-ordift-ink">Payment Not Verified</p>
+          <p className="font-sans text-body text-ordift-ink-muted">
+            {payment.clientVisibleNote ? `Our team couldn't verify this payment: ${payment.clientVisibleNote}` : "Our team couldn't verify this payment. Please check the details and try again, or contact us."}
+          </p>
+          <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
+            <Link href={checkoutHref} className="inline-flex min-h-11 items-center justify-center rounded-full bg-ordift-gold px-6 font-sans text-button font-semibold text-ordift-navy-950 hover:bg-ordift-gold-hover">Start a new transfer</Link>
+            {backButton}
+          </div>
+        </div>
+      )}
+
       {payment.status === "completed" && (
         <div className="rounded-xl border border-green-200 bg-green-50 p-6 sm:p-8 text-center space-y-4">
-          <p className="font-serif font-medium text-xl text-ordift-ink">Payment Successful</p>
+          <p className="font-serif font-medium text-xl text-ordift-ink">{isBank ? "Payment Verified" : "Payment Successful"}</p>
           <p className="font-serif font-medium text-3xl text-ordift-ink">{formatUsd(payment.referenceAmountUsd)}</p>
           <p className="font-sans text-body-small text-ordift-ink-muted">
             Paid via {methodLabel(payment.paymentMethod, payment.channel)}
@@ -104,7 +143,7 @@ export default async function PaymentStatusPage({
         </div>
       )}
 
-      {payment.status === "pending" && (
+      {payment.status === "pending" && !isBank && (
         <div className="rounded-xl border border-black/10 bg-white p-6 sm:p-8 text-center space-y-4">
           <PendingAutoRefresh />
           <p className="font-serif font-medium text-xl text-ordift-ink">Confirming Your Payment</p>
@@ -116,7 +155,7 @@ export default async function PaymentStatusPage({
         </div>
       )}
 
-      {(payment.status === "failed" || payment.status === "rejected") && (
+      {(payment.status === "failed" || (payment.status === "rejected" && !isBank)) && (
         <div className="rounded-xl border border-red-200 bg-red-50 p-6 sm:p-8 text-center space-y-4">
           <p className="font-serif font-medium text-xl text-ordift-ink">
             {payment.status === "rejected" ? "Payment Not Verified" : "Payment Failed"}
@@ -142,10 +181,10 @@ export default async function PaymentStatusPage({
 
       {payment.status === "awaiting_verification" && (
         <div className="rounded-xl border border-amber-200 bg-amber-50 p-6 sm:p-8 text-center space-y-4">
-          <p className="font-serif font-medium text-xl text-ordift-ink">Pending Verification</p>
+          <p className="font-serif font-medium text-xl text-ordift-ink">Proof Submitted — Awaiting Verification</p>
           <p className="font-sans text-body text-ordift-ink-muted">
-            We&apos;ve received your proof of payment. Our team will confirm it shortly — you&apos;ll see your balance update
-            once approved.
+            We&apos;ve received your proof of payment. We confirm a transfer once we see the money in our account — you&apos;ll see your balance update
+            here once it is verified.
           </p>
           {backButton}
         </div>

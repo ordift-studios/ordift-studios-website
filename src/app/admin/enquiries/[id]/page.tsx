@@ -14,6 +14,8 @@ import { getProjectRequestsForEntity } from "@/lib/admin/projectRequests";
 import ProjectRequestsManager from "@/components/admin/ProjectRequestsManager";
 import { addNoteAction } from "../actions";
 import SetAmountDueForm from "./SetAmountDueForm";
+import PaymentMarketForm from "./PaymentMarketForm";
+import { getStoredPaymentCountry } from "@/lib/payments/paymentMarket";
 import UpdateStageForm from "./UpdateStageForm";
 import StartHandlingButton from "./StartHandlingButton";
 import ActionForm from "@/components/admin/ActionForm";
@@ -41,7 +43,7 @@ function formatDateTime(iso: string): string {
 export default async function AdminEnquiryDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
 
-  const [enquiry, notes, categories, deliverables, requests, user, amountDueSource] = await Promise.all([
+  const [enquiry, notes, categories, deliverables, requests, user, amountDueSource, storedPaymentCountry] = await Promise.all([
     getEnquiryById(id),
     getEnquiryNotes(id),
     getDeliverableCategories(),
@@ -49,6 +51,7 @@ export default async function AdminEnquiryDetailPage({ params }: { params: Promi
     getProjectRequestsForEntity("enquiry", id),
     getCurrentUser(),
     getAmountDueProvenance(id),
+    getStoredPaymentCountry(id),
   ]);
 
   if (!enquiry) notFound();
@@ -181,6 +184,11 @@ export default async function AdminEnquiryDetailPage({ params }: { params: Promi
                 Amount Paid: <span className="font-medium text-ordift-ink">{formatUsd(enquiry.amountPaid ?? 0)}</span>
               </p>
             </div>
+            {isSuperAdmin(user) && canManageAmount && (
+              <div className="mb-4 border-b border-black/5 pb-4">
+                <PaymentMarketForm enquiryId={enquiry.id} current={storedPaymentCountry} />
+              </div>
+            )}
             {canManageAmount ? (
               <SetAmountDueForm enquiryId={enquiry.id} currentAmountDue={enquiry.amountDue} />
             ) : (

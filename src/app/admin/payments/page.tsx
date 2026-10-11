@@ -1,14 +1,14 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { canVerifyBankTransfers } from "@/lib/payments/bankTransferAccess";
 import { getCurrentUser } from "@/lib/portal/roles";
 import { canAccessPaymentsAdmin, PAYMENT_CAPABILITIES } from "@/lib/payments/paymentPermissions";
 import { hasCapability } from "@/lib/workflow/engine";
 import { createClient } from "@/lib/supabase/server";
 import { isStaging } from "@/lib/shared/env";
-import { approveBankTransferAction, rejectBankTransferAction } from "./actions";
-import ActionForm from "@/components/admin/ActionForm";
-import SubmitButton from "@/components/admin/SubmitButton";
+import { bankTransferStatusLabel } from "@/lib/payments/bankTransferRules";
+import { isSuperAdmin } from "@/lib/portal/roles";
 
 export const metadata: Metadata = {
   title: "Payments — Ordift Studios Admin",
@@ -28,16 +28,17 @@ function formatDate(iso: string): string {
 
 export default async function AdminPaymentsPage() {
   const user = await getCurrentUser();
-  if (!user || !canAccessPaymentsAdmin(user)) redirect("/portal");
+  if (!user || !(canAccessPaymentsAdmin(user) || (await canVerifyBankTransfers(user.id)))) redirect("/portal");
   const canManageCurrencies = hasCapability(user, PAYMENT_CAPABILITIES, "manage_currencies");
+  const canManageBankAccounts = isSuperAdmin(user) && hasCapability(user, PAYMENT_CAPABILITIES, "manage_bank_accounts");
 
   const supabase = await createClient();
 
   const [{ data: pending }, { data: recent }] = await Promise.all([
     supabase
       .from("payments")
-      .select("id, record_id, entity_type, entity_id, reference_amount_usd, payment_currency, converted_amount, submitted_at, review_notes")
-      .eq("status", "awaiting_verification")
+      .select("id, record_id, entity_type, entity_id, status, reference_amount_usd, payment_currency, converted_amount, submitted_at, client_bank_reference, client_transfer_date, receiving_account_snapshot")
+      .in("status", ["awaiting_verification", "additional_info_required"])
       .order("submitted_at", { ascending: true }),
     supabase
       .from("payments")
@@ -62,20 +63,33 @@ export default async function AdminPaymentsPage() {
               : "Production — Paystack Live Mode."}
           </p>
         </div>
-        {canManageCurrencies && (
-          <Link
-            href="/admin/payments/exchange-rates"
-            className="font-sans text-body-small font-medium px-4 py-2 rounded-md border border-black/15 text-ordift-ink hover:border-black/30"
-          >
-            Exchange Rate Management
-          </Link>
-        )}
+        <div className="flex flex-wrap gap-2">
+          {canManageBankAccounts && (
+            <Link
+              href="/admin/payments/bank-accounts"
+              className="font-sans text-body-small font-medium px-4 py-2 rounded-md border border-black/15 text-ordift-ink hover:border-black/30"
+            >
+              Bank Accounts
+            </Link>
+          )}
+          {canManageCurrencies && (
+            <Link
+              href="/admin/payments/exchange-rates"
+              className="font-sans text-body-small font-medium px-4 py-2 rounded-md border border-black/15 text-ordift-ink hover:border-black/30"
+            >
+              Exchange Rate Management
+            </Link>
+          )}
+        </div>
       </div>
 
       <section className="mb-10">
-        <h2 className="font-serif font-medium text-lg text-ordift-ink mb-4">
-          Pending Verification ({(pending ?? []).length})
+        <h2 className="font-serif font-medium text-lg text-ordift-ink mb-1">
+          Pending Verification ({(pending ?? []).filter((p) => p.status === "awaiting_verification").length})
         </h2>
+        <p className="font-sans text-caption text-ordift-ink-muted mb-4 max-w-2xl">
+          A client&apos;s receipt is evidence, not proof. Open a submission, check that the money has actually arrived in the receiving account, then record what you found. Nothing is marked paid until you do.
+        </p>
         {(pending ?? []).length === 0 ? (
           <p className="font-sans text-body-small text-ordift-ink-muted">No bank transfers awaiting review.</p>
         ) : (
@@ -84,59 +98,39 @@ export default async function AdminPaymentsPage() {
               <thead>
                 <tr className="border-b border-black/10">
                   <th className="font-sans text-caption uppercase tracking-wide text-ordift-ink-muted py-3 px-4">Reference</th>
-                  <th className="font-sans text-caption uppercase tracking-wide text-ordift-ink-muted py-3 px-4">Entity</th>
-                  <th className="font-sans text-caption uppercase tracking-wide text-ordift-ink-muted py-3 px-4">Amount</th>
+                  <th className="font-sans text-caption uppercase tracking-wide text-ordift-ink-muted py-3 px-4">Status</th>
+                  <th className="font-sans text-caption uppercase tracking-wide text-ordift-ink-muted py-3 px-4">Expected transfer</th>
+                  <th className="font-sans text-caption uppercase tracking-wide text-ordift-ink-muted py-3 px-4">Client reference / date</th>
+                  <th className="font-sans text-caption uppercase tracking-wide text-ordift-ink-muted py-3 px-4">Receiving account</th>
                   <th className="font-sans text-caption uppercase tracking-wide text-ordift-ink-muted py-3 px-4">Submitted</th>
-                  <th className="font-sans text-caption uppercase tracking-wide text-ordift-ink-muted py-3 px-4">Decision</th>
-                  <th className="font-sans text-caption uppercase tracking-wide text-ordift-ink-muted py-3 px-4">Details</th>
+                  <th className="font-sans text-caption uppercase tracking-wide text-ordift-ink-muted py-3 px-4">Review</th>
                 </tr>
               </thead>
               <tbody>
-                {(pending ?? []).map((p) => (
-                  <tr key={p.id} className="border-b border-black/5 last:border-0 hover:bg-ordift-offwhite">
-                    <td className="py-3 px-4 font-sans text-body-small text-ordift-ink">{p.record_id}</td>
-                    <td className="py-3 px-4 font-sans text-body-small text-ordift-ink-muted">
-                      {p.entity_type} · {p.entity_id.slice(0, 8)}
-                    </td>
-                    <td className="py-3 px-4 font-sans text-body-small text-ordift-ink-muted">
-                      {p.payment_currency} {Number(p.converted_amount).toFixed(2)} (USD {Number(p.reference_amount_usd).toFixed(2)})
-                    </td>
-                    <td className="py-3 px-4 font-sans text-body-small text-ordift-ink-muted whitespace-nowrap">
-                      {p.submitted_at ? formatDate(p.submitted_at) : "—"}
-                    </td>
-                    <td className="py-3 px-4">
-                      <div className="flex flex-wrap gap-2">
-                        <ActionForm action={approveBankTransferAction}>
-                          <input type="hidden" name="paymentId" value={p.id} />
-                          <SubmitButton pendingLabel="Working…" className="min-h-9 rounded-lg bg-ordift-gold px-3 font-sans text-body-small text-ordift-navy-950 hover:bg-ordift-gold-hover">
-                            Approve
-                          </SubmitButton>
-                        </ActionForm>
-                        <ActionForm action={rejectBankTransferAction} className="flex items-center gap-2">
-                          <input type="hidden" name="paymentId" value={p.id} />
-                          <input
-                            type="text"
-                            name="reason"
-                            required
-                            placeholder="Rejection reason"
-                            className="min-h-9 rounded-lg border border-black/15 bg-white px-2 font-sans text-body-small text-ordift-ink"
-                          />
-                          <SubmitButton pendingLabel="Working…" className="min-h-9 rounded-lg border border-black/20 px-3 font-sans text-body-small text-ordift-ink hover:bg-black/5">
-                            Reject
-                          </SubmitButton>
-                        </ActionForm>
-                      </div>
-                    </td>
-                    <td className="py-3 px-4">
-                      <Link
-                        href={`/admin/payments/${p.id}`}
-                        className="font-sans text-body-small font-medium text-ordift-gold-pressed hover:underline"
-                      >
-                        View →
-                      </Link>
-                    </td>
-                  </tr>
-                ))}
+                {(pending ?? []).map((p) => {
+                  const account = (p.receiving_account_snapshot ?? null) as { bankName?: string; classification?: string } | null;
+                  return (
+                    <tr key={p.id} className="border-b border-black/5 last:border-0 hover:bg-ordift-offwhite">
+                      <td className="py-3 px-4 font-sans text-body-small text-ordift-ink">{p.record_id}</td>
+                      <td className="py-3 px-4 font-sans text-body-small text-ordift-ink-muted">{bankTransferStatusLabel(p.status, "admin")}</td>
+                      <td className="py-3 px-4 font-sans text-body-small text-ordift-ink-muted">
+                        {p.payment_currency} {Number(p.converted_amount).toFixed(2)} (USD {Number(p.reference_amount_usd).toFixed(2)})
+                      </td>
+                      <td className="py-3 px-4 font-sans text-body-small text-ordift-ink-muted">
+                        {p.client_bank_reference ?? "—"}{p.client_transfer_date ? ` · ${p.client_transfer_date}` : ""}
+                      </td>
+                      <td className="py-3 px-4 font-sans text-body-small text-ordift-ink-muted">{account?.bankName ?? "—"}{account?.classification === "personal" ? " (personal)" : ""}</td>
+                      <td className="py-3 px-4 font-sans text-body-small text-ordift-ink-muted whitespace-nowrap">
+                        {p.submitted_at ? formatDate(p.submitted_at) : "—"}
+                      </td>
+                      <td className="py-3 px-4">
+                        <Link href={`/admin/payments/${p.id}`} className="font-sans text-body-small font-medium text-ordift-gold-pressed hover:underline">
+                          Review →
+                        </Link>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -166,7 +160,7 @@ export default async function AdminPaymentsPage() {
                   <td className="py-3 px-4 font-sans text-body-small text-ordift-ink-muted">
                     {p.payment_method === "gateway" ? p.provider : "Bank Transfer"}
                   </td>
-                  <td className="py-3 px-4 font-sans text-body-small text-ordift-ink-muted">{p.status}</td>
+                  <td className="py-3 px-4 font-sans text-body-small text-ordift-ink-muted">{p.payment_method === "bank_transfer" ? bankTransferStatusLabel(p.status, "admin") : p.status}</td>
                   <td className="py-3 px-4 font-sans text-body-small text-ordift-ink-muted">
                     {Number(p.reference_amount_usd).toFixed(2)}
                   </td>

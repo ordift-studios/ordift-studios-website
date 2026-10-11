@@ -63,3 +63,17 @@ describe("canAccessPaymentsAdmin — real assertions (Task 4 regression guard, 2
     expect(canAccessPaymentsAdmin(userWithRoles(["staff", "admin"]))).toBe(true);
   });
 });
+
+// Direct Bank Transfer (2026-10): a general admin or staff role must confer no bank-transfer
+// verification or bank-account privilege. Verification is Super Admin or the explicit
+// finance.bank_transfer.verify grant (see bankTransferAccess.ts), checked in the database too.
+describe("PAYMENT_CAPABILITIES: bank transfers", () => {
+  it("only super_admin holds approve/reject_bank_transfer and manage_bank_accounts", () => {
+    for (const cap of ["approve_bank_transfer", "reject_bank_transfer", "manage_bank_accounts"] as const) {
+      expect(hasCapability(userWithRoles(["super_admin"]), PAYMENT_CAPABILITIES, cap)).toBe(true);
+      expect(hasCapability(userWithRoles(["admin"]), PAYMENT_CAPABILITIES, cap)).toBe(false);
+      expect(hasCapability(userWithRoles(["staff"]), PAYMENT_CAPABILITIES, cap)).toBe(false);
+      expect(hasCapability(userWithRoles(["client"]), PAYMENT_CAPABILITIES, cap)).toBe(false);
+    }
+  });
+});

@@ -13,11 +13,10 @@ export const metadata: Metadata = {
   robots: { index: false, follow: false },
 };
 
-// Ghana-only today — same ACTIVE_CURRENCY pattern already used across
-// the payments module (checkout/actions.ts, checkout/page.tsx). A
-// second currency (Qatar/QAR) gets its own row here the same way, once
-// that market is live — no schema or UI rework needed.
-const ACTIVE_CURRENCY = "GHS";
+// One rate history per local currency. GHS (Ghana, Paystack) is the default; QAR (Qatar, Direct
+// Bank Transfer) is selected with ?currency=QAR. The QAR rate is a controlled, admin-set rate with
+// a recorded reason — never fetched automatically, never seeded.
+const SUPPORTED_CURRENCIES = ["GHS", "QAR"] as const;
 
 function formatDateTime(iso: string): string {
   return new Date(iso).toLocaleString("en-GB", {
@@ -32,9 +31,10 @@ function formatDateTime(iso: string): string {
 export default async function ExchangeRateManagementPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string }>;
+  searchParams: Promise<{ error?: string; currency?: string }>;
 }) {
-  const { error } = await searchParams;
+  const { error, currency } = await searchParams;
+  const ACTIVE_CURRENCY = (SUPPORTED_CURRENCIES as readonly string[]).includes(currency ?? "") ? (currency as string) : "GHS";
   const user = await getCurrentUser();
   if (!user || !hasCapability(user, PAYMENT_CAPABILITIES, "manage_currencies")) {
     redirect("/admin/payments");
@@ -62,6 +62,15 @@ export default async function ExchangeRateManagementPage({
         </p>
       </div>
 
+      <nav className="flex gap-2" aria-label="Currency">
+        {SUPPORTED_CURRENCIES.map((c) => (
+          <Link key={c} href={`/admin/payments/exchange-rates?currency=${c}`} aria-current={c === ACTIVE_CURRENCY ? "page" : undefined}
+            className={`rounded-full border px-4 py-1.5 font-sans text-body-small ${c === ACTIVE_CURRENCY ? "border-ordift-gold bg-ordift-gold/20 text-ordift-ink" : "border-black/15 text-ordift-ink-muted hover:border-black/30"}`}>
+            USD → {c}
+          </Link>
+        ))}
+      </nav>
+
       <section className="rounded-xl border border-black/10 bg-white p-6">
         <p className="font-sans text-caption uppercase tracking-wide text-ordift-ink-muted mb-3">
           Current Active Rate — USD → {ACTIVE_CURRENCY}
@@ -81,7 +90,7 @@ export default async function ExchangeRateManagementPage({
           </div>
         ) : (
           <p className="font-sans text-body-small text-amber-800 bg-amber-50 rounded-lg px-4 py-3">
-            No rate has been set yet — Card, Mobile Money, and Bank Transfer checkout in {ACTIVE_CURRENCY} cannot
+            No rate has been set yet — Pay Now in {ACTIVE_CURRENCY} cannot
             proceed until a rate is added below.
           </p>
         )}

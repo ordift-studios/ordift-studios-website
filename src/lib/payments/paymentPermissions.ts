@@ -9,6 +9,16 @@ import type { WorkflowCapabilityMatrix } from "@/lib/workflow/types";
 // access" tier, matching that precedent and every other Admin Platform
 // module's convention (isStaffOrAdmin()).
 //
+// Direct Bank Transfer (2026-10): approve_/reject_bank_transfer are held by Super Admin only and the
+// bank-transfer verification workflow no longer consults them — it requires Super Admin or the
+// explicit authority grant finance.bank_transfer.verify (bankTransferAccess.ts, and again inside
+// the database function). A general admin or staff role confers no verification privilege.
+//
+// manage_bank_accounts — which receiving accounts clients are told
+// to pay into — is Super Admin only. Changing where money is received is the most sensitive
+// financial configuration there is, so it is deliberately not delegated to the broader admin tier.
+// (Server actions also re-check Super Admin; this matrix is not the only gate.)
+//
 // `staff` gets view_all_payments + approve/reject_bank_transfer — the
 // day-to-day bank-transfer review workflow — but NOT issue_refund or
 // manage_bank_accounts/manage_currencies, which stay narrower (Owner/
@@ -29,10 +39,7 @@ export const PAYMENT_CAPABILITIES: WorkflowCapabilityMatrix = {
   ],
   admin: [
     "view_all_payments",
-    "approve_bank_transfer",
-    "reject_bank_transfer",
     "issue_refund",
-    "manage_bank_accounts",
     "manage_currencies",
     "manage_project_amount",
     "reconcile_payment",
@@ -42,7 +49,7 @@ export const PAYMENT_CAPABILITIES: WorkflowCapabilityMatrix = {
   // manage_currencies tier: it can only pull Paystack's own
   // authoritative verify result, never choose or force a financial
   // outcome, so it carries none of the risk those capabilities do.
-  staff: ["view_all_payments", "approve_bank_transfer", "reject_bank_transfer", "reconcile_payment"],
+  staff: ["view_all_payments", "reconcile_payment"],
 };
 
 // Task 4 audit fix (2026-09-17, real Kelvin QA finding) — previously

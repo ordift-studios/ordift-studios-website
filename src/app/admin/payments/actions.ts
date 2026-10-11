@@ -9,14 +9,14 @@ import { PAYMENT_CAPABILITIES } from "@/lib/payments/paymentPermissions";
 import { logActivity } from "@/lib/admin/activityLog";
 import { insertExchangeRate } from "@/lib/payments/currency";
 import { reconcilePendingGatewayPayment } from "@/lib/payments/reconcilePendingPayment";
+import { getProvider } from "@/lib/payments/providerRegistry";
+import { assessPaystackStatus, formatAssessment } from "@/lib/payments/paystackStatusCheck";
 import { sendPaymentReceiptEmail } from "@/lib/payments/receipts";
 import { advanceStageOnFullPayment } from "@/lib/payments/crmStageSync";
 import { actionOk, actionFail, type ActionState } from "@/lib/shared/actionState";
 
 async function requireCapability(
   capability:
-    | "approve_bank_transfer"
-    | "reject_bank_transfer"
     | "issue_refund"
     | "manage_currencies"
     | "reconcile_payment"
@@ -28,101 +28,11 @@ async function requireCapability(
   return user;
 }
 
-// Approve — transitions a bank-transfer payment from
-// awaiting_verification to completed, then continues the associated
-// booking/workshop workflow (UX Spec §9: "automatically continues").
-// "Continuation" here is the same amount_paid/payment_status sync the
-// gateway webhook path uses (src/app/api/payments/webhook/paystack/
-// route.ts's syncEntityPaymentStatus) — one shared mechanism for both
-// payment methods, not two divergent implementations.
-export async function approveBankTransferAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
-  const user = await requireCapability("approve_bank_transfer");
-  const paymentId = String(formData.get("paymentId") ?? "");
-  if (!paymentId) return actionFail("Nothing was saved — check the details and try again.");
-
-  // Admin/secret-key client, not the session client — public.payments
-  // grants UPDATE to service_role only (see migration 0024's RLS
-  // section comment); authorization is already enforced above via
-  // requireCapability(), this just supplies the DB privilege the write
-  // itself needs.
-  const supabase = createAdminClient();
-  const { data: payment } = await supabase
-    .from("payments")
-    .select("id, entity_type, entity_id, reference_amount_usd, payment_type")
-    .eq("id", paymentId)
-    .eq("status", "awaiting_verification")
-    .maybeSingle();
-
-  if (!payment) return actionFail("Nothing was saved — check the details and try again.");
-
-  const { error } = await supabase
-    .from("payments")
-    .update({
-      status: "completed",
-      amount_collected: payment.reference_amount_usd,
-      settlement_currency: null, // bank transfer settles directly to Ordift's bank, not through a gateway — nothing to record here
-      reviewed_by: user.id,
-      reviewed_at: new Date().toISOString(),
-    })
-    .eq("id", paymentId);
-
-  if (error) {
-    console.error("[admin] bank transfer approval failed", error.message);
-    return actionFail("Could not save your change. Please try again.");
-  }
-
-  await syncEntityAfterBankTransferDecision(payment.entity_type, payment.entity_id);
-
-  await logActivity({
-    actorUserId: user.id,
-    action: "payment.bank_transfer_approved",
-    entityType: "payment",
-    entityId: paymentId,
-  });
-
-  revalidatePath("/admin/payments");
-  return actionOk("Approved.");
-}
-
-export async function rejectBankTransferAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
-  const user = await requireCapability("reject_bank_transfer");
-  const paymentId = String(formData.get("paymentId") ?? "");
-  const reason = String(formData.get("reason") ?? "").trim();
-  // Every rejection carries a recorded reason — PAYMENT_SECURITY_
-  // REVIEW.md §16's "no refund/rejection without a reason" rule,
-  // applied here to rejections too.
-  if (!paymentId || !reason) return actionFail("Nothing was saved — check the details and try again.");
-
-  // Same admin/secret-key client as approveBankTransferAction above,
-  // same reason — public.payments grants UPDATE to service_role only.
-  const supabase = createAdminClient();
-  const { error } = await supabase
-    .from("payments")
-    .update({
-      status: "rejected",
-      reviewed_by: user.id,
-      reviewed_at: new Date().toISOString(),
-      review_notes: reason,
-    })
-    .eq("id", paymentId)
-    .eq("status", "awaiting_verification");
-
-  if (error) {
-    console.error("[admin] bank transfer rejection failed", error.message);
-    return actionFail("Could not save your change. Please try again.");
-  }
-
-  await logActivity({
-    actorUserId: user.id,
-    action: "payment.bank_transfer_rejected",
-    entityType: "payment",
-    entityId: paymentId,
-    metadata: { reason },
-  });
-
-  revalidatePath("/admin/payments");
-  return actionOk("Rejected.");
-}
+// Bank-transfer approve/reject moved to verificationActions.ts (Direct Bank Transfer, 2026-10): the
+// old one-click "Approve" credited the REQUESTED amount without anyone recording what actually
+// arrived. Decisions now go through verify_bank_transfer_payment() with the verifier's own
+// record of the receipt. syncEntityAfterBankTransferDecision below is kept (it is exercised by the
+// existing integration tests) but is no longer reachable from a form.
 
 // TD-043 — "Reconcile Now": lets staff manually trigger the same
 // authoritative Paystack verify-and-apply path the customer's own
@@ -176,6 +86,41 @@ export async function reconcilePaymentAction(_prev: ActionState, formData: FormD
   // failed/still-pending) shows immediately without a manual refresh.
   revalidatePath(`/admin/payments/${paymentId}`);
   return actionOk("Reconciled.");
+}
+
+// READ-ONLY: asks Paystack (through the existing integration, with Production's own key) what the
+// authoritative status of a pending gateway payment is, and explains what Reconcile Now WOULD do.
+// It never writes to payments or any financial record — it only appends an audit entry saying a
+// check was made. Use it to decide whether Reconcile Now is appropriate.
+export async function checkPaystackStatusAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  const user = await requireCapability("reconcile_payment");
+  const paymentId = String(formData.get("paymentId") ?? "");
+  if (!paymentId) return actionFail("Nothing was checked — the payment wasn't identified.");
+
+  const supabase = createAdminClient();
+  const { data: payment } = await supabase
+    .from("payments")
+    .select("id, status, payment_method, provider, gateway_reference, converted_amount, payment_currency")
+    .eq("id", paymentId)
+    .maybeSingle();
+  if (!payment || payment.payment_method !== "gateway" || !payment.gateway_reference) return actionFail("This isn't a gateway payment with a Paystack reference, so there is nothing to check.");
+
+  let event;
+  try {
+    event = await getProvider(payment.provider as string).verifyTransaction(payment.gateway_reference as string);
+  } catch (err) {
+    console.error("[admin] paystack status check failed", err instanceof Error ? err.message : err);
+    return actionFail("Couldn't reach Paystack to check this payment. Nothing was changed — try again shortly, or check the Paystack dashboard.");
+  }
+  const assessment = assessPaystackStatus(event, payment as { converted_amount: number | string; payment_currency: string });
+  await logActivity({
+    actorUserId: user.id,
+    action: "payment.paystack_status_checked",
+    entityType: "payment",
+    entityId: paymentId,
+    metadata: { paystackStatus: assessment.paystackStatus, amount: assessment.amount, currency: assessment.currency, matchesLockedAmount: assessment.matchesLockedAmount, currentPaymentStatus: payment.status, note: "Read-only check — no payment or receivable was changed." },
+  });
+  return actionOk(formatAssessment(assessment));
 }
 
 // TD-043 completion-idempotency remediation — retries a stuck/failed
@@ -247,9 +192,8 @@ export async function retryReceiptJobAction(_prev: ActionState, formData: FormDa
   return actionOk("Retried.");
 }
 
-// Ghana-only today, same as every other payments module file — see
-// checkout/actions.ts's ACTIVE_COUNTRY comment for the shared reasoning.
-const ACTIVE_CURRENCY = "GHS";
+// Local currencies with an admin-managed rate: GHS (Ghana) and QAR (Qatar bank transfer).
+const MANAGED_CURRENCIES = ["GHS", "QAR"];
 
 // The confirm-before-activate step happens entirely client-side
 // (AddExchangeRateForm's own local state) — this action is only ever
@@ -259,9 +203,12 @@ export async function addExchangeRateAction(formData: FormData): Promise<void> {
   const user = await requireCapability("manage_currencies");
   const rateToUsd = Number(formData.get("rateToUsd"));
   const reason = String(formData.get("reason") ?? "").trim() || null;
+  const requestedCurrency = String(formData.get("currencyCode") ?? "GHS");
+  const ACTIVE_CURRENCY = MANAGED_CURRENCIES.includes(requestedCurrency) ? requestedCurrency : "GHS";
+  const back = `/admin/payments/exchange-rates?currency=${ACTIVE_CURRENCY}`;
 
   if (!Number.isFinite(rateToUsd) || rateToUsd <= 0) {
-    redirect("/admin/payments/exchange-rates?error=invalid-rate");
+    redirect(`${back}&error=invalid-rate`);
   }
 
   const result = await insertExchangeRate({
@@ -272,7 +219,7 @@ export async function addExchangeRateAction(formData: FormData): Promise<void> {
   });
 
   if (!result.ok) {
-    redirect("/admin/payments/exchange-rates?error=insert-failed");
+    redirect(`${back}&error=insert-failed`);
   }
 
   await logActivity({
@@ -284,7 +231,7 @@ export async function addExchangeRateAction(formData: FormData): Promise<void> {
   });
 
   revalidatePath("/admin/payments/exchange-rates");
-  redirect("/admin/payments/exchange-rates");
+  redirect(back);
 }
 
 // Exported so it can be exercised directly by integration tests, the
