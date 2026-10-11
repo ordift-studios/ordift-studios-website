@@ -240,7 +240,7 @@ export async function addExchangeRateAction(formData: FormData): Promise<void> {
 // explicit result, is pending-disabled in the form, and refuses to add an IDENTICAL rate for the same
 // currency within a minute of the last one. The history stays append-only and locked historical rates
 // are never touched.
-export const DUPLICATE_RATE_WINDOW_MS = 60_000;
+const DUPLICATE_RATE_WINDOW_MS = 60_000; // not exported: a "use server" file may only export async functions
 
 export async function saveExchangeRateAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const user = await getCurrentUser();
