@@ -1,13 +1,13 @@
 import ActionForm from "@/components/admin/ActionForm";
 import SubmitButton from "@/components/admin/SubmitButton";
 import { COMPLETION_STATUS_LABELS, questionsFor, type CompletionStatus } from "@/lib/crewSupport/jobReportRules";
-import { RELEASE_STATUS_LABELS, managementActions, releaseCategoryLabel, type ReleaseStatus } from "@/lib/crewSupport/fileRelease";
+import { RELEASE_STATUS_LABELS, SELF_REVIEW_MESSAGE, managementActions, releaseCategoryLabel, reviewerConflict, type ReleaseStatus } from "@/lib/crewSupport/fileRelease";
 import type { AssignmentReport } from "@/lib/crewSupport/jobReports";
 import type { ProjectFile } from "@/lib/payables/projectFiles";
 import { releaseFilesAction, reviewFileAction } from "./releaseActions";
 import ReviewFileLink from "./ReviewFileLink";
 
-export type AssignmentWork = { slotId: string; label: string; engagementId: string; serviceFamily: string | null; reports: AssignmentReport[]; files: ProjectFile[] };
+export type AssignmentWork = { slotId: string; label: string; assigneeId: string | null; engagementId: string; serviceFamily: string | null; reports: AssignmentReport[]; files: ProjectFile[] };
 
 const BTN = "rounded-md px-3 py-1.5 font-sans text-caption font-semibold";
 const INPUT = "w-full rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small";
@@ -49,7 +49,7 @@ function ReportBlock({ reports, serviceFamily }: { reports: AssignmentReport[]; 
 
 // Management's view of an accepted job: the professional's report, and the files they have uploaded with
 // where each is in the review-and-release flow. Nothing reaches the client until it is released here.
-export default function AssignmentWorkPanel({ requestId, work, canReview, isTest }: { requestId: string; work: AssignmentWork[]; canReview: boolean; isTest: boolean }) {
+export default function AssignmentWorkPanel({ requestId, work, canReview, isTest, viewerId }: { requestId: string; work: AssignmentWork[]; canReview: boolean; isTest: boolean; viewerId: string }) {
   if (work.length === 0) return null;
   return (
     <section className="rounded-xl border border-black/10 bg-white p-6 space-y-6" aria-labelledby="assignment-work-heading">
@@ -65,10 +65,16 @@ export default function AssignmentWorkPanel({ requestId, work, canReview, isTest
         const awaiting = w.files.filter((f) => f.releaseStatus === "submitted");
         const approved = w.files.filter((f) => f.releaseStatus === "approved");
         const others = w.files.filter((f) => !["submitted", "approved"].includes(f.releaseStatus));
+        // Nobody reviews or releases their own work, whatever their role.
+        const conflicted = (f: (typeof w.files)[number]) => reviewerConflict({ reviewerId: viewerId, uploadedBy: f.uploadedBy, submittedBy: f.submittedForReleaseBy, assigneeId: w.assigneeId });
+        const anyConflict = [...awaiting, ...approved].some((f) => conflicted(f));
         return (
           <div key={w.slotId} className="space-y-4 border-t border-black/5 pt-4 first:border-t-0 first:pt-0">
             <p className="font-sans text-body-small font-medium text-ordift-ink">{w.label}</p>
             <ReportBlock reports={w.reports} serviceFamily={w.serviceFamily} />
+            {canReview && anyConflict && (
+              <p role="note" className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 font-sans text-caption text-amber-900">{SELF_REVIEW_MESSAGE}</p>
+            )}
 
             <div className="space-y-3">
               <p className="font-sans text-body-small font-medium text-ordift-ink">Files ({w.files.length})</p>
@@ -79,7 +85,7 @@ export default function AssignmentWorkPanel({ requestId, work, canReview, isTest
                 <div key={f.id} className="rounded-lg border border-amber-200 bg-amber-50/50 p-3 space-y-2">
                   <p className="font-sans text-body-small text-ordift-ink"><ReviewFileLink fileId={f.id} label={f.originalFilename} /> <span className="text-ordift-ink-muted">· {releaseCategoryLabel(f.releaseCategory)} · client title “{f.clientTitle}”</span></p>
                   {f.clientDescription && <p className="font-sans text-caption text-ordift-ink-muted">{f.clientDescription}</p>}
-                  {canReview && managementActions(f.releaseStatus).length > 0 && (
+                  {canReview && !conflicted(f) && managementActions(f.releaseStatus).length > 0 && (
                     <ActionForm action={reviewFileAction} className="flex flex-wrap items-center gap-2">
                       <input type="hidden" name="requestId" value={requestId} />
                       <input type="hidden" name="fileId" value={f.id} />
@@ -94,7 +100,7 @@ export default function AssignmentWorkPanel({ requestId, work, canReview, isTest
 
               {approved.length > 0 && <p className="font-sans text-caption font-semibold uppercase tracking-wide text-ordift-ink-muted">Approved — not yet released</p>}
               {approved.length > 0 && (
-                canReview ? (
+                canReview && !approved.some((f) => conflicted(f)) ? (
                   <ActionForm action={releaseFilesAction} className="space-y-3 rounded-lg border border-blue-200 bg-blue-50/40 p-3">
                     <input type="hidden" name="requestId" value={requestId} />
                     <ul className="space-y-1">
@@ -106,7 +112,7 @@ export default function AssignmentWorkPanel({ requestId, work, canReview, isTest
                       ))}
                     </ul>
                     <label className="flex items-center gap-2 font-sans text-caption text-ordift-ink">
-                      <input type="checkbox" name="notifyClient" defaultChecked={!isTest} disabled={isTest} /> Email the client one “files ready” message with a secure portal link{isTest ? " (disabled for test records)" : ""}
+                      <input type="checkbox" name="notifyClient" defaultChecked={false} disabled={isTest} /> Also email the client one “files ready” message with a secure portal link (off by default){isTest ? " — disabled for test records" : ""}
                     </label>
                     <SubmitButton pendingLabel="Releasing…" className={`${BTN} bg-ordift-gold text-ordift-navy-950`}>Release selected to the client</SubmitButton>
                   </ActionForm>

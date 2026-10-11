@@ -78,3 +78,16 @@ export function validateSubmitForRelease(input: { category: string; title: strin
 export function clientFilePath(fileId: string): string {
   return `/portal/client/files/${fileId}/download`;
 }
+
+// Separation of duties: nobody reviews or releases work they did themselves. A reviewer is conflicted if they
+// uploaded the file, submitted it for release, or are the professional assigned to the job it belongs to —
+// whatever their administrative role (a Super Admin who is the assigned photographer is the professional).
+// The same rule is enforced again by a database constraint on who uploaded/submitted a file.
+export const SELF_REVIEW_MESSAGE =
+  "You can't review or release your own work. You uploaded or submitted this file, or you are the professional assigned to this job, so an independent reviewer must approve and release it.";
+
+export function reviewerConflict(input: { reviewerId: string; uploadedBy: string | null; submittedBy: string | null; assigneeId: string | null }): string | null {
+  const { reviewerId } = input;
+  if (reviewerId && (reviewerId === input.uploadedBy || reviewerId === input.submittedBy || reviewerId === input.assigneeId)) return SELF_REVIEW_MESSAGE;
+  return null;
+}

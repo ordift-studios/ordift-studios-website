@@ -256,12 +256,13 @@ export type ProjectFile = {
   clientTitle: string | null;
   clientDescription: string | null;
   releaseReviewNote: string | null;
+  submittedForReleaseBy: string | null;
   releasedAt: string | null;
   deliverableId: string | null;
 };
 
 const FILE_SELECT =
-  "id, engagement_id, file_kind, storage_path, original_filename, mime_type, size_bytes, version, uploaded_by, uploaded_at, notes, lifecycle_state, retain, retain_until, backup_confirmed_by, backup_confirmed_at, purge_scheduled_at, purged_at, purge_reason, release_category, release_status, client_title, client_description, release_review_note, released_at, deliverable_id";
+  "id, engagement_id, file_kind, storage_path, original_filename, mime_type, size_bytes, version, uploaded_by, uploaded_at, notes, lifecycle_state, retain, retain_until, backup_confirmed_by, backup_confirmed_at, purge_scheduled_at, purged_at, purge_reason, release_category, release_status, client_title, client_description, release_review_note, submitted_for_release_by, released_at, deliverable_id";
 
 function mapProjectFile(r: Record<string, unknown>): ProjectFile {
   return {
@@ -288,6 +289,7 @@ function mapProjectFile(r: Record<string, unknown>): ProjectFile {
     clientTitle: (r.client_title as string | null) ?? null,
     clientDescription: (r.client_description as string | null) ?? null,
     releaseReviewNote: (r.release_review_note as string | null) ?? null,
+    submittedForReleaseBy: (r.submitted_for_release_by as string | null) ?? null,
     releasedAt: (r.released_at as string | null) ?? null,
     deliverableId: (r.deliverable_id as string | null) ?? null,
   };

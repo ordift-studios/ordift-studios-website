@@ -88,6 +88,7 @@ if (!/^https?:\/\/(127\.0\.0\.1|localhost)(:|\/|$)/.test(process.env.NEXT_PUBLIC
 const SUPER = "00000000-0000-4000-8000-0000000000c1"; // Founder-like: admin + super_admin
 const CREW1 = "00000000-0000-4000-8000-0000000000c2"; // staff member assigned to the job ("unclassified" for external-workforce modules)
 const CREW2 = "00000000-0000-4000-8000-0000000000c3"; // another staff member, not on the job
+const SUPER2 = "00000000-0000-4000-8000-0000000000c6"; // a genuinely independent administrator
 const CLIENT = "00000000-0000-4000-8000-0000000000c4";
 const CLIENT2 = "00000000-0000-4000-8000-0000000000c5";
 
@@ -100,7 +101,7 @@ const jwt = (sub: string) => {
   return `${head}.${body}.${createHmac("sha256", readFileSync("/tmp/e2e_jwt_secret", "utf8").trim()).update(`${head}.${body}`).digest("base64url")}`;
 };
 const asUserDb = (id: string) => createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, jwt(id), { auth: { persistSession: false }, global: { fetch: h.fetch } });
-const ROLES: Record<string, string[]> = { [SUPER]: ["admin", "super_admin"], [CREW1]: ["staff"], [CREW2]: ["staff"], [CLIENT]: ["client"], [CLIENT2]: ["client"] };
+const ROLES: Record<string, string[]> = { [SUPER]: ["admin", "super_admin"], [SUPER2]: ["admin", "super_admin"], [CREW1]: ["staff"], [CREW2]: ["staff"], [CLIENT]: ["client"], [CLIENT2]: ["client"] };
 const as = (id: string | null) => { h.user = id ? { id, email: `${id}@e2e.test`, fullName: id, roles: ROLES[id] ?? [], accessStatus: "active" } : null; };
 const asCurrent = (id: string): CurrentUser => ({ id, email: `${id}@e2e.test`, fullName: id, roles: ROLES[id] ?? [], accessStatus: "active" }) as unknown as CurrentUser;
 const must = <T extends { ok: boolean }>(r: T, label = ""): Extract<T, { ok: true }> => { if (!r.ok) throw new Error(`${label} expected ok, got ${JSON.stringify(r)}`); return r as Extract<T, { ok: true }>; };
@@ -157,13 +158,13 @@ beforeAll(() => {
     $$;`,
   });
   sql(`
-    insert into auth.users (id, email) values ('${SUPER}','founder@e2e.test'),('${CREW1}','crew1@e2e.test'),('${CREW2}','crew2@e2e.test'),('${CLIENT}','client@e2e.test'),('${CLIENT2}','client2@e2e.test') on conflict do nothing;
-    insert into public.profiles (id, full_name, access_status) values ('${SUPER}','Founder','active'),('${CREW1}','Crew One','active'),('${CREW2}','Crew Two','active'),('${CLIENT}','Client One','active'),('${CLIENT2}','Client Two','active')
+    insert into auth.users (id, email) values ('${SUPER}','founder@e2e.test'),('${SUPER2}','independent@e2e.test'),('${CREW1}','crew1@e2e.test'),('${CREW2}','crew2@e2e.test'),('${CLIENT}','client@e2e.test'),('${CLIENT2}','client2@e2e.test') on conflict do nothing;
+    insert into public.profiles (id, full_name, access_status) values ('${SUPER}','Founder','active'),('${SUPER2}','Independent Admin','active'),('${CREW1}','Crew One','active'),('${CREW2}','Crew Two','active'),('${CLIENT}','Client One','active'),('${CLIENT2}','Client Two','active')
       on conflict (id) do update set full_name = excluded.full_name, access_status = 'active';
-    insert into public.user_roles (user_id, role_id) select '${SUPER}', id from public.roles where slug in ('admin','super_admin') on conflict do nothing;
+    insert into public.user_roles (user_id, role_id) select u, r.id from unnest(array['${SUPER}','${SUPER2}']::uuid[]) u cross join public.roles r where r.slug in ('admin','super_admin') on conflict do nothing;
     insert into public.user_roles (user_id, role_id) select u, (select id from public.roles where slug = 'staff') from unnest(array['${CREW1}','${CREW2}']::uuid[]) u on conflict do nothing;
     insert into public.person_capabilities (profile_id, operational_title_id, proficiency, verification_status, source)
-      select p, (select id from public.operational_titles where slug = 'photographer'), 'primary', 'verified', 'admin' from unnest(array['${CREW1}','${CREW2}']::uuid[]) p on conflict do nothing;
+      select p, (select id from public.operational_titles where slug = 'photographer'), 'primary', 'verified', 'admin' from unnest(array['${CREW1}','${CREW2}','${SUPER}']::uuid[]) p on conflict do nothing;
     -- Reproduce Production: service_role has no access to these tables.
     revoke all on public.deliverables, public.deliverable_categories, public.enquiry_notes from service_role;
   `);
@@ -434,5 +435,49 @@ describe("E — the release columns can only be changed by server code", () => {
     // ordinary edits to the same row by staff still work (retain flag), and server code is unaffected
     expect((await staff.from("project_files").update({ retain: true }).eq("id", id).select("id")).error).toBeNull();
     must(await submitFileForRelease({ fileId: id, actorUserId: CREW1, category: "thank_you_image", title: "Direct one", description: "" }));
+  });
+});
+
+describe("F — separation of duties: the professional never approves or releases their own work, even as Super Admin", () => {
+  const j = {} as Awaited<ReturnType<typeof newJob>>;
+  let fileId = "";
+  it("F1 the Founder is both the assigned photographer and a Super Admin: he can upload and submit, but cannot approve, request changes on, decline or release his own files", async () => {
+    Object.assign(j, await newJob(SUPER));
+    fileId = (await upload(j.engagementId, "bright-1.jpg", "thank_you_image", SUPER)).id;
+    must(await submitFileForRelease({ fileId, actorUserId: SUPER, category: "thank_you_image", title: "Bright thank-you 1", description: "" }));
+    for (const action of ["approve", "request_changes", "reject"] as const) {
+      expect(mustFail(await reviewFileForRelease({ fileId, user: asCurrent(SUPER), action, note: "reason given here" }))).toMatch(/can't review or release your own work/);
+    }
+    expect((await fileRow(fileId)).release_status).toBe("submitted");
+    const rel = must(await releaseApprovedFiles({ fileIds: [fileId], user: asCurrent(SUPER), notifyClient: false }));
+    expect(rel.released).toBe(0);
+    expect(rel.failed[0]).toMatch(/can't review or release your own work/);
+  });
+  it("F2 the job report does not touch the files: still submitted, nothing released, no email", async () => {
+    const mails = h.sent.length;
+    must(await submitJobReport({ engagementId: j.engagementId, actorUserId: SUPER, input: REPORT }), "report");
+    expect((await fileRow(fileId)).release_status).toBe("submitted");
+    expect(await deliverableCount(j.enquiryId)).toBe(0);
+    expect(h.sent.length).toBe(mails);
+  });
+  it("F3 even after an independent approval, the Founder still cannot release his own file; the independent administrator can", async () => {
+    must(await reviewFileForRelease({ fileId, user: asCurrent(SUPER2), action: "approve" }), "independent approve");
+    const mine = must(await releaseApprovedFiles({ fileIds: [fileId], user: asCurrent(SUPER), notifyClient: false }));
+    expect(mine.released).toBe(0);
+    expect(mine.failed[0]).toMatch(/can't review or release your own work/);
+    expect(await deliverableCount(j.enquiryId)).toBe(0);
+    const theirs = must(await releaseApprovedFiles({ fileIds: [fileId], user: asCurrent(SUPER2), notifyClient: false }));
+    expect(theirs.released).toBe(1);
+    expect(await deliverableCount(j.enquiryId)).toBe(1);
+  });
+  it("F4 the database enforces it too: server code cannot record the uploader or submitter as reviewer or releaser", async () => {
+    const k = await newJob(SUPER);
+    const id = (await upload(k.engagementId, "bright-2.jpg", "thank_you_image", SUPER)).id;
+    must(await submitFileForRelease({ fileId: id, actorUserId: SUPER, category: "thank_you_image", title: "Bright thank-you 2", description: "" }));
+    const a = await db().from("project_files").update({ release_reviewed_by: SUPER }).eq("id", id);
+    expect(a.error?.message ?? "").toMatch(/release_separation/);
+    const b = await db().from("project_files").update({ released_by: SUPER }).eq("id", id);
+    expect(b.error?.message ?? "").toMatch(/release_separation/);
+    expect((await db().from("project_files").update({ release_reviewed_by: SUPER2 }).eq("id", id)).error).toBeNull();
   });
 });

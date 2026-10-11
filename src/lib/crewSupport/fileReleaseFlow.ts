@@ -6,7 +6,7 @@ import { sendFilesReadyEmail } from "@/lib/enquiry/lifecycleEmails";
 import { pathwayLabel } from "@/lib/enquiry/pathways";
 import { getCrewAssignmentForEngagement } from "./crewOffers";
 import { isManagementUser } from "./management";
-import { clientFilePath, deliverableKeyFor, releaseCategoryLabel, transition, validateSubmitForRelease, type ReleaseAction } from "./fileRelease";
+import { clientFilePath, deliverableKeyFor, releaseCategoryLabel, reviewerConflict, transition, validateSubmitForRelease, type ReleaseAction } from "./fileRelease";
 
 // The controlled path by which an assignment's private file reaches the client:
 //   professional uploads (private) -> submits for review -> management approves -> management releases.
@@ -17,12 +17,18 @@ import { clientFilePath, deliverableKeyFor, releaseCategoryLabel, transition, va
 type Result<T = object> = ({ ok: true } & T) | { ok: false; error: string };
 const SLOT_ENTITY = "crew_support_slot";
 
-type FileRow = { id: string; engagement_id: string; original_filename: string; release_status: string; release_category: string | null; client_title: string | null; client_description: string | null; purged_at: string | null };
-const FILE_COLS = "id, engagement_id, original_filename, release_status, release_category, client_title, client_description, purged_at";
+type FileRow = { id: string; engagement_id: string; original_filename: string; release_status: string; release_category: string | null; client_title: string | null; client_description: string | null; purged_at: string | null; uploaded_by: string | null; submitted_for_release_by: string | null };
+const FILE_COLS = "id, engagement_id, original_filename, release_status, release_category, client_title, client_description, purged_at, uploaded_by, submitted_for_release_by";
 
 async function loadFile(fileId: string): Promise<FileRow | null> {
   const { data } = await createAdminClient().from("project_files").select(FILE_COLS).eq("id", fileId).maybeSingle();
   return (data as FileRow | null) ?? null;
+}
+
+// Separation of duties for a file and a would-be reviewer/releaser; null means no conflict.
+async function conflictFor(file: FileRow, reviewerId: string): Promise<string | null> {
+  const { data: eng } = await createAdminClient().from("engagements").select("payee_profile_id").eq("id", file.engagement_id).maybeSingle();
+  return reviewerConflict({ reviewerId, uploadedBy: file.uploaded_by, submittedBy: file.submitted_for_release_by, assigneeId: (eng?.payee_profile_id as string | null) ?? null });
 }
 
 // Move a file between release states with an optimistic guard: the UPDATE only applies if the file is still
@@ -71,6 +77,8 @@ export async function reviewFileForRelease(params: { fileId: string; user: Curre
   if (!(await isManagementUser(params.user))) return { ok: false, error: "Only authorised management can review files for release." };
   const file = await loadFile(params.fileId);
   if (!file) return { ok: false, error: "File not found." };
+  const conflict = await conflictFor(file, params.user.id);
+  if (conflict) return { ok: false, error: conflict };
   const note = (params.note ?? "").trim();
   if (params.action !== "approve" && note.length < 5) return { ok: false, error: "Say what needs to change (or why it is declined) — the professional will see this." };
   const t = transition(file.release_status, params.action, "management");
@@ -122,6 +130,8 @@ export async function releaseApprovedFiles(params: { fileIds: string[]; user: Cu
 
   for (const file of files) {
     if (file.release_status === "released") { out.alreadyReleased++; continue; }
+    const conflict = await conflictFor(file, params.user.id);
+    if (conflict) { out.failed.push(`${file.client_title ?? file.original_filename}: ${conflict}`); continue; }
     const t = transition(file.release_status, "release", "management");
     if (!t.ok) { out.failed.push(`${file.client_title ?? file.original_filename}: ${t.error}`); continue; }
     const key = file.release_category ? deliverableKeyFor(file.release_category) : null;

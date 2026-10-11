@@ -79,7 +79,7 @@ export default async function CrewSupportDetailPage({ params }: { params: Promis
     ? await Promise.all(
         commitment.slots
           .filter((sl) => sl.status === "assigned" && sl.engagement)
-          .map(async (sl) => ({ slotId: sl.slotId, label: sl.label, engagementId: sl.engagement!.id, serviceFamily: String(r.service_family ?? ""), reports: await listReportsForEngagement(sl.engagement!.id), files: await listProjectFilesForEngagement(sl.engagement!.id) }))
+          .map(async (sl) => ({ slotId: sl.slotId, label: sl.label, assigneeId: sl.assigneeProfileId ?? null, engagementId: sl.engagement!.id, serviceFamily: String(r.service_family ?? ""), reports: await listReportsForEngagement(sl.engagement!.id), files: await listProjectFilesForEngagement(sl.engagement!.id) }))
       )
     : [];
   const enquiry = { id: String(r.enquiry_id), crmStage: String(enquiryRow.data?.crm_stage ?? "unknown"), amountDue: enquiryRow.data?.amount_due == null ? null : Number(enquiryRow.data.amount_due) };
@@ -167,7 +167,7 @@ export default async function CrewSupportDetailPage({ params }: { params: Promis
 
       {commitment && <ProductionPanel snapshot={commitment} enquiryId={r.enquiry_id} deliverables={deliverables} handoff={{ media: details.mediaHandoff ?? null, raw: details.rawRequired ?? null }} />}
 
-      <AssignmentWorkPanel requestId={r.id} work={assignmentWork} canReview={user ? await isManagementUser(user) : false} isTest={Boolean(detail.request.is_test)} />
+      <AssignmentWorkPanel requestId={r.id} work={assignmentWork} canReview={user ? await isManagementUser(user) : false} isTest={Boolean(detail.request.is_test)} viewerId={user?.id ?? ""} />
 
       <NotificationsPanel requestId={r.id} events={notificationEvents} isTest={Boolean(detail.request.is_test)} />
 

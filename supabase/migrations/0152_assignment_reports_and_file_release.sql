@@ -75,6 +75,13 @@ alter table public.project_files
   add column released_at timestamptz,
   add column released_by uuid references public.profiles (id),
   add column deliverable_id uuid references public.deliverables (id);
+-- Separation of duties, enforced by the database as well as the application: whoever uploaded a file or
+-- submitted it for release can never be recorded as its reviewer or releaser. (Existing rows have no
+-- reviewer or releaser, so they satisfy this trivially.)
+alter table public.project_files add constraint project_files_release_separation check (
+  (release_reviewed_by is null or (release_reviewed_by is distinct from uploaded_by and release_reviewed_by is distinct from submitted_for_release_by))
+  and (released_by is null or (released_by is distinct from uploaded_by and released_by is distinct from submitted_for_release_by))
+);
 create index project_files_release_idx on public.project_files (release_status) where release_status <> 'private';
 
 -- Defence in depth: the release columns are changed ONLY by server code (service role), after the application
