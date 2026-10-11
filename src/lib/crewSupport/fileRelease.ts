@@ -91,3 +91,13 @@ export function reviewerConflict(input: { reviewerId: string; uploadedBy: string
   if (reviewerId && (reviewerId === input.uploadedBy || reviewerId === input.submittedBy || reviewerId === input.assigneeId)) return SELF_REVIEW_MESSAGE;
   return null;
 }
+
+// Shown to an administrator who is also the professional assigned to the job, whether or not anything has been
+// submitted yet, so the rule is visible before it is needed.
+export const ASSIGNEE_NOTICE_TITLE = "You are the assigned professional on this job";
+export const ASSIGNEE_NOTICE_BODY =
+  "You can upload your work, submit your job report and submit files for review, but you cannot review, approve or release your own files, whatever your administrative role. A different person must do that.";
+
+export function isAssignedProfessional(viewerId: string, assigneeId: string | null): boolean {
+  return Boolean(viewerId) && viewerId === assigneeId;
+}

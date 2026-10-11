@@ -1,7 +1,7 @@
 import ActionForm from "@/components/admin/ActionForm";
 import SubmitButton from "@/components/admin/SubmitButton";
 import { COMPLETION_STATUS_LABELS, questionsFor, type CompletionStatus } from "@/lib/crewSupport/jobReportRules";
-import { RELEASE_STATUS_LABELS, SELF_REVIEW_MESSAGE, managementActions, releaseCategoryLabel, reviewerConflict, type ReleaseStatus } from "@/lib/crewSupport/fileRelease";
+import { ASSIGNEE_NOTICE_BODY, ASSIGNEE_NOTICE_TITLE, RELEASE_STATUS_LABELS, SELF_REVIEW_MESSAGE, isAssignedProfessional, managementActions, releaseCategoryLabel, reviewerConflict, type ReleaseStatus } from "@/lib/crewSupport/fileRelease";
 import type { AssignmentReport } from "@/lib/crewSupport/jobReports";
 import type { ProjectFile } from "@/lib/payables/projectFiles";
 import { releaseFilesAction, reviewFileAction } from "./releaseActions";
@@ -68,11 +68,18 @@ export default function AssignmentWorkPanel({ requestId, work, canReview, isTest
         // Nobody reviews or releases their own work, whatever their role.
         const conflicted = (f: (typeof w.files)[number]) => reviewerConflict({ reviewerId: viewerId, uploadedBy: f.uploadedBy, submittedBy: f.submittedForReleaseBy, assigneeId: w.assigneeId });
         const anyConflict = [...awaiting, ...approved].some((f) => conflicted(f));
+        const viewerIsAssignee = isAssignedProfessional(viewerId, w.assigneeId);
         return (
           <div key={w.slotId} className="space-y-4 border-t border-black/5 pt-4 first:border-t-0 first:pt-0">
             <p className="font-sans text-body-small font-medium text-ordift-ink">{w.label}</p>
+            {viewerIsAssignee && (
+              <div role="note" aria-label="Self-review restriction" className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2">
+                <p className="font-sans text-caption font-semibold text-amber-900">{ASSIGNEE_NOTICE_TITLE}</p>
+                <p className="font-sans text-caption text-amber-900">{ASSIGNEE_NOTICE_BODY}</p>
+              </div>
+            )}
             <ReportBlock reports={w.reports} serviceFamily={w.serviceFamily} />
-            {canReview && anyConflict && (
+            {canReview && anyConflict && !viewerIsAssignee && (
               <p role="note" className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 font-sans text-caption text-amber-900">{SELF_REVIEW_MESSAGE}</p>
             )}
 
