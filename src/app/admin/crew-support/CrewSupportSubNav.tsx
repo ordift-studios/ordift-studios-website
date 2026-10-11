@@ -2,8 +2,8 @@ import Link from "next/link";
 
 // Persistent in-section navigation so Capabilities is always one click
 // from Requests (and back), instead of a text link buried in a page body.
-export default function CrewSupportSubNav({ active }: { active: "requests" | "capabilities" }) {
-  const tab = (key: "requests" | "capabilities", href: string, label: string) => (
+export default function CrewSupportSubNav({ active }: { active: "requests" | "capabilities" | "readiness" }) {
+  const tab = (key: "requests" | "capabilities" | "readiness", href: string, label: string) => (
     <Link
       href={href}
       aria-current={active === key ? "page" : undefined}
@@ -16,6 +16,7 @@ export default function CrewSupportSubNav({ active }: { active: "requests" | "ca
     <nav aria-label="Crew Support sections" className="flex flex-wrap gap-2">
       {tab("requests", "/admin/crew-support", "Requests")}
       {tab("capabilities", "/admin/crew-support/capabilities", "Crew capabilities")}
+      {tab("readiness", "/admin/crew-support/readiness-settings", "Readiness settings")}
     </nav>
   );
 }

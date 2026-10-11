@@ -109,7 +109,10 @@ create table public.assignment_readiness_settings (
   updated_at timestamptz not null default now(),
   constraint assignment_readiness_settings_order check (first_reminder_hours > readiness_check_hours and readiness_check_hours > no_response_flag_hours),
   -- B1 sends nothing. A later migration (B2) replaces this guard when reminders are built and approved.
-  constraint assignment_readiness_settings_no_reminders_in_b1 check (reminders_enabled = false)
+  constraint assignment_readiness_settings_no_reminders_in_b1 check (reminders_enabled = false),
+  -- B1 enrols only by hand. Automatic enrolment (which would hook into the live acceptance workflow) is a later,
+  -- separately approved change; until then this cannot be set.
+  constraint assignment_readiness_settings_no_auto_enrol_in_b1 check (auto_enrol_from is null)
 );
 insert into public.assignment_readiness_settings (id) values (true);
 comment on table public.assignment_readiness_settings is

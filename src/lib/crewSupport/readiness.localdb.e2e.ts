@@ -71,14 +71,12 @@ vi.mock("@/lib/supabase/admin", async () => {
   };
 });
 
-import { NextRequest } from "next/server";
 import { setCrewSupportStatus } from "./admin";
 import { respondToCrewOffer, sendCrewOffer } from "./crewOffers";
 import type { CurrentUser } from "@/lib/portal/roles";
 import { disableReadiness, enrolAssignment, getReadinessAttention, getReadinessForAdmin, getReadinessForProfessional, getReadinessSettings, setResponsibleManager, submitReadiness, updateReadinessSettings } from "./readiness";
 import { assignFollowUp, manageIssue, postIssueMessage, professionalIssueAction } from "./readinessIssues";
 import { listScheduleChanges, recordScheduleNotice, rescheduleAssignment, setEventTimezone } from "./reschedule";
-import { submitJobReport } from "./jobReports";
 
 if (!/^https?:\/\/(127\.0\.0\.1|localhost)(:|\/|$)/.test(process.env.NEXT_PUBLIC_SUPABASE_URL ?? "")) {
   throw new Error("Refusing to run: this E2E may only target a localhost database.");
@@ -109,8 +107,6 @@ const mustFail = <T extends { ok: boolean }>(r: T): string => { expect(r.ok).toB
 const count = async (table: string, f: Record<string, unknown>) => (await db().from(table).select("id", { count: "exact", head: true }).match(f)).count ?? 0;
 
 
-// deliverables are unreadable to service_role (as in Production), so count them as a signed-in administrator.
-const _unusedDeliverableCount = async (enquiryId: string) => (await asUserDb(SUPER).from("deliverables").select("id").eq("entity_id", enquiryId)).data?.length ?? -1;
 
 let titleId = "";
 let counter = 0;
@@ -200,6 +196,9 @@ describe("A — enrolment: manual, management-only, eligible assignments only; n
     expect(sql("select count(*) from public.assignment_readiness")).toBe("0\n");
     const bad = (() => { try { sql("update public.assignment_readiness_settings set reminders_enabled = true"); return ""; } catch (e) { return String((e as { stderr?: Buffer }).stderr ?? e); } })();
     expect(bad).toMatch(/no_reminders_in_b1/);
+    const bad2 = (() => { try { sql("update public.assignment_readiness_settings set auto_enrol_from = now()"); return ""; } catch (e) { return String((e as { stderr?: Buffer }).stderr ?? e); } })();
+    expect(bad2).toMatch(/no_auto_enrol_in_b1/);
+    expect(mustFail(await updateReadinessSettings({ user: asCurrent(SUPER), values: { autoEnrolFrom: new Date().toISOString(), firstReminderHours: 48, readinessCheckHours: 24, noResponseFlagHours: 12, skipCheckIfReady: true } }))).toMatch(/isn't available yet/);
   });
   it("A2 only management can enrol; an administrator without management authority, staff and clients cannot", async () => {
     Object.assign(j, await liveJob());

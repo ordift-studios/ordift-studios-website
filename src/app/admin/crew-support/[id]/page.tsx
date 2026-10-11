@@ -15,6 +15,9 @@ import NotificationsPanel from "../NotificationsPanel";
 import CommitmentPanel from "../CommitmentPanel";
 import ProductionPanel from "../ProductionPanel";
 import AssignmentWorkPanel, { type AssignmentWork } from "../AssignmentWorkPanel";
+import ScheduleReadinessPanel, { type ReadinessSlotData } from "../ScheduleReadinessPanel";
+import { getReadinessForAdmin, getReadinessSettings, listManagerCandidates } from "@/lib/crewSupport/readiness";
+import { listScheduleChanges, partiesForRequest } from "@/lib/crewSupport/reschedule";
 import { listReportsForEngagement } from "@/lib/crewSupport/jobReports";
 import { listProjectFilesForEngagement } from "@/lib/payables/projectFiles";
 import { getDeliverablesForEntity } from "@/lib/admin/deliverables";
@@ -82,6 +85,14 @@ export default async function CrewSupportDetailPage({ params }: { params: Promis
           .map(async (sl) => ({ slotId: sl.slotId, label: sl.label, assigneeId: sl.assigneeProfileId ?? null, engagementId: sl.engagement!.id, serviceFamily: String(r.service_family ?? ""), reports: await listReportsForEngagement(sl.engagement!.id), files: await listProjectFilesForEngagement(sl.engagement!.id) }))
       )
     : [];
+  const readinessSlots: ReadinessSlotData[] = [];
+  for (const w of assignmentWork) {
+    const view = await getReadinessForAdmin(w.engagementId);
+    if (view) readinessSlots.push({ engagementId: w.engagementId, label: w.label, assigneeId: w.assigneeId, view, actualDates: w.reports.map((rep) => rep.actualServiceDate) });
+  }
+  const [scheduleChanges, scheduleParties, managerCandidates, readinessSettings, viewerIsManagement] = readinessSlots.length
+    ? await Promise.all([listScheduleChanges(id), partiesForRequest(id), listManagerCandidates(), getReadinessSettings(), user ? isManagementUser(user) : Promise.resolve(false)])
+    : [[], [], [], null, false];
   const enquiry = { id: String(r.enquiry_id), crmStage: String(enquiryRow.data?.crm_stage ?? "unknown"), amountDue: enquiryRow.data?.amount_due == null ? null : Number(enquiryRow.data.amount_due) };
   const nextStatuses = allowedStatusTransitions(r.status);
   const slotRules = detail.slots.map((sl) => ({ status: sl.status, assigneeProfileId: sl.assignee_profile_id }));
@@ -168,6 +179,10 @@ export default async function CrewSupportDetailPage({ params }: { params: Promis
       {commitment && <ProductionPanel snapshot={commitment} enquiryId={r.enquiry_id} deliverables={deliverables} handoff={{ media: details.mediaHandoff ?? null, raw: details.rawRequired ?? null }} />}
 
       <AssignmentWorkPanel requestId={r.id} work={assignmentWork} canReview={user ? await isManagementUser(user) : false} isTest={Boolean(detail.request.is_test)} viewerId={user?.id ?? ""} />
+
+      {readinessSettings && (
+        <ScheduleReadinessPanel requestId={r.id} slots={readinessSlots} changes={scheduleChanges} parties={scheduleParties} managers={managerCandidates} viewerId={user?.id ?? ""} isManagement={viewerIsManagement} canManageIssues flagHours={readinessSettings.noResponseFlagHours} />
+      )}
 
       <NotificationsPanel requestId={r.id} events={notificationEvents} isTest={Boolean(detail.request.is_test)} />
 

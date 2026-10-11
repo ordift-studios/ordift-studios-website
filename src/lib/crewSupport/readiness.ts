@@ -5,7 +5,7 @@ import { getCrewAssignmentForEngagement } from "./crewOffers";
 import { isManagementUser } from "./management";
 import { canManageCrewSupport } from "./permissions";
 import {
-  enrolmentBlocker, mayRespond, noResponseFlag, readinessState, validateReadinessResponse,
+  READINESS_STATE_LABELS, enrolmentBlocker, mayRespond, noResponseFlag, readinessState, validateReadinessResponse,
   type ReadinessInput, type ReadinessState,
 } from "./readinessRules";
 import { effectiveTimezone, scheduleEndMs, scheduleStart, scheduleVersionFromChangeCount, type EffectiveTimezone } from "./schedule";
@@ -96,7 +96,7 @@ export async function updateReadinessSettings(params: { user: CurrentUser; value
   const v = params.values;
   const bad = validateSettings(v);
   if (bad) return { ok: false, error: bad };
-  if (v.autoEnrolFrom && Number.isNaN(Date.parse(v.autoEnrolFrom))) return { ok: false, error: "Enter a valid date for automatic enrolment, or leave it blank to keep it off." };
+  if (v.autoEnrolFrom) return { ok: false, error: "Automatic enrolment isn't available yet — assignments are enrolled by management, one at a time." };
   const before = await getReadinessSettings();
   const { error } = await createAdminClient().from("assignment_readiness_settings").update({
     auto_enrol_from: v.autoEnrolFrom ? new Date(v.autoEnrolFrom).toISOString() : null, first_reminder_hours: v.firstReminderHours, readiness_check_hours: v.readinessCheckHours,
@@ -303,7 +303,6 @@ export type ReadinessAttention = { openIssues: { requestId: string; reference: s
 export async function getReadinessAttention(user: CurrentUser, nowMs: number = Date.now()): Promise<ReadinessAttention | null> {
   if (!canManageCrewSupport(user)) return null;
   const admin = createAdminClient();
-  const settings = await getReadinessSettings();
   const { data: tracked } = await admin.from("assignment_readiness").select("id, engagement_id, request_id").is("disabled_at", null);
   const out: ReadinessAttention = { openIssues: [], verifyIssues: 0, noResponse: [], pendingNotices: 0 };
   const rows = tracked ?? [];
@@ -332,4 +331,29 @@ export async function getReadinessAttention(user: CurrentUser, nowMs: number = D
     for (const c of changes) for (const p of ((c.notify_parties as { kind: string; profileId: string | null }[]) ?? [])) if (!have.has(`${c.id}|${p.kind}|${p.profileId ?? ""}`)) out.pendingNotices++;
   }
   return out;
+}
+
+// For the My Assignments list: the readiness chip for each of the signed-in person's own enrolled, upcoming jobs.
+export async function getReadinessChips(userId: string, jobs: { slotId: string; engagementId: string | null; state: string }[], nowMs: number = Date.now()): Promise<Record<string, { state: ReadinessState; label: string }>> {
+  const out: Record<string, { state: ReadinessState; label: string }> = {};
+  for (const j of jobs) {
+    if (!j.engagementId || j.state !== "accepted") continue;
+    const v = await getReadinessForProfessional(j.engagementId, userId, nowMs);
+    if (!v || !v.enrolled || !v.active || v.canRespond) continue; // only while tracking is active and the job has not started
+    out[j.slotId] = { state: v.state, label: READINESS_STATE_LABELS[v.state] };
+  }
+  return out;
+}
+
+// Active administrators who can be named responsible manager.
+export async function listManagerCandidates(): Promise<{ id: string; label: string }[]> {
+  const admin = createAdminClient();
+  const { data: roles } = await admin.from("roles").select("id, slug").in("slug", ["admin", "super_admin"]);
+  const roleIds = (roles ?? []).map((r) => r.id as string);
+  if (!roleIds.length) return [];
+  const { data: ur } = await admin.from("user_roles").select("user_id").in("role_id", roleIds);
+  const ids = [...new Set((ur ?? []).map((r) => r.user_id as string))];
+  if (!ids.length) return [];
+  const { data: profiles } = await admin.from("profiles").select("id, full_name, member_number, access_status").in("id", ids).eq("access_status", "active");
+  return (profiles ?? []).map((p) => ({ id: p.id as string, label: `${(p.full_name as string | null) ?? "Administrator"}${p.member_number ? ` (${p.member_number})` : ""}` })).sort((a, b) => a.label.localeCompare(b.label));
 }

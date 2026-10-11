@@ -9,6 +9,7 @@ import {
   getSeparationNeedsAttention,
   getRecentActivityForOverview,
 } from "@/lib/admin/overview";
+import { getReadinessAttention } from "@/lib/crewSupport/readiness";
 import ActiveUsersPanel from "@/components/admin/ActiveUsersPanel";
 
 export const metadata: Metadata = {
@@ -284,13 +285,14 @@ function AttentionCard({ item }: { item: AttentionItem }) {
 export default async function AdminOverviewPage() {
   const user = await getCurrentUser();
 
-  const [stats, activity, general, payables, onboardingAttention, separationAttention] = await Promise.all([
+  const [stats, activity, general, payables, onboardingAttention, separationAttention, readinessAttention] = await Promise.all([
     getOverviewStats(),
     getRecentActivityForOverview(),
     getGeneralNeedsAttention(),
     user ? getPayablesNeedsAttention(user.id) : Promise.resolve(null),
     user ? getOnboardingNeedsAttention(user.id) : Promise.resolve(null),
     user ? getSeparationNeedsAttention(user.id) : Promise.resolve(null),
+    user ? getReadinessAttention(user).catch(() => null) : Promise.resolve(null),
   ]);
 
   // "Needs Attention" — every entry here reuses an existing, already-filterable
@@ -311,6 +313,15 @@ export default async function AdminOverviewPage() {
       count: general.pendingPaymentRegistrations,
       href: "/admin/bookings?paymentStatus=Pending",
     });
+  }
+  if (readinessAttention) {
+    // Crew Support readiness (display only — nothing is emailed). One entry per condition; links to the single
+    // request when there is just one, otherwise to the Crew Support list.
+    const link = (reqIds: string[]) => (new Set(reqIds).size === 1 ? `/admin/crew-support/${reqIds[0]}` : "/admin/crew-support");
+    if (readinessAttention.openIssues.length > 0) attentionItems.push({ label: "Assignment readiness issues open", count: readinessAttention.openIssues.length, href: link(readinessAttention.openIssues.map((i) => i.requestId)) });
+    if (readinessAttention.verifyIssues > 0) attentionItems.push({ label: "Readiness issues the professional reports sorted — verify", count: readinessAttention.verifyIssues, href: "/admin/crew-support" });
+    if (readinessAttention.noResponse.length > 0) attentionItems.push({ label: "Assignments starting soon with no readiness answer", count: readinessAttention.noResponse.length, href: link(readinessAttention.noResponse.map((n) => n.requestId)) });
+    if (readinessAttention.pendingNotices > 0) attentionItems.push({ label: "Rescheduled — someone not yet recorded as told", count: readinessAttention.pendingNotices, href: "/admin/crew-support" });
   }
   if (payables) {
     if (payables.pendingApprovalCount > 0) {

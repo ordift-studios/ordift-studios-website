@@ -12,6 +12,9 @@ import { getServiceFamilyForEngagement, listMyReports } from "@/lib/crewSupport/
 import { RELEASE_CATEGORIES } from "@/lib/crewSupport/fileRelease";
 import CrewJobDetails from "@/components/portal/CrewJobDetails";
 import JobReportPanel from "@/components/portal/JobReportPanel";
+import ReadinessPanel from "@/components/portal/ReadinessPanel";
+import { getReadinessForProfessional } from "@/lib/crewSupport/readiness";
+import { formatInZone } from "@/lib/crewSupport/schedule";
 import MediaFileUploader from "@/components/payables/MediaFileUploader";
 import EngagementFileList from "@/components/portal/EngagementFileList";
 import { postEngagementUpdateAction, requestFileUploadAuthorizationAction, recordUploadedFileAction } from "../../actions";
@@ -62,7 +65,7 @@ export default async function CollaboratorEngagementPage({ params }: { params: P
   const isCrewJob = Boolean(crewJob);
   const showFiles = modules.files || isCrewJob;
   const showFeedback = modules.feedback || isCrewJob;
-  const [reports, serviceFamily] = isCrewJob ? await Promise.all([listMyReports(id, user.id), getServiceFamilyForEngagement(id)]) : [[], null];
+  const [reports, serviceFamily, readiness] = isCrewJob ? await Promise.all([listMyReports(id, user.id), getServiceFamilyForEngagement(id), getReadinessForProfessional(id, user.id)]) : [[], null, null];
   const instructor = isInstructorEngagement(engagement.operationalTitleName);
   const closed = isTerminalEngagementStatus(engagement.status);
 
@@ -106,6 +109,18 @@ export default async function CollaboratorEngagementPage({ params }: { params: P
           </p>
         )}
       </section>
+
+      {readiness?.enrolled && readiness.active && (
+        <ReadinessPanel
+          data={{
+            engagementId: id, serviceFamily: readiness.serviceFamily, state: readiness.state, timezone: readiness.timezone, callTimeKnown: readiness.callTimeKnown,
+            startLabel: readiness.startMs != null && readiness.timezone ? formatInZone(readiness.startMs, readiness.timezone) : null,
+            latest: readiness.latest ? { version: readiness.latest.version, status: readiness.latest.status, checks: readiness.latest.checks, concerns: readiness.latest.concerns, remarks: readiness.latest.remarks, submittedAt: readiness.latest.submittedAt } : null,
+            canRespond: readiness.canRespond,
+            issues: readiness.issues.filter((i) => i.status !== "resolved" || i.events.length > 0).slice(0, 3).map((i) => ({ id: i.id, status: i.status, kind: i.kind, events: i.events.map((e) => ({ id: e.id, actorRole: e.actorRole, event: e.event, body: e.body, createdAt: e.createdAt })) })),
+          }}
+        />
+      )}
 
       {crewJob && (
         <JobReportPanel
