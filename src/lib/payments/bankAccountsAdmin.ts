@@ -1,4 +1,5 @@
 import { createAdminClient } from "@/lib/supabase/admin";
+import { createClient } from "@/lib/supabase/server";
 import { logActivity } from "@/lib/admin/activityLog";
 import { isSuperAdminId } from "@/lib/organization/authority";
 import { maskAccountIdentifier, SENSITIVE_ACCOUNT_FIELDS, validateActivation, validateBankAccountInput, type BankAccountInput } from "@/lib/payments/bankTransferRules";
@@ -7,6 +8,13 @@ import { maskAccountIdentifier, SENSITIVE_ACCOUNT_FIELDS, validateActivation, va
 // UI), every change audited, and the identity fields of a LIVE account can't be edited in place:
 // to change them, deactivate and add a new account — historical payments keep the immutable
 // snapshot of the account they were told to pay (payments.receiving_account_snapshot) either way.
+
+// IMPORTANT (Production): `service_role` has NO read access to the reference tables currencies,
+// payment_country_config, exchange_rates or current_exchange_rates (migration 0024 grants them to
+// `authenticated` only — see the Phase F.1 note in currency.ts). So those tables are read/written with
+// the signed-in SESSION client (RLS: Super Admin may read and manage them), never the admin client. A
+// local database with default privileges hides this mistake; src/lib/payments/referenceTableAccess.test.ts
+// guards it.
 
 type Result<T = unknown> = ({ ok: true } & T) | { ok: false; error: string };
 
@@ -65,7 +73,8 @@ async function load(id: string): Promise<BankAccountRecord | null> {
 }
 
 export async function listMarketConfigs(): Promise<{ country: string; currency: string; provider: string; isActive: boolean }[]> {
-  const { data } = await createAdminClient().from("payment_country_config").select("country, default_currency_code, gateway_provider, is_active").order("country");
+  const session = await createClient();
+  const { data } = await session.from("payment_country_config").select("country, default_currency_code, gateway_provider, is_active").order("country");
   return (data ?? []).map((r) => ({ country: r.country as string, currency: r.default_currency_code as string, provider: r.gateway_provider as string, isActive: Boolean(r.is_active) }));
 }
 
@@ -76,14 +85,22 @@ export async function createBankAccount(params: { input: BankAccountInput; actor
   const v = validateBankAccountInput(i);
   if (!v.ok) return v;
   const admin = createAdminClient();
-  const { data: currency } = await admin.from("currencies").select("code").eq("code", i.currencyCode).eq("is_active", true).maybeSingle();
+  const session = await createClient();
+  const { data: currency, error: currencyError } = await session.from("currencies").select("code").eq("code", i.currencyCode).eq("is_active", true).maybeSingle();
+  if (currencyError) {
+    console.error("[bank-accounts] currency lookup failed", currencyError.code ?? "unknown"); // code only — never account details
+    return { ok: false, error: "Couldn't check the currency right now. Nothing was saved — please try again." };
+  }
   if (!currency) return { ok: false, error: `${i.currencyCode} isn't a supported currency.` };
   const { data, error } = await admin.from("bank_accounts").insert({
     country: i.country, currency_code: i.currencyCode, bank_name: i.bankName, account_name: i.beneficiaryName, account_number: i.accountNumber || i.iban,
     iban: i.iban || null, swift_code: i.swiftCode || null, account_classification: i.classification, is_active: false, is_default: false,
     created_by: params.actorUserId, updated_by: params.actorUserId,
   }).select(COLUMNS).single();
-  if (error || !data) return { ok: false, error: "Could not save the bank account. Please try again." };
+  if (error || !data) {
+    console.error("[bank-accounts] insert failed", error?.code ?? "no-row"); // code only — never account details
+    return { ok: false, error: "Could not save the bank account. Nothing was saved — please try again." };
+  }
   const rec = toRecord(data as Row);
   await logActivity({ actorUserId: params.actorUserId, action: "bank_account.created", entityType: "bank_account", entityId: rec.id, metadata: { after: auditView(rec), note: "Created inactive — it receives nothing until activated." } });
   return { ok: true, id: rec.id };
@@ -123,7 +140,7 @@ export async function activateBankAccount(params: { id: string; basis: string; c
   if (!acct) return { ok: false, error: "Bank account not found." };
   if (acct.isActive) return { ok: false, error: "This account is already active." };
   const admin = createAdminClient();
-  const { data: config } = await admin.from("payment_country_config").select("country").eq("country", acct.country).maybeSingle();
+  const { data: config } = await (await createClient()).from("payment_country_config").select("country").eq("country", acct.country).maybeSingle();
   const check = validateActivation({ classification: acct.classification, basis: params.basis, hasIdentifier: Boolean(acct.accountNumber || acct.iban), hasMarketConfig: Boolean(config), confirmedPersonalUse: params.confirmedPersonalUse });
   if (!check.ok) return check;
   const now = new Date().toISOString();
@@ -178,12 +195,12 @@ export async function deactivateBankAccount(params: { id: string; reason: string
 export async function setMarketPaymentsEnabled(params: { country: string; enabled: boolean; actorUserId: string }): Promise<Result> {
   const denied = await requireSuperAdmin(params.actorUserId);
   if (denied) return denied;
-  const admin = createAdminClient();
-  const { data: cfg } = await admin.from("payment_country_config").select("country, is_active, gateway_provider").eq("country", params.country).maybeSingle();
+  const session = await createClient();
+  const { data: cfg } = await session.from("payment_country_config").select("country, is_active, gateway_provider").eq("country", params.country).maybeSingle();
   if (!cfg) return { ok: false, error: "That market isn't configured." };
   if (params.country === "GH") return { ok: false, error: "The Ghana market is managed with the Paystack configuration, not here." };
   if (Boolean(cfg.is_active) === params.enabled) return { ok: true };
-  const { error } = await admin.from("payment_country_config").update({ is_active: params.enabled }).eq("country", params.country);
+  const { error } = await session.from("payment_country_config").update({ is_active: params.enabled }).eq("country", params.country);
   if (error) return { ok: false, error: "Could not update the market. Please try again." };
   await logActivity({ actorUserId: params.actorUserId, action: params.enabled ? "payment_market.enabled" : "payment_market.disabled", entityType: "payment_country_config", entityId: params.country, metadata: { market: params.country, provider: cfg.gateway_provider } });
   return { ok: true };

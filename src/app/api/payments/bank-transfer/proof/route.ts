@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { getCurrentUser, isStaffOrAdmin } from "@/lib/portal/roles";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { createClient } from "@/lib/supabase/server";
 import { generateRecordId } from "@/lib/shared/recordId";
 import { checkRateLimit } from "@/lib/shared/rateLimit";
 import { resolveEntityAmounts, resolveAmountToCharge } from "@/lib/payments/checkoutService";
@@ -232,7 +233,11 @@ export async function PUT(request: NextRequest) {
   const country = await getEntityPaymentCountry(entityType, body.entityId);
 
   const admin = createAdminClient();
-  const { data: countryConfig } = await admin
+  // payment_country_config and current_exchange_rates are readable by `authenticated` only —
+  // service_role has no grant on them in Production — so they are read with the client's own session
+  // (RLS: an inactive market is invisible to a client, which is exactly "not available").
+  const session = await createClient();
+  const { data: countryConfig } = await session
     .from("payment_country_config")
     .select("default_currency_code")
     .eq("country", country)
@@ -259,7 +264,7 @@ export async function PUT(request: NextRequest) {
   // getCurrentRate() for the same pattern; duplicated here rather than
   // imported since this route runs with the admin client, not the
   // session client currency.ts expects.
-  const { data: rateRow } = await admin
+  const { data: rateRow } = await session
     .from("current_exchange_rates")
     .select("rate_to_usd")
     .eq("currency_code", countryConfig.default_currency_code)
