@@ -4,6 +4,10 @@
     {
       "path": "/api/cron/pulse-discovery",
       "schedule": "0 3 * * *"
+    },
+    {
+      "path": "/api/cron/readiness-reminders",
+      "schedule": "40 4 * * *"
     }
   ]
 }

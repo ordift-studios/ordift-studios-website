@@ -10,7 +10,7 @@ import { logEmailSendFailure } from "./deadLetter";
 // between forms.
 
 export type EmailResult =
-  | { ok: true; mode: "sent" | "logged"; attempts: number }
+  | { ok: true; mode: "sent" | "logged"; attempts: number; providerId?: string }
   | { ok: false; error: string; attempts: number; permanent: boolean };
 
 const MAX_ATTEMPTS = 3;
@@ -90,7 +90,7 @@ export async function sendEmailNow(params: {
         if (attempt > 1) {
           console.log(`${logPrefix} email sent on retry (attempt ${attempt}/${MAX_ATTEMPTS}) to ${to}`);
         }
-        return { ok: true, mode: "sent", attempts: attempt };
+        return { ok: true, mode: "sent", attempts: attempt, providerId: result.data?.id };
       }
 
       lastError = result.error.message;

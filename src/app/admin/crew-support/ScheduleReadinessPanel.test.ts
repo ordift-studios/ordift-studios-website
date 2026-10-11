@@ -4,7 +4,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 
 vi.mock("./readinessAdminActions", () => {
   const f = vi.fn();
-  return { assignFollowUpAction: f, disableAction: f, enrolAction: f, manageIssueAction: f, postIssueMessageAction: f, recordNoticeAction: f, rescheduleAction: f, setManagerAction: f, setTimezoneAction: f };
+  return { assignFollowUpAction: f, disableAction: f, enrolAction: f, manageIssueAction: f, postIssueMessageAction: f, recordNoticeAction: f, rescheduleAction: f, setAreaLabelAction: f, setManagerAction: f, setTimezoneAction: f };
 });
 
 import ScheduleReadinessPanel, { type ReadinessSlotData } from "./ScheduleReadinessPanel";
@@ -13,7 +13,7 @@ import { SELF_ISSUE_MESSAGE } from "@/lib/crewSupport/readinessRules";
 
 const FOUNDER = "founder", OTHER = "other-admin";
 const ctx = { engagementId: "e1", slotId: "s1", requestId: "r1", assigneeId: FOUNDER, slotStatus: "assigned", slotAccepted: true, engagementStatus: "engagement_active", requestStatus: "confirmed", isTest: false, serviceFamily: "photography", reference: "CSR-1", startDate: "2026-10-12", endDate: "2026-10-12", callTime: "10:00", finishTime: "21:00", timezone: { timezone: "Asia/Qatar", source: "market" as const }, startMs: Date.parse("2026-10-12T07:00:00Z"), callTimeKnown: true, endMs: Date.parse("2026-10-12T21:00:00Z"), scheduleVersion: 1 };
-const view = (o: Partial<AdminReadinessView> = {}): AdminReadinessView => ({ context: ctx, enrolled: false, readinessId: null, enrolmentSource: null, enrolledAt: null, disabledAt: null, disabledReason: null, responsibleManagerId: null, state: "not_confirmed", flagNoResponse: false, responses: [], issues: [], enrolBlocker: null, ...o });
+const view = (o: Partial<AdminReadinessView> = {}): AdminReadinessView => ({ context: ctx, enrolled: false, readinessId: null, enrolmentSource: null, enrolledAt: null, disabledAt: null, disabledReason: null, responsibleManagerId: null, state: "not_confirmed", flagNoResponse: false, responses: [], issues: [], enrolBlocker: null, areaLabel: null, notifications: [], ...o });
 const slot = (v: AdminReadinessView): ReadinessSlotData => ({ engagementId: "e1", label: "Photographer", assigneeId: FOUNDER, view: v, actualDates: [] });
 const issue = { id: "i1", kind: "need_assistance", status: "open", raisedAt: "2026-10-11T10:00:00Z", acknowledgedAt: null, assignedTo: null, followUpAction: null, professionalReportedResolvedAt: null, professionalConfirmedAt: null, resolutionNote: null, resolvedAt: null, events: [
   { id: "ev1", event: "raised", visibility: "shared", actorId: FOUNDER, actorRole: "professional", body: "Reported: Need assistance", createdAt: "2026-10-11T10:00:00Z" },
@@ -79,5 +79,26 @@ describe("management schedule & readiness panel", () => {
     const picker = html.slice(html.indexOf('name="managerId"'), html.indexOf("</select>", html.indexOf('name="managerId"')));
     expect(picker).toContain("Other Admin");
     expect(picker).not.toContain("Founder");
+  });
+
+  it("reminders block: shows the area label, never offers label editing to non-management, and lists notifications with delivery stage", () => {
+    const enrolled = view({ enrolled: true, readinessId: "rd1", enrolledAt: "2026-10-10T10:00:00Z", enrolmentSource: "manual", areaLabel: "Doha — West Bay", notifications: [
+      { id: "n1", kind: "reminder_first", status: "sent", skipReason: null, recipientRole: "professional", recipientLabel: "SIM-0002", mode: "live", dueAt: "2026-10-10T07:00:00Z", at: "2026-10-10T07:05:00Z", stage: "provider_accepted", scheduleVersion: 1 },
+      { id: "n2", kind: "reminder_check", status: "skipped", skipReason: "already_ready", recipientRole: "professional", recipientLabel: null, mode: "live", dueAt: "2026-10-11T07:00:00Z", at: "2026-10-11T07:05:00Z", stage: null, scheduleVersion: 1 },
+      { id: "n3", kind: "reminder_first", status: "sent", skipReason: null, recipientRole: "professional", recipientLabel: "SIM-0003", mode: "live", dueAt: "2026-10-10T07:00:00Z", at: "2026-10-10T07:05:00Z", stage: "bounced", scheduleVersion: 1 },
+    ] });
+    const html = render(OTHER, enrolled);
+    expect(html).toContain("Doha — West Bay");
+    expect(html).toContain("Accepted by the email provider (not yet delivered)");
+    expect(html).toContain("Already confirmed ready for the current schedule");
+    expect(html).toContain("contact them another way");
+    expect(html).toContain("never include the venue");
+    const readOnly = render(OTHER, enrolled, { isManagement: false });
+    expect(readOnly).not.toContain("Save label");
+  });
+  it("reminders block: with no label the panel says no reminder can be sent", () => {
+    const html = render(OTHER, view({ enrolled: true, readinessId: "rd1", enrolledAt: "2026-10-10T10:00:00Z", enrolmentSource: "manual" }));
+    expect(html).toContain("not set");
+    expect(html).toContain("Nothing has been sent, skipped or recorded");
   });
 });

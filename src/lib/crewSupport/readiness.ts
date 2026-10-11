@@ -8,6 +8,7 @@ import {
   READINESS_STATE_LABELS, enrolmentBlocker, mayRespond, noResponseFlag, readinessState, validateReadinessResponse,
   type ReadinessInput, type ReadinessState,
 } from "./readinessRules";
+import { furthestStage, type DeliveryStage } from "./readinessReminderRules";
 import { effectiveTimezone, scheduleEndMs, scheduleStart, scheduleVersionFromChangeCount, type EffectiveTimezone } from "./schedule";
 
 // Pre-assignment readiness (B1). Builds on the existing request / slot / engagement records. It records and
@@ -77,7 +78,7 @@ export async function getReadinessSettings(): Promise<ReadinessSettings> {
     readinessCheckHours: (data?.readiness_check_hours as number | undefined) ?? 24,
     noResponseFlagHours: (data?.no_response_flag_hours as number | undefined) ?? 12,
     skipCheckIfReady: (data?.skip_check_if_ready as boolean | undefined) ?? true,
-    remindersEnabled: false, // cannot be enabled in B1
+    remindersEnabled: (data?.reminders_enabled as boolean | undefined) ?? false,
     updatedAt: (data?.updated_at as string | null) ?? null,
   };
 }
@@ -277,15 +278,34 @@ export async function getReadinessForProfessional(engagementId: string, userId: 
 export type AdminReadinessView = {
   context: AssignmentContext; enrolled: boolean; readinessId: string | null; enrolmentSource: string | null; enrolledAt: string | null; disabledAt: string | null; disabledReason: string | null;
   responsibleManagerId: string | null; state: ReadinessState; flagNoResponse: boolean; responses: ReadinessResponse[]; issues: IssueView[]; enrolBlocker: string | null;
+  areaLabel: string | null; notifications: NotificationHistoryItem[];
 };
+
+// What the system intended to send / sent / skipped for this assignment, with the furthest delivery stage reached.
+export type NotificationHistoryItem = { id: string; kind: string; status: string; skipReason: string | null; recipientRole: string; recipientLabel: string | null; mode: string; dueAt: string; at: string; stage: string | null; scheduleVersion: number };
+
+async function loadNotificationHistory(readinessId: string): Promise<NotificationHistoryItem[]> {
+  const admin = createAdminClient();
+  const { data: rows } = await admin.from("assignment_notifications").select("id, kind, status, skip_reason, recipient_role, recipient_profile_id, delivery_mode, due_at, claimed_at, schedule_version").eq("readiness_id", readinessId).order("due_at", { ascending: true });
+  if (!rows?.length) return [];
+  const ids = rows.map((r) => r.id as string);
+  const [{ data: dels }, { data: profs }] = await Promise.all([
+    admin.from("assignment_notification_deliveries").select("notification_id, stage").in("notification_id", ids),
+    admin.from("profiles").select("id, full_name, member_number").in("id", [...new Set(rows.map((r) => r.recipient_profile_id as string | null).filter((x): x is string => Boolean(x)))]),
+  ]);
+  const byN = new Map<string, DeliveryStage[]>();
+  for (const d of dels ?? []) byN.set(d.notification_id as string, [...(byN.get(d.notification_id as string) ?? []), d.stage as DeliveryStage]);
+  const label = new Map((profs ?? []).map((p) => [p.id as string, p.member_number ? `${p.member_number}` : ((p.full_name as string | null) ?? "—")]));
+  return rows.map((r) => ({ id: r.id as string, kind: r.kind as string, status: r.status as string, skipReason: (r.skip_reason as string | null) ?? null, recipientRole: r.recipient_role as string, recipientLabel: r.recipient_profile_id ? (label.get(r.recipient_profile_id as string) ?? null) : null, mode: r.delivery_mode as string, dueAt: r.due_at as string, at: r.claimed_at as string, stage: furthestStage(byN.get(r.id as string) ?? []), scheduleVersion: r.schedule_version as number }));
+}
 
 export async function getReadinessForAdmin(engagementId: string, nowMs: number = Date.now()): Promise<AdminReadinessView | null> {
   const ctx = await loadAssignmentContext(engagementId);
   if (!ctx) return null;
   const admin = createAdminClient();
-  const [{ data: rd }, settings] = await Promise.all([admin.from("assignment_readiness").select("id, enrolment_source, enrolled_at, disabled_at, disabled_reason, responsible_manager_id").eq("engagement_id", engagementId).maybeSingle(), getReadinessSettings()]);
+  const [{ data: rd }, settings] = await Promise.all([admin.from("assignment_readiness").select("id, enrolment_source, enrolled_at, disabled_at, disabled_reason, responsible_manager_id, area_label").eq("engagement_id", engagementId).maybeSingle(), getReadinessSettings()]);
   const blocker = enrolmentBlocker({ isTest: ctx.isTest, requestStatus: ctx.requestStatus, slotStatus: ctx.slotStatus, slotAccepted: ctx.slotAccepted, engagementStatus: ctx.engagementStatus, alreadyEnrolled: Boolean(rd), startMs: ctx.startMs, nowMs });
-  if (!rd) return { context: ctx, enrolled: false, readinessId: null, enrolmentSource: null, enrolledAt: null, disabledAt: null, disabledReason: null, responsibleManagerId: null, state: "not_confirmed", flagNoResponse: false, responses: [], issues: [], enrolBlocker: blocker };
+  if (!rd) return { context: ctx, enrolled: false, readinessId: null, enrolmentSource: null, enrolledAt: null, disabledAt: null, disabledReason: null, responsibleManagerId: null, state: "not_confirmed", flagNoResponse: false, responses: [], issues: [], enrolBlocker: blocker, areaLabel: null, notifications: [] };
   const responses = await listReadinessResponses(rd.id as string);
   const latest = responses[0] ?? null;
   const state = readinessState({ latest: latest ? { status: latest.status, scheduleVersion: latest.scheduleVersion } : null, currentScheduleVersion: ctx.scheduleVersion });
@@ -294,6 +314,7 @@ export async function getReadinessForAdmin(engagementId: string, nowMs: number =
     disabledReason: (rd.disabled_reason as string | null) ?? null, responsibleManagerId: (rd.responsible_manager_id as string | null) ?? null, state,
     flagNoResponse: !rd.disabled_at && noResponseFlag({ state, nowMs, startMs: ctx.startMs, flagHours: settings.noResponseFlagHours }),
     responses, issues: await loadIssues(rd.id as string, "management"), enrolBlocker: null,
+    areaLabel: (rd.area_label as string | null) ?? null, notifications: await loadNotificationHistory(rd.id as string),
   };
 }
 

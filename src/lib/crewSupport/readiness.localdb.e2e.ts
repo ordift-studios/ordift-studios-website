@@ -195,7 +195,7 @@ describe("A — enrolment: manual, management-only, eligible assignments only; n
     expect(s).toMatchObject({ autoEnrolFrom: null, firstReminderHours: 48, readinessCheckHours: 24, noResponseFlagHours: 12, skipCheckIfReady: true, remindersEnabled: false });
     expect(sql("select count(*) from public.assignment_readiness")).toBe("0\n");
     const bad = (() => { try { sql("update public.assignment_readiness_settings set reminders_enabled = true"); return ""; } catch (e) { return String((e as { stderr?: Buffer }).stderr ?? e); } })();
-    expect(bad).toMatch(/no_reminders_in_b1/);
+    expect(bad).toMatch(/enabled_matches_mode/);
     const bad2 = (() => { try { sql("update public.assignment_readiness_settings set auto_enrol_from = now()"); return ""; } catch (e) { return String((e as { stderr?: Buffer }).stderr ?? e); } })();
     expect(bad2).toMatch(/no_auto_enrol_in_b1/);
     expect(mustFail(await updateReadinessSettings({ user: asCurrent(SUPER), values: { autoEnrolFrom: new Date().toISOString(), firstReminderHours: 48, readinessCheckHours: 24, noResponseFlagHours: 12, skipCheckIfReady: true } }))).toMatch(/isn't available yet/);

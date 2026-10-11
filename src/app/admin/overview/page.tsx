@@ -10,6 +10,8 @@ import {
   getRecentActivityForOverview,
 } from "@/lib/admin/overview";
 import { getReadinessAttention } from "@/lib/crewSupport/readiness";
+import { getSchedulerStatus } from "@/lib/crewSupport/readinessReminders";
+import { canManageCrewSupport } from "@/lib/crewSupport/permissions";
 import ActiveUsersPanel from "@/components/admin/ActiveUsersPanel";
 
 export const metadata: Metadata = {
@@ -285,7 +287,7 @@ function AttentionCard({ item }: { item: AttentionItem }) {
 export default async function AdminOverviewPage() {
   const user = await getCurrentUser();
 
-  const [stats, activity, general, payables, onboardingAttention, separationAttention, readinessAttention] = await Promise.all([
+  const [stats, activity, general, payables, onboardingAttention, separationAttention, readinessAttention, reminderStatus] = await Promise.all([
     getOverviewStats(),
     getRecentActivityForOverview(),
     getGeneralNeedsAttention(),
@@ -293,6 +295,7 @@ export default async function AdminOverviewPage() {
     user ? getOnboardingNeedsAttention(user.id) : Promise.resolve(null),
     user ? getSeparationNeedsAttention(user.id) : Promise.resolve(null),
     user ? getReadinessAttention(user).catch(() => null) : Promise.resolve(null),
+    user && canManageCrewSupport(user) ? getSchedulerStatus().catch(() => null) : Promise.resolve(null),
   ]);
 
   // "Needs Attention" — every entry here reuses an existing, already-filterable
@@ -322,6 +325,13 @@ export default async function AdminOverviewPage() {
     if (readinessAttention.verifyIssues > 0) attentionItems.push({ label: "Readiness issues the professional reports sorted — verify", count: readinessAttention.verifyIssues, href: "/admin/crew-support" });
     if (readinessAttention.noResponse.length > 0) attentionItems.push({ label: "Assignments starting soon with no readiness answer", count: readinessAttention.noResponse.length, href: link(readinessAttention.noResponse.map((n) => n.requestId)) });
     if (readinessAttention.pendingNotices > 0) attentionItems.push({ label: "Rescheduled — someone not yet recorded as told", count: readinessAttention.pendingNotices, href: "/admin/crew-support" });
+  }
+  if (reminderStatus && reminderStatus.mode !== "off") {
+    // Reminder scheduler health: a missed run, a reminder skipped as too late, a failed or stuck send must be visible.
+    const h = reminderStatus.health.state;
+    if (h === "stale" || h === "never_run") attentionItems.push({ label: h === "stale" ? "Readiness reminder checks are overdue — no successful run recently" : "Readiness reminders are on but no check has run yet", count: 1, href: "/admin/crew-support/readiness-settings" });
+    if (reminderStatus.lateSkips7d > 0) attentionItems.push({ label: "Readiness reminders skipped as too late (last 7 days)", count: reminderStatus.lateSkips7d, href: "/admin/crew-support/readiness-settings" });
+    if (reminderStatus.failed7d + reminderStatus.stuckClaims > 0) attentionItems.push({ label: "Readiness reminders that failed or are stuck", count: reminderStatus.failed7d + reminderStatus.stuckClaims, href: "/admin/crew-support/readiness-settings" });
   }
   if (payables) {
     if (payables.pendingApprovalCount > 0) {

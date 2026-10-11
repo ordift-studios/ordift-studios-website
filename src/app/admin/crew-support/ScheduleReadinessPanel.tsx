@@ -7,7 +7,8 @@ import {
 import { formatInZone } from "@/lib/crewSupport/schedule";
 import type { AdminReadinessView } from "@/lib/crewSupport/readiness";
 import type { ScheduleChangeView } from "@/lib/crewSupport/reschedule";
-import { assignFollowUpAction, disableAction, enrolAction, manageIssueAction, postIssueMessageAction, recordNoticeAction, rescheduleAction, setManagerAction, setTimezoneAction } from "./readinessAdminActions";
+import { assignFollowUpAction, disableAction, enrolAction, manageIssueAction, postIssueMessageAction, recordNoticeAction, rescheduleAction, setAreaLabelAction, setManagerAction, setTimezoneAction } from "./readinessAdminActions";
+import { DELIVERY_STAGE_LABELS, REMINDER_KIND_LABELS, SKIP_REASON_LABELS, type DeliveryStage, type ReminderKind, type SkipReason } from "@/lib/crewSupport/readinessReminderRules";
 
 export type ReadinessSlotData = { engagementId: string; label: string; assigneeId: string | null; view: AdminReadinessView; actualDates: string[] };
 
@@ -217,8 +218,9 @@ export default function ScheduleReadinessPanel({ requestId, slots, changes, part
                 {isManagement && !v.enrolBlocker && (
                   <ActionForm action={enrolAction} className="flex items-center gap-2">
                     <input type="hidden" name="requestId" value={requestId} /><input type="hidden" name="engagementId" value={s.engagementId} />
+                    <label className="flex flex-col gap-1"><span className={LABEL}>City/area for reminder emails (optional now)</span><input name="areaLabel" maxLength={80} placeholder="Doha — West Bay" className={INPUT} /></label>
                     <SubmitButton pendingLabel="Enrolling…" className={`${BTN} border border-black/20`}>Turn on readiness tracking</SubmitButton>
-                    <span className={LABEL}>No message is sent to the professional.</span>
+                    <span className={LABEL}>No message is sent to the professional now.</span>
                   </ActionForm>
                 )}
               </div>
@@ -242,6 +244,7 @@ export default function ScheduleReadinessPanel({ requestId, slots, changes, part
                     </ActionForm>
                   </div>
                 )}
+                <Reminders requestId={requestId} slot={s} canEdit={isManagement && !v.disabledAt} />
                 {v.responses[0] ? (
                   <div className="rounded-lg border border-black/10 p-3 space-y-1">
                     <p className="font-sans text-caption text-ordift-ink-muted">Latest answer: version {v.responses[0].version} · {READINESS_SHORT_LABELS[v.responses[0].status as ReadinessStatus] ?? v.responses[0].status} · {fmt(v.responses[0].submittedAt, tz)} · for schedule version {v.responses[0].scheduleVersion}{v.responses.length > 1 ? ` · ${v.responses.length - 1} earlier version(s) kept` : ""}</p>
@@ -256,5 +259,39 @@ export default function ScheduleReadinessPanel({ requestId, slots, changes, part
         );
       })}
     </section>
+  );
+}
+
+function Reminders({ requestId, slot, canEdit }: { requestId: string; slot: ReadinessSlotData; canEdit: boolean }) {
+  const v = slot.view;
+  return (
+    <div className="space-y-2 rounded-lg border border-black/10 p-3">
+      <p className="font-sans text-caption font-medium text-ordift-ink">Automatic reminders</p>
+      <p className={LABEL}>
+        City/area shown in reminder emails: <strong className="text-ordift-ink">{v.areaLabel ?? "not set — no reminder can be sent to the professional until it is"}</strong>. Reminder emails never include the venue, client details, access instructions or pay.
+      </p>
+      {canEdit && (
+        <ActionForm action={setAreaLabelAction} className="flex flex-wrap items-end gap-2">
+          <input type="hidden" name="requestId" value={requestId} /><input type="hidden" name="engagementId" value={slot.engagementId} />
+          <label className="flex flex-1 flex-col gap-1"><span className={LABEL}>City/area label</span><input name="areaLabel" required minLength={2} maxLength={80} defaultValue={v.areaLabel ?? ""} placeholder="Doha — West Bay" className={INPUT} /></label>
+          <SubmitButton pendingLabel="Saving…" className={`${BTN} border border-black/20`}>Save label</SubmitButton>
+        </ActionForm>
+      )}
+      {v.notifications.length === 0 ? (
+        <p className={LABEL}>Nothing has been sent, skipped or recorded for this assignment.</p>
+      ) : (
+        <ul className="space-y-1">
+          {v.notifications.map((n) => (
+            <li key={n.id} className="font-sans text-caption text-ordift-ink">
+              <strong>{REMINDER_KIND_LABELS[n.kind as ReminderKind] ?? n.kind}</strong> · for schedule version {n.scheduleVersion} · {n.mode === "test" ? "test mode" : "live"} ·{" "}
+              {n.status === "skipped" ? <>skipped — {SKIP_REASON_LABELS[n.skipReason as SkipReason] ?? n.skipReason}</> : n.status === "suppressed_test" ? "recorded, not sent (test mode)" : n.status === "logged" ? "logged only (production sending is off)" : n.status === "claimed" ? "in progress" : n.status === "failed" ? "failed" : "sent"}
+              {n.recipientLabel ? ` · to ${n.recipientRole === "management" ? "manager " : ""}${n.recipientLabel}` : ""}
+              {n.stage ? <span className="text-ordift-ink-muted"> · {DELIVERY_STAGE_LABELS[n.stage as DeliveryStage] ?? n.stage}</span> : null}
+              {(n.stage === "bounced" || n.stage === "complained") && <span className="font-semibold text-red-900"> — contact them another way</span>}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
   );
 }
