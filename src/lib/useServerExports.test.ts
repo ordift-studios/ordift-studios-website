@@ -24,9 +24,9 @@ describe('"use server" files export only async functions (types are fine)', () =
       // Values that can never be an action: literals/objects/arrays assigned to an exported const, any
       // let/var, classes, enums and synchronous function declarations. (An exported const that holds a
       // function — e.g. an action built by a helper — is allowed; it is a function at runtime.)
-      for (const m of src.matchAll(/^export\s+const\s+\w+\s*(?::[^=\n]+)?=\s*(?:["'`\d\[{-]|true\b|false\b|null\b|new\b)/gm)) offenders.push(`${f}: exported constant value`);
+      if (/^export\s+const\s+\w+\s*(?::[^=\n]+)?=\s*(?:["'`\d\[{-]|true\b|false\b|null\b|new\b)/m.test(src)) offenders.push(`${f}: exported constant value`);
       for (const m of src.matchAll(/^export\s+(let|var|class|enum)\b/gm)) offenders.push(`${f}: export ${m[1]}`);
-      for (const m of src.matchAll(/^export\s+function\b(?!\*)/gm)) offenders.push(`${f}: sync function export ${m[0]}`);
+      if (/^export\s+function\b(?!\*)/m.test(src)) offenders.push(`${f}: sync function export`);
       if (/^export\s+default\s+(?!async\b)/m.test(src)) offenders.push(`${f}: default export is not an async function`);
     }
     expect(offenders).toEqual([]);
