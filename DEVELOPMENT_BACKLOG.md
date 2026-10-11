@@ -21,4 +21,6 @@ Recorded 2026-10-11 at the Founder's request. **These items are documented only.
 - **Do not** publish, announce, open bookings or incur any expense for this event until separately authorised.
 
 ## Relationship to current work
+Status 2026-10-11: Batch 1 is live; Batch 2 (job-completion reports, assignment-linked uploads, controlled release to the client) is built and tested on branch `batch2-job-reports-and-release`, awaiting the Founder's migration (0152) and deployment approvals — see `RELEASE_NOTES_BATCH2_ASSIGNMENT_WORK.md`. Follow-ups noted there: un-release a released file, thumbnails, management notification on report/file submission.
+
 Sequencing: finish Crew Support Batch 1 (assignments navigation, delivery-stage guard, CAPTCHA and exchange-rate fixes), then job-completion reporting and the secure deliverables workflow; items A–C follow only when the Founder prioritises them.

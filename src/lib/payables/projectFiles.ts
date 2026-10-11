@@ -3,6 +3,8 @@ import { logActivity } from "@/lib/admin/activityLog";
 import { authorizeWithSuperAdminOverride, FINANCE_CAPABILITIES } from "@/lib/organization/authority";
 import { isTerminalEngagementStatus } from "@/lib/payables/engagements";
 import { classifyExternalRelationship, modulesForRelationship } from "@/lib/portal/externalWorkforce";
+import { getCrewAssignmentForEngagement } from "@/lib/crewSupport/crewOffers";
+import { isReleaseCategory } from "@/lib/crewSupport/fileRelease";
 
 // Phase H.1/H.2 (2026-09-04) — direct-to-Supabase-Storage media
 // architecture for external-workforce engagements, and the backup/
@@ -102,6 +104,14 @@ async function ownerHasFilesModule(profileId: string): Promise<boolean> {
   return modulesForRelationship(relationship).files;
 }
 
+// An accepted Crew Support assignment is a job the person was offered and accepted, so its owner may
+// always upload work for it — whatever their payee classification. (Without this, a staff member or
+// Founder working a crew job was classified "unclassified" and silently had no Files section at all.)
+async function mayUploadToEngagement(engagementId: string, profileId: string): Promise<boolean> {
+  if (await getCrewAssignmentForEngagement(engagementId, profileId)) return true;
+  return ownerHasFilesModule(profileId);
+}
+
 // Step 1 of the direct-upload flow: browser asks Ordift for permission
 // before ever touching Storage. Returns a short-lived, single-use
 // signed upload URL/token — the browser then PUTs the file bytes
@@ -111,14 +121,16 @@ export async function requestProjectFileUploadAuthorization(params: {
   fileKind: string;
   originalFilename: string;
   actorUserId: string;
+  releaseCategory?: string | null;
 }): Promise<{ ok: true; signedUrl: string; token: string; path: string } | { ok: false; error: string }> {
   if (!PROJECT_FILE_KINDS.includes(params.fileKind as ProjectFileKind)) {
     return { ok: false, error: "Unrecognized file kind." };
   }
+  if (params.releaseCategory && !isReleaseCategory(params.releaseCategory)) return { ok: false, error: "Unrecognized file category." };
 
   const access = await resolveActorAccess(params.engagementId, params.actorUserId);
   if (!access.ok) return access;
-  if (access.isContractor && !(await ownerHasFilesModule(params.actorUserId))) {
+  if (access.isContractor && !(await mayUploadToEngagement(params.engagementId, params.actorUserId))) {
     return { ok: false, error: "File uploads are not available for this relationship type." };
   }
   if (access.isContractor && isTerminalEngagementStatus(access.engagementStatus)) {
@@ -153,6 +165,7 @@ export async function recordUploadedProjectFile(params: {
   actorUserId: string;
   notes?: string | null;
   supersedesFileId?: string | null;
+  releaseCategory?: string | null;
 }): Promise<{ ok: true; id: string } | { ok: false; error: string }> {
   if (!PROJECT_FILE_KINDS.includes(params.fileKind as ProjectFileKind)) {
     return { ok: false, error: "Unrecognized file kind." };
@@ -160,13 +173,14 @@ export async function recordUploadedProjectFile(params: {
   // storagePath must actually belong to this engagement — the first
   // path segment is the owning engagement id (same convention as every
   // other private bucket in this schema).
+  if (params.releaseCategory && !isReleaseCategory(params.releaseCategory)) return { ok: false, error: "Unrecognized file category." };
   if (!params.storagePath.startsWith(`${params.engagementId}/`)) {
     return { ok: false, error: "Storage path does not match this engagement." };
   }
 
   const access = await resolveActorAccess(params.engagementId, params.actorUserId);
   if (!access.ok) return access;
-  if (access.isContractor && !(await ownerHasFilesModule(params.actorUserId))) {
+  if (access.isContractor && !(await mayUploadToEngagement(params.engagementId, params.actorUserId))) {
     return { ok: false, error: "File uploads are not available for this relationship type." };
   }
   if (access.isContractor && isTerminalEngagementStatus(access.engagementStatus)) {
@@ -197,6 +211,8 @@ export async function recordUploadedProjectFile(params: {
       version,
       uploaded_by: params.actorUserId,
       notes: params.notes ?? (params.supersedesFileId ? `Supersedes file ${params.supersedesFileId}` : null),
+      // Always private on upload; it reaches the client only through the release workflow.
+      ...(params.releaseCategory ? { release_category: params.releaseCategory, release_status: "private" } : {}),
     })
     .select("id")
     .single();
@@ -210,7 +226,7 @@ export async function recordUploadedProjectFile(params: {
     action: "project_file.uploaded",
     entityType: "engagement",
     entityId: params.engagementId,
-    metadata: { fileId: data.id, fileKind: params.fileKind, originalFilename: params.originalFilename, sizeBytes: params.sizeBytes, uploadedByContractor: access.isContractor },
+    metadata: { fileId: data.id, fileKind: params.fileKind, originalFilename: params.originalFilename, sizeBytes: params.sizeBytes, uploadedByContractor: access.isContractor, releaseCategory: params.releaseCategory ?? null },
   });
 
   return { ok: true, id: data.id };
@@ -235,10 +251,17 @@ export type ProjectFile = {
   purgeScheduledAt: string | null;
   purgedAt: string | null;
   purgeReason: string | null;
+  releaseCategory: string | null;
+  releaseStatus: string;
+  clientTitle: string | null;
+  clientDescription: string | null;
+  releaseReviewNote: string | null;
+  releasedAt: string | null;
+  deliverableId: string | null;
 };
 
 const FILE_SELECT =
-  "id, engagement_id, file_kind, storage_path, original_filename, mime_type, size_bytes, version, uploaded_by, uploaded_at, notes, lifecycle_state, retain, retain_until, backup_confirmed_by, backup_confirmed_at, purge_scheduled_at, purged_at, purge_reason";
+  "id, engagement_id, file_kind, storage_path, original_filename, mime_type, size_bytes, version, uploaded_by, uploaded_at, notes, lifecycle_state, retain, retain_until, backup_confirmed_by, backup_confirmed_at, purge_scheduled_at, purged_at, purge_reason, release_category, release_status, client_title, client_description, release_review_note, released_at, deliverable_id";
 
 function mapProjectFile(r: Record<string, unknown>): ProjectFile {
   return {
@@ -260,6 +283,13 @@ function mapProjectFile(r: Record<string, unknown>): ProjectFile {
     purgeScheduledAt: r.purge_scheduled_at as string | null,
     purgedAt: r.purged_at as string | null,
     purgeReason: r.purge_reason as string | null,
+    releaseCategory: (r.release_category as string | null) ?? null,
+    releaseStatus: (r.release_status as string | null) ?? "private",
+    clientTitle: (r.client_title as string | null) ?? null,
+    clientDescription: (r.client_description as string | null) ?? null,
+    releaseReviewNote: (r.release_review_note as string | null) ?? null,
+    releasedAt: (r.released_at as string | null) ?? null,
+    deliverableId: (r.deliverable_id as string | null) ?? null,
   };
 }
 

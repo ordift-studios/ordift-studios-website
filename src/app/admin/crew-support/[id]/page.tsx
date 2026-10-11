@@ -14,6 +14,9 @@ import QuotationPanel from "../QuotationPanel";
 import NotificationsPanel from "../NotificationsPanel";
 import CommitmentPanel from "../CommitmentPanel";
 import ProductionPanel from "../ProductionPanel";
+import AssignmentWorkPanel, { type AssignmentWork } from "../AssignmentWorkPanel";
+import { listReportsForEngagement } from "@/lib/crewSupport/jobReports";
+import { listProjectFilesForEngagement } from "@/lib/payables/projectFiles";
 import { getDeliverablesForEntity } from "@/lib/admin/deliverables";
 import { isManagementUser } from "@/lib/crewSupport/management";
 import { authorizeWithSuperAdminOverride, FINANCE_CAPABILITIES } from "@/lib/organization/authority";
@@ -72,6 +75,13 @@ export default async function CrewSupportDetailPage({ params }: { params: Promis
     createAdminClient().from("enquiries").select("id, crm_stage, amount_due").eq("id", r.enquiry_id).maybeSingle(),
     getDeliverablesForEntity("enquiry", r.enquiry_id),
   ]);
+  const assignmentWork: AssignmentWork[] = commitment
+    ? await Promise.all(
+        commitment.slots
+          .filter((sl) => sl.status === "assigned" && sl.engagement)
+          .map(async (sl) => ({ slotId: sl.slotId, label: sl.label, engagementId: sl.engagement!.id, serviceFamily: String(r.service_family ?? ""), reports: await listReportsForEngagement(sl.engagement!.id), files: await listProjectFilesForEngagement(sl.engagement!.id) }))
+      )
+    : [];
   const enquiry = { id: String(r.enquiry_id), crmStage: String(enquiryRow.data?.crm_stage ?? "unknown"), amountDue: enquiryRow.data?.amount_due == null ? null : Number(enquiryRow.data.amount_due) };
   const nextStatuses = allowedStatusTransitions(r.status);
   const slotRules = detail.slots.map((sl) => ({ status: sl.status, assigneeProfileId: sl.assignee_profile_id }));
@@ -156,6 +166,8 @@ export default async function CrewSupportDetailPage({ params }: { params: Promis
       {commitment && <CommitmentPanel snapshot={commitment} canMarkTest={isSuperAdmin(user)} canCancelConfirmed={user ? await isManagementUser(user) : false} canReviewCancellation={user ? (await authorizeWithSuperAdminOverride(user.id, FINANCE_CAPABILITIES.paymentObligationApprove)).ok : false} />}
 
       {commitment && <ProductionPanel snapshot={commitment} enquiryId={r.enquiry_id} deliverables={deliverables} handoff={{ media: details.mediaHandoff ?? null, raw: details.rawRequired ?? null }} />}
+
+      <AssignmentWorkPanel requestId={r.id} work={assignmentWork} canReview={user ? await isManagementUser(user) : false} isTest={Boolean(detail.request.is_test)} />
 
       <NotificationsPanel requestId={r.id} events={notificationEvents} isTest={Boolean(detail.request.is_test)} />
 

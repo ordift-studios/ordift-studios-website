@@ -8,7 +8,10 @@ import { PAYABLE_STATUS_LABELS } from "@/lib/payments/payoutObligations";
 import { isInstructorEngagement } from "@/lib/portal/externalWorkforce";
 import { getMyPortalModules } from "@/lib/portal/portalModules";
 import { getCrewAssignmentForEngagement } from "@/lib/crewSupport/crewOffers";
+import { getServiceFamilyForEngagement, listMyReports } from "@/lib/crewSupport/jobReports";
+import { RELEASE_CATEGORIES } from "@/lib/crewSupport/fileRelease";
 import CrewJobDetails from "@/components/portal/CrewJobDetails";
+import JobReportPanel from "@/components/portal/JobReportPanel";
 import MediaFileUploader from "@/components/payables/MediaFileUploader";
 import EngagementFileList from "@/components/portal/EngagementFileList";
 import { postEngagementUpdateAction, requestFileUploadAuthorizationAction, recordUploadedFileAction } from "../../actions";
@@ -53,6 +56,13 @@ export default async function CollaboratorEngagementPage({ params }: { params: P
     getMyPortalModules(user.id, user.roles),
   ]);
   const files = filesResult.ok ? filesResult.files : [];
+  // An accepted Crew Support job always has its own workspace (job report, files, feedback), whatever the
+  // person's payee classification — the Founder or a staff member working a crew job is "unclassified"
+  // for the external-workforce modules and used to see none of it.
+  const isCrewJob = Boolean(crewJob);
+  const showFiles = modules.files || isCrewJob;
+  const showFeedback = modules.feedback || isCrewJob;
+  const [reports, serviceFamily] = isCrewJob ? await Promise.all([listMyReports(id, user.id), getServiceFamilyForEngagement(id)]) : [[], null];
   const instructor = isInstructorEngagement(engagement.operationalTitleName);
   const closed = isTerminalEngagementStatus(engagement.status);
 
@@ -97,10 +107,21 @@ export default async function CollaboratorEngagementPage({ params }: { params: P
         )}
       </section>
 
-      {modules.files && (
+      {crewJob && (
+        <JobReportPanel
+          engagementId={id}
+          serviceFamily={serviceFamily}
+          defaultDate={crewJob.startDate.slice(0, 10)}
+          reports={reports.map((r) => ({ id: r.id, version: r.version, correctionReason: r.correctionReason, actualServiceDate: r.actualServiceDate, actualStartTime: r.actualStartTime, actualEndTime: r.actualEndTime, completionStatus: r.completionStatus, wentSmoothly: r.wentSmoothly, answers: r.answers, incidents: r.incidents, clientRequests: r.clientRequests, additionalServices: r.additionalServices, outstandingWork: r.outstandingWork, remarks: r.remarks, submittedAt: r.submittedAt }))}
+        />
+      )}
+
+      {showFiles && (
       <section className="bg-white border border-black/10 rounded-2xl p-6 space-y-4">
         <h2 className="font-serif font-medium text-body text-ordift-ink">Files</h2>
+        {isCrewJob && <p className="font-sans text-caption text-ordift-ink-muted">Everything you upload here is private to Ordift. Submit a file for review when it is ready; the client sees it only after management approves and releases it.</p>}
         <EngagementFileList
+          releaseEngagementId={isCrewJob ? id : undefined}
           files={files.map((f) => ({
             id: f.id,
             fileKind: f.fileKind,
@@ -109,6 +130,10 @@ export default async function CollaboratorEngagementPage({ params }: { params: P
             version: f.version,
             uploadedAt: f.uploadedAt,
             displayState: deriveProjectFileDisplayState({ lifecycleState: f.lifecycleState, engagementStatus: engagement.status, fileKind: f.fileKind }),
+            releaseCategory: f.releaseCategory,
+            releaseStatus: f.releaseStatus,
+            clientTitle: f.clientTitle,
+            releaseReviewNote: f.releaseReviewNote,
           }))}
         />
         {closed ? (
@@ -116,10 +141,11 @@ export default async function CollaboratorEngagementPage({ params }: { params: P
         ) : (
           <MediaFileUploader
             engagementId={id}
-            fileKindOptions={[
+            fileKindOptions={isCrewJob ? [{ value: "deliverable", label: "Deliverable" }] : [
               { value: "deliverable", label: "Deliverable" },
               { value: "revision", label: "Revision" },
             ]}
+            categoryOptions={isCrewJob ? RELEASE_CATEGORIES.map((c) => ({ value: c.value, label: c.label })) : undefined}
             requestUpload={requestFileUploadAuthorizationAction}
             recordUpload={recordUploadedFileAction}
           />
@@ -127,7 +153,7 @@ export default async function CollaboratorEngagementPage({ params }: { params: P
       </section>
       )}
 
-      {modules.feedback && (
+      {showFeedback && (
       <section className="bg-white border border-black/10 rounded-2xl p-6 space-y-5">
         <h2 className="font-serif font-medium text-body text-ordift-ink">Feedback</h2>
         {closed ? (

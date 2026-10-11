@@ -101,6 +101,7 @@ export async function requestFileUploadAuthorizationAction(params: {
   engagementId: string;
   fileKind: string;
   originalFilename: string;
+  releaseCategory?: string | null;
 }): Promise<{ ok: true; signedUrl: string; token: string; path: string } | { ok: false; error: string }> {
   const user = await getCurrentUser();
   if (!user) return { ok: false, error: "Not signed in." };
@@ -115,6 +116,7 @@ export async function recordUploadedFileAction(params: {
   mimeType: string | null;
   sizeBytes: number | null;
   supersedesFileId?: string | null;
+  releaseCategory?: string | null;
 }): Promise<{ ok: true; id: string } | { ok: false; error: string }> {
   const user = await getCurrentUser();
   if (!user) return { ok: false, error: "Not signed in." };

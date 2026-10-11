@@ -28,6 +28,9 @@ import { useState } from "react";
 // new dependency for this first pass. Retry here means "attempt the
 // whole file again", not "resume mid-transfer".
 
+// Optional (assignment workspace): a second choice that tags each upload with what it is, so it can later be
+// submitted for client release. Uploads are always private.
+type CategoryOption = { value: string; label: string };
 type UploadAuth = { ok: true; signedUrl: string; token: string; path: string } | { ok: false; error: string };
 type RecordResult = { ok: true; id: string } | { ok: false; error: string };
 
@@ -59,10 +62,11 @@ export default function MediaFileUploader({
   requestUpload,
   recordUpload,
   onUploaded,
+  categoryOptions,
 }: {
   engagementId: string;
   fileKindOptions: { value: string; label: string }[];
-  requestUpload: (params: { engagementId: string; fileKind: string; originalFilename: string }) => Promise<UploadAuth>;
+  requestUpload: (params: { engagementId: string; fileKind: string; originalFilename: string; releaseCategory?: string | null }) => Promise<UploadAuth>;
   recordUpload: (params: {
     engagementId: string;
     fileKind: string;
@@ -70,16 +74,20 @@ export default function MediaFileUploader({
     originalFilename: string;
     mimeType: string | null;
     sizeBytes: number | null;
+    releaseCategory?: string | null;
   }) => Promise<RecordResult>;
   onUploaded?: () => void;
+  categoryOptions?: CategoryOption[];
 }) {
   const [tasks, setTasks] = useState<FileTask[]>([]);
   const [fileKind, setFileKind] = useState(fileKindOptions[0]?.value ?? "other");
+  const [category, setCategory] = useState(categoryOptions?.[0]?.value ?? "");
+  const releaseCategory = categoryOptions ? category : undefined;
 
   async function runTask(task: FileTask) {
     setTasks((prev) => prev.map((t) => (t.id === task.id ? { ...t, status: "uploading", error: undefined } : t)));
 
-    const auth = await requestUpload({ engagementId, fileKind, originalFilename: task.file.name });
+    const auth = await requestUpload({ engagementId, fileKind, originalFilename: task.file.name, releaseCategory });
     if (!auth.ok) {
       setTasks((prev) => prev.map((t) => (t.id === task.id ? { ...t, status: "error", error: auth.error } : t)));
       return;
@@ -100,6 +108,7 @@ export default function MediaFileUploader({
       originalFilename: task.file.name,
       mimeType: task.file.type || null,
       sizeBytes: task.file.size,
+      releaseCategory,
     });
     if (!recorded.ok) {
       setTasks((prev) => prev.map((t) => (t.id === task.id ? { ...t, status: "error", error: recorded.error } : t)));
@@ -118,6 +127,7 @@ export default function MediaFileUploader({
 
   return (
     <div className="rounded-lg border border-black/10 p-4">
+      {fileKindOptions.length > 1 && (
       <label className="flex flex-col gap-1 mb-3 max-w-xs">
         <span className="font-sans text-caption text-ordift-ink-muted">Uploading as</span>
         <select value={fileKind} onChange={(e) => setFileKind(e.target.value)} className="rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small">
@@ -128,6 +138,19 @@ export default function MediaFileUploader({
           ))}
         </select>
       </label>
+      )}
+      {categoryOptions && (
+      <label className="flex flex-col gap-1 mb-3 max-w-xs">
+        <span className="font-sans text-caption text-ordift-ink-muted">What are these files?</span>
+        <select value={category} onChange={(e) => setCategory(e.target.value)} className="rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small">
+          {categoryOptions.map((opt) => (
+            <option key={opt.value} value={opt.value}>
+              {opt.label}
+            </option>
+          ))}
+        </select>
+      </label>
+      )}
 
       <label className="flex flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed border-black/15 px-4 py-8 cursor-pointer hover:border-ordift-gold transition-colors">
         <span className="font-sans text-body-small text-ordift-ink">Drop files here or click to select</span>
