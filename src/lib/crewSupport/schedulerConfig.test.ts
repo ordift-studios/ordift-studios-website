@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
@@ -44,5 +45,28 @@ describe("Vercel cron sweep", () => {
   });
   it("keeps the existing Pulse cron untouched", () => {
     expect(vercel.crons.find((c) => c.path === "/api/cron/pulse-discovery")).toEqual({ path: "/api/cron/pulse-discovery", schedule: "0 3 * * *" });
+  });
+});
+
+describe("the dedicated scheduler secret reaches nothing else", () => {
+  const nonTestSource = (needle: string) =>
+    execFileSync("git", ["grep", "-l", needle, "--", "src", "vercel.json", ":!*.test.ts", ":!*.e2e.ts"], { encoding: "utf8" }).split("\n").filter(Boolean).sort();
+  it("READINESS_SCHEDULER_SECRET is read in exactly one route (the readiness endpoint)", () => {
+    const readers = execFileSync("git", ["grep", "-l", "process.env.READINESS_SCHEDULER_SECRET", "--", "src", ":!*.test.ts", ":!*.e2e.ts"], { encoding: "utf8" }).split("\n").filter(Boolean);
+    expect(readers).toEqual(["src/app/api/cron/readiness-reminders/route.ts"]);
+  });
+  it("the Pulse route reads only CRON_SECRET and never the dedicated one", () => {
+    const pulse = readFileSync("src/app/api/cron/pulse-discovery/route.ts", "utf8");
+    expect(pulse).toContain("process.env.CRON_SECRET");
+    expect(pulse).not.toContain("READINESS_SCHEDULER_SECRET");
+  });
+  it("only the two cron routes read CRON_SECRET, and no other file mentions the dedicated secret", () => {
+    const cronReaders = execFileSync("git", ["grep", "-l", "process.env.CRON_SECRET", "--", "src", ":!*.test.ts", ":!*.e2e.ts"], { encoding: "utf8" }).split("\n").filter(Boolean).sort();
+    expect(cronReaders).toEqual(["src/app/api/cron/pulse-discovery/route.ts", "src/app/api/cron/readiness-reminders/route.ts"]);
+    expect(nonTestSource("READINESS_SCHEDULER_SECRET")).toEqual(["src/app/api/cron/readiness-reminders/route.ts", "src/lib/crewSupport/readinessReminderRules.ts"]);
+  });
+  it("vercel.json is unchanged in shape: the same two crons, no secret in it", () => {
+    expect(vercel.crons.map((c) => c.path).sort()).toEqual(["/api/cron/pulse-discovery", "/api/cron/readiness-reminders"]);
+    expect(readFileSync("vercel.json", "utf8")).not.toMatch(/SECRET|Bearer/i);
   });
 });

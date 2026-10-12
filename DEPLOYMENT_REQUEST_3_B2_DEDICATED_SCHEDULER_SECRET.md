@@ -26,19 +26,29 @@ The recorded trigger now follows the credential rather than a self-declared head
 * Tests: `readinessReminderRules.test.ts` (new "dedicated scheduler secret" block), new `src/app/api/cron/readiness-reminders/route.test.ts`, `schedulerConfig.test.ts` (workflow must never reference `secrets.CRON_SECRET`), `readinessReminders.localdb.e2e.ts` (F1, F1b, F2).
 * **Not changed:** `src/app/api/cron/pulse-discovery/route.ts` (byte-identical to `main`), `vercel.json`, every migration, every other file.
 
-## 3. Verification run (all local; no Production access)
+## 3. Verification run (all local; no Production access, no secret read)
 
 | Check | Result |
 |---|---|
-| Unit suite (whole repo) | 227 files, 3,857 tests pass |
-| New route tests (credentials; Pulse unchanged; no secret in any response) | 9 pass |
-| Local-database end-to-end, readiness file, fresh database | 38 of 38 pass (includes F1 fail-closed matrix, F1b dedicated + Vercel, F2) |
-| TypeScript, ESLint on changed files | clean |
-| Workflow file | valid YAML; test asserts it references only the dedicated secret and never echoes it |
-| Clean-copy production compile | compiles successfully (page-data step needs real CMS credentials and was not run) |
+| Unit suite (whole repo) | 227 files, **3,861 tests pass** |
+| Route tests (credential matrix; Pulse unchanged; no secret in any response) | 9 pass |
+| Static guard tests (where each secret may be read; `vercel.json` shape; workflow never references `secrets.CRON_SECRET`) | 12 pass in `schedulerConfig.test.ts` |
+| Local-database end-to-end, all 5 files, fresh database each | assignmentWork 25/25, crewWorkflow 26/26, readiness 35/35, **readinessReminders 38/38** (repeated 5 times), bankTransfer 27/27 |
+| TypeScript, ESLint (`src/app/api/cron`, `src/lib/crewSupport`) | clean |
 | Secret scan of the diff | only obviously fake lab strings in tests |
 
-Pulse proof: route tests show that with both secrets set, Pulse accepts `CRON_SECRET`, refuses the readiness secret, and stays closed if `CRON_SECRET` is unset.
+Lab note (not a product issue): twice, a database-backed file started immediately after the previous file's database rebuild failed with "fetch failed" (the lab's REST container was not yet reachable). Re-running on a settled fresh database passed 38/38 every time. I mention it so it is not a surprise.
+
+### What the build checks do and do not prove
+
+| Level | What was done | Status |
+|---|---|---|
+| Compile and type check | `next build` compile step and `tsc` | **Verified**, clean |
+| Full local `next build` | Whole build, all 158 pages generated, both cron routes and the webhook present in the route list. Real public CMS identifiers (taken from the public site) and a dummy database key. Exit code 0. The one log line, "failed to load roles", comes from the dummy database key. | **Verified locally**; this is **not** Vercel's pipeline |
+| Vercel's own Production pipeline on this commit | Not run. Only a push to `main` (or a Vercel preview deployment from this branch, which also needs your approval) runs it, with Production/Preview environment values I must not read. | **Not verified.** I will not call it verified until it has run |
+| Base commit through the real pipeline | Production deployment of `0a8c730` is Ready (built in about 5 minutes). Same project settings (Next.js preset, Node 24, `next build`). | Verified (existing evidence) |
+
+Risk if the real pipeline were to fail: Vercel keeps serving the previous Production deployment when a build fails, so a failed build does not take the site down; I would report it and fix before anything else. The change touches one route and one library file, and adds no dependency, no environment requirement at build time, and no migration.
 
 ## 4. Expected impact of deploying the code
 
@@ -85,3 +95,25 @@ Presence is checked by name only. The first real proof is one run of the GitHub 
 * `CRON_SECRET` still opens the readiness endpoint (needed for Vercel's sweep), exactly as it did before; it cannot be avoided while Vercel Cron calls the endpoint. If you later prefer, the Vercel sweep can be removed and `CRON_SECRET` dropped from this endpoint; I have not done that.
 * If the dedicated and Vercel values were identical, the dedicated channel would win; the generated value is random, so this cannot happen by accident.
 * Public repo: GitHub disables scheduled workflows after 60 days of inactivity (unchanged note).
+
+## 10. Security review of the two accepted credentials
+
+| Property | `READINESS_SCHEDULER_SECRET` | `CRON_SECRET` (existing) |
+|---|---|---|
+| Where it can authenticate | **Only** `/api/cron/readiness-reminders` (a test fails if any other file reads it) | The Pulse cron and the readiness endpoint, exactly as before |
+| Matching rule | exact `Bearer <value>`, constant time (`timingSafeEqual`) | same |
+| Minimum length | 16 characters; weaker values refused even if they match | same |
+| Unset or empty | endpoint refuses (401); never matches an empty or `undefined` bearer | same |
+| Appears in a response/log | never (counts only; a test searches the response text) | never |
+| Stored | Vercel Production, Sensitive; GitHub Actions secret; never in the repository | unchanged (Vercel only) |
+| Effect on Pulse | none: Pulse refuses it (route test) and stays closed if `CRON_SECRET` is unset | unchanged |
+
+The only other place that reads an `Authorization` header is the staging access gate (`src/proxy.ts`, Basic auth, a no-op in Production); it uses different credentials and is unrelated.
+
+## 11. Exact deployment scope
+
+* Branch `b2-dedicated-scheduler-secret`, fast-forward onto `main` (`0a8c730`). The exact commit hash is stated in the approval request below.
+* Application files changed: `src/lib/crewSupport/readinessReminderRules.ts`, `src/app/api/cron/readiness-reminders/route.ts`, `.github/workflows/readiness-reminders.yml` (inert unless `READINESS_SCHEDULER_ENABLED` is `true`; absent today), `.env.example`; plus tests and two documents.
+* Unchanged: Pulse route, `vercel.json` (crons 03:00 and 04:40 UTC), migrations (0154 stays as applied), Bright's records, every other file.
+* No migration, no environment change, no credential created, no setting changed.
+* Production state just read (read-only): mode off, 0 enrolled, 0 notifications, 0 deliveries, 0 suppressions, Bright not enrolled; no `scheduler_runs` yet (the code went live after today's 04:40 run); scheduler endpoint 401 with no secret or a wrong one; Pulse endpoint 401 with no secret; `READINESS_SCHEDULER_ENABLED` absent.
