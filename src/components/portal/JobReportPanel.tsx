@@ -26,7 +26,7 @@ export type ReportView = {
 const INPUT = "w-full rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small";
 const LABEL = "font-sans text-caption text-ordift-ink-muted";
 
-function Fields({ engagementId, serviceFamily, defaults, defaultDate, correction }: { engagementId: string; serviceFamily: string | null; defaults?: ReportView; defaultDate: string; correction: boolean }) {
+function Fields({ engagementId, serviceFamily, defaults, scheduledDate, correction }: { engagementId: string; serviceFamily: string | null; defaults?: ReportView; scheduledDate: string; correction: boolean }) {
   const questions = questionsFor(serviceFamily);
   return (
     <div className="space-y-4">
@@ -39,8 +39,9 @@ function Fields({ engagementId, serviceFamily, defaults, defaultDate, correction
       )}
       <div className="grid gap-3 sm:grid-cols-3">
         <label className="flex flex-col gap-1">
-          <span className={LABEL}>Date the work was performed</span>
-          <input type="date" name="actualServiceDate" required defaultValue={defaults?.actualServiceDate ?? defaultDate} className={INPUT} />
+          <span className={LABEL}>Date the work was actually performed</span>
+          <input type="date" name="actualServiceDate" required defaultValue={defaults?.actualServiceDate ?? ""} className={INPUT} aria-describedby="scheduled-date-hint" />
+          <span id="scheduled-date-hint" className="font-sans text-caption text-ordift-ink-muted">The system shows {scheduledDate} as the scheduled date. It is not filled in for you: enter the date the work really happened, which may differ.</span>
         </label>
         <label className="flex flex-col gap-1">
           <span className={LABEL}>Actual start (optional)</span>
@@ -121,7 +122,7 @@ function Summary({ r, serviceFamily }: { r: ReportView; serviceFamily: string | 
 
 // The assigned professional's job-completion report. Submitting it records that the work was performed — it
 // does not complete the client's project and has no effect on payment.
-export default function JobReportPanel({ engagementId, serviceFamily, reports, defaultDate }: { engagementId: string; serviceFamily: string | null; reports: ReportView[]; defaultDate: string }) {
+export default function JobReportPanel({ engagementId, serviceFamily, reports, scheduledDate }: { engagementId: string; serviceFamily: string | null; reports: ReportView[]; scheduledDate: string }) {
   const latest = reports[0];
   return (
     <section className="bg-white border border-black/10 rounded-2xl p-6 space-y-4" aria-labelledby="job-report-heading">
@@ -132,7 +133,7 @@ export default function JobReportPanel({ engagementId, serviceFamily, reports, d
 
       {!latest ? (
         <ActionForm action={submitJobReportAction} className="space-y-4">
-          <Fields engagementId={engagementId} serviceFamily={serviceFamily} defaultDate={defaultDate} correction={false} />
+          <Fields engagementId={engagementId} serviceFamily={serviceFamily} scheduledDate={scheduledDate} correction={false} />
           <SubmitButton pendingLabel="Submitting…" className="rounded-md bg-ordift-navy-950 px-4 py-2 font-sans text-body-small font-semibold text-white">Confirm work performed &amp; submit report</SubmitButton>
         </ActionForm>
       ) : (
@@ -145,7 +146,7 @@ export default function JobReportPanel({ engagementId, serviceFamily, reports, d
           <details>
             <summary className="cursor-pointer font-sans text-caption text-ordift-gold-pressed underline underline-offset-4">Correct this report</summary>
             <ActionForm action={submitJobReportAction} className="mt-3 space-y-4">
-              <Fields engagementId={engagementId} serviceFamily={serviceFamily} defaults={latest} defaultDate={defaultDate} correction />
+              <Fields engagementId={engagementId} serviceFamily={serviceFamily} defaults={latest} scheduledDate={scheduledDate} correction />
               <SubmitButton pendingLabel="Saving…" className="rounded-md bg-ordift-navy-950 px-4 py-2 font-sans text-body-small font-semibold text-white">Save correction as a new version</SubmitButton>
             </ActionForm>
           </details>

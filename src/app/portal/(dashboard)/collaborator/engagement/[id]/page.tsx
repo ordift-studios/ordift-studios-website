@@ -126,7 +126,7 @@ export default async function CollaboratorEngagementPage({ params }: { params: P
         <JobReportPanel
           engagementId={id}
           serviceFamily={serviceFamily}
-          defaultDate={crewJob.startDate.slice(0, 10)}
+          scheduledDate={crewJob.startDate.slice(0, 10)}
           reports={reports.map((r) => ({ id: r.id, version: r.version, correctionReason: r.correctionReason, actualServiceDate: r.actualServiceDate, actualStartTime: r.actualStartTime, actualEndTime: r.actualEndTime, completionStatus: r.completionStatus, wentSmoothly: r.wentSmoothly, answers: r.answers, incidents: r.incidents, clientRequests: r.clientRequests, additionalServices: r.additionalServices, outstandingWork: r.outstandingWork, remarks: r.remarks, submittedAt: r.submittedAt }))}
         />
       )}
