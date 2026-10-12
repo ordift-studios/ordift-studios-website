@@ -29,10 +29,15 @@ function statusBadgeClass(status: ProjectRequestStatus): string {
 
 export default async function RequestsTabPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ kind: string; id: string }>;
+  searchParams: Promise<{ type?: string; about?: string }>;
 }) {
   const { kind, id } = await params;
+  // A link from a delivered item can pre-select the request type and name the item; the client still reviews and submits.
+  const { type: wantedType, about } = await searchParams;
+  const aboutText = about ? about.slice(0, 160) : "";
   if (!isProjectKind(kind)) return null;
   const user = await getCurrentUser();
   if (!user) return null;
@@ -63,6 +68,7 @@ export default async function RequestsTabPage({
               <select
                 name="requestTypeId"
                 required
+                defaultValue={requestTypes.find((t) => t.key === wantedType)?.id}
                 className="w-full min-h-11 rounded-lg border border-black/15 bg-white px-3 font-sans text-body-small text-ordift-ink"
               >
                 {requestTypes.map((t) => (
@@ -79,6 +85,7 @@ export default async function RequestsTabPage({
               <textarea
                 name="clientNotes"
                 rows={3}
+                defaultValue={aboutText ? `About “${aboutText}”: ` : undefined}
                 placeholder="Add any details that will help us action this…"
                 className="w-full rounded-lg border border-black/15 bg-white px-3 py-2 font-sans text-body-small text-ordift-ink"
               />

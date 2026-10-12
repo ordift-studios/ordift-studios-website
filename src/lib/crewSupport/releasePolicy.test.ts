@@ -28,3 +28,12 @@ describe("client notification is opt-in", () => {
     for (const forbidden of ["project_files", "deliverables", "dispatchNotification", "sendFilesReadyEmail", "payment_obligations", "setEngagementStatus"]) expect(src).not.toContain(forbidden);
   });
 });
+
+import { canRemoveOwnFile } from "./fileRelease";
+describe("removing your own upload", () => {
+  it("is allowed only while the file is still the professional's private working copy", () => {
+    expect(canRemoveOwnFile("private")).toBe(true);
+    expect(canRemoveOwnFile("changes_requested")).toBe(true);
+    for (const s of ["submitted", "approved", "released", "withdrawn"]) expect(canRemoveOwnFile(s)).toBe(false);
+  });
+});

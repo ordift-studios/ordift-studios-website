@@ -13,5 +13,5 @@ export default async function DeliverablesTabPage({
   if (!user) return null;
   const deliverables = await getClientDeliverables(kind, id, user.id);
 
-  return <DeliverablesGallery deliverables={deliverables} />;
+  return <DeliverablesGallery deliverables={deliverables} requestsHref={kind === "enquiry" ? `/portal/client/projects/${kind}/${id}/requests` : undefined} />;
 }

@@ -2,10 +2,10 @@
 
 import { useState } from "react";
 import { getMyFileDownloadUrlAction } from "@/app/portal/(dashboard)/collaborator/actions";
-import { submitFileForReleaseAction, submitAllPrivateFilesAction, withdrawFileFromReviewAction } from "@/app/portal/(dashboard)/collaborator/assignmentWorkActions";
+import { removeOwnPrivateFileAction, submitFileForReleaseAction, submitAllPrivateFilesAction, withdrawFileFromReviewAction } from "@/app/portal/(dashboard)/collaborator/assignmentWorkActions";
 import ActionForm from "@/components/admin/ActionForm";
 import SubmitButton from "@/components/admin/SubmitButton";
-import { RELEASE_CATEGORIES, RELEASE_STATUS_LABELS, professionalActions, releaseCategoryLabel, type ReleaseStatus } from "@/lib/crewSupport/fileRelease";
+import { RELEASE_CATEGORIES, RELEASE_STATUS_LABELS, canRemoveOwnFile, professionalActions, releaseCategoryLabel, type ReleaseStatus } from "@/lib/crewSupport/fileRelease";
 
 export type EngagementFileRow = {
   id: string;
@@ -20,6 +20,8 @@ export type EngagementFileRow = {
   releaseStatus?: string;
   clientTitle?: string | null;
   releaseReviewNote?: string | null;
+  // The viewer uploaded this file themselves (only then may they remove it).
+  canRemove?: boolean;
 };
 
 const STATUS_TONE: Record<string, string> = {
@@ -129,6 +131,17 @@ export default function EngagementFileList({ files, releaseEngagementId }: { fil
                         <input name="title" defaultValue={f.clientTitle ?? baseTitle(f.originalFilename)} placeholder="Title the client will see" required className="w-full rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small" />
                         <input name="description" defaultValue="" placeholder="Short description (optional)" className="w-full rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small" />
                         <SubmitButton pendingLabel="Submitting…" className="rounded-md bg-ordift-navy-950 px-3 py-1.5 font-sans text-caption font-semibold text-white">Submit for review</SubmitButton>
+                      </ActionForm>
+                    </details>
+                  )}
+                  {canRemoveOwnFile(f.releaseStatus ?? "private") && f.canRemove && (
+                    <details className="mt-2">
+                      <summary className="cursor-pointer font-sans text-caption text-ordift-ink-muted underline underline-offset-4">Remove this file</summary>
+                      <ActionForm action={removeOwnPrivateFileAction} className="mt-2 flex flex-wrap items-center gap-3">
+                        <input type="hidden" name="engagementId" value={releaseEngagementId} />
+                        <input type="hidden" name="fileId" value={f.id} />
+                        <p className="font-sans text-caption text-ordift-ink-muted">This deletes the stored copy. Use it for a wrong or duplicate upload. Nobody is notified.</p>
+                        <SubmitButton pendingLabel="Removing…" className="rounded-md border border-red-300 px-3 py-1.5 font-sans text-caption font-semibold text-red-800">Remove file</SubmitButton>
                       </ActionForm>
                     </details>
                   )}

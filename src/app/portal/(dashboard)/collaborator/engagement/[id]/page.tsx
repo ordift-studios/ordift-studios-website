@@ -58,7 +58,9 @@ export default async function CollaboratorEngagementPage({ params }: { params: P
     listMyProjectFiles(id, user.id),
     getMyPortalModules(user.id, user.roles),
   ]);
-  const files = filesResult.ok ? filesResult.files : [];
+  const allFiles = filesResult.ok ? filesResult.files : [];
+  // A file the uploader removed before submitting is kept on record but no longer listed.
+  const files = allFiles.filter((f) => !(f.releaseStatus === "withdrawn" && f.purgedAt));
   // An accepted Crew Support job always has its own workspace (job report, files, feedback), whatever the
   // person's payee classification — the Founder or a staff member working a crew job is "unclassified"
   // for the external-workforce modules and used to see none of it.
@@ -149,6 +151,7 @@ export default async function CollaboratorEngagementPage({ params }: { params: P
             releaseStatus: f.releaseStatus,
             clientTitle: f.clientTitle,
             releaseReviewNote: f.releaseReviewNote,
+            canRemove: f.uploadedBy === user.id,
           }))}
         />
         {closed ? (

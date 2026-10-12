@@ -6,7 +6,7 @@ import { sendFilesReadyEmail } from "@/lib/enquiry/lifecycleEmails";
 import { pathwayLabel } from "@/lib/enquiry/pathways";
 import { getCrewAssignmentForEngagement } from "./crewOffers";
 import { isManagementUser } from "./management";
-import { clientFilePath, deliverableKeyFor, releaseCategoryLabel, reviewerConflict, transition, validateSubmitForRelease, type ReleaseAction } from "./fileRelease";
+import { canRemoveOwnFile, clientFilePath, deliverableKeyFor, releaseCategoryLabel, reviewerConflict, transition, validateSubmitForRelease, type ReleaseAction } from "./fileRelease";
 
 // The controlled path by which an assignment's private file reaches the client:
 //   professional uploads (private) -> submits for review -> management approves -> management releases.
@@ -69,6 +69,29 @@ export async function withdrawFileFromReview(params: { fileId: string; actorUser
   if (!t.ok) return t;
   if (!(await setStatus(file, file.release_status, t.to, {}))) return { ok: false, error: "That file changed — refresh and try again." };
   await logActivityAsSystem({ actorUserId: params.actorUserId, action: "project_file.release_withdrawn", entityType: "engagement", entityId: file.engagement_id, metadata: { fileId: file.id } });
+  return { ok: true };
+}
+
+// Remove a file the professional uploaded and has not submitted (or that management sent back): a wrong or duplicate
+// upload, or a photograph they have decided not to deliver. The stored object is deleted; the record is kept, marked
+// purged and withdrawn, so the history of what was uploaded and removed is never lost. Submitted, approved and released
+// files cannot be removed here.
+export async function removeOwnPrivateFile(params: { fileId: string; actorUserId: string }): Promise<Result> {
+  const file = await loadFile(params.fileId);
+  if (!file || file.purged_at) return { ok: false, error: "File not found." };
+  if (!(await getCrewAssignmentForEngagement(file.engagement_id, params.actorUserId))) return { ok: false, error: "Only the assigned professional can remove this file." };
+  if (file.uploaded_by !== params.actorUserId) return { ok: false, error: "You can only remove files you uploaded yourself." };
+  if (!canRemoveOwnFile(file.release_status)) return { ok: false, error: "This file has been submitted for review or released, so it can't be removed. Withdraw it from review first if it has not been released." };
+
+  const admin = createAdminClient();
+  const { data: row } = await admin.from("project_files").select("storage_bucket, storage_path").eq("id", file.id).maybeSingle();
+  if (!row) return { ok: false, error: "File not found." };
+  // Claim the record first (so a simultaneous submit cannot succeed), then delete the stored object.
+  const claimed = await setStatus(file, file.release_status, "withdrawn", { lifecycle_state: "purged", purged_at: new Date().toISOString(), purge_reason: "removed by the uploader before submission" });
+  if (!claimed) return { ok: false, error: "That file changed — refresh and try again." };
+  const { error } = await admin.storage.from(row.storage_bucket as string).remove([row.storage_path as string]);
+  if (error) console.error("[crew-support] removing a stored file failed (record already marked removed)", error.message);
+  await logActivityAsSystem({ actorUserId: params.actorUserId, action: "project_file.removed_before_release", entityType: "engagement", entityId: file.engagement_id, metadata: { fileId: file.id, filename: file.original_filename, previousStatus: file.release_status } });
   return { ok: true };
 }
 

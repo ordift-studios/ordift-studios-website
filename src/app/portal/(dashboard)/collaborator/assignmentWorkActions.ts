@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { getCurrentUser } from "@/lib/portal/roles";
 import { getServiceFamilyForEngagement, submitJobReport } from "@/lib/crewSupport/jobReports";
 import { questionsFor } from "@/lib/crewSupport/jobReportRules";
-import { submitFileForRelease, withdrawFileFromReview } from "@/lib/crewSupport/fileReleaseFlow";
+import { removeOwnPrivateFile, submitFileForRelease, withdrawFileFromReview } from "@/lib/crewSupport/fileReleaseFlow";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { actionFail, actionOk, runAction, type ActionState } from "@/lib/shared/actionState";
 
@@ -99,4 +99,16 @@ export async function withdrawFileFromReviewAction(_prev: ActionState, formData:
     refresh(engagementId);
     return actionOk("Withdrawn — the file is private again.");
   }, "withdraw file from review");
+}
+
+export async function removeOwnPrivateFileAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  const user = await getCurrentUser();
+  if (!user) return actionFail("You are not signed in.");
+  const engagementId = str(formData, "engagementId");
+  return runAction(async () => {
+    const result = await removeOwnPrivateFile({ fileId: str(formData, "fileId"), actorUserId: user.id });
+    if (!result.ok) return actionFail(result.error);
+    refresh(engagementId);
+    return actionOk("File removed. Nothing was sent to anyone.");
+  }, "remove private file");
 }

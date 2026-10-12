@@ -24,7 +24,28 @@ function Thumbnail({ deliverable, className }: { deliverable: ClientDeliverable;
   );
 }
 
-export default function DeliverablesGallery({ deliverables }: { deliverables: ClientDeliverable[] }) {
+// A file released from an assignment is served by the authorised download route; those (and only those) can be saved as a
+// download, and any delivered item can be queried through the existing requests tab.
+const isReleasedFile = (url: string) => url.startsWith("/portal/client/files/");
+
+function FollowUpLinks({ d, requestsHref }: { d: ClientDeliverable; requestsHref?: string }) {
+  const about = encodeURIComponent(d.title.slice(0, 160));
+  return (
+    <span className="inline-flex flex-wrap gap-x-4 gap-y-1">
+      {isReleasedFile(d.url) && (
+        <a href={`${d.url}?download=1`} className="font-sans text-caption text-ordift-gold-pressed underline underline-offset-4">Download</a>
+      )}
+      {requestsHref && (
+        <>
+          <a href={`${requestsHref}?type=correction&about=${about}`} className="font-sans text-caption text-ordift-ink-muted underline underline-offset-4">Request a correction</a>
+          <a href={`${requestsHref}?type=delivery_issue&about=${about}`} className="font-sans text-caption text-ordift-ink-muted underline underline-offset-4">Report a problem</a>
+        </>
+      )}
+    </span>
+  );
+}
+
+export default function DeliverablesGallery({ deliverables, requestsHref }: { deliverables: ClientDeliverable[]; requestsHref?: string }) {
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState("all");
   const [sort, setSort] = useState<SortOption>("newest");
@@ -152,6 +173,7 @@ export default function DeliverablesGallery({ deliverables }: { deliverables: Cl
                 >
                   Open ↗
                 </a>
+                <div className="mt-2"><FollowUpLinks d={d} requestsHref={requestsHref} /></div>
               </div>
             </div>
           ))}
@@ -173,14 +195,17 @@ export default function DeliverablesGallery({ deliverables }: { deliverables: Cl
                   {d.publishedByName ? ` · ${d.publishedByName}` : ""}
                 </p>
               </div>
-              <a
-                href={d.url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="font-sans text-caption text-ordift-gold-pressed underline underline-offset-4 whitespace-nowrap"
-              >
-                Open ↗
-              </a>
+              <div className="flex flex-col items-end gap-1">
+                <a
+                  href={d.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="font-sans text-caption text-ordift-gold-pressed underline underline-offset-4 whitespace-nowrap"
+                >
+                  Open ↗
+                </a>
+                <FollowUpLinks d={d} requestsHref={requestsHref} />
+              </div>
             </div>
           ))}
         </div>

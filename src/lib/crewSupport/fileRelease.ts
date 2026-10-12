@@ -67,6 +67,13 @@ export function managementActions(status: string): ReleaseAction[] {
   return (["approve", "request_changes", "release", "reject"] as ReleaseAction[]).filter((a) => transition(status, a, "management").ok);
 }
 
+// A professional may remove a file they uploaded only while it is still their own private working copy: before it has
+// been submitted, or after management sent it back. Once submitted, approved or released it is part of the review
+// record and can only be withdrawn from review, never deleted.
+export function canRemoveOwnFile(status: string): boolean {
+  return status === "private" || status === "changes_requested";
+}
+
 export function validateSubmitForRelease(input: { category: string; title: string; description: string }): { ok: true } | { ok: false; error: string } {
   if (!isReleaseCategory(input.category)) return { ok: false, error: "Choose what kind of file this is." };
   if (input.title.trim().length < 3) return { ok: false, error: "Give the file a title the client will recognise." };
