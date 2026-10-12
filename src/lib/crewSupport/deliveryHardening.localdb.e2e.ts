@@ -76,12 +76,10 @@ vi.mock("@/lib/supabase/admin", async () => {
 
 import { NextRequest } from "next/server";
 import { GET as clientDownload } from "@/app/portal/(dashboard)/client/files/[fileId]/download/route";
-import { requestProjectFileUploadAuthorization, recordUploadedProjectFile, listProjectFilesForEngagement } from "@/lib/payables/projectFiles";
+import { requestProjectFileUploadAuthorization, recordUploadedProjectFile } from "@/lib/payables/projectFiles";
 import { setCrewSupportStatus } from "./admin";
 import { respondToCrewOffer, sendCrewOffer } from "./crewOffers";
-import { getServiceFamilyForEngagement, listMyReports, listReportsForEngagement, submitJobReport } from "./jobReports";
 import { releaseApprovedFiles as releaseFiles, reviewFileForRelease, submitFileForRelease, withdrawFileFromReview } from "./fileReleaseFlow";
-import type { JobReportInput } from "./jobReportRules";
 import type { CurrentUser } from "@/lib/portal/roles";
 
 if (!/^https?:\/\/(127\.0\.0\.1|localhost)(:|\/|$)/.test(process.env.NEXT_PUBLIC_SUPABASE_URL ?? "")) {
@@ -143,7 +141,6 @@ async function newJob(crewId = CREW1) {
   return { requestId: ids.request_id, enquiryId: ids.enquiry_id, slotId: slot!.id as string, engagementId: eng.id as string, ref, email };
 }
 
-const REPORT: JobReportInput = { serviceFamily: "photography", actualServiceDate: "2026-10-12", actualStartTime: "10:00", actualEndTime: "21:00", completionStatus: "completed", wentSmoothly: true, answers: { onTime: "yes", conditions: "good", editingRemaining: "selects" }, incidents: "", clientRequests: "Asked for extra family portraits", additionalServices: "", outstandingWork: "Edit the thank-you selection", remarks: "" };
 
 async function upload(engagementId: string, name: string, category: string | null = "thank_you_image", user = CREW1) {
   as(user);
