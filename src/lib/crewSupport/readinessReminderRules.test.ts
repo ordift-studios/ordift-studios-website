@@ -2,7 +2,7 @@ import { createHmac } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { zonedToUtcMs } from "./schedule";
 import {
-  buildReminderEmail, detectTrigger, escalationRecipients, evaluateReminders, furthestStage, isAuthorizedScheduler, notificationKey,
+  authenticateScheduler, buildReminderEmail, detectTrigger, escalationRecipients, evaluateReminders, furthestStage, isAuthorizedScheduler, notificationKey, triggerForChannel,
   reminderIneligibility, schedulerHealth, stageForResendEvent, stopsFurtherReminders, validateModeChange, verifyWebhookSignature,
   type ReminderContext, type ReminderDecision, type ReminderKind, type ReminderSettings,
 } from "./readinessReminderRules";
@@ -280,6 +280,43 @@ describe("scheduler authentication", () => {
     expect(detectTrigger({ userAgent: "vercel-cron/1.0", declared: null })).toBe("vercel");
     expect(detectTrigger({ userAgent: "curl/8", declared: "github" })).toBe("github");
     expect(detectTrigger({ userAgent: "curl/8", declared: null })).toBe("manual");
+  });
+});
+
+describe("dedicated scheduler secret", () => {
+  const cron = "vercel-cron-lab-only-secret-value-1";
+  const dedicated = "readiness-dedicated-lab-secret-value-2";
+  const both = { cron, dedicated };
+  it("accepts the dedicated secret and reports it as the dedicated channel", () => expect(authenticateScheduler(`Bearer ${dedicated}`, both)).toBe("dedicated"));
+  it("still accepts CRON_SECRET so Vercel's own daily sweep is not rejected", () => expect(authenticateScheduler(`Bearer ${cron}`, both)).toBe("vercel"));
+  it("works with only CRON_SECRET configured (today's Production) and with only the dedicated one", () => {
+    expect(authenticateScheduler(`Bearer ${cron}`, { cron, dedicated: undefined })).toBe("vercel");
+    expect(authenticateScheduler(`Bearer ${dedicated}`, { cron, dedicated: undefined })).toBeNull();
+    expect(authenticateScheduler(`Bearer ${dedicated}`, { cron: undefined, dedicated })).toBe("dedicated");
+  });
+  it("fails closed: nothing configured, no header, wrong, truncated, prefix-only or secret-without-Bearer", () => {
+    expect(authenticateScheduler(`Bearer ${dedicated}`, { cron: undefined, dedicated: undefined })).toBeNull();
+    expect(authenticateScheduler(null, both)).toBeNull();
+    expect(authenticateScheduler("Bearer wrong-wrong-wrong-wrong-wrong", both)).toBeNull();
+    expect(authenticateScheduler(`Bearer ${dedicated.slice(0, -1)}`, both)).toBeNull();
+    expect(authenticateScheduler(`Bearer ${dedicated}x`, both)).toBeNull();
+    expect(authenticateScheduler(dedicated, both)).toBeNull();
+    expect(authenticateScheduler("Bearer ", both)).toBeNull();
+  });
+  it("applies the 16-character floor to each secret on its own", () => {
+    expect(authenticateScheduler("Bearer short", { cron, dedicated: "short" })).toBeNull();
+    expect(authenticateScheduler("Bearer short", { cron: "short", dedicated })).toBeNull();
+    expect(authenticateScheduler("Bearer ", { cron: "", dedicated: "" })).toBeNull();
+  });
+  it("an unset or empty dedicated secret never lets an empty bearer through", () => {
+    expect(authenticateScheduler("Bearer undefined", { cron, dedicated: undefined })).toBeNull();
+    expect(authenticateScheduler("Bearer ", { cron, dedicated: "" })).toBeNull();
+  });
+  it("records the trigger from the credential, not from a self-declared header", () => {
+    expect(triggerForChannel("dedicated", { userAgent: "curl/8", declared: "github" })).toBe("github");
+    expect(triggerForChannel("dedicated", { userAgent: "vercel-cron/1.0", declared: null })).toBe("manual");
+    expect(triggerForChannel("vercel", { userAgent: "vercel-cron/1.0", declared: null })).toBe("vercel");
+    expect(triggerForChannel("vercel", { userAgent: "curl/8", declared: "github" })).toBe("manual");
   });
 });
 

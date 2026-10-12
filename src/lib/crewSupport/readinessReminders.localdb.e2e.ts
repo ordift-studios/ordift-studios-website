@@ -630,6 +630,7 @@ describe("E — delivery tracking, bounces and address suppression", () => {
 describe("F — scheduler: authentication, triggers, single-flight, heartbeat", () => {
   const call = (method: "GET" | "POST", headers: Record<string, string> = {}) => (method === "GET" ? cronRoute.GET : cronRoute.POST)(new NextRequest("http://localhost/api/cron/readiness-reminders", { method, headers }));
   const SECRET = "e2e-lab-only-cron-secret-value-123456";
+  const DEDICATED = "e2e-lab-only-readiness-scheduler-secret-654321";
   it("F1 fails closed: no configured secret, no header, wrong header, weak secret are all 401 and run nothing", async () => {
     const before = sql("select count(*) from public.scheduler_runs").trim();
     delete process.env.CRON_SECRET;
@@ -641,12 +642,31 @@ describe("F — scheduler: authentication, triggers, single-flight, heartbeat", 
     process.env.CRON_SECRET = "short";
     expect((await call("POST", { authorization: "Bearer short" })).status).toBe(401);
     process.env.CRON_SECRET = SECRET;
+    delete process.env.READINESS_SCHEDULER_SECRET;
+    expect((await call("POST", { authorization: `Bearer ${DEDICATED}` })).status).toBe(401); // dedicated secret not configured = refused
+    process.env.READINESS_SCHEDULER_SECRET = "short";
+    expect((await call("POST", { authorization: "Bearer short" })).status).toBe(401);
+    process.env.READINESS_SCHEDULER_SECRET = DEDICATED;
+    expect((await call("POST", { authorization: "Bearer another-long-but-wrong-secret-value" })).status).toBe(401);
     expect(sql("select count(*) from public.scheduler_runs").trim()).toBe(before);
+  });
+  it("F1b the dedicated secret runs it and is recorded as github; CRON_SECRET still works for Vercel's sweep", async () => {
+    process.env.CRON_SECRET = SECRET; process.env.READINESS_SCHEDULER_SECRET = DEDICATED;
+    await mode("off");
+    const notesBefore = sql("select count(*) from public.assignment_notifications").trim();
+    const g = await call("POST", { authorization: `Bearer ${DEDICATED}`, "x-scheduler-trigger": "github" });
+    expect(g.status).toBe(200);
+    expect(sql("select trigger from public.scheduler_runs order by started_at desc limit 1").trim()).toBe("github");
+    const v = await call("GET", { authorization: `Bearer ${SECRET}`, "user-agent": "vercel-cron/1.0" });
+    expect(v.status).toBe(200);
+    expect(sql("select trigger from public.scheduler_runs order by started_at desc limit 1").trim()).toBe("vercel");
+    expect(sql("select count(*) from public.assignment_notifications").trim()).toBe(notesBefore); // mode Off sent and claimed nothing
   });
   it("F2 the right bearer secret runs it; the trigger is recorded; the response carries counts only", async () => {
     process.env.CRON_SECRET = SECRET;
     await mode("test");
-    const r = await call("POST", { authorization: `Bearer ${SECRET}`, "x-scheduler-trigger": "github" });
+    process.env.READINESS_SCHEDULER_SECRET = DEDICATED;
+    const r = await call("POST", { authorization: `Bearer ${DEDICATED}`, "x-scheduler-trigger": "github" });
     expect(r.status).toBe(200);
     const body = await r.json();
     expect(Object.keys(body).sort()).toEqual(["blocked", "examined", "failed", "lateSkipped", "mode", "ok", "sent", "skipped", "status", "trigger"]);

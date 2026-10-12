@@ -11,8 +11,8 @@ name: Readiness reminders scheduler
 #  * In a public repository GitHub disables scheduled workflows after 60 days without repository activity.
 #  * INERT UNTIL ENABLED: the job only runs when the repository variable READINESS_SCHEDULER_ENABLED is exactly "true".
 #    Merging this file therefore starts nothing by itself.
-#  * Required (set by the repository owner; values are never printed here): secret CRON_SECRET (the same value as the
-#    app's CRON_SECRET) and variable READINESS_SCHEDULER_URL (the full https URL of /api/cron/readiness-reminders).
+#  * Required (set by the repository owner; values are never printed here): secret READINESS_SCHEDULER_SECRET (the same
+#    value as the app's READINESS_SCHEDULER_SECRET in Vercel Production; independent of CRON_SECRET, which Pulse uses) and variable READINESS_SCHEDULER_URL (the full https URL of /api/cron/readiness-reminders).
 
 on:
   schedule:
@@ -33,11 +33,11 @@ jobs:
     steps:
       - name: Call the reminder endpoint
         env:
-          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          READINESS_SCHEDULER_SECRET: ${{ secrets.READINESS_SCHEDULER_SECRET }}
           TARGET_URL: ${{ vars.READINESS_SCHEDULER_URL }}
         run: |
           set -euo pipefail
-          if [ -z "${CRON_SECRET:-}" ] || [ -z "${TARGET_URL:-}" ]; then
+          if [ -z "${READINESS_SCHEDULER_SECRET:-}" ] || [ -z "${TARGET_URL:-}" ]; then
             echo "::error::The scheduler secret or URL is not configured."
             exit 1
           fi
@@ -47,7 +47,7 @@ jobs:
           esac
           code=$(curl --silent --show-error --max-time 60 --retry 2 --retry-delay 10 --retry-all-errors \
             --output response.json --write-out '%{http_code}' --request POST \
-            --header "Authorization: Bearer ${CRON_SECRET}" --header "x-scheduler-trigger: github" "$TARGET_URL")
+            --header "Authorization: Bearer ${READINESS_SCHEDULER_SECRET}" --header "x-scheduler-trigger: github" "$TARGET_URL")
           echo "HTTP ${code}"
           cat response.json
           echo

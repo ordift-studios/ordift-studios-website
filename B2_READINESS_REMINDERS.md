@@ -36,9 +36,9 @@ Emails carry the reference, service, time (in the assignment timezone), the mana
 
 ## 4. Scheduler: authentication, secrets, monitoring
 
-* Endpoint `/api/cron/readiness-reminders` (GET/POST). Authentication: `Authorization: Bearer <CRON_SECRET>`, constant-time comparison, **fail-closed** if the secret is unset or shorter than 16 characters. The value is never logged or returned; the response carries counts only (test F2).
+* Endpoint `/api/cron/readiness-reminders` (GET/POST). Authentication: `Authorization: Bearer <secret>` where the secret is either the dedicated `READINESS_SCHEDULER_SECRET` (GitHub Actions) or `CRON_SECRET` (the one Vercel Cron attaches automatically, shared with Pulse and only ever read); each is checked on its own, constant-time, **fail-closed** if unset or shorter than 16 characters. The value is never logged or returned; the response carries counts only (test F2).
 * Triggers (three independent): **hourly GitHub Actions** (`.github/workflows/readiness-reminders.yml`, minute 17, no token permissions, non-overlapping, https-only, fails on non-200); **daily Vercel sweep** (`vercel.json`, 04:40 UTC, free-plan compatible); **"Run check now"** in the admin (management only).
-* The workflow is **inert until the repository variable `READINESS_SCHEDULER_ENABLED` is exactly `true`**; merging it starts nothing. It needs the repository secret `CRON_SECRET` and variable `READINESS_SCHEDULER_URL`, both entered by the owner (I never read them).
+* The workflow is **inert until the repository variable `READINESS_SCHEDULER_ENABLED` is exactly `true`**; merging it starts nothing. It needs the repository secret `READINESS_SCHEDULER_SECRET` and variable `READINESS_SCHEDULER_URL`, both entered by the owner (I never read them).
 * Heartbeat: every run is recorded (`scheduler_runs`, with its trigger). An Overview alarm appears if reminders are on and no run has succeeded within the configured window (default 3 h), plus counts of too-late, failed and stuck reminders.
 * GitHub may delay or drop scheduled runs and disables scheduled workflows in a public repo after 60 days without activity; the late caps, heartbeat alarm, daily sweep and manual button cover this.
 * Webhook `/api/webhooks/resend-readiness`: Svix-scheme signature verified before reading anything, 5-minute replay window, fail-closed without `RESEND_WEBHOOK_SECRET`, idempotent by provider event id, opens/clicks ignored.
@@ -71,5 +71,5 @@ Migration `supabase/migrations/0154_assignment_readiness_reminders.sql` (+ guard
 
 1. Push `b2-readiness-reminders` and merge to `main` (merging deploys to Production).
 2. Apply migration 0154 to Production (adds tables/columns; changes no data; reminders stay Off).
-3. You add `CRON_SECRET` (already present in Production), `RESEND_WEBHOOK_SECRET`, and the GitHub secret/variables; register the Resend webhook.
+3. You add `READINESS_SCHEDULER_SECRET` (Vercel Production and GitHub; `CRON_SECRET` stays as it is), `RESEND_WEBHOOK_SECRET`, and the GitHub secret/variables; register the Resend webhook.
 4. Switch mode Off → Dry run → Test → Live, each a separate decision, only for enrolments you choose. **Bright's assignment is never enrolled unless you say so.**

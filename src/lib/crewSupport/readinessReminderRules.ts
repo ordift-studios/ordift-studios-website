@@ -286,6 +286,30 @@ export function detectTrigger(h: { userAgent: string | null; declared: string | 
   return "manual";
 }
 
+// Which credential authenticated a scheduler request. Two independent secrets are accepted, each checked on its own:
+//   * "vercel"    — CRON_SECRET. Vercel Cron always sends this one automatically, so the endpoint must keep accepting it
+//                   or its own daily sweep would be rejected. It is the same secret the Pulse cron uses; it is only read here.
+//   * "dedicated" — READINESS_SCHEDULER_SECRET. Used by the GitHub Actions workflow and nothing else, so the two schedulers
+//                   (Pulse and readiness) can be changed or rotated independently.
+// Each secret is subject to the full existing rule (16+ characters, exact bearer match, constant time, unset = refused).
+// Both comparisons always run so timing does not reveal which one was configured or nearly matched.
+export type SchedulerChannel = "vercel" | "dedicated";
+export function authenticateScheduler(authorization: string | null, secrets: { cron: string | undefined; dedicated: string | undefined }): SchedulerChannel | null {
+  const viaCron = isAuthorizedScheduler(authorization, secrets.cron);
+  const viaDedicated = isAuthorizedScheduler(authorization, secrets.dedicated);
+  if (viaDedicated) return "dedicated";
+  if (viaCron) return "vercel";
+  return null;
+}
+
+// The trigger recorded in the heartbeat follows the credential, not a header an unauthenticated party could choose:
+// the dedicated secret is a GitHub (or manual) call, CRON_SECRET is the Vercel sweep (or a manual call carrying it).
+export function triggerForChannel(channel: SchedulerChannel, h: { userAgent: string | null; declared: string | null }): SchedulerTrigger {
+  const detected = detectTrigger(h);
+  if (channel === "dedicated") return detected === "github" ? "github" : "manual";
+  return detected === "vercel" ? "vercel" : "manual";
+}
+
 // ---------------------------------------------------------------- heartbeat / missed-run alarm
 export type SchedulerHealth = { state: "not_applicable" | "ok" | "stale" | "never_run"; ageHours: number | null };
 export function schedulerHealth(p: { mode: ReminderMode; trackedUpcoming: number; lastSuccessMs: number | null; nowMs: number; staleHours: number }): SchedulerHealth {

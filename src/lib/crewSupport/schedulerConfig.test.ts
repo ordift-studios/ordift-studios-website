@@ -19,9 +19,10 @@ describe("GitHub Actions scheduler workflow", () => {
     expect(workflow).toMatch(/cancel-in-progress: false/);
   });
   it("takes the secret from GitHub secrets only, never a literal, and never echoes it", () => {
-    expect(workflow).toContain("${{ secrets.CRON_SECRET }}");
+    expect(workflow).toContain("${{ secrets.READINESS_SCHEDULER_SECRET }}");
+    expect(workflow).not.toContain("secrets.CRON_SECRET"); // the workflow must never touch the Pulse/Vercel secret
     expect(workflow).not.toMatch(/Bearer [A-Za-z0-9_-]{16,}/);
-    expect(workflow).not.toMatch(/echo[^\n]*CRON_SECRET/);
+    expect(workflow).not.toMatch(/echo[^\n]*(CRON_SECRET|READINESS_SCHEDULER_SECRET)/);
     expect(workflow).not.toMatch(/set -x|--verbose|curl -v/);
   });
   it("only calls an https URL and fails the run on a non-200", () => {
