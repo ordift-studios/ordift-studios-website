@@ -57,6 +57,8 @@ export type ReminderContext = {
   enrolledAtMs: number;
   disabled: boolean;
   isTest: boolean;
+  // the professional has reported the work: it is done, so no readiness reminder makes sense whatever the schedule says
+  jobReportSubmitted: boolean;
   requestStatus: string;
   slotStatus: string;
   slotAccepted: boolean;
@@ -78,6 +80,7 @@ const TERMINAL_ENGAGEMENT = ["completed", "cancelled"];
 export function reminderIneligibility(c: ReminderContext): string | null {
   if (c.disabled) return "Readiness tracking is switched off for this assignment";
   if (c.isTest) return "QA/test record";
+  if (c.jobReportSubmitted) return "A job report has already been submitted (the work is done)";
   if (c.slotStatus !== "assigned" || !c.slotAccepted) return "The assignment is not accepted/assigned";
   if (!ACTIVE_REQUEST.includes(c.requestStatus)) return "The request is cancelled, declined, completed or not yet confirmed";
   if (TERMINAL_ENGAGEMENT.includes(c.engagementStatus)) return "The engagement is finished or cancelled";

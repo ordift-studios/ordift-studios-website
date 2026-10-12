@@ -136,6 +136,8 @@ export type EnrolContext = {
   alreadyEnrolled: boolean;
   startMs: number | null;
   nowMs: number;
+  // the assigned professional has already reported the work (so it is done, whatever the schedule says)
+  jobReportSubmitted?: boolean;
 };
 const ENROLLABLE_REQUEST_STATUSES = ["confirmed", "in_production"];
 const TERMINAL_ENGAGEMENT = ["completed", "cancelled"];
@@ -143,6 +145,7 @@ const TERMINAL_ENGAGEMENT = ["completed", "cancelled"];
 export function enrolmentBlocker(c: EnrolContext): string | null {
   if (c.alreadyEnrolled) return "This assignment is already enrolled.";
   if (c.isTest) return "QA/test assignments can't be enrolled.";
+  if (c.jobReportSubmitted) return "A job report has already been submitted for this assignment, so the work is done and readiness tracking can't be turned on.";
   if (c.slotStatus !== "assigned" || !c.slotAccepted) return "Only an accepted assignment can be enrolled.";
   if (!ENROLLABLE_REQUEST_STATUSES.includes(c.requestStatus)) return "Only a confirmed assignment that is not cancelled, declined or completed can be enrolled.";
   if (TERMINAL_ENGAGEMENT.includes(c.engagementStatus)) return "This assignment's engagement is already finished or cancelled.";

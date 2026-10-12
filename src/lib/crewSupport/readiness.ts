@@ -2,6 +2,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { logActivityAsSystem } from "@/lib/admin/activityLog";
 import type { CurrentUser } from "@/lib/portal/roles";
 import { getCrewAssignmentForEngagement } from "./crewOffers";
+import { hasSubmittedJobReport } from "./jobReportPresence";
 import { isManagementUser } from "./management";
 import { canManageCrewSupport } from "./permissions";
 import {
@@ -39,6 +40,7 @@ export type AssignmentContext = {
   callTimeKnown: boolean;
   endMs: number | null;
   scheduleVersion: number;
+  jobReportSubmitted: boolean;
 };
 
 export async function loadAssignmentContext(engagementId: string): Promise<AssignmentContext | null> {
@@ -49,9 +51,10 @@ export async function loadAssignmentContext(engagementId: string): Promise<Assig
   if (!slot) return null;
   const { data: req } = await admin.from("crew_support_requests").select("id, enquiry_id, reference_number, status, is_test, service_family, start_date, end_date, call_time, finish_time, event_timezone").eq("id", slot.request_id as string).maybeSingle();
   if (!req) return null;
-  const [{ data: enq }, { count }] = await Promise.all([
+  const [{ data: enq }, { count }, reported] = await Promise.all([
     admin.from("enquiries").select("payment_country").eq("id", req.enquiry_id as string).maybeSingle(),
     admin.from("assignment_schedule_changes").select("id", { count: "exact", head: true }).eq("request_id", req.id as string),
+    hasSubmittedJobReport(engagementId),
   ]);
   const tz = effectiveTimezone({ override: (req.event_timezone as string | null) ?? null, paymentCountry: (enq?.payment_country as string | null) ?? null });
   const start = scheduleStart({ startDate: req.start_date as string, callTime: (req.call_time as string | null) ?? null, timezone: tz.timezone });
@@ -63,7 +66,7 @@ export async function loadAssignmentContext(engagementId: string): Promise<Assig
     serviceFamily: (req.service_family as string | null) ?? null, reference: req.reference_number as string,
     startDate: req.start_date as string, endDate: req.end_date as string, callTime: (req.call_time as string | null) ?? null, finishTime: (req.finish_time as string | null) ?? null,
     timezone: tz, startMs: start.startMs, callTimeKnown: start.callTimeKnown, endMs: scheduleEndMs({ endDate: req.end_date as string, timezone: tz.timezone }),
-    scheduleVersion: scheduleVersionFromChangeCount(count ?? 0),
+    scheduleVersion: scheduleVersionFromChangeCount(count ?? 0), jobReportSubmitted: reported,
   };
 }
 
@@ -115,7 +118,7 @@ export async function enrolAssignment(params: { engagementId: string; user: Curr
   if (!ctx) return { ok: false, error: "Assignment not found." };
   const admin = createAdminClient();
   const { data: existing } = await admin.from("assignment_readiness").select("id").eq("engagement_id", params.engagementId).maybeSingle();
-  const blocker = enrolmentBlocker({ isTest: ctx.isTest, requestStatus: ctx.requestStatus, slotStatus: ctx.slotStatus, slotAccepted: ctx.slotAccepted, engagementStatus: ctx.engagementStatus, alreadyEnrolled: Boolean(existing), startMs: ctx.startMs, nowMs: params.nowMs ?? Date.now() });
+  const blocker = enrolmentBlocker({ isTest: ctx.isTest, requestStatus: ctx.requestStatus, slotStatus: ctx.slotStatus, slotAccepted: ctx.slotAccepted, engagementStatus: ctx.engagementStatus, alreadyEnrolled: Boolean(existing), startMs: ctx.startMs, nowMs: params.nowMs ?? Date.now(), jobReportSubmitted: ctx.jobReportSubmitted });
   if (blocker) return { ok: false, error: blocker };
   const { data, error } = await admin.from("assignment_readiness").insert({ engagement_id: ctx.engagementId, slot_id: ctx.slotId, request_id: ctx.requestId, enrolment_source: "manual", enrolled_by: params.user.id }).select("id").single();
   if (error || !data) {
@@ -304,7 +307,7 @@ export async function getReadinessForAdmin(engagementId: string, nowMs: number =
   if (!ctx) return null;
   const admin = createAdminClient();
   const [{ data: rd }, settings] = await Promise.all([admin.from("assignment_readiness").select("id, enrolment_source, enrolled_at, disabled_at, disabled_reason, responsible_manager_id, area_label").eq("engagement_id", engagementId).maybeSingle(), getReadinessSettings()]);
-  const blocker = enrolmentBlocker({ isTest: ctx.isTest, requestStatus: ctx.requestStatus, slotStatus: ctx.slotStatus, slotAccepted: ctx.slotAccepted, engagementStatus: ctx.engagementStatus, alreadyEnrolled: Boolean(rd), startMs: ctx.startMs, nowMs });
+  const blocker = enrolmentBlocker({ isTest: ctx.isTest, requestStatus: ctx.requestStatus, slotStatus: ctx.slotStatus, slotAccepted: ctx.slotAccepted, engagementStatus: ctx.engagementStatus, alreadyEnrolled: Boolean(rd), startMs: ctx.startMs, nowMs, jobReportSubmitted: ctx.jobReportSubmitted });
   if (!rd) return { context: ctx, enrolled: false, readinessId: null, enrolmentSource: null, enrolledAt: null, disabledAt: null, disabledReason: null, responsibleManagerId: null, state: "not_confirmed", flagNoResponse: false, responses: [], issues: [], enrolBlocker: blocker, areaLabel: null, notifications: [] };
   const responses = await listReadinessResponses(rd.id as string);
   const latest = responses[0] ?? null;

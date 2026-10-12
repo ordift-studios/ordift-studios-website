@@ -64,3 +64,11 @@ describe("the migration is additive and safe", () => {
     expect(sql).toMatch(/check \(auto_enrol_from is null\)/);
   });
 });
+
+describe("the job-report presence check is read-only", () => {
+  it("jobReportPresence.ts only selects (no insert, update, upsert or delete)", () => {
+    const src = readFileSync("src/lib/crewSupport/jobReportPresence.ts", "utf8").replace(/\/\/.*$/gm, "");
+    for (const w of [".insert(", ".update(", ".upsert(", ".delete(", ".rpc("]) expect(src).not.toContain(w);
+    expect(src).toContain('head: true');
+  });
+});

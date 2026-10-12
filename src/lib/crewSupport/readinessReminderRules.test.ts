@@ -12,7 +12,7 @@ const H = 3_600_000;
 const START = zonedToUtcMs("2026-10-18", 11, 0, "Asia/Qatar");
 const SETTINGS: ReminderSettings = { mode: "live", firstHours: 48, checkHours: 24, flagHours: 12, skipCheckIfReady: true, lateCapFirstHours: 6, lateCapCheckHours: 3, lateCapEscalationHours: 3, switchedOnAtMs: START - 200 * H };
 const ctx = (over: Partial<ReminderContext> = {}): ReminderContext => ({
-  nowMs: START - 47 * H, startMs: START, scheduleVersion: 1, enrolledAtMs: START - 100 * H, disabled: false, isTest: false,
+  nowMs: START - 47 * H, startMs: START, scheduleVersion: 1, enrolledAtMs: START - 100 * H, disabled: false, isTest: false, jobReportSubmitted: false,
   requestStatus: "confirmed", slotStatus: "assigned", slotAccepted: true, engagementStatus: "active", state: "not_confirmed",
   areaLabel: "Doha — West Bay", openIssue: null, ...over,
 });
@@ -117,6 +117,7 @@ describe("eligibility is re-checked from live data", () => {
     ["finished engagement", { engagementStatus: "completed" }],
     ["cancelled engagement", { engagementStatus: "cancelled" }],
     ["tracking disabled", { disabled: true }],
+    ["job report already submitted (work done, even if the schedule is still in the future)", { jobReportSubmitted: true }],
   ];
   for (const [name, over] of cases) {
     it(`${name} gets nothing`, () => {

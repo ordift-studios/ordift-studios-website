@@ -77,6 +77,7 @@ import type { CurrentUser } from "@/lib/portal/roles";
 import { enrolAssignment, getReadinessForAdmin, setResponsibleManager, submitReadiness } from "./readiness";
 import { manageIssue } from "./readinessIssues";
 import { rescheduleAssignment } from "./reschedule";
+import { submitJobReport } from "./jobReports";
 import { clearSuppression, getSchedulerStatus, previewReminders, runReadinessReminders, setAreaLabel, setRemindersMode, type Mailer } from "./readinessReminders";
 import { zonedToUtcMs } from "./schedule";
 import { NextRequest } from "next/server";
@@ -498,6 +499,23 @@ describe("C — late runs, enrolment, switch-on, labels, ineligibility", () => {
     await run(at(bright, 47)); await run(at(bright, 23)); await run(at(bright, 11));
     expect(mailsFor(bright)).toHaveLength(0);
     expect(notes(bright)).toHaveLength(0);
+  });
+  it("C8b a completed assignment is excluded: once the work is reported it can't be enrolled, and an enrolled one stops receiving anything — even if its schedule is still in the future (the Bright date mismatch)", async () => {
+    const report = (j: Job, user = CREW1) => submitJobReport({ engagementId: j.engagementId, actorUserId: user, input: { serviceFamily: "photography", actualServiceDate: "2026-10-10", actualStartTime: "11:00", actualEndTime: "21:00", completionStatus: "completed", wentSmoothly: true, answers: {}, incidents: "", clientRequests: "", additionalServices: "", outstandingWork: "", remarks: "Performed earlier than the schedule shows", } });
+    // (a) a future-dated assignment whose work has already been reported cannot be enrolled
+    const a = await liveJob({ daysAhead: 10 });
+    must(await report(a));
+    expect(mustFail(await enrolAssignment({ engagementId: a.engagementId, user: asCurrent(SUPER) }))).toMatch(/job report has already been submitted/);
+    expect(sql(`select count(*) from public.assignment_readiness where engagement_id = '${a.engagementId}'`).trim()).toBe("0");
+    // (b) one enrolled earlier stops getting reminders as soon as the report exists
+    const b = await liveJob({ daysAhead: 11 }); await arm(b); await mode("live");
+    await run(at(b, 47.5));
+    expect(mailsFor(b)).toHaveLength(1); // the 48h reminder went out while the work was genuinely upcoming
+    must(await report(b));
+    await run(at(b, 23.5)); await run(at(b, 11.5));
+    expect(by(b, "reminder_check")[0]).toMatchObject({ status: "skipped", skip_reason: "ineligible" });
+    expect(by(b, "escalation_no_response")[0]).toMatchObject({ status: "skipped", skip_reason: "ineligible" });
+    expect(mailsFor(b)).toHaveLength(1);
   });
   it("C9 reschedule re-arms: a new schedule version gets its own reminders, the old keys are untouched and stale answers stop suppressing", async () => {
     const j = await liveJob(); await arm(j); await mode("live");

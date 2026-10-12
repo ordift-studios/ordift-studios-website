@@ -106,7 +106,7 @@ async function loadCandidates(nowMs: number, settings: ReminderSettings): Promis
     const state = readinessState({ latest, currentScheduleVersion: ctx.scheduleVersion });
     const { data: issue } = await admin.from("assignment_readiness_issues").select("id, status, kind, raised_at").eq("readiness_id", r.id as string).neq("status", "resolved").maybeSingle();
     const decisions = evaluateReminders({
-      nowMs, startMs: ctx.startMs, scheduleVersion: ctx.scheduleVersion, enrolledAtMs: Date.parse(r.enrolled_at as string), disabled: Boolean(r.disabled_at), isTest: ctx.isTest,
+      nowMs, startMs: ctx.startMs, scheduleVersion: ctx.scheduleVersion, enrolledAtMs: Date.parse(r.enrolled_at as string), disabled: Boolean(r.disabled_at), isTest: ctx.isTest, jobReportSubmitted: ctx.jobReportSubmitted,
       requestStatus: ctx.requestStatus, slotStatus: ctx.slotStatus, slotAccepted: ctx.slotAccepted, engagementStatus: ctx.engagementStatus, state,
       areaLabel: (r.area_label as string | null) ?? null,
       openIssue: issue ? { id: issue.id as string, status: issue.status as string, raisedAtMs: Date.parse(issue.raised_at as string) } : null,

@@ -167,3 +167,13 @@ describe("reschedule validation: management must record who was told, how and wh
     expect(validateReschedule(base, parties, null, now).ok).toBe(false); // no timezone to interpret the time in
   });
 });
+
+import { enrolmentBlocker as enrolBlock } from "./readinessRules";
+describe("enrolment is refused once the work has been reported", () => {
+  const base = { isTest: false, requestStatus: "confirmed", slotStatus: "assigned", slotAccepted: true, engagementStatus: "engagement_active", alreadyEnrolled: false, startMs: 2_000_000, nowMs: 1_000_000 };
+  it("a future-dated assignment can be enrolled, but not after the professional's job report", () => {
+    expect(enrolBlock(base)).toBeNull();
+    expect(enrolBlock({ ...base, jobReportSubmitted: false })).toBeNull();
+    expect(enrolBlock({ ...base, jobReportSubmitted: true })).toMatch(/job report has already been submitted/);
+  });
+});
