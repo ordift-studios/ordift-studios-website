@@ -1,15 +1,17 @@
--- Rollback for 0165: removes the four new tables and the document-metadata columns ONLY if nothing has been recorded in them
+-- Rollback for 0159: removes the five new tables and the document-metadata columns ONLY if nothing has been recorded in them
 -- (otherwise it refuses, so no registration, signatory or expense record can be lost). Safe to run before the registry data step.
 begin;
 do $$
 begin
-  if exists (select 1 from public.entity_registrations) or exists (select 1 from public.entity_signatories) or exists (select 1 from public.entity_expenses) then
-    raise exception 'down_0165 refused: registry records already exist';
+  if exists (select 1 from public.entity_registrations) or exists (select 1 from public.entity_signatories) or exists (select 1 from public.entity_expenses) or exists (select 1 from public.booking_contracting_entities) then
+    raise exception 'down_0159 refused: registry records already exist';
   end if;
   if exists (select 1 from public.employing_entity_documents where file_sha256 is not null or original_filename is not null or relation is not null) then
-    raise exception 'down_0165 refused: documents already carry the new metadata';
+    raise exception 'down_0159 refused: documents already carry the new metadata';
   end if;
 end $$;
+drop table public.booking_contracting_entities;
+drop function private.booking_contracting_entities_guard();
 drop table public.entity_expenses;
 drop table public.entity_signatories;
 drop table public.entity_registrations;

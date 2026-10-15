@@ -163,3 +163,31 @@ export function reconcileReceipt(lines: ReceiptLine[], printedTotal: number): { 
   const sum = money(payable.reduce((s, l) => s + l.amount, 0));
   return { ok: sum === money(printedTotal), sum, difference: money(printedTotal - sum), payable };
 }
+
+// ------------------------------------------------------------------ which legal entity may contract
+// The contracting entity is chosen EXPLICITLY for each booking, quotation or agreement. It is never derived from the client's location or
+// currency. An entity is eligible only if its verified record supports it; a default is offered only when exactly one entity is eligible.
+export type ContractingCandidate = {
+  entityId: string; name: string; verified: boolean; active: boolean;
+  registrations: RegistrationFact[];   // empty for an entity with no registry records (e.g. Ghana today)
+};
+export type Eligibility = { eligible: boolean; blockers: string[] };
+
+export function assessContractingEligibility(c: ContractingCandidate, serviceFamily: string | null, today: string): Eligibility {
+  const blockers: string[] = [];
+  if (!c.active) blockers.push("The entity is not active.");
+  if (!c.verified) blockers.push("The entity's registration has not been verified by a Super Admin.");
+  if (c.registrations.length > 0) {
+    const st = entityStanding(c.registrations, today);
+    if (!st.registered) blockers.push("No current, unexpired commercial registration is on record.");
+    // A permit is required once the entity is tracking one: a not-yet-issued permit means it may not contract.
+    if (c.registrations.some((r) => r.kind === "commercial_permit") && !st.permitIssued) blockers.push("The commercial permit has not been issued or recorded.");
+    if (serviceFamily) { const cov = activityCoverage(serviceFamily, st); if (!cov.covered) blockers.push(cov.reason); }
+  }
+  return { eligible: blockers.length === 0, blockers };
+}
+
+export function suggestContractingEntity(candidates: { entityId: string; eligibility: Eligibility }[]): { entityId: string; reason: string } | null {
+  const ok = candidates.filter((c) => c.eligibility.eligible);
+  return ok.length === 1 ? { entityId: ok[0].entityId, reason: "The only legal entity currently eligible to contract. Confirm it; it is not chosen automatically." } : null;
+}

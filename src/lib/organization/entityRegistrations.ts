@@ -1,9 +1,9 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { logActivity } from "@/lib/admin/activityLog";
 import { isSuperAdminId } from "@/lib/organization/authority";
-import { reconcileReceipt, type KnownDocument, type ReceiptLine, type RegistrationFact, type RegistrationKind, type RegistrationStatus, checkDuplicate, sha256OfBytes, ENTITY_DOCUMENT_TYPES } from "@/lib/organization/entityRegistry";
+import { assessContractingEligibility, suggestContractingEntity, reconcileReceipt, type ContractingCandidate, type Eligibility, type KnownDocument, type ReceiptLine, type RegistrationFact, type RegistrationKind, type RegistrationStatus, checkDuplicate, sha256OfBytes, ENTITY_DOCUMENT_TYPES } from "@/lib/organization/entityRegistry";
 
-// Per-entity registrations, permits, authorised signatories and receipt-backed expenses (migration 0165). Every read and write is
+// Per-entity registrations, permits, authorised signatories and receipt-backed expenses (migration 0159). Every read and write is
 // Super-Admin-only and re-checked here, because the admin client bypasses row-level security. Each entity's records are separate:
 // every query is keyed to one entity id. NOTHING here creates a bank transaction, payable, reimbursement or payment instruction.
 
@@ -33,7 +33,7 @@ const PERMIT_NUMBER = /^[A-Za-z0-9][A-Za-z0-9\-/ ]{2,39}$/;
 // hold a current commercial registration, and the pending "not issued" record is superseded (kept in history). Premises are recorded only
 // here, from what the Founder supplies — never inferred.
 export async function recordCommercialPermit(p: {
-  entityId: string; permitNumber: string; issuedOn: string; expiresOn: string | null; issuingAuthority: string; premisesAddress: string; sourceDocumentId: string; actorUserId: string;
+  entityId: string; permitNumber: string; licenceNumber?: string | null; issuedOn: string; expiresOn: string | null; issuingAuthority: string; premisesAddress: string; sourceDocumentId: string; actorUserId: string;
 }): Promise<Result<{ registrationId: string }>> {
   if (!(await isSuperAdminId(p.actorUserId))) return NOT_ALLOWED;
   if (!PERMIT_NUMBER.test(p.permitNumber.trim())) return { ok: false, error: "Enter the permit number exactly as it appears on the permit." };
@@ -55,7 +55,7 @@ export async function recordCommercialPermit(p: {
   if (pending) { const { error } = await db.from("entity_registrations").update({ status: "superseded" }).eq("id", pending.id); if (error) return { ok: false, error: "Could not retire the pending permit record." }; }
   const { data, error } = await db.from("entity_registrations").insert({
     employing_entity_id: p.entityId, kind: "commercial_permit", status: "active", identifier: p.permitNumber.trim(), issued_on: p.issuedOn, valid_from: p.issuedOn, expires_on: p.expiresOn,
-    issuing_authority: p.issuingAuthority.trim(), facts: { premises: p.premisesAddress.trim() }, source_document_id: p.sourceDocumentId, supersedes_id: pending?.id ?? null, recorded_by: p.actorUserId,
+    issuing_authority: p.issuingAuthority.trim(), facts: { premises: p.premisesAddress.trim(), ...(p.licenceNumber?.trim() ? { licenceNumber: p.licenceNumber.trim() } : {}) }, source_document_id: p.sourceDocumentId, supersedes_id: pending?.id ?? null, recorded_by: p.actorUserId,
   }).select("id").single();
   if (error || !data) return { ok: false, error: error?.message ?? "Could not record the permit." };
   await logActivity({ actorUserId: p.actorUserId, action: "entity_registration.permit_recorded", entityType: "employing_entity", entityId: p.entityId, metadata: { registrationId: data.id, documentId: p.sourceDocumentId } });
@@ -64,17 +64,18 @@ export async function recordCommercialPermit(p: {
 
 // The 60-working-day condition has no deadline until the approval-notice date is known. Recording it is a replacement record, so the
 // original (unconfirmed) one stays in history.
-export async function confirmApprovalNoticeDate(p: { entityId: string; approvalNoticeDate: string; actorUserId: string }): Promise<Result<{ registrationId: string }>> {
+export async function confirmApprovalNoticeDate(p: { entityId: string; approvalNoticeDate: string; source: string; actorUserId: string }): Promise<Result<{ registrationId: string }>> {
   if (!(await isSuperAdminId(p.actorUserId))) return NOT_ALLOWED;
   if (!/^\d{4}-\d{2}-\d{2}$/.test(p.approvalNoticeDate)) return { ok: false, error: "Enter the date you received the official approval notice." };
+  if (p.source.trim().length < 5) return { ok: false, error: "Say which document or message confirms that date (it is not accepted without a source)." };
   const db = createAdminClient();
   const { data: cur } = await db.from("entity_registrations").select("*").eq("employing_entity_id", p.entityId).eq("kind", "investment_approval_condition").eq("status", "pending").maybeSingle();
   if (!cur) return { ok: false, error: "There is no open investment-approval condition for this entity." };
   await db.from("entity_registrations").update({ status: "superseded" }).eq("id", cur.id);
   const { data, error } = await db.from("entity_registrations").insert({
     employing_entity_id: p.entityId, kind: "investment_approval_condition", status: "pending", issued_on: cur.issued_on, issuing_authority: cur.issuing_authority,
-    facts: { ...(cur.facts as object), approvalNoticeDate: p.approvalNoticeDate }, source_document_id: cur.source_document_id, supersedes_id: cur.id, recorded_by: p.actorUserId,
-    note: "Approval-notice date confirmed by the Founder.",
+    facts: { ...(cur.facts as object), approvalNoticeDate: p.approvalNoticeDate, approvalNoticeSource: p.source.trim() }, source_document_id: cur.source_document_id, supersedes_id: cur.id, recorded_by: p.actorUserId,
+    note: "Approval-notice date recorded from the stated source. The working-day deadline is not calculated by the system.",
   }).select("id").single();
   if (error || !data) return { ok: false, error: error?.message ?? "Could not record the date." };
   await logActivity({ actorUserId: p.actorUserId, action: "entity_registration.approval_notice_date_confirmed", entityType: "employing_entity", entityId: p.entityId, metadata: { registrationId: data.id } });
@@ -94,12 +95,14 @@ const BUCKET = "legal-entity-documents";
 const MAX_BYTES = 10 * 1024 * 1024;
 const ALLOWED_MIME = new Set(["application/pdf", "image/jpeg", "image/png"]);
 
-export type VaultDocument = { id: string; documentType: string; filename: string | null; sha256: string | null; sizeBytes: number | null; issuedOn: string | null; expiresOn: string | null; issuingAuthority: string | null; relation: string | null; relatedDocumentId: string | null; notes: string | null; uploadedAt: string };
+export type VaultDocument = { id: string; documentType: string; filename: string | null; sha256: string | null; sizeBytes: number | null; issuedOn: string | null; expiresOn: string | null; issuingAuthority: string | null; relation: string | null; relatedDocumentId: string | null; replacedByDocumentId: string | null; notes: string | null; uploadedAt: string };
 export async function listVaultDocuments(entityId: string, actorUserId: string): Promise<VaultDocument[]> {
   if (!(await isSuperAdminId(actorUserId))) return [];
   const { data, error } = await createAdminClient().from("employing_entity_documents").select("id, document_type, original_filename, file_sha256, size_bytes, issued_on, expires_on, issuing_authority, relation, related_document_id, notes, uploaded_at").eq("employing_entity_id", entityId).order("uploaded_at", { ascending: false });
   if (error) { console.error("[entity registry] failed to load documents", error.message); return []; }
-  return (data ?? []).map((r) => ({ id: r.id, documentType: r.document_type, filename: r.original_filename, sha256: r.file_sha256, sizeBytes: r.size_bytes == null ? null : Number(r.size_bytes), issuedOn: r.issued_on, expiresOn: r.expires_on, issuingAuthority: r.issuing_authority, relation: r.relation, relatedDocumentId: r.related_document_id, notes: r.notes, uploadedAt: r.uploaded_at }));
+  const replacedBy = new Map<string, string>();
+  for (const r of data ?? []) if (r.relation === "new_version_of" && r.related_document_id) replacedBy.set(r.related_document_id, r.id);
+  return (data ?? []).map((r) => ({ replacedByDocumentId: replacedBy.get(r.id) ?? null, id: r.id, documentType: r.document_type, filename: r.original_filename, sha256: r.file_sha256, sizeBytes: r.size_bytes == null ? null : Number(r.size_bytes), issuedOn: r.issued_on, expiresOn: r.expires_on, issuingAuthority: r.issuing_authority, relation: r.relation, relatedDocumentId: r.related_document_id, notes: r.notes, uploadedAt: r.uploaded_at }));
 }
 
 // Stores one official document. The file is hashed first: an exact copy of a document already in this entity's vault is recorded as a
@@ -108,7 +111,7 @@ export async function listVaultDocuments(entityId: string, actorUserId: string):
 // its own file and linked with `overlapOf`.
 export async function addVaultDocument(p: {
   entityId: string; documentType: string; filename: string; mimeType: string; bytes: Uint8Array; notes?: string | null;
-  issuedOn?: string | null; expiresOn?: string | null; issuingAuthority?: string | null; overlapOf?: string | null; actorUserId: string;
+  issuedOn?: string | null; expiresOn?: string | null; issuingAuthority?: string | null; overlapOf?: string | null; replaces?: string | null; actorUserId: string;
 }): Promise<Result<{ documentId: string; duplicateOf: string | null }>> {
   if (!(await isSuperAdminId(p.actorUserId))) return NOT_ALLOWED;
   if (!ENTITY_DOCUMENT_TYPES.some((t) => t.value === p.documentType)) return { ok: false, error: "Choose what kind of document this is." };
@@ -121,6 +124,7 @@ export async function addVaultDocument(p: {
   const { data: rows } = await db.from("employing_entity_documents").select("id, document_type, original_filename, file_sha256, storage_path, relation").eq("employing_entity_id", p.entityId);
   const known: KnownDocument[] = (rows ?? []).filter((r) => r.relation == null).map((r) => ({ id: r.id, sha256: r.file_sha256, documentType: r.document_type, filename: r.original_filename }));
   const verdict = checkDuplicate(known, sha);
+  if (p.replaces && !(rows ?? []).some((r) => r.id === p.replaces)) return { ok: false, error: "The document this replaces is not in this entity's vault." };
 
   let storagePath: string;
   if (verdict.kind === "exact_duplicate_of") {
@@ -130,7 +134,9 @@ export async function addVaultDocument(p: {
     const up = await db.storage.from(BUCKET).upload(storagePath, Buffer.from(p.bytes), { contentType: p.mimeType, upsert: false });
     if (up.error) { console.error("[entity registry] upload failed", up.error.message); return { ok: false, error: "Failed to upload the file." }; }
   }
-  const relation = verdict.kind === "exact_duplicate_of" ? { relation: "exact_duplicate_of", related_document_id: verdict.of.id } : p.overlapOf ? { relation: "partial_overlap_of", related_document_id: p.overlapOf } : { relation: null, related_document_id: null };
+  const relation = verdict.kind === "exact_duplicate_of" ? { relation: "exact_duplicate_of", related_document_id: verdict.of.id }
+    : p.replaces ? { relation: "new_version_of", related_document_id: p.replaces }
+    : p.overlapOf ? { relation: "partial_overlap_of", related_document_id: p.overlapOf } : { relation: null, related_document_id: null };
   const { data, error } = await db.from("employing_entity_documents").insert({
     employing_entity_id: p.entityId, document_type: p.documentType, storage_path: storagePath, notes: p.notes ?? null, uploaded_by: p.actorUserId,
     original_filename: p.filename, mime_type: p.mimeType, size_bytes: p.bytes.byteLength, file_sha256: sha, issued_on: p.issuedOn ?? null, expires_on: p.expiresOn ?? null, issuing_authority: p.issuingAuthority ?? null, ...relation,
@@ -188,4 +194,67 @@ export async function confirmExpenseFunding(p: { entityId: string; receiptNumber
   if (error) return { ok: false, error: error.message };
   await logActivity({ actorUserId: p.actorUserId, action: "entity_expense.funding_confirmed", entityType: "employing_entity", entityId: p.entityId, metadata: { receiptNumber: p.receiptNumber, status: p.status } });
   return { ok: true, updated: (data ?? []).length };
+}
+
+// ------------------------------------------------------------------ the contracting entity of a booking, quotation or agreement
+export type ContractingSubject = { type: "crew_support_request" | "enquiry" | "quotation" | "agreement"; id: string };
+export type ContractingChoice = { version: number; entityId: string; entityName: string; basis: string; chosenAt: string };
+
+export async function listContractingCandidates(actorUserId: string, serviceFamily: string | null, today: string): Promise<{ candidates: (ContractingCandidate & { eligibility: Eligibility })[]; suggestion: { entityId: string; reason: string } | null }> {
+  if (!(await isSuperAdminId(actorUserId))) return { candidates: [], suggestion: null };
+  const db = createAdminClient();
+  const { data: ents } = await db.from("employing_entities").select("id, name, active, verification_status").order("sort_order");
+  const { data: regs } = await db.from("entity_registrations").select(REG_SELECT + ", employing_entity_id").in("status", ["active", "pending", "not_issued", "expired"]);
+  const candidates = (ents ?? []).map((e) => {
+    const registrations = ((regs ?? []) as unknown as (RegRow & { employing_entity_id: string })[]).filter((r) => r.employing_entity_id === e.id).map(mapReg);
+    const c: ContractingCandidate = { entityId: e.id, name: e.name, verified: e.verification_status === "verified", active: e.active, registrations };
+    return { ...c, eligibility: assessContractingEligibility(c, serviceFamily, today) };
+  });
+  return { candidates, suggestion: suggestContractingEntity(candidates) };
+}
+
+// A subject with no row is a booking made before this existed: it is NOT assigned an entity. Returned as null.
+export async function getContractingEntity(subject: ContractingSubject, actorUserId: string): Promise<ContractingChoice | null> {
+  if (!(await isSuperAdminId(actorUserId))) return null;
+  const db = createAdminClient();
+  const { data } = await db.from("booking_contracting_entities").select("version, employing_entity_id, basis, created_at").eq("subject_type", subject.type).eq("subject_id", subject.id).order("version", { ascending: false }).limit(1).maybeSingle();
+  if (!data) return null;
+  const { data: e } = await db.from("employing_entities").select("name").eq("id", data.employing_entity_id).maybeSingle();
+  return { version: data.version, entityId: data.employing_entity_id, entityName: e?.name ?? "", basis: data.basis, chosenAt: data.created_at };
+}
+
+// A booking with an accepted quotation or any payment is historical: its entity is never assigned or changed by this feature.
+export async function bookingIsHistorical(requestId: string): Promise<boolean> {
+  const db = createAdminClient();
+  const { data: r } = await db.from("crew_support_requests").select("enquiry_id").eq("id", requestId).maybeSingle();
+  const { data: q } = await db.from("client_quotations").select("id").eq("crew_support_request_id", requestId).eq("status", "accepted").limit(1);
+  const { data: enq } = r?.enquiry_id ? await db.from("enquiries").select("amount_paid").eq("id", r.enquiry_id).maybeSingle() : { data: null };
+  return (q ?? []).length > 0 || Number(enq?.amount_paid ?? 0) > 0;
+}
+
+// Records the contracting entity of a NEW booking. Refused for a booking that already has an accepted quotation or any payment (historical
+// bookings stay exactly as they are unless a correction is separately approved), and for an entity that is not eligible. Nothing else is
+// changed: no quotation, invoice, agreement, payment or payable is touched or regenerated.
+export async function chooseContractingEntity(p: { subject: ContractingSubject; entityId: string; basis: string; actorUserId: string; today?: string }): Promise<Result<{ version: number }>> {
+  if (!(await isSuperAdminId(p.actorUserId))) return NOT_ALLOWED;
+  if (p.basis.trim().length < 5) return { ok: false, error: "Say why this entity is contracting (for example: the Ghana entity contracts for work billed in GHS)." };
+  const db = createAdminClient();
+  let serviceFamily: string | null = null;
+  if (p.subject.type === "crew_support_request") {
+    const { data: r } = await db.from("crew_support_requests").select("id, service_family, enquiry_id").eq("id", p.subject.id).maybeSingle();
+    if (!r) return { ok: false, error: "That booking was not found." };
+    serviceFamily = r.service_family as string | null;
+    if (await bookingIsHistorical(p.subject.id)) return { ok: false, error: "This booking already has an accepted quotation or a payment. It is historical and is not reassigned; a correction needs the Founder's separate approval." };
+  }
+  const { candidates } = await listContractingCandidates(p.actorUserId, serviceFamily, p.today ?? new Date().toISOString().slice(0, 10));
+  const cand = candidates.find((c) => c.entityId === p.entityId);
+  if (!cand) return { ok: false, error: "That legal entity was not found." };
+  if (!cand.eligibility.eligible) return { ok: false, error: `That entity cannot contract for this booking: ${cand.eligibility.blockers.join(" ")}` };
+  const { data: prev } = await db.from("booking_contracting_entities").select("id, version, employing_entity_id").eq("subject_type", p.subject.type).eq("subject_id", p.subject.id).order("version", { ascending: false }).limit(1).maybeSingle();
+  if (prev?.employing_entity_id === p.entityId) return { ok: false, error: "That entity is already recorded for this booking." };
+  const version = (prev?.version ?? 0) + 1;
+  const { error } = await db.from("booking_contracting_entities").insert({ subject_type: p.subject.type, subject_id: p.subject.id, version, employing_entity_id: p.entityId, basis: p.basis.trim(), supersedes_id: prev?.id ?? null, chosen_by: p.actorUserId });
+  if (error) return { ok: false, error: error.code === "23505" ? "Someone else recorded an entity at the same moment; reload and check." : error.message };
+  await logActivity({ actorUserId: p.actorUserId, action: "booking.contracting_entity_chosen", entityType: p.subject.type, entityId: p.subject.id, metadata: { employingEntityId: p.entityId, version } });
+  return { ok: true, version };
 }

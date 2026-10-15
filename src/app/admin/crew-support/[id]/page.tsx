@@ -31,6 +31,8 @@ import ActionForm from "@/components/admin/ActionForm";
 import SubmitButton from "@/components/admin/SubmitButton";
 import { setRequestEquipmentAction, updateCrewSupportStatusAction } from "../actions";
 import SlotOffer from "../SlotOffer";
+import ContractingEntityPanel from "../ContractingEntityPanel";
+import { bookingIsHistorical, getContractingEntity, listContractingCandidates } from "@/lib/organization/entityRegistrations";
 
 export const metadata: Metadata = { title: "Crew Support Request — Ordift Studios Admin", robots: { index: false, follow: false } };
 
@@ -65,6 +67,10 @@ export default async function CrewSupportDetailPage({ params }: { params: Promis
   const overridePool = await listOverridePool(allCandidateIds).catch(() => []);
   const r = detail.request as Record<string, string | null> & { id: string; status: CrewSupportStatus; enquiry_id: string };
   const family = SERVICE_FAMILIES.find((f) => f.value === r.service_family);
+  // Super Admin only: which legal entity contracts for this booking (read-only for a historical booking).
+  const contracting = user && isSuperAdmin(user)
+    ? await Promise.all([getContractingEntity({ type: "crew_support_request", id }, user.id), listContractingCandidates(user.id, String(r.service_family ?? ""), new Date().toISOString().slice(0, 10)), bookingIsHistorical(id)]).catch(() => null)
+    : null;
   const details = (detail.request.service_details ?? {}) as Record<string, string>;
   const questions = detailQuestionsFor(String(r.service_family));
   const [quotation, variation, notificationEvents, markets, currencies, flags, commitment, enquiryRow, deliverables] = await Promise.all([
@@ -109,6 +115,16 @@ export default async function CrewSupportDetailPage({ params }: { params: Promis
           Status: <strong className="text-ordift-ink">{STATUS_LABELS[r.status]}</strong> · Ordift is the <strong>supporting</strong> party — the requester leads this engagement. Availability is not guaranteed until confirmed here.
         </p>
       </div>
+
+      {contracting && (
+        <ContractingEntityPanel
+          requestId={id}
+          current={contracting[0] ? { entityName: contracting[0].entityName, version: contracting[0].version, basis: contracting[0].basis } : null}
+          options={contracting[1].candidates.map((c) => ({ entityId: c.entityId, name: c.name, eligible: c.eligibility.eligible, blockers: c.eligibility.blockers }))}
+          suggestionId={contracting[1].suggestion?.entityId ?? null}
+          historical={contracting[2]}
+        />
+      )}
 
       <section className="rounded-xl border border-black/10 bg-white p-6">
         <dl className="grid grid-cols-1 sm:grid-cols-2 gap-4">

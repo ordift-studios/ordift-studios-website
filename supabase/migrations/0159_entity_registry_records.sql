@@ -8,8 +8,11 @@
 --
 --   entity_registrations   one row per registration/permit/card/certificate: kind, status, dates, identifier. Core facts are immutable;
 --                          only status (and verification) can change, so history is kept (a new permit supersedes a pending one).
---   employing_entity_documents  + file hash, filename, type, size, dates, duplicate/overlap link (for documents added from now on)
+--   employing_entity_documents  + file hash, filename, type, size, dates, and a link to a related document: exact duplicate, partial overlap, or
+--                          an updated VERSION of an earlier one (the earlier original is never replaced or deleted)
 --   entity_signatories     who may sign for the entity (name, position, authority) — NO identity numbers; the identity document stays in the vault
+--   booking_contracting_entities  which legal entity contracts for a booking/quotation/agreement, chosen explicitly and recorded (versioned, append-only).
+--                          Existing bookings have no row and stay exactly as they are.
 --   entity_expenses        a government fee or other cost, one row per receipt line, linked to its receipt document. NOT a bank transaction,
 --                          payable, reimbursement or payment instruction: nothing here moves or requests money.
 begin;
@@ -23,7 +26,7 @@ alter table public.employing_entity_documents
   add column if not exists issued_on date,
   add column if not exists expires_on date,
   add column if not exists issuing_authority text,
-  add column if not exists relation text check (relation is null or relation in ('exact_duplicate_of', 'partial_overlap_of')),
+  add column if not exists relation text check (relation is null or relation in ('exact_duplicate_of', 'partial_overlap_of', 'new_version_of')),
   add column if not exists related_document_id uuid references public.employing_entity_documents (id);
 alter table public.employing_entity_documents add constraint employing_entity_documents_relation_shape
   check ((relation is null) = (related_document_id is null));
@@ -168,5 +171,35 @@ create policy "entity_expenses: super admin only" on public.entity_expenses for 
 revoke all on public.entity_expenses from anon, authenticated, service_role;
 grant select on public.entity_expenses to authenticated;
 grant select, insert, update on public.entity_expenses to service_role;
+
+-- ------------------------------------------------------------------ which legal entity contracts (explicit, recorded, never inferred)
+create table public.booking_contracting_entities (
+  id uuid primary key default gen_random_uuid(),
+  business_id uuid not null references public.businesses (id) default public.ordift_studios_business_id(),
+  subject_type text not null check (subject_type in ('crew_support_request', 'enquiry', 'quotation', 'agreement')),
+  subject_id uuid not null,
+  version integer not null check (version >= 1),
+  employing_entity_id uuid not null references public.employing_entities (id),
+  basis text not null check (char_length(btrim(basis)) >= 5),   -- why this entity, in the chooser's words
+  supersedes_id uuid references public.booking_contracting_entities (id),
+  chosen_by uuid not null references public.profiles (id),
+  created_at timestamptz not null default now(),
+  constraint booking_contracting_entities_version_unique unique (subject_type, subject_id, version),
+  constraint booking_contracting_entities_chain check ((version = 1) = (supersedes_id is null))
+);
+comment on table public.booking_contracting_entities is
+  'The legal entity that contracts with the client for one booking, quotation or agreement. Chosen explicitly by a Super Admin from the entity''s verified record — never inferred from the client''s location or currency. Append-only: a change is a new version that names what it supersedes. A subject with no row is a booking made before this existed; it is left exactly as it was and is not reassigned.';
+create or replace function private.booking_contracting_entities_guard() returns trigger
+language plpgsql set search_path = '' as $$
+begin
+  raise exception 'booking_contracting_entities is append-only: record a new version instead' using errcode = '42501';
+end $$;
+revoke all on function private.booking_contracting_entities_guard() from public;
+create trigger booking_contracting_entities_guard before update or delete on public.booking_contracting_entities for each row execute function private.booking_contracting_entities_guard();
+alter table public.booking_contracting_entities enable row level security;
+create policy "booking_contracting_entities: super admin only" on public.booking_contracting_entities for select to authenticated using ((select private.is_super_admin()));
+revoke all on public.booking_contracting_entities from anon, authenticated, service_role;
+grant select on public.booking_contracting_entities to authenticated;
+grant select, insert on public.booking_contracting_entities to service_role;
 
 commit;

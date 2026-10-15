@@ -4,7 +4,7 @@ import { useActionState } from "react";
 import { confirmApprovalNoticeAction, confirmFundingAction, recordPermitAction, uploadEntityDocumentAction, viewEntityDocumentAction, type ActionState } from "./actions";
 import { ENTITY_DOCUMENT_TYPES, entityDocumentTypeLabel, type TrackedItem, type TrackedState } from "@/lib/organization/entityRegistry";
 
-export type RegistryDocView = { id: string; documentType: string; filename: string | null; sha256: string | null; sizeBytes: number | null; issuedOn: string | null; expiresOn: string | null; issuingAuthority: string | null; relation: string | null; relatedDocumentId: string | null; notes: string | null; uploadedAt: string };
+export type RegistryDocView = { id: string; documentType: string; filename: string | null; sha256: string | null; sizeBytes: number | null; issuedOn: string | null; expiresOn: string | null; issuingAuthority: string | null; relation: string | null; relatedDocumentId: string | null; replacedByDocumentId: string | null; notes: string | null; uploadedAt: string };
 export type RegistrationView = { id: string; kind: string; label: string; status: string; identifier: string | null; issuedOn: string | null; expiresOn: string | null; note: string | null; facts: Record<string, unknown> };
 export type SignatoryView = { id: string; fullName: string; position: string; authority: string | null; nationality: string | null; ownershipPercent: number | null };
 export type ExpenseView = { id: string; expenseDate: string; amount: number; currency: string; description: string; receiptNumber: string; receiptTotal: number; payerAsShown: string | null; fundingSourceStatus: string; fundingSourceNote: string | null; accountingTreatment: string };
@@ -35,7 +35,8 @@ function PermitForm({ entityId, permitDocs }: { entityId: string; permitDocs: Re
         {permitDocs.map((d) => <option key={d.id} value={d.id}>{d.filename ?? d.id} (uploaded {new Date(d.uploadedAt).toLocaleDateString()})</option>)}
       </select>
       <input name="permitNumber" required placeholder="Permit number, exactly as printed" className={input} />
-      <input name="issuingAuthority" required placeholder="Issuing authority" className={input} />
+      <input name="licenceNumber" placeholder="Licence number (if separate)" className={input} />
+      <input name="issuingAuthority" required placeholder="Issuing authority" className={`sm:col-span-2 ${input}`} />
       <label className="font-sans text-caption text-ordift-ink-muted">Issued on<input name="issuedOn" type="date" required className={`block w-full ${input}`} /></label>
       <label className="font-sans text-caption text-ordift-ink-muted">Expires on (if stated)<input name="expiresOn" type="date" className={`block w-full ${input}`} /></label>
       <input name="premisesAddress" required placeholder="Confirmed business premises address" className={`sm:col-span-2 ${input}`} />
@@ -52,13 +53,14 @@ function ApprovalNoticeForm({ entityId }: { entityId: string }) {
     <form action={action} className="flex flex-wrap items-end gap-2">
       <input type="hidden" name="entityId" value={entityId} />
       <label className="font-sans text-caption text-ordift-ink-muted">Date you received the official approval notice<input name="approvalNoticeDate" type="date" required className={`block ${input}`} /></label>
-      <button type="submit" disabled={pending} className={button}>{pending ? "Saving…" : "Confirm date"}</button>
+      <input name="source" required placeholder="Which document or message confirms this date?" className={`min-w-72 ${input}`} />
+      <button type="submit" disabled={pending} className={button}>{pending ? "Saving…" : "Record date"}</button>
       <Feedback state={state} pending={pending} />
     </form>
   );
 }
 
-function UploadForm({ entityId }: { entityId: string }) {
+function UploadForm({ entityId, documents }: { entityId: string; documents: RegistryDocView[] }) {
   const [state, action, pending] = useActionState<ActionState, FormData>(uploadEntityDocumentAction, null);
   return (
     <form action={action} className="grid grid-cols-1 sm:grid-cols-2 gap-2">
@@ -68,12 +70,16 @@ function UploadForm({ entityId }: { entityId: string }) {
         {ENTITY_DOCUMENT_TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
       </select>
       <input name="file" type="file" required accept=".pdf,.jpg,.jpeg,.png" className="sm:col-span-2 font-sans text-body-small" />
+      <select name="replaces" defaultValue="" className={`sm:col-span-2 ${input}`}>
+        <option value="">This is a new document (not an updated version)</option>
+        {documents.filter((d) => !d.relation && !d.replacedByDocumentId).map((d) => <option key={d.id} value={d.id}>Updated version of: {entityDocumentTypeLabel(d.documentType)} — {d.filename ?? d.id}</option>)}
+      </select>
       <input name="issuingAuthority" placeholder="Issuing authority (optional)" className={input} />
       <input name="notes" placeholder="Notes (optional)" className={input} />
       <label className="font-sans text-caption text-ordift-ink-muted">Issued on<input name="issuedOn" type="date" className={`block w-full ${input}`} /></label>
       <label className="font-sans text-caption text-ordift-ink-muted">Expires on<input name="expiresOn" type="date" className={`block w-full ${input}`} /></label>
       <button type="submit" disabled={pending} className={button}>{pending ? "Uploading…" : "Upload Document"}</button>
-      <p className="sm:col-span-2 font-sans text-caption text-ordift-ink-muted">An exact copy of a document already stored is recorded as a duplicate of the original; the original is never replaced.</p>
+      <p className="sm:col-span-2 font-sans text-caption text-ordift-ink-muted">An exact copy of a document already stored is recorded as a duplicate of the original. An updated government document is stored as a new version beside the original; the original is never replaced or deleted.</p>
       <Feedback state={state} pending={pending} />
     </form>
   );
@@ -129,7 +135,7 @@ export function EntityRegistryPanels({
         )}
         <ul className="space-y-1 pt-2">
           {registrations.filter((r) => r.kind !== "commercial_permit" && r.kind !== "investment_approval_condition").map((r) => (
-            <li key={r.id} className="font-sans text-caption text-ordift-ink-muted">· {r.label}{r.identifier ? ` — ${r.identifier}` : ""} — {r.status}{r.issuedOn ? `, issued ${r.issuedOn}` : ""}{r.expiresOn ? `, expires ${r.expiresOn}` : ""}</li>
+            <li key={r.id} className="font-sans text-caption text-ordift-ink-muted">· {r.label}{r.identifier ? ` — ${r.identifier}` : ""} — {r.status}{r.issuedOn ? `, issued ${r.issuedOn}` : ""}{r.expiresOn ? `, expires ${r.expiresOn}` : ""}{typeof r.facts.capitalQar === "number" ? ` — registered share capital QAR ${r.facts.capitalQar.toLocaleString()} (capital, not an expense)` : ""}{typeof r.facts.founderReportedClarification === "string" ? ` — Founder-reported clarification (not a written amendment): ${r.facts.founderReportedClarification}` : ""}</li>
           ))}
         </ul>
       </section>
@@ -145,6 +151,9 @@ export function EntityRegistryPanels({
           ) : (
             <>
               <p className="font-sans text-body-small text-ordift-ink"><strong>Not yet issued.</strong> The commercial registration is recorded, but no permit, permit number, premises or approval date is on record. This entity is not shown as operationally licensed.</p>
+              <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1 font-sans text-caption text-ordift-ink-muted">
+                {["Permit number", "Licence number", "Issue date", "Expiry date", "Confirmed premises address"].map((f) => <div key={f} className="flex gap-2"><dt>{f}:</dt><dd className="text-ordift-ink">— <span className="text-ordift-ink-muted">(blank until supplied)</span></dd></div>)}
+              </dl>
               <PermitForm entityId={entityId} permitDocs={permitDocs} />
             </>
           )}
@@ -170,14 +179,14 @@ export function EntityRegistryPanels({
                 <span className="font-sans text-caption text-ordift-ink-muted">
                   · <strong>{entityDocumentTypeLabel(d.documentType)}</strong>{d.filename ? ` — ${d.filename}` : ""}{d.sizeBytes ? ` (${Math.round(d.sizeBytes / 1024)} KB)` : ""}{d.sha256 ? ` — #${d.sha256.slice(0, 10)}` : ""}
                   {d.issuedOn ? ` — issued ${d.issuedOn}` : ""}{d.expiresOn ? ` — expires ${d.expiresOn}` : ""} — uploaded {new Date(d.uploadedAt).toLocaleDateString()}
-                  {d.relation === "exact_duplicate_of" ? " — exact duplicate of another stored document" : d.relation === "partial_overlap_of" ? " — overlaps another stored document" : ""}{d.notes ? ` — "${d.notes}"` : ""}
+                  {d.relation === "exact_duplicate_of" ? " — exact duplicate of another stored document" : d.relation === "partial_overlap_of" ? " — overlaps another stored document" : d.relation === "new_version_of" ? " — newer version of an earlier document (the original is kept)" : ""}{d.replacedByDocumentId ? " — superseded by a newer version (kept)" : ""}{d.notes ? ` — "${d.notes}"` : ""}
                 </span>
                 <form action={viewEntityDocumentAction} target="_blank"><input type="hidden" name="documentId" value={d.id} /><button type="submit" className="font-sans text-caption font-semibold text-ordift-gold-pressed underline underline-offset-4">View / Download →</button></form>
               </li>
             ))}
           </ul>
         ) : <p className="font-sans text-body-small text-ordift-ink-muted">No documents on file yet.</p>}
-        <UploadForm entityId={entityId} />
+        <UploadForm entityId={entityId} documents={documents} />
       </section>
 
       <section className="rounded-xl border border-black/10 bg-white p-6 space-y-3">

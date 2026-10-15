@@ -1,6 +1,6 @@
 // @vitest-environment node
 //
-// Legal-entity registry (migration 0165): per-entity registrations and permits, vault documents with duplicate detection, authorised
+// Legal-entity registry (migration 0159): per-entity registrations and permits, vault documents with duplicate detection, authorised
 // signatories and receipt-backed expenses. Runs the REAL service code against the throwaway local database (see vitest.localdb.config.ts).
 // SYNTHETIC data only — no real registration number, receipt or document is used here. The Ghana entity row that already exists in the
 // lab (a copy of Production's shape) must be left exactly as it was.
@@ -122,6 +122,19 @@ describe("B — the vault: hashing, duplicates that keep the original, overlap l
     expect(mustFail(await addVaultDocument({ ...base, documentType: "other", issuedOn: "15/10/2026" }))).toMatch(/YYYY-MM-DD/);
     expect(h.uploads.length).toBe(n);
   });
+  it("B7 an updated government document is stored as a NEW VERSION beside the original, which is kept untouched", async () => {
+    const before = h.uploads.length;
+    const v2 = must(await addVaultDocument({ entityId: E.qa, documentType: "commercial_registration", filename: "CR test v2 with address.pdf", mimeType: "application/pdf", bytes: bytes("cr with address"), replaces: E.crDoc, actorUserId: SUPER }));
+    expect(h.uploads.length).toBe(before + 1);
+    const list = await listVaultDocuments(E.qa, SUPER);
+    expect(list.find((d) => d.id === v2.documentId)).toMatchObject({ relation: "new_version_of", relatedDocumentId: E.crDoc, replacedByDocumentId: null });
+    expect(list.find((d) => d.id === E.crDoc)).toMatchObject({ relation: null, replacedByDocumentId: v2.documentId, filename: "CR test.pdf" });
+    expect((await db().from("employing_entity_documents").select("storage_path").eq("id", E.crDoc).single()).data!.storage_path).toContain("CR_test.pdf");
+    // a document that is not in this entity's vault cannot be 'replaced', and nothing is stored for the attempt
+    const n = h.uploads.length;
+    expect(mustFail(await addVaultDocument({ entityId: E.qa, documentType: "commercial_registration", filename: "x.pdf", mimeType: "application/pdf", bytes: bytes("zzz"), replaces: "00000000-0000-4000-8000-000000000999", actorUserId: SUPER }))).toMatch(/not in this entity's vault/);
+    expect(h.uploads.length).toBe(n);
+  });
   it("B6 a non-Super-Admin can neither store nor list vault documents", async () => {
     expect(mustFail(await addVaultDocument({ entityId: E.qa, documentType: "other", filename: "s.pdf", mimeType: "application/pdf", bytes: bytes("s"), actorUserId: STAFF }))).toMatch(/Super Admin/);
     expect(await listVaultDocuments(E.qa, STAFF)).toEqual([]);
@@ -129,7 +142,7 @@ describe("B — the vault: hashing, duplicates that keep the original, overlap l
 });
 
 const reg = (kind: string, status: string, ident: string | null) => {
-  const facts = kind === "commercial_registration" ? JSON.stringify({ activities: [{ code: "742010", name: "Photographic activities" }], headOfficeCity: "Doha" }) : "{}";
+  const facts = kind === "commercial_registration" ? JSON.stringify({ activities: [{ code: "742010", name: "Photographic activities" }], headOfficeCity: "Doha", capitalQar: 1000 }) : "{}";
   sql(`insert into public.entity_registrations (employing_entity_id, kind, status, identifier, issued_on, expires_on, facts, recorded_by) values ('${E.qa}','${kind}','${status}',${ident ? `'${ident}'` : "null"}, date '2026-10-15', ${kind === "commercial_registration" ? "date '2027-10-15'" : "null"}, '${facts}'::jsonb, '${SUPER}')`);
 };
 
@@ -178,12 +191,13 @@ describe("D — standing, tracking and particulars read from the records", () =>
     expect(p).toMatchObject({ crNumber: "TEST-CR-1", permitLine: null, registeredAddress: null, statements: { mayStateRegistered: true, mayStatePermitIssued: false } });
   });
   it("D2 confirming the approval-notice date is a replacement record; the unconfirmed original stays in history", async () => {
-    expect(mustFail(await confirmApprovalNoticeDate({ entityId: E.qa, approvalNoticeDate: "soon", actorUserId: SUPER }))).toMatch(/Enter the date/);
-    expect(mustFail(await confirmApprovalNoticeDate({ entityId: E.qa, approvalNoticeDate: "2026-10-15", actorUserId: STAFF }))).toMatch(/Super Admin/);
-    must(await confirmApprovalNoticeDate({ entityId: E.qa, approvalNoticeDate: "2026-10-15", actorUserId: SUPER }));
+    expect(mustFail(await confirmApprovalNoticeDate({ entityId: E.qa, approvalNoticeDate: "soon", source: "Notice letter", actorUserId: SUPER }))).toMatch(/Enter the date/);
+    expect(mustFail(await confirmApprovalNoticeDate({ entityId: E.qa, approvalNoticeDate: "2026-10-15", source: "Notice letter", actorUserId: STAFF }))).toMatch(/Super Admin/);
+    expect(mustFail(await confirmApprovalNoticeDate({ entityId: E.qa, approvalNoticeDate: "2026-10-15", source: "", actorUserId: SUPER }))).toMatch(/which document or message/);
+    must(await confirmApprovalNoticeDate({ entityId: E.qa, approvalNoticeDate: "2026-10-15", source: "Notice letter ref TEST-1", actorUserId: SUPER }));
     const hist = (await listEntityRegistrations(E.qa, SUPER, { includeHistory: true })).filter((r) => r.kind === "investment_approval_condition");
     expect(hist.map((r) => r.status).sort()).toEqual(["pending", "superseded"]);
-    expect(hist.find((r) => r.status === "pending")!.facts).toMatchObject({ workingDays: 60, approvalNoticeDate: "2026-10-15" });
+    expect(hist.find((r) => r.status === "pending")!.facts).toMatchObject({ workingDays: 60, approvalNoticeDate: "2026-10-15", approvalNoticeSource: "Notice letter ref TEST-1" });
   });
 });
 
@@ -204,7 +218,8 @@ describe("E — the Commercial Permit: pending until supplied, then recorded fro
   });
   it("E3 once uploaded and recorded, the pending record is superseded (kept) and the entity may now state the permit", async () => {
     E.permitDoc = must(await addVaultDocument({ entityId: E.qa, documentType: "commercial_permit", filename: "permit.pdf", mimeType: "application/pdf", bytes: bytes("permit"), actorUserId: SUPER })).documentId;
-    must(await recordCommercialPermit({ entityId: E.qa, permitNumber: "PERMIT-001", issuedOn: "2026-12-01", expiresOn: "2027-12-01", issuingAuthority: "Test Authority", premisesAddress: "Test Tower, Doha", sourceDocumentId: E.permitDoc, actorUserId: SUPER }));
+    must(await recordCommercialPermit({ entityId: E.qa, permitNumber: "PERMIT-001", licenceNumber: "LIC-77", issuedOn: "2026-12-01", expiresOn: "2027-12-01", issuingAuthority: "Test Authority", premisesAddress: "Test Tower, Doha", sourceDocumentId: E.permitDoc, actorUserId: SUPER }));
+    expect((await listEntityRegistrations(E.qa, SUPER)).find((r) => r.kind === "commercial_permit" && r.status === "active")!.facts).toEqual({ premises: "Test Tower, Doha", licenceNumber: "LIC-77" });
     const hist = (await listEntityRegistrations(E.qa, SUPER, { includeHistory: true })).filter((r) => r.kind === "commercial_permit");
     expect(hist.map((r) => r.status).sort()).toEqual(["active", "superseded"]);
     const regs = await listEntityRegistrations(E.qa, SUPER);
@@ -233,6 +248,10 @@ describe("F — receipt expenses: reconciled, de-duplicated, never assumed, neve
   it("F3 the receipt is recorded as its three payable lines (the zero line is not an expense), payer as shown, funding to confirm", async () => {
     const pre = { obligations: await count("payment_obligations"), payments: await count("payments"), items: await count("payable_items"), banks: await count("bank_accounts") };
     expect(must(await recordEntityReceipt(rcpt()))).toMatchObject({ recorded: 3, total: 1200 });
+    // the registered share capital (QAR 1,000 on the registration) is a different thing and is not in the expense total
+    const capital = Number((await listEntityRegistrations(E.qa, SUPER)).find((r) => r.kind === "commercial_registration")!.facts.capitalQar);
+    expect(capital).toBe(1000);
+    expect((await listEntityExpenses(E.qa, SUPER)).reduce((a, e) => a + e.amount, 0)).toBe(1200);
     const ex = await listEntityExpenses(E.qa, SUPER);
     expect(ex.map((e) => [e.lineCode, e.amount])).toEqual([["LINE_A", 200], ["LINE_B", 500], ["LINE_C", 500]]);
     for (const e of ex) expect(e).toMatchObject({ currency: "QAR", category: "incorporation_registration", receiptTotal: 1200, receiptNumber: "RCPT-TEST-1", fundingSourceStatus: "to_confirm", accountingTreatment: "to_be_confirmed", payerAsShown: "Applicant: Test Person (card payment)", sourceDocumentId: E.receiptDoc, status: "recorded" });

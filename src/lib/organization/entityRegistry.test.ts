@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { activityCoverage, buildParticulars, checkDuplicate, daysBetween, entityStanding, reconcileReceipt, sha256OfBytes, trackCompliance, type RegistrationFact } from "./entityRegistry";
+import { activityCoverage, assessContractingEligibility, buildParticulars, suggestContractingEntity, checkDuplicate, daysBetween, entityStanding, reconcileReceipt, sha256OfBytes, trackCompliance, type RegistrationFact } from "./entityRegistry";
 
 const reg = (o: Partial<RegistrationFact> & Pick<RegistrationFact, "kind" | "status">): RegistrationFact => ({ id: `${o.kind}-1`, identifier: null, issuedOn: null, expiresOn: null, facts: {}, note: null, verifiedAt: null, ...o });
 const CR = reg({ kind: "commercial_registration", status: "active", identifier: "900001", issuedOn: "2026-10-15", expiresOn: "2027-10-15", facts: { activities: [{ code: "742010", name: "Photographic activities" }], entityNumber: "00-0000-00", headOfficeCity: "Doha" } });
@@ -117,5 +117,24 @@ describe("receipt reconciliation", () => {
   });
   it("avoids floating-point drift", () => {
     expect(reconcileReceipt([{ code: "a", description: "a", amount: 0.1 }, { code: "b", description: "b", amount: 0.2 }], 0.3).ok).toBe(true);
+  });
+});
+
+describe("which legal entity may contract", () => {
+  const base = { entityId: "q", name: "Q", verified: true, active: true };
+  it("an entity with no registry records needs only to be verified and active", () => {
+    expect(assessContractingEligibility({ ...base, registrations: [] }, "photography", "2026-10-16").eligible).toBe(true);
+    expect(assessContractingEligibility({ ...base, verified: false, registrations: [] }, null, "2026-10-16").eligible).toBe(false);
+  });
+  it("an entity tracking a permit cannot contract until the permit is issued; only photography is covered", () => {
+    expect(assessContractingEligibility({ ...base, registrations: [CR, PERMIT_PENDING] }, "photography", "2026-10-16").blockers.join(" ")).toMatch(/permit has not been issued/);
+    const ok = { ...base, registrations: [CR, reg({ kind: "commercial_permit", status: "active", identifier: "P-1" })] };
+    expect(assessContractingEligibility(ok, "photography", "2026-10-16").eligible).toBe(true);
+    expect(assessContractingEligibility(ok, "videography", "2026-10-16").eligible).toBe(false);
+  });
+  it("a default is offered only when exactly one entity is eligible", () => {
+    const yes = { eligible: true, blockers: [] }; const no = { eligible: false, blockers: ["x"] };
+    expect(suggestContractingEntity([{ entityId: "a", eligibility: yes }, { entityId: "b", eligibility: no }])?.entityId).toBe("a");
+    expect(suggestContractingEntity([{ entityId: "a", eligibility: yes }, { entityId: "b", eligibility: yes }])).toBeNull();
   });
 });
