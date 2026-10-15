@@ -61,3 +61,6 @@ next-env.d.ts
 # truth (that's src/lib/legal/documents/), so it doesn't need to be tracked
 scripts/legal-export/
 __pycache__/
+
+# Private, never committed: real registration data and document manifests for Production data steps (repo is public)
+.private/

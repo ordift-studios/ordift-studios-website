@@ -164,22 +164,32 @@ export async function createEmployingEntity(params: {
   if (!slug) return { ok: false, error: "Could not derive a unique identifier from this legal name." };
 
   const admin = createAdminClient();
-  const { data, error } = await admin
-    .from("employing_entities")
-    .insert({
-      name: params.tradingName?.trim() || params.legalName.trim(),
-      slug,
-      legal_name: params.legalName.trim(),
-      trading_name: params.tradingName?.trim() || null,
-      jurisdiction_id: params.jurisdictionId ?? null,
-      registration_type: params.registrationType ?? null,
-      registration_date: params.registrationDate ?? null,
-      effective_from: params.effectiveFrom ?? null,
-      default_currency: params.defaultCurrency ?? null,
-      employer_capable: params.employerCapable ?? true,
-    })
-    .select("id")
-    .single();
+  // The same brand can be registered in more than one country under the same legal name (Ordift Studios in Ghana and in Qatar), so a
+  // name collision is retried once with the jurisdiction in the identifier before it is reported as a duplicate.
+  let jurisdictionSlug: string | null = null;
+  if (params.jurisdictionId) {
+    const { data: j } = await admin.from("employment_jurisdictions").select("slug").eq("id", params.jurisdictionId).maybeSingle();
+    jurisdictionSlug = j?.slug ?? null;
+  }
+  const insertRow = (entitySlug: string) =>
+    admin
+      .from("employing_entities")
+      .insert({
+        name: params.tradingName?.trim() || params.legalName.trim(),
+        slug: entitySlug,
+        legal_name: params.legalName.trim(),
+        trading_name: params.tradingName?.trim() || null,
+        jurisdiction_id: params.jurisdictionId ?? null,
+        registration_type: params.registrationType ?? null,
+        registration_date: params.registrationDate ?? null,
+        effective_from: params.effectiveFrom ?? null,
+        default_currency: params.defaultCurrency ?? null,
+        employer_capable: params.employerCapable ?? true,
+      })
+      .select("id")
+      .single();
+  let { data, error } = await insertRow(slug);
+  if (error?.code === "23505" && jurisdictionSlug && !slug.endsWith(`-${jurisdictionSlug}`)) ({ data, error } = await insertRow(`${slug}-${jurisdictionSlug}`));
   if (error || !data) {
     if (error?.code === "23505") return { ok: false, error: "An entity with this name already exists." };
     return { ok: false, error: error?.message ?? "Failed to create the legal entity." };

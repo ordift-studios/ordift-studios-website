@@ -2,9 +2,12 @@ import type { Metadata } from "next";
 import { redirect, notFound } from "next/navigation";
 import Link from "next/link";
 import { getCurrentUser, isSuperAdmin } from "@/lib/portal/roles";
-import { getEmployingEntityById, getEmployingEntitySensitiveDetails, listEmployingEntityDocuments, listProfileIdsForEmployingEntity } from "@/lib/organization/legalEntities";
+import { getEmployingEntityById, getEmployingEntitySensitiveDetails, listProfileIdsForEmployingEntity } from "@/lib/organization/legalEntities";
+import { listEntityExpenses, listEntityRegistrations, listEntitySignatories, listVaultDocuments } from "@/lib/organization/entityRegistrations";
+import { REGISTRATION_LABELS, trackCompliance } from "@/lib/organization/entityRegistry";
 import { listUsersWithRoles } from "@/lib/portal/adminData";
 import { EntityDetailWorkspace } from "./EntityDetailWorkspace";
+import { EntityRegistryPanels } from "./EntityRegistryPanels";
 
 export const metadata: Metadata = {
   title: "Legal Entity — Ordift Studios Admin",
@@ -19,12 +22,17 @@ export default async function LegalEntityDetailPage({ params }: { params: Promis
   const entity = await getEmployingEntityById(entityId);
   if (!entity) notFound();
 
-  const [sensitiveDetails, documents, profileIds, usersResult] = await Promise.all([
+  const [sensitiveDetails, vaultDocuments, profileIds, usersResult, registrations, signatories, expenses] = await Promise.all([
     getEmployingEntitySensitiveDetails(entityId, user.id),
-    listEmployingEntityDocuments(entityId, user.id),
+    listVaultDocuments(entityId, user.id),
     listProfileIdsForEmployingEntity(entityId),
     listUsersWithRoles(),
+    listEntityRegistrations(entityId, user.id),
+    listEntitySignatories(entityId, user.id),
+    listEntityExpenses(entityId, user.id),
   ]);
+  const today = new Date().toISOString().slice(0, 10);
+  const tracked = trackCompliance(registrations, today);
 
   const nameById = new Map<string, string>();
   if (usersResult.ok) {
@@ -69,12 +77,15 @@ export default async function LegalEntityDetailPage({ params }: { params: Promis
         </div>
       </section>
 
-      <EntityDetailWorkspace
+      <EntityDetailWorkspace entityId={entityId} registrationNumber={sensitiveDetails?.registrationNumber ?? null} taxIdentifier={sensitiveDetails?.taxIdentifier ?? null} registeredAddress={sensitiveDetails?.registeredAddress ?? null} documents={[]} hideDocuments />
+      <EntityRegistryPanels
         entityId={entityId}
-        registrationNumber={sensitiveDetails?.registrationNumber ?? null}
-        taxIdentifier={sensitiveDetails?.taxIdentifier ?? null}
-        registeredAddress={sensitiveDetails?.registeredAddress ?? null}
-        documents={documents}
+        tracked={tracked}
+        registrations={registrations.map((r) => ({ id: r.id, kind: r.kind, label: REGISTRATION_LABELS[r.kind], status: r.status, identifier: r.identifier, issuedOn: r.issuedOn, expiresOn: r.expiresOn, note: r.note, facts: r.facts }))}
+        signatories={signatories}
+        documents={vaultDocuments}
+        expenses={expenses}
+        canonicalPermitPending={registrations.some((r) => r.kind === "commercial_permit")}
       />
     </div>
   );

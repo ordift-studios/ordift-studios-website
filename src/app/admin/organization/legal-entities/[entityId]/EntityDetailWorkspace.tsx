@@ -59,12 +59,14 @@ export function EntityDetailWorkspace({
   taxIdentifier,
   registeredAddress,
   documents,
+  hideDocuments = false,
 }: {
   entityId: string;
   registrationNumber: string | null;
   taxIdentifier: string | null;
   registeredAddress: string | null;
   documents: DocumentView[];
+  hideDocuments?: boolean;
 }) {
   return (
     <div className="space-y-8">
@@ -73,7 +75,7 @@ export function EntityDetailWorkspace({
         <SensitiveDetailsForm entityId={entityId} registrationNumber={registrationNumber} taxIdentifier={taxIdentifier} registeredAddress={registeredAddress} />
       </section>
 
-      <section className="rounded-xl border border-black/10 bg-white p-6 space-y-3">
+      {!hideDocuments && <section className="rounded-xl border border-black/10 bg-white p-6 space-y-3">
         <h2 className="font-serif font-medium text-body text-ordift-ink">Evidence Documents (Super Admin only)</h2>
         {documents.length > 0 ? (
           <ul className="space-y-1">
@@ -95,7 +97,7 @@ export function EntityDetailWorkspace({
           <p className="font-sans text-body-small text-ordift-ink-muted">No evidence documents on file yet.</p>
         )}
         <UploadDocumentForm entityId={entityId} />
-      </section>
+      </section>}
     </div>
   );
 }
