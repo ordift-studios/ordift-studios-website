@@ -5,7 +5,8 @@ import { confirmApprovalNoticeAction, confirmFundingAction, recordPermitAction, 
 import { ENTITY_DOCUMENT_TYPES, entityDocumentTypeLabel, type TrackedItem, type TrackedState } from "@/lib/organization/entityRegistry";
 
 export type RegistryDocView = { id: string; documentType: string; filename: string | null; sha256: string | null; sizeBytes: number | null; issuedOn: string | null; expiresOn: string | null; issuingAuthority: string | null; relation: string | null; relatedDocumentId: string | null; replacedByDocumentId: string | null; notes: string | null; uploadedAt: string };
-export type RegistrationView = { id: string; kind: string; label: string; status: string; identifier: string | null; issuedOn: string | null; expiresOn: string | null; note: string | null; facts: Record<string, unknown> };
+export type RegistrationView = { id: string; kind: string; label: string; status: string; identifier: string | null; issuedOn: string | null; expiresOn: string | null; note: string | null; facts: Record<string, unknown>; verifiedAt: string | null };
+export type EntityStatusView = { entityVerification: string; employerCapable: boolean; documentCount: number };
 export type SignatoryView = { id: string; fullName: string; position: string; authority: string | null; nationality: string | null; ownershipPercent: number | null };
 export type ExpenseView = { id: string; expenseDate: string; amount: number; currency: string; description: string; receiptNumber: string; receiptTotal: number; payerAsShown: string | null; fundingSourceStatus: string; fundingSourceNote: string | null; accountingTreatment: string };
 
@@ -105,16 +106,28 @@ function FundingForm({ entityId, receiptNumber }: { entityId: string; receiptNum
 }
 
 export function EntityRegistryPanels({
-  entityId, tracked, registrations, signatories, documents, expenses, canonicalPermitPending,
+  entityId, tracked, registrations, signatories, documents, expenses, canonicalPermitPending, status,
 }: {
-  entityId: string; tracked: TrackedItem[]; registrations: RegistrationView[]; signatories: SignatoryView[]; documents: RegistryDocView[]; expenses: ExpenseView[]; canonicalPermitPending: boolean;
+  entityId: string; tracked: TrackedItem[]; registrations: RegistrationView[]; signatories: SignatoryView[]; documents: RegistryDocView[]; expenses: ExpenseView[]; canonicalPermitPending: boolean; status: EntityStatusView;
 }) {
+  const cr = registrations.find((r) => r.kind === "commercial_registration");
+  const permitRow = registrations.find((r) => r.kind === "commercial_permit");
   const permit = registrations.find((r) => r.kind === "commercial_permit");
   const condition = tracked.find((t) => t.kind === "investment_approval_condition");
   const receipts = [...new Set(expenses.map((e) => e.receiptNumber))];
   const permitDocs = documents.filter((d) => d.documentType === "commercial_permit" && !d.relation);
   return (
     <div className="space-y-8">
+      <section className="rounded-xl border border-black/10 bg-white p-6 space-y-2">
+        <h2 className="font-serif font-medium text-body text-ordift-ink">Status — four separate questions</h2>
+        <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1 font-sans text-body-small">
+          <div><dt className="inline text-ordift-ink-muted">Commercial Registration: </dt><dd className="inline text-ordift-ink">{cr ? `${cr.status}${cr.verifiedAt ? " — verified against the original document" : " — not yet verified"}` : "none recorded"}</dd></div>
+          <div><dt className="inline text-ordift-ink-muted">Commercial Permit: </dt><dd className="inline text-ordift-ink">{permitRow ? (permitRow.status === "active" ? "issued" : "not yet issued — awaiting the official document (this does not affect the issued registration)") : "not tracked"}</dd></div>
+          <div><dt className="inline text-ordift-ink-muted">Documents in the vault: </dt><dd className="inline text-ordift-ink">{status.documentCount} record(s); integrity hash recorded for each</dd></div>
+          <div><dt className="inline text-ordift-ink-muted">Employer-capable: </dt><dd className="inline text-ordift-ink">{status.employerCapable ? "yes" : "no — a separate decision, unaffected by registration or verification"}</dd></div>
+        </dl>
+      </section>
+
       <section className="rounded-xl border border-black/10 bg-white p-6 space-y-3">
         <h2 className="font-serif font-medium text-body text-ordift-ink">Registrations &amp; Renewals</h2>
         {tracked.length === 0 ? <p className="font-sans text-body-small text-ordift-ink-muted">No registrations are recorded for this entity.</p> : (
@@ -135,7 +148,7 @@ export function EntityRegistryPanels({
         )}
         <ul className="space-y-1 pt-2">
           {registrations.filter((r) => r.kind !== "commercial_permit" && r.kind !== "investment_approval_condition").map((r) => (
-            <li key={r.id} className="font-sans text-caption text-ordift-ink-muted">· {r.label}{r.identifier ? ` — ${r.identifier}` : ""} — {r.status}{r.issuedOn ? `, issued ${r.issuedOn}` : ""}{r.expiresOn ? `, expires ${r.expiresOn}` : ""}{typeof r.facts.capitalQar === "number" ? ` — registered share capital QAR ${r.facts.capitalQar.toLocaleString()} (capital, not an expense)` : ""}{typeof r.facts.founderReportedClarification === "string" ? ` — Founder-reported clarification (not a written amendment): ${r.facts.founderReportedClarification}` : ""}</li>
+            <li key={r.id} className="font-sans text-caption text-ordift-ink-muted">· {r.label}{r.identifier ? ` — ${r.identifier}` : ""} — {r.status}{r.issuedOn ? `, issued ${r.issuedOn}` : ""}{r.expiresOn ? `, expires ${r.expiresOn}` : ""}{typeof (r.facts.establishmentNumber ?? r.facts.entityNumber) === "string" ? ` — establishment no. ${String(r.facts.establishmentNumber ?? r.facts.entityNumber)}` : ""}{typeof r.facts.headOfficeCity === "string" ? ` — head office: ${r.facts.headOfficeCity}` : ""}{Array.isArray(r.facts.activities) ? ` — activity: ${(r.facts.activities as { code?: string; name?: string }[]).map((a) => `${a.code} ${a.name}`).join("; ")}` : ""}{r.verifiedAt ? " — verified" : ""}{typeof r.facts.capitalQar === "number" ? ` — registered share capital QAR ${r.facts.capitalQar.toLocaleString()} (capital, not an expense)` : ""}{typeof r.facts.founderReportedClarification === "string" ? ` — Founder-reported clarification (not a written amendment): ${r.facts.founderReportedClarification}` : ""}</li>
           ))}
         </ul>
       </section>

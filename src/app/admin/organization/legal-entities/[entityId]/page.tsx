@@ -81,11 +81,12 @@ export default async function LegalEntityDetailPage({ params }: { params: Promis
       <EntityRegistryPanels
         entityId={entityId}
         tracked={tracked}
-        registrations={registrations.map((r) => ({ id: r.id, kind: r.kind, label: REGISTRATION_LABELS[r.kind], status: r.status, identifier: r.identifier, issuedOn: r.issuedOn, expiresOn: r.expiresOn, note: r.note, facts: r.facts }))}
+        registrations={registrations.map((r) => ({ id: r.id, kind: r.kind, label: REGISTRATION_LABELS[r.kind], status: r.status, identifier: r.identifier, issuedOn: r.issuedOn, expiresOn: r.expiresOn, note: r.note, facts: r.facts, verifiedAt: r.verifiedAt }))}
         signatories={signatories}
         documents={vaultDocuments}
         expenses={expenses}
         canonicalPermitPending={registrations.some((r) => r.kind === "commercial_permit")}
+        status={{ entityVerification: entity.verificationStatus, employerCapable: entity.employerCapable, documentCount: vaultDocuments.length }}
       />
     </div>
   );
