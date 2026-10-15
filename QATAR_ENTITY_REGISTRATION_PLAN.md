@@ -5,7 +5,7 @@ This repository is public, so **no registration number, tax ID, identity number 
 
 ## What was built (reuses the Ghana architecture)
 - Qatar is a **second row in `employing_entities`** (same table as Ghana), with its own `employing_entity_sensitive_details` row (registration number, tax ID — Super-Admin-only, as Ghana's), its own jurisdiction row, and `employer_capable = false`.
-- Migration `0165_entity_registry_records.sql` (schema only; additive; rollback `down_0165.sql` refuses if anything is recorded):
+- Migration `0159_entity_registry_records.sql` (schema only; additive; rollback `down_0159.sql` refuses if anything is recorded):
   - `entity_registrations` — one row per CR / permit / tax registration / establishment card / name reservation / articles / chamber membership / investment-approval condition. Core facts immutable; only status can change; a replacement supersedes (history kept). One current record per kind per entity.
   - `employing_entity_documents` + file hash, filename, type, size, issue/expiry dates, authority, and a duplicate/overlap link.
   - `entity_signatories` — names and positions only (no identity numbers).
@@ -19,7 +19,7 @@ This repository is public, so **no registration number, tax ID, identity number 
 The private data steps were also rehearsed on a copy of the lab, twice (idempotent): 10 document rows, 8 registration records, 3 expense lines = 1,200, 1 signatory; Ghana entity byte-for-byte unchanged.
 
 ## Production steps (each needs separate approval; none is run)
-1. **0165** schema (isolated procedure: link → confirm only 0165 pending → push → unlink). Note: the unapplied 0159–0164 on other branches sit below 0165; if 0165 goes first they need renumbering at deploy time (or `--include-all` for exactly those files).
+1. **0159** schema (isolated procedure: link → confirm only 0159 pending → push → unlink). Note: the unapplied 0159–0164 on other branches sit below 0159; if 0159 goes first they need renumbering at deploy time (or `--include-all` for exactly those files).
 2. **Step A** entity + jurisdiction + registration/tax numbers (private SQL).
 3. **Upload** the 8 distinct documents to the private vault with hash verification (`upload.sh`), or by the Founder through the page.
 4. **Step B** document rows (10: two byte-identical copies share the original's stored object).
