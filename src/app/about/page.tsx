@@ -3,6 +3,7 @@ import NavBar from "@/components/NavBar";
 import Footer from "@/components/Footer";
 import Button from "@/components/Button";
 import { contentRepository } from "@/lib/content";
+import { Band, type BandImage } from "@/components/home/AboutPreview";
 
 // Copy sourced verbatim from the approved Brand Bible (sections 1, 4, 5, 6
 // — website versions), locked 2026-07-23, migrated into Sanity 2026-07-24
@@ -46,6 +47,14 @@ export async function generateMetadata(): Promise<Metadata> {
 
 export default async function AboutPage() {
   const [about, home] = await Promise.all([contentRepository.getAboutPage(), contentRepository.getHomePage()]);
+  // The Mission / Vision background photographs were assigned in Admin -> Portfolio -> Homepage About Visuals and used to appear on the
+  // homepage. They now appear here, with the same blurred-photo treatment and the same Mission / Vision wording. Nothing is replaced or
+  // deleted; until an admin assigns either photograph this page keeps its original Mission / Vision layout.
+  const bandImage = (img: typeof home.aboutMissionImage): BandImage =>
+    img ? { url: img.url, alt: img.alt, focalX: img.focalX, focalY: img.focalY } : null;
+  const missionImage = bandImage(home.aboutMissionImage);
+  const visionImage = bandImage(home.aboutVisionImage);
+  const hasBandPhotos = Boolean(missionImage || visionImage);
 
   return (
     <main>
@@ -104,30 +113,39 @@ export default async function AboutPage() {
         </div>
       </section>
 
-      {/* Mission & Vision — asymmetric composition: Mission carries more
-          visual weight and sits higher; Vision is narrower and offset
-          lower, rather than two identical side-by-side cards. Stacks
-          in natural reading order on tablet/mobile. */}
-      <section id="mission-vision" className="bg-white px-4 sm:px-8 py-16 sm:py-24">
-        <div className="max-w-6xl mx-auto grid grid-cols-1 md:grid-cols-12 gap-10 md:gap-6">
-          <div className="md:col-span-7">
-            <p className="font-sans font-semibold uppercase tracking-[0.2em] text-eyebrow text-ordift-gold-pressed mb-4">
-              Mission
-            </p>
-            <p className="font-serif font-medium text-section-heading sm:text-section-heading-tablet lg:text-section-heading-desktop text-ordift-ink leading-snug">
-              {about.mission}
-            </p>
+      {hasBandPhotos ? (
+        <section id="mission-vision" className="bg-white">
+          <Band label="Our Mission" copy={about.mission} image={missionImage} />
+          <Band label="Our Vision" copy={about.vision} image={visionImage} />
+        </section>
+      ) : (
+        <>
+        {/* Mission & Vision — asymmetric composition: Mission carries more
+            visual weight and sits higher; Vision is narrower and offset
+            lower, rather than two identical side-by-side cards. Stacks
+            in natural reading order on tablet/mobile. */}
+        <section id="mission-vision" className="bg-white px-4 sm:px-8 py-16 sm:py-24">
+          <div className="max-w-6xl mx-auto grid grid-cols-1 md:grid-cols-12 gap-10 md:gap-6">
+            <div className="md:col-span-7">
+              <p className="font-sans font-semibold uppercase tracking-[0.2em] text-eyebrow text-ordift-gold-pressed mb-4">
+                Mission
+              </p>
+              <p className="font-serif font-medium text-section-heading sm:text-section-heading-tablet lg:text-section-heading-desktop text-ordift-ink leading-snug">
+                {about.mission}
+              </p>
+            </div>
+            <div className="md:col-span-4 md:col-start-9 md:mt-20">
+              <p className="font-sans font-semibold uppercase tracking-[0.2em] text-eyebrow text-ordift-gold-pressed mb-4">
+                Vision
+              </p>
+              <p className="font-serif font-medium text-card-title lg:text-card-title-desktop text-ordift-ink leading-relaxed">
+                {about.vision}
+              </p>
+            </div>
           </div>
-          <div className="md:col-span-4 md:col-start-9 md:mt-20">
-            <p className="font-sans font-semibold uppercase tracking-[0.2em] text-eyebrow text-ordift-gold-pressed mb-4">
-              Vision
-            </p>
-            <p className="font-serif font-medium text-card-title lg:text-card-title-desktop text-ordift-ink leading-relaxed">
-              {about.vision}
-            </p>
-          </div>
-        </div>
-      </section>
+        </section>
+        </>
+      )}
 
       {/* Values — an indexed/numbered list reading like studio
           principles, not product-feature cards. */}

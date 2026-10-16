@@ -17,7 +17,7 @@ import Image from "next/image";
 // colour/photo rows); Who We Are and Our Values stay within the
 // page's normal contained width, matching the reference's own plain
 // title/list sections.
-type BandImage = { url: string; alt: string; focalX: number; focalY: number } | null;
+export type BandImage = { url: string; alt: string; focalX: number; focalY: number } | null;
 
 export default function AboutPreview({
   whoWeAreEyebrow,
@@ -88,7 +88,7 @@ export default function AboutPreview({
   );
 }
 
-function Band({ label, copy, image }: { label: string; copy: string; image: BandImage }) {
+export function Band({ label, copy, image }: { label: string; copy: string; image: BandImage }) {
   return (
     <div className="relative bg-ordift-navy-950 px-4 sm:px-8 py-8 sm:py-10 overflow-hidden">
       {/* Background blur (2026-08-24) — presentation-only: a CSS filter
