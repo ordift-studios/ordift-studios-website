@@ -1,31 +1,23 @@
 import Link from "next/link";
 
-// Four understated text links on the SAME horizontal level as the slideshow's own indicator (the dots), two at lower-left and two at
-// lower-right (Founder-approved, 2026-10-16/17). Small uppercase labels with a thin brand-gold rule — NO arrows, icons, buttons, cards or
-// panels. The dots stay exactly where they are, centred; this overlay only shares their level.
+// Two understated text links at the lower-RIGHT of the homepage slideshow (Founder-approved, 2026-10-17): Workshops directly above Meet the
+// Minds Behind the Scenes, vertically stacked. The lower-left stays free of links. Small uppercase labels with a thin brand-gold rule — NO
+// arrows, icons, buttons, cards or panels — with a thin dark text halo for readability on bright photographs (a text-shadow only: no box,
+// panel or gradient, and the photograph is not altered).
 //
-// How the level is shared: the slideshow places its dots 1rem (sm and up: 1.25rem) above the bottom edge and 6px tall, so their centre is 19px
-// (sm+: 23px) above the bottom. Every link here is a 44px-tall, vertically centred tap area, so a link whose bottom edge sits 22px below that
-// centre is centred on the dots' level: bottom -3px (sm+: 1px). The label inside is symmetrical about its own centre (the rule's space above is
-// matched by padding), so the TEXT centres on the dots' line.
+// "Meet the Minds Behind the Scenes" keeps its approved lower-right position: on the slideshow indicator's own horizontal level (the dots sit
+// 1rem, sm+ 1.25rem, above the bottom and are 6px tall, so their centre is 19px, sm+ 23px, above it; each link here is a 44px-tall tap area
+// centred on a line, so a link whose bottom edge sits 22px below that centre is centred on the dots' level: bottom -3px, sm+ 1px). Workshops
+// sits one 44px step above it. Both are right-aligned in the right-hand corner, well clear of the dots in the centre and of the arrows at
+// mid-height. On narrow phones the long label wraps to two lines and is lifted half a line so its LAST line (and gold rule) stays on the dots'
+// level, exactly as approved before.
 //
-// Layout: from tablet width up all four share one row (left pair beside each other, right pair beside each other) with the long label on one
-// line. On narrow portrait phones four labels cannot share one line with the dots in the middle at a readable size, so each side is a short
-// stack: the lower link of each side is on the dots' level and its partner sits directly above it. The long label wraps to two lines and is
-// lifted half a line so its LAST line (and its gold rule) sit at exactly the same level as the other bottom link, with the first line above.
-//
-// Readability on bright photographs: a thin dark halo on the text itself (a text-shadow — no box, panel or gradient, and the photograph is
-// not altered).
-//
-// The overlay lives in the homepage's own wrapper OVER the slideshow, so PortfolioHeroSlideshow itself is untouched. The container ignores
-// pointer events and only the links accept them, so swipe and the arrow and dot controls are never blocked.
+// This overlay lives in the homepage's own wrapper OVER the slideshow, so PortfolioHeroSlideshow itself is untouched (same slides, timing,
+// arrows, dots, swipe, crop and height). The container ignores pointer events and only the links accept them, so swipe and the arrow and
+// dot controls are never blocked.
 type Item = { href: string; label: string; wrap?: readonly [string, string] };
-const LEFT: Item[] = [
-  { href: "/process", label: "Our Process" },
-  { href: "/services", label: "Our Departments" },
-];
 const RIGHT: Item[] = [
-  { href: "/about", label: "Who We Are" },
+  { href: "/workshops", label: "Workshops" },
   { href: "/team", label: "Meet the Minds Behind the Scenes", wrap: ["Meet the Minds", "Behind the Scenes"] },
 ];
 
@@ -38,37 +30,30 @@ const anchorClass =
   "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ordift-gold";
 const labelClass = "inline-block border-b border-ordift-gold pt-[calc(0.55em+1px)] pb-[0.55em] text-left whitespace-nowrap";
 
-function Links({ items, side }: { items: Item[]; side: "left" | "right" }) {
-  return (
-    <ul className={`flex flex-col md:flex-row md:items-center ${side === "left" ? "-ml-2.5 md:-ml-2 lg:-ml-3" : "-mr-2.5 md:-mr-2 lg:-mr-3 items-end"}`}>
-      {items.map((it) => (
-        <li key={it.href} className={side === "right" ? "flex justify-end" : undefined}>
-          <Link href={it.href} className={anchorClass}>
-            <span className={`${labelClass} ${it.wrap ? "max-md:-translate-y-[0.75em]" : ""}`}>
-              {it.wrap ? (
-                <>
-                  <span className="block md:inline">{it.wrap[0]}</span>{" "}
-                  <span className="block md:inline">{it.wrap[1]}</span>
-                </>
-              ) : (
-                it.label
-              )}
-            </span>
-          </Link>
-        </li>
-      ))}
-    </ul>
-  );
-}
-
 export default function HeroExploreLinks() {
   return (
     <nav
       aria-label="Explore Ordift Studios"
-      className="pointer-events-none absolute inset-x-0 bottom-[-3px] sm:bottom-px z-10 px-5 sm:px-10 lg:px-14 flex items-end justify-between"
+      className="pointer-events-none absolute inset-x-0 bottom-[-3px] sm:bottom-px z-10 px-5 sm:px-10 lg:px-14 flex items-end justify-end"
     >
-      <Links items={LEFT} side="left" />
-      <Links items={RIGHT} side="right" />
+      <ul className="flex flex-col items-end -mr-2.5 md:-mr-2 lg:-mr-3">
+        {RIGHT.map((it) => (
+          <li key={it.href} className="flex justify-end">
+            <Link href={it.href} className={anchorClass}>
+              <span className={`${labelClass} ${it.wrap ? "max-md:-translate-y-[0.75em]" : ""}`}>
+                {it.wrap ? (
+                  <>
+                    <span className="block md:inline">{it.wrap[0]}</span>{" "}
+                    <span className="block md:inline">{it.wrap[1]}</span>
+                  </>
+                ) : (
+                  it.label
+                )}
+              </span>
+            </Link>
+          </li>
+        ))}
+      </ul>
     </nav>
   );
 }

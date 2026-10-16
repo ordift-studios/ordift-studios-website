@@ -4,21 +4,22 @@ import { useState } from "react";
 import Link from "next/link";
 import Logo from "./Logo";
 import Button from "./Button";
-import type { CtaButton, NavLink } from "@/lib/content/types";
+import type { CtaButton } from "@/lib/content/types";
+import type { MainNavItem } from "@/lib/content/navigationHelpers";
+
+// Main navigation labels are set in small, refined capitals with subtle letter-spacing (Founder-specified, 2026-10-17).
+const NAV_ITEM_CLASS = "uppercase tracking-[0.12em]";
 
 export default function NavBarClient({
-  links,
+  items,
   primaryCta,
-  accountHref,
   transparent = false,
 }: {
-  links: NavLink[];
+  // The five main navigation items (About, Portfolio, Talent, Contact, My Account), built server-side by buildMainNavigation(). The My
+  // Account destination is precomputed there from primaryPortalPath() (or the login page when signed out); this component never derives a
+  // destination from role data itself, so there's only one place role-based routing logic lives.
+  items: MainNavItem[];
   primaryCta: CtaButton;
-  // Precomputed server-side via primaryPortalPath() — null means the
-  // visitor isn't authenticated. This component never derives a
-  // destination from role data itself, so there's only one place
-  // role-based routing logic lives.
-  accountHref: string | null;
   // Homepage-only overlay mode (2026-08-23) — the photograph beneath
   // extends behind the nav instead of a solid navy bar pushing it down.
   // Every other page keeps the exact existing solid-bar behavior
@@ -85,26 +86,12 @@ export default function NavBarClient({
           <Logo variant="nav" color="white" height={28} priority />
         </Link>
 
-        <div className={`hidden lg:flex items-center gap-5 font-sans text-nav text-white/80 ${navGroupStripClass}`}>
-          {links.map((link) => (
-            <Link key={link.href} href={link.href} className="hover:text-white transition-colors">
-              {link.label}
+        <div className={`hidden lg:flex items-center gap-6 font-sans text-[0.8125rem] text-white/80 ${navGroupStripClass}`}>
+          {items.map((item) => (
+            <Link key={item.key} href={item.href} className={`${NAV_ITEM_CLASS} hover:text-white transition-colors`}>
+              {item.label}
             </Link>
           ))}
-          {accountHref ? (
-            <Link href={accountHref} className="hover:text-white transition-colors">
-              My Account
-            </Link>
-          ) : (
-            <>
-              <Link href="/portal/login" className="hover:text-white transition-colors">
-                Log in
-              </Link>
-              <Link href="/portal/signup" className="hover:text-white transition-colors">
-                Create account
-              </Link>
-            </>
-          )}
         </div>
 
         <div className="hidden lg:block">
@@ -157,42 +144,16 @@ export default function NavBarClient({
       >
         <div className="overflow-hidden">
           <div className="border-t border-white/10 px-4 py-4 flex flex-col gap-4">
-            {links.map((link) => (
+            {items.map((item) => (
               <Link
-                key={link.href}
-                href={link.href}
-                className="font-sans text-nav text-white/80 hover:text-white transition-colors"
+                key={item.key}
+                href={item.href}
+                className={`font-sans text-nav ${NAV_ITEM_CLASS} text-white/80 hover:text-white transition-colors`}
                 onClick={() => setOpen(false)}
               >
-                {link.label}
+                {item.label}
               </Link>
             ))}
-            {accountHref ? (
-              <Link
-                href={accountHref}
-                className="font-sans text-nav text-white/80 hover:text-white transition-colors"
-                onClick={() => setOpen(false)}
-              >
-                My Account
-              </Link>
-            ) : (
-              <>
-                <Link
-                  href="/portal/login"
-                  className="font-sans text-nav text-white/80 hover:text-white transition-colors"
-                  onClick={() => setOpen(false)}
-                >
-                  Log in
-                </Link>
-                <Link
-                  href="/portal/signup"
-                  className="font-sans text-nav text-white/80 hover:text-white transition-colors"
-                  onClick={() => setOpen(false)}
-                >
-                  Create account
-                </Link>
-              </>
-            )}
             <Button href={primaryCta.href} variant="primary" className="w-full">
               {primaryCta.label}
             </Button>

@@ -45,6 +45,14 @@ export async function generateMetadata(): Promise<Metadata> {
   };
 }
 
+const SECTION_LINKS = [
+  { label: "Who We Are", href: "#who-we-are" },
+  { label: "Our Process", href: "#process" },
+  { label: "Mission", href: "#mission" },
+  { label: "Vision", href: "#vision" },
+  { label: "Values", href: "#values" },
+] as const;
+
 export default async function AboutPage() {
   const [about, home] = await Promise.all([contentRepository.getAboutPage(), contentRepository.getHomePage()]);
   // The Mission / Vision background photographs were assigned in Admin -> Portfolio -> Homepage About Visuals and used to appear on the
@@ -74,6 +82,14 @@ export default async function AboutPage() {
           <h1 className="font-serif font-medium text-page-title sm:text-page-title-tablet lg:text-page-title-desktop text-ordift-ink max-w-4xl md:ml-[8%] leading-[1.1]">
             {about.heroHeadline}
           </h1>
+          {/* Understated in-page navigation (2026-10-17): Who We Are, Our Process, Mission, Vision and Values now live on this one page. */}
+          <nav aria-label="On this page" className="mt-10 md:ml-[8%] flex flex-wrap gap-x-6 gap-y-1 font-sans text-caption uppercase tracking-[0.14em] text-ordift-ink-muted">
+            {SECTION_LINKS.map((l) => (
+              <a key={l.href} href={l.href} className="inline-block py-2 hover:text-ordift-ink transition-colors border-b border-transparent hover:border-ordift-gold">
+                {l.label}
+              </a>
+            ))}
+          </nav>
         </div>
       </section>
 
@@ -113,10 +129,30 @@ export default async function AboutPage() {
         </div>
       </section>
 
+      {/* Our Process — moved here from the homepage and the short-lived /process page (2026-10-17). The five steps and their descriptions are the
+          same Sanity fields (home.process), unchanged. */}
+      <section id="process" className="bg-white px-4 sm:px-8 py-16 sm:py-24">
+        <div className="max-w-6xl mx-auto">
+          <p className="font-sans font-semibold uppercase tracking-[0.2em] text-eyebrow text-ordift-gold-pressed mb-3">Our Process</p>
+          <h2 className="font-serif font-medium text-section-heading sm:text-section-heading-tablet lg:text-section-heading-desktop text-ordift-ink mb-8 sm:mb-10">
+            From discovery to delivery
+          </h2>
+          <div className="grid grid-cols-1 sm:grid-cols-5 gap-6 sm:gap-4">
+            {home.process.map((p, i) => (
+              <div key={p.step}>
+                <p className="font-sans text-caption text-ordift-gold-pressed mb-2">{String(i + 1).padStart(2, "0")}</p>
+                <p className="font-serif font-medium text-card-title text-ordift-ink mb-2">{p.step}</p>
+                <p className="font-sans text-body-small text-ordift-ink-muted">{p.copy}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
       {hasBandPhotos ? (
         <section id="mission-vision" className="bg-white">
-          <Band label="Our Mission" copy={about.mission} image={missionImage} />
-          <Band label="Our Vision" copy={about.vision} image={visionImage} />
+          <div id="mission"><Band label="Our Mission" copy={about.mission} image={missionImage} /></div>
+          <div id="vision"><Band label="Our Vision" copy={about.vision} image={visionImage} /></div>
         </section>
       ) : (
         <>
@@ -126,7 +162,7 @@ export default async function AboutPage() {
             in natural reading order on tablet/mobile. */}
         <section id="mission-vision" className="bg-white px-4 sm:px-8 py-16 sm:py-24">
           <div className="max-w-6xl mx-auto grid grid-cols-1 md:grid-cols-12 gap-10 md:gap-6">
-            <div className="md:col-span-7">
+            <div id="mission" className="md:col-span-7">
               <p className="font-sans font-semibold uppercase tracking-[0.2em] text-eyebrow text-ordift-gold-pressed mb-4">
                 Mission
               </p>
@@ -134,7 +170,7 @@ export default async function AboutPage() {
                 {about.mission}
               </p>
             </div>
-            <div className="md:col-span-4 md:col-start-9 md:mt-20">
+            <div id="vision" className="md:col-span-4 md:col-start-9 md:mt-20">
               <p className="font-sans font-semibold uppercase tracking-[0.2em] text-eyebrow text-ordift-gold-pressed mb-4">
                 Vision
               </p>

@@ -4,6 +4,7 @@ import NavBar from "@/components/NavBar";
 import Footer from "@/components/Footer";
 import Button from "@/components/Button";
 import PortfolioCard from "@/components/portfolio/PortfolioCard";
+import DepartmentCard from "@/components/DepartmentCard";
 import WorkDisciplineBands from "@/components/portfolio/WorkDisciplineBands";
 import { contentRepository } from "@/lib/content";
 import { DISCIPLINE_LABEL, matchesSearch } from "@/lib/content/portfolioHelpers";
@@ -158,6 +159,11 @@ export default async function PortfolioPage({
             Photography, film, design, branding and content — a system of
             work rather than a single specialty.
           </p>
+          {/* Two clearly separate ways in (2026-10-17): the completed creative work below, and the departments behind it. */}
+          <nav aria-label="On this page" className="mt-8 flex flex-wrap gap-x-8 gap-y-1 font-sans text-caption uppercase tracking-[0.14em] text-white/70">
+            <a href="#completed-work" className="inline-block py-2 border-b border-transparent hover:text-white hover:border-ordift-gold transition-colors">Completed work</a>
+            <a href="#departments" className="inline-block py-2 border-b border-transparent hover:text-white hover:border-ordift-gold transition-colors">Our Departments</a>
+          </nav>
         </div>
       </section>
 
@@ -250,7 +256,7 @@ export default async function PortfolioPage({
           real section to place it in. The homepage's own, separate
           Featured Work section is unaffected by this removal. */}
 
-      <section className="bg-ordift-offwhite px-4 sm:px-8 py-14 sm:py-20">
+      <section id="completed-work" className="bg-ordift-offwhite px-4 sm:px-8 py-14 sm:py-20">
         <div className="max-w-6xl mx-auto">
           <h2 className="font-serif font-medium text-section-heading lg:text-section-heading-desktop text-ordift-ink mb-6">
             {hasFilters ? "Results" : "All Work"}
@@ -286,6 +292,24 @@ export default async function PortfolioPage({
               ))}
             </div>
           )}
+        </div>
+      </section>
+
+      {/* Our Departments — moved here from the homepage (2026-10-17): the seven departments behind the work, with the same descriptions, images
+          and links to each department's service information and booking as before. Distinct from the completed work above. */}
+      <section id="departments" className="bg-white px-4 sm:px-8 py-14 sm:py-20">
+        <div className="max-w-6xl mx-auto">
+          <p className="font-sans font-semibold uppercase tracking-[0.2em] text-eyebrow text-ordift-gold-pressed mb-3">Departments</p>
+          <h2 className="font-serif font-medium text-section-heading sm:text-section-heading-tablet lg:text-section-heading-desktop text-ordift-ink mb-8 sm:mb-10">
+            Explore our departments
+          </h2>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
+            {[...services]
+              .sort((a, b) => a.displayOrder - b.displayOrder)
+              .map((d) => (
+                <DepartmentCard key={d.id} name={d.name} description={d.summaryDescription} href={`/services/${d.slug}`} slug={d.slug} image={d.workLandingImage} />
+              ))}
+          </div>
         </div>
       </section>
 

@@ -1,6 +1,6 @@
 import { contentRepository } from "@/lib/content";
 import { getCurrentUser, primaryPortalPath } from "@/lib/portal/roles";
-import { withHrefFallback } from "@/lib/content/navigationHelpers";
+import { buildMainNavigation, withHrefFallback } from "@/lib/content/navigationHelpers";
 import NavBarClient from "./NavBarClient";
 
 // Server Component wrapper — fetches Navigation content (Version 1.2.6)
@@ -20,9 +20,9 @@ import NavBarClient from "./NavBarClient";
 // cause this addresses (a blank CMS href reading as "nothing happens"
 // on click).
 export default async function NavBar({ transparent = false }: { transparent?: boolean }) {
-  const [nav, user] = await Promise.all([contentRepository.getNavigation(), getCurrentUser()]);
+  const [nav, footer, user] = await Promise.all([contentRepository.getNavigation(), contentRepository.getFooterSettings(), getCurrentUser()]);
   const accountHref = user ? primaryPortalPath(user.roles) : null;
-  return (
-    <NavBarClient links={withHrefFallback(nav.links)} primaryCta={nav.primaryCta} accountHref={accountHref} transparent={transparent} />
-  );
+  // Main navigation structure (2026-10-17): ABOUT | PORTFOLIO | TALENT | CONTACT | MY ACCOUNT — see buildMainNavigation().
+  const items = buildMainNavigation({ cmsLinks: withHrefFallback(nav.links), footerColumns: footer.columns, accountHref });
+  return <NavBarClient items={items} primaryCta={nav.primaryCta} transparent={transparent} />;
 }

@@ -6,15 +6,14 @@ import HeroExploreLinks from "./HeroExploreLinks";
 
 const html = renderToStaticMarkup(createElement(HeroExploreLinks));
 const anchors = [...html.matchAll(/<a [^>]*href="([^"]+)"[^>]*>(.*?)<\/a>/g)].map((m) => ({ href: m[1], label: m[2].replace(/<[^>]+>/g, "").replace(/\s+/g, " ").trim() }));
-const groups = html.split("</ul>").slice(0, 2).map((g) => [...g.matchAll(/<a [^>]*>(.*?)<\/a>/g)].map((m) => m[1].replace(/<[^>]+>/g, "").replace(/\s+/g, " ").trim()));
-
 describe("homepage hero links (Founder-approved arrangement and reference)", () => {
-  it("has exactly four links: lower-left Our Process / Our Departments, lower-right Who We Are / Meet the Minds Behind the Scenes, in that order, to the right pages", () => {
-    expect(groups).toEqual([["Our Process", "Our Departments"], ["Who We Are", "Meet the Minds Behind the Scenes"]]);
-    expect(anchors).toEqual([
-      { href: "/process", label: "Our Process" }, { href: "/services", label: "Our Departments" },
-      { href: "/about", label: "Who We Are" }, { href: "/team", label: "Meet the Minds Behind the Scenes" },
-    ]);
+  it("has exactly two links, both lower-right, stacked: Workshops directly above Meet the Minds Behind the Scenes; nothing at the lower-left", () => {
+    expect(anchors).toEqual([{ href: "/workshops", label: "Workshops" }, { href: "/team", label: "Meet the Minds Behind the Scenes" }]);
+    expect((html.match(/<ul/g) ?? []).length).toBe(1);
+    expect(html).toMatch(/justify-end/);                 // the container is right-aligned
+    expect(html).not.toMatch(/justify-between|-ml-/);     // no left group
+    expect(html).toMatch(/<ul class="flex flex-col items-end/); // vertically stacked
+    for (const gone of ["Our Process", "Our Departments", "Who We Are"]) expect(html).not.toContain(gone);
   });
   it("the long label is one line from tablet width up and wraps to two lines on narrow phones, so its gold rule matches the label", () => {
     expect(html).toMatch(/<span class="block md:inline">Meet the Minds<\/span> <span class="block md:inline">Behind the Scenes<\/span>/);
@@ -29,18 +28,18 @@ describe("homepage hero links (Founder-approved arrangement and reference)", () 
     expect(html).toMatch(/border-b border-ordift-gold/);
   });
   it("keeps a comfortable invisible tap area: every link is a 44px-tall (h-11) target with side padding", () => {
-    expect((html.match(/\bh-11\b/g) ?? []).length).toBe(4);
-    expect((html.match(/\bpx-2\.5 md:px-2 lg:px-3\b/g) ?? []).length).toBe(4);
+    expect((html.match(/\bh-11\b/g) ?? []).length).toBe(2);
+    expect((html.match(/\bpx-2\.5 md:px-2 lg:px-3\b/g) ?? []).length).toBe(2);
   });
   it("each link is text with a thin brand-gold rule only: no arrows, icons, buttons, backgrounds, panels or shadows boxes", () => {
     expect(html).not.toMatch(/<svg|<img|<button|→|←|&rarr;|&larr;|>›|»/);
     expect(html).not.toMatch(/\bbg-|rounded|shadow-(sm|md|lg)|backdrop|gradient/);
     expect([...new Set(html.match(/\bborder[^\s"]*/g) ?? [])].sort()).toEqual(["border-b", "border-ordift-gold"]);
-    expect((html.match(/border-b border-ordift-gold/g) ?? []).length).toBe(4);
+    expect((html.match(/border-b border-ordift-gold/g) ?? []).length).toBe(2);
   });
-  it("sits over the slideshow without blocking it: the container ignores the pointer and only the four links accept it", () => {
+  it("sits over the slideshow without blocking it: the container ignores the pointer and only the two links accept it", () => {
     expect(html).toMatch(/<nav[^>]*aria-label="Explore Ordift Studios"[^>]*class="[^"]*pointer-events-none absolute/);
-    expect((html.match(/pointer-events-auto/g) ?? []).length).toBe(4);
+    expect((html.match(/pointer-events-auto/g) ?? []).length).toBe(2);
   });
   it("shares the slideshow indicator's horizontal level: its row sits on the dots' line (dots are 1rem, sm+ 1.25rem, above the bottom and 6px tall; each link is 44px tall and centred)", () => {
     // dots centre = 16px+3px (sm+: 20px+3px) above the bottom; a 44px link centred there has its bottom edge at 19-22 = -3px (sm+: 23-22 = 1px)
