@@ -46,6 +46,10 @@ describe("homepage hero links (Founder-approved arrangement and reference)", () 
     // dots centre = 16px+3px (sm+: 20px+3px) above the bottom; a 44px link centred there has its bottom edge at 19-22 = -3px (sm+: 23-22 = 1px)
     expect(html).toMatch(/class="[^"]*\bbottom-\[-3px\] sm:bottom-px\b/);
   });
+  it("has a thin dark text halo for bright photographs: a text-shadow only, so no box, panel or gradient is introduced", () => {
+    expect(html).toMatch(/text-shadow:0_0_3px_rgba\(0,0,0,0\.8\),0_0_8px_rgba\(0,0,0,0\.5\),0_1px_1px_rgba\(0,0,0,0\.85\)/);
+    expect(html).not.toMatch(/\bbg-|gradient|backdrop|\bshadow-(sm|md|lg|xl)|drop-shadow|rounded/);
+  });
   it("leaves the dots where they are: nothing here positions anything at the horizontal centre", () => {
     expect(html).not.toMatch(/left-1\/2|-translate-x-1\/2|justify-center/);
   });

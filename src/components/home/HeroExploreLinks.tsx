@@ -14,6 +14,9 @@ import Link from "next/link";
 // stack: the lower link of each side is on the dots' level and its partner sits directly above it. The long label wraps to two lines and is
 // lifted half a line so its LAST line (and its gold rule) sit at exactly the same level as the other bottom link, with the first line above.
 //
+// Readability on bright photographs: a thin dark halo on the text itself (a text-shadow — no box, panel or gradient, and the photograph is
+// not altered).
+//
 // The overlay lives in the homepage's own wrapper OVER the slideshow, so PortfolioHeroSlideshow itself is untouched. The container ignores
 // pointer events and only the links accept them, so swipe and the arrow and dot controls are never blocked.
 type Item = { href: string; label: string; wrap?: readonly [string, string] };
@@ -31,7 +34,7 @@ const RIGHT: Item[] = [
 const anchorClass =
   "pointer-events-auto flex h-11 items-center px-2.5 md:px-2 lg:px-3 font-sans font-normal uppercase leading-[1.5] text-white/90 hover:text-white " +
   "text-[0.53rem] tracking-[0.08em] max-[359px]:text-[0.5rem] max-[359px]:tracking-[0.06em] md:text-[0.625rem] md:tracking-[0.06em] lg:text-[0.6875rem] lg:tracking-[0.16em] " +
-  "[text-shadow:0_1px_8px_rgba(0,0,0,0.5)] " +
+  "[text-shadow:0_0_3px_rgba(0,0,0,0.8),0_0_8px_rgba(0,0,0,0.5),0_1px_1px_rgba(0,0,0,0.85)] " +
   "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ordift-gold";
 const labelClass = "inline-block border-b border-ordift-gold pt-[calc(0.55em+1px)] pb-[0.55em] text-left whitespace-nowrap";
 
