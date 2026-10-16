@@ -1,10 +1,9 @@
 import type { Metadata } from "next";
 import NavBar from "@/components/NavBar";
 import Footer from "@/components/Footer";
-import Button from "@/components/Button";
-import DepartmentCard from "@/components/DepartmentCard";
 import PortfolioHeroSlideshow from "@/components/portfolio/PortfolioHeroSlideshow";
-import AboutPreview from "@/components/home/AboutPreview";
+import HeroExploreLinks from "@/components/home/HeroExploreLinks";
+import LegacyHomeAnchors from "@/components/home/LegacyHomeAnchors";
 import { contentRepository } from "@/lib/content";
 import { getSlideshowProjects } from "@/lib/content/portfolioHelpers";
 
@@ -28,6 +27,13 @@ import { getSlideshowProjects } from "@/lib/content/portfolioHelpers";
 // data, just relocated presentation; see src/app/journal/page.tsx.
 // Homepage flow is now: Hero -> AboutPreview -> Departments -> Process
 // -> closing CTA -> Footer.
+//
+// Homepage restructuring (2026-10-16, Founder-approved): the homepage is now
+// ONLY the slideshow (with four small text links at its lower edge) and the
+// footer. Nothing was deleted: Who We Are / Mission / Vision / Values live on
+// /about, the departments on /services, the process on /process, and the team
+// on /team — all from the same CMS fields as before. AboutPreview.tsx is kept
+// in the codebase but is no longer rendered here.
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://ordiftstudios.com";
 
@@ -43,13 +49,10 @@ export async function generateMetadata(): Promise<Metadata> {
 }
 
 export default async function Home() {
-  const [home, about, services, portfolioProjects] = await Promise.all([
+  const [home, portfolioProjects] = await Promise.all([
     contentRepository.getHomePage(),
-    contentRepository.getAboutPage(),
-    contentRepository.getServices(),
     contentRepository.getPortfolioProjects(),
   ]);
-  const departments = [...services].sort((a, b) => a.displayOrder - b.displayOrder);
   // Homepage opening experience — full-screen photographic slideshow.
   // Primary source (2026-08-23): Admin/Super-Admin-curated
   // landscape/portrait slides (home.slideshowSlides — already filtered to
@@ -62,30 +65,6 @@ export default async function Home() {
   // is never left without a working slideshow, including before any
   // curated slide has been added yet.
   const heroSlideshowProjects = getSlideshowProjects(portfolioProjects);
-  // AboutPreview's Mission/Vision photo bands (2026-08-24, revised) —
-  // admin-controlled only (Admin -> Portfolio -> Homepage About
-  // Visuals), never auto-selected from Portfolio content. Reuses the
-  // existing focal-point/hotspot system directly (home.aboutMissionImage/
-  // aboutVisionImage already resolve focalX/focalY via
-  // optionalImageFragment, same as coverImage/workLandingImage) —
-  // degrades to a clean solid-colour panel until an admin assigns one.
-  const missionImage = home.aboutMissionImage
-    ? {
-        url: home.aboutMissionImage.url,
-        alt: home.aboutMissionImage.alt,
-        focalX: home.aboutMissionImage.focalX,
-        focalY: home.aboutMissionImage.focalY,
-      }
-    : null;
-  const visionImage = home.aboutVisionImage
-    ? {
-        url: home.aboutVisionImage.url,
-        alt: home.aboutVisionImage.alt,
-        focalX: home.aboutVisionImage.focalX,
-        focalY: home.aboutVisionImage.focalY,
-      }
-    : null;
-
   return (
     <main>
       {/* NavBar + slideshow share this positioning context so the nav can
@@ -96,86 +75,9 @@ export default async function Home() {
       <div className="relative">
         <NavBar transparent />
         <PortfolioHeroSlideshow projects={heroSlideshowProjects} slides={home.slideshowSlides} variant="hero" />
+        <HeroExploreLinks />
       </div>
-
-      <AboutPreview
-        whoWeAreEyebrow={home.whoWeAreEyebrow}
-        whoWeAreBody={home.whoWeAreBody}
-        mission={about.mission}
-        vision={about.vision}
-        valuesStatement="What doesn't bend under deadline pressure"
-        missionImage={missionImage}
-        visionImage={visionImage}
-      />
-
-      {/* Departments */}
-      <section className="bg-ordift-offwhite px-4 sm:px-8 py-14 sm:py-20">
-        <div className="max-w-6xl mx-auto">
-          <p className="font-sans font-semibold uppercase tracking-[0.2em] text-eyebrow text-ordift-gold-pressed mb-3">
-            Departments
-          </p>
-          <h2 className="font-serif font-medium text-section-heading sm:text-section-heading-tablet lg:text-section-heading-desktop text-ordift-ink mb-8 sm:mb-10">
-            Explore our departments
-          </h2>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
-            {departments.map((d) => (
-              <DepartmentCard
-                key={d.id}
-                name={d.name}
-                description={d.summaryDescription}
-                href={`/services/${d.slug}`}
-                slug={d.slug}
-                image={d.workLandingImage}
-              />
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* Process */}
-      <section className="bg-white px-4 sm:px-8 py-14 sm:py-20">
-        <div className="max-w-6xl mx-auto">
-          <p className="font-sans font-semibold uppercase tracking-[0.2em] text-eyebrow text-ordift-gold-pressed mb-3">
-            Our Process
-          </p>
-          <h2 className="font-serif font-medium text-section-heading sm:text-section-heading-tablet lg:text-section-heading-desktop text-ordift-ink mb-8 sm:mb-10">
-            From discovery to delivery
-          </h2>
-          <div className="grid grid-cols-1 sm:grid-cols-5 gap-6 sm:gap-4">
-            {home.process.map((p, i) => (
-              <div key={p.step}>
-                <p className="font-sans text-caption text-ordift-gold-pressed mb-2">
-                  {String(i + 1).padStart(2, "0")}
-                </p>
-                <p className="font-serif font-medium text-card-title text-ordift-ink mb-2">
-                  {p.step}
-                </p>
-                <p className="font-sans text-body-small text-ordift-ink-muted">
-                  {p.copy}
-                </p>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* CTA */}
-      <section className="bg-ordift-offwhite px-4 sm:px-8 py-14 sm:py-20 text-center">
-        <div className="max-w-2xl mx-auto">
-          <h2 className="font-serif font-medium text-page-title sm:text-page-title-tablet text-ordift-ink mb-4">
-            {home.ctaHeadline}
-          </h2>
-          <p className="font-sans text-body text-ordift-ink-muted mb-8">{home.ctaBody}</p>
-          <div className="flex flex-wrap gap-3 justify-center">
-            <Button href={home.ctaPrimary.href} variant="primary">
-              {home.ctaPrimary.label}
-            </Button>
-            <Button href={home.ctaSecondary.href} variant="secondary">
-              {home.ctaSecondary.label}
-            </Button>
-          </div>
-        </div>
-      </section>
+      <LegacyHomeAnchors />
 
       <Footer />
     </main>

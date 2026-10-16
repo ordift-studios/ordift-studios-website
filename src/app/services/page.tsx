@@ -53,6 +53,8 @@ export default async function ServicesPage() {
                 name={d.name}
                 description={d.summaryDescription}
                 href={`/services/${d.slug}`}
+                slug={d.slug}
+                image={d.workLandingImage}
               />
             ))}
           </div>

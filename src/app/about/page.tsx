@@ -45,7 +45,7 @@ export async function generateMetadata(): Promise<Metadata> {
 }
 
 export default async function AboutPage() {
-  const about = await contentRepository.getAboutPage();
+  const [about, home] = await Promise.all([contentRepository.getAboutPage(), contentRepository.getHomePage()]);
 
   return (
     <main>
@@ -65,6 +65,19 @@ export default async function AboutPage() {
           <h1 className="font-serif font-medium text-page-title sm:text-page-title-tablet lg:text-page-title-desktop text-ordift-ink max-w-4xl md:ml-[8%] leading-[1.1]">
             {about.heroHeadline}
           </h1>
+        </div>
+      </section>
+
+      {/* Who We Are introduction — moved here from the homepage (2026-10-16) with its wording unchanged (same Sanity fields,
+          home.whoWeAreEyebrow / home.whoWeAreBody), so the homepage can be the slideshow and footer only. */}
+      <section id="who-we-are" className="px-4 sm:px-8 pb-16 sm:pb-24">
+        <div className="max-w-6xl mx-auto md:ml-[8%]">
+          <p className="font-sans font-semibold uppercase tracking-[0.2em] text-eyebrow text-ordift-gold-pressed mb-3">
+            {home.whoWeAreEyebrow}
+          </p>
+          <p className="font-serif font-medium text-card-title sm:text-card-title-desktop text-ordift-ink leading-snug max-w-3xl">
+            {home.whoWeAreBody}
+          </p>
         </div>
       </section>
 
