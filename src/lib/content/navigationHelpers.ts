@@ -26,15 +26,15 @@ export function withHrefFallback(links: NavLink[]): NavLink[] {
 }
 
 // ------------------------------------------------------------------ main navigation (Founder-approved structure, 2026-10-17)
-// The top navigation is exactly: ABOUT | PORTFOLIO | TALENT | CONTACT | MY ACCOUNT, plus the gold Book a Service button.
-// Services, Workshops and Stories are no longer in the top navigation — their pages, records and links elsewhere are untouched (Workshops is
-// reached from the homepage hero, Services/departments from Portfolio, Stories from the footer).
+// The top navigation is exactly: ABOUT | PORTFOLIO | WORKSHOPS | TALENT | CONTACT | MY ACCOUNT, plus the gold Book a Service button (the
+// Workshops item was restored to the top navigation 2026-10-18; it had briefly lived in the homepage hero). Services and Stories are not in
+// the top navigation — their pages, records and links elsewhere are untouched (Services/departments from Portfolio, Stories from the footer).
 //
 // The destinations still come from the CMS where it already has them, so an edit to those links in Sanity keeps working: About, Work (shown
-// as "Portfolio") and Talent are read from the CMS navigation by their existing labels, and Contact from the footer's existing "Contact" link.
+// as "Portfolio"), Workshops and Talent are read from the CMS navigation by their existing labels, and Contact from the footer's existing "Contact" link.
 // Each falls back to today's address if the CMS entry is blank or missing. MY ACCOUNT goes to the visitor's own portal when signed in (the
 // destination is precomputed from their role elsewhere, never here) and otherwise to the login page, which links to account creation.
-export type MainNavItem = { label: string; href: string; key: "about" | "portfolio" | "talent" | "contact" | "account" };
+export type MainNavItem = { label: string; href: string; key: "about" | "portfolio" | "workshops" | "talent" | "contact" | "account" };
 
 export function buildMainNavigation(input: {
   cmsLinks: NavLink[];
@@ -49,6 +49,7 @@ export function buildMainNavigation(input: {
   return [
     { key: "about", label: "About", href: cms("About", "/about") },
     { key: "portfolio", label: "Portfolio", href: cms("Work", "/work") },
+    { key: "workshops", label: "Workshops", href: cms("Workshops", "/workshops") },
     { key: "talent", label: "Talent", href: cms("Talent", "/services/talent-management") },
     { key: "contact", label: "Contact", href: footerContact?.href?.trim() ? footerContact.href : "/book?service=general" },
     { key: "account", label: "My Account", href: input.accountHref ?? "/portal/login" },

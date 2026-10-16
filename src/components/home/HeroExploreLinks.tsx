@@ -1,15 +1,15 @@
 import Link from "next/link";
 
-// Two understated text links at the lower-RIGHT of the homepage slideshow (Founder-approved, 2026-10-17): Workshops directly above Meet the
-// Minds Behind the Scenes, vertically stacked. The lower-left stays free of links. Small uppercase labels with a thin brand-gold rule — NO
+// One understated text link at the lower-RIGHT of the homepage slideshow (Founder-approved, 2026-10-17): Meet the Minds Behind the Scenes.
+// Workshops used to sit directly above it here; it moved into the main navigation (2026-10-18), so this is now the only hero link. The
+// lower-left stays free of links. A small uppercase label with a thin brand-gold rule — NO
 // arrows, icons, buttons, cards or panels — with a thin dark text halo for readability on bright photographs (a text-shadow only: no box,
 // panel or gradient, and the photograph is not altered).
 //
 // "Meet the Minds Behind the Scenes" keeps its approved lower-right position: on the slideshow indicator's own horizontal level (the dots sit
 // 1rem, sm+ 1.25rem, above the bottom and are 6px tall, so their centre is 19px, sm+ 23px, above it; each link here is a 44px-tall tap area
-// centred on a line, so a link whose bottom edge sits 22px below that centre is centred on the dots' level: bottom -3px, sm+ 1px). Workshops
-// sits one 44px step above it. Both are right-aligned in the right-hand corner, well clear of the dots in the centre and of the arrows at
-// mid-height. On narrow phones the long label wraps to two lines and is lifted half a line so its LAST line (and gold rule) stays on the dots'
+// centred on a line, so a link whose bottom edge sits 22px below that centre is centred on the dots' level: bottom -3px, sm+ 1px). It is
+// right-aligned in the right-hand corner, well clear of the dots in the centre and of the arrows at mid-height. On narrow phones the long label wraps to two lines and is lifted half a line so its LAST line (and gold rule) stays on the dots'
 // level, exactly as approved before.
 //
 // This overlay lives in the homepage's own wrapper OVER the slideshow, so PortfolioHeroSlideshow itself is untouched (same slides, timing,
@@ -17,7 +17,6 @@ import Link from "next/link";
 // dot controls are never blocked.
 type Item = { href: string; label: string; wrap?: readonly [string, string] };
 const RIGHT: Item[] = [
-  { href: "/workshops", label: "Workshops" },
   { href: "/team", label: "Meet the Minds Behind the Scenes", wrap: ["Meet the Minds", "Behind the Scenes"] },
 ];
 

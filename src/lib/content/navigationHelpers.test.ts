@@ -43,18 +43,18 @@ describe("withHrefFallback", () => {
   });
 });
 
-describe("buildMainNavigation — ABOUT | PORTFOLIO | TALENT | CONTACT | MY ACCOUNT", () => {
+describe("buildMainNavigation — ABOUT | PORTFOLIO | WORKSHOPS | TALENT | CONTACT | MY ACCOUNT", () => {
   const cmsLinks = [
     { label: "About", href: "/about" }, { label: "Services", href: "/services" }, { label: "Work", href: "/work" },
     { label: "Workshops", href: "/workshops" }, { label: "Talent", href: "/services/talent-management" }, { label: "Stories", href: "/journal" },
   ];
   const footerColumns = [{ links: [{ label: "About", href: "/about" }, { label: "Contact", href: "/book?service=general" }] }];
 
-  it("is exactly five items in this order, with Work shown as Portfolio; Services, Workshops and Stories are not in it", () => {
+  it("is exactly six items in this order, with Work shown as Portfolio; Services and Stories are not in it", () => {
     const nav = buildMainNavigation({ cmsLinks, footerColumns, accountHref: null });
-    expect(nav.map((n) => n.label)).toEqual(["About", "Portfolio", "Talent", "Contact", "My Account"]);
-    expect(nav.map((n) => n.href)).toEqual(["/about", "/work", "/services/talent-management", "/book?service=general", "/portal/login"]);
-    expect(nav.map((n) => n.label.toLowerCase())).not.toEqual(expect.arrayContaining(["services", "workshops", "stories"]));
+    expect(nav.map((n) => n.label)).toEqual(["About", "Portfolio", "Workshops", "Talent", "Contact", "My Account"]);
+    expect(nav.map((n) => n.href)).toEqual(["/about", "/work", "/workshops", "/services/talent-management", "/book?service=general", "/portal/login"]);
+    expect(nav.map((n) => n.label.toLowerCase())).not.toEqual(expect.arrayContaining(["services", "stories"]));
   });
   it("My Account goes to the visitor's own portal when signed in (precomputed from their role), and to the login page otherwise", () => {
     expect(buildMainNavigation({ cmsLinks, footerColumns, accountHref: "/portal/client" }).at(-1)).toEqual({ key: "account", label: "My Account", href: "/portal/client" });
@@ -63,6 +63,7 @@ describe("buildMainNavigation — ABOUT | PORTFOLIO | TALENT | CONTACT | MY ACCO
   it("keeps following the CMS: a repointed CMS destination is used, and a blank or missing one falls back to today's address", () => {
     const repointed = buildMainNavigation({ cmsLinks: [{ label: "Work", href: "/work?discipline=photography" }, { label: "Talent", href: "" }], footerColumns: [], accountHref: null });
     expect(repointed.find((n) => n.key === "portfolio")?.href).toBe("/work?discipline=photography");
+    expect(repointed.find((n) => n.key === "workshops")?.href).toBe("/workshops"); // the live CMS Workshops href is blank today; the fallback holds
     expect(repointed.find((n) => n.key === "talent")?.href).toBe("/services/talent-management");
     expect(repointed.find((n) => n.key === "contact")?.href).toBe("/book?service=general");
   });

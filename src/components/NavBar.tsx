@@ -22,7 +22,7 @@ import NavBarClient from "./NavBarClient";
 export default async function NavBar({ transparent = false }: { transparent?: boolean }) {
   const [nav, footer, user] = await Promise.all([contentRepository.getNavigation(), contentRepository.getFooterSettings(), getCurrentUser()]);
   const accountHref = user ? primaryPortalPath(user.roles) : null;
-  // Main navigation structure (2026-10-17): ABOUT | PORTFOLIO | TALENT | CONTACT | MY ACCOUNT — see buildMainNavigation().
+  // Main navigation structure (2026-10-18): ABOUT | PORTFOLIO | WORKSHOPS | TALENT | CONTACT | MY ACCOUNT — see buildMainNavigation().
   const items = buildMainNavigation({ cmsLinks: withHrefFallback(nav.links), footerColumns: footer.columns, accountHref });
   return <NavBarClient items={items} primaryCta={nav.primaryCta} transparent={transparent} />;
 }

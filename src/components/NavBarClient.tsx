@@ -15,7 +15,7 @@ export default function NavBarClient({
   primaryCta,
   transparent = false,
 }: {
-  // The five main navigation items (About, Portfolio, Talent, Contact, My Account), built server-side by buildMainNavigation(). The My
+  // The six main navigation items (About, Portfolio, Workshops, Talent, Contact, My Account), built server-side by buildMainNavigation(). The My
   // Account destination is precomputed there from primaryPortalPath() (or the login page when signed out); this component never derives a
   // destination from role data itself, so there's only one place role-based routing logic lives.
   items: MainNavItem[];
@@ -81,12 +81,16 @@ export default function NavBarClient({
           onto two lines. Tablet-width viewports now use the hamburger
           menu (already correct on mobile) instead — same links, same
           button, same behavior, just a wider hamburger range. */}
-      <div className="relative max-w-6xl mx-auto px-4 sm:px-8 py-5 flex items-center justify-between">
-        <Link href="/" aria-label="Ordift Studios home" className="shrink-0">
+      {/* Corner alignment (2026-10-18): the bar spans the full width with the same 2rem margin on both sides (1rem on phones), so the logo
+          sits close to the upper-left corner and the Book a Service button close to the upper-right, with the six links centred on the page between them
+          (a three-column grid with equal outer columns, so the links stay centred even though the logo and button differ in width).
+          It used to sit inside a centred max-w-6xl column, which pushed both inward on wide screens. Logo and button are unchanged in size. */}
+      <div className="relative px-4 sm:px-8 py-5 flex items-center justify-between lg:grid lg:grid-cols-[1fr_auto_1fr]">
+        <Link href="/" aria-label="Ordift Studios home" className="shrink-0 lg:justify-self-start">
           <Logo variant="nav" color="white" height={28} priority />
         </Link>
 
-        <div className={`hidden lg:flex items-center gap-6 font-sans text-[0.8125rem] text-white/80 ${navGroupStripClass}`}>
+        <div className={`hidden lg:flex items-center gap-5 xl:gap-6 font-sans text-[0.8125rem] text-white/80 ${navGroupStripClass}`}>
           {items.map((item) => (
             <Link key={item.key} href={item.href} className={`${NAV_ITEM_CLASS} hover:text-white transition-colors`}>
               {item.label}
@@ -94,7 +98,7 @@ export default function NavBarClient({
           ))}
         </div>
 
-        <div className="hidden lg:block">
+        <div className="hidden lg:block lg:justify-self-end">
           <Button href={primaryCta.href} variant="primary" className={ctaChipClass}>
             {primaryCta.label}
           </Button>

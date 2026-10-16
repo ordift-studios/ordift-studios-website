@@ -88,9 +88,12 @@ export default function AboutPreview({
   );
 }
 
-export function Band({ label, copy, image }: { label: string; copy: string; image: BandImage }) {
+// `id` / `className` are optional (About page, 2026-10-18): the label becomes the section's scroll-target heading, and the band can be stretched to
+// share a full viewport with its neighbours. Without them the band renders exactly as before (the label's classes are unchanged, only its tag
+// is a heading rather than a paragraph).
+export function Band({ label, copy, image, id, className = "" }: { label: string; copy: string; image: BandImage; id?: string; className?: string }) {
   return (
-    <div className="relative bg-ordift-navy-950 px-4 sm:px-8 py-8 sm:py-10 overflow-hidden">
+    <div className={`relative bg-ordift-navy-950 px-4 sm:px-8 py-8 sm:py-10 overflow-hidden ${className}`}>
       {/* Background blur (2026-08-24) — presentation-only: a CSS filter
           applied to this <Image> element alone, never touching the
           uploaded Sanity/Storage asset itself (still full-resolution
@@ -120,9 +123,9 @@ export function Band({ label, copy, image }: { label: string; copy: string; imag
         />
       )}
       <div className="absolute inset-0 bg-gradient-to-r from-black/75 via-black/45 to-black/20" />
-      <div className="relative max-w-6xl mx-auto grid grid-cols-1 md:grid-cols-12 gap-3 md:gap-8 items-center">
+      <div className="relative w-full max-w-6xl mx-auto grid grid-cols-1 md:grid-cols-12 gap-3 md:gap-8 items-center">
         <div className="md:col-span-3">
-          <p className="font-sans font-semibold uppercase tracking-[0.15em] text-caption text-white">{label}</p>
+          <h2 id={id} tabIndex={id ? -1 : undefined} className="scroll-mt-6 font-sans font-semibold uppercase tracking-[0.15em] text-caption text-white focus:outline-none">{label}</h2>
         </div>
         <div className="md:col-span-8 md:col-start-5">
           <p className="font-serif font-medium text-card-title sm:text-card-title-desktop text-white leading-snug">

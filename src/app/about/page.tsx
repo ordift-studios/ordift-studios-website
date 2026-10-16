@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import type { CSSProperties } from "react";
 import NavBar from "@/components/NavBar";
 import Footer from "@/components/Footer";
 import Button from "@/components/Button";
@@ -16,6 +17,12 @@ import { Band, type BandImage } from "@/components/home/AboutPreview";
 // storyBody/mission/vision/values are byte-for-byte the same fields as
 // before), an editorial progression: Who We Are -> Our Story -> Mission
 // & Vision -> Values -> a closing collaboration transition.
+//
+// Four-view restructure (2026-10-18, Founder-specified): the opening headline block is gone — the first line under the site header is the
+// section navigation. View 1 = Our Story; view 2 = Who We Are, Our Mission, Our Vision; view 3 = Our Values then Our Process; view 4 = the
+// approved closing call to action (unchanged). On desktop each of the first three views fills about one viewport; below lg they simply grow.
+// Every word comes from the same CMS fields as before. No new imagery was added: the Mission and Vision photographs are the two already
+// assigned in Admin -> Portfolio -> Homepage About Visuals, and Our Story has no assigned photograph, so it stays typographic.
 //
 // Team split out (2026-08-24) — Meet the Team now has its own dedicated
 // page (/team, reached via the Homepage's "Meet the Minds Behind the
@@ -53,74 +60,57 @@ const SECTION_LINKS = [
   { label: "Values", href: "#values" },
 ] as const;
 
+// Heading style for the in-page scroll targets: focusable by script (tabIndex -1) so keyboard and screen-reader users land on the heading, with a
+// small scroll margin so it never sits flush against the top edge (the site header scrolls away with the page; it is not fixed).
+const TARGET = "scroll-mt-6 focus:outline-none";
+
 export default async function AboutPage() {
   const [about, home] = await Promise.all([contentRepository.getAboutPage(), contentRepository.getHomePage()]);
-  // The Mission / Vision background photographs were assigned in Admin -> Portfolio -> Homepage About Visuals and used to appear on the
-  // homepage. They now appear here, with the same blurred-photo treatment and the same Mission / Vision wording. Nothing is replaced or
-  // deleted; until an admin assigns either photograph this page keeps its original Mission / Vision layout.
+  // The Mission / Vision background photographs were assigned in Admin -> Portfolio -> Homepage About Visuals. They keep the same blurred-photo
+  // treatment and the same wording; until an admin assigns either photograph its band shows the approved solid-navy fallback.
   const bandImage = (img: typeof home.aboutMissionImage): BandImage =>
     img ? { url: img.url, alt: img.alt, focalX: img.focalX, focalY: img.focalY } : null;
   const missionImage = bandImage(home.aboutMissionImage);
   const visionImage = bandImage(home.aboutVisionImage);
-  const hasBandPhotos = Boolean(missionImage || visionImage);
+  const columns = (n: number) => ({ "--cols": Math.min(Math.max(n, 1), 6) }) as CSSProperties;
 
   return (
-    <main>
+    <main id="about-page">
+      {/* Smooth in-page scrolling for the section navigation, only while this page is shown and only when the visitor has not asked for reduced
+          motion (reduced-motion visitors jump straight to the heading). */}
+      <style>{"@media (prefers-reduced-motion: no-preference){html:has(#about-page){scroll-behavior:smooth}}"}</style>
       <NavBar />
 
-      {/* Who We Are — an editorial opening, not "ABOUT US / hero image /
-          paragraph": an oversized, deliberately asymmetric headline with
-          generous negative space rather than a centered navy band. No
-          imagery here — none exists yet to show honestly, and inventing
-          one would break the zero-invention rule this page's own
-          history already established (see file header). */}
-      <section className="px-4 sm:px-8 pt-20 sm:pt-28 pb-16 sm:pb-24">
-        <div className="max-w-6xl mx-auto">
-          <p className="font-sans font-semibold uppercase tracking-[0.25em] text-eyebrow text-ordift-gold-pressed mb-6">
-            {about.heroEyebrow}
-          </p>
-          <h1 className="font-serif font-medium text-page-title sm:text-page-title-tablet lg:text-page-title-desktop text-ordift-ink max-w-4xl md:ml-[8%] leading-[1.1]">
-            {about.heroHeadline}
-          </h1>
-          {/* Understated in-page navigation (2026-10-17): Who We Are, Our Process, Mission, Vision and Values now live on this one page. */}
-          <nav aria-label="On this page" className="mt-10 md:ml-[8%] flex flex-wrap gap-x-6 gap-y-1 font-sans text-caption uppercase tracking-[0.14em] text-ordift-ink-muted">
-            {SECTION_LINKS.map((l) => (
-              <a key={l.href} href={l.href} className="inline-block py-2 hover:text-ordift-ink transition-colors border-b border-transparent hover:border-ordift-gold">
-                {l.label}
-              </a>
+      {/* View 1 — section navigation (the first line under the site header) and Our Story. The navigation belongs to this view; it is not a
+          fifth section. About one desktop viewport tall (viewport minus the 84px site header). */}
+      <section id="story" aria-labelledby="story-heading" className="bg-ordift-offwhite px-4 sm:px-8 flex flex-col lg:min-h-[calc(100svh-5.25rem)]">
+        <nav aria-label="On this page" className="max-w-6xl w-full mx-auto pt-6 sm:pt-8 pb-5 border-b border-ordift-ink/10">
+          <ul className="flex flex-wrap justify-center gap-x-5 sm:gap-x-1 gap-y-0 font-sans text-caption sm:text-body-small uppercase tracking-[0.16em] text-ordift-ink-muted">
+            {SECTION_LINKS.map((l, i) => (
+              <li key={l.href} className="flex items-center">
+                {i > 0 && <span aria-hidden="true" className="hidden sm:block mx-4 h-3 w-px bg-ordift-ink/25" />}
+                <a
+                  href={l.href}
+                  className="inline-block py-2 border-b border-transparent hover:text-ordift-ink hover:border-ordift-gold focus-visible:outline-none focus-visible:text-ordift-ink focus-visible:border-ordift-gold transition-colors"
+                >
+                  {l.label}
+                </a>
+              </li>
             ))}
-          </nav>
-        </div>
-      </section>
+          </ul>
+        </nav>
 
-      {/* Who We Are introduction — moved here from the homepage (2026-10-16) with its wording unchanged (same Sanity fields,
-          home.whoWeAreEyebrow / home.whoWeAreBody), so the homepage can be the slideshow and footer only. */}
-      <section id="who-we-are" className="px-4 sm:px-8 pb-16 sm:pb-24">
-        <div className="max-w-6xl mx-auto md:ml-[8%]">
-          <p className="font-sans font-semibold uppercase tracking-[0.2em] text-eyebrow text-ordift-gold-pressed mb-3">
-            {home.whoWeAreEyebrow}
-          </p>
-          <p className="font-serif font-medium text-card-title sm:text-card-title-desktop text-ordift-ink leading-snug max-w-3xl">
-            {home.whoWeAreBody}
-          </p>
-        </div>
-      </section>
-
-      {/* Our Story — offset reading column rather than a full-width
-          centered block, so it reads like a magazine feature, not a
-          corporate mission statement. */}
-      <section id="story" className="bg-ordift-offwhite px-4 sm:px-8 py-16 sm:py-24">
-        <div className="max-w-6xl mx-auto grid grid-cols-1 md:grid-cols-12 gap-6 md:gap-10">
-          <div className="md:col-span-3">
-            <p className="font-sans font-semibold uppercase tracking-[0.2em] text-eyebrow text-ordift-gold-pressed">
-              {about.storyEyebrow}
-            </p>
-          </div>
-          <div className="md:col-span-8 md:col-start-4">
-            <h2 className="font-serif font-medium text-section-heading sm:text-section-heading-tablet lg:text-section-heading-desktop text-ordift-ink mb-6">
-              {about.storyHeadline}
-            </h2>
-            <div className="font-sans text-body lg:text-body-desktop text-ordift-ink-muted space-y-4 max-w-2xl">
+        <div className="flex-1 flex items-center py-12 sm:py-16 lg:py-10">
+          <div className="max-w-6xl w-full mx-auto grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-14 items-center">
+            <div className="lg:col-span-5">
+              <h1 id="story-heading" className="font-sans font-semibold uppercase tracking-[0.25em] text-eyebrow lg:text-eyebrow-desktop text-ordift-gold-pressed mb-5">
+                {about.storyEyebrow}
+              </h1>
+              <p className="font-serif font-medium text-page-title sm:text-page-title-tablet lg:text-[2.75rem] xl:text-[3.25rem] text-ordift-ink leading-[1.12] text-balance">
+                {about.storyHeadline}
+              </p>
+            </div>
+            <div className="lg:col-span-7 font-sans text-body lg:text-[1.0625rem] lg:leading-[1.65] text-ordift-ink-muted space-y-4">
               {about.storyBody.map((paragraph, i) => (
                 <p key={i}>{paragraph}</p>
               ))}
@@ -129,84 +119,62 @@ export default async function AboutPage() {
         </div>
       </section>
 
-      {/* Our Process — moved here from the homepage and the short-lived /process page (2026-10-17). The five steps and their descriptions are the
-          same Sanity fields (home.process), unchanged. */}
-      <section id="process" className="bg-white px-4 sm:px-8 py-16 sm:py-24">
-        <div className="max-w-6xl mx-auto">
-          <p className="font-sans font-semibold uppercase tracking-[0.2em] text-eyebrow text-ordift-gold-pressed mb-3">Our Process</p>
-          <h2 className="font-serif font-medium text-section-heading sm:text-section-heading-tablet lg:text-section-heading-desktop text-ordift-ink mb-8 sm:mb-10">
-            From discovery to delivery
-          </h2>
-          <div className="grid grid-cols-1 sm:grid-cols-5 gap-6 sm:gap-4">
-            {home.process.map((p, i) => (
-              <div key={p.step}>
-                <p className="font-sans text-caption text-ordift-gold-pressed mb-2">{String(i + 1).padStart(2, "0")}</p>
-                <p className="font-serif font-medium text-card-title text-ordift-ink mb-2">{p.step}</p>
-                <p className="font-sans text-body-small text-ordift-ink-muted">{p.copy}</p>
-              </div>
-            ))}
+      {/* View 2 — Who We Are, Our Mission, Our Vision. The two photograph bands stretch to share the viewport that Who We Are leaves free. */}
+      <section id="who-mission-vision" className="bg-white flex flex-col lg:min-h-svh">
+        <div className="px-4 sm:px-8 py-12 sm:py-14 lg:py-12">
+          <div className="max-w-3xl mx-auto text-center">
+            <h2 id="who-we-are" tabIndex={-1} className={`${TARGET} font-sans font-semibold uppercase tracking-[0.2em] text-eyebrow text-ordift-gold-pressed mb-4`}>
+              {home.whoWeAreEyebrow}
+            </h2>
+            <p className="font-serif font-medium text-card-title sm:text-card-title-desktop lg:text-section-heading-desktop text-ordift-ink leading-snug">
+              {home.whoWeAreBody}
+            </p>
           </div>
         </div>
+        {/* Kept for bookmarks made before the restructure (the old combined Mission / Vision section was #mission-vision). */}
+        <span id="mission-vision" aria-hidden="true" className="block" />
+        <Band id="mission" label="Our Mission" copy={about.mission} image={missionImage} className="lg:flex-1 lg:flex lg:items-center lg:py-12" />
+        <Band id="vision" label="Our Vision" copy={about.vision} image={visionImage} className="lg:flex-1 lg:flex lg:items-center lg:py-12" />
       </section>
 
-      {hasBandPhotos ? (
-        <section id="mission-vision" className="bg-white">
-          <div id="mission"><Band label="Our Mission" copy={about.mission} image={missionImage} /></div>
-          <div id="vision"><Band label="Our Vision" copy={about.vision} image={visionImage} /></div>
-        </section>
-      ) : (
-        <>
-        {/* Mission & Vision — asymmetric composition: Mission carries more
-            visual weight and sits higher; Vision is narrower and offset
-            lower, rather than two identical side-by-side cards. Stacks
-            in natural reading order on tablet/mobile. */}
-        <section id="mission-vision" className="bg-white px-4 sm:px-8 py-16 sm:py-24">
-          <div className="max-w-6xl mx-auto grid grid-cols-1 md:grid-cols-12 gap-10 md:gap-6">
-            <div id="mission" className="md:col-span-7">
-              <p className="font-sans font-semibold uppercase tracking-[0.2em] text-eyebrow text-ordift-gold-pressed mb-4">
-                Mission
-              </p>
-              <p className="font-serif font-medium text-section-heading sm:text-section-heading-tablet lg:text-section-heading-desktop text-ordift-ink leading-snug">
-                {about.mission}
-              </p>
-            </div>
-            <div id="vision" className="md:col-span-4 md:col-start-9 md:mt-20">
-              <p className="font-sans font-semibold uppercase tracking-[0.2em] text-eyebrow text-ordift-gold-pressed mb-4">
-                Vision
-              </p>
-              <p className="font-serif font-medium text-card-title lg:text-card-title-desktop text-ordift-ink leading-relaxed">
-                {about.vision}
-              </p>
-            </div>
+      {/* View 3 — Our Values, then Our Process beneath it. Compact multi-column rows so both fit one desktop viewport; they stack and scroll
+          naturally on smaller screens. */}
+      <section id="values-process" className="bg-ordift-offwhite px-4 sm:px-8 py-14 sm:py-16 lg:py-12 flex lg:min-h-svh lg:items-center">
+        <div className="max-w-6xl w-full mx-auto space-y-14 lg:space-y-14">
+          <div>
+            <h2 id="values" tabIndex={-1} className={`${TARGET} font-sans font-semibold uppercase tracking-[0.2em] text-eyebrow text-ordift-gold-pressed mb-2`}>
+              Our Values
+            </h2>
+            <p className="font-serif font-medium text-section-heading sm:text-section-heading-tablet lg:text-section-heading-desktop text-ordift-ink mb-7 lg:mb-8">
+              What doesn&apos;t bend under deadline pressure
+            </p>
+            <ol style={columns(about.values.length)} className="grid grid-cols-1 sm:grid-cols-2 lg:[grid-template-columns:repeat(var(--cols),minmax(0,1fr))] gap-x-8 gap-y-6 border-t border-ordift-ink/10 pt-6">
+              {about.values.map((v, i) => (
+                <li key={v.name}>
+                  <p className="font-serif font-light text-section-heading-desktop text-ordift-ink/20 leading-none mb-2 tabular-nums">{String(i + 1).padStart(2, "0")}</p>
+                  <p className="font-serif font-medium text-card-title lg:text-card-title-desktop text-ordift-ink mb-1.5">{v.name}</p>
+                  <p className="font-sans text-body-small lg:text-[0.9375rem] text-ordift-ink-muted">{v.copy}</p>
+                </li>
+              ))}
+            </ol>
           </div>
-        </section>
-        </>
-      )}
 
-      {/* Values — an indexed/numbered list reading like studio
-          principles, not product-feature cards. */}
-      <section id="values" className="bg-ordift-offwhite px-4 sm:px-8 py-16 sm:py-24">
-        <div className="max-w-4xl mx-auto">
-          <p className="font-sans font-semibold uppercase tracking-[0.2em] text-eyebrow text-ordift-gold-pressed mb-3">
-            Our Values
-          </p>
-          <h2 className="font-serif font-medium text-section-heading sm:text-section-heading-tablet lg:text-section-heading-desktop text-ordift-ink mb-10 sm:mb-14">
-            What doesn&apos;t bend under deadline pressure
-          </h2>
-          <div className="divide-y divide-ordift-ink/10">
-            {about.values.map((v, i) => (
-              <div key={v.name} className="flex gap-6 sm:gap-10 py-6 sm:py-8">
-                <span className="font-serif font-light text-page-title text-ordift-ink/15 leading-none shrink-0 tabular-nums">
-                  {String(i + 1).padStart(2, "0")}
-                </span>
-                <div>
-                  <p className="font-serif font-medium text-card-title lg:text-card-title-desktop text-ordift-ink mb-1.5">
-                    {v.name}
-                  </p>
-                  <p className="font-sans text-body-small text-ordift-ink-muted max-w-xl">{v.copy}</p>
-                </div>
-              </div>
-            ))}
+          <div>
+            <h2 id="process" tabIndex={-1} className={`${TARGET} font-sans font-semibold uppercase tracking-[0.2em] text-eyebrow text-ordift-gold-pressed mb-2`}>
+              Our Process
+            </h2>
+            <p className="font-serif font-medium text-section-heading sm:text-section-heading-tablet lg:text-section-heading-desktop text-ordift-ink mb-7 lg:mb-8">
+              From discovery to delivery
+            </p>
+            <ol style={columns(home.process.length)} className="grid grid-cols-1 sm:grid-cols-2 lg:[grid-template-columns:repeat(var(--cols),minmax(0,1fr))] gap-x-8 gap-y-6 border-t border-ordift-ink/10 pt-6">
+              {home.process.map((p, i) => (
+                <li key={p.step}>
+                  <p className="font-sans text-caption text-ordift-gold-pressed mb-2 tabular-nums">{String(i + 1).padStart(2, "0")}</p>
+                  <p className="font-serif font-medium text-card-title lg:text-card-title-desktop text-ordift-ink mb-1.5">{p.step}</p>
+                  <p className="font-sans text-body-small lg:text-[0.9375rem] text-ordift-ink-muted">{p.copy}</p>
+                </li>
+              ))}
+            </ol>
           </div>
         </div>
       </section>
