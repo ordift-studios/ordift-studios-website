@@ -1,13 +1,14 @@
 import { describe, expect, it } from "vitest";
 import { excerptOf, normalisedForHash, parseApprovalEmail, senderDomainFromAddress } from "./approvalEmail";
 
-const OWN = ["ordiftstudios.com", "ordiftghana.com"];
+// Reserved example domain (RFC 2606) standing in for "an address of our own" so no real company mailbox appears in test fixtures.
+const OWN = ["ordift.example"];
 
 const WITH_HEADERS = [
-  "Delivered-To: someone@ordiftstudios.com",
+  "Delivered-To: someone@ordift.example",
   "Authentication-Results: mx.example.net; dkim=pass header.d=acme.example header.i=@acme.example; spf=pass smtp.mailfrom=acme.example; dmarc=pass header.from=acme.example",
   "From: Procurement Desk <procurement@mail.acme.example>",
-  "To: Ordift Studios <hello@ordiftstudios.com>",
+  "To: Ordift Studios <hello@ordift.example>",
   "Subject: Supplier application SA-1042 approved",
   "Date: Tue, 20 Oct 2026 09:14:00 +0000",
   "Message-ID: <abc@mail.acme.example>",
@@ -44,8 +45,8 @@ describe("parseApprovalEmail", () => {
   });
   it("reads the original sender from a forwarded block when the From header is an Ordift address", () => {
     const forwarded = [
-      "From: Founder <founder@ordiftstudios.com>",
-      "To: Admin <admin@ordiftstudios.com>",
+      "From: Founder <founder@ordift.example>",
+      "To: Admin <admin@ordift.example>",
       "Subject: Fwd: Approved",
       "Date: Wed, 21 Oct 2026 08:00:00 +0000",
       "",

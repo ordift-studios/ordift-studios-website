@@ -9,7 +9,7 @@ function email(over: { from?: string; subject?: string; date?: string; body?: st
   const lines = [
     `Authentication-Results: mx.example.net; ${over.auth ?? "dkim=pass header.d=acme.example; spf=pass smtp.mailfrom=acme.example; dmarc=pass header.from=acme.example"}`,
     `From: Procurement <${over.from ?? "procurement@acme.example"}>`,
-    "To: Ordift <hello@ordiftstudios.com>",
+    "To: Ordift <hello@ordift.example>",
     `Subject: ${over.subject ?? "Supplier application SA-1042 approved"}`,
     `Date: ${over.date ?? "Tue, 20 Oct 2026 09:14:00 +0000"}`,
     "",
@@ -40,6 +40,25 @@ describe("assessApproval", () => {
     const passed = assessApproval(APP, email()).signals.find((s) => s.key === "authentication")!;
     expect(passed.detail).toMatch(/not been verified|not independently verified/);
     expect(passed.detail).not.toMatch(/^Passed/);
+  });
+  it("treats a forward from one of the platform's own domains as a forward, using the real own-domain list", () => {
+    expect(ORDIFT_OWN_DOMAINS.length).toBeGreaterThan(0);
+    const forwarded = [
+      `From: Forwarder <forwarder@${ORDIFT_OWN_DOMAINS[0]}>`,
+      "To: Colleague <colleague@ordift.example>",
+      "Subject: Fwd: approved",
+      "Date: Wed, 21 Oct 2026 08:00:00 +0000",
+      "",
+      "---------- Forwarded message ---------",
+      "From: Procurement <procurement@acme.example>",
+      "Date: Tue, 20 Oct 2026 09:14:00 +0000",
+      "Subject: Supplier application SA-1042 approved",
+      "",
+      "Your supplier application SA-1042 has been approved.",
+    ].join("\n");
+    const parsed = parseApprovalEmail(forwarded, { ownDomains: ORDIFT_OWN_DOMAINS });
+    expect(parsed.senderDomain).toBe("acme.example");
+    expect(parsed.senderFromForward).toBe(true);
   });
   it("states plainly that nothing was verified with the sender", () => {
     expect(UNVERIFIED_NOTICE).toMatch(/pasted/);
