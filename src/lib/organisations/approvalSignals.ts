@@ -2,10 +2,15 @@ import { domainsMatch, isFreeMailDomain, normaliseOrganisationName, registrableD
 import type { ParsedApprovalEmail } from "./approvalEmail";
 
 // How a pasted email lines up with a recorded supplier application, and what a person must do before confirming it.
-// Pure. These are HINTS for a human decision: the platform never treats an email as proof of approval, and a strong
-// result still requires an administrator to confirm.
+// Pure. These are HINTS for a human decision: all of the evidence is text a person pasted, none of it is independently
+// verified, the platform never treats an email as proof of approval, and even the best result still requires an
+// administrator to attest and confirm.
 
 export const ORDIFT_OWN_DOMAINS = ["ordiftstudios.com", "ordiftghana.com"];
+
+// Shown wherever the checks are shown. Every fact below comes from text a person pasted, so none of it is independently verified.
+export const UNVERIFIED_NOTICE =
+  "Everything below is read from text a person pasted. Nothing was checked with the sending organisation or its mail system, and email headers in pasted text can be edited or invented. These are consistency checks to help you decide, not proof.";
 
 export type SignalState = "ok" | "warn" | "bad" | "unknown";
 export type ApprovalSignal = { key: SignalKey; label: string; state: SignalState; detail: string };
@@ -71,15 +76,17 @@ export function assessApproval(application: ApplicationForMatching, email: Parse
   else if (negative) signals.push({ key: "approval_wording", label: "Approval wording", state: "bad", detail: "The email contains wording that suggests it is NOT an approval." });
   else signals.push({ key: "approval_wording", label: "Approval wording", state: "warn", detail: "No clear approval wording was found." });
 
-  // 5. Authentication verdicts recorded by the receiving mail server.
+  // 5. Authentication results AS PASTED. The receiving server's verdicts are only as trustworthy as the person-supplied text they
+  //    were read from, so every branch says so.
+  const AUTH_LABEL = "Sender authentication (as pasted, not independently verified)";
   if (!email.hasHeaders || email.senderFromForward) {
-    signals.push({ key: "authentication", label: "Sender authentication", state: "unknown", detail: email.senderFromForward ? "The email was pasted as a forward, so the original authentication results are not available." : "No headers were pasted, so the sender could not be authenticated." });
+    signals.push({ key: "authentication", label: AUTH_LABEL, state: "unknown", detail: email.senderFromForward ? "The email was pasted as a forward, so no authentication results for the original message are available." : "No headers were pasted, so there are no authentication results to read." });
   } else if (email.spf === "fail" || email.dkim === "fail" || email.dmarc === "fail") {
-    signals.push({ key: "authentication", label: "Sender authentication", state: "bad", detail: `The receiving server recorded a failure (SPF ${email.spf}, DKIM ${email.dkim}, DMARC ${email.dmarc}).` });
+    signals.push({ key: "authentication", label: AUTH_LABEL, state: "bad", detail: `The pasted headers report a failure (SPF ${email.spf}, DKIM ${email.dkim}, DMARC ${email.dmarc}).` });
   } else if (email.dmarc === "pass" || email.dkimAligned) {
-    signals.push({ key: "authentication", label: "Sender authentication", state: "ok", detail: `Passed for the sender's own domain (SPF ${email.spf}, DKIM ${email.dkim}, DMARC ${email.dmarc}).` });
+    signals.push({ key: "authentication", label: AUTH_LABEL, state: "ok", detail: `The pasted headers report a pass for the sender's own domain (SPF ${email.spf}, DKIM ${email.dkim}, DMARC ${email.dmarc}). This was read from pasted text and has not been verified; headers can be edited.` });
   } else {
-    signals.push({ key: "authentication", label: "Sender authentication", state: "warn", detail: `Not enough to show the sender's domain signed it (SPF ${email.spf}, DKIM ${email.dkim}, DMARC ${email.dmarc}).` });
+    signals.push({ key: "authentication", label: AUTH_LABEL, state: "warn", detail: `The pasted headers do not show that the sender's own domain signed the message (SPF ${email.spf}, DKIM ${email.dkim}, DMARC ${email.dmarc}). Not independently verified.` });
   }
 
   // 6. Date: an approval cannot predate the application it approves.
@@ -108,8 +115,9 @@ export function levelOf(signals: ApprovalSignal[]): MatchLevel {
   return "review";
 }
 
+// A person always attests before an approval is recorded; no match level, however good, approves anything on its own.
 export function confirmationRequirements(level: MatchLevel): { acknowledgement: boolean; noteRequired: boolean } {
-  return { acknowledgement: level !== "strong", noteRequired: level === "weak" };
+  return { acknowledgement: true, noteRequired: level === "weak" };
 }
 
 // ---- Choosing the organisation at confirmation ---------------------------------------------------------------------
@@ -129,7 +137,7 @@ export type ConfirmationPlan = { ok: true; mode: "link_existing" | "create_new" 
 export function planConfirmation(input: ConfirmationInput): ConfirmationPlan {
   const need = confirmationRequirements(input.level);
   if (need.acknowledgement && !input.acknowledgedReview) {
-    return { ok: false, error: "The email does not clearly match this application. Tick the box to confirm you have verified the approval another way." };
+    return { ok: false, error: "Tick the box to confirm you have read the email and decided that it is a genuine approval. The checks are not proof." };
   }
   if (need.noteRequired && input.note.trim().length < 10) {
     return { ok: false, error: "Add a note (at least 10 characters) saying how the approval was verified." };

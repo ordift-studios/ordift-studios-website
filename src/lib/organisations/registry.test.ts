@@ -130,3 +130,21 @@ describe("migration 0163 is additive, schema-only and locked down", () => {
     expect(rollback.indexOf("raise exception")).toBeLessThan(rollback.indexOf("drop table"));
   });
 });
+
+describe("pasted evidence is never presented as verified, and approval stays a human decision", () => {
+  const page = read("src/app/admin/organisations/applications/[id]/page.tsx");
+  const signals = read("src/lib/organisations/approvalSignals.ts");
+  it("the confirmation page shows the unverified notice and requires the person's attestation", () => {
+    expect(page).toContain("UNVERIFIED_NOTICE");
+    expect(page).toMatch(/name="acknowledgedReview" required/);
+    expect(page).not.toMatch(/Strong match|Passed for the sender/);
+  });
+  it("no signal text claims independent verification", () => {
+    expect(signals).not.toMatch(/\bverified by the (receiving )?server\b|\brecorded a failure\b|Passed for the sender's own domain/);
+    expect(signals).toContain("as pasted, not independently verified");
+  });
+  it("the database records the attestation and labels the pasted authentication columns", () => {
+    expect(migration).toContain("acknowledged_review boolean");
+    expect(migration).toMatch(/comment on column public\.supplier_applications\.approval_spf is 'SPF result AS PASTED/);
+  });
+});

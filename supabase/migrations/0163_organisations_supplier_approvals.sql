@@ -76,6 +76,9 @@ create table public.supplier_applications (
 create unique index supplier_applications_approval_hash_uniq on public.supplier_applications (business_id, approval_text_sha256) where approval_text_sha256 is not null;
 create index supplier_applications_status_idx on public.supplier_applications (business_id, status, submitted_on desc);
 create index supplier_applications_organisation_idx on public.supplier_applications (organisation_id) where organisation_id is not null;
+comment on column public.supplier_applications.approval_spf is 'SPF result AS PASTED by a person in the email headers. Not independently verified; pasted headers can be edited or invented. Same for approval_dkim, approval_dmarc and approval_dkim_aligned.';
+comment on column public.supplier_applications.approval_sender_domain is 'Sender domain as read from text a person pasted. Not independently verified.';
+comment on column public.supplier_applications.approval_match_level is 'How consistent the pasted email is with the application (strong / review / weak). A hint for a person, never proof; every approval still needs a person to attest (acknowledged_review) and confirm.';
 comment on table public.supplier_applications is 'An application Ordift submitted to an organisation to become its supplier. Approved only by an administrator confirming a pasted approval email; an email alone never changes anything. Creates no booking, invoice, payable or payment.';
 
 -- ------------------------------------------------------------------ organisation_relationships

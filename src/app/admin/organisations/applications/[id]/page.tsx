@@ -4,7 +4,7 @@ import { notFound, redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/portal/roles";
 import { authorizeWithSuperAdminOverride, STRATEGY_CAPABILITIES } from "@/lib/organization/authority";
 import { findOrganisationMatches, getApplication, type ApplicationStatus } from "@/lib/organisations/registry";
-import { confirmationRequirements, type SignalState } from "@/lib/organisations/approvalSignals";
+import { confirmationRequirements, UNVERIFIED_NOTICE, type SignalState } from "@/lib/organisations/approvalSignals";
 import { isFreeMailDomain } from "@/lib/organisations/names";
 import { closeApplicationAction, confirmApprovalAction, discardApprovalEmailAction, submitApprovalEmailAction } from "../../actions";
 import ActionForm from "@/components/admin/ActionForm";
@@ -97,12 +97,13 @@ export default async function SupplierApplicationDetailPage({ params }: { params
             <div className="flex flex-wrap items-center justify-between gap-3">
               <h2 className="font-serif font-medium text-body text-ordift-ink">How the email matches this application</h2>
               <span className={`rounded-full border px-3 py-1 font-sans text-caption ${level === "strong" ? SIGNAL_STYLE.ok : level === "review" ? SIGNAL_STYLE.warn : SIGNAL_STYLE.bad}`}>
-                {level === "strong" ? "Strong match" : level === "review" ? "Needs review" : "Weak match"}
+                {level === "strong" ? "Consistent with the application" : level === "review" ? "Needs review" : "Inconsistent or weak"}
               </span>
             </div>
             <p className="font-sans text-caption text-ordift-ink-muted">
-              {app.approvalSubject ? `Subject: ${app.approvalSubject} · ` : ""}From {app.approvalSenderDomain ?? "unknown sender"}{app.approvalSentOn ? ` · ${app.approvalSentOn}` : ""}. These are checks to help you decide; read the email yourself.
+              {app.approvalSubject ? `Subject: ${app.approvalSubject} · ` : ""}From {app.approvalSenderDomain ?? "unknown sender"}{app.approvalSentOn ? ` · ${app.approvalSentOn}` : ""}.
             </p>
+            <p className="rounded-lg border border-amber-600/30 bg-amber-50 px-3 py-2 font-sans text-body-small text-amber-900">{UNVERIFIED_NOTICE}</p>
             <ul className="space-y-2">
               {(app.approvalSignals ?? []).map((s) => (
                 <li key={s.key} className={`rounded-lg border px-3 py-2 font-sans text-body-small ${SIGNAL_STYLE[s.state]}`}>
@@ -162,12 +163,15 @@ export default async function SupplierApplicationDetailPage({ params }: { params
 
               {need.acknowledgement ? (
                 <label className="flex items-start gap-2 font-sans text-body-small text-ordift-ink">
-                  <input type="checkbox" name="acknowledgedReview" className="mt-1" />
-                  <span>I have read the email and the checks above, and I have verified this approval is genuine{level === "weak" ? " by another means (describe below)" : ""}.</span>
+                  <input type="checkbox" name="acknowledgedReview" required className="mt-1" />
+                  <span>
+                    I have read the email myself and I decide, as my own judgement, that it is a genuine approval from this organisation. I understand the checks above come from pasted text and were not independently verified.
+                    {level === "weak" ? " The checks are inconsistent or weak, so I describe below how I verified it." : ""}
+                  </span>
                 </label>
               ) : null}
               <textarea name="note" rows={2} maxLength={2000} placeholder={need.noteRequired ? "How was this approval verified? (required)" : "Note (optional)"} className={`${FIELD} w-full`} />
-              <ConfirmSubmitButton confirmMessage="Confirm this approval and register or update the organisation as a client?" pendingLabel="Confirming…" className="rounded-lg bg-ordift-ink text-white px-4 py-2 font-sans text-body-small">
+              <ConfirmSubmitButton confirmMessage="You are deciding that this is a genuine approval. Register or update the organisation as a client?" pendingLabel="Confirming…" className="rounded-lg bg-ordift-ink text-white px-4 py-2 font-sans text-body-small">
                 Confirm approval
               </ConfirmSubmitButton>
             </ActionForm>

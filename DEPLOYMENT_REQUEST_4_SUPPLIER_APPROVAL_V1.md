@@ -7,7 +7,8 @@ Branch `supplier-approval-v1`, based on `main` = `f8a6108`. One additive migrati
 Supplier application recorded → approval email **pasted by a person** → matched to the application and to the organisation directory → an administrator **confirms** → the organisation's **client** relationship is created or moved to approved.
 
 * No mailbox connection, no monitoring, no outbound email, no automation. An email exists in the system only because someone pasted it.
-* An email never changes a record by itself. Only `confirmApproval()` does, and only after a Super Admin confirms.
+* An email never changes a record by itself. Only `confirmApproval()` does, and only after a Super Admin attests that they read the email and judge it genuine (a required tick, recorded; a note too if the match is weak).
+* Everything read from the pasted email, including SPF/DKIM/DMARC results, is labelled **as pasted, not independently verified**: pasted headers can be edited or invented, so they are consistency hints, never proof.
 * Confirming records a relationship and nothing else: it creates no booking, quotation, invoice, payable, payment or financial entry (checked by tests: no such import, no such table).
 * `client` = the organisation approved Ordift as **its** supplier. Vendors and contractors supplying services **to** Ordift stay in their existing tables, untouched; the shared `organisations` record has a separate `vendor` kind reserved for later, with no screen creating it.
 

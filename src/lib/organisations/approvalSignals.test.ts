@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { parseApprovalEmail } from "./approvalEmail";
-import { assessApproval, confirmationRequirements, ORDIFT_OWN_DOMAINS, planConfirmation, relationshipWrite, type ApplicationForMatching } from "./approvalSignals";
+import { assessApproval, confirmationRequirements, ORDIFT_OWN_DOMAINS, planConfirmation, relationshipWrite, UNVERIFIED_NOTICE, type ApplicationForMatching } from "./approvalSignals";
 import { matchOrganisations } from "./names";
 
 const APP: ApplicationForMatching = { reference: "SA-1042", organisationName: "Acme Industries Ltd", contactDomain: "acme.example", submittedOn: "2026-10-10", linkedOrganisation: null };
@@ -21,10 +21,30 @@ function email(over: { from?: string; subject?: string; date?: string; body?: st
 const state = (r: ReturnType<typeof assessApproval>, key: string) => r.signals.find((s) => s.key === key)?.state;
 
 describe("assessApproval", () => {
-  it("rates a matching, authenticated, correctly dated email as strong", () => {
+  it("rates a matching, correctly dated email as strong, but a person must still attest", () => {
     const r = assessApproval(APP, email());
     expect(r.level).toBe("strong");
-    expect(confirmationRequirements(r.level)).toEqual({ acknowledgement: false, noteRequired: false });
+    expect(confirmationRequirements(r.level)).toEqual({ acknowledgement: true, noteRequired: false });
+  });
+  it("labels every authentication result as pasted and not independently verified", () => {
+    const cases = [
+      email(),
+      email({ auth: "dkim=fail header.d=acme.example; spf=fail; dmarc=fail" }),
+      email({ auth: "spf=pass smtp.mailfrom=acme.example" }),
+      parseApprovalEmail("Your supplier application SA-1042 has been approved by Acme Industries Ltd.", { senderAddress: "a@acme.example" }),
+    ];
+    for (const e of cases) {
+      const auth = assessApproval(APP, e).signals.find((s) => s.key === "authentication")!;
+      expect(auth.label).toMatch(/as pasted, not independently verified/);
+    }
+    const passed = assessApproval(APP, email()).signals.find((s) => s.key === "authentication")!;
+    expect(passed.detail).toMatch(/not been verified|not independently verified/);
+    expect(passed.detail).not.toMatch(/^Passed/);
+  });
+  it("states plainly that nothing was verified with the sender", () => {
+    expect(UNVERIFIED_NOTICE).toMatch(/pasted/);
+    expect(UNVERIFIED_NOTICE).toMatch(/Nothing was checked with the sending organisation/);
+    expect(UNVERIFIED_NOTICE).toMatch(/not proof/);
   });
   it("rates an email from a different domain as weak", () => {
     const r = assessApproval(APP, email({ from: "procurement@lookalike-acme.example", auth: "dkim=pass header.d=lookalike-acme.example; dmarc=pass" }));
@@ -63,7 +83,8 @@ describe("assessApproval", () => {
     const app = { ...APP, contactDomain: null, linkedOrganisation: { name: "Acme Industries Ltd", primaryDomain: "acme.example" } };
     expect(state(assessApproval(app, email()), "sender_domain")).toBe("ok");
   });
-  it("requires acknowledgement and a note for a weak match", () => {
+  it("always requires the person's attestation, and a note for a weak match", () => {
+    expect(confirmationRequirements("strong")).toEqual({ acknowledgement: true, noteRequired: false });
     expect(confirmationRequirements("review")).toEqual({ acknowledgement: true, noteRequired: false });
     expect(confirmationRequirements("weak")).toEqual({ acknowledgement: true, noteRequired: true });
   });
@@ -71,7 +92,7 @@ describe("assessApproval", () => {
 
 describe("planConfirmation", () => {
   const dir = [{ id: "org-1", name: "Acme Industries Limited", primaryDomain: "acme.example" }];
-  const base = { level: "strong" as const, acknowledgedReview: false, confirmedDistinct: false, note: "", matchesForNew: [] };
+  const base = { level: "strong" as const, acknowledgedReview: true, confirmedDistinct: false, note: "", matchesForNew: [] };
 
   it("confirms a strong match against an existing organisation", () => {
     expect(planConfirmation({ ...base, organisationChoice: { kind: "existing", organisationId: "org-1" } })).toEqual({ ok: true, mode: "link_existing" });
@@ -92,10 +113,15 @@ describe("planConfirmation", () => {
     const allowed = planConfirmation({ ...base, organisationChoice: { kind: "new", name: "Acme", domain: null }, matchesForNew: matches, confirmedDistinct: true });
     expect(allowed).toEqual({ ok: true, mode: "create_new" });
   });
-  it("requires acknowledgement for a review-level match and a note for a weak one", () => {
+  it("never confirms without the person's attestation, even for a strong match", () => {
     const choice = { kind: "existing", organisationId: "org-1" } as const;
-    expect(planConfirmation({ ...base, level: "review", organisationChoice: choice }).ok).toBe(false);
-    expect(planConfirmation({ ...base, level: "review", acknowledgedReview: true, organisationChoice: choice }).ok).toBe(true);
+    for (const level of ["strong", "review", "weak"] as const) {
+      expect(planConfirmation({ ...base, level, acknowledgedReview: false, note: "A sufficiently long note.", organisationChoice: choice }).ok).toBe(false);
+    }
+  });
+  it("requires a note for a weak match", () => {
+    const choice = { kind: "existing", organisationId: "org-1" } as const;
+    expect(planConfirmation({ ...base, level: "review", organisationChoice: choice }).ok).toBe(true);
     expect(planConfirmation({ ...base, level: "weak", acknowledgedReview: true, organisationChoice: choice }).ok).toBe(false);
     expect(planConfirmation({ ...base, level: "weak", acknowledgedReview: true, note: "Confirmed by phone with their procurement lead.", organisationChoice: choice }).ok).toBe(true);
   });
