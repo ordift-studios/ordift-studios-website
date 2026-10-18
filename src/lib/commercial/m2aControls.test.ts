@@ -33,8 +33,8 @@ describe("migration 0166 is additive and locked down", () => {
     expect(code).toMatch(/revoke all on public\.enquiry_amount_events from anon, authenticated, service_role/);
     expect(code).not.toMatch(/grant\s+(insert|update|delete)[^;]*enquiry_amount_events/i);
   });
-  it("the one-live-quotation index covers only linked ordinary quotations in a live status", () => {
-    expect(code).toMatch(/create unique index client_quotations_one_live_per_enquiry on public\.client_quotations \(enquiry_id\)\s+where enquiry_id is not null and crew_support_request_id is null and status in \('draft', 'ready', 'sent', 'accepted'\)/);
+  it("the one-live-quotation index covers only linked, original (non-variation) ordinary quotations in a live status", () => {
+    expect(code).toMatch(/create unique index client_quotations_one_live_per_enquiry on public\.client_quotations \(enquiry_id\)\s+where enquiry_id is not null and crew_support_request_id is null and is_variation = false and status in \('draft', 'ready', 'sent', 'accepted'\)/);
   });
   it("quotation currency must exist in the currencies table", () => {
     expect(code).toMatch(/client_quotations_currency_fk foreign key \(currency\) references public\.currencies \(code\)/);

@@ -84,8 +84,10 @@ grant select on public.enquiry_amount_events to authenticated, service_role;
 
 -- ---------------------------------------------------------------------------------------------------------------------------------------------
 -- 2. One live ordinary quotation per enquiry. 'ready' exists only for Crew Support but is listed so the rule can never be bypassed by a status mix-up.
+-- is_variation = false: the index governs ORIGINAL quotations only, exactly as Crew Support's own index does (0147), so a future, separately approved
+-- ordinary-variation workflow can add its own index without altering this one. Nothing creates an ordinary variation today.
 create unique index client_quotations_one_live_per_enquiry on public.client_quotations (enquiry_id)
-  where enquiry_id is not null and crew_support_request_id is null and status in ('draft', 'ready', 'sent', 'accepted');
+  where enquiry_id is not null and crew_support_request_id is null and is_variation = false and status in ('draft', 'ready', 'sent', 'accepted');
 
 -- 3. Quotation currency must be a real currency.
 alter table public.client_quotations add constraint client_quotations_currency_fk foreign key (currency) references public.currencies (code);

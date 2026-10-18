@@ -34,7 +34,7 @@ begin
 end $$;
 
 create or replace function public.m2a_live(p_enq uuid) returns bigint language sql stable as $$
-  select count(*) from public.client_quotations where enquiry_id = p_enq and crew_support_request_id is null and status in ('draft','ready','sent','accepted') $$;
+  select count(*) from public.client_quotations where enquiry_id = p_enq and crew_support_request_id is null and is_variation = false and status in ('draft','ready','sent','accepted') $$;
 
 -- baseline snapshot of everything that must NOT change (notifications, payments, obligations, stages) --------------------------------------------
 create table if not exists public.m2a_snap (k text primary key, v bigint);
@@ -60,6 +60,11 @@ update public.client_quotations set status = 'sent', issued_at = now() where id 
 update public.client_quotations set status = 'declined' where id = public.m2a_id('q_IDX1');
 select public.m2a_mkq('IDX4', public.m2a_id('enq_IDX'), 'draft', 'USD', 500);
 select public.m2a_assert(public.m2a_live(public.m2a_id('enq_IDX')) = 1, 'index: a declined quotation no longer counts; a new one can be created (1 live)');
+update public.client_quotations set is_variation = true where id = public.m2a_id('q_IDX4');
+select public.m2a_mkq('IDXVAR', public.m2a_id('enq_IDX'), 'draft', 'USD', 500);
+select public.m2a_assert(public.m2a_live(public.m2a_id('enq_IDX')) = 1, 'index: governs ORIGINAL quotations only (a variation row does not collide with its original)');
+update public.client_quotations set status = 'declined' where id = public.m2a_id('q_IDXVAR');
+update public.client_quotations set is_variation = false where id = public.m2a_id('q_IDX4');
 select public.m2a_expect($$ select public.m2a_mkq('IDX5', null, 'draft', 'XXX', 500) $$, '%client_quotations_currency_fk%');
 select public.m2a_assert((select count(*) from public.client_quotations where enquiry_id is null and is_test) >= 0, 'index: unlinked quotations are unrestricted');
 select public.m2a_mkq('IDX6', null, 'draft', 'USD', 500); select public.m2a_mkq('IDX7', null, 'draft', 'USD', 500);

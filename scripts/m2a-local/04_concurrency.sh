@@ -57,7 +57,7 @@ grep -q "ordift:quotation_not_accepted" /tmp/m2a_g5b.out && ok "establish waited
 [ "$(sql "select amount_due is null from public.enquiries where id='$E5'")" = t ] && ok "no amount was written" || bad "amount unexpectedly written"
 
 echo "===== G6. integrity after all races"
-[ "$(sql "select count(*) from (select enquiry_id from public.client_quotations where enquiry_id is not null and crew_support_request_id is null and status in ('draft','ready','sent','accepted') group by 1 having count(*)>1) x")" = 0 ] && ok "no enquiry anywhere has two live ordinary quotations" || bad "duplicate live quotations exist"
+[ "$(sql "select count(*) from (select enquiry_id from public.client_quotations where enquiry_id is not null and crew_support_request_id is null and is_variation = false and status in ('draft','ready','sent','accepted') group by 1 having count(*)>1) x")" = 0 ] && ok "no enquiry anywhere has two live ordinary quotations" || bad "duplicate live quotations exist"
 [ "$(sql "select count(*) from public.client_quotations q where q.supersedes_id is not null and not exists (select 1 from public.client_quotations o where o.id=q.supersedes_id and o.status='superseded')")" = 0 ] && ok "every version points to a superseded predecessor (no half-written history)" || bad "orphan revision history"
 [ "$(sql "select count(*) from public.client_quotations q where q.status='draft' and q.supersedes_id is not null and not exists (select 1 from public.client_quotation_items i where i.quotation_id=q.id)")" = 0 ] && ok "no revision exists without its lines" || bad "revision without lines"
 echo; [ $FAILED = 0 ] && echo "ALL CONCURRENCY CHECKS PASSED" || echo "SOME CONCURRENCY CHECKS FAILED"
