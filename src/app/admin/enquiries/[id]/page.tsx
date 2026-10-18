@@ -22,6 +22,7 @@ import ActionForm from "@/components/admin/ActionForm";
 import ClientRecordPanel from "../../organisations/ClientRecordPanel";
 import WorkflowSummary from "@/components/admin/WorkflowSummary";
 import ContractingEntitySection from "../../organisations/ContractingEntitySection";
+import EmailNotificationsPanel from "./EmailNotificationsPanel";
 import { displayEmail } from "@/lib/shared/email/placeholder";
 import SubmitButton from "@/components/admin/SubmitButton";
 
@@ -97,6 +98,8 @@ export default async function AdminEnquiryDetailPage({ params }: { params: Promi
           </div>
 
           {user ? <WorkflowSummary enquiryId={enquiry.id} userId={user.id} isSuperAdmin={isSuperAdmin(user)} /> : null}
+
+          {user && (isSuperAdmin(user) || hasRole(user, "admin")) ? <EmailNotificationsPanel enquiryId={enquiry.id} /> : null}
 
           {user && isSuperAdmin(user) ? (
             <>

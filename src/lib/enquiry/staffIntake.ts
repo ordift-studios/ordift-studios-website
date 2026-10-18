@@ -65,6 +65,8 @@ export function validateStaffEnquiry(input: StaffEnquiryInput): { ok: true; valu
   if (rawPhone && !phoneDigits) return { ok: false, error: "That is not a valid phone number (7 to 15 digits)." };
   if (!email && !phoneDigits) return { ok: false, error: "Enter at least an email address or a phone number so the client can be reached." };
 
+  if (input.allowStatusEmails && !email) return { ok: false, error: "Automatic status emails need a real email address. Leave that box unticked." };
+
   const t = Date.parse(input.receivedAt);
   if (Number.isNaN(t)) return { ok: false, error: "Enter when the client made contact." };
   if (t > input.now.getTime() + 5 * 60_000) return { ok: false, error: "The contact time can't be in the future." };

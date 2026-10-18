@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { getCurrentUser, isStaffOrAdmin, isSuperAdmin } from "@/lib/portal/roles";
+import { getCurrentUser, hasRole, isStaffOrAdmin, isSuperAdmin } from "@/lib/portal/roles";
 import { PATHWAYS } from "@/lib/enquiry/pathways";
 import { INTAKE_CHANNELS } from "@/lib/enquiry/staffIntake";
 import { listContacts } from "@/lib/directory/directory";
@@ -24,6 +24,7 @@ export default async function RecordEnquiryPage() {
   const user = await getCurrentUser();
   if (!user || !isStaffOrAdmin(user)) redirect("/admin/overview");
   const superAdmin = isSuperAdmin(user);
+  const canAllowEmails = superAdmin || hasRole(user, "admin");
   const [contacts, organisations] = superAdmin ? await Promise.all([listContacts(user.id), listOrganisations(user.id)]) : [[], []];
 
   return (
@@ -96,10 +97,14 @@ export default async function RecordEnquiryPage() {
             </div>
           ) : null}
 
-          <label className="flex items-start gap-2 font-sans text-caption text-ordift-ink-muted sm:col-span-2">
-            <input type="checkbox" name="allowStatusEmails" className="mt-0.5" />
-            Allow automatic status emails to this client later (quotation ready, booking confirmed, files ready). Leave unticked unless the client has agreed to receive them; they are off by default.
-          </label>
+          {canAllowEmails ? (
+            <label className="flex items-start gap-2 font-sans text-caption text-ordift-ink-muted sm:col-span-2">
+              <input type="checkbox" name="allowStatusEmails" className="mt-0.5" />
+              Allow automatic status emails to this client later (quotation ready, booking confirmed, files ready). Needs an email address. Leave unticked unless the client has agreed to receive them; they are off by default, and you can switch them on later from the enquiry.
+            </label>
+          ) : (
+            <p className="sm:col-span-2 font-sans text-caption text-ordift-ink-muted">Automatic status emails to this client are off. An admin can switch them on later if the client agrees.</p>
+          )}
           <SubmitButton pendingLabel="Saving…" className="min-h-11 px-5 rounded-full bg-ordift-navy-950 text-white font-sans text-body-small sm:col-span-2 justify-self-start">Record enquiry</SubmitButton>
         </ActionForm>
       </section>

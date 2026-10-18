@@ -1,4 +1,5 @@
 import { createAdminClient } from "@/lib/supabase/admin";
+import { isPlaceholderEmail } from "@/lib/shared/email/placeholder";
 
 type AdminClient = ReturnType<typeof createAdminClient>;
 
@@ -20,6 +21,8 @@ type AdminClient = ReturnType<typeof createAdminClient>;
 //
 // Best-effort: never throws, never blocks login/signup on failure.
 export async function linkGuestRecordsToAccount(userId: string, email: string): Promise<void> {
+  // A reserved no-email placeholder (an enquiry staff recorded without an address) is never an identity: an account can never claim records by it.
+  if (isPlaceholderEmail(email)) return;
   const admin: AdminClient = createAdminClient();
 
   const { error: enquiryError } = await admin

@@ -9,6 +9,7 @@ import { linkGuestRecordsToAccount } from "@/lib/supabase/accountLinking";
 import { siteUrl } from "@/lib/shared/env";
 import { checkRateLimit, getClientIp } from "@/lib/shared/rateLimit";
 import { isSafeReturnPath, primaryPortalPath } from "@/lib/portal/roles";
+import { isPlaceholderEmail } from "@/lib/shared/email/placeholder";
 
 export type SignupState = { error: string | null };
 
@@ -31,6 +32,10 @@ export async function signUpAction(_prev: SignupState, formData: FormData): Prom
   }
   if (password.length < 8) {
     return { error: "Password must be at least 8 characters." };
+  }
+  // The reserved .invalid domain stands in for "no email on file" on enquiries staff recorded by hand; it can never be a real mailbox or an account.
+  if (isPlaceholderEmail(email)) {
+    return { error: "Enter a valid email address." };
   }
 
   const rateLimit = await checkRateLimit(`signup:${await getClientIp()}`);

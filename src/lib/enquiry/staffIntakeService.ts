@@ -1,8 +1,8 @@
 import { createAdminClient } from "@/lib/supabase/admin";
-import { getCurrentUser, isStaffOrAdmin } from "@/lib/portal/roles";
+import { getCurrentUser, hasRole, isStaffOrAdmin, isSuperAdmin } from "@/lib/portal/roles";
 import { logActivity } from "@/lib/admin/activityLog";
 import { generateRecordId } from "@/lib/shared/recordId";
-import { placeholderEmailFor } from "@/lib/shared/email/placeholder";
+import { isPlaceholderEmail, placeholderEmailFor } from "@/lib/shared/email/placeholder";
 import { linkRecord } from "@/lib/directory/directory";
 import { validateStaffEnquiry, type StaffEnquiryInput } from "./staffIntake";
 
@@ -26,6 +26,11 @@ export async function createStaffEnquiry(params: {
 }): Promise<{ ok: true; id: string; reference: string; linkNote: string | null } | Fail> {
   const user = await getCurrentUser();
   if (!user || user.id !== params.actorUserId || !isStaffOrAdmin(user)) return { ok: false, error: "Not authorised to record enquiries." };
+
+  // Allowing automatic client emails is an explicit decision for an admin: plain staff record the enquiry with emails off, and an admin can switch them on.
+  if (params.input.allowStatusEmails && !(hasRole(user, "admin") || isSuperAdmin(user))) {
+    return { ok: false, error: "Only an admin can allow automatic status emails. Leave the box unticked; an admin can switch them on later." };
+  }
 
   const checked = validateStaffEnquiry({ ...params.input, now: new Date() });
   if (!checked.ok) return checked;
@@ -79,4 +84,24 @@ export async function createStaffEnquiry(params: {
     linkNote = linked.ok ? null : `The enquiry was recorded, but it was not linked to the directory: ${linked.error}`;
   }
   return { ok: true, id, reference, linkNote };
+}
+
+// Switches automatic client emails on or off for a STAFF-RECORDED enquiry. Admin or Super Admin only, with a reason, audited. It never applies to a website
+// enquiry (those keep their established behaviour), and it cannot be switched on for an enquiry with no real email address.
+export async function setStaffEnquiryEmailNotifications(params: { enquiryId: string; allow: boolean; reason: string }): Promise<{ ok: true } | Fail> {
+  const user = await getCurrentUser();
+  if (!user || !(hasRole(user, "admin") || isSuperAdmin(user))) return { ok: false, error: "Only an admin can change automatic client emails." };
+  const reason = params.reason.trim();
+  if (reason.length < 5) return { ok: false, error: "Say why (at least 5 characters)." };
+  const admin = createAdminClient();
+  const { data: e } = await admin.from("enquiries").select("created_by, email, email_notifications_suppressed").eq("id", params.enquiryId).maybeSingle();
+  if (!e) return { ok: false, error: "Enquiry not found." };
+  if (e.created_by === null) return { ok: false, error: "Only an enquiry recorded by staff has this setting. Website enquiries keep their established behaviour." };
+  if (params.allow && isPlaceholderEmail(e.email)) return { ok: false, error: "This enquiry has no email address on file, so automatic emails cannot be switched on." };
+  const suppress = !params.allow;
+  if (e.email_notifications_suppressed === suppress) return { ok: true };
+  const { data, error } = await admin.from("enquiries").update({ email_notifications_suppressed: suppress }).eq("id", params.enquiryId).not("created_by", "is", null).select("id").maybeSingle();
+  if (error || !data) return { ok: false, error: "Could not change the setting." };
+  await logActivity({ actorUserId: user.id, action: params.allow ? "enquiry.client_emails_enabled" : "enquiry.client_emails_disabled", entityType: "enquiry", entityId: params.enquiryId, metadata: { reason } });
+  return { ok: true };
 }

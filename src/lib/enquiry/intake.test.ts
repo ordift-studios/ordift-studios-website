@@ -33,7 +33,9 @@ describe("a staff-recorded enquiry sends nothing and creates nothing financial",
   });
   it("it writes only the enquiry row and an internal note, at the ordinary first stage, with no amount, payment, quotation or booking field", () => {
     const writes = [...service.matchAll(/\.from\("([a-z_]+)"\)\s*\n?\s*\.(insert|update|upsert|delete)\(/g)].map((m) => `${m[1]}:${m[2]}`);
-    expect(new Set(writes)).toEqual(new Set(["enquiries:insert", "enquiry_notes:insert"]));
+    // The one update is the explicit, admin-only emails on/off switch (tested below); it writes only that flag.
+    expect(new Set(writes)).toEqual(new Set(["enquiries:insert", "enquiry_notes:insert", "enquiries:update"]));
+    expect([...service.matchAll(/\.update\((\{[^}]*\})\)/g)].map((m) => m[1])).toEqual(["{ email_notifications_suppressed: suppress }"]);
     expect(service).toContain('crm_stage: "new_lead"');
     expect(code(service)).not.toMatch(/amount_due|amount_paid|payment_status|payment_country|client_quotations|payments"|booked|accepted_quotation/);
     expect(service).toContain('audience: "internal"');
@@ -175,5 +177,62 @@ describe("migration 0165 is additive and locked down", () => {
   it("the rollback refuses once any enquiry carries intake information", () => {
     expect(rollback).toContain("down_0165 refused");
     expect(rollback.indexOf("raise exception")).toBeLessThan(rollback.indexOf("drop column"));
+  });
+});
+
+describe("automatic client emails are off by default and enabling them is an explicit, authorised, audited action", () => {
+  it("only an admin can tick 'allow' at recording, and 'allow' needs a real email address", () => {
+    expect(service).toMatch(/params\.input\.allowStatusEmails && !\(hasRole\(user, "admin"\) \|\| isSuperAdmin\(user\)\)/);
+    expect(service.indexOf("params.input.allowStatusEmails &&")).toBeLessThan(service.indexOf("createAdminClient()"));
+    const page = read("src/app/admin/enquiries/new/page.tsx");
+    expect(page).toContain("canAllowEmails ?");
+  });
+  it("switching on later needs admin, a reason, a staff-recorded enquiry and a real address, and is audited; it sends nothing", () => {
+    const fn = service.slice(service.indexOf("export async function setStaffEnquiryEmailNotifications"));
+    expect(fn).toContain('hasRole(user, "admin") || isSuperAdmin(user)');
+    expect(fn).toContain("reason.length < 5");
+    expect(fn).toContain("e.created_by === null");
+    expect(fn).toContain("isPlaceholderEmail(e.email)");
+    expect(fn).toMatch(/enquiry\.client_emails_enabled/);
+    expect(code(fn)).not.toMatch(/sendEmail|dispatchNotification|lifecycleEmails/);
+    const writes = [...fn.matchAll(/\.update\((\{[^}]*\})\)/g)].map((m) => m[1]);
+    expect(writes).toEqual(["{ email_notifications_suppressed: suppress }"]);
+  });
+  it("a staff-recorded enquiry is created suppressed unless explicitly allowed (the default is the safe one)", () => {
+    expect(read("src/lib/enquiry/staffIntake.ts")).toContain("suppressEmails: !input.allowStatusEmails");
+  });
+});
+
+describe("a placeholder address cannot become an identity or a payment email", () => {
+  it("sign-up refuses it, account linking ignores it, checkout refuses it, and the directory never stores it", () => {
+    expect(read("src/app/portal/signup/actions.ts")).toMatch(/if \(isPlaceholderEmail\(email\)\) \{\s*return \{ error: "Enter a valid email address\." \}/);
+    const linking = read("src/lib/supabase/accountLinking.ts");
+    expect(linking.indexOf("isPlaceholderEmail(email)")).toBeLessThan(linking.indexOf("createAdminClient()", linking.indexOf("export async function linkGuestRecordsToAccount")));
+    const checkout = read("src/lib/payments/checkoutService.ts");
+    const fn = checkout.slice(checkout.indexOf("export async function initiateGatewayCheckout"));
+    expect(fn.indexOf("isPlaceholderEmail(params.email)")).toBeGreaterThan(-1);
+    expect(fn.indexOf("isPlaceholderEmail(params.email)")).toBeLessThan(fn.indexOf("getActiveCountryConfig("));
+    expect(read("src/lib/directory/emails.ts")).toContain("if (isPlaceholderEmail(e)) return null;");
+  });
+  it("the database keeps staff-recorded placeholders unique", () => {
+    expect(migration).toContain("create unique index enquiries_placeholder_email_uniq on public.enquiries (lower(email)) where created_by is not null and lower(email) like '%@no-email.invalid';");
+    expect(rollback).toContain("drop index public.enquiries_placeholder_email_uniq;");
+  });
+  it("the enquiry list and page show a placeholder as 'No email on file'", () => {
+    expect(read("src/app/admin/enquiries/page.tsx")).toContain("displayEmail(e.email)");
+    expect(read("src/app/admin/enquiries/[id]/page.tsx")).toContain("displayEmail(enquiry.email)");
+  });
+});
+
+describe("a manually recorded enquiry cannot book, pay, issue or notify by itself", () => {
+  it("the only code that writes a stage 'booked' is unchanged and is not called from M1 code", () => {
+    for (const f of ["src/lib/enquiry/staffIntakeService.ts", "src/lib/commercial/quotationAcceptance.ts", "src/app/admin/enquiries/staffIntakeActions.ts", "src/app/admin/organisations/contractingActions.ts"]) {
+      const src = code(read(f));
+      expect(src, f).not.toMatch(/advanceStageOnFullPayment|crmStageSync|updateStageAction|crm_stage: "booked"|status: "sent"|issueCrewSupportQuotation|createClientQuotation/);
+    }
+  });
+  it("no database trigger or default turns an inserted enquiry into a booking, payment or quotation", () => {
+    expect(code(migration)).not.toMatch(/crm_stage|amount_due|amount_paid|payment_status|insert into public\.(payments|client_quotations)/i);
+    expect(migration).not.toMatch(/create trigger[^;]*(payments|client_quotations)/i);
   });
 });

@@ -4,6 +4,7 @@ import { dispatchNotification } from "@/lib/notifications/dispatch";
 import type { EmailResult } from "@/lib/shared/email/dispatch";
 import { siteUrl } from "@/lib/shared/env";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { logEmailSendFailure } from "@/lib/shared/email/deadLetter";
 
 // CRM Lifecycle Automation Phase 1, Batch 2 (2026-08-20) — two new
 // client-facing lifecycle emails, distinct from every existing
@@ -40,15 +41,28 @@ import { createAdminClient } from "@/lib/supabase/admin";
 // can log it, but should never let it affect their own return value.
 
 // Staff-recorded enquiries (WhatsApp, telephone, in person ...) are created with automatic client emails switched off, so a status change never emails a
-// client who was not told to expect it. The flag is read at send time; a lookup failure leaves behaviour exactly as it was before the flag existed.
-export async function clientEmailsSuppressed(enquiryId: string | null | undefined): Promise<boolean> {
-  if (!enquiryId) return false;
+// client who was not told to expect it. The flag is read at send time, and the check FAILS SAFE: if it cannot be read, or the enquiry cannot be found, the
+// email is NOT sent (and the failure is logged for follow-up), because a wrongly sent client email cannot be taken back while a withheld one can be re-sent.
+// The one deliberate exception is a database that does not yet have the intake columns (error 42703, before migration 0165 is applied): no enquiry can be
+// staff-recorded there, so established behaviour continues unchanged. Enquiries from the website form (flag false, no author) are never suppressed.
+export async function clientEmailsSuppressed(enquiryId: string | null | undefined, emailType = "client-email"): Promise<boolean> {
+  if (!enquiryId) return false; // not tied to an enquiry (nothing to suppress)
+  const indeterminate = async (why: string): Promise<boolean> => {
+    console.error(`[enquiry] suppression check indeterminate (${why}); the client email was NOT sent`, enquiryId);
+    await logEmailSendFailure({ emailType: `suppression-check:${emailType}`, recipient: `enquiry:${enquiryId}`, referenceNumber: null, errorMessage: `suppression check indeterminate: ${why}`, attempts: 0, permanent: false });
+    return true;
+  };
   try {
-    const { data } = await createAdminClient().from("enquiries").select("email_notifications_suppressed").eq("id", enquiryId).maybeSingle();
-    return data?.email_notifications_suppressed === true;
+    const { data, error } = await createAdminClient().from("enquiries").select("email_notifications_suppressed, created_by").eq("id", enquiryId).maybeSingle();
+    if (error) {
+      if (error.code === "42703") return false;
+      return await indeterminate(error.message);
+    }
+    if (!data) return await indeterminate("enquiry not found");
+    // Suppressed when the flag is set, or when the enquiry was staff-recorded and the flag is anything other than an explicit false.
+    return data.email_notifications_suppressed === true || (data.created_by !== null && data.email_notifications_suppressed !== false);
   } catch (err) {
-    console.error("[enquiry] could not read the email-suppression flag", err);
-    return false;
+    return await indeterminate(err instanceof Error ? err.message : "unknown error");
   }
 }
 
@@ -117,7 +131,7 @@ export function buildQuotationReadyEmail(data: QuotationReadyData): { subject: s
 
 export async function sendQuotationReadyEmail(data: QuotationReadyData): Promise<EmailResult | null> {
   try {
-    if (await clientEmailsSuppressed(data.enquiryId)) return null;
+    if (await clientEmailsSuppressed(data.enquiryId, "enquiry-quotation-ready")) return null;
     const { subject, html, text } = buildQuotationReadyEmail(data);
     const result = await dispatchNotification({
       channels: ["email"],
@@ -195,7 +209,7 @@ export function buildBookingConfirmedEmail(data: BookingConfirmedData): { subjec
 
 export async function sendBookingConfirmedEmail(data: BookingConfirmedData): Promise<EmailResult | null> {
   try {
-    if (await clientEmailsSuppressed(data.enquiryId)) return null;
+    if (await clientEmailsSuppressed(data.enquiryId, "enquiry-booking-confirmed")) return null;
     const { subject, html, text } = buildBookingConfirmedEmail(data);
     const result = await dispatchNotification({
       channels: ["email"],
@@ -288,7 +302,7 @@ export function buildFilesReadyEmail(data: FilesReadyData): { subject: string; h
 
 export async function sendFilesReadyEmail(data: FilesReadyData): Promise<EmailResult | null> {
   try {
-    if (data.portalKind === "enquiry" && (await clientEmailsSuppressed(data.entityId))) return null;
+    if (data.portalKind === "enquiry" && (await clientEmailsSuppressed(data.entityId, "deliverable-files-ready"))) return null;
     const { subject, html, text } = buildFilesReadyEmail(data);
     const result = await dispatchNotification({
       channels: ["email"],

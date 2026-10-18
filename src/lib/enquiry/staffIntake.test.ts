@@ -33,6 +33,9 @@ describe("validateStaffEnquiry", () => {
     expect(validateStaffEnquiry({ ...base, receivedAt: "2024-01-01T00:00:00Z" }).ok).toBe(false);
     expect(validateStaffEnquiry({ ...base, receivedAt: "garbage" }).ok).toBe(false);
   });
+  it("automatic status emails need a real email address", () => {
+    expect(validateStaffEnquiry({ ...base, allowStatusEmails: true }).ok).toBe(false);
+  });
   it("switches automatic emails on only when explicitly allowed", () => {
     expect(validateStaffEnquiry({ ...base, email: "client@example.com", allowStatusEmails: true })).toMatchObject({ ok: true, value: { suppressEmails: false } });
   });

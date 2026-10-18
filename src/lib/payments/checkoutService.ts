@@ -6,6 +6,7 @@ import { lockExchangeRate, convertedAmountsMatch } from "@/lib/payments/currency
 import { getActiveCountryConfig, getProvider } from "@/lib/payments/providerRegistry";
 import { reconcilePendingGatewayPayment } from "@/lib/payments/reconcilePendingPayment";
 import type { PaymentEntityType, PaymentType } from "@/lib/payments/types";
+import { isPlaceholderEmail } from "@/lib/shared/email/placeholder";
 
 // Postgres unique_violation — raised by the partial unique index
 // (migration 0028) when two near-simultaneous requests both pass the
@@ -202,6 +203,11 @@ export async function initiateGatewayCheckout(
   // request reaching this function some other way.
   if (!Number.isFinite(params.quotedConvertedAmount)) {
     return { ok: false, error: "missing-quote" };
+  }
+
+  // A reserved no-email placeholder is not a customer address: a gateway checkout is never started with one.
+  if (isPlaceholderEmail(params.email)) {
+    return { ok: false, error: "no-deliverable-email" };
   }
 
   const countryConfig = await getActiveCountryConfig(params.country);

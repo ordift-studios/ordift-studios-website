@@ -21,6 +21,9 @@ alter table public.enquiries
   add column email_notifications_suppressed boolean not null default false,
   add constraint enquiries_staff_recorded_shape check (created_by is null or (source_channel is not null and received_at is not null));
 
+-- A placeholder address is derived from the enquiry's own (unique) reference, so no two staff-recorded enquiries can ever share one.
+create unique index enquiries_placeholder_email_uniq on public.enquiries (lower(email)) where created_by is not null and lower(email) like '%@no-email.invalid';
+
 comment on column public.enquiries.source_channel is 'How the enquiry reached Ordift. NULL = website form or recorded before this column existed (not guessed).';
 comment on column public.enquiries.received_at is 'When the client made contact, as recorded by the staff member who created the enquiry. Not the time the row was created.';
 comment on column public.enquiries.created_by is 'The staff member who recorded the enquiry by hand. NULL for enquiries submitted through the website.';

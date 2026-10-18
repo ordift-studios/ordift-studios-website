@@ -9,6 +9,7 @@ begin
 end $$;
 drop trigger enquiries_intake_guard on public.enquiries;
 drop function private.enquiry_intake_guard();
+drop index public.enquiries_placeholder_email_uniq;
 alter table public.enquiries drop constraint enquiries_staff_recorded_shape;
 alter table public.enquiries drop column source_channel, drop column received_at, drop column created_by, drop column email_notifications_suppressed;
 commit;
