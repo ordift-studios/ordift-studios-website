@@ -357,6 +357,9 @@ export async function updateQuotationStatus(params: { quotationId: string; statu
   const crewRefusal = await crewManagedRefusal(params.quotationId);
   if (crewRefusal) return crewRefusal;
 
+  // Acceptance is never a bare status flip: it is recorded with its evidence (who accepted, how, when) through recordOrdinaryQuotationAcceptance().
+  if (params.status === "accepted") return { ok: false, error: "Record the acceptance with its evidence (who accepted, how it was received and when) using “Record acceptance”." };
+
   const admin = createAdminClient();
   const { data: current } = await admin.from("client_quotations").select("status").eq("id", params.quotationId).maybeSingle();
   if (!current) return { ok: false, error: "Quotation not found." };

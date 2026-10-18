@@ -232,6 +232,32 @@ export async function bookingIsHistorical(requestId: string): Promise<boolean> {
   return (q ?? []).length > 0 || Number(enq?.amount_paid ?? 0) > 0;
 }
 
+// An ordinary (non-Crew-Support) enquiry or quotation is historical once its quotation has been accepted or any payment has been received: its entity is then
+// never assigned or changed by this feature, the same rule Crew Support bookings already follow. Crew Support enquiries are handled from their request.
+export async function ordinarySubjectGate(subject: { type: "enquiry" | "quotation"; id: string }): Promise<{ ok: true } | { ok: false; error: string }> {
+  const db = createAdminClient();
+  let enquiryId: string | null = null;
+  if (subject.type === "quotation") {
+    const { data: q } = await db.from("client_quotations").select("status, enquiry_id, crew_support_request_id").eq("id", subject.id).maybeSingle();
+    if (!q) return { ok: false, error: "That quotation was not found." };
+    if (q.crew_support_request_id) return { ok: false, error: "This quotation belongs to a Crew Support request — choose the entity from that request." };
+    if (q.status === "accepted") return { ok: false, error: "This quotation has already been accepted. It is historical and its entity is not assigned here; a correction needs the Founder's separate approval." };
+    enquiryId = q.enquiry_id;
+  } else {
+    enquiryId = subject.id;
+  }
+  if (!enquiryId) return { ok: true };
+  const { data: enq } = await db.from("enquiries").select("commercial_intent, amount_paid").eq("id", enquiryId).maybeSingle();
+  if (!enq) return { ok: false, error: "That enquiry was not found." };
+  if (enq.commercial_intent === "creative_crew_support") return { ok: false, error: "This is a Creative Crew Support enquiry — choose the entity from its Crew Support request." };
+  if (Number(enq.amount_paid ?? 0) > 0) return { ok: false, error: "A payment has already been received for this enquiry. It is historical and its entity is not assigned here; a correction needs the Founder's separate approval." };
+  if (subject.type === "enquiry") {
+    const { data: acc } = await db.from("client_quotations").select("id").eq("enquiry_id", enquiryId).eq("status", "accepted").limit(1);
+    if ((acc ?? []).length > 0) return { ok: false, error: "A quotation for this enquiry has already been accepted. It is historical and its entity is not assigned here; a correction needs the Founder's separate approval." };
+  }
+  return { ok: true };
+}
+
 // Records the contracting entity of a NEW booking. Refused for a booking that already has an accepted quotation or any payment (historical
 // bookings stay exactly as they are unless a correction is separately approved), and for an entity that is not eligible. Nothing else is
 // changed: no quotation, invoice, agreement, payment or payable is touched or regenerated.
@@ -245,6 +271,10 @@ export async function chooseContractingEntity(p: { subject: ContractingSubject; 
     if (!r) return { ok: false, error: "That booking was not found." };
     serviceFamily = r.service_family as string | null;
     if (await bookingIsHistorical(p.subject.id)) return { ok: false, error: "This booking already has an accepted quotation or a payment. It is historical and is not reassigned; a correction needs the Founder's separate approval." };
+  }
+  if (p.subject.type === "enquiry" || p.subject.type === "quotation") {
+    const gate = await ordinarySubjectGate({ type: p.subject.type, id: p.subject.id });
+    if (!gate.ok) return gate;
   }
   const { candidates } = await listContractingCandidates(p.actorUserId, serviceFamily, p.today ?? new Date().toISOString().slice(0, 10));
   const cand = candidates.find((c) => c.entityId === p.entityId);

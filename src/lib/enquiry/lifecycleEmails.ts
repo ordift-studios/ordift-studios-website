@@ -3,6 +3,7 @@ import { pathwayLabel } from "./pathways";
 import { dispatchNotification } from "@/lib/notifications/dispatch";
 import type { EmailResult } from "@/lib/shared/email/dispatch";
 import { siteUrl } from "@/lib/shared/env";
+import { createAdminClient } from "@/lib/supabase/admin";
 
 // CRM Lifecycle Automation Phase 1, Batch 2 (2026-08-20) — two new
 // client-facing lifecycle emails, distinct from every existing
@@ -37,6 +38,19 @@ import { siteUrl } from "@/lib/shared/env";
 // failure must never fail or roll back the payment/quotation write
 // that triggered it. Callers still get the EmailResult back so they
 // can log it, but should never let it affect their own return value.
+
+// Staff-recorded enquiries (WhatsApp, telephone, in person ...) are created with automatic client emails switched off, so a status change never emails a
+// client who was not told to expect it. The flag is read at send time; a lookup failure leaves behaviour exactly as it was before the flag existed.
+export async function clientEmailsSuppressed(enquiryId: string | null | undefined): Promise<boolean> {
+  if (!enquiryId) return false;
+  try {
+    const { data } = await createAdminClient().from("enquiries").select("email_notifications_suppressed").eq("id", enquiryId).maybeSingle();
+    return data?.email_notifications_suppressed === true;
+  } catch (err) {
+    console.error("[enquiry] could not read the email-suppression flag", err);
+    return false;
+  }
+}
 
 function formatUsd(amount: number): string {
   return `$${amount.toFixed(2)}`;
@@ -103,6 +117,7 @@ export function buildQuotationReadyEmail(data: QuotationReadyData): { subject: s
 
 export async function sendQuotationReadyEmail(data: QuotationReadyData): Promise<EmailResult | null> {
   try {
+    if (await clientEmailsSuppressed(data.enquiryId)) return null;
     const { subject, html, text } = buildQuotationReadyEmail(data);
     const result = await dispatchNotification({
       channels: ["email"],
@@ -180,6 +195,7 @@ export function buildBookingConfirmedEmail(data: BookingConfirmedData): { subjec
 
 export async function sendBookingConfirmedEmail(data: BookingConfirmedData): Promise<EmailResult | null> {
   try {
+    if (await clientEmailsSuppressed(data.enquiryId)) return null;
     const { subject, html, text } = buildBookingConfirmedEmail(data);
     const result = await dispatchNotification({
       channels: ["email"],
@@ -272,6 +288,7 @@ export function buildFilesReadyEmail(data: FilesReadyData): { subject: string; h
 
 export async function sendFilesReadyEmail(data: FilesReadyData): Promise<EmailResult | null> {
   try {
+    if (data.portalKind === "enquiry" && (await clientEmailsSuppressed(data.entityId))) return null;
     const { subject, html, text } = buildFilesReadyEmail(data);
     const result = await dispatchNotification({
       channels: ["email"],

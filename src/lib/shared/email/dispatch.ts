@@ -1,6 +1,7 @@
 import { Resend } from "resend";
 import { productionSendingEnabled } from "@/lib/shared/env";
 import { logEmailSendFailure } from "./deadLetter";
+import { isPlaceholderEmail } from "./placeholder";
 
 // Single shared send path for every email-producing form (Contact
 // Enquiry, Workshop Registration, Project Requests) — previously each
@@ -44,6 +45,12 @@ export async function sendEmail(params: {
 }): Promise<EmailResult> {
   const { to, subject, text, logPrefix } = params;
 
+  // A reserved placeholder address stands in for "no email on file" (an enquiry staff recorded from WhatsApp, a call or a visit). Nothing is ever sent to it.
+  if (isPlaceholderEmail(to)) {
+    console.log(`${logPrefix} not sent: recipient is a no-email placeholder`);
+    return { ok: true, mode: "logged", attempts: 0 };
+  }
+
   if (!productionSendingEnabled()) {
     console.log(`${logPrefix} [test-mode] would send email to ${to}\nSubject: ${subject}\n${text}\n`);
     return { ok: true, mode: "logged", attempts: 0 };
@@ -71,6 +78,11 @@ export async function sendEmailNow(params: {
   referenceNumber: string | null;
 }): Promise<EmailResult> {
   const { to, subject, html, text, logPrefix, emailType, referenceNumber } = params;
+
+  if (isPlaceholderEmail(to)) {
+    console.log(`${logPrefix} not sent: recipient is a no-email placeholder`);
+    return { ok: true, mode: "logged", attempts: 0 };
+  }
 
   const apiKey = process.env.RESEND_API_KEY;
   const from = process.env.EMAIL_FROM_ADDRESS;

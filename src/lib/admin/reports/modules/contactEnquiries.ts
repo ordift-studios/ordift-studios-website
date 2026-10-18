@@ -2,6 +2,7 @@ import { getAllEnquiries, crmStageLabel, REPORT_LIMIT } from "@/lib/portal/data"
 import { CRM_STAGES } from "@/lib/admin/enquiries";
 import { PATHWAYS, EXTRA_ENQUIRY_SERVICES } from "@/lib/enquiry/pathways";
 import type { ReportModule } from "../types";
+import { isPlaceholderEmail } from "@/lib/shared/email/placeholder";
 
 export const contactEnquiriesModule: ReportModule = {
   key: "contactEnquiries",
@@ -40,7 +41,8 @@ export const contactEnquiriesModule: ReportModule = {
       "Record ID": r.referenceNumber,
       Date: r.submittedAt,
       Name: r.fullName,
-      Email: r.email,
+      // A staff-recorded enquiry with no email address carries a reserved placeholder; reports show it as empty, never as an address.
+      Email: isPlaceholderEmail(r.email) ? "" : r.email,
       Phone: r.phone ?? "",
       Service: r.service,
       Status: crmStageLabel(r.crmStage),

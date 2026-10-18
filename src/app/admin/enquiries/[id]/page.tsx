@@ -20,6 +20,9 @@ import UpdateStageForm from "./UpdateStageForm";
 import StartHandlingButton from "./StartHandlingButton";
 import ActionForm from "@/components/admin/ActionForm";
 import ClientRecordPanel from "../../organisations/ClientRecordPanel";
+import WorkflowSummary from "@/components/admin/WorkflowSummary";
+import ContractingEntitySection from "../../organisations/ContractingEntitySection";
+import { displayEmail } from "@/lib/shared/email/placeholder";
 import SubmitButton from "@/components/admin/SubmitButton";
 
 function formatUsd(amount: number): string {
@@ -78,7 +81,7 @@ export default async function AdminEnquiryDetailPage({ params }: { params: Promi
               {enquiry.fullName}
             </h1>
             <p className="font-sans text-body-small text-ordift-ink-muted mt-1">
-              {enquiry.email} · {enquiry.referenceNumber}{enquiry.isTest ? <span className="ml-2 rounded-full bg-amber-100 px-2 py-0.5 text-caption text-amber-900">TEST / QA record</span> : null}
+              {displayEmail(enquiry.email)} · {enquiry.referenceNumber}{enquiry.isTest ? <span className="ml-2 rounded-full bg-amber-100 px-2 py-0.5 text-caption text-amber-900">TEST / QA record</span> : null}
             </p>
           </div>
 
@@ -93,7 +96,14 @@ export default async function AdminEnquiryDetailPage({ params }: { params: Promi
             <p className="font-sans text-body text-ordift-ink">{formatDateTime(enquiry.submittedAt)}</p>
           </div>
 
-          {user && isSuperAdmin(user) ? <ClientRecordPanel userId={user.id} subject={{ type: "enquiry", id: enquiry.id }} /> : null}
+          {user ? <WorkflowSummary enquiryId={enquiry.id} userId={user.id} isSuperAdmin={isSuperAdmin(user)} /> : null}
+
+          {user && isSuperAdmin(user) ? (
+            <>
+              <ClientRecordPanel userId={user.id} subject={{ type: "enquiry", id: enquiry.id }} />
+              {enquiry.service !== "crew-support" ? <ContractingEntitySection userId={user.id} subject={{ type: "enquiry", id: enquiry.id }} /> : null}
+            </>
+          ) : null}
 
           <div>
             <h2 className="font-serif font-medium text-body text-ordift-ink mb-4">Notes &amp; Updates</h2>

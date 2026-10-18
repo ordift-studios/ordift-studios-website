@@ -1,5 +1,6 @@
 "use server";
 
+import { recordOrdinaryQuotationAcceptance } from "@/lib/commercial/quotationAcceptance";
 import { revalidatePath } from "next/cache";
 import { getCurrentUser, hasRole, isSuperAdmin } from "@/lib/portal/roles";
 import {
@@ -211,5 +212,23 @@ export async function associateQuotationWithClientAction(_prev: ActionState, for
   if (!result.ok) return { ok: false, error: result.error };
 
   revalidatePath(`/admin/pricing/quotations/${quotationId}`);
+  return { ok: true };
+}
+
+// Records a client's acceptance of an ordinary quotation WITH its evidence. Changes only the quotation's acceptance record: no amount due, payment, stage,
+// booking or email is created or changed.
+export async function recordQuotationAcceptanceAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  const quotationId = String(formData.get("quotationId") ?? "");
+  if (!quotationId) return { ok: false, error: "Invalid request." };
+  const result = await recordOrdinaryQuotationAcceptance({
+    quotationId,
+    channel: String(formData.get("channel") ?? ""),
+    evidence: String(formData.get("evidence") ?? ""),
+    acceptedByName: String(formData.get("acceptedByName") ?? ""),
+    receivedAt: String(formData.get("receivedAt") ?? ""),
+  });
+  if (!result.ok) return { ok: false, error: result.error };
+  revalidatePath(`/admin/pricing/quotations/${quotationId}`);
+  revalidatePath("/admin/pricing/quotations");
   return { ok: true };
 }

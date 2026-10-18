@@ -6,6 +6,8 @@ import { getClientQuotation } from "@/lib/commercial/clientQuotations";
 import { QuotationStatusActions } from "./QuotationStatusActions";
 import { ReviseQuotationButton, DeleteQuotationButton } from "./QuotationRecordActions";
 import ClientRecordPanel from "../../../organisations/ClientRecordPanel";
+import ContractingEntitySection from "../../../organisations/ContractingEntitySection";
+import { getQuotationAcceptanceRecord } from "@/lib/commercial/quotationAcceptance";
 
 export const metadata: Metadata = {
   title: "Quotation — Ordift Studios Admin",
@@ -19,6 +21,7 @@ export default async function QuotationDetailPage({ params }: { params: Promise<
 
   const quotation = await getClientQuotation(id);
   if (!quotation) notFound();
+  const acceptance = quotation.status === "accepted" ? await getQuotationAcceptanceRecord(quotation.id) : null;
 
   return (
     <div className="max-w-5xl">
@@ -57,6 +60,20 @@ export default async function QuotationDetailPage({ params }: { params: Promise<
 
       {quotation.version > 1 && (
         <p className="font-sans text-caption text-ordift-ink-muted mb-4">Version {quotation.version} — revises an earlier issued quotation.</p>
+      )}
+
+      {acceptance && (
+        <div className="rounded-xl border border-black/10 bg-white p-6 mb-6 space-y-1">
+          <p className="font-sans text-body-small font-medium text-ordift-ink">Client acceptance recorded</p>
+          <p className="font-sans text-body-small text-ordift-ink-muted">
+            {acceptance.via === "client_portal" ? "Accepted by the client in the portal" : "Recorded by staff"}
+            {acceptance.channel ? ` · received by ${acceptance.channel.replace(/_/g, " ")}` : ""}
+            {acceptance.byName ? ` · accepted by ${acceptance.byName}` : ""}
+            {acceptance.receivedAt ? ` · received ${acceptance.receivedAt.slice(0, 16).replace("T", " ")} UTC` : ""}
+          </p>
+          {acceptance.evidence ? <p className="font-sans text-caption text-ordift-ink-muted whitespace-pre-wrap">Evidence: {acceptance.evidence}</p> : null}
+          <p className="font-sans text-caption text-ordift-ink-muted">A recorded acceptance is not a booking. It did not set the amount due, create a payment or send an email.</p>
+        </div>
       )}
 
       <div className="rounded-xl border border-black/10 bg-white p-6 mb-6">
@@ -120,7 +137,8 @@ export default async function QuotationDetailPage({ params }: { params: Promise<
       )}
 
       {isSuperAdmin(user) ? (
-        <div className="mt-6">
+        <div className="mt-6 space-y-6">
+          <ContractingEntitySection userId={user.id} subject={{ type: "quotation", id: quotation.id }} />
           <ClientRecordPanel userId={user.id} subject={{ type: "quotation", id: quotation.id }} />
         </div>
       ) : null}

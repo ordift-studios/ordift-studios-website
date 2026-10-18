@@ -1,4 +1,5 @@
 import { isFreeMailDomain, normaliseDomain } from "@/lib/organisations/names";
+import { isPlaceholderEmail } from "@/lib/shared/email/placeholder";
 
 // Client Directory — email and phone normalisation. Pure and import-light: used by the matcher, the server layer and tests.
 //
@@ -12,6 +13,8 @@ export function normaliseEmail(raw: string | null | undefined): string | null {
   if (e.length === 0 || e.length > 254 || /\s/.test(e)) return null;
   if (!/^[a-z0-9._%+'-]+@[a-z0-9-]+(\.[a-z0-9-]+)+$/.test(e)) return null;
   e = e.replace(/\.$/, "");
+  // A reserved placeholder (an enquiry recorded without an email address) is not an address and is never used as one.
+  if (isPlaceholderEmail(e)) return null;
   return e;
 }
 

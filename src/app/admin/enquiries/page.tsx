@@ -6,6 +6,7 @@ import { getAllEnquiries, crmStageLabel, paymentStatusLabel } from "@/lib/portal
 import { CRM_STAGES } from "@/lib/admin/enquiries";
 import { PATHWAYS, EXTRA_ENQUIRY_SERVICES, pathwayLabel } from "@/lib/enquiry/pathways";
 import ReportExportLinks from "@/components/admin/ReportExportLinks";
+import { displayEmail } from "@/lib/shared/email/placeholder";
 
 export const metadata: Metadata = {
   title: "Enquiries — Ordift Studios Admin",
@@ -82,6 +83,9 @@ export default async function AdminEnquiriesPage({
             Enquiries
           </h1>
           <p className="font-sans text-body-small text-ordift-ink-muted mt-2">{enquiries.length} shown</p>
+          <Link href="/admin/enquiries/new" className="mt-3 inline-block font-sans text-body-small font-semibold px-4 py-2 rounded-md border border-black/15 text-ordift-ink">
+            Record an enquiry (WhatsApp, call, email, in person) →
+          </Link>
         </div>
         <ReportExportLinks
           exportBaseHref="/api/admin/reports/contactEnquiries/export"
@@ -219,7 +223,7 @@ export default async function AdminEnquiriesPage({
                   <td className="py-3 px-4">
                     <Link href={`/admin/enquiries/${e.id}`} className="block">
                       <p className="font-sans text-body-small text-ordift-ink font-medium">{e.fullName}</p>
-                      <p className="font-sans text-caption text-ordift-ink-muted">{e.email}</p>
+                      <p className="font-sans text-caption text-ordift-ink-muted">{displayEmail(e.email)}</p>
                       {e.phone && <p className="font-sans text-caption text-ordift-ink-muted">{e.phone}</p>}
                       <p className="font-sans text-caption text-ordift-ink-muted">{e.referenceNumber}{e.isTest ? <span className="ml-2 rounded-full bg-amber-100 px-2 py-0.5 text-amber-900">TEST</span> : null}</p>
                     </Link>
