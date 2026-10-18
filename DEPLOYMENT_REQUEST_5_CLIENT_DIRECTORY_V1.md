@@ -36,7 +36,7 @@ Migration not applied; nothing pushed or deployed; no real data; no database-lev
 
 ## 7. Runbook once authorised (separate approvals)
 
-1. **Backup + apply 0164**: fresh logical backup into the encrypted volume (`supabase db dump --linked`), verify; read-only pre-counts; `supabase link` → `migration list --linked` (expect 0164 only) → `supabase db push --yes` → unlink; verify tables, policies, indexes, triggers, grants, the four columns all NULL, existing row counts unchanged, object deltas as expected (+2 tables, +4 columns, +5 triggers, +3 functions), site pages 200.
+1. **Backup + apply 0164**: fresh logical backup into the encrypted volume (`supabase db dump --linked`), verify; read-only pre-counts; `supabase link` → `migration list --linked` (expect 0164 only) → `supabase db push --yes` → unlink; verify tables, policies, indexes, triggers, grants, the four columns all NULL, existing row counts unchanged, object deltas as expected (+2 tables, +4 columns, +4 triggers, +3 functions, +12 indexes, +2 policies), site pages 200.
 2. **Deploy**: fast-forward push to `main`; monitor Vercel; verify public pages and that the new admin routes redirect when signed out. (Must precede any repository-visibility change, or a Vercel route be decided.)
 3. **First use**: Super Admin links the seven existing enquiries through Link enquiries, with real records entered only through the screens (never in code).
 
