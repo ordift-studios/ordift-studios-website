@@ -5,6 +5,7 @@ import { getCurrentUser, hasRole, isSuperAdmin } from "@/lib/portal/roles";
 import { getClientQuotation } from "@/lib/commercial/clientQuotations";
 import { QuotationStatusActions } from "./QuotationStatusActions";
 import { ReviseQuotationButton, DeleteQuotationButton } from "./QuotationRecordActions";
+import ClientRecordPanel from "../../../organisations/ClientRecordPanel";
 
 export const metadata: Metadata = {
   title: "Quotation — Ordift Studios Admin",
@@ -117,6 +118,12 @@ export default async function QuotationDetailPage({ params }: { params: Promise<
           )}
         </div>
       )}
+
+      {isSuperAdmin(user) ? (
+        <div className="mt-6">
+          <ClientRecordPanel userId={user.id} subject={{ type: "quotation", id: quotation.id }} />
+        </div>
+      ) : null}
     </div>
   );
 }

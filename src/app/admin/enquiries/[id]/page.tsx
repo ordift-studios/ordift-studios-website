@@ -19,6 +19,7 @@ import { getStoredPaymentCountry } from "@/lib/payments/paymentMarket";
 import UpdateStageForm from "./UpdateStageForm";
 import StartHandlingButton from "./StartHandlingButton";
 import ActionForm from "@/components/admin/ActionForm";
+import ClientRecordPanel from "../../organisations/ClientRecordPanel";
 import SubmitButton from "@/components/admin/SubmitButton";
 
 function formatUsd(amount: number): string {
@@ -91,6 +92,8 @@ export default async function AdminEnquiryDetailPage({ params }: { params: Promi
             </p>
             <p className="font-sans text-body text-ordift-ink">{formatDateTime(enquiry.submittedAt)}</p>
           </div>
+
+          {user && isSuperAdmin(user) ? <ClientRecordPanel userId={user.id} subject={{ type: "enquiry", id: enquiry.id }} /> : null}
 
           <div>
             <h2 className="font-serif font-medium text-body text-ordift-ink mb-4">Notes &amp; Updates</h2>
