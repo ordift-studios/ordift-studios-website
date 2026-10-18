@@ -108,7 +108,10 @@ export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
   },
   {
     label: "Talent & Partnerships",
-    items: [{ label: "Partnerships & Collaborations", href: "/admin/partnerships", partnershipAdministerOnly: true }],
+    items: [
+      { label: "Partnerships & Collaborations", href: "/admin/partnerships", partnershipAdministerOnly: true },
+      { label: "Organisations", href: "/admin/organisations", superAdminOnly: true },
+    ],
   },
   {
     label: "Legal & Governance",

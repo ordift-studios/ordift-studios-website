@@ -357,6 +357,9 @@ export const STRATEGY_CAPABILITIES = {
   partnershipConcessionApproveStrategic: "strategy.partnership_concession.approve_strategic", // DORMANT — >30-50% band
   partnershipReferralAdminister: "strategy.partnership_referral.administer", // WIRED — src/lib/partnerships/referrals.ts
   partnershipRightsExclusivityReview: "strategy.partnership_rights_exclusivity.review", // DORMANT — >30-day exclusivity / commercial usage review
+  // Organisation registry + supplier-approval confirmation (v1) — WIRED, src/lib/organisations/registry.ts. Super Admin override is the
+  // working path today; no Authority Grant is manufactured for it.
+  organisationRegistryAdminister: "strategy.organisation_registry.administer",
 } as const;
 
 // people.* — PULSE. recruitmentAdminister is WIRED into
