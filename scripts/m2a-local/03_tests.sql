@@ -38,7 +38,10 @@ select public.m2a_expect(format($$ select public.m2a_est(%L, %L) $$, public.m2a_
 select public.m2a_mkenq('R4', 'GH'); select public.m2a_mkq('R4Q', public.m2a_id('enq_R4'), 'accepted', 'QAR', 3640);
 select public.m2a_expect(format($$ select public.m2a_est(%L, %L, 'admin', 'QAR') $$, public.m2a_id('enq_R4'), public.m2a_id('q_R4Q')), '%ordift:currency_market_mismatch%');
 select public.m2a_mkenq('R5', 'QA'); select public.m2a_mkq('R5Q', public.m2a_id('enq_R5'), 'accepted', 'QAR', 3640);
-select public.m2a_expect(format($$ select public.m2a_est(%L, %L, 'admin', 'QAR') $$, public.m2a_id('enq_R5'), public.m2a_id('q_R5Q')), '%ordift:rate_stale%');
+-- the shared scratch database may hold a fresh QAR rate from other suites, so staleness is created INSIDE the rolled-back block
+select public.m2a_expect(format($$ do $x$ begin
+  update public.exchange_rates set effective_from = effective_from - interval '90 days' where currency_code = 'QAR';
+  perform public.m2a_est(%L, %L, 'admin', 'QAR'); end $x$ $$, public.m2a_id('enq_R5'), public.m2a_id('q_R5Q')), '%ordift:rate_stale%');
 select public.m2a_mkenq('R6'); select public.m2a_mkq('R6Q', public.m2a_id('enq_R6'), 'accepted', 'GHS', 1108.98);
 select public.m2a_expect(format($$ select public.establish_enquiry_amount_due(%L, %L, %L, 11.5, now(), false) $$, public.m2a_id('enq_R6'), public.m2a_id('q_R6Q'), public.m2a_id('admin')), '%ordift:rate_changed_since_preview%');
 select public.m2a_expect(format($$ select public.establish_enquiry_amount_due(%L, %L, %L) $$, public.m2a_id('enq_R6'), public.m2a_id('q_R6Q'), public.m2a_id('admin')), '%ordift:rate_changed_since_preview%');

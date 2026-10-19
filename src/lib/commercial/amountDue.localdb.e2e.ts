@@ -386,11 +386,18 @@ describe("currency handling: non-USD quotations", () => {
   it("a stale rate (over 30 days) cannot be established and cannot be overridden away; a QAR quotation on a Qatar enquiry shows the stale-rate message", async () => {
     h.nonUsd = true;
     const { enquiryId, quotationId } = await readyScenario({ currency: "QAR", total: 3640, market: "QA" });
-    const p = await previewOf(enquiryId);
-    expect(p.assessment.blockers[0].code).toBe("rate_stale");
-    as(ADMIN);
-    expect(mustFail(await establishAmountDue({ enquiryId, quotationId, expectedRateToUsd: 3.64, expectedRateEffectiveFrom: new Date(Date.now() - 45 * 86400_000).toISOString(), acknowledgeRateJump: false }))).toMatch(/30 days|changed after/);
-    expect(one(`select amount_due is null from public.enquiries where id='${enquiryId}'`)).toBe("t");
+    // The shared scratch database may hold a fresh QAR rate left by other suites, so make every QAR rate 90 days old for this test only, then put it back.
+    sql("update public.exchange_rates set effective_from = effective_from - interval '90 days' where currency_code = 'QAR'");
+    try {
+      const p = await previewOf(enquiryId);
+      expect(p.assessment.blockers[0].code).toBe("rate_stale");
+      as(ADMIN);
+      const stale = await establishAmountDue({ enquiryId, quotationId, expectedRateToUsd: 3.64, expectedRateEffectiveFrom: one("select effective_from from public.exchange_rates where currency_code = 'QAR' order by effective_from desc limit 1"), acknowledgeRateJump: false });
+      expect(mustFail(stale)).toMatch(/more than 30 days old/);
+      expect(one(`select amount_due is null from public.enquiries where id='${enquiryId}'`)).toBe("t");
+    } finally {
+      sql("update public.exchange_rates set effective_from = effective_from + interval '90 days' where currency_code = 'QAR'");
+    }
   });
   it("a currency that is not the payment market's is refused (QAR on a Ghana enquiry)", async () => {
     h.nonUsd = true;
