@@ -6,7 +6,8 @@
 --   2. client_quotations_one_live_per_enquiry   at most one live ORDINARY quotation per enquiry (partial unique index).
 --   3. client_quotations_currency_fk   quotation currency must exist in public.currencies (it was free text).
 --   4. public.revise_ordinary_quotation()        ATOMIC revision: supersede + new version + items + link + audit in one transaction.
---   5. public.establish_enquiry_amount_due()     ATOMIC establishment from an accepted quotation, with the rate checks done on the server.
+--   5. public.establish_enquiry_amount_due()     ATOMIC establishment from an accepted quotation, with the rate checks done on the server. Refuses non-USD
+--                                                quotations while private.non_usd_amount_due_enabled() is false (release safeguard, enforced here as well as in the app).
 --   6. public.override_enquiry_amount_due()      Super Admin override with a structured reason, before/after values and a ledger row.
 --
 -- None of the three functions writes a stage, sends or queues an email or notification, or touches a payment, obligation, receivable, invoice or
@@ -160,6 +161,14 @@ revoke all on function public.revise_ordinary_quotation(uuid, uuid) from public,
 grant execute on function public.revise_ordinary_quotation(uuid, uuid) to service_role;
 
 -- ---------------------------------------------------------------------------------------------------------------------------------------------
+-- Release safeguard (Founder, 2026-10-19): an amount due may NOT be established from a non-USD quotation until the payment-page wording fix (P1) is separately
+-- approved, deployed and verified. The application enforces it, and this function enforces it too, so no other caller (a script, the SQL editor, a future
+-- route) can bypass it. The P1 release flips it with one line: create or replace this function returning true.
+create or replace function private.non_usd_amount_due_enabled() returns boolean
+language sql immutable set search_path = '' as $$ select false $$;
+revoke all on function private.non_usd_amount_due_enabled() from public;
+
+-- ---------------------------------------------------------------------------------------------------------------------------------------------
 -- 5. Atomic establishment of the amount due from an ACCEPTED ordinary quotation.
 --    Writes: enquiries.amount_due / amount_due_source / amount_due_quotation_id; the rate lock and USD total on the quotation; one ledger row; one
 --    audit entry. Never writes the stage. Repeating the same call is a harmless no-op.
@@ -204,6 +213,7 @@ begin
   if e.payment_country is null then raise exception 'ordift:payment_market_not_set'; end if;
   select default_currency_code into v_market_currency from public.payment_country_config where country = e.payment_country;
   if q.currency <> 'USD' and q.currency is distinct from v_market_currency then raise exception 'ordift:currency_market_mismatch'; end if;
+  if q.currency <> 'USD' and not private.non_usd_amount_due_enabled() then raise exception 'ordift:non_usd_disabled'; end if;
 
   select coalesce(sum(i.line_total), 0), count(*) into v_lines, v_n from public.client_quotation_items i where i.quotation_id = q.id;
   if v_n = 0 or q.total <= 0 or abs(v_lines - q.total) > 0.01 * v_n then raise exception 'ordift:total_not_consistent'; end if;

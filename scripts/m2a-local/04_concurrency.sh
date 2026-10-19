@@ -38,7 +38,9 @@ sql "$INS values ('M2A-Q-C3B','x','draft','USD',1,0,0,1,'$SUP','$E3',true)" > /t
 grep -q "one_live_per_enquiry" /tmp/m2a_g3b.out && ok "the second creator was stopped by the unique index once the first committed" || bad "second creator: $(cat /tmp/m2a_g3b.out)"
 [ "$(sql "select public.m2a_live('$E3')")" = 1 ] && ok "exactly one live quotation" || bad "live count wrong"
 
+GATE(){ sql "create or replace function private.non_usd_amount_due_enabled() returns boolean language sql immutable set search_path = '' as \$\$ select $1 \$\$" >/dev/null; }
 echo "===== G4. two sessions establish the amount due at the same moment (double click)"
+GATE true
 sql "select public.m2a_mkenq('CONC4')" >/dev/null; sql "select public.m2a_mkq('CONC4Q', public.m2a_id('enq_CONC4'), 'accepted', 'GHS', 1108.98)" >/dev/null
 E4=$(sql "select public.m2a_id('enq_CONC4')"); Q4=$(sql "select public.m2a_id('q_CONC4Q')")
 CALL="select public.m2a_est('$E4','$Q4')"
@@ -47,6 +49,7 @@ sleep 0.6; sql "$CALL" > /tmp/m2a_g4b.out; wait
 grep -q '"noop": false' /tmp/m2a_g4a.out && ok "first session established the amount" || bad "first: $(cat /tmp/m2a_g4a.out)"
 grep -q '"noop": true' /tmp/m2a_g4b.out && ok "second session waited, then returned a harmless no-op" || bad "second: $(cat /tmp/m2a_g4b.out)"
 [ "$(sql "select count(*) from public.enquiry_amount_events where enquiry_id='$E4'")" = 1 ] && ok "exactly one ledger row" || bad "ledger count wrong"
+GATE false
 
 echo "===== G5. establish races a revision of the same quotation (opposite entry points, same lock order)"
 sql "select public.m2a_mkenq('CONC5')" >/dev/null; Q5=$(sql "select public.m2a_mkq('CONC5Q', public.m2a_id('enq_CONC5'), 'sent', 'GHS', 1108.98)"); E5=$(sql "select public.m2a_id('enq_CONC5')")

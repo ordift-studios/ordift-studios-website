@@ -87,6 +87,10 @@ const snapshotCounts = () => ({
 });
 let baseline = snapshotCounts();
 
+// The release safeguard exists twice: the application flag AND the database function. Tests switch both together; one test switches only the application.
+const setDbGate = (on: boolean) => sql(`create or replace function private.non_usd_amount_due_enabled() returns boolean language sql immutable set search_path = '' as $$ select ${on} $$;`);
+const gate = (on: boolean) => { h.nonUsd = on; setDbGate(on); };
+
 let counter = 0;
 function newEnquiry(opts: { market?: "GH" | "QA" | null; intent?: string; paid?: number | null; due?: number | null; source?: string | null } = {}): string {
   const ref = `M2APP-${Date.now().toString().slice(-7)}${++counter}`;
@@ -153,6 +157,7 @@ beforeAll(() => {
 
 afterAll(() => {
   try {
+    setDbGate(false);
     sql(`
       set session_replication_role = replica;
       delete from public.enquiry_amount_events where enquiry_id in (select id from public.enquiries where reference_number like 'M2APP-%');
@@ -180,7 +185,7 @@ describe("authorization", () => {
     as(ADMIN); expect(await getAmountDuePanel(enquiryId)).not.toBeNull();
   });
   it("establishing needs the manage-amount permission: staff, a client and signed-out are refused and nothing is written", async () => {
-    h.nonUsd = false;
+    gate(false);
     const { enquiryId, quotationId } = await readyScenario();
     for (const who of [STAFF, CLIENT, null]) {
       as(who);
@@ -288,7 +293,7 @@ describe("the contracting entity is a prerequisite for acceptance (never inferre
     must(await acceptQuotation(loose));
   });
   it("establishing is refused when no entity is recorded, even for an accepted quotation", async () => {
-    h.nonUsd = false;
+    gate(false);
     const enquiryId = newEnquiry(); const q = await makeQuotation(enquiryId); await sendQuotation(q);
     sql(`update public.client_quotations set status='accepted', accepted_at=now(), accepted_via='staff_recorded', accepted_by_name='x', acceptance_channel='email', acceptance_evidence='direct data fix', acceptance_received_at=now(), acceptance_recorded_by='${ADMIN}' where id='${q}'`);
     const p = await previewOf(enquiryId);
@@ -299,7 +304,7 @@ describe("the contracting entity is a prerequisite for acceptance (never inferre
 
 describe("establishing the amount due (USD)", () => {
   it("writes the amount, source and quotation link; records the ledger and audit; changes no stage; sends nothing", async () => {
-    h.nonUsd = false;
+    gate(false);
     const { enquiryId, quotationId } = await readyScenario({ total: 250 });
     const stageBefore = stageOf(enquiryId);
     const emailsBefore = h.emails.length + h.notifications.length + h.quotationReadyEmails.length;
@@ -313,7 +318,7 @@ describe("establishing the amount due (USD)", () => {
     expect(num(`select count(*) from public.activity_log where action='enquiry.amount_due_established' and entity_id='${enquiryId}' and actor_user_id='${ADMIN}'`)).toBe(1);
   });
   it("repeating it is a harmless no-op, and the panel then reports it as established", async () => {
-    h.nonUsd = false;
+    gate(false);
     const { enquiryId, quotationId } = await readyScenario();
     must(await establishFromPreview(enquiryId, quotationId));
     const again = must(await establishFromPreview(enquiryId, quotationId));
@@ -324,7 +329,7 @@ describe("establishing the amount due (USD)", () => {
     expect(p.events).toHaveLength(1);
   });
   it("is refused for an unaccepted quotation, a Crew Support enquiry and an unset payment market, with plain messages", async () => {
-    h.nonUsd = false;
+    gate(false);
     const e = newEnquiry(); const q = await makeQuotation(e); await sendQuotation(q);
     as(ADMIN); expect(mustFail(await establishAmountDue({ enquiryId: e, quotationId: q, expectedRateToUsd: null, expectedRateEffectiveFrom: null, acknowledgeRateJump: false }))).toMatch(/not been accepted/);
     const crew = newEnquiry({ intent: "creative_crew_support" });
@@ -333,7 +338,7 @@ describe("establishing the amount due (USD)", () => {
     expect(mustFail(await establishFromPreview(noMarket.enquiryId, noMarket.quotationId))).toMatch(/payment market/);
   });
   it("the form action reports success only after it happened and says no email was sent or stage changed", async () => {
-    h.nonUsd = false;
+    gate(false);
     const { enquiryId, quotationId } = await readyScenario({ total: 120 });
     as(ADMIN);
     const fd = new FormData(); fd.set("enquiryId", enquiryId); fd.set("quotationId", quotationId);
@@ -347,7 +352,7 @@ describe("establishing the amount due (USD)", () => {
 
 describe("currency handling: non-USD quotations", () => {
   it("while the safeguard is on, a GHS quotation cannot be established, the database is never called, and the amount stays unset", async () => {
-    h.nonUsd = false;
+    gate(false);
     const { enquiryId, quotationId } = await readyScenario({ currency: "GHS", total: 1108.98 });
     const p = await previewOf(enquiryId);
     expect(p.assessment.canEstablish).toBe(false);
@@ -357,7 +362,7 @@ describe("currency handling: non-USD quotations", () => {
     expect(one(`select amount_due is null from public.enquiries where id='${enquiryId}'`)).toBe("t");
   });
   it("with the safeguard off (the P1 release), GHS 1,108.98 at the current rate becomes USD 100.00, the rate is locked, and later rate changes do not move it", async () => {
-    h.nonUsd = true;
+    gate(true);
     const { enquiryId, quotationId } = await readyScenario({ currency: "GHS", total: 1108.98 });
     const p = await previewOf(enquiryId);
     expect(p.assessment.canEstablish).toBe(true);
@@ -372,8 +377,18 @@ describe("currency handling: non-USD quotations", () => {
     expect(one(`select fx_rate_to_usd from public.client_quotations where id='${quotationId}'`)).toBe("11.089800");
     sql(`delete from public.exchange_rates where reason = 'M2APP later rate'`);
   });
+  it("the database refuses a non-USD establishment by itself, even if the application safeguard were bypassed or switched on", async () => {
+    h.nonUsd = true; setDbGate(false);
+    const { enquiryId, quotationId } = await readyScenario({ currency: "GHS", total: 1108.98 });
+    const direct = await db().rpc("establish_enquiry_amount_due", { p_enquiry_id: enquiryId, p_quotation_id: quotationId, p_actor: ADMIN, p_expected_rate: 11.0898, p_expected_effective: new Date().toISOString(), p_ack_rate_jump: false });
+    expect(direct.error?.message).toContain("ordift:non_usd_disabled");
+    expect(mustFail(await establishFromPreview(enquiryId, quotationId))).toMatch(/wording update/);
+    expect(one(`select amount_due is null from public.enquiries where id='${enquiryId}'`)).toBe("t");
+    expect(num(`select count(*) from public.enquiry_amount_events where enquiry_id='${enquiryId}'`)).toBe(0);
+    gate(false);
+  });
   it("a rate that changed after the preview is refused (the rate previewed is the rate used)", async () => {
-    h.nonUsd = true;
+    gate(true);
     const { enquiryId, quotationId } = await readyScenario({ currency: "GHS", total: 1108.98 });
     const p = await previewOf(enquiryId);
     sql(`insert into public.exchange_rates (currency_code, rate_to_usd, effective_from, reason, updated_by) values ('GHS', 11.1, now() - interval '1 hour', 'M2APP shifted rate', '${SUPER}')`);
@@ -384,7 +399,7 @@ describe("currency handling: non-USD quotations", () => {
     sql(`delete from public.exchange_rates where reason = 'M2APP shifted rate'`);
   });
   it("a stale rate (over 30 days) cannot be established and cannot be overridden away; a QAR quotation on a Qatar enquiry shows the stale-rate message", async () => {
-    h.nonUsd = true;
+    gate(true);
     const { enquiryId, quotationId } = await readyScenario({ currency: "QAR", total: 3640, market: "QA" });
     // The shared scratch database may hold a fresh QAR rate left by other suites, so make every QAR rate 90 days old for this test only, then put it back.
     sql("update public.exchange_rates set effective_from = effective_from - interval '90 days' where currency_code = 'QAR'");
@@ -400,12 +415,12 @@ describe("currency handling: non-USD quotations", () => {
     }
   });
   it("a currency that is not the payment market's is refused (QAR on a Ghana enquiry)", async () => {
-    h.nonUsd = true;
+    gate(true);
     const { enquiryId } = await readyScenario({ currency: "QAR", total: 3640, market: "GH" });
     expect((await previewOf(enquiryId)).assessment.blockers[0].code).toBe("currency_market_mismatch");
   });
   it("payments already received block a different amount; an override can never go below what was paid", async () => {
-    h.nonUsd = false;
+    gate(false);
     const { enquiryId, quotationId } = await readyScenario({ total: 400, paid: 50 });
     expect(mustFail(await establishFromPreview(enquiryId, quotationId))).toMatch(/Payments exist/);
     const e2 = newEnquiry({ paid: 50, due: 60, source: "manual" });
@@ -417,7 +432,7 @@ describe("currency handling: non-USD quotations", () => {
 
 describe("Super Admin override: meaningful reasons, before/after values, audit", () => {
   async function establishedEnquiry(total = 200) {
-    h.nonUsd = false;
+    gate(false);
     const s = await readyScenario({ total });
     must(await establishFromPreview(s.enquiryId, s.quotationId));
     return s;
@@ -487,7 +502,7 @@ describe("the register", () => {
 
 describe("duplicate submissions and concurrency", () => {
   it("six simultaneous establish calls: exactly one writes, five are harmless no-ops, one ledger row, one audit entry", async () => {
-    h.nonUsd = false;
+    gate(false);
     const { enquiryId, quotationId } = await readyScenario({ total: 180 });
     const results = await Promise.all(Array.from({ length: 6 }, () => establishFromPreview(enquiryId, quotationId)));
     const oks = results.filter((r) => r.ok) as Extract<(typeof results)[number], { ok: true }>[];
@@ -525,7 +540,7 @@ describe("duplicate submissions and concurrency", () => {
     expect(num(`select count(*) from public.client_quotations where enquiry_id='${enquiryId}'`)).toBe(1);
   });
   it("simultaneous overrides apply one after another: every row's 'before' equals the previous row's 'after', and the final amount is the last one written", async () => {
-    h.nonUsd = false;
+    gate(false);
     const { enquiryId, quotationId } = await readyScenario({ total: 200 });
     must(await establishFromPreview(enquiryId, quotationId));
     as(SUPER);
@@ -559,7 +574,7 @@ describe("failed transactions leave everything as it was", () => {
     must(await reviseClientQuotation(q));
   });
   it("a refused establishment or override changes nothing at all (no amount, ledger row or audit entry)", async () => {
-    h.nonUsd = false;
+    gate(false);
     const { enquiryId } = await readyScenario();
     const before = { ledger: num("select count(*) from public.enquiry_amount_events"), audit: num("select count(*) from public.activity_log") };
     as(SUPER);
@@ -584,7 +599,7 @@ describe("failed transactions leave everything as it was", () => {
 
 describe("quotation history is preserved", () => {
   it("a chain of revisions keeps every version, links each to its predecessor, and only the newest can be accepted and established", async () => {
-    h.nonUsd = false;
+    gate(false);
     const enquiryId = newEnquiry();
     const v1 = await makeQuotation(enquiryId, { total: 500 }); await sendQuotation(v1);
     as(ADMIN);

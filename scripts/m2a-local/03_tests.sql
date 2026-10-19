@@ -10,6 +10,10 @@ begin
 end $$;
 
 \echo ===== D. establishing the amount due =====
+-- the database safeguard is OFF by default (non-USD refused); the first test proves it, then it is switched ON locally for the currency-conversion tests
+select public.m2a_mkenq('GATE'); select public.m2a_mkq('GATEQ', public.m2a_id('enq_GATE'), 'accepted', 'GHS', 1108.98);
+select public.m2a_expect(format($$ select public.establish_enquiry_amount_due(%L, %L, %L, 11.0898, now(), false) $$, public.m2a_id('enq_GATE'), public.m2a_id('q_GATEQ'), public.m2a_id('admin')), '%ordift:non_usd_disabled%');
+create or replace function private.non_usd_amount_due_enabled() returns boolean language sql immutable set search_path = '' as $$ select true $$;
 select public.m2a_mkenq('EST', 'GH'); select public.m2a_mkq('EST1', public.m2a_id('enq_EST'), 'accepted', 'GHS', 1108.98);
 create temp table est_before as select crm_stage, amount_paid from public.enquiries where id = public.m2a_id('enq_EST');
 create temp table est_out as select public.m2a_est(public.m2a_id('enq_EST'), public.m2a_id('q_EST1')) r;
@@ -96,3 +100,6 @@ select public.m2a_assert((select count(*) from public.payments) = (select v from
 select public.m2a_assert((select count(*) from pg_trigger t join pg_proc p on p.oid = t.tgfoid where not t.tgisinternal and t.tgrelid in ('public.enquiries'::regclass, 'public.client_quotations'::regclass, 'public.client_quotation_items'::regclass, 'public.enquiry_amount_events'::regclass) and p.prosrc ~* '(insert into|perform |net\.http|http_post|pg_notify|dblink)') = 0, 'every trigger on the affected tables only guards or stamps (no inserts, no network calls, no notifications)');
 select public.m2a_assert((select count(*) from pg_proc p where p.pronamespace = 'public'::regnamespace and p.proname in ('revise_ordinary_quotation','establish_enquiry_amount_due','override_enquiry_amount_due') and (p.prosrc ~* 'crm_stage|pg_net|http_post|notif' )) = 0, 'the three functions never reference the stage, notifications or network calls');
 select public.m2a_assert((select count(*) from pg_proc p where p.pronamespace = 'public'::regnamespace and p.proname in ('revise_ordinary_quotation','establish_enquiry_amount_due','override_enquiry_amount_due') and (p.prosrc ~* '(insert into|update|delete from)\s+public\.(payments|payment_obligations|engagements|crew_support|deliverables)')) = 0, 'the three functions never write payment, obligation, engagement, Crew Support or deliverable tables');
+-- restore the shipped safeguard value
+create or replace function private.non_usd_amount_due_enabled() returns boolean language sql immutable set search_path = '' as $$ select false $$;
+select public.m2a_expect(format($$ select public.m2a_est(%L, %L) $$, public.m2a_id('enq_EST'), public.m2a_id('q_EST1')), '%ordift:non_usd_disabled%');

@@ -84,6 +84,13 @@ describe("the three functions are server-only, atomic and side-effect free", () 
       expect(b, code).toContain(`ordift:${code}`);
     }
   });
+  it("the non-USD release safeguard is enforced in the database too, defaulting to disabled", () => {
+    expect(migration).toMatch(/function private\.non_usd_amount_due_enabled\(\) returns boolean\s+language sql immutable set search_path = '' as \$\$ select false \$\$/);
+    const b = body("establish_enquiry_amount_due");
+    expect(b).toContain("not private.non_usd_amount_due_enabled()");
+    expect(b).toContain("ordift:non_usd_disabled");
+    expect(rollback).toContain("non_usd_amount_due_enabled");
+  });
   it("override is Super Admin only and needs a category, a long enough reason, distinct words and evidence", () => {
     const b = body("override_enquiry_amount_due");
     expect(b).toContain("array['super_admin']");

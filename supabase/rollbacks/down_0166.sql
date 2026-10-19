@@ -12,5 +12,6 @@ alter table public.client_quotations drop constraint client_quotations_currency_
 drop index public.client_quotations_one_live_per_enquiry;
 drop table public.enquiry_amount_events;
 drop function private.enquiry_amount_events_immutable();
+drop function private.non_usd_amount_due_enabled();
 drop function private.actor_has_role(uuid, text[]);
 commit;
