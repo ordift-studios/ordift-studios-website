@@ -1,5 +1,6 @@
 "use server";
 
+import { hasActiveOrdinaryQuotation } from "@/lib/commercial/amountDue";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentUser, isStaffOrAdmin } from "@/lib/portal/roles";
@@ -244,6 +245,21 @@ export async function setAmountDueAction(
   // refused. Every other enquiry keeps this manual action unchanged.
   if (current?.commercial_intent === "creative_crew_support") {
     return { ok: false, error: "For Creative Crew Support, the amount due is set automatically when the quotation is accepted — it can't be typed in here." };
+  }
+
+  // M2a: an enquiry that has an active ordinary quotation takes its amount from that quotation (explicit "Establish amount due", or a Super Admin override
+  // with a recorded reason). This typed action advances the stage and emails the client, so it must not be reachable for such an enquiry by accident.
+  // Enquiries without an active quotation keep this action exactly as it was.
+  let hasQuotation: boolean;
+  try {
+    hasQuotation = await hasActiveOrdinaryQuotation(enquiryId);
+  } catch (error) {
+    // Fail closed: if we cannot tell whether a quotation owns this amount, nothing is written.
+    console.error("[admin] amount-due guard failed", error);
+    return { ok: false, error: "Save failed. Please try again." };
+  }
+  if (hasQuotation) {
+    return { ok: false, error: "This enquiry has an active quotation. Establish the amount due from the accepted quotation on this page instead of typing it in (a Super Admin can override it with a recorded reason)." };
   }
 
   const updates: { amount_due: number; amount_due_source: "manual"; amount_due_quotation_id: null; crm_stage?: CrmStage } = {

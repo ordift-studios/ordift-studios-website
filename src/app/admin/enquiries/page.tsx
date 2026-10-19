@@ -86,6 +86,11 @@ export default async function AdminEnquiriesPage({
           <Link href="/admin/enquiries/new" className="mt-3 inline-block font-sans text-body-small font-semibold px-4 py-2 rounded-md border border-black/15 text-ordift-ink">
             Record an enquiry (WhatsApp, call, email, in person) →
           </Link>
+          {isSuperAdmin(user) ? (
+            <Link href="/admin/enquiries/overrides" className="mt-3 ml-2 inline-block font-sans text-body-small font-semibold px-4 py-2 rounded-md border border-black/15 text-ordift-ink">
+              Amount-due register →
+            </Link>
+          ) : null}
         </div>
         <ReportExportLinks
           exportBaseHref="/api/admin/reports/contactEnquiries/export"

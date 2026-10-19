@@ -85,7 +85,9 @@ export async function createQuotationAction(_prev: CreateQuotationState, formDat
   if (!currency) return { ok: false, error: "Currency is required." };
   if (items.length === 0) return { ok: false, error: "Add at least one valid line item." };
 
+  const enquiryId = String(formData.get("enquiryId") ?? "").trim() || null;
   const result = await createClientQuotation({
+    enquiryId,
     clientProfileId,
     prospectName,
     prospectEmail,
@@ -100,6 +102,7 @@ export async function createQuotationAction(_prev: CreateQuotationState, formDat
   if (!result.ok) return { ok: false, error: result.error };
 
   revalidatePath("/admin/pricing/quotations");
+  if (enquiryId) revalidatePath(`/admin/enquiries/${enquiryId}`);
   return { ok: true, quotationId: result.quotationId, quotationReference: result.quotationReference };
 }
 

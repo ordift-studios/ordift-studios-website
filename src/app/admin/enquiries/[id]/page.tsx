@@ -25,6 +25,8 @@ import ContractingEntitySection from "../../organisations/ContractingEntitySecti
 import EmailNotificationsPanel from "./EmailNotificationsPanel";
 import { displayEmail } from "@/lib/shared/email/placeholder";
 import SubmitButton from "@/components/admin/SubmitButton";
+import { getAmountDuePanel } from "@/lib/commercial/amountDue";
+import QuotationAmountPanel from "./QuotationAmountPanel";
 
 function formatUsd(amount: number): string {
   return `$${amount.toFixed(2)}`;
@@ -48,7 +50,7 @@ function formatDateTime(iso: string): string {
 export default async function AdminEnquiryDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
 
-  const [enquiry, notes, categories, deliverables, requests, user, amountDueSource, storedPaymentCountry] = await Promise.all([
+  const [enquiry, notes, categories, deliverables, requests, user, amountDueSource, storedPaymentCountry, amountPanel] = await Promise.all([
     getEnquiryById(id),
     getEnquiryNotes(id),
     getDeliverableCategories(),
@@ -57,6 +59,7 @@ export default async function AdminEnquiryDetailPage({ params }: { params: Promi
     getCurrentUser(),
     getAmountDueProvenance(id),
     getStoredPaymentCountry(id),
+    getAmountDuePanel(id),
   ]);
 
   if (!enquiry) notFound();
@@ -100,6 +103,8 @@ export default async function AdminEnquiryDetailPage({ params }: { params: Promi
           {user ? <WorkflowSummary enquiryId={enquiry.id} userId={user.id} isSuperAdmin={isSuperAdmin(user)} /> : null}
 
           {user && (isSuperAdmin(user) || hasRole(user, "admin")) ? <EmailNotificationsPanel enquiryId={enquiry.id} /> : null}
+
+          {amountPanel ? <QuotationAmountPanel panel={amountPanel} /> : null}
 
           {user && isSuperAdmin(user) ? (
             <>
@@ -205,7 +210,11 @@ export default async function AdminEnquiryDetailPage({ params }: { params: Promi
                 <PaymentMarketForm enquiryId={enquiry.id} current={storedPaymentCountry} />
               </div>
             )}
-            {canManageAmount ? (
+            {canManageAmount && amountPanel?.activeQuotation && !amountPanel.enquiry.isCrewSupport ? (
+              <p className="font-sans text-caption text-ordift-ink-muted">
+                This enquiry has an active quotation, so the amount due is established from it (see Quotation and amount due). A Super Admin can override it with a recorded reason.
+              </p>
+            ) : canManageAmount ? (
               <SetAmountDueForm enquiryId={enquiry.id} currentAmountDue={enquiry.amountDue} />
             ) : (
               <p className="font-sans text-caption text-ordift-ink-muted">

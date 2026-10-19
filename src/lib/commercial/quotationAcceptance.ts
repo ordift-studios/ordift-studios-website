@@ -2,6 +2,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { getCurrentUser, hasRole, isSuperAdmin } from "@/lib/portal/roles";
 import { logActivity } from "@/lib/admin/activityLog";
 import { validateStaffAcceptance } from "@/lib/crewSupport/quotationRules";
+import { CONTRACTING_ENTITY_REQUIRED_MESSAGE, hasContractingEntityRecorded } from "./contractingEntityGate";
 
 // Recorded client acceptance of an ORDINARY (non-Crew-Support) quotation, with its evidence. Server-only.
 //
@@ -10,6 +11,7 @@ import { validateStaffAcceptance } from "@/lib/crewSupport/quotationRules";
 //
 // What this does, and does not do:
 //   * It records that the client said yes. That is NOT a booking, and the booking stage keeps its existing meaning.
+//   * For an enquiry-linked quotation it refuses until a contracting entity has been explicitly recorded (never inferred).
 //   * It does NOT set or change the enquiry's amount due, create a payment, obligation, receivable or invoice, change any stage, or send any email.
 //   * It does not touch Crew Support quotations: those are managed only from their Crew Support request.
 
@@ -26,10 +28,14 @@ export async function recordOrdinaryQuotationAcceptance(params: {
   if (!user || (!hasRole(user, "admin") && !isSuperAdmin(user))) return { ok: false, error: "Not authorized to manage quotations." };
 
   const admin = createAdminClient();
-  const { data: q } = await admin.from("client_quotations").select("id, status, crew_support_request_id, issued_at").eq("id", params.quotationId).maybeSingle();
+  const { data: q } = await admin.from("client_quotations").select("id, status, crew_support_request_id, issued_at, enquiry_id").eq("id", params.quotationId).maybeSingle();
   if (!q) return { ok: false, error: "Quotation not found." };
   if (q.crew_support_request_id) return { ok: false, error: "This quotation belongs to a Crew Support request — record the acceptance from that request." };
   if (q.status !== "sent") return { ok: false, error: q.status === "accepted" ? "This quotation's acceptance is already recorded." : "Only an issued (sent) quotation can have an acceptance recorded." };
+
+  // M2a (decision 1): an enquiry-linked quotation cannot be accepted until the contracting entity has been explicitly recorded. Otherwise the acceptance would
+  // make the entity historical (M1 refuses to record one after acceptance) and it could never be given one.
+  if (q.enquiry_id && !(await hasContractingEntityRecorded({ quotationId: q.id, enquiryId: q.enquiry_id }))) return { ok: false, error: CONTRACTING_ENTITY_REQUIRED_MESSAGE };
 
   const checked = validateStaffAcceptance({ channel: params.channel, evidence: params.evidence, acceptedByName: params.acceptedByName, receivedAt: params.receivedAt, now: new Date(), issuedAt: q.issued_at });
   if (!checked.ok) return { ok: false, error: checked.reason };

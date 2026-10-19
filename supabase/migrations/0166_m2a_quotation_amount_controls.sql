@@ -40,6 +40,9 @@ revoke all on function private.actor_has_role(uuid, text[]) from public;
 -- 1. Append-only ledger.
 create table public.enquiry_amount_events (
   id uuid primary key default gen_random_uuid(),
+  -- seq gives the ledger one exact order. created_at is the real clock time at insert (clock_timestamp, not the transaction start), and the insert happens
+  -- inside the function AFTER the enquiry row lock is taken, so both follow the order in which concurrent changes were actually applied.
+  seq bigint generated always as identity unique,
   business_id uuid not null references public.businesses (id) default public.ordift_studios_business_id(),
   enquiry_id uuid not null references public.enquiries (id) on delete restrict,
   kind text not null check (kind in ('established', 'override')),
@@ -58,14 +61,14 @@ create table public.enquiry_amount_events (
   reason text,
   evidence_reference text,
   actor_id uuid not null references public.profiles (id),
-  created_at timestamptz not null default now(),
+  created_at timestamptz not null default clock_timestamp(),
   constraint enquiry_amount_events_shape check (
     (kind = 'established' and quotation_id is not null and category is null and reason is null and evidence_reference is null)
     or (kind = 'override' and category is not null and reason is not null and char_length(btrim(reason)) >= 30
         and (category = 'data_entry_correction' or (evidence_reference is not null and char_length(btrim(evidence_reference)) >= 3)))
   )
 );
-create index enquiry_amount_events_enquiry_idx on public.enquiry_amount_events (enquiry_id, created_at);
+create index enquiry_amount_events_enquiry_idx on public.enquiry_amount_events (enquiry_id, seq);
 comment on table public.enquiry_amount_events is 'Append-only ledger: every amount-due establishment from an accepted quotation and every Super Admin override, with before and after values. Written only by the M2a functions.';
 
 create or replace function private.enquiry_amount_events_immutable() returns trigger

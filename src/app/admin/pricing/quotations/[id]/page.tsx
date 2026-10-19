@@ -58,6 +58,12 @@ export default async function QuotationDetailPage({ params }: { params: Promise<
         </div>
       </div>
 
+      {quotation.enquiryId ? (
+        <p className="font-sans text-caption text-ordift-ink-muted mb-4">
+          For enquiry <Link href={`/admin/enquiries/${quotation.enquiryId}`} className="text-ordift-gold-pressed underline underline-offset-4">{quotation.enquiryReference ?? "view"}</Link>. The amount due is established from the enquiry page once this quotation is accepted.
+        </p>
+      ) : null}
+
       {quotation.version > 1 && (
         <p className="font-sans text-caption text-ordift-ink-muted mb-4">Version {quotation.version} — revises an earlier issued quotation.</p>
       )}

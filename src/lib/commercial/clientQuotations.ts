@@ -2,6 +2,8 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { logActivity } from "@/lib/admin/activityLog";
 import { hasRole, isSuperAdmin, getCurrentUser } from "@/lib/portal/roles";
 import { formatQuotationReference } from "./quotationReference";
+import { isSupportedCurrency } from "@/lib/payments/currency";
+import { messageForAmountDueError } from "./amountDueRules";
 
 // Universal Commercial Rate Card & Quotation System — selling side
 // (2026-09-16, migration 0134). A quotation is a formal, versioned
@@ -57,6 +59,8 @@ export type QuotationLineItemInput = {
 };
 
 export type CreateQuotationParams = {
+  // M2a: the enquiry this quotation is for. Optional: a quotation can still be made without one (it can be attached later).
+  enquiryId?: string | null;
   clientProfileId?: string | null;
   prospectName?: string | null;
   prospectEmail?: string | null;
@@ -157,12 +161,37 @@ function validatePartyAndItems(params: { clientProfileId?: string | null; prospe
   return { ok: true };
 }
 
+// M2a: a quotation's currency must be a real, active currency (it used to accept any text). The database also enforces this with a foreign key.
+async function currencyRefusal(currency: string): Promise<{ ok: false; error: string } | null> {
+  return (await isSupportedCurrency(currency.trim())) ? null : { ok: false, error: "Choose a supported currency (GHS, QAR or USD)." };
+}
+
+// M2a: an enquiry a quotation may be linked to: it exists, is not Creative Crew Support, and has no other active quotation. The database's unique index is
+// the real backstop for the last rule (two people acting at once); this gives the friendly message first.
+async function enquiryLinkRefusal(enquiryId: string, exceptQuotationId?: string): Promise<{ ok: false; error: string } | null> {
+  const admin = createAdminClient();
+  const { data: enq } = await admin.from("enquiries").select("id, commercial_intent").eq("id", enquiryId).maybeSingle();
+  if (!enq) return { ok: false, error: "That enquiry was not found." };
+  if (enq.commercial_intent === "creative_crew_support") return { ok: false, error: "This is a Creative Crew Support enquiry. Its quotation is managed from the Crew Support request." };
+  let q = admin.from("client_quotations").select("id").eq("enquiry_id", enquiryId).is("crew_support_request_id", null).eq("is_variation", false).in("status", ["draft", "ready", "sent", "accepted"]).limit(1);
+  if (exceptQuotationId) q = q.neq("id", exceptQuotationId);
+  const { data: live } = await q;
+  if ((live ?? []).length > 0) return { ok: false, error: messageForAmountDueError("client_quotations_one_live_per_enquiry") };
+  return null;
+}
+
 export async function createClientQuotation(params: CreateQuotationParams): Promise<CreateQuotationResult> {
   const auth = await requireAdminActor();
   if (!auth.ok) return auth;
 
   const validation = validatePartyAndItems(params);
   if (!validation.ok) return validation;
+  const badCurrency = await currencyRefusal(params.currency);
+  if (badCurrency) return badCurrency;
+  if (params.enquiryId) {
+    const refusal = await enquiryLinkRefusal(params.enquiryId);
+    if (refusal) return refusal;
+  }
 
   const admin = createAdminClient();
   const { data: seqValue, error: seqError } = await admin.rpc("next_client_quotation_reference_seq");
@@ -177,12 +206,13 @@ export async function createClientQuotation(params: CreateQuotationParams): Prom
     .from("client_quotations")
     .insert({
       quotation_reference: quotationReference,
+      enquiry_id: params.enquiryId ?? null,
       client_profile_id: params.clientProfileId ?? null,
       prospect_name: params.prospectName ?? null,
       prospect_email: params.prospectEmail ?? null,
       prospect_phone: params.prospectPhone ?? null,
       prospect_company: params.prospectCompany ?? null,
-      currency: params.currency,
+      currency: params.currency.trim(),
       subtotal: totals.subtotal,
       discount_total: totals.discountTotal,
       tax_total: totals.taxTotal,
@@ -196,18 +226,22 @@ export async function createClientQuotation(params: CreateQuotationParams): Prom
     .single();
   if (insertError || !quotation) {
     console.error("[commercial] failed to create client_quotation", insertError?.message);
-    return { ok: false, error: "Failed to create the quotation." };
+    return { ok: false, error: insertError?.message?.includes("client_quotations_one_live_per_enquiry") ? messageForAmountDueError("client_quotations_one_live_per_enquiry") : "Failed to create the quotation." };
   }
 
   const itemsResult = await insertQuotationItems(admin, quotation.id, params.items, totals);
-  if (!itemsResult.ok) return itemsResult;
+  if (!itemsResult.ok) {
+    // A brand-new draft with no lines must not be left behind (it would also hold the enquiry's single active-quotation slot).
+    await admin.from("client_quotations").delete().eq("id", quotation.id).eq("status", "draft");
+    return itemsResult;
+  }
 
   await logActivity({
     actorUserId: auth.actorUserId,
     action: "client_quotation.created",
     entityType: "client_quotation",
     entityId: quotation.id,
-    metadata: { quotationReference, total: totals.total, currency: params.currency },
+    metadata: { quotationReference, total: totals.total, currency: params.currency, ...(params.enquiryId ? { enquiryId: params.enquiryId } : {}) },
   });
 
   return { ok: true, quotationId: quotation.id, quotationReference };
@@ -253,6 +287,8 @@ export async function listClientQuotations(): Promise<ClientQuotationSummary[]> 
 }
 
 export type ClientQuotationDetail = ClientQuotationSummary & {
+  enquiryId: string | null;
+  enquiryReference: string | null;
   prospectEmail: string | null;
   prospectPhone: string | null;
   subtotal: number;
@@ -282,7 +318,7 @@ export async function getClientQuotation(id: string): Promise<ClientQuotationDet
     admin
       .from("client_quotations")
       .select(
-        "id, quotation_reference, client_profile_id, prospect_name, prospect_email, prospect_phone, prospect_company, status, currency, subtotal, discount_total, tax_total, total, valid_until, payment_booking_terms, commercial_notes, version, created_at, profiles!client_profile_id(full_name)"
+        "id, enquiry_id, quotation_reference, client_profile_id, prospect_name, prospect_email, prospect_phone, prospect_company, status, currency, subtotal, discount_total, tax_total, total, valid_until, payment_booking_terms, commercial_notes, version, created_at, profiles!client_profile_id(full_name)"
       )
       .eq("id", id)
       .maybeSingle(),
@@ -301,9 +337,13 @@ export async function getClientQuotation(id: string): Promise<ClientQuotationDet
   if (quotationError) console.error("[commercial] failed to load client_quotation", quotationError.message);
   if (itemsError) console.error("[commercial] failed to load client_quotation_items", itemsError.message);
   if (!quotation) return null;
+  const enquiryId = (quotation as { enquiry_id?: string | null }).enquiry_id ?? null;
+  const enquiryReference = enquiryId ? ((await admin.from("enquiries").select("reference_number").eq("id", enquiryId).maybeSingle()).data?.reference_number ?? null) : null;
 
   return {
     id: quotation.id,
+    enquiryId,
+    enquiryReference,
     quotationReference: quotation.quotation_reference,
     clientProfileId: quotation.client_profile_id,
     clientName: (quotation.profiles as unknown as { full_name: string | null } | null)?.full_name ?? null,
@@ -437,6 +477,8 @@ export async function updateClientQuotationDraft(params: UpdateQuotationDraftPar
 
   const validation = validatePartyAndItems(params);
   if (!validation.ok) return validation;
+  const badCurrency = await currencyRefusal(params.currency);
+  if (badCurrency) return badCurrency;
 
   const admin = createAdminClient();
   const { data: current } = await admin.from("client_quotations").select("status").eq("id", params.quotationId).maybeSingle();
@@ -455,7 +497,7 @@ export async function updateClientQuotationDraft(params: UpdateQuotationDraftPar
       prospect_email: params.prospectEmail ?? null,
       prospect_phone: params.prospectPhone ?? null,
       prospect_company: params.prospectCompany ?? null,
-      currency: params.currency,
+      currency: params.currency.trim(),
       subtotal: totals.subtotal,
       discount_total: totals.discountTotal,
       tax_total: totals.taxTotal,
@@ -493,89 +535,56 @@ export async function updateClientQuotationDraft(params: UpdateQuotationDraftPar
   return { ok: true };
 }
 
-// Revises an already-issued (non-draft) quotation: creates a NEW draft
-// row copying its current party/terms/items, linked via supersedes_id,
-// version = original + 1 — never mutates the original's own issued
-// commercial history. Marks the original 'superseded' via the same
-// governed status transition every other status change goes through.
-// Refuses for an already-draft quotation (edit it directly instead —
-// no version bump needed for something never issued).
+// Revises an already-issued quotation: ONE database transaction (migration 0166, revise_ordinary_quotation) that locks the enquiry then the quotation,
+// marks the original superseded FIRST (so the one-active-quotation index is never violated), inserts the next version (linked to the same enquiry, same
+// terms and lines), and writes the audit entry. Any failure rolls back all of it, so the enquiry never loses its active quotation and the revision history
+// is never half-written. It replaces the earlier three separate writes (header, lines, supersede) that could leave a header without lines.
+// Refuses for a draft (edit it directly) and for anything that is not a current, sent, ordinary quotation. The function re-checks the actor's role.
 export async function reviseClientQuotation(quotationId: string): Promise<CreateQuotationResult> {
   const auth = await requireAdminActor();
   if (!auth.ok) return auth;
-  const crewRefusal = await crewManagedRefusal(quotationId);
+  if (!quotationId) return { ok: false, error: "Quotation not found." };
+
+  const { data, error } = await createAdminClient().rpc("revise_ordinary_quotation", { p_quotation_id: quotationId, p_actor: auth.actorUserId });
+  if (error) {
+    return { ok: false, error: messageForAmountDueError(error.message) };
+  }
+  const row = (Array.isArray(data) ? data[0] : data) as { quotation_id: string; quotation_reference: string } | null;
+  if (!row) return { ok: false, error: "Failed to create the revision." };
+  return { ok: true, quotationId: row.quotation_id, quotationReference: row.quotation_reference };
+}
+
+// M2a: attach an existing ORDINARY quotation (no enquiry yet, not accepted) to an enquiry, one at a time. Crew Support quotations and enquiries are refused.
+// The "no enquiry yet" rule is part of the UPDATE itself, and the database's unique index stops a second active quotation for the enquiry if two people act at
+// once. Changes nothing else: no status, amount, stage, payment or email.
+export async function attachQuotationToEnquiry(params: { quotationId: string; enquiryId: string }): Promise<{ ok: true } | { ok: false; error: string }> {
+  const auth = await requireAdminActor();
+  if (!auth.ok) return auth;
+  if (!params.quotationId || !params.enquiryId) return { ok: false, error: "Invalid request." };
+  const crewRefusal = await crewManagedRefusal(params.quotationId);
   if (crewRefusal) return crewRefusal;
 
-  const original = await getClientQuotation(quotationId);
-  if (!original) return { ok: false, error: "Quotation not found." };
-  if (original.status === "draft") return { ok: false, error: "A draft quotation can be edited directly — no revision needed." };
-  if (!isValidQuotationStatusTransition(original.status, "superseded")) {
-    return { ok: false, error: `A ${original.status} quotation cannot be revised.` };
-  }
-
   const admin = createAdminClient();
-  const { data: seqValue, error: seqError } = await admin.rpc("next_client_quotation_reference_seq");
-  if (seqError || seqValue === null || seqValue === undefined) {
-    return { ok: false, error: "Failed to generate a quotation reference." };
-  }
-  const quotationReference = formatQuotationReference(new Date().getFullYear(), Number(seqValue));
+  const { data: q } = await admin.from("client_quotations").select("id, status, enquiry_id, is_variation, quotation_reference").eq("id", params.quotationId).maybeSingle();
+  if (!q) return { ok: false, error: "Quotation not found." };
+  if (q.enquiry_id) return { ok: false, error: "This quotation is already attached to an enquiry." };
+  if (q.status !== "draft" && q.status !== "sent") return { ok: false, error: "Only a draft or sent quotation can be attached." };
+  if (q.is_variation) return { ok: false, error: "A variation cannot be attached here." };
+  const refusal = await enquiryLinkRefusal(params.enquiryId);
+  if (refusal) return refusal;
 
-  const items: QuotationLineItemInput[] = original.items.map((i) => ({
-    serviceItem: i.serviceItem,
-    description: i.description,
-    quantity: i.quantity,
-    unitBasis: i.unitBasis,
-    sellingRate: i.sellingRate,
-    discountPercent: i.discountPercent,
-    taxPercent: i.taxPercent,
-    sourceType: i.sourceType,
-    sourceReference: i.sourceReference,
-  }));
-  const totals = computeQuotationTotals(items);
-
-  const { data: revision, error: insertError } = await admin
-    .from("client_quotations")
-    .insert({
-      quotation_reference: quotationReference,
-      client_profile_id: original.clientProfileId,
-      prospect_name: original.prospectName,
-      prospect_email: original.prospectEmail,
-      prospect_phone: original.prospectPhone,
-      prospect_company: original.prospectCompany,
-      currency: original.currency,
-      subtotal: totals.subtotal,
-      discount_total: totals.discountTotal,
-      tax_total: totals.taxTotal,
-      total: totals.total,
-      valid_until: original.validUntil,
-      payment_booking_terms: original.paymentBookingTerms,
-      commercial_notes: original.commercialNotes,
-      version: original.version + 1,
-      supersedes_id: original.id,
-      created_by: auth.actorUserId,
-    })
-    .select("id")
-    .single();
-  if (insertError || !revision) {
-    console.error("[commercial] failed to create quotation revision", insertError?.message);
-    return { ok: false, error: "Failed to create the revision." };
-  }
-
-  const itemsResult = await insertQuotationItems(admin, revision.id, items, totals);
-  if (!itemsResult.ok) return itemsResult;
-
-  const supersede = await updateQuotationStatus({ quotationId: original.id, status: "superseded" });
-  if (!supersede.ok) return { ok: false, error: supersede.error };
+  const { data: updated, error } = await admin.from("client_quotations").update({ enquiry_id: params.enquiryId }).eq("id", params.quotationId).is("enquiry_id", null).in("status", ["draft", "sent"]).select("id").maybeSingle();
+  if (error) return { ok: false, error: error.message.includes("client_quotations_one_live_per_enquiry") ? messageForAmountDueError("client_quotations_one_live_per_enquiry") : "Could not attach the quotation. Nothing was changed." };
+  if (!updated) return { ok: false, error: "The quotation changed while you were working. Reload and check." };
 
   await logActivity({
     actorUserId: auth.actorUserId,
-    action: "client_quotation.revised",
+    action: "client_quotation.attached_to_enquiry",
     entityType: "client_quotation",
-    entityId: revision.id,
-    metadata: { quotationReference, supersedesId: original.id, supersedesReference: original.quotationReference },
+    entityId: params.quotationId,
+    metadata: { quotationReference: q.quotation_reference, enquiryId: params.enquiryId },
   });
-
-  return { ok: true, quotationId: revision.id, quotationReference };
+  return { ok: true };
 }
 
 // Hard delete — draft ONLY (a status other than 'draft' means real

@@ -134,12 +134,14 @@ export type QuotationFormInitialData = {
 // updateClientQuotationDraft()'s own guard) rather than a duplicated
 // component, so the party/items/terms UI can never drift between the
 // two modes.
-export function NewQuotationForm({ clients, markets, editing }: { clients: ClientOption[]; markets: MarketOption[]; editing?: QuotationFormInitialData }) {
+export type EnquiryContext = { id: string; reference: string; clientProfileId: string | null; prospectName: string; prospectEmail: string; prospectPhone: string; defaultCurrency: string };
+
+export function NewQuotationForm({ clients, markets, editing, enquiry, currencies }: { clients: ClientOption[]; markets: MarketOption[]; editing?: QuotationFormInitialData; enquiry?: EnquiryContext; currencies?: string[] }) {
   const router = useRouter();
   const createState = useActionState<CreateQuotationState, FormData>(createQuotationAction, null);
   const editState = useActionState<SimpleActionState, FormData>(updateQuotationDraftAction, null);
   const [formAction] = editing ? [editState[1]] : [createState[1]];
-  const [partyType, setPartyType] = useState<"client" | "prospect">(editing?.partyType ?? "prospect");
+  const [partyType, setPartyType] = useState<"client" | "prospect">(editing?.partyType ?? (enquiry?.clientProfileId ? "client" : "prospect"));
   const [items, setItems] = useState<LineItem[]>(editing?.items ?? [{ ...EMPTY_ITEM }]);
 
   // Production fix (2026-09-16) — navigation happens HERE, client-side,
@@ -173,6 +175,7 @@ export function NewQuotationForm({ clients, markets, editing }: { clients: Clien
   return (
     <form action={formAction} className="space-y-6">
       {editing && <input type="hidden" name="quotationId" value={editing.quotationId} />}
+      {!editing && enquiry && <input type="hidden" name="enquiryId" value={enquiry.id} />}
       <section className="rounded-xl border border-black/10 bg-white p-6 space-y-3">
         <h2 className="font-serif font-medium text-body text-ordift-ink">Client / Prospect</h2>
         <div className="flex gap-4 font-sans text-body-small text-ordift-ink">
@@ -186,7 +189,7 @@ export function NewQuotationForm({ clients, markets, editing }: { clients: Clien
           </label>
         </div>
         {partyType === "client" ? (
-          <select name="clientProfileId" required defaultValue={editing?.clientProfileId ?? ""} className="w-full rounded-lg border border-black/15 bg-white px-3 py-2 font-sans text-body-small">
+          <select name="clientProfileId" required defaultValue={editing?.clientProfileId ?? enquiry?.clientProfileId ?? ""} className="w-full rounded-lg border border-black/15 bg-white px-3 py-2 font-sans text-body-small">
             <option value="">Choose a Client…</option>
             {clients.map((c) => (
               <option key={c.id} value={c.id}>{c.fullName ?? c.email ?? c.id}</option>
@@ -194,10 +197,10 @@ export function NewQuotationForm({ clients, markets, editing }: { clients: Clien
           </select>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-            <input name="prospectName" required defaultValue={editing?.prospectName} placeholder="Prospect name (required)" className="rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small" />
+            <input name="prospectName" required defaultValue={editing?.prospectName ?? enquiry?.prospectName} placeholder="Prospect name (required)" className="rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small" />
             <input name="prospectCompany" defaultValue={editing?.prospectCompany} placeholder="Company (optional)" className="rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small" />
-            <input name="prospectEmail" type="email" defaultValue={editing?.prospectEmail} placeholder="Email (optional)" className="rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small" />
-            <input name="prospectPhone" defaultValue={editing?.prospectPhone} placeholder="Phone (optional)" className="rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small" />
+            <input name="prospectEmail" type="email" defaultValue={editing?.prospectEmail ?? enquiry?.prospectEmail} placeholder="Email (optional)" className="rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small" />
+            <input name="prospectPhone" defaultValue={editing?.prospectPhone ?? enquiry?.prospectPhone} placeholder="Phone (optional)" className="rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small" />
           </div>
         )}
       </section>
@@ -245,7 +248,13 @@ export function NewQuotationForm({ clients, markets, editing }: { clients: Clien
       <section className="rounded-xl border border-black/10 bg-white p-6 space-y-3">
         <h2 className="font-serif font-medium text-body text-ordift-ink">Terms</h2>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-          <input name="currency" required defaultValue={editing?.currency ?? "GHS"} placeholder="Currency (e.g. GHS)" className="rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small" />
+          {currencies && currencies.length > 0 ? (
+            <select name="currency" required defaultValue={editing?.currency ?? enquiry?.defaultCurrency ?? "USD"} aria-label="Currency" className="rounded-lg border border-black/15 bg-white px-3 py-2 font-sans text-body-small">
+              {currencies.map((c) => <option key={c} value={c}>{c}</option>)}
+            </select>
+          ) : (
+            <input name="currency" required defaultValue={editing?.currency ?? enquiry?.defaultCurrency ?? "GHS"} placeholder="Currency (e.g. GHS)" className="rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small" />
+          )}
           <input name="validUntil" type="date" defaultValue={editing?.validUntil} className="rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small" />
           <textarea name="paymentBookingTerms" defaultValue={editing?.paymentBookingTerms} placeholder="Payment / booking terms (optional)" className="sm:col-span-2 rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small" rows={2} />
           <textarea name="commercialNotes" defaultValue={editing?.commercialNotes} placeholder="Commercial notes (optional, internal)" className="sm:col-span-2 rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small" rows={2} />
