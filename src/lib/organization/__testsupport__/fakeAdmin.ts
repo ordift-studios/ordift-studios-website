@@ -63,7 +63,7 @@ export function makeFakeAdmin(tables: FakeTables) {
         return Promise.resolve(result(writeKind ? null : (rows()[0] ?? null)));
       },
       single() {
-        const found = rows()[0] ?? null;
+        const found = writeKind === "insert" ? { id: "fake-inserted-id" } : (rows()[0] ?? null);
         return Promise.resolve(found || writeKind ? result(found) : { data: null, error: { message: "not found" } });
       },
       then(onFulfilled: (value: ReturnType<typeof result>) => unknown, onRejected?: (reason: unknown) => unknown) {

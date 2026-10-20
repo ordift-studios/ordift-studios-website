@@ -235,6 +235,14 @@ export async function setVendorProfileStatus(params: {
   if (!(await canManageOnboarding(params.actorUserId))) {
     return { ok: false, error: "Not authorized to change vendor status." };
   }
+  // Contributor/vendor boundary (2026-10-21) — the vendor status belongs to a
+  // vendor profile; never flip it for a contributor or a conflicting account.
+  try {
+    await assertVendorEligible(params.vendorProfileId);
+  } catch (error) {
+    if (error instanceof VendorEligibilityError) return { ok: false, error: error.message };
+    throw error;
+  }
 
   const admin = createAdminClient();
   const { error } = await admin.from("vendor_profiles").update({ status: params.status }).eq("id", params.vendorProfileId);
