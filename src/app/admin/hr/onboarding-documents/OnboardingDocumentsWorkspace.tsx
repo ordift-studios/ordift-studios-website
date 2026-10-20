@@ -3,14 +3,21 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import type { OnboardingDocumentsRow } from "@/lib/organization/onboardingDocumentsOverview";
+import { onboardingWorkspaceHref } from "@/lib/organization/onboardingRelationship";
 
 // HR Onboarding Documents (Task 2, 2026-09-17) — client-side
 // search/filter over the already-fetched rows, matching the same
 // pattern PeopleDirectory.tsx already established (search input + a
 // handful of selects, no second data fetch on filter change).
 
+// Relationship-aware routing (2026-10-21). This used to be decided by the
+// pipeline alone — every non-employee, including individual contributors
+// such as a Workshop Instructor, was sent to the Vendor workspace. Now only
+// a verified vendor/supplier opens the Vendor workspace; everyone else
+// (employees, individual contributors, other externals, and accounts whose
+// classification is in conflict) opens the generic onboarding workspace.
 function workspaceHref(row: OnboardingDocumentsRow): string {
-  return row.pipeline === "employee" ? `/admin/organization/onboarding/${row.onboardingId}` : `/admin/organization/vendors/${row.profileId}`;
+  return onboardingWorkspaceHref({ relationship: row.relationship, onboardingId: row.onboardingId, profileId: row.profileId });
 }
 
 // Same profiles.avatar_url source Meet the Team / People Directory
@@ -142,6 +149,11 @@ export function OnboardingDocumentsWorkspace({ rows }: { rows: OnboardingDocumen
                 <span className="font-sans text-caption text-ordift-ink-muted tabular-nums">
                   Documents: {r.documentsComplete}/{r.documentsTotal}
                 </span>
+                {r.relationship === "conflict" && (
+                  <span className="px-2 py-0.5 rounded-full font-sans text-caption whitespace-nowrap bg-red-100 text-red-800">
+                    Classification review
+                  </span>
+                )}
                 {r.outstandingActionCount > 0 && (
                   <span className="px-2 py-0.5 rounded-full font-sans text-caption whitespace-nowrap bg-amber-100 text-amber-800">
                     {r.outstandingActionCount} outstanding

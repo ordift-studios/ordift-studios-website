@@ -1,6 +1,7 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { logActivity } from "@/lib/admin/activityLog";
 import { isSuperAdminId, authorizeWithSuperAdminOverride, FINANCE_CAPABILITIES } from "@/lib/organization/authority";
+import { assertVendorPayeeCategoryAllowed } from "@/lib/organization/vendorEligibility";
 
 // Universal Payables System (2026-09-03), Part A — against
 // public.payee_profiles (supabase/migrations/0049_universal_payables.sql).
@@ -155,6 +156,18 @@ export async function createPayeeProfile(params: CreatePayeeProfileParams): Prom
   const admin = createAdminClient();
   const { data: existingProfile } = await admin.from("profiles").select("id").eq("id", params.profileId).maybeSingle();
   if (!existingProfile) return { ok: false, error: "No account exists for that profile — the person must have (or create) an Ordift account first." };
+
+  // Contributor/vendor boundary (2026-10-21) — the "vendor" payee category
+  // describes a supplier relationship and must never be assigned to an
+  // individual contributor or contractor (e.g. a Workshop Instructor), nor
+  // to an account whose classification is in conflict. Enforced here, in
+  // the library, so it holds for the Vendor workspace button AND the
+  // generic Payables → Payees form alike. Finance authorization above is
+  // unchanged and still comes first.
+  if (params.category === "vendor") {
+    const allowed = await assertVendorPayeeCategoryAllowed(params.profileId);
+    if (!allowed.ok) return allowed;
+  }
 
   const { error } = await admin.from("payee_profiles").insert({
     id: params.profileId,

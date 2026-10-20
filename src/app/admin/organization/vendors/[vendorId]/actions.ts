@@ -21,6 +21,14 @@ import { transitionAgreementStatus, approveAgreementAmendment } from "@/lib/lega
 import { issueVendorFrameworkAgreement } from "@/lib/legal/vendorAgreementIssuance";
 import { issueVendorWorkOrder } from "@/lib/legal/vendorWorkOrderIssuance";
 import { sendVendorAgreementNotification } from "@/lib/notifications/vendorAgreementNotification";
+import {
+  vendorActionFailureMessage,
+  assertVendorEligible,
+  assertOnboardingBelongsToVendor,
+  assertAgreementBelongsToVendor,
+  assertAmendmentBelongsToVendor,
+  assertDocumentBelongsToVendor,
+} from "@/lib/organization/vendorEligibility";
 
 export type ActionState = { ok: boolean; error?: string } | null;
 
@@ -28,6 +36,26 @@ async function requireVendorAdmin() {
   const user = await getCurrentUser();
   if (!user || !(await canManageOnboarding(user.id))) throw new Error("Not authorized.");
   return user;
+}
+
+// Vendor-only boundary (2026-10-21) — independent of UI navigation. Every
+// action below calls this immediately after authenticating the caller and
+// reading the target ids, BEFORE any read-for-write or write. It refuses
+// unless the target account resolves, from the database, to a clean
+// vendor/supplier (engagement type and system role agree — see
+// onboardingRelationship.ts), and unless any onboarding record, document,
+// agreement or variation named in the request genuinely belongs to that
+// vendor (so an eligible vendor id cannot be paired with someone else's
+// record id). Individual contributors (e.g. a Workshop Instructor), models,
+// interns and conflicting classifications are refused.
+type VendorScope = { onboardingId?: string; agreementId?: string; amendmentId?: string; documentId?: string };
+
+async function guardVendorTarget(vendorId: string, scope: VendorScope = {}) {
+  await assertVendorEligible(vendorId);
+  if (scope.onboardingId) await assertOnboardingBelongsToVendor(scope.onboardingId, vendorId);
+  if (scope.agreementId) await assertAgreementBelongsToVendor(scope.agreementId, vendorId);
+  if (scope.amendmentId) await assertAmendmentBelongsToVendor(scope.amendmentId, vendorId);
+  if (scope.documentId) await assertDocumentBelongsToVendor(scope.documentId, vendorId);
 }
 
 function revalidateVendor(vendorId: string) {
@@ -39,6 +67,7 @@ export async function recordVendorCompanyProfileAction(_prev: ActionState, formD
   try {
     const user = await requireVendorAdmin();
     const vendorId = String(formData.get("vendorId") ?? "");
+    await guardVendorTarget(vendorId);
     const companyName = String(formData.get("companyName") ?? "");
     const relationshipJurisdictionId = String(formData.get("relationshipJurisdictionId") ?? "").trim() || null;
     const optionalField = (name: string) => String(formData.get(name) ?? "").trim() || null;
@@ -57,8 +86,8 @@ export async function recordVendorCompanyProfileAction(_prev: ActionState, formD
     if (!result.ok) return { ok: false, error: result.error };
     revalidateVendor(vendorId);
     return { ok: true };
-  } catch {
-    return { ok: false, error: "You are not authorized to do this." };
+  } catch (error) {
+    return { ok: false, error: vendorActionFailureMessage(error) };
   }
 }
 
@@ -73,6 +102,7 @@ export async function startVendorOnboardingAction(_prev: ActionState, formData: 
   try {
     const user = await requireVendorAdmin();
     const vendorId = String(formData.get("vendorId") ?? "");
+    await guardVendorTarget(vendorId);
     const admin = createAdminClient();
     const { data: vendorEngagementType } = await admin.from("engagement_types").select("id").eq("slug", "vendor_supplier").single();
     if (!vendorEngagementType) return { ok: false, error: "vendor_supplier engagement type is missing reference data." };
@@ -87,8 +117,8 @@ export async function startVendorOnboardingAction(_prev: ActionState, formData: 
     void sendVendorAgreementNotification({ vendorProfileId: vendorId, event: "onboarding_started" });
     revalidateVendor(vendorId);
     return { ok: true };
-  } catch {
-    return { ok: false, error: "You are not authorized to do this." };
+  } catch (error) {
+    return { ok: false, error: vendorActionFailureMessage(error) };
   }
 }
 
@@ -105,6 +135,7 @@ export async function correctVendorOnboardingClassificationAction(_prev: ActionS
     const user = await requireVendorAdmin();
     const vendorId = String(formData.get("vendorId") ?? "");
     const onboardingId = String(formData.get("onboardingId") ?? "");
+    await guardVendorTarget(vendorId, { onboardingId });
     const reason = String(formData.get("reason") ?? "");
     const acknowledgeExistingProgress = formData.get("acknowledgeExistingProgress") === "on";
     const admin = createAdminClient();
@@ -120,8 +151,8 @@ export async function correctVendorOnboardingClassificationAction(_prev: ActionS
     if (!result.ok) return { ok: false, error: result.error };
     revalidateVendor(vendorId);
     return { ok: true };
-  } catch {
-    return { ok: false, error: "You are not authorized to do this." };
+  } catch (error) {
+    return { ok: false, error: vendorActionFailureMessage(error) };
   }
 }
 
@@ -130,13 +161,14 @@ export async function advanceVendorOnboardingStageAction(_prev: ActionState, for
     const user = await requireVendorAdmin();
     const vendorId = String(formData.get("vendorId") ?? "");
     const onboardingId = String(formData.get("onboardingId") ?? "");
+    await guardVendorTarget(vendorId, { onboardingId });
     const toStage = String(formData.get("toStage") ?? "");
     const result = await advanceOnboardingStage({ onboardingId, toStage, actorUserId: user.id });
     if (!result.ok) return { ok: false, error: result.error };
     revalidateVendor(vendorId);
     return { ok: true };
-  } catch {
-    return { ok: false, error: "You are not authorized to do this." };
+  } catch (error) {
+    return { ok: false, error: vendorActionFailureMessage(error) };
   }
 }
 
@@ -145,13 +177,14 @@ export async function completeVendorOnboardingAction(_prev: ActionState, formDat
     const user = await requireVendorAdmin();
     const vendorId = String(formData.get("vendorId") ?? "");
     const onboardingId = String(formData.get("onboardingId") ?? "");
+    await guardVendorTarget(vendorId, { onboardingId });
     const result = await completeStaffOnboarding({ onboardingId, actorUserId: user.id });
     if (!result.ok) return { ok: false, error: result.error };
     void sendVendorAgreementNotification({ vendorProfileId: vendorId, event: "onboarding_completed" });
     revalidateVendor(vendorId);
     return { ok: true };
-  } catch {
-    return { ok: false, error: "You are not authorized to do this." };
+  } catch (error) {
+    return { ok: false, error: vendorActionFailureMessage(error) };
   }
 }
 
@@ -160,6 +193,7 @@ export async function updateVendorRequirementAction(_prev: ActionState, formData
     const user = await requireVendorAdmin();
     const vendorId = String(formData.get("vendorId") ?? "");
     const onboardingId = String(formData.get("onboardingId") ?? "");
+    await guardVendorTarget(vendorId, { onboardingId });
     const pipeline = String(formData.get("pipeline") ?? "") as OnboardingPipeline;
     const requirementKey = String(formData.get("requirementKey") ?? "");
     const status = String(formData.get("status") ?? "") as RequirementStatus;
@@ -168,8 +202,8 @@ export async function updateVendorRequirementAction(_prev: ActionState, formData
     if (!result.ok) return { ok: false, error: result.error };
     revalidateVendor(vendorId);
     return { ok: true };
-  } catch {
-    return { ok: false, error: "You are not authorized to do this." };
+  } catch (error) {
+    return { ok: false, error: vendorActionFailureMessage(error) };
   }
 }
 
@@ -184,6 +218,7 @@ export async function deferVendorRequirementAction(_prev: ActionState, formData:
     const user = await requireVendorAdmin();
     const vendorId = String(formData.get("vendorId") ?? "");
     const onboardingId = String(formData.get("onboardingId") ?? "");
+    await guardVendorTarget(vendorId, { onboardingId });
     const pipeline = String(formData.get("pipeline") ?? "") as OnboardingPipeline;
     const requirementKey = String(formData.get("requirementKey") ?? "");
     const reason = String(formData.get("reason") ?? "");
@@ -191,8 +226,8 @@ export async function deferVendorRequirementAction(_prev: ActionState, formData:
     if (!result.ok) return { ok: false, error: result.error };
     revalidateVendor(vendorId);
     return { ok: true };
-  } catch {
-    return { ok: false, error: "You are not authorized to do this." };
+  } catch (error) {
+    return { ok: false, error: vendorActionFailureMessage(error) };
   }
 }
 
@@ -208,10 +243,11 @@ export type RequestVendorDocumentUploadResult = { ok: true; signedUrl: string; t
 export async function requestVendorDocumentUploadAuthorizationAction(params: { vendorId: string; originalFilename: string }): Promise<RequestVendorDocumentUploadResult> {
   try {
     const user = await requireVendorAdmin();
+    await guardVendorTarget(params.vendorId);
     if (!params.vendorId || !params.originalFilename) return { ok: false, error: "Missing file." };
     return requestVendorDocumentUploadAuthorization({ vendorProfileId: params.vendorId, originalFilename: params.originalFilename, actorUserId: user.id });
-  } catch {
-    return { ok: false, error: "You are not authorized to do this." };
+  } catch (error) {
+    return { ok: false, error: vendorActionFailureMessage(error) };
   }
 }
 
@@ -225,13 +261,14 @@ export async function recordVendorDocumentUploadAction(params: {
 }): Promise<RecordVendorDocumentUploadResult> {
   try {
     const user = await requireVendorAdmin();
+    await guardVendorTarget(params.vendorId);
     if (!params.vendorId || !params.storagePath || !params.documentType) return { ok: false, error: "Missing upload details." };
     const result = await recordVendorDocument({ vendorProfileId: params.vendorId, storagePath: params.storagePath, documentType: params.documentType, notes: params.notes ?? null, actorUserId: user.id });
     if (!result.ok) return { ok: false, error: result.error };
     revalidateVendor(params.vendorId);
     return { ok: true };
-  } catch {
-    return { ok: false, error: "You are not authorized to do this." };
+  } catch (error) {
+    return { ok: false, error: vendorActionFailureMessage(error) };
   }
 }
 
@@ -240,13 +277,14 @@ export async function reviewVendorDocumentAction(_prev: ActionState, formData: F
     const user = await requireVendorAdmin();
     const vendorId = String(formData.get("vendorId") ?? "");
     const documentId = String(formData.get("documentId") ?? "");
+    await guardVendorTarget(vendorId, { documentId });
     const status = String(formData.get("status") ?? "") as "approved" | "rejected";
     const result = await reviewVendorDocument({ documentId, status, actorUserId: user.id });
     if (!result.ok) return { ok: false, error: result.error };
     revalidateVendor(vendorId);
     return { ok: true };
-  } catch {
-    return { ok: false, error: "You are not authorized to do this." };
+  } catch (error) {
+    return { ok: false, error: vendorActionFailureMessage(error) };
   }
 }
 
@@ -260,13 +298,14 @@ export async function annotateVendorDocumentAction(_prev: ActionState, formData:
     const user = await requireVendorAdmin();
     const vendorId = String(formData.get("vendorId") ?? "");
     const documentId = String(formData.get("documentId") ?? "");
+    await guardVendorTarget(vendorId, { documentId });
     const notes = String(formData.get("notes") ?? "");
     const result = await annotateVendorDocument({ documentId, notes, actorUserId: user.id });
     if (!result.ok) return { ok: false, error: result.error };
     revalidateVendor(vendorId);
     return { ok: true };
-  } catch {
-    return { ok: false, error: "You are not authorized to do this." };
+  } catch (error) {
+    return { ok: false, error: vendorActionFailureMessage(error) };
   }
 }
 
@@ -274,13 +313,14 @@ export async function setVendorStatusAction(_prev: ActionState, formData: FormDa
   try {
     const user = await requireVendorAdmin();
     const vendorId = String(formData.get("vendorId") ?? "");
+    await guardVendorTarget(vendorId);
     const status = String(formData.get("status") ?? "") as "pending" | "active" | "inactive";
     const result = await setVendorProfileStatus({ vendorProfileId: vendorId, status, actorUserId: user.id });
     if (!result.ok) return { ok: false, error: result.error };
     revalidateVendor(vendorId);
     return { ok: true };
-  } catch {
-    return { ok: false, error: "You are not authorized to do this." };
+  } catch (error) {
+    return { ok: false, error: vendorActionFailureMessage(error) };
   }
 }
 
@@ -295,13 +335,14 @@ export async function createVendorPayeeProfileAction(_prev: ActionState, formDat
     const user = await getCurrentUser();
     if (!user) return { ok: false, error: "Not authorized." };
     const vendorId = String(formData.get("vendorId") ?? "");
+    await guardVendorTarget(vendorId);
     const companyName = String(formData.get("companyName") ?? "").trim() || null;
     const result = await createPayeeProfile({ profileId: vendorId, category: "vendor", companyName, actorUserId: user.id });
     if (!result.ok) return { ok: false, error: result.error };
     revalidateVendor(vendorId);
     return { ok: true };
-  } catch {
-    return { ok: false, error: "You are not authorized to do this." };
+  } catch (error) {
+    return { ok: false, error: vendorActionFailureMessage(error) };
   }
 }
 
@@ -315,6 +356,7 @@ export async function createVendorFrameworkAction(_prev: CreateFrameworkActionSt
   try {
     const user = await requireVendorAdmin();
     const vendorId = String(formData.get("vendorId") ?? "");
+    await guardVendorTarget(vendorId);
 
     // Vendor Profile Particulars (2026-09-15) — vendorType,
     // registrationNumber, registeredAddress, contactPerson, telephone,
@@ -333,8 +375,8 @@ export async function createVendorFrameworkAction(_prev: CreateFrameworkActionSt
     if (!result.ok) return { ok: false, error: result.error, missingFields: result.missingFields };
     revalidateVendor(vendorId);
     return { ok: true };
-  } catch {
-    return { ok: false, error: "You are not authorized to do this." };
+  } catch (error) {
+    return { ok: false, error: vendorActionFailureMessage(error) };
   }
 }
 
@@ -349,6 +391,7 @@ export async function approveVendorFrameworkForIssueAction(_prev: ActionState, f
     const user = await requireVendorAdmin();
     const vendorId = String(formData.get("vendorId") ?? "");
     const agreementId = String(formData.get("agreementId") ?? "");
+    await guardVendorTarget(vendorId, { agreementId });
 
     const toReview = await transitionAgreementStatus({ agreementId, toStatus: "internal_review", actorUserId: user.id });
     if (!toReview.ok) return { ok: false, error: toReview.error };
@@ -357,8 +400,8 @@ export async function approveVendorFrameworkForIssueAction(_prev: ActionState, f
 
     revalidateVendor(vendorId);
     return { ok: true };
-  } catch {
-    return { ok: false, error: "You are not authorized to do this." };
+  } catch (error) {
+    return { ok: false, error: vendorActionFailureMessage(error) };
   }
 }
 
@@ -367,14 +410,15 @@ export async function issueVendorFrameworkAction(_prev: ActionState, formData: F
     const user = await requireVendorAdmin();
     const vendorId = String(formData.get("vendorId") ?? "");
     const agreementId = String(formData.get("agreementId") ?? "");
+    await guardVendorTarget(vendorId, { agreementId });
 
     const result = await issueVendorFrameworkAgreement({ agreementId, actorUserId: user.id });
     if (!result.ok) return { ok: false, error: `${result.error} (step: ${result.step})` };
 
     revalidateVendor(vendorId);
     return { ok: true };
-  } catch {
-    return { ok: false, error: "You are not authorized to do this." };
+  } catch (error) {
+    return { ok: false, error: vendorActionFailureMessage(error) };
   }
 }
 
@@ -387,6 +431,7 @@ export async function createVendorWorkOrderAction(_prev: ActionState, formData: 
     const user = await requireVendorAdmin();
     const vendorId = String(formData.get("vendorId") ?? "");
     const frameworkAgreementId = String(formData.get("frameworkAgreementId") ?? "");
+    await guardVendorTarget(vendorId, { agreementId: frameworkAgreementId });
 
     const textFields: (keyof VendorWorkOrderDetails)[] = [
       "projectTitle",
@@ -415,8 +460,8 @@ export async function createVendorWorkOrderAction(_prev: ActionState, formData: 
     if (!result.ok) return { ok: false, error: result.error };
     revalidateVendor(vendorId);
     return { ok: true };
-  } catch {
-    return { ok: false, error: "You are not authorized to do this." };
+  } catch (error) {
+    return { ok: false, error: vendorActionFailureMessage(error) };
   }
 }
 
@@ -425,6 +470,7 @@ export async function approveVendorWorkOrderForIssueAction(_prev: ActionState, f
     const user = await requireVendorAdmin();
     const vendorId = String(formData.get("vendorId") ?? "");
     const agreementId = String(formData.get("agreementId") ?? "");
+    await guardVendorTarget(vendorId, { agreementId });
 
     const toReview = await transitionAgreementStatus({ agreementId, toStatus: "internal_review", actorUserId: user.id });
     if (!toReview.ok) return { ok: false, error: toReview.error };
@@ -433,8 +479,8 @@ export async function approveVendorWorkOrderForIssueAction(_prev: ActionState, f
 
     revalidateVendor(vendorId);
     return { ok: true };
-  } catch {
-    return { ok: false, error: "You are not authorized to do this." };
+  } catch (error) {
+    return { ok: false, error: vendorActionFailureMessage(error) };
   }
 }
 
@@ -443,14 +489,15 @@ export async function issueVendorWorkOrderAction(_prev: ActionState, formData: F
     const user = await requireVendorAdmin();
     const vendorId = String(formData.get("vendorId") ?? "");
     const agreementId = String(formData.get("agreementId") ?? "");
+    await guardVendorTarget(vendorId, { agreementId });
 
     const result = await issueVendorWorkOrder({ agreementId, actorUserId: user.id });
     if (!result.ok) return { ok: false, error: `${result.error} (step: ${result.step})` };
 
     revalidateVendor(vendorId);
     return { ok: true };
-  } catch {
-    return { ok: false, error: "You are not authorized to do this." };
+  } catch (error) {
+    return { ok: false, error: vendorActionFailureMessage(error) };
   }
 }
 
@@ -463,6 +510,7 @@ export async function createVendorWorkOrderVariationAction(_prev: ActionState, f
     const user = await requireVendorAdmin();
     const vendorId = String(formData.get("vendorId") ?? "");
     const workOrderAgreementId = String(formData.get("workOrderAgreementId") ?? "");
+    await guardVendorTarget(vendorId, { agreementId: workOrderAgreementId });
     const reason = String(formData.get("reason") ?? "").trim();
     if (!reason) return { ok: false, error: "A reason is required." };
 
@@ -477,8 +525,8 @@ export async function createVendorWorkOrderVariationAction(_prev: ActionState, f
     if (!result.ok) return { ok: false, error: result.error };
     revalidateVendor(vendorId);
     return { ok: true };
-  } catch {
-    return { ok: false, error: "You are not authorized to do this." };
+  } catch (error) {
+    return { ok: false, error: vendorActionFailureMessage(error) };
   }
 }
 
@@ -487,12 +535,13 @@ export async function approveVendorWorkOrderVariationAction(_prev: ActionState, 
     const user = await requireVendorAdmin();
     const vendorId = String(formData.get("vendorId") ?? "");
     const amendmentId = String(formData.get("amendmentId") ?? "");
+    await guardVendorTarget(vendorId, { amendmentId });
 
     const result = await approveAgreementAmendment({ amendmentId, actorUserId: user.id });
     if (!result.ok) return { ok: false, error: result.error };
     revalidateVendor(vendorId);
     return { ok: true };
-  } catch {
-    return { ok: false, error: "You are not authorized to do this." };
+  } catch (error) {
+    return { ok: false, error: vendorActionFailureMessage(error) };
   }
 }

@@ -2,6 +2,7 @@ import { listUsersWithRoles, type AdminUserRow } from "@/lib/portal/adminData";
 import { listResolvedRequirements } from "@/lib/organization/onboardingRequirements";
 import { resolveCurrentEmploymentContext } from "@/lib/organization/employmentTermsHistory";
 import { checkEmployeeAgreementReadiness, getEmployeeEmploymentAgreementSummary } from "@/lib/legal/employeeAgreements";
+import { resolveOnboardingRelationship, type OnboardingRelationship } from "@/lib/organization/onboardingRelationship";
 
 // HR Onboarding Documents (Task 2, 2026-09-17) — an operational HR
 // surface over the SAME universal, classification-driven onboarding
@@ -27,6 +28,11 @@ export type OnboardingDocumentsRow = {
   positionName: string | null;
   departmentName: string | null;
   relationshipLabel: string;
+  // Verified relationship classification (engagement type + system role,
+  // see onboardingRelationship.ts) — decides which workspace a row opens.
+  // The pipeline alone must never decide that: it only separates
+  // employment from everything external.
+  relationship: OnboardingRelationship;
   jurisdictionName: string | null;
   pipeline: "employee" | "external_contractor";
   stage: string;
@@ -80,6 +86,8 @@ export async function getOnboardingDocumentsOverview(): Promise<OnboardingDocume
         );
       }
 
+      const relationship = resolveOnboardingRelationship({ engagementTypeSlug: u.engagementTypeSlug, roles: u.roles, pipeline }).relationship;
+
       return {
         onboardingId,
         profileId: u.id,
@@ -91,6 +99,7 @@ export async function getOnboardingDocumentsOverview(): Promise<OnboardingDocume
         positionName: u.positionName ?? u.operationalTitleName,
         departmentName: u.departmentName,
         relationshipLabel: pipeline === "employee" ? "Employee" : (u.engagementTypeName ?? "External Workforce"),
+        relationship,
         jurisdictionName: employmentContext.employmentJurisdictionName,
         pipeline,
         stage: u.onboardingStage ?? "—",

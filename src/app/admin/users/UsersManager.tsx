@@ -3,8 +3,9 @@
 import { useActionState, useEffect, useMemo, useState, useTransition } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import type { AdminUserRow, LookupOption } from "@/lib/portal/adminData";
+import type { AdminUserRow, LookupOption, EngagementTypeOption } from "@/lib/portal/adminData";
 import type { MemberClassification } from "@/lib/portal/memberNumbers";
+import { resolveOnboardingRelationship, onboardingCopy, EMPLOYEE_ENGAGEMENT_SLUGS } from "@/lib/organization/onboardingRelationship";
 import type { RoleSlug } from "@/lib/portal/roles";
 import type { Position } from "@/lib/organization/types";
 import type { AdminProjectAssignment, AssignmentStatus, ProjectSearchResult } from "@/lib/admin/projectAssignments";
@@ -132,7 +133,7 @@ function UserDetail({
   user: AdminUserRow;
   currentUserIsSuperAdmin: boolean;
   operationalTitles: LookupOption[];
-  engagementTypes: LookupOption[];
+  engagementTypes: EngagementTypeOption[];
   classifications: MemberClassification[];
   positions: Position[];
   approvedRequisitions: RecruitmentRequisition[];
@@ -291,6 +292,19 @@ function UserDetail({
   // genuinely can become a real employee later — just makes the
   // transition explicit rather than a single unguarded click.
   const hasExternalWorkforceRelationship = user.roles.some((r) => r === "contractor" || r === "vendor" || r === "model");
+  // Relationship-aware wording (2026-10-21). The section used to be titled
+  // "Internal Staff Onboarding" and described as "the internal-employment
+  // onboarding process only" for EVERY account, including individual
+  // contributors (e.g. a Workshop Instructor) whose onboarding is an
+  // external-contractor process. Terminology now follows the verified
+  // relationship (engagement type + system role); employees keep the
+  // original wording exactly.
+  const relationship = resolveOnboardingRelationship({
+    engagementTypeSlug: user.engagementTypeSlug,
+    roles: user.roles,
+    pipeline: user.onboardingPipeline === "employee" || user.onboardingPipeline === "external_contractor" ? user.onboardingPipeline : null,
+  }).relationship;
+  const copy = onboardingCopy(relationship);
   // E.5 Stage 2M, Part 5 — onboarding-start integrity. A new onboarding
   // now requires a specific approved requisition (standard recruitment
   // or Founder Direct Hire); this is the picker for it. Direct-hire
@@ -312,13 +326,22 @@ function UserDetail({
   // judgment among the open options.
   const namedMatch = findNamedPersonRequisitionMatch(requisitionsForThisUser, user.id);
   const [selectedRequisitionId, setSelectedRequisitionId] = useState(namedMatch?.id ?? "");
+  // The "separate internal-employment process" warning is only true when the
+  // chosen requisition is an EMPLOYMENT engagement type being started on an
+  // account that currently has an external-workforce relationship (e.g. a
+  // contractor being hired). It is not true for an external contributor's own
+  // contributor onboarding (e.g. a Workshop Instructor with an Instructor
+  // requisition), which is why it no longer shows unconditionally.
+  const selectedRequisition = requisitionsForThisUser.find((r) => r.id === selectedRequisitionId);
+  const selectedRequisitionSlug = engagementTypes.find((t) => t.id === selectedRequisition?.engagementTypeId)?.slug ?? null;
+  const startsEmploymentPath = selectedRequisitionSlug !== null && (EMPLOYEE_ENGAGEMENT_SLUGS as readonly string[]).includes(selectedRequisitionSlug);
 
   function startOnboarding() {
     if (!selectedRequisitionId) {
       setError("Choose the approved requisition this onboarding originates from.");
       return;
     }
-    if (hasExternalWorkforceRelationship) {
+    if (hasExternalWorkforceRelationship && startsEmploymentPath) {
       const confirmed = window.confirm(
         "This account currently has an external-workforce relationship (Contractor/Vendor/Model). Starting Internal Staff Onboarding begins a SEPARATE internal-employment process — it does not replace or delete their existing external-workforce history (engagements, payables, files remain exactly as they are). Continue?"
       );
@@ -917,9 +940,9 @@ function UserDetail({
       {currentUserIsSuperAdmin && (
         <section className="space-y-2">
           <h3 className="font-sans text-caption font-semibold uppercase tracking-wide text-ordift-ink-muted">
-            Internal Staff Onboarding
+            {copy.sectionHeading}
           </h3>
-          {hasExternalWorkforceRelationship && !user.onboardingStatus && (
+          {hasExternalWorkforceRelationship && startsEmploymentPath && !user.onboardingStatus && (
             <p className="font-sans text-caption text-amber-700 bg-amber-50 border border-amber-200 rounded px-3 py-2">
               This account currently has an external-workforce relationship (Contractor/Vendor/Model). Starting
               Internal Staff Onboarding begins a separate internal-employment process — it does not replace or
@@ -1012,7 +1035,7 @@ function UserDetail({
                 aria-busy={pending}
                 className="font-sans text-body-small text-ordift-gold-pressed underline underline-offset-4 disabled:opacity-50"
               >
-                {pending ? "Starting…" : "Start Internal Staff Onboarding"}
+                {pending ? "Starting…" : copy.startLabel}
               </button>
             )}
             {user.onboardingStatus === "in_progress" && (
@@ -1053,10 +1076,7 @@ function UserDetail({
               Current stage: {user.onboardingStage} ({user.onboardingPipeline})
             </p>
           )}
-          <p className="font-sans text-caption text-ordift-ink-muted">
-            Tracks the internal-employment onboarding process only — assign Department/Position/Grade above, and set
-            up a payment destination via Payables → Payees if this person will be paid through Ordift.
-          </p>
+          <p className="font-sans text-caption text-ordift-ink-muted">{copy.usersCaption}</p>
         </section>
       )}
 
@@ -1405,7 +1425,7 @@ function InvitePanel({
   prefill,
 }: {
   operationalTitles: LookupOption[];
-  engagementTypes: LookupOption[];
+  engagementTypes: EngagementTypeOption[];
   classifications: MemberClassification[];
   currentUserIsSuperAdmin: boolean;
   onDone: () => void;
@@ -1638,7 +1658,7 @@ export default function UsersManager({
   currentUserId: string;
   currentUserIsSuperAdmin: boolean;
   operationalTitles: LookupOption[];
-  engagementTypes: LookupOption[];
+  engagementTypes: EngagementTypeOption[];
   classifications: MemberClassification[];
   positions: Position[];
   approvedRequisitions: RecruitmentRequisition[];

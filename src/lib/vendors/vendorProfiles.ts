@@ -1,6 +1,7 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { logActivity } from "@/lib/admin/activityLog";
 import { canManageOnboarding } from "@/lib/organization/onboarding";
+import { assertVendorEligible, VendorEligibilityError } from "@/lib/organization/vendorEligibility";
 
 // Vendor Completion Phase (2026-09-15) — wires public.vendor_profiles
 // (migration 0001), previously a genuine scaffold with zero write path
@@ -179,6 +180,14 @@ function normalizeOptionalText(value: string | null | undefined): string | null 
 export async function upsertVendorProfile(params: UpsertVendorProfileParams): Promise<{ ok: true } | { ok: false; error: string }> {
   if (!(await canManageOnboarding(params.actorUserId))) {
     return { ok: false, error: "Not authorized to record vendor profile details." };
+  }
+  // Contributor/vendor boundary (2026-10-21) — a vendor_profiles row is a
+  // supplier record and must not be created for an individual contributor.
+  try {
+    await assertVendorEligible(params.profileId);
+  } catch (error) {
+    if (error instanceof VendorEligibilityError) return { ok: false, error: error.message };
+    throw error;
   }
   const companyName = params.companyName?.trim() || null;
 

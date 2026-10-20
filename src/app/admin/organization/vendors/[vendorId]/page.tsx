@@ -13,6 +13,8 @@ import { listVendorAgreementFamily, listVendorWorkOrderVariations, summarizeCurr
 import { listEmployingEntities } from "@/lib/organization/legalEntities";
 import { isTerminalStage } from "@/lib/organization/onboardingStages";
 import { VendorDetailWorkspace } from "./VendorDetailWorkspace";
+import { resolveRelationshipForProfile } from "@/lib/organization/vendorEligibility";
+import { isVendorEligible } from "@/lib/organization/onboardingRelationship";
 
 export const metadata: Metadata = {
   title: "Vendor — Ordift Studios Admin",
@@ -32,6 +34,19 @@ export default async function VendorDetailPage({ params }: { params: Promise<{ v
     getStaffOnboardingByProfileId(vendorId),
   ]);
   if (!profile) notFound();
+
+  // Vendor-only workspace (2026-10-21). This page used to render for ANY
+  // profile id, so an individual contributor (e.g. a Workshop Instructor)
+  // reached through a pipeline-based link saw a Vendor Company Profile, a
+  // Vendor Framework Agreement and a vendor-classified payee button. Only a
+  // verified, unambiguous vendor/supplier may open it; everyone else —
+  // including accounts whose engagement type and role conflict — is sent to
+  // the generic onboarding workspace (or the Full Profile when there is no
+  // onboarding record). The vendor actions enforce the same rule server-side.
+  const relationship = await resolveRelationshipForProfile(vendorId);
+  if (!isVendorEligible(relationship)) {
+    redirect(onboarding ? `/admin/organization/onboarding/${onboarding.id}` : `/admin/organization/people/${vendorId}`);
+  }
 
   const [resolvedRequirements, overrides, documents, payeeProfile, { data: paymentInstructions }, jurisdictions, agreementFamily, employingEntities] = await Promise.all([
     onboarding ? listResolvedRequirements({ onboardingId: onboarding.id, profileId: vendorId, pipeline: onboarding.pipeline }) : Promise.resolve([]),
