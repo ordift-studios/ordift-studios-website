@@ -1,16 +1,17 @@
 import ActionForm from "@/components/admin/ActionForm";
-import SubmitButton from "@/components/admin/SubmitButton";
 import { COMPLETION_STATUS_LABELS, questionsFor, type CompletionStatus } from "@/lib/crewSupport/jobReportRules";
-import { ASSIGNEE_NOTICE_BODY, ASSIGNEE_NOTICE_TITLE, RELEASE_STATUS_LABELS, SELF_REVIEW_MESSAGE, isAssignedProfessional, managementActions, releaseCategoryLabel, reviewerConflict, type ReleaseStatus } from "@/lib/crewSupport/fileRelease";
+import { ASSIGNEE_NOTICE_BODY, ASSIGNEE_NOTICE_TITLE, SELF_REVIEW_MESSAGE, isAssignedProfessional, releaseCategoryLabel, reviewerConflict } from "@/lib/crewSupport/fileRelease";
 import type { AssignmentReport } from "@/lib/crewSupport/jobReports";
 import type { ProjectFile } from "@/lib/payables/projectFiles";
-import { releaseFilesAction, reviewFileAction } from "./releaseActions";
+import ConfirmSubmitButton from "@/components/admin/ConfirmSubmitButton";
+import { summarizeDeliverySet, toGalleryFile } from "@/lib/crewSupport/fileReview";
+import { notifyReleasedFilesAction, releaseFilesAction } from "./releaseActions";
+import AssignmentReviewGallery from "./AssignmentReviewGallery";
 import ReviewFileLink from "./ReviewFileLink";
 
-export type AssignmentWork = { slotId: string; label: string; assigneeId: string | null; engagementId: string; serviceFamily: string | null; reports: AssignmentReport[]; files: ProjectFile[] };
+export type AssignmentWork = { slotId: string; label: string; assigneeId: string | null; engagementId: string; serviceFamily: string | null; reports: AssignmentReport[]; files: ProjectFile[]; emailedFileIds?: string[] };
 
 const BTN = "rounded-md px-3 py-1.5 font-sans text-caption font-semibold";
-const INPUT = "w-full rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small";
 
 function ReportBlock({ reports, serviceFamily }: { reports: AssignmentReport[]; serviceFamily: string | null }) {
   const r = reports[0];
@@ -64,7 +65,11 @@ export default function AssignmentWorkPanel({ requestId, work, canReview, isTest
       {work.map((w) => {
         const awaiting = w.files.filter((f) => f.releaseStatus === "submitted");
         const approved = w.files.filter((f) => f.releaseStatus === "approved");
-        const others = w.files.filter((f) => !["submitted", "approved"].includes(f.releaseStatus));
+        const released = w.files.filter((f) => f.releaseStatus === "released");
+        const emailed = new Set(w.emailedFileIds ?? []);
+        const unemailed = released.filter((f) => !emailed.has(f.id));
+        const set = summarizeDeliverySet(w.files.map((f) => ({ id: f.id, fileKind: f.fileKind, releaseStatus: f.releaseStatus, purged: Boolean(f.purgedAt) })));
+        const gallery = w.files.map((f) => toGalleryFile(f, viewerId, w.assigneeId, emailed.has(f.id)));
         // Nobody reviews or releases their own work, whatever their role.
         const conflicted = (f: (typeof w.files)[number]) => reviewerConflict({ reviewerId: viewerId, uploadedBy: f.uploadedBy, submittedBy: f.submittedForReleaseBy, assigneeId: w.assigneeId });
         const anyConflict = [...awaiting, ...approved].some((f) => conflicted(f));
@@ -87,23 +92,12 @@ export default function AssignmentWorkPanel({ requestId, work, canReview, isTest
               <p className="font-sans text-body-small font-medium text-ordift-ink">Files ({w.files.length})</p>
               {w.files.length === 0 && <p className="font-sans text-caption text-ordift-ink-muted">Nothing uploaded yet.</p>}
 
-              {awaiting.length > 0 && <p className="font-sans text-caption font-semibold uppercase tracking-wide text-ordift-ink-muted">Awaiting your review</p>}
-              {awaiting.map((f) => (
-                <div key={f.id} className="rounded-lg border border-amber-200 bg-amber-50/50 p-3 space-y-2">
-                  <p className="font-sans text-body-small text-ordift-ink"><ReviewFileLink fileId={f.id} label={f.originalFilename} /> <span className="text-ordift-ink-muted">· {releaseCategoryLabel(f.releaseCategory)} · client title “{f.clientTitle}”</span></p>
-                  {f.clientDescription && <p className="font-sans text-caption text-ordift-ink-muted">{f.clientDescription}</p>}
-                  {canReview && !conflicted(f) && managementActions(f.releaseStatus).length > 0 && (
-                    <ActionForm action={reviewFileAction} className="flex flex-wrap items-center gap-2">
-                      <input type="hidden" name="requestId" value={requestId} />
-                      <input type="hidden" name="fileId" value={f.id} />
-                      <input name="note" placeholder="Note (required to request changes or decline)" className={`${INPUT} sm:max-w-xs`} />
-                      <SubmitButton name="decision" value="approve" pendingLabel="Saving…" className={`${BTN} bg-ordift-navy-950 text-white`}>Approve</SubmitButton>
-                      <SubmitButton name="decision" value="request_changes" pendingLabel="Saving…" className={`${BTN} border border-black/20`}>Request changes</SubmitButton>
-                      <SubmitButton name="decision" value="reject" pendingLabel="Saving…" className={`${BTN} border border-red-300 text-red-800`}>Decline</SubmitButton>
-                    </ActionForm>
-                  )}
-                </div>
-              ))}
+              {w.files.length > 0 && (
+                <p className="font-sans text-caption text-ordift-ink-muted" data-testid="delivery-set">
+                  Delivery set: <strong>{set.ready}</strong> approved and ready to release · <strong>{set.awaitingReview}</strong> awaiting review · <strong>{set.returned}</strong> returned for rework · <strong>{set.released}</strong> released{set.notInSet > 0 ? ` · ${set.notInSet} not part of the delivery (internal or private files)` : ""}.
+                </p>
+              )}
+              {w.files.length > 0 && <AssignmentReviewGallery requestId={requestId} engagementId={w.engagementId} files={gallery} />}
 
               {approved.length > 0 && <p className="font-sans text-caption font-semibold uppercase tracking-wide text-ordift-ink-muted">Approved — not yet released</p>}
               {approved.length > 0 && (
@@ -121,23 +115,32 @@ export default function AssignmentWorkPanel({ requestId, work, canReview, isTest
                     <label className="flex items-center gap-2 font-sans text-caption text-ordift-ink">
                       <input type="checkbox" name="notifyClient" defaultChecked={false} disabled={isTest} /> Also email the client one “files ready” message with a secure portal link (off by default){isTest ? " — disabled for test records" : ""}
                     </label>
-                    <SubmitButton pendingLabel="Releasing…" className={`${BTN} bg-ordift-gold text-ordift-navy-950`}>Release selected to the client</SubmitButton>
+                    <ConfirmSubmitButton confirmMessage="Release the ticked files to the client now? They become visible in the client’s portal immediately. This does not complete the project or pay anyone." pendingLabel="Releasing…" className={`${BTN} bg-ordift-gold text-ordift-navy-950`}>Release selected to the client</ConfirmSubmitButton>
                   </ActionForm>
                 ) : (
                   <ul className="list-disc pl-5 font-sans text-body-small text-ordift-ink">{approved.map((f) => <li key={f.id}>{f.clientTitle ?? f.originalFilename}</li>)}</ul>
                 )
               )}
 
-              {others.length > 0 && (
-                <ul className="space-y-1 font-sans text-caption text-ordift-ink-muted">
-                  {others.map((f) => (
-                    <li key={f.id}>
-                      {canReview ? <ReviewFileLink fileId={f.id} label={f.originalFilename} /> : f.originalFilename} · {releaseCategoryLabel(f.releaseCategory)} · {RELEASE_STATUS_LABELS[f.releaseStatus as ReleaseStatus] ?? f.releaseStatus}
-                      {f.releaseStatus === "changes_requested" && f.releaseReviewNote ? ` — “${f.releaseReviewNote}”` : ""}
-                      {f.releasedAt ? ` · ${new Date(f.releasedAt).toLocaleString()}` : ""}
-                    </li>
-                  ))}
-                </ul>
+              {released.length > 0 && (
+                <div className="space-y-2 rounded-lg border border-green-200 bg-green-50/40 p-3">
+                  <p className="font-sans text-body-small font-medium text-ordift-ink">Released to the client ({released.length})</p>
+                  <ul className="space-y-1 font-sans text-caption text-ordift-ink-muted">
+                    {released.map((f) => (
+                      <li key={f.id}>
+                        {f.clientTitle ?? f.originalFilename} · released {f.releasedAt ? new Date(f.releasedAt).toLocaleString() : ""} · client email: {emailed.has(f.id) ? "sent" : "not sent"}
+                      </li>
+                    ))}
+                  </ul>
+                  {unemailed.length > 0 && canReview && !isTest && !unemailed.some((f) => conflicted(f)) && (
+                    <ActionForm action={notifyReleasedFilesAction} className="space-y-2">
+                      <input type="hidden" name="requestId" value={requestId} />
+                      {unemailed.map((f) => <input key={f.id} type="hidden" name="fileId" value={f.id} />)}
+                      <p className="font-sans text-caption text-ordift-ink-muted">Releasing and emailing are separate. {unemailed.length} released file{unemailed.length === 1 ? " has" : "s have"} not been emailed about. This sends the client ONE “files ready” email with their secure portal link; a file is never emailed about twice.</p>
+                      <ConfirmSubmitButton confirmMessage={`Email the client once about ${unemailed.length} released file${unemailed.length === 1 ? "" : "s"}?`} pendingLabel="Sending…" className={`${BTN} border border-black/20`}>Email the client about these files</ConfirmSubmitButton>
+                    </ActionForm>
+                  )}
+                </div>
               )}
             </div>
           </div>

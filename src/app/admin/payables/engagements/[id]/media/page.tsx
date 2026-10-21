@@ -5,18 +5,12 @@ import { getCurrentUser } from "@/lib/portal/roles";
 import { authorizeWithSuperAdminOverride, FINANCE_CAPABILITIES } from "@/lib/organization/authority";
 import { getEngagement } from "@/lib/payables/engagements";
 import { getPayeeProfile } from "@/lib/payables/payeeProfiles";
-import { listProjectFilesForEngagement, deriveProjectFileDisplayState, canPromoteFileKindToFinalApproved, PROJECT_FILE_KINDS } from "@/lib/payables/projectFiles";
+import { listProjectFilesForEngagement, PROJECT_FILE_KINDS } from "@/lib/payables/projectFiles";
 import MediaFileUploader from "@/components/payables/MediaFileUploader";
-import ConfirmSubmitButton from "@/components/admin/ConfirmSubmitButton";
-import SubmitButton from "@/components/admin/SubmitButton";
-import {
-  requestStaffFileUploadAuthorizationAction,
-  recordStaffUploadedFileAction,
-  confirmProjectFileBackupAction,
-  setProjectFileRetainAction,
-  promoteProjectFileToFinalApprovedAction,
-} from "../../../actions";
-import ActionForm from "@/components/admin/ActionForm";
+import { requestStaffFileUploadAuthorizationAction, recordStaffUploadedFileAction } from "../../../actions";
+import MediaReviewGallery from "./MediaReviewGallery";
+import { toGalleryFile } from "@/lib/crewSupport/fileReview";
+import { crewRequestForEngagement } from "@/lib/crewSupport/fileReleaseFlow";
 
 export const metadata: Metadata = {
   title: "Engagement Media — Payables — Ordift Studios Admin",
@@ -24,21 +18,6 @@ export const metadata: Metadata = {
 };
 
 const STAFF_FILE_KIND_OPTIONS = PROJECT_FILE_KINDS.map((k) => ({ value: k, label: k.replace(/_/g, " ") }));
-
-// Phase H.7 — plain labels for the admin file list, matching the
-// portal's own FILE_KIND_LABELS (EngagementFileList.tsx) so the two
-// surfaces read consistently even though they're separate components.
-const FILE_KIND_LABELS: Record<string, string> = {
-  source_raw: "Source (RAW)",
-  source_reference: "Reference",
-  intermediate: "Intermediate",
-  working: "Working file",
-  deliverable: "Deliverable",
-  final_approved: "Final Approved",
-  revision: "Revision",
-  archive_reference: "Archive reference",
-  other: "Other",
-};
 
 // Phase H.1/H.2 (2026-09-04) — internal staff media/backup/retention
 // panel for one engagement. Staff can upload any file_kind (source
@@ -57,10 +36,14 @@ export default async function EngagementMediaPage({ params }: { params: Promise<
   const engagement = await getEngagement(id);
   if (!engagement) notFound();
 
-  const [payee, files] = await Promise.all([
+  const [payee, files, crewRequest] = await Promise.all([
     engagement.payeeProfileId ? getPayeeProfile(engagement.payeeProfileId) : Promise.resolve(null),
     listProjectFilesForEngagement(id),
+    crewRequestForEngagement(id),
   ]);
+  // Oldest first, so the gallery reads in the order the work was done; the viewer's own separation-of-duties block is
+  // evaluated per file (the assigned professional is the engagement's payee).
+  const gallery = [...files].reverse().map((f) => toGalleryFile(f, user.id, engagement.payeeProfileId ?? null));
 
   return (
     <div className="space-y-8">
@@ -82,71 +65,22 @@ export default async function EngagementMediaPage({ params }: { params: Promise<
         </p>
       </div>
 
-      <section className="rounded-xl border border-black/10 bg-white p-6">
-        <h2 className="font-serif font-medium text-body text-ordift-ink mb-3">Files</h2>
-        <ul className="divide-y divide-black/5 rounded-lg border border-black/5 mb-4">
-          {files.map((f) => (
-            <li key={f.id} className="px-4 py-3 flex items-center justify-between gap-4 flex-wrap">
-              <div className="min-w-0">
-                <p className="font-sans text-body-small text-ordift-ink">
-                  {f.originalFilename} {f.version > 1 && <span className="text-ordift-ink-muted">v{f.version}</span>}
-                </p>
-                <p className="font-sans text-caption text-ordift-ink-muted">
-                  {FILE_KIND_LABELS[f.fileKind] ?? f.fileKind} · {f.sizeBytes ? `${(f.sizeBytes / (1024 * 1024)).toFixed(1)} MB` : "—"} ·{" "}
-                  {deriveProjectFileDisplayState({ lifecycleState: f.lifecycleState, engagementStatus: engagement.status, fileKind: f.fileKind })}
-                  {f.retain && f.fileKind !== "final_approved" && " · Retained"}
-                  {/* No scheduler exists — this is only ever the earliest date the file WOULD qualify for
-                      cleanup if every other condition is also met by then, not a scheduled deletion. Never
-                      shown for a file that's unconditionally protected (final_approved or retained), since
-                      showing a future date there would misleadingly suggest it's still on a deletion path. */}
-                  {f.purgeScheduledAt && !f.purgedAt && !f.retain && f.fileKind !== "final_approved" && (
-                    <> · Eligible for cleanup from {new Date(f.purgeScheduledAt).toLocaleDateString()}</>
-                  )}
-                </p>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                {f.lifecycleState === "active" && f.fileKind !== "final_approved" && (
-                  <ActionForm action={confirmProjectFileBackupAction}>
-                    <input type="hidden" name="fileId" value={f.id} />
-                    <input type="hidden" name="engagementId" value={id} />
-                    <ConfirmSubmitButton
-                      confirmMessage={`Confirm this file has been backed up externally? This starts the retention grace period before eventual cleanup.`}
-                      pendingLabel="Confirming…"
-                      className="rounded border border-black/15 px-2 py-1 font-sans text-caption hover:border-black/30"
-                    >
-                      Confirm Backup
-                    </ConfirmSubmitButton>
-                  </ActionForm>
-                )}
-                {canPromoteFileKindToFinalApproved(f.fileKind) && !f.purgedAt && (
-                  <ActionForm action={promoteProjectFileToFinalApprovedAction}>
-                    <input type="hidden" name="fileId" value={f.id} />
-                    <input type="hidden" name="engagementId" value={id} />
-                    <ConfirmSubmitButton
-                      confirmMessage="Mark this as the final approved deliverable? This is the authoritative retained version — it will be permanently exempt from media cleanup regardless of backup/retention state."
-                      pendingLabel="Approving…"
-                      className="rounded border border-black/15 px-2 py-1 font-sans text-caption hover:border-black/30"
-                    >
-                      Mark Final Approved
-                    </ConfirmSubmitButton>
-                  </ActionForm>
-                )}
-                <ActionForm action={setProjectFileRetainAction}>
-                  <input type="hidden" name="fileId" value={f.id} />
-                  <input type="hidden" name="engagementId" value={id} />
-                  <input type="hidden" name="retain" value={f.retain ? "false" : "true"} />
-                  <SubmitButton
-                    pendingLabel={f.retain ? "Removing Retain…" : "Retaining…"}
-                    className="rounded border border-black/15 px-2 py-1 font-sans text-caption hover:border-black/30"
-                  >
-                    {f.retain ? "Remove Retain" : "Retain"}
-                  </SubmitButton>
-                </ActionForm>
-              </div>
-            </li>
-          ))}
-          {files.length === 0 && <li className="px-4 py-3 font-sans text-body-small text-ordift-ink-muted">No files yet.</li>}
-        </ul>
+      <section className="rounded-xl border border-black/10 bg-white p-6 space-y-4">
+        <h2 className="font-serif font-medium text-body text-ordift-ink">Uploads &amp; approvals</h2>
+
+        <div className="rounded-lg border border-black/10 bg-black/[0.02] p-4 space-y-2" data-testid="what-the-buttons-mean">
+          <p className="font-sans text-body-small font-semibold text-ordift-ink">Three different things happen to a file here</p>
+          <ul className="list-disc space-y-1 pl-5 font-sans text-caption text-ordift-ink-muted">
+            <li><strong>Review for the client</strong> — Approve for client / Return for rework. Approving does not show anything to the client.</li>
+            <li><strong>Release</strong> — done on {crewRequest ? <Link href={`/admin/crew-support/${crewRequest.requestId}`} className="underline">{crewRequest.reference}</Link> : "the Crew Support request"}: approved files are explicitly released, and the client email is a separate, optional step.</li>
+            <li><strong>Retention</strong> — Confirm backup / Retain / Final version control how long Ordift keeps a file. They never approve, release or email anything.</li>
+          </ul>
+          <p className="font-sans text-caption text-ordift-ink-muted">
+            &ldquo;Uploading as&rdquo; (Deliverable, Final Approved, Source RAW…) describes the file for retention only. A file uploaded as Final Approved is still reviewed and released like any other.
+          </p>
+        </div>
+
+        <MediaReviewGallery engagementId={id} requestId={crewRequest?.requestId ?? ""} files={gallery} />
 
         <MediaFileUploader
           engagementId={id}

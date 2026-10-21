@@ -3,8 +3,9 @@
 import { revalidatePath } from "next/cache";
 import { getCurrentUser } from "@/lib/portal/roles";
 import { canManageCrewSupport } from "@/lib/crewSupport/permissions";
-import { releaseApprovedFiles, reviewFileForRelease } from "@/lib/crewSupport/fileReleaseFlow";
-import { getProjectFileDownloadUrl } from "@/lib/payables/projectFiles";
+import { notifyClientOfReleasedFiles, releaseApprovedFiles, reviewFileForRelease, reviewFilesForRelease } from "@/lib/crewSupport/fileReleaseFlow";
+import { decisionSummary, type FileOutcome, type ReviewDecision } from "@/lib/crewSupport/fileReview";
+import { getProjectFileDownloadUrl, getProjectFilePreviewUrls } from "@/lib/payables/projectFiles";
 import { actionFail, actionOk, runAction, type ActionState } from "@/lib/shared/actionState";
 
 // Management's side of releasing an assignment's files to the client. The lib enforces that only authorised
@@ -56,4 +57,50 @@ export async function reviewFileDownloadUrlAction(fileId: string): Promise<{ ok:
   const user = await authorize();
   if (!user) return { ok: false, error: DENIED };
   return getProjectFileDownloadUrl(fileId, user.id);
+}
+
+// ---- gallery (grid + viewer) support
+
+export type PreviewUrls = { ok: true; urls: Record<string, { url: string } | { error: string }> } | { ok: false; error: string };
+
+// Short-lived signed links for the gallery. Any signed-in user may ASK; the library only signs files the caller is
+// allowed to see (the assigned professional for their own engagement, or payee-administration / Super Admin).
+export async function previewUrlsAction(fileIds: string[]): Promise<PreviewUrls> {
+  const user = await getCurrentUser();
+  if (!user) return { ok: false, error: "You are not signed in." };
+  return getProjectFilePreviewUrls(fileIds.map(String).slice(0, 60), user.id);
+}
+
+export type ReviewBatchResult = { ok: boolean; message: string; outcomes: FileOutcome[] };
+
+// One decision applied to the files chosen in the gallery. Every file gets its own outcome (and its own audit entry);
+// separation of duties is enforced per file by the library and by the database, exactly as for a single decision.
+export async function reviewFilesAction(input: { requestId: string; engagementId?: string; fileIds: string[]; decision: ReviewDecision; note: string }): Promise<ReviewBatchResult> {
+  const user = await authorize();
+  if (!user) return { ok: false, message: DENIED, outcomes: [] };
+  if (input.decision !== "approve" && input.decision !== "request_changes" && input.decision !== "reject") return { ok: false, message: "Choose approve, return for rework or decline.", outcomes: [] };
+  try {
+    const r = await reviewFilesForRelease({ fileIds: input.fileIds.map(String), user, action: input.decision, note: input.note ?? "" });
+    if (!r.ok) return { ok: false, message: r.error, outcomes: [] };
+    if (input.requestId) refresh(input.requestId);
+    if (input.engagementId) revalidatePath(`/admin/payables/engagements/${input.engagementId}/media`);
+    return { ...decisionSummary(input.decision, r.outcomes), outcomes: r.outcomes };
+  } catch (error) {
+    console.error("[action] bulk review failed", error);
+    return { ok: false, message: "Something went wrong. Some files may have been processed — refresh to see their current status.", outcomes: [] };
+  }
+}
+
+// Emails the client about files that were already released (the release and the email are separate outcomes).
+// Each file is emailed about at most once.
+export async function notifyReleasedFilesAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  const user = await authorize();
+  if (!user) return actionFail(DENIED);
+  const fileIds = formData.getAll("fileId").map(String).filter(Boolean);
+  return runAction(async () => {
+    const r = await notifyClientOfReleasedFiles({ fileIds, user });
+    if (!r.ok) return actionFail(r.error);
+    refresh(str(formData, "requestId"));
+    return actionOk(r.reason);
+  }, "email client about released files");
 }

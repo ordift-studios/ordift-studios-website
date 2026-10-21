@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useActionState, useState } from "react";
+import { useFormStatus } from "react-dom";
 import { getMyFileDownloadUrlAction } from "@/app/portal/(dashboard)/collaborator/actions";
 import { removeOwnPrivateFileAction, submitFileForReleaseAction, submitAllPrivateFilesAction, withdrawFileFromReviewAction } from "@/app/portal/(dashboard)/collaborator/assignmentWorkActions";
 import ActionForm from "@/components/admin/ActionForm";
@@ -56,6 +57,40 @@ const FILE_KIND_LABELS: Record<string, string> = {
   other: "Other",
 };
 
+// Pending text lives inside the <form> so useFormStatus() can see it. Submitting a whole gallery used to show only a
+// button label for ~30 s with nothing else, and people refreshed (which throws the result away).
+function PendingNote({ count }: { count: number }) {
+  const { pending } = useFormStatus();
+  if (!pending) return null;
+  return (
+    <p role="status" className="basis-full font-sans text-caption text-ordift-ink">
+      Submitting {count} file{count === 1 ? "" : "s"} for review… this takes a few seconds. Please stay on this page — your files are not being re-uploaded.
+    </p>
+  );
+}
+
+// Kept mounted whether or not any private files remain, so the result of "Submit all" stays on screen after the
+// list refreshes (the old form unmounted itself the moment its last private file became "submitted", taking its own
+// success message with it).
+function SubmitAllPanel({ engagementId, privateCount }: { engagementId: string; privateCount: number }) {
+  const [state, formAction] = useActionState(submitAllPrivateFilesAction, null);
+  if (privateCount <= 1 && !state) return null;
+  return (
+    <form action={formAction} className="mb-3 flex flex-wrap items-center gap-3 rounded-lg border border-black/10 bg-black/[0.02] px-4 py-3">
+      <input type="hidden" name="engagementId" value={engagementId} />
+      {privateCount > 1 && (
+        <>
+          <p className="font-sans text-caption text-ordift-ink-muted">{privateCount} private files are ready to send for review. Each keeps its file name as its title.</p>
+          <SubmitButton pendingLabel="Submitting…" className="rounded-md bg-ordift-navy-950 px-3 py-1.5 font-sans text-caption font-semibold text-white">Submit all for review</SubmitButton>
+        </>
+      )}
+      <PendingNote count={privateCount} />
+      {state?.ok === true && <p role="status" className="basis-full font-sans text-caption text-green-700">{state.message}</p>}
+      {state?.ok === false && <p role="alert" className="basis-full font-sans text-caption text-red-700">{state.error}</p>}
+    </form>
+  );
+}
+
 // Downloads go through a signed URL requested on click, not a static
 // link — the URL is short-lived (300s) and authorized fresh each time,
 // matching the established pattern (payeeInstructions/paymentEvidence/
@@ -85,13 +120,7 @@ export default function EngagementFileList({ files, releaseEngagementId }: { fil
 
   return (
     <div>
-      {releaseEnabled && privateTagged > 1 && (
-        <ActionForm action={submitAllPrivateFilesAction} className="mb-3 flex flex-wrap items-center gap-3 rounded-lg border border-black/10 bg-black/[0.02] px-4 py-3">
-          <input type="hidden" name="engagementId" value={releaseEngagementId} />
-          <p className="font-sans text-caption text-ordift-ink-muted">{privateTagged} private files are ready to send for review. Each keeps its file name as its title.</p>
-          <SubmitButton pendingLabel="Submitting…" className="rounded-md bg-ordift-navy-950 px-3 py-1.5 font-sans text-caption font-semibold text-white">Submit all for review</SubmitButton>
-        </ActionForm>
-      )}
+      {releaseEnabled && <SubmitAllPanel engagementId={releaseEngagementId as string} privateCount={privateTagged} />}
       {error && (
         <div role="alert" className="mb-3 rounded-lg border border-red-200 bg-red-50 px-4 py-3">
           <p className="font-sans text-body-small text-red-800">{error}</p>

@@ -15,6 +15,7 @@ import NotificationsPanel from "../NotificationsPanel";
 import CommitmentPanel from "../CommitmentPanel";
 import ProductionPanel from "../ProductionPanel";
 import AssignmentWorkPanel, { type AssignmentWork } from "../AssignmentWorkPanel";
+import { listEmailedReleasedFileIds } from "@/lib/crewSupport/fileReleaseFlow";
 import ScheduleReadinessPanel, { type ReadinessSlotData } from "../ScheduleReadinessPanel";
 import { getReadinessForAdmin, getReadinessSettings, listManagerCandidates } from "@/lib/crewSupport/readiness";
 import { listScheduleChanges, partiesForRequest } from "@/lib/crewSupport/reschedule";
@@ -84,11 +85,12 @@ export default async function CrewSupportDetailPage({ params }: { params: Promis
     createAdminClient().from("enquiries").select("id, crm_stage, amount_due").eq("id", r.enquiry_id).maybeSingle(),
     getDeliverablesForEntity("enquiry", r.enquiry_id),
   ]);
+  const emailedFileIds = commitment ? await listEmailedReleasedFileIds(r.enquiry_id).catch(() => [] as string[]) : [];
   const assignmentWork: AssignmentWork[] = commitment
     ? await Promise.all(
         commitment.slots
           .filter((sl) => sl.status === "assigned" && sl.engagement)
-          .map(async (sl) => ({ slotId: sl.slotId, label: sl.label, assigneeId: sl.assigneeProfileId ?? null, engagementId: sl.engagement!.id, serviceFamily: String(r.service_family ?? ""), reports: await listReportsForEngagement(sl.engagement!.id), files: await listProjectFilesForEngagement(sl.engagement!.id) }))
+          .map(async (sl) => ({ slotId: sl.slotId, label: sl.label, assigneeId: sl.assigneeProfileId ?? null, engagementId: sl.engagement!.id, serviceFamily: String(r.service_family ?? ""), reports: await listReportsForEngagement(sl.engagement!.id), files: await listProjectFilesForEngagement(sl.engagement!.id), emailedFileIds }))
       )
     : [];
   const readinessSlots: ReadinessSlotData[] = [];
