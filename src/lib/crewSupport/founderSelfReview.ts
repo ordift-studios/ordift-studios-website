@@ -266,8 +266,20 @@ export async function declareAndRelease(params: {
     for (const id of ids) await admin.rpc("fsr_record_failure", { p_declaration: decl.declarationId, p_file: id, p_error: released.error });
     return { ok: true, outcomes: ids.map((id) => ({ fileId: id, label: id, ok: false, error: released.error })), declaration: declarationOutcome("release", ids.map((id) => ({ fileId: id, label: id, ok: false, error: released.error }))), declarationId: decl.declarationId, release: null };
   }
-  const { data: states } = await createAdminClient().from("self_review_declaration_files").select("file_id, outcome, outcome_error").eq("declaration_id", decl.declarationId);
-  const byFile = new Map((states ?? []).map((s) => [s.file_id as string, s]));
+  const admin2 = createAdminClient();
+  const read = async () => (await admin2.from("self_review_declaration_files").select("file_id, outcome, outcome_error").eq("declaration_id", decl.declarationId)).data ?? [];
+  let states = await read();
+  // A file the release engine skipped before claiming it (for example its client category is missing) is still "pending" in the
+  // database. Record that honestly as FAILED, with the engine's own reason, so the declaration never lingers half-open.
+  const stillPending = states.filter((x) => x.outcome === "pending");
+  for (const row of stillPending) {
+    const f = files.find((x) => x.id === (row.file_id as string));
+    const label = f?.client_title ?? f?.original_filename ?? "";
+    const reason = released.failed.find((m) => label && m.startsWith(`${label}:`))?.slice(label.length + 1).trim() || "This image was not released.";
+    await admin2.rpc("fsr_record_failure", { p_declaration: decl.declarationId, p_file: row.file_id as string, p_error: reason });
+  }
+  if (stillPending.length > 0) states = await read();
+  const byFile = new Map(states.map((s) => [s.file_id as string, s]));
   const outcomes: FileOutcome[] = ids.map((id) => {
     const f = files.find((x) => x.id === id)!;
     const s = byFile.get(id);
