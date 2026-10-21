@@ -384,6 +384,9 @@ export async function getActiveSuperAdminCount(): Promise<number> {
 }
 
 export type LookupOption = { id: string; name: string; active: boolean };
+// Engagement types also carry their slug (additive) so screens can decide by
+// relationship (employee vs contributor vs vendor) without matching on names.
+export type EngagementTypeOption = LookupOption & { slug: string };
 
 export async function listOperationalTitles(): Promise<LookupOption[]> {
   const admin = createAdminClient();
@@ -398,9 +401,9 @@ export async function listOperationalTitles(): Promise<LookupOption[]> {
   return data ?? [];
 }
 
-export async function listEngagementTypes(): Promise<LookupOption[]> {
+export async function listEngagementTypes(): Promise<EngagementTypeOption[]> {
   const admin = createAdminClient();
-  const { data, error } = await admin.from("engagement_types").select("id, name, active").order("sort_order");
+  const { data, error } = await admin.from("engagement_types").select("id, name, slug, active").order("sort_order");
   if (error) {
     console.error("[portal admin] failed to load engagement_types", error.message);
     return [];

@@ -14,6 +14,7 @@ import { getRequisitionById, listApprovedRequisitionsForOnboarding } from "@/lib
 import { resolveCurrentEmploymentContext, listEmploymentTermsHistory, EMPLOYMENT_TRANSITION_TYPES } from "@/lib/organization/employmentTermsHistory";
 import { listEmployerCapableEmployingEntities } from "@/lib/organization/legalEntities";
 import { getEmployeeEmploymentAgreementSummary, checkEmployeeAgreementReadiness } from "@/lib/legal/employeeAgreements";
+import { resolveOnboardingRelationship, onboardingCopy, onboardingWorkspaceHref } from "@/lib/organization/onboardingRelationship";
 import { OnboardingWorkspace } from "./OnboardingWorkspace";
 
 export const metadata: Metadata = {
@@ -56,6 +57,17 @@ export default async function OnboardingWorkspacePage({ params }: { params: Prom
   ]);
 
   const person = usersResult.ok ? usersResult.users.find((u) => u.id === onboarding.profileId) : undefined;
+  // Relationship-aware presentation (2026-10-21): the same verified
+  // classification (engagement type + system role) that routes admins here
+  // decides the terminology and whether employee-only organizational
+  // fields are shown. Employees keep the original presentation exactly.
+  const relationshipResolution = resolveOnboardingRelationship({
+    engagementTypeSlug: person?.engagementTypeSlug ?? null,
+    roles: person?.roles ?? [],
+    pipeline: onboarding.pipeline,
+  });
+  const relationship = relationshipResolution.relationship;
+  const copy = onboardingCopy(relationship);
   const personGrants = grants.filter((g) => g.profileId === onboarding.profileId && isGrantActive(g));
   const identity = identities.find((i) => i.profileId === onboarding.profileId) ?? null;
   const hiringManagerName = requisition?.hiringManagerId
@@ -141,20 +153,53 @@ export default async function OnboardingWorkspacePage({ params }: { params: Prom
         <div className="rounded-xl border border-black/10 bg-white p-6 space-y-2">
           <h2 className="font-serif font-medium text-body text-ordift-ink">Person</h2>
           <p className="font-sans text-body-small text-ordift-ink-muted">Name: {person?.fullName ?? "—"}</p>
-          <p className="font-sans text-body-small text-ordift-ink-muted">Member/staff number: {person?.memberNumber ?? "Not yet issued"}</p>
+          <p className="font-sans text-body-small text-ordift-ink-muted">{copy.numberLabel}: {person?.memberNumber ?? "Not yet issued"}</p>
           <p className="font-sans text-body-small text-ordift-ink-muted">Engagement type: {person?.engagementTypeName ?? "—"}</p>
         </div>
 
         <div className="rounded-xl border border-black/10 bg-white p-6 space-y-2">
-          <h2 className="font-serif font-medium text-body text-ordift-ink">Organization</h2>
-          <p className="font-sans text-body-small text-ordift-ink-muted">Position: {person?.positionName ?? "Not yet assigned"}</p>
-          <p className="font-sans text-body-small text-ordift-ink-muted">Department: {person?.departmentName ?? "—"}</p>
-          <p className="font-sans text-body-small text-ordift-ink-muted">Grade: {person?.gradeCode ? `${person.gradeCode} — ${person.gradeName}` : "—"}</p>
-          <p className="font-sans text-body-small text-ordift-ink-muted">Operational Title: {person?.operationalTitleName ?? "—"}</p>
+          <h2 className="font-serif font-medium text-body text-ordift-ink">{copy.organizationCardHeading}</h2>
+          {copy.showEmployeeOrganizationFields ? (
+            <>
+              <p className="font-sans text-body-small text-ordift-ink-muted">Position: {person?.positionName ?? "Not yet assigned"}</p>
+              <p className="font-sans text-body-small text-ordift-ink-muted">Department: {person?.departmentName ?? "—"}</p>
+              <p className="font-sans text-body-small text-ordift-ink-muted">Grade: {person?.gradeCode ? `${person.gradeCode} — ${person.gradeName}` : "—"}</p>
+              <p className="font-sans text-body-small text-ordift-ink-muted">Operational Title: {person?.operationalTitleName ?? "—"}</p>
+            </>
+          ) : (
+            <>
+              <p className="font-sans text-body-small text-ordift-ink-muted">Operational Title: {person?.operationalTitleName ?? "—"}</p>
+              <p className="font-sans text-body-small text-ordift-ink-muted">System role: {person?.roles.length ? person.roles.join(", ") : "—"}</p>
+              <p className="font-sans text-caption text-ordift-ink-muted">Position, department and grade apply to employees only.</p>
+            </>
+          )}
         </div>
       </section>
 
+      {relationship === "conflict" && (
+        <p className="font-sans text-body-small text-red-700 bg-red-50 border border-red-200 rounded px-4 py-3" role="alert">
+          Classification review required — {relationshipResolution.reason}
+        </p>
+      )}
+      {relationship === "individual_contributor" && (
+        <p className="font-sans text-caption text-ordift-ink-muted bg-ordift-offwhite border border-black/10 rounded px-4 py-3">
+          Individual contributor / contractor — onboarded here. Vendor company details, vendor agreements and vendor payee
+          classification do not apply to this relationship; payment destinations are handled separately under
+          Payables → Payees and only once engagement terms are agreed.
+        </p>
+      )}
+      {relationship === "vendor_supplier" && (
+        <p className="font-sans text-caption text-ordift-ink-muted bg-ordift-offwhite border border-black/10 rounded px-4 py-3">
+          This account is a vendor/supplier. Its company profile, documents, agreements and payment readiness are managed in the{" "}
+          <Link href={onboardingWorkspaceHref({ relationship, onboardingId: onboarding.id, profileId: onboarding.profileId })} className="underline underline-offset-4">
+            Vendor workspace
+          </Link>
+          .
+        </p>
+      )}
+
       <OnboardingWorkspace
+        relationship={relationship}
         onboarding={onboarding}
         pipelineStages={pipelineStages}
         nextStageName={next}

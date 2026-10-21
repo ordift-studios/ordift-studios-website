@@ -3,6 +3,20 @@ import { createDraftAgreement, addAgreementParty, attachAgreementSnapshot, creat
 import { isTerminalAgreementStatus, isIssuedAgreementStatus, type AgreementLifecycleStatus } from "./agreementLifecycle";
 import { checkVendorAgreementJurisdiction } from "./vendorAgreementJurisdictionGate";
 import { VENDOR_FRAMEWORK_VARIABLES, type VendorFrameworkVariableKey } from "./documents/os-lgl-009a-vendor-supplier-framework-agreement";
+import { assertVendorEligible, VendorEligibilityError } from "@/lib/organization/vendorEligibility";
+
+// Contributor/vendor boundary (2026-10-21) — vendor agreements (OS-LGL-009A/B)
+// may only be drafted for a clean vendor/supplier. Never a substitute for the
+// Instructor / Workshop Facilitator Agreement (OS-LGL-010).
+async function vendorEligibilityRefusal(vendorProfileId: string): Promise<{ ok: false; error: string } | null> {
+  try {
+    await assertVendorEligible(vendorProfileId);
+    return null;
+  } catch (error) {
+    if (error instanceof VendorEligibilityError) return { ok: false, error: error.message };
+    throw error;
+  }
+}
 
 // Ordift Studios Legal Suite — OS-LGL-009 Vendor & Supplier Framework
 // Agreement architecture (2026-09-15). Approved integration: Option A
@@ -192,6 +206,8 @@ export async function createVendorFrameworkDraftAgreement(params: {
   additionalVariables?: Partial<Record<VendorFrameworkVariableKey, string>>;
   actorUserId: string;
 }): Promise<CreateVendorFrameworkDraftAgreementResult> {
+  const refusal = await vendorEligibilityRefusal(params.vendorProfileId);
+  if (refusal) return refusal;
   const jurisdictionCheck = await checkVendorAgreementJurisdiction(params.vendorProfileId);
   if (!jurisdictionCheck.ok) return { ok: false, error: jurisdictionCheck.error };
 
@@ -363,6 +379,8 @@ export async function createVendorWorkOrderDraftAgreement(params: {
   details?: VendorWorkOrderDetails;
   actorUserId: string;
 }): Promise<{ ok: true; agreementId: string; agreementReference: string } | { ok: false; error: string }> {
+  const refusal = await vendorEligibilityRefusal(params.vendorProfileId);
+  if (refusal) return refusal;
   const admin = createAdminClient();
   const { data: framework } = await admin
     .from("agreements")

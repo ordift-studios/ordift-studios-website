@@ -1,6 +1,7 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { logActivity } from "@/lib/admin/activityLog";
 import { canManageOnboarding } from "@/lib/organization/onboarding";
+import { assertVendorEligible, VendorEligibilityError } from "@/lib/organization/vendorEligibility";
 import { sendVendorAgreementNotification } from "@/lib/notifications/vendorAgreementNotification";
 
 // Vendor Completion Phase (2026-09-15) — against public.vendor_documents
@@ -33,6 +34,23 @@ const SIGNED_URL_TTL_SECONDS = 300;
 async function canAccessVendorDocuments(vendorProfileId: string, actorUserId: string): Promise<boolean> {
   if (actorUserId === vendorProfileId) return true;
   return canManageOnboarding(actorUserId);
+}
+
+// Contributor/vendor boundary (2026-10-21) — every vendor-document WRITE
+// (and review/annotation) requires the target account to be a clean,
+// unambiguous vendor, whoever the actor is. Ownership alone ("the row is
+// on my own profile") is deliberately not enough: an instructor, freelancer
+// or contractor must not be able to create vendor evidence for themselves,
+// and a conflicting classification fails safe. Reads are not gated here.
+// The decision itself comes from the single shared resolver.
+async function vendorEligibilityRefusal(vendorProfileId: string): Promise<{ ok: false; error: string } | null> {
+  try {
+    await assertVendorEligible(vendorProfileId);
+    return null;
+  } catch (error) {
+    if (error instanceof VendorEligibilityError) return { ok: false, error: error.message };
+    throw error;
+  }
 }
 
 export type VendorDocument = {
@@ -120,6 +138,8 @@ export async function requestVendorDocumentUploadAuthorization(params: {
   if (!(await canAccessVendorDocuments(params.vendorProfileId, params.actorUserId))) {
     return { ok: false, error: "Not authorized to upload a document for this vendor." };
   }
+  const refusal = await vendorEligibilityRefusal(params.vendorProfileId);
+  if (refusal) return refusal;
 
   const admin = createAdminClient();
   const sanitizedFilename = params.originalFilename.replace(/[^a-zA-Z0-9._-]/g, "_").slice(-180);
@@ -149,6 +169,8 @@ export async function recordVendorDocument(params: {
   if (!(await canAccessVendorDocuments(params.vendorProfileId, params.actorUserId))) {
     return { ok: false, error: "Not authorized to upload a document for this vendor." };
   }
+  const refusal = await vendorEligibilityRefusal(params.vendorProfileId);
+  if (refusal) return refusal;
   const documentType = params.documentType.trim();
   if (!documentType) return { ok: false, error: "A document type is required." };
   if (!params.storagePath.startsWith(`${params.vendorProfileId}/`)) {
@@ -156,6 +178,14 @@ export async function recordVendorDocument(params: {
   }
 
   const admin = createAdminClient();
+  // A superseded document must be this same vendor's own — the foreign key
+  // alone would accept another account's document id.
+  if (params.supersedesId) {
+    const { data: superseded } = await admin.from("vendor_documents").select("vendor_profile_id").eq("id", params.supersedesId).maybeSingle();
+    if (!superseded || superseded.vendor_profile_id !== params.vendorProfileId) {
+      return { ok: false, error: "The document being replaced does not belong to this vendor." };
+    }
+  }
   const { data, error } = await admin
     .from("vendor_documents")
     .insert({
@@ -219,6 +249,8 @@ export async function reviewVendorDocument(params: {
   const admin = createAdminClient();
   const { data: existing } = await admin.from("vendor_documents").select("vendor_profile_id").eq("id", params.documentId).maybeSingle();
   if (!existing) return { ok: false, error: "Document not found." };
+  const refusal = await vendorEligibilityRefusal(existing.vendor_profile_id);
+  if (refusal) return refusal;
 
   const now = new Date().toISOString();
   const { error } = await admin
@@ -275,6 +307,8 @@ export async function annotateVendorDocument(params: {
   const admin = createAdminClient();
   const { data: existing } = await admin.from("vendor_documents").select("vendor_profile_id").eq("id", params.documentId).maybeSingle();
   if (!existing) return { ok: false, error: "Document not found." };
+  const refusal = await vendorEligibilityRefusal(existing.vendor_profile_id);
+  if (refusal) return refusal;
 
   const { error } = await admin.from("vendor_documents").update({ notes }).eq("id", params.documentId);
   if (error) {
