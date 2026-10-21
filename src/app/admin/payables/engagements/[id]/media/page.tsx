@@ -80,7 +80,7 @@ export default async function EngagementMediaPage({ params }: { params: Promise<
           </p>
         </div>
 
-        <MediaReviewGallery engagementId={id} requestId={crewRequest?.requestId ?? ""} files={gallery} />
+        <MediaReviewGallery engagementId={id} requestId={crewRequest?.requestId ?? ""} engagementStatus={engagement.status} files={gallery} />
 
         <MediaFileUploader
           engagementId={id}

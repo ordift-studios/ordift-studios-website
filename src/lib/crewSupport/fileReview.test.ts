@@ -146,3 +146,59 @@ describe("gallery rows apply separation of duties per file and per viewer", () =
     expect(row.releaseStatus).toBe("private");
   });
 });
+
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { CLEANUP_GRACE_DAYS, retentionImplications, tileCleanupNote } from "./fileReview";
+
+describe("retention implications are shown for the exact selection", () => {
+  const now = new Date("2026-10-22T09:00:00Z");
+  const files = [{ fileKind: "deliverable", retain: false, backedUp: false }, { fileKind: "deliverable", retain: false, backedUp: false }];
+  it("the grace period matches the platform's cleanup rule (pinned against projectFiles.ts)", () => {
+    const text = readFileSync(join(process.cwd(), "src/lib/payables/projectFiles.ts"), "utf8");
+    expect(text).toContain(`const DEFAULT_GRACE_PERIOD_DAYS = ${CLEANUP_GRACE_DAYS};`);
+    expect(CLEANUP_GRACE_DAYS).toBe(10);
+  });
+  it("confirm backup: states it is only an attestation, shows the 10-day date, and that an open engagement blocks cleanup", () => {
+    const lines = retentionImplications("confirm_backup", files, "engagement_active", now).join(" ");
+    expect(lines).toContain("attesting that you hold a copy of 2 files outside Ordift's storage");
+    expect(lines).toContain("does not make a backup for you");
+    expect(lines).toContain("10-day grace period today (2026-10-22); it ends on 2026-11-01");
+    expect(lines).toContain("nothing can be cleaned up while it stays open");
+    expect(lines).toContain("unless they are retained or marked as the final version");
+    expect(lines).toContain("no scheduler exists");
+  });
+  it("confirm backup on a completed engagement says the files become removable after the grace date", () => {
+    const lines = retentionImplications("confirm_backup", files, "completed", now).join(" ");
+    expect(lines).toContain("after 2026-11-01 these files can be removed by a manual “Run Cleanup”");
+    expect(lines).not.toContain("nothing can be cleaned up while it stays open");
+  });
+  it("retain, remove-retain and final-version each state their own consequence and never claim client approval", () => {
+    expect(retentionImplications("retain", files, "engagement_active", now).join(" ")).toContain("Nothing is approved, released or sent to the client");
+    const un = retentionImplications("unretain", [{ fileKind: "deliverable", retain: true, backedUp: true }, { fileKind: "deliverable", retain: true, backedUp: false }], "completed", now).join(" ");
+    expect(un).toContain("(1 of 2 is)");
+    const fin = retentionImplications("final_approved", files, "engagement_active", now).join(" ");
+    expect(fin).toContain("not client approval and does not release anything");
+    expect(fin).toContain("at least one deliverable is marked as the final version");
+  });
+  it("every retention explanation ends with the fact that cleanup is manual", () => {
+    for (const op of ["confirm_backup", "retain", "unretain", "final_approved"] as const) {
+      expect(retentionImplications(op, files, "completed", now).at(-1)).toContain("Cleanup is never automatic");
+    }
+  });
+  it("grid notes show the cleanup state of each file", () => {
+    const base = { fileKind: "deliverable", retain: false, backedUp: false, purgeScheduledAt: null, purged: false };
+    expect(tileCleanupNote(base, "engagement_active")).toBeNull();
+    expect(tileCleanupNote({ ...base, backedUp: true, purgeScheduledAt: "2026-11-01T09:00:00Z" }, "engagement_active")).toBe("Backup confirmed — cleanup possible from 2026-11-01, once the engagement is completed or cancelled");
+    expect(tileCleanupNote({ ...base, backedUp: true, purgeScheduledAt: "2026-11-01T09:00:00Z" }, "completed")).toBe("Backup confirmed — cleanup possible from 2026-11-01");
+    expect(tileCleanupNote({ ...base, retain: true, backedUp: true }, "completed")).toBe("Retained — exempt from cleanup");
+    expect(tileCleanupNote({ ...base, fileKind: "final_approved" }, "completed")).toBe("Final version — exempt from cleanup");
+    expect(tileCleanupNote({ ...base, purged: true }, "completed")).toBe("Removed by cleanup");
+  });
+  it("the media gallery wires an implications panel to every retention action and a cleanup note to every tile", () => {
+    const w = readFileSync(join(process.cwd(), "src/app/admin/payables/engagements/[id]/media/MediaReviewGallery.tsx"), "utf8");
+    for (const op of ["confirm_backup", "retain", "unretain", "final_approved"]) expect(w).toContain(`implications: implications("${op}")`);
+    expect(w).toContain("cleanupNote={(f) => tileCleanupNote(f, engagementStatus)}");
+    expect(readFileSync(join(process.cwd(), "src/app/admin/payables/engagements/[id]/media/page.tsx"), "utf8")).toContain("engagementStatus={engagement.status}");
+  });
+});

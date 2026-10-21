@@ -20,6 +20,8 @@ export type GalleryAction = {
   needsNote?: boolean;
   noteLabel?: string;
   attestation?: string;
+  // Exact consequences for the selected files, shown in the confirmation (e.g. the cleanup grace period).
+  implications?: (files: GalleryFile[]) => string[];
   // Does this action apply to this file right now?
   eligible: (file: GalleryFile) => boolean;
   // Skips the viewer's separation-of-duties block (retention actions are not part of the review).
@@ -49,7 +51,7 @@ type Filter = "all" | ReviewBucket;
 type Pending = { action: GalleryAction; ids: string[] } | null;
 const ZOOMS = ["fit", 1, 2, 3] as const;
 
-export default function FileReviewGallery({ files, actions, fetchUrls, emptyText = "No files." }: { files: GalleryFile[]; actions: GalleryAction[]; fetchUrls: (ids: string[]) => Promise<PreviewUrlResult>; emptyText?: string }) {
+export default function FileReviewGallery({ files, actions, fetchUrls, emptyText = "No files.", cleanupNote }: { files: GalleryFile[]; actions: GalleryAction[]; fetchUrls: (ids: string[]) => Promise<PreviewUrlResult>; emptyText?: string; cleanupNote?: (file: GalleryFile) => string | null }) {
   const router = useRouter();
   const [filter, setFilter] = useState<Filter>("all");
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -216,6 +218,11 @@ export default function FileReviewGallery({ files, actions, fetchUrls, emptyText
       <div role="group" aria-label="Confirm action" className="space-y-2 rounded-lg border border-amber-300 bg-amber-50 p-3 text-ordift-ink">
         <p className="font-sans text-body-small font-semibold">{action.label}: {ids.length} file{ids.length === 1 ? "" : "s"}</p>
         <p className="font-sans text-caption">{action.meaning}</p>
+        {action.implications && (
+          <ul className="list-disc space-y-1 pl-5 font-sans text-caption" data-testid="implications">
+            {action.implications(ids.map((id) => byId.get(id)).filter((f): f is GalleryFile => Boolean(f))).map((line) => <li key={line}>{line}</li>)}
+          </ul>
+        )}
         <p className="font-sans text-caption text-ordift-ink-muted">{names.slice(0, 5).join(", ")}{names.length > 5 ? ` and ${names.length - 5} more` : ""}</p>
         {action.needsNote && (
           <label className="block font-sans text-caption">{action.noteLabel ?? "Note"}
@@ -268,7 +275,7 @@ export default function FileReviewGallery({ files, actions, fetchUrls, emptyText
       ) : (
         <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
           {visible.map((f) => (
-            <Tile key={f.id} f={f} entry={urls[f.id]} checked={selected.has(f.id)} selectable={actionable(f)} onToggle={() => toggle(f.id)} onOpen={(el) => openViewer(f.id, el)} onVisible={() => { if (shouldAutoLoadThumbnail(f.sizeBytes, f.mimeType, f.filename)) want(f.id); }} onBroken={() => want(f.id, true)} />
+            <Tile key={f.id} f={f} note={cleanupNote?.(f) ?? null} entry={urls[f.id]} checked={selected.has(f.id)} selectable={actionable(f)} onToggle={() => toggle(f.id)} onOpen={(el) => openViewer(f.id, el)} onVisible={() => { if (shouldAutoLoadThumbnail(f.sizeBytes, f.mimeType, f.filename)) want(f.id); }} onBroken={() => want(f.id, true)} />
           ))}
         </ul>
       )}
@@ -325,7 +332,7 @@ export default function FileReviewGallery({ files, actions, fetchUrls, emptyText
   );
 }
 
-function Tile({ f, entry, checked, selectable, onToggle, onOpen, onVisible, onBroken }: { f: GalleryFile; entry?: UrlEntry; checked: boolean; selectable: boolean; onToggle: () => void; onOpen: (el: HTMLElement) => void; onVisible: () => void; onBroken: () => void }) {
+function Tile({ f, note, entry, checked, selectable, onToggle, onOpen, onVisible, onBroken }: { f: GalleryFile; note?: string | null; entry?: UrlEntry; checked: boolean; selectable: boolean; onToggle: () => void; onOpen: (el: HTMLElement) => void; onVisible: () => void; onBroken: () => void }) {
   const ref = useRef<HTMLLIElement>(null);
   useEffect(() => {
     const el = ref.current;
@@ -363,7 +370,7 @@ function Tile({ f, entry, checked, selectable, onToggle, onOpen, onVisible, onBr
           {f.blockedReason && <span title="Separation of duties: open the file to see why" className="inline-flex rounded-full bg-amber-100 px-2 py-0.5 font-sans text-caption text-amber-950">Can&apos;t act on own work</span>}
         </p>
         <p className="font-sans text-caption text-ordift-ink-muted">{f.classification}{f.categoryLabel ? ` · ${f.categoryLabel}` : ""} · {formatBytes(f.sizeBytes)}</p>
-        {(f.retain || f.backedUp) && <p className="font-sans text-caption text-ordift-ink-muted">{[f.backedUp ? "Backup confirmed" : null, f.retain ? "Retained" : null].filter(Boolean).join(" · ")}</p>}
+        {note && <p className="font-sans text-caption text-ordift-ink-muted" data-testid="cleanup-note">{note}</p>}
       </div>
     </li>
   );

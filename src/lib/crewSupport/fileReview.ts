@@ -199,6 +199,7 @@ export type GalleryFile = {
   purged: boolean;
   retain: boolean;
   backedUp: boolean;
+  purgeScheduledAt: string | null;
   // Why THIS viewer may not act on THIS file (separation of duties), if so. The file can still be viewed.
   blockedReason: string | null;
   emailed?: boolean;
@@ -217,6 +218,7 @@ export type GallerySource = {
   purgedAt: string | null;
   retain: boolean;
   backupConfirmedAt: string | null;
+  purgeScheduledAt?: string | null;
   uploadedBy: string | null;
   submittedForReleaseBy: string | null;
 };
@@ -239,7 +241,57 @@ export function toGalleryFile(f: GallerySource, viewerId: string, assigneeId: st
     purged: Boolean(f.purgedAt),
     retain: f.retain,
     backedUp: Boolean(f.backupConfirmedAt),
+    purgeScheduledAt: f.purgeScheduledAt ?? null,
     blockedReason: reviewerConflict({ reviewerId: viewerId, uploadedBy: f.uploadedBy, submittedBy: f.submittedForReleaseBy, assigneeId }),
     emailed,
   };
+}
+
+// ---------------------------------------------------------------- what retention actions actually mean
+// Mirrors DEFAULT_GRACE_PERIOD_DAYS and isProjectFilePurgeEligible() in lib/payables/projectFiles.ts (pinned by a test).
+export const CLEANUP_GRACE_DAYS = 10;
+const TERMINAL_ENGAGEMENT = ["completed", "cancelled"];
+const isoDay = (d: Date) => d.toISOString().slice(0, 10);
+const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
+
+// Plain-language consequences of a retention action for the exact files selected, shown before anything is applied.
+// Cleanup is never automatic: it happens only when someone runs "Run Cleanup" on the Payables page, and only for a file
+// that is not final, not retained, has a confirmed backup whose grace period has passed, in a completed or cancelled
+// engagement.
+export function retentionImplications(op: RetentionOp, files: Pick<GalleryFile, "fileKind" | "retain" | "backedUp">[], engagementStatus: string, now: Date): string[] {
+  const n = files.length;
+  const open = !TERMINAL_ENGAGEMENT.includes(engagementStatus);
+  const grace = new Date(now.getTime());
+  grace.setUTCDate(grace.getUTCDate() + CLEANUP_GRACE_DAYS);
+  const lines: string[] = [];
+  if (op === "confirm_backup") {
+    lines.push(`You are attesting that you hold a copy of ${plural(n, "file")} outside Ordift's storage. The platform cannot check this and does not make a backup for you.`);
+    lines.push(`This starts the ${CLEANUP_GRACE_DAYS}-day grace period today (${isoDay(now)}); it ends on ${isoDay(grace)}.`);
+    lines.push(
+      open
+        ? `The engagement is “${engagementStatus.replace(/_/g, " ")}”, so nothing can be cleaned up while it stays open. If it is later completed or cancelled, these files become removable from ${isoDay(grace)} by a manual “Run Cleanup” — unless they are retained or marked as the final version first.`
+        : `The engagement is “${engagementStatus.replace(/_/g, " ")}”: after ${isoDay(grace)} these files can be removed by a manual “Run Cleanup” unless they are retained or marked as the final version.`
+    );
+  } else if (op === "retain") {
+    lines.push(`${plural(n, "file")} will be kept out of cleanup until you remove the retain flag. Nothing is approved, released or sent to the client.`);
+  } else if (op === "unretain") {
+    const backed = files.filter((f) => f.backedUp).length;
+    lines.push(`${plural(n, "file")} will take part in cleanup again. A file is removed only if its engagement is completed or cancelled, its backup is confirmed (${backed} of ${n} ${backed === 1 ? "is" : "are"}) and ${CLEANUP_GRACE_DAYS} days have passed — and only when someone runs “Run Cleanup”.`);
+  } else {
+    lines.push(`${plural(n, "file")} will be permanently exempt from cleanup (classified Final Approved). This is not client approval and does not release anything.`);
+    lines.push("An engagement can only be completed once at least one deliverable is marked as the final version. Files you do not mark as final or retain stay eligible for cleanup after completion, a confirmed backup and the grace period.");
+  }
+  lines.push("Cleanup is never automatic: no scheduler exists, so nothing is removed unless someone runs “Run Cleanup” on the Payables page.");
+  return lines;
+}
+
+// A short per-file note for the grid, so the cleanup state is never hidden.
+export function tileCleanupNote(f: Pick<GalleryFile, "fileKind" | "retain" | "backedUp" | "purgeScheduledAt" | "purged">, engagementStatus: string): string | null {
+  if (f.purged) return "Removed by cleanup";
+  if (f.fileKind === "final_approved") return "Final version — exempt from cleanup";
+  if (f.retain) return "Retained — exempt from cleanup";
+  if (!f.backedUp) return null;
+  const from = f.purgeScheduledAt ? f.purgeScheduledAt.slice(0, 10) : null;
+  const open = !TERMINAL_ENGAGEMENT.includes(engagementStatus);
+  return `Backup confirmed${from ? ` — cleanup possible from ${from}${open ? ", once the engagement is completed or cancelled" : ""}` : ""}`;
 }
