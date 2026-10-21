@@ -7,9 +7,11 @@ import ConfirmSubmitButton from "@/components/admin/ConfirmSubmitButton";
 import { summarizeDeliverySet, toGalleryFile } from "@/lib/crewSupport/fileReview";
 import { notifyReleasedFilesAction, releaseFilesAction } from "./releaseActions";
 import AssignmentReviewGallery from "./AssignmentReviewGallery";
+import FounderSelfReviewPanel from "./FounderSelfReviewPanel";
+import type { FounderContext } from "@/lib/crewSupport/founderSelfReviewRules";
 import ReviewFileLink from "./ReviewFileLink";
 
-export type AssignmentWork = { slotId: string; label: string; assigneeId: string | null; engagementId: string; serviceFamily: string | null; reports: AssignmentReport[]; files: ProjectFile[]; emailedFileIds?: string[] };
+export type AssignmentWork = { slotId: string; label: string; assigneeId: string | null; engagementId: string; serviceFamily: string | null; reports: AssignmentReport[]; files: ProjectFile[]; emailedFileIds?: string[]; founder?: FounderContext; selfReleasedIds?: string[] };
 
 const BTN = "rounded-md px-3 py-1.5 font-sans text-caption font-semibold";
 
@@ -69,7 +71,13 @@ export default function AssignmentWorkPanel({ requestId, work, canReview, isTest
         const emailed = new Set(w.emailedFileIds ?? []);
         const unemailed = released.filter((f) => !emailed.has(f.id));
         const set = summarizeDeliverySet(w.files.map((f) => ({ id: f.id, fileKind: f.fileKind, releaseStatus: f.releaseStatus, purged: Boolean(f.purgedAt) })));
-        const gallery = w.files.map((f) => toGalleryFile(f, viewerId, w.assigneeId, emailed.has(f.id)));
+        const selfReleased = new Set(w.selfReleasedIds ?? []);
+        // A login registered under the Founder's common control is never an independent reviewer of the Founder's work.
+        const linkedBlock = w.founder?.state === "linked_login" ? w.founder.message : null;
+        const gallery = w.files.map((f) => {
+          const row = toGalleryFile(f, viewerId, w.assigneeId, emailed.has(f.id));
+          return linkedBlock && !row.blockedReason ? { ...row, blockedReason: linkedBlock } : row;
+        });
         // Nobody reviews or releases their own work, whatever their role.
         const conflicted = (f: (typeof w.files)[number]) => reviewerConflict({ reviewerId: viewerId, uploadedBy: f.uploadedBy, submittedBy: f.submittedForReleaseBy, assigneeId: w.assigneeId });
         const anyConflict = [...awaiting, ...approved].some((f) => conflicted(f));
@@ -83,6 +91,7 @@ export default function AssignmentWorkPanel({ requestId, work, canReview, isTest
                 <p className="font-sans text-caption text-amber-900">{ASSIGNEE_NOTICE_BODY}</p>
               </div>
             )}
+            {w.founder && w.founder.state !== "not_applicable" && <FounderSelfReviewPanel requestId={requestId} engagementId={w.engagementId} context={w.founder} files={gallery} />}
             <ReportBlock reports={w.reports} serviceFamily={w.serviceFamily} />
             {canReview && anyConflict && !viewerIsAssignee && (
               <p role="note" className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 font-sans text-caption text-amber-900">{SELF_REVIEW_MESSAGE}</p>
@@ -132,7 +141,7 @@ export default function AssignmentWorkPanel({ requestId, work, canReview, isTest
                       </li>
                     ))}
                   </ul>
-                  {unemailed.length > 0 && canReview && !isTest && !unemailed.some((f) => conflicted(f)) && (
+                  {unemailed.length > 0 && canReview && !isTest && !unemailed.some((f) => conflicted(f) && !selfReleased.has(f.id)) && w.founder?.state !== "linked_login" && (
                     <ActionForm action={notifyReleasedFilesAction} className="space-y-2">
                       <input type="hidden" name="requestId" value={requestId} />
                       {unemailed.map((f) => <input key={f.id} type="hidden" name="fileId" value={f.id} />)}

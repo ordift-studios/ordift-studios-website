@@ -26,7 +26,10 @@ export type GalleryAction = {
   eligible: (file: GalleryFile) => boolean;
   // Skips the viewer's separation-of-duties block (retention actions are not part of the review).
   ignoresBlock?: boolean;
-  run: (fileIds: string[], note: string, attested: boolean) => Promise<{ ok: boolean; message: string; outcomes: FileOutcome[] }>;
+  // Ask the person to type the number of files (a deliberate extra step for consequential decisions) and list every file name.
+  typedCount?: boolean;
+  listAllNames?: boolean;
+  run: (fileIds: string[], note: string, attested: boolean, typedCount: string) => Promise<{ ok: boolean; message: string; outcomes: FileOutcome[] }>;
 };
 
 export type PreviewUrlResult = { ok: true; urls: Record<string, { url: string } | { error: string }> } | { ok: false; error: string };
@@ -51,7 +54,9 @@ type Filter = "all" | ReviewBucket;
 type Pending = { action: GalleryAction; ids: string[] } | null;
 const ZOOMS = ["fit", 1, 2, 3] as const;
 
-export default function FileReviewGallery({ files, actions, fetchUrls, emptyText = "No files.", cleanupNote }: { files: GalleryFile[]; actions: GalleryAction[]; fetchUrls: (ids: string[]) => Promise<PreviewUrlResult>; emptyText?: string; cleanupNote?: (file: GalleryFile) => string | null }) {
+export type ViewerResult = { ok: true; url: string } | { ok: false; error: string };
+
+export default function FileReviewGallery({ files, actions, fetchUrls, emptyText = "No files.", cleanupNote, viewerFetch, onViewed, viewedIds }: { files: GalleryFile[]; actions: GalleryAction[]; fetchUrls: (ids: string[]) => Promise<PreviewUrlResult>; emptyText?: string; cleanupNote?: (file: GalleryFile) => string | null; viewerFetch?: (fileId: string) => Promise<ViewerResult>; onViewed?: (fileId: string) => void; viewedIds?: string[] }) {
   const router = useRouter();
   const [filter, setFilter] = useState<Filter>("all");
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -62,6 +67,10 @@ export default function FileReviewGallery({ files, actions, fetchUrls, emptyText
   const [pending, setPending] = useState<Pending>(null);
   const [note, setNote] = useState("");
   const [attested, setAttested] = useState(false);
+  const [typed, setTyped] = useState("");
+  const viewerFetchRef = useRef(viewerFetch);
+  const onViewedRef = useRef(onViewed);
+  useEffect(() => { viewerFetchRef.current = viewerFetch; onViewedRef.current = onViewed; });
   const [running, setRunning] = useState(false);
   const [result, setResult] = useState<{ ok: boolean; message: string; outcomes: FileOutcome[] } | null>(null);
   const wanted = useRef<Set<string>>(new Set());
@@ -144,9 +153,19 @@ export default function FileReviewGallery({ files, actions, fetchUrls, emptyText
 
   useEffect(() => {
     if (!current) return;
-    want(current.id);
-    const next = visible[(viewerIndex + 1) % visible.length];
-    if (next && next.id !== current.id && isPreviewableImage(next.mimeType, next.filename)) want(next.id);
+    const fetcher = viewerFetchRef.current;
+    if (fetcher) {
+      // Review mode: the SERVER issues this link and records, itself, that this image was opened. Nothing is preloaded.
+      const id = current.id;
+      void fetcher(id).then((r) => {
+        setUrls((prev) => ({ ...prev, [id]: r.ok ? { url: r.url, at: Date.now() } : { error: r.error, at: Date.now() } }));
+        if (r.ok) onViewedRef.current?.(id);
+      });
+    } else {
+      want(current.id);
+      const next = visible[(viewerIndex + 1) % visible.length];
+      if (next && next.id !== current.id && isPreviewableImage(next.mimeType, next.filename)) want(next.id);
+    }
     closeRef.current?.focus();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [current?.id]);
@@ -174,6 +193,7 @@ export default function FileReviewGallery({ files, actions, fetchUrls, emptyText
     setPending({ action, ids });
     setNote("");
     setAttested(false);
+    setTyped("");
     setResult(null);
   }
   async function confirm() {
@@ -181,9 +201,10 @@ export default function FileReviewGallery({ files, actions, fetchUrls, emptyText
     const { action, ids } = pending;
     if (action.needsNote && note.trim().length < 5) return setResult({ ok: false, message: `${action.noteLabel ?? "A note"} is required (at least 5 characters).`, outcomes: [] });
     if (action.attestation && !attested) return setResult({ ok: false, message: "Tick the box to confirm before continuing.", outcomes: [] });
+    if (action.typedCount && typed.trim() !== String(ids.length)) return setResult({ ok: false, message: `Type ${ids.length} to confirm the number of images.`, outcomes: [] });
     setRunning(true);
     setResult(null);
-    const r = await action.run(ids, note.trim(), attested).catch(() => ({ ok: false, message: "Something went wrong. Some files may have been processed — refresh to see their current status.", outcomes: [] as FileOutcome[] }));
+    const r = await action.run(ids, note.trim(), attested, typed.trim()).catch(() => ({ ok: false, message: "Something went wrong. Some files may have been processed — refresh to see their current status.", outcomes: [] as FileOutcome[] }));
     setRunning(false);
     setResult(r);
     setPending(null);
@@ -223,7 +244,11 @@ export default function FileReviewGallery({ files, actions, fetchUrls, emptyText
             {action.implications(ids.map((id) => byId.get(id)).filter((f): f is GalleryFile => Boolean(f))).map((line) => <li key={line}>{line}</li>)}
           </ul>
         )}
-        <p className="font-sans text-caption text-ordift-ink-muted">{names.slice(0, 5).join(", ")}{names.length > 5 ? ` and ${names.length - 5} more` : ""}</p>
+        {action.listAllNames ? (
+          <ol className="list-decimal space-y-0.5 pl-5 font-sans text-caption" data-testid="all-names">{names.map((n, i) => <li key={`${n}-${i}`}>{n}</li>)}</ol>
+        ) : (
+          <p className="font-sans text-caption text-ordift-ink-muted">{names.slice(0, 5).join(", ")}{names.length > 5 ? ` and ${names.length - 5} more` : ""}</p>
+        )}
         {action.needsNote && (
           <label className="block font-sans text-caption">{action.noteLabel ?? "Note"}
             <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={2} className="mt-1 w-full rounded-lg border border-black/15 bg-white px-3 py-2 font-sans text-body-small" />
@@ -231,6 +256,11 @@ export default function FileReviewGallery({ files, actions, fetchUrls, emptyText
         )}
         {action.attestation && (
           <label className="flex items-start gap-2 font-sans text-caption"><input type="checkbox" checked={attested} onChange={(e) => setAttested(e.target.checked)} className="mt-0.5" /> {action.attestation}</label>
+        )}
+        {action.typedCount && (
+          <label className="block font-sans text-caption">Type the number of images ({ids.length}) to confirm
+            <input inputMode="numeric" value={typed} onChange={(e) => setTyped(e.target.value)} className="mt-1 w-24 rounded-lg border border-black/15 bg-white px-3 py-2 font-sans text-body-small" />
+          </label>
         )}
         <div className="flex gap-2">
           <button type="button" onClick={() => void confirm()} disabled={running} className={`rounded-md px-3 py-1.5 font-sans text-caption font-semibold disabled:opacity-50 ${BTN_TONE[action.tone === "danger" ? "danger" : "primary"]}`}>{running ? "Working…" : `Apply to ${ids.length} file${ids.length === 1 ? "" : "s"}`}</button>
@@ -275,7 +305,7 @@ export default function FileReviewGallery({ files, actions, fetchUrls, emptyText
       ) : (
         <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
           {visible.map((f) => (
-            <Tile key={f.id} f={f} note={cleanupNote?.(f) ?? null} entry={urls[f.id]} checked={selected.has(f.id)} selectable={actionable(f)} onToggle={() => toggle(f.id)} onOpen={(el) => openViewer(f.id, el)} onVisible={() => { if (shouldAutoLoadThumbnail(f.sizeBytes, f.mimeType, f.filename)) want(f.id); }} onBroken={() => want(f.id, true)} />
+            <Tile key={f.id} f={f} opened={viewedIds?.includes(f.id)} note={cleanupNote?.(f) ?? null} entry={urls[f.id]} checked={selected.has(f.id)} selectable={actionable(f)} onToggle={() => toggle(f.id)} onOpen={(el) => openViewer(f.id, el)} onVisible={() => { if (shouldAutoLoadThumbnail(f.sizeBytes, f.mimeType, f.filename)) want(f.id); }} onBroken={() => want(f.id, true)} />
           ))}
         </ul>
       )}
@@ -304,7 +334,7 @@ export default function FileReviewGallery({ files, actions, fetchUrls, emptyText
                   src={urls[current.id].url}
                   alt={current.title ?? current.filename}
                   onLoad={(e) => setNatural({ w: e.currentTarget.naturalWidth })}
-                  onError={() => want(current.id, true)}
+                  onError={() => { if (!viewerFetchRef.current) want(current.id, true); }}
                   className={zoom === "fit" ? "mx-auto max-h-full max-w-full object-contain" : "mx-auto max-w-none"}
                   style={zoom === "fit" ? undefined : { width: `${(natural?.w ?? 1200) * zoom}px` }}
                 />
@@ -332,7 +362,7 @@ export default function FileReviewGallery({ files, actions, fetchUrls, emptyText
   );
 }
 
-function Tile({ f, note, entry, checked, selectable, onToggle, onOpen, onVisible, onBroken }: { f: GalleryFile; note?: string | null; entry?: UrlEntry; checked: boolean; selectable: boolean; onToggle: () => void; onOpen: (el: HTMLElement) => void; onVisible: () => void; onBroken: () => void }) {
+function Tile({ f, opened, note, entry, checked, selectable, onToggle, onOpen, onVisible, onBroken }: { f: GalleryFile; opened?: boolean; note?: string | null; entry?: UrlEntry; checked: boolean; selectable: boolean; onToggle: () => void; onOpen: (el: HTMLElement) => void; onVisible: () => void; onBroken: () => void }) {
   const ref = useRef<HTMLLIElement>(null);
   useEffect(() => {
     const el = ref.current;
@@ -371,6 +401,7 @@ function Tile({ f, note, entry, checked, selectable, onToggle, onOpen, onVisible
         </p>
         <p className="font-sans text-caption text-ordift-ink-muted">{f.classification}{f.categoryLabel ? ` · ${f.categoryLabel}` : ""} · {formatBytes(f.sizeBytes)}</p>
         {note && <p className="font-sans text-caption text-ordift-ink-muted" data-testid="cleanup-note">{note}</p>}
+        {opened !== undefined && <p className={`font-sans text-caption ${opened ? "text-green-800" : "text-ordift-ink-muted"}`} data-testid="opened-note">{opened ? "Opened in the review viewer" : "Not opened yet — open it to enable a decision"}</p>}
       </div>
     </li>
   );

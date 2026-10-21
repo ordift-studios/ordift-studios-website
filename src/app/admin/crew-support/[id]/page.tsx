@@ -16,6 +16,7 @@ import CommitmentPanel from "../CommitmentPanel";
 import ProductionPanel from "../ProductionPanel";
 import AssignmentWorkPanel, { type AssignmentWork } from "../AssignmentWorkPanel";
 import { listEmailedReleasedFileIds } from "@/lib/crewSupport/fileReleaseFlow";
+import { getFounderContext, listSelfReviewFileState } from "@/lib/crewSupport/founderSelfReview";
 import ScheduleReadinessPanel, { type ReadinessSlotData } from "../ScheduleReadinessPanel";
 import { getReadinessForAdmin, getReadinessSettings, listManagerCandidates } from "@/lib/crewSupport/readiness";
 import { listScheduleChanges, partiesForRequest } from "@/lib/crewSupport/reschedule";
@@ -90,7 +91,7 @@ export default async function CrewSupportDetailPage({ params }: { params: Promis
     ? await Promise.all(
         commitment.slots
           .filter((sl) => sl.status === "assigned" && sl.engagement)
-          .map(async (sl) => ({ slotId: sl.slotId, label: sl.label, assigneeId: sl.assigneeProfileId ?? null, engagementId: sl.engagement!.id, serviceFamily: String(r.service_family ?? ""), reports: await listReportsForEngagement(sl.engagement!.id), files: await listProjectFilesForEngagement(sl.engagement!.id), emailedFileIds }))
+          .map(async (sl) => ({ slotId: sl.slotId, label: sl.label, assigneeId: sl.assigneeProfileId ?? null, engagementId: sl.engagement!.id, serviceFamily: String(r.service_family ?? ""), reports: await listReportsForEngagement(sl.engagement!.id), files: await listProjectFilesForEngagement(sl.engagement!.id), emailedFileIds, ...(user ? { founder: await getFounderContext(user, sl.engagement!.id), selfReleasedIds: (await listSelfReviewFileState(sl.engagement!.id)).releasedIds } : {}) }))
       )
     : [];
   const readinessSlots: ReadinessSlotData[] = [];

@@ -6,6 +6,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 type Row = Record<string, unknown>;
 const db: Record<string, Row[]> = {};
 const writes: { table: string; patch: Row; id: unknown }[] = [];
+const tableErrors: Record<string, { code: string; message: string }> = {};
 
 function makeClient() {
   function from(table: string) {
@@ -16,9 +17,11 @@ function makeClient() {
       select: () => b,
       eq: (c: string, v: unknown) => { filters.push((r) => r[c] === v); return b; },
       is: (c: string, v: unknown) => { filters.push((r) => (v === null ? r[c] == null : r[c] === v)); return b; },
+      in: (c: string, vals: unknown[]) => { filters.push((r) => vals.includes(r[c])); return b; },
       update: (p: Row) => { patch = p; return b; },
-      maybeSingle: () => Promise.resolve({ data: rows()[0] ?? null, error: null }),
+      maybeSingle: () => Promise.resolve(tableErrors[table] ? { data: null, error: tableErrors[table] } : { data: rows()[0] ?? null, error: null }),
       then: (ok: (v: unknown) => unknown, bad?: (e: unknown) => unknown) => {
+        if (tableErrors[table]) return Promise.resolve({ data: null, error: tableErrors[table] }).then(ok, bad);
         const hit = rows();
         if (patch) {
           for (const r of hit) { Object.assign(r, patch); writes.push({ table, patch: patch!, id: r.id }); }
@@ -64,6 +67,7 @@ function file(id: string, over: Row = {}): Row {
 
 beforeEach(() => {
   for (const k of Object.keys(db)) delete db[k];
+  for (const k of Object.keys(tableErrors)) delete tableErrors[k];
   writes.length = 0;
   db.engagements = [{ id: ENG, payee_profile_id: PHOTOGRAPHER, entity_type: "crew_support_slot", entity_id: "slot-1" }];
   db.crew_support_slots = [{ id: "slot-1", request_id: "req-1" }];
@@ -203,5 +207,47 @@ describe("notifyClientOfReleasedFiles — release and email are separate, and th
     db.enquiries[0].email = null;
     expect((await notifyClientOfReleasedFiles({ fileIds: ["r1"], user: user("second-person") })).ok).toBe(false);
     expect(mocks.sendFilesReadyEmail).not.toHaveBeenCalled();
+  });
+});
+
+describe("independence: a login under the Founder's common control is never an independent reviewer", () => {
+  const FOUNDER = PHOTOGRAPHER;
+  const SECOND = "second-login";
+  beforeEach(() => {
+    db.project_files = [file("a"), file("b")];
+    db.founder_identities = [{ id: "fi-1", profile_id: FOUNDER, status: "active" }];
+    db.founder_common_control_accounts = [{ id: "cc-1", founder_identity_id: "fi-1", profile_id: SECOND, revoked_at: null }];
+  });
+  it("the registered second login cannot review the Founder's files, even though it is a different profile", async () => {
+    const r = await reviewFilesForRelease({ fileIds: ["a", "b"], user: user(SECOND), action: "approve" });
+    expect(r.ok && r.outcomes.every((o) => !o.ok)).toBe(true);
+    expect(r.ok && r.outcomes[0].error).toMatch(/common control/);
+    expect(writes).toHaveLength(0);
+  });
+  it("an unrelated independent person is unaffected", async () => {
+    const r = await reviewFilesForRelease({ fileIds: ["a"], user: user("second-person"), action: "approve" });
+    expect(r.ok && r.outcomes[0].ok).toBe(true);
+  });
+  it("the Founder is still blocked from approving their own work through the normal path", async () => {
+    const r = await reviewFilesForRelease({ fileIds: ["a"], user: user(FOUNDER), action: "approve" });
+    expect(r.ok && r.outcomes[0].error).toMatch(/can't review or release your own work/);
+  });
+  it("a revoked link no longer blocks (the registration is what makes a login non-independent)", async () => {
+    db.founder_common_control_accounts[0].revoked_at = "2026-10-22T00:00:00Z";
+    db.founder_common_control_accounts = db.founder_common_control_accounts.filter((r) => r.revoked_at === null);
+    const r = await reviewFilesForRelease({ fileIds: ["a"], user: user(SECOND), action: "approve" });
+    expect(r.ok && r.outcomes[0].ok).toBe(true);
+  });
+  it("before the exception tables exist (migration not applied) normal reviews behave exactly as before", async () => {
+    tableErrors.founder_identities = { code: "42P01", message: 'relation "public.founder_identities" does not exist' };
+    tableErrors.founder_common_control_accounts = { code: "42P01", message: "does not exist" };
+    const r = await reviewFilesForRelease({ fileIds: ["a"], user: user("second-person"), action: "approve" });
+    expect(r.ok && r.outcomes[0].ok).toBe(true);
+  });
+  it("an unexpected error while checking independence fails CLOSED (the review is blocked, not allowed)", async () => {
+    tableErrors.founder_identities = { code: "XX000", message: "connection reset" };
+    const r = await reviewFilesForRelease({ fileIds: ["a"], user: user("second-person"), action: "approve" });
+    expect(r.ok && r.outcomes[0].ok).toBe(false);
+    expect(writes).toHaveLength(0);
   });
 });

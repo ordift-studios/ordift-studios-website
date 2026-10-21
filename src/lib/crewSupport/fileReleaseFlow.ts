@@ -8,6 +8,7 @@ import { getCrewAssignmentForEngagement } from "./crewOffers";
 import { isManagementUser } from "./management";
 import { canRemoveOwnFile, clientFilePath, deliverableKeyFor, releaseCategoryLabel, reviewerConflict, transition, validateSubmitForRelease, type ReleaseAction } from "./fileRelease";
 import { canReviewFile, type FileOutcome } from "./fileReview";
+import { LINKED_LOGIN_MESSAGE } from "./founderSelfReviewRules";
 
 // The controlled path by which an assignment's private file reaches the client:
 //   professional uploads (private) -> submits for review -> management approves -> management releases.
@@ -33,6 +34,12 @@ async function mapLimit<T, R>(items: T[], limit: number, fn: (item: T) => Promis
   return out;
 }
 const BATCH_CONCURRENCY = 4;
+
+// Database refusals carry a readable "fsr: …" message; show that, never a raw stack or internal detail.
+export function friendlyDbError(message: string): string {
+  const m = /fsr: ([^\n]+)/.exec(message);
+  return m ? m[1].replace(/\s+/g, " ").trim() : "The change was refused.";
+}
 const MAX_BATCH = 200;
 
 type FileRow = { id: string; engagement_id: string; file_kind: string; original_filename: string; release_status: string; release_category: string | null; client_title: string | null; client_description: string | null; purged_at: string | null; uploaded_by: string | null; submitted_for_release_by: string | null };
@@ -44,9 +51,53 @@ async function loadFile(fileId: string): Promise<FileRow | null> {
 }
 
 // Separation of duties for a file and a would-be reviewer/releaser; null means no conflict.
+// Beyond the person's own work, a login registered as being under the Founder's common control is never an independent
+// reviewer of the Founder's work (ORDIFT-POL-FSR-001). Before the exception tables exist this adds nothing.
 async function conflictFor(file: FileRow, reviewerId: string): Promise<string | null> {
   const { data: eng } = await createAdminClient().from("engagements").select("payee_profile_id").eq("id", file.engagement_id).maybeSingle();
-  return reviewerConflict({ reviewerId, uploadedBy: file.uploaded_by, submittedBy: file.submitted_for_release_by, assigneeId: (eng?.payee_profile_id as string | null) ?? null });
+  const assigneeId = (eng?.payee_profile_id as string | null) ?? null;
+  const own = reviewerConflict({ reviewerId, uploadedBy: file.uploaded_by, submittedBy: file.submitted_for_release_by, assigneeId });
+  if (own) return own;
+  return linkedLoginConflict(reviewerId, [file.uploaded_by, file.submitted_for_release_by, assigneeId]);
+}
+
+async function linkedLoginConflict(reviewerId: string, performers: (string | null)[]): Promise<string | null> {
+  const group = await foundersGroupOf([reviewerId, ...performers.filter((p): p is string => Boolean(p))]);
+  if (group === "not-installed") return null;
+  if (group === "unknown") return "Independence could not be verified right now, so this review is blocked. Try again shortly.";
+  const reviewerGroup = group.get(reviewerId);
+  if (!reviewerGroup) return null;
+  const clash = performers.some((p) => p && p !== reviewerId && group.get(p) === reviewerGroup);
+  return clash ? LINKED_LOGIN_MESSAGE : null;
+}
+
+// profile id -> Founder identity id, for the Founder and any login registered under the Founder's common control.
+async function foundersGroupOf(profileIds: string[]): Promise<Map<string, string> | "not-installed" | "unknown"> {
+  const admin = createAdminClient();
+  const ids = [...new Set(profileIds)];
+  const [founders, linked] = await Promise.all([
+    admin.from("founder_identities").select("id, profile_id").eq("status", "active").in("profile_id", ids),
+    admin.from("founder_common_control_accounts").select("founder_identity_id, profile_id").is("revoked_at", null).in("profile_id", ids),
+  ]);
+  for (const r of [founders, linked]) {
+    if (r.error) return isMissingRelation(r.error) ? "not-installed" : "unknown";
+  }
+  const out = new Map<string, string>();
+  for (const f of founders.data ?? []) out.set(f.profile_id as string, f.id as string);
+  if ((linked.data ?? []).length > 0) {
+    // a linked login belongs to its Founder's group only while that Founder identity is active
+    const { data: active, error } = await admin.from("founder_identities").select("id, profile_id").eq("status", "active");
+    if (error) return isMissingRelation(error) ? "not-installed" : "unknown";
+    const activeIds = new Set((active ?? []).map((a) => a.id as string));
+    for (const l of linked.data ?? []) if (activeIds.has(l.founder_identity_id as string)) out.set(l.profile_id as string, l.founder_identity_id as string);
+    // a performer who IS the Founder must be in the map too (it may not have been in the ids queried above)
+    for (const a of active ?? []) if (ids.includes(a.profile_id as string)) out.set(a.profile_id as string, a.id as string);
+  }
+  return out;
+}
+
+export function isMissingRelation(error: { code?: string; message?: string } | null | undefined): boolean {
+  return Boolean(error) && (error!.code === "42P01" || error!.code === "PGRST205" || /does not exist|schema cache/i.test(error!.message ?? ""));
 }
 
 // Move a file between release states with an optimistic guard: the UPDATE only applies if the file is still
@@ -202,7 +253,7 @@ export type ReleaseOutcome = { released: number; alreadyReleased: number; failed
 // Release approved files to the client. One call = one release event: ONE client-visible project update and
 // at most ONE email, however many files it covers (so releasing 40 thank-you photographs does not send 40
 // emails). The email is opt-in per release, and is never sent for a QA/test record.
-export async function releaseApprovedFiles(params: { fileIds: string[]; user: CurrentUser; notifyClient: boolean }): Promise<Result<ReleaseOutcome>> {
+export async function releaseApprovedFiles(params: { fileIds: string[]; user: CurrentUser; notifyClient: boolean; selfReview?: { declarationId: string } }): Promise<Result<ReleaseOutcome>> {
   if (!(await isManagementUser(params.user))) return { ok: false, error: "Only authorised management can release files to a client." };
   const ids = [...new Set(params.fileIds)];
   if (ids.length === 0) return { ok: false, error: "Choose at least one approved file." };
@@ -225,7 +276,9 @@ export async function releaseApprovedFiles(params: { fileIds: string[]; user: Cu
 
   for (const file of files) {
     if (file.release_status === "released") { out.alreadyReleased++; continue; }
-    const conflict = await conflictFor(file, params.user.id);
+    // Under a Founder self-review declaration the conflict is validated by the database against that declaration;
+    // otherwise the normal separation of duties applies.
+    const conflict = params.selfReview ? null : await conflictFor(file, params.user.id);
     if (conflict) { out.failed.push(`${file.client_title ?? file.original_filename}: ${conflict}`); continue; }
     const t = transition(file.release_status, "release", "management");
     if (!t.ok) { out.failed.push(`${file.client_title ?? file.original_filename}: ${t.error}`); continue; }
@@ -235,7 +288,15 @@ export async function releaseApprovedFiles(params: { fileIds: string[]; user: Cu
     if (!category) { out.failed.push(`${file.client_title}: the "${key}" category does not exist`); continue; }
 
     // Claim the file first (guards double release), then publish. If publishing fails, put it back.
-    if (!(await setStatus(file, "approved", "released", { released_at: new Date().toISOString(), released_by: params.user.id }))) { out.alreadyReleased++; continue; }
+    if (params.selfReview) {
+      const claimed = await createAdminClient().rpc("fsr_claim_release", { p_declaration: params.selfReview.declarationId, p_file: file.id });
+      if (claimed.error) {
+        out.failed.push(`${file.client_title}: ${friendlyDbError(claimed.error.message)}`);
+        await createAdminClient().rpc("fsr_record_failure", { p_declaration: params.selfReview.declarationId, p_file: file.id, p_error: friendlyDbError(claimed.error.message) });
+        continue;
+      }
+      if (claimed.data === "already_applied") { out.alreadyReleased++; continue; }
+    } else if (!(await setStatus(file, "approved", "released", { released_at: new Date().toISOString(), released_by: params.user.id }))) { out.alreadyReleased++; continue; }
     const { data: deliverable, error } = await supabase
       .from("deliverables")
       .insert({ entity_type: "enquiry", entity_id: ctx.enquiryId, category_id: category.id as string, title: file.client_title, description: file.client_description, url: clientFilePath(file.id), published_by: params.user.id, project_file_id: file.id })
@@ -244,11 +305,16 @@ export async function releaseApprovedFiles(params: { fileIds: string[]; user: Cu
     if (error || !deliverable) {
       if (error?.code === "23505") { out.alreadyReleased++; continue; } // already has its deliverable
       console.error("[crew-support] deliverable insert failed", error?.message);
-      await createAdminClient().from("project_files").update({ release_status: "approved", released_at: null, released_by: null }).eq("id", file.id).eq("release_status", "released");
+      if (params.selfReview) await createAdminClient().rpc("fsr_revert_release", { p_declaration: params.selfReview.declarationId, p_file: file.id, p_error: "the client-facing deliverable could not be published" });
+      else await createAdminClient().from("project_files").update({ release_status: "approved", released_at: null, released_by: null }).eq("id", file.id).eq("release_status", "released");
       out.failed.push(`${file.client_title}: could not be published`);
       continue;
     }
     await createAdminClient().from("project_files").update({ deliverable_id: deliverable.id as string }).eq("id", file.id);
+    if (params.selfReview) {
+      const confirmed = await createAdminClient().rpc("fsr_confirm_release", { p_declaration: params.selfReview.declarationId, p_file: file.id });
+      if (confirmed.error) out.failed.push(`${file.client_title}: released, but the declaration outcome could not be recorded (${friendlyDbError(confirmed.error.message)})`);
+    }
     await logActivityAsSystem({ actorUserId: params.user.id, action: "deliverable.published", entityType: "enquiry", entityId: ctx.enquiryId, metadata: { title: file.client_title, fromAssignmentFile: file.id } });
     await logActivityAsSystem({ actorUserId: params.user.id, action: "project_file.released", entityType: "engagement", entityId: file.engagement_id, metadata: { fileId: file.id, deliverableId: deliverable.id, title: file.client_title, category: file.release_category } });
     releasedTitles.push(file.client_title);
