@@ -393,3 +393,14 @@ describe("releasing a fixed, separately confirmed set (steps G–H)", () => {
     expect(db.self_review_declarations).toHaveLength(0);
   });
 });
+
+describe("post-rehearsal corrections", () => {
+  it("an exception made under a PREVIOUS (revoked/replaced) holder is not shown as open — a new one can be opened", async () => {
+    openException({ holder_id: "h-old" }); // current holder is h-1
+    expect((await getFounderContext(user(FOUNDER), ENG)).state).toBe("available");
+  });
+  it("an open exception under the CURRENT holder is still open", async () => {
+    openException();
+    expect((await getFounderContext(user(FOUNDER), ENG)).state).toBe("open");
+  });
+});

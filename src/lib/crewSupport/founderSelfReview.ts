@@ -62,12 +62,15 @@ export async function getFounderContext(user: { id: string }, engagementId: stri
   const nowIso = new Date().toISOString();
   const [holderRes, openRes] = await Promise.all([
     admin.from("self_review_exception_holders").select("id, effective_at, expires_at").eq("founder_identity_id", founder.id).is("revoked_at", null).limit(1).maybeSingle(),
-    admin.from("self_review_exceptions").select("id, opened_at, expires_at, justification").eq("engagement_id", engagementId).eq("status", "open").gt("expires_at", nowIso).limit(1).maybeSingle(),
+    admin.from("self_review_exceptions").select("id, opened_at, expires_at, justification, holder_id").eq("engagement_id", engagementId).eq("status", "open").gt("expires_at", nowIso).limit(1).maybeSingle(),
   ]);
   if (holderRes.error || openRes.error) return { state: "unavailable", reason: "The exception could not be verified right now." };
   const holder = holderRes.data as { id: string; effective_at: string; expires_at: string | null } | null;
   const holderActive = Boolean(holder && new Date(holder.effective_at).getTime() <= Date.now() && (!holder.expires_at || new Date(holder.expires_at).getTime() > Date.now()));
-  const open = openRes.data as { id: string; opened_at: string; expires_at: string; justification: string } | null;
+  const openRow = openRes.data as { id: string; opened_at: string; expires_at: string; justification: string; holder_id: string } | null;
+  // An exception made under an earlier, revoked or ended authorization is inert: treat it as not open (the database closes it
+  // automatically when the Founder opens a new one — found by the PostgreSQL rehearsal).
+  const open = openRow && holder && openRow.holder_id === holder.id ? openRow : null;
   let viewed: string[] = [];
   if (open && holderActive) {
     const [views, files] = await Promise.all([

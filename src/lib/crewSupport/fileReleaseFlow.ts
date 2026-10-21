@@ -76,7 +76,9 @@ async function foundersGroupOf(profileIds: string[]): Promise<Map<string, string
   const admin = createAdminClient();
   const ids = [...new Set(profileIds)];
   const [founders, linked] = await Promise.all([
-    admin.from("founder_identities").select("id, profile_id").eq("status", "active").in("profile_id", ids),
+    // NOT limited to an active identity: revoking the exception or the identity must never make the second login "independent"
+    // again (mirrors private.fsr_group in migration 0169, found by the PostgreSQL rehearsal).
+    admin.from("founder_identities").select("id, profile_id").in("profile_id", ids),
     admin.from("founder_common_control_accounts").select("founder_identity_id, profile_id").is("revoked_at", null).in("profile_id", ids),
   ]);
   for (const r of [founders, linked]) {
@@ -85,13 +87,12 @@ async function foundersGroupOf(profileIds: string[]): Promise<Map<string, string
   const out = new Map<string, string>();
   for (const f of founders.data ?? []) out.set(f.profile_id as string, f.id as string);
   if ((linked.data ?? []).length > 0) {
-    // a linked login belongs to its Founder's group only while that Founder identity is active
-    const { data: active, error } = await admin.from("founder_identities").select("id, profile_id").eq("status", "active");
+    // a linked login belongs to its Founder identity's group (whatever that identity's status is)
+    const { data: all, error } = await admin.from("founder_identities").select("id, profile_id");
     if (error) return isMissingRelation(error) ? "not-installed" : "unknown";
-    const activeIds = new Set((active ?? []).map((a) => a.id as string));
-    for (const l of linked.data ?? []) if (activeIds.has(l.founder_identity_id as string)) out.set(l.profile_id as string, l.founder_identity_id as string);
+    for (const l of linked.data ?? []) out.set(l.profile_id as string, l.founder_identity_id as string);
     // a performer who IS the Founder must be in the map too (it may not have been in the ids queried above)
-    for (const a of active ?? []) if (ids.includes(a.profile_id as string)) out.set(a.profile_id as string, a.id as string);
+    for (const a of all ?? []) if (ids.includes(a.profile_id as string)) out.set(a.profile_id as string, a.id as string);
   }
   return out;
 }

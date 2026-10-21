@@ -251,3 +251,14 @@ describe("independence: a login under the Founder's common control is never an i
     expect(writes).toHaveLength(0);
   });
 });
+
+describe("independence survives revocation of the Founder identity (mirrors the database)", () => {
+  it("the registered second login stays non-independent even when the Founder identity row is revoked", async () => {
+    db.project_files = [file("a")];
+    db.founder_identities = [{ id: "fi-1", profile_id: PHOTOGRAPHER, status: "revoked" }];
+    db.founder_common_control_accounts = [{ id: "cc-1", founder_identity_id: "fi-1", profile_id: "second-login", revoked_at: null }];
+    const r = await reviewFilesForRelease({ fileIds: ["a"], user: user("second-login"), action: "approve" });
+    expect(r.ok && r.outcomes[0].error).toMatch(/common control/);
+    expect(writes).toHaveLength(0);
+  });
+});
