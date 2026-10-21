@@ -23,6 +23,11 @@ function Card({ job, today, href, chip }: { job: CrewJobView; today: string; hre
         <p className="mt-2 font-sans text-caption text-ordift-ink">Next: {s.nextAction}</p>
         {chip && <p className="mt-2"><span className={`rounded-full border px-2.5 py-0.5 font-sans text-caption ${CHIP_TONE[chip.state] ?? "border-amber-200 bg-amber-50 text-amber-900"}`}>Readiness: {chip.label}</span></p>}
       </Link>
+      {job.engagementId && s.group === "active" && (
+        <p className="mt-1 px-1 font-sans text-caption">
+          <Link href={`/portal/collaborator/engagement/${job.engagementId}`} className="text-ordift-gold-pressed underline underline-offset-4">Your files &amp; job report →</Link>
+        </p>
+      )}
     </li>
   );
 }

@@ -3,7 +3,8 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 
 // The panel's server actions pull in server-only modules; the notice is pure display, so stub them.
-vi.mock("./releaseActions", () => ({ reviewFileAction: vi.fn(), releaseFilesAction: vi.fn(), reviewFileDownloadUrlAction: vi.fn() }));
+vi.mock("./releaseActions", () => ({ reviewFileAction: vi.fn(), releaseFilesAction: vi.fn(), reviewFileDownloadUrlAction: vi.fn(), previewUrlsAction: vi.fn(), reviewFilesAction: vi.fn(), notifyReleasedFilesAction: vi.fn() }));
+vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
 vi.mock("./ReviewFileLink", () => ({ default: ({ label }: { label: string }) => label }));
 
 import AssignmentWorkPanel, { type AssignmentWork } from "./AssignmentWorkPanel";

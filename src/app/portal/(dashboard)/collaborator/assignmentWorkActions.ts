@@ -4,8 +4,7 @@ import { revalidatePath } from "next/cache";
 import { getCurrentUser } from "@/lib/portal/roles";
 import { getServiceFamilyForEngagement, submitJobReport } from "@/lib/crewSupport/jobReports";
 import { questionsFor } from "@/lib/crewSupport/jobReportRules";
-import { removeOwnPrivateFile, submitFileForRelease, withdrawFileFromReview } from "@/lib/crewSupport/fileReleaseFlow";
-import { createAdminClient } from "@/lib/supabase/admin";
+import { removeOwnPrivateFile, submitFileForRelease, submitPrivateFilesForRelease, withdrawFileFromReview } from "@/lib/crewSupport/fileReleaseFlow";
 import { actionFail, actionOk, runAction, type ActionState } from "@/lib/shared/actionState";
 
 // The assigned professional's own actions on their assignment: the job report and submitting files for
@@ -66,26 +65,27 @@ export async function submitFileForReleaseAction(_prev: ActionState, formData: F
 }
 
 // Submits every still-private file that was uploaded WITH a category, using the file name as its title —
-// so a set of thank-you photographs can be sent for review in one step.
+// so a set of photographs can be sent for review in one step. One check and one read for the whole set, then
+// bounded-parallel updates (the original one-file-at-a-time loop took about 1.3 s per file, so a full gallery left
+// the button on "Submitting…" for half a minute). Safe to repeat: files already in review are counted, never
+// touched, so a retry after a refresh cannot duplicate anything and still reports the true state.
 export async function submitAllPrivateFilesAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const user = await getCurrentUser();
   if (!user) return actionFail("You are not signed in.");
   const engagementId = str(formData, "engagementId");
   return runAction(async () => {
-    const { data } = await createAdminClient().from("project_files").select("id, original_filename, release_category").eq("engagement_id", engagementId).eq("release_status", "private").not("release_category", "is", null).is("purged_at", null);
-    const rows = data ?? [];
-    if (rows.length === 0) return actionFail("There are no private files with a category to submit.");
-    let ok = 0;
-    const problems: string[] = [];
-    for (const f of rows) {
-      const title = (f.original_filename as string).replace(/\.[^.]+$/, "").replace(/[_-]+/g, " ").trim() || "Photo";
-      const r = await submitFileForRelease({ fileId: f.id as string, actorUserId: user.id, category: f.release_category as string, title: title.length >= 3 ? title : `${title} photo`, description: "" });
-      if (r.ok) ok++;
-      else problems.push(r.error);
-    }
+    const r = await submitPrivateFilesForRelease({ engagementId, actorUserId: user.id });
+    if (!r.ok) return actionFail(r.error);
     refresh(engagementId);
-    if (ok === 0) return actionFail(problems[0] ?? "Nothing could be submitted.");
-    return actionOk(`${ok} file${ok === 1 ? "" : "s"} submitted for review.${problems.length ? ` ${problems.length} could not be submitted.` : ""}`);
+    const failed = r.outcomes.filter((o) => !o.ok);
+    if (r.outcomes.length === 0) {
+      return r.alreadyInReview > 0
+        ? actionOk(`Nothing left to submit — ${r.alreadyInReview} file${r.alreadyInReview === 1 ? " is" : "s are"} already submitted for review, approved or released.`)
+        : actionFail("There are no private files with a category to submit.");
+    }
+    if (r.submitted === 0) return actionFail(`None of the ${r.outcomes.length} files could be submitted. ${failed[0]?.error ?? ""}`.trim());
+    const tail = failed.length ? ` ${failed.length} could not be submitted: ${failed.slice(0, 3).map((f) => `${f.label} (${f.error})`).join("; ")}${failed.length > 3 ? "…" : ""}.` : "";
+    return actionOk(`${r.submitted} of ${r.outcomes.length} file${r.outcomes.length === 1 ? "" : "s"} submitted for review.${tail} They stay private until management approves and releases them.`);
   }, "submit all private files");
 }
 

@@ -25,6 +25,8 @@ import {
 } from "@/lib/payments/payoutObligations";
 import { createPaymentInstruction, updatePaymentInstruction, verifyPaymentInstruction, setPaymentInstructionActive } from "@/lib/payments/payeeInstructions";
 import { actionOk, actionFail, type ActionState } from "@/lib/shared/actionState";
+import { applyRetentionToFiles } from "@/lib/payables/projectFiles";
+import { RETENTION_MEANINGS, summarizeOutcomes } from "@/lib/crewSupport/fileReview";
 
 // Universal Payables System (2026-09-03) — plain FormData server
 // actions, matching the established convention already used by
@@ -563,6 +565,24 @@ export async function promoteProjectFileToFinalApprovedAction(_prev: ActionState
   }
   if (engagementId) revalidatePath(`/admin/payables/engagements/${engagementId}/media`);
   return actionOk("Promoted.");
+}
+
+// Retention operations (backup attestation, retain, final-version marker) for several files at once, with one honest
+// outcome per file. Retention only: none of these approves a file for the client or releases it.
+export async function retentionOpAction(input: {
+  engagementId: string;
+  op: "confirm_backup" | "retain" | "unretain" | "final_approved";
+  fileIds: string[];
+  attestedBackup?: boolean;
+}): Promise<{ ok: boolean; message: string; outcomes: { fileId: string; label: string; ok: boolean; error?: string }[] }> {
+  const user = await getCurrentUser();
+  if (!user) return { ok: false, message: "You must be signed in.", outcomes: [] };
+  if (!["confirm_backup", "retain", "unretain", "final_approved"].includes(input.op)) return { ok: false, message: "Unknown operation.", outcomes: [] };
+  const result = await applyRetentionToFiles({ op: input.op, fileIds: input.fileIds.map(String), attestedBackup: Boolean(input.attestedBackup), actorUserId: user.id });
+  if (!result.ok) return { ok: false, message: result.error, outcomes: [] };
+  if (input.engagementId) revalidatePath(`/admin/payables/engagements/${input.engagementId}/media`);
+  const summary = summarizeOutcomes(RETENTION_MEANINGS[input.op].label, result.outcomes);
+  return { ...summary, outcomes: result.outcomes };
 }
 
 // Manual trigger only — no pg_cron/Vercel Cron infrastructure exists

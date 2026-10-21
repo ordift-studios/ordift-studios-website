@@ -5,6 +5,7 @@ import { isTerminalEngagementStatus } from "@/lib/payables/engagements";
 import { classifyExternalRelationship, modulesForRelationship } from "@/lib/portal/externalWorkforce";
 import { getCrewAssignmentForEngagement } from "@/lib/crewSupport/crewOffers";
 import { isReleaseCategory } from "@/lib/crewSupport/fileRelease";
+import { canApplyRetentionOp } from "@/lib/crewSupport/fileReview";
 
 // Phase H.1/H.2 (2026-09-04) — direct-to-Supabase-Storage media
 // architecture for external-workforce engagements, and the backup/
@@ -393,6 +394,93 @@ export async function getProjectFileDownloadUrl(fileId: string, actorUserId: str
     return { ok: false, error: "Failed to authorize the download." };
   }
   return { ok: true, url: data.signedUrl };
+}
+
+// Gallery previews: short-lived signed links for several files of one or more engagements in one round trip. The
+// same access rule as a single download applies per engagement (the assigned professional, or payee-administration /
+// Super Admin); purged files are refused. Nothing is copied, resized or made public — the browser simply displays the
+// private object through a link that expires in minutes and is requested again when it does.
+export const PREVIEW_URL_TTL_SECONDS = 600;
+const MAX_PREVIEW_BATCH = 60;
+
+export async function getProjectFilePreviewUrls(
+  fileIds: string[],
+  actorUserId: string
+): Promise<{ ok: true; urls: Record<string, { url: string } | { error: string }> } | { ok: false; error: string }> {
+  const ids = [...new Set(fileIds)].slice(0, MAX_PREVIEW_BATCH);
+  if (ids.length === 0) return { ok: true, urls: {} };
+  const admin = createAdminClient();
+  const { data, error } = await admin.from("project_files").select("id, engagement_id, storage_bucket, storage_path, purged_at").in("id", ids);
+  if (error) {
+    console.error("[payables] failed to load files for preview", error.message);
+    return { ok: false, error: "Could not load the previews." };
+  }
+  const urls: Record<string, { url: string } | { error: string }> = {};
+  const access = new Map<string, boolean>();
+  const byBucket = new Map<string, { id: string; path: string }[]>();
+  for (const row of data ?? []) {
+    if (row.purged_at) { urls[row.id as string] = { error: "This file has been purged." }; continue; }
+    const engagementId = row.engagement_id as string;
+    if (!access.has(engagementId)) access.set(engagementId, (await resolveActorAccess(engagementId, actorUserId)).ok);
+    if (!access.get(engagementId)) { urls[row.id as string] = { error: "Not authorized to view this file." }; continue; }
+    const list = byBucket.get(row.storage_bucket as string) ?? [];
+    list.push({ id: row.id as string, path: row.storage_path as string });
+    byBucket.set(row.storage_bucket as string, list);
+  }
+  for (const [bucket, items] of byBucket) {
+    const { data: signed, error: signError } = await admin.storage.from(bucket).createSignedUrls(items.map((i) => i.path), PREVIEW_URL_TTL_SECONDS);
+    if (signError || !signed) {
+      console.error("[payables] failed to sign preview urls", signError?.message);
+      for (const i of items) urls[i.id] = { error: "Could not authorize this preview." };
+      continue;
+    }
+    const byPath = new Map(signed.map((x) => [x.path, x]));
+    for (const i of items) {
+      const hit = byPath.get(i.path);
+      urls[i.id] = hit?.signedUrl ? { url: hit.signedUrl } : { error: "This file is unavailable." };
+    }
+  }
+  for (const id of ids) if (!urls[id]) urls[id] = { error: "File not found." };
+  return { ok: true, urls };
+}
+
+// Retention operations applied to a chosen set of files, one outcome per file. Eligibility is re-checked per file on
+// the server (a purged file, an already-final file, or a file whose state doesn't allow the operation is reported as
+// skipped, never silently changed). Confirm-backup additionally requires an explicit attestation: it records that the
+// operator holds a copy outside Ordift storage — the platform cannot verify that and must not imply that it did.
+export async function applyRetentionToFiles(params: {
+  op: "confirm_backup" | "retain" | "unretain" | "final_approved";
+  fileIds: string[];
+  attestedBackup?: boolean;
+  actorUserId: string;
+}): Promise<{ ok: true; outcomes: { fileId: string; label: string; ok: boolean; error?: string }[] } | { ok: false; error: string }> {
+  const auth = await authorizeWithSuperAdminOverride(params.actorUserId, FINANCE_CAPABILITIES.payeeAdminister);
+  if (!auth.ok) return { ok: false, error: "Not authorized to change file retention." };
+  const ids = [...new Set(params.fileIds)].slice(0, 200);
+  if (ids.length === 0) return { ok: false, error: "Select at least one file." };
+  if (params.op === "confirm_backup" && !params.attestedBackup) return { ok: false, error: "Tick the box to confirm you hold a copy of these files outside Ordift's storage." };
+
+  const admin = createAdminClient();
+  const { data, error } = await admin.from("project_files").select("id, file_kind, lifecycle_state, retain, purged_at, original_filename, client_title").in("id", ids);
+  if (error) return { ok: false, error: "Could not load the selected files." };
+  const byId = new Map((data ?? []).map((r) => [r.id as string, r]));
+
+  const outcomes: { fileId: string; label: string; ok: boolean; error?: string }[] = [];
+  for (const id of ids) {
+    const row = byId.get(id);
+    if (!row) { outcomes.push({ fileId: id, label: "Unknown file", ok: false, error: "File not found." }); continue; }
+    const label = (row.client_title as string | null) ?? (row.original_filename as string);
+    const facts = { fileKind: row.file_kind as string, lifecycleState: row.lifecycle_state as string, retain: Boolean(row.retain), purged: Boolean(row.purged_at) };
+    if (!canApplyRetentionOp(params.op, facts)) { outcomes.push({ fileId: id, label, ok: false, error: "Skipped — not applicable to this file in its current state." }); continue; }
+    const r =
+      params.op === "confirm_backup" ? await confirmProjectFilesBackup({ fileIds: [id], actorUserId: params.actorUserId })
+      : params.op === "final_approved" ? await promoteProjectFileToFinalApproved({ fileId: id, actorUserId: params.actorUserId })
+      : await setProjectFileRetain({ fileId: id, retain: params.op === "retain", actorUserId: params.actorUserId });
+    if (!r.ok) outcomes.push({ fileId: id, label, ok: false, error: r.error });
+    else if (params.op === "confirm_backup" && "confirmedCount" in r && r.confirmedCount === 0) outcomes.push({ fileId: id, label, ok: false, error: "Skipped — this file's backup was already confirmed or its state changed." });
+    else outcomes.push({ fileId: id, label, ok: true });
+  }
+  return { ok: true, outcomes };
 }
 
 // ============================================================
