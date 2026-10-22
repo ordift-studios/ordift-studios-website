@@ -570,7 +570,7 @@ export function OnboardingWorkspace({
         </section>
       )}
 
-      <section className="rounded-xl border border-black/10 bg-white p-6 space-y-2">
+      <section id="section-stage" className="rounded-xl border border-black/10 bg-white p-6 space-y-2 scroll-mt-6">
         <h2 className="font-serif font-medium text-body text-ordift-ink">Pipeline &amp; Stage</h2>
         <p className="font-sans text-body-small text-ordift-ink-muted">
           Pipeline: <span className="font-medium text-ordift-ink">{onboarding.pipeline}</span> · Status:{" "}
@@ -606,7 +606,7 @@ export function OnboardingWorkspace({
         {onboarding.status === "in_progress" && isTerminal && <CompleteControl onboardingId={onboarding.id} />}
       </section>
 
-      <section className="rounded-xl border border-black/10 bg-white p-6 space-y-3">
+      <section id="section-requirements" className="rounded-xl border border-black/10 bg-white p-6 space-y-3 scroll-mt-6">
         <h2 className="font-serif font-medium text-body text-ordift-ink">Current-Stage Requirements</h2>
         {currentStageRequirements.length === 0 ? (
           <p className="font-sans text-caption text-ordift-ink-muted">No requirements are defined for this stage.</p>

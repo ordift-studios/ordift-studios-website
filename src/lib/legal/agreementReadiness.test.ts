@@ -1,85 +1,63 @@
 import { describe, expect, it } from "vitest";
 import { assessAgreementReadiness, type AgreementReadinessInput } from "./agreementReadiness";
-import { buildJourney } from "@/lib/organization/onboardingJourney";
+import { recorded } from "./agreementReadiness.fixture";
 
-// OS-LGL-010 v1.0 exactly as recorded in Production (2026-10-22): approved by "Legal Counsel", but no approval date, effective date,
-// activation date, content reference or document hash; master files stored with checksums.
-const recorded: AgreementReadinessInput = {
-  code: "OS-LGL-010",
-  title: "Instructor / Workshop Facilitator Agreement",
-  version: { status: "approved", approvedBy: "Legal Counsel", approvedAt: null, activatedAt: null, effectiveDate: null, contentReference: null, documentHash: null, masterDocxSha256: "1c68433532061921f6e1b5ea776186c5d31ec8e27d4a2a8863ab3454aecc6034", masterPdfSha256: "7014db6" },
-  jurisdictionName: null,
-  confirmedEntityId: null,
-  entityCandidates: [
-    { id: "gh", name: "Ordift Studios", jurisdiction: "Ghana", verified: true, hasSignatory: false },
-    { id: "qa", name: "Ordift Studios (Qatar)", jurisdiction: "Qatar", verified: true, hasSignatory: true },
-  ],
-};
 const by = (r: ReturnType<typeof assessAgreementReadiness>, k: string) => r.checks.find((c) => c.key === k)!;
 
 describe("OS-LGL-010 as actually recorded is NOT issuable, and nothing is invented", () => {
   const r = assessAgreementReadiness(recorded);
-  it("blocks issue and names every missing fact", () => {
+  it("blocks issue and lists exactly what is unresolved", () => {
     expect(r.canIssue).toBe(false);
-    expect(r.missing.map((m) => m.key)).toEqual(["approval_date", "content_reference", "activation", "effective_date", "jurisdiction", "contracting_entity", "signatory"]);
+    expect(r.unresolved.map((m) => `${m.key}:${m.state}`)).toEqual([
+      "approval_date:missing", "content_reference:missing", "activation:missing", "effective_date:missing", "contracting_entity:needs_confirmation", "signatory:missing",
+    ]);
   });
-  it("what IS recorded is verified (approver, stored master files)", () => {
-    expect(by(r, "approval_recorded").state).toBe("verified");
-    expect(by(r, "master_files").state).toBe("verified");
+  it("what IS recorded is verified: approver, stored masters, and Ghana from the requisition (no re-entry)", () => {
+    for (const k of ["approval_recorded", "master_files", "jurisdiction"]) expect(by(r, k).state).toBe("verified");
+    expect(by(r, "jurisdiction").detail).toContain("Founder-approved requisition");
   });
-  it("does not assume the Qatar or Ghana entity, and does not borrow the Qatar signatory", () => {
-    expect(by(r, "contracting_entity").state).toBe("missing");
-    expect(by(r, "signatory").detail).toContain("No contracting entity is confirmed");
+  it("offers the Ghana entity as the candidate but requires confirmation, and never borrows the Qatar signatory", () => {
+    expect(by(r, "contracting_entity").detail).toContain("Ordift Studios (Ghana)");
+    expect(by(r, "signatory").detail).toBe("No authorised signatory is recorded for Ordift Studios.");
+    expect(JSON.stringify(r)).not.toContain("Myredlive");
+  });
+  it("every unresolved item explains what, why, where, who and how", () => {
+    for (const c of r.unresolved) for (const f of ["what", "why", "source", "who", "how"] as const) expect(c.guide![f].length).toBeGreaterThan(3);
+  });
+  it("the approval date item says plainly that the date is unverified and where to resolve it, and does not borrow a package date", () => {
+    const a = by(r, "approval_date");
+    expect(a.label).toBe("Historical approval date requires verification");
+    expect(a.detail).toContain("Another document set's approval date is not borrowed");
+    expect(a.guide!.how).toContain("awaits the Founder's separate authorization");
+  });
+  it("the content reference is derived from the stored master but reported as not yet registered", () => {
+    expect(by(r, "content_reference").detail).toContain("1c6843353206");
+    expect(by(r, "content_reference").state).toBe("missing");
   });
 });
 
 describe("it becomes issuable only when every fact is genuinely recorded", () => {
   const full: AgreementReadinessInput = {
     ...recorded,
-    version: { ...recorded.version!, status: "active", approvedAt: "2026-10-23T08:00:00Z", activatedAt: "2026-10-24T09:00:00Z", effectiveDate: "2026-10-24", contentReference: "legal-import:abc", documentHash: "deadbeef" },
-    jurisdictionName: "Ghana",
+    version: { ...recorded.version!, status: "active", activatedAt: "2026-10-30T09:00:00Z", effectiveDate: "2026-10-30", contentReference: "legal-masters:x" },
+    attestation: { approvalDate: "2026-09-05", counselName: "Counsel Name", counselFirm: "Firm", verifiedAt: "2026-10-29T10:00:00Z" },
+    attestationStoreAvailable: true,
     confirmedEntityId: "gh",
-    entityCandidates: [{ id: "gh", name: "Ordift Studios", jurisdiction: "Ghana", verified: true, hasSignatory: true }],
+    entityCandidates: [{ ...recorded.entityCandidates[0], hasSignatory: true, signatoryName: "Authorised Person" }],
   };
-  it("all verified -> canIssue", () => expect(assessAgreementReadiness(full).canIssue).toBe(true));
-  it("an effective date before the approval date is rejected", () => {
-    const r = assessAgreementReadiness({ ...full, version: { ...full.version!, effectiveDate: "2026-10-01" } });
-    expect(by(r, "effective_date").state).toBe("missing");
-    expect(r.canIssue).toBe(false);
+  it("all verified -> canIssue, and the approval date is shown as attested, distinct from the verification date", () => {
+    const r = assessAgreementReadiness(full);
+    expect(r.canIssue).toBe(true);
+    expect(by(r, "approval_date").detail).toContain("Approved on 2026-09-05");
+    expect(by(r, "approval_date").detail).toContain("evidence verified 2026-10-29");
   });
-  it("an unverified entity is not accepted", () => {
+  it("an effective date earlier than the approval date is rejected", () => {
+    expect(by(assessAgreementReadiness({ ...full, version: { ...full.version!, effectiveDate: "2026-09-01" } }), "effective_date").state).toBe("missing");
+  });
+  it("an unverified entity is never accepted as the contracting party", () => {
     const r = assessAgreementReadiness({ ...full, entityCandidates: [{ ...full.entityCandidates[0], verified: false }] });
     expect(by(r, "contracting_entity").state).toBe("missing");
+    expect(r.canIssue).toBe(false);
   });
   it("no current version -> blocked", () => expect(assessAgreementReadiness({ ...full, version: null }).canIssue).toBe(false));
-});
-
-describe("Kwaku's journey (INT0001): Profile stage, agreement blocked", () => {
-  const stages = ["proposed", "approved", "invited", "profile", "payment_setup", "engagement_assigned", "active"];
-  const facts = (agreement: ReturnType<typeof assessAgreementReadiness> | null) => ({
-    pipeline: "external_contractor" as const, stages, stage: "profile", status: "in_progress", personName: "Kwaku Darko Gyimah", engagementTypeLabel: "Instructor", isInstructor: true,
-    requirements: [{ requirementKey: "instructor_agreement_executed", stage: "profile", requirementType: "agreement", label: "Instructor agreement executed", required: true, status: "pending" }],
-    hasPaymentDetails: false, engagementCount: 0, agreement, agreementsHref: "/admin/legal", legalHref: "/admin/legal",
-  });
-  it("marks earlier stages done, Profile current, the rest upcoming", () => {
-    const { roadmap } = buildJourney(facts(assessAgreementReadiness(recorded)));
-    expect(roadmap.map((s) => s.state)).toEqual(["done", "done", "done", "current", "upcoming", "upcoming", "upcoming"]);
-  });
-  it("the next action is the Founder resolving legal prerequisites, listing each missing item with its fix; nothing is sent", () => {
-    const { next } = buildJourney(facts(assessAgreementReadiness(recorded)));
-    expect(next.actor).toBe("Founder");
-    expect(next.title).toContain("OS-LGL-010");
-    expect(next.blockedBy).toHaveLength(7);
-    expect(next.explanation).toContain("Nothing has been sent");
-    expect(next.href).toBe("/admin/legal");
-  });
-  it("when legal prerequisites are verified the next action is to prepare the agreement (still a separate authorised step)", () => {
-    const ok = assessAgreementReadiness({ ...recorded, version: { ...recorded.version!, status: "active", approvedAt: "2026-10-23T00:00:00Z", activatedAt: "2026-10-24T00:00:00Z", effectiveDate: "2026-10-24", contentReference: "x" }, jurisdictionName: "Ghana", confirmedEntityId: "qa" });
-    const { next } = buildJourney(facts(ok));
-    expect(next.title).toContain("Prepare");
-  });
-  it("completed onboarding says nothing more is needed", () => {
-    const { next } = buildJourney({ ...facts(null), stage: "active", status: "completed" });
-    expect(next.title).toBe("Onboarding is complete");
-  });
 });

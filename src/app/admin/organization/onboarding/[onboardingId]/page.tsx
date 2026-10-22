@@ -131,11 +131,18 @@ export default async function OnboardingWorkspacePage({ params }: { params: Prom
       : [[], [], []];
 
   // Guided journey (external contributors only; read-only). Instructors are the only engagement type whose onboarding currently gates on a
-  // controlled agreement, so legal readiness is assessed for OS-LGL-010 only; no contracting entity is ever assumed (none is recorded yet).
+  // controlled agreement, so legal readiness is assessed for OS-LGL-010 only. Jurisdiction and the candidate contracting entity are REUSED
+  // from the Founder-approved requisition; nothing is entered a second time and nothing is assumed.
   const isInstructor = person?.engagementTypeSlug === "instructor";
   const journeyAgreement =
     onboarding.pipeline === "external_contractor" && isInstructor
-      ? await loadAgreementReadiness({ canonicalCode: "OS-LGL-010", jurisdictionName: employmentContext?.employmentJurisdictionName ?? null, confirmedEntityId: null })
+      ? await loadAgreementReadiness({
+          canonicalCode: "OS-LGL-010",
+          jurisdictionName: employmentContext?.employmentJurisdictionName ?? null,
+          jurisdictionSource: requisition?.employmentJurisdictionName ? "the Founder-approved requisition" : null,
+          recordedEntityId: requisition?.employingEntityId ?? null,
+          confirmedEntityId: null,
+        })
       : null;
   const journey =
     onboarding.pipeline === "external_contractor"
@@ -145,14 +152,10 @@ export default async function OnboardingWorkspacePage({ params }: { params: Prom
           stage: onboarding.stage,
           status: onboarding.status,
           personName: person?.fullName ?? null,
-          engagementTypeLabel: person?.engagementTypeName ?? null,
           isInstructor,
           requirements: requirements.map((r) => ({ requirementKey: r.requirementKey, stage: r.stage, requirementType: r.requirementType, label: r.label, required: r.required, status: r.status })),
-          hasPaymentDetails: paymentInstructions.length > 0,
-          engagementCount: 0,
           agreement: journeyAgreement,
-          agreementsHref: "/admin/legal",
-          legalHref: "/admin/legal",
+          anchors: { requirements: "#section-requirements", stage: "#section-stage" },
         })
       : null;
 
@@ -178,7 +181,7 @@ export default async function OnboardingWorkspacePage({ params }: { params: Prom
         </p>
       </div>
 
-      {journey && <OnboardingJourneyPanel roadmap={journey.roadmap} next={journey.next} agreement={journeyAgreement} personName={person?.fullName ?? null} />}
+      {journey && <OnboardingJourneyPanel roadmap={journey.roadmap} next={journey.next} agreement={journeyAgreement} personName={person?.fullName ?? null} returnPath={`/admin/organization/onboarding/${onboarding.id}`} />}
 
       <section className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="rounded-xl border border-black/10 bg-white p-6 space-y-2">
