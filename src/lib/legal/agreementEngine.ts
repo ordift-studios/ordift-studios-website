@@ -567,6 +567,9 @@ export async function hasFullyExecutedAgreement(params: {
     .eq("primary_context_type", params.primaryContextType)
     .eq("primary_context_reference", params.primaryContextReference)
     .in("status", ["fully_executed", "active", "completed"])
+    // A CONTROLLED TEST agreement (evidence_classification = 'controlled_test') is rehearsal evidence, never a genuine executed
+    // agreement: it must not satisfy an onboarding or engagement requirement. Unclassified (null) and 'genuine' rows still count.
+    .or("evidence_classification.is.null,evidence_classification.neq.controlled_test")
     .limit(1)
     .maybeSingle();
   return Boolean(data);

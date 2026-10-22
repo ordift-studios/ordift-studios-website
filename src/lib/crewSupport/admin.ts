@@ -34,7 +34,22 @@ export type CrewSupportListRow = {
   isTest: boolean;
 };
 
-export async function listCrewSupportRequests(status?: string): Promise<CrewSupportListRow[]> {
+// How many QA/test requests the ordinary list is currently hiding (so the screen can say so honestly).
+export async function countHiddenTestRequests(status?: string): Promise<number> {
+  let query = createAdminClient().from("crew_support_requests").select("id", { count: "exact", head: true }).eq("is_test", true);
+  if (status) query = query.eq("status", status);
+  const { count, error } = await query;
+  if (error) {
+    console.error("[crew-support] failed to count hidden test requests", error.message);
+    return 0;
+  }
+  return count ?? 0;
+}
+
+// QA/test requests (is_test = true) are HIDDEN from the ordinary list unless the caller asks to include them - the same convention the
+// enquiries list and the dashboard overview already follow. Nothing is deleted or changed: the records, their audit history and their
+// direct links all remain.
+export async function listCrewSupportRequests(status?: string, options: { includeTest?: boolean } = {}): Promise<CrewSupportListRow[]> {
   const admin = createAdminClient();
   let query = admin
     .from("crew_support_requests")
@@ -42,6 +57,7 @@ export async function listCrewSupportRequests(status?: string): Promise<CrewSupp
     .order("submitted_at", { ascending: false })
     .limit(200);
   if (status) query = query.eq("status", status);
+  if (!options.includeTest) query = query.eq("is_test", false);
   const { data, error } = await query;
   if (error) {
     console.error("[crew-support] failed to list requests", error.message);

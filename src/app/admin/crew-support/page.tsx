@@ -3,7 +3,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/portal/roles";
 import { canManageCrewSupport } from "@/lib/crewSupport/permissions";
-import { listCrewSupportRequests } from "@/lib/crewSupport/admin";
+import { countHiddenTestRequests, listCrewSupportRequests } from "@/lib/crewSupport/admin";
 import CrewSupportSubNav from "./CrewSupportSubNav";
 import { CREW_SUPPORT_STATUSES, SERVICE_FAMILIES, STATUS_LABELS } from "@/lib/crewSupport/config";
 
@@ -13,12 +13,15 @@ function dateRange(start: string, end: string) {
   return start === end ? start : `${start} → ${end}`;
 }
 
-export default async function AdminCrewSupportPage({ searchParams }: { searchParams: Promise<{ status?: string }> }) {
+export default async function AdminCrewSupportPage({ searchParams }: { searchParams: Promise<{ status?: string; test?: string }> }) {
   const user = await getCurrentUser();
   if (!canManageCrewSupport(user)) redirect("/admin/overview");
-  const { status } = await searchParams;
+  const { status, test } = await searchParams;
   const activeStatus = (CREW_SUPPORT_STATUSES as readonly string[]).includes(status ?? "") ? status : undefined;
-  const rows = await listCrewSupportRequests(activeStatus);
+  const includeTest = test === "1";
+  const rows = await listCrewSupportRequests(activeStatus, { includeTest });
+  const hiddenTest = includeTest ? 0 : await countHiddenTestRequests(activeStatus);
+  const withTest = (href: string) => (includeTest ? `${href}${href.includes("?") ? "&" : "?"}test=1` : href);
 
   return (
     <div className="space-y-6">
@@ -33,11 +36,19 @@ export default async function AdminCrewSupportPage({ searchParams }: { searchPar
       <CrewSupportSubNav active="requests" />
 
       <div className="flex flex-wrap gap-2">
-        <Link href="/admin/crew-support" className={`rounded-full border px-3 py-1 font-sans text-caption ${!activeStatus ? "border-ordift-ink bg-ordift-ink text-white" : "border-black/15 text-ordift-ink-muted"}`}>All</Link>
+        <Link href={withTest("/admin/crew-support")} className={`rounded-full border px-3 py-1 font-sans text-caption ${!activeStatus ? "border-ordift-ink bg-ordift-ink text-white" : "border-black/15 text-ordift-ink-muted"}`}>All</Link>
         {CREW_SUPPORT_STATUSES.map((s) => (
-          <Link key={s} href={`/admin/crew-support?status=${s}`} className={`rounded-full border px-3 py-1 font-sans text-caption ${activeStatus === s ? "border-ordift-ink bg-ordift-ink text-white" : "border-black/15 text-ordift-ink-muted"}`}>{STATUS_LABELS[s]}</Link>
+          <Link key={s} href={withTest(`/admin/crew-support?status=${s}`)} className={`rounded-full border px-3 py-1 font-sans text-caption ${activeStatus === s ? "border-ordift-ink bg-ordift-ink text-white" : "border-black/15 text-ordift-ink-muted"}`}>{STATUS_LABELS[s]}</Link>
         ))}
       </div>
+
+      <p className="font-sans text-caption text-ordift-ink-muted">
+        {includeTest ? (
+          <>Showing QA/test records too. <Link href={activeStatus ? `/admin/crew-support?status=${activeStatus}` : "/admin/crew-support"} className="text-ordift-gold-pressed underline underline-offset-4">Hide them</Link></>
+        ) : hiddenTest > 0 ? (
+          <>{hiddenTest} QA/test record{hiddenTest === 1 ? "" : "s"} hidden from this list (kept, with their history). <Link href={activeStatus ? `/admin/crew-support?status=${activeStatus}&test=1` : "/admin/crew-support?test=1"} className="text-ordift-gold-pressed underline underline-offset-4">Show them</Link></>
+        ) : null}
+      </p>
 
       <section className="rounded-xl border border-black/10 bg-white p-4 sm:p-6 overflow-x-auto">
         {rows.length === 0 ? (

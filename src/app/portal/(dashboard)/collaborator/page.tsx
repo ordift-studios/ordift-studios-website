@@ -8,6 +8,9 @@ import ExternalWorkforceEngagements from "@/components/portal/ExternalWorkforceE
 import { ExternalOnboardingStatus } from "@/components/portal/ExternalOnboardingStatus";
 import { getStaffOnboardingByProfileId } from "@/lib/organization/onboarding";
 import { listResolvedRequirements } from "@/lib/organization/onboardingRequirements";
+import ContributorStatusLayers from "@/components/portal/ContributorStatusLayers";
+import { contributorStatusLayers } from "@/lib/organization/contributorStatusLayers";
+import { getOwnPayeeProfile } from "@/lib/payables/payeeProfiles";
 
 export const metadata: Metadata = {
   title: "My Projects — Ordift Studios Portal",
@@ -47,6 +50,14 @@ export default async function CollaboratorPortalPage() {
       </div>
 
       <ExternalOnboardingStatus onboarding={onboarding} resolvedRequirements={resolvedRequirements} />
+      <ContributorStatusLayers
+        layers={contributorStatusLayers({
+          onboarding: onboarding ? { stage: onboarding.stage, status: onboarding.status } : null,
+          requirements: resolvedRequirements.map((r) => ({ requirementType: r.requirementType, label: r.label, required: r.required, status: r.status })),
+          engagementCount: workshopEngagements.length + assignments.length + engagements.length,
+          hasPayeeProfile: Boolean(await getOwnPayeeProfile(user.id)),
+        })}
+      />
 
       {/* Universal Payables engagements — Phase H.1/H.2, generalized into
           a shared component in Phase K.1 (see ExternalWorkforceEngagements) */}
