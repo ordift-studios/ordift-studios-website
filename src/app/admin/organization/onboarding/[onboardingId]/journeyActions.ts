@@ -8,6 +8,7 @@ import { confirmContractingEntity, selectAgreementSignatory } from "@/lib/organi
 import { addEntitySignatory, addVaultDocument, findActiveProfileByMemberNumber } from "@/lib/organization/entityRegistrations";
 import { ENTITY_DOCUMENT_TYPES } from "@/lib/organization/entityRegistry";
 import { loadOnboardingDecisions } from "@/lib/organization/onboardingDecisions";
+import { STEP7_UPLOAD_MAX_BYTES, STEP7_UPLOAD_MAX_LABEL } from "@/lib/organization/onboardingUploadLimit";
 import { prepareInstructorAgreementDraft, resolveOnboardingLegalContext } from "@/lib/legal/instructorAgreements";
 import { approveInstructorAgreementForIssue, issueInstructorAgreement, saveInstructorScheduleA } from "@/lib/legal/instructorAgreementIssuance";
 import { SCHEDULE_A_FIELDS, type ScheduleATerms } from "@/lib/legal/instructorAgreementTerms";
@@ -87,6 +88,7 @@ export async function uploadEvidenceAction(_p: JourneyActionState, d: FormData):
   if (notes.length < 10) return { ok: false, error: "Describe what the document is and what it shows (at least a short sentence)." };
   const file = d.get("file");
   if (!(file instanceof File) || file.size === 0) return { ok: false, error: "Choose the file to upload." };
+  if (file.size > STEP7_UPLOAD_MAX_BYTES) return { ok: false, error: `This file is too large for this form (the limit here is ${STEP7_UPLOAD_MAX_LABEL}). Compress it or save it as a smaller PDF, and nothing has been stored.` };
   const r = await addVaultDocument({ entityId, documentType, filename: file.name, mimeType: file.type, bytes: new Uint8Array(await file.arrayBuffer()), notes, issuedOn: f(d, "issuedOn") || null, issuingAuthority: f(d, "issuingAuthority") || null, replaces: f(d, "replaces") || null, actorUserId: a.id });
   return r.ok ? done(onboardingId, r.duplicateOf ? "This exact file was already in the vault; it was recorded as a duplicate of the original." : "Stored in the entity's document vault with its fingerprint.") : fail(r);
 }

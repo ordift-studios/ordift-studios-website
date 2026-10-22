@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState } from "react";
+import { STEP7_UPLOAD_MAX_BYTES, STEP7_UPLOAD_MAX_LABEL } from "@/lib/organization/onboardingUploadLimit";
 import { SCHEDULE_A_FIELDS, INDEPENDENT_STATUS_ROUTES, PROFESSIONAL_ROLES, REGULATORY_APPROVAL_STATUSES, type ScheduleATerms } from "@/lib/legal/instructorAgreementTerms";
 import type { JourneyActionState } from "@/app/admin/organization/onboarding/[onboardingId]/journeyActions";
 import {
@@ -110,11 +111,11 @@ export function UploadEvidenceForm({ onboardingId, entity, legacyRecords }: { on
   const [state, action, pending] = useActionState<JourneyActionState, FormData>(uploadEvidenceAction, null);
   return (
     <Box title={`Upload evidence to ${entity.name}'s document vault`}>
-      <p className="font-sans text-caption text-ordift-ink-muted">Stored in the entity&apos;s existing vault with a SHA-256 fingerprint; nothing already there is overwritten or deleted. Upload the document that shows who may sign for this entity. If a registration certificate does not itself state signing authority, also upload the document that does (for example an authorising letter or resolution). Files are limited by the vault (PDF, JPEG or PNG, up to 10 MB).</p>
-      <form action={action} className="space-y-3" encType="multipart/form-data">
+      <p className="font-sans text-caption text-ordift-ink-muted">Stored in the entity&apos;s existing vault with a SHA-256 fingerprint; nothing already there is overwritten or deleted. Upload the document that shows who may sign for this entity. If a registration certificate does not itself state signing authority, also upload the document that does (for example an authorising letter or resolution). Accepted: PDF, JPEG or PNG, up to {STEP7_UPLOAD_MAX_LABEL} per file through this form (the vault itself allows more, but this form cannot carry it). A bigger photo must be compressed or saved as a smaller PDF first.</p>
+      <form action={action} className="space-y-3" encType="multipart/form-data" onSubmit={(e) => { const f = (e.currentTarget.elements.namedItem("file") as HTMLInputElement | null)?.files?.[0]; if (f && f.size > STEP7_UPLOAD_MAX_BYTES) { e.preventDefault(); alert(`This file is ${(f.size / 1_000_000).toFixed(1)} MB; the limit here is ${STEP7_UPLOAD_MAX_LABEL}. Nothing was uploaded.`); } }}>
         <input type="hidden" name="onboardingId" value={onboardingId} /><input type="hidden" name="entityId" value={entity.id} />
         <div><label className={label} htmlFor="ev-type">What is this document?</label><select id="ev-type" name="documentType" required className={input} defaultValue=""><option value="" disabled>Choose…</option>{UPLOAD_TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}</select></div>
-        <div><label className={label} htmlFor="ev-file">File</label><input id="ev-file" name="file" type="file" required accept="application/pdf,image/jpeg,image/png" className={input} /></div>
+        <div><label className={label} htmlFor="ev-file">File (maximum {STEP7_UPLOAD_MAX_LABEL})</label><input id="ev-file" name="file" type="file" required accept="application/pdf,image/jpeg,image/png" className={input} /></div>
         <div><label className={label} htmlFor="ev-notes">What it is and what it shows (required)</label><textarea id="ev-notes" name="notes" required rows={2} className={input} /></div>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <div><label className={label} htmlFor="ev-issued">Issued on (optional)</label><input id="ev-issued" name="issuedOn" type="date" className={input} /></div>

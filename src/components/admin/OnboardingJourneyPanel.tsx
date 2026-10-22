@@ -171,7 +171,7 @@ export default function OnboardingJourneyPanel({ steps, summary, personName, ret
             {agreement && s.key === "signatory" && agreement.context.entity && (
               <div className="rounded-lg border border-black/10 p-4 font-sans text-caption text-ordift-ink-muted space-y-2">
                 <p className="text-body-small font-medium text-ordift-ink">Records for {agreement.context.entity.name} ({agreement.context.entity.jurisdiction ?? "jurisdiction not recorded"})</p>
-                <p>Signatories: {agreement.context.entity.signatories.length ? agreement.context.entity.signatories.map((g) => `${g.fullName}, ${g.position} — ${g.sourceDocumentId ? "documentary basis linked" : "no documentary basis"}, ${g.profileId ? "account linked" : "no account linked"}`).join("; ") : "none recorded."}</p>
+                <p>Signatories: {agreement.context.entity.signatories.length ? agreement.context.entity.signatories.map((g) => `${g.fullName}, ${g.position} — ${g.sourceDocumentId ? `documentary basis: ${agreement.context.entity?.documents.find((d) => d.id === g.sourceDocumentId)?.filename ?? "linked document"}` : "no documentary basis"}, ${g.profileId ? "account linked" : "no account linked"}`).join("; ") : "none recorded."}</p>
                 <p>Documents in the vault: {agreement.context.entity.documents.length ? agreement.context.entity.documents.map((d) => `${d.filename ?? d.type} (${d.hasStoredFile ? "stored file with fingerprint" : "older record: no verifiable file details"})`).join("; ") : "none."}</p>
               </div>
             )}

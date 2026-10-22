@@ -41,6 +41,14 @@ describe("the guided journey adds no way to change a record and no new access", 
       for (const t of ["transitionAgreementStatus", "advanceAgreementToFullyExecuted", "sendEmail", "inviteCollaborator", "createInstructorEngagement", "payment_obligations"]) expect(src, `${f} must not use ${t}`).not.toContain(t);
     }
   });
+  it("the evidence upload states and enforces the real server-action limit (1 MB), not the vault's 10 MB", () => {
+    const forms = read("../../components/admin/OnboardingJourneyForms.tsx");
+    const actions = read("../../app/admin/organization/onboarding/[onboardingId]/journeyActions.ts");
+    expect(forms).toContain("STEP7_UPLOAD_MAX_LABEL");
+    expect(forms).not.toContain("up to 10 MB");
+    expect(actions).toContain("file.size > STEP7_UPLOAD_MAX_BYTES");
+    expect(read("./onboardingUploadLimit.ts")).toContain("STEP7_UPLOAD_MAX_BYTES = 1_000_000");
+  });
   it("no migration is part of this work: nothing was added under supabase/migrations or supabase/proposals", () => {
     expect(() => read("../../../supabase/proposals/PROPOSED_legal_approval_attestations.sql")).toThrow();
   });
