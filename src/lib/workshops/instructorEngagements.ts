@@ -2,7 +2,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { logActivity } from "@/lib/admin/activityLog";
 import { authorizeWithSuperAdminOverride, PEOPLE_CAPABILITIES } from "@/lib/organization/authority";
 import { getWorkshopByIdAdmin } from "@/lib/content/sanity/workshopAdmin";
-import { hasFullyExecutedAgreement } from "@/lib/legal/agreementEngine";
+import { instructorAssignmentRefusal } from "./instructorEligibility";
 
 // Workshop Management V1, Phase B, Part 16 (2026-08-25) — against
 // public.workshop_instructor_engagements. Links a workshop to a real
@@ -91,17 +91,9 @@ export async function createInstructorEngagement(params: CreateEngagementParams)
 
   const admin = createAdminClient();
 
-  // Eligibility gate (Founder decision, 2026-10-23): a person classified as an Instructor may not be assigned to a real workshop until
-  // their Instructor / Workshop Facilitator Agreement (OS-LGL-010) is genuinely executed. Test agreements never count. People of other
-  // engagement types (e.g. employees facilitating internally) are governed by their own agreements and are not affected.
-  if (params.profileId) {
-    const { data: p } = await admin.from("profiles").select("engagement_type_id").eq("id", params.profileId).maybeSingle();
-    const { data: t } = p?.engagement_type_id ? await admin.from("engagement_types").select("slug").eq("id", p.engagement_type_id as string).maybeSingle() : { data: null };
-    if (t?.slug === "instructor") {
-      const executed = await hasFullyExecutedAgreement({ canonicalCode: "OS-LGL-010", primaryContextType: "instructor_profile", primaryContextReference: params.profileId });
-      if (!executed) return { ok: false, error: "This instructor cannot be assigned yet: their Instructor / Workshop Facilitator Agreement (OS-LGL-010) is not fully executed." };
-    }
-  }
+  // Eligibility gate: an Instructor needs a fully executed OS-LGL-010 before any real assignment (see instructorEligibility.ts).
+  const refusal = await instructorAssignmentRefusal(params.profileId);
+  if (refusal) return { ok: false, error: refusal };
 
   const { data, error } = await admin
     .from("workshop_instructor_engagements")

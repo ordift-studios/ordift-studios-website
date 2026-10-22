@@ -1,3 +1,4 @@
+import { instructorAssignmentRefusal } from "@/lib/workshops/instructorEligibility";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { logActivity } from "@/lib/admin/activityLog";
 import { authorizeWithSuperAdminOverride, FINANCE_CAPABILITIES } from "@/lib/organization/authority";
@@ -285,6 +286,12 @@ export async function createEngagement(params: CreateEngagementParams): Promise<
 
   const auth = await authorizeWithSuperAdminOverride(params.actorUserId, FINANCE_CAPABILITIES.payeeAdminister);
   if (!auth.ok) return { ok: false, error: "Not authorized to administer engagements." };
+  // An instructor cannot be engaged for workshop work (or an unspecified engagement) until their OS-LGL-010 is fully executed. Engagements
+  // tied to other entities, such as Crew Support slots, are not workshop assignments and are unaffected.
+  if (params.payeeProfileId && (!params.entityType || params.entityType.startsWith("workshop"))) {
+    const refusal = await instructorAssignmentRefusal(params.payeeProfileId);
+    if (refusal) return { ok: false, error: refusal };
+  }
   // Payable Safety Hardening (2026-09-04) — an engagement's currency
   // flows straight into any payable created from it
   // (createEngagementPayable() below passes it through unchanged), so

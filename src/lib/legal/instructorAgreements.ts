@@ -2,6 +2,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { createDraftAgreement, addAgreementParty, attachAgreementSnapshot } from "./agreementEngine";
 import { isTerminalAgreementStatus, type AgreementLifecycleStatus } from "./agreementLifecycle";
 import { loadAgreementReadiness } from "./agreementReadinessData";
+import { getEngagementTypeSlug } from "@/lib/organization/engagementTypeLookup";
 import type { AgreementReadiness } from "./agreementReadiness";
 
 // OS-LGL-010 Instructor / Workshop Facilitator Agreement - PREPARATION ONLY. Creates a DRAFT agreement (never issues, sends or signs) from
@@ -40,12 +41,7 @@ export async function resolveOnboardingLegalContext(onboardingId: string): Promi
       jurisdictionName = (j?.name as string | null) ?? null;
     }
   }
-  const { data: p } = await admin.from("profiles").select("engagement_type_id").eq("id", ob.profile_id as string).maybeSingle();
-  let engagementTypeSlug: string | null = null;
-  if (p?.engagement_type_id) {
-    const { data: t } = await admin.from("engagement_types").select("slug").eq("id", p.engagement_type_id as string).maybeSingle();
-    engagementTypeSlug = (t?.slug as string | null) ?? null;
-  }
+  const engagementTypeSlug = await getEngagementTypeSlug(ob.profile_id as string);
   return { profileId: ob.profile_id as string, jurisdictionName, recordedEntityId, engagementTypeSlug };
 }
 

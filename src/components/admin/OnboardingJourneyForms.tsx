@@ -38,7 +38,7 @@ export function AttestApprovalForm({ onboardingId, versionId, documentCode, toda
   const [state, action, pending] = useActionState<JourneyActionState, FormData>(attestApprovalAction, null);
   return (
     <Box title="Verify historical legal approval">
-      <p className="font-sans text-caption text-ordift-ink-muted">Record the real date counsel approved {documentCode}, with the evidence. Your identity and today&apos;s date ({today}) are recorded automatically as the verification, separately from the approval date. Nothing here activates or issues anything.</p>
+      <p className="font-sans text-caption text-ordift-ink-muted">Record the real date counsel approved {documentCode}. This is an administrator attestation: the system records your claim and the evidence fingerprint but cannot inspect counsel&apos;s document itself, so only attest what the document shows. Your identity and today&apos;s date ({today}) are recorded automatically as the verification, separately from the approval date. Nothing here activates or issues anything.</p>
       <form action={action} className="space-y-3">
         <input type="hidden" name="onboardingId" value={onboardingId} /><input type="hidden" name="versionId" value={versionId} /><input type="hidden" name="documentCode" value={documentCode} />
         <div><label className={label} htmlFor="approvalDate">Date counsel approved this document</label><input id="approvalDate" name="approvalDate" type="date" required max={today} className={input} /></div>
@@ -49,7 +49,7 @@ export function AttestApprovalForm({ onboardingId, versionId, documentCode, toda
         <div><label className={label} htmlFor="evidenceKind">Kind of evidence</label>
           <select id="evidenceKind" name="evidenceKind" required className={input} defaultValue=""><option value="" disabled>Choose…</option><option value="signed_letter">Signed letter</option><option value="counsel_email">Counsel&apos;s email</option><option value="signed_register">Signed register or certificate</option><option value="other_written_record">Other written record</option></select></div>
         <div><label className={label} htmlFor="evidenceReference">What the evidence is and where it is kept</label><textarea id="evidenceReference" name="evidenceReference" required rows={2} className={input} /></div>
-        <div><label className={label} htmlFor="evidenceSha256">Evidence file fingerprint (SHA-256, optional)</label><input id="evidenceSha256" name="evidenceSha256" className={input} /></div>
+        <div><label className={label} htmlFor="evidenceSha256">Evidence file fingerprint (SHA-256, required — run “shasum -a 256 &lt;file&gt;” on the letter, email or register)</label><input id="evidenceSha256" name="evidenceSha256" required pattern="[0-9a-fA-F]{64}" className={input} /></div>
         <label className="flex items-start gap-2 font-sans text-body-small text-ordift-ink"><input type="checkbox" name="namesThisDocument" value="yes" className="mt-1" /> The evidence expressly names {documentCode}. (A date belonging to a different document set cannot be used.)</label>
         <button className={button} disabled={pending}>{pending ? "Recording…" : "Record verified approval"}</button>
         <Result state={state} />

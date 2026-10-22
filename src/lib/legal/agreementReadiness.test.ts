@@ -55,7 +55,8 @@ describe("it becomes issuable only when every fact is genuinely recorded", () =>
     const r = assessAgreementReadiness(full);
     expect(r.canIssue).toBe(true);
     expect(by(r, "approval_date").detail).toContain("Approved on 2026-09-05");
-    expect(by(r, "approval_date").detail).toContain("Evidence verified on 2026-10-29");
+    expect(by(r, "approval_date").detail).toContain("Recorded on 2026-10-29");
+    expect(by(r, "approval_date").detail).toContain("administrator attestation");
     expect(by(r, "approval_date").detail).toContain("member 0001");
   });
   it("an effective date earlier than the approval date is rejected", () => {

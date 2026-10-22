@@ -1,5 +1,5 @@
 import { createAdminClient } from "@/lib/supabase/admin";
-import { logActivity } from "@/lib/admin/activityLog";
+import { recordAuditEvent } from "@/lib/legal/strictAudit";
 import { authorizeWithSuperAdminOverride, GOVERNANCE_CAPABILITIES } from "@/lib/organization/authority";
 
 // Two audited decisions the Founder makes inside an onboarding, stored in the existing audit log keyed to the onboarding record (no new
@@ -38,14 +38,14 @@ export async function confirmContractingEntity(p: { onboardingId: string; entity
     const { data: j } = await admin.from("employment_jurisdictions").select("name").eq("id", e.jurisdiction_id as string).maybeSingle();
     if (j?.name !== p.expectedJurisdiction) return { ok: false, error: `This onboarding is for ${p.expectedJurisdiction}; ${e.name} is registered in ${j?.name ?? "another jurisdiction"}.` };
   }
-  await logActivity({ actorUserId: p.actorUserId, action: CONFIRMED_ENTITY_ACTION, entityType: "staff_onboarding", entityId: p.onboardingId, metadata: { entityId: p.entityId, entityName: e.name, profileId: ob.profile_id } });
-  return { ok: true };
+  const written = await recordAuditEvent({ actorUserId: p.actorUserId, action: CONFIRMED_ENTITY_ACTION, entityType: "staff_onboarding", entityId: p.onboardingId, metadata: { entityId: p.entityId, entityName: e.name, profileId: ob.profile_id } });
+  return written.ok ? { ok: true } : { ok: false, error: "The confirmation could not be recorded, so nothing was saved. Try again." };
 }
 
 export async function selectAgreementSignatory(p: { onboardingId: string; entityId: string; signatoryId: string; actorUserId: string }): Promise<Result> {
   if (!(await requireAuthority(p.actorUserId))) return { ok: false, error: "Not authorized to select a signatory." };
   const { data: s } = await createAdminClient().from("entity_signatories").select("id, full_name, employing_entity_id, effective_to, source_document_id").eq("id", p.signatoryId).maybeSingle();
   if (!s || s.employing_entity_id !== p.entityId || s.effective_to) return { ok: false, error: "That person is not a current signatory of the confirmed entity." };
-  await logActivity({ actorUserId: p.actorUserId, action: SELECTED_SIGNATORY_ACTION, entityType: "staff_onboarding", entityId: p.onboardingId, metadata: { signatoryId: p.signatoryId, entityId: p.entityId, signatoryName: s.full_name, hasSourceDocument: Boolean(s.source_document_id) } });
-  return { ok: true };
+  const written = await recordAuditEvent({ actorUserId: p.actorUserId, action: SELECTED_SIGNATORY_ACTION, entityType: "staff_onboarding", entityId: p.onboardingId, metadata: { signatoryId: p.signatoryId, entityId: p.entityId, signatoryName: s.full_name, hasSourceDocument: Boolean(s.source_document_id) } });
+  return written.ok ? { ok: true } : { ok: false, error: "The selection could not be recorded, so nothing was saved. Try again." };
 }

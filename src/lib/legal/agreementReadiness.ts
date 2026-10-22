@@ -88,7 +88,7 @@ export function assessAgreementReadiness(i: AgreementReadinessInput): AgreementR
           "Historical approval date",
           approval.source === "registry_stamp"
             ? `Approved on ${approval.date} (registry stamp).`
-            : `Approved on ${approval.date} — attested by ${i.attestation!.verifiedByLabel ?? "an administrator"}: ${i.attestation!.counselName}, ${i.attestation!.counselFirm}. Evidence verified on ${i.attestation!.verifiedAt.slice(0, 10)} (a separate date from the approval).`,
+            : `Approved on ${approval.date} — attested by ${i.attestation!.verifiedByLabel ?? "an administrator"}: ${i.attestation!.counselName}, ${i.attestation!.counselFirm}. Recorded on ${i.attestation!.verifiedAt.slice(0, 10)} (a separate date from the approval). This is an administrator attestation backed by an evidence fingerprint; the system has not itself inspected counsel's document.`,
         ),
       );
     } else {

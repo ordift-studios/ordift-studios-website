@@ -30,7 +30,7 @@ export function buildInstructorWorkspace(f: InstructorWorkspaceFacts): { steps: 
   const check = (...keys: string[]) => (f.agreement?.checks ?? []).filter((c) => keys.includes(c.key));
   const req = (key: string) => f.requirements.find((r) => r.requirementKey === key) ?? null;
   const reqDone = (key: string) => { const r = req(key); return r ? DONE.has(r.status) : false; };
-  const executed = reqDone("instructor_agreement_executed");
+  const executed = req("instructor_agreement_executed")?.status === "satisfied"; // only genuine execution counts; a waiver never does
   const unresolved = (cs: ReadinessCheck[]) => cs.filter((c) => c.state !== "verified");
   const stateFromChecks = (cs: ReadinessCheck[]): StepState => (cs.length === 0 ? "pending" : unresolved(cs).length === 0 ? "completed" : "pending");
   const completedOnboarding = f.status === "completed" || f.stage === "active";

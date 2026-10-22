@@ -60,6 +60,9 @@ export type RequirementTemplate = {
   label: string;
   required: boolean;
   responsibleRole?: string;
+  // A requirement that can only ever be satisfied by its own live evidence: no stored row, waiver, "not applicable", deferral or
+  // authorised override can stand in for it. Used for the instructor's executed agreement (Founder decision, 2026-10-23).
+  nonWaivable?: boolean;
   // Derived requirements compute their live status from an existing
   // Ordift system rather than a manual click — e.g. background
   // screening outcome, or whether a Corporate Identity has been
@@ -453,6 +456,7 @@ export const INSTRUCTOR_ONBOARDING_REQUIREMENT_CATALOG: readonly RequirementTemp
     requirementType: "agreement",
     label: "Instructor / Workshop Facilitator Agreement (OS-LGL-010) executed",
     required: true,
+    nonWaivable: true,
     responsibleRole: "super_admin",
     derive: deriveAgreementExecuted("OS-LGL-010", "instructor_profile"),
     applicableEngagementTypeSlugs: ["instructor"],
@@ -593,6 +597,7 @@ export function computeUnsatisfiedRequired(
   return catalog.filter((template) => {
     if (!template.required) return false;
     if (stage !== undefined && template.stage !== stage) return false;
+    if (template.nonWaivable) return derivedByKey.get(template.requirementKey) !== "satisfied";
     const row = rowsByKey.get(template.requirementKey);
     // Signature/execution-derived-requirement integrity fix
     // (2026-09-16, backlog Phase 4) — a template with a derive()
@@ -694,6 +699,7 @@ export async function listResolvedRequirements(params: {
     // trusted on its own — only derived's own live evidence check ever
     // produces "satisfied" for these, so the display can never show
     // SATISFIED merely because some row happens to carry that value.
+    if (template.nonWaivable) return toClientSafeResolvedRequirement(template, derived === "satisfied" ? "satisfied" : "pending", row);
     const trustedRowStatus = template.derive && row && row.status !== "waived" && row.status !== "not_applicable" && row.status !== "deferred" ? null : row?.status;
     const status: RequirementStatus = trustedRowStatus === "deferred" && derived === "satisfied" ? "satisfied" : (trustedRowStatus ?? derived ?? "pending");
     return toClientSafeResolvedRequirement(template, status, row);
@@ -789,6 +795,9 @@ export async function updateOnboardingRequirement(params: {
   // "waived"/"not_applicable"/"deferred" remain real, legitimate human
   // decisions and are never blocked here — only a bare "satisfied"
   // claim standing in for evidence that must come from derive() alone.
+  if (template.nonWaivable && params.status !== "pending") {
+    return { ok: false, error: `"${template.label}" cannot be waived, marked not applicable, deferred or manually satisfied. It is satisfied only by a genuinely executed agreement.` };
+  }
   if (template.derive && params.status === "satisfied") {
     return { ok: false, error: `"${template.label}" is evidence-derived and can never be manually marked satisfied — use waive, mark not applicable, or a controlled defer instead if genuinely appropriate.` };
   }
@@ -999,6 +1008,10 @@ export async function authorizeOnboardingRequirementOverride(params: {
   const template = catalogForPipeline(params.pipeline).find((t) => t.requirementKey === params.requirementKey);
   if (!template) {
     return { ok: false, error: "Unknown onboarding requirement for this pipeline." };
+  }
+
+  if (template.nonWaivable) {
+    return { ok: false, error: `"${template.label}" cannot be overridden: onboarding cannot progress past it without a genuinely executed agreement.` };
   }
 
   const admin = createAdminClient();

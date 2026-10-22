@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { makeFakeDb, type FakeDb } from "./fakeAdmin.testkit";
-import { makeZip } from "./docxText.test";
+import { makeZip } from "./zipFixture.testkit";
 
 const h = vi.hoisted(() => ({ db: null as unknown as FakeDb, authorized: true, logged: [] as { action: string; entityId: string; metadata: Record<string, unknown>; actorUserId: string }[] }));
 vi.mock("@/lib/supabase/admin", async () => {
@@ -28,7 +28,7 @@ const version = (o: Record<string, unknown> = {}) => ({
   id: "v1", master_id: "m1", status: "approved", approved_by: "Legal Counsel", approved_at: null, effective_date: null, content_reference: null, document_hash: null,
   master_docx_storage_path: "masters-docx/OS-LGL-010/a.docx", master_docx_sha256: sha(cleanDocx), master_pdf_storage_path: "masters-pdf/OS-LGL-010/a.pdf", master_pdf_sha256: sha(pdf), created_at: "2026-09-08T01:36:30Z", ...o,
 });
-const input = { approvalDate: "2026-09-05", counselName: "Counsel Name", counselFirm: "Firm LLP", evidenceKind: "counsel_email", evidenceReference: "Email of 5 Sep 2026 approving the legal suite, filed in the legal archive", evidenceSha256: null, coversDocumentCodes: ["OS-LGL-010"] };
+const input = { approvalDate: "2026-09-05", counselName: "Counsel Name", counselFirm: "Firm LLP", evidenceKind: "counsel_email", evidenceReference: "Email of 5 Sep 2026 approving the legal suite, filed in the legal archive", evidenceSha256: "a".repeat(64), coversDocumentCodes: ["OS-LGL-010"] };
 
 beforeEach(() => {
   h.authorized = true; h.logged = [];
@@ -39,8 +39,9 @@ describe("attestHistoricalApproval", () => {
   it("records an audited attestation without touching the registry's own columns", async () => {
     const r = await attestHistoricalApproval({ versionId: "v1", input, actorUserId: "u1" });
     expect(r).toEqual({ ok: true, approvalDate: "2026-09-05" });
-    expect(h.logged[0]).toMatchObject({ action: "legal.master_version.approval_attested", entityId: "v1", actorUserId: "u1" });
-    expect(h.logged[0].metadata).toMatchObject({ approvalDate: "2026-09-05", counselName: "Counsel Name", documentCode: "OS-LGL-010" });
+    const ev = h.db.tables.activity_log[0];
+    expect(ev).toMatchObject({ action: "legal.master_version.approval_attested", entity_id: "v1", actor_user_id: "u1" });
+    expect(ev.metadata).toMatchObject({ approvalDate: "2026-09-05", counselName: "Counsel Name", documentCode: "OS-LGL-010", basis: "administrator_attestation_system_has_not_inspected_the_evidence" });
     expect(h.db.writes.filter((w) => w.table === "legal_document_versions")).toEqual([]);
   });
   it("refuses an unauthorised user, the Addendum date, evidence that does not name the document, and a version that already has a stamp", async () => {
@@ -52,7 +53,14 @@ describe("attestHistoricalApproval", () => {
     expect((await attestHistoricalApproval({ versionId: "v1", input: { ...input, coversDocumentCodes: ["OS-LGL-001"] }, actorUserId: "u1" })).ok).toBe(false);
     h.db.tables.legal_document_versions[0].approved_at = "2026-09-04T00:00:00Z";
     expect((await attestHistoricalApproval({ versionId: "v1", input, actorUserId: "u1" })).ok).toBe(false);
-    expect(h.logged).toEqual([]);
+    expect(h.db.tables.activity_log).toEqual([]);
+  });
+  it("requires the evidence fingerprint, refuses a second attestation, and refuses to report success if the audit write fails", async () => {
+    expect((await attestHistoricalApproval({ versionId: "v1", input: { ...input, evidenceSha256: null }, actorUserId: "u1" })).ok).toBe(false);
+    expect((await attestHistoricalApproval({ versionId: "v1", input, actorUserId: "u1" })).ok).toBe(true);
+    const again = await attestHistoricalApproval({ versionId: "v1", input: { ...input, approvalDate: "2026-09-06" }, actorUserId: "u1" });
+    expect(!again.ok && again.error).toContain("already on record");
+    expect(h.db.tables.activity_log.length).toBe(1);
   });
 });
 
@@ -63,7 +71,7 @@ describe("registerControlledMaster", () => {
     const row = h.db.tables.legal_document_versions[0];
     expect(row.document_hash).toBe(sha(cleanDocx));
     expect(String(row.content_reference)).toContain(`legal-masters:masters-docx/OS-LGL-010/a.docx@sha256:${sha(cleanDocx)}`);
-    expect(h.logged[0]).toMatchObject({ action: "legal.master_version.content_registered", metadata: { unresolvedMarkers: 0 } });
+    expect(h.db.tables.activity_log.at(-1)).toMatchObject({ action: "legal.master_version.content_registered", metadata: { unresolvedMarkers: 0 } });
     expect((await registerControlledMaster({ versionId: "v1", actorUserId: "u1" })).ok).toBe(false); // set-once
   });
   it("HARD STOP when a stored file no longer matches its recorded checksum; nothing is written", async () => {
@@ -115,6 +123,40 @@ describe("activateMasterVersion", () => {
     expect((await activateMasterVersion({ versionId: "v1", effectiveDate: "2026-09-01", backdatedReason: "Because I said so, for testing.", actorUserId: "u1" })).ok).toBe(false);
     expect((await activateMasterVersion({ versionId: "v1", effectiveDate: "2026-09-05", actorUserId: "u1" })).ok).toBe(false);
     expect(h.db.tables.legal_document_versions[0].status).toBe("approved");
+  });
+});
+
+describe("failure handling: no false success, no half-finished state", () => {
+  it("an attestation whose audit write fails is refused and leaves nothing behind", async () => {
+    h.db.failInsert = new Set(["activity_log"]);
+    const r = await attestHistoricalApproval({ versionId: "v1", input, actorUserId: "u1" });
+    expect(!r.ok && r.error).toContain("nothing was saved");
+    expect(h.db.tables.activity_log).toEqual([]);
+  });
+  it("a registration whose audit write fails is reversed: the reference is not left behind", async () => {
+    h.db.failInsert = new Set(["activity_log"]);
+    const r = await registerControlledMaster({ versionId: "v1", actorUserId: "u1" });
+    expect(r.ok).toBe(false);
+    const row = h.db.tables.legal_document_versions[0];
+    expect(row.content_reference).toBeNull();
+    expect(row.document_hash).toBeNull();
+  });
+  it("activation re-verifies the stored master: a file altered after registration stops the activation", async () => {
+    await attestHistoricalApproval({ versionId: "v1", input, actorUserId: "u1" });
+    await registerControlledMaster({ versionId: "v1", actorUserId: "u1" });
+    h.db.storage["masters-docx/OS-LGL-010/a.docx"] = dirtyDocx; // altered after registration
+    const r = await activateMasterVersion({ versionId: "v1", effectiveDate: "2026-09-05", backdatedReason: "Effective from counsel's approval date, as decided.", actorUserId: "u1" });
+    expect(!r.ok && r.error).toContain("HARD STOP");
+    expect(h.db.tables.legal_document_versions[0]).toMatchObject({ status: "approved", effective_date: null });
+  });
+  it("activation of a version that is not the master's current version, or twice, is refused", async () => {
+    await attestHistoricalApproval({ versionId: "v1", input, actorUserId: "u1" });
+    await registerControlledMaster({ versionId: "v1", actorUserId: "u1" });
+    h.db.tables.legal_document_masters[0].current_version_id = "other";
+    expect((await activateMasterVersion({ versionId: "v1", effectiveDate: "2026-09-05", backdatedReason: "Effective from counsel's approval date, as decided.", actorUserId: "u1" })).ok).toBe(false);
+    h.db.tables.legal_document_masters[0].current_version_id = "v1";
+    expect((await activateMasterVersion({ versionId: "v1", effectiveDate: "2026-09-05", backdatedReason: "Effective from counsel's approval date, as decided.", actorUserId: "u1" })).ok).toBe(true);
+    expect((await activateMasterVersion({ versionId: "v1", effectiveDate: "2026-09-05", backdatedReason: "Effective from counsel's approval date, as decided.", actorUserId: "u1" })).ok).toBe(false);
   });
 });
 

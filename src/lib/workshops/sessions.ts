@@ -2,6 +2,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { logActivity } from "@/lib/admin/activityLog";
 import { authorizeWithSuperAdminOverride, OPERATIONS_CAPABILITIES } from "@/lib/organization/authority";
 import { getWorkshopByIdAdmin } from "@/lib/content/sanity/workshopAdmin";
+import { instructorAssignmentRefusal } from "./instructorEligibility";
 
 // Workshop Learning Infrastructure V1 (2026-09-19) — against
 // public.workshop_sessions (migration 0138). This is the real, dated,
@@ -259,6 +260,8 @@ export async function createWorkshopSession(params: CreateSessionParams): Promis
   const auth = await authorizeWithSuperAdminOverride(params.actorUserId, OPERATIONS_CAPABILITIES.workshopAdminister);
   if (!auth.ok) return { ok: false, error: "Not authorized to manage this workshop's schedule." };
   if (!params.title.trim()) return { ok: false, error: "Title is required." };
+  const refusal = await instructorAssignmentRefusal(params.instructorProfileId);
+  if (refusal) return { ok: false, error: refusal };
 
   const conflicts = params.instructorProfileId
     ? await findInstructorSessionConflicts(params.instructorProfileId, params.sessionDate, params.startTime, params.endTime ?? null)

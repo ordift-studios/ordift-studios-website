@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { logActivity } from "@/lib/admin/activityLog";
+import { recordAuditEvent } from "./strictAudit";
 import { authorizeWithSuperAdminOverride, GOVERNANCE_CAPABILITIES } from "@/lib/organization/authority";
 import { validateApprovalAttestation, resolveApprovalDate, type AttestationInput } from "./approvalAttestation";
 import { deriveMasterContentReference, verifyStoredMaster } from "./masterContentReference";
@@ -70,6 +70,10 @@ export async function attestHistoricalApproval(params: { versionId: string; inpu
   const { v, code } = loaded;
   if (!["approved", "active"].includes(v.status)) return { ok: false, error: `This version is “${v.status}”; only an approved version carries a historical approval to verify.` };
   if (v.approved_at) return { ok: false, error: "The registry already holds a stamped approval date for this version; nothing needs to be attested." };
+  if (await loadApprovalAttestation(v.id)) return { ok: false, error: "An approval attestation is already on record for this version and is not replaced. A correction needs the Founder's separate authorization." };
+  // The attestation is a claim by an administrator, and the system cannot inspect counsel's evidence itself. To keep it from being a bare
+  // assertion, the evidence must exist as a file whose fingerprint is recorded, and the record says exactly that.
+  if (!params.input.evidenceSha256) return { ok: false, error: "Attach the evidence: enter the SHA-256 fingerprint of the file (letter, email or register) so the record points at a real document." };
 
   const verdict = validateApprovalAttestation(
     { ...params.input, documentCode: code },
@@ -77,18 +81,36 @@ export async function attestHistoricalApproval(params: { versionId: string; inpu
   );
   if (!verdict.ok) return { ok: false, error: verdict.errors[0], errors: verdict.errors };
 
-  await logActivity({
+  const written = await recordAuditEvent({
     actorUserId: params.actorUserId,
     action: ATTESTED_ACTION,
     entityType: "legal_document_version",
     entityId: v.id,
     metadata: {
+      basis: "administrator_attestation_system_has_not_inspected_the_evidence",
       documentCode: code, approvalDate: params.input.approvalDate, counselName: params.input.counselName.trim(), counselFirm: params.input.counselFirm.trim(),
       evidenceKind: params.input.evidenceKind, evidenceReference: params.input.evidenceReference.trim(), evidenceSha256: params.input.evidenceSha256 ?? null,
-      coversDocumentCodes: params.input.coversDocumentCodes, versionCreatedOn: v.created_at.slice(0, 10), registryStampPreserved: null,
+      coversDocumentCodes: params.input.coversDocumentCodes, versionCreatedOn: v.created_at.slice(0, 10),
     },
   });
+  if (!written.ok) return { ok: false, error: "The attestation could not be recorded, so nothing was saved. Try again." };
   return { ok: true, approvalDate: params.input.approvalDate };
+}
+
+// Re-reads the stored master from the private bucket and checks it against what the registry recorded at ingestion. Used both when the master
+// is registered and again at activation, so the template that goes live is the actual approved file, byte for byte.
+async function verifyStoredMasterIntegrity(v: VersionRow): Promise<{ ok: true; markers: number; docxSha256: string; pdfSha256: string } | { ok: false; error: string }> {
+  if (!v.master_docx_storage_path || !v.master_docx_sha256 || !v.master_pdf_storage_path || !v.master_pdf_sha256) return { ok: false, error: "The stored master files or their checksums are not recorded." };
+  const admin = createAdminClient();
+  const [docx, pdf] = await Promise.all([admin.storage.from(BUCKET).download(v.master_docx_storage_path), admin.storage.from(BUCKET).download(v.master_pdf_storage_path)]);
+  if (docx.error || !docx.data || pdf.error || !pdf.data) return { ok: false, error: "A stored master file could not be read." };
+  const docxBytes = new Uint8Array(await docx.data.arrayBuffer());
+  const pdfBytes = new Uint8Array(await pdf.data.arrayBuffer());
+  const check = verifyStoredMaster({ docxSha256: v.master_docx_sha256, pdfSha256: v.master_pdf_sha256 }, { docxSha256: sha256(docxBytes), pdfSha256: sha256(pdfBytes) });
+  if (!check.ok) return { ok: false, error: `HARD STOP: the stored ${check.mismatched.join(" and ")} master no longer matches its recorded checksum.` };
+  const text = extractDocxText(docxBytes);
+  if (text === null) return { ok: false, error: "The stored Word master could not be read for the clause check." };
+  return { ok: true, markers: findUnresolvedReviewMarkers(text).length, docxSha256: sha256(docxBytes), pdfSha256: sha256(pdfBytes) };
 }
 
 // ------------------------------------------------------------------ 2. register the controlled master
@@ -99,30 +121,23 @@ export async function registerControlledMaster(params: { versionId: string; acto
   if (!loaded) return { ok: false, error: "Legal document version not found." };
   const { v, code } = loaded;
   if (v.content_reference || v.document_hash) return { ok: false, error: "This master is already registered under a controlled content reference." };
-  if (!v.master_docx_storage_path || !v.master_docx_sha256 || !v.master_pdf_storage_path || !v.master_pdf_sha256) return { ok: false, error: "The stored master files or their checksums are not recorded." };
-
+  const integrity = await verifyStoredMasterIntegrity(v);
+  if (!integrity.ok) return { ok: false, error: `${integrity.error} Nothing was registered.` };
+  if (integrity.markers > 0) return { ok: false, error: `The master still contains ${integrity.markers} unresolved counsel-review marker(s). Nothing was registered.` };
   const admin = createAdminClient();
-  const [docx, pdf] = await Promise.all([admin.storage.from(BUCKET).download(v.master_docx_storage_path), admin.storage.from(BUCKET).download(v.master_pdf_storage_path)]);
-  if (docx.error || !docx.data || pdf.error || !pdf.data) return { ok: false, error: "A stored master file could not be read." };
-  const docxBytes = new Uint8Array(await docx.data.arrayBuffer());
-  const pdfBytes = new Uint8Array(await pdf.data.arrayBuffer());
 
-  const check = verifyStoredMaster({ docxSha256: v.master_docx_sha256, pdfSha256: v.master_pdf_sha256 }, { docxSha256: sha256(docxBytes), pdfSha256: sha256(pdfBytes) });
-  if (!check.ok) return { ok: false, error: `HARD STOP: the stored ${check.mismatched.join(" and ")} master no longer matches its recorded checksum. Nothing was registered.` };
-
-  const text = extractDocxText(docxBytes);
-  if (text === null) return { ok: false, error: "The stored Word master could not be read for the clause check. Nothing was registered." };
-  const markers = findUnresolvedReviewMarkers(text);
-  if (markers.length > 0) return { ok: false, error: `The master still contains ${markers.length} unresolved counsel-review marker(s) (for example “${markers[0]}”). Nothing was registered.` };
-
-  const ref = deriveMasterContentReference({ code, version: "1.0", docxPath: v.master_docx_storage_path, docxSha256: v.master_docx_sha256, pdfPath: v.master_pdf_storage_path, pdfSha256: v.master_pdf_sha256 });
+  const ref = deriveMasterContentReference({ code, version: "1.0", docxPath: v.master_docx_storage_path!, docxSha256: v.master_docx_sha256!, pdfPath: v.master_pdf_storage_path!, pdfSha256: v.master_pdf_sha256! });
   const { error } = await admin.from("legal_document_versions").update({ content_reference: ref.contentReference, document_hash: ref.documentHash }).eq("id", v.id).is("content_reference", null).is("document_hash", null);
   if (error) { console.error("[legal] failed to register controlled master", error.message); return { ok: false, error: "Failed to record the controlled content reference." }; }
 
-  await logActivity({
+  const written = await recordAuditEvent({
     actorUserId: params.actorUserId, action: REGISTERED_ACTION, entityType: "legal_document_version", entityId: v.id,
     metadata: { documentCode: code, contentReference: ref.contentReference, documentHash: ref.documentHash, pdfSha256: v.master_pdf_sha256, unresolvedMarkers: 0, checkedAgainst: "recorded ingestion checksums" },
   });
+  if (!written.ok) {
+    await admin.from("legal_document_versions").update({ content_reference: null, document_hash: null }).eq("id", v.id).eq("content_reference", ref.contentReference);
+    return { ok: false, error: "The registration could not be audited, so it was reversed. Nothing was registered." };
+  }
   return { ok: true, ...ref };
 }
 
@@ -144,12 +159,25 @@ export async function activateMasterVersion(params: { versionId: string; effecti
   });
   if (!verdict.ok) return { ok: false, error: verdict.errors[0], errors: verdict.errors };
 
+  // The template that goes live must be the actual approved file: re-verify the stored master now, not only at registration.
+  const integrity = await verifyStoredMasterIntegrity(v);
+  if (!integrity.ok) return { ok: false, error: `${integrity.error} Nothing was activated.` };
+  if (integrity.markers > 0) return { ok: false, error: `The master contains ${integrity.markers} unresolved counsel-review marker(s). Nothing was activated.` };
+  const expected = deriveMasterContentReference({ code, version: "1.0", docxPath: v.master_docx_storage_path!, docxSha256: v.master_docx_sha256!, pdfPath: v.master_pdf_storage_path!, pdfSha256: v.master_pdf_sha256! });
+  if (v.content_reference !== expected.contentReference || v.document_hash !== expected.documentHash) return { ok: false, error: "The registered content reference no longer matches the stored master. Nothing was activated." };
+  const { data: master } = await createAdminClient().from("legal_document_masters").select("current_version_id").eq("id", v.master_id).maybeSingle();
+  if (!master || master.current_version_id !== v.id) return { ok: false, error: "This is not the current version of its legal master. Nothing was activated." };
+
   const admin = createAdminClient();
   if (v.effective_date && v.effective_date !== params.effectiveDate) return { ok: false, error: `An effective date (${v.effective_date}) is already recorded and is not overwritten.` };
   if (!v.effective_date) {
     const { error } = await admin.from("legal_document_versions").update({ effective_date: params.effectiveDate }).eq("id", v.id).is("effective_date", null);
     if (error) { console.error("[legal] failed to set effective date", error.message); return { ok: false, error: "Failed to record the effective date." }; }
-    await logActivity({ actorUserId: params.actorUserId, action: ACTIVATION_PREPARED_ACTION, entityType: "legal_document_version", entityId: v.id, metadata: { documentCode: code, effectiveDate: params.effectiveDate, approvalDate: approval?.date, approvalDateSource: approval?.source, backdatedReason: params.backdatedReason ?? null } });
+    const written = await recordAuditEvent({ actorUserId: params.actorUserId, action: ACTIVATION_PREPARED_ACTION, entityType: "legal_document_version", entityId: v.id, metadata: { documentCode: code, effectiveDate: params.effectiveDate, approvalDate: approval?.date, approvalDateSource: approval?.source, backdatedReason: params.backdatedReason ?? null } });
+    if (!written.ok) {
+      await admin.from("legal_document_versions").update({ effective_date: null }).eq("id", v.id).eq("effective_date", params.effectiveDate);
+      return { ok: false, error: "The effective date could not be audited, so it was reversed. Nothing was activated." };
+    }
   }
   // The registry stamps the REAL activation time and repoints the master - it is never back-dated.
   return transitionLegalDocumentVersionStatus({ versionId: v.id, toStatus: "active", actorUserId: params.actorUserId });
