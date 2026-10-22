@@ -8,7 +8,7 @@ const h = vi.hoisted(() => ({
   events: [] as DeliveryEvent[],
   fingerprints: [] as string[],
   recorded: [] as { action: string; metadata: Record<string, unknown> }[],
-  notified: [] as { kind: string; remarks: string | null }[],
+  notified: [] as { kind: string; remarks: string | null; enquiryId?: string }[],
 }));
 
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
@@ -36,7 +36,8 @@ describe("confirmDeliveryAction", () => {
     expect(h.recorded).toHaveLength(1);
     expect(h.recorded[0].action).toBe("client_delivery.receipt_confirmed");
     expect(h.recorded[0].metadata).toMatchObject({ reference: "CSR-2026-000002", requestId: "req-1", fileCount: 2, remarks: null });
-    expect(h.notified).toEqual([{ kind: "receipt", reference: "CSR-2026-000002", clientName: "Bright", requestId: "req-1", fileCount: 2, remarks: null }]);
+    expect(h.notified).toHaveLength(1);
+    expect(h.notified[0]).toMatchObject({ kind: "receipt", reference: "CSR-2026-000002", clientName: "Bright", requestId: "req-1", enquiryId: ENQ, fileCount: 2, remarks: null });
   });
 
   it("receipt and acceptance are separate records", async () => {
@@ -84,7 +85,8 @@ describe("submitRatingAction", () => {
     expect(r).toMatchObject({ ok: true });
     expect(h.recorded[0].action).toBe("client_feedback.rating_submitted");
     expect(h.recorded[0].metadata).toMatchObject({ reference: "CSR-2026-000002", requestId: "req-1", service: "crew-support", professionalProfileId: "pro-1", ratings: { overall: 10 }, comment: null });
-    expect(h.notified).toHaveLength(0);
+    expect(h.notified).toHaveLength(1); // the administrator is told once about new feedback
+    expect(h.notified[0]).toMatchObject({ kind: "rating", enquiryId: ENQ });
   });
 
   it("takes the five categories and an optional comment", async () => {
@@ -105,6 +107,7 @@ describe("submitRatingAction", () => {
     const again = await submitRatingAction(null, form({ enquiryId: ENQ, overall: "8" }));
     expect(again).toMatchObject({ ok: true, message: expect.stringContaining("already recorded") });
     expect(h.recorded).toHaveLength(1);
+    expect(h.notified).toHaveLength(1); // and not told again about an identical resubmission
   });
 
   it("requires the client's own project", async () => {

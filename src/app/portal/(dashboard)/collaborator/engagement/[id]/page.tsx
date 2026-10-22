@@ -13,6 +13,8 @@ import { RELEASE_CATEGORIES } from "@/lib/crewSupport/fileRelease";
 import CrewJobDetails from "@/components/portal/CrewJobDetails";
 import JobReportPanel from "@/components/portal/JobReportPanel";
 import ReadinessPanel from "@/components/portal/ReadinessPanel";
+import ClientFeedbackPanel from "@/components/portal/ClientFeedbackPanel";
+import { loadClientFeedbackForProfessional } from "@/lib/crewSupport/clientResponses";
 import { getReadinessForProfessional } from "@/lib/crewSupport/readiness";
 import { formatInZone } from "@/lib/crewSupport/schedule";
 import MediaFileUploader from "@/components/payables/MediaFileUploader";
@@ -59,6 +61,8 @@ export default async function CollaboratorEngagementPage({ params }: { params: P
     getMyPortalModules(user.id, user.roles),
   ]);
   const allFiles = filesResult.ok ? filesResult.files : [];
+  // What the client said about THIS assignment (null unless the signed-in person is its assigned professional and there is a response).
+  const clientFeedback = crewJob ? await loadClientFeedbackForProfessional(id, user.id).catch(() => null) : null;
   // A file the uploader removed before submitting is kept on record but no longer listed.
   const files = allFiles.filter((f) => !(f.releaseStatus === "withdrawn" && f.purgedAt));
   // An accepted Crew Support job always has its own workspace (job report, files, feedback), whatever the
@@ -92,6 +96,8 @@ export default async function CollaboratorEngagementPage({ params }: { params: P
       </div>
 
       {crewJob && <CrewJobDetails job={crewJob} />}
+
+      {clientFeedback && <ClientFeedbackPanel feedback={clientFeedback} />}
 
       <section className="bg-white border border-black/10 rounded-2xl p-6 space-y-2">
         <h2 className="font-serif font-medium text-body text-ordift-ink mb-2">Brief</h2>

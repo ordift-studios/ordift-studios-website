@@ -65,7 +65,7 @@ export async function confirmDeliveryAction(_prev: ActionState, formData: FormDa
         previousCorrectionRequests: events.filter((e) => e.action === DELIVERY_ACTIONS.corrections).length,
       },
     });
-    await notifyAdminOfClientDelivery({ kind, reference: ctx.reference, clientName: ctx.clientName, requestId: job.requestId, fileCount: ctx.files.length, remarks: remarks || null });
+    await notifyAdminOfClientDelivery({ kind, reference: ctx.reference, clientName: ctx.clientName, requestId: job.requestId, enquiryId, batch, fileCount: ctx.files.length, remarks: remarks || null });
     revalidatePath(`/portal/client/projects/enquiry/${enquiryId}/deliverables`);
 
     return actionOk(
@@ -112,6 +112,17 @@ export async function submitRatingAction(_prev: ActionState, formData: FormData)
         batch,
         fingerprint,
       },
+    });
+    await notifyAdminOfClientDelivery({
+      kind: "rating",
+      reference: ctx.reference,
+      clientName: ctx.clientName,
+      requestId: job.requestId,
+      enquiryId,
+      batch,
+      fileCount: ctx.files.length,
+      remarks: comment || null,
+      detail: `Ratings (1-10): ${Object.entries(parsed.ratings).map(([k, v]) => `${k} ${v}`).join(", ")}`,
     });
     revalidatePath(`/portal/client/projects/enquiry/${enquiryId}/deliverables`);
     return actionOk("Thank you for your feedback — it helps us improve.");

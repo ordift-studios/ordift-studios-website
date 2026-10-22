@@ -122,24 +122,58 @@ export async function recordClientEvent(params: { userId: string; action: string
 }
 
 // One short message to Ordift's administrator (never to the client). Callers de-duplicate before calling, so each distinct
-// confirmation produces at most one message.
-export async function notifyAdminOfClientDelivery(params: { kind: DeliveryKind; reference: string; clientName: string | null; requestId: string | null; fileCount: number; remarks: string | null }): Promise<void> {
+// confirmation produces at most one message. The OUTCOME is always recorded as an audited event
+// (client_delivery.admin_notification) so the internal dashboard can show whether the email was handed over, not sent or failed -
+// a failed or unconfigured email never hides the client's response itself.
+export type NotifyKind = DeliveryKind | "rating";
+const NOTIFY_TEXT: Record<NotifyKind, string> = { ...DELIVERY_LABELS, rating: "submitted experience feedback" };
+
+export async function notifyAdminOfClientDelivery(params: {
+  kind: NotifyKind;
+  reference: string;
+  clientName: string | null;
+  requestId: string | null;
+  enquiryId?: string;
+  batch?: string | null;
+  fileCount: number;
+  remarks: string | null;
+  detail?: string | null;
+}): Promise<{ ok: boolean; mode?: string; error?: string }> {
+  let outcome: { ok: boolean; mode?: string; error?: string };
   try {
     const to = process.env.EMAIL_ADMIN_NOTIFICATION_TO;
     if (!to) {
-      console.error("[client-delivery] EMAIL_ADMIN_NOTIFICATION_TO is not set — the confirmation is recorded in the activity log only");
-      return;
+      console.error("[client-delivery] EMAIL_ADMIN_NOTIFICATION_TO is not set — the response is recorded in the activity log only");
+      outcome = { ok: false, error: "admin recipient not configured" };
+    } else {
+      const who = params.clientName?.trim() || "The client";
+      const what = NOTIFY_TEXT[params.kind];
+      const site = process.env.NEXT_PUBLIC_SITE_URL || "https://ordiftstudios.com";
+      const link = params.requestId ? `${site}/admin/crew-support/${params.requestId}` : `${site}/admin`;
+      const subject = `${params.reference}: ${who} ${what}`;
+      const note = params.remarks ? `\nTheir note: ${params.remarks}` : "";
+      const extra = params.detail ? `\n${params.detail}` : "";
+      const text = `${who} has ${what} for ${params.reference} (${params.fileCount} released file${params.fileCount === 1 ? "" : "s"}).${extra}${note}\n\nSee it under “Client Acceptance & Feedback”: ${link}\n\nThis is a record only. It does not close the request, complete the engagement or change any payable or file.`;
+      const html = `<p>${escapeHtml(who)} has ${escapeHtml(what)} for <strong>${escapeHtml(params.reference)}</strong> (${params.fileCount} released file${params.fileCount === 1 ? "" : "s"}).</p>${params.detail ? `<p>${escapeHtml(params.detail)}</p>` : ""}${params.remarks ? `<p>Their note: ${escapeHtml(params.remarks)}</p>` : ""}<p><a href="${escapeHtml(link)}">Open “Client Acceptance &amp; Feedback”</a></p><p style="color:#666">This is a record only. It does not close the request, complete the engagement or change any payable or file.</p>`;
+      const result = await sendEmail({ to, subject, html, text, logPrefix: "[client-delivery]", emailType: `client-delivery-${params.kind}`, referenceNumber: params.reference });
+      outcome = result.ok ? { ok: true, mode: result.mode } : { ok: false, error: result.error };
     }
-    const who = params.clientName?.trim() || "The client";
-    const what = DELIVERY_LABELS[params.kind];
-    const site = process.env.NEXT_PUBLIC_SITE_URL || "https://ordiftstudios.com";
-    const link = params.requestId ? `${site}/admin/crew-support/${params.requestId}` : `${site}/admin`;
-    const subject = `${params.reference}: ${who} ${what}`;
-    const remarks = params.remarks ? `\nTheir note: ${params.remarks}` : "";
-    const text = `${who} has ${what} for ${params.reference} (${params.fileCount} released file${params.fileCount === 1 ? "" : "s"}).${remarks}\n\nOpen the request: ${link}\n\nThis is a record only. It does not close the request, complete the engagement or change any payable or file.`;
-    const html = `<p>${escapeHtml(who)} has ${escapeHtml(what)} for <strong>${escapeHtml(params.reference)}</strong> (${params.fileCount} released file${params.fileCount === 1 ? "" : "s"}).</p>${params.remarks ? `<p>Their note: ${escapeHtml(params.remarks)}</p>` : ""}<p><a href="${escapeHtml(link)}">Open the request</a></p><p style="color:#666">This is a record only. It does not close the request, complete the engagement or change any payable or file.</p>`;
-    await sendEmail({ to, subject, html, text, logPrefix: "[client-delivery]", emailType: `client-delivery-${params.kind}`, referenceNumber: params.reference });
   } catch (error) {
     console.error("[client-delivery] admin notification failed", error);
+    outcome = { ok: false, error: error instanceof Error ? error.message.slice(0, 120) : "unexpected error" };
   }
+  if (params.enquiryId) {
+    try {
+      await logActivityAsSystem({
+        actorUserId: null,
+        action: "client_delivery.admin_notification",
+        entityType: "enquiry",
+        entityId: params.enquiryId,
+        metadata: { kind: params.kind, batch: params.batch ?? null, ok: outcome.ok, mode: outcome.mode ?? null, error: outcome.error ?? null },
+      });
+    } catch (error) {
+      console.error("[client-delivery] could not record the notification outcome", error);
+    }
+  }
+  return outcome;
 }

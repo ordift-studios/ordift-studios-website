@@ -17,6 +17,8 @@ import ProductionPanel from "../ProductionPanel";
 import AssignmentWorkPanel, { type AssignmentWork } from "../AssignmentWorkPanel";
 import { listEmailedReleasedFileIds } from "@/lib/crewSupport/fileReleaseFlow";
 import { getFounderContext, listSelfReviewFileState } from "@/lib/crewSupport/founderSelfReview";
+import ClientResponsesPanel from "../ClientResponsesPanel";
+import { loadClientResponsesForRequest } from "@/lib/crewSupport/clientResponses";
 import ScheduleReadinessPanel, { type ReadinessSlotData } from "../ScheduleReadinessPanel";
 import { getReadinessForAdmin, getReadinessSettings, listManagerCandidates } from "@/lib/crewSupport/readiness";
 import { listScheduleChanges, partiesForRequest } from "@/lib/crewSupport/reschedule";
@@ -68,6 +70,11 @@ export default async function CrewSupportDetailPage({ params }: { params: Promis
   const allCandidateIds = [...new Set(Object.values(candidatesByRequirement ?? {}).flatMap((c) => c.candidates.map((x) => x.profileId)))];
   const overridePool = await listOverridePool(allCandidateIds).catch(() => []);
   const r = detail.request as Record<string, string | null> & { id: string; status: CrewSupportStatus; enquiry_id: string };
+  // The client's own confirmations and feedback (read-only; the page is already limited to people who manage Crew Support).
+  const clientResponses = await loadClientResponsesForRequest(r.id).catch((error) => {
+    console.error("[crew-support] could not load client responses", error);
+    return null;
+  });
   const family = SERVICE_FAMILIES.find((f) => f.value === r.service_family);
   // Super Admin only: which legal entity contracts for this booking (read-only for a historical booking).
   const contracting = user && isSuperAdmin(user)
@@ -198,6 +205,8 @@ export default async function CrewSupportDetailPage({ params }: { params: Promis
       {commitment && <ProductionPanel snapshot={commitment} enquiryId={r.enquiry_id} deliverables={deliverables} handoff={{ media: details.mediaHandoff ?? null, raw: details.rawRequired ?? null }} />}
 
       <AssignmentWorkPanel requestId={r.id} work={assignmentWork} canReview={user ? await isManagementUser(user) : false} isTest={Boolean(detail.request.is_test)} viewerId={user?.id ?? ""} />
+
+      {clientResponses && <ClientResponsesPanel data={clientResponses} />}
 
       {readinessSettings && (
         <ScheduleReadinessPanel requestId={r.id} slots={readinessSlots} changes={scheduleChanges} parties={scheduleParties} managers={managerCandidates} viewerId={user?.id ?? ""} isManagement={viewerIsManagement} canManageIssues flagHours={readinessSettings.noResponseFlagHours} />
