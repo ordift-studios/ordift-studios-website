@@ -27,7 +27,7 @@ vi.mock("@/lib/supabase/admin", async () => {
       const real = make(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SECRET_KEY!, { auth: { persistSession: false, autoRefreshToken: false }, global: { fetch: h.fetch } });
       return new Proxy(real, {
         get(target, prop) {
-          if (prop === "storage") return { from: () => ({ download: async (path: string) => (h.storage[path] ? { data: new Blob([h.storage[path] as BlobPart]), error: null } : { data: null, error: { message: "missing" } }) }) };
+          if (prop === "storage") return { from: () => ({ download: async (path: string) => (h.storage[path] ? { data: new Blob([h.storage[path] as BlobPart]), error: null } : { data: null, error: { message: "missing" } }), upload: async (path: string, body: Buffer) => { h.storage[path] = new Uint8Array(body); return { error: null }; } }) };
           if (prop === "auth") return { admin: { getUserById: async () => ({ data: { user: { email: "kwaku.synthetic@example.test" } } }) } };
           return Reflect.get(target, prop);
         },
@@ -38,7 +38,7 @@ vi.mock("@/lib/supabase/admin", async () => {
 
 import { attestHistoricalApproval, activateMasterVersion, registerControlledMaster } from "./masterRegistryActions";
 import { confirmContractingEntity, selectAgreementSignatory } from "@/lib/organization/onboardingDecisions";
-import { addEntitySignatory } from "@/lib/organization/entityRegistrations";
+import { addEntitySignatory, addVaultDocument, findActiveProfileByMemberNumber } from "@/lib/organization/entityRegistrations";
 import { loadAgreementReadiness } from "./agreementReadinessData";
 import { prepareInstructorAgreementDraft, getCurrentInstructorAgreement, resolveOnboardingLegalContext } from "./instructorAgreements";
 import { createInstructorEngagement } from "@/lib/workshops/instructorEngagements";
@@ -247,5 +247,26 @@ describe("7. existing records and ordinary employee onboarding are unaffected", 
   it("cleanup of synthetic rows", () => {
     sql(`delete from public.workshop_instructor_engagements where profile_id in ('${KWAKU}','${EMP}'); delete from public.workshop_sessions where workshop_id like 'w-synthetic%'; delete from public.staff_onboarding where profile_id='${EMP}';`);
     expect(true).toBe(true);
+  });
+});
+
+describe("8. Step 7 signatory workflow: evidence upload, account link, per-entity authority", () => {
+  it("a legacy note-only record is replaced (kept) by a stored, fingerprinted file; the signatory can then be recorded and linked to an existing active account by member number", async () => {
+    sql(`update public.profiles set member_number='SYN0001' where id='${SUPER}'`);
+    const bytes = new Uint8Array([37, 80, 68, 70, 45, 49, 46, 52, 10, 1, 2, 3]);
+    const up = await addVaultDocument({ entityId: ids.ghana, documentType: "commercial_registration", filename: "ghana-certificate.pdf", mimeType: "application/pdf", bytes, notes: "SYNTHETIC replacement of the legacy note", replaces: ids.docNote, actorUserId: SUPER });
+    expect(up.ok).toBe(true);
+    const newId = (up as { documentId: string }).documentId;
+    expect(sql(`select file_sha256||'|'||relation||'|'||related_document_id from public.employing_entity_documents where id='${newId}'`)).toBe(`${sha(bytes)}|new_version_of|${ids.docNote}`);
+    expect(sql(`select count(*) from public.employing_entity_documents where id='${ids.docNote}'`)).toBe("1"); // the older record is preserved
+    // account lookup: exists and active, unknown refused, inactive refused
+    const found = await findActiveProfileByMemberNumber("SYN0001", SUPER);
+    expect(found.ok && found.profileId).toBe(SUPER);
+    expect((await findActiveProfileByMemberNumber("9999", SUPER)).ok).toBe(false);
+    expect((await findActiveProfileByMemberNumber("SYN0001", STAFF)).ok).toBe(false); // Super Admin only
+    const sig = await addEntitySignatory({ entityId: ids.ghana, fullName: "Synthetic Founder Signatory", position: "Proprietor", authority: "As stated on the certificate", sourceDocumentId: newId, profileId: found.ok ? found.profileId : null, actorUserId: SUPER });
+    expect(sig.ok).toBe(true);
+    // authority is per entity: the same person is not a signatory of any other entity because of this
+    expect(sql(`select count(*) from public.entity_signatories where full_name='Synthetic Founder Signatory' and employing_entity_id <> '${ids.ghana}'`)).toBe("0");
   });
 });

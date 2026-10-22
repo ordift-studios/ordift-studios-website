@@ -5,7 +5,9 @@ import { getCurrentUser } from "@/lib/portal/roles";
 import { canManageOnboarding } from "@/lib/organization/onboarding";
 import { attestHistoricalApproval, registerControlledMaster, activateMasterVersion } from "@/lib/legal/masterRegistryActions";
 import { confirmContractingEntity, selectAgreementSignatory } from "@/lib/organization/onboardingDecisions";
-import { addEntitySignatory } from "@/lib/organization/entityRegistrations";
+import { addEntitySignatory, addVaultDocument, findActiveProfileByMemberNumber } from "@/lib/organization/entityRegistrations";
+import { ENTITY_DOCUMENT_TYPES } from "@/lib/organization/entityRegistry";
+import { loadOnboardingDecisions } from "@/lib/organization/onboardingDecisions";
 import { prepareInstructorAgreementDraft, resolveOnboardingLegalContext } from "@/lib/legal/instructorAgreements";
 import { approveInstructorAgreementForIssue, issueInstructorAgreement, saveInstructorScheduleA } from "@/lib/legal/instructorAgreementIssuance";
 import { SCHEDULE_A_FIELDS, type ScheduleATerms } from "@/lib/legal/instructorAgreementTerms";
@@ -65,15 +67,49 @@ export async function confirmEntityAction(_p: JourneyActionState, d: FormData): 
   return r.ok ? done(onboardingId, "Contracting entity confirmed.") : fail(r);
 }
 
+// The entity must be THIS onboarding's contracting entity (confirmed, else the one recorded on the requisition) - evidence and signatories are
+// recorded per entity and are never carried from one entity or jurisdiction to another.
+async function entityForOnboarding(onboardingId: string, entityId: string): Promise<boolean> {
+  const [ctx, decisions] = await Promise.all([resolveOnboardingLegalContext(onboardingId), loadOnboardingDecisions(onboardingId)]);
+  const allowed = decisions.entityId ?? ctx?.recordedEntityId ?? null;
+  return Boolean(entityId) && entityId === allowed;
+}
+
+export async function uploadEvidenceAction(_p: JourneyActionState, d: FormData): Promise<JourneyActionState> {
+  const onboardingId = f(d, "onboardingId");
+  const a = await actor(onboardingId);
+  if ("error" in a) return { ok: false, error: a.error };
+  const entityId = f(d, "entityId");
+  if (!(await entityForOnboarding(onboardingId, entityId))) return { ok: false, error: "Evidence can only be added to this onboarding's contracting entity." };
+  const documentType = f(d, "documentType");
+  if (!ENTITY_DOCUMENT_TYPES.some((t) => t.value === documentType)) return { ok: false, error: "Choose what kind of document this is." };
+  const notes = f(d, "notes");
+  if (notes.length < 10) return { ok: false, error: "Describe what the document is and what it shows (at least a short sentence)." };
+  const file = d.get("file");
+  if (!(file instanceof File) || file.size === 0) return { ok: false, error: "Choose the file to upload." };
+  const r = await addVaultDocument({ entityId, documentType, filename: file.name, mimeType: file.type, bytes: new Uint8Array(await file.arrayBuffer()), notes, issuedOn: f(d, "issuedOn") || null, issuingAuthority: f(d, "issuingAuthority") || null, replaces: f(d, "replaces") || null, actorUserId: a.id });
+  return r.ok ? done(onboardingId, r.duplicateOf ? "This exact file was already in the vault; it was recorded as a duplicate of the original." : "Stored in the entity's document vault with its fingerprint.") : fail(r);
+}
+
 export async function addSignatoryAction(_p: JourneyActionState, d: FormData): Promise<JourneyActionState> {
   const onboardingId = f(d, "onboardingId");
   const a = await actor(onboardingId);
   if ("error" in a) return { ok: false, error: a.error };
+  const entityId = f(d, "entityId");
+  if (!(await entityForOnboarding(onboardingId, entityId))) return { ok: false, error: "A signatory can only be recorded for this onboarding's contracting entity." };
+  if (d.get("documentShowsAuthority") !== "yes") return { ok: false, error: "Tick the confirmation that the selected document itself shows this person's name, position and authority. If it does not, upload the document that does." };
+  let profileId: string | null = null;
+  const member = f(d, "accountMemberNumber");
+  if (member) {
+    const found = await findActiveProfileByMemberNumber(member, a.id);
+    if (!found.ok) return { ok: false, error: found.error };
+    profileId = found.profileId;
+  }
   const r = await addEntitySignatory({
-    entityId: f(d, "entityId"), fullName: f(d, "fullName"), position: f(d, "position"), authority: f(d, "authority"), sourceDocumentId: f(d, "sourceDocumentId"),
-    profileId: d.get("linkFounder") === "yes" ? f(d, "founderProfileId") || null : null, effectiveFrom: f(d, "effectiveFrom") || null, actorUserId: a.id,
+    entityId, fullName: f(d, "fullName"), position: f(d, "position"), authority: f(d, "authority"), sourceDocumentId: f(d, "sourceDocumentId"),
+    profileId, effectiveFrom: f(d, "effectiveFrom") || null, actorUserId: a.id,
   });
-  return r.ok ? done(onboardingId, "Signatory recorded with its supporting document.") : fail(r);
+  return r.ok ? done(onboardingId, profileId ? "Signatory recorded with its supporting document and linked to the Ordift account." : "Signatory recorded with its supporting document. Link an Ordift account before issuing, so a secure signing link can be delivered.") : fail(r);
 }
 
 export async function selectSignatoryAction(_p: JourneyActionState, d: FormData): Promise<JourneyActionState> {

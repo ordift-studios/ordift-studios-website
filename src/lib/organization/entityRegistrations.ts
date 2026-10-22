@@ -120,6 +120,18 @@ export async function addEntitySignatory(p: {
   return { ok: true, signatoryId: data.id };
 }
 
+// Finds the existing ACTIVE Ordift account for a member number, so a signatory can be linked to the right account for secure signature delivery.
+// Never creates a profile. Super Admin only.
+export async function findActiveProfileByMemberNumber(memberNumber: string, actorUserId: string): Promise<Result<{ profileId: string; fullName: string | null }>> {
+  if (!(await isSuperAdminId(actorUserId))) return NOT_ALLOWED;
+  const n = memberNumber.trim();
+  if (!n) return { ok: false, error: "Enter the member number of the existing Ordift account." };
+  const { data } = await createAdminClient().from("profiles").select("id, full_name, access_status").eq("member_number", n).maybeSingle();
+  if (!data) return { ok: false, error: `No Ordift account has member number ${n}.` };
+  if (data.access_status !== "active") return { ok: false, error: `The account ${n} is not active, so it cannot receive a secure signing link.` };
+  return { ok: true, profileId: data.id as string, fullName: (data.full_name as string | null) ?? null };
+}
+
 // ------------------------------------------------------------------ vault documents (hash, metadata, duplicate detection)
 const BUCKET = "legal-entity-documents";
 const MAX_BYTES = 10 * 1024 * 1024;

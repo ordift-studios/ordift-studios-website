@@ -180,16 +180,16 @@ export function assessAgreementReadiness(i: AgreementReadinessInput): AgreementR
     checks.push(open("needs_confirmation", "signatory", "Confirm authorised signatory", `${entity.name} has ${sigs.length} recorded signatories; choose which one signs this agreement.`, { what: "More than one signatory is recorded.", why: "One person must be named for this agreement.", source: "The entity's signatory register", who: "Founder / Super Admin", how: "Select one below.", href: null, hrefLabel: null }, "select_signatory"));
   } else {
     const gap = storedDocs.length
-      ? `A registration document is on file (${storedDocs.map((d) => d.filename ?? d.type).join("; ")}); select it as the documentary basis when recording the signatory.`
-      : `The only record on file (${docs.map((d) => d.type).join("; ") || "none"}) is a note with no stored file or fingerprint, so it cannot yet evidence who may sign. Upload the registration certificate to the entity record first.`;
+      ? `A document with a stored, fingerprinted file is on file (${storedDocs.map((d) => d.filename ?? d.type).join("; ")}); select it as the documentary basis when recording the signatory.`
+      : `The only record on file (${docs.map((d) => d.type).join("; ") || "none"}) is an older entry with no recorded filename or fingerprint, so it cannot yet evidence who may sign. Upload the document below; the older entry is kept.`;
     checks.push(open("missing", "signatory", "Confirm authorised signatory", `No authorised signatory is recorded for ${entity.name}. ${gap}`, {
       what: `No one is recorded as authorised to sign for ${entity.name}.`,
       why: "Without a verified signatory the agreement cannot be signed for Ordift. One entity's signatory is never borrowed for another, and the Founder's authority is not assumed from ownership alone.",
       source: "The entity's business registration or authorisation documents",
       who: "Founder / Super Admin",
-      how: storedDocs.length ? "Record the signatory below, linking the registration document." : "Upload the registration certificate on the entity record, then record the signatory.",
+      how: storedDocs.length ? "Record the signatory below, linking the supporting document." : "Upload the certificate (and, if it does not state signing authority, the document that does) below, then record the signatory.",
       href: entity.href, hrefLabel: "Open the entity record",
-    }, storedDocs.length ? "add_signatory" : null));
+    }, "add_signatory"));
   }
 
   const unresolved = checks.filter((c) => c.state !== "verified");

@@ -2,7 +2,7 @@ import Link from "next/link";
 import type { ReadinessCheck, AgreementReadiness } from "@/lib/legal/agreementReadiness";
 import type { InstructorStep } from "@/lib/organization/instructorWorkspace";
 import type { StepState, WorkspaceSummary } from "@/lib/workspace/processWorkspace";
-import { ActivateForm, AddSignatoryForm, ApproveForIssueForm, AttestApprovalForm, ConfirmEntityForm, IssueAgreementForm, PrepareAgreementForm, RegisterMasterForm, ScheduleAForm, SelectSignatoryForm } from "./OnboardingJourneyForms";
+import { ActivateForm, AddSignatoryForm, ApproveForIssueForm, AttestApprovalForm, ConfirmEntityForm, IssueAgreementForm, PrepareAgreementForm, RegisterMasterForm, ScheduleAForm, SelectSignatoryForm, UploadEvidenceForm } from "./OnboardingJourneyForms";
 import type { AgreementStage } from "@/lib/legal/instructorAgreementDocument";
 import type { ScheduleATerms } from "@/lib/legal/instructorAgreementTerms";
 import type { SigningProgress } from "@/lib/legal/instructorAgreementIssuance";
@@ -48,7 +48,12 @@ function Form({ kind, onboardingId, agreement, today, steps }: { kind: string; o
     case "confirm_entity":
       return <ConfirmEntityForm onboardingId={onboardingId} candidates={ctx.candidates.map((c) => ({ id: c.id, name: c.name, jurisdiction: c.jurisdiction }))} recordedEntityId={ctx.recordedEntityId} />;
     case "add_signatory":
-      return entity ? <AddSignatoryForm onboardingId={onboardingId} entity={{ id: entity.id, name: entity.name }} documents={entity.documents.filter((d) => d.hasStoredFile).map((d) => ({ id: d.id, label: d.filename ?? d.type }))} founder={ctx.founder} /> : null;
+      return entity ? (
+        <>
+          <UploadEvidenceForm onboardingId={onboardingId} entity={{ id: entity.id, name: entity.name }} legacyRecords={entity.documents.filter((d) => !d.hasStoredFile).map((d) => ({ id: d.id, label: `${d.type}${d.notes ? ` — ${d.notes}` : ""}` }))} />
+          <AddSignatoryForm onboardingId={onboardingId} entity={{ id: entity.id, name: entity.name }} documents={entity.documents.filter((d) => d.hasStoredFile).map((d) => ({ id: d.id, label: `${d.filename ?? d.type}${d.notes ? ` — ${d.notes}` : ""}` }))} founder={ctx.founder} />
+        </>
+      ) : null;
     case "select_signatory":
       return entity ? <SelectSignatoryForm onboardingId={onboardingId} entityId={entity.id} signatories={entity.signatories.map((s) => ({ id: s.id, label: `${s.fullName} — ${s.position}` }))} /> : null;
     case "prepare_agreement":
@@ -163,6 +168,13 @@ export default function OnboardingJourneyPanel({ steps, summary, personName, ret
               </ul>
             )}
             {s.key === "agreement" && agreementPanel && <AgreementPanel data={agreementPanel} onboardingId={onboardingId} today={today} />}
+            {agreement && s.key === "signatory" && agreement.context.entity && (
+              <div className="rounded-lg border border-black/10 p-4 font-sans text-caption text-ordift-ink-muted space-y-2">
+                <p className="text-body-small font-medium text-ordift-ink">Records for {agreement.context.entity.name} ({agreement.context.entity.jurisdiction ?? "jurisdiction not recorded"})</p>
+                <p>Signatories: {agreement.context.entity.signatories.length ? agreement.context.entity.signatories.map((g) => `${g.fullName}, ${g.position} — ${g.sourceDocumentId ? "documentary basis linked" : "no documentary basis"}, ${g.profileId ? "account linked" : "no account linked"}`).join("; ") : "none recorded."}</p>
+                <p>Documents in the vault: {agreement.context.entity.documents.length ? agreement.context.entity.documents.map((d) => `${d.filename ?? d.type} (${d.hasStoredFile ? "stored file with fingerprint" : "older record: no verifiable file details"})`).join("; ") : "none."}</p>
+              </div>
+            )}
             {agreement && s.key === "signatory" && agreement.context.governance.length > 0 && (
               <div className="rounded-lg border border-black/10 p-4">
                 <p className="font-sans text-body-small font-medium text-ordift-ink">Founder governance record{agreement.context.founder ? ` — ${agreement.context.founder.name}${agreement.context.founder.memberNumber ? `, member ${agreement.context.founder.memberNumber}` : ""} (verified identity; one profile for every entity)` : ""}</p>

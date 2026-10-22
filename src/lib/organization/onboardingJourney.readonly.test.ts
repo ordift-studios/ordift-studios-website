@@ -23,12 +23,12 @@ describe("the guided journey adds no way to change a record and no new access", 
     const panel = read("../../components/admin/OnboardingJourneyPanel.tsx");
     expect(panel).not.toMatch(/<form|<button|action=\{/);
     const forms = read("../../components/admin/OnboardingJourneyForms.tsx");
-    for (const a of ["attestApprovalAction", "registerMasterAction", "activateTemplateAction", "confirmEntityAction", "addSignatoryAction", "selectSignatoryAction", "prepareAgreementAction", "saveScheduleAAction", "approveForIssueAction", "issueAgreementAction"]) expect(forms).toContain(a);
+    for (const a of ["attestApprovalAction", "registerMasterAction", "activateTemplateAction", "confirmEntityAction", "addSignatoryAction", "selectSignatoryAction", "prepareAgreementAction", "uploadEvidenceAction", "saveScheduleAAction", "approveForIssueAction", "issueAgreementAction"]) expect(forms).toContain(a);
   });
   it("every embedded server action first requires onboarding-management authority, then delegates to an authoritative function", () => {
     const actions = read("../../app/admin/organization/onboarding/[onboardingId]/journeyActions.ts");
-    expect(actions.split("export async function ").length - 1).toBe(10);
-    expect(actions.split("await actor(onboardingId)").length - 1).toBe(10);
+    expect(actions.split("export async function ").length - 1).toBe(11);
+    expect(actions.split("await actor(onboardingId)").length - 1).toBe(11);
     // the two record-changing legal steps that send or approve for sending need an explicit tick in the same submission
     expect(actions).toContain('d.get("confirmPreview") !== "yes"');
     expect(actions).toContain('d.get("confirmIssue") !== "yes"');

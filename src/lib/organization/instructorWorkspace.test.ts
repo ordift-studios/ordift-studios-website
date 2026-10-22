@@ -65,8 +65,8 @@ describe("Kwaku's workspace, top to bottom", () => {
     const s = by("signatory");
     expect(s.state).toBe("pending");
     expect(s.missing).toEqual(["Confirm authorised signatory"]);
-    expect(s.checks[0].detail).toContain("no stored file or fingerprint");
-    expect(s.checks[0].actionKey).toBeNull();
+    expect(s.checks[0].detail).toContain("no recorded filename or fingerprint");
+    expect(s.checks[0].actionKey).toBe("add_signatory");
   });
   it("agreement preparation is blocked, naming what it waits for; eligibility is blocked until execution; nothing is marked ready", () => {
     expect(by("agreement")).toMatchObject({ state: "blocked", forms: [] });

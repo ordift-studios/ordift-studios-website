@@ -37,7 +37,8 @@ const inForce = (a: Appointment, on: string) => a.status === "active" && a.effec
 // Who reviews a NEW document in this jurisdiction and category on this date? A firm formally appointed for the jurisdiction always wins over
 // an interim arrangement. Nothing is routed to a firm that has no appointment covering that jurisdiction (or an express interim authorisation).
 export function routeLegalReview(appointments: readonly Appointment[], jurisdiction: string, category: string, on: string): Routing {
-  const direct = appointments.find((a) => inForce(a, on) && a.jurisdiction === jurisdiction && covers(a, category));
+  const matches = appointments.filter((a) => inForce(a, on) && a.jurisdiction === jurisdiction && covers(a, category));
+  const direct = matches.find((a) => a.categories.includes(category)) ?? matches[0]; // an explicit category assignment beats a catch-all
   if (direct) return { kind: "appointed", firmId: direct.firmId, firmName: direct.firmName, provisional: false };
   const interim = appointments.find((a) => inForce(a, on) && a.interimFor?.jurisdiction === jurisdiction && a.interimFor.expressAuthorisationReference.trim().length >= 10 && covers(a, category));
   if (interim) return { kind: "interim", firmId: interim.firmId, firmName: interim.firmName, provisional: true, note: `Advice from ${interim.firmName} (appointed for ${interim.jurisdiction}) is provisional for ${jurisdiction}: it is not verified ${jurisdiction}-law compliance or final ${jurisdiction} approval.` };

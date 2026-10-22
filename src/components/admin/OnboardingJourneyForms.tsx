@@ -4,7 +4,7 @@ import { useActionState } from "react";
 import { SCHEDULE_A_FIELDS, INDEPENDENT_STATUS_ROUTES, PROFESSIONAL_ROLES, REGULATORY_APPROVAL_STATUSES, type ScheduleATerms } from "@/lib/legal/instructorAgreementTerms";
 import type { JourneyActionState } from "@/app/admin/organization/onboarding/[onboardingId]/journeyActions";
 import {
-  activateTemplateAction, addSignatoryAction, approveForIssueAction, attestApprovalAction, confirmEntityAction, issueAgreementAction, prepareAgreementAction, registerMasterAction, saveScheduleAAction, selectSignatoryAction,
+  activateTemplateAction, addSignatoryAction, uploadEvidenceAction, approveForIssueAction, attestApprovalAction, confirmEntityAction, issueAgreementAction, prepareAgreementAction, registerMasterAction, saveScheduleAAction, selectSignatoryAction,
 } from "@/app/admin/organization/onboarding/[onboardingId]/journeyActions";
 
 // Embedded forms of the guided onboarding workspace. They carry no authority of their own: each submits to a server action that re-checks
@@ -104,22 +104,51 @@ export function ConfirmEntityForm({ onboardingId, candidates, recordedEntityId }
   );
 }
 
+const UPLOAD_TYPES = [{ value: "commercial_registration", label: "Business / commercial registration certificate" }, { value: "articles_of_association", label: "Articles / constitutional document" }, { value: "other", label: "Other official document (for example a letter or resolution authorising the signatory)" }];
+
+export function UploadEvidenceForm({ onboardingId, entity, legacyRecords }: { onboardingId: string; entity: { id: string; name: string }; legacyRecords: { id: string; label: string }[] }) {
+  const [state, action, pending] = useActionState<JourneyActionState, FormData>(uploadEvidenceAction, null);
+  return (
+    <Box title={`Upload evidence to ${entity.name}'s document vault`}>
+      <p className="font-sans text-caption text-ordift-ink-muted">Stored in the entity&apos;s existing vault with a SHA-256 fingerprint; nothing already there is overwritten or deleted. Upload the document that shows who may sign for this entity. If a registration certificate does not itself state signing authority, also upload the document that does (for example an authorising letter or resolution). Files are limited by the vault (PDF, JPEG or PNG, up to 10 MB).</p>
+      <form action={action} className="space-y-3" encType="multipart/form-data">
+        <input type="hidden" name="onboardingId" value={onboardingId} /><input type="hidden" name="entityId" value={entity.id} />
+        <div><label className={label} htmlFor="ev-type">What is this document?</label><select id="ev-type" name="documentType" required className={input} defaultValue=""><option value="" disabled>Choose…</option>{UPLOAD_TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}</select></div>
+        <div><label className={label} htmlFor="ev-file">File</label><input id="ev-file" name="file" type="file" required accept="application/pdf,image/jpeg,image/png" className={input} /></div>
+        <div><label className={label} htmlFor="ev-notes">What it is and what it shows (required)</label><textarea id="ev-notes" name="notes" required rows={2} className={input} /></div>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <div><label className={label} htmlFor="ev-issued">Issued on (optional)</label><input id="ev-issued" name="issuedOn" type="date" className={input} /></div>
+          <div><label className={label} htmlFor="ev-auth">Issuing authority (optional)</label><input id="ev-auth" name="issuingAuthority" className={input} /></div>
+        </div>
+        {legacyRecords.length > 0 && (
+          <div><label className={label} htmlFor="ev-replaces">This file replaces an older record that has no verifiable file (the older record is kept)</label>
+            <select id="ev-replaces" name="replaces" className={input} defaultValue=""><option value="">No — this is a new document</option>{legacyRecords.map((r) => <option key={r.id} value={r.id}>{r.label}</option>)}</select></div>
+        )}
+        <button className={button} disabled={pending}>{pending ? "Uploading…" : "Upload to the vault"}</button>
+        <Result state={state} />
+      </form>
+    </Box>
+  );
+}
+
 export function AddSignatoryForm({ onboardingId, entity, documents, founder }: { onboardingId: string; entity: { id: string; name: string }; documents: { id: string; label: string }[]; founder: { profileId: string; name: string; memberNumber: string | null } | null }) {
   const [state, action, pending] = useActionState<JourneyActionState, FormData>(addSignatoryAction, null);
   return (
     <Box title={`Record an authorised signatory for ${entity.name}`}>
-      <p className="font-sans text-caption text-ordift-ink-muted">Copy the name, position and authority exactly as the supporting document states them. Nothing is pre-filled as fact: ownership alone does not establish signing authority.</p>
+      <p className="font-sans text-caption text-ordift-ink-muted">Recorded for THIS entity only: authority recorded for one entity or jurisdiction is never applied to another. The Founder&apos;s name and account are suggested below because you named the Founder as intended signatory, but ownership or the Founder role does not by itself establish signing authority. The position and authority must be copied from the document you select.</p>
+      {documents.length === 0 && <p className="font-sans text-caption text-amber-900">No document with a stored, fingerprinted file exists for this entity yet. Upload it above first.</p>}
       <form action={action} className="space-y-3">
         <input type="hidden" name="onboardingId" value={onboardingId} /><input type="hidden" name="entityId" value={entity.id} />
         <div><label className={label} htmlFor="sigDoc">Supporting document (must have a stored file)</label>
           <select id="sigDoc" name="sourceDocumentId" required className={input} defaultValue=""><option value="" disabled>Choose…</option>{documents.map((d) => <option key={d.id} value={d.id}>{d.label}</option>)}</select></div>
-        <div><label className={label} htmlFor="fullName">Full name</label><input id="fullName" name="fullName" required className={input} defaultValue={founder?.name ?? ""} /></div>
+        <div><label className={label} htmlFor="fullName">Full name (as the document states it)</label><input id="fullName" name="fullName" required className={input} defaultValue={founder?.name ?? ""} /></div>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <div><label className={label} htmlFor="position">Position (as stated)</label><input id="position" name="position" required className={input} /></div>
-          <div><label className={label} htmlFor="authority">Authority (as stated)</label><input id="authority" name="authority" required className={input} /></div>
+          <div><label className={label} htmlFor="authority">Authority basis (as stated)</label><input id="authority" name="authority" required className={input} /></div>
         </div>
+        <div><label className={label} htmlFor="accountMemberNumber">Existing Ordift account to receive the secure signing link (member number)</label><input id="accountMemberNumber" name="accountMemberNumber" className={input} defaultValue={founder?.memberNumber ?? ""} /></div>
         <div><label className={label} htmlFor="effectiveFrom">Effective from (optional)</label><input id="effectiveFrom" name="effectiveFrom" type="date" className={input} /></div>
-        {founder && (<label className="flex items-start gap-2 font-sans text-body-small text-ordift-ink"><input type="checkbox" name="linkFounder" value="yes" className="mt-1" /> This is the Founder ({founder.name}{founder.memberNumber ? `, member ${founder.memberNumber}` : ""}) - link to their verified identity.<input type="hidden" name="founderProfileId" value={founder.profileId} /></label>)}
+        <label className="flex items-start gap-2 font-sans text-body-small text-ordift-ink"><input type="checkbox" name="documentShowsAuthority" value="yes" className="mt-1" /> The selected document itself shows this person&apos;s name, position and authority to sign for {entity.name}.</label>
         <button className={button} disabled={pending}>{pending ? "Recording…" : "Record signatory"}</button>
         <Result state={state} />
       </form>

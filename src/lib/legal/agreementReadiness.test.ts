@@ -19,8 +19,8 @@ describe("OS-LGL-010 as actually recorded is NOT issuable, and nothing is invent
   it("offers the Ghana entity as the candidate but requires confirmation, and never borrows the Qatar signatory", () => {
     expect(by(r, "contracting_entity").detail).toContain("Ordift Studios (Ghana)");
     expect(by(r, "signatory").detail).toContain("No authorised signatory is recorded for Ordift Studios.");
-    expect(by(r, "signatory").detail).toContain("no stored file or fingerprint");
-    expect(by(r, "signatory").actionKey).toBeNull(); // the registration certificate must be uploaded first
+    expect(by(r, "signatory").detail).toContain("no recorded filename or fingerprint");
+    expect(by(r, "signatory").actionKey).toBe("add_signatory"); // upload + record are both offered in the step
     expect(by(r, "signatory").detail).not.toContain("Myredlive");
     expect(r.context.entity?.name).toBe("Ordift Studios");
     expect(r.context.candidates.map((c) => c.jurisdiction)).toEqual(["Ghana"]);
