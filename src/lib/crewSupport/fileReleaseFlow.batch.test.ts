@@ -317,3 +317,25 @@ describe("four-account mapping: two registered Founder-controlled logins are bot
     expect(r.ok && r.outcomes[0].ok).toBe(true);
   });
 });
+
+describe("re-designating the Founder identity does not release the registered logins (mirrors private.fsr_group)", () => {
+  it("both logins registered against the OLD identity row stay non-independent after the Founder is designated again", async () => {
+    db.project_files = [file("a")];
+    db.founder_identities = [
+      { id: "fi-old", profile_id: PHOTOGRAPHER, status: "revoked" },
+      { id: "fi-new", profile_id: PHOTOGRAPHER, status: "active" },
+    ];
+    db.founder_common_control_accounts = [
+      { id: "cc-1", founder_identity_id: "fi-old", profile_id: "second-login", revoked_at: null },
+      { id: "cc-2", founder_identity_id: "fi-old", profile_id: "additional-login", revoked_at: null },
+    ];
+    for (const login of ["second-login", "additional-login"]) {
+      const r = await reviewFilesForRelease({ fileIds: ["a"], user: user(login), action: "approve" });
+      expect(r.ok && r.outcomes[0].error).toMatch(/common control/);
+    }
+    expect(writes).toHaveLength(0);
+    // a person who was never registered is still independent
+    const ok = await reviewFilesForRelease({ fileIds: ["a"], user: user("ct0001-separate-person"), action: "approve" });
+    expect(ok.ok && ok.outcomes[0].ok).toBe(true);
+  });
+});

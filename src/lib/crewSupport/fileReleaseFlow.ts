@@ -71,13 +71,14 @@ async function linkedLoginConflict(reviewerId: string, performers: (string | nul
   return clash ? LINKED_LOGIN_MESSAGE : null;
 }
 
-// profile id -> Founder identity id, for the Founder and any login registered under the Founder's common control.
+// profile id -> the FOUNDER's profile id, for the Founder and any login registered under the Founder's common control. Keyed on the
+// Founder's profile (not on an identity row) exactly like private.fsr_group, so re-designating the Founder identity can never
+// separate the Founder from the registered logins (found by the three-account PostgreSQL rehearsal).
 async function foundersGroupOf(profileIds: string[]): Promise<Map<string, string> | "not-installed" | "unknown"> {
   const admin = createAdminClient();
   const ids = [...new Set(profileIds)];
   const [founders, linked] = await Promise.all([
-    // NOT limited to an active identity: revoking the exception or the identity must never make the second login "independent"
-    // again (mirrors private.fsr_group in migration 0167, found by the PostgreSQL rehearsal).
+    // NOT limited to an active identity: revoking the exception or the identity must never make a registered login "independent" again
     admin.from("founder_identities").select("id, profile_id").in("profile_id", ids),
     admin.from("founder_common_control_accounts").select("founder_identity_id, profile_id").is("revoked_at", null).in("profile_id", ids),
   ]);
@@ -85,14 +86,19 @@ async function foundersGroupOf(profileIds: string[]): Promise<Map<string, string
     if (r.error) return isMissingRelation(r.error) ? "not-installed" : "unknown";
   }
   const out = new Map<string, string>();
-  for (const f of founders.data ?? []) out.set(f.profile_id as string, f.id as string);
+  for (const f of founders.data ?? []) out.set(f.profile_id as string, f.profile_id as string);
   if ((linked.data ?? []).length > 0) {
-    // a linked login belongs to its Founder identity's group (whatever that identity's status is)
+    // a registered login belongs to the group of the Founder PROFILE its identity row names (whatever that row's status is)
     const { data: all, error } = await admin.from("founder_identities").select("id, profile_id");
     if (error) return isMissingRelation(error) ? "not-installed" : "unknown";
-    for (const l of linked.data ?? []) out.set(l.profile_id as string, l.founder_identity_id as string);
+    const profileOf = new Map((all ?? []).map((a) => [a.id as string, a.profile_id as string]));
+    for (const l of linked.data ?? []) {
+      const founderProfile = profileOf.get(l.founder_identity_id as string);
+      if (!founderProfile) return "unknown"; // a registration whose identity cannot be read: fail closed
+      out.set(l.profile_id as string, founderProfile);
+    }
     // a performer who IS the Founder must be in the map too (it may not have been in the ids queried above)
-    for (const a of all ?? []) if (ids.includes(a.profile_id as string)) out.set(a.profile_id as string, a.id as string);
+    for (const a of all ?? []) if (ids.includes(a.profile_id as string)) out.set(a.profile_id as string, a.profile_id as string);
   }
   return out;
 }
