@@ -83,6 +83,9 @@ export default async function AdminEnquiriesPage({
             Enquiries
           </h1>
           <p className="font-sans text-body-small text-ordift-ink-muted mt-2">{enquiries.length} shown</p>
+          <Link href="/admin/enquiries/quick-price" className="mt-3 mr-2 inline-block font-sans text-body-small font-semibold px-4 py-2 rounded-md bg-ordift-ink text-white">
+            Enquiries &amp; Quick Pricing →
+          </Link>
           <Link href="/admin/enquiries/new" className="mt-3 inline-block font-sans text-body-small font-semibold px-4 py-2 rounded-md border border-black/15 text-ordift-ink">
             Record an enquiry (WhatsApp, call, email, in person) →
           </Link>
