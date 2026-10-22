@@ -16,6 +16,9 @@ import { listEmployerCapableEmployingEntities } from "@/lib/organization/legalEn
 import { getEmployeeEmploymentAgreementSummary, checkEmployeeAgreementReadiness } from "@/lib/legal/employeeAgreements";
 import { resolveOnboardingRelationship, onboardingCopy, onboardingWorkspaceHref } from "@/lib/organization/onboardingRelationship";
 import { OnboardingWorkspace } from "./OnboardingWorkspace";
+import OnboardingJourneyPanel from "@/components/admin/OnboardingJourneyPanel";
+import { buildJourney } from "@/lib/organization/onboardingJourney";
+import { loadAgreementReadiness } from "@/lib/legal/agreementReadinessData";
 
 export const metadata: Metadata = {
   title: "Onboarding — Ordift Studios Admin",
@@ -127,6 +130,32 @@ export default async function OnboardingWorkspacePage({ params }: { params: Prom
       ? await Promise.all([listEmploymentTermsHistory(onboarding.profileId), listEmployerCapableEmployingEntities(), listEmploymentJurisdictions()])
       : [[], [], []];
 
+  // Guided journey (external contributors only; read-only). Instructors are the only engagement type whose onboarding currently gates on a
+  // controlled agreement, so legal readiness is assessed for OS-LGL-010 only; no contracting entity is ever assumed (none is recorded yet).
+  const isInstructor = person?.engagementTypeSlug === "instructor";
+  const journeyAgreement =
+    onboarding.pipeline === "external_contractor" && isInstructor
+      ? await loadAgreementReadiness({ canonicalCode: "OS-LGL-010", jurisdictionName: employmentContext?.employmentJurisdictionName ?? null, confirmedEntityId: null })
+      : null;
+  const journey =
+    onboarding.pipeline === "external_contractor"
+      ? buildJourney({
+          pipeline: onboarding.pipeline,
+          stages: pipelineStages,
+          stage: onboarding.stage,
+          status: onboarding.status,
+          personName: person?.fullName ?? null,
+          engagementTypeLabel: person?.engagementTypeName ?? null,
+          isInstructor,
+          requirements: requirements.map((r) => ({ requirementKey: r.requirementKey, stage: r.stage, requirementType: r.requirementType, label: r.label, required: r.required, status: r.status })),
+          hasPaymentDetails: paymentInstructions.length > 0,
+          engagementCount: 0,
+          agreement: journeyAgreement,
+          agreementsHref: "/admin/legal",
+          legalHref: "/admin/legal",
+        })
+      : null;
+
   return (
     <div className="space-y-8">
       <div>
@@ -148,6 +177,8 @@ export default async function OnboardingWorkspacePage({ params }: { params: Prom
           )}
         </p>
       </div>
+
+      {journey && <OnboardingJourneyPanel roadmap={journey.roadmap} next={journey.next} agreement={journeyAgreement} personName={person?.fullName ?? null} />}
 
       <section className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="rounded-xl border border-black/10 bg-white p-6 space-y-2">
