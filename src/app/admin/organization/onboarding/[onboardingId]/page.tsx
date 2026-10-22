@@ -19,6 +19,11 @@ import { OnboardingWorkspace } from "./OnboardingWorkspace";
 import OnboardingJourneyPanel from "@/components/admin/OnboardingJourneyPanel";
 import { buildInstructorWorkspace } from "@/lib/organization/instructorWorkspace";
 import { getCurrentInstructorAgreement, resolveOnboardingLegalContext } from "@/lib/legal/instructorAgreements";
+import { loadInstructorSigningProgress, previewInstructorAgreement } from "@/lib/legal/instructorAgreementIssuance";
+import { instructorAgreementStage } from "@/lib/legal/instructorAgreementDocument";
+import { missingScheduleATerms } from "@/lib/legal/instructorAgreementTerms";
+import type { AgreementPanelData } from "@/components/admin/OnboardingJourneyPanel";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { listControlledPolicyDocuments, listPolicyAcknowledgementsForProfile } from "@/lib/organization/policyAcknowledgements";
 import { loadAgreementReadiness } from "@/lib/legal/agreementReadinessData";
 
@@ -163,10 +168,28 @@ export default async function OnboardingWorkspacePage({ params }: { params: Prom
             policies,
             requirements: requirements.map((r) => ({ requirementKey: r.requirementKey, stage: r.stage, requirementType: r.requirementType, label: r.label, required: r.required, status: r.status })),
             agreement,
-            draftAgreement: draft ? { id: draft.id, reference: draft.agreementReference, status: draft.status } : null,
+            draftAgreement: draft ? { id: draft.id, reference: draft.agreementReference, status: draft.status, stageLabel: instructorAgreementStage(draft.status, draft.evidenceClassification).label } : null,
             paymentInstructionCount: paymentInstructions.length,
           });
-          return { ...ws, agreement };
+          let agreementPanel: AgreementPanelData | null = null;
+          if (draft) {
+            const admin = createAdminClient();
+            const [{ data: snap }, { data: ag }, signing] = await Promise.all([
+              admin.from("agreement_snapshots").select("snapshot_data").eq("agreement_id", draft.id).order("created_at", { ascending: false }).limit(1).maybeSingle(),
+              admin.from("agreements").select("issued_document_sha256").eq("id", draft.id).maybeSingle(),
+              loadInstructorSigningProgress(draft.id),
+            ]);
+            const terms = ((snap?.snapshot_data as { scheduleA?: Record<string, string> } | null)?.scheduleA ?? {}) as AgreementPanelData["terms"];
+            const missingTerms = missingScheduleATerms(terms);
+            const unissued = ["draft", "internal_review", "approved_for_issue"].includes(draft.status);
+            const preview = unissued && missingTerms.length === 0 ? await previewInstructorAgreement(onboarding.id, draft.id) : null;
+            agreementPanel = {
+              id: draft.id, reference: draft.agreementReference, status: draft.status, stage: instructorAgreementStage(draft.status, draft.evidenceClassification, signing.map((g) => ({ status: g.status, linkExpiresAt: g.linkExpiresAt }))), terms, missingTerms,
+              preview: preview && preview.ok ? { text: preview.text, sha256: preview.sha256 } : null, previewError: preview && !preview.ok ? preview.error : null,
+              issuedSha256: (ag?.issued_document_sha256 as string | null) ?? null, signing,
+            };
+          }
+          return { ...ws, agreement, agreementPanel };
         })()
       : null;
 
@@ -200,6 +223,7 @@ export default async function OnboardingWorkspacePage({ params }: { params: Prom
           returnPath={`/admin/organization/onboarding/${onboarding.id}`}
           onboardingId={onboarding.id}
           agreement={instructorWorkspace.agreement}
+          agreementPanel={instructorWorkspace.agreementPanel}
           today={new Date().toISOString().slice(0, 10)}
         />
       )}

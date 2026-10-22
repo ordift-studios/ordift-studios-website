@@ -17,7 +17,7 @@ export type InstructorWorkspaceFacts = {
   policies: { registered: number; acknowledged: number };
   requirements: { requirementKey: string; stage: string; requirementType: string; label: string; required: boolean; status: string }[];
   agreement: AgreementReadiness | null;
-  draftAgreement: { id: string; reference: string; status: string } | null;
+  draftAgreement: { id: string; reference: string; status: string; stageLabel: string } | null;
   paymentInstructionCount: number;
 };
 
@@ -75,9 +75,9 @@ export function buildInstructorWorkspace(f: InstructorWorkspaceFacts): { steps: 
   const allLegal = f.agreement?.canIssue ?? false;
   const blockedBy = (f.agreement?.unresolved ?? []).map((c) => c.label);
   raw.push({ key: "agreement", title: "Prepare, issue and sign the agreement", owner: "Ordift staff, then the person", purpose: "Prepare the Instructor Agreement from the verified information, review it, issue it for signature and record the signatures.",
-    known: f.draftAgreement ? [`Draft ${f.draftAgreement.reference} (status: ${f.draftAgreement.status})`] : [], missing: executed ? [] : f.draftAgreement ? ["Not yet issued and signed"] : ["No agreement has been prepared"],
+    known: f.draftAgreement ? [`Agreement ${f.draftAgreement.reference}: ${f.draftAgreement.stageLabel}`] : [], missing: executed ? [] : f.draftAgreement ? ["A genuinely executed agreement (both signatures)"] : ["No agreement has been prepared"],
     state: executed ? "completed" : !allLegal ? "blocked" : "pending", blocker: !executed && !allLegal ? `Waiting for: ${blockedBy.join("; ")}.` : null,
-    action: f.draftAgreement ? { kind: "link", href: `/admin/organization/agreements/${f.draftAgreement.id}`, label: "Open the agreement" } : allLegal && !executed ? { kind: "embedded", label: "Prepare below" } : null, checks: [], forms: allLegal && !f.draftAgreement && !executed ? ["prepare_agreement"] : [] });
+    action: f.draftAgreement || (allLegal && !executed) ? { kind: "embedded", label: f.draftAgreement ? "Continue below" : "Prepare below" } : null, checks: [], forms: allLegal && !f.draftAgreement && !executed ? ["prepare_agreement"] : [] });
 
   const payOk = reqDone("instructor_payment_setup_completed");
   raw.push({ key: "payment", title: "Payment profile", owner: "Finance", purpose: "Payout details are added and verified by Finance. Each payment is still approved separately.",

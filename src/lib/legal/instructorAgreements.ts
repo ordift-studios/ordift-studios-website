@@ -92,6 +92,7 @@ export async function prepareInstructorAgreementDraft(params: {
     agreementId: draft.agreementId, sourceReference: `staff_onboarding:${params.onboardingId}`, actorUserId: params.actorUserId,
     snapshotData: {
       agreementReference: draft.agreementReference,
+      onboardingId: params.onboardingId,
       jurisdiction: ctx.jurisdictionName,
       instructor: { profileId: ctx.profileId, legalName: profile?.full_name ?? null, memberNumber: profile?.member_number ?? null, email: authUser.data.user?.email ?? null },
       contractingEntity: { id: entity.id, name: entity.name, legalName: entity.legal_name, registrationType: entity.registration_type, registrationDate: entity.registration_date },

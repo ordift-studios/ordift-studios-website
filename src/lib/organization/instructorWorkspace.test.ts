@@ -81,11 +81,12 @@ describe("Kwaku's workspace, top to bottom", () => {
 });
 
 describe("later states", () => {
-  it("once every legal prerequisite is verified the agreement step offers to prepare the draft; a draft links to the agreement page", () => {
+  it("once every legal prerequisite is verified the agreement step offers to prepare the draft; a draft continues in the same workspace", () => {
     const ready = { ...assessAgreementReadiness(recorded), canIssue: true, unresolved: [] };
     expect(buildInstructorWorkspace(facts({ agreement: ready })).steps.find((s) => s.key === "agreement")).toMatchObject({ state: "pending", forms: ["prepare_agreement"] });
-    const withDraft = buildInstructorWorkspace(facts({ agreement: ready, draftAgreement: { id: "agr1", reference: "ORD-AGR-2026-000099", status: "draft" } })).steps.find((s) => s.key === "agreement")!;
-    expect(withDraft.action).toEqual({ kind: "link", href: "/admin/organization/agreements/agr1", label: "Open the agreement" });
+    const withDraft = buildInstructorWorkspace(facts({ agreement: ready, draftAgreement: { id: "agr1", reference: "ORD-AGR-2026-000099", status: "draft", stageLabel: "Draft" } })).steps.find((s) => s.key === "agreement")!;
+    expect(withDraft.action).toEqual({ kind: "embedded", label: "Continue below" });
+    expect(withDraft.known).toEqual(["Agreement ORD-AGR-2026-000099: Draft"]);
     expect(withDraft.forms).toEqual([]);
   });
   it("an executed agreement completes the agreement and eligibility steps", () => {

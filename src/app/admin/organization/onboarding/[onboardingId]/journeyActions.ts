@@ -7,6 +7,8 @@ import { attestHistoricalApproval, registerControlledMaster, activateMasterVersi
 import { confirmContractingEntity, selectAgreementSignatory } from "@/lib/organization/onboardingDecisions";
 import { addEntitySignatory } from "@/lib/organization/entityRegistrations";
 import { prepareInstructorAgreementDraft, resolveOnboardingLegalContext } from "@/lib/legal/instructorAgreements";
+import { approveInstructorAgreementForIssue, issueInstructorAgreement, saveInstructorScheduleA } from "@/lib/legal/instructorAgreementIssuance";
+import { SCHEDULE_A_FIELDS, type ScheduleATerms } from "@/lib/legal/instructorAgreementTerms";
 
 // Embedded actions of the guided onboarding workspace. Each is a thin wrapper: it checks that the caller may manage onboarding, then calls
 // the existing authoritative function, which independently re-checks its own authority (contract administration / Super Admin) and writes
@@ -88,4 +90,32 @@ export async function prepareAgreementAction(_p: JourneyActionState, d: FormData
   if ("error" in a) return { ok: false, error: a.error };
   const r = await prepareInstructorAgreementDraft({ onboardingId, actorUserId: a.id });
   return r.ok ? done(onboardingId, `Draft ${r.agreementReference} prepared. Nothing has been issued or sent.`) : fail({ error: r.error, errors: r.unresolved });
+}
+
+export async function saveScheduleAAction(_p: JourneyActionState, d: FormData): Promise<JourneyActionState> {
+  const onboardingId = f(d, "onboardingId");
+  const a = await actor(onboardingId);
+  if ("error" in a) return { ok: false, error: a.error };
+  const terms: Partial<ScheduleATerms> = {};
+  for (const field of SCHEDULE_A_FIELDS) terms[field.key] = f(d, field.key);
+  const r = await saveInstructorScheduleA({ onboardingId, agreementId: f(d, "agreementId"), terms, actorUserId: a.id });
+  return r.ok ? done(onboardingId, "Agreement terms saved. Review the preview below.") : fail(r);
+}
+
+export async function approveForIssueAction(_p: JourneyActionState, d: FormData): Promise<JourneyActionState> {
+  const onboardingId = f(d, "onboardingId");
+  const a = await actor(onboardingId);
+  if ("error" in a) return { ok: false, error: a.error };
+  if (d.get("confirmPreview") !== "yes") return { ok: false, error: "Tick the confirmation that you have reviewed the full preview." };
+  const r = await approveInstructorAgreementForIssue({ onboardingId, agreementId: f(d, "agreementId"), actorUserId: a.id });
+  return r.ok ? done(onboardingId, "Approved for issue. Nothing has been sent yet.") : fail(r);
+}
+
+export async function issueAgreementAction(_p: JourneyActionState, d: FormData): Promise<JourneyActionState> {
+  const onboardingId = f(d, "onboardingId");
+  const a = await actor(onboardingId);
+  if ("error" in a) return { ok: false, error: a.error };
+  if (d.get("confirmIssue") !== "yes") return { ok: false, error: "Tick the confirmation to issue: secure signing links will be emailed to both signatories." };
+  const r = await issueInstructorAgreement({ onboardingId, agreementId: f(d, "agreementId"), actorUserId: a.id });
+  return r.ok ? done(onboardingId, "Issued. Secure signing links were sent to both signatories.") : fail({ error: `${r.error} (step: ${r.step.replace(/_/g, " ")}). Nothing is marked executed; you can retry.` });
 }

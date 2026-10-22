@@ -2,7 +2,10 @@ import Link from "next/link";
 import type { ReadinessCheck, AgreementReadiness } from "@/lib/legal/agreementReadiness";
 import type { InstructorStep } from "@/lib/organization/instructorWorkspace";
 import type { StepState, WorkspaceSummary } from "@/lib/workspace/processWorkspace";
-import { ActivateForm, AddSignatoryForm, AttestApprovalForm, ConfirmEntityForm, PrepareAgreementForm, RegisterMasterForm, SelectSignatoryForm } from "./OnboardingJourneyForms";
+import { ActivateForm, AddSignatoryForm, ApproveForIssueForm, AttestApprovalForm, ConfirmEntityForm, IssueAgreementForm, PrepareAgreementForm, RegisterMasterForm, ScheduleAForm, SelectSignatoryForm } from "./OnboardingJourneyForms";
+import type { AgreementStage } from "@/lib/legal/instructorAgreementDocument";
+import type { ScheduleATerms } from "@/lib/legal/instructorAgreementTerms";
+import type { SigningProgress } from "@/lib/legal/instructorAgreementIssuance";
 
 // One guided workspace for one onboarding, top to bottom. Display plus embedded forms: every control submits to a server action that
 // re-checks authority and calls the existing authoritative function. HR, Legal and Finance remain the systems of record; steps that rely on
@@ -56,8 +59,57 @@ function Form({ kind, onboardingId, agreement, today, steps }: { kind: string; o
   }
 }
 
-export default function OnboardingJourneyPanel({ steps, summary, personName, returnPath, onboardingId, agreement, today }: {
-  steps: InstructorStep[]; summary: WorkspaceSummary; personName: string | null; returnPath: string; onboardingId: string; agreement: AgreementReadiness | null; today: string;
+export type AgreementPanelData = {
+  id: string; reference: string; status: string; stage: AgreementStage; terms: Partial<ScheduleATerms>; missingTerms: string[];
+  preview: { text: string; sha256: string } | null; previewError: string | null; issuedSha256: string | null; signing: SigningProgress;
+};
+const TONE: Record<AgreementStage["tone"], string> = { neutral: "bg-black/5 text-ordift-ink", pending: "bg-amber-100 text-amber-900", good: "bg-green-100 text-green-900", bad: "bg-red-100 text-red-900" };
+
+function AgreementPanel({ data, onboardingId, today }: { data: AgreementPanelData; onboardingId: string; today: string }) {
+  const editable = data.status === "draft";
+  const canApprove = ["draft", "internal_review"].includes(data.status) && data.missingTerms.length === 0 && data.preview;
+  return (
+    <div className="rounded-lg border border-black/10 p-4 space-y-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <p className="font-sans text-body-small font-medium text-ordift-ink">Agreement {data.reference}</p>
+        <span className={`rounded-full px-3 py-1 font-sans text-caption font-medium ${TONE[data.stage.tone]}`}>{data.stage.label}</span>
+      </div>
+      <p className="font-sans text-caption text-ordift-ink-muted">Only a document signed by both parties counts as executed. A draft, an issued document, a partial signature or a test signature never does, and executing the agreement does not by itself assign a workshop.</p>
+      {data.issuedSha256 && <p className="font-sans text-caption text-ordift-ink-muted">Issued document SHA-256: <span className="font-mono break-all">{data.issuedSha256}</span></p>}
+
+      {editable && <ScheduleAForm onboardingId={onboardingId} agreementId={data.id} terms={data.terms} today={today} />}
+      {data.missingTerms.length > 0 && editable && <p className="font-sans text-caption text-amber-900">Still required before preview: {data.missingTerms.join("; ")}.</p>}
+
+      {data.preview ? (
+        <details className="rounded-md border border-black/10 bg-ordift-offwhite p-3" open={editable || data.status === "internal_review" || data.status === "approved_for_issue"}>
+          <summary className="cursor-pointer font-sans text-body-small font-medium text-ordift-ink">Full document preview (SHA-256 {data.preview.sha256.slice(0, 16)}…) — not issued</summary>
+          <pre className="mt-3 max-h-[32rem] overflow-auto whitespace-pre-wrap font-mono text-caption text-ordift-ink">{data.preview.text}</pre>
+        </details>
+      ) : data.previewError ? <p className="font-sans text-caption text-red-800">Preview unavailable: {data.previewError}</p> : null}
+
+      {canApprove && data.preview && <ApproveForIssueForm onboardingId={onboardingId} agreementId={data.id} previewSha256={data.preview.sha256} />}
+      {data.status === "approved_for_issue" && <IssueAgreementForm onboardingId={onboardingId} agreementId={data.id} />}
+
+      {data.signing.length > 0 && (
+        <table className="w-full text-left font-sans text-caption">
+          <thead className="text-ordift-ink-muted"><tr><th className="py-1 pr-3">Signatory</th><th className="py-1 pr-3">Status</th><th className="py-1 pr-3">Signed</th><th className="py-1 pr-3">Link expires</th><th className="py-1">Evidence</th></tr></thead>
+          <tbody className="text-ordift-ink">
+            {data.signing.map((g) => (
+              <tr key={g.role} className="border-t border-black/5">
+                <td className="py-1 pr-3">{g.role === "ordift" ? "Ordift" : "Instructor"}</td><td className="py-1 pr-3">{g.status.replace(/_/g, " ")}</td>
+                <td className="py-1 pr-3">{g.signedAt ? g.signedAt.slice(0, 16).replace("T", " ") : "—"}</td><td className="py-1 pr-3">{g.linkExpiresAt ? g.linkExpiresAt.slice(0, 10) : "—"}</td>
+                <td className="py-1 font-mono">{g.evidenceSha256 ? `${g.evidenceSha256.slice(0, 12)}…` : "—"}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </div>
+  );
+}
+
+export default function OnboardingJourneyPanel({ steps, summary, personName, returnPath, onboardingId, agreement, today, agreementPanel }: {
+  steps: InstructorStep[]; summary: WorkspaceSummary; personName: string | null; returnPath: string; onboardingId: string; agreement: AgreementReadiness | null; today: string; agreementPanel?: AgreementPanelData | null;
 }) {
   const current = summary.currentIndex === null ? null : steps[summary.currentIndex];
   return (
@@ -106,6 +158,7 @@ export default function OnboardingJourneyPanel({ steps, summary, personName, ret
                 ))}
               </ul>
             )}
+            {s.key === "agreement" && agreementPanel && <AgreementPanel data={agreementPanel} onboardingId={onboardingId} today={today} />}
             {agreement && s.key === "signatory" && agreement.context.governance.length > 0 && (
               <div className="rounded-lg border border-black/10 p-4">
                 <p className="font-sans text-body-small font-medium text-ordift-ink">Founder governance record{agreement.context.founder ? ` — ${agreement.context.founder.name}${agreement.context.founder.memberNumber ? `, member ${agreement.context.founder.memberNumber}` : ""} (verified identity; one profile for every entity)` : ""}</p>

@@ -1,9 +1,10 @@
 "use client";
 
 import { useActionState } from "react";
+import { SCHEDULE_A_FIELDS, INDEPENDENT_STATUS_ROUTES, PROFESSIONAL_ROLES, REGULATORY_APPROVAL_STATUSES, type ScheduleATerms } from "@/lib/legal/instructorAgreementTerms";
 import type { JourneyActionState } from "@/app/admin/organization/onboarding/[onboardingId]/journeyActions";
 import {
-  activateTemplateAction, addSignatoryAction, attestApprovalAction, confirmEntityAction, prepareAgreementAction, registerMasterAction, selectSignatoryAction,
+  activateTemplateAction, addSignatoryAction, approveForIssueAction, attestApprovalAction, confirmEntityAction, issueAgreementAction, prepareAgreementAction, registerMasterAction, saveScheduleAAction, selectSignatoryAction,
 } from "@/app/admin/organization/onboarding/[onboardingId]/journeyActions";
 
 // Embedded forms of the guided onboarding workspace. They carry no authority of their own: each submits to a server action that re-checks
@@ -146,6 +147,64 @@ export function PrepareAgreementForm({ onboardingId, code }: { onboardingId: str
     <Box title={`Prepare the ${code} agreement`}>
       <p className="font-sans text-caption text-ordift-ink-muted">Creates a DRAFT from the verified profile, entity, signatory and template. It is not issued, sent or signed, and the session and fee schedules are completed per workshop.</p>
       <form action={action}><input type="hidden" name="onboardingId" value={onboardingId} /><button className={button} disabled={pending}>{pending ? "Preparing…" : "Prepare draft agreement"}</button><Result state={state} /></form>
+    </Box>
+  );
+}
+
+const CHOICES: Partial<Record<keyof ScheduleATerms, readonly string[]>> = { professionalRole: PROFESSIONAL_ROLES, independentStatusRoute: INDEPENDENT_STATUS_ROUTES, regulatoryApprovalStatus: REGULATORY_APPROVAL_STATUSES };
+
+export function ScheduleAForm({ onboardingId, agreementId, terms, today }: { onboardingId: string; agreementId: string; terms: Partial<ScheduleATerms>; today: string }) {
+  const [state, action, pending] = useActionState<JourneyActionState, FormData>(saveScheduleAAction, null);
+  return (
+    <Box title="Agreement terms (Schedule A) — stated by you, not guessed">
+      <p className="font-sans text-caption text-ordift-ink-muted">The instructor&apos;s name, email, the Ghana jurisdiction, the contracting entity and the signatory are filled in from verified records. The terms below have no verified source, so they must be stated here. Session fees, dates and topics are not part of this agreement: each workshop gets its own Session Schedule.</p>
+      <form action={action} className="space-y-3">
+        <input type="hidden" name="onboardingId" value={onboardingId} /><input type="hidden" name="agreementId" value={agreementId} />
+        {SCHEDULE_A_FIELDS.map((fld) => (
+          <div key={fld.key}>
+            <label className={label} htmlFor={`sa-${fld.key}`}>{fld.label}{fld.required ? " (required)" : " (optional)"} — {fld.hint}</label>
+            {CHOICES[fld.key] ? (
+              <select id={`sa-${fld.key}`} name={fld.key} className={input} defaultValue={terms[fld.key] ?? ""}><option value="">Choose…</option>{CHOICES[fld.key]!.map((c) => <option key={c} value={c}>{c}</option>)}</select>
+            ) : fld.key === "agreementEffectiveDate" ? (
+              <input id={`sa-${fld.key}`} name={fld.key} type="date" min={today} className={input} defaultValue={terms[fld.key] ?? ""} />
+            ) : (
+              <input id={`sa-${fld.key}`} name={fld.key} className={input} defaultValue={terms[fld.key] ?? ""} />
+            )}
+          </div>
+        ))}
+        <button className={button} disabled={pending}>{pending ? "Saving…" : "Save terms"}</button>
+        <Result state={state} />
+      </form>
+    </Box>
+  );
+}
+
+export function ApproveForIssueForm({ onboardingId, agreementId, previewSha256 }: { onboardingId: string; agreementId: string; previewSha256: string }) {
+  const [state, action, pending] = useActionState<JourneyActionState, FormData>(approveForIssueAction, null);
+  return (
+    <Box title="Approve this exact document for issue">
+      <p className="font-sans text-caption text-ordift-ink-muted">Re-checks every legal prerequisite now. Nothing is sent. Preview fingerprint: <span className="font-mono">{previewSha256.slice(0, 16)}…</span></p>
+      <form action={action} className="space-y-3">
+        <input type="hidden" name="onboardingId" value={onboardingId} /><input type="hidden" name="agreementId" value={agreementId} />
+        <label className="flex items-start gap-2 font-sans text-body-small text-ordift-ink"><input type="checkbox" name="confirmPreview" value="yes" className="mt-1" /> I have reviewed the full preview above.</label>
+        <button className={button} disabled={pending}>{pending ? "Approving…" : "Approve for issue"}</button>
+        <Result state={state} />
+      </form>
+    </Box>
+  );
+}
+
+export function IssueAgreementForm({ onboardingId, agreementId }: { onboardingId: string; agreementId: string }) {
+  const [state, action, pending] = useActionState<JourneyActionState, FormData>(issueAgreementAction, null);
+  return (
+    <Box title="Issue for signature">
+      <p className="font-sans text-caption text-ordift-ink-muted">Stores the immutable document with its SHA-256, then emails each signatory a secure, expiring link to review and sign. The agreement counts as executed only when both have signed.</p>
+      <form action={action} className="space-y-3">
+        <input type="hidden" name="onboardingId" value={onboardingId} /><input type="hidden" name="agreementId" value={agreementId} />
+        <label className="flex items-start gap-2 font-sans text-body-small text-ordift-ink"><input type="checkbox" name="confirmIssue" value="yes" className="mt-1" /> I confirm secure signing links should be emailed now.</label>
+        <button className={button} disabled={pending}>{pending ? "Issuing…" : "Issue for signature"}</button>
+        <Result state={state} />
+      </form>
     </Box>
   );
 }

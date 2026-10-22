@@ -27,13 +27,13 @@ async function requireAuthority(actorUserId: string): Promise<{ ok: true } | { o
 const sha256 = (b: Uint8Array) => createHash("sha256").update(b).digest("hex");
 const today = () => new Date().toISOString().slice(0, 10);
 
-type VersionRow = {
+export type VersionRow = {
   id: string; master_id: string; status: string; approved_by: string | null; approved_at: string | null; effective_date: string | null; content_reference: string | null;
   document_hash: string | null; master_docx_storage_path: string | null; master_docx_sha256: string | null; master_pdf_storage_path: string | null; master_pdf_sha256: string | null; created_at: string;
 };
 const VERSION_COLS = "id, master_id, status, approved_by, approved_at, effective_date, content_reference, document_hash, master_docx_storage_path, master_docx_sha256, master_pdf_storage_path, master_pdf_sha256, created_at";
 
-async function loadVersion(versionId: string): Promise<{ v: VersionRow; code: string } | null> {
+export async function loadVersion(versionId: string): Promise<{ v: VersionRow; code: string } | null> {
   const admin = createAdminClient();
   const { data: v } = await admin.from("legal_document_versions").select(VERSION_COLS).eq("id", versionId).maybeSingle();
   if (!v) return null;
@@ -99,7 +99,7 @@ export async function attestHistoricalApproval(params: { versionId: string; inpu
 
 // Re-reads the stored master from the private bucket and checks it against what the registry recorded at ingestion. Used both when the master
 // is registered and again at activation, so the template that goes live is the actual approved file, byte for byte.
-async function verifyStoredMasterIntegrity(v: VersionRow): Promise<{ ok: true; markers: number; docxSha256: string; pdfSha256: string } | { ok: false; error: string }> {
+export async function verifyStoredMasterIntegrity(v: VersionRow): Promise<{ ok: true; markers: number; docxSha256: string; pdfSha256: string; text: string } | { ok: false; error: string }> {
   if (!v.master_docx_storage_path || !v.master_docx_sha256 || !v.master_pdf_storage_path || !v.master_pdf_sha256) return { ok: false, error: "The stored master files or their checksums are not recorded." };
   const admin = createAdminClient();
   const [docx, pdf] = await Promise.all([admin.storage.from(BUCKET).download(v.master_docx_storage_path), admin.storage.from(BUCKET).download(v.master_pdf_storage_path)]);
@@ -110,7 +110,7 @@ async function verifyStoredMasterIntegrity(v: VersionRow): Promise<{ ok: true; m
   if (!check.ok) return { ok: false, error: `HARD STOP: the stored ${check.mismatched.join(" and ")} master no longer matches its recorded checksum.` };
   const text = extractDocxText(docxBytes);
   if (text === null) return { ok: false, error: "The stored Word master could not be read for the clause check." };
-  return { ok: true, markers: findUnresolvedReviewMarkers(text).length, docxSha256: sha256(docxBytes), pdfSha256: sha256(pdfBytes) };
+  return { ok: true, markers: findUnresolvedReviewMarkers(text).length, docxSha256: sha256(docxBytes), pdfSha256: sha256(pdfBytes), text };
 }
 
 // ------------------------------------------------------------------ 2. register the controlled master
