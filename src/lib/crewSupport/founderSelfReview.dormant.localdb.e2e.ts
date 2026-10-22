@@ -6,11 +6,8 @@
 // Staging or Production: the URL must be localhost.
 import { beforeAll, describe, expect, it, vi } from "vitest";
 import { execSync } from "node:child_process";
-import { createHmac } from "node:crypto";
-import { readFileSync } from "node:fs";
 import { createClient } from "@supabase/supabase-js";
 
-const DIR = process.env.E2E_FSR_DIR ?? "";
 const CONTAINER = process.env.E2E_FSR_CONTAINER ?? "ordift-fsr-rehearsal";
 const DBNAME = process.env.E2E_FSR_DB ?? "t_e2e";
 
@@ -76,13 +73,6 @@ const GOOD = "I am the sole performing photographer on this job and no independe
 
 const db = () => createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SECRET_KEY!, { auth: { persistSession: false }, global: { fetch: h.fetch } });
 const sql = (q: string, role = "postgres") => execSync(`docker exec -i ${CONTAINER} psql -U ${role} -d ${DBNAME} -h 127.0.0.1 -v ON_ERROR_STOP=1 -At`, { input: q }).toString();
-const jwt = (sub: string) => {
-  const b64 = (o: object) => Buffer.from(JSON.stringify(o)).toString("base64url");
-  const head = b64({ alg: "HS256", typ: "JWT" });
-  const body = b64({ role: "authenticated", sub, aud: "authenticated", exp: Math.floor(Date.now() / 1000) + 3600 });
-  return `${head}.${body}.${createHmac("sha256", readFileSync(`${DIR}/jwt_secret`, "utf8").trim()).update(`${head}.${body}`).digest("base64url")}`;
-};
-const asUserDb = (id: string) => createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, jwt(id), { auth: { persistSession: false }, global: { fetch: h.fetch } });
 const as = (id: string | null) => { h.user = id ? { id } : null; };
 const cur = (id: string): CurrentUser => ({ id, email: `${id}@e2e.invalid`, fullName: id, roles: ROLES[id] ?? [], accessStatus: "active" }) as unknown as CurrentUser;
 const must = <T extends { ok: boolean }>(r: T, label = ""): Extract<T, { ok: true }> => { if (!r.ok) throw new Error(`${label} expected ok, got ${JSON.stringify(r)}`); return r as Extract<T, { ok: true }>; };
