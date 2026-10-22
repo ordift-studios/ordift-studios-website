@@ -140,9 +140,19 @@ export async function issueInstructorAgreement(params: { onboardingId: string; a
     requestId = created.signatureRequestId;
   }
 
-  const { data: signatories } = await admin.from("signature_signatories").select("id, role, token_hash, agreement_parties(profile_id)").eq("signature_request_id", requestId);
+  // Per-recipient delivery state (recoverable, idempotent). A recipient whose email was ACCEPTED by the provider is never emailed again and
+  // keeps their valid link. A recipient whose email failed or was ambiguous (error/timeout) gets exactly one fresh link on retry, which
+  // replaces any earlier link, so at most one link per signatory is ever valid. Acceptance by the provider is not proof of receipt.
+  const { data: signatories } = await admin.from("signature_signatories").select("id, role, status, agreement_parties(profile_id)").eq("signature_request_id", requestId);
+  const sigIds = (signatories ?? []).map((s) => s.id as string);
+  const { data: acceptedRows } = sigIds.length ? await admin.from("signature_events").select("signatory_id").eq("event_type", "link_email_accepted").in("signatory_id", sigIds) : { data: [] };
+  const accepted = new Set((acceptedRows ?? []).map((r) => r.signatory_id as string));
+  const recordDelivery = async (signatoryId: string, type: "link_email_accepted" | "link_email_failed", metadata: Record<string, unknown>) => {
+    const { error } = await admin.from("signature_events").insert({ signatory_id: signatoryId, event_type: type, actor_type: "admin", metadata });
+    return !error;
+  };
   for (const s of signatories ?? []) {
-    if (s.token_hash) continue;
+    if (accepted.has(s.id as string) || ["signed", "declined"].includes(s.status as string)) continue;
     const profileId = (s.agreement_parties as unknown as { profile_id: string | null } | null)?.profile_id;
     if (!profileId) return { ok: false, error: `The “${s.role}” signatory has no linked account to deliver a secure link to.`, step: "deliver_access_links" };
     const { data: authUser } = await admin.auth.admin.getUserById(profileId);
@@ -151,20 +161,35 @@ export async function issueInstructorAgreement(params: { onboardingId: string; a
     const link = await generateSignatoryAccessLink({ signatoryId: s.id as string, actorUserId: params.actorUserId });
     if (!link.ok) return { ok: false, error: link.error, step: "deliver_access_links" };
     const signUrl = `${process.env.NEXT_PUBLIC_SITE_URL ?? "https://ordiftstudios.com"}/legal/sign/${link.token}`;
-    const sent = await sendEmail({
-      to: email,
-      subject: `${agreement.agreement_reference} — Instructor / Workshop Facilitator Agreement ready for your review`,
-      html: `<p>An Instructor / Workshop Facilitator Agreement (${agreement.agreement_reference}) is ready for your review and signature.</p><p><a href="${signUrl}">Review and sign →</a></p><p>This link expires ${link.expiresAt}.</p>`,
-      text: `An Instructor / Workshop Facilitator Agreement (${agreement.agreement_reference}) is ready for your review and signature.\n\nReview and sign: ${signUrl}\n\nThis link expires ${link.expiresAt}.`,
-      logPrefix: "[legal instructor agreement issuance]",
-      emailType: "instructor_agreement_signature_request",
-      referenceNumber: agreement.agreement_reference,
-    });
-    if (!sent.ok) return { ok: false, error: `Failed to deliver the secure link to the “${s.role}” signatory.`, step: "deliver_access_links" };
+    let sentOk = false;
+    let detail = "the email provider reported an error";
+    try {
+      const sent = await sendEmail({
+        to: email,
+        subject: `${agreement.agreement_reference} — Instructor / Workshop Facilitator Agreement ready for your review`,
+        html: `<p>An Instructor / Workshop Facilitator Agreement (${agreement.agreement_reference}) is ready for your review and signature.</p><p><a href="${signUrl}">Review and sign →</a></p><p>This link expires ${link.expiresAt}.</p>`,
+        text: `An Instructor / Workshop Facilitator Agreement (${agreement.agreement_reference}) is ready for your review and signature.\n\nReview and sign: ${signUrl}\n\nThis link expires ${link.expiresAt}.`,
+        logPrefix: "[legal instructor agreement issuance]",
+        emailType: "instructor_agreement_signature_request",
+        referenceNumber: agreement.agreement_reference,
+      });
+      sentOk = sent.ok;
+    } catch (err) {
+      detail = "the email request did not complete (timeout or connection error), so delivery is unknown";
+      console.error("[legal] instructor agreement email threw", err);
+    }
+    if (!sentOk) {
+      await recordDelivery(s.id as string, "link_email_failed", { reason: detail });
+      return { ok: false, error: `The email to the “${s.role}” signatory was not accepted — ${detail}. Recipients already accepted keep their valid links and will not be emailed again. Retrying sends this recipient one fresh link; any earlier link for them stops working.`, step: "deliver_access_links" };
+    }
+    if (!(await recordDelivery(s.id as string, "link_email_accepted", { acceptedByProvider: true, note: "accepted for delivery; not proof of receipt" }))) {
+      return { ok: false, error: `The email to the “${s.role}” signatory was accepted but its delivery record could not be saved. Retry to record it (they will be sent one fresh link).`, step: "deliver_access_links" };
+    }
+    accepted.add(s.id as string);
   }
 
-  const { data: final } = await admin.from("signature_signatories").select("token_hash").eq("signature_request_id", requestId);
-  if (!(final ?? []).length || !(final ?? []).every((s) => s.token_hash)) return { ok: false, error: "Not every signatory has a delivered secure link yet.", step: "deliver_access_links" };
+  const outstanding = (signatories ?? []).filter((s) => !accepted.has(s.id as string) && !["signed", "declined"].includes(s.status as string));
+  if (!(signatories ?? []).length || outstanding.length > 0) return { ok: false, error: "Not every signatory has an accepted secure-link email yet.", step: "deliver_access_links" };
   const t = await transitionAgreementStatus({ agreementId: agreement.id, toStatus: "sent", actorUserId: params.actorUserId });
   if (!t.ok) return { ok: false, error: t.error, step: "transition_to_sent" };
   await logActivity({ actorUserId: params.actorUserId, action: "legal.instructor_agreement.issued_and_sent", entityType: "agreement", entityId: agreement.id, metadata: { agreementReference: agreement.agreement_reference, documentSha256: agreement.issued_document_sha256 ?? null } });
@@ -172,7 +197,8 @@ export async function issueInstructorAgreement(params: { onboardingId: string; a
 }
 
 // ------------------------------------------------------------------ read model for the workspace
-export type SigningProgress = { role: string; status: string; signedAt: string | null; linkExpiresAt: string | null; evidenceSha256: string | null }[];
+export type EmailState = "accepted" | "failed" | "not_sent";
+export type SigningProgress = { role: string; status: string; signedAt: string | null; linkExpiresAt: string | null; evidenceSha256: string | null; email: EmailState }[];
 export async function loadInstructorSigningProgress(agreementId: string): Promise<SigningProgress> {
   const admin = createAdminClient();
   const { data: req } = await admin.from("signature_requests").select("id").eq("agreement_id", agreementId).maybeSingle();
@@ -181,7 +207,9 @@ export async function loadInstructorSigningProgress(agreementId: string): Promis
   const out: SigningProgress = [];
   for (const s of sigs ?? []) {
     const { data: ev } = await admin.from("signature_evidence").select("document_sha256").eq("signatory_id", s.id as string).maybeSingle();
-    out.push({ role: s.role as string, status: s.status as string, signedAt: (s.signed_at as string | null) ?? null, linkExpiresAt: (s.token_expires_at as string | null) ?? null, evidenceSha256: (ev?.document_sha256 as string | null) ?? null });
+    const { data: evs } = await admin.from("signature_events").select("event_type").eq("signatory_id", s.id as string).in("event_type", ["link_email_accepted", "link_email_failed"]).order("occurred_at", { ascending: false });
+    const email: EmailState = (evs ?? []).some((e) => e.event_type === "link_email_accepted") ? "accepted" : (evs ?? []).length ? "failed" : "not_sent";
+    out.push({ role: s.role as string, status: s.status as string, signedAt: (s.signed_at as string | null) ?? null, linkExpiresAt: (s.token_expires_at as string | null) ?? null, evidenceSha256: (ev?.document_sha256 as string | null) ?? null, email });
   }
   return out;
 }

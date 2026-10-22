@@ -13,6 +13,8 @@ const h = vi.hoisted(() => ({
   agent: null as unknown,
   files: {} as Record<string, Uint8Array>,
   emails: [] as { to: string; subject: string; text: string }[],
+  failFor: new Set<string>(),
+  throwFor: new Set<string>(),
   fetch: async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
     const undici = await import("undici");
     (h as { agent: unknown }).agent ??= new undici.Agent({ keepAliveTimeout: 1, keepAliveMaxTimeout: 1 });
@@ -22,7 +24,7 @@ const h = vi.hoisted(() => ({
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 vi.mock("@/lib/admin/activityLog", () => ({ logActivity: vi.fn(async () => undefined) }));
 vi.mock("@/lib/content/sanity/workshopAdmin", () => ({ getWorkshopByIdAdmin: async () => null }));
-vi.mock("@/lib/shared/email/dispatch", () => ({ sendEmail: async (a: { to: string; subject: string; text: string }) => { h.emails.push({ to: a.to, subject: a.subject, text: a.text }); return { ok: true }; } }));
+vi.mock("@/lib/shared/email/dispatch", () => ({ sendEmail: async (a: { to: string; subject: string; text: string }) => { if (h.throwFor.has(a.to)) throw new Error("timeout"); if (h.failFor.has(a.to)) return { ok: false, error: "rejected" }; h.emails.push({ to: a.to, subject: a.subject, text: a.text }); return { ok: true }; } }));
 vi.mock("@/lib/supabase/admin", async () => {
   const { createClient: make } = await import("@supabase/supabase-js");
   return {
@@ -52,7 +54,7 @@ import { addEntitySignatory } from "@/lib/organization/entityRegistrations";
 import { prepareInstructorAgreementDraft, getCurrentInstructorAgreement } from "./instructorAgreements";
 import { approveInstructorAgreementForIssue, issueInstructorAgreement, loadInstructorSigningProgress, previewInstructorAgreement, saveInstructorScheduleA } from "./instructorAgreementIssuance";
 import { getIssuedAgreementTextForSignatory } from "./agreementIssuance";
-import { recordSignatoryConsent, recordSignatorySignature, recordSignatoryDecline } from "./signatureEngine";
+import { recordSignatoryConsent, recordSignatorySignature, recordSignatoryDecline, verifySignatoryToken } from "./signatureEngine";
 import { createInstructorEngagement } from "@/lib/workshops/instructorEngagements";
 import { getUnsatisfiedRequiredRequirements } from "@/lib/organization/onboardingRequirements";
 import type { ScheduleATerms } from "./instructorAgreementTerms";
@@ -237,7 +239,7 @@ describe("4. review and signature through the existing secure token flow", () =>
     const issued = sql(`select issued_document_sha256 from public.agreements where id='${ids.agreement}'`);
     expect(sql(`select string_agg(distinct e.document_sha256, ',') from public.signature_evidence e join public.signature_signatories s on s.id=e.signatory_id join public.signature_requests r on r.id=s.signature_request_id where r.agreement_id='${ids.agreement}'`)).toBe(issued);
     expect(sql(`select count(*) from public.signature_evidence e join public.signature_signatories s on s.id=e.signatory_id join public.signature_requests r on r.id=s.signature_request_id where r.agreement_id='${ids.agreement}'`)).toBe("2");
-    expect(sql(`select string_agg(distinct e.event_type, ',' order by e.event_type) from public.signature_events e join public.signature_signatories s on s.id=e.signatory_id join public.signature_requests r on r.id=s.signature_request_id where r.agreement_id='${ids.agreement}'`)).toBe("consent_given,link_generated,signed,viewed");
+    expect(sql(`select string_agg(distinct e.event_type, ',' order by e.event_type) from public.signature_events e join public.signature_signatories s on s.id=e.signatory_id join public.signature_requests r on r.id=s.signature_request_id where r.agreement_id='${ids.agreement}'`)).toBe("consent_given,link_email_accepted,link_generated,signed,viewed");
   });
   it("execution is reflected automatically in the onboarding requirement and in assignment eligibility - but nothing is assigned automatically", async () => {
     const open = await getUnsatisfiedRequiredRequirements({ onboardingId: ids.onboarding, profileId: KWAKU, pipeline: "external_contractor" });
@@ -288,5 +290,95 @@ describe("5. a declined agreement is never executed", () => {
     expect(open.map((x) => x.requirementKey)).toContain("instructor_agreement_executed");
     expect((await createInstructorEngagement({ workshopId: "w-p3i-2", profileId: KW2, actorUserId: SUPER })).ok).toBe(false);
     sql(`delete from public.workshop_instructor_engagements where profile_id in ('${KWAKU}','${KW2}')`);
+  });
+});
+
+async function freshApprovedAgreement(uuidTail: string, name: string) {
+  const P = `00000000-0000-4000-8000-0000000000${uuidTail}`;
+  sql(`
+    insert into auth.users (id, email) values ('${P}','${uuidTail}@p3i.test') on conflict do nothing;
+    insert into public.profiles (id, full_name, access_status, member_number) values ('${P}','${name}','active','INT00${uuidTail}') on conflict (id) do update set access_status='active';
+    insert into public.staff_details (id, engagement_type_id) select '${P}', t.id from public.engagement_types t where t.slug='instructor' on conflict (id) do update set engagement_type_id = excluded.engagement_type_id;
+    delete from public.signature_evidence where signatory_id in (select s.id from public.signature_signatories s join public.signature_requests r on r.id=s.signature_request_id join public.agreements a on a.id=r.agreement_id where a.primary_context_reference='${P}');
+    delete from public.signature_events where signatory_id in (select s.id from public.signature_signatories s join public.signature_requests r on r.id=s.signature_request_id join public.agreements a on a.id=r.agreement_id where a.primary_context_reference='${P}');
+    delete from public.signature_signatories where signature_request_id in (select r.id from public.signature_requests r join public.agreements a on a.id=r.agreement_id where a.primary_context_reference='${P}');
+    delete from public.signature_requests where agreement_id in (select id from public.agreements where primary_context_reference='${P}');
+    delete from public.agreements where primary_context_reference='${P}';
+    delete from public.staff_onboarding where profile_id='${P}';`);
+  const reqId = sql(`with r as (insert into public.department_requests (request_type, title, requested_by) values ('recruitment','Synthetic ${name}','${SUPER}') returning id)
+    insert into public.recruitment_requisitions (request_id, employing_entity_id, employment_jurisdiction_id, direct_hire_profile_id, hire_origin, headcount)
+    select r.id, '${ids.ghana}', (select id from public.employment_jurisdictions where slug='ghana'), '${P}', 'founder_direct_hire', 1 from r returning id`).split("\n")[0];
+  const ob = sql(`insert into public.staff_onboarding (profile_id, pipeline, stage, status, requisition_id) values ('${P}','external_contractor','profile','in_progress','${reqId}') returning id`).split("\n")[0];
+  if (!(await confirmContractingEntity({ onboardingId: ob, entityId: ids.ghana, expectedJurisdiction: "Ghana", actorUserId: SUPER })).ok) throw new Error("confirm failed");
+  const d = await prepareInstructorAgreementDraft({ onboardingId: ob, actorUserId: SUPER });
+  if (!d.ok) throw new Error(JSON.stringify(d));
+  if (!(await saveInstructorScheduleA({ onboardingId: ob, agreementId: d.agreementId, terms: TERMS, actorUserId: SUPER })).ok) throw new Error("terms failed");
+  if (!(await approveInstructorAgreementForIssue({ onboardingId: ob, agreementId: d.agreementId, actorUserId: SUPER })).ok) throw new Error("approve failed");
+  return { P, ob, agreementId: d.agreementId, email: `${P.slice(-4)}@synthetic.test` };
+}
+const ORDIFT_EMAIL = `${SUPER.slice(-4)}@synthetic.test`;
+
+describe("6. consent is enforced by the server, with attributable evidence", () => {
+  it("signing without consent, or twice, is refused and writes no evidence; consent then signature works exactly once", async () => {
+    const a = await freshApprovedAgreement("b1", "Synthetic Consent");
+    expect((await issueInstructorAgreement({ onboardingId: a.ob, agreementId: a.agreementId, actorUserId: SUPER })).ok).toBe(true);
+    const tok = tokenFrom(a.email);
+    const count = () => Number(sql(`select count(*) from public.signature_evidence e join public.signature_signatories s on s.id=e.signatory_id join public.signature_requests r on r.id=s.signature_request_id where r.agreement_id='${a.agreementId}'`));
+    // opening the link marks it viewed only; signing now (a direct call / manipulated request) must fail
+    expect((await verifySignatoryToken(tok)).ok).toBe(true);
+    const noConsent = await recordSignatorySignature({ rawToken: tok, typedFullName: "Synthetic Consent", consentStatement: "I agree", ipAddress: null, userAgent: null });
+    expect(noConsent.ok).toBe(false);
+    expect(count()).toBe(0);
+    expect(sql(`select s.status from public.signature_signatories s join public.signature_requests r on r.id=s.signature_request_id where r.agreement_id='${a.agreementId}' and s.role='instructor'`)).toBe("viewed");
+    expect((await recordSignatoryConsent(tok)).ok).toBe(true);
+    expect((await recordSignatoryConsent(tok)).ok).toBe(true); // idempotent
+    expect((await recordSignatorySignature({ rawToken: tok, typedFullName: "", consentStatement: "I agree", ipAddress: null, userAgent: null })).ok).toBe(false); // evidence must be complete
+    expect(count()).toBe(0);
+    expect((await recordSignatorySignature({ rawToken: tok, typedFullName: "Synthetic Consent", consentStatement: "I agree", ipAddress: "203.0.113.1", userAgent: "vitest" })).ok).toBe(true);
+    expect(count()).toBe(1);
+    const again = await recordSignatorySignature({ rawToken: tok, typedFullName: "Synthetic Consent", consentStatement: "I agree", ipAddress: null, userAgent: null });
+    expect(again.ok).toBe(false);
+    expect(count()).toBe(1); // no duplicate evidence
+    expect(sql(`select status from public.agreements where id='${a.agreementId}'`)).toBe("sent"); // one signature is not execution
+  });
+});
+
+describe("7. partial email delivery is recoverable, per recipient, with no duplicate emails or requests", () => {
+  it("first accepted, second rejected: not issued, state is true, retry emails only the second, one request, first link stays valid", async () => {
+    const a = await freshApprovedAgreement("b2", "Synthetic Partial");
+    h.failFor.add(ORDIFT_EMAIL);
+    const first = await issueInstructorAgreement({ onboardingId: a.ob, agreementId: a.agreementId, actorUserId: SUPER });
+    expect(first.ok).toBe(false);
+    expect(sql(`select status from public.agreements where id='${a.agreementId}'`)).toBe("approved_for_issue"); // not falsely 'sent'
+    const progress = await loadInstructorSigningProgress(a.agreementId);
+    expect(progress.map((p) => `${p.role}:${p.email}`).sort()).toEqual(["instructor:accepted", "ordift:failed"]);
+    const instructorLink = tokenFrom(a.email);
+    expect(instructorLink).not.toBe("");
+    // retry once the provider recovers
+    h.failFor.clear();
+    const before = h.emails.filter((e) => e.to === a.email).length;
+    const retry = await issueInstructorAgreement({ onboardingId: a.ob, agreementId: a.agreementId, actorUserId: SUPER });
+    expect(retry.ok).toBe(true);
+    expect(h.emails.filter((e) => e.to === a.email).length).toBe(before); // the accepted recipient is NOT emailed again
+    expect(sql(`select count(*) from public.signature_requests where agreement_id='${a.agreementId}'`)).toBe("1");
+    expect(sql(`select count(*) from public.agreements where primary_context_reference='${a.P}'`)).toBe("1");
+    expect((await verifySignatoryToken(instructorLink)).ok).toBe(true); // the first, delivered link was preserved
+    expect(sql(`select status from public.agreements where id='${a.agreementId}'`)).toBe("sent");
+    expect((await loadInstructorSigningProgress(a.agreementId)).every((p) => p.email === "accepted")).toBe(true);
+  });
+  it("an ambiguous result (timeout/throw) is treated as not delivered: nothing is marked accepted or sent, and a retry yields one valid fresh link", async () => {
+    const a = await freshApprovedAgreement("b3", "Synthetic Timeout");
+    h.throwFor.add(a.email);
+    const r = await issueInstructorAgreement({ onboardingId: a.ob, agreementId: a.agreementId, actorUserId: SUPER });
+    expect(!r.ok && r.error).toContain("delivery is unknown");
+    expect(sql(`select status from public.agreements where id='${a.agreementId}'`)).toBe("approved_for_issue");
+    expect((await loadInstructorSigningProgress(a.agreementId)).find((p) => p.role === "instructor")?.email).toBe("failed");
+    const staleHash = sql(`select s.token_hash from public.signature_signatories s join public.signature_requests r on r.id=s.signature_request_id where r.agreement_id='${a.agreementId}' and s.role='instructor'`);
+    h.throwFor.clear();
+    expect((await issueInstructorAgreement({ onboardingId: a.ob, agreementId: a.agreementId, actorUserId: SUPER })).ok).toBe(true);
+    const freshHash = sql(`select s.token_hash from public.signature_signatories s join public.signature_requests r on r.id=s.signature_request_id where r.agreement_id='${a.agreementId}' and s.role='instructor'`);
+    expect(freshHash).not.toBe(staleHash); // exactly one valid link: the earlier one was replaced
+    expect(sql(`select count(*) from public.signature_requests where agreement_id='${a.agreementId}'`)).toBe("1");
+    expect(sql(`select count(*) from public.signature_events e join public.signature_signatories s on s.id=e.signatory_id join public.signature_requests r on r.id=s.signature_request_id where r.agreement_id='${a.agreementId}' and s.role='instructor' and e.event_type='link_email_accepted'`)).toBe("1");
   });
 });

@@ -91,13 +91,17 @@ function AgreementPanel({ data, onboardingId, today }: { data: AgreementPanelDat
       {data.status === "approved_for_issue" && <IssueAgreementForm onboardingId={onboardingId} agreementId={data.id} />}
 
       {data.signing.length > 0 && (
+        <p className="font-sans text-caption text-ordift-ink-muted">“Accepted by provider” means the email service took the message; it is not proof it arrived. “Viewed” appears only when the signatory opens their secure link. If a delivery failed, press Issue again: signatories already accepted are not emailed twice.</p>
+      )}
+      {data.signing.length > 0 && (
         <table className="w-full text-left font-sans text-caption">
-          <thead className="text-ordift-ink-muted"><tr><th className="py-1 pr-3">Signatory</th><th className="py-1 pr-3">Status</th><th className="py-1 pr-3">Signed</th><th className="py-1 pr-3">Link expires</th><th className="py-1">Evidence</th></tr></thead>
+          <thead className="text-ordift-ink-muted"><tr><th className="py-1 pr-3">Signatory</th><th className="py-1 pr-3">Status</th><th className="py-1 pr-3">Signed</th><th className="py-1 pr-3">Link expires</th><th className="py-1 pr-3">Email</th><th className="py-1">Evidence</th></tr></thead>
           <tbody className="text-ordift-ink">
             {data.signing.map((g) => (
               <tr key={g.role} className="border-t border-black/5">
                 <td className="py-1 pr-3">{g.role === "ordift" ? "Ordift" : "Instructor"}</td><td className="py-1 pr-3">{g.status.replace(/_/g, " ")}</td>
                 <td className="py-1 pr-3">{g.signedAt ? g.signedAt.slice(0, 16).replace("T", " ") : "—"}</td><td className="py-1 pr-3">{g.linkExpiresAt ? g.linkExpiresAt.slice(0, 10) : "—"}</td>
+                <td className="py-1 pr-3">{g.email === "accepted" ? "Accepted by provider" : g.email === "failed" ? "Failed — retry issue" : "Not sent"}</td>
                 <td className="py-1 font-mono">{g.evidenceSha256 ? `${g.evidenceSha256.slice(0, 12)}…` : "—"}</td>
               </tr>
             ))}

@@ -206,13 +206,15 @@ export async function recordSignatoryConsent(rawToken: string): Promise<{ ok: tr
   const verification = await verifySignatoryToken(rawToken);
   if (!verification.ok) return verification;
 
+  if (verification.signatory.status === "consented") return { ok: true }; // idempotent: consent already on record
   const admin = createAdminClient();
-  const { error } = await admin
+  const { data: moved, error } = await admin
     .from("signature_signatories")
     .update({ status: "consented", consented_at: new Date().toISOString() })
     .eq("id", verification.signatory.id)
-    .eq("status", "viewed");
-  if (error) return { ok: false, error: "Failed to record consent." };
+    .eq("status", "viewed")
+    .select("id");
+  if (error || !moved || moved.length !== 1) return { ok: false, error: "Failed to record consent." };
 
   await admin.from("signature_events").insert({ signatory_id: verification.signatory.id, event_type: "consent_given", actor_type: "external_signatory" });
   await syncSignatureRequestStatus(admin, verification.signatory.signatureRequestId);
@@ -278,15 +280,19 @@ export async function recordSignatorySignature(params: RecordSignatorySignatureP
 
   const admin = createAdminClient();
 
-  // Atomic compare-and-swap — only a "consented" signatory can become
-  // "signed", the same idempotency pattern used everywhere else in
-  // this Legal Suite.
-  const { error: transitionError } = await admin
+  // Consent boundary (enforced HERE, on the server, not in the page): a signature is recorded only for a signatory whose status is
+  // "consented". The compare-and-swap below must match exactly one row - an update that matches nothing (not yet consented, already signed,
+  // declined) is a refusal, never a silent success, and no evidence is written for it.
+  if (signatory.status !== "consented") {
+    return { ok: false, error: signatory.status === "signed" ? "This agreement has already been signed by you." : "Signing requires prior recorded consent — please confirm consent before signing." };
+  }
+  const { data: swapped, error: transitionError } = await admin
     .from("signature_signatories")
     .update({ status: "signed", signed_at: evidenceResult.evidence.signedAt.toISOString() })
     .eq("id", signatory.id)
-    .eq("status", "consented");
-  if (transitionError) {
+    .eq("status", "consented")
+    .select("id");
+  if (transitionError || !swapped || swapped.length !== 1) {
     return { ok: false, error: "Signing requires prior recorded consent — please confirm consent before signing." };
   }
 
@@ -302,6 +308,8 @@ export async function recordSignatorySignature(params: RecordSignatorySignatureP
   });
   if (evidenceError) {
     console.error("[legal] failed to record signature evidence", evidenceError.message);
+    // No signature without its evidence: put the signatory back to "consented" so it can be retried.
+    await admin.from("signature_signatories").update({ status: "consented", signed_at: null }).eq("id", signatory.id).eq("status", "signed");
     return { ok: false, error: "Failed to record signature evidence." };
   }
 
