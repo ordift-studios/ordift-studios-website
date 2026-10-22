@@ -37,19 +37,21 @@ export async function uploadApprovalEvidenceAction(_p: JourneyActionState, d: Fo
   if ("error" in a) return { ok: false, error: a.error };
   const file = d.get("file");
   const pasted = f(d, "pastedText");
-  let filename: string; let bytes: Uint8Array;
+  let filename: string; let bytes: Uint8Array; let pastedLabel = "";
   if (file instanceof File && file.size > 0) {
     if (file.size > STEP7_UPLOAD_MAX_BYTES) return { ok: false, error: `This file is too large for this form (the limit here is ${STEP7_UPLOAD_MAX_LABEL}). Nothing has been stored.` };
     filename = file.name; bytes = new Uint8Array(await file.arrayBuffer());
   } else if (pasted.length >= 40) {
     // A message with no document to upload: kept as an immutable, fingerprinted transcript, labelled as pasted by the administrator.
     filename = `transcript-pasted-${new Date().toISOString().slice(0, 10)}.txt`; bytes = new TextEncoder().encode(pasted);
+    pastedLabel = "ADMINISTRATOR-SUPPLIED TRANSCRIPT (typed or pasted by an administrator; not independently authenticated correspondence) — ";
   } else return { ok: false, error: "Choose a file, or paste the text of the message (at least a few sentences). A description alone is not evidence." };
-  const r = await storeApprovalEvidence({ versionId: f(d, "versionId"), filename, bytes, description: f(d, "description"), counselName: f(d, "counselName") || null, actorUserId: a.id });
+  const r = await storeApprovalEvidence({ versionId: f(d, "versionId"), filename, bytes, description: `${pastedLabel}${f(d, "description")}`, counselName: f(d, "counselName") || null, actorUserId: a.id });
   if (!r.ok) return { ok: false, error: r.error };
   const t = r.text;
   const details = [
     `Stored as: ${r.item.name}`,
+    ...(pastedLabel ? ["This is a transcript supplied by an administrator. It is not authenticated correspondence; the original message must be kept and shown on request."] : []),
     `SHA-256 computed by the server: ${r.item.sha256}`,
     `Size: ${r.sizeBytes} bytes`,
     "Verification: the stored copy was read back and re-hashed - it matches.",

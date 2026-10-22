@@ -56,6 +56,13 @@ describe("the guided journey adds no way to change a record and no new access", 
     expect(forms).toContain('name="evidenceDocumentId"');
     expect(actions).not.toContain('f(d, "evidenceSha256")');
   });
+  it("a pasted message is labelled as an administrator-supplied transcript, and unreadable PDFs carry a personal-review warning", () => {
+    const actions = read("../../app/admin/organization/onboarding/[onboardingId]/journeyActions.ts");
+    const forms = read("../../components/admin/OnboardingJourneyForms.tsx");
+    expect(actions).toContain("ADMINISTRATOR-SUPPLIED TRANSCRIPT");
+    expect(actions).toContain("not authenticated correspondence");
+    expect(forms).toContain("the system does not read PDFs, so you must have read this source yourself");
+  });
   it("no migration is part of this work: nothing was added under supabase/migrations or supabase/proposals", () => {
     expect(() => read("../../../supabase/proposals/PROPOSED_legal_approval_attestations.sql")).toThrow();
   });
