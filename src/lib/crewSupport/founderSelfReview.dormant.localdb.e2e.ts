@@ -87,7 +87,6 @@ const as = (id: string | null) => { h.user = id ? { id } : null; };
 const cur = (id: string): CurrentUser => ({ id, email: `${id}@e2e.invalid`, fullName: id, roles: ROLES[id] ?? [], accessStatus: "active" }) as unknown as CurrentUser;
 const must = <T extends { ok: boolean }>(r: T, label = ""): Extract<T, { ok: true }> => { if (!r.ok) throw new Error(`${label} expected ok, got ${JSON.stringify(r)}`); return r as Extract<T, { ok: true }>; };
 const fileRow = async (id: string) => (await db().from("project_files").select("*").eq("id", id).single()).data as Record<string, unknown>;
-const deliverableCount = async (enquiryId: string) => (await asUserDb(MGR).from("deliverables").select("id").eq("entity_id", enquiryId)).data?.length ?? -1;
 
 let job: { requestId: string; enquiryId: string; slotId: string; engagementId: string };
 const ids: Record<string, string> = {};

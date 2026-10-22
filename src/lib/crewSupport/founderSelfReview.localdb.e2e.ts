@@ -71,7 +71,9 @@ if (!/^https?:\/\/(127\.0\.0\.1|localhost)(:|\/|$)/.test(process.env.NEXT_PUBLIC
 const FOUNDER = "00000000-0000-4000-8000-0000000000f1";
 const SECOND = "00000000-0000-4000-8000-0000000000f2"; // the Founder's second login
 const MGR = "00000000-0000-4000-8000-0000000000a1"; // a genuinely independent administrator
-const ROLES: Record<string, string[]> = { [FOUNDER]: ["admin", "super_admin"], [SECOND]: ["admin", "super_admin"], [MGR]: ["admin", "super_admin"] };
+const ADDITIONAL = "00000000-0000-4000-8000-0000000000f3"; // the Founder's additional (admin-only) login
+const SEPARATE = "00000000-0000-4000-8000-0000000000c1"; // a separate person (CT0001-like) with an admin login, never registered
+const ROLES: Record<string, string[]> = { [FOUNDER]: ["admin", "super_admin"], [SECOND]: ["admin", "super_admin"], [MGR]: ["admin", "super_admin"], [ADDITIONAL]: ["admin"], [SEPARATE]: ["admin"] };
 const GOOD = "I am the sole performing photographer on this job and no independent reviewer is appointed.";
 
 const db = () => createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SECRET_KEY!, { auth: { persistSession: false }, global: { fetch: h.fetch } });
@@ -104,10 +106,15 @@ beforeAll(async () => {
     insert into auth.users (id, instance_id, aud, role, email, raw_user_meta_data, created_at, updated_at) values
       ('${FOUNDER}','00000000-0000-0000-0000-000000000000','authenticated','authenticated','founder@e2e.invalid','{}',now(),now()),
       ('${SECOND}','00000000-0000-0000-0000-000000000000','authenticated','authenticated','second@e2e.invalid','{}',now(),now()),
-      ('${MGR}','00000000-0000-0000-0000-000000000000','authenticated','authenticated','mgr@e2e.invalid','{}',now(),now()) on conflict do nothing;
-    insert into public.profiles (id, full_name, access_status) values ('${FOUNDER}','Synthetic Founder','active'),('${SECOND}','Synthetic Second Login','active'),('${MGR}','Synthetic Independent Admin','active')
+      ('${MGR}','00000000-0000-0000-0000-000000000000','authenticated','authenticated','mgr@e2e.invalid','{}',now(),now()),
+      ('${ADDITIONAL}','00000000-0000-0000-0000-000000000000','authenticated','authenticated','additional@e2e.invalid','{}',now(),now()),
+      ('${SEPARATE}','00000000-0000-0000-0000-000000000000','authenticated','authenticated','separate@e2e.invalid','{}',now(),now()) on conflict do nothing;
+    insert into public.profiles (id, full_name, access_status) values ('${FOUNDER}','Synthetic Founder','active'),('${SECOND}','Synthetic Second Login','active'),('${MGR}','Synthetic Independent Admin','active'),('${ADDITIONAL}','Synthetic Additional Login','active'),('${SEPARATE}','Synthetic Separate Person','active')
       on conflict (id) do update set access_status = 'active';
-    insert into public.user_roles (user_id, role_id) select u, r.id from unnest(array['${FOUNDER}','${SECOND}','${MGR}']::uuid[]) u cross join public.roles r where r.slug in ('admin','super_admin') on conflict do nothing;
+    insert into public.user_roles (user_id, role_id) select u, r.id from unnest(array['${FOUNDER}','${SECOND}','${MGR}']::uuid[]) u cross join public.roles r where r.slug in ('admin','super_admin') union all select x, r.id from unnest(array['${ADDITIONAL}','${SEPARATE}']::uuid[]) x cross join public.roles r where r.slug = 'admin' on conflict do nothing;
+    -- file review/release needs Super Admin OR an executive_admin grant: give the two admin-only synthetic logins that authority so the
+    -- common-control rule (not the authority check) is what is being tested for them
+    insert into public.authority_grants (profile_id, authority, granted_by, reason) select x, 'executive_admin', '${MGR}', 'SYNTHETIC e2e grant' from unnest(array['${ADDITIONAL}','${SEPARATE}']::uuid[]) x;
     insert into public.person_capabilities (profile_id, operational_title_id, proficiency, verification_status, source)
       select p, (select id from public.operational_titles where slug = 'photographer'), 'primary', 'verified', 'admin' from unnest(array['${FOUNDER}']::uuid[]) p on conflict do nothing;
     revoke all on public.deliverables, public.deliverable_categories, public.enquiry_notes from service_role; -- reproduce Production's grant gap
@@ -343,3 +350,82 @@ describe("6 — closing the exception, direct API attempts, and the Bright-style
     expect(events.indexOf("declaration_review")).toBeLessThan(events.indexOf("declaration_release"));
   });
 });
+
+describe("7 — three accounts and re-designation, end to end (corrected migration + corrected application)", () => {
+  let lateA = "";
+  let lateB = "";
+  const op = (q: string) => sql(q);
+  it("7a the operator registers the additional login; BOTH Founder-controlled logins are refused, the separate person is independent", async () => {
+    op(`insert into public.founder_common_control_accounts (founder_identity_id, profile_id, note) select id, '${ADDITIONAL}', 'SYNTHETIC additional login of the Founder (e2e)' from public.founder_identities where status = 'active'`);
+    lateA = await upload(job.engagementId, "img-late-a.jpg", "final_gallery");
+    lateB = await upload(job.engagementId, "img-late-b.jpg", "final_gallery");
+    as(FOUNDER);
+    must(await submitPrivateFilesForRelease({ engagementId: job.engagementId, actorUserId: FOUNDER }));
+    for (const login of [SECOND, ADDITIONAL]) {
+      as(login);
+      const r = must(await reviewFilesForRelease({ fileIds: [lateA], user: cur(login), action: "approve" }));
+      expect(r.outcomes[0].error).toMatch(/common control/);
+      // the database agrees even when the application is bypassed
+      const direct = await db().from("project_files").update({ release_status: "approved", release_reviewed_by: login, release_reviewed_at: new Date().toISOString() }).eq("id", lateA);
+      expect(direct.error?.message ?? "").toMatch(/common control/);
+    }
+    as(SEPARATE);
+    const ok = must(await reviewFilesForRelease({ fileIds: [lateB], user: cur(SEPARATE), action: "approve" }));
+    expect(ok.outcomes[0].ok).toBe(true);
+    expect(await fileRow(lateB)).toMatchObject({ release_status: "approved", release_reviewed_by: SEPARATE });
+    expect(await fileRow(lateA)).toMatchObject({ release_status: "submitted" });
+  });
+  it("7b revoking and RE-DESIGNATING the Founder identity does not release either registered login (application and database)", async () => {
+    op(`update public.founder_identities set status = 'revoked', revoked_at = now(), revoked_reason = 'SYNTHETIC revocation before re-designation (e2e)' where status = 'active'`);
+    op(`insert into public.founder_identities (profile_id, designation_reference) values ('${FOUNDER}', 'SYNTHETIC second designation of the Founder identity (e2e)')`);
+    for (const login of [SECOND, ADDITIONAL]) {
+      as(login);
+      const r = must(await reviewFilesForRelease({ fileIds: [lateA], user: cur(login), action: "approve" }));
+      expect(r.outcomes[0].error).toMatch(/common control/);
+      const direct = await db().from("project_files").update({ release_status: "approved", release_reviewed_by: login, release_reviewed_at: new Date().toISOString() }).eq("id", lateA);
+      expect(direct.error?.message ?? "").toMatch(/common control/);
+    }
+    expect((await fileRow(lateA)).release_status).toBe("submitted");
+    as(SEPARATE);
+    expect(must(await reviewFilesForRelease({ fileIds: [lateA], user: cur(SEPARATE), action: "request_changes", note: "Please soften the crop on this one." })).outcomes[0].ok).toBe(true);
+  });
+  it("7c re-designation alone does NOT activate the exception: a holder is a separate act", async () => {
+    expect(Number(op("select count(*) from public.self_review_exception_holders where revoked_at is null and founder_identity_id = (select id from public.founder_identities where status = 'active')").trim())).toBe(0);
+    const ctx = await getFounderContext({ id: FOUNDER }, job.engagementId);
+    expect(ctx.state).toBe("unavailable");
+    expect((await openFounderException({ user: cur(FOUNDER), engagementId: job.engagementId, justification: GOOD, acknowledged: true })).ok).toBe(false);
+    for (const login of [SECOND, ADDITIONAL]) expect((await getFounderContext({ id: login }, job.engagementId)).state).toBe("linked_login");
+    expect((await getFounderContext({ id: SEPARATE }, job.engagementId)).state).toBe("not_applicable");
+    op(`insert into public.self_review_exception_holders (founder_identity_id, authorization_reference) select id, 'SYNTHETIC authorization of ORDIFT-POL-FSR-001 for the new identity (e2e)' from public.founder_identities where status = 'active'`);
+    expect((await getFounderContext({ id: FOUNDER }, job.engagementId)).state).toBe("available");
+  });
+  it("7d the performer still cannot approve their own image without an open exception, and nothing was emailed", async () => {
+    const lateD = await upload(job.engagementId, "img-late-d.jpg", "final_gallery");
+    as(FOUNDER);
+    must(await submitPrivateFilesForRelease({ engagementId: job.engagementId, actorUserId: FOUNDER }));
+    const own = must(await reviewFilesForRelease({ fileIds: [lateD], user: cur(FOUNDER), action: "approve" }));
+    expect(own.outcomes[0].ok).toBe(false);
+    expect(own.outcomes[0].error).toMatch(/can't review or release your own work/);
+    expect(h.sent.length).toBeLessThanOrEqual(1); // only the one deliberate notification sent in block 5e
+  });
+  it("7e revoking ONE registration frees only that login", async () => {
+    const lateC = await upload(job.engagementId, "img-late-c.jpg", "final_gallery");
+    as(FOUNDER);
+    must(await submitPrivateFilesForRelease({ engagementId: job.engagementId, actorUserId: FOUNDER }));
+    op(`update public.founder_common_control_accounts set revoked_at = now(), revoked_reason = 'SYNTHETIC revocation of one registration (e2e)' where profile_id = '${ADDITIONAL}' and revoked_at is null`);
+    as(SECOND);
+    const stillBlocked = must(await reviewFilesForRelease({ fileIds: [lateC], user: cur(SECOND), action: "approve" }));
+    expect(stillBlocked.outcomes[0].error).toMatch(/common control/);
+    as(ADDITIONAL);
+    const freed = must(await reviewFilesForRelease({ fileIds: [lateC], user: cur(ADDITIONAL), action: "approve" }));
+    expect(freed.outcomes[0].ok).toBe(true);
+    expect(await fileRow(lateC)).toMatchObject({ release_status: "approved", release_reviewed_by: ADDITIONAL });
+  });
+  it("7f designation tables were written only by the operator steps: audit events exist and no role changed", () => {
+    expect(Number(op("select count(*) from public.self_review_events where event = 'founder_identities_insert'").trim())).toBe(2);
+    expect(Number(op("select count(*) from public.self_review_events where event = 'founder_common_control_accounts_insert'").trim())).toBe(2);
+    expect(op(`select string_agg(r.slug, ',' order by r.slug) from public.user_roles ur join public.roles r on r.id = ur.role_id where ur.user_id = '${ADDITIONAL}'`).trim()).toBe("admin");
+    expect(op(`select string_agg(r.slug, ',' order by r.slug) from public.user_roles ur join public.roles r on r.id = ur.role_id where ur.user_id = '${SEPARATE}'`).trim()).toBe("admin");
+  });
+});
+
