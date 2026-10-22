@@ -22,7 +22,7 @@ import {
   type SelfReviewDecision,
 } from "./founderSelfReviewRules";
 
-// ORDIFT-POL-FSR-001 — server side. Every check here is repeated by the database (migration 0169): this layer refuses
+// ORDIFT-POL-FSR-001 — server side. Every check here is repeated by the database (migration 0167): this layer refuses
 // early with a clear message; the database refuses even if this layer were wrong or bypassed. The browser is never
 // trusted for file ids' properties, versions, sizes, paths, or for having "viewed" anything: all of that is read from, or
 // recorded by, the server.
@@ -48,7 +48,7 @@ export async function getFounderContext(user: { id: string }, engagementId: stri
     admin.from("engagements").select("payee_profile_id, entity_type").eq("id", engagementId).maybeSingle(),
   ]);
   if (founderRes.error || linkedRes.error) {
-    // Not installed yet (before migration 0169): the exception simply does not exist. Any other error: treat as unavailable.
+    // Not installed yet (before migration 0167): the exception simply does not exist. Any other error: treat as unavailable.
     return isMissingRelation(founderRes.error) || isMissingRelation(linkedRes.error) ? { state: "not_applicable" } : { state: "unavailable", reason: "The exception could not be verified right now." };
   }
   const founder = founderRes.data as { id: string; profile_id: string } | null;

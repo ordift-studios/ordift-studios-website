@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 // ORDIFT-POL-FSR-001 application layer, run against an in-memory database double. The double does NOT execute the
 // database triggers (no PostgreSQL engine is involved): these tests prove what the application checks, what it writes,
 // in what order, and how it reports database refusals. Database enforcement is covered separately (structural tests of
-// migration 0169) and still needs a real-engine rehearsal.
+// migration 0167) and still needs a real-engine rehearsal.
 
 type Row = Record<string, unknown>;
 const db: Record<string, Row[]> = {};
@@ -150,7 +150,7 @@ describe("who the exception is available to", () => {
     db.self_review_exception_holders = [{ id: "h-1", founder_identity_id: "fi-1", effective_at: "2999-01-01T00:00:00Z", expires_at: null, revoked_at: null }];
     expect((await getFounderContext(user(FOUNDER), ENG)).state).toBe("unavailable");
   });
-  it("before migration 0169 exists (tables missing) the exception simply does not exist", async () => {
+  it("before migration 0167 exists (tables missing) the exception simply does not exist", async () => {
     tableErrors.founder_identities = { code: "42P01", message: "relation does not exist" };
     tableErrors.founder_common_control_accounts = { code: "42P01", message: "relation does not exist" };
     expect((await getFounderContext(user(FOUNDER), ENG)).state).toBe("not_applicable");

@@ -77,7 +77,7 @@ async function foundersGroupOf(profileIds: string[]): Promise<Map<string, string
   const ids = [...new Set(profileIds)];
   const [founders, linked] = await Promise.all([
     // NOT limited to an active identity: revoking the exception or the identity must never make the second login "independent"
-    // again (mirrors private.fsr_group in migration 0169, found by the PostgreSQL rehearsal).
+    // again (mirrors private.fsr_group in migration 0167, found by the PostgreSQL rehearsal).
     admin.from("founder_identities").select("id, profile_id").in("profile_id", ids),
     admin.from("founder_common_control_accounts").select("founder_identity_id, profile_id").is("revoked_at", null).in("profile_id", ids),
   ]);

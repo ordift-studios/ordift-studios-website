@@ -1,5 +1,5 @@
 // ORDIFT-POL-FSR-001 — Founder Self-Review & Client Deliverable Release Exception. Pure rules, no I/O, safe to import
-// from client components. The database independently enforces the same rules (migration 0169); this module is what the
+// from client components. The database independently enforces the same rules (migration 0167); this module is what the
 // application checks BEFORE it asks the database, and what the screens use to explain the process.
 //
 // The exception is not a role and not a bypass. It applies only to the verified Founder identity, on an engagement where

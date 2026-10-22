@@ -1,7 +1,7 @@
 // @vitest-environment node
 //
 // END-TO-END against REAL PostgreSQL (rehearsal container) through REAL PostgREST: the actual Founder self-review code, the
-// actual migration 0169, real per-user JWTs (so RLS and the server-only guards genuinely apply) and a service-role key.
+// actual migration 0167, real per-user JWTs (so RLS and the server-only guards genuinely apply) and a service-role key.
 // Synthetic users, a synthetic job and synthetic image rows only; storage and outbound email are stubbed. It cannot reach
 // Staging or Production: the URL must be localhost.
 import { beforeAll, describe, expect, it, vi } from "vitest";
