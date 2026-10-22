@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { makeFakeDb, type FakeDb } from "./fakeAdmin.testkit";
+import { storeTestEvidence } from "./approvalEvidence.testkit";
 import { makeZip } from "./zipFixture.testkit";
 
 const h = vi.hoisted(() => ({ db: null as unknown as FakeDb, authorized: true, logged: [] as { action: string; entityId: string; metadata: Record<string, unknown>; actorUserId: string }[] }));
@@ -28,11 +29,13 @@ const version = (o: Record<string, unknown> = {}) => ({
   id: "v1", master_id: "m1", status: "approved", approved_by: "Legal Counsel", approved_at: null, effective_date: null, content_reference: null, document_hash: null,
   master_docx_storage_path: "masters-docx/OS-LGL-010/a.docx", master_docx_sha256: sha(cleanDocx), master_pdf_storage_path: "masters-pdf/OS-LGL-010/a.pdf", master_pdf_sha256: sha(pdf), created_at: "2026-09-08T01:36:30Z", ...o,
 });
-const input = { approvalDate: "2026-09-05", counselName: "Counsel Name", counselFirm: "Firm LLP", evidenceKind: "counsel_email", evidenceReference: "Email of 5 Sep 2026 approving the legal suite, filed in the legal archive", evidenceSha256: "a".repeat(64), coversDocumentCodes: ["OS-LGL-010"] };
+const input = { approvalDate: "2026-09-05", counselName: "Counsel Name", counselFirm: "Firm LLP", evidenceKind: "counsel_email", evidenceReference: "Email of 5 Sep 2026 approving the legal suite, filed in the legal archive", evidenceDocumentId: "", coversDocumentCodes: ["OS-LGL-010"] };
 
-beforeEach(() => {
+beforeEach(async () => {
   h.authorized = true; h.logged = [];
-  h.db = makeFakeDb({ legal_document_versions: [version()], legal_document_masters: [{ id: "m1", canonical_code: "OS-LGL-010", current_version_id: "v1" }], activity_log: [] }, { "masters-docx/OS-LGL-010/a.docx": cleanDocx, "masters-pdf/OS-LGL-010/a.pdf": pdf });
+  h.db = makeFakeDb({ legal_document_versions: [version()], legal_document_masters: [{ id: "m1", canonical_code: "OS-LGL-010", title: "Instructor / Workshop Facilitator Agreement", current_version_id: "v1" }], legal_suite_provenance_documents: [], activity_log: [] }, { "masters-docx/OS-LGL-010/a.docx": cleanDocx, "masters-pdf/OS-LGL-010/a.pdf": pdf });
+  input.evidenceDocumentId = await storeTestEvidence("v1", "u1");
+  h.db.writes.length = 0; // setup writes are not part of what each test asserts
 });
 
 describe("attestHistoricalApproval", () => {
@@ -55,8 +58,9 @@ describe("attestHistoricalApproval", () => {
     expect((await attestHistoricalApproval({ versionId: "v1", input, actorUserId: "u1" })).ok).toBe(false);
     expect(h.db.tables.activity_log).toEqual([]);
   });
-  it("requires the evidence fingerprint, refuses a second attestation, and refuses to report success if the audit write fails", async () => {
-    expect((await attestHistoricalApproval({ versionId: "v1", input: { ...input, evidenceSha256: null }, actorUserId: "u1" })).ok).toBe(false);
+  it("requires stored evidence, refuses a second attestation, and refuses to report success if the audit write fails", async () => {
+    expect((await attestHistoricalApproval({ versionId: "v1", input: { ...input, evidenceDocumentId: "" }, actorUserId: "u1" })).ok).toBe(false);
+    expect((await attestHistoricalApproval({ versionId: "v1", input: { ...input, evidenceDocumentId: "not-stored" }, actorUserId: "u1" })).ok).toBe(false);
     expect((await attestHistoricalApproval({ versionId: "v1", input, actorUserId: "u1" })).ok).toBe(true);
     const again = await attestHistoricalApproval({ versionId: "v1", input: { ...input, approvalDate: "2026-09-06" }, actorUserId: "u1" });
     expect(!again.ok && again.error).toContain("already on record");

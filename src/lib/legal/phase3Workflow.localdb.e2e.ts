@@ -45,6 +45,8 @@ import { createInstructorEngagement } from "@/lib/workshops/instructorEngagement
 import { createWorkshopSession } from "@/lib/workshops/sessions";
 import { updateOnboardingRequirement, authorizeOnboardingRequirementOverride, getUnsatisfiedRequiredRequirements } from "@/lib/organization/onboardingRequirements";
 import { transitionLegalDocumentVersionStatus } from "./masterRegistry";
+import { storeTestEvidence } from "./approvalEvidence.testkit";
+import { loadVerifiedEvidence, storeApprovalEvidence, listApprovalEvidence } from "./approvalEvidence";
 
 if (!/^https?:\/\/(127\.0\.0\.1|localhost)(:|\/|$)/.test(process.env.NEXT_PUBLIC_SUPABASE_URL ?? "")) throw new Error("Refusing to run: this E2E may only target a localhost database.");
 
@@ -74,6 +76,7 @@ beforeAll(() => {
     insert into public.user_roles (user_id, role_id) select '${STAFF}', r.id from public.roles r where r.slug = 'staff' on conflict do nothing;
     insert into public.staff_details (id, engagement_type_id) select '${KWAKU}', t.id from public.engagement_types t where t.slug='instructor' on conflict (id) do update set engagement_type_id = excluded.engagement_type_id;
     insert into public.staff_details (id, engagement_type_id) select '${EMP}', t.id from public.engagement_types t where t.slug='full_time' on conflict (id) do update set engagement_type_id = excluded.engagement_type_id;
+    delete from public.legal_suite_provenance_documents where release_version='approval-evidence';
     delete from public.activity_log where entity_id in (select id::text from public.legal_document_versions where master_id=(select id from public.legal_document_masters where canonical_code='OS-LGL-010'));
     update public.legal_document_versions set created_at='2026-09-08T01:36:30Z', status='approved', approved_at=null, activated_at=null, effective_date=null, content_reference=null, document_hash=null,
       master_docx_storage_path='${DOCX_PATH}', master_docx_sha256='${sha(CLEAN)}', master_pdf_storage_path='${PDF_PATH}', master_pdf_sha256='${sha(PDF)}'
@@ -96,7 +99,7 @@ beforeAll(() => {
   ids.docFile = sql(`insert into public.employing_entity_documents (employing_entity_id, document_type, storage_path, notes, uploaded_by, original_filename, file_sha256, mime_type, size_bytes) values ('${ids.ghana}','Business Registration Certificate','synthetic/file.pdf','SYNTHETIC stored file','${SUPER}','certificate.pdf','${"c".repeat(64)}','application/pdf',10) returning id`).split("\n")[0];
 });
 
-const input = { approvalDate: "2026-09-05", counselName: "Synthetic Counsel", counselFirm: "Synthetic LLP", evidenceKind: "counsel_email", evidenceReference: "Synthetic email approving the suite, kept in the archive", evidenceSha256: EVIDENCE, coversDocumentCodes: ["OS-LGL-010"] };
+const input = { approvalDate: "2026-09-05", counselName: "Synthetic Counsel", counselFirm: "Synthetic LLP", evidenceKind: "counsel_email", evidenceReference: "Synthetic email approving the suite, kept in the archive", evidenceDocumentId: "", coversDocumentCodes: ["OS-LGL-010"] };
 const auditCount = (action: string) => Number(sql(`select count(*) from public.activity_log where action='${action}' and entity_id in ('${ids.version}','${ids.onboarding}')`));
 
 describe("1. authority is real: an ordinary staff account can do none of the legal writes", () => {
@@ -113,14 +116,16 @@ describe("1. authority is real: an ordinary staff account can do none of the leg
 });
 
 describe("2. the approval attestation cannot misrepresent counsel's approval", () => {
-  it("rejects the Addendum date, a document it does not name, and a missing evidence fingerprint; stores nothing", async () => {
+  it("rejects the Addendum date, a document it does not name, and missing or unstored evidence; stores nothing", async () => {
+    input.evidenceDocumentId = await storeTestEvidence(ids.version, SUPER);
     expect((await attestHistoricalApproval({ versionId: ids.version, input: { ...input, approvalDate: "2026-10-11" }, actorUserId: SUPER })).ok).toBe(false);
     expect((await attestHistoricalApproval({ versionId: ids.version, input: { ...input, coversDocumentCodes: ["OS-LGL-001"] }, actorUserId: SUPER })).ok).toBe(false);
-    expect((await attestHistoricalApproval({ versionId: ids.version, input: { ...input, evidenceSha256: null }, actorUserId: SUPER })).ok).toBe(false);
+    expect((await attestHistoricalApproval({ versionId: ids.version, input: { ...input, evidenceDocumentId: "" }, actorUserId: SUPER })).ok).toBe(false);
     expect(auditCount("legal.master_version.approval_attested")).toBe(0);
   });
   it("records one attestation (approval date, verifier identity and the real recording time kept apart) and refuses a duplicate", async () => {
-    expect((await attestHistoricalApproval({ versionId: ids.version, input, actorUserId: SUPER })).ok).toBe(true);
+    const first = await attestHistoricalApproval({ versionId: ids.version, input, actorUserId: SUPER });
+    expect(first, JSON.stringify(first)).toMatchObject({ ok: true });
     expect((await attestHistoricalApproval({ versionId: ids.version, input: { ...input, approvalDate: "2026-09-06" }, actorUserId: SUPER })).ok).toBe(false);
     expect(auditCount("legal.master_version.approval_attested")).toBe(1);
     expect(sql(`select actor_user_id::text||'|'||(metadata->>'approvalDate')||'|'||(created_at::date)::text from public.activity_log where action='legal.master_version.approval_attested'`)).toBe(`${SUPER}|2026-09-05|${new Date().toISOString().slice(0, 10)}`);
@@ -268,5 +273,25 @@ describe("8. Step 7 signatory workflow: evidence upload, account link, per-entit
     expect(sig.ok).toBe(true);
     // authority is per entity: the same person is not a signatory of any other entity because of this
     expect(sql(`select count(*) from public.entity_signatories where full_name='Synthetic Founder Signatory' and employing_entity_id <> '${ids.ghana}'`)).toBe("0");
+  });
+});
+
+describe("9. approval evidence against the real schema: restrictions, duplicates, tamper detection", () => {
+  it("stores only PDF/Word/text, never twice, scoped to its document; a changed stored file is caught", async () => {
+    const base = { versionId: ids.version, description: "Synthetic counsel email for the real-schema test", actorUserId: SUPER };
+    expect((await storeApprovalEvidence({ ...base, filename: "screenshot.png", bytes: new Uint8Array([137, 80, 78, 71, 1]) })).ok).toBe(false);
+    expect((await storeApprovalEvidence({ ...base, filename: "x.txt", bytes: new TextEncoder().encode("hi") , actorUserId: STAFF })).ok).toBe(false);
+    const text = new TextEncoder().encode("Counsel email 5 September 2026 approving OS-LGL-010 (synthetic, distinct content 9).");
+    const a = await storeApprovalEvidence({ ...base, filename: "e1.txt", bytes: text });
+    const b = await storeApprovalEvidence({ ...base, filename: "e1-copy.txt", bytes: text });
+    expect(a.ok && b.ok && b.duplicate && b.item.id === a.item.id).toBe(true);
+    expect((await listApprovalEvidence(ids.version)).filter((e) => e.sha256 === (a.ok ? a.item.sha256 : "")).length).toBe(1);
+    expect((await loadVerifiedEvidence(ids.version, a.ok ? a.item.id : "", null)).ok).toBe(true);
+    const path = a.ok ? a.item.storagePath : "";
+    const original = h.storage[path];
+    h.storage[path] = new TextEncoder().encode("altered");
+    const bad = await loadVerifiedEvidence(ids.version, a.ok ? a.item.id : "", null);
+    expect(!bad.ok && bad.error).toContain("HARD STOP");
+    h.storage[path] = original;
   });
 });

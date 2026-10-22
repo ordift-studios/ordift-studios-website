@@ -58,6 +58,7 @@ import { recordSignatoryConsent, recordSignatorySignature, recordSignatoryDeclin
 import { createInstructorEngagement } from "@/lib/workshops/instructorEngagements";
 import { getUnsatisfiedRequiredRequirements } from "@/lib/organization/onboardingRequirements";
 import type { ScheduleATerms } from "./instructorAgreementTerms";
+import { storeTestEvidence } from "./approvalEvidence.testkit";
 
 if (!/^https?:\/\/(127\.0\.0\.1|localhost)(:|\/|$)/.test(process.env.NEXT_PUBLIC_SUPABASE_URL ?? "")) throw new Error("Refusing to run: this E2E may only target a localhost database.");
 
@@ -96,6 +97,7 @@ beforeAll(async () => {
     delete from public.workshop_instructor_engagements where profile_id='${KWAKU}';
     delete from public.entity_signatories where full_name like 'Synthetic%';
     delete from public.employing_entity_documents where notes like 'SYNTHETIC%';
+    delete from public.legal_suite_provenance_documents where release_version='approval-evidence';
     delete from public.activity_log where entity_id in (select id::text from public.legal_document_versions where master_id=(select id from public.legal_document_masters where canonical_code='OS-LGL-010'));
     update public.legal_document_versions set created_at='2026-09-08T01:36:30Z', status='approved', approved_at=null, activated_at=null, effective_date=null, content_reference=null, document_hash=null,
       master_docx_storage_path='${DOCX_PATH}', master_docx_sha256='${sha(CLEAN)}', master_pdf_storage_path='${PDF_PATH}', master_pdf_sha256='${sha(PDF)}'
@@ -111,7 +113,7 @@ beforeAll(async () => {
   ids.docFile = sql(`insert into public.employing_entity_documents (employing_entity_id, document_type, storage_path, notes, uploaded_by, original_filename, file_sha256, mime_type, size_bytes) values ('${ids.ghana}','Business Registration Certificate','synthetic/file.pdf','SYNTHETIC stored file','${SUPER}','certificate.pdf','${"c".repeat(64)}','application/pdf',10) returning id`).split("\n")[0];
 
   // every legal prerequisite, through the real actions (the Founder's explicit steps in the workspace)
-  const ev = { approvalDate: "2026-09-05", counselName: "Synthetic Counsel", counselFirm: "Synthetic LLP", evidenceKind: "counsel_email", evidenceReference: "Synthetic email approving the suite, filed in the archive", evidenceSha256: "e".repeat(64), coversDocumentCodes: ["OS-LGL-010"] };
+  const ev = { approvalDate: "2026-09-05", counselName: "Synthetic Counsel", counselFirm: "Synthetic LLP", evidenceKind: "counsel_email", evidenceReference: "Synthetic email approving the suite, filed in the archive", evidenceDocumentId: await storeTestEvidence(ids.version, SUPER), coversDocumentCodes: ["OS-LGL-010"] };
   for (const r of [
     await attestHistoricalApproval({ versionId: ids.version, input: ev, actorUserId: SUPER }),
     await registerControlledMaster({ versionId: ids.version, actorUserId: SUPER }),

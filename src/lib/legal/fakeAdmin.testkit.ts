@@ -23,7 +23,7 @@ export function fakeAdmin(db: FakeDb) {
     const run = () => {
       if (mode === "insert" && db.failInsert?.has(table)) return { data: null, error: { message: "simulated write failure" } };
       if (mode === "insert") { const row: Row = { id: payload.id ?? `${table}-${rows().length + 1}`, ...payload };
-      if (table === "activity_log" && !row.created_at) row.created_at = new Date(Date.UTC(2026, 9, 30, 10, 0, rows().length)).toISOString(); rows().push(row); db.writes.push({ table, op: "insert", values: payload }); return { data: [row], error: null }; }
+      if (!row.created_at) row.created_at = new Date(Date.UTC(2026, 9, 30, 10, 0, rows().length)).toISOString(); rows().push(row); db.writes.push({ table, op: "insert", values: payload }); return { data: [row], error: null }; }
       if (mode === "update") { const m = matched(); m.forEach((r) => Object.assign(r, payload)); db.writes.push({ table, op: "update", values: payload, matched: m.length }); return { data: m, error: null }; }
       return { data: matched(), error: null };
     };
@@ -32,6 +32,7 @@ export function fakeAdmin(db: FakeDb) {
       insert: (v: Row) => { mode = "insert"; payload = v; return b; },
       update: (v: Row) => { mode = "update"; payload = v; return b; },
       eq: (c: string, v: unknown) => { filters.push((r) => r[c] === v); return b; },
+      like: (c: string, pat: string) => { const pre = pat.replace(/%$/, ""); filters.push((r) => String(r[c] ?? "").startsWith(pre)); return b; },
       in: (c: string, vs: unknown[]) => { filters.push((r) => vs.includes(r[c])); return b; },
       is: (c: string, v: unknown) => { filters.push((r) => (r[c] ?? null) === v); return b; },
       ilike: (c: string, v: string) => { filters.push((r) => String(r[c] ?? "").toLowerCase() === v.toLowerCase()); return b; },
@@ -45,7 +46,7 @@ export function fakeAdmin(db: FakeDb) {
   }
   return {
     from,
-    storage: { from: () => ({ download: async (path: string) => (db.storage[path] ? { data: new Blob([db.storage[path] as BlobPart]), error: null } : { data: null, error: { message: "missing" } }) }) },
+    storage: { from: () => ({ download: async (path: string) => (db.storage[path] ? { data: new Blob([db.storage[path] as BlobPart]), error: null } : { data: null, error: { message: "missing" } }), upload: async (path: string, body: Buffer) => { if (db.storage[path]) return { error: { message: "exists" } }; db.storage[path] = new Uint8Array(body); return { error: null }; } }) },
     auth: { admin: { getUserById: async () => ({ data: { user: { email: "kwaku@example.test" } } }) } },
   };
 }

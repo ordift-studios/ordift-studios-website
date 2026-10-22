@@ -9,6 +9,7 @@ import { addEntitySignatory, addVaultDocument, findActiveProfileByMemberNumber }
 import { ENTITY_DOCUMENT_TYPES } from "@/lib/organization/entityRegistry";
 import { loadOnboardingDecisions } from "@/lib/organization/onboardingDecisions";
 import { STEP7_UPLOAD_MAX_BYTES, STEP7_UPLOAD_MAX_LABEL } from "@/lib/organization/onboardingUploadLimit";
+import { storeApprovalEvidence } from "@/lib/legal/approvalEvidence";
 import { prepareInstructorAgreementDraft, resolveOnboardingLegalContext } from "@/lib/legal/instructorAgreements";
 import { approveInstructorAgreementForIssue, issueInstructorAgreement, saveInstructorScheduleA } from "@/lib/legal/instructorAgreementIssuance";
 import { SCHEDULE_A_FIELDS, type ScheduleATerms } from "@/lib/legal/instructorAgreementTerms";
@@ -17,7 +18,7 @@ import { SCHEDULE_A_FIELDS, type ScheduleATerms } from "@/lib/legal/instructorAg
 // the existing authoritative function, which independently re-checks its own authority (contract administration / Super Admin) and writes
 // the audit record. Nothing here issues, signs or sends an agreement, sends an invitation or creates an engagement.
 
-export type JourneyActionState = { ok: boolean; message?: string; error?: string; errors?: string[] } | null;
+export type JourneyActionState = { ok: boolean; message?: string; error?: string; errors?: string[]; details?: string[] } | null;
 const f = (d: FormData, k: string) => String(d.get(k) ?? "").trim();
 
 async function actor(onboardingId: string): Promise<{ id: string } | { error: string }> {
@@ -30,16 +31,48 @@ async function actor(onboardingId: string): Promise<{ id: string } | { error: st
 const done = (onboardingId: string, message: string): JourneyActionState => { revalidatePath(`/admin/organization/onboarding/${onboardingId}`); return { ok: true, message }; };
 const fail = (r: { error: string; errors?: string[] }): JourneyActionState => ({ ok: false, error: r.error, errors: r.errors });
 
+export async function uploadApprovalEvidenceAction(_p: JourneyActionState, d: FormData): Promise<JourneyActionState> {
+  const onboardingId = f(d, "onboardingId");
+  const a = await actor(onboardingId);
+  if ("error" in a) return { ok: false, error: a.error };
+  const file = d.get("file");
+  const pasted = f(d, "pastedText");
+  let filename: string; let bytes: Uint8Array;
+  if (file instanceof File && file.size > 0) {
+    if (file.size > STEP7_UPLOAD_MAX_BYTES) return { ok: false, error: `This file is too large for this form (the limit here is ${STEP7_UPLOAD_MAX_LABEL}). Nothing has been stored.` };
+    filename = file.name; bytes = new Uint8Array(await file.arrayBuffer());
+  } else if (pasted.length >= 40) {
+    // A message with no document to upload: kept as an immutable, fingerprinted transcript, labelled as pasted by the administrator.
+    filename = `transcript-pasted-${new Date().toISOString().slice(0, 10)}.txt`; bytes = new TextEncoder().encode(pasted);
+  } else return { ok: false, error: "Choose a file, or paste the text of the message (at least a few sentences). A description alone is not evidence." };
+  const r = await storeApprovalEvidence({ versionId: f(d, "versionId"), filename, bytes, description: f(d, "description"), counselName: f(d, "counselName") || null, actorUserId: a.id });
+  if (!r.ok) return { ok: false, error: r.error };
+  const t = r.text;
+  const details = [
+    `Stored as: ${r.item.name}`,
+    `SHA-256 computed by the server: ${r.item.sha256}`,
+    `Size: ${r.sizeBytes} bytes`,
+    "Verification: the stored copy was read back and re-hashed - it matches.",
+    ...(r.duplicate ? ["This exact file was already stored for this document; the existing record is used."] : []),
+    ...(t.checked
+      ? [`Mentions this document: ${t.mentionsDocument ? "yes" : "NO - it cannot support an approval of this document"}`, `Mentions the counsel's surname: ${t.mentionsCounsel === null ? "not checked (no counsel name entered)" : t.mentionsCounsel ? "yes" : "no"}`, `Dates found in the text: ${t.datesFound.length ? t.datesFound.join(", ") : "none"}`, "These are text matches only; the system does not decide who approved or which date is the approval date."]
+      : [t.reason]),
+  ];
+  revalidatePath(`/admin/organization/onboarding/${onboardingId}`);
+  return { ok: true, message: "Evidence stored. Review the details, then complete the attestation below.", details };
+}
+
 export async function attestApprovalAction(_p: JourneyActionState, d: FormData): Promise<JourneyActionState> {
   const onboardingId = f(d, "onboardingId");
   const a = await actor(onboardingId);
   if ("error" in a) return { ok: false, error: a.error };
+  if (d.get("understands") !== "yes") return { ok: false, error: "Tick the confirmation: this is your attestation, and the system has not itself established who approved the document." };
   const code = f(d, "documentCode");
   const r = await attestHistoricalApproval({
     versionId: f(d, "versionId"), actorUserId: a.id,
-    input: { approvalDate: f(d, "approvalDate"), counselName: f(d, "counselName"), counselFirm: f(d, "counselFirm"), evidenceKind: f(d, "evidenceKind"), evidenceReference: f(d, "evidenceReference"), evidenceSha256: f(d, "evidenceSha256") || null, coversDocumentCodes: d.get("namesThisDocument") === "yes" && code ? [code] : [] },
+    input: { approvalDate: f(d, "approvalDate"), counselName: f(d, "counselName"), counselFirm: f(d, "counselFirm"), evidenceKind: f(d, "evidenceKind"), evidenceReference: f(d, "evidenceReference"), evidenceDocumentId: f(d, "evidenceDocumentId"), coversDocumentCodes: d.get("namesThisDocument") === "yes" && code ? [code] : [] },
   });
-  return r.ok ? done(onboardingId, "Historical approval recorded with your identity and the current time.") : fail(r);
+  return r.ok ? done(onboardingId, "Historical approval attested with your identity and the current time, linked to the stored evidence.") : fail(r);
 }
 
 export async function registerMasterAction(_p: JourneyActionState, d: FormData): Promise<JourneyActionState> {

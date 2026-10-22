@@ -9,7 +9,7 @@
 //   4. activation timestamp       - stamped by the registry when the version is activated
 //   5. the individual agreement's own effective / execution dates - belong to that agreement, never to the template
 
-export const EVIDENCE_KINDS = ["signed_letter", "counsel_email", "signed_register", "other_written_record"] as const;
+export const EVIDENCE_KINDS = ["signed_letter", "counsel_email", "counsel_message", "message_transcript", "signed_register", "other_written_record"] as const;
 export type EvidenceKind = (typeof EVIDENCE_KINDS)[number];
 
 export type AttestationInput = {

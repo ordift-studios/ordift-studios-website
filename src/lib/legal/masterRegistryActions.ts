@@ -3,6 +3,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { recordAuditEvent } from "./strictAudit";
 import { authorizeWithSuperAdminOverride, GOVERNANCE_CAPABILITIES } from "@/lib/organization/authority";
 import { validateApprovalAttestation, resolveApprovalDate, type AttestationInput } from "./approvalAttestation";
+import { loadVerifiedEvidence } from "./approvalEvidence";
 import { deriveMasterContentReference, verifyStoredMaster } from "./masterContentReference";
 import { extractDocxText, findUnresolvedReviewMarkers } from "./docxText";
 import { checkActivationPreconditions } from "./legalGovernance";
@@ -62,7 +63,7 @@ export async function loadRegistrationCheck(versionId: string): Promise<{ unreso
 }
 
 // ------------------------------------------------------------------ 1. verify historical approval
-export async function attestHistoricalApproval(params: { versionId: string; input: Omit<AttestationInput, "documentCode">; actorUserId: string }): Promise<Result<{ approvalDate: string }>> {
+export async function attestHistoricalApproval(params: { versionId: string; input: Omit<AttestationInput, "documentCode" | "evidenceSha256"> & { evidenceDocumentId: string }; actorUserId: string }): Promise<Result<{ approvalDate: string }>> {
   const auth = await requireAuthority(params.actorUserId);
   if (!auth.ok) return auth;
   const loaded = await loadVersion(params.versionId);
@@ -71,12 +72,14 @@ export async function attestHistoricalApproval(params: { versionId: string; inpu
   if (!["approved", "active"].includes(v.status)) return { ok: false, error: `This version is “${v.status}”; only an approved version carries a historical approval to verify.` };
   if (v.approved_at) return { ok: false, error: "The registry already holds a stamped approval date for this version; nothing needs to be attested." };
   if (await loadApprovalAttestation(v.id)) return { ok: false, error: "An approval attestation is already on record for this version and is not replaced. A correction needs the Founder's separate authorization." };
-  // The attestation is a claim by an administrator, and the system cannot inspect counsel's evidence itself. To keep it from being a bare
-  // assertion, the evidence must exist as a file whose fingerprint is recorded, and the record says exactly that.
-  if (!params.input.evidenceSha256) return { ok: false, error: "Attach the evidence: enter the SHA-256 fingerprint of the file (letter, email or register) so the record points at a real document." };
-
+  // The attestation is a claim by an administrator; the system cannot decide who approved a document. It therefore requires a STORED evidence file for
+  // this document, whose fingerprint it computes and re-verifies itself (no typed fingerprint), and it reports what it could and could not read.
+  if (!params.input.evidenceDocumentId) return { ok: false, error: "Upload or select the approval evidence first. A description alone is not accepted." };
+  const evidence = await loadVerifiedEvidence(v.id, params.input.evidenceDocumentId, params.input.counselName);
+  if (!evidence.ok) return evidence;
+  if (evidence.text.checked && !evidence.text.mentionsDocument) return { ok: false, error: `The evidence text does not mention ${code} or its title, so it cannot support an approval of this document. Select evidence that names it.` };
   const verdict = validateApprovalAttestation(
-    { ...params.input, documentCode: code },
+    { ...params.input, documentCode: code, evidenceSha256: evidence.item.sha256 },
     { documentCode: code, today: today(), versionCreatedOn: v.created_at.slice(0, 10), versionWasCreatedApproved: true },
   );
   if (!verdict.ok) return { ok: false, error: verdict.errors[0], errors: verdict.errors };
@@ -89,7 +92,9 @@ export async function attestHistoricalApproval(params: { versionId: string; inpu
     metadata: {
       basis: "administrator_attestation_system_has_not_inspected_the_evidence",
       documentCode: code, approvalDate: params.input.approvalDate, counselName: params.input.counselName.trim(), counselFirm: params.input.counselFirm.trim(),
-      evidenceKind: params.input.evidenceKind, evidenceReference: params.input.evidenceReference.trim(), evidenceSha256: params.input.evidenceSha256 ?? null,
+      evidenceKind: params.input.evidenceKind, evidenceReference: params.input.evidenceReference.trim(), evidenceSha256: evidence.item.sha256,
+      evidenceDocumentId: evidence.item.id, evidenceFile: evidence.item.name, evidenceStoragePath: evidence.item.storagePath, evidenceSizeBytes: evidence.sizeBytes, evidenceCheck: evidence.text,
+      claimedApprovalDate: params.input.approvalDate,
       coversDocumentCodes: params.input.coversDocumentCodes, versionCreatedOn: v.created_at.slice(0, 10),
     },
   });

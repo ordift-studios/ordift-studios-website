@@ -2,7 +2,7 @@ import Link from "next/link";
 import type { ReadinessCheck, AgreementReadiness } from "@/lib/legal/agreementReadiness";
 import type { InstructorStep } from "@/lib/organization/instructorWorkspace";
 import type { StepState, WorkspaceSummary } from "@/lib/workspace/processWorkspace";
-import { ActivateForm, AddSignatoryForm, ApproveForIssueForm, AttestApprovalForm, ConfirmEntityForm, IssueAgreementForm, PrepareAgreementForm, RegisterMasterForm, ScheduleAForm, SelectSignatoryForm, UploadEvidenceForm } from "./OnboardingJourneyForms";
+import { ActivateForm, AddSignatoryForm, ApprovalEvidenceForm, ApproveForIssueForm, AttestApprovalForm, type EvidenceOption, ConfirmEntityForm, IssueAgreementForm, PrepareAgreementForm, RegisterMasterForm, ScheduleAForm, SelectSignatoryForm, UploadEvidenceForm } from "./OnboardingJourneyForms";
 import type { AgreementStage } from "@/lib/legal/instructorAgreementDocument";
 import type { ScheduleATerms } from "@/lib/legal/instructorAgreementTerms";
 import type { SigningProgress } from "@/lib/legal/instructorAgreementIssuance";
@@ -31,13 +31,18 @@ function Guide({ c }: { c: ReadinessCheck }) {
   );
 }
 
-function Form({ kind, onboardingId, agreement, today, steps }: { kind: string; onboardingId: string; agreement: AgreementReadiness; today: string; steps: InstructorStep[] }) {
+function Form({ kind, onboardingId, agreement, today, steps, approvalEvidence }: { kind: string; onboardingId: string; agreement: AgreementReadiness; today: string; steps: InstructorStep[]; approvalEvidence: EvidenceOption[] }) {
   const ctx = agreement.context;
   const by = (k: string) => agreement.checks.find((c) => c.key === k);
   const entity = ctx.entity;
   switch (kind) {
     case "attest_approval":
-      return ctx.versionId ? <AttestApprovalForm onboardingId={onboardingId} versionId={ctx.versionId} documentCode={agreement.code} today={today} /> : null;
+      return ctx.versionId ? (
+        <>
+          <ApprovalEvidenceForm onboardingId={onboardingId} versionId={ctx.versionId} documentCode={agreement.code} />
+          <AttestApprovalForm onboardingId={onboardingId} versionId={ctx.versionId} documentCode={agreement.code} today={today} evidence={approvalEvidence} />
+        </>
+      ) : null;
     case "register_master":
       return ctx.versionId ? <RegisterMasterForm onboardingId={onboardingId} versionId={ctx.versionId} /> : null;
     case "activate": {
@@ -117,8 +122,8 @@ function AgreementPanel({ data, onboardingId, today }: { data: AgreementPanelDat
   );
 }
 
-export default function OnboardingJourneyPanel({ steps, summary, personName, returnPath, onboardingId, agreement, today, agreementPanel }: {
-  steps: InstructorStep[]; summary: WorkspaceSummary; personName: string | null; returnPath: string; onboardingId: string; agreement: AgreementReadiness | null; today: string; agreementPanel?: AgreementPanelData | null;
+export default function OnboardingJourneyPanel({ steps, summary, personName, returnPath, onboardingId, agreement, today, agreementPanel, approvalEvidence }: {
+  steps: InstructorStep[]; summary: WorkspaceSummary; personName: string | null; returnPath: string; onboardingId: string; agreement: AgreementReadiness | null; today: string; agreementPanel?: AgreementPanelData | null; approvalEvidence?: EvidenceOption[];
 }) {
   const current = summary.currentIndex === null ? null : steps[summary.currentIndex];
   return (
@@ -190,7 +195,7 @@ export default function OnboardingJourneyPanel({ steps, summary, personName, ret
             )}
             {agreement && s.forms.map((kind) => {
               const needed = kind === "prepare_agreement" || s.checks.some((c) => c.state !== "verified" && c.actionKey === kind);
-              return needed ? <Form key={kind} kind={kind} onboardingId={onboardingId} agreement={agreement} today={today} steps={steps} /> : null;
+              return needed ? <Form key={kind} kind={kind} onboardingId={onboardingId} agreement={agreement} today={today} steps={steps} approvalEvidence={approvalEvidence ?? []} /> : null;
             })}
 
             <nav className="flex justify-between border-t border-black/5 pt-2 font-sans text-caption text-ordift-ink-muted" aria-label={`Step ${s.number} navigation`}>

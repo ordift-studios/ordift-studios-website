@@ -24,6 +24,7 @@ import { instructorAgreementStage } from "@/lib/legal/instructorAgreementDocumen
 import { missingScheduleATerms } from "@/lib/legal/instructorAgreementTerms";
 import type { AgreementPanelData } from "@/components/admin/OnboardingJourneyPanel";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { listApprovalEvidence } from "@/lib/legal/approvalEvidence";
 import { listControlledPolicyDocuments, listPolicyAcknowledgementsForProfile } from "@/lib/organization/policyAcknowledgements";
 import { loadAgreementReadiness } from "@/lib/legal/agreementReadinessData";
 
@@ -189,7 +190,8 @@ export default async function OnboardingWorkspacePage({ params }: { params: Prom
               issuedSha256: (ag?.issued_document_sha256 as string | null) ?? null, signing,
             };
           }
-          return { ...ws, agreement, agreementPanel };
+          const approvalEvidence = agreement?.context.versionId && !agreement.context.approvalDate ? (await listApprovalEvidence(agreement.context.versionId)).map((e) => ({ id: e.id, name: e.name, sha256: e.sha256, storedAt: e.storedAt })) : [];
+          return { ...ws, agreement, agreementPanel, approvalEvidence };
         })()
       : null;
 
@@ -224,6 +226,7 @@ export default async function OnboardingWorkspacePage({ params }: { params: Prom
           onboardingId={onboarding.id}
           agreement={instructorWorkspace.agreement}
           agreementPanel={instructorWorkspace.agreementPanel}
+          approvalEvidence={instructorWorkspace.approvalEvidence}
           today={new Date().toISOString().slice(0, 10)}
         />
       )}

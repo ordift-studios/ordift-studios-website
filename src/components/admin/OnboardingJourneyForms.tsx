@@ -5,7 +5,7 @@ import { STEP7_UPLOAD_MAX_BYTES, STEP7_UPLOAD_MAX_LABEL } from "@/lib/organizati
 import { SCHEDULE_A_FIELDS, INDEPENDENT_STATUS_ROUTES, PROFESSIONAL_ROLES, REGULATORY_APPROVAL_STATUSES, type ScheduleATerms } from "@/lib/legal/instructorAgreementTerms";
 import type { JourneyActionState } from "@/app/admin/organization/onboarding/[onboardingId]/journeyActions";
 import {
-  activateTemplateAction, addSignatoryAction, uploadEvidenceAction, approveForIssueAction, attestApprovalAction, confirmEntityAction, issueAgreementAction, prepareAgreementAction, registerMasterAction, saveScheduleAAction, selectSignatoryAction,
+  activateTemplateAction, addSignatoryAction, uploadEvidenceAction, uploadApprovalEvidenceAction, approveForIssueAction, attestApprovalAction, confirmEntityAction, issueAgreementAction, prepareAgreementAction, registerMasterAction, saveScheduleAAction, selectSignatoryAction,
 } from "@/app/admin/organization/onboarding/[onboardingId]/journeyActions";
 
 // Embedded forms of the guided onboarding workspace. They carry no authority of their own: each submits to a server action that re-checks
@@ -18,7 +18,7 @@ const button = "rounded-md bg-ordift-ink px-4 py-2 font-sans text-body-small tex
 function Result({ state }: { state: JourneyActionState }) {
   if (!state) return null;
   return state.ok ? (
-    <p role="status" className="font-sans text-caption text-green-800">{state.message}</p>
+    <div role="status" className="font-sans text-caption text-green-800"><p>{state.message}</p>{state.details && <ul className="mt-1 list-disc pl-5 text-ordift-ink break-all">{state.details.map((x) => <li key={x}>{x}</li>)}</ul>}</div>
   ) : (
     <div role="alert" className="font-sans text-caption text-red-800">
       <p>{state.error}</p>
@@ -36,26 +36,51 @@ function Box({ title, children }: { title: string; children: React.ReactNode }) 
   );
 }
 
-export function AttestApprovalForm({ onboardingId, versionId, documentCode, today }: { onboardingId: string; versionId: string; documentCode: string; today: string }) {
-  const [state, action, pending] = useActionState<JourneyActionState, FormData>(attestApprovalAction, null);
+export type EvidenceOption = { id: string; name: string; sha256: string; storedAt: string };
+
+export function ApprovalEvidenceForm({ onboardingId, versionId, documentCode }: { onboardingId: string; versionId: string; documentCode: string }) {
+  const [state, action, pending] = useActionState<JourneyActionState, FormData>(uploadApprovalEvidenceAction, null);
   return (
-    <Box title="Verify historical legal approval">
-      <p className="font-sans text-caption text-ordift-ink-muted">Record the real date counsel approved {documentCode}. This is an administrator attestation: the system records your claim and the evidence fingerprint but cannot inspect counsel&apos;s document itself, so only attest what the document shows. Your identity and today&apos;s date ({today}) are recorded automatically as the verification, separately from the approval date. Nothing here activates or issues anything.</p>
-      <form action={action} className="space-y-3">
-        <input type="hidden" name="onboardingId" value={onboardingId} /><input type="hidden" name="versionId" value={versionId} /><input type="hidden" name="documentCode" value={documentCode} />
-        <div><label className={label} htmlFor="approvalDate">Date counsel approved this document</label><input id="approvalDate" name="approvalDate" type="date" required max={today} className={input} /></div>
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <div><label className={label} htmlFor="counselName">Counsel&apos;s name</label><input id="counselName" name="counselName" required className={input} /></div>
-          <div><label className={label} htmlFor="counselFirm">Firm</label><input id="counselFirm" name="counselFirm" required className={input} /></div>
-        </div>
-        <div><label className={label} htmlFor="evidenceKind">Kind of evidence</label>
-          <select id="evidenceKind" name="evidenceKind" required className={input} defaultValue=""><option value="" disabled>Choose…</option><option value="signed_letter">Signed letter</option><option value="counsel_email">Counsel&apos;s email</option><option value="signed_register">Signed register or certificate</option><option value="other_written_record">Other written record</option></select></div>
-        <div><label className={label} htmlFor="evidenceReference">What the evidence is and where it is kept</label><textarea id="evidenceReference" name="evidenceReference" required rows={2} className={input} /></div>
-        <div><label className={label} htmlFor="evidenceSha256">Evidence file fingerprint (SHA-256, required — run “shasum -a 256 &lt;file&gt;” on the letter, email or register)</label><input id="evidenceSha256" name="evidenceSha256" required pattern="[0-9a-fA-F]{64}" className={input} /></div>
-        <label className="flex items-start gap-2 font-sans text-body-small text-ordift-ink"><input type="checkbox" name="namesThisDocument" value="yes" className="mt-1" /> The evidence expressly names {documentCode}. (A date belonging to a different document set cannot be used.)</label>
-        <button className={button} disabled={pending}>{pending ? "Recording…" : "Record verified approval"}</button>
+    <Box title={`1. Upload the approval evidence for ${documentCode}`}>
+      <p className="font-sans text-caption text-ordift-ink-muted">Upload the document that shows counsel approved <strong>{documentCode}</strong>: a signed letter, or an email or chat saved as a PDF, a Word file or a text file (up to {STEP7_UPLOAD_MAX_LABEL} through this form). If you only have a message, paste its text below and it is stored as a fingerprinted transcript. The system calculates and verifies the fingerprint itself, and shows you what it stored and what it could read. A description on its own is not accepted.</p>
+      <form action={action} className="space-y-3" encType="multipart/form-data" onSubmit={(e) => { const f = (e.currentTarget.elements.namedItem("file") as HTMLInputElement | null)?.files?.[0]; if (f && f.size > STEP7_UPLOAD_MAX_BYTES) { e.preventDefault(); alert(`This file is ${(f.size / 1_000_000).toFixed(1)} MB; the limit here is ${STEP7_UPLOAD_MAX_LABEL}. Nothing was uploaded.`); } }}>
+        <input type="hidden" name="onboardingId" value={onboardingId} /><input type="hidden" name="versionId" value={versionId} />
+        <div><label className={label} htmlFor="ae-file">File (PDF, Word or text)</label><input id="ae-file" name="file" type="file" accept=".pdf,.docx,.txt" className={input} /></div>
+        <div><label className={label} htmlFor="ae-paste">…or paste the text of the message</label><textarea id="ae-paste" name="pastedText" rows={4} className={input} /></div>
+        <div><label className={label} htmlFor="ae-desc">What is this evidence? (required, e.g. “Email from counsel dated …”)</label><input id="ae-desc" name="description" required className={input} /></div>
+        <div><label className={label} htmlFor="ae-counsel">Counsel named in it (optional, only used to check the text)</label><input id="ae-counsel" name="counselName" className={input} /></div>
+        <button className={button} disabled={pending}>{pending ? "Storing and verifying…" : "Store and verify evidence"}</button>
         <Result state={state} />
       </form>
+    </Box>
+  );
+}
+
+export function AttestApprovalForm({ onboardingId, versionId, documentCode, today, evidence }: { onboardingId: string; versionId: string; documentCode: string; today: string; evidence: EvidenceOption[] }) {
+  const [state, action, pending] = useActionState<JourneyActionState, FormData>(attestApprovalAction, null);
+  return (
+    <Box title="2. Attest the historical approval">
+      <p className="font-sans text-caption text-ordift-ink-muted">This is an administrator attestation: you state the date and counsel shown in the evidence. Nothing is assumed: the recorded 8 September 2026 ingestion date is not proof of approval, and counsel associated with a different legal package is not treated as the approver of {documentCode}. Your identity and today&apos;s date ({today}) are recorded as the verification, separately from the approval date. Nothing here activates or issues anything.</p>
+      {evidence.length === 0 ? <p className="font-sans text-caption text-amber-900">No evidence has been stored for {documentCode} yet. Complete step 1 first.</p> : (
+        <form action={action} className="space-y-3">
+          <input type="hidden" name="onboardingId" value={onboardingId} /><input type="hidden" name="versionId" value={versionId} /><input type="hidden" name="documentCode" value={documentCode} />
+          <div><label className={label} htmlFor="evidenceDocumentId">Evidence file</label>
+            <select id="evidenceDocumentId" name="evidenceDocumentId" required className={input} defaultValue={evidence[0].id}>{evidence.map((e) => <option key={e.id} value={e.id}>{e.name.slice(0, 110)} — SHA-256 {e.sha256.slice(0, 12)}…</option>)}</select>
+            <ul className="mt-1 font-sans text-caption text-ordift-ink-muted">{evidence.map((e) => <li key={e.id} className="break-all">{e.name} — stored {e.storedAt.slice(0, 16).replace("T", " ")} — full SHA-256 <span className="font-mono">{e.sha256}</span> — re-verified when you submit</li>)}</ul></div>
+          <div><label className={label} htmlFor="approvalDate">Date counsel approved this document, as shown in the evidence</label><input id="approvalDate" name="approvalDate" type="date" required max={today} className={input} /></div>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div><label className={label} htmlFor="counselName">Counsel&apos;s name, as shown in the evidence</label><input id="counselName" name="counselName" required className={input} /></div>
+            <div><label className={label} htmlFor="counselFirm">Firm</label><input id="counselFirm" name="counselFirm" required className={input} /></div>
+          </div>
+          <div><label className={label} htmlFor="evidenceKind">Kind of evidence</label>
+            <select id="evidenceKind" name="evidenceKind" required className={input} defaultValue=""><option value="" disabled>Choose…</option><option value="signed_letter">Signed letter</option><option value="counsel_email">Counsel&apos;s email</option><option value="counsel_message">Counsel&apos;s written message (chat)</option><option value="message_transcript">Transcript of a message, pasted by an administrator</option><option value="signed_register">Signed register or certificate</option><option value="other_written_record">Other written record</option></select></div>
+          <div><label className={label} htmlFor="evidenceReference">Where the original is kept and what in the evidence supports this (required)</label><textarea id="evidenceReference" name="evidenceReference" required rows={2} className={input} /></div>
+          <label className="flex items-start gap-2 font-sans text-body-small text-ordift-ink"><input type="checkbox" name="namesThisDocument" value="yes" className="mt-1" /> The evidence expressly names {documentCode} and the approval date I entered.</label>
+          <label className="flex items-start gap-2 font-sans text-body-small text-ordift-ink"><input type="checkbox" name="understands" value="yes" className="mt-1" /> I understand this is my attestation and that the system has not itself established who approved the document.</label>
+          <button className={button} disabled={pending}>{pending ? "Recording…" : "Record attested approval"}</button>
+          <Result state={state} />
+        </form>
+      )}
     </Box>
   );
 }

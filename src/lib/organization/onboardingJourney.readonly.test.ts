@@ -23,12 +23,12 @@ describe("the guided journey adds no way to change a record and no new access", 
     const panel = read("../../components/admin/OnboardingJourneyPanel.tsx");
     expect(panel).not.toMatch(/<form|<button|action=\{/);
     const forms = read("../../components/admin/OnboardingJourneyForms.tsx");
-    for (const a of ["attestApprovalAction", "registerMasterAction", "activateTemplateAction", "confirmEntityAction", "addSignatoryAction", "selectSignatoryAction", "prepareAgreementAction", "uploadEvidenceAction", "saveScheduleAAction", "approveForIssueAction", "issueAgreementAction"]) expect(forms).toContain(a);
+    for (const a of ["attestApprovalAction", "registerMasterAction", "activateTemplateAction", "confirmEntityAction", "addSignatoryAction", "selectSignatoryAction", "prepareAgreementAction", "uploadEvidenceAction", "uploadApprovalEvidenceAction", "saveScheduleAAction", "approveForIssueAction", "issueAgreementAction"]) expect(forms).toContain(a);
   });
   it("every embedded server action first requires onboarding-management authority, then delegates to an authoritative function", () => {
     const actions = read("../../app/admin/organization/onboarding/[onboardingId]/journeyActions.ts");
-    expect(actions.split("export async function ").length - 1).toBe(11);
-    expect(actions.split("await actor(onboardingId)").length - 1).toBe(11);
+    expect(actions.split("export async function ").length - 1).toBe(12);
+    expect(actions.split("await actor(onboardingId)").length - 1).toBe(12);
     // the two record-changing legal steps that send or approve for sending need an explicit tick in the same submission
     expect(actions).toContain('d.get("confirmPreview") !== "yes"');
     expect(actions).toContain('d.get("confirmIssue") !== "yes"');
@@ -48,6 +48,13 @@ describe("the guided journey adds no way to change a record and no new access", 
     expect(forms).not.toContain("up to 10 MB");
     expect(actions).toContain("file.size > STEP7_UPLOAD_MAX_BYTES");
     expect(read("./onboardingUploadLimit.ts")).toContain("STEP7_UPLOAD_MAX_BYTES = 1_000_000");
+  });
+  it("the Step 6 form no longer asks for a typed fingerprint: the server computes it", () => {
+    const forms = read("../../components/admin/OnboardingJourneyForms.tsx");
+    const actions = read("../../app/admin/organization/onboarding/[onboardingId]/journeyActions.ts");
+    expect(forms).not.toContain('name="evidenceSha256"');
+    expect(forms).toContain('name="evidenceDocumentId"');
+    expect(actions).not.toContain('f(d, "evidenceSha256")');
   });
   it("no migration is part of this work: nothing was added under supabase/migrations or supabase/proposals", () => {
     expect(() => read("../../../supabase/proposals/PROPOSED_legal_approval_attestations.sql")).toThrow();
