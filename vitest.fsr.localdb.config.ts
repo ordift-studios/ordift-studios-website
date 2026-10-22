@@ -13,7 +13,7 @@ export default defineConfig({
   plugins: [tsconfigPaths()],
   test: {
     environment: "node",
-    include: ["src/**/founderSelfReview.localdb.e2e.ts"],
+    include: ["src/**/founderSelfReview*.localdb.e2e.ts"],
     testTimeout: 90000,
     hookTimeout: 180000,
     fileParallelism: false,
