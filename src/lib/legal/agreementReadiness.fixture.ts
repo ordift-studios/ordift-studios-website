@@ -16,10 +16,13 @@ export const recorded: AgreementReadinessInput = {
   recordedEntityId: "gh",
   confirmedEntityId: null,
   entityCandidates: [
-    { id: "gh", name: "Ordift Studios", jurisdiction: "Ghana", verified: true, hasSignatory: false, signatoryName: null, href: "/admin/organization/legal-entities/gh" },
-    { id: "qa", name: "Ordift Studios (Qatar)", jurisdiction: "Qatar", verified: true, hasSignatory: true, signatoryName: "Myredlive Anim-Tetey", href: "/admin/organization/legal-entities/qa" },
+    { id: "gh", name: "Ordift Studios", jurisdiction: "Ghana", verified: true, signatories: [], documents: [{ id: "d1", type: "Business Registration Certificate", filename: null, hasStoredFile: false, notes: "Ordift Studios Ghana Certificate of Registration — issued 7 May 2018." }], href: "/admin/organization/legal-entities/gh" },
+    { id: "qa", name: "Ordift Studios (Qatar)", jurisdiction: "Qatar", verified: true, signatories: [{ id: "s1", fullName: "Myredlive Anim-Tetey", position: "Owner", authority: "Full and absolute authority", sourceDocumentId: "d9", profileId: null }], documents: [], href: "/admin/organization/legal-entities/qa" },
   ],
+  versionId: "v1",
+  registrationCheck: null,
+  selectedSignatoryId: null,
+  founder: { profileId: "f1", name: "Myredlive Anim-Tetey", memberNumber: "0001" },
   attestation: null,
-  attestationStoreAvailable: false,
   legalHref: "/admin/legal",
 };

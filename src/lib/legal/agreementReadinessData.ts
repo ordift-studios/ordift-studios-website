@@ -1,14 +1,16 @@
 import { createAdminClient } from "@/lib/supabase/admin";
-import { assessAgreementReadiness, type AgreementReadiness, type AttestationFacts, type EntityCandidate } from "./agreementReadiness";
+import { assessAgreementReadiness, type AgreementReadiness, type AttestationFacts, type EntityCandidate, type FounderFact } from "./agreementReadiness";
+import { loadApprovalAttestation, loadRegistrationCheck } from "./masterRegistryActions";
+import { loadOnboardingDecisions } from "@/lib/organization/onboardingDecisions";
 
-// Read-only loader: gathers the recorded facts for one controlled legal document and the verified legal entities, then assesses them.
-// It writes nothing and changes no approval, version, entity or audit record.
+// Read-only loader: gathers the recorded facts for one controlled legal document, the verified legal entities (with their documents and
+// signatories), the Founder's verified identity and the audited decisions made in this onboarding, then assesses them. It writes nothing.
 export async function loadAgreementReadiness(params: {
+  onboardingId: string;
   canonicalCode: string;
   jurisdictionName: string | null;
   jurisdictionSource: string | null;
   recordedEntityId: string | null;
-  confirmedEntityId: string | null;
 }): Promise<AgreementReadiness | null> {
   const admin = createAdminClient();
   const { data: master } = await admin.from("legal_document_masters").select("id, title, current_version_id").eq("canonical_code", params.canonicalCode).maybeSingle();
@@ -21,14 +23,15 @@ export async function loadAgreementReadiness(params: {
         .maybeSingle()
     : { data: null };
 
-  const [{ data: entities }, { data: jurisdictions }, { data: signatories }] = await Promise.all([
+  const [{ data: entities }, { data: jurisdictions }, { data: signatories }, { data: documents }, { data: founderRow }, decisions] = await Promise.all([
     admin.from("employing_entities").select("id, name, jurisdiction_id, active, verification_status"),
     admin.from("employment_jurisdictions").select("id, name"),
-    admin.from("entity_signatories").select("employing_entity_id, full_name").is("effective_to", null),
+    admin.from("entity_signatories").select("id, employing_entity_id, full_name, position, authority, source_document_id, profile_id").is("effective_to", null),
+    admin.from("employing_entity_documents").select("id, employing_entity_id, document_type, original_filename, file_sha256, notes"),
+    admin.from("founder_identities").select("profile_id").eq("status", "active").maybeSingle(),
+    loadOnboardingDecisions(params.onboardingId),
   ]);
   const jName = new Map((jurisdictions ?? []).map((j) => [j.id as string, j.name as string]));
-  const signatoryOf = new Map<string, string>();
-  for (const s of signatories ?? []) if (!signatoryOf.has(s.employing_entity_id as string)) signatoryOf.set(s.employing_entity_id as string, s.full_name as string);
   const candidates: EntityCandidate[] = (entities ?? [])
     .filter((e) => e.active)
     .map((e) => ({
@@ -36,32 +39,37 @@ export async function loadAgreementReadiness(params: {
       name: e.name as string,
       jurisdiction: jName.get(e.jurisdiction_id as string) ?? null,
       verified: e.verification_status === "verified",
-      hasSignatory: signatoryOf.has(e.id as string),
-      signatoryName: signatoryOf.get(e.id as string) ?? null,
+      signatories: (signatories ?? []).filter((s) => s.employing_entity_id === e.id).map((s) => ({ id: s.id as string, fullName: s.full_name as string, position: s.position as string, authority: (s.authority as string | null) ?? null, sourceDocumentId: (s.source_document_id as string | null) ?? null, profileId: (s.profile_id as string | null) ?? null })),
+      documents: (documents ?? []).filter((d) => d.employing_entity_id === e.id).map((d) => ({ id: d.id as string, type: d.document_type as string, filename: (d.original_filename as string | null) ?? null, hasStoredFile: Boolean(d.file_sha256 && d.original_filename), notes: (d.notes as string | null) ?? null })),
       href: `/admin/organization/legal-entities/${e.id as string}`,
     }));
 
-  // The attestation store is a PROPOSED table that does not exist until a separately authorised migration is applied; its absence is
-  // a normal state here, not an error.
+  let founder: FounderFact = null;
+  if (founderRow?.profile_id) {
+    const { data: p } = await admin.from("profiles").select("full_name, member_number").eq("id", founderRow.profile_id as string).maybeSingle();
+    if (p) founder = { profileId: founderRow.profile_id as string, name: (p.full_name as string) ?? "Founder", memberNumber: (p.member_number as string | null) ?? null };
+  }
+
   let attestation: AttestationFacts = null;
-  let attestationStoreAvailable = false;
+  let registrationCheck: { unresolvedMarkers: number } | null = null;
   if (v) {
-    const { data: a, error } = await admin
-      .from("legal_document_approval_attestations")
-      .select("approval_date, counsel_name, counsel_firm, verified_at")
-      .eq("version_id", v.id as string)
-      .order("verified_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-    if (!error) {
-      attestationStoreAvailable = true;
-      if (a) attestation = { approvalDate: a.approval_date as string, counselName: a.counsel_name as string, counselFirm: a.counsel_firm as string, verifiedAt: a.verified_at as string };
+    const a = await loadApprovalAttestation(v.id as string);
+    if (a) {
+      let verifiedByLabel: string | null = null;
+      if (a.verifiedByProfileId) {
+        const { data: p } = await admin.from("profiles").select("member_number").eq("id", a.verifiedByProfileId).maybeSingle();
+        verifiedByLabel = (p?.member_number as string | null) ? `member ${p!.member_number}` : null; // audit identity standard: member number, not name
+      }
+      attestation = { approvalDate: a.approvalDate, counselName: a.counselName, counselFirm: a.counselFirm, verifiedAt: a.verifiedAt, verifiedByLabel };
     }
+    const r = await loadRegistrationCheck(v.id as string);
+    if (r && r.unresolvedMarkers >= 0) registrationCheck = { unresolvedMarkers: r.unresolvedMarkers };
   }
 
   return assessAgreementReadiness({
     code: params.canonicalCode,
     title: master.title as string,
+    versionId: (v?.id as string | undefined) ?? null,
     version: v
       ? {
           status: v.status as string,
@@ -82,10 +90,12 @@ export async function loadAgreementReadiness(params: {
     jurisdictionName: params.jurisdictionName,
     jurisdictionSource: params.jurisdictionSource,
     recordedEntityId: params.recordedEntityId,
-    confirmedEntityId: params.confirmedEntityId,
+    confirmedEntityId: decisions.entityId,
     entityCandidates: candidates,
     attestation,
-    attestationStoreAvailable,
+    registrationCheck,
+    selectedSignatoryId: decisions.signatoryId,
+    founder,
     legalHref: "/admin/legal",
   });
 }

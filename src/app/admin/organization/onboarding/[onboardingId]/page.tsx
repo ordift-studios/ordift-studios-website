@@ -17,7 +17,9 @@ import { getEmployeeEmploymentAgreementSummary, checkEmployeeAgreementReadiness 
 import { resolveOnboardingRelationship, onboardingCopy, onboardingWorkspaceHref } from "@/lib/organization/onboardingRelationship";
 import { OnboardingWorkspace } from "./OnboardingWorkspace";
 import OnboardingJourneyPanel from "@/components/admin/OnboardingJourneyPanel";
-import { buildJourney } from "@/lib/organization/onboardingJourney";
+import { buildInstructorWorkspace } from "@/lib/organization/instructorWorkspace";
+import { getCurrentInstructorAgreement, resolveOnboardingLegalContext } from "@/lib/legal/instructorAgreements";
+import { listControlledPolicyDocuments, listPolicyAcknowledgementsForProfile } from "@/lib/organization/policyAcknowledgements";
 import { loadAgreementReadiness } from "@/lib/legal/agreementReadinessData";
 
 export const metadata: Metadata = {
@@ -130,33 +132,42 @@ export default async function OnboardingWorkspacePage({ params }: { params: Prom
       ? await Promise.all([listEmploymentTermsHistory(onboarding.profileId), listEmployerCapableEmployingEntities(), listEmploymentJurisdictions()])
       : [[], [], []];
 
-  // Guided journey (external contributors only; read-only). Instructors are the only engagement type whose onboarding currently gates on a
-  // controlled agreement, so legal readiness is assessed for OS-LGL-010 only. Jurisdiction and the candidate contracting entity are REUSED
-  // from the Founder-approved requisition; nothing is entered a second time and nothing is assumed.
+  // Guided workspace (external instructors). Jurisdiction and the candidate contracting entity are REUSED from the Founder-approved
+  // requisition; the legal facts, the Founder's identity and the decisions already taken are read from their systems of record. Nothing
+  // is entered a second time and nothing is assumed. The embedded forms act only through the existing authoritative functions.
   const isInstructor = person?.engagementTypeSlug === "instructor";
-  const journeyAgreement =
+  const instructorWorkspace =
     onboarding.pipeline === "external_contractor" && isInstructor
-      ? await loadAgreementReadiness({
-          canonicalCode: "OS-LGL-010",
-          jurisdictionName: employmentContext?.employmentJurisdictionName ?? null,
-          jurisdictionSource: requisition?.employmentJurisdictionName ? "the Founder-approved requisition" : null,
-          recordedEntityId: requisition?.employingEntityId ?? null,
-          confirmedEntityId: null,
-        })
-      : null;
-  const journey =
-    onboarding.pipeline === "external_contractor"
-      ? buildJourney({
-          pipeline: onboarding.pipeline,
-          stages: pipelineStages,
-          stage: onboarding.stage,
-          status: onboarding.status,
-          personName: person?.fullName ?? null,
-          isInstructor,
-          requirements: requirements.map((r) => ({ requirementKey: r.requirementKey, stage: r.stage, requirementType: r.requirementType, label: r.label, required: r.required, status: r.status })),
-          agreement: journeyAgreement,
-          anchors: { requirements: "#section-requirements", stage: "#section-stage" },
-        })
+      ? await (async () => {
+          const legalCtx = await resolveOnboardingLegalContext(onboarding.id);
+          const agreement = await loadAgreementReadiness({
+            onboardingId: onboarding.id,
+            canonicalCode: "OS-LGL-010",
+            jurisdictionName: legalCtx?.jurisdictionName ?? null,
+            jurisdictionSource: legalCtx?.jurisdictionName ? "the Founder-approved requisition" : null,
+            recordedEntityId: legalCtx?.recordedEntityId ?? null,
+          });
+          const draft = await getCurrentInstructorAgreement(onboarding.profileId);
+          const [controlledPolicies, acknowledgements] = await Promise.all([listControlledPolicyDocuments(), listPolicyAcknowledgementsForProfile(onboarding.profileId)]);
+          const acknowledgedIds = new Set(acknowledgements.map((a) => a.policyVersionId));
+          const policies = { registered: controlledPolicies.length, acknowledged: controlledPolicies.filter((d) => acknowledgedIds.has(d.documentVersionId)).length };
+          const ws = buildInstructorWorkspace({
+            onboardingId: onboarding.id,
+            personName: person?.fullName ?? null,
+            memberNumber: person?.memberNumber ?? null,
+            engagementTypeName: person?.engagementTypeName ?? null,
+            stage: onboarding.stage,
+            status: onboarding.status,
+            requisitionLinked: Boolean(onboarding.requisitionId),
+            startDate: requisition?.preferredStartDate ?? null,
+            policies,
+            requirements: requirements.map((r) => ({ requirementKey: r.requirementKey, stage: r.stage, requirementType: r.requirementType, label: r.label, required: r.required, status: r.status })),
+            agreement,
+            draftAgreement: draft ? { id: draft.id, reference: draft.agreementReference, status: draft.status } : null,
+            paymentInstructionCount: paymentInstructions.length,
+          });
+          return { ...ws, agreement };
+        })()
       : null;
 
   return (
@@ -181,10 +192,20 @@ export default async function OnboardingWorkspacePage({ params }: { params: Prom
         </p>
       </div>
 
-      {journey && <OnboardingJourneyPanel roadmap={journey.roadmap} next={journey.next} agreement={journeyAgreement} personName={person?.fullName ?? null} returnPath={`/admin/organization/onboarding/${onboarding.id}`} />}
+      {instructorWorkspace && (
+        <OnboardingJourneyPanel
+          steps={instructorWorkspace.steps}
+          summary={instructorWorkspace.summary}
+          personName={person?.fullName ?? null}
+          returnPath={`/admin/organization/onboarding/${onboarding.id}`}
+          onboardingId={onboarding.id}
+          agreement={instructorWorkspace.agreement}
+          today={new Date().toISOString().slice(0, 10)}
+        />
+      )}
 
       <section className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="rounded-xl border border-black/10 bg-white p-6 space-y-2">
+        <div id="section-person" className="rounded-xl border border-black/10 bg-white p-6 space-y-2 scroll-mt-6">
           <h2 className="font-serif font-medium text-body text-ordift-ink">Person</h2>
           <p className="font-sans text-body-small text-ordift-ink-muted">Name: {person?.fullName ?? "—"}</p>
           <p className="font-sans text-body-small text-ordift-ink-muted">{copy.numberLabel}: {person?.memberNumber ?? "Not yet issued"}</p>
@@ -284,7 +305,7 @@ export default async function OnboardingWorkspacePage({ params }: { params: Prom
           </p>
         </div>
 
-        <div className="rounded-xl border border-black/10 bg-white p-6 space-y-2">
+        <div id="section-payment" className="rounded-xl border border-black/10 bg-white p-6 space-y-2 scroll-mt-6">
           <h2 className="font-serif font-medium text-body text-ordift-ink">Payment / Payroll</h2>
           <p className="font-sans text-body-small text-ordift-ink-muted">
             {paymentInstructions.length > 0 ? "Payment destination on file" : "No payment destination on file"}

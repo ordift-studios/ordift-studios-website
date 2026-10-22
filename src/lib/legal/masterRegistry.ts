@@ -195,6 +195,17 @@ export async function transitionLegalDocumentVersionStatus(params: {
     return { ok: false, error: `Cannot move a legal document version from "${fromStatus}" to "${params.toStatus}".` };
   }
 
+  // Repeatable policy (Founder directive, 2026-10-22): a template cannot be ACTIVATED unless its approval date is on record - either the
+  // registry's own stamp (set by a real approve transition) or an audited, verified attestation. This is what stops the 2026-09-08
+  // omission (versions seeded as approved with no date) from ever reaching production use unnoticed.
+  if (params.toStatus === "active") {
+    const { data: stamp } = await admin.from("legal_document_versions").select("approved_at").eq("id", params.versionId).maybeSingle();
+    if (!stamp?.approved_at) {
+      const { data: attested } = await admin.from("activity_log").select("id").eq("action", "legal.master_version.approval_attested").eq("entity_id", params.versionId).limit(1).maybeSingle();
+      if (!attested) return { ok: false, error: "This version has no verified approval date, so it cannot be activated. Verify the historical approval first." };
+    }
+  }
+
   const now = new Date().toISOString();
   const updates: Record<string, unknown> = { status: params.toStatus };
   if (params.toStatus === "approved") updates.approved_at = now;

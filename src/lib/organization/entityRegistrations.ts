@@ -90,6 +90,36 @@ export async function listEntitySignatories(entityId: string, actorUserId: strin
   return (data ?? []).map((r) => ({ id: r.id, fullName: r.full_name, position: r.position, authority: r.authority, nationality: r.nationality, ownershipPercent: r.ownership_percent == null ? null : Number(r.ownership_percent), effectiveFrom: r.effective_from }));
 }
 
+// Records ONE authorised signatory for an entity. The documentary basis is mandatory: it must be a document already in THIS entity's vault
+// that has a stored file and fingerprint (a note-only record is not evidence). The authority wording is copied from the document by the
+// person recording it - it is never generated. A profile link is made only to the profile the caller names, and a signatory of one entity
+// never becomes a signatory of another.
+export async function addEntitySignatory(p: {
+  entityId: string; fullName: string; position: string; authority: string; sourceDocumentId: string; profileId?: string | null; nationality?: string | null; ownershipPercent?: number | null; effectiveFrom?: string | null; actorUserId: string;
+}): Promise<Result<{ signatoryId: string }>> {
+  if (!(await isSuperAdminId(p.actorUserId))) return NOT_ALLOWED;
+  if (p.fullName.trim().length < 3) return { ok: false, error: "Enter the signatory's full name." };
+  if (p.position.trim().length < 3) return { ok: false, error: "Enter the position exactly as the document states it." };
+  if (p.authority.trim().length < 5) return { ok: false, error: "Enter the authority wording exactly as the document states it." };
+  if (p.effectiveFrom && !/^\d{4}-\d{2}-\d{2}$/.test(p.effectiveFrom)) return { ok: false, error: "Enter the effective date as YYYY-MM-DD." };
+  if (p.ownershipPercent != null && (p.ownershipPercent < 0 || p.ownershipPercent > 100)) return { ok: false, error: "Ownership must be between 0 and 100." };
+
+  const db = createAdminClient();
+  const { data: doc } = await db.from("employing_entity_documents").select("id, file_sha256, original_filename").eq("id", p.sourceDocumentId).eq("employing_entity_id", p.entityId).maybeSingle();
+  if (!doc) return { ok: false, error: "The supporting document is not in this entity's vault." };
+  if (!doc.file_sha256 || !doc.original_filename) return { ok: false, error: "The selected record has no stored file or fingerprint. Upload the actual document to the entity record first." };
+  const { data: existing } = await db.from("entity_signatories").select("id").eq("employing_entity_id", p.entityId).ilike("full_name", p.fullName.trim()).is("effective_to", null).maybeSingle();
+  if (existing) return { ok: false, error: "This person is already a current signatory of this entity." };
+
+  const { data, error } = await db.from("entity_signatories").insert({
+    employing_entity_id: p.entityId, full_name: p.fullName.trim(), position: p.position.trim(), authority: p.authority.trim(), nationality: p.nationality?.trim() || null,
+    ownership_percent: p.ownershipPercent ?? null, profile_id: p.profileId ?? null, effective_from: p.effectiveFrom ?? null, source_document_id: p.sourceDocumentId, recorded_by: p.actorUserId,
+  }).select("id").single();
+  if (error || !data) return { ok: false, error: error?.message ?? "Could not record the signatory." };
+  await logActivity({ actorUserId: p.actorUserId, action: "entity_signatory.recorded", entityType: "employing_entity", entityId: p.entityId, metadata: { signatoryId: data.id, documentId: p.sourceDocumentId, linkedProfile: Boolean(p.profileId) } });
+  return { ok: true, signatoryId: data.id };
+}
+
 // ------------------------------------------------------------------ vault documents (hash, metadata, duplicate detection)
 const BUCKET = "legal-entity-documents";
 const MAX_BYTES = 10 * 1024 * 1024;

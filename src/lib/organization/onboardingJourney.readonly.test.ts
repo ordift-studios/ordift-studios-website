@@ -9,22 +9,36 @@ describe("the guided journey adds no way to change a record and no new access", 
     const gate = page.indexOf("canManageOnboarding(currentUser.id)");
     expect(gate).toBeGreaterThan(-1);
     expect(page.indexOf("loadAgreementReadiness(")).toBeGreaterThan(gate);
-    expect(page.indexOf("buildJourney(")).toBeGreaterThan(gate);
+    expect(page.indexOf("buildInstructorWorkspace(")).toBeGreaterThan(gate);
     expect(page.slice(gate, gate + 120)).toContain("redirect(");
   });
   it("the new journey modules and loader contain no write calls, sends or status transitions", () => {
-    const files = ["./onboardingJourney.ts", "../legal/agreementReadiness.ts", "../legal/agreementReadinessData.ts", "../legal/approvalAttestation.ts", "../legal/masterContentReference.ts", "../../components/admin/OnboardingJourneyPanel.tsx"];
+    const files = ["./instructorWorkspace.ts", "../workspace/processWorkspace.ts", "../legal/agreementReadiness.ts", "../legal/agreementReadinessData.ts", "../legal/approvalAttestation.ts", "../legal/masterContentReference.ts", "../legal/legalGovernance.ts", "../legal/docxText.ts", "../../components/admin/OnboardingJourneyPanel.tsx"];
     for (const f of files) {
       const src = read(f);
       for (const verb of [".insert(", ".update(", ".upsert(", ".delete(", "sendEmail", "transitionLegalDocumentVersionStatus", "advanceOnboardingStage", "createDraftAgreement", "use server"]) expect(src, `${f} must not contain ${verb}`).not.toContain(verb);
     }
   });
-  it("the panel has no form or button: every change goes through the existing forms lower on the same page", () => {
+  it("the panel itself holds no form: change controls are the embedded forms, which only submit to the journey server actions", () => {
     const panel = read("../../components/admin/OnboardingJourneyPanel.tsx");
     expect(panel).not.toMatch(/<form|<button|action=\{/);
+    const forms = read("../../components/admin/OnboardingJourneyForms.tsx");
+    for (const a of ["attestApprovalAction", "registerMasterAction", "activateTemplateAction", "confirmEntityAction", "addSignatoryAction", "selectSignatoryAction", "prepareAgreementAction"]) expect(forms).toContain(a);
   });
-  it("the attestation migration is a proposal outside supabase/migrations", () => {
-    const sql = read("../../../supabase/proposals/PROPOSED_legal_approval_attestations.sql");
-    expect(sql.split("\n")[0]).toContain("PROPOSED - NOT APPLIED");
+  it("every embedded server action first requires onboarding-management authority, then delegates to an authoritative function", () => {
+    const actions = read("../../app/admin/organization/onboarding/[onboardingId]/journeyActions.ts");
+    expect(actions.split("export async function ").length - 1).toBe(7);
+    expect(actions.split("await actor(onboardingId)").length - 1).toBe(7);
+    expect(actions).toContain("canManageOnboarding(u.id)");
+    for (const verb of [".insert(", ".update(", ".from(", "sendEmail", "createAdminClient"]) expect(actions, `actions must not write directly: ${verb}`).not.toContain(verb);
+  });
+  it("no embedded action issues, signs or sends: no lifecycle transition to sent/executed, no email, no invitation, no engagement", () => {
+    for (const f of ["../legal/instructorAgreements.ts", "../legal/masterRegistryActions.ts", "../organization/onboardingDecisions.ts"]) {
+      const src = read(f);
+      for (const t of ["transitionAgreementStatus", "advanceAgreementToFullyExecuted", "sendEmail", "inviteCollaborator", "createInstructorEngagement", "payment_obligations"]) expect(src, `${f} must not use ${t}`).not.toContain(t);
+    }
+  });
+  it("no migration is part of this work: nothing was added under supabase/migrations or supabase/proposals", () => {
+    expect(() => read("../../../supabase/proposals/PROPOSED_legal_approval_attestations.sql")).toThrow();
   });
 });

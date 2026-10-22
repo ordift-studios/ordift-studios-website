@@ -422,6 +422,17 @@ export const CONTRACTOR_FREELANCER_ONBOARDING_REQUIREMENT_CATALOG: readonly Requ
 
 export const INSTRUCTOR_ONBOARDING_REQUIREMENT_CATALOG: readonly RequirementTemplate[] = [
   {
+    // Added with the guided workspace (2026-10-23): a real, existing way (the Current-Stage Requirements form) to record that staff have
+    // sighted and verified the person's identity document. OPTIONAL, so it never blocks completion; the Founder can make it required.
+    requirementKey: "instructor_identity_verified",
+    stage: "profile",
+    requirementType: "physical_document",
+    label: "Identity document sighted and verified",
+    required: false,
+    responsibleRole: "super_admin",
+    applicableEngagementTypeSlugs: ["instructor"],
+  },
+  {
     requirementKey: "instructor_payment_setup_completed",
     stage: "payment_setup",
     requirementType: "task",
@@ -432,8 +443,13 @@ export const INSTRUCTOR_ONBOARDING_REQUIREMENT_CATALOG: readonly RequirementTemp
     applicableEngagementTypeSlugs: ["instructor"],
   },
   {
+    // Profile-stage circularity fix (Founder decision, 2026-10-23): the agreement is prepared FROM the person's profile, so it cannot be a
+    // condition of finishing the profile. It remains mandatory: it is a REQUIRED item at the terminal "active" stage, so onboarding cannot be
+    // completed without it (completeStaffOnboarding checks every required item), and createInstructorEngagement() independently refuses
+    // to assign an instructor without it. It is deliberately NOT a payment_setup item and NOT an engagement_assigned item (that stage keeps
+    // its zero-requirements rule).
     requirementKey: "instructor_agreement_executed",
-    stage: "profile",
+    stage: "active",
     requirementType: "agreement",
     label: "Instructor / Workshop Facilitator Agreement (OS-LGL-010) executed",
     required: true,

@@ -460,7 +460,7 @@ export function OnboardingWorkspace({
           which entity, where, under what employment context, for what
           role, and through which approved hiring path. Unresolved
           fields show "Not yet set", never a guessed value. */}
-      <section className="rounded-xl border border-black/10 bg-white p-6 space-y-2">
+      <section id="section-requisition" className="rounded-xl border border-black/10 bg-white p-6 space-y-2 scroll-mt-6">
         <h2 className="font-serif font-medium text-body text-ordift-ink">{copy.definitionHeading}</h2>
         {requisition ? (
           <>
@@ -630,7 +630,7 @@ export function OnboardingWorkspace({
         </section>
       )}
 
-      <section className="rounded-xl border border-black/10 bg-white p-6 space-y-3">
+      <section id="section-documents" className="rounded-xl border border-black/10 bg-white p-6 space-y-3 scroll-mt-6">
         <h2 className="font-serif font-medium text-body text-ordift-ink">Documents &amp; Agreements</h2>
 
         {/* Employment Agreement Readiness (Task 1 fix, 2026-09-17) —
