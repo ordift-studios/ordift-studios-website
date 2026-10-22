@@ -262,3 +262,58 @@ describe("independence survives revocation of the Founder identity (mirrors the 
     expect(writes).toHaveLength(0);
   });
 });
+
+// The Founder's confirmed Production mapping (2026-10-22): the primary account (member 0001), TWO Founder-controlled logins, and one
+// separate person (CT0001) who must stay an independent reviewer. Prefix labels only; real ids are resolved before any write.
+describe("four-account mapping: two registered Founder-controlled logins are both non-independent; the separate person is not", () => {
+  const PRIMARY = PHOTOGRAPHER; // 966bf3f7 - performer on the engagement
+  const BACKUP = "second-login"; // 2bf593f7
+  const ADDITIONAL = "additional-login"; // fb17e4c5
+  const SEPARATE = "ct0001-separate-person"; // 14c51def - never registered
+  beforeEach(() => {
+    db.project_files = [file("a"), file("b")];
+    db.founder_identities = [{ id: "fi-1", profile_id: PRIMARY, status: "active" }];
+    db.founder_common_control_accounts = [
+      { id: "cc-1", founder_identity_id: "fi-1", profile_id: BACKUP, revoked_at: null },
+      { id: "cc-2", founder_identity_id: "fi-1", profile_id: ADDITIONAL, revoked_at: null },
+    ];
+  });
+  it("each Founder-controlled login is refused as reviewer of the Founder's files, and nothing is written", async () => {
+    for (const login of [BACKUP, ADDITIONAL]) {
+      const r = await reviewFilesForRelease({ fileIds: ["a", "b"], user: user(login), action: "approve" });
+      expect(r.ok && r.outcomes.every((o) => !o.ok)).toBe(true);
+      expect(r.ok && r.outcomes[0].error).toMatch(/common control/);
+    }
+    expect(writes).toHaveLength(0);
+  });
+  it("the separate person (CT0001, not registered) remains an independent reviewer", async () => {
+    const r = await reviewFilesForRelease({ fileIds: ["a"], user: user(SEPARATE), action: "approve" });
+    expect(r.ok && r.outcomes[0].ok).toBe(true);
+  });
+  it("it also works in the other direction: work performed by one controlled login cannot be reviewed by the other", async () => {
+    db.project_files = [file("c", { uploaded_by: ADDITIONAL, submitted_for_release_by: ADDITIONAL })];
+    const r = await reviewFilesForRelease({ fileIds: ["c"], user: user(BACKUP), action: "approve" });
+    expect(r.ok && r.outcomes[0].error).toMatch(/common control/);
+    const ok = await reviewFilesForRelease({ fileIds: ["c"], user: user(SEPARATE), action: "approve" });
+    expect(ok.ok && ok.outcomes[0].ok).toBe(true);
+  });
+  it("revoking ONE registration frees only that login; the other stays non-independent", async () => {
+    db.founder_common_control_accounts = db.founder_common_control_accounts.filter((x) => x.profile_id !== ADDITIONAL);
+    const stillBlocked = await reviewFilesForRelease({ fileIds: ["a"], user: user(BACKUP), action: "approve" });
+    expect(stillBlocked.ok && stillBlocked.outcomes[0].error).toMatch(/common control/);
+    const freed = await reviewFilesForRelease({ fileIds: ["b"], user: user(ADDITIONAL), action: "approve" });
+    expect(freed.ok && freed.outcomes[0].ok).toBe(true);
+  });
+  it("both stay non-independent even if the Founder identity row is revoked", async () => {
+    db.founder_identities[0].status = "revoked";
+    for (const login of [BACKUP, ADDITIONAL]) {
+      const r = await reviewFilesForRelease({ fileIds: ["a"], user: user(login), action: "approve" });
+      expect(r.ok && r.outcomes[0].error).toMatch(/common control/);
+    }
+  });
+  it("registering links changes no one's review permission outside the Founder's own work (management check is untouched)", async () => {
+    const r = await reviewFilesForRelease({ fileIds: ["a"], user: user(SEPARATE), action: "approve" });
+    expect(mocks.isManagementUser).toHaveBeenCalled();
+    expect(r.ok && r.outcomes[0].ok).toBe(true);
+  });
+});

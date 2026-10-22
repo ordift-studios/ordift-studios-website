@@ -124,6 +124,16 @@ describe("who the exception is available to", () => {
     const c = await getFounderContext(user(SECOND), ENG);
     expect(c.state).toBe("linked_login");
   });
+  it("a SECOND registered Founder-controlled login is also told it is not an independent reviewer, and cannot open an exception", async () => {
+    db.founder_common_control_accounts.push({ id: "cc-2", founder_identity_id: "fi-1", profile_id: "additional-login", revoked_at: null });
+    for (const login of [SECOND, "additional-login"]) {
+      expect((await getFounderContext(user(login), ENG)).state).toBe("linked_login");
+      expect((await openFounderException({ user: user(login), engagementId: ENG, justification: GOOD, acknowledged: true })).ok).toBe(false);
+    }
+    expect(db.self_review_exceptions).toHaveLength(0);
+    // the separate person (never registered) is simply not offered the exception
+    expect((await getFounderContext(user("ct0001-separate-person"), ENG)).state).toBe("not_applicable");
+  });
   it("a Super Admin who is the performer but NOT the Founder identity gets no exception (it is not a generic Super Admin bypass)", async () => {
     db.engagements[0].payee_profile_id = OTHER_ADMIN;
     expect((await getFounderContext(user(OTHER_ADMIN), ENG)).state).toBe("not_applicable");
