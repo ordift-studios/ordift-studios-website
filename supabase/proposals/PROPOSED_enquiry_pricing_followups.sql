@@ -48,6 +48,7 @@ create table public.enquiry_price_communications (
   scope_title text not null,
   scope_lines jsonb not null,                                                 -- deliverables / inclusions exactly as the governed calculator reported them
   pricing_snapshot jsonb not null,                                            -- calculator output + the rate-card values and effective dates it used
+  scope_hash text not null check (scope_hash ~ '^[0-9a-f]{64}$'),             -- hash of the exact priced scope this revision communicates (ties a discount approval to THIS revision)
   original_total_usd numeric(12, 2) check (original_total_usd is null or original_total_usd > 0),
   communicated_amount numeric(12, 2) not null check (communicated_amount > 0),
   communicated_currency text not null default 'USD' check (communicated_currency ~ '^[A-Z]{3}$'),
@@ -111,8 +112,11 @@ begin
   select id, revision_number into prev from public.enquiry_price_communications where enquiry_id = new.enquiry_id order by revision_number desc limit 1;
   new.revision_number := coalesce(prev.revision_number, 0) + 1;
   new.supersedes_id := prev.id;
-  if new.discount_approval_id is not null and not exists (select 1 from public.enquiry_discount_approvals d where d.id = new.discount_approval_id and d.enquiry_id = new.enquiry_id and d.status = 'approved') then
-    raise exception 'a communicated price can only carry an APPROVED discount belonging to the same enquiry';
+  if new.discount_approval_id is not null then
+    if not exists (select 1 from public.enquiry_discount_approvals d where d.id = new.discount_approval_id and d.enquiry_id = new.enquiry_id and d.status = 'approved') then
+      raise exception 'a communicated price can only carry an APPROVED discount belonging to the same enquiry'; end if;
+    if not exists (select 1 from public.enquiry_discount_approvals d where d.id = new.discount_approval_id and d.scope_hash = new.scope_hash and d.total_after_usd = new.communicated_amount) then
+      raise exception 'the approved discount was granted for a different scope or amount; it must be approved again'; end if;
   end if;
   return new;
 end $$;

@@ -57,7 +57,7 @@ export default async function QuickPricePage({ searchParams }: { searchParams: P
         <ul className="list-disc pl-5 font-sans text-body-small text-ordift-ink-muted space-y-1">
           <li><Link href="/admin/enquiries/new" className="underline text-ordift-ink">Record this as an enquiry</Link> (channel, contact, notes). It creates the ordinary enquiry only; no email, quotation or booking.</li>
           <li><Link href="/admin/enquiries" className="underline text-ordift-ink">Open the enquiries register</Link> to follow up, then raise the formal quotation and booking from the enquiry.</li>
-          <li><Link href="/admin/portfolio" className="underline text-ordift-ink">Portfolio</Link> for examples of previous work.</li>
+          <li><a href="/admin/enquiries/quick-price/portfolio" target="_blank" rel="noopener" className="underline text-ordift-ink">Quick Portfolio Picker</a> (opens in a new tab, so your calculation stays here) to browse photographs already stored for jobs. <Link href="/admin/portfolio" className="underline text-ordift-ink">Portfolio administration</Link> is separate.</li>
         </ul>
       </section>
     </div>
