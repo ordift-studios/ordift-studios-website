@@ -1,4 +1,12 @@
-# Release plan, impact assessment and authorization request: migrations 0168-0171 (NOT APPLIED)
+# Release plan and record: migrations 0168-0171 (APPLIED to Production 2026-10-25)
+
+> **STATUS 2026-10-25: APPLIED AND VERIFIED.** Founder-approved; applied in order 0168, 0169, 0170, 0171 by `~/ordift-release/apply-0168-0171/apply.sh` after a fresh COMPLETE R7 backup
+> (`r7-20261024-213824Z`, dump SHA-256 `57e9a84d…ae82`, baseline 0167/160). Ledger now 0171 / 164 versions. All 15 post-apply checks passed (11 tables, 1 view, 19 functions, RLS on 11, 13 policies,
+> 18 triggers, no anon/PUBLIC grants, authenticated SELECT only, no DELETE/TRUNCATE/REFERENCES/TRIGGER/MAINTAIN for service_role, 4 server-only functions closed to anon/authenticated, all new tables empty) and the
+> 28-measure fingerprint (Bright, completed jobs, Kwaku's onboarding, legal, QA, payments, roles) was unchanged. **Every application gate is still OFF.**
+> Pre-apply fix: Production's default privileges grant anon/authenticated/service_role TRUNCATE/REFERENCES/TRIGGER/MAINTAIN on new public tables, so each migration revokes them explicitly before its intended grants.
+> Recovery: `supabase/proposals/ROLLBACK_0168_0171.sql` (refuses if any new table holds a row) then `supabase migration repair --status reverted 0171 0170 0169 0168`; backup on the encrypted volume.
+> The sections below are the pre-apply plan, kept as the record. The files now live in `supabase/migrations/`.
 
 Prepared 2026-10-25. Nothing here has been applied to Production, Staging or any shared database. The application code that depends on these migrations is already
 deployed but switched OFF by two constants (see section 6), so the migrations can be applied without any user-visible change.
