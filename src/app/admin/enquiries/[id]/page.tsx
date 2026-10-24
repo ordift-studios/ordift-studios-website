@@ -27,6 +27,7 @@ import { displayEmail } from "@/lib/shared/email/placeholder";
 import SubmitButton from "@/components/admin/SubmitButton";
 import { getAmountDuePanel } from "@/lib/commercial/amountDue";
 import QuotationAmountPanel from "./QuotationAmountPanel";
+import PricingPanel from "./PricingPanel";
 
 function formatUsd(amount: number): string {
   return `$${amount.toFixed(2)}`;
@@ -105,6 +106,7 @@ export default async function AdminEnquiryDetailPage({ params }: { params: Promi
           {user && (isSuperAdmin(user) || hasRole(user, "admin")) ? <EmailNotificationsPanel enquiryId={enquiry.id} /> : null}
 
           {amountPanel ? <QuotationAmountPanel panel={amountPanel} /> : null}
+          {user ? <PricingPanel enquiryId={enquiry.id} isSuperAdmin={isSuperAdmin(user)} /> : null}
 
           {user && isSuperAdmin(user) ? (
             <>

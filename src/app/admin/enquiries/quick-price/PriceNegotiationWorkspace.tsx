@@ -1,13 +1,15 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition, type ReactNode } from "react";
+import { saveWorkspacePriceAction, type SaveState } from "./saveActions";
 import { indicativeLocalAmount, type FxEntry } from "@/lib/pricing/indicativeLocal";
 import { buildClientSummary, captureFromHref, compareOptions, discountState, previewDiscount, type Captured, type DiscountInput } from "@/lib/pricing/quickPriceModel";
 
 // Negotiation workspace: up to three independent calculator "options" (A original, B revised, C alternative) of the SAME governed estimator, kept
 // mounted side by side so each keeps its inputs and can be restored for further revision by switching back to it. Results are read from the booking
 // link each calculator already builds; there is no second pricing engine. Everything here lives in this browser tab only: a page refresh or a change
-// of service clears it. Nothing is saved, approved, sent or posted.
+// of service clears it. Nothing is approved, sent or posted from here. Only the optional, feature-gated "Save as communicated" action stores anything, and only
+// what the staff member chooses to record on an enquiry.
 
 const SLOTS = ["A", "B", "C"] as const;
 type Slot = (typeof SLOTS)[number];
@@ -16,7 +18,7 @@ const usd = (n: number) => `$${n.toFixed(2)} USD`;
 const input = "w-full rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small";
 const btn = "rounded-md px-4 py-2 font-sans text-body-small";
 
-export default function PriceNegotiationWorkspace({ slots, isSuperAdmin, fx }: { slots: ReactNode[]; isSuperAdmin: boolean; fx: Record<"QAR" | "GHS", FxEntry> }) {
+export default function PriceNegotiationWorkspace({ slots, isSuperAdmin, fx, persistence = false, family = "" }: { slots: ReactNode[]; isSuperAdmin: boolean; fx: Record<"QAR" | "GHS", FxEntry>; persistence?: boolean; family?: string }) {
   const [active, setActive] = useState<Slot>("A");
   const [live, setLive] = useState<Record<Slot, Captured>>({ A: { status: "unpriced", reason: "No calculator result yet." }, B: { status: "unpriced", reason: "No calculator result yet." }, C: { status: "unpriced", reason: "No calculator result yet." } });
   const [locked, setLocked] = useState<Partial<Record<Slot, Captured>>>({});
@@ -26,6 +28,11 @@ export default function PriceNegotiationWorkspace({ slots, isSuperAdmin, fx }: {
   const [dReason, setDReason] = useState("");
   const [useDiscount, setUseDiscount] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [saveRef, setSaveRef] = useState("");
+  const [saveChannel, setSaveChannel] = useState("");
+  const [saveAssumptions, setSaveAssumptions] = useState("");
+  const [saveResult, setSaveResult] = useState<SaveState>(null);
+  const [saving, startSave] = useTransition();
   const [refCurrency, setRefCurrency] = useState<"" | "QAR" | "GHS">("");
   const refs = useRef<Record<Slot, HTMLDivElement | null>>({ A: null, B: null, C: null });
 
@@ -166,8 +173,28 @@ export default function PriceNegotiationWorkspace({ slots, isSuperAdmin, fx }: {
         <h2 id="sum" className="font-serif font-medium text-body text-ordift-ink">Client summary</h2>
         {summary ? <pre className="whitespace-pre-wrap rounded-lg bg-ordift-offwhite p-3 font-sans text-caption text-ordift-ink">{summary}</pre> : <p className="font-sans text-caption text-ordift-ink-muted">The preferred option has no price yet, so there is no summary. Nothing is assumed.</p>}
         <button type="button" onClick={copy} disabled={!summary} className="rounded-md bg-ordift-ink px-4 py-2 font-sans text-body-small text-white disabled:opacity-50">{copied ? "Copied" : "Copy summary"}</button>
-        <p className="font-sans text-caption text-ordift-ink-muted">Only in this browser tab: refreshing the page or changing the service clears the options. To keep a communicated figure, record the enquiry and write it in the enquiry notes. Saving communicated prices, follow-ups and approved discounts as permanent records needs a database change that has not been authorised yet; until then nothing here is stored.</p>
+        <p className="font-sans text-caption text-ordift-ink-muted">{persistence ? "The options live in this browser tab only. To keep what the client was told, use Save as communicated above; nothing else here is stored." : "Only in this browser tab: refreshing the page or changing the service clears the options. To keep a communicated figure, record the enquiry and write it in the enquiry notes. Saving communicated prices, follow-ups and approved discounts as permanent records needs a database change that has not been authorised yet; until then nothing here is stored."}</p>
       </section>
+      {persistence && (
+        <section className="rounded-xl border border-black/10 bg-white p-4 sm:p-5 space-y-3" aria-labelledby="save">
+          <h2 id="save" className="font-serif font-medium text-body text-ordift-ink">Save as communicated to an enquiry</h2>
+          <p className="font-sans text-caption text-ordift-ink-muted">Records what the client was actually told (the preferred option, in USD) on the enquiry, as a new revision; earlier ones are kept. Nothing is sent to the client. A discounted price is saved from the enquiry itself, after a Super Admin has approved it.</p>
+          {chosen.status !== "priced" || useDiscount ? <p className="font-sans text-caption text-amber-900">{useDiscount ? "Remove the discount preview to save the calculator price; a discounted price needs approval first." : "Only a calculated total can be saved."}</p> : (
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+              <label className="font-sans text-caption text-ordift-ink-muted">Enquiry reference<input value={saveRef} onChange={(e) => setSaveRef(e.target.value)} className={input} placeholder="ENQ-…" /></label>
+              <label className="font-sans text-caption text-ordift-ink-muted">How you told the client<input value={saveChannel} onChange={(e) => setSaveChannel(e.target.value)} className={input} placeholder="phone, WhatsApp, email, in person" /></label>
+              <label className="font-sans text-caption text-ordift-ink-muted">Assumptions (optional)<input value={saveAssumptions} onChange={(e) => setSaveAssumptions(e.target.value)} className={input} /></label>
+              <div className="sm:col-span-3">
+                <button type="button" disabled={saving || !saveRef.trim() || saveChannel.trim().length < 3} className="rounded-md bg-ordift-ink px-4 py-2 font-sans text-body-small text-white disabled:opacity-50"
+                  onClick={() => startSave(async () => setSaveResult(await saveWorkspacePriceAction({ enquiryReference: saveRef, service: family || "service", title: chosen.title, lines: chosen.lines, totalUsd: chosen.totalUsd, channel: saveChannel, communicatedAt: new Date().toISOString(), localCurrency: refCurrency, assumptions: saveAssumptions, notes: "" })))}>
+                  {saving ? "Saving…" : `Save ${usd(chosen.totalUsd)} as communicated`}
+                </button>
+              </div>
+              {saveResult && <p role={saveResult.ok ? "status" : "alert"} className={`font-sans text-caption sm:col-span-3 ${saveResult.ok ? "text-green-800" : "text-red-800"}`}>{saveResult.message}</p>}
+            </div>
+          )}
+        </section>
+      )}
     </div>
   );
 }

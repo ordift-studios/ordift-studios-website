@@ -37,6 +37,16 @@ describe("Enquiries & Quick Pricing is staff-only, read-only and shares the publ
     expect(ws).toContain("Founder / Super Admin approval");
     expect(ws).toContain("No percentage or amount limit has been set");
   });
+  it("saving is available only behind the persistence gate, and says nothing is sent", async () => {
+    const { default: Workspace } = await import("./PriceNegotiationWorkspace");
+    const props = { isSuperAdmin: false, fx: { QAR: null, GHS: null }, slots: [createElement("p", { key: 1 }, "a"), createElement("p", { key: 2 }, "b"), createElement("p", { key: 3 }, "c")] };
+    expect(renderToStaticMarkup(createElement(Workspace, props))).not.toContain("Save as communicated");
+    const on = renderToStaticMarkup(createElement(Workspace, { ...props, persistence: true, family: "wedding_event" }));
+    expect(on).toContain("Save as communicated to an enquiry");
+    expect(on).toContain("Nothing is sent to the client");
+    expect(read("./PriceNegotiationWorkspace.tsx")).toContain("{persistence && (");
+    expect(read("../../../../lib/enquiry/pricingHistory.ts")).toContain("ENQUIRY_PRICING_PERSISTENCE_ENABLED = false");
+  });
   it("renders for staff and for a Super Admin with the three options, the compare area and the approval boundary (mobile-first markup)", async () => {
     const { default: Workspace } = await import("./PriceNegotiationWorkspace");
     for (const superAdmin of [false, true]) {
@@ -58,8 +68,8 @@ describe("Enquiries & Quick Pricing is staff-only, read-only and shares the publ
     expect(read("../../../../lib/pricing/quickPriceModel.ts")).not.toMatch(/QAR|GHS/);
   });
   it("the migration-dependent enquiry persistence layer is a proposal only: no migration was added", () => {
-    expect(() => readFileSync(new URL("../../../../../supabase/proposals/PROPOSED_enquiry_pricing_followups.sql", import.meta.url), "utf8")).not.toThrow();
-    const sql = readFileSync(new URL("../../../../../supabase/proposals/PROPOSED_enquiry_pricing_followups.sql", import.meta.url), "utf8");
+    expect(() => readFileSync(new URL("../../../../../supabase/proposals/PROPOSED_0168_enquiry_pricing_followups.sql", import.meta.url), "utf8")).not.toThrow();
+    const sql = readFileSync(new URL("../../../../../supabase/proposals/PROPOSED_0168_enquiry_pricing_followups.sql", import.meta.url), "utf8");
     expect(sql.split("\n")[0]).toContain("PROPOSED - NOT APPLIED");
   });
 });

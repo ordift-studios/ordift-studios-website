@@ -1,7 +1,9 @@
 "use client";
 
 import FileReviewGallery, { type GalleryAction } from "@/components/admin/FileReviewGallery";
-import { canReviewFile, type GalleryFile, type ReviewDecision } from "@/lib/crewSupport/fileReview";
+import { canReviewFile, isPreviewableImage, type GalleryFile, type ReviewDecision } from "@/lib/crewSupport/fileReview";
+import { PORTFOLIO_LIBRARY_ENABLED } from "@/lib/portfolio/featureGate";
+import { addCandidatesAction } from "@/app/admin/portfolio-library/actions";
 import { previewUrlsAction, reviewFilesAction } from "./releaseActions";
 
 // Management's review gallery for one assignment's files (client delivery). Approving does NOT release anything:
@@ -15,5 +17,13 @@ export default function AssignmentReviewGallery({ requestId, engagementId, files
     { key: "request_changes", label: "Return for rework", tone: "neutral", meaning: "Sends the image back to the professional with your note. It leaves the delivery set until they resubmit it.", needsNote: true, noteLabel: "What needs to change (the professional will see this)", eligible: eligible("request_changes"), run: decide("request_changes") },
     { key: "reject", label: "Decline", tone: "danger", meaning: "Declines the image: it will not be delivered. The file itself is kept; nothing is deleted.", needsNote: true, noteLabel: "Why it is declined", eligible: eligible("reject"), run: decide("reject") },
   ];
+  // Optional, independent of delivery: propose promising images as PRIVATE portfolio candidates while processing the job. It points at the same file (no copy,
+  // no re-upload), changes no release or retention state, and publishes nothing; marketing permission and internal approval are decided separately.
+  if (PORTFOLIO_LIBRARY_ENABLED) actions.push({
+    key: "portfolio_candidate", label: "Add to Portfolio Candidates", tone: "neutral", ignoresBlock: true,
+    meaning: "Marks these images as private portfolio candidates. Nothing is delivered, published or shared, delivery and retention are unchanged, and no client permission is assumed.",
+    eligible: (f: GalleryFile) => !f.purged && isPreviewableImage(f.mimeType, f.filename),
+    run: async (ids: string[]) => { const r = await addCandidatesAction(ids, "final_approval"); return { ok: r.ok, message: r.message, outcomes: [] }; },
+  });
   return <FileReviewGallery files={files} actions={actions} fetchUrls={previewUrlsAction} emptyText="No files in this view." />;
 }

@@ -1,7 +1,7 @@
--- PROPOSED - NOT APPLIED - NOT in supabase/migrations. Needs the Founder's separate written authorization, then a numbered migration.
--- NUMBERING: Production ledger head is 0167. Held proposals: Vendor RLS (0168/0169) and legal representation (0170). Number this file after whatever is
--- applied first (0168 if it goes first). Dependencies, all present in Production: businesses, profiles, enquiries, employing_entities, user_roles, roles,
--- private.is_staff_or_admin(), public.ordift_studios_business_id().
+-- PROPOSED - NOT APPLIED - NOT in supabase/migrations. Needs the Founder's separate written release confirmation.
+-- NUMBER: 0168 (Production ledger head verified read-only on 2026-10-24: 0167, 160 versions applied). Held Vendor RLS / legal-representation proposals renumber AFTER this set.
+-- Dependencies, all present in Production: businesses, profiles, enquiries, employing_entities, user_roles, roles, private.is_staff_or_admin(), public.ordift_studios_business_id().
+-- None of the new table names exist in Production (checked). Independent of 0169-0171.
 --
 -- Purpose (Priority 3): durable, append-only price communications; Founder/Super Admin discount approvals; follow-ups; one conversion record per enquiry.
 -- Additive only: no existing table or row is altered. Existing enquiries simply have no communications / follow-ups until staff add them.
@@ -152,7 +152,7 @@ begin
 end $$;
 create trigger enquiry_followup_guard before update on public.enquiry_followups for each row execute function private.enquiry_followup_guard();
 
-create function public.reschedule_enquiry_followup(p_followup_id uuid, p_new_due timestamptz, p_actor uuid, p_note text) returns uuid
+create function public.reschedule_enquiry_followup(p_followup_id uuid, p_new_due timestamptz, p_actor uuid, p_note text, p_handler uuid default null) returns uuid
 language plpgsql set search_path = '' as $$
 declare old_row public.enquiry_followups; new_id uuid;
 begin
@@ -161,11 +161,11 @@ begin
   if char_length(btrim(coalesce(p_note, ''))) < 3 then raise exception 'a reason is required to reschedule'; end if;
   update public.enquiry_followups set status = 'cancelled', completed_at = now(), completed_by = p_actor, completion_note = 'Rescheduled: ' || p_note where id = p_followup_id;
   insert into public.enquiry_followups (enquiry_id, handler_profile_id, next_action, due_at, last_contact_at, rescheduled_from_id, created_by)
-    values (old_row.enquiry_id, old_row.handler_profile_id, old_row.next_action, p_new_due, old_row.last_contact_at, old_row.id, p_actor) returning id into new_id;
+    values (old_row.enquiry_id, coalesce(p_handler, old_row.handler_profile_id), old_row.next_action, p_new_due, old_row.last_contact_at, old_row.id, p_actor) returning id into new_id;
   return new_id;
 end $$;
-revoke all on function public.reschedule_enquiry_followup(uuid, timestamptz, uuid, text) from public, anon, authenticated;
-grant execute on function public.reschedule_enquiry_followup(uuid, timestamptz, uuid, text) to service_role;
+revoke all on function public.reschedule_enquiry_followup(uuid, timestamptz, uuid, text, uuid) from public, anon, authenticated;
+grant execute on function public.reschedule_enquiry_followup(uuid, timestamptz, uuid, text, uuid) to service_role;
 
 -- ------------------------------------------------------------------ access: staff and admins read; every write goes through the server (service role) after its own checks
 alter table public.enquiry_discount_approvals enable row level security; alter table public.enquiry_price_communications enable row level security;
@@ -179,6 +179,6 @@ grant select, insert, update on public.enquiry_discount_approvals, public.enquir
 grant select, insert on public.enquiry_price_communications, public.enquiry_conversions to service_role;
 commit;
 
--- ROLLBACK (only while the tables hold no genuine rows): drop function public.reschedule_enquiry_followup; drop tables enquiry_conversions, enquiry_followups,
+-- ROLLBACK (only while the tables hold no genuine rows): drop function public.reschedule_enquiry_followup(uuid, timestamptz, uuid, text, uuid); drop tables enquiry_conversions, enquiry_followups,
 -- enquiry_price_communications, enquiry_discount_approvals (in that order); drop functions private.enquiry_comm_before_insert, enquiry_append_only,
 -- enquiry_discount_guard, enquiry_followup_guard. No existing table is touched, so nothing else needs reverting.

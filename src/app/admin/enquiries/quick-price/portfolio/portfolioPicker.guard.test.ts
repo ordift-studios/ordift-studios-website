@@ -16,7 +16,13 @@ describe("Quick Portfolio Picker is internal, management-only and read-only", ()
   });
   it("writes nothing: no inserts, updates, uploads, storage copies or server actions of its own", () => {
     for (const src of [page, picker, source])
-      for (const bad of [".insert(", ".update(", ".upsert(", ".delete(", ".upload(", ".copy(", "use server", "sendEmail", "createSignedUrl", "getPublicUrl", "localStorage", "sessionStorage"]) expect(src).not.toContain(bad);
+      for (const bad of [".insert(", ".update(", ".upsert(", ".delete(", ".upload(", ".copy(", "use server", "sendEmail", "createSignedUrl", "getPublicUrl", "localStorage"]) expect(src).not.toContain(bad);
+  });
+  it("offers the three browsing modes and builds the job list from real job records", () => {
+    for (const label of ["Final Images", "Jobs & Projects", "Portfolio Collections"]) expect(page).toContain(label);
+    expect(source).toContain("crew_support_requests");
+    expect(source).not.toMatch(/invent|fixture|sample job/i);
+    expect(page).toContain("getPortfolioCategories");
   });
   it("only reads project_files / job tables and excludes purged files", () => {
     expect(source).toContain('.is("purged_at", null)');
@@ -29,7 +35,8 @@ describe("Quick Portfolio Picker is internal, management-only and read-only", ()
   it("labels every photograph as not cleared and never claims clearance", () => {
     expect(source).toContain('clearance: "not_cleared"');
     expect(picker).toContain("Not cleared for marketing");
-    expect(page).toContain("Marketing clearance is not recorded yet");
+    expect(page).toContain("Two separate approvals are needed");
+    expect(page).toContain("PORTFOLIO_LIBRARY_ENABLED");
     expect(picker).not.toMatch(/\bcleared for use\b|Cleared\b/);
   });
   it("puts Final images first and keeps the full Portfolio administration separate", () => {
@@ -42,6 +49,8 @@ describe("Quick Portfolio Picker is internal, management-only and read-only", ()
   });
   it("the tray is temporary and its copied list carries the not-cleared warning", () => {
     expect(picker).toContain("lives only in this tab");
+    expect(picker).toContain("sessionStorage");   // this tab only, never localStorage
+    expect(picker).toContain("never images or links");
     expect(picker).toContain("NOT CLEARED for marketing");
   });
 });

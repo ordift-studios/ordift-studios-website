@@ -7,6 +7,7 @@ import { CRM_STAGES } from "@/lib/admin/enquiries";
 import { PATHWAYS, EXTRA_ENQUIRY_SERVICES, pathwayLabel } from "@/lib/enquiry/pathways";
 import ReportExportLinks from "@/components/admin/ReportExportLinks";
 import { displayEmail } from "@/lib/shared/email/placeholder";
+import { listDueFollowUps } from "@/lib/enquiry/pricingPersistence";
 
 export const metadata: Metadata = {
   title: "Enquiries — Ordift Studios Admin",
@@ -72,6 +73,7 @@ export default async function AdminEnquiriesPage({
   if (dateFrom) exportSearchParams.set("dateFrom", dateFrom);
   if (dateTo) exportSearchParams.set("dateTo", dateTo);
 
+  const dueFollowUps = await listDueFollowUps();
   return (
     <div>
       <div className="mb-8 flex flex-wrap items-end justify-between gap-4">
@@ -100,6 +102,20 @@ export default async function AdminEnquiriesPage({
           searchParams={exportSearchParams}
         />
       </div>
+
+      {dueFollowUps.length > 0 && (
+        <section aria-labelledby="due" className="mb-6 rounded-xl border border-black/10 bg-white p-4">
+          <h2 id="due" className="font-serif font-medium text-body text-ordift-ink">Follow-ups due or overdue</h2>
+          <ul className="mt-2 space-y-1">
+            {dueFollowUps.map((f) => (
+              <li key={f.id} className="font-sans text-body-small">
+                <span className={f.state === "overdue" ? "font-semibold text-red-800" : "font-semibold"}>{f.state === "overdue" ? "Overdue" : "Due today"}</span>{" "}
+                <Link href={`/admin/enquiries/${f.enquiryId}`} className="underline">{f.reference}</Link> · {f.nextAction} · {f.handlerName} · {f.dueAt.slice(0, 16).replace("T", " ")}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       <form action="/admin/enquiries" className="mb-6 flex flex-wrap gap-3 items-end">
         <div className="flex flex-col gap-1">

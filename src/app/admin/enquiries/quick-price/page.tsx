@@ -5,6 +5,7 @@ import { getCurrentUser, isStaffOrAdmin, isSuperAdmin } from "@/lib/portal/roles
 import PricingEstimatorPanel, { PRICING_FAMILIES, normalizePricingFamily } from "@/app/pricing/PricingEstimatorPanel";
 import PriceNegotiationWorkspace from "./PriceNegotiationWorkspace";
 import { getExchangeRateHistory } from "@/lib/payments/currency";
+import { ENQUIRY_PRICING_PERSISTENCE_ENABLED } from "@/lib/enquiry/pricingHistory";
 import type { FxEntry } from "@/lib/pricing/indicativeLocal";
 
 export const metadata: Metadata = { title: "Enquiries & Quick Pricing — Ordift Studios Admin", robots: { index: false, follow: false } };
@@ -49,7 +50,7 @@ export default async function QuickPricePage({ searchParams }: { searchParams: P
       <section aria-labelledby="step2" className="space-y-3">
         <h2 id="step2" className="font-serif font-medium text-body text-ordift-ink">2. Calculate, revise, compare and copy</h2>
         <p className="font-sans text-caption text-ordift-ink-muted">Calculate the original in Option A, enter the revised scope in Option B, compare, preview a discount if one is being proposed, choose the preferred option and copy the summary. Everything on this page is temporary and in this tab only.</p>
-        <PriceNegotiationWorkspace isSuperAdmin={isSuperAdmin(user)} fx={fx} slots={[0, 1, 2].map((i) => <PricingEstimatorPanel key={i} family={family} />)} />
+        <PriceNegotiationWorkspace isSuperAdmin={isSuperAdmin(user)} fx={fx} persistence={ENQUIRY_PRICING_PERSISTENCE_ENABLED} family={family} slots={[0, 1, 2].map((i) => <PricingEstimatorPanel key={i} family={family} />)} />
       </section>
 
       <section aria-labelledby="step4" className="space-y-3 rounded-xl border border-black/10 bg-white p-5">
