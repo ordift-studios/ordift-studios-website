@@ -186,6 +186,8 @@ create policy "permission_requests: staff read" on public.marketing_permission_r
 create policy "permission_requests: addressee read" on public.marketing_permission_requests for select to authenticated using (addressed_to = (select auth.uid()));
 create policy "permission_records: staff read" on public.marketing_permission_records for select to authenticated using ((select private.is_staff_or_admin()));
 create policy "permission_records: grantor read own" on public.marketing_permission_records for select to authenticated using (grantor_profile_id = (select auth.uid()));
+-- This project's default privileges give anon, authenticated and service_role TRUNCATE/REFERENCES/TRIGGER/MAINTAIN on every new table (TRUNCATE would skip the append-only row triggers). Remove them, then grant only what is intended.
+revoke all on public.marketing_permission_requests, public.marketing_permission_records from anon, authenticated, service_role;
 grant select on public.marketing_permission_requests, public.marketing_permission_records to authenticated;
 grant select, insert, update on public.marketing_permission_requests to service_role;
 grant select, insert on public.marketing_permission_records to service_role;

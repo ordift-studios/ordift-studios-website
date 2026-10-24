@@ -103,6 +103,8 @@ alter table public.portfolio_internal_reviews enable row level security;
 alter table public.portfolio_use_events enable row level security;
 create policy "portfolio_reviews: staff read" on public.portfolio_internal_reviews for select to authenticated using ((select private.is_staff_or_admin()));
 create policy "portfolio_use: staff read" on public.portfolio_use_events for select to authenticated using ((select private.is_staff_or_admin()));
+-- This project's default privileges give anon, authenticated and service_role TRUNCATE/REFERENCES/TRIGGER/MAINTAIN on every new table (TRUNCATE would skip the append-only row triggers). Remove them, then grant only what is intended.
+revoke all on public.portfolio_internal_reviews, public.portfolio_use_events, public.portfolio_uses_needing_review from anon, authenticated, service_role;
 grant select on public.portfolio_internal_reviews, public.portfolio_use_events to authenticated;
 grant select, insert on public.portfolio_internal_reviews, public.portfolio_use_events to service_role;
 revoke all on function public.portfolio_use_eligibility(uuid, text, date) from public, anon, authenticated;

@@ -174,6 +174,8 @@ create policy "enquiry_discount_approvals: staff read" on public.enquiry_discoun
 create policy "enquiry_price_communications: staff read" on public.enquiry_price_communications for select to authenticated using ((select private.is_staff_or_admin()));
 create policy "enquiry_followups: staff read" on public.enquiry_followups for select to authenticated using ((select private.is_staff_or_admin()));
 create policy "enquiry_conversions: staff read" on public.enquiry_conversions for select to authenticated using ((select private.is_staff_or_admin()));
+-- This project's default privileges give anon, authenticated and service_role TRUNCATE/REFERENCES/TRIGGER/MAINTAIN on every new table (TRUNCATE would skip the append-only row triggers). Remove them, then grant only what is intended.
+revoke all on public.enquiry_discount_approvals, public.enquiry_price_communications, public.enquiry_followups, public.enquiry_conversions from anon, authenticated, service_role;
 grant select on public.enquiry_discount_approvals, public.enquiry_price_communications, public.enquiry_followups, public.enquiry_conversions to authenticated;
 grant select, insert, update on public.enquiry_discount_approvals, public.enquiry_followups to service_role;
 grant select, insert on public.enquiry_price_communications, public.enquiry_conversions to service_role;

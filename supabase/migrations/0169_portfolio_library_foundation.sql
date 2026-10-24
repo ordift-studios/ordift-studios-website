@@ -104,6 +104,8 @@ alter table public.portfolio_collection_items enable row level security;
 create policy "portfolio_candidates: staff read" on public.portfolio_candidates for select to authenticated using ((select private.is_staff_or_admin()));
 create policy "portfolio_collections: staff read" on public.portfolio_collections for select to authenticated using ((select private.is_staff_or_admin()));
 create policy "portfolio_collection_items: staff read" on public.portfolio_collection_items for select to authenticated using ((select private.is_staff_or_admin()));
+-- This project's default privileges give anon, authenticated and service_role TRUNCATE/REFERENCES/TRIGGER/MAINTAIN on every new table (TRUNCATE would skip the append-only row triggers). Remove them, then grant only what is intended.
+revoke all on public.portfolio_candidates, public.portfolio_collections, public.portfolio_collection_items from anon, authenticated, service_role;
 grant select on public.portfolio_candidates, public.portfolio_collections, public.portfolio_collection_items to authenticated;
 grant select, insert, update on public.portfolio_candidates, public.portfolio_collections, public.portfolio_collection_items to service_role;
 commit;
