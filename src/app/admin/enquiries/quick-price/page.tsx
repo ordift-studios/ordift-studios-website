@@ -1,9 +1,9 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { getCurrentUser, isStaffOrAdmin } from "@/lib/portal/roles";
+import { getCurrentUser, isStaffOrAdmin, isSuperAdmin } from "@/lib/portal/roles";
 import PricingEstimatorPanel, { PRICING_FAMILIES, normalizePricingFamily } from "@/app/pricing/PricingEstimatorPanel";
-import ClientSummaryBuilder from "./ClientSummaryBuilder";
+import PriceNegotiationWorkspace from "./PriceNegotiationWorkspace";
 
 export const metadata: Metadata = { title: "Enquiries & Quick Pricing — Ordift Studios Admin", robots: { index: false, follow: false } };
 
@@ -22,7 +22,7 @@ export default async function QuickPricePage({ searchParams }: { searchParams: P
         <Link href="/admin/enquiries" className="font-sans text-body-small text-ordift-gold-pressed underline">← All Enquiries</Link>
         <h1 className="mt-3 font-serif font-medium text-section-heading text-ordift-ink">Enquiries &amp; Quick Pricing</h1>
         <p className="mt-2 font-sans text-body-small text-ordift-ink-muted">
-          Use this during a call or chat. <strong>Nothing here is saved or sent</strong>, and an estimate is not a quotation. Work down the page: choose the service, calculate and revise the options, copy a summary, then record the enquiry if the client wants to continue.
+          Use this during a call or chat. <strong>Nothing here is saved or sent</strong>, and an estimate is not a quotation. Work down the page: choose the service, calculate the original, revise and compare, preview a proposed discount, copy the summary, then record the enquiry if the client wants to continue.
         </p>
       </div>
 
@@ -39,16 +39,9 @@ export default async function QuickPricePage({ searchParams }: { searchParams: P
       </section>
 
       <section aria-labelledby="step2" className="space-y-3">
-        <h2 id="step2" className="font-serif font-medium text-body text-ordift-ink">2. Calculate and revise</h2>
-        <p className="font-sans text-caption text-ordift-ink-muted">Change the scope in the calculator to compare options (for example fewer outfits or a shorter session) and note each figure. Discounts are applied only through the governed quotation step, not here.</p>
-        <div className="rounded-xl border border-black/10 bg-white p-4 sm:p-6">
-          <PricingEstimatorPanel family={family} />
-        </div>
-      </section>
-
-      <section aria-labelledby="step3" className="space-y-3">
-        <h2 id="step3" className="sr-only">3. Summary</h2>
-        <ClientSummaryBuilder />
+        <h2 id="step2" className="font-serif font-medium text-body text-ordift-ink">2. Calculate, revise, compare and copy</h2>
+        <p className="font-sans text-caption text-ordift-ink-muted">Calculate the original in Option A, enter the revised scope in Option B, compare, preview a discount if one is being proposed, choose the preferred option and copy the summary. Everything on this page is temporary and in this tab only.</p>
+        <PriceNegotiationWorkspace isSuperAdmin={isSuperAdmin(user)} slots={[0, 1, 2].map((i) => <PricingEstimatorPanel key={i} family={family} />)} />
       </section>
 
       <section aria-labelledby="step4" className="space-y-3 rounded-xl border border-black/10 bg-white p-5">
