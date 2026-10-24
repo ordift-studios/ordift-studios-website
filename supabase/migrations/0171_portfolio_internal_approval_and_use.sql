@@ -1,4 +1,4 @@
--- PROPOSED - NOT APPLIED - NOT in supabase/migrations. Needs the Founder's separate written release confirmation.
+-- Founder-approved 2026-10-25 for Production, to be applied in order 0168, 0169, 0170, 0171 with every application feature gate OFF. Additive only. Rehearsed locally (see supabase/proposals/RELEASE_PLAN_0168_0171.md).
 -- NUMBER: 0171 (after 0170, which it requires). Part 3 of 3: STAGE 2 - internal creative/quality approval, and the control that re-checks BOTH stages at the moment of use.
 -- Dependencies: 0169 (portfolio_candidates, private.is_portfolio_authority, private.portfolio_append_only), 0170 (public.marketing_permission_state).
 --

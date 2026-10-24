@@ -3,11 +3,11 @@ import { describe, expect, it } from "vitest";
 import { USAGE_RIGHTS_CATEGORIES } from "@/lib/legal/rightsCatalogue";
 import { DESTINATIONS, DESTINATION_KEYS, DESTINATION_USAGE_RIGHT, jobKey, parseJobKey } from "./destinations";
 
-const sql = (f: string) => readFileSync(new URL(`../../../supabase/proposals/${f}`, import.meta.url), "utf8");
-const permissions = sql("PROPOSED_0170_portfolio_marketing_permissions.sql");
-const approval = sql("PROPOSED_0171_portfolio_internal_approval_and_use.sql");
+const sql = (f: string) => readFileSync(new URL(`../../../supabase/migrations/${f}`, import.meta.url), "utf8");
+const permissions = sql("0170_portfolio_marketing_permissions.sql");
+const approval = sql("0171_portfolio_internal_approval_and_use.sql");
 
-describe("destinations stay in step with the database proposals", () => {
+describe("destinations stay in step with the database migrations", () => {
   it("every destination in the app is allowed by the permission and approval tables, and vice versa", () => {
     const listIn = (src: string) => [...src.matchAll(/<@ array\[([^\]]+)\]/g)].map((m) => m[1].replace(/'/g, "").split(",").map((s) => s.trim()).sort().join(","));
     const app = [...DESTINATION_KEYS].sort().join(",");

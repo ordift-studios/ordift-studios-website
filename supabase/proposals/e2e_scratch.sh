@@ -22,7 +22,7 @@ do $$ declare f record; begin
   for f in select p.oid::regprocedure as sig from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' loop execute format('grant execute on function %s to service_role, authenticated', f.sig); end loop;
 end $$;
 SQL
-for f in PROPOSED_0168_enquiry_pricing_followups.sql PROPOSED_0169_portfolio_library_foundation.sql PROPOSED_0170_portfolio_marketing_permissions.sql PROPOSED_0171_portfolio_internal_approval_and_use.sql; do q -d p4_e2e -X -q -v ON_ERROR_STOP=1 < "$D/$f" >/dev/null; done
+for f in 0168_enquiry_pricing_followups.sql 0169_portfolio_library_foundation.sql 0170_portfolio_marketing_permissions.sql 0171_portfolio_internal_approval_and_use.sql; do q -d p4_e2e -X -q -v ON_ERROR_STOP=1 < "$D/../migrations/$f" >/dev/null; done
 PW=$(python3 -c "import secrets;print(secrets.token_hex(16))"); SECRET=$(python3 -c "import secrets;print(secrets.token_hex(32))")
 q -d p4_e2e -X -q -v ON_ERROR_STOP=1 -c "drop role if exists p4_auth" -c "create role p4_auth login noinherit password '$PW'" -c "grant anon, authenticated, service_role to p4_auth" >/dev/null
 docker run -d --name p4-e2e-rest --network "$NET" -p 127.0.0.1:54997:3000 -e PGRST_DB_URI="postgres://p4_auth:$PW@$C:5432/p4_e2e" -e PGRST_DB_SCHEMAS=public -e PGRST_DB_ANON_ROLE=anon -e PGRST_JWT_SECRET="$SECRET" public.ecr.aws/supabase/postgrest:v14.5 >/dev/null

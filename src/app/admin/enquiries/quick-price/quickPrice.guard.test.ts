@@ -67,9 +67,10 @@ describe("Enquiries & Quick Pricing is staff-only, read-only and shares the publ
     expect(call).not.toMatch(/refLocal|refCurrency|indicative/);
     expect(read("../../../../lib/pricing/quickPriceModel.ts")).not.toMatch(/QAR|GHS/);
   });
-  it("the migration-dependent enquiry persistence layer is a proposal only: no migration was added", () => {
-    expect(() => readFileSync(new URL("../../../../../supabase/proposals/PROPOSED_0168_enquiry_pricing_followups.sql", import.meta.url), "utf8")).not.toThrow();
-    const sql = readFileSync(new URL("../../../../../supabase/proposals/PROPOSED_0168_enquiry_pricing_followups.sql", import.meta.url), "utf8");
-    expect(sql.split("\n")[0]).toContain("PROPOSED - NOT APPLIED");
+  it("the database-dependent layers stay switched off until each is separately activated, whatever the migration state", () => {
+    const flag = (f: string, name: string) => expect(readFileSync(new URL(f, import.meta.url), "utf8")).toMatch(new RegExp(`${name} = false;`));
+    flag("../../../../lib/enquiry/pricingHistory.ts", "ENQUIRY_PRICING_PERSISTENCE_ENABLED");
+    flag("../../../../lib/portfolio/featureGate.ts", "PORTFOLIO_LIBRARY_ENABLED");
+    flag("../../../../lib/portfolio/permissionText.ts", "PERMISSION_TEXT_APPROVED");
   });
 });

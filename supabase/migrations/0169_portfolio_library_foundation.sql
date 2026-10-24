@@ -1,4 +1,4 @@
--- PROPOSED - NOT APPLIED - NOT in supabase/migrations. Needs the Founder's separate written release confirmation.
+-- Founder-approved 2026-10-25 for Production, to be applied in order 0168, 0169, 0170, 0171 with every application feature gate OFF. Additive only. Rehearsed locally (see supabase/proposals/RELEASE_PLAN_0168_0171.md).
 -- NUMBER: 0169 (after 0168; ledger head verified read-only 2026-10-24: 0167). Part 1 of 3 for the portfolio library (0169 foundation, 0170 marketing permissions, 0171 internal approval + use control).
 -- Dependencies, all present in Production: businesses, profiles, project_files, engagements, crew_support_slots, user_roles, roles, authority_grants,
 -- private.is_staff_or_admin(), public.ordift_studios_business_id(). None of the new object names exist in Production (checked).

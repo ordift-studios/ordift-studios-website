@@ -1,4 +1,4 @@
--- PROPOSED - NOT APPLIED - NOT in supabase/migrations. Needs the Founder's separate written release confirmation.
+-- Founder-approved 2026-10-25 for Production, to be applied in order 0168, 0169, 0170, 0171 with every application feature gate OFF. Additive only. Rehearsed locally (see supabase/proposals/RELEASE_PLAN_0168_0171.md).
 -- NUMBER: 0170 (after 0169, which it requires). Part 2 of 3: STAGE 1 - rights-holder authorization (marketing permission).
 -- Dependencies in Production: agreements (status, primary_context_type/reference), agreement_releases (usage_rights, duration, territory), profiles, project_files,
 -- plus 0169 helpers (private.is_portfolio_authority, private.project_file_job, private.job_reference, private.portfolio_append_only).

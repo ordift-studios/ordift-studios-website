@@ -1,4 +1,4 @@
--- PROPOSED - NOT APPLIED - NOT in supabase/migrations. Needs the Founder's separate written release confirmation.
+-- Founder-approved 2026-10-25 for Production, to be applied in order 0168, 0169, 0170, 0171 with every application feature gate OFF. Additive only. Rehearsed locally (see supabase/proposals/RELEASE_PLAN_0168_0171.md).
 -- NUMBER: 0168 (Production ledger head verified read-only on 2026-10-24: 0167, 160 versions applied). Held Vendor RLS / legal-representation proposals renumber AFTER this set.
 -- Dependencies, all present in Production: businesses, profiles, enquiries, employing_entities, user_roles, roles, private.is_staff_or_admin(), public.ordift_studios_business_id().
 -- None of the new table names exist in Production (checked). Independent of 0169-0171.
