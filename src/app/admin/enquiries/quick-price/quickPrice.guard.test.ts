@@ -40,12 +40,26 @@ describe("Enquiries & Quick Pricing is staff-only, read-only and shares the publ
   it("renders for staff and for a Super Admin with the three options, the compare area and the approval boundary (mobile-first markup)", async () => {
     const { default: Workspace } = await import("./PriceNegotiationWorkspace");
     for (const superAdmin of [false, true]) {
-      const html = renderToStaticMarkup(createElement(Workspace, { isSuperAdmin: superAdmin, slots: [createElement("p", { key: 1 }, "calc A"), createElement("p", { key: 2 }, "calc B"), createElement("p", { key: 3 }, "calc C")] }));
+      const html = renderToStaticMarkup(createElement(Workspace, { isSuperAdmin: superAdmin, fx: { QAR: { rateToUsd: 3.64, effectiveFrom: "2026-10-11T00:00:00Z" }, GHS: null }, slots: [createElement("p", { key: 1 }, "calc A"), createElement("p", { key: 2 }, "calc B"), createElement("p", { key: 3 }, "calc C")] }));
       expect(html).toContain("Option A — original");
       expect(html).toContain("Option B — revised");
       expect(html).toContain("Compare");
+      expect(html).toContain("A USD amount is never relabelled as QAR or GHS");
+      expect(html).toContain("not</strong> added to the client summary");
       expect(html).toContain(superAdmin ? "this page records no approval" : "you cannot authorise it");
       expect(html).toContain("grid-cols-3"); // tab row fits a phone
     }
+  });
+  it("the internal local-currency reference never reaches the client summary", () => {
+    const ws = read("./PriceNegotiationWorkspace.tsx");
+    const start = ws.indexOf("buildClientSummary(chosen");
+    const call = ws.slice(start, ws.indexOf("\n", start));
+    expect(call).not.toMatch(/refLocal|refCurrency|indicative/);
+    expect(read("../../../../lib/pricing/quickPriceModel.ts")).not.toMatch(/QAR|GHS/);
+  });
+  it("the migration-dependent enquiry persistence layer is a proposal only: no migration was added", () => {
+    expect(() => readFileSync(new URL("../../../../../supabase/proposals/PROPOSED_enquiry_pricing_followups.sql", import.meta.url), "utf8")).not.toThrow();
+    const sql = readFileSync(new URL("../../../../../supabase/proposals/PROPOSED_enquiry_pricing_followups.sql", import.meta.url), "utf8");
+    expect(sql.split("\n")[0]).toContain("PROPOSED - NOT APPLIED");
   });
 });

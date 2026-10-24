@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { indicativeLocalAmount, type FxEntry } from "@/lib/pricing/indicativeLocal";
 import { buildClientSummary, captureFromHref, compareOptions, discountState, previewDiscount, type Captured, type DiscountInput } from "@/lib/pricing/quickPriceModel";
 
 // Negotiation workspace: up to three independent calculator "options" (A original, B revised, C alternative) of the SAME governed estimator, kept
@@ -15,7 +16,7 @@ const usd = (n: number) => `$${n.toFixed(2)} USD`;
 const input = "w-full rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small";
 const btn = "rounded-md px-4 py-2 font-sans text-body-small";
 
-export default function PriceNegotiationWorkspace({ slots, isSuperAdmin }: { slots: ReactNode[]; isSuperAdmin: boolean }) {
+export default function PriceNegotiationWorkspace({ slots, isSuperAdmin, fx }: { slots: ReactNode[]; isSuperAdmin: boolean; fx: Record<"QAR" | "GHS", FxEntry> }) {
   const [active, setActive] = useState<Slot>("A");
   const [live, setLive] = useState<Record<Slot, Captured>>({ A: { status: "unpriced", reason: "No calculator result yet." }, B: { status: "unpriced", reason: "No calculator result yet." }, C: { status: "unpriced", reason: "No calculator result yet." } });
   const [locked, setLocked] = useState<Partial<Record<Slot, Captured>>>({});
@@ -25,6 +26,7 @@ export default function PriceNegotiationWorkspace({ slots, isSuperAdmin }: { slo
   const [dReason, setDReason] = useState("");
   const [useDiscount, setUseDiscount] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [refCurrency, setRefCurrency] = useState<"" | "QAR" | "GHS">("");
   const refs = useRef<Record<Slot, HTMLDivElement | null>>({ A: null, B: null, C: null });
 
   // Read each calculator's current result from the booking link it renders.
@@ -53,6 +55,8 @@ export default function PriceNegotiationWorkspace({ slots, isSuperAdmin }: { slo
   const preview = useMemo(() => (useDiscount ? previewDiscount(chosen, dInput) : null), [useDiscount, chosen, dType, dValue, dReason]); // eslint-disable-line react-hooks/exhaustive-deps
   const state = discountState(preview, isSuperAdmin);
   const summary = chosen.status === "unpriced" ? "" : buildClientSummary(chosen, { label: LABEL[preferred], original: preferred === "A" ? null : original, originalLabel: LABEL.A, discount: preview, discountInput: dInput });
+  const refBase = chosen.status === "priced" ? (preview && preview.ok ? preview.totalUsd : chosen.totalUsd) : 0;
+  const refLocal = refCurrency ? indicativeLocalAmount(refBase, refCurrency, fx[refCurrency]) : null;
   const priced = SLOTS.filter((s) => effective(s).status !== "unpriced");
 
   async function copy() { try { await navigator.clipboard.writeText(summary); setCopied(true); setTimeout(() => setCopied(false), 2000); } catch { setCopied(false); } }
@@ -148,11 +152,21 @@ export default function PriceNegotiationWorkspace({ slots, isSuperAdmin }: { slo
         <p className="font-sans text-caption text-ordift-ink-muted">One discount at a time: changing the values replaces the preview; discounts never stack. Change an option&apos;s scope and the preview recalculates on the new total (and shows a message if the discount no longer fits).</p>
       </section>
 
+      <section className="rounded-xl border border-black/10 bg-white p-4 sm:p-5 space-y-3" aria-labelledby="cur">
+        <h2 id="cur" className="font-serif font-medium text-body text-ordift-ink">Currency</h2>
+        <p className="font-sans text-caption text-ordift-ink-muted">Every figure above is in <strong>USD</strong>, Ordift&apos;s pricing reference currency, and clients are asked to pay in USD. A USD amount is never relabelled as QAR or GHS. If you need a local figure for your own reference, it is converted with the governed exchange rate below. It is for staff only, is <strong>not</strong> added to the client summary, and must not be quoted to a client as the price.</p>
+        <label className="block font-sans text-caption text-ordift-ink-muted">Internal reference currency
+          <select value={refCurrency} onChange={(e) => setRefCurrency(e.target.value as "" | "QAR" | "GHS")} className={input}><option value="">None (USD only)</option><option value="QAR">Qatari riyal (QAR)</option><option value="GHS">Ghana cedi (GHS)</option></select></label>
+        {refLocal && (refLocal.ok
+          ? <p className="rounded-lg bg-ordift-offwhite p-3 font-sans text-body-small text-ordift-ink">{usd(refBase)} ≈ <strong>{refLocal.amount.toLocaleString("en-US", { minimumFractionDigits: 2 })} {refLocal.currency}</strong> at the governed rate 1 USD = {refLocal.rateToUsd} {refLocal.currency} (effective {refLocal.effectiveFrom.slice(0, 10)}, {refLocal.ageDays} days old). Reference only.</p>
+          : <p role="alert" className="font-sans text-caption text-amber-900">{refLocal.reason}</p>)}
+      </section>
+
       <section className="rounded-xl border border-black/10 bg-white p-4 sm:p-5 space-y-3" aria-labelledby="sum">
         <h2 id="sum" className="font-serif font-medium text-body text-ordift-ink">Client summary</h2>
         {summary ? <pre className="whitespace-pre-wrap rounded-lg bg-ordift-offwhite p-3 font-sans text-caption text-ordift-ink">{summary}</pre> : <p className="font-sans text-caption text-ordift-ink-muted">The preferred option has no price yet, so there is no summary. Nothing is assumed.</p>}
         <button type="button" onClick={copy} disabled={!summary} className="rounded-md bg-ordift-ink px-4 py-2 font-sans text-body-small text-white disabled:opacity-50">{copied ? "Copied" : "Copy summary"}</button>
-        <p className="font-sans text-caption text-ordift-ink-muted">Only in this browser tab: refreshing the page or changing the service clears the options. To keep a communicated figure, record the enquiry and note it there (saved pricing history is the next stage).</p>
+        <p className="font-sans text-caption text-ordift-ink-muted">Only in this browser tab: refreshing the page or changing the service clears the options. To keep a communicated figure, record the enquiry and write it in the enquiry notes. Saving communicated prices, follow-ups and approved discounts as permanent records needs a database change that has not been authorised yet; until then nothing here is stored.</p>
       </section>
     </div>
   );
