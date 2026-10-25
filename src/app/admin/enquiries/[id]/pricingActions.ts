@@ -5,7 +5,7 @@ import { getCurrentUser, type CurrentUser } from "@/lib/portal/roles";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { completeFollowUp, convertToQuotation, createFollowUp, decideDiscount, proposeDiscount, rescheduleFollowUp, saveCommunicatedPrice, type Result } from "@/lib/enquiry/pricingPersistence";
 
-export type PState = { ok: boolean; message: string } | null;
+export type PState = { ok: boolean; message: string; kind?: "created" | "found"; reference?: string; quotationId?: string } | null;
 const str = (f: FormData, k: string) => String(f.get(k) ?? "");
 async function run(f: FormData, fn: (u: CurrentUser, enquiryId: string) => Promise<Result<object>>, okMessage: string): Promise<PState> {
   const u = await getCurrentUser(); if (!u) return { ok: false, message: "Please sign in again." };
@@ -47,6 +47,7 @@ export async function convertAction(_: PState, f: FormData): Promise<PState> {
   const u = await getCurrentUser(); if (!u) return { ok: false, message: "Please sign in again." };
   const enquiryId = str(f, "enquiryId");
   const r = await convertToQuotation(u, enquiryId);
-  revalidatePath(`/admin/enquiries/${enquiryId}`);
-  return r.ok ? { ok: true, message: r.alreadyDone ? `A quotation already exists (${r.quotationReference}); no second one was created.` : `Draft quotation ${r.quotationReference} created. It is not sent, and nothing is booked or charged.` } : { ok: false, message: r.error };
+  revalidatePath(`/admin/enquiries/${enquiryId}`); revalidatePath("/admin/pricing/quotations");
+  if (!r.ok) return { ok: false, message: r.error };
+  return { ok: true, kind: r.alreadyDone ? "found" : "created", reference: r.quotationReference, quotationId: r.quotationId, message: r.alreadyDone ? `A quotation already exists (${r.quotationReference}); no second one was created.` : `Draft quotation ${r.quotationReference} created. It is not issued or sent, and nothing is booked or charged.` };
 }

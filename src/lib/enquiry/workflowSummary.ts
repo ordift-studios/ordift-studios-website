@@ -1,5 +1,8 @@
 import { CRM_STAGES } from "@/lib/admin/enquiries";
 import { channelLabel } from "./staffIntake";
+import { nextActionFor, quotationHref, quotationLine } from "./quotationState";
+
+export { nextActionFor, quotationHref, quotationLine, quotationStatusWord } from "./quotationState";
 
 // Consolidated, READ-ONLY workflow summary for an enquiry (M1). Pure.
 //
@@ -9,9 +12,19 @@ import { channelLabel } from "./staffIntake";
 // changes a stage or a record.
 
 export type StepState = "done" | "current" | "pending" | "not_applicable" | "unknown";
-export type SummaryStep = { key: "enquiry" | "quotation" | "acceptance" | "amount_due" | "payment" | "booking" | "entity"; label: string; state: StepState; detail: string };
+export type SummaryStep = {
+  key: "enquiry" | "draft" | "quotation" | "acceptance" | "amount_due" | "payment" | "booking" | "entity";
+  label: string;
+  state: StepState;
+  detail: string;
+  answer?: "Yes" | "No"; // for the plain yes/no facts (draft created, issued or sent)
+  href?: string;         // where to look at the record behind the line
+  hrefLabel?: string;
+};
 
 export type QuotationFact = {
+  id?: string;
+  version?: number;
   reference: string;
   status: string; // draft | ready | sent | accepted | declined | expired | superseded
   issuedAt: string | null;
@@ -50,7 +63,7 @@ export function bookedOrLater(stage: string): boolean {
   return i >= CRM_STAGES.indexOf("booked") && i >= 0 && stage !== "declined" && stage !== "closed";
 }
 
-export function summariseWorkflow(f: WorkflowFacts): { steps: SummaryStep[]; notes: string[] } {
+export function summariseWorkflow(f: WorkflowFacts): { steps: SummaryStep[]; notes: string[]; next: string } {
   const steps: SummaryStep[] = [];
   const notes: string[] = [];
   const quotes = f.quotations.filter((q) => !q.isTest || f.quotations.every((x) => x.isTest));
@@ -67,25 +80,32 @@ export function summariseWorkflow(f: WorkflowFacts): { steps: SummaryStep[]; not
     detail: `${channelLabel(f.sourceChannel)}${f.staffRecorded ? ", recorded by staff" : ""} · ${day(f.receivedAt ?? f.submittedAt)}`,
   });
 
-  if (accepted) steps.push({ key: "quotation", label: "Quotation issued", state: "done", detail: `${accepted.reference} · ${accepted.currency} ${accepted.total.toFixed(2)}${accepted.issuedAt ? ` · issued ${day(accepted.issuedAt)}` : ""}` });
-  else if (issued) steps.push({ key: "quotation", label: "Quotation issued", state: "current", detail: `${issued.reference} · ${issued.currency} ${issued.total.toFixed(2)}${issued.issuedAt ? ` · issued ${day(issued.issuedAt)}` : ""} · waiting for the client` });
-  else if (preparing) steps.push({ key: "quotation", label: "Quotation issued", state: "pending", detail: `${preparing.reference} is in preparation and has not been issued` });
-  else if (closed) steps.push({ key: "quotation", label: "Quotation issued", state: "done", detail: `${closed.reference} was ${closed.status}` });
-  else steps.push({ key: "quotation", label: "Quotation issued", state: "pending", detail: "No quotation recorded for this enquiry" });
+  // 1. Was a draft (or any quotation) created? Independent of whether it was issued.
+  const primary = accepted ?? issued ?? preparing ?? closed ?? null;
+  steps.push(primary
+    ? { key: "draft", label: "Draft quotation created", state: "done", answer: "Yes", detail: quotationLine(primary), href: primary.id ? quotationHref(primary.id) : undefined, hrefLabel: primary.status === "draft" ? "View draft quotation" : "View quotation" }
+    : { key: "draft", label: "Draft quotation created", state: "pending", answer: "No", detail: "No quotation exists for this enquiry yet" });
+
+  // 2. Was it issued / sent to the client? A draft is not an issued quotation.
+  if (accepted) steps.push({ key: "quotation", label: "Quotation issued or sent", state: "done", answer: "Yes", detail: `${accepted.reference} · ${accepted.currency} ${accepted.total.toFixed(2)}${accepted.issuedAt ? ` · issued ${day(accepted.issuedAt)}` : ""}` });
+  else if (issued) steps.push({ key: "quotation", label: "Quotation issued or sent", state: "current", answer: "Yes", detail: `${issued.reference} · ${issued.currency} ${issued.total.toFixed(2)}${issued.issuedAt ? ` · issued ${day(issued.issuedAt)}` : ""} · waiting for the client` });
+  else if (preparing) steps.push({ key: "quotation", label: "Quotation issued or sent", state: "pending", answer: "No", detail: `${preparing.reference} is still ${preparing.status === "ready" ? "ready but not issued" : "a draft"}: it has not been issued or sent, and the client has not seen it` });
+  else if (closed) steps.push({ key: "quotation", label: "Quotation issued or sent", state: "done", answer: "Yes", detail: `${closed.reference} was ${closed.status}` });
+  else steps.push({ key: "quotation", label: "Quotation issued or sent", state: "pending", answer: "No", detail: "No quotation recorded for this enquiry" });
 
   if (accepted) {
     const how = accepted.acceptedVia ? ACCEPT_VIA[accepted.acceptedVia] ?? accepted.acceptedVia : "recorded";
     const parts = [`${how}${accepted.acceptanceChannel ? ` (${accepted.acceptanceChannel.replace(/_/g, " ")})` : ""}`, accepted.acceptedByName ? `by ${accepted.acceptedByName}` : "", day(accepted.acceptedAt)].filter(Boolean);
     steps.push({ key: "acceptance", label: "Client acceptance recorded", state: "done", detail: `${parts.join(" · ")} — a recorded acceptance, not a booking` });
   } else {
-    steps.push({ key: "acceptance", label: "Client acceptance recorded", state: issued ? "current" : "pending", detail: issued ? "Not yet recorded" : "Needs an issued quotation first" });
+    steps.push({ key: "acceptance", label: "Client acceptance recorded", state: issued ? "current" : "pending", detail: issued ? "Not yet recorded" : preparing ? "Not yet: the quotation has to be issued before the client can accept it" : "Needs an issued quotation first" });
   }
 
   if (f.amountDue != null && f.amountDue > 0) {
     const src = f.amountDueSource === "accepted_quotation" ? "from an accepted quotation" : f.amountDueSource === "manual" ? "typed in by staff" : "recorded before sources were tracked";
     steps.push({ key: "amount_due", label: "Amount due established", state: "done", detail: `${usd(f.amountDue)} · ${src}` });
   } else {
-    steps.push({ key: "amount_due", label: "Amount due established", state: "pending", detail: "No amount due set" });
+    steps.push({ key: "amount_due", label: "Amount due established", state: "pending", detail: preparing ? "No amount due set. A draft quotation never creates one" : "No amount due set" });
   }
 
   const paid = f.amountPaid ?? 0;
@@ -104,5 +124,5 @@ export function summariseWorkflow(f: WorkflowFacts): { steps: SummaryStep[]; not
   if (bookedOrLater(f.stage) && !accepted && !crew) notes.push("This enquiry is booked without a recorded quotation acceptance (booked by payment or by hand, as before). Nothing about it has changed.");
   if (f.emailsSuppressed) notes.push("Automatic client emails are switched off for this enquiry. Nothing is sent to the client unless staff send it.");
   if (crew) notes.push("Creative Crew Support has its own quotation, agreement and confirmation workflow. Manage it from the Crew Support request.");
-  return { steps, notes };
+  return { steps, notes, next: nextActionFor(primary, f.amountDue) };
 }

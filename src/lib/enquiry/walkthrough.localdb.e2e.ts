@@ -33,11 +33,13 @@ import { saveWorkspacePriceAction as saveRaw } from "@/app/admin/enquiries/quick
 import * as acts from "@/app/admin/enquiries/[id]/pricingActions";
 import { buildClientSummary, captureFromHref, compareOptions, discountState, previewDiscount } from "@/lib/pricing/quickPriceModel";
 import { encodePricingHandoff } from "./pricingHandoff";
+import { loadWorkflowFacts } from "./workflowFacts";
+import { summariseWorkflow } from "./workflowSummary";
 
 // the form actions return null only for an initial render state; in a walkthrough a result is always expected
 const nn = <A extends unknown[]>(fn: (...a: A) => Promise<{ ok: boolean; message: string } | null>) => async (...a: A) => (await fn(...a))!;
 const saveWorkspacePriceAction = nn(saveRaw);
-const [convertAction, createFollowUpAction, decideDiscountAction, proposeDiscountAction, communicateDiscountAction, rescheduleFollowUpAction] = [acts.convertAction, acts.createFollowUpAction, acts.decideDiscountAction, acts.proposeDiscountAction, acts.communicateDiscountAction, acts.rescheduleFollowUpAction].map((f) => nn(f as never)) as unknown as Array<(prev: null, f: FormData) => Promise<{ ok: boolean; message: string }>>;
+const [convertAction, createFollowUpAction, decideDiscountAction, proposeDiscountAction, communicateDiscountAction, rescheduleFollowUpAction] = [acts.convertAction, acts.createFollowUpAction, acts.decideDiscountAction, acts.proposeDiscountAction, acts.communicateDiscountAction, acts.rescheduleFollowUpAction].map((f) => nn(f as never)) as unknown as Array<(prev: null, f: FormData) => Promise<{ ok: boolean; message: string; kind?: "created" | "found"; reference?: string }>>;
 const sql = (q: string) => execSync("docker exec -i ordift-mig-check2 psql -U supabase_admin -h 127.0.0.1 -d p4_e2e -X -q -At -v ON_ERROR_STOP=1", { input: q }).toString().trim();
 const U = (n: number) => `00000000-0000-4000-8000-0000000000${n.toString(16).padStart(2, "0")}`;
 const user = (n: number, roles: string[]) => ({ id: U(n), email: `u${n}@e2e.test`, fullName: `User ${n}`, roles, accessStatus: "active" }) as unknown as Parameters<typeof svc.saveCommunicatedPrice>[0];
@@ -201,8 +203,12 @@ describe("7. Conversion to ONE draft quotation, with no booking, payment, revenu
     expect((await convertAction(null, fd({ enquiryId: GH }))).ok).toBe(false);
     h.current = admin;
     const [x, y] = await Promise.all([convertAction(null, fd({ enquiryId: GH })), convertAction(null, fd({ enquiryId: GH }))]);
-    expect([x, y].filter((r) => r?.ok).length).toBeGreaterThanOrEqual(1);
+    // simultaneous presses: both succeed, exactly one says "created", the other says "found" (never a refusal and never a second quotation)
+    expect([x, y].map((r) => r.ok)).toEqual([true, true]);
+    expect([x, y].map((r) => r.kind).sort()).toEqual(["created", "found"]);
+    expect(x.reference).toBe(y.reference);
     const again = await convertAction(null, fd({ enquiryId: GH }));
+    expect(again).toMatchObject({ ok: true, kind: "found" });
     expect(again.message).toMatch(/already exists.*no second one was created/);
     const latest = (await svc.getEnquiryPricingView(GH))!.communications[0];
     expect(sql(`select count(*)||':'||min(status)||':'||min(currency)||':'||min(total) from public.client_quotations where enquiry_id='${GH}'`)).toBe(`1:draft:USD:${latest.communicated.toFixed(2)}`);
@@ -214,6 +220,21 @@ describe("7. Conversion to ONE draft quotation, with no booking, payment, revenu
     expect(latest.revision).toBe(4);                                              // revision 4 = Option A re-saved in step 5
     expect(sql(`select total from public.client_quotations where enquiry_id='${GH}'`)).toBe("1000.00");
     expect(sql(`select count(*) from public.enquiry_price_communications where enquiry_id='${GH}' and communicated_amount = 1260 and original_total_usd = 1400`)).toBe("1");   // the approved discounted revision is still in the history
+  });
+  it("the workflow summary and the enquiry panel read the SAME draft and say it is a draft, not issued", async () => {
+    const f = await loadWorkflowFacts(GH, { userId: U(0xd2), isSuperAdmin: false });
+    const r = summariseWorkflow(f!);
+    const draftStep = r.steps.find((st) => st.key === "draft")!;
+    expect(draftStep).toMatchObject({ answer: "Yes", state: "done" });
+    expect(draftStep.detail).toMatch(/^ORD-QUO-\d{4}-\d{6} · version 1 · USD 1000\.00 · Draft$/);
+    expect(r.steps.find((st) => st.key === "quotation")).toMatchObject({ answer: "No", state: "pending" });
+    expect(r.steps.find((st) => st.key === "amount_due")!.state).toBe("pending");
+    expect(r.steps.find((st) => st.key === "booking")!.state).toBe("pending");
+    const conv = (await svc.getEnquiryPricingView(GH))!.conversion!;
+    expect(conv).toMatchObject({ status: "draft", currency: "USD", total: 1000, version: 1, issuedAt: null, acceptedAt: null });
+    expect(f!.quotations).toHaveLength(1);                                                        // one quotation, one source of truth
+    expect(f!.quotations[0].reference).toBe(conv.quotationReference);
+    expect(sql(`select count(*) from public.client_quotations where quotation_reference='${conv.quotationReference}'`)).toBe("1");
   });
   it("an enquiry whose only saved price is on a Qatar enquiry converts to a USD draft too (no local-currency quotation)", async () => {
     h.current = admin;

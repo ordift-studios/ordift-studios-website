@@ -14,11 +14,13 @@ export async function loadWorkflowFacts(enquiryId: string, viewer: { userId: str
   if (!e) return null;
   const { data: q } = await admin
     .from("client_quotations")
-    .select("quotation_reference, status, issued_at, accepted_at, accepted_via, acceptance_channel, accepted_by_name, currency, total, is_test")
+    .select("id, version, quotation_reference, status, issued_at, accepted_at, accepted_via, acceptance_channel, accepted_by_name, currency, total, is_test")
     .eq("enquiry_id", enquiryId)
     .neq("status", "superseded")
     .order("created_at", { ascending: false });
   const quotations: QuotationFact[] = (q ?? []).map((r) => ({
+    id: r.id,
+    version: r.version == null ? undefined : Number(r.version),
     reference: r.quotation_reference,
     status: r.status,
     issuedAt: r.issued_at,

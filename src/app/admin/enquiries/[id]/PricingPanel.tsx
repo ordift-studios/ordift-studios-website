@@ -2,7 +2,8 @@ import Link from "next/link";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getEnquiryPricingView } from "@/lib/enquiry/pricingPersistence";
 import { ENQUIRY_PRICING_PERSISTENCE_ENABLED } from "@/lib/enquiry/pricingHistory";
-import { CommunicateDiscountForm, ConvertForm, DecideDiscountForm, ManageFollowUp, NewFollowUpForm, ProposeDiscountForm } from "./PricingForms";
+import ConvertPanel from "./ConvertPanel";
+import { CommunicateDiscountForm, DecideDiscountForm, ManageFollowUp, NewFollowUpForm, ProposeDiscountForm } from "./PricingForms";
 
 const usd = (n: number) => `$${n.toFixed(2)} USD`;
 const STATE_LABEL = { overdue: "Overdue", due_today: "Due today", upcoming: "Upcoming" } as const;
@@ -50,7 +51,7 @@ export default async function PricingPanel({ enquiryId, isSuperAdmin }: { enquir
 
       {hasPrice && (
         <div className="space-y-2"><h3 className="font-sans text-body-small font-medium">Proceed</h3>
-          {view.conversion ? <p className="font-sans text-body-small">Draft quotation <Link className="underline" href={`/admin/pricing/quotations/${view.conversion.quotationId}`}>{view.conversion.quotationReference}</Link> already exists for this enquiry.</p> : <ConvertForm enquiryId={enquiryId} />}</div>)}
+          <ConvertPanel enquiryId={enquiryId} existing={view.conversion} /></div>)}
     </section>
   );
 }

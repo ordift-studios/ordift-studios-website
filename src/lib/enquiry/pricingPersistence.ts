@@ -142,7 +142,19 @@ export async function convertToQuotation(user: CurrentUser, enquiryId: string): 
     commercialNotes: [comm.assumptions ? `Assumptions: ${comm.assumptions}` : "", comm.exclusions ? `Exclusions: ${comm.exclusions}` : ""].filter(Boolean).join("\n") || null,
     items: [{ serviceItem: comm.scope_title as string, description: lines.join("; ").slice(0, 900) || null, quantity: 1, unitBasis: "package", sellingRate: Number(comm.communicated_amount), sourceType: "manual" }],
   });
-  if (!q.ok) return fail(q.error);
+  if (!q.ok) {
+    // Two presses at once: the other one may have created the quotation a moment ago and be about to record the link. Look again briefly before reporting a failure,
+    // so the second press says "found, no duplicate" instead of showing a refusal.
+    for (let i = 0; i < 3; i++) {
+      await new Promise((r) => setTimeout(r, 250));
+      const { data: now } = await admin.from("enquiry_conversions").select("target_id").eq("enquiry_id", enquiryId).eq("target_type", "client_quotation").maybeSingle();
+      if (now) {
+        const { data: found } = await admin.from("client_quotations").select("quotation_reference").eq("id", now.target_id).maybeSingle();
+        return { ok: true, quotationId: now.target_id as string, quotationReference: (found?.quotation_reference as string) ?? "", alreadyDone: true };
+      }
+    }
+    return fail(q.error);
+  }
   const { error } = await admin.from("enquiry_conversions").insert({ enquiry_id: enquiryId, target_type: "client_quotation", target_id: q.quotationId, price_communication_id: comm.id, idempotency_key: conversionIdempotencyKey(enquiryId, "client_quotation"), converted_by: user.id });
   if (error) return fail("The quotation was created but the link could not be recorded. Open the quotation from the Quotations list and tell the Founder.");
   await logActivity({ actorUserId: user.id, action: "enquiry.converted_to_quotation", entityType: "enquiry", entityId: enquiryId, metadata: { quotationReference: q.quotationReference } });
@@ -155,7 +167,7 @@ export type EnquiryPricingView = {
   discount: { id: string; status: string; type: string; value: number; discountUsd: number; totalAfterUsd: number; reason: string; decisionNote: string | null } | null;
   followUp: { id: string; handlerId: string; handlerName: string; nextAction: string; dueAt: string; state: FollowUpState } | null;
   followUpHistory: { dueAt: string; handlerName: string; status: string; note: string | null }[];
-  conversion: { quotationId: string; quotationReference: string } | null;
+  conversion: { quotationId: string; quotationReference: string; version: number; status: string; currency: string; total: number; issuedAt: string | null; acceptedAt: string | null; convertedAt: string } | null;
 };
 export async function getEnquiryPricingView(enquiryId: string): Promise<EnquiryPricingView | null> {
   if (!ENQUIRY_PRICING_PERSISTENCE_ENABLED) return null;
@@ -164,20 +176,20 @@ export async function getEnquiryPricingView(enquiryId: string): Promise<EnquiryP
     admin.from("enquiry_price_communications").select("*").eq("enquiry_id", enquiryId).order("revision_number", { ascending: false }),
     admin.from("enquiry_discount_approvals").select("*").eq("enquiry_id", enquiryId).in("status", ["proposed", "approved"]).limit(1),
     admin.from("enquiry_followups").select("*").eq("enquiry_id", enquiryId).order("created_at", { ascending: false }),
-    admin.from("enquiry_conversions").select("target_id").eq("enquiry_id", enquiryId).eq("target_type", "client_quotation").maybeSingle(),
+    admin.from("enquiry_conversions").select("target_id, converted_at").eq("enquiry_id", enquiryId).eq("target_type", "client_quotation").maybeSingle(),
   ]);
   const handlerIds = [...new Set((fus ?? []).map((f) => f.handler_profile_id as string))];
   const { data: profs } = handlerIds.length ? await admin.from("profiles").select("id, full_name").in("id", handlerIds) : { data: [] };
   const nameOf = (id: string) => (profs ?? []).find((p) => p.id === id)?.full_name ?? "Unnamed";
   const open = (fus ?? []).find((f) => f.status === "open");
-  const quote = conv ? (await admin.from("client_quotations").select("id, quotation_reference").eq("id", conv.target_id).maybeSingle()).data : null;
+  const quote = conv ? (await admin.from("client_quotations").select("id, quotation_reference, version, status, currency, total, issued_at, accepted_at").eq("id", conv.target_id).maybeSingle()).data : null;
   const d = (discs ?? [])[0];
   return {
     communications: (comms ?? []).map((c) => ({ id: c.id, revision: c.revision_number, scopeTitle: c.scope_title, original: c.original_total_usd === null ? null : Number(c.original_total_usd), communicated: Number(c.communicated_amount), currency: c.communicated_currency, channel: c.channel, at: c.communicated_at, discountApprovalId: c.discount_approval_id, localNote: c.indicative_local_currency ? `Internal reference only: ${c.indicative_local_currency} ${Number(c.indicative_local_amount).toFixed(2)} at ${c.fx_rate_to_usd} (rate effective ${String(c.fx_effective_from).slice(0, 10)})` : null })),
     discount: d ? { id: d.id, status: d.status, type: d.discount_type, value: Number(d.discount_value), discountUsd: Number(d.discount_usd), totalAfterUsd: Number(d.total_after_usd), reason: d.reason, decisionNote: d.decision_note } : null,
     followUp: open ? { id: open.id, handlerId: open.handler_profile_id, handlerName: nameOf(open.handler_profile_id), nextAction: open.next_action, dueAt: open.due_at, state: followUpState(open.due_at) } : null,
     followUpHistory: (fus ?? []).filter((f) => f.status !== "open").map((f) => ({ dueAt: f.due_at, handlerName: nameOf(f.handler_profile_id), status: f.status, note: f.completion_note })),
-    conversion: conv && quote ? { quotationId: quote.id as string, quotationReference: quote.quotation_reference as string } : null,
+    conversion: conv && quote ? { quotationId: quote.id as string, quotationReference: quote.quotation_reference as string, version: Number(quote.version ?? 1), status: quote.status as string, currency: quote.currency as string, total: Number(quote.total ?? 0), issuedAt: (quote.issued_at as string | null) ?? null, acceptedAt: (quote.accepted_at as string | null) ?? null, convertedAt: conv.converted_at as string } : null,
   };
 }
 

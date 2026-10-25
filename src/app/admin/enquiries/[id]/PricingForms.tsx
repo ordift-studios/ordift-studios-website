@@ -1,7 +1,7 @@
 "use client";
 
 import { useActionState } from "react";
-import { communicateDiscountAction, completeFollowUpAction, convertAction, createFollowUpAction, decideDiscountAction, proposeDiscountAction, rescheduleFollowUpAction, type PState } from "./pricingActions";
+import { communicateDiscountAction, completeFollowUpAction, createFollowUpAction, decideDiscountAction, proposeDiscountAction, rescheduleFollowUpAction, type PState } from "./pricingActions";
 
 const input = "w-full rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small";
 const btn = "min-h-10 rounded-md bg-ordift-ink px-4 py-2 font-sans text-body-small text-white disabled:opacity-60";
@@ -52,9 +52,4 @@ export function ManageFollowUp({ enquiryId, followUpId, people }: { enquiryId: s
     <form action={cact} className="flex flex-wrap items-center gap-2"><H id={enquiryId} /><input type="hidden" name="followUpId" value={followUpId} />
       <input name="note" placeholder="Outcome (optional)" aria-label="Outcome" className={small} />
       <button className={ghost} disabled={cp}>Mark done</button><Msg s={cs} /></form></div>;
-}
-export function ConvertForm({ enquiryId }: { enquiryId: string }) {
-  const [s, act, p] = useActionState(convertAction, null as PState);
-  return <form action={act} className="space-y-2"><H id={enquiryId} /><button className={btn} disabled={p}>Proceed to quotation</button><Msg s={s} />
-    <p className="font-sans text-caption text-ordift-ink-muted">Creates one DRAFT quotation from the latest communicated price. It is not sent, and no booking, payment, revenue, agreement or payable is created. Pressing it again never makes a second one.</p></form>;
 }
