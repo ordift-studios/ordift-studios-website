@@ -6,7 +6,7 @@ import { PrintButton } from "@/components/admin/PrintButton";
 import { getCrewQuotationPrintExtras } from "@/lib/crewSupport/quotation";
 import { snapshotScheduleText } from "@/lib/crewSupport/quotationSnapshot";
 import { quotationDates, utcDate } from "@/lib/commercial/quotationValidity";
-import { resolveQuotationEntity } from "@/lib/commercial/quotationEntity";
+import { resolveQuotationEntityView } from "@/lib/commercial/quotationEntity";
 
 export const metadata: Metadata = {
   title: "Quotation PDF — Ordift Studios",
@@ -38,7 +38,9 @@ export default async function QuotationPdfPage({ params }: { params: Promise<{ i
   // Created / Issued / Valid until, labelled. A draft shows "Not yet issued" and a DRAFT banner: the creation date is never presented as an issue date.
   // The contracting entity of an ORDINARY quotation, from the existing governed record only. Only its legal name, registration type and current verified CR / tax identifiers can
   // appear here (see buildEntityDisplay); Crew Support quotations keep their own output unchanged.
-  const entity = crew ? null : await resolveQuotationEntity(id);
+  // A DRAFT shows the live record; an ISSUED quotation shows only the legal details frozen when it was issued, so a later registry change never alters an issued document.
+  const entityView = crew ? null : await resolveQuotationEntityView(id);
+  const entityShown = entityView?.phase === "issued" ? entityView.frozen : entityView?.phase === "draft" && entityView.resolution.ok ? { legalName: entityView.resolution.entity.display.legalName, registrationType: entityView.resolution.entity.display.registrationType, identifiers: entityView.resolution.entity.display.identifiers } : null;
   const dates = quotationDates({ createdAt: quotation.createdAt, issuedAt: crew?.issuedAt ?? quotation.issuedAt, validUntil: quotation.validUntil, status: crew?.status ?? quotation.status }, utcDate(new Date()), { crew: Boolean(crew) });
 
   return (
@@ -94,14 +96,14 @@ export default async function QuotationPdfPage({ params }: { params: Promise<{ i
         {quotation.prospectPhone && <div>{quotation.prospectPhone}</div>}
       </div>
 
-      {entity?.ok ? (
+      {entityShown ? (
         <div style={{ marginBottom: 24, fontSize: 12 }}>
           <div style={{ textTransform: "uppercase", letterSpacing: "0.08em", fontSize: 9, color: "#888" }}>Contracting entity</div>
-          <div style={{ fontWeight: "bold", fontSize: 13 }}>{entity.entity.display.legalName}</div>
-          {entity.entity.display.registrationType && <div>{entity.entity.display.registrationType}</div>}
-          {entity.entity.display.identifiers.map((i) => <div key={i.label}>{i.label} {i.identifier}</div>)}
+          <div style={{ fontWeight: "bold", fontSize: 13 }}>{entityShown.legalName}</div>
+          {entityShown.registrationType && <div>{entityShown.registrationType}</div>}
+          {entityShown.identifiers.map((i) => <div key={i.label}>{i.label} {i.identifier}</div>)}
         </div>
-      ) : entity && dates.draft ? (
+      ) : entityView?.phase === "draft" && dates.draft ? (
         <div style={{ marginBottom: 24, fontSize: 12, color: "#a33" }}>Contracting entity: not yet selected (it must be selected before this quotation can be issued)</div>
       ) : null}
 

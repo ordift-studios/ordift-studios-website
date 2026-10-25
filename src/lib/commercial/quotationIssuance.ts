@@ -4,6 +4,7 @@ import { getCurrentUser, hasRole, isSuperAdmin } from "@/lib/portal/roles";
 import { issuanceBlockers, planIssuance } from "./quotationValidity";
 import { DELIVERY_CHANNELS_UI } from "./quotationDeliveryChannels";
 import { resolveQuotationEntity } from "./quotationEntity";
+import { ISSUED_ACTION, buildIssuedLegalDetails } from "./quotationIssuedDetails";
 
 // ORDINARY quotation issuance, delivery record and their audit. Issuing is ONE deliberate, confirmed act that records WHEN it was issued, BY WHOM, and the approved validity.
 // It is deliberately NOT sending: nothing is emailed or notified, and it creates no payment, booking, amount due, receivable or client acceptance. Delivering the quotation to the client
@@ -41,16 +42,36 @@ export async function issueOrdinaryQuotation(params: { quotationId: string; vali
   if (error) { console.error("[commercial] failed to issue quotation", error.message); return { ok: false, error: "The quotation could not be issued. Nothing was changed." }; }
   if (!updated) return { ok: false, error: "This quotation was already issued or changed by someone else. Reload to see its current state. Nothing was changed." };
 
-  await logActivity({
-    actorUserId: user.id, action: "client_quotation.issued", entityType: "client_quotation", entityId: params.quotationId,
+  // The issuance record is written WITH the frozen legal details of the entity (see quotationIssuedDetails.ts). It is checked, not best-effort: if it cannot be saved, or the
+  // entity record changed while issuing, the issuance is rolled back to a draft so there is never an issued quotation without its evidence.
+  const revert = async (reason: string, userMessage: string): Promise<IssueResult> => {
+    const { data: undone } = await admin.from("client_quotations")
+      .update({ status: "draft", issued_at: null, issued_by: null, valid_until: q.valid_until ?? null })
+      .eq("id", params.quotationId).eq("status", "sent").eq("issued_at", issuedAt).select("id").maybeSingle();
+    if (undone) {
+      await logActivity({ actorUserId: user.id, action: "client_quotation.issuance_reverted", entityType: "client_quotation", entityId: params.quotationId, metadata: { quotationReference: q.quotation_reference, issuedAt, reason } });
+      return { ok: false, error: `${userMessage} Nothing was issued.` };
+    }
+    console.error("[commercial] could not roll back an issuance whose record failed", params.quotationId, reason);
+    return { ok: false, error: "The quotation was issued but its issuance record could not be completed. Do not send it; contact the platform administrator." };
+  };
+  const { error: auditError } = await admin.from("activity_log").insert({
+    actor_user_id: user.id, action: ISSUED_ACTION, entity_type: "client_quotation", entity_id: params.quotationId,
     metadata: {
       quotationReference: q.quotation_reference, from: "draft", issuedAt, validUntil: plan.validUntil, standardValidUntil: plan.defaultUntil, withinStandardPolicy: !plan.isException,
       ...(plan.isException ? { exceptionReason: (params.exceptionReason ?? "").trim(), extensionBeyondStandard: plan.isExtension, approvedBy: user.id } : {}),
       ...(plan.replacedExpired ? { replacedExpiredCarriedDate: q.valid_until } : {}),
       contractingEntity: { entityId: entity.entity.entityId, name: entity.entity.name, recordedOn: entity.entity.source, version: entity.entity.version },
+      legalDetails: buildIssuedLegalDetails(entity.entity, issuedAt),
       delivery: "not sent by the system: issuing does not email or notify the client",
     },
   });
+  if (auditError) { console.error("[commercial] failed to write the issuance record", auditError.message); return revert("issuance record could not be saved", "The issuance record could not be saved."); }
+  // The entity may have been changed by someone else between the check above and the write: the frozen details must be the entity that is on record.
+  const recheck = await resolveQuotationEntity(params.quotationId);
+  if (!recheck.ok || recheck.entity.entityId !== entity.entity.entityId || recheck.entity.version !== entity.entity.version) {
+    return revert("the contracting entity changed while issuing", "The contracting entity was changed while you were issuing. Review it and issue again.");
+  }
   return { ok: true, issuedAt, validUntil: plan.validUntil, isException: plan.isException, isExtension: plan.isExtension };
 }
 

@@ -12,7 +12,7 @@ import { getQuotationDelivery } from "@/lib/commercial/quotationIssuance";
 import { defaultValidUntil, formatDate, isExpired, issuanceBlockers, utcDate } from "@/lib/commercial/quotationValidity";
 import { DELIVERY_CHANNELS_UI } from "@/lib/commercial/quotationDeliveryChannels";
 import QuotationDatesCard from "./QuotationDatesCard";
-import { resolveQuotationEntity } from "@/lib/commercial/quotationEntity";
+import { resolveQuotationEntityView } from "@/lib/commercial/quotationEntity";
 
 export const metadata: Metadata = {
   title: "Quotation — Ordift Studios Admin",
@@ -33,7 +33,10 @@ export default async function QuotationDetailPage({ params }: { params: Promise<
   const deliveredText = delivery ? `Delivered via ${DELIVERY_CHANNELS_UI.find((c) => c.value === delivery.channel)?.label ?? delivery.channel} on ${formatDate(delivery.deliveredAt)} (recorded by staff; the system sent nothing)` : null;
   const expired = isExpired(quotation.status, quotation.validUntil, today);
   // The contracting entity is read from the existing governed record (never inferred). A draft may exist without one; issuing needs one.
-  const entity = quotation.crewManaged ? null : await resolveQuotationEntity(quotation.id, today);
+  // A draft reads the live record. An ISSUED quotation shows the legal details frozen in its issuance record (they never change with the live registry).
+  const entityView = quotation.crewManaged ? null : await resolveQuotationEntityView(quotation.id, today);
+  const frozen = entityView?.phase === "issued" ? entityView : null;
+  const entity = entityView?.phase === "draft" ? entityView.resolution : entityView?.phase === "issued_unfrozen" ? entityView.live : null;
   const blockers = [
     ...issuanceBlockers({ status: quotation.status, lineCount: quotation.items.length, total: quotation.total, crewManaged: quotation.crewManaged }),
     ...(quotation.status === "draft" && entity && !entity.ok ? [entity.message] : []),
@@ -104,6 +107,13 @@ export default async function QuotationDetailPage({ params }: { params: Promise<
         </p>
       )}
 
+      {frozen && (
+        <section id="contracting-entity" aria-label="Contracting entity" className="rounded-xl border border-black/10 bg-white p-4 sm:p-6 mb-6 space-y-2">
+          <p className="font-sans text-body-small text-ordift-ink">Contracting entity (as issued): <strong>{frozen.frozen.name}</strong>{frozen.frozen.legalName !== frozen.frozen.name ? ` — ${frozen.frozen.legalName}` : ""}{frozen.frozen.recordedOn === "enquiry" ? " (recorded on the enquiry)" : ""}</p>
+          <p className="font-sans text-caption text-ordift-ink-muted">Fixed when the quotation was issued ({formatDate(frozen.record.issuedAt)}). Later changes to the entity&apos;s registry do not alter this quotation or its document. To use a different entity, revise the quotation and select it on the new version.</p>
+        </section>
+      )}
+
       {entity && (
         <section id="contracting-entity" aria-label="Contracting entity" className="rounded-xl border border-black/10 bg-white p-4 sm:p-6 mb-6 space-y-2">
           <p className="font-sans text-body-small text-ordift-ink">Contracting entity: <strong>{entity.ok ? entity.entity.name : entity.code === "unavailable" && entity.entityName ? `${entity.entityName} (cannot currently contract)` : "Not yet selected"}</strong>{entity.ok && entity.entity.source === "enquiry" ? " (recorded on the enquiry)" : ""}</p>
@@ -111,10 +121,10 @@ export default async function QuotationDetailPage({ params }: { params: Promise<
             <p role="status" className="font-sans text-body-small text-amber-900">
               {quotation.status === "draft"
                 ? (isSuperAdmin(user) ? "Next step: select the contracting entity below. This quotation cannot be issued until one is recorded; it is never chosen automatically." : entity.code === "unavailable" ? entity.message : "Next step: a Super Admin must select the contracting entity before this quotation can be issued. It is never chosen automatically.")
-                : "This quotation was issued before an entity had to be recorded. A Super Admin can still record it here; it is needed before an acceptance can be recorded."}
+                : "This quotation was issued before an entity had to be recorded, so its document shows none. A Super Admin can still record one here; it is needed before an acceptance can be recorded, and it will not be added to the issued document."}
             </p>
           )}
-          {entity.ok && quotation.status !== "draft" && <p className="font-sans text-caption text-ordift-ink-muted">Shown on the quotation document. It is not changed once the quotation is issued; revise the quotation to change it.</p>}
+          {entity.ok && quotation.status !== "draft" && <p className="font-sans text-caption text-ordift-ink-muted">Recorded after this quotation was issued, so it is not part of the issued document. It is not changed once recorded; revise the quotation to use a different entity.</p>}
         </section>
       )}
       {entity && isSuperAdmin(user) ? <ContractingEntitySection userId={user.id} subject={{ type: "quotation", id: quotation.id }} /> : null}

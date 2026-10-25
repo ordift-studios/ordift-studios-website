@@ -28,7 +28,8 @@ vi.mock("@/lib/supabase/server", async () => {
 
 import { createClientQuotation, reviseClientQuotation, updateQuotationStatus } from "./clientQuotations";
 import { chooseContractingEntity } from "@/lib/organization/entityRegistrations";
-import { resolveQuotationEntity } from "./quotationEntity";
+import { resolveQuotationEntity, resolveQuotationEntityView } from "./quotationEntity";
+import { readIssuedLegalDetails } from "./quotationIssuedDetails";
 import { getQuotationDelivery, issueOrdinaryQuotation, recordQuotationDelivery } from "./quotationIssuance";
 import { recordOrdinaryQuotationAcceptance } from "./quotationAcceptance";
 import { addDays, defaultValidUntil, utcDate } from "./quotationValidity";
@@ -323,6 +324,178 @@ describe("the contracting entity is a prerequisite of issuing (fail-closed, neve
   it("the Crew Support path is untouched: the resolver defers to its own governance", async () => {
     const q = sql(`insert into public.client_quotations (quotation_reference, prospect_name, status, currency, subtotal, total, created_by, crew_support_request_id) select 'ORD-QUO-E2E-CREW','x','draft','USD',10,10,'${U(0xe2)}', c.id from public.crew_support_requests c limit 1 returning id`);
     if (q) expect(await resolveQuotationEntity(q)).toMatchObject({ ok: false, code: "crew" });
+  });
+});
+
+describe("an issued quotation is frozen: its legal details and entity never change after issuance", () => {
+  const mkEntity = (slug: string, legal: string, cr: string | null) => {
+    sql(`insert into public.employing_entities (name, slug, legal_name, registration_type, verification_status) values ('${slug}','${slug}','${legal}','W.L.L.','verified') on conflict do nothing`);
+    if (cr) sql(`insert into public.entity_registrations (employing_entity_id, kind, status, identifier, valid_from, verified_at, verified_by, recorded_by) select id, 'commercial_registration','active','${cr}', current_date - 100, now(), '${U(0xe3)}', '${U(0xe3)}' from public.employing_entities where slug='${slug}'`);
+    return entityId(slug);
+  };
+  const choose = (type: "quotation" | "enquiry", id: string, ent: string, who = U(0xe3)) => chooseContractingEntity({ subject: { type, id }, entityId: ent, basis: "E2E frozen test", actorUserId: who });
+  const entityRows = () => sql(`select count(*) from public.booking_contracting_entities`);
+  const issueWith = async (ent: string, opts: { enquiryId?: string } = {}) => {
+    const q = await draft({ ...opts, noEntity: true });
+    expect(await choose("quotation", q, ent)).toMatchObject({ ok: true });
+    h.current = admin;
+    expect((await issueOrdinaryQuotation({ quotationId: q })).ok).toBe(true);
+    return q;
+  };
+
+  it("issuance stores the entity's legal details; later registry changes (rename, new numbers, ineligibility) do NOT change the issued view, while a draft stays live", async () => {
+    const f = mkEntity("fz-main", "FROZEN MAIN W.L.L.", "CR-OLD-1");
+    const q = await issueWith(f);
+    const a = audit(q, "client_quotation.issued");
+    expect(a.legalDetails).toMatchObject({ entityId: f, legalName: "FROZEN MAIN W.L.L.", registrationType: "W.L.L.", identifiers: [{ label: "Commercial Registration (CR) No.", identifier: "CR-OLD-1" }] });
+    const before = await readIssuedLegalDetails(q);
+    expect(before.state).toBe("ok");
+    if (before.state !== "ok") return;
+    expect(before.record.eventId).toBe(sql(`select id from public.activity_log where entity_id='${q}' and action='client_quotation.issued'`));
+    // a draft that uses the same entity, to show the contrast
+    const d = await draft({ noEntity: true });
+    expect(await choose("quotation", d, f)).toMatchObject({ ok: true });
+    // the live registry changes: renamed, the CR is retired and a tax number is added
+    sql(`update public.employing_entities set legal_name = 'RENAMED LATER LLC', registration_type = 'LLC' where slug = 'fz-main'`);
+    sql(`update public.entity_registrations set status = 'expired' where identifier = 'CR-OLD-1'`);
+    const after = await resolveQuotationEntityView(q);
+    expect(after).toMatchObject({ phase: "issued", frozen: { legalName: "FROZEN MAIN W.L.L.", registrationType: "W.L.L.", identifiers: [{ identifier: "CR-OLD-1" }] } });
+    expect((await readIssuedLegalDetails(q)).state).toBe("ok");
+    const live = await resolveQuotationEntity(q);
+    expect(live.ok).toBe(false);                                                   // the live entity can no longer contract, yet the issued document is unchanged
+    const draftView = await resolveQuotationEntityView(d);
+    expect(draftView.phase).toBe("draft");                                         // a draft is not frozen: it reports the live (now ineligible) record
+    expect(draftView.phase === "draft" && draftView.resolution.ok).toBe(false);
+  });
+
+  it("the quotation keeps its original entity through acceptance, decline, expiry and revision: any change is refused, nothing is written, the frozen details stay", async () => {
+    const x = mkEntity("fz-x", "ENTITY X W.L.L.", "CR-X");
+    const y = mkEntity("fz-y", "ENTITY Y W.L.L.", "CR-Y");
+    const rowsBefore = entityRows();
+    const attempts = async (q: string) => {
+      for (const target of [y, x]) {
+        const r = await choose("quotation", q, target);
+        expect(r.ok).toBe(false);
+      }
+      const view = await resolveQuotationEntityView(q);
+      expect(view).toMatchObject({ phase: "issued", frozen: { entityId: x, legalName: "ENTITY X W.L.L." } });
+    };
+    // accepted
+    const qa = await issueWith(x); h.current = admin;
+    expect((await recordOrdinaryQuotationAcceptance({ quotationId: qa, channel: "email", evidence: "Email reply: yes, go ahead", acceptedByName: "Synthetic Client", receivedAt: new Date().toISOString() })).ok).toBe(true);
+    expect(row(qa)[0]).toBe("accepted"); await attempts(qa);
+    // declined
+    const qd = await issueWith(x); h.current = admin;
+    expect(await updateQuotationStatus({ quotationId: qd, status: "declined" })).toEqual({ ok: true });
+    await attempts(qd);
+    // expired (marked)
+    const qe = await issueWith(x); h.current = admin;
+    expect(await updateQuotationStatus({ quotationId: qe, status: "expired" })).toEqual({ ok: true });
+    await attempts(qe);
+    // superseded by a revision: the OLD version keeps X; the new draft selects its own entity
+    const enq = "00000000-0000-4000-8000-00000000e403";
+    sql(`insert into public.enquiries (id, reference_number, email, full_name, service) values ('${enq}','ENQ-ISS-3','iss3@b.test','Enquiry Three','photography') on conflict do nothing`);
+    const qs = await issueWith(x, { enquiryId: enq }); h.current = founder;
+    const rev = await reviseClientQuotation(qs);
+    expect(rev.ok).toBe(true);
+    if (!rev.ok) return;
+    expect(row(qs)[0]).toBe("superseded");
+    await attempts(qs);
+    expect(await choose("quotation", rev.quotationId, y)).toMatchObject({ ok: true });      // the new version may take another entity
+    expect(await resolveQuotationEntityView(qs)).toMatchObject({ phase: "issued", frozen: { entityId: x } });
+    expect(entityRows()).toBe(String(Number(rowsBefore) + 5));                      // exactly the 4 legitimate choices before issuing + 1 on the new version; every refused attempt wrote nothing
+  });
+
+  it("an entity recorded on the ENQUIRY cannot be overridden on the issued quotation, and the enquiry-level record is locked once a quotation is issued under it", async () => {
+    const x = mkEntity("fz-x2", "ENTITY X2 W.L.L.", "CR-X2");
+    const y = mkEntity("fz-y2", "ENTITY Y2 W.L.L.", "CR-Y2");
+    const enq = "00000000-0000-4000-8000-00000000e404";
+    sql(`insert into public.enquiries (id, reference_number, email, full_name, service) values ('${enq}','ENQ-ISS-4','iss4@b.test','Enquiry Four','photography') on conflict do nothing`);
+    expect(await choose("enquiry", enq, x)).toMatchObject({ ok: true });
+    const q = await draft({ enquiryId: enq, noEntity: true });
+    h.current = admin;
+    expect((await issueOrdinaryQuotation({ quotationId: q })).ok).toBe(true);
+    expect(audit(q, "client_quotation.issued").contractingEntity).toMatchObject({ entityId: x, recordedOn: "enquiry" });
+    expect((await choose("quotation", q, y)).ok).toBe(false);                         // no quotation-level override of the issued entity
+    expect((await choose("enquiry", enq, y)).ok).toBe(false);                         // and no change at the enquiry
+    expect(await resolveQuotationEntityView(q)).toMatchObject({ phase: "issued", frozen: { entityId: x, recordedOn: "enquiry" } });
+  });
+
+  it("legacy compatibility: a quotation issued before an entity was required can still have one recorded for the first time, and it stays out of the issued document", async () => {
+    const x = mkEntity("fz-leg", "LEGACY ENTITY W.L.L.", "CR-LEG");
+    const q = await draft({ noEntity: true });
+    sql(`update public.client_quotations set status='sent', issued_at=now() - interval '2 days', valid_until=current_date+20 where id='${q}'`);
+    expect((await readIssuedLegalDetails(q)).state).toBe("no_snapshot");
+    expect(await resolveQuotationEntityView(q)).toMatchObject({ phase: "issued_unfrozen", live: { ok: false, code: "none" } });
+    expect(await choose("quotation", q, x)).toMatchObject({ ok: true });                // first-time recording allowed
+    expect(await resolveQuotationEntityView(q)).toMatchObject({ phase: "issued_unfrozen", live: { ok: true } });
+    expect((await readIssuedLegalDetails(q)).state).toBe("no_snapshot");               // never added to the issued document
+    const second = mkEntity("fz-leg2", "LEGACY TWO W.L.L.", "CR-LEG2");
+    expect((await choose("quotation", q, second)).ok).toBe(false);                      // but not changed afterwards
+  });
+
+  it("only a Super Admin can record or change an entity; admins, staff and clients cannot, before or after issuance", async () => {
+    const x = mkEntity("fz-perm", "PERM W.L.L.", "CR-PERM");
+    const q = await issueWith(x);
+    for (const who of [U(0xe2), U(0xe1), U(0xe4)]) expect((await choose("quotation", q, x, who)).ok).toBe(false);
+    const d = await draft({ noEntity: true });
+    for (const who of [U(0xe2), U(0xe1), U(0xe4)]) expect((await choose("quotation", d, x, who)).ok).toBe(false);
+    expect(await resolveQuotationEntityView(d)).toMatchObject({ phase: "draft", resolution: { ok: false, code: "none" } });
+  });
+
+  it("two simultaneous issues produce one issuance and exactly one matching issuance record", async () => {
+    const x = mkEntity("fz-conc", "CONC W.L.L.", "CR-CONC");
+    const q = await draft({ noEntity: true });
+    expect(await choose("quotation", q, x)).toMatchObject({ ok: true });
+    h.current = admin;
+    const res = await Promise.all([issueOrdinaryQuotation({ quotationId: q }), issueOrdinaryQuotation({ quotationId: q }), issueOrdinaryQuotation({ quotationId: q })]);
+    expect(res.filter((r) => r.ok)).toHaveLength(1);
+    const events = sql(`select count(*) from public.activity_log where entity_id='${q}' and action='client_quotation.issued'`);
+    const reverted = sql(`select count(*) from public.activity_log where entity_id='${q}' and action='client_quotation.issuance_reverted'`);
+    expect(events).toBe("1");
+    expect(reverted).toBe("0");
+    expect((await readIssuedLegalDetails(q)).state).toBe("ok");
+  });
+
+  it("if the issuance record cannot be saved, the issuance is rolled back to a draft (never an issued quotation without its evidence); a retry then works", async () => {
+    const x = mkEntity("fz-roll", "ROLL W.L.L.", "CR-ROLL");
+    const q = await draft({ noEntity: true });
+    expect(await choose("quotation", q, x)).toMatchObject({ ok: true });
+    sql(`create or replace function public.e2e_fail_issued() returns trigger language plpgsql as $$ begin if new.action = 'client_quotation.issued' and new.entity_id = '${q}' then raise exception 'e2e simulated audit failure'; end if; return new; end $$;
+         create trigger e2e_fail_issued_trg before insert on public.activity_log for each row execute function public.e2e_fail_issued();`);
+    try {
+      h.current = admin;
+      const r = await issueOrdinaryQuotation({ quotationId: q });
+      expect(r.ok === false && r.error).toMatch(/could not be saved\. Nothing was issued/);
+      expect(row(q)).toEqual(["draft", "-", "-", "-"]);
+      expect(sql(`select count(*) from public.activity_log where entity_id='${q}' and action='client_quotation.issuance_reverted'`)).toBe("1");
+      expect(sql(`select count(*) from public.activity_log where entity_id='${q}' and action='client_quotation.issued'`)).toBe("0");
+    } finally { sql(`drop trigger if exists e2e_fail_issued_trg on public.activity_log; drop function if exists public.e2e_fail_issued()`); }
+    expect((await issueOrdinaryQuotation({ quotationId: q })).ok).toBe(true);
+    expect((await readIssuedLegalDetails(q)).state).toBe("ok");
+  });
+
+  it("if the entity record changes while issuing, the issuance is rolled back and its stray record is ignored by the later, real issuance", async () => {
+    const x = mkEntity("fz-race", "RACE W.L.L.", "CR-RACE");
+    const y = mkEntity("fz-race2", "RACE TWO W.L.L.", "CR-RACE2");
+    const q = await draft({ noEntity: true });
+    expect(await choose("quotation", q, x)).toMatchObject({ ok: true });
+    sql(`create or replace function public.e2e_change_entity() returns trigger language plpgsql as $$ begin if new.action = 'client_quotation.issued' and new.entity_id = '${q}' then
+           insert into public.booking_contracting_entities (subject_type, subject_id, version, employing_entity_id, basis, supersedes_id, chosen_by)
+           select 'quotation', '${q}', 2, '${y}', 'E2E concurrent change', b.id, '${U(0xe3)}' from public.booking_contracting_entities b where b.subject_id = '${q}' and b.version = 1;
+         end if; return new; end $$;
+         create trigger e2e_change_entity_trg after insert on public.activity_log for each row execute function public.e2e_change_entity();`);
+    try {
+      h.current = admin;
+      const r = await issueOrdinaryQuotation({ quotationId: q });
+      expect(r.ok === false && r.error).toMatch(/changed while you were issuing/);
+      expect(row(q)).toEqual(["draft", "-", "-", "-"]);
+    } finally { sql(`drop trigger if exists e2e_change_entity_trg on public.activity_log; drop function if exists public.e2e_change_entity()`); }
+    // the stray 'issued' event from the rolled-back attempt must not be taken for the real issuance
+    expect((await issueOrdinaryQuotation({ quotationId: q })).ok).toBe(true);
+    const view = await resolveQuotationEntityView(q);
+    expect(view).toMatchObject({ phase: "issued", frozen: { entityId: y, legalName: "RACE TWO W.L.L." } });   // the entity on record at the real issuance (version 2)
+    expect(sql(`select count(*) from public.activity_log where entity_id='${q}' and action='client_quotation.issued'`)).toBe("2");
   });
 });
 

@@ -32,7 +32,10 @@ describe("issuing is a recorded, confirmed act: never a bare status flip, never 
     expect(resolver).not.toMatch(/\.insert\(|\.update\(|\.upsert\(|chooseContractingEntity|default\w*Entity|slug/i);
   });
   it("it audits who, when, the approved validity, any exception and its approver, and states that nothing was sent", () => {
-    for (const t of ["client_quotation.issued", "issuedAt", "validUntil: plan.validUntil", "standardValidUntil", "withinStandardPolicy", "exceptionReason", "approvedBy: user.id", "not sent by the system"]) expect(issuance).toContain(t);
+    for (const t of ["ISSUED_ACTION", "issuedAt", "validUntil: plan.validUntil", "standardValidUntil", "withinStandardPolicy", "exceptionReason", "approvedBy: user.id", "not sent by the system"]) expect(issuance).toContain(t);
+  });
+  it("the issuance event keeps its documented action name", () => {
+    expect(code(read("./quotationIssuedDetails.ts"))).toContain('ISSUED_ACTION = "client_quotation.issued"');
   });
   it("it sends nothing and creates nothing financial: no email, notification, payment, booking, amount due or acceptance", () => {
     expect(issuance).not.toMatch(/sendEmail\(|sendQuotation|dispatch\w*\(|resend|\.from\("(payments|payment_obligations|engagements|enquiries)"\)|amount_due|accepted_at|accepted_via|crm_stage|establish_enquiry_amount_due/i);
@@ -163,17 +166,17 @@ describe("the dates card", () => {
 });
 
 describe("the preview / PDF header", () => {
-  async function renderPdf(entity: unknown) {
+  async function renderPdf(view: unknown, q: { status: string; issuedAt: string | null; validUntil: string | null } = { status: "draft", issuedAt: null, validUntil: null }) {
     vi.resetModules();
     vi.doMock("@/lib/portal/roles", () => ({ getCurrentUser: async () => ({ id: "u", roles: ["admin"] }), hasRole: () => true, isSuperAdmin: () => false }));
     vi.doMock("@/lib/crewSupport/quotation", () => ({ getCrewQuotationPrintExtras: async () => null }));
-    vi.doMock("@/lib/commercial/clientQuotations", () => ({ getClientQuotation: async () => ({ id: "q1", quotationReference: "ORD-QUO-2026-000006", status: "draft", createdAt: "2026-10-25T09:57:14Z", issuedAt: null, validUntil: null, clientName: null, prospectName: "Test", prospectCompany: null, prospectEmail: null, prospectPhone: null, currency: "USD", subtotal: 351, discountTotal: 0, taxTotal: 0, total: 351, paymentBookingTerms: null, items: [] }) }));
-    vi.doMock("@/lib/commercial/quotationEntity", () => ({ resolveQuotationEntity: async () => entity }));
+    vi.doMock("@/lib/commercial/clientQuotations", () => ({ getClientQuotation: async () => ({ id: "q1", quotationReference: "ORD-QUO-2026-000006", status: q.status, createdAt: "2026-10-25T09:57:14Z", issuedAt: q.issuedAt, validUntil: q.validUntil, clientName: null, prospectName: "Test", prospectCompany: null, prospectEmail: null, prospectPhone: null, currency: "USD", subtotal: 351, discountTotal: 0, taxTotal: 0, total: 351, paymentBookingTerms: null, items: [] }) }));
+    vi.doMock("@/lib/commercial/quotationEntity", () => ({ resolveQuotationEntityView: async () => view }));
     vi.doMock("next/navigation", () => ({ redirect: () => { throw new Error("redirect"); }, notFound: () => { throw new Error("notFound"); } }));
     const { default: Page } = await import("../../app/admin/pricing/quotations/[id]/pdf/page");
     return renderToStaticMarkup(await Page({ params: Promise.resolve({ id: "q1" }) }));
   }
-  const NONE = { ok: false, code: "none", message: "A contracting entity must be selected before this quotation can be issued." };
+  const NONE = { phase: "draft", resolution: { ok: false, code: "none", message: "A contracting entity must be selected before this quotation can be issued." } };
   it("labels Created / Issued / Valid until, and a draft says so loudly (never an unlabelled date)", async () => {
     const html = await renderPdf(NONE);
     expect(html).toContain("Created: 25 Oct 2026");
@@ -187,11 +190,68 @@ describe("the preview / PDF header", () => {
     expect(html).toMatch(/Contracting entity:.*not yet selected/);
   });
   it("with an entity it shows only the verified legal name, registration type and CR / tax identifiers", async () => {
-    const html = await renderPdf({ ok: true, entity: { entityId: "e1", name: "Short Name", source: "quotation", version: 1, display: { legalName: "ORDIFT STUDIOS", registrationType: "W.L.L.", identifiers: [{ label: "Commercial Registration (CR) No.", identifier: "254551" }, { label: "Tax registration No.", identifier: "5009300880" }] } } });
+    const html = await renderPdf({ phase: "draft", resolution: { ok: true, entity: { entityId: "e1", name: "Short Name", source: "quotation", version: 1, display: { legalName: "ORDIFT STUDIOS", registrationType: "W.L.L.", identifiers: [{ label: "Commercial Registration (CR) No.", identifier: "254551" }, { label: "Tax registration No.", identifier: "5009300880" }] } } } });
     expect(html).toContain("ORDIFT STUDIOS");
     expect(html).toContain("W.L.L.");
     expect(html).toContain("254551");
     expect(html).toContain("5009300880");
     expect(html).not.toMatch(/verification|basis|chosen|permit|establishment/i);
+  });
+  const FROZEN = { phase: "issued", frozen: { entityId: "e1", name: "Short Name", recordedOn: "quotation", version: 1, legalName: "ORDIFT STUDIOS (AS ISSUED)", registrationType: "W.L.L.", identifiers: [{ label: "Commercial Registration (CR) No.", identifier: "111111" }], capturedAt: "2026-10-26T08:00:00Z" }, record: { eventId: "ev1", recordedAt: "2026-10-26T08:00:01Z", issuedAt: "2026-10-26T08:00:00Z" } };
+  it("an ISSUED quotation prints the legal details frozen at issuance; the live registry is not consulted", async () => {
+    const html = await renderPdf(FROZEN, { status: "sent", issuedAt: "2026-10-26T08:00:00Z", validUntil: "2026-11-25" });
+    expect(html).toContain("ORDIFT STUDIOS (AS ISSUED)");
+    expect(html).toContain("111111");
+    expect(html).not.toMatch(/not yet selected/);
+  });
+  it("an issued quotation from before the snapshot existed prints NO entity block (nothing is reconstructed or taken from the live registry)", async () => {
+    const html = await renderPdf({ phase: "issued_unfrozen", live: { ok: true, entity: { entityId: "e9", name: "Live Later", source: "quotation", version: 1, display: { legalName: "LIVE LATER LEGAL NAME", registrationType: null, identifiers: [] } } } }, { status: "sent", issuedAt: "2026-10-26T08:00:00Z", validUntil: "2026-11-25" });
+    expect(html).not.toContain("LIVE LATER LEGAL NAME");
+    expect(html).not.toMatch(/Contracting entity/);
+  });
+});
+
+import { buildIssuedLegalDetails, parseIssuedLegalDetails, pickIssuanceEvent } from "./quotationIssuedDetails";
+
+describe("the frozen legal details (pure parts)", () => {
+  const entity = { entityId: "e1", name: "Short", source: "enquiry" as const, version: 2, display: { legalName: "LEGAL NAME", registrationType: "W.L.L.", identifiers: [{ label: "Commercial Registration (CR) No.", identifier: "1" }] } };
+  it("builds only the legal name, type and the two public identifiers; parsing round-trips and rejects malformed or empty data", () => {
+    const d = buildIssuedLegalDetails(entity, "2026-10-26T08:00:00.000Z");
+    expect(d).toEqual({ entityId: "e1", name: "Short", recordedOn: "enquiry", version: 2, legalName: "LEGAL NAME", registrationType: "W.L.L.", identifiers: [{ label: "Commercial Registration (CR) No.", identifier: "1" }], capturedAt: "2026-10-26T08:00:00.000Z" });
+    expect(parseIssuedLegalDetails({ legalDetails: d })).toEqual(d);
+    for (const bad of [null, {}, { legalDetails: null }, { legalDetails: { ...d, legalName: "  " } }, { legalDetails: { ...d, recordedOn: "agreement" } }, { legalDetails: { ...d, entityId: 5 } }]) expect(parseIssuedLegalDetails(bad)).toBeNull();
+  });
+  it("the authoritative issuance event is the one matching the row's own issue time and issuer; a rolled-back or foreign event is ignored", () => {
+    const mk = (id: string, created: string, at: string, actor: string | null) => ({ id, created_at: created, actor_user_id: actor, metadata: { issuedAt: at } });
+    const events = [mk("rolled-back", "2026-10-26T07:59:00Z", "2026-10-26T07:59:00.000Z", "u1"), mk("real", "2026-10-26T08:00:01Z", "2026-10-26T08:00:00.000Z", "u1"), mk("other-user", "2026-10-26T08:00:02Z", "2026-10-26T08:00:00.000Z", "u2")];
+    expect(pickIssuanceEvent(events, "2026-10-26T08:00:00+00:00", "u1")?.id).toBe("real");
+    expect(pickIssuanceEvent(events, "2026-10-26T09:00:00Z", "u1")).toBeNull();
+    expect(pickIssuanceEvent(events, "not a date", "u1")).toBeNull();
+  });
+});
+
+describe("issued quotations are frozen (source guards)", () => {
+  const strip = (t: string) => code(t);
+  const issuanceSrc = strip(read("./quotationIssuance.ts"));
+  it("the issuance record carries the frozen details, is written with a CHECKED insert (not best-effort), and is rolled back if it cannot be saved or the entity changed", () => {
+    expect(issuanceSrc).toContain("legalDetails: buildIssuedLegalDetails(entity.entity, issuedAt)");
+    expect(issuanceSrc).toMatch(/await admin\.from\("activity_log"\)\.insert\(\{[\s\S]*action: ISSUED_ACTION/);
+    expect(issuanceSrc).toMatch(/if \(auditError\)[\s\S]*return revert\(/);
+    expect(issuanceSrc).toMatch(/recheck\.entity\.entityId !== entity\.entity\.entityId \|\| recheck\.entity\.version !== entity\.entity\.version[\s\S]*return revert\(/);
+    expect(issuanceSrc).toMatch(/\.eq\("status", "sent"\)\.eq\("issued_at", issuedAt\)/);                  // the rollback can only undo THIS issuance
+  });
+  it("the quotation PDF never reads the live entity for an issued quotation: it uses the view resolver only", () => {
+    const pdf = strip(read("../../app/admin/pricing/quotations/[id]/pdf/page.tsx"));
+    expect(pdf).toContain("resolveQuotationEntityView");
+    expect(pdf).not.toMatch(/resolveQuotationEntity\(/);
+    const page = strip(read("../../app/admin/pricing/quotations/[id]/page.tsx"));
+    expect(page).not.toMatch(/resolveQuotationEntity\(/);
+  });
+  it("the entity lock is decided by the issuance timestamp (issued_at), never by the current status", () => {
+    const reg = strip(read("../organization/entityRegistrations.ts"));
+    const lock = reg.slice(reg.indexOf("async function issuedEntityLock"), reg.indexOf("export type ContractingSubject"));
+    expect(lock).toContain("issued_at");
+    expect(lock).not.toMatch(/\.eq\("status"/);
+    expect(reg).not.toContain("hasIssuedOrdinaryQuotation");
   });
 });

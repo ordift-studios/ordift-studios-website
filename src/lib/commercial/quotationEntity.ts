@@ -1,6 +1,7 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getContractingEntityStanding } from "@/lib/organization/entityRegistrations";
 import { buildEntityDisplay, type EntityDisplay } from "@/lib/organization/entityDisplay";
+import { readIssuedLegalDetails, type IssuedLegalDetails } from "./quotationIssuedDetails";
 
 // The contracting legal entity of an ORDINARY quotation, read from the existing governed record (booking_contracting_entities, chosen explicitly by a Super Admin).
 // Resolution: the quotation's own record, else its linked enquiry's. NOTHING here chooses, infers or defaults an entity: no record means "not selected". Server-internal and
@@ -32,4 +33,20 @@ export async function resolveQuotationEntity(quotationId: string, today: string 
     return { ok: false, code: "unavailable", entityName: standing.entity.name, message: `The recorded contracting entity (${standing.entity.name}) cannot currently contract: ${standing.eligibility.blockers.join(" ")} A Super Admin must review it before this quotation is issued.` };
   }
   return { ok: true, entity: { entityId: rec.employing_entity_id as string, name: standing.entity.name, source, version: Number(rec.version), display: buildEntityDisplay(standing.entity, standing.registrations, today) } };
+}
+
+// What a quotation DOCUMENT or detail page may say about its contracting entity.
+//  - draft:  the live governed record (it can still change until the quotation is issued);
+//  - issued: ONLY the legal details frozen in the issuance record (never the live registry);
+//  - issued before the snapshot existed: no entity block (nothing is reconstructed), and `live` says whether an entity has since been recorded.
+export type QuotationEntityView =
+  | { phase: "draft"; resolution: EntityResolution }
+  | { phase: "issued"; frozen: IssuedLegalDetails; record: { eventId: string; recordedAt: string; issuedAt: string } }
+  | { phase: "issued_unfrozen"; live: EntityResolution };
+
+export async function resolveQuotationEntityView(quotationId: string, today?: string): Promise<QuotationEntityView> {
+  const issued = await readIssuedLegalDetails(quotationId);
+  if (issued.state === "ok") return { phase: "issued", frozen: issued.details, record: issued.record };
+  const live = await resolveQuotationEntity(quotationId, today);
+  return issued.state === "no_snapshot" ? { phase: "issued_unfrozen", live } : { phase: "draft", resolution: live };
 }

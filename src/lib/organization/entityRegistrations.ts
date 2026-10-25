@@ -251,14 +251,26 @@ export async function getContractingEntityStanding(entityId: string, today: stri
   return { entity: { name: e.name as string, legal_name: (e.legal_name as string | null) ?? null, registration_type: (e.registration_type as string | null) ?? null }, eligibility: assessContractingEligibility(candidate, null, today), registrations };
 }
 
-// An ordinary quotation (or an enquiry with one) that has been ISSUED: its legal issuer is part of what was issued, so a RECORDED entity is not changed afterwards.
-// (A first-time recording on an older issued quotation that never had one is still allowed: that is how such a quotation is repaired.)
-async function hasIssuedOrdinaryQuotation(subject: { type: "enquiry" | "quotation"; id: string }): Promise<boolean> {
+// The issuance of an ORDINARY quotation fixes its contracting entity. The evidence is the quotation's own `issued_at` (written once, by the single issuing update), NOT its current
+// status: a quotation keeps its original entity after it is accepted, declined, expired or superseded. Returns a plain-language refusal, or null when a change is allowed.
+//  - quotation subject: locked once issued if ANY entity is on record for it (its own, or its enquiry's);
+//  - enquiry subject:   a recorded enquiry-level entity is locked once any ordinary quotation of that enquiry has been issued (a revision selects its own entity on the new version).
+// First-time recording on an older issued quotation that never had an entity stays allowed: that is how such a quotation is repaired, and it is not added to the issued document.
+async function issuedEntityLock(subject: { type: "enquiry" | "quotation"; id: string }, hasOwnRecord: boolean): Promise<string | null> {
   const db = createAdminClient();
-  const q = subject.type === "quotation"
-    ? await db.from("client_quotations").select("id").eq("id", subject.id).is("crew_support_request_id", null).eq("status", "sent").limit(1)
-    : await db.from("client_quotations").select("id").eq("enquiry_id", subject.id).is("crew_support_request_id", null).eq("status", "sent").limit(1);
-  return (q.data ?? []).length > 0;
+  if (subject.type === "quotation") {
+    const { data: q } = await db.from("client_quotations").select("issued_at, enquiry_id").eq("id", subject.id).is("crew_support_request_id", null).maybeSingle();
+    if (!q?.issued_at) return null;
+    let recorded = hasOwnRecord;
+    if (!recorded && q.enquiry_id) {
+      const { data: e } = await db.from("booking_contracting_entities").select("id").eq("subject_type", "enquiry").eq("subject_id", q.enquiry_id as string).limit(1);
+      recorded = (e ?? []).length > 0;
+    }
+    return recorded ? "This quotation has been issued with its contracting entity, so the entity is not changed, even after it is accepted, declined, expired or revised. Revise the quotation and select the entity on the new version." : null;
+  }
+  if (!hasOwnRecord) return null;
+  const { data: issued } = await db.from("client_quotations").select("id").eq("enquiry_id", subject.id).is("crew_support_request_id", null).not("issued_at", "is", null).limit(1);
+  return (issued ?? []).length > 0 ? "A quotation for this enquiry has already been issued under this entity, so the enquiry's entity is not changed. Revise the quotation and select the entity on the new version." : null;
 }
 
 // ------------------------------------------------------------------ the contracting entity of a booking, quotation or agreement
@@ -346,8 +358,9 @@ export async function chooseContractingEntity(p: { subject: ContractingSubject; 
   if (!cand) return { ok: false, error: "That legal entity was not found." };
   if (!cand.eligibility.eligible) return { ok: false, error: `That entity cannot contract for this booking: ${cand.eligibility.blockers.join(" ")}` };
   const { data: prev } = await db.from("booking_contracting_entities").select("id, version, employing_entity_id").eq("subject_type", p.subject.type).eq("subject_id", p.subject.id).order("version", { ascending: false }).limit(1).maybeSingle();
-  if (prev && (p.subject.type === "enquiry" || p.subject.type === "quotation") && (await hasIssuedOrdinaryQuotation({ type: p.subject.type, id: p.subject.id }))) {
-    return { ok: false, error: "This quotation has been issued with its contracting entity, so the entity is not changed. Revise the quotation (a new version) to change it." };
+  if (p.subject.type === "enquiry" || p.subject.type === "quotation") {
+    const locked = await issuedEntityLock({ type: p.subject.type, id: p.subject.id }, Boolean(prev));
+    if (locked) return { ok: false, error: locked };
   }
   if (prev?.employing_entity_id === p.entityId) return { ok: false, error: "That entity is already recorded for this booking." };
   const version = (prev?.version ?? 0) + 1;
