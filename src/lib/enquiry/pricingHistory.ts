@@ -1,10 +1,10 @@
 import { createHash } from "node:crypto";
 
 // Pure rules for the PERSISTENT enquiry pricing workflow (communicated-price revisions, Founder-approved discounts, follow-ups, conversion).
-// The database tables that would store them are an UNAPPLIED proposal (supabase/proposals/PROPOSED_enquiry_pricing_followups.sql), so this layer is
-// OFF and nothing in the product depends on it yet. Nothing here sends, books, posts revenue or creates a payable.
+// The tables that store them are migration 0168 (applied to Production 2026-10-25). Switched ON 2026-10-25 by the Founder's authorisation, for this module ONLY
+// (the portfolio and permission features have their own gates and stay off). Nothing here sends, books, posts revenue or creates a payable.
 
-export const ENQUIRY_PRICING_PERSISTENCE_ENABLED = false;
+export const ENQUIRY_PRICING_PERSISTENCE_ENABLED = true;
 
 // A discount approval is tied to the exact priced scope. If the scope or base price changes materially, the approval no longer applies.
 export function scopeHash(scope: { title: string; lines: readonly string[]; baseUsd: number }): string {

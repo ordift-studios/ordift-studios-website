@@ -3,7 +3,7 @@ import { approvalStillValid, conversionIdempotencyKey, ENQUIRY_PRICING_PERSISTEN
 
 const scope = { title: "Personal Portrait — 1h", lines: ["Market: Qatar / GCC", "Outfits/looks: 1"], baseUsd: 300 };
 describe("enquiry pricing rules (feature off until the database change is authorised)", () => {
-  it("is off", () => expect(ENQUIRY_PRICING_PERSISTENCE_ENABLED).toBe(false));
+  it("is on (Founder-authorised 2026-10-25); the portfolio gates are separate and stay off", () => expect(ENQUIRY_PRICING_PERSISTENCE_ENABLED).toBe(true));
   it("a discount approval holds only for the exact scope and base price; any material change needs renewed approval", () => {
     const approved = { scopeHash: scopeHash(scope), status: "approved" };
     expect(approvalStillValid(approved, scope)).toEqual({ valid: true });

@@ -48,7 +48,6 @@ describe("Enquiries & Quick Pricing is staff-only, read-only and shares the publ
     expect(on).toContain("propose the discount there");
     expect(renderToStaticMarkup(createElement(Workspace, props))).toContain("database change that has not been authorised");
     expect(read("./PriceNegotiationWorkspace.tsx")).toContain("{persistence && (");
-    expect(read("../../../../lib/enquiry/pricingHistory.ts")).toContain("ENQUIRY_PRICING_PERSISTENCE_ENABLED = false");
   });
   it("renders for staff and for a Super Admin with the three options, the compare area and the approval boundary (mobile-first markup)", async () => {
     const { default: Workspace } = await import("./PriceNegotiationWorkspace");
@@ -70,9 +69,9 @@ describe("Enquiries & Quick Pricing is staff-only, read-only and shares the publ
     expect(call).not.toMatch(/refLocal|refCurrency|indicative/);
     expect(read("../../../../lib/pricing/quickPriceModel.ts")).not.toMatch(/QAR|GHS/);
   });
-  it("the database-dependent layers stay switched off until each is separately activated, whatever the migration state", () => {
-    const flag = (f: string, name: string) => expect(readFileSync(new URL(f, import.meta.url), "utf8")).toMatch(new RegExp(`${name} = false;`));
-    flag("../../../../lib/enquiry/pricingHistory.ts", "ENQUIRY_PRICING_PERSISTENCE_ENABLED");
+  it("each database-dependent layer has its own gate: enquiry pricing is on (authorised 2026-10-25); the portfolio library and the client wording stay off", () => {
+    const flag = (f: string, name: string, v = false) => expect(readFileSync(new URL(f, import.meta.url), "utf8")).toMatch(new RegExp(`${name} = ${v};`));
+    flag("../../../../lib/enquiry/pricingHistory.ts", "ENQUIRY_PRICING_PERSISTENCE_ENABLED", true);
     flag("../../../../lib/portfolio/featureGate.ts", "PORTFOLIO_LIBRARY_ENABLED");
     flag("../../../../lib/portfolio/permissionText.ts", "PERMISSION_TEXT_APPROVED");
   });
