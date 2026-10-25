@@ -181,6 +181,29 @@ describe("expiry blocks late acceptance (staff-recorded); in-time acceptance can
   });
 });
 
+describe("issue, delivery and acceptance are three distinct, auditable acts with honest wording", () => {
+  it("one quotation taken through all three: separate audit events in order, each stating exactly what happened, and later acts never alter earlier facts", async () => {
+    const q = await draft(); h.current = admin;
+    const mails = () => sql(`select (select count(*) from public.email_send_failures)||'/'||(select count(*) from public.assignment_notifications)`);
+    const mailsBefore = mails();
+    await issueOrdinaryQuotation({ quotationId: q });
+    const afterIssue = row(q);
+    await recordQuotationDelivery({ quotationId: q, channel: "email", deliveredAt: new Date().toISOString(), note: "emailed from my own mailbox" });
+    expect(row(q).join("|")).toBe(afterIssue.join("|"));                                   // delivery changed nothing on the quotation
+    const acc = await recordOrdinaryQuotationAcceptance({ quotationId: q, channel: "email", evidence: "Email reply from the client: yes, please go ahead", acceptedByName: "Synthetic Client", receivedAt: new Date().toISOString() });
+    expect(acc.ok).toBe(true);
+    const after = row(q);
+    expect([after[0], after[1], after[2], after[3]]).toEqual(["accepted", afterIssue[1], afterIssue[2], afterIssue[3]]);   // only the status moved; issue time, issuer and validity are untouched
+    const actions = sql(`select string_agg(action, ',' order by created_at) from public.activity_log where entity_id='${q}' and action like 'client_quotation.%' and action <> 'client_quotation.created'`);
+    expect(actions).toBe("client_quotation.issued,client_quotation.delivery_recorded,client_quotation.acceptance_recorded");
+    expect(audit(q, "client_quotation.issued").delivery).toMatch(/not sent by the system/);
+    expect(audit(q, "client_quotation.delivery_recorded")).toMatchObject({ channel: "email", recordedBy: U(0xe2) });
+    expect(audit(q, "client_quotation.delivery_recorded").note_system).toMatch(/system did not send anything/);
+    expect(audit(q, "client_quotation.acceptance_recorded")).toMatchObject({ via: "staff_recorded", channel: "email" });
+    expect(mails()).toBe(mailsBefore);                                                    // not one email or notification was sent or queued by any of the three
+  });
+});
+
 describe("revision: an expired date is never carried silently", () => {
   it("revising an expired quotation gives a new DRAFT; issuing it replaces the passed date with the standard 30 days and records that", async () => {
     const q = await draft({ enquiryId: E_REAL }); h.current = founder;

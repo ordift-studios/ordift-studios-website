@@ -19,8 +19,8 @@ const NEXT_STATUS: Record<string, { status: string; label: string }[]> = {
 const FIELD = "block w-full mt-1 min-h-11 rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small text-ordift-ink";
 const STATUS_WORD: Record<string, string> = { draft: "Draft (not issued)", sent: "Issued", accepted: "Accepted", declined: "Declined", expired: "Expired", superseded: "Superseded" };
 
-export function QuotationStatusActions({ quotationId, status, defaultValidUntil, currentValidUntil, isSuperAdmin, blockers, expired, deliveredText, today }: {
-  today: string; quotationId: string; status: string; hasClient: boolean; defaultValidUntil: string; currentValidUntil: string | null; isSuperAdmin: boolean; blockers: string[]; expired: boolean; deliveredText: string | null;
+export function QuotationStatusActions({ quotationId, status, defaultValidUntil, currentValidUntil, isSuperAdmin, blockers, expired, deliveredText, today, crewManaged = false }: {
+  crewManaged?: boolean; today: string; quotationId: string; status: string; hasClient: boolean; defaultValidUntil: string; currentValidUntil: string | null; isSuperAdmin: boolean; blockers: string[]; expired: boolean; deliveredText: string | null;
 }) {
   const [state, formAction] = useActionState<ActionState, FormData>(updateQuotationStatusAction, null);
   const [acceptState, acceptAction] = useActionState<ActionState, FormData>(recordQuotationAcceptanceAction, null);
@@ -42,7 +42,11 @@ export function QuotationStatusActions({ quotationId, status, defaultValidUntil,
       )}
       {issueState?.ok === false && <p role="alert" className="rounded-lg border border-red-300 bg-red-50 p-3 font-sans text-body-small text-red-900">{issueState.error} Nothing was changed.</p>}
 
-      {status === "draft" && (
+      {status === "draft" && crewManaged && (
+        <p role="status" className="rounded-lg border border-black/15 bg-ordift-offwhite p-3 font-sans text-body-small text-ordift-ink">This is a Crew Support quotation. It is reviewed and issued from its Crew Support request, which has its own validity and approval steps. It cannot be issued from this page.</p>
+      )}
+
+      {status === "draft" && !crewManaged && (
         <section aria-labelledby="issue-h" className="space-y-3 rounded-lg border border-black/15 p-3 sm:p-4">
           <h2 id="issue-h" className="font-serif font-medium text-body text-ordift-ink">Issue quotation</h2>
           <p className="font-sans text-caption text-ordift-ink-muted">This is a draft: it exists, but it has not been issued. Issuing records today as the issue date, you as the issuer, and the validity below. <strong>It does not email or notify the client</strong>, and it creates no payment, booking, amount due or acceptance. You deliver it yourself and record that afterwards.</p>
@@ -69,7 +73,7 @@ export function QuotationStatusActions({ quotationId, status, defaultValidUntil,
         </section>
       )}
 
-      {(status === "sent" || status === "accepted") && (
+      {(status === "sent" || status === "accepted") && !crewManaged && (
         <section aria-labelledby="deliv-h" className="space-y-2 rounded-lg border border-black/10 p-3 sm:p-4">
           <h2 id="deliv-h" className="font-serif font-medium text-body text-ordift-ink">Delivery to the client</h2>
           <p className="font-sans text-body-small text-ordift-ink">{deliveredText ?? "Not recorded. Issuing did not email or notify the client: share the quotation yourself, then record it here."}</p>
@@ -100,10 +104,10 @@ export function QuotationStatusActions({ quotationId, status, defaultValidUntil,
       )}
       {state?.ok === false && <p className="font-sans text-caption text-red-700">{state.error}</p>}
 
-      {status === "sent" && expired && (
+      {status === "sent" && !crewManaged && expired && (
         <p role="status" className="rounded-lg border border-red-300 bg-red-50 p-3 font-sans text-body-small text-red-900">This quotation has expired, so acceptance cannot be recorded against it. Use Revise to create a new version (its validity starts fresh when you issue it).</p>
       )}
-      {status === "sent" && !expired && (
+      {status === "sent" && !crewManaged && !expired && (
         <details className="rounded-lg border border-black/10 px-3 py-2">
           <summary className="min-h-11 cursor-pointer py-2 font-sans text-body-small text-ordift-ink">Record acceptance (with evidence)</summary>
           <p className="mt-2 font-sans text-caption text-ordift-ink-muted">

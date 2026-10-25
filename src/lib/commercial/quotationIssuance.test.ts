@@ -95,6 +95,15 @@ describe("the issuance panel (server-rendered markup)", () => {
   it("prerequisite blockers are shown", async () => {
     expect(await render({ status: "draft", blockers: ["Add at least one line item before issuing."] })).toContain("Add at least one line item before issuing.");
   });
+  it("a Crew Support quotation shows no Issue form here: it is issued from its request", async () => {
+    const html = await render({ status: "draft", crewManaged: true } as never);
+    expect(html).not.toContain("Issue quotation");
+    expect(html).not.toContain('name="confirm"');
+    expect(html).toContain("issued from its Crew Support request");
+    const sent = await render({ status: "sent", crewManaged: true } as never);
+    expect(sent).not.toContain("Delivery to the client");
+    expect(sent).not.toContain("Record acceptance (with evidence)");
+  });
   it("an issued quotation: delivery is a separate recorded step, acceptance is available, no issue button", async () => {
     const html = await render({ status: "sent", currentValidUntil: "2026-11-25" });
     expect(html).not.toContain("Issue quotation");

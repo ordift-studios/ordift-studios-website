@@ -71,7 +71,8 @@ export function acceptanceExpiryRefusal(validUntil: string | null | undefined, r
 }
 
 export type QuotationDates = { created: string; issued: string | null; validUntil: string | null; draft: boolean; expired: boolean; createdText: string; issuedText: string; validText: string };
-export function quotationDates(q: { createdAt: string; issuedAt: string | null; validUntil: string | null; status: string }, today: string): QuotationDates {
+// `crew`: a Crew Support quotation has its own validity rule (set before it is marked ready) and its own issue path, so the ordinary 30-day wording is never shown for it.
+export function quotationDates(q: { createdAt: string; issuedAt: string | null; validUntil: string | null; status: string }, today: string, opts: { crew?: boolean } = {}): QuotationDates {
   const draft = q.status === "draft" || q.status === "ready";
   const expired = isExpired(q.status, q.validUntil, today) || q.status === "expired";
   const issued = draft ? null : q.issuedAt;
@@ -80,7 +81,9 @@ export function quotationDates(q: { createdAt: string; issuedAt: string | null; 
     created: q.createdAt.slice(0, 10), issued, validUntil: q.validUntil?.slice(0, 10) ?? null, draft, expired,
     createdText: formatDate(q.createdAt),
     issuedText: draft ? "Not yet issued" : issued ? formatDate(issued) : legacy ? "Issue date not recorded" : "Not yet issued",
-    validText: draft && q.validUntil && q.validUntil.slice(0, 10) < today
+    validText: opts.crew
+      ? (q.validUntil ? `${formatDate(q.validUntil)}${expired ? " (expired)" : ""}` : draft ? "Set before the quotation is issued (Crew Support)" : "No validity date recorded")
+      : draft && q.validUntil && q.validUntil.slice(0, 10) < today
       ? `Set when issued (${ORDINARY_VALIDITY_DAYS} calendar days from the issue date). The earlier date, ${formatDate(q.validUntil)}, has passed and will not be carried over`
       : q.validUntil ? `${formatDate(q.validUntil)}${expired ? " (expired)" : ""}` : draft ? `Set when issued (${ORDINARY_VALIDITY_DAYS} calendar days from the issue date)` : "No validity date recorded",
   };

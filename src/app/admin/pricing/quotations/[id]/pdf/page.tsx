@@ -35,7 +35,7 @@ export default async function QuotationPdfPage({ params }: { params: Promise<{ i
   // (frozen at issue). null for every other quotation — unchanged output.
   const crew = await getCrewQuotationPrintExtras(id);
   // Created / Issued / Valid until, labelled. A draft shows "Not yet issued" and a DRAFT banner: the creation date is never presented as an issue date.
-  const dates = quotationDates({ createdAt: quotation.createdAt, issuedAt: crew?.issuedAt ?? quotation.issuedAt, validUntil: quotation.validUntil, status: crew?.status ?? quotation.status }, utcDate(new Date()));
+  const dates = quotationDates({ createdAt: quotation.createdAt, issuedAt: crew?.issuedAt ?? quotation.issuedAt, validUntil: quotation.validUntil, status: crew?.status ?? quotation.status }, utcDate(new Date()), { crew: Boolean(crew) });
 
   return (
     <div className="print-page">

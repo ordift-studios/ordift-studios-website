@@ -2,8 +2,8 @@ import { quotationDates } from "@/lib/commercial/quotationValidity";
 
 // Created on / Issued on / Valid until, the same three facts everywhere. A draft shows a prominent DRAFT indicator and "Not yet issued": an issue date is only ever the REAL recorded
 // issue time, never the creation date and never invented. Creation, issuance, delivery to the client and client acceptance are four different things and are shown as such.
-export default function QuotationDatesCard({ createdAt, issuedAt, validUntil, status, deliveryText, acceptanceText, today }: { createdAt: string; issuedAt: string | null; validUntil: string | null; status: string; deliveryText: string; acceptanceText: string; today: string }) {
-  const d = quotationDates({ createdAt, issuedAt, validUntil, status }, today);
+export default function QuotationDatesCard({ createdAt, issuedAt, validUntil, status, deliveryText, acceptanceText, today, crew = false }: { crew?: boolean; createdAt: string; issuedAt: string | null; validUntil: string | null; status: string; deliveryText: string; acceptanceText: string; today: string }) {
+  const d = quotationDates({ createdAt, issuedAt, validUntil, status }, today, { crew });
   const rows: { label: string; value: string; tone?: "warn" | "bad" }[] = [
     { label: "Created on", value: d.createdText },
     { label: "Issued on", value: d.issuedText, tone: d.draft ? "warn" : undefined },

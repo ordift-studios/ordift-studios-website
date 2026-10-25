@@ -98,7 +98,7 @@ export default async function QuotationDetailPage({ params }: { params: Promise<
         </p>
       )}
 
-      <QuotationDatesCard
+      <QuotationDatesCard crew={quotation.crewManaged}
         createdAt={quotation.createdAt} issuedAt={quotation.issuedAt} validUntil={quotation.validUntil} status={quotation.status} today={today}
         deliveryText={quotation.status === "draft" ? "Not applicable until it is issued" : deliveredText ?? "Not recorded (issuing does not send it to the client)"}
         acceptanceText={quotation.status === "accepted" ? "Accepted (recorded)" : quotation.status === "sent" ? (expired ? "Not accepted — expired" : "Not yet accepted") : quotation.status === "draft" ? "Not applicable until it is issued" : "Not accepted"}
@@ -106,7 +106,7 @@ export default async function QuotationDetailPage({ params }: { params: Promise<
 
       <div className="rounded-xl border border-black/10 bg-white p-4 sm:p-6 mb-6">
         <QuotationStatusActions quotationId={quotation.id} status={quotation.status} hasClient={Boolean(quotation.clientProfileId)} today={today} defaultValidUntil={defaultValidUntil(now)} currentValidUntil={quotation.validUntil}
-          isSuperAdmin={isSuperAdmin(user)} blockers={blockers} expired={expired} deliveredText={deliveredText} />
+          isSuperAdmin={isSuperAdmin(user)} blockers={blockers} expired={expired} deliveredText={deliveredText} crewManaged={quotation.crewManaged} />
       </div>
 
       <div className="rounded-xl border border-black/10 bg-white overflow-x-auto mb-6">

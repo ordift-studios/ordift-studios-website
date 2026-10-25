@@ -86,3 +86,12 @@ describe("dates shown to people: created, issued, valid until", () => {
     expect(d.validText).toBe("No validity date recorded");
   });
 });
+
+describe("Crew Support quotations keep their own validity wording (no ordinary 30-day claim)", () => {
+  it("a Crew draft says validity is set before issue by its own rules; a set date is shown as is", () => {
+    const d = quotationDates({ createdAt: "2026-10-25T00:00:00Z", issuedAt: null, validUntil: null, status: "draft" }, "2026-10-26", { crew: true });
+    expect(d.validText).toBe("Set before the quotation is issued (Crew Support)");
+    expect(d.validText).not.toMatch(/30/);
+    expect(quotationDates({ createdAt: "2026-10-25T00:00:00Z", issuedAt: "2026-10-26T00:00:00Z", validUntil: "2026-11-09", status: "sent" }, "2026-10-27", { crew: true }).validText).toBe("9 Nov 2026");
+  });
+});

@@ -62,5 +62,10 @@ describe("the other states stay accurate and separate", () => {
     expect(step(summariseWorkflow(facts({ quotations: [quote({ status: "declined" })] })), "quotation").detail).toMatch(/was declined/);
     expect(nextActionFor(quote({ status: "declined" }))).toMatch(/closed/);
   });
+  it("a Crew Support enquiry's draft does not claim the ordinary 30-day rule", () => {
+    const r = summariseWorkflow(facts({ commercialIntent: "creative_crew_support", quotations: [quote()] }));
+    expect(step(r, "quotation").detail).toMatch(/Crew Support has its own validity rule/);
+    expect(step(r, "quotation").detail).not.toMatch(/30 calendar days/);
+  });
   it("the one-line description is reusable and exact", () => expect(quotationLine(quote())).toBe("ORD-QUO-2026-000006 · version 1 · USD 351.00 · Draft"));
 });
