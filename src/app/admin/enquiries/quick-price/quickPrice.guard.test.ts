@@ -44,6 +44,9 @@ describe("Enquiries & Quick Pricing is staff-only, read-only and shares the publ
     const on = renderToStaticMarkup(createElement(Workspace, { ...props, persistence: true, family: "wedding_event" }));
     expect(on).toContain("Save as communicated to an enquiry");
     expect(on).toContain("Nothing is sent to the client");
+    expect(on).not.toContain("database change that has not been authorised");   // once saving is on, the discount note points to the enquiry instead
+    expect(on).toContain("propose the discount there");
+    expect(renderToStaticMarkup(createElement(Workspace, props))).toContain("database change that has not been authorised");
     expect(read("./PriceNegotiationWorkspace.tsx")).toContain("{persistence && (");
     expect(read("../../../../lib/enquiry/pricingHistory.ts")).toContain("ENQUIRY_PRICING_PERSISTENCE_ENABLED = false");
   });

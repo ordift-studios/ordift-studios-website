@@ -136,7 +136,9 @@ export default function PriceNegotiationWorkspace({ slots, isSuperAdmin, fx, per
           ))}
         </div>
         <div className="rounded-lg bg-amber-50 p-3 font-sans text-caption text-amber-900">
-          Discretionary discounts need <strong>Founder / Super Admin approval</strong>. {isSuperAdmin ? "You can preview one here, but this page records no approval: confirm it in the formal quotation." : "You can propose one here, but you cannot authorise it."} No percentage or amount limit has been set, and nothing below is saved. Persistent approval and an audit record need a database change that has not been authorised yet.
+          Discretionary discounts need <strong>Founder / Super Admin approval</strong>. {persistence
+            ? "You can preview one here. To make it count, save the price to the enquiry first, then propose the discount there: a Super Admin approves it, tied to that exact scope, and the approval is recorded. No percentage or amount limit has been set, and nothing in this preview is saved."
+            : <>{isSuperAdmin ? "You can preview one here, but this page records no approval: confirm it in the formal quotation." : "You can propose one here, but you cannot authorise it."} No percentage or amount limit has been set, and nothing below is saved. Persistent approval and an audit record need a database change that has not been authorised yet.</>}
         </div>
         <label className="flex items-center gap-2 font-sans text-body-small text-ordift-ink"><input type="checkbox" checked={useDiscount} onChange={(e) => setUseDiscount(e.target.checked)} /> Preview a discount on {LABEL[preferred]}</label>
         {useDiscount && (
@@ -150,7 +152,7 @@ export default function PriceNegotiationWorkspace({ slots, isSuperAdmin, fx, per
             {preview && preview.ok && (
               <dl className="grid grid-cols-2 gap-2 rounded-lg bg-ordift-offwhite p-3 font-sans text-body-small text-ordift-ink">
                 <dt>Eligible subtotal</dt><dd>{usd(preview.eligibleSubtotalUsd)}</dd><dt>Proposed discount</dt><dd>−{usd(preview.discountUsd)}</dd><dt className="font-medium">Total after discount</dt><dd className="font-medium">{usd(preview.totalUsd)}</dd>
-                <dt>Status</dt><dd>{state === "proposed_needs_approval" ? "Proposed — needs Founder / Super Admin approval" : "Preview — confirm in the formal quotation"}</dd>
+                <dt>Status</dt><dd>{persistence ? "Preview only — propose it on the enquiry; a Super Admin must approve it" : state === "proposed_needs_approval" ? "Proposed — needs Founder / Super Admin approval" : "Preview — confirm in the formal quotation"}</dd>
               </dl>
             )}
             <button type="button" className={`${btn} border border-black/15`} onClick={() => { setUseDiscount(false); setDValue(""); setDReason(""); }}>Remove discount</button>

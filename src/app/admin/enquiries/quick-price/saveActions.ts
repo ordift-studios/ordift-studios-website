@@ -6,6 +6,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { getExchangeRateHistory } from "@/lib/payments/currency";
 import { indicativeLocalAmount } from "@/lib/pricing/indicativeLocal";
 import { saveCommunicatedPrice } from "@/lib/enquiry/pricingPersistence";
+import { PAYMENT_MARKETS, isPaymentCountry } from "@/lib/payments/paymentMarket";
 
 export type SaveState = { ok: boolean; message: string } | null;
 
@@ -15,8 +16,12 @@ export type SaveState = { ok: boolean; message: string } | null;
 export async function saveWorkspacePriceAction(p: { enquiryReference: string; service: string; title: string; lines: string[]; totalUsd: number; channel: string; communicatedAt: string; localCurrency: "" | "QAR" | "GHS"; assumptions: string; notes: string }): Promise<SaveState> {
   const user = await getCurrentUser(); if (!user) return { ok: false, message: "Please sign in again." };
   const admin = createAdminClient();
-  const { data: enq } = await admin.from("enquiries").select("id").eq("reference_number", p.enquiryReference.trim().toUpperCase()).maybeSingle();
+  const { data: enq } = await admin.from("enquiries").select("id, payment_country").eq("reference_number", p.enquiryReference.trim().toUpperCase()).maybeSingle();
   if (!enq) return { ok: false, message: "No enquiry has that reference." };
+  // Ghana and Qatar stay separate: an enquiry in a payment market can carry only that market's internal reference currency (GHS for Ghana, QAR for Qatar).
+  if (p.localCurrency && isPaymentCountry(enq.payment_country) && PAYMENT_MARKETS[enq.payment_country].currency !== p.localCurrency) {
+    return { ok: false, message: `This is a ${PAYMENT_MARKETS[enq.payment_country].label} enquiry, so its internal reference currency is ${PAYMENT_MARKETS[enq.payment_country].currency}, not ${p.localCurrency}. Nothing was saved.` };
+  }
   let indicativeLocal = null;
   if (p.localCurrency) {
     const rate = (await getExchangeRateHistory(p.localCurrency)).find((r) => new Date(r.effectiveFrom).getTime() <= Date.now());

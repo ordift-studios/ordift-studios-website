@@ -4,8 +4,9 @@ import { useActionState } from "react";
 import { communicateDiscountAction, completeFollowUpAction, convertAction, createFollowUpAction, decideDiscountAction, proposeDiscountAction, rescheduleFollowUpAction, type PState } from "./pricingActions";
 
 const input = "w-full rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small";
-const btn = "rounded-md bg-ordift-ink px-4 py-2 font-sans text-body-small text-white disabled:opacity-60";
-const ghost = "rounded-md border border-black/20 px-3 py-1.5 font-sans text-caption disabled:opacity-60";
+const btn = "min-h-10 rounded-md bg-ordift-ink px-4 py-2 font-sans text-body-small text-white disabled:opacity-60";
+const ghost = "min-h-10 rounded-md border border-black/20 px-3 py-1.5 font-sans text-caption disabled:opacity-60";
+const small = "min-h-10 min-w-0 flex-1 rounded-lg border border-black/15 px-3 py-1.5 font-sans text-caption";
 const Msg = ({ s }: { s: PState }) => (s ? <p role={s.ok ? "status" : "alert"} className={`font-sans text-caption ${s.ok ? "text-green-800" : "text-red-800"}`}>{s.message}</p> : null);
 const H = ({ id }: { id: string }) => <input type="hidden" name="enquiryId" value={id} />;
 type Person = { id: string; name: string };
@@ -21,13 +22,13 @@ export function ProposeDiscountForm({ enquiryId }: { enquiryId: string }) {
 export function DecideDiscountForm({ enquiryId, discountId }: { enquiryId: string; discountId: string }) {
   const [s, act, p] = useActionState(decideDiscountAction, null as PState);
   return <form action={act} className="flex flex-wrap items-center gap-2"><H id={enquiryId} /><input type="hidden" name="discountId" value={discountId} />
-    <input name="note" placeholder="Decision note" aria-label="Decision note" className="min-w-0 flex-1 rounded-lg border border-black/15 px-3 py-1.5 font-sans text-caption" />
+    <input name="note" placeholder="Decision note" aria-label="Decision note" className={small} />
     <button name="decision" value="approved" className={ghost} disabled={p}>Approve</button><button name="decision" value="rejected" className={ghost} disabled={p}>Reject</button><Msg s={s} /></form>;
 }
 export function CommunicateDiscountForm({ enquiryId }: { enquiryId: string }) {
   const [s, act, p] = useActionState(communicateDiscountAction, null as PState);
   return <form action={act} className="grid grid-cols-1 gap-2 sm:grid-cols-3"><H id={enquiryId} />
-    <input name="channel" placeholder="How you told the client (phone, WhatsApp…)" aria-label="Channel" className={input} required />
+    <input name="channel" placeholder="How (phone, WhatsApp…)" aria-label="Channel" className={input} required />
     <input name="communicatedAt" type="datetime-local" aria-label="When" className={input} />
     <button className={btn} disabled={p}>Save the discounted price as communicated</button><div className="sm:col-span-3"><Msg s={s} /></div></form>;
 }
@@ -49,7 +50,7 @@ export function ManageFollowUp({ enquiryId, followUpId, people }: { enquiryId: s
       <input name="reason" placeholder="Why (kept in history)" aria-label="Reason" className={input} required />
       <button className={ghost} disabled={rp}>Reschedule / hand over</button><div className="sm:col-span-4"><Msg s={rs} /></div></form>
     <form action={cact} className="flex flex-wrap items-center gap-2"><H id={enquiryId} /><input type="hidden" name="followUpId" value={followUpId} />
-      <input name="note" placeholder="Outcome (optional)" aria-label="Outcome" className="min-w-0 flex-1 rounded-lg border border-black/15 px-3 py-1.5 font-sans text-caption" />
+      <input name="note" placeholder="Outcome (optional)" aria-label="Outcome" className={small} />
       <button className={ghost} disabled={cp}>Mark done</button><Msg s={cs} /></form></div>;
 }
 export function ConvertForm({ enquiryId }: { enquiryId: string }) {
