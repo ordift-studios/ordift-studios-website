@@ -1,6 +1,7 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getContractingEntity } from "@/lib/organization/entityRegistrations";
 import type { QuotationFact, WorkflowFacts } from "./workflowSummary";
+import { getQuotationDelivery } from "../commercial/quotationIssuance";
 
 // Loads the facts for the read-only workflow summary of one enquiry. Server-only. Reads only: nothing is written and nothing is inferred.
 // The contracting entity is readable by a Super Admin only (the existing rule); for anyone else the summary leaves that line out.
@@ -14,12 +15,14 @@ export async function loadWorkflowFacts(enquiryId: string, viewer: { userId: str
   if (!e) return null;
   const { data: q } = await admin
     .from("client_quotations")
-    .select("id, version, quotation_reference, status, issued_at, accepted_at, accepted_via, acceptance_channel, accepted_by_name, currency, total, is_test")
+    .select("id, version, created_at, valid_until, quotation_reference, status, issued_at, accepted_at, accepted_via, acceptance_channel, accepted_by_name, currency, total, is_test")
     .eq("enquiry_id", enquiryId)
     .neq("status", "superseded")
     .order("created_at", { ascending: false });
   const quotations: QuotationFact[] = (q ?? []).map((r) => ({
     id: r.id,
+    createdAt: r.created_at,
+    validUntil: r.valid_until ?? null,
     version: r.version == null ? undefined : Number(r.version),
     reference: r.quotation_reference,
     status: r.status,
@@ -32,6 +35,8 @@ export async function loadWorkflowFacts(enquiryId: string, viewer: { userId: str
     total: Number(r.total ?? 0),
     isTest: Boolean(r.is_test),
   }));
+  const lead = quotations.find((x) => x.status === "accepted") ?? quotations.find((x) => x.status === "sent") ?? null;
+  const quotationDelivery = lead?.id ? await getQuotationDelivery(lead.id) : null;
   let contractingEntity: WorkflowFacts["contractingEntity"] = "hidden";
   if (viewer.isSuperAdmin) {
     const c = await getContractingEntity({ type: "enquiry", id: enquiryId }, viewer.userId);
@@ -52,5 +57,6 @@ export async function loadWorkflowFacts(enquiryId: string, viewer: { userId: str
     quotations,
     contractingEntity,
     emailsSuppressed: e.email_notifications_suppressed === true,
+    quotationDelivery: quotationDelivery ? { channel: quotationDelivery.channel, deliveredAt: quotationDelivery.deliveredAt } : null,
   };
 }

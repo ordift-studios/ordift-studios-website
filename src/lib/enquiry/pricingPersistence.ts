@@ -167,7 +167,7 @@ export type EnquiryPricingView = {
   discount: { id: string; status: string; type: string; value: number; discountUsd: number; totalAfterUsd: number; reason: string; decisionNote: string | null } | null;
   followUp: { id: string; handlerId: string; handlerName: string; nextAction: string; dueAt: string; state: FollowUpState } | null;
   followUpHistory: { dueAt: string; handlerName: string; status: string; note: string | null }[];
-  conversion: { quotationId: string; quotationReference: string; version: number; status: string; currency: string; total: number; issuedAt: string | null; acceptedAt: string | null; convertedAt: string } | null;
+  conversion: { quotationId: string; quotationReference: string; version: number; status: string; currency: string; total: number; issuedAt: string | null; acceptedAt: string | null; convertedAt: string; createdAt: string; validUntil: string | null } | null;
 };
 export async function getEnquiryPricingView(enquiryId: string): Promise<EnquiryPricingView | null> {
   if (!ENQUIRY_PRICING_PERSISTENCE_ENABLED) return null;
@@ -182,14 +182,14 @@ export async function getEnquiryPricingView(enquiryId: string): Promise<EnquiryP
   const { data: profs } = handlerIds.length ? await admin.from("profiles").select("id, full_name").in("id", handlerIds) : { data: [] };
   const nameOf = (id: string) => (profs ?? []).find((p) => p.id === id)?.full_name ?? "Unnamed";
   const open = (fus ?? []).find((f) => f.status === "open");
-  const quote = conv ? (await admin.from("client_quotations").select("id, quotation_reference, version, status, currency, total, issued_at, accepted_at").eq("id", conv.target_id).maybeSingle()).data : null;
+  const quote = conv ? (await admin.from("client_quotations").select("id, quotation_reference, version, status, currency, total, issued_at, accepted_at, created_at, valid_until").eq("id", conv.target_id).maybeSingle()).data : null;
   const d = (discs ?? [])[0];
   return {
     communications: (comms ?? []).map((c) => ({ id: c.id, revision: c.revision_number, scopeTitle: c.scope_title, original: c.original_total_usd === null ? null : Number(c.original_total_usd), communicated: Number(c.communicated_amount), currency: c.communicated_currency, channel: c.channel, at: c.communicated_at, discountApprovalId: c.discount_approval_id, localNote: c.indicative_local_currency ? `Internal reference only: ${c.indicative_local_currency} ${Number(c.indicative_local_amount).toFixed(2)} at ${c.fx_rate_to_usd} (rate effective ${String(c.fx_effective_from).slice(0, 10)})` : null })),
     discount: d ? { id: d.id, status: d.status, type: d.discount_type, value: Number(d.discount_value), discountUsd: Number(d.discount_usd), totalAfterUsd: Number(d.total_after_usd), reason: d.reason, decisionNote: d.decision_note } : null,
     followUp: open ? { id: open.id, handlerId: open.handler_profile_id, handlerName: nameOf(open.handler_profile_id), nextAction: open.next_action, dueAt: open.due_at, state: followUpState(open.due_at) } : null,
     followUpHistory: (fus ?? []).filter((f) => f.status !== "open").map((f) => ({ dueAt: f.due_at, handlerName: nameOf(f.handler_profile_id), status: f.status, note: f.completion_note })),
-    conversion: conv && quote ? { quotationId: quote.id as string, quotationReference: quote.quotation_reference as string, version: Number(quote.version ?? 1), status: quote.status as string, currency: quote.currency as string, total: Number(quote.total ?? 0), issuedAt: (quote.issued_at as string | null) ?? null, acceptedAt: (quote.accepted_at as string | null) ?? null, convertedAt: conv.converted_at as string } : null,
+    conversion: conv && quote ? { quotationId: quote.id as string, quotationReference: quote.quotation_reference as string, version: Number(quote.version ?? 1), status: quote.status as string, currency: quote.currency as string, total: Number(quote.total ?? 0), issuedAt: (quote.issued_at as string | null) ?? null, acceptedAt: (quote.accepted_at as string | null) ?? null, convertedAt: conv.converted_at as string, createdAt: quote.created_at as string, validUntil: (quote.valid_until as string | null) ?? null } : null,
   };
 }
 

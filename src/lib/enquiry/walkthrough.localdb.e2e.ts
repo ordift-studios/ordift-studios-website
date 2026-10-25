@@ -226,7 +226,7 @@ describe("7. Conversion to ONE draft quotation, with no booking, payment, revenu
     const r = summariseWorkflow(f!);
     const draftStep = r.steps.find((st) => st.key === "draft")!;
     expect(draftStep).toMatchObject({ answer: "Yes", state: "done" });
-    expect(draftStep.detail).toMatch(/^ORD-QUO-\d{4}-\d{6} · version 1 · USD 1000\.00 · Draft$/);
+    expect(draftStep.detail).toMatch(/^ORD-QUO-\d{4}-\d{6} · version 1 · USD 1000\.00 · Draft · created \d{1,2} \w{3} \d{4}$/);
     expect(r.steps.find((st) => st.key === "quotation")).toMatchObject({ answer: "No", state: "pending" });
     expect(r.steps.find((st) => st.key === "amount_due")!.state).toBe("pending");
     expect(r.steps.find((st) => st.key === "booking")!.state).toBe("pending");

@@ -1,6 +1,8 @@
 "use server";
 
 import { recordOrdinaryQuotationAcceptance } from "@/lib/commercial/quotationAcceptance";
+import { issueOrdinaryQuotation, recordQuotationDelivery } from "@/lib/commercial/quotationIssuance";
+import { formatDate } from "@/lib/commercial/quotationValidity";
 import { revalidatePath } from "next/cache";
 import { getCurrentUser, hasRole, isSuperAdmin } from "@/lib/portal/roles";
 import {
@@ -15,7 +17,7 @@ import {
 import { suggestCorporateHeadshotQuotationLine, type CorporateHeadshotQuoteSuggestion } from "@/lib/commercial/pricingCatalog";
 import type { CorporateProductSlug } from "@/lib/pricing/corporateHeadshotPricing";
 
-export type ActionState = { ok: boolean; error?: string } | null;
+export type ActionState = { ok: boolean; error?: string; message?: string } | null;
 // Create-specific result — deliberately does NOT call redirect() from
 // inside this action (2026-09-16 Production fix). redirect() throws
 // NEXT_REDIRECT, and calling it inside a useActionState-bound action
@@ -234,4 +236,26 @@ export async function recordQuotationAcceptanceAction(_prev: ActionState, formDa
   revalidatePath(`/admin/pricing/quotations/${quotationId}`);
   revalidatePath("/admin/pricing/quotations");
   return { ok: true };
+}
+
+// ISSUE (not "mark sent"): confirmation-based, records issued_at / issued_by / approved validity and audit evidence. It does NOT email or notify the client and creates no payment,
+// booking, amount due or acceptance. The server re-checks the role, the prerequisites and the validity rules, and only one issuance can ever succeed.
+export async function issueQuotationAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  const quotationId = String(formData.get("quotationId") ?? "");
+  if (!quotationId) return { ok: false, error: "Invalid request." };
+  if (formData.get("confirm") !== "on") return { ok: false, error: "Tick the confirmation to issue the quotation." };
+  const result = await issueOrdinaryQuotation({ quotationId, validUntil: String(formData.get("validUntil") ?? "") || null, exceptionReason: String(formData.get("exceptionReason") ?? "") || null });
+  if (!result.ok) return { ok: false, error: result.error };
+  revalidatePath(`/admin/pricing/quotations/${quotationId}`);
+  revalidatePath("/admin/pricing/quotations");
+  return { ok: true, message: `Quotation issued. It is valid until ${formatDate(result.validUntil)}${result.isException ? " (approved exception recorded)" : " (30 calendar days from today)"}. Nothing was emailed or sent to the client, and no payment, booking, amount due or acceptance was created. Deliver it yourself, then record the delivery below.` };
+}
+
+export async function recordQuotationDeliveryAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  const quotationId = String(formData.get("quotationId") ?? "");
+  if (!quotationId) return { ok: false, error: "Invalid request." };
+  const result = await recordQuotationDelivery({ quotationId, channel: String(formData.get("channel") ?? ""), deliveredAt: String(formData.get("deliveredAt") ?? ""), note: String(formData.get("note") ?? "") });
+  if (!result.ok) return { ok: false, error: result.error };
+  revalidatePath(`/admin/pricing/quotations/${quotationId}`);
+  return { ok: true, message: "Delivery recorded. This is a note that you delivered it; the system sent nothing." };
 }

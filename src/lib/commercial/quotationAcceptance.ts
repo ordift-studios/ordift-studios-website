@@ -1,3 +1,4 @@
+import { acceptanceExpiryRefusal } from "./quotationValidity";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getCurrentUser, hasRole, isSuperAdmin } from "@/lib/portal/roles";
 import { logActivity } from "@/lib/admin/activityLog";
@@ -28,7 +29,7 @@ export async function recordOrdinaryQuotationAcceptance(params: {
   if (!user || (!hasRole(user, "admin") && !isSuperAdmin(user))) return { ok: false, error: "Not authorized to manage quotations." };
 
   const admin = createAdminClient();
-  const { data: q } = await admin.from("client_quotations").select("id, status, crew_support_request_id, issued_at, enquiry_id").eq("id", params.quotationId).maybeSingle();
+  const { data: q } = await admin.from("client_quotations").select("id, status, crew_support_request_id, issued_at, enquiry_id, valid_until").eq("id", params.quotationId).maybeSingle();
   if (!q) return { ok: false, error: "Quotation not found." };
   if (q.crew_support_request_id) return { ok: false, error: "This quotation belongs to a Crew Support request — record the acceptance from that request." };
   if (q.status !== "sent") return { ok: false, error: q.status === "accepted" ? "This quotation's acceptance is already recorded." : "Only an issued (sent) quotation can have an acceptance recorded." };
@@ -39,6 +40,9 @@ export async function recordOrdinaryQuotationAcceptance(params: {
 
   const checked = validateStaffAcceptance({ channel: params.channel, evidence: params.evidence, acceptedByName: params.acceptedByName, receivedAt: params.receivedAt, now: new Date(), issuedAt: q.issued_at });
   if (!checked.ok) return { ok: false, error: checked.reason };
+  // An expired quotation cannot be accepted: judged on when the CLIENT accepted (the evidence date), so an in-time acceptance can still be recorded late.
+  const expired = acceptanceExpiryRefusal(q.valid_until, checked.receivedAtIso);
+  if (expired) return { ok: false, error: expired };
 
   const { data: updated, error } = await admin
     .from("client_quotations")

@@ -46,7 +46,10 @@ describe("the other states stay accurate and separate", () => {
     const r = summariseWorkflow(facts({ stage: "quotation_sent", quotations: [quote({ status: "sent", issuedAt: "2026-10-26T08:00:00Z" })] }));
     expect(step(r, "quotation")).toMatchObject({ answer: "Yes", state: "current" });
     expect(step(r, "acceptance").state).toBe("current");
-    expect(r.next).toMatch(/Waiting for the client/);
+    expect(r.next).toMatch(/record the delivery/);          // delivery is a separate, person-recorded step
+    const delivered = summariseWorkflow(facts({ stage: "quotation_sent", quotations: [quote({ status: "sent", issuedAt: "2026-10-26T08:00:00Z", validUntil: "2026-11-25" })], quotationDelivery: { channel: "whatsapp_message", deliveredAt: "2026-10-26T09:00:00Z" } }), "2026-10-27");
+    expect(step(delivered, "delivery")).toMatchObject({ state: "done", answer: "Yes" });
+    expect(delivered.next).toMatch(/Waiting for the client/);
   });
   it("accepted with no amount due: next is to establish it deliberately; acceptance is not a booking", () => {
     const r = summariseWorkflow(facts({ stage: "quotation_sent", quotations: [quote({ status: "accepted", issuedAt: "2026-10-26T08:00:00Z", acceptedAt: "2026-10-27T08:00:00Z", acceptedVia: "staff_recorded" })] }));

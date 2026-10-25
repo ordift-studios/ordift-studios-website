@@ -8,6 +8,10 @@ import { ReviseQuotationButton, DeleteQuotationButton } from "./QuotationRecordA
 import ClientRecordPanel from "../../../organisations/ClientRecordPanel";
 import ContractingEntitySection from "../../../organisations/ContractingEntitySection";
 import { getQuotationAcceptanceRecord } from "@/lib/commercial/quotationAcceptance";
+import { getQuotationDelivery } from "@/lib/commercial/quotationIssuance";
+import { defaultValidUntil, formatDate, isExpired, issuanceBlockers, utcDate } from "@/lib/commercial/quotationValidity";
+import { DELIVERY_CHANNELS_UI } from "@/lib/commercial/quotationDeliveryChannels";
+import QuotationDatesCard from "./QuotationDatesCard";
 
 export const metadata: Metadata = {
   title: "Quotation — Ordift Studios Admin",
@@ -22,6 +26,12 @@ export default async function QuotationDetailPage({ params }: { params: Promise<
   const quotation = await getClientQuotation(id);
   if (!quotation) notFound();
   const acceptance = quotation.status === "accepted" ? await getQuotationAcceptanceRecord(quotation.id) : null;
+  const now = new Date();
+  const today = utcDate(now);
+  const delivery = quotation.status === "sent" || quotation.status === "accepted" ? await getQuotationDelivery(quotation.id) : null;
+  const deliveredText = delivery ? `Delivered via ${DELIVERY_CHANNELS_UI.find((c) => c.value === delivery.channel)?.label ?? delivery.channel} on ${formatDate(delivery.deliveredAt)} (recorded by staff; the system sent nothing)` : null;
+  const expired = isExpired(quotation.status, quotation.validUntil, today);
+  const blockers = issuanceBlockers({ status: quotation.status, lineCount: quotation.items.length, total: quotation.total, crewManaged: quotation.crewManaged });
 
   return (
     <div className="max-w-5xl">
@@ -82,8 +92,15 @@ export default async function QuotationDetailPage({ params }: { params: Promise<
         </div>
       )}
 
-      <div className="rounded-xl border border-black/10 bg-white p-6 mb-6">
-        <QuotationStatusActions quotationId={quotation.id} status={quotation.status} hasClient={Boolean(quotation.clientProfileId)} />
+      <QuotationDatesCard
+        createdAt={quotation.createdAt} issuedAt={quotation.issuedAt} validUntil={quotation.validUntil} status={quotation.status} today={today}
+        deliveryText={quotation.status === "draft" ? "Not applicable until it is issued" : deliveredText ?? "Not recorded (issuing does not send it to the client)"}
+        acceptanceText={quotation.status === "accepted" ? "Accepted (recorded)" : quotation.status === "sent" ? (expired ? "Not accepted — expired" : "Not yet accepted") : quotation.status === "draft" ? "Not applicable until it is issued" : "Not accepted"}
+      />
+
+      <div className="rounded-xl border border-black/10 bg-white p-4 sm:p-6 mb-6">
+        <QuotationStatusActions quotationId={quotation.id} status={quotation.status} hasClient={Boolean(quotation.clientProfileId)} today={today} defaultValidUntil={defaultValidUntil(now)} currentValidUntil={quotation.validUntil}
+          isSuperAdmin={isSuperAdmin(user)} blockers={blockers} expired={expired} deliveredText={deliveredText} />
       </div>
 
       <div className="rounded-xl border border-black/10 bg-white overflow-x-auto mb-6">

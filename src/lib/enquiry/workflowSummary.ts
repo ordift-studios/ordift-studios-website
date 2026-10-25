@@ -1,6 +1,7 @@
 import { CRM_STAGES } from "@/lib/admin/enquiries";
 import { channelLabel } from "./staffIntake";
 import { nextActionFor, quotationHref, quotationLine } from "./quotationState";
+import { formatDate, isExpired, utcDate } from "../commercial/quotationValidity";
 
 export { nextActionFor, quotationHref, quotationLine, quotationStatusWord } from "./quotationState";
 
@@ -13,7 +14,7 @@ export { nextActionFor, quotationHref, quotationLine, quotationStatusWord } from
 
 export type StepState = "done" | "current" | "pending" | "not_applicable" | "unknown";
 export type SummaryStep = {
-  key: "enquiry" | "draft" | "quotation" | "acceptance" | "amount_due" | "payment" | "booking" | "entity";
+  key: "enquiry" | "draft" | "quotation" | "delivery" | "acceptance" | "amount_due" | "payment" | "booking" | "entity";
   label: string;
   state: StepState;
   detail: string;
@@ -24,6 +25,8 @@ export type SummaryStep = {
 
 export type QuotationFact = {
   id?: string;
+  createdAt?: string;
+  validUntil?: string | null;
   version?: number;
   reference: string;
   status: string; // draft | ready | sent | accepted | declined | expired | superseded
@@ -52,6 +55,7 @@ export type WorkflowFacts = {
   quotations: QuotationFact[]; // newest first, superseded excluded
   contractingEntity: { name: string; version: number } | null | "hidden";
   emailsSuppressed: boolean;
+  quotationDelivery?: { channel: string; deliveredAt: string } | null; // a person's record of delivering the quotation; the system never sends it
 };
 
 const ACCEPT_VIA: Record<string, string> = { client_portal: "by the client in the portal", staff_recorded: "recorded by staff" };
@@ -63,7 +67,7 @@ export function bookedOrLater(stage: string): boolean {
   return i >= CRM_STAGES.indexOf("booked") && i >= 0 && stage !== "declined" && stage !== "closed";
 }
 
-export function summariseWorkflow(f: WorkflowFacts): { steps: SummaryStep[]; notes: string[]; next: string } {
+export function summariseWorkflow(f: WorkflowFacts, today: string = utcDate(new Date())): { steps: SummaryStep[]; notes: string[]; next: string } {
   const steps: SummaryStep[] = [];
   const notes: string[] = [];
   const quotes = f.quotations.filter((q) => !q.isTest || f.quotations.every((x) => x.isTest));
@@ -83,15 +87,26 @@ export function summariseWorkflow(f: WorkflowFacts): { steps: SummaryStep[]; not
   // 1. Was a draft (or any quotation) created? Independent of whether it was issued.
   const primary = accepted ?? issued ?? preparing ?? closed ?? null;
   steps.push(primary
-    ? { key: "draft", label: "Draft quotation created", state: "done", answer: "Yes", detail: quotationLine(primary), href: primary.id ? quotationHref(primary.id) : undefined, hrefLabel: primary.status === "draft" ? "View draft quotation" : "View quotation" }
+    ? { key: "draft", label: "Draft quotation created", state: "done", answer: "Yes", detail: `${quotationLine(primary)}${primary.createdAt ? ` · created ${formatDate(primary.createdAt)}` : ""}`, href: primary.id ? quotationHref(primary.id) : undefined, hrefLabel: primary.status === "draft" ? "View draft quotation" : "View quotation" }
     : { key: "draft", label: "Draft quotation created", state: "pending", answer: "No", detail: "No quotation exists for this enquiry yet" });
 
   // 2. Was it issued / sent to the client? A draft is not an issued quotation.
-  if (accepted) steps.push({ key: "quotation", label: "Quotation issued or sent", state: "done", answer: "Yes", detail: `${accepted.reference} · ${accepted.currency} ${accepted.total.toFixed(2)}${accepted.issuedAt ? ` · issued ${day(accepted.issuedAt)}` : ""}` });
-  else if (issued) steps.push({ key: "quotation", label: "Quotation issued or sent", state: "current", answer: "Yes", detail: `${issued.reference} · ${issued.currency} ${issued.total.toFixed(2)}${issued.issuedAt ? ` · issued ${day(issued.issuedAt)}` : ""} · waiting for the client` });
-  else if (preparing) steps.push({ key: "quotation", label: "Quotation issued or sent", state: "pending", answer: "No", detail: `${preparing.reference} is still ${preparing.status === "ready" ? "ready but not issued" : "a draft"}: it has not been issued or sent, and the client has not seen it` });
+  const when = (q: QuotationFact) => `Issued on ${q.issuedAt ? formatDate(q.issuedAt) : "date not recorded"} · Valid until ${q.validUntil ? formatDate(q.validUntil) : "not recorded"}${isExpired(q.status, q.validUntil, today) ? " (expired)" : ""}`;
+  const amount = (q: QuotationFact) => `${q.currency} ${q.total.toFixed(2)}`;
+  if (accepted) steps.push({ key: "quotation", label: "Quotation issued or sent", state: "done", answer: "Yes", detail: `${accepted.reference} · ${amount(accepted)} · ${when(accepted)}` });
+  else if (issued) steps.push({ key: "quotation", label: "Quotation issued or sent", state: "current", answer: "Yes", detail: `${issued.reference} · ${amount(issued)} · ${when(issued)}${isExpired(issued.status, issued.validUntil, today) ? " · cannot be accepted" : " · waiting for the client"}` });
+  else if (preparing) steps.push({ key: "quotation", label: "Quotation issued or sent", state: "pending", answer: "No", detail: `${preparing.reference} is still ${preparing.status === "ready" ? "ready but not issued" : "a draft"}: it has not been issued or sent, and the client has not seen it. Issued on: not yet issued. Valid until: set when issued (30 calendar days from the issue date).` });
   else if (closed) steps.push({ key: "quotation", label: "Quotation issued or sent", state: "done", answer: "Yes", detail: `${closed.reference} was ${closed.status}` });
   else steps.push({ key: "quotation", label: "Quotation issued or sent", state: "pending", answer: "No", detail: "No quotation recorded for this enquiry" });
+
+  // 3. Delivered to the client? Recorded by a person; issuing never sends anything.
+  const deliveredNA = !primary || (preparing != null && !issued && !accepted);
+  const dv = f.quotationDelivery ?? null;
+  steps.push(deliveredNA
+    ? { key: "delivery", label: "Delivered to client", state: "not_applicable", answer: "No", detail: "Not applicable until the quotation is issued. The system never sends a quotation: a person delivers it and records that." }
+    : dv
+      ? { key: "delivery", label: "Delivered to client", state: "done", answer: "Yes", detail: `${dv.channel.replace(/_/g, " ")} on ${formatDate(dv.deliveredAt)} (recorded by staff)` }
+      : { key: "delivery", label: "Delivered to client", state: "pending", answer: "No", detail: "Not recorded. Issuing does not email or notify the client." });
 
   if (accepted) {
     const how = accepted.acceptedVia ? ACCEPT_VIA[accepted.acceptedVia] ?? accepted.acceptedVia : "recorded";
@@ -124,5 +139,5 @@ export function summariseWorkflow(f: WorkflowFacts): { steps: SummaryStep[]; not
   if (bookedOrLater(f.stage) && !accepted && !crew) notes.push("This enquiry is booked without a recorded quotation acceptance (booked by payment or by hand, as before). Nothing about it has changed.");
   if (f.emailsSuppressed) notes.push("Automatic client emails are switched off for this enquiry. Nothing is sent to the client unless staff send it.");
   if (crew) notes.push("Creative Crew Support has its own quotation, agreement and confirmation workflow. Manage it from the Crew Support request.");
-  return { steps, notes, next: nextActionFor(primary, f.amountDue) };
+  return { steps, notes, next: nextActionFor(primary, f.amountDue, { delivered: Boolean(f.quotationDelivery), expired: primary ? isExpired(primary.status, primary.validUntil, today) : false }) };
 }

@@ -1,4 +1,5 @@
 import { inheritedTestFlag } from "./testFlag";
+import { issueOrdinaryQuotation } from "./quotationIssuance";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { logActivity } from "@/lib/admin/activityLog";
 import { hasRole, isSuperAdmin, getCurrentUser } from "@/lib/portal/roles";
@@ -307,6 +308,8 @@ export type ClientQuotationDetail = ClientQuotationSummary & {
   paymentBookingTerms: string | null;
   commercialNotes: string | null;
   version: number;
+  issuedAt: string | null;
+  crewManaged: boolean;
   items: {
     id: string;
     serviceItem: string;
@@ -328,7 +331,7 @@ export async function getClientQuotation(id: string): Promise<ClientQuotationDet
     admin
       .from("client_quotations")
       .select(
-        "id, enquiry_id, quotation_reference, client_profile_id, prospect_name, prospect_email, prospect_phone, prospect_company, status, currency, subtotal, discount_total, tax_total, total, valid_until, payment_booking_terms, commercial_notes, version, created_at, profiles!client_profile_id(full_name)"
+        "id, enquiry_id, quotation_reference, client_profile_id, prospect_name, prospect_email, prospect_phone, prospect_company, status, currency, subtotal, discount_total, tax_total, total, valid_until, issued_at, crew_support_request_id, payment_booking_terms, commercial_notes, version, created_at, profiles!client_profile_id(full_name)"
       )
       .eq("id", id)
       .maybeSingle(),
@@ -372,6 +375,8 @@ export async function getClientQuotation(id: string): Promise<ClientQuotationDet
     commercialNotes: quotation.commercial_notes,
     version: quotation.version,
     createdAt: quotation.created_at,
+    issuedAt: (quotation as { issued_at?: string | null }).issued_at ?? null,
+    crewManaged: Boolean((quotation as { crew_support_request_id?: string | null }).crew_support_request_id),
     items: (items ?? []).map((i) => ({
       id: i.id,
       serviceItem: i.service_item,
@@ -409,6 +414,13 @@ export async function updateQuotationStatus(params: { quotationId: string; statu
 
   // Acceptance is never a bare status flip: it is recorded with its evidence (who accepted, how, when) through recordOrdinaryQuotationAcceptance().
   if (params.status === "accepted") return { ok: false, error: "Record the acceptance with its evidence (who accepted, how it was received and when) using “Record acceptance”." };
+
+  // "Sent" is never a bare status flip: it is ISSUANCE, which records who issued it, when, and the approved validity (see quotationIssuance.ts). This path can only issue with the
+  // standard 30 days; any other validity goes through the Issue quotation form.
+  if (params.status === "sent") {
+    const issued = await issueOrdinaryQuotation({ quotationId: params.quotationId });
+    return issued.ok ? { ok: true } : { ok: false, error: issued.error };
+  }
 
   const admin = createAdminClient();
   const { data: current } = await admin.from("client_quotations").select("status").eq("id", params.quotationId).maybeSingle();
@@ -561,6 +573,9 @@ export async function reviseClientQuotation(quotationId: string): Promise<Create
   }
   const row = (Array.isArray(data) ? data[0] : data) as { quotation_id: string; quotation_reference: string } | null;
   if (!row) return { ok: false, error: "Failed to create the revision." };
+  // The revise function copies the old version's valid-until date into the new DRAFT (it is one atomic database call, kept that way on purpose). That date is NEVER carried silently:
+  // issuing replaces a date that has passed with the standard 30 days (and records that it did), treats any other carried date as an exception that needs a reason (and a Super Admin
+  // beyond 30 days), and the draft screen says the earlier date will not carry over. See planIssuance().
   return { ok: true, quotationId: row.quotation_id, quotationReference: row.quotation_reference };
 }
 

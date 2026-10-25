@@ -71,7 +71,7 @@ const ROLES: Record<string, string[]> = { [ADMIN]: ["admin"], [SUPER]: ["admin",
 const as = (id: string | null) => { h.user = id ? { id, email: `${id}@e2e.test`, fullName: id, roles: ROLES[id] ?? [], accessStatus: "active" } : null; };
 
 const db = () => createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SECRET_KEY!, { auth: { persistSession: false }, global: { fetch: h.fetch } });
-const sql = (q: string) => execSync("docker exec -i ordift-mig-check2 psql -U postgres -h 127.0.0.1 -v ON_ERROR_STOP=1 -At", { input: q }).toString();
+const sql = (q: string) => execSync(`docker exec -i ordift-mig-check2 psql -U ${process.env.P4_E2E_USER ?? "postgres"} -h 127.0.0.1 -d ${process.env.P4_E2E_DB ?? "postgres"} -v ON_ERROR_STOP=1 -At`, { input: q }).toString();
 const one = (q: string) => sql(q).trim().split("\n")[0];
 const num = (q: string) => Number(one(q));
 const must = <T extends { ok: boolean }>(r: T, label = ""): Extract<T, { ok: true }> => { if (!r.ok) throw new Error(`${label} expected ok, got ${JSON.stringify(r)}`); return r as Extract<T, { ok: true }>; };
@@ -111,7 +111,7 @@ async function makeQuotation(enquiryId: string | null, opts: { currency?: string
 async function sendQuotation(quotationId: string) { as(ADMIN); must(await updateQuotationStatus({ quotationId, status: "sent" }), "mark sent"); }
 async function acceptQuotation(quotationId: string) {
   as(ADMIN);
-  return recordOrdinaryQuotationAcceptance({ quotationId, channel: "email", evidence: "Email from the client on 2026-10-19", acceptedByName: "M2APP Client", receivedAt: new Date(Date.now() - 3600_000).toISOString() });
+  return recordOrdinaryQuotationAcceptance({ quotationId, channel: "email", evidence: "Email from the client on 2026-10-19", acceptedByName: "M2APP Client", receivedAt: new Date().toISOString() });   // issuing now records the real issue time, and an acceptance cannot pre-date it
 }
 /** An accepted, entity-recorded, enquiry-linked quotation ready to establish. */
 async function readyScenario(opts: { currency?: string; total?: number; market?: "GH" | "QA" | null; paid?: number | null } = {}) {

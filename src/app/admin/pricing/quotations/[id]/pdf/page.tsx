@@ -5,6 +5,7 @@ import { getClientQuotation } from "@/lib/commercial/clientQuotations";
 import { PrintButton } from "@/components/admin/PrintButton";
 import { getCrewQuotationPrintExtras } from "@/lib/crewSupport/quotation";
 import { snapshotScheduleText } from "@/lib/crewSupport/quotationSnapshot";
+import { quotationDates, utcDate } from "@/lib/commercial/quotationValidity";
 
 export const metadata: Metadata = {
   title: "Quotation PDF — Ordift Studios",
@@ -33,6 +34,8 @@ export default async function QuotationPdfPage({ params }: { params: Promise<{ i
   // Creative Crew Support quotations also print the event details quoted for
   // (frozen at issue). null for every other quotation — unchanged output.
   const crew = await getCrewQuotationPrintExtras(id);
+  // Created / Issued / Valid until, labelled. A draft shows "Not yet issued" and a DRAFT banner: the creation date is never presented as an issue date.
+  const dates = quotationDates({ createdAt: quotation.createdAt, issuedAt: crew?.issuedAt ?? quotation.issuedAt, validUntil: quotation.validUntil, status: crew?.status ?? quotation.status }, utcDate(new Date()));
 
   return (
     <div className="print-page">
@@ -71,9 +74,12 @@ export default async function QuotationPdfPage({ params }: { params: Promise<{ i
 
       <div style={{ textAlign: "right", fontSize: 11, marginBottom: 24 }}>
         <div>{quotation.quotationReference}{crew && crew.version > 1 ? ` (version ${crew.version})` : ""}{crew?.isVariation ? " — variation" : ""}</div>
-        <div>{new Date(crew?.issuedAt ?? quotation.createdAt).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" })}</div>
+        <div>Created: {dates.createdText}</div>
+        <div>Issued: {dates.issuedText}</div>
+        <div>Valid until: {dates.validText}</div>
         {crew?.requestReference && <div>Request {crew.requestReference}</div>}
-        {crew && crew.status === "draft" && <div style={{ color: "#a33" }}>DRAFT — not yet issued</div>}
+        {dates.draft && <div style={{ color: "#a33", fontWeight: "bold", marginTop: 6, border: "1px solid #a33", padding: "4px 8px", display: "inline-block" }}>DRAFT — NOT YET ISSUED. Not a final quotation: do not send as issued.</div>}
+        {dates.expired && !dates.draft && <div style={{ color: "#a33", fontWeight: "bold", marginTop: 6 }}>EXPIRED — no longer open for acceptance</div>}
       </div>
 
       <div style={{ marginBottom: 24, fontSize: 12 }}>
@@ -131,7 +137,7 @@ export default async function QuotationPdfPage({ params }: { params: Promise<{ i
         </tbody>
       </table>
 
-      {quotation.validUntil && (
+      {quotation.validUntil && !dates.draft && (
         <p style={{ fontSize: 11, marginTop: 24 }}>This quotation is valid until {new Date(quotation.validUntil).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" })}.</p>
       )}
       {crew?.paymentConditionText && (
