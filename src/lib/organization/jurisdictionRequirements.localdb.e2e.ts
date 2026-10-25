@@ -27,7 +27,7 @@ vi.mock("@/lib/supabase/server", async () => {
 });
 
 import { createClientQuotation } from "@/lib/commercial/clientQuotations";
-import { addVaultDocument, chooseContractingEntity, getContractingEntityStanding, listOrdinaryContractingCandidates, listVaultDocuments, recordEntityRegistration, recordRenewalConfirmation, setEntityActivity, setSignatoryLegalCapacity } from "./entityRegistrations";
+import { addVaultDocument, chooseContractingEntity, getContractingEntityStanding, linkSignatoryToFounderIdentity, listEntitySignatories, listOrdinaryContractingCandidates, listVaultDocuments, recordEntityRegistration, recordRenewalConfirmation, setEntityActivity, setSignatoryLegalCapacity } from "./entityRegistrations";
 import { issueOrdinaryQuotation } from "@/lib/commercial/quotationIssuance";
 import { readIssuedLegalDetails } from "@/lib/commercial/quotationIssuedDetails";
 import { resolveQuotationEntityView } from "@/lib/commercial/quotationEntity";
@@ -81,8 +81,8 @@ beforeAll(() => {
   if (!/^https?:\/\/(127\.0\.0\.1|localhost)/.test(process.env.NEXT_PUBLIC_SUPABASE_URL ?? "")) throw new Error("Refusing to run against a non-local database");
   sql(`
   set session_replication_role = replica;
-  insert into auth.users (id,email) select ('00000000-0000-4000-8000-0000000000'||lpad(to_hex(n),2,'0'))::uuid, 'u'||n||'@e2e.test' from generate_series(193,196) n on conflict do nothing;
-  insert into public.profiles (id, full_name, access_status) select ('00000000-0000-4000-8000-0000000000'||lpad(to_hex(n),2,'0'))::uuid, 'User '||n, 'active' from generate_series(193,196) n on conflict do nothing;
+  insert into auth.users (id,email) select ('00000000-0000-4000-8000-0000000000'||lpad(to_hex(n),2,'0'))::uuid, 'u'||n||'@e2e.test' from generate_series(193,199) n on conflict do nothing;
+  insert into public.profiles (id, full_name, access_status) select ('00000000-0000-4000-8000-0000000000'||lpad(to_hex(n),2,'0'))::uuid, 'User '||n, 'active' from generate_series(193,199) n on conflict do nothing;
   insert into public.user_roles (user_id, role_id) select '${U(0xc1)}', r.id from public.roles r where r.slug='staff' on conflict do nothing;
   insert into public.user_roles (user_id, role_id) select '${U(0xc2)}', r.id from public.roles r where r.slug='admin' on conflict do nothing;
   insert into public.user_roles (user_id, role_id) select '${U(0xc3)}', r.id from public.roles r where r.slug in ('admin','super_admin') on conflict do nothing;
@@ -204,12 +204,119 @@ describe("Ghana: the proprietor's legal capacity and the Chief Executive Officer
     expect(await setSignatoryLegalCapacity({ signatoryId: sigId, capacity: "sole_proprietor", actorUserId: U(0xc3) })).toMatchObject({ ok: true });
     expect(await setSignatoryLegalCapacity({ signatoryId: sigId, capacity: "owner", actorUserId: U(0xc3) })).toMatchObject({ ok: false, error: expect.stringMatching(/already recorded/) });
     expect(psqlErr(`update public.entity_signatories set legal_capacity='owner' where id='${sigId}'`)).toMatch(/signatory_capacity_fixed/);
-    expect(psqlErr(`update public.entity_signatories set position='Director' where id='${sigId}'`)).toMatch(/signatory_capacity_fixed/);
+    expect(psqlErr(`update public.entity_signatories set position='Director' where id='${sigId}'`)).toMatch(/signatory_immutable/);
     expect(psqlErr(`delete from public.entity_signatories where id='${sigId}'`)).toMatch(/never deleted/);
     // a row whose capacity is still empty can ONLY have its capacity set, nothing else
     const id2 = mkEntity("gh-prop3", "ghana"); addSignatory("gh-prop3");
     expect(psqlErr(`update public.entity_signatories set position='Director' where employing_entity_id='${id2}'`)).toMatch(/signatory_immutable/);
     expect(await setSignatoryLegalCapacity({ signatoryId: sql(`select id from public.entity_signatories where employing_entity_id='${id2}'`), capacity: "unicorn" as never, actorUserId: U(0xc3) })).toMatchObject({ ok: false });
+  });
+});
+
+describe("one individual, several entities: the person link is set ONCE, to the Founder identity, on each entity's own record", () => {
+  const FOUNDER = U(0xc5), SECONDARY = U(0xc6), OTHER = U(0xc7);
+  const sigRow = (entity: string) => sql(`select to_jsonb(s)::text from public.entity_signatories s where employing_entity_id='${entity}' order by created_at limit 1`);
+  const sigId = (entity: string) => sql(`select id from public.entity_signatories where employing_entity_id='${entity}' order by created_at limit 1`);
+  const qatarOwnerRow = (slug: string, endedOn: string | null = null) => { const id = mkEntity(slug, "qatar", { type: "Single-Member Limited Liability Company (W.L.L.)" }); sql(`insert into public.entity_signatories (employing_entity_id, full_name, position, authority, ownership_percent, nationality, effective_from, effective_to, recorded_by) values ('${id}', 'Synthetic Founder', 'Owner (100%) and Chairman of the Board of Managers', 'Full and Absolute Authority', 100, 'Ghana', '2026-10-15', ${endedOn ? `'${endedOn}'` : "null"}, '${U(0xc3)}')`); return id; };
+
+  it("Ghana: the CEO title and the sole-proprietor capacity coexist on the ONE existing row, already linked to the person; nothing is duplicated and no other column or history changes", async () => {
+    const id = mkEntity("fi-gh", "ghana"); addReg("fi-gh", "commercial_registration", { identifier: "BN000000011" });
+    sql(`update public.profiles set full_name = 'Synthetic Founder' where id = '${FOUNDER}'`);
+    sql(`insert into public.entity_signatories (employing_entity_id, full_name, position, authority, effective_from, profile_id, recorded_by) values ('${id}', 'Synthetic Founder', 'Chief Executive Officer', 'Full & Absolute Authority', '2018-05-07', '${FOUNDER}', '${U(0xc3)}')`);
+    const before = JSON.parse(sigRow(id)); const sid = sigId(id);
+    const auditBefore = sql("select count(*) from public.activity_log"); const profilesBefore = sql("select count(*) from public.profiles");
+    expect(await setSignatoryLegalCapacity({ signatoryId: sid, capacity: "sole_proprietor", actorUserId: U(0xc3) })).toMatchObject({ ok: true });
+    const after = JSON.parse(sigRow(id));
+    expect(sql(`select count(*) from public.entity_signatories where employing_entity_id='${id}'`)).toBe("1");        // still ONE row: no duplicate individual
+    const { legal_capacity: lc, ...restAfter } = after; const { legal_capacity: lc0, ...restBefore } = before;
+    expect([lc0, lc]).toEqual([null, "sole_proprietor"]);
+    expect(restAfter).toEqual(restBefore);                                                                              // title, authority, dates, person link, ids: untouched
+    expect(after.position).toBe("Chief Executive Officer");
+    expect(sql("select count(*) from public.profiles")).toBe(profilesBefore);
+    expect(Number(sql("select count(*) from public.activity_log")) - Number(auditBefore)).toBe(1);                      // exactly the one capacity audit entry; no history rewritten
+    const listed = await listEntitySignatories(id, U(0xc3));
+    expect(listed).toMatchObject([{ position: "Chief Executive Officer", legalCapacity: "sole_proprietor", profileLinked: true }]);
+    // the person link cannot be redone or changed, and linking the Founder again is refused
+    expect(psqlErr(`update public.entity_signatories set profile_id='${SECONDARY}' where id='${sid}'`)).toMatch(/signatory_person_fixed/);
+    expect(psqlErr(`update public.entity_signatories set profile_id=null where id='${sid}'`)).toMatch(/signatory_person_fixed/);
+  });
+
+  it("Qatar: the owner row is linked to the Founder identity ONCE, with a validated entity, person and legal capacity, only by a Super Admin, with a full audit trail", async () => {
+    const qa = qatarOwnerRow("fi-qa"); const gh = eid("fi-gh"); const sid = sigId(qa);
+    const base: Parameters<typeof linkSignatoryToFounderIdentity>[0] = { signatoryId: sid, entityId: qa, capacity: "owner", confirmsSamePerson: true, actorUserId: U(0xc3) };
+    // unauthorised callers
+    for (const who of [U(0xc1), U(0xc2)]) expect(await linkSignatoryToFounderIdentity({ ...base, actorUserId: who })).toMatchObject({ ok: false, error: expect.stringMatching(/Only a Super Admin/) });
+    // no Founder designated yet
+    expect(await linkSignatoryToFounderIdentity(base)).toMatchObject({ ok: false, error: expect.stringMatching(/No active Founder identity/) });
+    // the designation and the SECONDARY login, recorded as the production system records them
+    sql(`insert into public.founder_identities (profile_id, status, designation_reference) values ('${FOUNDER}', 'active', 'Founder written authorization 2026-10-22 (e2e designation of the Founder identity)')`);
+    sql(`insert into public.founder_common_control_accounts (founder_identity_id, profile_id, note) select id, '${SECONDARY}', 'Founder-confirmed secondary/backup Super Admin login (e2e)' from public.founder_identities where status='active'`);
+    const before = sigRow(qa);
+    const auditBefore = sql("select count(*) from public.activity_log");
+    const refused = async (over: Partial<typeof base>, re: RegExp) => { expect(await linkSignatoryToFounderIdentity({ ...base, ...over })).toMatchObject({ ok: false, error: expect.stringMatching(re) }); expect(sigRow(qa)).toBe(before); };
+    await refused({ confirmsSamePerson: false }, /Confirm that this signatory is the Founder/);
+    await refused({ entityId: gh }, /does not belong to this entity/);                                                  // the intended entity must own the record
+    await refused({ signatoryId: U(0xc9) }, /not found/);
+    await refused({ capacity: undefined as never }, /Choose the legal capacity/);
+    await refused({ capacity: "sole_proprietor" }, /not one this jurisdiction accepts/);                                // Ghana's capacity is not Qatar's
+    await refused({ capacity: "unicorn" as never }, /Choose a legal capacity from the list/);
+    expect(Number(sql("select count(*) from public.activity_log")) - Number(auditBefore)).toBe(0);                       // refusals leave no audit trace of a change
+    // success: ONE update sets the person and (empty) capacity; title, authority, ownership and dates are untouched
+    expect(await linkSignatoryToFounderIdentity(base)).toMatchObject({ ok: true, profileId: FOUNDER, capacity: "owner" });
+    const after = JSON.parse(sigRow(qa)); const was = JSON.parse(before);
+    expect([after.profile_id, after.legal_capacity]).toEqual([FOUNDER, "owner"]);
+    const { profile_id: p1, legal_capacity: c1, ...restAfter } = after; const { profile_id: p0, legal_capacity: c0, ...restBefore } = was;
+    expect([p0, c0]).toEqual([null, null]); void p1; void c1;
+    expect(restAfter).toEqual(restBefore);
+    expect(sql(`select count(*) from public.entity_signatories where employing_entity_id='${qa}'`)).toBe("1");
+    const ev = JSON.parse(sql(`select metadata::text from public.activity_log where entity_id='${qa}' and action='entity_signatory.person_linked'`));
+    expect(ev).toMatchObject({ signatoryId: sid, linkedProfileId: FOUNDER, via: "active_founder_identity", before: { profileId: null, legalCapacity: null }, after: { profileId: FOUNDER, legalCapacity: "owner" } });
+    // exactly once: a second attempt, a change, a clearing, any other edit and a deletion are all refused
+    expect(await linkSignatoryToFounderIdentity(base)).toMatchObject({ ok: false, error: expect.stringMatching(/already linked/) });
+    expect(psqlErr(`update public.entity_signatories set profile_id='${SECONDARY}' where id='${sid}'`)).toMatch(/signatory_person_fixed/);
+    expect(psqlErr(`update public.entity_signatories set profile_id=null where id='${sid}'`)).toMatch(/signatory_person_fixed/);
+    expect(psqlErr(`update public.entity_signatories set legal_capacity='manager' where id='${sid}'`)).toMatch(/signatory_capacity_fixed/);
+    expect(psqlErr(`update public.entity_signatories set position='Someone else' where id='${sid}'`)).toMatch(/signatory_immutable/);
+    expect(psqlErr(`delete from public.entity_signatories where id='${sid}'`)).toMatch(/never deleted/);
+    // the same person now holds a record in BOTH entities: one profile, two entity records, each with its own capacity
+    expect(sql(`select count(*) from public.entity_signatories where profile_id='${FOUNDER}'`)).toBe("2");
+    expect(sql(`select count(distinct profile_id) from public.entity_signatories where profile_id='${FOUNDER}'`)).toBe("1");
+    expect(sql(`select string_agg(e.slug||':'||coalesce(s.legal_capacity,'-'), ',' order by e.slug) from public.entity_signatories s join public.employing_entities e on e.id=s.employing_entity_id where s.profile_id='${FOUNDER}'`)).toBe("fi-gh:sole_proprietor,fi-qa:owner");
+    // and Qatar's signatory requirement is now met by the legal capacity, not by the title
+    expect((await getContractingEntityStanding(qa, TODAY, null))!.eligibility.blockers.join(" ")).not.toMatch(/No signatory with legal authority/);
+  });
+
+  it("conflicting assignments and unsuitable records are refused: the same person twice in one entity, an ended record, an inactive account; only the Founder identity can be the person", async () => {
+    // the Founder is already a current signatory of this entity under another record
+    const qa2 = qatarOwnerRow("fi-qa2");
+    sql(`insert into public.entity_signatories (employing_entity_id, full_name, position, authority, effective_from, profile_id, legal_capacity, recorded_by) values ('${qa2}', 'Synthetic Founder', 'Director', 'Full', '2026-10-01', '${FOUNDER}', 'director', '${U(0xc3)}')`);
+    const owner = sql(`select id from public.entity_signatories where employing_entity_id='${qa2}' and position like 'Owner%'`);
+    expect(await linkSignatoryToFounderIdentity({ signatoryId: owner, entityId: qa2, capacity: "owner", confirmsSamePerson: true, actorUserId: U(0xc3) })).toMatchObject({ ok: false, error: expect.stringMatching(/already a current signatory of this entity/) });
+    expect(psqlErr(`update public.entity_signatories set profile_id='${FOUNDER}' where id='${owner}'`)).toMatch(/signatory_person_conflict/);                  // and the database refuses it by itself
+    // an ended record
+    const qa3 = qatarOwnerRow("fi-qa3", DAYS(-1));
+    expect(await linkSignatoryToFounderIdentity({ signatoryId: sigId(qa3), entityId: qa3, capacity: "owner", confirmsSamePerson: true, actorUserId: U(0xc3) })).toMatchObject({ ok: false, error: expect.stringMatching(/no longer current/) });
+    // a person whose account is not active can never be linked (database rule)
+    sql(`update public.profiles set access_status='suspended' where id='${OTHER}'`);
+    const qa4 = qatarOwnerRow("fi-qa4");
+    expect(psqlErr(`update public.entity_signatories set profile_id='${OTHER}' where employing_entity_id='${qa4}'`)).toMatch(/signatory_person_not_active/);
+    // the function never takes a person from the caller: the secondary login cannot be linked through it, and the Founder's own account must be active
+    sql(`update public.profiles set access_status='suspended' where id='${FOUNDER}'`);
+    expect(await linkSignatoryToFounderIdentity({ signatoryId: sigId(qa4), entityId: qa4, capacity: "owner", confirmsSamePerson: true, actorUserId: U(0xc3) })).toMatchObject({ ok: false, error: expect.stringMatching(/not active/) });
+    sql(`update public.profiles set access_status='active' where id='${FOUNDER}'`);
+    expect(sql(`select count(*) from public.entity_signatories where profile_id='${SECONDARY}'`)).toBe("0");              // the secondary login is not a signatory anywhere
+    // after revocation of the designation there is nobody to link
+    sql(`update public.founder_identities set status='revoked', revoked_at=now(), revoked_reason='e2e revoke to prove no designation means no link' where status='active'`);
+    expect(await linkSignatoryToFounderIdentity({ signatoryId: sigId(qa4), entityId: qa4, capacity: "owner", confirmsSamePerson: true, actorUserId: U(0xc3) })).toMatchObject({ ok: false, error: expect.stringMatching(/No active Founder identity/) });
+  });
+
+  it("two simultaneous link attempts produce exactly one link (and one audit entry)", async () => {
+    sql(`insert into public.founder_identities (profile_id, status, designation_reference) values ('${FOUNDER}', 'active', 'Founder written authorization (e2e re-designation for the concurrency test)')`);
+    const qa5 = qatarOwnerRow("fi-qa5"); const sid = sigId(qa5);
+    const results = await Promise.all([1, 2, 3].map(() => linkSignatoryToFounderIdentity({ signatoryId: sid, entityId: qa5, capacity: "owner", confirmsSamePerson: true, actorUserId: U(0xc3) })));
+    expect(results.filter((r) => r.ok)).toHaveLength(1);
+    expect(sql(`select count(*) from public.activity_log where entity_id='${qa5}' and action='entity_signatory.person_linked'`)).toBe("1");
+    expect(sql(`select profile_id||'|'||legal_capacity from public.entity_signatories where id='${sid}'`)).toBe(`${FOUNDER}|owner`);
   });
 });
 

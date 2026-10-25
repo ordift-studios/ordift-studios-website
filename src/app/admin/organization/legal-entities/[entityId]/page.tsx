@@ -3,7 +3,7 @@ import { redirect, notFound } from "next/navigation";
 import Link from "next/link";
 import { getCurrentUser, isSuperAdmin } from "@/lib/portal/roles";
 import { getEmployingEntityById, getEmployingEntitySensitiveDetails, listProfileIdsForEmployingEntity } from "@/lib/organization/legalEntities";
-import { listEntityExpenses, listEntityRegistrations, listEntityRenewals, listEntitySignatories, listVaultDocuments } from "@/lib/organization/entityRegistrations";
+import { getActiveFounderProfileId, listEntityExpenses, listEntityRegistrations, listEntityRenewals, listEntitySignatories, listVaultDocuments } from "@/lib/organization/entityRegistrations";
 import { REGISTRATION_LABELS, trackCompliance } from "@/lib/organization/entityRegistry";
 import { listUsersWithRoles } from "@/lib/portal/adminData";
 import { EntityDetailWorkspace } from "./EntityDetailWorkspace";
@@ -22,7 +22,7 @@ export default async function LegalEntityDetailPage({ params }: { params: Promis
   const entity = await getEmployingEntityById(entityId);
   if (!entity) notFound();
 
-  const [sensitiveDetails, vaultDocuments, profileIds, usersResult, registrations, signatories, expenses, renewals] = await Promise.all([
+  const [sensitiveDetails, vaultDocuments, profileIds, usersResult, registrations, signatories, expenses, renewals, founderProfileId] = await Promise.all([
     getEmployingEntitySensitiveDetails(entityId, user.id),
     listVaultDocuments(entityId, user.id),
     listProfileIdsForEmployingEntity(entityId),
@@ -31,6 +31,7 @@ export default async function LegalEntityDetailPage({ params }: { params: Promis
     listEntitySignatories(entityId, user.id),
     listEntityExpenses(entityId, user.id),
     listEntityRenewals(entityId, user.id),
+    getActiveFounderProfileId(),
   ]);
   const today = new Date().toISOString().slice(0, 10);
   const tracked = trackCompliance(registrations, today);
@@ -90,6 +91,7 @@ export default async function LegalEntityDetailPage({ params }: { params: Promis
         status={{ entityVerification: entity.verificationStatus, employerCapable: entity.employerCapable, documentCount: vaultDocuments.length }}
         renewals={renewals}
         jurisdictionName={entity.jurisdictionName ?? null}
+        founderIdentityActive={Boolean(founderProfileId)}
       />
     </div>
   );

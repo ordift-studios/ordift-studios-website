@@ -363,7 +363,7 @@ describe("migration 0173 encodes the Founder's clarified policy and writes no da
     expect(fn).toContain("s.legal_capacity = any (r.signatory_capacities)");
     expect(fn).not.toMatch(/s\.position/);
     expect(live).toContain("ordift:signatory_capacity_fixed");
-    expect(live).toContain("grant update (legal_capacity) on public.entity_signatories to service_role");
+    expect(live).toContain("grant update (legal_capacity, profile_id) on public.entity_signatories to service_role");
   });
   it("a Founder statement can never carry an official reference or a verifier, and an official confirmation needs an official basis and a verifier (database constraints); history is append-only", () => {
     expect(live).toContain("constraint entity_renewal_founder_basis check (status <> 'founder_confirmed' or (basis = 'founder_statement' and official_reference is null and verified_by is null))");
@@ -383,5 +383,31 @@ describe("migration 0173 encodes the Founder's clarified policy and writes no da
     const fn = live.slice(live.indexOf("create or replace function private.entity_issue_standing"));
     expect(fn).toContain("v_cr_ok := found and v_cr.status = 'active' and v_cr.verified_at is not null and (v_cr.expires_on is null or v_cr.expires_on >= p_today);");
     expect(fn.indexOf("act.status in ('planned', 'suspended')")).toBeLessThan(fn.indexOf("v_state := 'listed_on_registration'"));
+  });
+});
+
+describe("the signatory person link: set once, only to the Founder identity, validated and audited", () => {
+  const m73 = read("../../../supabase/migrations/0173_jurisdiction_entity_requirements.sql").replace(/--.*$/gm, "");
+  const reg = read("../organization/entityRegistrations.ts");
+  const fn = reg.slice(reg.indexOf("export async function linkSignatoryToFounderIdentity"), reg.indexOf("// Checks an identifier against the format observed"));
+  it("the database allows ONLY the capacity and the person link to change, each once from empty, and refuses conflicts, ended records and inactive accounts", () => {
+    const g = m73.slice(m73.indexOf("create or replace function private.entity_signatories_guard"), m73.indexOf("grant update (legal_capacity, profile_id)"));
+    for (const t of ["ordift:signatory_immutable", "ordift:signatory_capacity_fixed", "ordift:signatory_person_fixed", "ordift:signatory_not_current", "ordift:signatory_person_not_active", "ordift:signatory_person_conflict", "never deleted"]) expect(g, t).toContain(t);
+    expect(g).toContain("to_jsonb(new) - 'legal_capacity' - 'profile_id' is distinct from to_jsonb(old) - 'legal_capacity' - 'profile_id'");
+    expect(m73).not.toMatch(/grant (insert|delete|update)[^;]*on public\.entity_signatories to (anon|authenticated)/);
+  });
+  it("the application never takes the person from the caller: it is always the active Founder identity; the caller supplies only the record, the entity, the capacity and a confirmation", () => {
+    expect(fn).toMatch(/linkSignatoryToFounderIdentity\(p: \{ signatoryId: string; entityId: string; capacity\?: LegalCapacity \| null; confirmsSamePerson: boolean; actorUserId: string \}\)/);
+    expect(fn).toContain("await getActiveFounderProfileId()");
+    expect(fn).not.toMatch(/p\.profileId|profile_id: p\./);
+    expect(fn).toContain("isSuperAdminId(p.actorUserId)");
+  });
+  it("it validates entity, person and capacity, and writes with a compare-and-set so two callers cannot both link", () => {
+    for (const t of ["sig.employing_entity_id !== p.entityId", "sig.effective_to", "if (sig.profile_id)", "already a current signatory of this entity under another record", "accepted && !accepted.includes(capacity)", ".is(\"profile_id\", null)", "(done ?? []).length !== 1", "action: \"entity_signatory.person_linked\"", "before: { profileId: null", "after: { profileId: founder"]) expect(fn, t).toContain(t);
+  });
+  it("nothing in the migration links, merges or modifies any profile or existing signatory row", () => {
+    expect(m73).not.toMatch(/(insert into|update|delete from) public\.profiles/);
+    expect(m73).not.toMatch(/update public\.entity_signatories/);
+    expect(m73).not.toMatch(/founder_identities|founder_common_control_accounts/);
   });
 });

@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { getCurrentUser, isSuperAdmin } from "@/lib/portal/roles";
 import { recordEmployingEntitySensitiveDetails, getEmployingEntityDocumentSignedUrl } from "@/lib/organization/legalEntities";
-import { addVaultDocument, chooseContractingEntity, confirmApprovalNoticeDate, confirmExpenseFunding, recordCommercialPermit, recordEntityRegistration, recordRenewalConfirmation, setSignatoryLegalCapacity, type LegalCapacity } from "@/lib/organization/entityRegistrations";
+import { addVaultDocument, chooseContractingEntity, confirmApprovalNoticeDate, confirmExpenseFunding, recordCommercialPermit, recordEntityRegistration, linkSignatoryToFounderIdentity, recordRenewalConfirmation, setSignatoryLegalCapacity, type LegalCapacity } from "@/lib/organization/entityRegistrations";
 
 export type ActionState = { ok: boolean; error?: string } | null;
 
@@ -163,6 +163,18 @@ export async function recordRenewalAction(_prev: ActionState, formData: FormData
     basis: String(formData.get("basis") ?? "") as "founder_statement" | "official_registry_check" | "renewal_certificate_or_receipt", statement: String(formData.get("statement") ?? "") || null,
     officialReference: String(formData.get("officialReference") ?? "") || null, nextDueOn: String(formData.get("nextDueOn") ?? "") || null, actorUserId: actor.id,
   });
+  if (!result.ok) return { ok: false, error: result.error };
+  revalidatePath(`/admin/organization/legal-entities/${entityId}`);
+  return { ok: true };
+}
+
+// Links a signatory record to the authoritative Founder identity, once. The person is never chosen here: it is always the active Founder identity.
+export async function linkSignatoryToFounderAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  const actor = await requireSuperAdminActor();
+  if ("error" in actor) return { ok: false, error: actor.error };
+  const entityId = String(formData.get("entityId") ?? "");
+  const capacity = String(formData.get("capacity") ?? "") as LegalCapacity;
+  const result = await linkSignatoryToFounderIdentity({ signatoryId: String(formData.get("signatoryId") ?? ""), entityId, capacity: capacity || null, confirmsSamePerson: formData.get("confirmsSamePerson") === "on", actorUserId: actor.id });
   if (!result.ok) return { ok: false, error: result.error };
   revalidatePath(`/admin/organization/legal-entities/${entityId}`);
   return { ok: true };

@@ -84,16 +84,16 @@ export async function confirmApprovalNoticeDate(p: { entityId: string; approvalN
 }
 
 // ------------------------------------------------------------------ signatories
-export type EntitySignatory = { id: string; fullName: string; position: string; authority: string | null; nationality: string | null; ownershipPercent: number | null; effectiveFrom: string | null; legalCapacity: string | null };
+export type EntitySignatory = { id: string; fullName: string; position: string; authority: string | null; nationality: string | null; ownershipPercent: number | null; effectiveFrom: string | null; legalCapacity: string | null; profileLinked: boolean };
 export async function listEntitySignatories(entityId: string, actorUserId: string): Promise<EntitySignatory[]> {
   if (!(await isSuperAdminId(actorUserId))) return [];
   const db = createAdminClient();
-  const cols = "id, full_name, position, authority, nationality, ownership_percent, effective_from";
+  const cols = "id, full_name, position, authority, nationality, ownership_percent, effective_from, profile_id";
   // `legal_capacity` arrives with migration 0173; until then the list must still work exactly as before
   let { data, error } = await db.from("entity_signatories").select(`${cols}, legal_capacity`).eq("employing_entity_id", entityId).is("effective_to", null).order("created_at");
   if (error) ({ data, error } = await db.from("entity_signatories").select(cols).eq("employing_entity_id", entityId).is("effective_to", null).order("created_at") as unknown as { data: typeof data; error: typeof error });
-  return ((data ?? []) as unknown as { id: string; full_name: string; position: string; authority: string | null; nationality: string | null; ownership_percent: number | null; effective_from: string | null; legal_capacity?: string | null }[])
-    .map((r) => ({ id: r.id, fullName: r.full_name, position: r.position, authority: r.authority, nationality: r.nationality, ownershipPercent: r.ownership_percent == null ? null : Number(r.ownership_percent), effectiveFrom: r.effective_from, legalCapacity: r.legal_capacity ?? null }));
+  return ((data ?? []) as unknown as { id: string; full_name: string; position: string; authority: string | null; nationality: string | null; ownership_percent: number | null; effective_from: string | null; profile_id: string | null; legal_capacity?: string | null }[])
+    .map((r) => ({ id: r.id, fullName: r.full_name, position: r.position, authority: r.authority, nationality: r.nationality, ownershipPercent: r.ownership_percent == null ? null : Number(r.ownership_percent), effectiveFrom: r.effective_from, legalCapacity: r.legal_capacity ?? null, profileLinked: r.profile_id != null }));
 }
 
 // Records ONE authorised signatory for an entity. The documentary basis is mandatory: it must be a document already in THIS entity's vault
@@ -144,6 +144,51 @@ export async function setSignatoryLegalCapacity(p: { signatoryId: string; capaci
   if (error) return { ok: false, error: error.message.includes("ordift:signatory") ? "This signatory's legal capacity is already recorded and is not changed." : error.message };
   await logActivity({ actorUserId: p.actorUserId, action: "entity_signatory.legal_capacity_recorded", entityType: "employing_entity", entityId: s.employing_entity_id as string, metadata: { signatoryId: p.signatoryId, capacity: p.capacity } });
   return { ok: true, capacity: p.capacity };
+}
+
+// The ONE active Founder identity (the explicitly governed record of who the Founder is). Secondary / backup logins of the same person are NOT it: they are recorded separately as common-control accounts.
+export async function getActiveFounderProfileId(): Promise<string | null> {
+  const { data } = await createAdminClient().from("founder_identities").select("profile_id").eq("status", "active").limit(1).maybeSingle();
+  return (data?.profile_id as string | undefined) ?? null;
+}
+
+// Links an existing signatory row to the authoritative FOUNDER IDENTITY, exactly once. For the case where one individual is the owner / signatory of several entities (for example Ghana and Qatar) under one
+// identity: the same person is linked on each entity's own row, no row is duplicated and no historical record is rewritten. Nothing is chosen by the caller except the confirmation: the person is ALWAYS the
+// active Founder identity (a secondary login is refused). It validates the intended entity (the row must belong to it and be current), the person (active Founder identity, active account, not already a
+// signatory of this entity) and the legal capacity (one the entity's own jurisdiction accepts as authority to contract; set in the same single update only if the row has none). The database refuses any
+// later change or clearing. Super Admin only, audited with before and after. It never creates a person and never merges accounts.
+export async function linkSignatoryToFounderIdentity(p: { signatoryId: string; entityId: string; capacity?: LegalCapacity | null; confirmsSamePerson: boolean; actorUserId: string }): Promise<Result<{ profileId: string; capacity: string }>> {
+  if (!(await isSuperAdminId(p.actorUserId))) return NOT_ALLOWED;
+  if (!p.confirmsSamePerson) return { ok: false, error: "Confirm that this signatory is the Founder before linking the record." };
+  const db = createAdminClient();
+  const founder = await getActiveFounderProfileId();
+  if (!founder) return { ok: false, error: "No active Founder identity is designated, so there is nobody to link." };
+  const { data: fp } = await db.from("profiles").select("id, access_status").eq("id", founder).maybeSingle();
+  if (!fp || fp.access_status !== "active") return { ok: false, error: "The Founder identity's account is not active." };
+  const { data: sig } = await db.from("entity_signatories").select("id, employing_entity_id, profile_id, legal_capacity, effective_to").eq("id", p.signatoryId).maybeSingle();
+  if (!sig) return { ok: false, error: "That signatory was not found." };
+  if (sig.employing_entity_id !== p.entityId) return { ok: false, error: "That signatory does not belong to this entity. Nothing was changed." };
+  if (sig.effective_to) return { ok: false, error: "That signatory is no longer current, so it is not linked." };
+  if (sig.profile_id) return { ok: false, error: "This signatory is already linked to a person. A link is set once and is not changed." };
+  const { data: other } = await db.from("entity_signatories").select("id").eq("employing_entity_id", p.entityId).eq("profile_id", founder).is("effective_to", null).neq("id", p.signatoryId).limit(1);
+  if ((other ?? []).length > 0) return { ok: false, error: "The Founder is already a current signatory of this entity under another record. It is not linked twice." };
+  const capacity = (sig.legal_capacity as LegalCapacity | null) ?? p.capacity ?? null;
+  if (!capacity) return { ok: false, error: "Choose the legal capacity in which the Founder signs for this entity." };
+  if (sig.legal_capacity && p.capacity && p.capacity !== sig.legal_capacity) return { ok: false, error: "This signatory's legal capacity is already recorded and is not changed." };
+  if (!LEGAL_CAPACITIES.includes(capacity)) return { ok: false, error: "Choose a legal capacity from the list." };
+  const { data: ent } = await db.from("employing_entities").select("jurisdiction_id").eq("id", p.entityId).maybeSingle();
+  if (ent?.jurisdiction_id) {
+    const { data: rule } = await db.from("jurisdiction_entity_requirements").select("signatory_capacities").eq("jurisdiction_id", ent.jurisdiction_id as string).eq("category", "signatory").not("approved_at", "is", null).limit(1).maybeSingle();
+    const accepted = (rule?.signatory_capacities as string[] | null) ?? null;
+    if (accepted && !accepted.includes(capacity)) return { ok: false, error: `That capacity is not one this jurisdiction accepts as authority to contract (${accepted.join(", ").replace(/_/g, " ")}). Nothing was changed.` };
+  }
+  let update = db.from("entity_signatories").update({ profile_id: founder, ...(sig.legal_capacity ? {} : { legal_capacity: capacity }) }).eq("id", p.signatoryId).is("profile_id", null);
+  if (!sig.legal_capacity) update = update.is("legal_capacity", null);
+  const { data: done, error } = await update.select("id");
+  if (error) return { ok: false, error: error.message.includes("ordift:signatory_person_conflict") ? "The Founder is already a current signatory of this entity under another record." : error.message.includes("ordift:signatory") ? "The record changed while linking, or it is already fixed. Nothing was changed." : error.message };
+  if ((done ?? []).length !== 1) return { ok: false, error: "The record changed while linking. Nothing was changed." };
+  await logActivity({ actorUserId: p.actorUserId, action: "entity_signatory.person_linked", entityType: "employing_entity", entityId: p.entityId, metadata: { signatoryId: p.signatoryId, linkedProfileId: founder, via: "active_founder_identity", before: { profileId: null, legalCapacity: sig.legal_capacity ?? null }, after: { profileId: founder, legalCapacity: capacity } } });
+  return { ok: true, profileId: founder, capacity };
 }
 
 // Checks an identifier against the format observed on the jurisdiction's own documents (catalog `identifier_pattern`). It only VALIDATES a number the person read from the document; it can never produce one.

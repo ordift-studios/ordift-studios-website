@@ -10,8 +10,11 @@
 --   1.  public.entity_activity_types            the activities Ordift can offer (photography, videography, graphic design, talent management, production services, drone operations).
 --   1b. entity_registrations                    ONE new registration kind, 'activity_licence' (an activity-specific licence or authorisation, e.g. a drone operating authorisation); the "one current
 --                                               record per kind" unique index also separates activity licences by activity (facts.activityKey). Existing rows keep exactly the uniqueness they had.
---   1c. entity_signatories.legal_capacity       the LEGAL capacity in which a person may contract (sole proprietor, owner, director, manager, authorised signatory), kept SEPARATE from `position`,
---                                               the management title (e.g. Chief Executive Officer). A title alone never gives contracting authority. Settable once from empty; nothing else changes.
+--   1c. entity_signatories.legal_capacity      the LEGAL capacity in which a person may contract (sole proprietor, owner, director, manager, authorised signatory), kept SEPARATE from `position`,
+--       and the person link (profile_id)       the management title (e.g. Chief Executive Officer). A title alone never gives contracting authority. Each of the two can be set ONCE from empty
+--                                               (never changed, never cleared) and nothing else on the row can change, so one existing row can carry both a title and a legal capacity and be
+--                                               linked to the one person it belongs to, without a duplicate row and without rewriting history. A person can be linked to a CURRENT signatory row
+--                                               of an entity only once. The same person (profile) may hold rows in several entities (Ghana and Qatar).
 --   1d. employing_entity_documents              page_number / page_count and the relation 'continuation_page_of', so pages 2 and 3 of a multi-page official form attach to the SAME registration
 --                                               document as page 1 without touching page 1 or creating a second registration.
 --   2.  public.jurisdiction_entity_requirements the rule catalog: per jurisdiction, each requirement with the jurisdiction's OWN document name and identifier label, its category, and whether it is
@@ -64,18 +67,35 @@ create unique index entity_registrations_one_current on public.entity_registrati
 alter table public.entity_signatories add column legal_capacity text
   check (legal_capacity is null or legal_capacity in ('sole_proprietor', 'owner', 'director', 'manager', 'authorised_signatory'));
 comment on column public.entity_signatories.legal_capacity is
-  'The LEGAL capacity in which this person may bind the entity (sole proprietor / owner / director / manager / authorised signatory). `position` is only the management title (e.g. Chief Executive Officer) and never gives contracting authority. Empty = not yet recorded; it can be set once and never changed (a change is a new effective-dated row).';
+  'The LEGAL capacity in which this person may bind the entity (sole proprietor / owner / director / manager / authorised signatory). `position` is only the management title (e.g. Chief Executive Officer) and never gives contracting authority. Empty = not yet recorded; it can be set once and never changed (a change is a new effective-dated row). The person link (profile_id) follows the same set-once rule.';
 create or replace function private.entity_signatories_guard() returns trigger
 language plpgsql security definer set search_path = '' as $$
 begin
   if tg_op = 'DELETE' then raise exception 'entity_signatories rows are never deleted: end-date the row and add a new one' using errcode = '42501'; end if;
-  if old.legal_capacity is not null then raise exception 'ordift:signatory_capacity_fixed: the legal capacity of a recorded signatory is not changed; add a new effective-dated row' using errcode = '42501'; end if;
-  if to_jsonb(new) - 'legal_capacity' is distinct from to_jsonb(old) - 'legal_capacity' then raise exception 'ordift:signatory_immutable: only the legal capacity can be set, once' using errcode = '42501'; end if;
+  -- nothing but the legal capacity and the person link can change, and each only from empty
+  if to_jsonb(new) - 'legal_capacity' - 'profile_id' is distinct from to_jsonb(old) - 'legal_capacity' - 'profile_id' then
+    raise exception 'ordift:signatory_immutable: only the legal capacity and the person link can be set, each once' using errcode = '42501';
+  end if;
+  if old.legal_capacity is not null and new.legal_capacity is distinct from old.legal_capacity then
+    raise exception 'ordift:signatory_capacity_fixed: the legal capacity of a recorded signatory is not changed; add a new effective-dated row' using errcode = '42501';
+  end if;
+  if old.profile_id is not null and new.profile_id is distinct from old.profile_id then
+    raise exception 'ordift:signatory_person_fixed: the person a signatory is linked to is not changed or cleared; add a new effective-dated row' using errcode = '42501';
+  end if;
+  if old.profile_id is null and new.profile_id is not null then
+    if new.effective_to is not null then raise exception 'ordift:signatory_not_current: only a current signatory can be linked to a person' using errcode = '23514'; end if;
+    if not exists (select 1 from public.profiles p where p.id = new.profile_id and p.access_status = 'active') then
+      raise exception 'ordift:signatory_person_not_active: the person must have an active account record' using errcode = '23514';
+    end if;
+    if exists (select 1 from public.entity_signatories s where s.employing_entity_id = new.employing_entity_id and s.profile_id = new.profile_id and s.id <> new.id and s.effective_to is null) then
+      raise exception 'ordift:signatory_person_conflict: this person is already a current signatory of this entity' using errcode = '23505';
+    end if;
+  end if;
   return new;
 end $$;
 revoke all on function private.entity_signatories_guard() from public, anon, authenticated;
 create trigger entity_signatories_guard before update or delete on public.entity_signatories for each row execute function private.entity_signatories_guard();
-grant update (legal_capacity) on public.entity_signatories to service_role;
+grant update (legal_capacity, profile_id) on public.entity_signatories to service_role;
 
 -- ---------------------------------------------------------------------------------------------------------------------------------------------
 -- 1d. Continuation pages of a multi-page official document (additive; page 1 and every existing document are untouched).

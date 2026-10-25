@@ -4,7 +4,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { createElement } from "react";
 
 vi.mock("./actions", () => ({
-  confirmApprovalNoticeAction: vi.fn(), confirmFundingAction: vi.fn(), recordPermitAction: vi.fn(), uploadEntityDocumentAction: vi.fn(), viewEntityDocumentAction: vi.fn(), recordRegistrationAction: vi.fn(), recordRenewalAction: vi.fn(), setSignatoryCapacityAction: vi.fn(),
+  confirmApprovalNoticeAction: vi.fn(), confirmFundingAction: vi.fn(), recordPermitAction: vi.fn(), uploadEntityDocumentAction: vi.fn(), viewEntityDocumentAction: vi.fn(), recordRegistrationAction: vi.fn(), recordRenewalAction: vi.fn(), setSignatoryCapacityAction: vi.fn(), linkSignatoryToFounderAction: vi.fn(),
 }));
 import { EntityRegistryPanels } from "./EntityRegistryPanels";
 import { trackCompliance } from "@/lib/organization/entityRegistry";
@@ -66,5 +66,26 @@ describe("Ghana registry panels: proprietor capacity, renewal tracking and the r
     expect(html).toContain("Record a registration");
     expect(html).toContain("the tax identification number");
     expect(html).toContain("recorded as a cross-check, not as confirmation by the issuing authority");
+  });
+});
+
+describe("linking a signatory record to the Founder identity", () => {
+  const sig = (over: Record<string, unknown>) => ({ id: "s1", fullName: "Test Founder", position: "Owner", authority: "Full authority", nationality: "Ghana", ownershipPercent: 100, legalCapacity: null, profileLinked: false, ...over });
+  const html = (signatories: unknown[], founderIdentityActive: boolean) => renderToStaticMarkup(createElement(EntityRegistryPanels, {
+    entityId: "q", tracked, registrations: regs, signatories, documents: [], expenses: [], canonicalPermitPending: true, status: { entityVerification: "verified", employerCapable: false, documentCount: 0 }, founderIdentityActive,
+  } as never));
+  it("an unlinked record offers the link (with its capacity choice) only when a Founder identity is designated; the person is never chosen on screen", () => {
+    const h = html([sig({})], true);
+    expect(h).toContain("Link to the Founder identity");
+    expect(h).toContain("This signatory is the Founder (the designated Founder identity)");
+    expect(h).toContain("Legal capacity…");
+    expect(h).not.toMatch(/name="profileId"|name="profile"/);
+    expect(html([sig({})], false)).not.toContain("Link to the Founder identity");          // nobody designated: nothing to link
+  });
+  it("a record that is already linked offers no link, and one with a capacity already recorded does not ask for it again", () => {
+    expect(html([sig({ profileLinked: true, legalCapacity: "owner" })], true)).not.toContain("Link to the Founder identity");
+    const h = html([sig({ legalCapacity: "owner" })], true);
+    expect(h).toContain("Link to the Founder identity");
+    expect(h.split("Legal capacity…").length - 1).toBe(0);
   });
 });

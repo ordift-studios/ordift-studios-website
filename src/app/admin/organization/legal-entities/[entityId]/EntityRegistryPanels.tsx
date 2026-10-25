@@ -1,13 +1,13 @@
 "use client";
 
 import { useActionState } from "react";
-import { confirmApprovalNoticeAction, confirmFundingAction, recordPermitAction, recordRegistrationAction, recordRenewalAction, setSignatoryCapacityAction, uploadEntityDocumentAction, viewEntityDocumentAction, type ActionState } from "./actions";
+import { confirmApprovalNoticeAction, confirmFundingAction, linkSignatoryToFounderAction, recordPermitAction, recordRegistrationAction, recordRenewalAction, setSignatoryCapacityAction, uploadEntityDocumentAction, viewEntityDocumentAction, type ActionState } from "./actions";
 import { ENTITY_DOCUMENT_TYPES, entityDocumentTypeLabel, type TrackedItem, type TrackedState } from "@/lib/organization/entityRegistry";
 
 export type RegistryDocView = { id: string; documentType: string; filename: string | null; sha256: string | null; sizeBytes: number | null; issuedOn: string | null; expiresOn: string | null; issuingAuthority: string | null; relation: string | null; relatedDocumentId: string | null; replacedByDocumentId: string | null; notes: string | null; uploadedAt: string };
 export type RegistrationView = { id: string; kind: string; label: string; status: string; identifier: string | null; issuedOn: string | null; expiresOn: string | null; note: string | null; facts: Record<string, unknown>; verifiedAt: string | null };
 export type EntityStatusView = { entityVerification: string; employerCapable: boolean; documentCount: number };
-export type SignatoryView = { id: string; fullName: string; position: string; authority: string | null; nationality: string | null; ownershipPercent: number | null; legalCapacity?: string | null };
+export type SignatoryView = { id: string; fullName: string; position: string; authority: string | null; nationality: string | null; ownershipPercent: number | null; legalCapacity?: string | null; profileLinked?: boolean };
 export type RenewalView = { id: string; coversFrom: string; coversTo: string; status: "founder_confirmed" | "official_verified" | "lapsed"; basis: string; statement: string | null; officialReference: string | null; nextDueOn: string | null; verifiedAt: string | null };
 const CAPACITY_LABEL: Record<string, string> = { sole_proprietor: "Sole proprietor", owner: "Owner", director: "Director", manager: "Manager", authorised_signatory: "Authorised signatory" };
 const RENEWAL_LABEL: Record<RenewalView["status"], string> = { founder_confirmed: "Founder-confirmed — official verification pending", official_verified: "Officially verified", lapsed: "Recorded as lapsed" };
@@ -157,6 +157,25 @@ function CapacityForm({ entityId, signatoryId }: { entityId: string; signatoryId
   );
 }
 
+function LinkFounderForm({ entityId, signatory }: { entityId: string; signatory: SignatoryView }) {
+  const [state, action, pending] = useActionState<ActionState, FormData>(linkSignatoryToFounderAction, null);
+  return (
+    <form action={action} className="mt-1 flex flex-wrap items-end gap-2">
+      <input type="hidden" name="entityId" value={entityId} />
+      <input type="hidden" name="signatoryId" value={signatory.id} />
+      {!signatory.legalCapacity && (
+        <select name="capacity" required defaultValue="" className={input}>
+          <option value="" disabled>Legal capacity…</option>
+          {Object.entries(CAPACITY_LABEL).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+        </select>
+      )}
+      <label className="flex items-center gap-2 font-sans text-caption text-ordift-ink"><input type="checkbox" name="confirmsSamePerson" required className="h-4 w-4" />This signatory is the Founder (the designated Founder identity)</label>
+      <button type="submit" disabled={pending} className={button}>{pending ? "Linking…" : "Link to the Founder identity"}</button>
+      <Feedback state={state} pending={pending} />
+    </form>
+  );
+}
+
 function RenewalForm({ entityId, registrations }: { entityId: string; registrations: RegistrationView[] }) {
   const [state, action, pending] = useActionState<ActionState, FormData>(recordRenewalAction, null);
   const bases = registrations.filter((r) => r.kind === "commercial_registration" && r.status === "active");
@@ -192,9 +211,9 @@ function RenewalForm({ entityId, registrations }: { entityId: string; registrati
 }
 
 export function EntityRegistryPanels({
-  entityId, tracked, registrations, signatories, documents, expenses, canonicalPermitPending, status, renewals = [], jurisdictionName = null,
+  entityId, tracked, registrations, signatories, documents, expenses, canonicalPermitPending, status, renewals = [], jurisdictionName = null, founderIdentityActive = false,
 }: {
-  entityId: string; tracked: TrackedItem[]; registrations: RegistrationView[]; signatories: SignatoryView[]; documents: RegistryDocView[]; expenses: ExpenseView[]; canonicalPermitPending: boolean; status: EntityStatusView; renewals?: RenewalView[]; jurisdictionName?: string | null;
+  entityId: string; tracked: TrackedItem[]; registrations: RegistrationView[]; signatories: SignatoryView[]; documents: RegistryDocView[]; expenses: ExpenseView[]; canonicalPermitPending: boolean; status: EntityStatusView; renewals?: RenewalView[]; jurisdictionName?: string | null; founderIdentityActive?: boolean;
 }) {
   const cr = registrations.find((r) => r.kind === "commercial_registration");
   const permitRow = registrations.find((r) => r.kind === "commercial_permit");
@@ -284,7 +303,7 @@ export function EntityRegistryPanels({
         <h2 className="font-serif font-medium text-body text-ordift-ink">Authorised Signatories</h2>
         {signatories.length === 0 ? <p className="font-sans text-body-small text-ordift-ink-muted">None recorded for this entity.</p> : (
           <ul className="space-y-1">
-            {signatories.map((s) => <li key={s.id} className="font-sans text-caption text-ordift-ink-muted">· {s.fullName} — title: {s.position} — legal capacity: <strong className="text-ordift-ink">{s.legalCapacity ? CAPACITY_LABEL[s.legalCapacity] ?? s.legalCapacity : "not recorded (a title alone is not legal authority to contract)"}</strong>{s.legalCapacity ? "" : <CapacityForm entityId={entityId} signatoryId={s.id} />}{s.authority ? ` — ${s.authority}` : ""}{s.ownershipPercent != null ? ` — owns ${s.ownershipPercent}%` : ""}{s.nationality ? ` (${s.nationality})` : ""}</li>)}
+            {signatories.map((s) => <li key={s.id} className="font-sans text-caption text-ordift-ink-muted">· {s.fullName} — title: {s.position} — legal capacity: <strong className="text-ordift-ink">{s.legalCapacity ? CAPACITY_LABEL[s.legalCapacity] ?? s.legalCapacity : "not recorded (a title alone is not legal authority to contract)"}</strong>{s.legalCapacity || (founderIdentityActive && s.profileLinked === false) ? "" : <CapacityForm entityId={entityId} signatoryId={s.id} />}{s.profileLinked === false && founderIdentityActive && <LinkFounderForm entityId={entityId} signatory={s} />}{s.authority ? ` — ${s.authority}` : ""}{s.ownershipPercent != null ? ` — owns ${s.ownershipPercent}%` : ""}{s.nationality ? ` (${s.nationality})` : ""}</li>)}
           </ul>
         )}
         <p className="font-sans text-caption text-ordift-ink-muted">Names and positions only. Identity numbers stay in the private document vault.</p>
