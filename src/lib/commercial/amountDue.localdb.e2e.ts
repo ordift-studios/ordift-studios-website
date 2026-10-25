@@ -101,14 +101,18 @@ function newEnquiry(opts: { market?: "GH" | "QA" | null; intent?: string; paid?:
 const refOf = (enquiryId: string) => one(`select reference_number from public.enquiries where id = '${enquiryId}'`);
 const stageOf = (enquiryId: string) => one(`select crm_stage from public.enquiries where id = '${enquiryId}'`);
 const recordEntity = (quotationId: string) => sql(`insert into public.booking_contracting_entities (subject_type, subject_id, version, employing_entity_id, basis, chosen_by)
-  select 'quotation', '${quotationId}', 1, e.id, 'M2APP test basis', '${SUPER}' from public.employing_entities e where e.slug = 'm2app-entity'`);
+  select 'quotation', '${quotationId}', 1, e.id, 'M2APP test basis', '${SUPER}' from public.employing_entities e where e.slug = 'm2app-entity'
+  and not exists (select 1 from public.booking_contracting_entities b where b.subject_type = 'quotation' and b.subject_id = '${quotationId}')`);
 
 async function makeQuotation(enquiryId: string | null, opts: { currency?: string; total?: number } = {}) {
   as(ADMIN);
   const r = must(await createClientQuotation({ enquiryId, prospectName: "M2APP Prospect", currency: opts.currency ?? "USD", items: [{ serviceItem: "Photography", quantity: 1, unitBasis: "per_job", sellingRate: opts.total ?? 250 }] }), "create quotation");
   return r.quotationId;
 }
-async function sendQuotation(quotationId: string) { as(ADMIN); must(await updateQuotationStatus({ quotationId, status: "sent" }), "mark sent"); }
+// Issuing now REQUIRES a recorded contracting entity, so the normal helper records one first (as the real workflow does), then issues.
+async function sendQuotation(quotationId: string) { recordEntity(quotationId); as(ADMIN); must(await updateQuotationStatus({ quotationId, status: "sent" }), "mark sent"); }
+// A quotation issued BEFORE the entity rule existed (no entity recorded): simulated by a direct data change, since the application can no longer produce one.
+const sendWithoutEntity = (quotationId: string) => sql(`update public.client_quotations set status = 'sent', issued_at = now() - interval '1 minute', valid_until = current_date + 20 where id = '${quotationId}'`);
 async function acceptQuotation(quotationId: string) {
   as(ADMIN);
   return recordOrdinaryQuotationAcceptance({ quotationId, channel: "email", evidence: "Email from the client on 2026-10-19", acceptedByName: "M2APP Client", receivedAt: new Date().toISOString() });   // issuing now records the real issue time, and an acceptance cannot pre-date it
@@ -145,7 +149,7 @@ beforeAll(() => {
     insert into public.user_roles (user_id, role_id) select '${SUPER}', r.id from public.roles r where r.slug in ('admin','super_admin') on conflict do nothing;
     insert into public.user_roles (user_id, role_id) select '${STAFF}', r.id from public.roles r where r.slug = 'staff' on conflict do nothing;
     insert into public.user_roles (user_id, role_id) select '${CLIENT}', r.id from public.roles r where r.slug = 'client' on conflict do nothing;
-    insert into public.employing_entities (name, slug) select 'M2APP Entity', 'm2app-entity' where not exists (select 1 from public.employing_entities where slug = 'm2app-entity');
+    insert into public.employing_entities (name, slug, verification_status) select 'M2APP Entity', 'm2app-entity', 'verified' where not exists (select 1 from public.employing_entities where slug = 'm2app-entity');
     insert into public.exchange_rates (currency_code, rate_to_usd, effective_from, reason, updated_by) values
       ('GHS', 11.000000, now() - interval '40 days', 'M2APP previous rate', '${SUPER}'),
       ('GHS', 11.089800, now() - interval '10 days', 'M2APP official mid-rate', '${SUPER}'),
@@ -277,7 +281,7 @@ describe("the contracting entity is a prerequisite for acceptance (never inferre
   it("an enquiry-linked quotation cannot have its acceptance recorded until an entity is recorded; then it can", async () => {
     const enquiryId = newEnquiry();
     const q = await makeQuotation(enquiryId);
-    await sendQuotation(q);
+    sendWithoutEntity(q);
     expect(mustFail(await acceptQuotation(q))).toMatch(/Choose the contracting entity first/);
     expect(one(`select status from public.client_quotations where id='${q}'`)).toBe("sent");
     recordEntity(q);
@@ -286,7 +290,7 @@ describe("the contracting entity is a prerequisite for acceptance (never inferre
   });
   it("an entity recorded on the ENQUIRY also satisfies it; an unlinked quotation keeps the existing behaviour", async () => {
     const enquiryId = newEnquiry();
-    const q = await makeQuotation(enquiryId); await sendQuotation(q);
+    const q = await makeQuotation(enquiryId); sendWithoutEntity(q);
     sql(`insert into public.booking_contracting_entities (subject_type, subject_id, version, employing_entity_id, basis, chosen_by) select 'enquiry', '${enquiryId}', 1, e.id, 'M2APP test basis', '${SUPER}' from public.employing_entities e where e.slug = 'm2app-entity'`);
     must(await acceptQuotation(q));
     const loose = await makeQuotation(null); await sendQuotation(loose);
@@ -294,7 +298,7 @@ describe("the contracting entity is a prerequisite for acceptance (never inferre
   });
   it("establishing is refused when no entity is recorded, even for an accepted quotation", async () => {
     gate(false);
-    const enquiryId = newEnquiry(); const q = await makeQuotation(enquiryId); await sendQuotation(q);
+    const enquiryId = newEnquiry(); const q = await makeQuotation(enquiryId); sendWithoutEntity(q);
     sql(`update public.client_quotations set status='accepted', accepted_at=now(), accepted_via='staff_recorded', accepted_by_name='x', acceptance_channel='email', acceptance_evidence='direct data fix', acceptance_received_at=now(), acceptance_recorded_by='${ADMIN}' where id='${q}'`);
     const p = await previewOf(enquiryId);
     expect(p.assessment.blockers[0].code).toBe("contracting_entity_missing");

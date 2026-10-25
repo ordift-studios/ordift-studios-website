@@ -1,0 +1,35 @@
+import { createAdminClient } from "@/lib/supabase/admin";
+import { getContractingEntityStanding } from "@/lib/organization/entityRegistrations";
+import { buildEntityDisplay, type EntityDisplay } from "@/lib/organization/entityDisplay";
+
+// The contracting legal entity of an ORDINARY quotation, read from the existing governed record (booking_contracting_entities, chosen explicitly by a Super Admin).
+// Resolution: the quotation's own record, else its linked enquiry's. NOTHING here chooses, infers or defaults an entity: no record means "not selected". Server-internal and
+// actor-independent (callers authorise); what a client document may show is limited by buildEntityDisplay().
+
+export type QuotationEntity = { entityId: string; name: string; source: "quotation" | "enquiry"; version: number; display: EntityDisplay };
+export type EntityResolution =
+  | { ok: true; entity: QuotationEntity }
+  | { ok: false; code: "none" | "unavailable" | "crew"; message: string; entityName?: string };
+
+export const ENTITY_REQUIRED_TO_ISSUE = "A contracting entity must be selected before this quotation can be issued. A Super Admin selects it on this quotation or on its enquiry; it is never chosen automatically.";
+
+export async function resolveQuotationEntity(quotationId: string, today: string = new Date().toISOString().slice(0, 10)): Promise<EntityResolution> {
+  const db = createAdminClient();
+  const { data: q } = await db.from("client_quotations").select("id, enquiry_id, crew_support_request_id").eq("id", quotationId).maybeSingle();
+  if (!q) return { ok: false, code: "none", message: "Quotation not found." };
+  if (q.crew_support_request_id) return { ok: false, code: "crew", message: "Crew Support quotations have their own entity governance and are issued from their request." };
+
+  const latest = async (type: "quotation" | "enquiry", id: string) =>
+    (await db.from("booking_contracting_entities").select("employing_entity_id, version").eq("subject_type", type).eq("subject_id", id).order("version", { ascending: false }).limit(1).maybeSingle()).data;
+  let rec = await latest("quotation", quotationId);
+  let source: "quotation" | "enquiry" = "quotation";
+  if (!rec && q.enquiry_id) { rec = await latest("enquiry", q.enquiry_id as string); source = "enquiry"; }
+  if (!rec) return { ok: false, code: "none", message: ENTITY_REQUIRED_TO_ISSUE };
+
+  const standing = await getContractingEntityStanding(rec.employing_entity_id as string, today);
+  if (!standing) return { ok: false, code: "unavailable", message: "The recorded contracting entity could not be found. A Super Admin must review it before this quotation is issued." };
+  if (!standing.eligibility.eligible) {
+    return { ok: false, code: "unavailable", entityName: standing.entity.name, message: `The recorded contracting entity (${standing.entity.name}) cannot currently contract: ${standing.eligibility.blockers.join(" ")} A Super Admin must review it before this quotation is issued.` };
+  }
+  return { ok: true, entity: { entityId: rec.employing_entity_id as string, name: standing.entity.name, source, version: Number(rec.version), display: buildEntityDisplay(standing.entity, standing.registrations, today) } };
+}

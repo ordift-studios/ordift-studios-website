@@ -50,7 +50,13 @@ export function QuotationStatusActions({ quotationId, status, defaultValidUntil,
         <section aria-labelledby="issue-h" className="space-y-3 rounded-lg border border-black/15 p-3 sm:p-4">
           <h2 id="issue-h" className="font-serif font-medium text-body text-ordift-ink">Issue quotation</h2>
           <p className="font-sans text-caption text-ordift-ink-muted">This is a draft: it exists, but it has not been issued. Issuing records today as the issue date, you as the issuer, and the validity below. <strong>It does not email or notify the client</strong>, and it creates no payment, booking, amount due or acceptance. You deliver it yourself and record that afterwards.</p>
-          {blockers.length > 0 && <ul className="list-disc pl-5 font-sans text-caption text-red-800">{blockers.map((b) => <li key={b}>{b}</li>)}</ul>}
+          {blockers.length > 0 && (
+            <div role="status" className="space-y-1 rounded-lg border border-amber-300 bg-amber-50 p-3">
+              <p className="font-sans text-body-small font-semibold text-amber-900">Issuing is not available yet</p>
+              <ul className="list-disc pl-5 font-sans text-caption text-amber-900">{blockers.map((b) => <li key={b}>{b}</li>)}</ul>
+            </div>
+          )}
+          {blockers.length === 0 && (
           <form action={issueAction} className="space-y-3">
             <input type="hidden" name="quotationId" value={quotationId} />
             <label className="block font-sans text-caption text-ordift-ink-muted">Valid until (standard: {ORDINARY_VALIDITY_DAYS} calendar days from issue = {formatDate(defaultValidUntil)})
@@ -70,6 +76,7 @@ export function QuotationStatusActions({ quotationId, status, defaultValidUntil,
             </label>
             <SubmitButton pendingLabel="Issuing…" className="min-h-11 w-full sm:w-auto rounded-md bg-ordift-ink px-4 py-2 font-sans text-body-small font-semibold text-white disabled:opacity-50">Issue quotation</SubmitButton>
           </form>
+          )}
         </section>
       )}
 

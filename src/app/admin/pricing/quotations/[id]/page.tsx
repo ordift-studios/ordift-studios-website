@@ -12,6 +12,7 @@ import { getQuotationDelivery } from "@/lib/commercial/quotationIssuance";
 import { defaultValidUntil, formatDate, isExpired, issuanceBlockers, utcDate } from "@/lib/commercial/quotationValidity";
 import { DELIVERY_CHANNELS_UI } from "@/lib/commercial/quotationDeliveryChannels";
 import QuotationDatesCard from "./QuotationDatesCard";
+import { resolveQuotationEntity } from "@/lib/commercial/quotationEntity";
 
 export const metadata: Metadata = {
   title: "Quotation — Ordift Studios Admin",
@@ -31,7 +32,12 @@ export default async function QuotationDetailPage({ params }: { params: Promise<
   const delivery = quotation.status === "sent" || quotation.status === "accepted" ? await getQuotationDelivery(quotation.id) : null;
   const deliveredText = delivery ? `Delivered via ${DELIVERY_CHANNELS_UI.find((c) => c.value === delivery.channel)?.label ?? delivery.channel} on ${formatDate(delivery.deliveredAt)} (recorded by staff; the system sent nothing)` : null;
   const expired = isExpired(quotation.status, quotation.validUntil, today);
-  const blockers = issuanceBlockers({ status: quotation.status, lineCount: quotation.items.length, total: quotation.total, crewManaged: quotation.crewManaged });
+  // The contracting entity is read from the existing governed record (never inferred). A draft may exist without one; issuing needs one.
+  const entity = quotation.crewManaged ? null : await resolveQuotationEntity(quotation.id, today);
+  const blockers = [
+    ...issuanceBlockers({ status: quotation.status, lineCount: quotation.items.length, total: quotation.total, crewManaged: quotation.crewManaged }),
+    ...(quotation.status === "draft" && entity && !entity.ok ? [entity.message] : []),
+  ];
 
   return (
     <div className="max-w-5xl">
@@ -97,6 +103,21 @@ export default async function QuotationDetailPage({ params }: { params: Promise<
           This quotation was marked expired, so it cannot be revised. To offer the client a new one, <Link href={`/admin/pricing/quotations/new?enquiryId=${quotation.enquiryId}`} className="underline font-medium">create a new quotation for this enquiry</Link>: its validity starts fresh when you issue it.
         </p>
       )}
+
+      {entity && (
+        <section id="contracting-entity" aria-label="Contracting entity" className="rounded-xl border border-black/10 bg-white p-4 sm:p-6 mb-6 space-y-2">
+          <p className="font-sans text-body-small text-ordift-ink">Contracting entity: <strong>{entity.ok ? entity.entity.name : entity.code === "unavailable" && entity.entityName ? `${entity.entityName} (cannot currently contract)` : "Not yet selected"}</strong>{entity.ok && entity.entity.source === "enquiry" ? " (recorded on the enquiry)" : ""}</p>
+          {!entity.ok && (
+            <p role="status" className="font-sans text-body-small text-amber-900">
+              {quotation.status === "draft"
+                ? (isSuperAdmin(user) ? "Next step: select the contracting entity below. This quotation cannot be issued until one is recorded; it is never chosen automatically." : entity.code === "unavailable" ? entity.message : "Next step: a Super Admin must select the contracting entity before this quotation can be issued. It is never chosen automatically.")
+                : "This quotation was issued before an entity had to be recorded. A Super Admin can still record it here; it is needed before an acceptance can be recorded."}
+            </p>
+          )}
+          {entity.ok && quotation.status !== "draft" && <p className="font-sans text-caption text-ordift-ink-muted">Shown on the quotation document. It is not changed once the quotation is issued; revise the quotation to change it.</p>}
+        </section>
+      )}
+      {entity && isSuperAdmin(user) ? <ContractingEntitySection userId={user.id} subject={{ type: "quotation", id: quotation.id }} /> : null}
 
       <QuotationDatesCard crew={quotation.crewManaged}
         createdAt={quotation.createdAt} issuedAt={quotation.issuedAt} validUntil={quotation.validUntil} status={quotation.status} today={today}
@@ -167,7 +188,7 @@ export default async function QuotationDetailPage({ params }: { params: Promise<
 
       {isSuperAdmin(user) ? (
         <div className="mt-6 space-y-6">
-          <ContractingEntitySection userId={user.id} subject={{ type: "quotation", id: quotation.id }} />
+          {quotation.crewManaged ? <ContractingEntitySection userId={user.id} subject={{ type: "quotation", id: quotation.id }} /> : null}   {/* Crew Support: shown exactly as before (it explains the entity is chosen from the request) */}
           <ClientRecordPanel userId={user.id} subject={{ type: "quotation", id: quotation.id }} />
         </div>
       ) : null}

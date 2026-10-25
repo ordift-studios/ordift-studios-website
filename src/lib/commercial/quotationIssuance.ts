@@ -3,6 +3,7 @@ import { logActivity } from "@/lib/admin/activityLog";
 import { getCurrentUser, hasRole, isSuperAdmin } from "@/lib/portal/roles";
 import { issuanceBlockers, planIssuance } from "./quotationValidity";
 import { DELIVERY_CHANNELS_UI } from "./quotationDeliveryChannels";
+import { resolveQuotationEntity } from "./quotationEntity";
 
 // ORDINARY quotation issuance, delivery record and their audit. Issuing is ONE deliberate, confirmed act that records WHEN it was issued, BY WHOM, and the approved validity.
 // It is deliberately NOT sending: nothing is emailed or notified, and it creates no payment, booking, amount due, receivable or client acceptance. Delivering the quotation to the client
@@ -21,6 +22,11 @@ export async function issueOrdinaryQuotation(params: { quotationId: string; vali
   const { count } = await admin.from("client_quotation_items").select("id", { count: "exact", head: true }).eq("quotation_id", params.quotationId);
   const blockers = issuanceBlockers({ status: q.status, lineCount: count ?? 0, total: Number(q.total ?? 0), crewManaged: Boolean(q.crew_support_request_id) });
   if (blockers.length) return { ok: false, error: blockers.join(" ") };
+
+  // FAIL CLOSED: a quotation is issued only with a contracting legal entity that was explicitly recorded (on it or on its enquiry) and that can currently contract. Read from the
+  // authoritative record at this moment, never inferred or defaulted. A draft needs none; issuing does.
+  const entity = await resolveQuotationEntity(params.quotationId);
+  if (!entity.ok) return { ok: false, error: entity.message };
 
   const now = new Date();
   const plan = planIssuance({ now, existingValidUntil: q.valid_until, requestedValidUntil: params.validUntil ?? null, exceptionReason: params.exceptionReason ?? null, isSuperAdmin: isSuperAdmin(user) });
@@ -41,6 +47,7 @@ export async function issueOrdinaryQuotation(params: { quotationId: string; vali
       quotationReference: q.quotation_reference, from: "draft", issuedAt, validUntil: plan.validUntil, standardValidUntil: plan.defaultUntil, withinStandardPolicy: !plan.isException,
       ...(plan.isException ? { exceptionReason: (params.exceptionReason ?? "").trim(), extensionBeyondStandard: plan.isExtension, approvedBy: user.id } : {}),
       ...(plan.replacedExpired ? { replacedExpiredCarriedDate: q.valid_until } : {}),
+      contractingEntity: { entityId: entity.entity.entityId, name: entity.entity.name, recordedOn: entity.entity.source, version: entity.entity.version },
       delivery: "not sent by the system: issuing does not email or notify the client",
     },
   });

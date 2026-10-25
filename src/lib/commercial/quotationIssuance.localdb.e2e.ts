@@ -27,6 +27,8 @@ vi.mock("@/lib/supabase/server", async () => {
 });
 
 import { createClientQuotation, reviseClientQuotation, updateQuotationStatus } from "./clientQuotations";
+import { chooseContractingEntity } from "@/lib/organization/entityRegistrations";
+import { resolveQuotationEntity } from "./quotationEntity";
 import { getQuotationDelivery, issueOrdinaryQuotation, recordQuotationDelivery } from "./quotationIssuance";
 import { recordOrdinaryQuotationAcceptance } from "./quotationAcceptance";
 import { addDays, defaultValidUntil, utcDate } from "./quotationValidity";
@@ -42,10 +44,13 @@ const DEFAULT = defaultValidUntil(NOW);
 const financeAndMoney = () => sql(`select (select count(*) from public.payments)||'/'||(select count(*) from public.payment_obligations)||'/'||(select count(*) from public.engagements)||'/'||(select count(*) from public.agreements)||'/'||(select count(*) from public.email_send_failures)||'/'||(select count(*) from public.assignment_notifications)||'/'||(select count(*) from public.enquiry_amount_events)||'/'||(select count(*) from public.enquiries where amount_due is not null)`);
 let before = "";
 
-async function draft(opts: { enquiryId?: string } = {}): Promise<string> {
+const entityId = (slug: string) => sql(`select id from public.employing_entities where slug = '${slug}'`);
+// Issuing REQUIRES an explicitly recorded contracting entity. Unless a test says otherwise, a draft gets one the way production does (a Super Admin's recorded choice, here written directly).
+async function draft(opts: { enquiryId?: string; noEntity?: boolean } = {}): Promise<string> {
   h.current = admin;
   const r = await createClientQuotation({ ...(opts.enquiryId ? { enquiryId: opts.enquiryId } : {}), prospectName: "Synthetic Prospect", currency: "USD", items: [{ serviceItem: "Portrait session", quantity: 1, unitBasis: "package", sellingRate: 351 }] });
   if (!r.ok) throw new Error(r.error);
+  if (!opts.noEntity) sql(`insert into public.booking_contracting_entities (subject_type, subject_id, version, employing_entity_id, basis, chosen_by) values ('quotation','${r.quotationId}',1,'${entityId("iss-entity")}','E2E recorded choice','${U(0xe3)}')`);
   return r.quotationId;
 }
 const row = (id: string) => sql(`select status||'|'||coalesce(issued_at::text,'-')||'|'||coalesce(issued_by::text,'-')||'|'||coalesce(valid_until::text,'-') from public.client_quotations where id='${id}'`).split("|");
@@ -60,6 +65,9 @@ beforeAll(() => {
   insert into public.user_roles (user_id, role_id) select '${U(0xe2)}', r.id from public.roles r where r.slug='admin' on conflict do nothing;
   insert into public.user_roles (user_id, role_id) select '${U(0xe3)}', r.id from public.roles r where r.slug in ('admin','super_admin') on conflict do nothing;
   insert into public.currencies (code, name, symbol) values ('USD','US dollar','$') on conflict do nothing;
+  insert into public.employing_entities (name, slug, legal_name, registration_type, verification_status) values ('ISS Entity','iss-entity','ISS ENTITY W.L.L.','W.L.L.','verified') on conflict do nothing;
+  insert into public.employing_entities (name, slug, verification_status) values ('ISS Unverified','iss-unverified','unverified') on conflict do nothing;
+  insert into public.employing_entities (name, slug, verification_status, active) values ('ISS Inactive','iss-inactive','verified', false) on conflict do nothing;
   insert into public.enquiries (id, reference_number, email, full_name, service) values ('${E_REAL}','ENQ-ISS-1','iss@b.test','Real Enquiry','photography');
   `);
   before = financeAndMoney();
@@ -218,9 +226,103 @@ describe("revision: an expired date is never carried silently", () => {
     expect(issuedAt).toBe("-");                                   // the revision has NOT been issued; no issue date is copied
     expect(carried).toBe(oldDate);                                // the database copies it into the draft (kept atomic on purpose) ...
     expect(row(q)[0]).toBe("superseded");
+    expect((await issueOrdinaryQuotation({ quotationId: rev.quotationId })).ok).toBe(false);   // the new version has no entity of its own yet: fail-closed, never copied or inferred
+    expect(await chooseContractingEntity({ subject: { type: "quotation", id: rev.quotationId }, entityId: entityId("iss-entity"), basis: "E2E revision choice", actorUserId: U(0xe3) })).toMatchObject({ ok: true });
+    h.current = founder;
     const r = await issueOrdinaryQuotation({ quotationId: rev.quotationId });
     expect(r).toMatchObject({ ok: true, validUntil: DEFAULT });  // ... but issuing never keeps a passed date
     expect(audit(rev.quotationId, "client_quotation.issued")).toMatchObject({ replacedExpiredCarriedDate: oldDate });
+  });
+});
+
+describe("the contracting entity is a prerequisite of issuing (fail-closed, never inferred)", () => {
+  const rowCount = () => sql(`select count(*) from public.booking_contracting_entities`);
+  it("a draft can be created, saved and revised without an entity; creating records none", async () => {
+    const c0 = rowCount();
+    const q = await draft({ noEntity: true });
+    expect(row(q)[0]).toBe("draft");
+    expect(rowCount()).toBe(c0);
+    expect(await resolveQuotationEntity(q)).toMatchObject({ ok: false, code: "none" });
+  });
+  it("issuing is refused without an entity — directly and through the legacy 'sent' status change — and nothing changes", async () => {
+    const q = await draft({ noEntity: true }); h.current = founder;
+    const r = await issueOrdinaryQuotation({ quotationId: q });
+    expect(r.ok === false && r.error).toMatch(/contracting entity must be selected/);
+    const legacy = await updateQuotationStatus({ quotationId: q, status: "sent" });
+    expect(legacy.ok).toBe(false);
+    expect(row(q)).toEqual(["draft", "-", "-", "-"]);
+    expect(sql(`select count(*) from public.activity_log where entity_id='${q}' and action='client_quotation.issued'`)).toBe("0");
+  });
+  it("issuing succeeds once a Super Admin records an entity on the quotation, and the audit names it", async () => {
+    const q = await draft({ noEntity: true });
+    expect(await chooseContractingEntity({ subject: { type: "quotation", id: q }, entityId: entityId("iss-entity"), basis: "E2E explicit choice", actorUserId: U(0xe3) })).toMatchObject({ ok: true });
+    h.current = admin;
+    expect((await issueOrdinaryQuotation({ quotationId: q })).ok).toBe(true);
+    expect(audit(q, "client_quotation.issued").contractingEntity).toMatchObject({ entityId: entityId("iss-entity"), name: "ISS Entity", recordedOn: "quotation", version: 1 });
+  });
+  it("an entity recorded on the linked ENQUIRY satisfies it; a quotation-level record takes precedence", async () => {
+    const enq = "00000000-0000-4000-8000-00000000e402";
+    sql(`insert into public.enquiries (id, reference_number, email, full_name, service) values ('${enq}','ENQ-ISS-2','iss2@b.test','Enquiry Two','photography') on conflict do nothing`);
+    const q = await draft({ enquiryId: enq, noEntity: true });
+    expect(await resolveQuotationEntity(q)).toMatchObject({ ok: false, code: "none" });
+    expect(await chooseContractingEntity({ subject: { type: "enquiry", id: enq }, entityId: entityId("iss-entity"), basis: "E2E enquiry-level choice", actorUserId: U(0xe3) })).toMatchObject({ ok: true });
+    expect(await resolveQuotationEntity(q)).toMatchObject({ ok: true, entity: { source: "enquiry" } });
+    sql(`insert into public.employing_entities (name, slug, verification_status) values ('ISS Second','iss-second','verified') on conflict do nothing`);
+    expect(await chooseContractingEntity({ subject: { type: "quotation", id: q }, entityId: entityId("iss-second"), basis: "E2E quotation-level choice", actorUserId: U(0xe3) })).toMatchObject({ ok: true });
+    expect(await resolveQuotationEntity(q)).toMatchObject({ ok: true, entity: { name: "ISS Second", source: "quotation" } });
+  });
+  it("an unverified, inactive or otherwise ineligible entity refuses issuance; nobody but a Super Admin can record or choose one", async () => {
+    for (const slug of ["iss-unverified", "iss-inactive"]) {
+      const q = await draft({ noEntity: true });
+      expect(await chooseContractingEntity({ subject: { type: "quotation", id: q }, entityId: entityId(slug), basis: "E2E ineligible choice", actorUserId: U(0xe3) })).toMatchObject({ ok: false });
+      // even if such a record existed (written directly), issuing re-checks the standing at the moment of issue
+      sql(`insert into public.booking_contracting_entities (subject_type, subject_id, version, employing_entity_id, basis, chosen_by) values ('quotation','${q}',1,'${entityId(slug)}','E2E direct','${U(0xe3)}')`);
+      h.current = founder;
+      const r = await issueOrdinaryQuotation({ quotationId: q });
+      expect(r.ok === false && r.error).toMatch(/cannot currently contract/);
+      expect(row(q)[0]).toBe("draft");
+    }
+    const q = await draft({ noEntity: true });
+    for (const actor of [U(0xe2), U(0xe1), U(0xe4)]) {
+      expect(await chooseContractingEntity({ subject: { type: "quotation", id: q }, entityId: entityId("iss-entity"), basis: "E2E not a super admin", actorUserId: actor })).toMatchObject({ ok: false });
+    }
+    expect(await resolveQuotationEntity(q)).toMatchObject({ ok: false, code: "none" });
+  });
+  it("an entity that stops being eligible after selection blocks issuing at the moment of issue", async () => {
+    const q = await draft(); h.current = founder;
+    sql(`update public.employing_entities set active = false where slug = 'iss-entity'`);
+    try {
+      const r = await issueOrdinaryQuotation({ quotationId: q });
+      expect(r.ok === false && r.error).toMatch(/not active/);
+      expect(row(q)[0]).toBe("draft");
+    } finally { sql(`update public.employing_entities set active = true where slug = 'iss-entity'`); }
+  });
+  it("once issued, the entity cannot be changed (revise instead); first-time recording on a legacy issued quotation is still allowed", async () => {
+    const q = await draft(); h.current = founder;
+    await issueOrdinaryQuotation({ quotationId: q });
+    sql(`insert into public.employing_entities (name, slug, verification_status) values ('ISS Third','iss-third','verified') on conflict do nothing`);
+    const changed = await chooseContractingEntity({ subject: { type: "quotation", id: q }, entityId: entityId("iss-third"), basis: "E2E change attempt", actorUserId: U(0xe3) });
+    expect(changed.ok === false && changed.error).toMatch(/issued with its contracting entity/);
+    const legacy = await draft({ noEntity: true });
+    sql(`update public.client_quotations set status='sent', issued_at=now(), valid_until=current_date+20 where id='${legacy}'`);
+    expect(await chooseContractingEntity({ subject: { type: "quotation", id: legacy }, entityId: entityId("iss-entity"), basis: "E2E legacy first record", actorUserId: U(0xe3) })).toMatchObject({ ok: true });
+  });
+  it("the document data exposes only the legal name, registration type and current verified CR / tax identifiers", async () => {
+    const q = await draft({ noEntity: true });
+    sql(`insert into public.entity_registrations (employing_entity_id, kind, status, identifier, valid_from, verified_at, verified_by, note, recorded_by) select id, 'commercial_registration', 'active', 'CR-12345', current_date - 100, now(), '${U(0xe3)}', 'INTERNAL NOTE', '${U(0xe3)}' from public.employing_entities where slug='iss-entity';
+         insert into public.entity_registrations (employing_entity_id, kind, status, identifier, valid_from, verified_at, verified_by, recorded_by) select id, 'establishment_card', 'active', 'EC-999', current_date - 100, now(), '${U(0xe3)}', '${U(0xe3)}' from public.employing_entities where slug='iss-entity';`);
+    sql(`insert into public.booking_contracting_entities (subject_type, subject_id, version, employing_entity_id, basis, chosen_by) values ('quotation','${q}',1,'${entityId("iss-entity")}','E2E display','${U(0xe3)}')`);
+    const res = await resolveQuotationEntity(q);
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    expect(res.entity.display.legalName).toBe("ISS ENTITY W.L.L.");
+    const blob = JSON.stringify(res.entity.display);
+    expect(blob).toContain("CR-12345");
+    expect(blob).not.toMatch(/EC-999|INTERNAL NOTE|E2E display/);
+  });
+  it("the Crew Support path is untouched: the resolver defers to its own governance", async () => {
+    const q = sql(`insert into public.client_quotations (quotation_reference, prospect_name, status, currency, subtotal, total, created_by, crew_support_request_id) select 'ORD-QUO-E2E-CREW','x','draft','USD',10,10,'${U(0xe2)}', c.id from public.crew_support_requests c limit 1 returning id`);
+    if (q) expect(await resolveQuotationEntity(q)).toMatchObject({ ok: false, code: "crew" });
   });
 });
 

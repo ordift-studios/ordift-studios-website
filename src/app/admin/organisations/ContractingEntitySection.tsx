@@ -9,7 +9,7 @@ export default async function ContractingEntitySection({ userId, subject }: { us
   const { candidates } = await listContractingCandidates(userId, null, new Date().toISOString().slice(0, 10));
   const options = candidates.map((c) => ({ entityId: c.entityId, name: c.name, eligible: c.eligibility.eligible, blockers: c.eligibility.blockers }));
   return (
-    <section className="rounded-xl border border-black/10 bg-white p-6 space-y-3">
+    <section id="contracting-entity-select" className="rounded-xl border border-black/10 bg-white p-4 sm:p-6 space-y-3 mb-6">
       <h2 className="font-serif font-medium text-body text-ordift-ink">Contracting legal entity</h2>
       {current ? (
         <p className="font-sans text-body-small text-ordift-ink"><strong>{current.entityName}</strong> contracts for this {subject.type} (version {current.version}) — <span className="text-ordift-ink-muted">{current.basis}</span></p>

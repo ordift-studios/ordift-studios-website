@@ -238,6 +238,29 @@ export async function confirmExpenseFunding(p: { entityId: string; receiptNumber
   return { ok: true, updated: (data ?? []).length };
 }
 
+// SERVER-INTERNAL, actor-independent: the CURRENT standing of one legal entity as a contracting party, read from the authoritative records and judged by the same rule the
+// selection screen uses (active, verified, a current registration, an issued permit where one is tracked). Callers authorise first; this never returns governance detail
+// beyond what its caller asks for. Used to re-check, immediately before a quotation is issued, that the recorded entity can still contract.
+export async function getContractingEntityStanding(entityId: string, today: string): Promise<{ entity: { name: string; legal_name: string | null; registration_type: string | null }; eligibility: Eligibility; registrations: EntityRegistration[] } | null> {
+  const db = createAdminClient();
+  const { data: e } = await db.from("employing_entities").select("id, name, legal_name, registration_type, active, verification_status").eq("id", entityId).maybeSingle();
+  if (!e) return null;
+  const { data: regs } = await db.from("entity_registrations").select(REG_SELECT).eq("employing_entity_id", entityId).in("status", ["active", "pending", "not_issued", "expired"]);
+  const registrations = ((regs ?? []) as unknown as RegRow[]).map(mapReg);
+  const candidate: ContractingCandidate = { entityId: e.id as string, name: e.name as string, verified: e.verification_status === "verified", active: Boolean(e.active), registrations };
+  return { entity: { name: e.name as string, legal_name: (e.legal_name as string | null) ?? null, registration_type: (e.registration_type as string | null) ?? null }, eligibility: assessContractingEligibility(candidate, null, today), registrations };
+}
+
+// An ordinary quotation (or an enquiry with one) that has been ISSUED: its legal issuer is part of what was issued, so a RECORDED entity is not changed afterwards.
+// (A first-time recording on an older issued quotation that never had one is still allowed: that is how such a quotation is repaired.)
+async function hasIssuedOrdinaryQuotation(subject: { type: "enquiry" | "quotation"; id: string }): Promise<boolean> {
+  const db = createAdminClient();
+  const q = subject.type === "quotation"
+    ? await db.from("client_quotations").select("id").eq("id", subject.id).is("crew_support_request_id", null).eq("status", "sent").limit(1)
+    : await db.from("client_quotations").select("id").eq("enquiry_id", subject.id).is("crew_support_request_id", null).eq("status", "sent").limit(1);
+  return (q.data ?? []).length > 0;
+}
+
 // ------------------------------------------------------------------ the contracting entity of a booking, quotation or agreement
 export type ContractingSubject = { type: "crew_support_request" | "enquiry" | "quotation" | "agreement"; id: string };
 export type ContractingChoice = { version: number; entityId: string; entityName: string; basis: string; chosenAt: string };
@@ -323,6 +346,9 @@ export async function chooseContractingEntity(p: { subject: ContractingSubject; 
   if (!cand) return { ok: false, error: "That legal entity was not found." };
   if (!cand.eligibility.eligible) return { ok: false, error: `That entity cannot contract for this booking: ${cand.eligibility.blockers.join(" ")}` };
   const { data: prev } = await db.from("booking_contracting_entities").select("id, version, employing_entity_id").eq("subject_type", p.subject.type).eq("subject_id", p.subject.id).order("version", { ascending: false }).limit(1).maybeSingle();
+  if (prev && (p.subject.type === "enquiry" || p.subject.type === "quotation") && (await hasIssuedOrdinaryQuotation({ type: p.subject.type, id: p.subject.id }))) {
+    return { ok: false, error: "This quotation has been issued with its contracting entity, so the entity is not changed. Revise the quotation (a new version) to change it." };
+  }
   if (prev?.employing_entity_id === p.entityId) return { ok: false, error: "That entity is already recorded for this booking." };
   const version = (prev?.version ?? 0) + 1;
   const { error } = await db.from("booking_contracting_entities").insert({ subject_type: p.subject.type, subject_id: p.subject.id, version, employing_entity_id: p.entityId, basis: p.basis.trim(), supersedes_id: prev?.id ?? null, chosen_by: p.actorUserId });

@@ -23,6 +23,14 @@ describe("issuing is a recorded, confirmed act: never a bare status flip, never 
     expect(issuance).toMatch(/\.update\(\{ status: "sent", issued_at: issuedAt, issued_by: user\.id, valid_until: plan\.validUntil \}\)/);
     expect(issuance).toMatch(/\.eq\("status", "draft"\)\.is\("issued_at", null\)/);
   });
+  it("the contracting entity is re-read from the authoritative record immediately before the conditional write; it is never defaulted or inferred", () => {
+    const i = issuance.indexOf("export async function issueOrdinaryQuotation");
+    const body = issuance.slice(i, issuance.indexOf("export async function recordQuotationDelivery"));
+    expect(body).toMatch(/await resolveQuotationEntity\(params\.quotationId\)[\s\S]*if \(!entity\.ok\) return \{ ok: false, error: entity\.message \}/);
+    expect(body.indexOf("resolveQuotationEntity(")).toBeLessThan(body.indexOf('.update({ status: "sent"'));
+    const resolver = code(read("./quotationEntity.ts"));
+    expect(resolver).not.toMatch(/\.insert\(|\.update\(|\.upsert\(|chooseContractingEntity|default\w*Entity|slug/i);
+  });
   it("it audits who, when, the approved validity, any exception and its approver, and states that nothing was sent", () => {
     for (const t of ["client_quotation.issued", "issuedAt", "validUntil: plan.validUntil", "standardValidUntil", "withinStandardPolicy", "exceptionReason", "approvedBy: user.id", "not sent by the system"]) expect(issuance).toContain(t);
   });
@@ -95,6 +103,13 @@ describe("the issuance panel (server-rendered markup)", () => {
   it("prerequisite blockers are shown", async () => {
     expect(await render({ status: "draft", blockers: ["Add at least one line item before issuing."] })).toContain("Add at least one line item before issuing.");
   });
+  it("while the contracting entity is missing the Issue form is not offered at all, only the reason", async () => {
+    const html = await render({ status: "draft", blockers: ["A contracting entity must be selected before this quotation can be issued."] });
+    expect(html).toContain("Issuing is not available yet");
+    expect(html).toContain("A contracting entity must be selected");
+    expect(html).not.toContain('name="confirm"');
+    expect(html).not.toContain("Issue this quotation");
+  });
   it("a Crew Support quotation shows no Issue form here: it is issued from its request", async () => {
     const html = await render({ status: "draft", crewManaged: true } as never);
     expect(html).not.toContain("Issue quotation");
@@ -148,18 +163,35 @@ describe("the dates card", () => {
 });
 
 describe("the preview / PDF header", () => {
-  it("labels Created / Issued / Valid until, and a draft says so loudly (never an unlabelled date)", async () => {
+  async function renderPdf(entity: unknown) {
     vi.resetModules();
     vi.doMock("@/lib/portal/roles", () => ({ getCurrentUser: async () => ({ id: "u", roles: ["admin"] }), hasRole: () => true, isSuperAdmin: () => false }));
     vi.doMock("@/lib/crewSupport/quotation", () => ({ getCrewQuotationPrintExtras: async () => null }));
     vi.doMock("@/lib/commercial/clientQuotations", () => ({ getClientQuotation: async () => ({ id: "q1", quotationReference: "ORD-QUO-2026-000006", status: "draft", createdAt: "2026-10-25T09:57:14Z", issuedAt: null, validUntil: null, clientName: null, prospectName: "Test", prospectCompany: null, prospectEmail: null, prospectPhone: null, currency: "USD", subtotal: 351, discountTotal: 0, taxTotal: 0, total: 351, paymentBookingTerms: null, items: [] }) }));
+    vi.doMock("@/lib/commercial/quotationEntity", () => ({ resolveQuotationEntity: async () => entity }));
     vi.doMock("next/navigation", () => ({ redirect: () => { throw new Error("redirect"); }, notFound: () => { throw new Error("notFound"); } }));
     const { default: Page } = await import("../../app/admin/pricing/quotations/[id]/pdf/page");
-    const html = renderToStaticMarkup(await Page({ params: Promise.resolve({ id: "q1" }) }));
+    return renderToStaticMarkup(await Page({ params: Promise.resolve({ id: "q1" }) }));
+  }
+  const NONE = { ok: false, code: "none", message: "A contracting entity must be selected before this quotation can be issued." };
+  it("labels Created / Issued / Valid until, and a draft says so loudly (never an unlabelled date)", async () => {
+    const html = await renderPdf(NONE);
     expect(html).toContain("Created: 25 Oct 2026");
     expect(html).toContain("Issued: Not yet issued");
     expect(html).toMatch(/Valid until: Set when issued \(30 calendar days from the issue date\)/);
     expect(html).toContain("DRAFT — NOT YET ISSUED");
     expect(html).not.toMatch(/This quotation is valid until/);
+  });
+  it("a draft with no entity says it is not yet selected; nothing is guessed", async () => {
+    const html = await renderPdf(NONE);
+    expect(html).toMatch(/Contracting entity:.*not yet selected/);
+  });
+  it("with an entity it shows only the verified legal name, registration type and CR / tax identifiers", async () => {
+    const html = await renderPdf({ ok: true, entity: { entityId: "e1", name: "Short Name", source: "quotation", version: 1, display: { legalName: "ORDIFT STUDIOS", registrationType: "W.L.L.", identifiers: [{ label: "Commercial Registration (CR) No.", identifier: "254551" }, { label: "Tax registration No.", identifier: "5009300880" }] } } });
+    expect(html).toContain("ORDIFT STUDIOS");
+    expect(html).toContain("W.L.L.");
+    expect(html).toContain("254551");
+    expect(html).toContain("5009300880");
+    expect(html).not.toMatch(/verification|basis|chosen|permit|establishment/i);
   });
 });

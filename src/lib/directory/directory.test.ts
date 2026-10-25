@@ -97,7 +97,10 @@ describe("authorisation", () => {
   });
   it("the enquiry and quotation pages render the client-record panel only for a Super Admin, and the panel re-checks authorisation", () => {
     expect(read("src/app/admin/enquiries/[id]/page.tsx")).toMatch(/user && isSuperAdmin\(user\) \? \(\s*<>\s*<ClientRecordPanel/);
-    expect(read("src/app/admin/pricing/quotations/[id]/page.tsx")).toMatch(/isSuperAdmin\(user\) \? \(\s*<div className="mt-6 space-y-6">\s*<ContractingEntitySection[^>]*\/>\s*<ClientRecordPanel/);
+    const quotationPage = read("src/app/admin/pricing/quotations/[id]/page.tsx");
+    expect(quotationPage).toMatch(/isSuperAdmin\(user\) \? \(\s*<div className="mt-6 space-y-6">\s*(\{quotation\.crewManaged \? <ContractingEntitySection[^>]*\/> : null\})?\s*(\{[^\n]*\*\/\})?\s*<ClientRecordPanel/);
+    // ordinary quotations: the entity selection is shown inline (before the dates card) and only to a Super Admin
+    expect(quotationPage).toMatch(/entity && isSuperAdmin\(user\) \? <ContractingEntitySection/);
     expect(read("src/app/admin/organisations/ClientRecordPanel.tsx")).toContain("if (!context) return null;");
   });
   it("the existing enquiry and quotation pages are otherwise unchanged apart from the panel and its import", () => {
