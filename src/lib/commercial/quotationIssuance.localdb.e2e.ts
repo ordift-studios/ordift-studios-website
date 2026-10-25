@@ -30,6 +30,7 @@ import { createClientQuotation, reviseClientQuotation, updateQuotationStatus } f
 import { chooseContractingEntity } from "@/lib/organization/entityRegistrations";
 import { resolveQuotationEntity, resolveQuotationEntityView } from "./quotationEntity";
 import { readIssuedLegalDetails } from "./quotationIssuedDetails";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { getQuotationDelivery, issueOrdinaryQuotation, recordQuotationDelivery } from "./quotationIssuance";
 import { recordOrdinaryQuotationAcceptance } from "./quotationAcceptance";
 import { addDays, defaultValidUntil, utcDate } from "./quotationValidity";
@@ -592,6 +593,126 @@ describe("an issued quotation is frozen: its legal details and entity never chan
     }
   });
 
+});
+
+describe("the issuance audit event is protected: created only by the atomic function, immutable afterwards, never replaceable by a look-alike", () => {
+  const PROTECTED = "client_quotation.issued";
+  const STAFF_UID = U(0xe1), ADMIN_UID = U(0xe2);
+  const asSession = (uid: string, stmt: string) => `begin; set local role authenticated; select set_config('request.jwt.claims', '{"sub":"${uid}","role":"authenticated"}', true); ${stmt}; commit;`;
+  const psqlErr = (script: string): string => { try { sql(script); return ""; } catch (e) { return String((e as { stderr?: Buffer }).stderr ?? e); } };
+  const insertRow = (action: string, entityIdText: string, extra = "") => `insert into public.activity_log (actor_user_id, action, entity_type, entity_id, metadata${extra ? ", created_at" : ""}) values ('${ADMIN_UID}', '${action}', 'client_quotation', '${entityIdText}', '{"issuedAt":"2020-01-01T00:00:00.000000Z","legalDetails":{"legalName":"FORGED"}}'${extra ? `, '${extra}'` : ""})`;
+  const mkIssued = async (slug: string, cr: string) => {
+    sql(`insert into public.employing_entities (name, slug, legal_name, registration_type, verification_status) values ('${slug}','${slug}','${slug.toUpperCase()} W.L.L.','W.L.L.','verified') on conflict do nothing;
+         insert into public.entity_registrations (employing_entity_id, kind, status, identifier, valid_from, verified_at, verified_by, recorded_by) select id,'commercial_registration','active','${cr}',current_date-100,now(),'${U(0xe3)}','${U(0xe3)}' from public.employing_entities where slug='${slug}' and not exists (select 1 from public.entity_registrations r where r.employing_entity_id = employing_entities.id)`);
+    const q = await draft({ noEntity: true });
+    expect(await chooseContractingEntity({ subject: { type: "quotation", id: q }, entityId: entityId(slug), basis: "E2E guard test", actorUserId: U(0xe3) })).toMatchObject({ ok: true });
+    h.current = admin;
+    expect((await issueOrdinaryQuotation({ quotationId: q })).ok).toBe(true);
+    return q;
+  };
+  const eventRow = (q: string) => sql(`select id||'|'||created_at::text||'|'||metadata::text from public.activity_log where entity_id='${q}' and action='${PROTECTED}'`);
+  const guardsEnabled = () => sql(`select count(*) from pg_trigger where tgrelid='public.activity_log'::regclass and tgname like 'activity_log_issuance_guard_%' and tgenabled='O'`);
+
+  it("the authorised issuance succeeds; its event is stamped at exactly the issue time; there is one per quotation", async () => {
+    sql(`insert into public.user_roles (user_id, role_id) select '${STAFF_UID}', r.id from public.roles r where r.slug='staff' on conflict do nothing`);
+    const q = await mkIssued("gd-main", "CR-GD1");
+    expect(sql(`select count(*) from public.client_quotations c join public.activity_log a on a.entity_id = c.id::text and a.action='${PROTECTED}' where c.id='${q}' and a.created_at = c.issued_at and a.actor_user_id = c.issued_by`)).toBe("1");
+    expect(await readIssuedLegalDetails(q)).toMatchObject({ state: "ok", details: { legalName: "GD-MAIN W.L.L." } });
+    expect(guardsEnabled()).toBe("3");
+  });
+
+  it("DIRECT INSERT is rejected for every route: staff session, admin session, the server's service role, the database owner, and an owner-run function with a caller-chosen action", async () => {
+    const q = await mkIssued("gd-ins", "CR-GD2");
+    const other = "22222222-2222-4222-8222-222222222222";           // a quotation that has no issuance event: so only the guard (not the unique index) can refuse
+    // control: the SAME sessions can still write ordinary audit rows (legitimate behaviour preserved)
+    expect(psqlErr(asSession(STAFF_UID, insertRow("e2e.staff_note", other)))).toBe("");
+    expect(psqlErr(asSession(ADMIN_UID, insertRow("client_quotation.delivery_recorded", other)))).toBe("");
+    // forged issuance events
+    for (const uid of [STAFF_UID, ADMIN_UID]) {
+      expect(psqlErr(asSession(uid, insertRow(PROTECTED, other))), uid).toMatch(/issuance_event_protected/);
+      expect(psqlErr(asSession(uid, insertRow(PROTECTED, other, "2020-01-01"))), uid).toMatch(/issuance_event_protected/);       // backdated
+    }
+    const viaServiceRole = await createAdminClient().from("activity_log").insert({ actor_user_id: ADMIN_UID, action: PROTECTED, entity_type: "client_quotation", entity_id: other, metadata: { issuedAt: "x", legalDetails: { legalName: "FORGED" } } });
+    expect(viaServiceRole.error?.message ?? "").toMatch(/issuance_event_protected/);
+    expect(psqlErr(insertRow(PROTECTED, other))).toMatch(/issuance_event_protected/);                                                // even the database owner, without the function's marker
+    expect(psqlErr(`select set_config('ordift.issuing_quotation', 'wrong:marker', false); ${insertRow(PROTECTED, other)}`)).toMatch(/issuance_event_protected/);
+    // a session that knows the marker format and sets it itself still cannot mint an event: the role check (not the marker) is what resists impersonation
+    const forgedId = "33333333-3333-4333-8333-333333333333";
+    const withMarker = (role: "authenticated" | "service_role", uid: string) => `begin; set local role ${role}; select set_config('request.jwt.claims', '{"sub":"${uid}","role":"${role}"}', true); select set_config('ordift.issuing_quotation', '${forgedId}:${other}', true);
+      insert into public.activity_log (id, actor_user_id, action, entity_type, entity_id, metadata) values ('${forgedId}', '${ADMIN_UID}', '${PROTECTED}', 'client_quotation', '${other}', '{}'); commit;`;
+    expect(psqlErr(withMarker("authenticated", ADMIN_UID))).toMatch(/issuance_event_protected/);
+    expect(psqlErr(withMarker("service_role", ADMIN_UID))).toMatch(/issuance_event_protected/);
+    // another owner-run SECURITY DEFINER function that takes its action from its caller (the pattern of claim_and_log_payment_activity)
+    sql(`create or replace function public.e2e_mint(p_action text, p_entity text) returns void language plpgsql security definer set search_path = '' as $$ begin insert into public.activity_log (action, entity_type, entity_id, metadata) values (p_action, 'client_quotation', p_entity, '{}'); end $$;
+         grant execute on function public.e2e_mint(text, text) to service_role; notify pgrst, 'reload schema';`);
+    await new Promise((r) => setTimeout(r, 2500));
+    try {
+      const mint = await createAdminClient().rpc("e2e_mint", { p_action: PROTECTED, p_entity: other });
+      expect(mint.error?.message ?? "").toMatch(/issuance_event_protected/);
+      expect((await createAdminClient().rpc("e2e_mint", { p_action: "e2e.ordinary", p_entity: other })).error).toBeNull();       // ordinary actions still pass through it
+    } finally { sql(`drop function if exists public.e2e_mint(text, text)`); }
+    // the marker does not outlive the function: a forged insert later in the SAME transaction is still refused
+    const q2 = await draft({ noEntity: true });
+    expect(await chooseContractingEntity({ subject: { type: "quotation", id: q2 }, entityId: entityId("gd-ins"), basis: "E2E marker test", actorUserId: U(0xe3) })).toMatchObject({ ok: true });
+    expect(psqlErr(`begin; select 1 from public.issue_ordinary_quotation('${q2}', '${ADMIN_UID}', '${DEFAULT}'::date, null, '{}'::jsonb); ${insertRow(PROTECTED, other)}; commit;`)).toMatch(/issuance_event_protected/);
+    expect(row(q2)[0]).toBe("draft");                                                  // that whole transaction rolled back
+    expect(sql(`select count(*) from public.activity_log where entity_id = '${other}' and action='${PROTECTED}'`)).toBe("0");
+    expect(await readIssuedLegalDetails(q)).toMatchObject({ state: "ok", details: { legalName: "GD-INS W.L.L." } });
+  });
+
+  it("UPDATE and DELETE of an issuance event are rejected for every role, and an ordinary row cannot be turned into one; ordinary rows stay editable as before", async () => {
+    const q = await mkIssued("gd-upd", "CR-GD3");
+    const before = eventRow(q);
+    const svc = createAdminClient();
+    expect((await svc.from("activity_log").update({ metadata: { legalDetails: { legalName: "HACKED" } } }).eq("entity_id", q).eq("action", PROTECTED)).error?.message ?? "").toMatch(/issuance_event_protected/);
+    expect((await svc.from("activity_log").delete().eq("entity_id", q).eq("action", PROTECTED)).error?.message ?? "").toMatch(/issuance_event_protected/);
+    expect(psqlErr(`update public.activity_log set metadata = '{}' where entity_id='${q}' and action='${PROTECTED}'`)).toMatch(/issuance_event_protected/);
+    expect(psqlErr(`delete from public.activity_log where entity_id='${q}' and action='${PROTECTED}'`)).toMatch(/issuance_event_protected/);
+    expect(psqlErr(`update public.activity_log set created_at = '2020-01-01' where entity_id='${q}' and action='${PROTECTED}'`)).toMatch(/issuance_event_protected/);
+    expect(psqlErr(asSession(ADMIN_UID, `delete from public.activity_log where entity_id='${q}'`))).toMatch(/permission denied|issuance_event_protected/);      // authenticated has no delete right at all
+    sql(`insert into public.activity_log (action, entity_type, entity_id, metadata) values ('e2e.ordinary_row', 'client_quotation', '${q}', '{}')`);
+    expect(psqlErr(`update public.activity_log set action = '${PROTECTED}' where entity_id='${q}' and action='e2e.ordinary_row'`)).toMatch(/issuance_event_protected/);
+    expect((await svc.from("activity_log").update({ metadata: { edited: true } }).eq("entity_id", q).eq("action", "e2e.ordinary_row")).error).toBeNull();   // ordinary rows: unchanged behaviour
+    expect((await svc.from("activity_log").delete().eq("entity_id", q).eq("action", "e2e.ordinary_row")).error).toBeNull();
+    expect(eventRow(q)).toBe(before);
+    expect(await readIssuedLegalDetails(q)).toMatchObject({ state: "ok", details: { legalName: "GD-UPD W.L.L." } });
+  });
+
+  it("a forged event cannot replace the genuine legal details, even in the worst case where an administrator has switched the database guards off", async () => {
+    const q = await mkIssued("gd-forge", "CR-GD4");
+    const q0 = sql(`select issued_at::text from public.client_quotations where id='${q}'`);
+    const forge = (createdAt: string) => `insert into public.activity_log (actor_user_id, action, entity_type, entity_id, metadata, created_at) values ('${admin.id}', '${PROTECTED}', 'client_quotation', '${q}', '{"issuedAt":"${new Date(q0.replace(" ", "T").replace(/\+00$/, "Z")).toISOString().replace("Z", "000Z")}","legalDetails":{"entityId":"${entityId("gd-forge")}","name":"FORGED","recordedOn":"quotation","version":1,"legalName":"FORGED LEGAL NAME","registrationType":null,"identifiers":[],"capturedAt":""}}', '${createdAt}')`;
+    // layer 1: the unique index refuses a second event for the quotation even if triggers were bypassed
+    const guards = (verb: "disable" | "enable") => sql(["ins", "upd", "del"].map((k) => `alter table public.activity_log ${verb} trigger activity_log_issuance_guard_${k};`).join(" "));
+    guards("disable");
+    try {
+      expect(psqlErr(forge("2020-01-01 00:00:00+00"))).toMatch(/activity_log_one_issuance_per_quotation|duplicate key/);
+      // layer 2: with BOTH the guard and the index removed, the resolver itself still refuses to prefer a look-alike
+      sql(`drop index public.activity_log_one_issuance_per_quotation`);
+      sql(forge("2020-01-01 00:00:00+00"));                                                                      // backdated copy
+      expect(await readIssuedLegalDetails(q)).toMatchObject({ state: "ok", details: { legalName: "GD-FORGE W.L.L." } });
+      expect(await resolveQuotationEntityView(q)).toMatchObject({ phase: "issued", frozen: { legalName: "GD-FORGE W.L.L." } });
+      sql(forge(q0));                                                                                            // an exact-time duplicate: ambiguous
+      expect((await readIssuedLegalDetails(q)).state).toBe("no_snapshot");                                       // fail closed: shows nothing rather than either
+      sql(`delete from public.activity_log where id in (select id from public.activity_log where entity_id='${q}' and action='${PROTECTED}' and metadata->'legalDetails'->>'legalName' = 'FORGED LEGAL NAME')`);   // (guard-less cleanup of the planted rows)
+    } finally {
+      sql(`create unique index if not exists activity_log_one_issuance_per_quotation on public.activity_log (entity_id) where action = 'client_quotation.issued'`);
+      guards("enable");
+    }
+    expect(guardsEnabled()).toBe("3");
+    expect(sql(`select count(*) from pg_indexes where indexname='activity_log_one_issuance_per_quotation'`)).toBe("1");
+    expect(await readIssuedLegalDetails(q)).toMatchObject({ state: "ok", details: { legalName: "GD-FORGE W.L.L." } });
+  });
+
+  it("existing audit workflows are untouched: ordinary, delivery, acceptance and revision events are written, read, edited and removed exactly as before", async () => {
+    const q = await mkIssued("gd-flow", "CR-GD5");
+    h.current = admin;
+    expect((await recordQuotationDelivery({ quotationId: q, channel: "email", deliveredAt: new Date().toISOString() })).ok).toBe(true);
+    expect((await recordOrdinaryQuotationAcceptance({ quotationId: q, channel: "email", evidence: "Email: yes, please go ahead", acceptedByName: "Synthetic Client", receivedAt: new Date().toISOString() })).ok).toBe(true);
+    const kinds = sql(`select string_agg(action, ',' order by created_at) from public.activity_log where entity_id='${q}' and action like 'client_quotation.%' and action <> 'client_quotation.created'`);
+    expect(kinds).toBe("client_quotation.issued,client_quotation.delivery_recorded,client_quotation.acceptance_recorded");
+    expect(await readIssuedLegalDetails(q)).toMatchObject({ state: "ok", details: { legalName: "GD-FLOW W.L.L." } });      // frozen details survive the later events
+  });
 });
 
 describe("issuing never creates money, bookings, acceptance or messages", () => {

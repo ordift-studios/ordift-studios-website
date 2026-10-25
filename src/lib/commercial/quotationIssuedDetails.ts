@@ -5,8 +5,8 @@ import { createAdminClient } from "@/lib/supabase/admin";
 // reads ONLY this snapshot: later changes to the live entity registry (a renewed registration, a new tax number, an entity that stops being eligible) never alter a document that
 // was already issued. Nothing is reconstructed or guessed: an issued quotation with no snapshot shows no entity block rather than live data.
 //
-// The AUTHORITATIVE issuance record is the `client_quotation.issued` event whose recorded issue time and issuer equal the quotation row's own `issued_at` / `issued_by` (the row is
-// written by the single conditional update that issues it). Any other `issued` event for the same quotation, for example from an issuance that was rolled back, is ignored.
+// The AUTHORITATIVE issuance record is the `client_quotation.issued` event written by issue_ordinary_quotation() in the SAME transaction as the issue (migration 0172): its issue time,
+// creation time and issuer equal the quotation row's own `issued_at` / `issued_by`. The database refuses any other way of creating, changing or removing such an event.
 
 export const ISSUED_ACTION = "client_quotation.issued";
 
@@ -29,18 +29,22 @@ export function parseIssuedLegalDetails(metadata: unknown): IssuedLegalDetails |
   };
 }
 
-export type IssuanceEventRow = { id: string; created_at: string; actor_user_id: string | null; metadata: unknown };
+export type IssuanceEventRow = { id: string; created_at: string; actor_user_id: string | null; entity_type?: string | null; metadata: unknown };
 
-// Pure: the one event that IS this quotation's issuance (matched on the row's own issue time and issuer). The earliest match wins if there were ever two.
+// Pure. The ONE event that IS this quotation's issuance. The database only lets issue_ordinary_quotation() create such an event (and at most one per quotation), stamped with
+// created_at = the row's issued_at; this resolver nevertheless re-checks everything and FAILS CLOSED, so even a forged look-alike that somehow existed could not be preferred:
+//   - the event must be the quotation's (entity_type client_quotation), by the same issuer, recording the same issue time, AND have been created at exactly that moment (a backdated
+//     or later-dated copy does not match);
+//   - if anything other than exactly one event matches (none, or an ambiguous duplicate), nothing is returned and no entity block is shown. It never picks a winner.
 export function pickIssuanceEvent(events: IssuanceEventRow[], issuedAt: string, issuedBy: string | null): IssuanceEventRow | null {
   const at = new Date(issuedAt).getTime();
-  if (Number.isNaN(at)) return null;
+  if (Number.isNaN(at) || !issuedBy) return null;
   const matches = events.filter((e) => {
-    const m = e.metadata as { issuedAt?: string } | null;
-    const t = m?.issuedAt ? new Date(m.issuedAt).getTime() : NaN;
-    return t === at && (issuedBy === null || e.actor_user_id === issuedBy);
+    const m = e.metadata as { issuedAt?: unknown } | null;
+    const t = typeof m?.issuedAt === "string" ? new Date(m.issuedAt).getTime() : NaN;
+    return t === at && new Date(e.created_at).getTime() === at && e.actor_user_id === issuedBy && (e.entity_type === undefined || e.entity_type === "client_quotation");
   });
-  return matches.sort((a, b) => a.created_at.localeCompare(b.created_at))[0] ?? null;
+  return matches.length === 1 ? matches[0] : null;
 }
 
 export type IssuedLegalDetailsResult =
@@ -52,7 +56,7 @@ export async function readIssuedLegalDetails(quotationId: string): Promise<Issue
   const db = createAdminClient();
   const { data: q } = await db.from("client_quotations").select("issued_at, issued_by, crew_support_request_id").eq("id", quotationId).maybeSingle();
   if (!q || q.crew_support_request_id || !q.issued_at) return { state: "not_issued" };
-  const { data: events } = await db.from("activity_log").select("id, created_at, actor_user_id, metadata").eq("entity_id", quotationId).eq("action", ISSUED_ACTION);
+  const { data: events } = await db.from("activity_log").select("id, created_at, actor_user_id, entity_type, metadata").eq("entity_id", quotationId).eq("action", ISSUED_ACTION);
   const hit = pickIssuanceEvent((events ?? []) as IssuanceEventRow[], q.issued_at as string, (q.issued_by as string | null) ?? null);
   const details = hit ? parseIssuedLegalDetails(hit.metadata) : null;
   if (!hit || !details) return { state: "no_snapshot" };

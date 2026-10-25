@@ -223,12 +223,22 @@ describe("the frozen legal details (pure parts)", () => {
     expect(parseIssuedLegalDetails({ legalDetails: { ...d, extra: "ignored", secret: "x" } })).toEqual(d);
     for (const bad of [null, {}, { legalDetails: null }, { legalDetails: { ...d, legalName: "  " } }, { legalDetails: { ...d, recordedOn: "agreement" } }, { legalDetails: { ...d, entityId: 5 } }]) expect(parseIssuedLegalDetails(bad)).toBeNull();
   });
-  it("the authoritative issuance event is the one matching the row's own issue time and issuer; a foreign event is ignored (microsecond text and ms ISO compare equal)", () => {
-    const mk = (id: string, created: string, at: string, actor: string | null) => ({ id, created_at: created, actor_user_id: actor, metadata: { issuedAt: at } });
-    const events = [mk("older", "2026-10-26T07:59:00Z", "2026-10-26T07:59:00.000000Z", "u1"), mk("real", "2026-10-26T08:00:01Z", "2026-10-26T08:00:00.123456Z", "u1"), mk("other-user", "2026-10-26T08:00:02Z", "2026-10-26T08:00:00.123456Z", "u2")];
-    expect(pickIssuanceEvent(events, "2026-10-26T08:00:00.123456+00:00", "u1")?.id).toBe("real");
-    expect(pickIssuanceEvent(events, "2026-10-26T09:00:00Z", "u1")).toBeNull();
-    expect(pickIssuanceEvent(events, "not a date", "u1")).toBeNull();
+  const ISSUED = "2026-10-26T08:00:00.123456+00:00";
+  const mk = (over: Record<string, unknown> = {}) => ({ id: "ev", created_at: "2026-10-26T08:00:00.123456+00:00", actor_user_id: "u1", entity_type: "client_quotation", metadata: { issuedAt: "2026-10-26T08:00:00.123456Z", legalDetails: { legalName: "GENUINE" } }, ...over });
+  it("the genuine event is found by exact issue time, creation time, issuer and type (microsecond text and ms ISO compare equal)", () => {
+    expect(pickIssuanceEvent([mk()], ISSUED, "u1")?.id).toBe("ev");
+  });
+  it("FAIL-CLOSED: a backdated or later-dated copy, a wrong issuer, a wrong type, malformed metadata or no issuer is never selected", () => {
+    for (const bad of [mk({ created_at: "2020-01-01T00:00:00Z" }), mk({ created_at: "2026-10-26T08:00:05Z" }), mk({ actor_user_id: "u2" }), mk({ entity_type: "enquiry" }), mk({ metadata: null }), mk({ metadata: { issuedAt: 42 } }), mk({ metadata: { issuedAt: "garbage" } })]) {
+      expect(pickIssuanceEvent([bad], ISSUED, "u1")).toBeNull();
+    }
+    expect(pickIssuanceEvent([mk()], ISSUED, null)).toBeNull();
+    expect(pickIssuanceEvent([mk()], "not a date", "u1")).toBeNull();
+  });
+  it("a forged event cannot displace the genuine one: ignored if it differs, and if it matches exactly (an ambiguous duplicate) NOTHING is shown rather than choosing either", () => {
+    const forgedBackdated = mk({ id: "forged", created_at: "2020-01-01T00:00:00Z", metadata: { issuedAt: "2026-10-26T08:00:00.123456Z", legalDetails: { legalName: "FORGED" } } });
+    expect(pickIssuanceEvent([forgedBackdated, mk()], ISSUED, "u1")?.id).toBe("ev");
+    expect(pickIssuanceEvent([mk({ id: "forged" }), mk()], ISSUED, "u1")).toBeNull();
   });
 });
 
@@ -250,6 +260,21 @@ describe("issued quotations are frozen (source guards)", () => {
     expect(fn.indexOf("update public.client_quotations")).toBeLessThan(fn.indexOf("insert into public.activity_log"));
     expect(sql).toMatch(/revoke all on function public\.issue_ordinary_quotation\(uuid, uuid, date, uuid, jsonb\) from public, anon, authenticated;\s*grant execute on function public\.issue_ordinary_quotation\(uuid, uuid, date, uuid, jsonb\) to service_role;/);
     expect(fn).not.toMatch(/email|notification|payment|obligation|amount_due|accepted_at|crm_stage/i);
+  });
+  it("the migration protects the issuance event: three narrow triggers (only for that action), role + marker provenance, immutability, one per quotation, and nothing else on the audit log changes", () => {
+    const sql = read("../../../supabase/migrations/0172_atomic_ordinary_quotation_issuance.sql");
+    const fn = sql.slice(sql.indexOf("create or replace function private.activity_log_issuance_guard"), sql.indexOf("revoke all on function private.activity_log_issuance_guard"));
+    expect(fn).toContain("security invoker");                                        // current_user must be the role actually running the insert
+    expect(fn).toContain("current_user = v_owner");
+    expect(fn).toContain("current_setting('ordift.issuing_quotation', true)");
+    expect(sql).toMatch(/create trigger activity_log_issuance_guard_ins before insert on public\.activity_log\s+for each row when \(new\.action = 'client_quotation\.issued'\)/);
+    expect(sql).toMatch(/create trigger activity_log_issuance_guard_upd before update on public\.activity_log\s+for each row when \(old\.action = 'client_quotation\.issued' or new\.action = 'client_quotation\.issued'\)/);
+    expect(sql).toMatch(/create trigger activity_log_issuance_guard_del before delete on public\.activity_log\s+for each row when \(old\.action = 'client_quotation\.issued'\)/);
+    expect(sql).toMatch(/create unique index activity_log_one_issuance_per_quotation on public\.activity_log \(entity_id\) where action = 'client_quotation\.issued'/);
+    expect(sql).toMatch(/set_config\('ordift\.issuing_quotation', v_event::text \|\| ':' \|\| q\.id::text, true\)[\s\S]*insert into public\.activity_log \(id, actor_user_id, action, entity_type, entity_id, metadata, created_at\)[\s\S]*set_config\('ordift\.issuing_quotation', '', true\)/);
+    const live = sql.replace(/--.*$/gm, "");                                         // statements only, not comments
+    expect(live.match(/on public\.activity_log/g)?.length).toBe(4);                  // 3 triggers + 1 index: no policy, grant, revoke or column change on the audit log
+    expect(live).not.toMatch(/(grant|revoke)[^;]*\bon (table )?public\.activity_log|alter table public\.activity_log|(create|alter|drop) policy/i);
   });
   it("the quotation PDF never reads the live entity for an issued quotation: it uses the view resolver only", () => {
     const pdf = strip(read("../../app/admin/pricing/quotations/[id]/pdf/page.tsx"));

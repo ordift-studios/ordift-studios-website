@@ -9,10 +9,22 @@
 --   2. public.issue_ordinary_quotation()         ONE transaction: lock the enquiry then the quotation, re-check the draft, resolve the entity that is on record RIGHT NOW,
 --                                                verify it can contract, freeze its legal details, set status / issue time / issuer / validity, and write the audit event that
 --                                                carries the frozen details. All of it commits together or none of it does; the draft is untouched on any failure.
---   3. booking_contracting_entities_issue_lock   serialises entity recording against issuance (same lock order) and refuses to record a NEW version of an entity that an
+--   3. activity_log_issuance_guard_*              the genuine issuance event cannot be forged, altered or removed (see "4." below).
+--   4. booking_contracting_entities_issue_lock   serialises entity recording against issuance (same lock order) and refuses to record a NEW version of an entity that an
 --                                                issued ordinary quotation already carries. Defence in depth for the application's own check, and it closes the one race the
 --                                                application cannot: choosing an entity in the same instant as an issue.
 --
+--      The issuance audit event is the authoritative record of what a quotation said about its legal entity when it was issued. Production lets any staff session INSERT
+--      audit rows (RLS checks only "is staff or admin"), so without a guard a backdated look-alike could be planted. Three narrow triggers, each firing ONLY for the action
+--      'client_quotation.issued' (no other audit row is touched, delayed or checked), now make that event creatable ONLY by issue_ordinary_quotation():
+--        * INSERT is accepted only when (a) the statement runs as the OWNER of issue_ordinary_quotation (current_user is the function owner: the API roles anon /
+--          authenticated / service_role can never be that role) AND (b) the transaction carries a marker that only that function sets, bound to the event's own id and
+--          quotation. (a) is the load-bearing control; (b) additionally stops any OTHER owner-run SECURITY DEFINER function that writes audit rows with a caller-chosen
+--          action (public.claim_and_log_payment_activity takes p_action from its caller) from being used to mint one.
+--        * UPDATE and DELETE of such a row are refused for every role, including service_role and the owner.
+--        * a partial unique index allows at most ONE issuance event per quotation, so a duplicate cannot exist even if a guard were bypassed by an administrator.
+--      The event also takes created_at = the quotation's issued_at, so the two can be matched exactly. A database administrator can still disable triggers; that is an
+--      administrator-level capability and is outside what an application role can reach.
 -- Nothing here sends or queues an email or notification, or touches a payment, obligation, invoice, booking, amount due or acceptance. The function is executable by
 -- service_role only; the server decides WHO may call it and the function re-checks the actor's role itself.
 -- Lock order everywhere is: enquiry row first, then quotation row (same as 0166), so two callers can never deadlock each other.
@@ -138,7 +150,9 @@ begin
      set status = 'sent', issued_at = v_issued, issued_by = p_actor, valid_until = p_valid_until
    where id = q.id;
 
-  insert into public.activity_log (id, actor_user_id, action, entity_type, entity_id, metadata)
+  -- provenance marker for activity_log_issuance_guard (transaction-local; bound to this event id and quotation)
+  perform set_config('ordift.issuing_quotation', v_event::text || ':' || q.id::text, true);
+  insert into public.activity_log (id, actor_user_id, action, entity_type, entity_id, metadata, created_at)
   values (v_event, p_actor, 'client_quotation.issued', 'client_quotation', q.id,
     coalesce(p_audit, '{}'::jsonb) || jsonb_build_object(
       'quotationReference', q.quotation_reference,
@@ -147,7 +161,8 @@ begin
       'validUntil', p_valid_until,
       'contractingEntity', jsonb_build_object('entityId', v_entity, 'name', v_standing ->> 'entityName', 'recordedOn', v_source, 'version', v_version),
       'legalDetails', jsonb_build_object('entityId', v_entity, 'name', v_standing ->> 'entityName', 'recordedOn', v_source, 'version', v_version,
-                                         'capturedAt', to_char(v_issued at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')) || (v_standing -> 'legal')));
+                                         'capturedAt', to_char(v_issued at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')) || (v_standing -> 'legal')), v_issued);
+  perform set_config('ordift.issuing_quotation', '', true);
 
   return query select v_issued, v_event;
 end $$;
@@ -184,5 +199,35 @@ end $$;
 revoke all on function private.booking_contracting_entities_issue_lock() from public, anon, authenticated;
 create trigger booking_contracting_entities_issue_lock before insert on public.booking_contracting_entities
   for each row execute function private.booking_contracting_entities_issue_lock();
+
+-- ---------------------------------------------------------------------------------------------------------------------------------------------
+-- 4. The issuance audit event is creatable only by issue_ordinary_quotation(), and immutable afterwards.
+--    SECURITY INVOKER on purpose: current_user must be the role that is actually executing the insert (inside issue_ordinary_quotation that is the function owner).
+create or replace function private.activity_log_issuance_guard() returns trigger
+language plpgsql security invoker set search_path = '' as $$
+declare
+  v_owner name;
+begin
+  if tg_op = 'INSERT' then
+    select pg_get_userbyid(p.proowner) into v_owner from pg_catalog.pg_proc p where p.oid = 'public.issue_ordinary_quotation(uuid,uuid,date,uuid,jsonb)'::pg_catalog.regprocedure;
+    if current_user = v_owner
+       and coalesce(current_setting('ordift.issuing_quotation', true), '') = new.id::text || ':' || coalesce(new.entity_id, '') then
+      return new;
+    end if;
+    raise exception 'ordift:issuance_event_protected: this audit event can only be created by issue_ordinary_quotation()' using errcode = '42501';
+  end if;
+  raise exception 'ordift:issuance_event_protected: an issuance audit event cannot be changed or removed' using errcode = '42501';
+end $$;
+revoke all on function private.activity_log_issuance_guard() from public, anon, authenticated;
+
+create trigger activity_log_issuance_guard_ins before insert on public.activity_log
+  for each row when (new.action = 'client_quotation.issued') execute function private.activity_log_issuance_guard();
+create trigger activity_log_issuance_guard_upd before update on public.activity_log
+  for each row when (old.action = 'client_quotation.issued' or new.action = 'client_quotation.issued') execute function private.activity_log_issuance_guard();
+create trigger activity_log_issuance_guard_del before delete on public.activity_log
+  for each row when (old.action = 'client_quotation.issued') execute function private.activity_log_issuance_guard();
+
+-- at most one issuance event per quotation (partial: no other audit row is affected; none exists today)
+create unique index activity_log_one_issuance_per_quotation on public.activity_log (entity_id) where action = 'client_quotation.issued';
 
 commit;
