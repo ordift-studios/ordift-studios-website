@@ -63,8 +63,8 @@ beforeAll(() => {
   insert into public.profiles (id, full_name, access_status) select ('00000000-0000-4000-8000-0000000000'||lpad(to_hex(n),2,'0'))::uuid, 'User '||n, 'active' from generate_series(209,212) n on conflict do nothing;
   insert into public.user_roles (user_id, role_id) select '${U(0xd3)}', r.id from public.roles r where r.slug='super_admin' on conflict do nothing;
   insert into public.user_roles (user_id, role_id) select '${U(0xd2)}', r.id from public.roles r where r.slug='admin' on conflict do nothing;
-  insert into public.enquiries (id, reference_number, email, full_name, service, phone, payment_country) values
-    ('${GH}','ENQ-WT-GH','gh@b.test','Ghana Client','photography','0200000001','GH'),('${QA}','ENQ-WT-QA','qa@b.test','Qatar Client','photography','0200000002','QA'),('${NOMKT}','ENQ-WT-NM','nm@b.test','Unset Market','photography',null,null);
+  insert into public.enquiries (id, reference_number, email, full_name, service, phone, payment_country, is_test) values
+    ('${GH}','ENQ-WT-GH','gh@b.test','Ghana Client','photography','0200000001','GH',false),('${QA}','ENQ-WT-QA','qa@b.test','Qatar Client','photography','0200000002','QA',true),('${NOMKT}','ENQ-WT-NM','nm@b.test','Unset Market','photography',null,null,false);
   insert into public.currencies (code, name, symbol) values ('USD','US dollar','$'),('QAR','Qatari riyal','QAR'),('GHS','Ghana cedi','GHS') on conflict do nothing;
   insert into public.exchange_rates (currency_code, rate_to_usd, effective_from, reason) values ('QAR', 3.64, now() - interval '2 days', 'walkthrough fresh'), ('GHS', 14.5, now() - interval '60 days', 'walkthrough stale');
   `);
@@ -240,6 +240,10 @@ describe("7. Conversion to ONE draft quotation, with no booking, payment, revenu
     h.current = admin;
     expect(await convertAction(null, fd({ enquiryId: QA }))).toMatchObject({ ok: true });
     expect(sql(`select currency||':'||status from public.client_quotations where enquiry_id='${QA}'`)).toBe("USD:draft");
+  });
+  it("test classification: a quotation made from a TEST enquiry is itself a test record; one from a real enquiry is not", () => {
+    expect(sql(`select is_test::text from public.client_quotations where enquiry_id='${QA}'`)).toBe("true");
+    expect(sql(`select is_test::text from public.client_quotations where enquiry_id='${GH}'`)).toBe("false");
   });
   it("across the whole journey no payment, obligation, payable, engagement, agreement, receipt job, email failure or notification was created", () => {
     expect(finance()).toBe(financeBefore);

@@ -1,3 +1,4 @@
+import { inheritedTestFlag } from "./testFlag";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { logActivity } from "@/lib/admin/activityLog";
 import { hasRole, isSuperAdmin, getCurrentUser } from "@/lib/portal/roles";
@@ -59,6 +60,8 @@ export type QuotationLineItemInput = {
 };
 
 export type CreateQuotationParams = {
+  // Marks the quotation as a test record. A quotation linked to a TEST enquiry is always a test record, whether or not this is set.
+  isTest?: boolean;
   // M2a: the enquiry this quotation is for. Optional: a quotation can still be made without one (it can be attached later).
   enquiryId?: string | null;
   clientProfileId?: string | null;
@@ -194,6 +197,12 @@ export async function createClientQuotation(params: CreateQuotationParams): Prom
   }
 
   const admin = createAdminClient();
+  let enquiryIsTest = false;
+  if (params.enquiryId) {
+    const { data: enq } = await admin.from("enquiries").select("is_test").eq("id", params.enquiryId).maybeSingle();
+    enquiryIsTest = Boolean(enq?.is_test);
+  }
+  const isTest = inheritedTestFlag(params.isTest, enquiryIsTest);
   const { data: seqValue, error: seqError } = await admin.rpc("next_client_quotation_reference_seq");
   if (seqError || seqValue === null || seqValue === undefined) {
     return { ok: false, error: "Failed to generate a quotation reference." };
@@ -207,6 +216,7 @@ export async function createClientQuotation(params: CreateQuotationParams): Prom
     .insert({
       quotation_reference: quotationReference,
       enquiry_id: params.enquiryId ?? null,
+      is_test: isTest,
       client_profile_id: params.clientProfileId ?? null,
       prospect_name: params.prospectName ?? null,
       prospect_email: params.prospectEmail ?? null,
