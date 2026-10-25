@@ -338,3 +338,50 @@ describe("migration 0173 replaces the issuing function WITHOUT weakening anythin
     expect(m73).toContain("rows are never deleted");
   });
 });
+
+describe("migration 0173 encodes the Founder's clarified policy and writes no data", () => {
+  const m73 = read("../../../supabase/migrations/0173_jurisdiction_entity_requirements.sql");
+  const live = m73.replace(/--.*$/gm, "");
+  it("inserts only catalog configuration: activity types, the Ghana and Qatar rule sets and the Qatar activity-code map; never a registration, number, signatory capacity, activity decision, renewal or entity selection", () => {
+    const beforeIssuing = live.slice(0, live.indexOf("create or replace function public.issue_ordinary_quotation"));   // the issuing function itself (from 0172) writes the issuance audit event, as before
+    const inserted = [...beforeIssuing.matchAll(/insert into public\.(\w+)/g)].map((m) => m[1]);
+    expect([...new Set(inserted)].sort()).toEqual(["entity_activity_types", "jurisdiction_activity_codes", "jurisdiction_entity_requirements"]);
+    expect(beforeIssuing).not.toMatch(/\bupdate public\.|\bdelete from public\./);                                   // no existing row is modified (the only 'update' is inside a trigger's guard text, which has none)
+    expect(live).not.toMatch(/BN\d{3}|P\d{6}|\b\d{6,}\b.*TIN/);                                         // no real number
+  });
+  it("Ghana: certificate and legal-capacity signatory mandatory; TIN optional and NOT shown; no commercial permit; renewal optional; Qatar: permit mandatory, renewal not applicable", () => {
+    expect(live).toMatch(/'legal_registration',\s+'legal_registration',\s+'Certificate of Registration of a Business Name[^']*',\s+'Business Registration No\.', '\^BN\[0-9\]\{9\}\$',\s+'commercial_registration', null::text\[\], 'mandatory'/);
+    expect(live).toMatch(/'tax_registration',\s+'tax_registration',\s+'Tax Identification Number \(TIN\)',\s+'TIN',\s+'\^P\[0-9\]\{10\}\$',\s+'tax_registration',\s+null,\s+'optional',\s+null,\s+true,\s+true,\s+false,/);
+    expect(live).toMatch(/'operating_permission','operating_permission', 'Commercial permit',\s+null,\s+null,\s+'commercial_permit',\s+null,\s+'not_applicable'/);
+    expect(live).toMatch(/'signatory',[^\n]*array\['sole_proprietor', 'authorised_signatory'\], 'mandatory'/);
+    expect(live).toMatch(/'operating_permission','operating_permission', 'Commercial Permit \/ Licence',\s+null,\s+null,\s+'commercial_permit',\s+null,\s+'mandatory'/);
+    expect(live).toMatch(/'renewal_evidence',\s+'renewal_evidence',\s+'Registration renewal',[^\n]*'not_applicable'/);
+    expect(live).toContain("insert into public.jurisdiction_activity_codes (jurisdiction_id, activity_code, activity_key, description)\nselect j.id, '742010', 'photography', 'Photographic activities'");
+  });
+  it("a management title never gives authority: the signatory rule reads legal_capacity only, which can be set once and never changed", () => {
+    const fn = live.slice(live.indexOf("create or replace function private.entity_issue_standing"));
+    expect(fn).toContain("s.legal_capacity = any (r.signatory_capacities)");
+    expect(fn).not.toMatch(/s\.position/);
+    expect(live).toContain("ordift:signatory_capacity_fixed");
+    expect(live).toContain("grant update (legal_capacity) on public.entity_signatories to service_role");
+  });
+  it("a Founder statement can never carry an official reference or a verifier, and an official confirmation needs an official basis and a verifier (database constraints); history is append-only", () => {
+    expect(live).toContain("constraint entity_renewal_founder_basis check (status <> 'founder_confirmed' or (basis = 'founder_statement' and official_reference is null and verified_by is null))");
+    expect(live).toContain("constraint entity_renewal_official_basis check (status <> 'official_verified' or (basis in ('official_registry_check', 'renewal_certificate_or_receipt') and verified_by is not null and verified_at is not null))");
+    expect(live).toContain("create trigger entity_renewal_confirmations_guard before update or delete on public.entity_renewal_confirmations");
+    const fn = live.slice(live.indexOf("create or replace function private.entity_issue_standing"));
+    expect(fn).toContain("v_lapsed := true;");                                                              // only a recorded lapse blocks
+    expect(fn).toContain("no renewal confirmation is recorded");                                            // absence is advisory text, not a blocker
+    expect(fn).not.toMatch(/overdue/i);
+  });
+  it("continuation pages: relation, page shape and one-page-per-slot are enforced by the database; page 1 is never modified by the migration", () => {
+    expect(live).toContain("'continuation_page_of'");
+    expect(live).toContain("employing_entity_documents_page_shape");
+    expect(live).toContain("create unique index employing_entity_documents_one_page on public.employing_entity_documents (related_document_id, page_number) where relation = 'continuation_page_of'");
+  });
+  it("a planned activity is never derived or licensed; the CR listing counts only while the CR is verified and in date", () => {
+    const fn = live.slice(live.indexOf("create or replace function private.entity_issue_standing"));
+    expect(fn).toContain("v_cr_ok := found and v_cr.status = 'active' and v_cr.verified_at is not null and (v_cr.expires_on is null or v_cr.expires_on >= p_today);");
+    expect(fn.indexOf("act.status in ('planned', 'suspended')")).toBeLessThan(fn.indexOf("v_state := 'listed_on_registration'"));
+  });
+});

@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { getCurrentUser, isSuperAdmin } from "@/lib/portal/roles";
 import { recordEmployingEntitySensitiveDetails, getEmployingEntityDocumentSignedUrl } from "@/lib/organization/legalEntities";
-import { addVaultDocument, chooseContractingEntity, confirmApprovalNoticeDate, confirmExpenseFunding, recordCommercialPermit } from "@/lib/organization/entityRegistrations";
+import { addVaultDocument, chooseContractingEntity, confirmApprovalNoticeDate, confirmExpenseFunding, recordCommercialPermit, recordEntityRegistration, recordRenewalConfirmation, setSignatoryLegalCapacity, type LegalCapacity } from "@/lib/organization/entityRegistrations";
 
 export type ActionState = { ok: boolean; error?: string } | null;
 
@@ -42,11 +42,15 @@ export async function uploadEntityDocumentAction(_prev: ActionState, formData: F
   const expiresOn = String(formData.get("expiresOn") ?? "").trim() || null;
   const issuingAuthority = String(formData.get("issuingAuthority") ?? "").trim() || null;
   const replaces = String(formData.get("replaces") ?? "").trim() || null;
+  // a further page (2 or more) of a multi-page official form: attaches to page 1 of the SAME document; page 1 is never touched
+  const pageOf = String(formData.get("pageOf") ?? "").trim() || null;
+  const pageNumber = Number(formData.get("pageNumber") ?? 0);
+  const pageCount = Number(formData.get("pageCount") ?? 0);
   const file = formData.get("file");
   if (!entityId || !documentType) return { ok: false, error: "A document type and file are required." };
   if (!(file instanceof File) || file.size === 0) return { ok: false, error: "A file is required." };
 
-  const result = await addVaultDocument({ entityId, documentType, filename: file.name, mimeType: file.type, bytes: new Uint8Array(await file.arrayBuffer()), notes, issuedOn, expiresOn, issuingAuthority, replaces, actorUserId: actor.id });
+  const result = await addVaultDocument({ entityId, documentType, filename: file.name, mimeType: file.type, bytes: new Uint8Array(await file.arrayBuffer()), notes, issuedOn, expiresOn, issuingAuthority, replaces, ...(pageOf ? { continuationOf: { documentId: pageOf, pageNumber, pageCount } } : {}), actorUserId: actor.id });
   if (!result.ok) return { ok: false, error: result.error };
   revalidatePath(`/admin/organization/legal-entities/${entityId}`);
   return { ok: true };
@@ -118,5 +122,48 @@ export async function chooseContractingEntityAction(_prev: ActionState, formData
   const result = await chooseContractingEntity({ subject: { type: "crew_support_request", id: requestId }, entityId, basis: String(formData.get("basis") ?? ""), actorUserId: actor.id });
   if (!result.ok) return { ok: false, error: result.error };
   revalidatePath(`/admin/crew-support/${requestId}`);
+  return { ok: true };
+}
+
+// Records a legal / tax registration from its official document (number checked against the jurisdiction's own format; nothing generated; duplicates refused).
+export async function recordRegistrationAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  const actor = await requireSuperAdminActor();
+  if ("error" in actor) return { ok: false, error: actor.error };
+  const entityId = String(formData.get("entityId") ?? "");
+  const kind = String(formData.get("kind") ?? "");
+  if (kind !== "commercial_registration" && kind !== "tax_registration") return { ok: false, error: "Choose which registration this is." };
+  const result = await recordEntityRegistration({
+    entityId, kind, identifier: String(formData.get("identifier") ?? ""), issuedOn: String(formData.get("issuedOn") ?? "").trim() || null, expiresOn: String(formData.get("expiresOn") ?? "").trim() || null,
+    issuingAuthority: String(formData.get("issuingAuthority") ?? ""), sourceDocumentId: String(formData.get("sourceDocumentId") ?? ""), founderCrossChecked: formData.get("founderCrossChecked") === "on", actorUserId: actor.id,
+  });
+  if (!result.ok) return { ok: false, error: result.error };
+  revalidatePath(`/admin/organization/legal-entities/${entityId}`);
+  return { ok: true };
+}
+
+// Records the LEGAL capacity of an existing signatory (once). The management title is not changed and no person is duplicated.
+export async function setSignatoryCapacityAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  const actor = await requireSuperAdminActor();
+  if ("error" in actor) return { ok: false, error: actor.error };
+  const entityId = String(formData.get("entityId") ?? "");
+  const result = await setSignatoryLegalCapacity({ signatoryId: String(formData.get("signatoryId") ?? ""), capacity: String(formData.get("capacity") ?? "") as LegalCapacity, actorUserId: actor.id });
+  if (!result.ok) return { ok: false, error: result.error };
+  revalidatePath(`/admin/organization/legal-entities/${entityId}`);
+  return { ok: true };
+}
+
+// Records an annual renewal confirmation: a Founder statement is stored as exactly that; an official verification needs the Registrar's record or a certificate/receipt.
+export async function recordRenewalAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  const actor = await requireSuperAdminActor();
+  if ("error" in actor) return { ok: false, error: actor.error };
+  const entityId = String(formData.get("entityId") ?? "");
+  const status = String(formData.get("status") ?? "") as "founder_confirmed" | "official_verified" | "lapsed";
+  const result = await recordRenewalConfirmation({
+    entityId, registrationId: String(formData.get("registrationId") ?? ""), coversFrom: String(formData.get("coversFrom") ?? ""), coversTo: String(formData.get("coversTo") ?? ""), status,
+    basis: String(formData.get("basis") ?? "") as "founder_statement" | "official_registry_check" | "renewal_certificate_or_receipt", statement: String(formData.get("statement") ?? "") || null,
+    officialReference: String(formData.get("officialReference") ?? "") || null, nextDueOn: String(formData.get("nextDueOn") ?? "") || null, actorUserId: actor.id,
+  });
+  if (!result.ok) return { ok: false, error: result.error };
+  revalidatePath(`/admin/organization/legal-entities/${entityId}`);
   return { ok: true };
 }

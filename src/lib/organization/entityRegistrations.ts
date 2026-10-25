@@ -84,11 +84,16 @@ export async function confirmApprovalNoticeDate(p: { entityId: string; approvalN
 }
 
 // ------------------------------------------------------------------ signatories
-export type EntitySignatory = { id: string; fullName: string; position: string; authority: string | null; nationality: string | null; ownershipPercent: number | null; effectiveFrom: string | null };
+export type EntitySignatory = { id: string; fullName: string; position: string; authority: string | null; nationality: string | null; ownershipPercent: number | null; effectiveFrom: string | null; legalCapacity: string | null };
 export async function listEntitySignatories(entityId: string, actorUserId: string): Promise<EntitySignatory[]> {
   if (!(await isSuperAdminId(actorUserId))) return [];
-  const { data } = await createAdminClient().from("entity_signatories").select("id, full_name, position, authority, nationality, ownership_percent, effective_from").eq("employing_entity_id", entityId).is("effective_to", null).order("created_at");
-  return (data ?? []).map((r) => ({ id: r.id, fullName: r.full_name, position: r.position, authority: r.authority, nationality: r.nationality, ownershipPercent: r.ownership_percent == null ? null : Number(r.ownership_percent), effectiveFrom: r.effective_from }));
+  const db = createAdminClient();
+  const cols = "id, full_name, position, authority, nationality, ownership_percent, effective_from";
+  // `legal_capacity` arrives with migration 0173; until then the list must still work exactly as before
+  let { data, error } = await db.from("entity_signatories").select(`${cols}, legal_capacity`).eq("employing_entity_id", entityId).is("effective_to", null).order("created_at");
+  if (error) ({ data, error } = await db.from("entity_signatories").select(cols).eq("employing_entity_id", entityId).is("effective_to", null).order("created_at") as unknown as { data: typeof data; error: typeof error });
+  return ((data ?? []) as unknown as { id: string; full_name: string; position: string; authority: string | null; nationality: string | null; ownership_percent: number | null; effective_from: string | null; legal_capacity?: string | null }[])
+    .map((r) => ({ id: r.id, fullName: r.full_name, position: r.position, authority: r.authority, nationality: r.nationality, ownershipPercent: r.ownership_percent == null ? null : Number(r.ownership_percent), effectiveFrom: r.effective_from, legalCapacity: r.legal_capacity ?? null }));
 }
 
 // Records ONE authorised signatory for an entity. The documentary basis is mandatory: it must be a document already in THIS entity's vault
@@ -96,7 +101,7 @@ export async function listEntitySignatories(entityId: string, actorUserId: strin
 // person recording it - it is never generated. A profile link is made only to the profile the caller names, and a signatory of one entity
 // never becomes a signatory of another.
 export async function addEntitySignatory(p: {
-  entityId: string; fullName: string; position: string; authority: string; sourceDocumentId: string; profileId?: string | null; nationality?: string | null; ownershipPercent?: number | null; effectiveFrom?: string | null; actorUserId: string;
+  entityId: string; fullName: string; position: string; authority: string; sourceDocumentId: string; profileId?: string | null; nationality?: string | null; ownershipPercent?: number | null; effectiveFrom?: string | null; legalCapacity?: LegalCapacity | null; actorUserId: string;
 }): Promise<Result<{ signatoryId: string }>> {
   if (!(await isSuperAdminId(p.actorUserId))) return NOT_ALLOWED;
   if (p.fullName.trim().length < 3) return { ok: false, error: "Enter the signatory's full name." };
@@ -104,6 +109,7 @@ export async function addEntitySignatory(p: {
   if (p.authority.trim().length < 5) return { ok: false, error: "Enter the authority wording exactly as the document states it." };
   if (p.effectiveFrom && !/^\d{4}-\d{2}-\d{2}$/.test(p.effectiveFrom)) return { ok: false, error: "Enter the effective date as YYYY-MM-DD." };
   if (p.ownershipPercent != null && (p.ownershipPercent < 0 || p.ownershipPercent > 100)) return { ok: false, error: "Ownership must be between 0 and 100." };
+  if (p.legalCapacity && !LEGAL_CAPACITIES.includes(p.legalCapacity)) return { ok: false, error: "Choose a legal capacity from the list." };
 
   const db = createAdminClient();
   const { data: doc } = await db.from("employing_entity_documents").select("id, file_sha256, original_filename").eq("id", p.sourceDocumentId).eq("employing_entity_id", p.entityId).maybeSingle();
@@ -114,11 +120,113 @@ export async function addEntitySignatory(p: {
 
   const { data, error } = await db.from("entity_signatories").insert({
     employing_entity_id: p.entityId, full_name: p.fullName.trim(), position: p.position.trim(), authority: p.authority.trim(), nationality: p.nationality?.trim() || null,
-    ownership_percent: p.ownershipPercent ?? null, profile_id: p.profileId ?? null, effective_from: p.effectiveFrom ?? null, source_document_id: p.sourceDocumentId, recorded_by: p.actorUserId,
+    ownership_percent: p.ownershipPercent ?? null, profile_id: p.profileId ?? null, effective_from: p.effectiveFrom ?? null, legal_capacity: p.legalCapacity ?? null, source_document_id: p.sourceDocumentId, recorded_by: p.actorUserId,
   }).select("id").single();
   if (error || !data) return { ok: false, error: error?.message ?? "Could not record the signatory." };
   await logActivity({ actorUserId: p.actorUserId, action: "entity_signatory.recorded", entityType: "employing_entity", entityId: p.entityId, metadata: { signatoryId: data.id, documentId: p.sourceDocumentId, linkedProfile: Boolean(p.profileId) } });
   return { ok: true, signatoryId: data.id };
+}
+
+export const LEGAL_CAPACITIES = ["sole_proprietor", "owner", "director", "manager", "authorised_signatory"] as const;
+export type LegalCapacity = (typeof LEGAL_CAPACITIES)[number];
+
+// Sets the LEGAL capacity of an EXISTING signatory (for example: the registered sole proprietor who is also the Chief Executive Officer). The management title (`position`) is not touched, and the
+// same person row and profile link are kept, so no duplicate person is created. It can be set once from empty; the database refuses any further change (a change is a new effective-dated row).
+// Super Admin only.
+export async function setSignatoryLegalCapacity(p: { signatoryId: string; capacity: LegalCapacity; actorUserId: string }): Promise<Result<{ capacity: string }>> {
+  if (!(await isSuperAdminId(p.actorUserId))) return NOT_ALLOWED;
+  if (!LEGAL_CAPACITIES.includes(p.capacity)) return { ok: false, error: "Choose a legal capacity from the list." };
+  const db = createAdminClient();
+  const { data: s } = await db.from("entity_signatories").select("id, employing_entity_id, legal_capacity").eq("id", p.signatoryId).maybeSingle();
+  if (!s) return { ok: false, error: "That signatory was not found." };
+  if (s.legal_capacity) return { ok: false, error: "This signatory's legal capacity is already recorded and is not changed. Record a new effective-dated entry instead." };
+  const { error } = await db.from("entity_signatories").update({ legal_capacity: p.capacity }).eq("id", p.signatoryId).is("legal_capacity", null);
+  if (error) return { ok: false, error: error.message.includes("ordift:signatory") ? "This signatory's legal capacity is already recorded and is not changed." : error.message };
+  await logActivity({ actorUserId: p.actorUserId, action: "entity_signatory.legal_capacity_recorded", entityType: "employing_entity", entityId: s.employing_entity_id as string, metadata: { signatoryId: p.signatoryId, capacity: p.capacity } });
+  return { ok: true, capacity: p.capacity };
+}
+
+// Checks an identifier against the format observed on the jurisdiction's own documents (catalog `identifier_pattern`). It only VALIDATES a number the person read from the document; it can never produce one.
+export function checkIdentifierFormat(pattern: string | null | undefined, identifier: string): { ok: true } | { ok: false } {
+  if (!pattern) return { ok: true };
+  try { return new RegExp(pattern).test(identifier.trim()) ? { ok: true } : { ok: false }; } catch { return { ok: true }; }
+}
+
+// Records ONE legal/tax registration of an entity from its OFFICIAL document: the document must already be in THIS entity's vault with a stored file and fingerprint, the number is validated against
+// the jurisdiction's own format, and a second record of the same kind, or a number already recorded for any entity, is refused (no duplicate registrations). It is marked verified only when the caller says the
+// Founder cross-checked the supplied original, and says so in the note: it is never presented as a government confirmation. Nothing is generated. Super Admin only.
+export async function recordEntityRegistration(p: {
+  entityId: string; kind: "commercial_registration" | "tax_registration"; identifier: string; issuedOn: string | null; expiresOn?: string | null; issuingAuthority: string;
+  sourceDocumentId: string; founderCrossChecked: boolean; facts?: Record<string, unknown>; note?: string | null; actorUserId: string;
+}): Promise<Result<{ registrationId: string }>> {
+  if (!(await isSuperAdminId(p.actorUserId))) return NOT_ALLOWED;
+  const identifier = p.identifier.trim();
+  if (!identifier) return { ok: false, error: "Enter the number exactly as printed on the document." };
+  for (const d of [p.issuedOn, p.expiresOn]) if (d && !/^\d{4}-\d{2}-\d{2}$/.test(d)) return { ok: false, error: "Dates must be entered as YYYY-MM-DD." };
+  if (p.issuingAuthority.trim().length < 3) return { ok: false, error: "Enter the issuing authority as printed on the document." };
+  const db = createAdminClient();
+  const { data: e } = await db.from("employing_entities").select("id, jurisdiction_id").eq("id", p.entityId).maybeSingle();
+  if (!e) return { ok: false, error: "That legal entity was not found." };
+  if (!e.jurisdiction_id) return { ok: false, error: "The entity has no jurisdiction recorded, so its requirements and number format are not known." };
+  const { data: rule } = await db.from("jurisdiction_entity_requirements").select("label, identifier_pattern").eq("jurisdiction_id", e.jurisdiction_id as string).eq("registration_kind", p.kind).not("approved_at", "is", null).limit(1).maybeSingle();
+  if (!rule) return { ok: false, error: "This jurisdiction has no approved requirement for that kind of registration." };
+  if (!checkIdentifierFormat(rule.identifier_pattern as string | null, identifier).ok) return { ok: false, error: `That does not match the format of ${rule.label as string} for this jurisdiction. Check the number against the document; nothing was recorded.` };
+  const { data: doc } = await db.from("employing_entity_documents").select("id, file_sha256, original_filename").eq("id", p.sourceDocumentId).eq("employing_entity_id", p.entityId).maybeSingle();
+  if (!doc) return { ok: false, error: "The supporting document is not in this entity's vault." };
+  if (!doc.file_sha256 || !doc.original_filename) return { ok: false, error: "The selected record has no stored file or fingerprint. Upload the actual document to the entity record first." };
+  const { data: current } = await db.from("entity_registrations").select("id").eq("employing_entity_id", p.entityId).eq("kind", p.kind).in("status", ["active", "pending", "not_issued"]).limit(1);
+  if ((current ?? []).length > 0) return { ok: false, error: "This entity already has a current record of that kind. It is not duplicated; supersede the existing record instead." };
+  const { data: same } = await db.from("entity_registrations").select("id").eq("kind", p.kind).eq("identifier", identifier).limit(1);
+  if ((same ?? []).length > 0) return { ok: false, error: "That number is already recorded for a registration, so it was not recorded again." };
+  const note = [p.note?.trim(), p.founderCrossChecked ? "Verified by the Founder against the supplied original document (cross-checked; not checked against the issuing authority's own records)." : null].filter(Boolean).join(" ") || null;
+  const { data, error } = await db.from("entity_registrations").insert({
+    employing_entity_id: p.entityId, kind: p.kind, status: "active", identifier, issued_on: p.issuedOn, expires_on: p.expiresOn ?? null, issuing_authority: p.issuingAuthority.trim(), facts: p.facts ?? {}, note,
+    source_document_id: p.sourceDocumentId, recorded_by: p.actorUserId, ...(p.founderCrossChecked ? { verified_by: p.actorUserId, verified_at: new Date().toISOString() } : {}),
+  }).select("id").single();
+  if (error || !data) return { ok: false, error: error?.code === "23505" ? "That record already exists." : error?.message ?? "Could not record the registration." };
+  await logActivity({ actorUserId: p.actorUserId, action: "entity_registration.recorded", entityType: "employing_entity", entityId: p.entityId, metadata: { registrationId: data.id, kind: p.kind, documentId: p.sourceDocumentId, verifiedByFounder: p.founderCrossChecked } });
+  return { ok: true, registrationId: data.id as string };
+}
+
+export type EntityRenewal = { id: string; coversFrom: string; coversTo: string; status: "founder_confirmed" | "official_verified" | "lapsed"; basis: string; statement: string | null; officialReference: string | null; nextDueOn: string | null; verifiedAt: string | null; recordedAt: string };
+export async function listEntityRenewals(entityId: string, actorUserId: string): Promise<EntityRenewal[]> {
+  if (!(await isSuperAdminId(actorUserId))) return [];
+  const { data, error } = await createAdminClient().from("entity_renewal_confirmations").select("id, covers_from, covers_to, status, basis, statement, official_reference, next_due_on, verified_at, created_at").eq("employing_entity_id", entityId).order("covers_to", { ascending: false }).order("created_at", { ascending: false });
+  if (error) return [];                                                                               // before migration 0173 there is no renewal history
+  return ((data ?? []) as { id: string; covers_from: string; covers_to: string; status: EntityRenewal["status"]; basis: string; statement: string | null; official_reference: string | null; next_due_on: string | null; verified_at: string | null; created_at: string }[])
+    .map((r) => ({ id: r.id, coversFrom: r.covers_from, coversTo: r.covers_to, status: r.status, basis: r.basis, statement: r.statement, officialReference: r.official_reference, nextDueOn: r.next_due_on, verifiedAt: r.verified_at, recordedAt: r.created_at }));
+}
+
+// Records a RENEWAL confirmation for a registration (for example a Ghana business name, renewed every year). It is kept apart from the certificate's own expiry date and never makes the business
+// "overdue" by itself. A Founder statement is stored AS a Founder statement (status founder_confirmed, no official reference, no verifier): "Founder-confirmed — official verification pending". An official
+// confirmation needs the Registrar's record or a renewal certificate/receipt as its basis and records who verified it; an official reference is stored only if one was actually issued. 'lapsed' blocks issuing.
+export async function recordRenewalConfirmation(p: {
+  entityId: string; registrationId: string; coversFrom: string; coversTo: string; status: "founder_confirmed" | "official_verified" | "lapsed";
+  basis: "founder_statement" | "official_registry_check" | "renewal_certificate_or_receipt"; statement?: string | null; officialReference?: string | null; nextDueOn?: string | null; sourceDocumentId?: string | null; actorUserId: string;
+}): Promise<Result<{ confirmationId: string }>> {
+  if (!(await isSuperAdminId(p.actorUserId))) return NOT_ALLOWED;
+  for (const d of [p.coversFrom, p.coversTo, p.nextDueOn]) if (d && !/^\d{4}-\d{2}-\d{2}$/.test(d)) return { ok: false, error: "Dates must be entered as YYYY-MM-DD." };
+  if (p.coversTo < p.coversFrom) return { ok: false, error: "The period must end on or after it starts." };
+  const official = p.basis === "official_registry_check" || p.basis === "renewal_certificate_or_receipt";
+  if (p.status === "founder_confirmed" && p.basis !== "founder_statement") return { ok: false, error: "A Founder confirmation is recorded with the basis 'Founder statement'." };
+  if (p.status === "official_verified" && !official) return { ok: false, error: "An official verification needs the Registrar's record or a renewal certificate or receipt as its basis." };
+  if (p.officialReference && !official) return { ok: false, error: "An official reference can only be recorded with an official basis; a Founder statement has none." };
+  if (p.status === "founder_confirmed" && (p.statement ?? "").trim().length < 10) return { ok: false, error: "Record the Founder's statement in the Founder's own words (at least a sentence)." };
+  const db = createAdminClient();
+  const { data: reg } = await db.from("entity_registrations").select("id").eq("id", p.registrationId).eq("employing_entity_id", p.entityId).maybeSingle();
+  if (!reg) return { ok: false, error: "That registration is not a record of this entity." };
+  if (p.sourceDocumentId) {
+    const { data: d } = await db.from("employing_entity_documents").select("id").eq("id", p.sourceDocumentId).eq("employing_entity_id", p.entityId).maybeSingle();
+    if (!d) return { ok: false, error: "The supporting document is not in this entity's vault." };
+  }
+  const { data, error } = await db.from("entity_renewal_confirmations").insert({
+    employing_entity_id: p.entityId, registration_id: p.registrationId, covers_from: p.coversFrom, covers_to: p.coversTo, status: p.status, basis: p.basis, statement: (p.statement ?? "").trim() || null,
+    official_reference: (p.officialReference ?? "").trim() || null, next_due_on: p.nextDueOn ?? null, source_document_id: p.sourceDocumentId ?? null, recorded_by: p.actorUserId,
+    ...(p.status === "official_verified" ? { verified_by: p.actorUserId, verified_at: new Date().toISOString() } : {}),
+  }).select("id").single();
+  if (error || !data) return { ok: false, error: error?.message ?? "Could not record the renewal." };
+  await logActivity({ actorUserId: p.actorUserId, action: "entity_renewal.recorded", entityType: "employing_entity", entityId: p.entityId, metadata: { confirmationId: data.id, status: p.status, basis: p.basis, coversFrom: p.coversFrom, coversTo: p.coversTo } });
+  return { ok: true, confirmationId: data.id as string };
 }
 
 // Finds the existing ACTIVE Ordift account for a member number, so a signatory can be linked to the right account for secure signature delivery.
@@ -138,14 +246,18 @@ const BUCKET = "legal-entity-documents";
 const MAX_BYTES = 10 * 1024 * 1024;
 const ALLOWED_MIME = new Set(["application/pdf", "image/jpeg", "image/png"]);
 
-export type VaultDocument = { id: string; documentType: string; filename: string | null; sha256: string | null; sizeBytes: number | null; issuedOn: string | null; expiresOn: string | null; issuingAuthority: string | null; relation: string | null; relatedDocumentId: string | null; replacedByDocumentId: string | null; notes: string | null; uploadedAt: string };
+export type VaultDocument = { id: string; documentType: string; filename: string | null; sha256: string | null; sizeBytes: number | null; issuedOn: string | null; expiresOn: string | null; issuingAuthority: string | null; relation: string | null; relatedDocumentId: string | null; replacedByDocumentId: string | null; pageNumber: number | null; pageCount: number | null; notes: string | null; uploadedAt: string };
 export async function listVaultDocuments(entityId: string, actorUserId: string): Promise<VaultDocument[]> {
   if (!(await isSuperAdminId(actorUserId))) return [];
-  const { data, error } = await createAdminClient().from("employing_entity_documents").select("id, document_type, original_filename, file_sha256, size_bytes, issued_on, expires_on, issuing_authority, relation, related_document_id, notes, uploaded_at").eq("employing_entity_id", entityId).order("uploaded_at", { ascending: false });
+  const db = createAdminClient();
+  const cols = "id, document_type, original_filename, file_sha256, size_bytes, issued_on, expires_on, issuing_authority, relation, related_document_id, notes, uploaded_at";
+  // page_number / page_count arrive with migration 0173; until then the vault must list exactly as before
+  let { data, error } = await db.from("employing_entity_documents").select(`${cols}, page_number, page_count`).eq("employing_entity_id", entityId).order("uploaded_at", { ascending: false });
+  if (error) ({ data, error } = await db.from("employing_entity_documents").select(cols).eq("employing_entity_id", entityId).order("uploaded_at", { ascending: false }) as unknown as { data: typeof data; error: typeof error });
   if (error) { console.error("[entity registry] failed to load documents", error.message); return []; }
   const replacedBy = new Map<string, string>();
   for (const r of data ?? []) if (r.relation === "new_version_of" && r.related_document_id) replacedBy.set(r.related_document_id, r.id);
-  return (data ?? []).map((r) => ({ replacedByDocumentId: replacedBy.get(r.id) ?? null, id: r.id, documentType: r.document_type, filename: r.original_filename, sha256: r.file_sha256, sizeBytes: r.size_bytes == null ? null : Number(r.size_bytes), issuedOn: r.issued_on, expiresOn: r.expires_on, issuingAuthority: r.issuing_authority, relation: r.relation, relatedDocumentId: r.related_document_id, notes: r.notes, uploadedAt: r.uploaded_at }));
+  return (data ?? []).map((r) => ({ replacedByDocumentId: replacedBy.get(r.id) ?? null, id: r.id, documentType: r.document_type, filename: r.original_filename, sha256: r.file_sha256, sizeBytes: r.size_bytes == null ? null : Number(r.size_bytes), issuedOn: r.issued_on, expiresOn: r.expires_on, issuingAuthority: r.issuing_authority, relation: r.relation, relatedDocumentId: r.related_document_id, pageNumber: (r as { page_number?: number | null }).page_number ?? null, pageCount: (r as { page_count?: number | null }).page_count ?? null, notes: r.notes, uploadedAt: r.uploaded_at }));
 }
 
 // Stores one official document. The file is hashed first: an exact copy of a document already in this entity's vault is recorded as a
@@ -154,7 +266,8 @@ export async function listVaultDocuments(entityId: string, actorUserId: string):
 // its own file and linked with `overlapOf`.
 export async function addVaultDocument(p: {
   entityId: string; documentType: string; filename: string; mimeType: string; bytes: Uint8Array; notes?: string | null;
-  issuedOn?: string | null; expiresOn?: string | null; issuingAuthority?: string | null; overlapOf?: string | null; replaces?: string | null; actorUserId: string;
+  issuedOn?: string | null; expiresOn?: string | null; issuingAuthority?: string | null; overlapOf?: string | null; replaces?: string | null;
+  continuationOf?: { documentId: string; pageNumber: number; pageCount: number }; actorUserId: string;
 }): Promise<Result<{ documentId: string; duplicateOf: string | null }>> {
   if (!(await isSuperAdminId(p.actorUserId))) return NOT_ALLOWED;
   if (!ENTITY_DOCUMENT_TYPES.some((t) => t.value === p.documentType)) return { ok: false, error: "Choose what kind of document this is." };
@@ -164,20 +277,34 @@ export async function addVaultDocument(p: {
 
   const db = createAdminClient();
   const sha = sha256OfBytes(p.bytes);
-  const { data: rows } = await db.from("employing_entity_documents").select("id, document_type, original_filename, file_sha256, storage_path, relation").eq("employing_entity_id", p.entityId);
+  const docCols = "id, document_type, original_filename, file_sha256, storage_path, relation, related_document_id";
+  let { data: rows, error: rowsError } = await db.from("employing_entity_documents").select(`${docCols}, page_number`).eq("employing_entity_id", p.entityId);
+  if (rowsError) ({ data: rows, error: rowsError } = await db.from("employing_entity_documents").select(docCols).eq("employing_entity_id", p.entityId) as unknown as { data: typeof rows; error: typeof rowsError });
+  if (rowsError) return { ok: false, error: "The vault could not be read, so nothing was stored." };       // never risk storing a duplicate because the existing documents could not be checked
+  if (p.continuationOf && !(rows ?? []).some((r) => "page_number" in r)) return { ok: false, error: "Attaching further pages is not available yet." };
   const known: KnownDocument[] = (rows ?? []).filter((r) => r.relation == null).map((r) => ({ id: r.id, sha256: r.file_sha256, documentType: r.document_type, filename: r.original_filename }));
   const verdict = checkDuplicate(known, sha);
+  const cont = p.continuationOf;
+  if (cont) {
+    // a further page of a multi-page official document: attaches to the SAME document as page 1; page 1 and the existing record are never touched, and the same bytes are never stored twice
+    const first = (rows ?? []).find((r) => r.id === cont.documentId);
+    if (!first || first.relation === "continuation_page_of") return { ok: false, error: "Page 1 of this document is not in this entity's vault." };
+    if (!Number.isInteger(cont.pageNumber) || !Number.isInteger(cont.pageCount) || cont.pageNumber < 2 || cont.pageNumber > cont.pageCount) return { ok: false, error: "Enter the page number (2 or more) and the total number of pages." };
+    if ((rows ?? []).some((r) => r.file_sha256 === sha)) return { ok: false, error: "These exact bytes are already stored in this entity's vault, so the page was not stored again." };
+    if ((rows ?? []).some((r) => (r as { related_document_id?: string }).related_document_id === cont.documentId && (r as { page_number?: number }).page_number === cont.pageNumber)) return { ok: false, error: `Page ${cont.pageNumber} of this document is already attached.` };
+  }
   if (p.replaces && !(rows ?? []).some((r) => r.id === p.replaces)) return { ok: false, error: "The document this replaces is not in this entity's vault." };
 
   let storagePath: string;
-  if (verdict.kind === "exact_duplicate_of") {
+  if (!cont && verdict.kind === "exact_duplicate_of") {
     storagePath = (rows ?? []).find((r) => r.id === verdict.of.id)!.storage_path;       // shares the original's object; nothing new is stored
   } else {
     storagePath = `${p.entityId}/${sha.slice(0, 16)}-${p.filename.replace(/[^A-Za-z0-9._-]+/g, "_")}`;
     const up = await db.storage.from(BUCKET).upload(storagePath, Buffer.from(p.bytes), { contentType: p.mimeType, upsert: false });
     if (up.error) { console.error("[entity registry] upload failed", up.error.message); return { ok: false, error: "Failed to upload the file." }; }
   }
-  const relation = verdict.kind === "exact_duplicate_of" ? { relation: "exact_duplicate_of", related_document_id: verdict.of.id }
+  const relation = cont ? { relation: "continuation_page_of", related_document_id: cont.documentId, page_number: cont.pageNumber, page_count: cont.pageCount }
+    : verdict.kind === "exact_duplicate_of" ? { relation: "exact_duplicate_of", related_document_id: verdict.of.id }
     : p.replaces ? { relation: "new_version_of", related_document_id: p.replaces }
     : p.overlapOf ? { relation: "partial_overlap_of", related_document_id: p.overlapOf } : { relation: null, related_document_id: null };
   const { data, error } = await db.from("employing_entity_documents").insert({
@@ -248,9 +375,9 @@ export type EntityStanding = {
   eligibility: Eligibility;
   registrations: EntityRegistration[];
 };
-type CatalogRow = { requirement_key: string; category: string; label: string; identifier_label: string | null; registration_kind: string | null; necessity: string; condition_activity: string | null; requires_verified: boolean; requires_in_date: boolean; shown_on_document: boolean; sort_order: number; approved_at: string | null };
+type CatalogRow = { requirement_key: string; category: string; label: string; identifier_label: string | null; identifier_pattern: string | null; registration_kind: string | null; signatory_capacities: string[] | null; necessity: string; condition_activity: string | null; requires_verified: boolean; requires_in_date: boolean; shown_on_document: boolean; sort_order: number; approved_at: string | null };
 const mapCatalog = (c: CatalogRow): RequirementRow => ({
-  key: c.requirement_key, category: c.category as RequirementRow["category"], label: c.label, identifierLabel: c.identifier_label, registrationKind: c.registration_kind, necessity: c.necessity as RequirementRow["necessity"],
+  key: c.requirement_key, category: c.category as RequirementRow["category"], label: c.label, identifierLabel: c.identifier_label, identifierPattern: c.identifier_pattern, registrationKind: c.registration_kind, signatoryCapacities: c.signatory_capacities, necessity: c.necessity as RequirementRow["necessity"],
   conditionActivity: c.condition_activity, requiresVerified: c.requires_verified, requiresInDate: c.requires_in_date, shownOnDocument: c.shown_on_document, sortOrder: c.sort_order, approved: Boolean(c.approved_at),
 });
 
@@ -259,20 +386,24 @@ async function loadEntityFacts(entityId: string): Promise<{ facts: EntityFacts; 
   const { data: e } = await db.from("employing_entities").select("id, name, legal_name, registration_type, active, verification_status, jurisdiction_id").eq("id", entityId).maybeSingle();
   if (!e) return null;
   const jurisdictionId = (e.jurisdiction_id as string | null) ?? null;
-  const [{ data: j }, { data: cat }, { data: regs }, { data: sigs }, { data: acts }, { data: types }] = await Promise.all([
+  const [{ data: j }, { data: cat }, { data: regs }, { data: sigs }, { data: acts }, { data: types }, { data: renewals }, { data: codes }] = await Promise.all([
     jurisdictionId ? db.from("employment_jurisdictions").select("name").eq("id", jurisdictionId).maybeSingle() : Promise.resolve({ data: null }),
-    jurisdictionId ? db.from("jurisdiction_entity_requirements").select("requirement_key, category, label, identifier_label, registration_kind, necessity, condition_activity, requires_verified, requires_in_date, shown_on_document, sort_order, approved_at").eq("jurisdiction_id", jurisdictionId) : Promise.resolve({ data: [] }),
+    jurisdictionId ? db.from("jurisdiction_entity_requirements").select("requirement_key, category, label, identifier_label, identifier_pattern, registration_kind, signatory_capacities, necessity, condition_activity, requires_verified, requires_in_date, shown_on_document, sort_order, approved_at").eq("jurisdiction_id", jurisdictionId) : Promise.resolve({ data: [] }),
     db.from("entity_registrations").select(REG_SELECT).eq("employing_entity_id", entityId).in("status", ["active", "pending", "not_issued", "expired"]),
-    db.from("entity_signatories").select("effective_from, effective_to").eq("employing_entity_id", entityId),
+    db.from("entity_signatories").select("effective_from, effective_to, legal_capacity").eq("employing_entity_id", entityId),
     db.from("entity_activities").select("activity_key, status, evidence_registration_id").eq("employing_entity_id", entityId),
     db.from("entity_activity_types").select("key, label"),
+    db.from("entity_renewal_confirmations").select("status, covers_to, created_at, next_due_on").eq("employing_entity_id", entityId),
+    jurisdictionId ? db.from("jurisdiction_activity_codes").select("activity_code, activity_key").eq("jurisdiction_id", jurisdictionId) : Promise.resolve({ data: [] }),
   ]);
   const registrations = ((regs ?? []) as unknown as RegRow[]).map(mapReg);
   const facts: EntityFacts = {
     name: e.name as string, legalName: (e.legal_name as string | null) ?? null, registrationType: (e.registration_type as string | null) ?? null, active: Boolean(e.active), verified: e.verification_status === "verified",
     jurisdictionName: jurisdictionId ? ((j as { name: string } | null)?.name ?? "this jurisdiction") : null,
     registrations,
-    signatories: ((sigs ?? []) as { effective_from: string | null; effective_to: string | null }[]).map((s) => ({ effectiveFrom: s.effective_from, effectiveTo: s.effective_to })),
+    signatories: ((sigs ?? []) as { effective_from: string | null; effective_to: string | null; legal_capacity: string | null }[]).map((s) => ({ effectiveFrom: s.effective_from, effectiveTo: s.effective_to, legalCapacity: s.legal_capacity })),
+    renewals: ((renewals ?? []) as { status: string; covers_to: string; created_at: string; next_due_on: string | null }[]).map((r) => ({ status: r.status as "founder_confirmed" | "official_verified" | "lapsed", coversTo: r.covers_to, createdAt: r.created_at, nextDueOn: r.next_due_on })),
+    activityCodes: ((codes ?? []) as { activity_code: string; activity_key: string }[]).map((c) => ({ code: c.activity_code, activityKey: c.activity_key })),
     activities: ((acts ?? []) as { activity_key: string; status: string; evidence_registration_id: string | null }[]).map((a): ActivityFact => ({ key: a.activity_key, status: a.status as ActivityFact["status"], evidenceRegistrationId: a.evidence_registration_id })),
     activityLabels: Object.fromEntries(((types ?? []) as { key: string; label: string }[]).map((t) => [t.key, t.label])),
   };

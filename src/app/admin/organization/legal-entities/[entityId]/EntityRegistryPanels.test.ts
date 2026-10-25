@@ -4,7 +4,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { createElement } from "react";
 
 vi.mock("./actions", () => ({
-  confirmApprovalNoticeAction: vi.fn(), confirmFundingAction: vi.fn(), recordPermitAction: vi.fn(), uploadEntityDocumentAction: vi.fn(), viewEntityDocumentAction: vi.fn(),
+  confirmApprovalNoticeAction: vi.fn(), confirmFundingAction: vi.fn(), recordPermitAction: vi.fn(), uploadEntityDocumentAction: vi.fn(), viewEntityDocumentAction: vi.fn(), recordRegistrationAction: vi.fn(), recordRenewalAction: vi.fn(), setSignatoryCapacityAction: vi.fn(),
 }));
 import { EntityRegistryPanels } from "./EntityRegistryPanels";
 import { trackCompliance } from "@/lib/organization/entityRegistry";
@@ -36,5 +36,35 @@ describe("Qatar entity registry panels render the linked records", () => {
     for (const f of ["Permit number", "Licence number", "Issue date", "Expiry date", "Confirmed premises address"]) expect(html).toContain(f);
     expect(html).toContain("blank until supplied"); expect(html).toContain("Test Owner"); expect(html).toContain("CR.pdf");
     expect(html).toContain("Receipt R-1"); expect(html).toContain("QAR 1200.00"); expect(html).toContain("Paid personally by the Founder");
+  });
+});
+
+describe("Ghana registry panels: proprietor capacity, renewal tracking and the registration form", () => {
+  const ghanaRegs = [{ id: "g1", kind: "commercial_registration", label: "Commercial Registration (CR)", status: "active", identifier: "BN000000000", issuedOn: "2018-05-07", expiresOn: null, note: null, verifiedAt: "2026-10-26", facts: {} }];
+  const base = {
+    entityId: "g", tracked: trackCompliance(ghanaRegs.map((r) => ({ ...r, kind: r.kind as never, status: r.status as never })), "2026-10-26"), registrations: ghanaRegs, documents: [{ id: "d9", documentType: "commercial_registration", filename: "certificate.jpeg", sha256: "b".repeat(64), sizeBytes: 1024, issuedOn: "2018-05-07", expiresOn: null, issuingAuthority: "Registrar", relation: null, relatedDocumentId: null, replacedByDocumentId: null, pageNumber: null, pageCount: null, notes: null, uploadedAt: "2026-10-22T00:00:00Z" }],
+    expenses: [], canonicalPermitPending: false, status: { entityVerification: "verified", employerCapable: true, documentCount: 1 }, jurisdictionName: "Ghana",
+  };
+  const ghanaHtml = (over: Record<string, unknown>) => renderToStaticMarkup(createElement(EntityRegistryPanels, { ...base, signatories: [], ...over } as never));
+  it("shows the title and the LEGAL capacity separately; a title alone is flagged as not legal authority, and offers to record the capacity", () => {
+    const html = ghanaHtml({ signatories: [{ id: "s1", fullName: "Test Proprietor", position: "Chief Executive Officer", authority: "Full authority", nationality: null, ownershipPercent: null, legalCapacity: null }] });
+    expect(html).toContain("title: Chief Executive Officer");
+    expect(html).toContain("not recorded (a title alone is not legal authority to contract)");
+    expect(html).toContain("Record legal capacity");
+    const done = ghanaHtml({ signatories: [{ id: "s1", fullName: "Test Proprietor", position: "Chief Executive Officer", authority: "Full authority", nationality: null, ownershipPercent: null, legalCapacity: "sole_proprietor" }] });
+    expect(done).toContain("title: Chief Executive Officer"); expect(done).toContain("Sole proprietor"); expect(done).not.toContain("Record legal capacity");   // set once
+  });
+  it("renewal: no record says so plainly; a Founder statement is labelled 'Founder-confirmed — official verification pending'; nothing is called overdue", () => {
+    expect(ghanaHtml({})).toContain("No renewal confirmation is recorded.");
+    const html = ghanaHtml({ renewals: [{ id: "r1", coversFrom: "2018-05-07", coversTo: "2026-10-26", status: "founder_confirmed", basis: "founder_statement", statement: "x", officialReference: null, nextDueOn: null, verifiedAt: null }] });
+    expect(html).toContain("Founder-confirmed — official verification pending");
+    expect(html.replace("Nothing is marked overdue or non-compliant because a paper receipt is missing.", "")).not.toMatch(/overdue|non-compliant/i);
+    expect(html).toContain("Nothing is marked overdue or non-compliant because a paper receipt is missing.");
+  });
+  it("the registration form appears only for what is not yet recorded, and says the number is checked against the jurisdiction's format and recorded as a cross-check", () => {
+    const html = ghanaHtml({});
+    expect(html).toContain("Record a registration");
+    expect(html).toContain("the tax identification number");
+    expect(html).toContain("recorded as a cross-check, not as confirmation by the issuing authority");
   });
 });

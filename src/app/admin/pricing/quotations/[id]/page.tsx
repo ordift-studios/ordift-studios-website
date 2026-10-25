@@ -130,6 +130,7 @@ export default async function QuotationDetailPage({ params }: { params: Promise<
             <details className="font-sans text-caption text-ordift-ink-muted">
               <summary className="cursor-pointer text-ordift-ink">Requirements for {(entity.ok ? entity.entity.assessment : entity.assessment)!.jurisdiction ?? "this jurisdiction"} ({(entity.ok ? entity.entity.assessment : entity.assessment)!.requirements.filter((r) => r.blocking).length} blocking)</summary>
               <ul className="mt-1 list-disc pl-5 space-y-0.5">{(entity.ok ? entity.entity.assessment : entity.assessment)!.requirements.map((r) => <li key={r.key}>{r.label}: <strong className={r.blocking ? "text-red-800" : "text-ordift-ink"}>{requirementStateLabel(r)}</strong></li>)}</ul>
+              {(entity.ok ? entity.entity.assessment : entity.assessment)!.advisories.length > 0 && <ul className="mt-1 list-disc pl-5 space-y-0.5">{(entity.ok ? entity.entity.assessment : entity.assessment)!.advisories.map((a) => <li key={a}>{a} <em>(advisory, not blocking)</em></li>)}</ul>}
             </details>
           )}
           {entity.ok && quotation.status !== "draft" && <p className="font-sans text-caption text-ordift-ink-muted">Recorded after this quotation was issued, so it is not part of the issued document. It is not changed once recorded; revise the quotation to use a different entity.</p>}
