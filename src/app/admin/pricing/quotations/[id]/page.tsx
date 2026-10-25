@@ -92,6 +92,12 @@ export default async function QuotationDetailPage({ params }: { params: Promise<
         </div>
       )}
 
+      {quotation.status === "expired" && quotation.enquiryId && !quotation.crewManaged && (
+        <p className="mb-4 rounded-lg border border-black/15 bg-white p-3 font-sans text-body-small text-ordift-ink">
+          This quotation was marked expired, so it cannot be revised. To offer the client a new one, <Link href={`/admin/pricing/quotations/new?enquiryId=${quotation.enquiryId}`} className="underline font-medium">create a new quotation for this enquiry</Link>: its validity starts fresh when you issue it.
+        </p>
+      )}
+
       <QuotationDatesCard
         createdAt={quotation.createdAt} issuedAt={quotation.issuedAt} validUntil={quotation.validUntil} status={quotation.status} today={today}
         deliveryText={quotation.status === "draft" ? "Not applicable until it is issued" : deliveredText ?? "Not recorded (issuing does not send it to the client)"}
