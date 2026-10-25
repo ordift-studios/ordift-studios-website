@@ -18,7 +18,7 @@ vi.mock("@/lib/admin/activityLog", () => ({
 }));
 vi.mock("@/lib/organization/authority", () => ({ authorizeWithSuperAdminOverride: async () => ({ ok: h.authorized, actedAsOverride: false }), GOVERNANCE_CAPABILITIES: { contractAdminister: "x" } }));
 
-import { activateMasterVersion, attestHistoricalApproval, registerControlledMaster } from "./masterRegistryActions";
+import { activateMasterVersion, approvalDateInEvidence, attestHistoricalApproval, loadApprovalAttestation, registerControlledMaster } from "./masterRegistryActions";
 
 const sha = (b: Uint8Array) => createHash("sha256").update(b).digest("hex");
 const cleanDocx = makeZip("word/document.xml", "<w:document><w:body><w:p><w:r><w:t>24.1 Instructor-caused claims. The Instructor shall provide proportionate protection.</w:t></w:r></w:p></w:body></w:document>");
@@ -29,7 +29,7 @@ const version = (o: Record<string, unknown> = {}) => ({
   id: "v1", master_id: "m1", status: "approved", approved_by: "Legal Counsel", approved_at: null, effective_date: null, content_reference: null, document_hash: null,
   master_docx_storage_path: "masters-docx/OS-LGL-010/a.docx", master_docx_sha256: sha(cleanDocx), master_pdf_storage_path: "masters-pdf/OS-LGL-010/a.pdf", master_pdf_sha256: sha(pdf), created_at: "2026-09-08T01:36:30Z", ...o,
 });
-const input = { approvalDate: "2026-09-05", counselName: "Counsel Name", counselFirm: "Firm LLP", evidenceKind: "counsel_email", evidenceReference: "Email of 5 Sep 2026 approving the legal suite, filed in the legal archive", evidenceDocumentId: "", coversDocumentCodes: ["OS-LGL-010"] };
+const input = { approvalDate: "2026-09-18", counselName: "Counsel Name", counselFirm: "Firm LLP", evidenceKind: "counsel_email", evidenceReference: "Email of 18 Sep 2026 approving the document, filed in the legal archive", evidenceDocumentId: "", coversDocumentCodes: ["OS-LGL-010"], identityCheck: { method: "call_back_independent_number", checkedOn: "2026-09-20", note: "The Founder called the firm on a number taken from the Bar register and spoke to counsel." } };
 
 beforeEach(async () => {
   h.authorized = true; h.logged = [];
@@ -41,18 +41,18 @@ beforeEach(async () => {
 describe("attestHistoricalApproval", () => {
   it("records an audited attestation without touching the registry's own columns", async () => {
     const r = await attestHistoricalApproval({ versionId: "v1", input, actorUserId: "u1" });
-    expect(r).toEqual({ ok: true, approvalDate: "2026-09-05" });
+    expect(r).toEqual({ ok: true, approvalDate: "2026-09-18" });
     const ev = h.db.tables.activity_log[0];
     expect(ev).toMatchObject({ action: "legal.master_version.approval_attested", entity_id: "v1", actor_user_id: "u1" });
-    expect(ev.metadata).toMatchObject({ approvalDate: "2026-09-05", counselName: "Counsel Name", documentCode: "OS-LGL-010", basis: "administrator_attestation_system_has_not_inspected_the_evidence" });
+    expect(ev.metadata).toMatchObject({ approvalDate: "2026-09-18", counselName: "Counsel Name", documentCode: "OS-LGL-010", basis: "administrator_attestation_system_has_not_inspected_the_evidence" });
     expect(h.db.writes.filter((w) => w.table === "legal_document_versions")).toEqual([]);
   });
-  it("refuses an unauthorised user, the Addendum date, evidence that does not name the document, and a version that already has a stamp", async () => {
+  it("refuses an unauthorised user, a date before the version existed, evidence that does not name the document, and a version that already has a stamp", async () => {
     h.authorized = false;
     expect((await attestHistoricalApproval({ versionId: "v1", input, actorUserId: "u2" })).ok).toBe(false);
     h.authorized = true;
-    const addendum = await attestHistoricalApproval({ versionId: "v1", input: { ...input, approvalDate: "2026-10-11" }, actorUserId: "u1" });
-    expect(addendum.ok).toBe(false);
+    const before = await attestHistoricalApproval({ versionId: "v1", input: { ...input, approvalDate: "2026-09-07" }, actorUserId: "u1" });
+    expect(!before.ok && before.error).toContain("cannot be dated before it existed");
     expect((await attestHistoricalApproval({ versionId: "v1", input: { ...input, coversDocumentCodes: ["OS-LGL-001"] }, actorUserId: "u1" })).ok).toBe(false);
     h.db.tables.legal_document_versions[0].approved_at = "2026-09-04T00:00:00Z";
     expect((await attestHistoricalApproval({ versionId: "v1", input, actorUserId: "u1" })).ok).toBe(false);
@@ -62,7 +62,7 @@ describe("attestHistoricalApproval", () => {
     expect((await attestHistoricalApproval({ versionId: "v1", input: { ...input, evidenceDocumentId: "" }, actorUserId: "u1" })).ok).toBe(false);
     expect((await attestHistoricalApproval({ versionId: "v1", input: { ...input, evidenceDocumentId: "not-stored" }, actorUserId: "u1" })).ok).toBe(false);
     expect((await attestHistoricalApproval({ versionId: "v1", input, actorUserId: "u1" })).ok).toBe(true);
-    const again = await attestHistoricalApproval({ versionId: "v1", input: { ...input, approvalDate: "2026-09-06" }, actorUserId: "u1" });
+    const again = await attestHistoricalApproval({ versionId: "v1", input: { ...input, approvalDate: "2026-09-19" }, actorUserId: "u1" });
     expect(!again.ok && again.error).toContain("already on record");
     expect(h.db.tables.activity_log.length).toBe(1);
   });
@@ -106,17 +106,17 @@ describe("activateMasterVersion", () => {
     h.db.writes.length = 0;
   };
   it("refuses until the approval date is verified, the master registered and the clause check clean", async () => {
-    const r = await activateMasterVersion({ versionId: "v1", effectiveDate: "2026-09-05", backdatedReason: "Effective from the approval date.", actorUserId: "u1" });
+    const r = await activateMasterVersion({ versionId: "v1", effectiveDate: "2026-09-18", backdatedReason: "Effective from the approval date.", actorUserId: "u1" });
     expect(r.ok).toBe(false);
     expect(!r.ok && r.errors?.length).toBeGreaterThanOrEqual(2);
     expect(h.db.writes).toEqual([]);
   });
   it("sets the effective date (approval date, with a stated reason because it is in the past) and activates at the real time", async () => {
     await prepare();
-    const r = await activateMasterVersion({ versionId: "v1", effectiveDate: "2026-09-05", backdatedReason: "Effective from counsel's approval date, as decided by the Founder.", actorUserId: "u1" });
+    const r = await activateMasterVersion({ versionId: "v1", effectiveDate: "2026-09-18", backdatedReason: "Effective from counsel's approval date, as decided by the Founder.", actorUserId: "u1" });
     expect(r.ok).toBe(true);
     const row = h.db.tables.legal_document_versions[0];
-    expect(row.effective_date).toBe("2026-09-05");
+    expect(row.effective_date).toBe("2026-09-18");
     expect(row.status).toBe("active");
     expect(typeof row.activated_at).toBe("string");
     expect(String(row.activated_at).slice(0, 10)).toBe(new Date().toISOString().slice(0, 10)); // the real activation time, never back-dated
@@ -125,7 +125,7 @@ describe("activateMasterVersion", () => {
   it("refuses an effective date earlier than the verified approval date, or in the past without a reason", async () => {
     await prepare();
     expect((await activateMasterVersion({ versionId: "v1", effectiveDate: "2026-09-01", backdatedReason: "Because I said so, for testing.", actorUserId: "u1" })).ok).toBe(false);
-    expect((await activateMasterVersion({ versionId: "v1", effectiveDate: "2026-09-05", actorUserId: "u1" })).ok).toBe(false);
+    expect((await activateMasterVersion({ versionId: "v1", effectiveDate: "2026-09-18", actorUserId: "u1" })).ok).toBe(false);
     expect(h.db.tables.legal_document_versions[0].status).toBe("approved");
   });
 });
@@ -149,7 +149,7 @@ describe("failure handling: no false success, no half-finished state", () => {
     await attestHistoricalApproval({ versionId: "v1", input, actorUserId: "u1" });
     await registerControlledMaster({ versionId: "v1", actorUserId: "u1" });
     h.db.storage["masters-docx/OS-LGL-010/a.docx"] = dirtyDocx; // altered after registration
-    const r = await activateMasterVersion({ versionId: "v1", effectiveDate: "2026-09-05", backdatedReason: "Effective from counsel's approval date, as decided.", actorUserId: "u1" });
+    const r = await activateMasterVersion({ versionId: "v1", effectiveDate: "2026-09-18", backdatedReason: "Effective from counsel's approval date, as decided.", actorUserId: "u1" });
     expect(!r.ok && r.error).toContain("HARD STOP");
     expect(h.db.tables.legal_document_versions[0]).toMatchObject({ status: "approved", effective_date: null });
   });
@@ -157,10 +157,10 @@ describe("failure handling: no false success, no half-finished state", () => {
     await attestHistoricalApproval({ versionId: "v1", input, actorUserId: "u1" });
     await registerControlledMaster({ versionId: "v1", actorUserId: "u1" });
     h.db.tables.legal_document_masters[0].current_version_id = "other";
-    expect((await activateMasterVersion({ versionId: "v1", effectiveDate: "2026-09-05", backdatedReason: "Effective from counsel's approval date, as decided.", actorUserId: "u1" })).ok).toBe(false);
+    expect((await activateMasterVersion({ versionId: "v1", effectiveDate: "2026-09-18", backdatedReason: "Effective from counsel's approval date, as decided.", actorUserId: "u1" })).ok).toBe(false);
     h.db.tables.legal_document_masters[0].current_version_id = "v1";
-    expect((await activateMasterVersion({ versionId: "v1", effectiveDate: "2026-09-05", backdatedReason: "Effective from counsel's approval date, as decided.", actorUserId: "u1" })).ok).toBe(true);
-    expect((await activateMasterVersion({ versionId: "v1", effectiveDate: "2026-09-05", backdatedReason: "Effective from counsel's approval date, as decided.", actorUserId: "u1" })).ok).toBe(false);
+    expect((await activateMasterVersion({ versionId: "v1", effectiveDate: "2026-09-18", backdatedReason: "Effective from counsel's approval date, as decided.", actorUserId: "u1" })).ok).toBe(true);
+    expect((await activateMasterVersion({ versionId: "v1", effectiveDate: "2026-09-18", backdatedReason: "Effective from counsel's approval date, as decided.", actorUserId: "u1" })).ok).toBe(false);
   });
 });
 
@@ -173,5 +173,124 @@ describe("the registry itself refuses to activate a version with no approval dat
     expect(h.db.tables.legal_document_versions[0].status).toBe("approved");
     await attestHistoricalApproval({ versionId: "v1", input, actorUserId: "u1" });
     expect((await transitionLegalDocumentVersionStatus({ versionId: "v1", toStatus: "active", actorUserId: "u1" })).ok).toBe(true);
+  });
+});
+
+
+describe("attestation after creation: chronology, counsel identity check and what the registry label means", () => {
+  const events = () => h.db.tables.activity_log.filter((e) => e.action === "legal.master_version.approval_attested");
+  const row = () => h.db.tables.legal_document_versions[0];
+
+  it("records counsel's 18 Sep confirmation of a version created on 8 Sep, keeping creation, the seeded label, counsel's date and the identity check apart", async () => {
+    const r = await attestHistoricalApproval({ versionId: "v1", input, actorUserId: "u1" });
+    expect(r).toEqual({ ok: true, approvalDate: "2026-09-18" });
+    expect(events()).toHaveLength(1);
+    expect(events()[0].metadata).toMatchObject({
+      schemaVersion: 2, approvalDate: "2026-09-18", versionCreatedOn: "2026-09-08", dateMeaning: "counsel_legal_review_and_confirmation_date",
+      registryAtAttestation: { status: "approved", approvedBy: "Legal Counsel", approvedAtStamp: null, createdOn: "2026-09-08", basis: "seeded_label_unevidenced" },
+      identityCheck: { method: "call_back_independent_number", checkedOn: "2026-09-20" }, identityVerificationNature: "administrator_recorded_independent_check_system_has_not_verified_identity",
+    });
+    // nothing about the registry changed: the creation date, status, label and (absent) stamp stay exactly as seeded; nothing is activated, registered or issued
+    expect(row()).toMatchObject({ status: "approved", approved_by: "Legal Counsel", approved_at: null, effective_date: null, content_reference: null, created_at: "2026-09-08T01:36:30Z" });
+    expect(row().activated_at ?? null).toBeNull();
+    expect(h.db.writes.filter((w) => w.table === "legal_document_versions")).toEqual([]);
+    const stored = await loadApprovalAttestation("v1");
+    expect(stored).toMatchObject({ approvalDate: "2026-09-18", dateMeaning: "counsel_legal_review_and_confirmation_date", registryBasisAtAttestation: "seeded_label_unevidenced", identityCheck: { method: "call_back_independent_number" }, approvalDateInEvidence: false });
+  });
+  it("accepts the creation date itself, and refuses the day before and a future date, storing nothing", async () => {
+    expect((await attestHistoricalApproval({ versionId: "v1", input: { ...input, approvalDate: "2026-09-07" }, actorUserId: "u1" })).ok).toBe(false);
+    expect((await attestHistoricalApproval({ versionId: "v1", input: { ...input, approvalDate: "2999-01-01" }, actorUserId: "u1" })).ok).toBe(false);
+    expect(events()).toHaveLength(0);
+    expect((await attestHistoricalApproval({ versionId: "v1", input: { ...input, approvalDate: "2026-09-08" }, actorUserId: "u1" })).ok).toBe(true);
+  });
+  it("refuses a missing, self-declared or token identity check and stores nothing", async () => {
+    const noCheck = { ...input } as Record<string, unknown>; delete noCheck.identityCheck;
+    expect((await attestHistoricalApproval({ versionId: "v1", input: noCheck as typeof input, actorUserId: "u1" })).ok).toBe(false);
+    for (const identityCheck of [
+      { ...input.identityCheck, method: "sender_confirmed_by_email" }, { ...input.identityCheck, method: "" }, { ...input.identityCheck, note: "ok" }, { ...input.identityCheck, checkedOn: "2999-01-01" },
+    ]) expect((await attestHistoricalApproval({ versionId: "v1", input: { ...input, identityCheck }, actorUserId: "u1" })).ok).toBe(false);
+    expect(events()).toHaveLength(0);
+    expect(h.db.writes.filter((w) => w.table === "activity_log")).toEqual([]);
+  });
+  it("takes registry facts and the meaning of the date from the stored row, never from the request (extra fields cannot pre-verify identity or fake a stamp)", async () => {
+    const forged = { ...input, versionCreatedOn: "2026-01-01", registryAtAttestation: { basis: "registry_stamp", approvedAtStamp: "2026-01-01T00:00:00Z" }, dateMeaning: "internal_approval", schemaVersion: 1, identityVerified: true, identityVerificationNature: "system_verified" };
+    expect((await attestHistoricalApproval({ versionId: "v1", input: forged, actorUserId: "u1" })).ok).toBe(true);
+    expect(events()[0].metadata).toMatchObject({ versionCreatedOn: "2026-09-08", schemaVersion: 2, dateMeaning: "counsel_legal_review_and_confirmation_date", registryAtAttestation: { basis: "seeded_label_unevidenced", approvedAtStamp: null }, identityVerificationNature: "administrator_recorded_independent_check_system_has_not_verified_identity" });
+    expect(events()[0].metadata).not.toHaveProperty("identityVerified");
+    // and extra fields cannot rescue an identity check that is missing
+    const noCheck = { ...forged } as Record<string, unknown>; delete noCheck.identityCheck;
+    h.db.tables.activity_log = [];
+    expect((await attestHistoricalApproval({ versionId: "v1", input: noCheck as typeof input, actorUserId: "u1" })).ok).toBe(false);
+  });
+  it("keeps the one-attestation-per-version control, including for a later 'correction' with a different date or identity check", async () => {
+    expect((await attestHistoricalApproval({ versionId: "v1", input, actorUserId: "u1" })).ok).toBe(true);
+    for (const attempt of [{ ...input, approvalDate: "2026-09-25" }, { ...input, identityCheck: { ...input.identityCheck, note: "A different note that is long enough to pass." } }]) {
+      const again = await attestHistoricalApproval({ versionId: "v1", input: attempt, actorUserId: "u1" });
+      expect(!again.ok && again.error).toContain("already on record");
+    }
+    expect(events()).toHaveLength(1);
+  });
+  it("applies the same rules to another agreement type without changing how a stamped version behaves", async () => {
+    h.db.tables.legal_document_masters.push({ id: "m2", canonical_code: "OS-LGL-014", title: "Booking Terms", current_version_id: "v2" });
+    h.db.tables.legal_document_versions.push(version({ id: "v2", master_id: "m2" }));
+    const ev2 = await storeTestEvidence("v2", "u1", "Email from counsel, 18 September 2026: I approve OS-LGL-014, Booking Terms, v1.0. Synthetic test evidence.", "booking.txt");
+    const other = { ...input, coversDocumentCodes: ["OS-LGL-014"], evidenceDocumentId: ev2 };
+    expect((await attestHistoricalApproval({ versionId: "v2", input: { ...other, approvalDate: "2026-09-07" }, actorUserId: "u1" })).ok).toBe(false);
+    expect((await attestHistoricalApproval({ versionId: "v2", input: other, actorUserId: "u1" })).ok).toBe(true);
+    expect(events().map((e) => e.entity_id)).toEqual(["v2"]);
+    // a version the registry already stamped is still not attestable
+    h.db.tables.legal_document_versions[0].approved_at = "2026-09-12T00:00:00Z";
+    expect((await attestHistoricalApproval({ versionId: "v1", input, actorUserId: "u1" })).ok).toBe(false);
+  });
+  it("keeps master-hash integrity: after an attestation the master is still re-hashed, and a tampered file is refused", async () => {
+    await attestHistoricalApproval({ versionId: "v1", input, actorUserId: "u1" });
+    h.db.storage["masters-docx/OS-LGL-010/a.docx"] = dirtyDocx;
+    const r = await registerControlledMaster({ versionId: "v1", actorUserId: "u1" });
+    expect(r.ok).toBe(false);
+    expect(row().content_reference).toBeNull();
+  });
+  it("never activates or issues by itself: after attesting and registering, the version is still 'approved' with no effective date", async () => {
+    await attestHistoricalApproval({ versionId: "v1", input, actorUserId: "u1" });
+    await registerControlledMaster({ versionId: "v1", actorUserId: "u1" });
+    expect(row()).toMatchObject({ status: "approved", effective_date: null });
+    expect(row().activated_at ?? null).toBeNull();
+    expect(h.db.tables.activity_log.map((e) => e.action).filter((a) => /activat|issu|agreement/.test(String(a)))).toEqual([]);
+  });
+  it("does not let an effective date precede counsel's attested date, and allows it on that date", async () => {
+    await attestHistoricalApproval({ versionId: "v1", input, actorUserId: "u1" });
+    await registerControlledMaster({ versionId: "v1", actorUserId: "u1" });
+    expect((await activateMasterVersion({ versionId: "v1", effectiveDate: "2026-09-08", backdatedReason: "Effective from the creation date, for testing.", actorUserId: "u1" })).ok).toBe(false);
+    expect((await activateMasterVersion({ versionId: "v1", effectiveDate: "2026-09-18", backdatedReason: "Effective from counsel's approval date, as decided by the Founder.", actorUserId: "u1" })).ok).toBe(true);
+  });
+});
+
+describe("historical audit events stay readable", () => {
+  const legacy = (metadata: Record<string, unknown>) => { h.db.tables.activity_log.push({ id: "old", action: "legal.master_version.approval_attested", entity_id: "v1", metadata, actor_user_id: "u1", created_at: "2026-10-12T10:00:00Z" }); };
+  it("an event written before identity checks existed is read as-is: no identity check, no date meaning, nothing rewritten", async () => {
+    legacy({ approvalDate: "2026-09-05", counselName: "Counsel Name", counselFirm: "Firm LLP", evidenceKind: "counsel_email", evidenceReference: "Email of 5 Sep 2026", evidenceSha256: "a".repeat(64) });
+    const a = await loadApprovalAttestation("v1");
+    expect(a).toMatchObject({ approvalDate: "2026-09-05", counselName: "Counsel Name", identityCheck: null, dateMeaning: null, registryBasisAtAttestation: null, approvalDateInEvidence: null });
+    expect(h.db.tables.activity_log).toHaveLength(1);
+    expect(h.db.writes.filter((w) => w.table === "activity_log")).toEqual([]);
+  });
+  it("a stored identity check with an unknown method is not trusted", async () => {
+    legacy({ approvalDate: "2026-09-18", counselName: "Counsel Name", counselFirm: "Firm LLP", identityCheck: { method: "sender_confirmed_by_email", checkedOn: "2026-09-20", note: "Counsel said it was him." }, schemaVersion: 2 });
+    expect((await loadApprovalAttestation("v1"))?.identityCheck).toBeNull();
+  });
+  it("an existing attestation still blocks a second one, whatever shape it has", async () => {
+    legacy({ approvalDate: "2026-09-05", counselName: "Counsel Name", counselFirm: "Firm LLP" });
+    const again = await attestHistoricalApproval({ versionId: "v1", input, actorUserId: "u1" });
+    expect(!again.ok && again.error).toContain("already on record");
+  });
+});
+
+describe("approvalDateInEvidence", () => {
+  it("reports whether the readable evidence mentions the entered date, in ISO or written form, and null when unreadable", () => {
+    expect(approvalDateInEvidence({ checked: true, datesFound: ["18 September 2026"] }, "2026-09-18")).toBe(true);
+    expect(approvalDateInEvidence({ checked: true, datesFound: ["18th September, 2026"] }, "2026-09-18")).toBe(true);
+    expect(approvalDateInEvidence({ checked: true, datesFound: ["2026-09-18"] }, "2026-09-18")).toBe(true);
+    expect(approvalDateInEvidence({ checked: true, datesFound: ["5 September 2026"] }, "2026-09-18")).toBe(false);
+    expect(approvalDateInEvidence({ checked: true, datesFound: [] }, "2026-09-18")).toBe(false);
+    expect(approvalDateInEvidence({ checked: false }, "2026-09-18")).toBeNull();
   });
 });

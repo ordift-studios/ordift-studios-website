@@ -60,7 +60,7 @@ export async function loadAgreementReadiness(params: {
         const { data: p } = await admin.from("profiles").select("member_number").eq("id", a.verifiedByProfileId).maybeSingle();
         verifiedByLabel = (p?.member_number as string | null) ? `member ${p!.member_number}` : null; // audit identity standard: member number, not name
       }
-      attestation = { approvalDate: a.approvalDate, counselName: a.counselName, counselFirm: a.counselFirm, verifiedAt: a.verifiedAt, verifiedByLabel };
+      attestation = { approvalDate: a.approvalDate, counselName: a.counselName, counselFirm: a.counselFirm, verifiedAt: a.verifiedAt, verifiedByLabel, identityCheck: a.identityCheck ? { method: a.identityCheck.method, checkedOn: a.identityCheck.checkedOn } : null, approvalDateInEvidence: a.approvalDateInEvidence };
     }
     const r = await loadRegistrationCheck(v.id as string);
     if (r && r.unresolvedMarkers >= 0) registrationCheck = { unresolvedMarkers: r.unresolvedMarkers };

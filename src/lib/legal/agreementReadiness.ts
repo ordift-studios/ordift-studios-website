@@ -1,5 +1,5 @@
 import { deriveMasterContentReference } from "./masterContentReference";
-import { resolveApprovalDate } from "./approvalAttestation";
+import { resolveApprovalDate, classifyRegistryApproval, IDENTITY_METHOD_LABELS, type IdentityMethod } from "./approvalAttestation";
 
 // Is a controlled legal document genuinely ready to be ISSUED to a person? Pure assessment from recorded facts only. Every check is
 // VERIFIED from a stored record, NEEDS CONFIRMATION (a record exists but a person must confirm it), or MISSING - and each unresolved item
@@ -24,7 +24,11 @@ export type VersionFacts = {
 export type SignatoryFact = { id: string; fullName: string; position: string; authority: string | null; sourceDocumentId: string | null; profileId: string | null };
 export type EntityDocumentFact = { id: string; type: string; filename: string | null; hasStoredFile: boolean; notes: string | null };
 export type EntityCandidate = { id: string; name: string; jurisdiction: string | null; verified: boolean; signatories: SignatoryFact[]; documents: EntityDocumentFact[]; href: string };
-export type AttestationFacts = { approvalDate: string; counselName: string; counselFirm: string; verifiedAt: string; verifiedByLabel: string | null } | null;
+export type AttestationFacts = {
+  approvalDate: string; counselName: string; counselFirm: string; verifiedAt: string; verifiedByLabel: string | null;
+  identityCheck?: { method: string; checkedOn: string } | null; // null/absent: an event written before counsel-identity checks were captured
+  approvalDateInEvidence?: boolean | null;
+} | null;
 export type FounderFact = { profileId: string; name: string; memberNumber: string | null } | null;
 // the action a check needs; the workspace shows the matching embedded form next to it
 export type ActionKey = "attest_approval" | "register_master" | "activate" | "confirm_entity" | "add_signatory" | "select_signatory" | "set_jurisdiction";
@@ -76,7 +80,9 @@ export function assessAgreementReadiness(i: AgreementReadinessInput): AgreementR
   } else {
     checks.push(
       ["approved", "active"].includes(v.status) && v.approvedBy
-        ? ok("approval_recorded", "Approval recorded", `Recorded as ${v.status} by ${v.approvedBy}.`)
+        ? ok("approval_recorded", "Registry status", classifyRegistryApproval(v) === "seeded_label_unevidenced"
+            ? `The registry shows “${v.status}”, approver label “${v.approvedBy}”${v.createdAt ? `, set when the version was created (${v.createdAt.slice(0, 10)})` : ""}. This is the registry's seeded label: it carries no approval date and no evidence, so it is not a verified legal approval. Counsel's dated approval is verified separately below.`
+            : `Recorded as ${v.status} by ${v.approvedBy}, with an approval stamp from the registry.`)
         : open("missing", "approval_recorded", "Approval recorded", `Status is “${v.status}”${v.approvedBy ? "" : " and no approver is recorded"}.`, { ...legal("The document is not recorded as approved.", "An unapproved template cannot be issued.", "Legal document registry", "Complete legal review and approval."), href: i.legalHref, hrefLabel: "Open the legal document registry" }),
     );
 
@@ -88,17 +94,21 @@ export function assessAgreementReadiness(i: AgreementReadinessInput): AgreementR
           "Historical approval date",
           approval.source === "registry_stamp"
             ? `Approved on ${approval.date} (registry stamp).`
-            : `Approved on ${approval.date} — attested by ${i.attestation!.verifiedByLabel ?? "an administrator"}: ${i.attestation!.counselName}, ${i.attestation!.counselFirm}. Recorded on ${i.attestation!.verifiedAt.slice(0, 10)} (a separate date from the approval). This is an administrator attestation backed by an evidence fingerprint; the system has not itself inspected counsel's document.`,
+            : `Counsel's legal approval / confirmation dated ${approval.date} — attested by ${i.attestation!.verifiedByLabel ?? "an administrator"}: ${i.attestation!.counselName}, ${i.attestation!.counselFirm}. Recorded on ${i.attestation!.verifiedAt.slice(0, 10)} (a separate date from the approval, and from the registry's creation date${v.createdAt ? ` of ${v.createdAt.slice(0, 10)}` : ""}). ${
+              i.attestation!.identityCheck
+                ? `Counsel's identity was checked independently by the administrator: ${IDENTITY_METHOD_LABELS[i.attestation!.identityCheck.method as IdentityMethod] ?? i.attestation!.identityCheck.method}, on ${i.attestation!.identityCheck.checkedOn}.`
+                : "No independent counsel-identity check is on record for this attestation (it pre-dates that control)."
+            } ${i.attestation!.approvalDateInEvidence === false ? "The readable evidence does not mention this date. " : ""}This is an administrator attestation backed by an evidence fingerprint; the system has not itself inspected counsel's document or verified counsel's identity.`,
         ),
       );
     } else {
       checks.push(
-        open("missing", "approval_date", "Verify historical legal approval", `The registry recorded this version as approved by “${v.approvedBy ?? "—"}” when it was created${v.createdAt ? ` (${v.createdAt.slice(0, 10)})` : ""}, but no approval date was stamped and no dated evidence is on file. The ingestion date is not proof of approval, and another document set's approval date is not borrowed.`, {
+        open("missing", "approval_date", "Verify historical legal approval", `The registry labelled this version “approved” by “${v.approvedBy ?? "—"}” when it was created${v.createdAt ? ` (${v.createdAt.slice(0, 10)})` : ""}, but that label carries no approval date and no evidence. The creation date is not proof of approval, and another document set's approval date is not borrowed.`, {
           what: "The day Legal Counsel actually approved this specific document is not recorded.",
           why: "The approval date is the legal starting point for the template's effective date and for every agreement built from it. It must be real — not the ingestion date, not today, not another package's date.",
-          source: "Counsel's written approval (letter, email or signed register) that names this document. The registry already showed it approved when created, so the approval cannot be later than that.",
+          source: "Counsel's own written approval or confirmation (letter, email or signed register) that names this document. Its date may be the creation date or any later day up to today, never earlier than the version's creation.",
           who: `${WHO_LEGAL}. The verifier's identity and the real verification time are recorded automatically, separately from the approval date.`,
-          how: "Enter the date, counsel and firm, and the evidence below. If no such evidence exists, a fresh counsel approval is needed: this form refuses to guess.",
+          how: "Enter the date, counsel and firm, the evidence, and how counsel's identity was checked independently (the sender's own confirmation is not enough). If no such evidence exists, a fresh counsel approval is needed: this form refuses to guess.",
           href: null, hrefLabel: null,
         }, "attest_approval"),
       );

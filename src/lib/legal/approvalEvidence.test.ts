@@ -12,7 +12,7 @@ import { checkEvidenceText, listApprovalEvidence, loadVerifiedEvidence, storeApp
 const enc = (t: string) => new TextEncoder().encode(t);
 const GOOD = "Email from counsel, 5 September 2026: I approve OS-LGL-010, the Instructor / Workshop Facilitator Agreement.";
 const base = { versionId: "v1", description: "Counsel's email of 5 September 2026", actorUserId: "u1" };
-const input = { approvalDate: "2026-09-05", counselName: "Counsel Name", counselFirm: "Firm LLP", evidenceKind: "counsel_email", evidenceReference: "Original kept in the legal archive, email thread", evidenceDocumentId: "", coversDocumentCodes: ["OS-LGL-010"] };
+const input = { approvalDate: "2026-09-18", counselName: "Counsel Name", counselFirm: "Firm LLP", evidenceKind: "counsel_email", evidenceReference: "Original kept in the legal archive, email thread", evidenceDocumentId: "", coversDocumentCodes: ["OS-LGL-010"], identityCheck: { method: "call_back_independent_number", checkedOn: "2026-09-20", note: "The Founder called the firm on a number taken from the Bar register and spoke to counsel." } };
 
 beforeEach(() => {
   h.authorized = true;
@@ -78,7 +78,7 @@ describe("the attestation depends on that stored evidence", () => {
     const good = await storeApprovalEvidence({ ...base, filename: "good.txt", bytes: enc(GOOD) });
     await attestHistoricalApproval({ versionId: "v1", input: { ...input, evidenceDocumentId: good.ok ? good.item.id : "" }, actorUserId: "u1" });
     const meta = h.db.tables.activity_log[0].metadata as Record<string, unknown>;
-    expect(meta).toMatchObject({ evidenceDocumentId: good.ok ? good.item.id : "", evidenceSha256: good.ok ? good.item.sha256 : "", claimedApprovalDate: "2026-09-05", documentCode: "OS-LGL-010", counselName: "Counsel Name", basis: "administrator_attestation_system_has_not_inspected_the_evidence" });
+    expect(meta).toMatchObject({ evidenceDocumentId: good.ok ? good.item.id : "", evidenceSha256: good.ok ? good.item.sha256 : "", claimedApprovalDate: "2026-09-18", documentCode: "OS-LGL-010", counselName: "Counsel Name", basis: "administrator_attestation_system_has_not_inspected_the_evidence" });
     expect(meta.evidenceCheck).toMatchObject({ checked: true, mentionsDocument: true });
     expect(h.db.tables.activity_log[0].actor_user_id).toBe("u1");
   });

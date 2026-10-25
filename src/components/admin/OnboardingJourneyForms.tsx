@@ -3,6 +3,7 @@
 import { useActionState } from "react";
 import { STEP7_UPLOAD_MAX_BYTES, STEP7_UPLOAD_MAX_LABEL } from "@/lib/organization/onboardingUploadLimit";
 import { SCHEDULE_A_FIELDS, INDEPENDENT_STATUS_ROUTES, PROFESSIONAL_ROLES, REGULATORY_APPROVAL_STATUSES, type ScheduleATerms } from "@/lib/legal/instructorAgreementTerms";
+import { IDENTITY_METHODS, IDENTITY_METHOD_LABELS } from "@/lib/legal/approvalAttestation";
 import type { JourneyActionState } from "@/app/admin/organization/onboarding/[onboardingId]/journeyActions";
 import {
   activateTemplateAction, addSignatoryAction, uploadEvidenceAction, uploadApprovalEvidenceAction, approveForIssueAction, attestApprovalAction, confirmEntityAction, issueAgreementAction, prepareAgreementAction, registerMasterAction, saveScheduleAAction, selectSignatoryAction,
@@ -60,14 +61,14 @@ export function AttestApprovalForm({ onboardingId, versionId, documentCode, toda
   const [state, action, pending] = useActionState<JourneyActionState, FormData>(attestApprovalAction, null);
   return (
     <Box title="2. Attest the historical approval">
-      <p className="font-sans text-caption text-ordift-ink-muted">This is an administrator attestation: you state the date and counsel shown in the evidence. Nothing is assumed: the recorded 8 September 2026 ingestion date is not proof of approval, and counsel associated with a different legal package is not treated as the approver of {documentCode}. Your identity and today&apos;s date ({today}) are recorded as the verification, separately from the approval date. Nothing here activates or issues anything.</p>
+      <p className="font-sans text-caption text-ordift-ink-muted">This is an administrator attestation: you state the date and counsel shown in the evidence. Nothing is assumed: the registry&apos;s &ldquo;approved&rdquo; label that was set when the version was created carries no date and no evidence, so it is not proof of approval, and counsel associated with a different legal package is not treated as the approver of {documentCode}. The date you enter is counsel&apos;s own approval or confirmation date: the day the version was created or any later day, never earlier. You must also record how counsel&apos;s identity was checked independently; the sender&apos;s own confirmation is not enough. Your identity and today&apos;s date ({today}) are recorded as the verification, separately from the approval date. Nothing here activates or issues anything.</p>
       {evidence.length === 0 ? <p className="font-sans text-caption text-amber-900">No evidence has been stored for {documentCode} yet. Complete step 1 first.</p> : (
         <form action={action} className="space-y-3">
           <input type="hidden" name="onboardingId" value={onboardingId} /><input type="hidden" name="versionId" value={versionId} /><input type="hidden" name="documentCode" value={documentCode} />
           <div><label className={label} htmlFor="evidenceDocumentId">Evidence file</label>
             <select id="evidenceDocumentId" name="evidenceDocumentId" required className={input} defaultValue={evidence[0].id}>{evidence.map((e) => <option key={e.id} value={e.id}>{e.name.slice(0, 110)} — SHA-256 {e.sha256.slice(0, 12)}…</option>)}</select>
             <ul className="mt-1 font-sans text-caption text-ordift-ink-muted">{evidence.map((e) => <li key={e.id} className="break-all">{e.name} — stored {e.storedAt.slice(0, 16).replace("T", " ")} — full SHA-256 <span className="font-mono">{e.sha256}</span> — re-verified when you submit{/\.pdf\b/i.test(e.name) ? " — PDF: the system does not read PDFs, so you must have read this source yourself" : ""}{/ADMINISTRATOR-SUPPLIED TRANSCRIPT/.test(e.name) ? " — administrator-supplied transcript, not authenticated correspondence" : ""}</li>)}</ul></div>
-          <div><label className={label} htmlFor="approvalDate">Date counsel approved this document, as shown in the evidence</label><input id="approvalDate" name="approvalDate" type="date" required max={today} className={input} /></div>
+          <div><label className={label} htmlFor="approvalDate">Date of counsel&apos;s legal approval or confirmation, as shown in the evidence</label><input id="approvalDate" name="approvalDate" type="date" required max={today} className={input} /></div>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div><label className={label} htmlFor="counselName">Counsel&apos;s name, as shown in the evidence</label><input id="counselName" name="counselName" required className={input} /></div>
             <div><label className={label} htmlFor="counselFirm">Firm</label><input id="counselFirm" name="counselFirm" required className={input} /></div>
@@ -75,8 +76,16 @@ export function AttestApprovalForm({ onboardingId, versionId, documentCode, toda
           <div><label className={label} htmlFor="evidenceKind">Kind of evidence</label>
             <select id="evidenceKind" name="evidenceKind" required className={input} defaultValue=""><option value="" disabled>Choose…</option><option value="signed_letter">Signed letter</option><option value="counsel_email">Counsel&apos;s email</option><option value="counsel_message">Counsel&apos;s written message (chat)</option><option value="message_transcript">Transcript of a message, pasted by an administrator</option><option value="signed_register">Signed register or certificate</option><option value="other_written_record">Other written record</option></select></div>
           <div><label className={label} htmlFor="evidenceReference">Where the original is kept and what in the evidence supports this (required)</label><textarea id="evidenceReference" name="evidenceReference" required rows={2} className={input} /></div>
+          <fieldset className="space-y-2 rounded-md border border-black/15 p-3">
+            <legend className="font-sans text-caption font-medium text-ordift-ink">Independent check of counsel&apos;s identity (required)</legend>
+            <div><label className={label} htmlFor="identityMethod">How was counsel&apos;s identity checked, independently of the email?</label>
+              <select id="identityMethod" name="identityMethod" required className={input} defaultValue=""><option value="" disabled>Choose…</option>{IDENTITY_METHODS.map((m) => <option key={m} value={m}>{IDENTITY_METHOD_LABELS[m]}</option>)}</select></div>
+            <div><label className={label} htmlFor="identityCheckedOn">Date of the check</label><input id="identityCheckedOn" name="identityCheckedOn" type="date" required max={today} className={input} /></div>
+            <div><label className={label} htmlFor="identityNote">What was checked and what was confirmed (who did it, how, and the result)</label><textarea id="identityNote" name="identityNote" required rows={2} className={input} /></div>
+            <p className="font-sans text-caption text-ordift-ink-muted">Counsel confirming their own address or identity by email does not count. The system records your check; it does not verify anyone itself.</p>
+          </fieldset>
           <label className="flex items-start gap-2 font-sans text-body-small text-ordift-ink"><input type="checkbox" name="namesThisDocument" value="yes" className="mt-1" /> The evidence expressly names {documentCode} and the approval date I entered.</label>
-          <label className="flex items-start gap-2 font-sans text-body-small text-ordift-ink"><input type="checkbox" name="understands" value="yes" className="mt-1" /> I understand this is my attestation and that the system has not itself established who approved the document.</label>
+          <label className="flex items-start gap-2 font-sans text-body-small text-ordift-ink"><input type="checkbox" name="understands" value="yes" className="mt-1" /> I understand this is my attestation and that the system has not itself established who approved the document or verified counsel&apos;s identity.</label>
           <button className={button} disabled={pending}>{pending ? "Recording…" : "Record attested approval"}</button>
           <Result state={state} />
         </form>

@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { recordAuditEvent } from "./strictAudit";
 import { authorizeWithSuperAdminOverride, GOVERNANCE_CAPABILITIES } from "@/lib/organization/authority";
-import { validateApprovalAttestation, resolveApprovalDate, type AttestationInput } from "./approvalAttestation";
+import { validateApprovalAttestation, resolveApprovalDate, classifyRegistryApproval, IDENTITY_METHODS, type AttestationInput, type CounselIdentityCheck } from "./approvalAttestation";
 import { loadVerifiedEvidence } from "./approvalEvidence";
 import { deriveMasterContentReference, verifyStoredMaster } from "./masterContentReference";
 import { extractDocxText, findUnresolvedReviewMarkers } from "./docxText";
@@ -43,7 +43,18 @@ export async function loadVersion(versionId: string): Promise<{ v: VersionRow; c
 }
 
 // ------------------------------------------------------------------ audited facts read back from the audit log
-export type StoredAttestation = { approvalDate: string; counselName: string; counselFirm: string; evidenceKind: string; evidenceReference: string; evidenceSha256: string | null; verifiedAt: string; verifiedByProfileId: string | null };
+// identityCheck / dateMeaning are null for an event written before counsel-identity checks existed (compatible, never rewritten); they are read only from the stored
+// event - which attestHistoricalApproval() builds on the server from validated input - and are never taken from a form.
+export type StoredAttestation = {
+  approvalDate: string; counselName: string; counselFirm: string; evidenceKind: string; evidenceReference: string; evidenceSha256: string | null; verifiedAt: string; verifiedByProfileId: string | null;
+  identityCheck: CounselIdentityCheck | null; dateMeaning: string | null; registryBasisAtAttestation: string | null; approvalDateInEvidence: boolean | null;
+};
+
+function readIdentityCheck(raw: unknown): CounselIdentityCheck | null {
+  const c = raw as { method?: unknown; checkedOn?: unknown; note?: unknown } | null;
+  if (!c || typeof c.method !== "string" || typeof c.checkedOn !== "string" || typeof c.note !== "string") return null;
+  return (IDENTITY_METHODS as readonly string[]).includes(c.method) ? { method: c.method, checkedOn: c.checkedOn, note: c.note } : null;
+}
 
 export async function loadApprovalAttestation(versionId: string): Promise<StoredAttestation | null> {
   const { data } = await createAdminClient()
@@ -51,7 +62,13 @@ export async function loadApprovalAttestation(versionId: string): Promise<Stored
   if (!data) return null;
   const m = (data.metadata ?? {}) as Record<string, unknown>;
   if (typeof m.approvalDate !== "string") return null;
-  return { approvalDate: m.approvalDate, counselName: String(m.counselName ?? ""), counselFirm: String(m.counselFirm ?? ""), evidenceKind: String(m.evidenceKind ?? ""), evidenceReference: String(m.evidenceReference ?? ""), evidenceSha256: (m.evidenceSha256 as string | null) ?? null, verifiedAt: data.created_at as string, verifiedByProfileId: (data.actor_user_id as string | null) ?? null };
+  return {
+    approvalDate: m.approvalDate, counselName: String(m.counselName ?? ""), counselFirm: String(m.counselFirm ?? ""), evidenceKind: String(m.evidenceKind ?? ""), evidenceReference: String(m.evidenceReference ?? ""),
+    evidenceSha256: (m.evidenceSha256 as string | null) ?? null, verifiedAt: data.created_at as string, verifiedByProfileId: (data.actor_user_id as string | null) ?? null,
+    identityCheck: readIdentityCheck(m.identityCheck), dateMeaning: typeof m.dateMeaning === "string" ? m.dateMeaning : null,
+    registryBasisAtAttestation: typeof (m.registryAtAttestation as { basis?: unknown } | undefined)?.basis === "string" ? (m.registryAtAttestation as { basis: string }).basis : null,
+    approvalDateInEvidence: typeof m.approvalDateInEvidence === "boolean" ? m.approvalDateInEvidence : null,
+  };
 }
 
 export async function loadRegistrationCheck(versionId: string): Promise<{ unresolvedMarkers: number; registeredAt: string } | null> {
@@ -60,6 +77,18 @@ export async function loadRegistrationCheck(versionId: string): Promise<{ unreso
   if (!data) return null;
   const m = (data.metadata ?? {}) as Record<string, unknown>;
   return { unresolvedMarkers: Number(m.unresolvedMarkers ?? -1), registeredAt: data.created_at as string };
+}
+
+// Shown, never blocking: does the readable evidence itself mention the date the administrator entered? null = the file could not be read (for example a PDF).
+const MONTH_INDEX: Record<string, number> = { january: 0, february: 1, march: 2, april: 3, may: 4, june: 5, july: 6, august: 7, september: 8, october: 9, november: 10, december: 11 };
+export function approvalDateInEvidence(text: { checked: boolean; datesFound?: string[] }, isoDate: string): boolean | null {
+  if (!text.checked) return null;
+  return (text.datesFound ?? []).some((raw) => {
+    if (raw === isoDate) return true;
+    const m = raw.match(/^(\d{1,2})(?:st|nd|rd|th)?\s+([A-Za-z]+),?\s+(\d{4})$/);
+    if (!m || !(m[2].toLowerCase() in MONTH_INDEX)) return false;
+    return new Date(Date.UTC(Number(m[3]), MONTH_INDEX[m[2].toLowerCase()], Number(m[1]))).toISOString().slice(0, 10) === isoDate;
+  });
 }
 
 // ------------------------------------------------------------------ 1. verify historical approval
@@ -78,10 +107,14 @@ export async function attestHistoricalApproval(params: { versionId: string; inpu
   const evidence = await loadVerifiedEvidence(v.id, params.input.evidenceDocumentId, params.input.counselName);
   if (!evidence.ok) return evidence;
   if (evidence.text.checked && !evidence.text.mentionsDocument) return { ok: false, error: `The evidence text does not mention ${code} or its title, so it cannot support an approval of this document. Select evidence that names it.` };
-  const verdict = validateApprovalAttestation(
-    { ...params.input, documentCode: code, evidenceSha256: evidence.item.sha256 },
-    { documentCode: code, today: today(), versionCreatedOn: v.created_at.slice(0, 10), versionWasCreatedApproved: true },
-  );
+  // Only these fields are taken from the caller. Everything about the registry (creation date, the seeded "approved" label) is read here from the stored row, and the meaning of
+  // the date is fixed by this function: nothing in the request can claim a different creation date, a stamped approval, or an identity check that was not recorded.
+  const input: AttestationInput = {
+    documentCode: code, approvalDate: params.input.approvalDate, counselName: params.input.counselName, counselFirm: params.input.counselFirm, evidenceKind: params.input.evidenceKind,
+    evidenceReference: params.input.evidenceReference, evidenceSha256: evidence.item.sha256, coversDocumentCodes: params.input.coversDocumentCodes,
+    identityCheck: { method: params.input.identityCheck?.method ?? "", checkedOn: params.input.identityCheck?.checkedOn ?? "", note: params.input.identityCheck?.note ?? "" },
+  };
+  const verdict = validateApprovalAttestation(input, { documentCode: code, today: today(), versionCreatedOn: v.created_at.slice(0, 10) });
   if (!verdict.ok) return { ok: false, error: verdict.errors[0], errors: verdict.errors };
 
   const written = await recordAuditEvent({
@@ -96,6 +129,14 @@ export async function attestHistoricalApproval(params: { versionId: string; inpu
       evidenceDocumentId: evidence.item.id, evidenceFile: evidence.item.name, evidenceStoragePath: evidence.item.storagePath, evidenceSizeBytes: evidence.sizeBytes, evidenceCheck: evidence.text,
       claimedApprovalDate: params.input.approvalDate,
       coversDocumentCodes: params.input.coversDocumentCodes, versionCreatedOn: v.created_at.slice(0, 10),
+      schemaVersion: 2,
+      // what the date IS: counsel's own dated review/confirmation. It is not the registry's creation date and not the seeded "approved" label.
+      dateMeaning: "counsel_legal_review_and_confirmation_date",
+      registryAtAttestation: { status: v.status, approvedBy: v.approved_by, approvedAtStamp: v.approved_at, createdOn: v.created_at.slice(0, 10), basis: classifyRegistryApproval({ status: v.status, approvedBy: v.approved_by, approvedAt: v.approved_at }) },
+      // the administrator's recorded independent check of who counsel is; the system itself has NOT verified counsel's identity
+      identityCheck: { method: input.identityCheck.method, checkedOn: input.identityCheck.checkedOn, note: input.identityCheck.note.trim() },
+      identityVerificationNature: "administrator_recorded_independent_check_system_has_not_verified_identity",
+      approvalDateInEvidence: approvalDateInEvidence(evidence.text, params.input.approvalDate),
     },
   });
   if (!written.ok) return { ok: false, error: "The attestation could not be recorded, so nothing was saved. Try again." };

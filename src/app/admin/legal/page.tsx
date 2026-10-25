@@ -195,7 +195,7 @@ export default async function AdminLegalGovernancePage() {
           headers={["Code", "Title", "Classification", "Current Version Status"]}
           rows={masters.map((m) => {
             const current = m.versions.find((v) => v.id === m.currentVersionId);
-            return [m.canonicalCode, m.title, m.classification.replace(/_/g, " "), current ? <Pill key="s">{current.status}</Pill> : <EmptyState key="e" label="No current version" />];
+            return [m.canonicalCode, m.title, m.classification.replace(/_/g, " "), current ? <Pill key="s">{current.status === "approved" && !current.approvedAt ? "approved (registry label, undated)" : current.status}</Pill> : <EmptyState key="e" label="No current version" />];
           })}
         />
       </SectionCard>

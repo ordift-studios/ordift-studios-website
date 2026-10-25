@@ -60,13 +60,14 @@ export default async function AdminSettingsPage() {
           <div>
             <p className="font-sans text-body-small text-ordift-ink font-medium">Legal Masters</p>
             <p className="font-sans text-caption text-ordift-ink-muted">
-              Whether all 21 canonical Ordift Studios legal documents have Legal Counsel approval on record.
-              Derived from the legal document master registry — never a manual toggle.
+              Whether all 21 canonical Ordift Studios legal documents are recorded as approved in the legal document master registry.
+              This is the registry&apos;s own status — never a manual toggle. For the imported masters it is a recorded assertion without an approval date or evidence;
+              dated, evidenced counsel approval is verified per document in the onboarding workspace and is not implied here.
             </p>
           </div>
           <StatusPill
             ok={legalSuiteStatus.legalMastersStatus === "approved"}
-            label={legalSuiteStatus.legalMastersStatus === "approved" ? "Approved" : "Incomplete"}
+            label={legalSuiteStatus.legalMastersStatus === "approved" ? "Recorded as approved" : "Incomplete"}
           />
         </div>
 

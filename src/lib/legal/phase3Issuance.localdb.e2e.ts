@@ -65,7 +65,8 @@ if (!/^https?:\/\/(127\.0\.0\.1|localhost)(:|\/|$)/.test(process.env.NEXT_PUBLIC
 const SUPER = "00000000-0000-4000-8000-000000000a01";
 const STAFF = "00000000-0000-4000-8000-000000000a02";
 const KWAKU = "00000000-0000-4000-8000-000000000a03";
-const sql = (q: string) => execSync("docker exec -i ordift-mig-check2 psql -U postgres -h 127.0.0.1 -v ON_ERROR_STOP=1 -At", { input: q }).toString().trim();
+// E2E_DB selects the throwaway database that the PostgREST under test points at (supabase/proposals/e2e_scratch.sh builds p4_e2e); unset keeps the original lab database.
+const sql = (q: string) => execSync(process.env.E2E_DB ? `docker exec -i ordift-mig-check2 psql -U supabase_admin -h 127.0.0.1 -d ${process.env.E2E_DB} -X -q -v ON_ERROR_STOP=1 -At` : "docker exec -i ordift-mig-check2 psql -U postgres -h 127.0.0.1 -v ON_ERROR_STOP=1 -At", { input: q }).toString().trim();
 const sha = (b: Uint8Array | string) => createHash("sha256").update(b).digest("hex");
 
 const CLEAN = makeZip("word/document.xml", "<w:document><w:body><w:p><w:r><w:t>INSTRUCTOR / WORKSHOP FACILITATOR AGREEMENT</w:t></w:r></w:p><w:p><w:r><w:t>1.1 Agreement. Each workshop is created by an accepted Session Schedule.</w:t></w:r></w:p><w:p><w:r><w:t>3.4 No guaranteed engagements.</w:t></w:r></w:p></w:body></w:document>");
@@ -95,7 +96,9 @@ beforeAll(async () => {
     delete from public.agreements where primary_context_reference='${KWAKU}';
     delete from public.staff_onboarding where profile_id='${KWAKU}';
     delete from public.workshop_instructor_engagements where profile_id='${KWAKU}';
+    set session_replication_role = replica; -- the signatory guard (0173) refuses deletes; this throwaway database is reset by the test harness only
     delete from public.entity_signatories where full_name like 'Synthetic%';
+    set session_replication_role = origin;
     delete from public.employing_entity_documents where notes like 'SYNTHETIC%';
     delete from public.legal_suite_provenance_documents where release_version='approval-evidence';
     delete from public.activity_log where entity_id in (select id::text from public.legal_document_versions where master_id=(select id from public.legal_document_masters where canonical_code='OS-LGL-010'));
@@ -113,11 +116,11 @@ beforeAll(async () => {
   ids.docFile = sql(`insert into public.employing_entity_documents (employing_entity_id, document_type, storage_path, notes, uploaded_by, original_filename, file_sha256, mime_type, size_bytes) values ('${ids.ghana}','Business Registration Certificate','synthetic/file.pdf','SYNTHETIC stored file','${SUPER}','certificate.pdf','${"c".repeat(64)}','application/pdf',10) returning id`).split("\n")[0];
 
   // every legal prerequisite, through the real actions (the Founder's explicit steps in the workspace)
-  const ev = { approvalDate: "2026-09-05", counselName: "Synthetic Counsel", counselFirm: "Synthetic LLP", evidenceKind: "counsel_email", evidenceReference: "Synthetic email approving the suite, filed in the archive", evidenceDocumentId: await storeTestEvidence(ids.version, SUPER), coversDocumentCodes: ["OS-LGL-010"] };
+  const ev = { approvalDate: "2026-09-18", counselName: "Synthetic Counsel", counselFirm: "Synthetic LLP", evidenceKind: "counsel_email", evidenceReference: "Synthetic email approving the suite, filed in the archive", evidenceDocumentId: await storeTestEvidence(ids.version, SUPER), coversDocumentCodes: ["OS-LGL-010"], identityCheck: { method: "call_back_independent_number", checkedOn: "2026-09-20", note: "Synthetic: the Founder called the firm on an independently sourced number." } };
   for (const r of [
     await attestHistoricalApproval({ versionId: ids.version, input: ev, actorUserId: SUPER }),
     await registerControlledMaster({ versionId: ids.version, actorUserId: SUPER }),
-    await activateMasterVersion({ versionId: ids.version, effectiveDate: "2026-09-05", backdatedReason: "Effective from counsel's approval date, as decided by the Founder.", actorUserId: SUPER }),
+    await activateMasterVersion({ versionId: ids.version, effectiveDate: "2026-09-18", backdatedReason: "Effective from counsel's approval date, as decided by the Founder.", actorUserId: SUPER }),
     await confirmContractingEntity({ onboardingId: ids.onboarding, entityId: ids.ghana, expectedJurisdiction: "Ghana", actorUserId: SUPER }),
   ]) if (!r.ok) throw new Error(`setup failed: ${JSON.stringify(r)}`);
   const sig = await addEntitySignatory({ entityId: ids.ghana, fullName: "Synthetic Signatory", position: "Proprietor", authority: "As stated on the certificate", sourceDocumentId: ids.docFile, profileId: SUPER, actorUserId: SUPER });

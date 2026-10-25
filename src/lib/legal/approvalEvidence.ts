@@ -31,7 +31,7 @@ export function checkEvidenceText(text: string, code: string, title: string, cou
   const lower = text.toLowerCase();
   const dates = new Set<string>();
   for (const m of text.matchAll(/\b(\d{4}-\d{2}-\d{2})\b/g)) dates.add(m[1]);
-  for (const m of text.matchAll(new RegExp(`\\b(\\d{1,2}(?:st|nd|rd|th)?\\s+(?:${MONTHS})\\s+\\d{4})\\b`, "gi"))) dates.add(m[1]);
+  for (const m of text.matchAll(new RegExp(`\\b(\\d{1,2}(?:st|nd|rd|th)?\\s+(?:${MONTHS}),?\\s+\\d{4})\\b`, "gi"))) dates.add(m[1]);
   return {
     checked: true,
     mentionsDocument: lower.includes(code.toLowerCase()) || lower.includes(title.toLowerCase()),

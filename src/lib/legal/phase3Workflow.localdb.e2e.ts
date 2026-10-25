@@ -54,7 +54,8 @@ const SUPER = "00000000-0000-4000-8000-000000000f01";
 const STAFF = "00000000-0000-4000-8000-000000000f02";
 const KWAKU = "00000000-0000-4000-8000-000000000f03";
 const EMP = "00000000-0000-4000-8000-000000000f04";
-const sql = (q: string) => execSync("docker exec -i ordift-mig-check2 psql -U postgres -h 127.0.0.1 -v ON_ERROR_STOP=1 -At", { input: q }).toString().trim();
+// E2E_DB selects the throwaway database that the PostgREST under test points at (supabase/proposals/e2e_scratch.sh builds p4_e2e); unset keeps the original lab database.
+const sql = (q: string) => execSync(process.env.E2E_DB ? `docker exec -i ordift-mig-check2 psql -U supabase_admin -h 127.0.0.1 -d ${process.env.E2E_DB} -X -q -v ON_ERROR_STOP=1 -At` : "docker exec -i ordift-mig-check2 psql -U postgres -h 127.0.0.1 -v ON_ERROR_STOP=1 -At", { input: q }).toString().trim();
 const sha = (b: Uint8Array) => createHash("sha256").update(b).digest("hex");
 
 const CLEAN = makeZip("word/document.xml", "<w:document><w:body><w:p><w:r><w:t>24.1 Instructor-caused claims. 25.2 Cap applies only if selected in the Schedule. APPROVED - OFFICIAL MASTER</w:t></w:r></w:p></w:body></w:document>");
@@ -85,7 +86,9 @@ beforeAll(() => {
     delete from public.agreements where primary_context_reference='${KWAKU}';
     delete from public.staff_onboarding where profile_id in ('${KWAKU}','${EMP}');
     delete from public.workshop_instructor_engagements where profile_id='${KWAKU}';
+    set session_replication_role = replica; -- the signatory guard (0173) refuses deletes; this throwaway database is reset by the test harness only
     delete from public.entity_signatories where full_name like 'Synthetic%';
+    set session_replication_role = origin;
     delete from public.employing_entity_documents where notes like 'SYNTHETIC%';
   `);
   ids.version = sql("select id from public.legal_document_versions where master_id=(select id from public.legal_document_masters where canonical_code='OS-LGL-010')");
@@ -99,7 +102,7 @@ beforeAll(() => {
   ids.docFile = sql(`insert into public.employing_entity_documents (employing_entity_id, document_type, storage_path, notes, uploaded_by, original_filename, file_sha256, mime_type, size_bytes) values ('${ids.ghana}','Business Registration Certificate','synthetic/file.pdf','SYNTHETIC stored file','${SUPER}','certificate.pdf','${"c".repeat(64)}','application/pdf',10) returning id`).split("\n")[0];
 });
 
-const input = { approvalDate: "2026-09-05", counselName: "Synthetic Counsel", counselFirm: "Synthetic LLP", evidenceKind: "counsel_email", evidenceReference: "Synthetic email approving the suite, kept in the archive", evidenceDocumentId: "", coversDocumentCodes: ["OS-LGL-010"] };
+const input = { approvalDate: "2026-09-18", counselName: "Synthetic Counsel", counselFirm: "Synthetic LLP", evidenceKind: "counsel_email", evidenceReference: "Synthetic email approving the suite, kept in the archive", evidenceDocumentId: "", coversDocumentCodes: ["OS-LGL-010"], identityCheck: { method: "call_back_independent_number", checkedOn: "2026-09-20", note: "Synthetic: the Founder called the firm on an independently sourced number." } };
 const auditCount = (action: string) => Number(sql(`select count(*) from public.activity_log where action='${action}' and entity_id in ('${ids.version}','${ids.onboarding}')`));
 
 describe("1. authority is real: an ordinary staff account can do none of the legal writes", () => {
@@ -107,7 +110,7 @@ describe("1. authority is real: an ordinary staff account can do none of the leg
     const before = sql("select count(*) from public.activity_log");
     expect((await attestHistoricalApproval({ versionId: ids.version, input, actorUserId: STAFF })).ok).toBe(false);
     expect((await registerControlledMaster({ versionId: ids.version, actorUserId: STAFF })).ok).toBe(false);
-    expect((await activateMasterVersion({ versionId: ids.version, effectiveDate: "2026-09-05", backdatedReason: "Synthetic reason for the test.", actorUserId: STAFF })).ok).toBe(false);
+    expect((await activateMasterVersion({ versionId: ids.version, effectiveDate: "2026-09-18", backdatedReason: "Synthetic reason for the test.", actorUserId: STAFF })).ok).toBe(false);
     expect((await confirmContractingEntity({ onboardingId: ids.onboarding, entityId: ids.ghana, expectedJurisdiction: "Ghana", actorUserId: STAFF })).ok).toBe(false);
     expect((await addEntitySignatory({ entityId: ids.ghana, fullName: "Synthetic Person", position: "Proprietor", authority: "As stated", sourceDocumentId: ids.docFile, actorUserId: STAFF })).ok).toBe(false);
     expect(sql("select count(*) from public.activity_log")).toBe(before);
@@ -116,26 +119,41 @@ describe("1. authority is real: an ordinary staff account can do none of the leg
 });
 
 describe("2. the approval attestation cannot misrepresent counsel's approval", () => {
-  it("rejects the Addendum date, a document it does not name, and missing or unstored evidence; stores nothing", async () => {
+  it("rejects a date before the version existed, a document it does not name, and missing or unstored evidence; stores nothing", async () => {
     input.evidenceDocumentId = await storeTestEvidence(ids.version, SUPER);
-    expect((await attestHistoricalApproval({ versionId: ids.version, input: { ...input, approvalDate: "2026-10-11" }, actorUserId: SUPER })).ok).toBe(false);
+    expect((await attestHistoricalApproval({ versionId: ids.version, input: { ...input, approvalDate: "2026-09-07" }, actorUserId: SUPER })).ok).toBe(false); // before the version existed
     expect((await attestHistoricalApproval({ versionId: ids.version, input: { ...input, coversDocumentCodes: ["OS-LGL-001"] }, actorUserId: SUPER })).ok).toBe(false);
     expect((await attestHistoricalApproval({ versionId: ids.version, input: { ...input, evidenceDocumentId: "" }, actorUserId: SUPER })).ok).toBe(false);
     expect(auditCount("legal.master_version.approval_attested")).toBe(0);
   });
+  it("rejects a future date and a missing, self-declared or token counsel identity check; stores nothing", async () => {
+    expect((await attestHistoricalApproval({ versionId: ids.version, input: { ...input, approvalDate: "2999-01-01" }, actorUserId: SUPER })).ok).toBe(false);
+    const noCheck = { ...input } as Record<string, unknown>; delete noCheck.identityCheck;
+    expect((await attestHistoricalApproval({ versionId: ids.version, input: noCheck as typeof input, actorUserId: SUPER })).ok).toBe(false);
+    for (const identityCheck of [{ ...input.identityCheck, method: "sender_confirmed_by_email" }, { ...input.identityCheck, note: "ok" }, { ...input.identityCheck, checkedOn: "2999-01-01" }])
+      expect((await attestHistoricalApproval({ versionId: ids.version, input: { ...input, identityCheck }, actorUserId: SUPER })).ok).toBe(false);
+    expect(auditCount("legal.master_version.approval_attested")).toBe(0);
+  });
   it("records one attestation (approval date, verifier identity and the real recording time kept apart) and refuses a duplicate", async () => {
-    const first = await attestHistoricalApproval({ versionId: ids.version, input, actorUserId: SUPER });
+    // counsel's evidenced date is AFTER the version's creation (8 Sep -> 18 Sep); extra request fields claiming a different creation date, meaning or a pre-verified identity are ignored
+    const forged = { ...input, versionCreatedOn: "2026-01-01", dateMeaning: "internal_approval", identityVerified: true, registryAtAttestation: { basis: "registry_stamp" } };
+    const first = await attestHistoricalApproval({ versionId: ids.version, input: forged, actorUserId: SUPER });
     expect(first, JSON.stringify(first)).toMatchObject({ ok: true });
-    expect((await attestHistoricalApproval({ versionId: ids.version, input: { ...input, approvalDate: "2026-09-06" }, actorUserId: SUPER })).ok).toBe(false);
+    expect((await attestHistoricalApproval({ versionId: ids.version, input: { ...input, approvalDate: "2026-09-19" }, actorUserId: SUPER })).ok).toBe(false);
     expect(auditCount("legal.master_version.approval_attested")).toBe(1);
-    expect(sql(`select actor_user_id::text||'|'||(metadata->>'approvalDate')||'|'||(created_at::date)::text from public.activity_log where action='legal.master_version.approval_attested'`)).toBe(`${SUPER}|2026-09-05|${new Date().toISOString().slice(0, 10)}`);
+    expect(sql(`select actor_user_id::text||'|'||(metadata->>'approvalDate')||'|'||(created_at::date)::text from public.activity_log where action='legal.master_version.approval_attested'`)).toBe(`${SUPER}|2026-09-18|${new Date().toISOString().slice(0, 10)}`);
     expect(sql(`select coalesce(approved_at::text,'null') from public.legal_document_versions where id='${ids.version}'`)).toBe("null"); // the registry's own stamp is untouched
+    // what was stored: counsel's date is kept apart from the creation date and the seeded label, and the identity check is the administrator's recorded check
+    expect(sql(`select (metadata->>'dateMeaning')||'|'||(metadata->'registryAtAttestation'->>'basis')||'|'||(metadata->>'versionCreatedOn')||'|'||(metadata->'identityCheck'->>'method')||'|'||(metadata->>'schemaVersion')||'|'||coalesce(metadata->>'identityVerified','absent') from public.activity_log where action='legal.master_version.approval_attested'`))
+      .toBe("counsel_legal_review_and_confirmation_date|seeded_label_unevidenced|2026-09-08|call_back_independent_number|2|absent");
+    // the registry row is exactly as seeded: nothing activated, registered, dated or approved by the attestation
+    expect(sql(`select status||'|'||(created_at::date)::text||'|'||coalesce(effective_date::text,'-')||'|'||coalesce(activated_at::text,'-')||'|'||coalesce(content_reference,'-') from public.legal_document_versions where id='${ids.version}'`)).toBe("approved|2026-09-08|-|-|-");
   });
 });
 
 describe("3. activation needs the actual approved master and every prerequisite", () => {
   it("refuses before registration, then registers once, and refuses a second registration", async () => {
-    const early = await activateMasterVersion({ versionId: ids.version, effectiveDate: "2026-09-05", backdatedReason: "Synthetic reason for the test.", actorUserId: SUPER });
+    const early = await activateMasterVersion({ versionId: ids.version, effectiveDate: "2026-09-18", backdatedReason: "Synthetic reason for the test.", actorUserId: SUPER });
     expect(early.ok).toBe(false);
     expect(sql(`select status from public.legal_document_versions where id='${ids.version}'`)).toBe("approved");
     expect((await registerControlledMaster({ versionId: ids.version, actorUserId: SUPER })).ok).toBe(true);
@@ -145,14 +163,14 @@ describe("3. activation needs the actual approved master and every prerequisite"
   });
   it("a file changed after registration stops activation; nothing is partly applied", async () => {
     h.storage[DOCX_PATH] = DIRTY;
-    const r = await activateMasterVersion({ versionId: ids.version, effectiveDate: "2026-09-05", backdatedReason: "Synthetic reason for the test.", actorUserId: SUPER });
+    const r = await activateMasterVersion({ versionId: ids.version, effectiveDate: "2026-09-18", backdatedReason: "Synthetic reason for the test.", actorUserId: SUPER });
     expect(r.ok).toBe(false);
     expect(sql(`select status||'/'||coalesce(effective_date::text,'-') from public.legal_document_versions where id='${ids.version}'`)).toBe("approved/-");
     h.storage[DOCX_PATH] = CLEAN;
   });
   it("an effective date before the verified approval date, or in the past without a reason, is refused", async () => {
     expect((await activateMasterVersion({ versionId: ids.version, effectiveDate: "2026-09-01", backdatedReason: "Synthetic reason for the test.", actorUserId: SUPER })).ok).toBe(false);
-    expect((await activateMasterVersion({ versionId: ids.version, effectiveDate: "2026-09-05", actorUserId: SUPER })).ok).toBe(false);
+    expect((await activateMasterVersion({ versionId: ids.version, effectiveDate: "2026-09-18", actorUserId: SUPER })).ok).toBe(false);
   });
   it("is not performed by the readiness/loader code: loading readiness changes nothing and reports exactly what is open", async () => {
     const before = sql("select md5(string_agg(t::text,'|')) from (select * from public.legal_document_versions order by id) t");
@@ -185,9 +203,9 @@ describe("4. entity and signatory: Ghana only, evidence-backed, never borrowed",
 
 describe("5. activation, then a DRAFT agreement - and nothing more", () => {
   it("activates at the real time with the stated effective date, without touching the registry's approval stamp", async () => {
-    const r = await activateMasterVersion({ versionId: ids.version, effectiveDate: "2026-09-05", backdatedReason: "Effective from counsel's approval date as decided by the Founder.", actorUserId: SUPER });
+    const r = await activateMasterVersion({ versionId: ids.version, effectiveDate: "2026-09-18", backdatedReason: "Effective from counsel's approval date as decided by the Founder.", actorUserId: SUPER });
     expect(r.ok).toBe(true);
-    expect(sql(`select status||'|'||effective_date::text||'|'||(activated_at::date)::text||'|'||coalesce(approved_at::text,'null') from public.legal_document_versions where id='${ids.version}'`)).toBe(`active|2026-09-05|${new Date().toISOString().slice(0, 10)}|null`);
+    expect(sql(`select status||'|'||effective_date::text||'|'||(activated_at::date)::text||'|'||coalesce(approved_at::text,'null') from public.legal_document_versions where id='${ids.version}'`)).toBe(`active|2026-09-18|${new Date().toISOString().slice(0, 10)}|null`);
     expect(auditCount("legal.master_version.effective_date_set")).toBe(1);
   });
   it("prepares one draft from verified facts; it is not issued, sent or executed; a second is refused", async () => {
@@ -206,7 +224,7 @@ describe("5. activation, then a DRAFT agreement - and nothing more", () => {
     expect(sql(`select count(*) from public.workshop_instructor_engagements where profile_id='${KWAKU}'`)).toBe("0");
   });
   it("the registry refuses to activate a version with no verified approval date (fresh version, same rule)", async () => {
-    sql(`insert into public.legal_document_versions (master_id, version, status, approved_by) select id, '9.9', 'approved', 'Synthetic' from public.legal_document_masters where canonical_code='OS-LGL-011'`);
+    sql(`delete from public.legal_document_versions where version='9.9'; insert into public.legal_document_versions (master_id, version, status, approved_by) select id, '9.9', 'approved', 'Synthetic' from public.legal_document_masters where canonical_code='OS-LGL-011'`); // clears leftovers of an earlier failed run
     const v = sql("select v.id from public.legal_document_versions v join public.legal_document_masters m on m.id=v.master_id where m.canonical_code='OS-LGL-011' and v.version='9.9'");
     const r = await transitionLegalDocumentVersionStatus({ versionId: v, toStatus: "active", actorUserId: SUPER });
     expect(!r.ok && r.error).toContain("no verified approval date");

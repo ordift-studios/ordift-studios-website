@@ -68,11 +68,12 @@ export async function attestApprovalAction(_p: JourneyActionState, d: FormData):
   const onboardingId = f(d, "onboardingId");
   const a = await actor(onboardingId);
   if ("error" in a) return { ok: false, error: a.error };
-  if (d.get("understands") !== "yes") return { ok: false, error: "Tick the confirmation: this is your attestation, and the system has not itself established who approved the document." };
+  if (d.get("understands") !== "yes") return { ok: false, error: "Tick the confirmation: this is your attestation, and the system has not itself established who approved the document or verified counsel's identity." };
   const code = f(d, "documentCode");
   const r = await attestHistoricalApproval({
     versionId: f(d, "versionId"), actorUserId: a.id,
-    input: { approvalDate: f(d, "approvalDate"), counselName: f(d, "counselName"), counselFirm: f(d, "counselFirm"), evidenceKind: f(d, "evidenceKind"), evidenceReference: f(d, "evidenceReference"), evidenceDocumentId: f(d, "evidenceDocumentId"), coversDocumentCodes: d.get("namesThisDocument") === "yes" && code ? [code] : [] },
+    input: { approvalDate: f(d, "approvalDate"), counselName: f(d, "counselName"), counselFirm: f(d, "counselFirm"), evidenceKind: f(d, "evidenceKind"), evidenceReference: f(d, "evidenceReference"), evidenceDocumentId: f(d, "evidenceDocumentId"), coversDocumentCodes: d.get("namesThisDocument") === "yes" && code ? [code] : [],
+      identityCheck: { method: f(d, "identityMethod"), checkedOn: f(d, "identityCheckedOn"), note: f(d, "identityNote") } },
   });
   return r.ok ? done(onboardingId, "Historical approval attested with your identity and the current time, linked to the stored evidence.") : fail(r);
 }
