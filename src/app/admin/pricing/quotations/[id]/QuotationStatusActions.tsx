@@ -19,8 +19,8 @@ const NEXT_STATUS: Record<string, { status: string; label: string }[]> = {
 const FIELD = "block w-full mt-1 min-h-11 rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small text-ordift-ink";
 const STATUS_WORD: Record<string, string> = { draft: "Draft (not issued)", sent: "Issued", accepted: "Accepted", declined: "Declined", expired: "Expired", superseded: "Superseded" };
 
-export function QuotationStatusActions({ quotationId, status, defaultValidUntil, currentValidUntil, isSuperAdmin, blockers, expired, deliveredText, today, crewManaged = false, expectedEntityId = null }: {
-  crewManaged?: boolean; expectedEntityId?: string | null; today: string; quotationId: string; status: string; hasClient: boolean; defaultValidUntil: string; currentValidUntil: string | null; isSuperAdmin: boolean; blockers: string[]; expired: boolean; deliveredText: string | null;
+export function QuotationStatusActions({ quotationId, status, defaultValidUntil, currentValidUntil, isSuperAdmin, blockers, expired, deliveredText, today, crewManaged = false, expectedEntityId = null, activityOptions = [], defaultActivities = [] }: {
+  crewManaged?: boolean; expectedEntityId?: string | null; activityOptions?: { key: string; label: string }[]; defaultActivities?: string[]; today: string; quotationId: string; status: string; hasClient: boolean; defaultValidUntil: string; currentValidUntil: string | null; isSuperAdmin: boolean; blockers: string[]; expired: boolean; deliveredText: string | null;
 }) {
   const [state, formAction] = useActionState<ActionState, FormData>(updateQuotationStatusAction, null);
   const [acceptState, acceptAction] = useActionState<ActionState, FormData>(recordQuotationAcceptanceAction, null);
@@ -60,6 +60,17 @@ export function QuotationStatusActions({ quotationId, status, defaultValidUntil,
           <form action={issueAction} className="space-y-3">
             <input type="hidden" name="quotationId" value={quotationId} />
             {expectedEntityId && <input type="hidden" name="expectedEntityId" value={expectedEntityId} />}
+            {activityOptions.length > 0 && (
+              <fieldset className="space-y-1">
+                <legend className="font-sans text-body-small font-medium text-ordift-ink">Activities this quotation covers</legend>
+                <p className="font-sans text-caption text-ordift-ink-muted">Tick what the quotation actually includes. Some jurisdictions only allow activities the entity is licensed for; a planned activity is never treated as licensed, and issuing is refused if it is not.</p>
+                <div className="flex flex-wrap gap-x-4 gap-y-1">
+                  {activityOptions.map((a) => (
+                    <label key={a.key} className="flex items-center gap-2 font-sans text-body-small text-ordift-ink"><input type="checkbox" name="activities" value={a.key} defaultChecked={defaultActivities.includes(a.key)} className="h-4 w-4" />{a.label}</label>
+                  ))}
+                </div>
+              </fieldset>
+            )}
             <label className="block font-sans text-caption text-ordift-ink-muted">Valid until (standard: {ORDINARY_VALIDITY_DAYS} calendar days from issue = {formatDate(defaultValidUntil)})
               <input type="date" name="validUntil" value={validUntil} min={today} onChange={(e) => setValidUntil(e.target.value)} className={FIELD} required />
             </label>

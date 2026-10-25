@@ -37,12 +37,14 @@ describe("only two writers may set status 'sent' on a quotation: the atomic issu
     const iss = files.find((x) => x.p === "lib/commercial/quotationIssuance.ts")!.src;
     expect(iss).toContain("crewManaged: Boolean(q.crew_support_request_id)");
   });
-  it("no migration sets a quotation to 'sent' except the one atomic ordinary-issuance function", () => {
+  it("no migration sets a quotation to 'sent' except the atomic ordinary-issuance function (0172 and its replacement 0173), each only inside that function", () => {
     const dir = join(process.cwd(), "supabase", "migrations");
     const hits = readdirSync(dir).filter((f) => f.endsWith(".sql")).filter((f) => /update\s+public\.client_quotations\s+set[^;]*status\s*=\s*'sent'/i.test(readFileSync(join(dir, f), "utf8")));
-    expect(hits).toEqual(["0172_atomic_ordinary_quotation_issuance.sql"]);
-    const sql = readFileSync(join(dir, hits[0]), "utf8");
-    expect((sql.match(/status\s*=\s*'sent'/g) ?? []).length).toBe(1);
-    expect(sql.slice(sql.indexOf("create or replace function public.issue_ordinary_quotation"), sql.indexOf("revoke all on function public.issue_ordinary_quotation"))).toContain("status = 'sent'");
+    expect(hits).toEqual(["0172_atomic_ordinary_quotation_issuance.sql", "0173_jurisdiction_entity_requirements.sql"]);
+    for (const f of hits) {
+      const sql = readFileSync(join(dir, f), "utf8");
+      expect((sql.match(/status\s*=\s*'sent'/g) ?? []).length).toBe(1);
+      expect(sql.slice(sql.indexOf("create or replace function public.issue_ordinary_quotation"), sql.indexOf("revoke all on function public.issue_ordinary_quotation"))).toContain("status = 'sent'");
+    }
   });
 });

@@ -46,6 +46,10 @@ function psqlBackground(query: string, expectFailure = false): Promise<{ code: n
     child.stdin.end(query);
   });
 }
+// ENTITY FIXTURES: eligibility is now judged against the entity's own jurisdiction (migration 0173). These suites use a test jurisdiction whose approved rule set is the minimum
+// (a mandatory legal registration). The Ghana and Qatar rule sets are exercised in jurisdictionRequirements.localdb.e2e.ts.
+const EJ = `(select id from public.employment_jurisdictions where slug = 'e2e-land')`;
+const crSql = (slug: string, cr: string) => `insert into public.entity_registrations (employing_entity_id, kind, status, identifier, valid_from, verified_at, verified_by, recorded_by) select id, 'commercial_registration', 'active', '${cr}', current_date - 100, now(), 'U3', 'U3' from public.employing_entities where slug = '${slug}' and not exists (select 1 from public.entity_registrations r where r.employing_entity_id = employing_entities.id and r.kind = 'commercial_registration')`.replace(/U3/g, "00000000-0000-4000-8000-0000000000e3");
 const U = (n: number) => `00000000-0000-4000-8000-0000000000${n.toString(16).padStart(2, "0")}`;
 const user = (n: number, roles: string[]) => ({ id: U(n), email: `u${n}@e2e.test`, fullName: `User ${n}`, roles, accessStatus: "active" });
 const staff = user(0xe1, ["staff"]), admin = user(0xe2, ["admin"]), founder = user(0xe3, ["admin", "super_admin"]), client = user(0xe4, ["client"]);
@@ -77,9 +81,13 @@ beforeAll(() => {
   insert into public.user_roles (user_id, role_id) select '${U(0xe2)}', r.id from public.roles r where r.slug='admin' on conflict do nothing;
   insert into public.user_roles (user_id, role_id) select '${U(0xe3)}', r.id from public.roles r where r.slug in ('admin','super_admin') on conflict do nothing;
   insert into public.currencies (code, name, symbol) values ('USD','US dollar','$') on conflict do nothing;
-  insert into public.employing_entities (name, slug, legal_name, registration_type, verification_status) values ('ISS Entity','iss-entity','ISS ENTITY W.L.L.','W.L.L.','verified') on conflict do nothing;
-  insert into public.employing_entities (name, slug, verification_status) values ('ISS Unverified','iss-unverified','unverified') on conflict do nothing;
-  insert into public.employing_entities (name, slug, verification_status, active) values ('ISS Inactive','iss-inactive','verified', false) on conflict do nothing;
+  insert into public.employment_jurisdictions (name, slug) values ('E2E Land','e2e-land') on conflict do nothing;
+  insert into public.jurisdiction_entity_requirements (jurisdiction_id, requirement_key, category, label, identifier_label, registration_kind, necessity, shown_on_document, sort_order, approved_at)
+    select id, 'legal_registration', 'legal_registration', 'Commercial Registration (CR)', 'Commercial Registration (CR) No.', 'commercial_registration', 'mandatory', true, 10, now() from public.employment_jurisdictions where slug = 'e2e-land' on conflict do nothing;
+  insert into public.employing_entities (name, slug, legal_name, registration_type, verification_status, jurisdiction_id) values ('ISS Entity','iss-entity','ISS ENTITY W.L.L.','W.L.L.','verified', ${EJ}) on conflict do nothing;
+  insert into public.employing_entities (name, slug, verification_status, jurisdiction_id) values ('ISS Unverified','iss-unverified','unverified', ${EJ}) on conflict do nothing;
+  insert into public.employing_entities (name, slug, verification_status, active, jurisdiction_id) values ('ISS Inactive','iss-inactive','verified', false, ${EJ}) on conflict do nothing;
+  ${crSql("iss-entity", "CR-ISS-ENTITY")};
   insert into public.enquiries (id, reference_number, email, full_name, service) values ('${E_REAL}','ENQ-ISS-1','iss@b.test','Real Enquiry','photography');
   `);
   before = financeAndMoney();
@@ -279,7 +287,7 @@ describe("the contracting entity is a prerequisite of issuing (fail-closed, neve
     expect(await resolveQuotationEntity(q)).toMatchObject({ ok: false, code: "none" });
     expect(await chooseContractingEntity({ subject: { type: "enquiry", id: enq }, entityId: entityId("iss-entity"), basis: "E2E enquiry-level choice", actorUserId: U(0xe3) })).toMatchObject({ ok: true });
     expect(await resolveQuotationEntity(q)).toMatchObject({ ok: true, entity: { source: "enquiry" } });
-    sql(`insert into public.employing_entities (name, slug, verification_status) values ('ISS Second','iss-second','verified') on conflict do nothing`);
+    sql(`insert into public.employing_entities (name, slug, verification_status, jurisdiction_id) values ('ISS Second','iss-second','verified', ${EJ}) on conflict do nothing; ${crSql("iss-second", "CR-ISS-2")}`);
     expect(await chooseContractingEntity({ subject: { type: "quotation", id: q }, entityId: entityId("iss-second"), basis: "E2E quotation-level choice", actorUserId: U(0xe3) })).toMatchObject({ ok: true });
     expect(await resolveQuotationEntity(q)).toMatchObject({ ok: true, entity: { name: "ISS Second", source: "quotation" } });
   });
@@ -312,7 +320,7 @@ describe("the contracting entity is a prerequisite of issuing (fail-closed, neve
   it("once issued, the entity cannot be changed (revise instead); first-time recording on a legacy issued quotation is still allowed", async () => {
     const q = await draft(); h.current = founder;
     await issueOrdinaryQuotation({ quotationId: q });
-    sql(`insert into public.employing_entities (name, slug, verification_status) values ('ISS Third','iss-third','verified') on conflict do nothing`);
+    sql(`insert into public.employing_entities (name, slug, verification_status, jurisdiction_id) values ('ISS Third','iss-third','verified', ${EJ}) on conflict do nothing; ${crSql("iss-third", "CR-ISS-3")}`);
     const changed = await chooseContractingEntity({ subject: { type: "quotation", id: q }, entityId: entityId("iss-third"), basis: "E2E change attempt", actorUserId: U(0xe3) });
     expect(changed.ok === false && changed.error).toMatch(/issued with its contracting entity/);
     const legacy = await draft({ noEntity: true });
@@ -321,7 +329,7 @@ describe("the contracting entity is a prerequisite of issuing (fail-closed, neve
   });
   it("the document data exposes only the legal name, registration type and current verified CR / tax identifiers", async () => {
     const q = await draft({ noEntity: true });
-    sql(`insert into public.entity_registrations (employing_entity_id, kind, status, identifier, valid_from, verified_at, verified_by, note, recorded_by) select id, 'commercial_registration', 'active', 'CR-12345', current_date - 100, now(), '${U(0xe3)}', 'INTERNAL NOTE', '${U(0xe3)}' from public.employing_entities where slug='iss-entity';
+    sql(`update public.entity_registrations set note = 'INTERNAL NOTE' where identifier = 'CR-ISS-ENTITY';
          insert into public.entity_registrations (employing_entity_id, kind, status, identifier, valid_from, verified_at, verified_by, recorded_by) select id, 'establishment_card', 'active', 'EC-999', current_date - 100, now(), '${U(0xe3)}', '${U(0xe3)}' from public.employing_entities where slug='iss-entity';`);
     sql(`insert into public.booking_contracting_entities (subject_type, subject_id, version, employing_entity_id, basis, chosen_by) values ('quotation','${q}',1,'${entityId("iss-entity")}','E2E display','${U(0xe3)}')`);
     const res = await resolveQuotationEntity(q);
@@ -329,7 +337,7 @@ describe("the contracting entity is a prerequisite of issuing (fail-closed, neve
     if (!res.ok) return;
     expect(res.entity.display.legalName).toBe("ISS ENTITY W.L.L.");
     const blob = JSON.stringify(res.entity.display);
-    expect(blob).toContain("CR-12345");
+    expect(blob).toContain("CR-ISS-ENTITY");
     expect(blob).not.toMatch(/EC-999|INTERNAL NOTE|E2E display/);
   });
   it("the Crew Support path is untouched: the resolver defers to its own governance", async () => {
@@ -340,7 +348,7 @@ describe("the contracting entity is a prerequisite of issuing (fail-closed, neve
 
 describe("an issued quotation is frozen: its legal details and entity never change after issuance", () => {
   const mkEntity = (slug: string, legal: string, cr: string | null) => {
-    sql(`insert into public.employing_entities (name, slug, legal_name, registration_type, verification_status) values ('${slug}','${slug}','${legal}','W.L.L.','verified') on conflict do nothing`);
+    sql(`insert into public.employing_entities (name, slug, legal_name, registration_type, verification_status, jurisdiction_id) values ('${slug}','${slug}','${legal}','W.L.L.','verified', ${EJ}) on conflict do nothing`);
     if (cr) sql(`insert into public.entity_registrations (employing_entity_id, kind, status, identifier, valid_from, verified_at, verified_by, recorded_by) select id, 'commercial_registration','active','${cr}', current_date - 100, now(), '${U(0xe3)}', '${U(0xe3)}' from public.employing_entities where slug='${slug}'`);
     return entityId(slug);
   };
@@ -559,39 +567,6 @@ describe("an issued quotation is frozen: its legal details and entity never chan
     expect(fails(() => rpc(sql(`select id from public.client_quotations where status='draft' and crew_support_request_id is not null limit 1`) || U(0xe5), U(0xe2), valid))).not.toBe("");
   });
 
-  it("PARITY: the SQL eligibility and legal-detail rules give exactly the same answers as the application's own rules, over entities in many states", async () => {
-    const { getContractingEntityStanding } = await import("@/lib/organization/entityRegistrations");
-    const { buildEntityDisplay } = await import("@/lib/organization/entityDisplay");
-    const today = TODAY;
-    const reg = (slug: string, kind: string, status: string, ident: string | null, opts: { exp?: string; verified?: boolean } = {}) =>
-      sql(`insert into public.entity_registrations (employing_entity_id, kind, status, identifier, valid_from, expires_on, verified_at, verified_by, recorded_by) select id, '${kind}', '${status}', ${ident ? `'${ident}'` : "null"}, current_date - 200, ${opts.exp ? `'${opts.exp}'` : "null"}, ${opts.verified === false ? "null" : "now()"}, ${opts.verified === false ? "null" : `'${U(0xe3)}'`}, '${U(0xe3)}' from public.employing_entities where slug='${slug}'`);
-    const ent = (slug: string, legal: string | null, type: string | null, status = "verified", active = true) =>
-      sql(`insert into public.employing_entities (name, slug, legal_name, registration_type, verification_status, active) values ('${slug}','${slug}',${legal ? `'${legal}'` : "null"},${type ? `'${type}'` : "null"},'${status}',${active})`);
-    ent("par-bare", null, null);                                                                         // verified, no registrations
-    ent("par-unver", "UNVER LLC", "LLC", "unverified");
-    ent("par-inactive", "INACT LLC", null, "verified", false);
-    ent("par-cr", "  CR LLC  ", "W.L.L."); reg("par-cr", "commercial_registration", "active", " 123 ");
-    ent("par-cr-expired", null, null); reg("par-cr-expired", "commercial_registration", "active", "9", { exp: addDays(TODAY, -3) });
-    ent("par-cr-exp-status", null, null); reg("par-cr-exp-status", "commercial_registration", "expired", "9");
-    ent("par-permit-none", "PN LLC", null); reg("par-permit-none", "commercial_registration", "active", "55"); reg("par-permit-none", "commercial_permit", "not_issued", null);
-    ent("par-permit-ok", "PO LLC", null); reg("par-permit-ok", "commercial_registration", "active", "56"); reg("par-permit-ok", "commercial_permit", "active", "PERMIT-1", { exp: addDays(TODAY, 90) });
-    ent("par-permit-expired", "PE LLC", null); reg("par-permit-expired", "commercial_registration", "active", "57"); reg("par-permit-expired", "commercial_permit", "expired", "PERMIT-0");
-    ent("par-unverified-reg", "UR LLC", null); reg("par-unverified-reg", "commercial_registration", "active", "58", { verified: false }); reg("par-unverified-reg", "tax_registration", "active", "TAX-58");
-    ent("par-tax-only", "TO LLC", null); reg("par-tax-only", "tax_registration", "active", "TAX-1");
-    ent("par-cr-pending", "CP LLC", null); reg("par-cr-pending", "commercial_registration", "pending", null);
-    ent("par-both", "BOTH LLC", "Branch"); reg("par-both", "commercial_registration", "active", "60"); reg("par-both", "tax_registration", "active", "TAX-60", { exp: addDays(TODAY, 5) });
-    const slugs = ["par-bare", "par-unver", "par-inactive", "par-cr", "par-cr-expired", "par-cr-exp-status", "par-permit-none", "par-permit-ok", "par-permit-expired", "par-unverified-reg", "par-tax-only", "par-cr-pending", "par-both"];
-    for (const slug of slugs) {
-      const id = entityId(slug);
-      const app = await getContractingEntityStanding(id, today);
-      const db = JSON.parse(sql(`select private.entity_issue_standing('${id}', '${today}'::date)`));
-      expect(app, slug).not.toBeNull();
-      if (!app) continue;
-      const display = buildEntityDisplay(app.entity, app.registrations, today);
-      expect({ eligible: db.eligible, blockers: db.blockers }, slug).toEqual({ eligible: app.eligibility.eligible, blockers: app.eligibility.blockers });
-      expect(db.legal, slug).toEqual({ legalName: display.legalName, registrationType: display.registrationType, identifiers: display.identifiers });
-    }
-  });
 
 });
 
@@ -602,7 +577,7 @@ describe("the issuance audit event is protected: created only by the atomic func
   const psqlErr = (script: string): string => { try { sql(script); return ""; } catch (e) { return String((e as { stderr?: Buffer }).stderr ?? e); } };
   const insertRow = (action: string, entityIdText: string, extra = "") => `insert into public.activity_log (actor_user_id, action, entity_type, entity_id, metadata${extra ? ", created_at" : ""}) values ('${ADMIN_UID}', '${action}', 'client_quotation', '${entityIdText}', '{"issuedAt":"2020-01-01T00:00:00.000000Z","legalDetails":{"legalName":"FORGED"}}'${extra ? `, '${extra}'` : ""})`;
   const mkIssued = async (slug: string, cr: string) => {
-    sql(`insert into public.employing_entities (name, slug, legal_name, registration_type, verification_status) values ('${slug}','${slug}','${slug.toUpperCase()} W.L.L.','W.L.L.','verified') on conflict do nothing;
+    sql(`insert into public.employing_entities (name, slug, legal_name, registration_type, verification_status, jurisdiction_id) values ('${slug}','${slug}','${slug.toUpperCase()} W.L.L.','W.L.L.','verified', ${EJ}) on conflict do nothing;
          insert into public.entity_registrations (employing_entity_id, kind, status, identifier, valid_from, verified_at, verified_by, recorded_by) select id,'commercial_registration','active','${cr}',current_date-100,now(),'${U(0xe3)}','${U(0xe3)}' from public.employing_entities where slug='${slug}' and not exists (select 1 from public.entity_registrations r where r.employing_entity_id = employing_entities.id)`);
     const q = await draft({ noEntity: true });
     expect(await chooseContractingEntity({ subject: { type: "quotation", id: q }, entityId: entityId(slug), basis: "E2E guard test", actorUserId: U(0xe3) })).toMatchObject({ ok: true });

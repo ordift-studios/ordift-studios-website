@@ -1,20 +1,20 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getContractingEntityStanding } from "@/lib/organization/entityRegistrations";
-import { buildEntityDisplay, type EntityDisplay } from "@/lib/organization/entityDisplay";
+import type { EntityAssessment, EntityDisplay } from "@/lib/organization/jurisdictionRequirements";
 import { readIssuedLegalDetails, type IssuedLegalDetails } from "./quotationIssuedDetails";
 
 // The contracting legal entity of an ORDINARY quotation, read from the existing governed record (booking_contracting_entities, chosen explicitly by a Super Admin).
 // Resolution: the quotation's own record, else its linked enquiry's. NOTHING here chooses, infers or defaults an entity: no record means "not selected". Server-internal and
-// actor-independent (callers authorise); what a client document may show is limited by buildEntityDisplay().
+// actor-independent (callers authorise); what a client document may show is limited to the legal name, registration type and the jurisdiction's own current, verified identifiers (see assessEntityForQuotation).
 
-export type QuotationEntity = { entityId: string; name: string; source: "quotation" | "enquiry"; version: number; display: EntityDisplay };
+export type QuotationEntity = { entityId: string; name: string; source: "quotation" | "enquiry"; version: number; display: EntityDisplay; assessment: EntityAssessment };
 export type EntityResolution =
   | { ok: true; entity: QuotationEntity }
-  | { ok: false; code: "none" | "unavailable" | "crew"; message: string; entityName?: string };
+  | { ok: false; code: "none" | "unavailable" | "crew"; message: string; entityName?: string; assessment?: EntityAssessment };
 
 export const ENTITY_REQUIRED_TO_ISSUE = "A contracting entity must be selected before this quotation can be issued. A Super Admin selects it on this quotation or on its enquiry; it is never chosen automatically.";
 
-export async function resolveQuotationEntity(quotationId: string, today: string = new Date().toISOString().slice(0, 10)): Promise<EntityResolution> {
+export async function resolveQuotationEntity(quotationId: string, today: string = new Date().toISOString().slice(0, 10), declaredActivities: string[] | null = null): Promise<EntityResolution> {
   const db = createAdminClient();
   const { data: q } = await db.from("client_quotations").select("id, enquiry_id, crew_support_request_id").eq("id", quotationId).maybeSingle();
   if (!q) return { ok: false, code: "none", message: "Quotation not found." };
@@ -27,12 +27,12 @@ export async function resolveQuotationEntity(quotationId: string, today: string 
   if (!rec && q.enquiry_id) { rec = await latest("enquiry", q.enquiry_id as string); source = "enquiry"; }
   if (!rec) return { ok: false, code: "none", message: ENTITY_REQUIRED_TO_ISSUE };
 
-  const standing = await getContractingEntityStanding(rec.employing_entity_id as string, today);
+  const standing = await getContractingEntityStanding(rec.employing_entity_id as string, today, declaredActivities);
   if (!standing) return { ok: false, code: "unavailable", message: "The recorded contracting entity could not be found. A Super Admin must review it before this quotation is issued." };
   if (!standing.eligibility.eligible) {
-    return { ok: false, code: "unavailable", entityName: standing.entity.name, message: `The recorded contracting entity (${standing.entity.name}) cannot currently contract: ${standing.eligibility.blockers.join(" ")} A Super Admin must review it before this quotation is issued.` };
+    return { ok: false, code: "unavailable", entityName: standing.entity.name, assessment: standing.assessment, message: `The recorded contracting entity (${standing.entity.name}) cannot currently contract: ${standing.eligibility.blockers.join(" ")} A Super Admin must review it before this quotation is issued.` };
   }
-  return { ok: true, entity: { entityId: rec.employing_entity_id as string, name: standing.entity.name, source, version: Number(rec.version), display: buildEntityDisplay(standing.entity, standing.registrations, today) } };
+  return { ok: true, entity: { entityId: rec.employing_entity_id as string, name: standing.entity.name, source, version: Number(rec.version), display: standing.assessment.legal, assessment: standing.assessment } };
 }
 
 // What a quotation DOCUMENT or detail page may say about its contracting entity.
@@ -49,4 +49,19 @@ export async function resolveQuotationEntityView(quotationId: string, today?: st
   if (issued.state === "ok") return { phase: "issued", frozen: issued.details, record: issued.record };
   const live = await resolveQuotationEntity(quotationId, today);
   return issued.state === "no_snapshot" ? { phase: "issued_unfrozen", live } : { phase: "draft", resolution: live };
+}
+
+// The activities an ordinary quotation can declare, and a SUGGESTED pre-selection from the linked enquiry's service when it names one exactly. The person confirms it when issuing: the
+// system never decides which activities a quotation covers, and a planned activity is never made licensed by being selected here.
+export async function quotationActivityChoices(enquiryId: string | null): Promise<{ options: { key: string; label: string }[]; suggested: string[] }> {
+  const db = createAdminClient();
+  const { data: types } = await db.from("entity_activity_types").select("key, label").order("sort_order");
+  const options = (types ?? []) as { key: string; label: string }[];
+  let suggested: string[] = [];
+  if (enquiryId) {
+    const { data: e } = await db.from("enquiries").select("service").eq("id", enquiryId).maybeSingle();
+    const svc = String((e as { service?: string } | null)?.service ?? "").toLowerCase().replace(/[^a-z]+/g, "_");
+    if (options.some((o) => o.key === svc)) suggested = [svc];
+  }
+  return { options, suggested };
 }

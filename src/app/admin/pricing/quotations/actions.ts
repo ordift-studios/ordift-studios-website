@@ -244,7 +244,7 @@ export async function issueQuotationAction(_prev: ActionState, formData: FormDat
   const quotationId = String(formData.get("quotationId") ?? "");
   if (!quotationId) return { ok: false, error: "Invalid request." };
   if (formData.get("confirm") !== "on") return { ok: false, error: "Tick the confirmation to issue the quotation." };
-  const result = await issueOrdinaryQuotation({ quotationId, validUntil: String(formData.get("validUntil") ?? "") || null, exceptionReason: String(formData.get("exceptionReason") ?? "") || null, expectedEntityId: String(formData.get("expectedEntityId") ?? "") || null });
+  const result = await issueOrdinaryQuotation({ quotationId, validUntil: String(formData.get("validUntil") ?? "") || null, exceptionReason: String(formData.get("exceptionReason") ?? "") || null, expectedEntityId: String(formData.get("expectedEntityId") ?? "") || null, activities: formData.getAll("activities").map(String) });
   if (!result.ok) return { ok: false, error: result.error };
   revalidatePath(`/admin/pricing/quotations/${quotationId}`);
   revalidatePath("/admin/pricing/quotations");

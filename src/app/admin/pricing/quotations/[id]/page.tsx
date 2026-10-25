@@ -5,6 +5,7 @@ import { getCurrentUser, hasRole, isSuperAdmin } from "@/lib/portal/roles";
 import { getClientQuotation } from "@/lib/commercial/clientQuotations";
 import { QuotationStatusActions } from "./QuotationStatusActions";
 import { ReviseQuotationButton, DeleteQuotationButton } from "./QuotationRecordActions";
+import { requirementStateLabel } from "@/lib/organization/jurisdictionRequirements";
 import ClientRecordPanel from "../../../organisations/ClientRecordPanel";
 import ContractingEntitySection from "../../../organisations/ContractingEntitySection";
 import { getQuotationAcceptanceRecord } from "@/lib/commercial/quotationAcceptance";
@@ -12,7 +13,7 @@ import { getQuotationDelivery } from "@/lib/commercial/quotationIssuance";
 import { defaultValidUntil, formatDate, isExpired, issuanceBlockers, utcDate } from "@/lib/commercial/quotationValidity";
 import { DELIVERY_CHANNELS_UI } from "@/lib/commercial/quotationDeliveryChannels";
 import QuotationDatesCard from "./QuotationDatesCard";
-import { resolveQuotationEntityView } from "@/lib/commercial/quotationEntity";
+import { resolveQuotationEntityView, quotationActivityChoices } from "@/lib/commercial/quotationEntity";
 
 export const metadata: Metadata = {
   title: "Quotation — Ordift Studios Admin",
@@ -35,6 +36,7 @@ export default async function QuotationDetailPage({ params }: { params: Promise<
   // The contracting entity is read from the existing governed record (never inferred). A draft may exist without one; issuing needs one.
   // A draft reads the live record. An ISSUED quotation shows the legal details frozen in its issuance record (they never change with the live registry).
   const entityView = quotation.crewManaged ? null : await resolveQuotationEntityView(quotation.id, today);
+  const activityChoices = quotation.crewManaged || quotation.status !== "draft" ? { options: [], suggested: [] } : await quotationActivityChoices(quotation.enquiryId ?? null);
   const frozen = entityView?.phase === "issued" ? entityView : null;
   const entity = entityView?.phase === "draft" ? entityView.resolution : entityView?.phase === "issued_unfrozen" ? entityView.live : null;
   const blockers = [
@@ -124,6 +126,12 @@ export default async function QuotationDetailPage({ params }: { params: Promise<
                 : "This quotation was issued before an entity had to be recorded, so its document shows none. A Super Admin can still record one here; it is needed before an acceptance can be recorded, and it will not be added to the issued document."}
             </p>
           )}
+          {(entity.ok ? entity.entity.assessment : entity.assessment) && ((entity.ok ? entity.entity.assessment : entity.assessment)!.requirements.length > 0) && quotation.status === "draft" && (
+            <details className="font-sans text-caption text-ordift-ink-muted">
+              <summary className="cursor-pointer text-ordift-ink">Requirements for {(entity.ok ? entity.entity.assessment : entity.assessment)!.jurisdiction ?? "this jurisdiction"} ({(entity.ok ? entity.entity.assessment : entity.assessment)!.requirements.filter((r) => r.blocking).length} blocking)</summary>
+              <ul className="mt-1 list-disc pl-5 space-y-0.5">{(entity.ok ? entity.entity.assessment : entity.assessment)!.requirements.map((r) => <li key={r.key}>{r.label}: <strong className={r.blocking ? "text-red-800" : "text-ordift-ink"}>{requirementStateLabel(r)}</strong></li>)}</ul>
+            </details>
+          )}
           {entity.ok && quotation.status !== "draft" && <p className="font-sans text-caption text-ordift-ink-muted">Recorded after this quotation was issued, so it is not part of the issued document. It is not changed once recorded; revise the quotation to use a different entity.</p>}
         </section>
       )}
@@ -137,7 +145,7 @@ export default async function QuotationDetailPage({ params }: { params: Promise<
 
       <div className="rounded-xl border border-black/10 bg-white p-4 sm:p-6 mb-6">
         <QuotationStatusActions quotationId={quotation.id} status={quotation.status} hasClient={Boolean(quotation.clientProfileId)} today={today} defaultValidUntil={defaultValidUntil(now)} currentValidUntil={quotation.validUntil}
-          isSuperAdmin={isSuperAdmin(user)} blockers={blockers} expectedEntityId={entity?.ok ? entity.entity.entityId : null} expired={expired} deliveredText={deliveredText} crewManaged={quotation.crewManaged} />
+          isSuperAdmin={isSuperAdmin(user)} blockers={blockers} expectedEntityId={entity?.ok ? entity.entity.entityId : null} activityOptions={activityChoices.options} defaultActivities={activityChoices.suggested} expired={expired} deliveredText={deliveredText} crewManaged={quotation.crewManaged} />
       </div>
 
       <div className="rounded-xl border border-black/10 bg-white overflow-x-auto mb-6">

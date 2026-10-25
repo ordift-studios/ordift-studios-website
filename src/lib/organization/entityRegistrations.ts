@@ -1,6 +1,7 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { logActivity } from "@/lib/admin/activityLog";
 import { isSuperAdminId } from "@/lib/organization/authority";
+import { assessEntityForQuotation, type ActivityFact, type EntityAssessment, type EntityFacts, type RequirementRow } from "@/lib/organization/jurisdictionRequirements";
 import { assessContractingEligibility, suggestContractingEntity, reconcileReceipt, type ContractingCandidate, type Eligibility, type KnownDocument, type ReceiptLine, type RegistrationFact, type RegistrationKind, type RegistrationStatus, checkDuplicate, sha256OfBytes, ENTITY_DOCUMENT_TYPES } from "@/lib/organization/entityRegistry";
 
 // Per-entity registrations, permits, authorised signatories and receipt-backed expenses (migration 0159). Every read and write is
@@ -238,17 +239,84 @@ export async function confirmExpenseFunding(p: { entityId: string; receiptNumber
   return { ok: true, updated: (data ?? []).length };
 }
 
-// SERVER-INTERNAL, actor-independent: the CURRENT standing of one legal entity as a contracting party, read from the authoritative records and judged by the same rule the
-// selection screen uses (active, verified, a current registration, an issued permit where one is tracked). Callers authorise first; this never returns governance detail
-// beyond what its caller asks for. Used to re-check, immediately before a quotation is issued, that the recorded entity can still contract.
-export async function getContractingEntityStanding(entityId: string, today: string): Promise<{ entity: { name: string; legal_name: string | null; registration_type: string | null }; eligibility: Eligibility; registrations: EntityRegistration[] } | null> {
+// SERVER-INTERNAL, actor-independent: the CURRENT standing of one legal entity as a contracting party for an ORDINARY quotation, judged against ITS OWN jurisdiction's approved
+// requirements (migration 0173; Ghana and Qatar are not held to the same rules) and the activities the quotation declares. The database enforces the same rule at issuance
+// (private.entity_issue_standing) and a parity test keeps the two identical. Callers authorise first. Never returns governance detail beyond what its caller asks for.
+export type EntityStanding = {
+  entity: { name: string; legal_name: string | null; registration_type: string | null };
+  assessment: EntityAssessment;
+  eligibility: Eligibility;
+  registrations: EntityRegistration[];
+};
+type CatalogRow = { requirement_key: string; category: string; label: string; identifier_label: string | null; registration_kind: string | null; necessity: string; condition_activity: string | null; requires_verified: boolean; requires_in_date: boolean; shown_on_document: boolean; sort_order: number; approved_at: string | null };
+const mapCatalog = (c: CatalogRow): RequirementRow => ({
+  key: c.requirement_key, category: c.category as RequirementRow["category"], label: c.label, identifierLabel: c.identifier_label, registrationKind: c.registration_kind, necessity: c.necessity as RequirementRow["necessity"],
+  conditionActivity: c.condition_activity, requiresVerified: c.requires_verified, requiresInDate: c.requires_in_date, shownOnDocument: c.shown_on_document, sortOrder: c.sort_order, approved: Boolean(c.approved_at),
+});
+
+async function loadEntityFacts(entityId: string): Promise<{ facts: EntityFacts; catalog: RequirementRow[]; registrations: EntityRegistration[] } | null> {
   const db = createAdminClient();
-  const { data: e } = await db.from("employing_entities").select("id, name, legal_name, registration_type, active, verification_status").eq("id", entityId).maybeSingle();
+  const { data: e } = await db.from("employing_entities").select("id, name, legal_name, registration_type, active, verification_status, jurisdiction_id").eq("id", entityId).maybeSingle();
   if (!e) return null;
-  const { data: regs } = await db.from("entity_registrations").select(REG_SELECT).eq("employing_entity_id", entityId).in("status", ["active", "pending", "not_issued", "expired"]);
+  const jurisdictionId = (e.jurisdiction_id as string | null) ?? null;
+  const [{ data: j }, { data: cat }, { data: regs }, { data: sigs }, { data: acts }, { data: types }] = await Promise.all([
+    jurisdictionId ? db.from("employment_jurisdictions").select("name").eq("id", jurisdictionId).maybeSingle() : Promise.resolve({ data: null }),
+    jurisdictionId ? db.from("jurisdiction_entity_requirements").select("requirement_key, category, label, identifier_label, registration_kind, necessity, condition_activity, requires_verified, requires_in_date, shown_on_document, sort_order, approved_at").eq("jurisdiction_id", jurisdictionId) : Promise.resolve({ data: [] }),
+    db.from("entity_registrations").select(REG_SELECT).eq("employing_entity_id", entityId).in("status", ["active", "pending", "not_issued", "expired"]),
+    db.from("entity_signatories").select("effective_from, effective_to").eq("employing_entity_id", entityId),
+    db.from("entity_activities").select("activity_key, status, evidence_registration_id").eq("employing_entity_id", entityId),
+    db.from("entity_activity_types").select("key, label"),
+  ]);
   const registrations = ((regs ?? []) as unknown as RegRow[]).map(mapReg);
-  const candidate: ContractingCandidate = { entityId: e.id as string, name: e.name as string, verified: e.verification_status === "verified", active: Boolean(e.active), registrations };
-  return { entity: { name: e.name as string, legal_name: (e.legal_name as string | null) ?? null, registration_type: (e.registration_type as string | null) ?? null }, eligibility: assessContractingEligibility(candidate, null, today), registrations };
+  const facts: EntityFacts = {
+    name: e.name as string, legalName: (e.legal_name as string | null) ?? null, registrationType: (e.registration_type as string | null) ?? null, active: Boolean(e.active), verified: e.verification_status === "verified",
+    jurisdictionName: jurisdictionId ? ((j as { name: string } | null)?.name ?? "this jurisdiction") : null,
+    registrations,
+    signatories: ((sigs ?? []) as { effective_from: string | null; effective_to: string | null }[]).map((s) => ({ effectiveFrom: s.effective_from, effectiveTo: s.effective_to })),
+    activities: ((acts ?? []) as { activity_key: string; status: string; evidence_registration_id: string | null }[]).map((a): ActivityFact => ({ key: a.activity_key, status: a.status as ActivityFact["status"], evidenceRegistrationId: a.evidence_registration_id })),
+    activityLabels: Object.fromEntries(((types ?? []) as { key: string; label: string }[]).map((t) => [t.key, t.label])),
+  };
+  return { facts, catalog: ((cat ?? []) as CatalogRow[]).map(mapCatalog), registrations };
+}
+
+export async function getContractingEntityStanding(entityId: string, today: string, declaredActivities: string[] | null = null): Promise<EntityStanding | null> {
+  const loaded = await loadEntityFacts(entityId);
+  if (!loaded) return null;
+  const assessment = assessEntityForQuotation(loaded.facts, loaded.catalog, declaredActivities, today);
+  return {
+    entity: { name: loaded.facts.name, legal_name: loaded.facts.legalName, registration_type: loaded.facts.registrationType },
+    assessment, eligibility: { eligible: assessment.eligible, blockers: assessment.blockers }, registrations: loaded.registrations,
+  };
+}
+
+// Candidates for an ORDINARY enquiry or quotation (Super Admin only). Selection happens before the activities are declared, so activity coverage is judged when the quotation is issued;
+// everything else (jurisdiction requirements, verification, signatory) is judged here, so the selection screen and issuance agree.
+export async function listOrdinaryContractingCandidates(actorUserId: string, today: string): Promise<{ candidates: { entityId: string; name: string; jurisdiction: string | null; eligibility: Eligibility; advisories: string[]; requirements: EntityAssessment["requirements"] }[]; suggestion: { entityId: string; reason: string } | null }> {
+  if (!(await isSuperAdminId(actorUserId))) return { candidates: [], suggestion: null };
+  const { data: ents } = await createAdminClient().from("employing_entities").select("id, name").order("sort_order");
+  const candidates = [];
+  for (const e of ents ?? []) {
+    const st = await getContractingEntityStanding(e.id as string, today, null);
+    if (!st) continue;
+    candidates.push({ entityId: e.id as string, name: e.name as string, jurisdiction: st.assessment.jurisdiction, eligibility: st.eligibility, advisories: st.assessment.advisories, requirements: st.assessment.requirements });
+  }
+  return { candidates, suggestion: suggestContractingEntity(candidates) };
+}
+
+// Records whether an entity may carry out an activity. 'planned' is an intention and is NEVER treated as licensed. 'licensed' needs verified, active evidence (a registration of the SAME entity);
+// the database refuses anything else. Super Admin only; nothing is changed automatically and no activity is ever activated by the system.
+export async function setEntityActivity(p: { entityId: string; activityKey: string; status: "planned" | "licensed" | "suspended" | "withdrawn"; evidenceRegistrationId?: string | null; note?: string; actorUserId: string }): Promise<Result<{ status: string }>> {
+  if (!(await isSuperAdminId(p.actorUserId))) return NOT_ALLOWED;
+  if (p.status === "licensed" && !p.evidenceRegistrationId) return { ok: false, error: "A licensed activity needs the verified registration or licence that covers it." };
+  const db = createAdminClient();
+  const { data: t } = await db.from("entity_activity_types").select("key").eq("key", p.activityKey).maybeSingle();
+  if (!t) return { ok: false, error: "That activity is not one Ordift offers." };
+  const { data: prev } = await db.from("entity_activities").select("id, status").eq("employing_entity_id", p.entityId).eq("activity_key", p.activityKey).maybeSingle();
+  const row = { employing_entity_id: p.entityId, activity_key: p.activityKey, status: p.status, evidence_registration_id: p.status === "licensed" ? p.evidenceRegistrationId ?? null : p.evidenceRegistrationId ?? null, note: (p.note ?? "").trim() || null, recorded_by: p.actorUserId };
+  const { error } = prev ? await db.from("entity_activities").update(row).eq("id", prev.id as string) : await db.from("entity_activities").insert(row);
+  if (error) return { ok: false, error: error.message.includes("ordift:activity_evidence") ? "That evidence is not an active, verified record of this entity." : error.message };
+  await logActivity({ actorUserId: p.actorUserId, action: "entity.activity_recorded", entityType: "employing_entity", entityId: p.entityId, metadata: { activity: p.activityKey, from: (prev?.status as string | undefined) ?? null, to: p.status } });
+  return { ok: true, status: p.status };
 }
 
 // The issuance of an ORDINARY quotation fixes its contracting entity. The evidence is the quotation's own `issued_at` (written once, by the single issuing update), NOT its current
@@ -353,7 +421,11 @@ export async function chooseContractingEntity(p: { subject: ContractingSubject; 
     const gate = await ordinarySubjectGate({ type: p.subject.type, id: p.subject.id });
     if (!gate.ok) return gate;
   }
-  const { candidates } = await listContractingCandidates(p.actorUserId, serviceFamily, p.today ?? new Date().toISOString().slice(0, 10));
+  const today = p.today ?? new Date().toISOString().slice(0, 10);
+  // Ordinary subjects are judged against the entity's OWN jurisdiction requirements (the same rule the database enforces at issuance); Crew Support keeps its existing rule.
+  const { candidates } = p.subject.type === "enquiry" || p.subject.type === "quotation"
+    ? await listOrdinaryContractingCandidates(p.actorUserId, today)
+    : await listContractingCandidates(p.actorUserId, serviceFamily, today);
   const cand = candidates.find((c) => c.entityId === p.entityId);
   if (!cand) return { ok: false, error: "That legal entity was not found." };
   if (!cand.eligibility.eligible) return { ok: false, error: `That entity cannot contract for this booking: ${cand.eligibility.blockers.join(" ")}` };

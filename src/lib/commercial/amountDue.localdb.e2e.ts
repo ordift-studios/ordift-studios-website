@@ -149,7 +149,11 @@ beforeAll(() => {
     insert into public.user_roles (user_id, role_id) select '${SUPER}', r.id from public.roles r where r.slug in ('admin','super_admin') on conflict do nothing;
     insert into public.user_roles (user_id, role_id) select '${STAFF}', r.id from public.roles r where r.slug = 'staff' on conflict do nothing;
     insert into public.user_roles (user_id, role_id) select '${CLIENT}', r.id from public.roles r where r.slug = 'client' on conflict do nothing;
-    insert into public.employing_entities (name, slug, verification_status) select 'M2APP Entity', 'm2app-entity', 'verified' where not exists (select 1 from public.employing_entities where slug = 'm2app-entity');
+    insert into public.employment_jurisdictions (name, slug) values ('E2E Land','e2e-land') on conflict do nothing;
+    insert into public.jurisdiction_entity_requirements (jurisdiction_id, requirement_key, category, label, identifier_label, registration_kind, necessity, shown_on_document, sort_order, approved_at)
+      select id, 'legal_registration', 'legal_registration', 'Commercial Registration (CR)', 'Commercial Registration (CR) No.', 'commercial_registration', 'mandatory', true, 10, now() from public.employment_jurisdictions where slug = 'e2e-land' on conflict do nothing;
+    insert into public.employing_entities (name, slug, verification_status, jurisdiction_id) select 'M2APP Entity', 'm2app-entity', 'verified', (select id from public.employment_jurisdictions where slug = 'e2e-land') where not exists (select 1 from public.employing_entities where slug = 'm2app-entity');
+    insert into public.entity_registrations (employing_entity_id, kind, status, identifier, valid_from, verified_at, verified_by, recorded_by) select e.id, 'commercial_registration', 'active', 'CR-M2APP', current_date - 100, now(), '${SUPER}', '${SUPER}' from public.employing_entities e where e.slug = 'm2app-entity' and not exists (select 1 from public.entity_registrations r where r.employing_entity_id = e.id);
     insert into public.exchange_rates (currency_code, rate_to_usd, effective_from, reason, updated_by) values
       ('GHS', 11.000000, now() - interval '40 days', 'M2APP previous rate', '${SUPER}'),
       ('GHS', 11.089800, now() - interval '10 days', 'M2APP official mid-rate', '${SUPER}'),
@@ -169,7 +173,7 @@ afterAll(() => {
       delete from public.client_quotation_items where quotation_id in (select id from public.client_quotations where prospect_name = 'M2APP Prospect');
       delete from public.client_quotations where prospect_name = 'M2APP Prospect';
       delete from public.booking_contracting_entities where basis like 'M2APP%';
-      delete from public.employing_entities where slug = 'm2app-entity';
+      -- the entity and its (append-only) registration stay: the fixtures are idempotent and the scratch database is thrown away
       delete from public.crew_support_requests where reference_number like 'M2APP-%';
       delete from public.enquiries where reference_number like 'M2APP-%';
       delete from public.exchange_rates where reason like 'M2APP%';

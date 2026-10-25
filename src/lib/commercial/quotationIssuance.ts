@@ -11,7 +11,7 @@ import { ENTITY_REQUIRED_TO_ISSUE, resolveQuotationEntity } from "./quotationEnt
 
 export type IssueResult = { ok: true; issuedAt: string; validUntil: string; isException: boolean; isExtension: boolean } | { ok: false; error: string };
 
-export async function issueOrdinaryQuotation(params: { quotationId: string; validUntil?: string | null; exceptionReason?: string | null; expectedEntityId?: string | null }): Promise<IssueResult> {
+export async function issueOrdinaryQuotation(params: { quotationId: string; validUntil?: string | null; exceptionReason?: string | null; expectedEntityId?: string | null; activities?: string[] | null }): Promise<IssueResult> {
   const user = await getCurrentUser();
   if (!user || (!hasRole(user, "admin") && !isSuperAdmin(user))) return { ok: false, error: "Not authorized to issue quotations." };
   if (!params.quotationId) return { ok: false, error: "Quotation not found." };
@@ -25,7 +25,8 @@ export async function issueOrdinaryQuotation(params: { quotationId: string; vali
 
   // FAIL CLOSED: a quotation is issued only with a contracting legal entity that was explicitly recorded (on it or on its enquiry) and that can currently contract. Read from the
   // authoritative record at this moment, never inferred or defaulted. A draft needs none; issuing does.
-  const entity = await resolveQuotationEntity(params.quotationId);
+  const declared = [...new Set((params.activities ?? []).map((a) => String(a).trim()).filter(Boolean))].sort();
+  const entity = await resolveQuotationEntity(params.quotationId, undefined, declared);
   if (!entity.ok) return { ok: false, error: entity.message };
 
   const now = new Date();
@@ -41,6 +42,7 @@ export async function issueOrdinaryQuotation(params: { quotationId: string; vali
   const { data, error } = await admin.rpc("issue_ordinary_quotation", {
     p_quotation_id: params.quotationId, p_actor: user.id, p_valid_until: plan.validUntil, p_expected_entity: params.expectedEntityId ?? entity.entity.entityId,
     p_audit: {
+      declaredActivities: declared,
       standardValidUntil: plan.defaultUntil, withinStandardPolicy: !plan.isException,
       ...(plan.isException ? { exceptionReason: (params.exceptionReason ?? "").trim(), extensionBeyondStandard: plan.isExtension, approvedBy: user.id } : {}),
       ...(plan.replacedExpired ? { replacedExpiredCarriedDate: q.valid_until } : {}),
@@ -66,6 +68,7 @@ function messageForIssueError(message: string, details: string | null): string {
   if (m.includes("ordift:entity_unavailable")) return "The recorded contracting entity could not be found. A Super Admin must review it before this quotation is issued. Nothing was issued.";
   if (m.includes("ordift:validity_in_past")) return "The validity date is already in the past. Choose a date from today onward. Nothing was issued.";
   if (m.includes("ordift:validity_needs_super_admin")) return "A validity beyond the standard 30 days needs approval from a Founder / Super Admin. Nothing was issued.";
+  if (m.includes("ordift:unknown_activity")) return "Choose the activities from the list. Nothing was issued.";
   if (m.includes("ordift:not_authorised")) return "Not authorized to issue quotations.";
   if (m.includes("ordift:crew_managed")) return "This is a Crew Support quotation: it is issued from its Crew Support request.";
   if (m.includes("ordift:no_lines")) return "Add at least one line item before issuing.";

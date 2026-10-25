@@ -5,7 +5,7 @@ import { createHash } from "node:crypto";
 
 export const REGISTRATION_KINDS = [
   "commercial_registration", "commercial_permit", "tax_registration", "establishment_card",
-  "trade_name_reservation", "articles_of_association", "chamber_membership", "investment_approval_condition",
+  "trade_name_reservation", "articles_of_association", "chamber_membership", "investment_approval_condition", "activity_licence",
 ] as const;
 export type RegistrationKind = (typeof REGISTRATION_KINDS)[number];
 export type RegistrationStatus = "active" | "pending" | "not_issued" | "expired" | "superseded" | "revoked";
@@ -19,6 +19,7 @@ export const REGISTRATION_LABELS: Record<RegistrationKind, string> = {
   articles_of_association: "Articles of Association",
   chamber_membership: "Chamber of Commerce membership",
   investment_approval_condition: "Investment approval condition",
+  activity_licence: "Activity licence / authorisation",
 };
 
 // Canonical document classes for the private vault. Free text is still accepted for older records (e.g. the Ghana certificate).

@@ -116,6 +116,16 @@ describe("the issuance panel (server-rendered markup)", () => {
     expect(html).not.toContain('name="confirm"');
     expect(html).not.toContain("Issue this quotation");
   });
+  it("the Issue form asks which activities the quotation covers: pre-ticks only the enquiry's suggestion, and says a planned activity is never treated as licensed", async () => {
+    const opts = [{ key: "photography", label: "Photography" }, { key: "videography", label: "Videography" }, { key: "drone_operations", label: "Drone operations" }];
+    const html = await render({ status: "draft", activityOptions: opts, defaultActivities: ["photography"] } as never);
+    expect((html.match(/name="activities"/g) ?? []).length).toBe(3);
+    expect(html).toMatch(/value="photography"[^>]*checked|checked[^>]*value="photography"/);
+    expect(html).not.toMatch(/value="videography"[^>]*checked|checked[^>]*value="videography"/);
+    expect(html).toContain("a planned activity is never treated as licensed");
+    expect(await render({ status: "draft" })).not.toContain('name="activities"');                     // no options (e.g. Crew / issued): nothing to ask
+    expect(await render({ status: "draft", blockers: ["A contracting entity must be selected"] , activityOptions: opts } as never)).not.toContain('name="activities"');   // blocked: no form at all
+  });
   it("a Crew Support quotation shows no Issue form here: it is issued from its request", async () => {
     const html = await render({ status: "draft", crewManaged: true } as never);
     expect(html).not.toContain("Issue quotation");
@@ -289,5 +299,42 @@ describe("issued quotations are frozen (source guards)", () => {
     expect(lock).toContain("issued_at");
     expect(lock).not.toMatch(/\.eq\("status"/);
     expect(reg).not.toContain("hasIssuedOrdinaryQuotation");
+  });
+});
+
+describe("migration 0173 replaces the issuing function WITHOUT weakening anything 0172 established", () => {
+  const m72 = read("../../../supabase/migrations/0172_atomic_ordinary_quotation_issuance.sql");
+  const m73 = read("../../../supabase/migrations/0173_jurisdiction_entity_requirements.sql");
+  const fn = (sql: string) => sql.slice(sql.indexOf("create or replace function public.issue_ordinary_quotation"), sql.indexOf("revoke all on function public.issue_ordinary_quotation"));
+  it("same signature, security definer, empty search_path, service_role-only execution", () => {
+    const sig = "create or replace function public.issue_ordinary_quotation(\n  p_quotation_id uuid, p_actor uuid, p_valid_until date, p_expected_entity uuid default null, p_audit jsonb default '{}'::jsonb)";
+    expect(fn(m72)).toContain(sig);
+    expect(fn(m73)).toContain(sig);
+    expect(fn(m73)).toContain("security definer set search_path = ''");
+    expect(m73).toMatch(/revoke all on function public\.issue_ordinary_quotation\(uuid, uuid, date, uuid, jsonb\) from public, anon, authenticated;\s*grant execute on function public\.issue_ordinary_quotation\(uuid, uuid, date, uuid, jsonb\) to service_role;/);
+  });
+  it("every safeguard line of the 0172 body is still present: role check, lock order, draft re-check, entity re-read, validity backstops, one update, marker, created_at = issued_at", () => {
+    for (const t of ["private.actor_has_role(p_actor, array['admin', 'super_admin'])", "for update;                 -- enquiry first", "for update;   -- then the quotation", "ordift:crew_managed", "ordift:already_issued", "ordift:no_lines", "ordift:no_total",
+      "ordift:entity_required", "ordift:entity_changed", "ordift:entity_ineligible", "ordift:validity_in_past", "ordift:validity_needs_super_admin", "set status = 'sent', issued_at = v_issued, issued_by = p_actor, valid_until = p_valid_until",
+      "set_config('ordift.issuing_quotation', v_event::text || ':' || q.id::text, true)", "insert into public.activity_log (id, actor_user_id, action, entity_type, entity_id, metadata, created_at)", "'client_quotation.issued'", "'legalDetails'", ", v_issued);",
+      "set_config('ordift.issuing_quotation', '', true)"]) expect(fn(m73), t).toContain(t);
+    expect(fn(m73).indexOf("update public.client_quotations")).toBeLessThan(fn(m73).indexOf("insert into public.activity_log"));
+  });
+  it("it changes no existing data and touches no audit-log trigger, index or policy; the guard from 0172 is not replaced", () => {
+    const live = m73.replace(/--.*$/gm, "");
+    expect(live).not.toMatch(/activity_log_issuance_guard|on public\.activity_log|create trigger activity_log/);
+    expect(live).not.toMatch(/delete from public\.(?!\w*activities)/);
+    expect(live).toContain("drop function private.entity_issue_standing(uuid, date);");
+  });
+  it("the catalog seeds name no real number and record no registration, activity licence or entity selection", () => {
+    const live = m73.replace(/--.*$/gm, "");
+    expect(live).not.toMatch(/insert into public\.(entity_registrations|entity_activities|booking_contracting_entities|employing_entities)/);
+    expect(live).not.toMatch(/BN\d|P\d{6}|\bTIN\s*[:=]\s*\w*\d/);
+  });
+  it("planned activities cannot be licensed by the schema: 'licensed' requires evidence of the same entity, verified and active", () => {
+    expect(m73).toContain("constraint entity_activities_licensed_needs_evidence check (status <> 'licensed' or evidence_registration_id is not null)");
+    expect(m73).toContain("ordift:activity_evidence_not_this_entity");
+    expect(m73).toContain("ordift:activity_evidence_not_verified");
+    expect(m73).toContain("rows are never deleted");
   });
 });

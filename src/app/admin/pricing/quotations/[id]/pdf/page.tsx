@@ -37,7 +37,7 @@ export default async function QuotationPdfPage({ params }: { params: Promise<{ i
   const crew = await getCrewQuotationPrintExtras(id);
   // Created / Issued / Valid until, labelled. A draft shows "Not yet issued" and a DRAFT banner: the creation date is never presented as an issue date.
   // The contracting entity of an ORDINARY quotation, from the existing governed record only. Only its legal name, registration type and current verified CR / tax identifiers can
-  // appear here (see buildEntityDisplay); Crew Support quotations keep their own output unchanged.
+  // appear here (see assessEntityForQuotation); Crew Support quotations keep their own output unchanged.
   // A DRAFT shows the live record; an ISSUED quotation shows only the legal details frozen when it was issued, so a later registry change never alters an issued document.
   const entityView = crew ? null : await resolveQuotationEntityView(id);
   const entityShown = entityView?.phase === "issued" ? entityView.frozen : entityView?.phase === "draft" && entityView.resolution.ok ? { legalName: entityView.resolution.entity.display.legalName, registrationType: entityView.resolution.entity.display.registrationType, identifiers: entityView.resolution.entity.display.identifiers } : null;
