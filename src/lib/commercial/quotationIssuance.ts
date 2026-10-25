@@ -3,8 +3,7 @@ import { logActivity } from "@/lib/admin/activityLog";
 import { getCurrentUser, hasRole, isSuperAdmin } from "@/lib/portal/roles";
 import { issuanceBlockers, planIssuance } from "./quotationValidity";
 import { DELIVERY_CHANNELS_UI } from "./quotationDeliveryChannels";
-import { resolveQuotationEntity } from "./quotationEntity";
-import { ISSUED_ACTION, buildIssuedLegalDetails } from "./quotationIssuedDetails";
+import { ENTITY_REQUIRED_TO_ISSUE, resolveQuotationEntity } from "./quotationEntity";
 
 // ORDINARY quotation issuance, delivery record and their audit. Issuing is ONE deliberate, confirmed act that records WHEN it was issued, BY WHOM, and the approved validity.
 // It is deliberately NOT sending: nothing is emailed or notified, and it creates no payment, booking, amount due, receivable or client acceptance. Delivering the quotation to the client
@@ -12,7 +11,7 @@ import { ISSUED_ACTION, buildIssuedLegalDetails } from "./quotationIssuedDetails
 
 export type IssueResult = { ok: true; issuedAt: string; validUntil: string; isException: boolean; isExtension: boolean } | { ok: false; error: string };
 
-export async function issueOrdinaryQuotation(params: { quotationId: string; validUntil?: string | null; exceptionReason?: string | null }): Promise<IssueResult> {
+export async function issueOrdinaryQuotation(params: { quotationId: string; validUntil?: string | null; exceptionReason?: string | null; expectedEntityId?: string | null }): Promise<IssueResult> {
   const user = await getCurrentUser();
   if (!user || (!hasRole(user, "admin") && !isSuperAdmin(user))) return { ok: false, error: "Not authorized to issue quotations." };
   if (!params.quotationId) return { ok: false, error: "Quotation not found." };
@@ -32,47 +31,46 @@ export async function issueOrdinaryQuotation(params: { quotationId: string; vali
   const now = new Date();
   const plan = planIssuance({ now, existingValidUntil: q.valid_until, requestedValidUntil: params.validUntil ?? null, exceptionReason: params.exceptionReason ?? null, isSuperAdmin: isSuperAdmin(user) });
   if (!plan.ok) return plan;
+  // The Issue form carries the entity the person was looking at; if it is no longer the one on record, nothing is issued.
+  if (params.expectedEntityId && params.expectedEntityId !== entity.entity.entityId) return { ok: false, error: ENTITY_CHANGED };
 
-  // One conditional write: only a still-draft, never-issued row can be issued, so two people pressing at once (or a double tap) produce exactly one issuance.
-  const issuedAt = now.toISOString();
-  const { data: updated, error } = await admin.from("client_quotations")
-    .update({ status: "sent", issued_at: issuedAt, issued_by: user.id, valid_until: plan.validUntil })
-    .eq("id", params.quotationId).eq("status", "draft").is("issued_at", null)
-    .select("id").maybeSingle();
-  if (error) { console.error("[commercial] failed to issue quotation", error.message); return { ok: false, error: "The quotation could not be issued. Nothing was changed." }; }
-  if (!updated) return { ok: false, error: "This quotation was already issued or changed by someone else. Reload to see its current state. Nothing was changed." };
-
-  // The issuance record is written WITH the frozen legal details of the entity (see quotationIssuedDetails.ts). It is checked, not best-effort: if it cannot be saved, or the
-  // entity record changed while issuing, the issuance is rolled back to a draft so there is never an issued quotation without its evidence.
-  const revert = async (reason: string, userMessage: string): Promise<IssueResult> => {
-    const { data: undone } = await admin.from("client_quotations")
-      .update({ status: "draft", issued_at: null, issued_by: null, valid_until: q.valid_until ?? null })
-      .eq("id", params.quotationId).eq("status", "sent").eq("issued_at", issuedAt).select("id").maybeSingle();
-    if (undone) {
-      await logActivity({ actorUserId: user.id, action: "client_quotation.issuance_reverted", entityType: "client_quotation", entityId: params.quotationId, metadata: { quotationReference: q.quotation_reference, issuedAt, reason } });
-      return { ok: false, error: `${userMessage} Nothing was issued.` };
-    }
-    console.error("[commercial] could not roll back an issuance whose record failed", params.quotationId, reason);
-    return { ok: false, error: "The quotation was issued but its issuance record could not be completed. Do not send it; contact the platform administrator." };
-  };
-  const { error: auditError } = await admin.from("activity_log").insert({
-    actor_user_id: user.id, action: ISSUED_ACTION, entity_type: "client_quotation", entity_id: params.quotationId,
-    metadata: {
-      quotationReference: q.quotation_reference, from: "draft", issuedAt, validUntil: plan.validUntil, standardValidUntil: plan.defaultUntil, withinStandardPolicy: !plan.isException,
+  // ONE database transaction (migration 0172, issue_ordinary_quotation): lock the enquiry then the quotation, re-check that it is still an unissued draft, resolve and verify the
+  // contracting entity on record at that moment, FREEZE its legal details, set status / issue time / issuer / validity, and write the audit event that carries the frozen details.
+  // All of it commits together or none of it does, so there is never an issued quotation without its authoritative legal snapshot, and two people pressing at once produce exactly
+  // one issuance. The function re-checks the actor's role and the entity's eligibility itself; the checks above only give friendlier messages first.
+  const { data, error } = await admin.rpc("issue_ordinary_quotation", {
+    p_quotation_id: params.quotationId, p_actor: user.id, p_valid_until: plan.validUntil, p_expected_entity: params.expectedEntityId ?? entity.entity.entityId,
+    p_audit: {
+      standardValidUntil: plan.defaultUntil, withinStandardPolicy: !plan.isException,
       ...(plan.isException ? { exceptionReason: (params.exceptionReason ?? "").trim(), extensionBeyondStandard: plan.isExtension, approvedBy: user.id } : {}),
       ...(plan.replacedExpired ? { replacedExpiredCarriedDate: q.valid_until } : {}),
-      contractingEntity: { entityId: entity.entity.entityId, name: entity.entity.name, recordedOn: entity.entity.source, version: entity.entity.version },
-      legalDetails: buildIssuedLegalDetails(entity.entity, issuedAt),
       delivery: "not sent by the system: issuing does not email or notify the client",
     },
   });
-  if (auditError) { console.error("[commercial] failed to write the issuance record", auditError.message); return revert("issuance record could not be saved", "The issuance record could not be saved."); }
-  // The entity may have been changed by someone else between the check above and the write: the frozen details must be the entity that is on record.
-  const recheck = await resolveQuotationEntity(params.quotationId);
-  if (!recheck.ok || recheck.entity.entityId !== entity.entity.entityId || recheck.entity.version !== entity.entity.version) {
-    return revert("the contracting entity changed while issuing", "The contracting entity was changed while you were issuing. Review it and issue again.");
+  if (error) {
+    console.error("[commercial] failed to issue quotation", error.message);
+    return { ok: false, error: messageForIssueError(error.message, (error as { details?: string | null }).details ?? null) };
   }
-  return { ok: true, issuedAt, validUntil: plan.validUntil, isException: plan.isException, isExtension: plan.isExtension };
+  const row = (Array.isArray(data) ? data[0] : data) as { issued_at: string } | null;
+  if (!row?.issued_at) return { ok: false, error: "The quotation could not be issued. Nothing was changed." };
+  return { ok: true, issuedAt: row.issued_at, validUntil: plan.validUntil, isException: plan.isException, isExtension: plan.isExtension };
+}
+
+const ENTITY_CHANGED = "The contracting entity was changed since you opened this quotation. Review it and issue again. Nothing was issued.";
+function messageForIssueError(message: string, details: string | null): string {
+  const m = message ?? "";
+  if (m.includes("ordift:already_issued") || m.includes("ordift:changed_concurrently")) return "This quotation was already issued or changed by someone else. Reload to see its current state. Nothing was changed.";
+  if (m.includes("ordift:entity_changed")) return ENTITY_CHANGED;
+  if (m.includes("ordift:entity_required")) return ENTITY_REQUIRED_TO_ISSUE;
+  if (m.includes("ordift:entity_ineligible")) return `The recorded contracting entity cannot currently contract: ${details ?? ""} A Super Admin must review it before this quotation is issued. Nothing was issued.`.replace("  ", " ");
+  if (m.includes("ordift:entity_unavailable")) return "The recorded contracting entity could not be found. A Super Admin must review it before this quotation is issued. Nothing was issued.";
+  if (m.includes("ordift:validity_in_past")) return "The validity date is already in the past. Choose a date from today onward. Nothing was issued.";
+  if (m.includes("ordift:validity_needs_super_admin")) return "A validity beyond the standard 30 days needs approval from a Founder / Super Admin. Nothing was issued.";
+  if (m.includes("ordift:not_authorised")) return "Not authorized to issue quotations.";
+  if (m.includes("ordift:crew_managed")) return "This is a Crew Support quotation: it is issued from its Crew Support request.";
+  if (m.includes("ordift:no_lines")) return "Add at least one line item before issuing.";
+  if (m.includes("ordift:no_total")) return "The total must be greater than zero before issuing.";
+  return "The quotation could not be issued. Nothing was changed.";
 }
 
 // ---- delivery to the client: a person records HOW and WHEN they delivered it. Kept as an audit event (no schema change); it never changes the quotation.

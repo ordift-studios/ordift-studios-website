@@ -1,5 +1,5 @@
 #!/bin/bash
-# LOCAL ONLY. Rebuilds a throwaway database `p4_e2e` inside the local lab Postgres container (schema copy + proposed migrations 0168-0171 applied for real),
+# LOCAL ONLY. Rebuilds a throwaway database `p4_e2e` inside the local lab Postgres container (schema copy + proposed migrations 0168-0172 applied for real),
 # and starts a private PostgREST on 127.0.0.1:54997 with a random secret and short-lived tokens in /tmp. Nothing here can reach Staging or Production.
 # Then run: E2E_SUPABASE_URL=http://127.0.0.1:54997 npx vitest run --config vitest.localdb.config.ts src/lib/portfolio/library.localdb.e2e.ts src/lib/enquiry/pricingPersistence.localdb.e2e.ts
 # Clean up with: ./e2e_scratch.sh down
@@ -24,7 +24,7 @@ end $$;
 SQL
 # Production's default privileges for new objects in public (read-only check 2026-10-25): anon/authenticated/service_role get TRUNCATE, REFERENCES, TRIGGER, MAINTAIN on every new table, so each migration must revoke them explicitly. Reproduced here.
 q -d p4_e2e -X -q -v ON_ERROR_STOP=1 -c "alter default privileges for role supabase_admin in schema public grant truncate, references, trigger, maintain on tables to anon, authenticated, service_role" >/dev/null
-for f in 0168_enquiry_pricing_followups.sql 0169_portfolio_library_foundation.sql 0170_portfolio_marketing_permissions.sql 0171_portfolio_internal_approval_and_use.sql; do q -d p4_e2e -X -q -v ON_ERROR_STOP=1 < "$D/../migrations/$f" >/dev/null; done
+for f in 0168_enquiry_pricing_followups.sql 0169_portfolio_library_foundation.sql 0170_portfolio_marketing_permissions.sql 0171_portfolio_internal_approval_and_use.sql 0172_atomic_ordinary_quotation_issuance.sql; do q -d p4_e2e -X -q -v ON_ERROR_STOP=1 < "$D/../migrations/$f" >/dev/null; done
 PW=$(python3 -c "import secrets;print(secrets.token_hex(16))"); SECRET=$(python3 -c "import secrets;print(secrets.token_hex(32))")
 q -d p4_e2e -X -q -v ON_ERROR_STOP=1 -c "drop role if exists p4_auth" -c "create role p4_auth login noinherit password '$PW'" -c "grant anon, authenticated, service_role to p4_auth" >/dev/null
 docker run -d --name p4-e2e-rest --network "$NET" -p 127.0.0.1:54997:3000 -e PGRST_DB_URI="postgres://p4_auth:$PW@$C:5432/p4_e2e" -e PGRST_DB_SCHEMAS=public -e PGRST_DB_ANON_ROLE=anon -e PGRST_JWT_SECRET="$SECRET" public.ecr.aws/supabase/postgrest:v14.5 >/dev/null

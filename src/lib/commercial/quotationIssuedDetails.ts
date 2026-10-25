@@ -1,5 +1,4 @@
 import { createAdminClient } from "@/lib/supabase/admin";
-import type { QuotationEntity } from "./quotationEntity";
 
 // The legal identity of the contracting entity AS IT WAS WHEN THE QUOTATION WAS ISSUED. It is captured once, inside the issuance audit event (`client_quotation.issued`), which the
 // platform already treats as its append-only evidence store (delivery and acceptance are kept the same way, so no schema change is needed). An issued quotation's preview / PDF
@@ -15,14 +14,6 @@ export type IssuedLegalDetails = {
   entityId: string; name: string; recordedOn: "quotation" | "enquiry"; version: number;
   legalName: string; registrationType: string | null; identifiers: { label: string; identifier: string }[]; capturedAt: string;
 };
-
-export function buildIssuedLegalDetails(entity: QuotationEntity, capturedAt: string): IssuedLegalDetails {
-  return {
-    entityId: entity.entityId, name: entity.name, recordedOn: entity.source, version: entity.version,
-    legalName: entity.display.legalName, registrationType: entity.display.registrationType,
-    identifiers: entity.display.identifiers.map((i) => ({ label: i.label, identifier: i.identifier })), capturedAt,
-  };
-}
 
 export function parseIssuedLegalDetails(metadata: unknown): IssuedLegalDetails | null {
   const d = (metadata as { legalDetails?: Record<string, unknown> } | null)?.legalDetails;

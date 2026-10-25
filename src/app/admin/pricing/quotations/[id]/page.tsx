@@ -137,7 +137,7 @@ export default async function QuotationDetailPage({ params }: { params: Promise<
 
       <div className="rounded-xl border border-black/10 bg-white p-4 sm:p-6 mb-6">
         <QuotationStatusActions quotationId={quotation.id} status={quotation.status} hasClient={Boolean(quotation.clientProfileId)} today={today} defaultValidUntil={defaultValidUntil(now)} currentValidUntil={quotation.validUntil}
-          isSuperAdmin={isSuperAdmin(user)} blockers={blockers} expired={expired} deliveredText={deliveredText} crewManaged={quotation.crewManaged} />
+          isSuperAdmin={isSuperAdmin(user)} blockers={blockers} expectedEntityId={entity?.ok ? entity.entity.entityId : null} expired={expired} deliveredText={deliveredText} crewManaged={quotation.crewManaged} />
       </div>
 
       <div className="rounded-xl border border-black/10 bg-white overflow-x-auto mb-6">

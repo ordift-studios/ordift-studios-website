@@ -19,20 +19,23 @@ describe("issuing is a recorded, confirmed act: never a bare status flip, never 
     expect(body).toMatch(/params\.status === "sent"[\s\S]*issueOrdinaryQuotation\(\{ quotationId: params\.quotationId \}\)/);
     expect(body.indexOf("issueOrdinaryQuotation")).toBeLessThan(body.indexOf('.update({ status: params.status })'));
   });
-  it("one conditional write records status, issue time, issuer and validity together, and only for a still-draft, never-issued row", () => {
-    expect(issuance).toMatch(/\.update\(\{ status: "sent", issued_at: issuedAt, issued_by: user\.id, valid_until: plan\.validUntil \}\)/);
-    expect(issuance).toMatch(/\.eq\("status", "draft"\)\.is\("issued_at", null\)/);
+  it("one conditional write (inside the atomic function) records status, issue time, issuer and validity together, and only for a still-draft, never-issued row", () => {
+    const sql = read("../../../supabase/migrations/0172_atomic_ordinary_quotation_issuance.sql");
+    expect(sql).toContain("set status = 'sent', issued_at = v_issued, issued_by = p_actor, valid_until = p_valid_until");
+    expect(sql).toMatch(/if q\.status <> 'draft' or q\.issued_at is not null then raise exception 'ordift:already_issued'/);
   });
-  it("the contracting entity is re-read from the authoritative record immediately before the conditional write; it is never defaulted or inferred", () => {
-    const i = issuance.indexOf("export async function issueOrdinaryQuotation");
-    const body = issuance.slice(i, issuance.indexOf("export async function recordQuotationDelivery"));
-    expect(body).toMatch(/await resolveQuotationEntity\(params\.quotationId\)[\s\S]*if \(!entity\.ok\) return \{ ok: false, error: entity\.message \}/);
-    expect(body.indexOf("resolveQuotationEntity(")).toBeLessThan(body.indexOf('.update({ status: "sent"'));
+  it("the contracting entity is resolved from the authoritative record INSIDE the issuing transaction; it is never defaulted or inferred", () => {
+    const sql = read("../../../supabase/migrations/0172_atomic_ordinary_quotation_issuance.sql");
+    const fn = sql.slice(sql.indexOf("create or replace function public.issue_ordinary_quotation"), sql.indexOf("revoke all on function public.issue_ordinary_quotation"));
+    expect(fn).toMatch(/from public\.booking_contracting_entities b[\s\S]*subject_type = 'quotation'[\s\S]*subject_type = 'enquiry'[\s\S]*if v_entity is null then raise exception 'ordift:entity_required'/);
+    expect(fn).not.toMatch(/insert into public\.booking_contracting_entities|employing_entities where slug|default.*entity/i);
     const resolver = code(read("./quotationEntity.ts"));
     expect(resolver).not.toMatch(/\.insert\(|\.update\(|\.upsert\(|chooseContractingEntity|default\w*Entity|slug/i);
   });
-  it("it audits who, when, the approved validity, any exception and its approver, and states that nothing was sent", () => {
-    for (const t of ["ISSUED_ACTION", "issuedAt", "validUntil: plan.validUntil", "standardValidUntil", "withinStandardPolicy", "exceptionReason", "approvedBy: user.id", "not sent by the system"]) expect(issuance).toContain(t);
+  it("it audits who, when, the approved validity, any exception and its approver, the entity and its frozen details, and states that nothing was sent", () => {
+    for (const t of ["standardValidUntil", "withinStandardPolicy", "exceptionReason", "approvedBy: user.id", "not sent by the system"]) expect(issuance).toContain(t);
+    const sql = read("../../../supabase/migrations/0172_atomic_ordinary_quotation_issuance.sql");
+    for (const t of ["'issuedAt'", "'validUntil'", "'contractingEntity'", "'legalDetails'", "actor_user_id", "'client_quotation.issued'"]) expect(sql).toContain(t);
   });
   it("the issuance event keeps its documented action name", () => {
     expect(code(read("./quotationIssuedDetails.ts"))).toContain('ISSUED_ACTION = "client_quotation.issued"');
@@ -211,20 +214,19 @@ describe("the preview / PDF header", () => {
   });
 });
 
-import { buildIssuedLegalDetails, parseIssuedLegalDetails, pickIssuanceEvent } from "./quotationIssuedDetails";
+import { parseIssuedLegalDetails, pickIssuanceEvent } from "./quotationIssuedDetails";
 
 describe("the frozen legal details (pure parts)", () => {
-  const entity = { entityId: "e1", name: "Short", source: "enquiry" as const, version: 2, display: { legalName: "LEGAL NAME", registrationType: "W.L.L.", identifiers: [{ label: "Commercial Registration (CR) No.", identifier: "1" }] } };
-  it("builds only the legal name, type and the two public identifiers; parsing round-trips and rejects malformed or empty data", () => {
-    const d = buildIssuedLegalDetails(entity, "2026-10-26T08:00:00.000Z");
-    expect(d).toEqual({ entityId: "e1", name: "Short", recordedOn: "enquiry", version: 2, legalName: "LEGAL NAME", registrationType: "W.L.L.", identifiers: [{ label: "Commercial Registration (CR) No.", identifier: "1" }], capturedAt: "2026-10-26T08:00:00.000Z" });
+  const d = { entityId: "e1", name: "Short", recordedOn: "enquiry", version: 2, legalName: "LEGAL NAME", registrationType: "W.L.L.", identifiers: [{ label: "Commercial Registration (CR) No.", identifier: "1" }], capturedAt: "2026-10-26T08:00:00.000000Z" };
+  it("parsing returns exactly the frozen shape and rejects malformed or empty data", () => {
     expect(parseIssuedLegalDetails({ legalDetails: d })).toEqual(d);
+    expect(parseIssuedLegalDetails({ legalDetails: { ...d, extra: "ignored", secret: "x" } })).toEqual(d);
     for (const bad of [null, {}, { legalDetails: null }, { legalDetails: { ...d, legalName: "  " } }, { legalDetails: { ...d, recordedOn: "agreement" } }, { legalDetails: { ...d, entityId: 5 } }]) expect(parseIssuedLegalDetails(bad)).toBeNull();
   });
-  it("the authoritative issuance event is the one matching the row's own issue time and issuer; a rolled-back or foreign event is ignored", () => {
+  it("the authoritative issuance event is the one matching the row's own issue time and issuer; a foreign event is ignored (microsecond text and ms ISO compare equal)", () => {
     const mk = (id: string, created: string, at: string, actor: string | null) => ({ id, created_at: created, actor_user_id: actor, metadata: { issuedAt: at } });
-    const events = [mk("rolled-back", "2026-10-26T07:59:00Z", "2026-10-26T07:59:00.000Z", "u1"), mk("real", "2026-10-26T08:00:01Z", "2026-10-26T08:00:00.000Z", "u1"), mk("other-user", "2026-10-26T08:00:02Z", "2026-10-26T08:00:00.000Z", "u2")];
-    expect(pickIssuanceEvent(events, "2026-10-26T08:00:00+00:00", "u1")?.id).toBe("real");
+    const events = [mk("older", "2026-10-26T07:59:00Z", "2026-10-26T07:59:00.000000Z", "u1"), mk("real", "2026-10-26T08:00:01Z", "2026-10-26T08:00:00.123456Z", "u1"), mk("other-user", "2026-10-26T08:00:02Z", "2026-10-26T08:00:00.123456Z", "u2")];
+    expect(pickIssuanceEvent(events, "2026-10-26T08:00:00.123456+00:00", "u1")?.id).toBe("real");
     expect(pickIssuanceEvent(events, "2026-10-26T09:00:00Z", "u1")).toBeNull();
     expect(pickIssuanceEvent(events, "not a date", "u1")).toBeNull();
   });
@@ -233,12 +235,21 @@ describe("the frozen legal details (pure parts)", () => {
 describe("issued quotations are frozen (source guards)", () => {
   const strip = (t: string) => code(t);
   const issuanceSrc = strip(read("./quotationIssuance.ts"));
-  it("the issuance record carries the frozen details, is written with a CHECKED insert (not best-effort), and is rolled back if it cannot be saved or the entity changed", () => {
-    expect(issuanceSrc).toContain("legalDetails: buildIssuedLegalDetails(entity.entity, issuedAt)");
-    expect(issuanceSrc).toMatch(/await admin\.from\("activity_log"\)\.insert\(\{[\s\S]*action: ISSUED_ACTION/);
-    expect(issuanceSrc).toMatch(/if \(auditError\)[\s\S]*return revert\(/);
-    expect(issuanceSrc).toMatch(/recheck\.entity\.entityId !== entity\.entity\.entityId \|\| recheck\.entity\.version !== entity\.entity\.version[\s\S]*return revert\(/);
-    expect(issuanceSrc).toMatch(/\.eq\("status", "sent"\)\.eq\("issued_at", issuedAt\)/);                  // the rollback can only undo THIS issuance
+  it("issuing is ONE database call (the atomic function); the application writes neither the status, the audit event nor the snapshot itself", () => {
+    const i = issuanceSrc.indexOf("export async function issueOrdinaryQuotation");
+    const body = issuanceSrc.slice(i, issuanceSrc.indexOf("export const DELIVERY_CHANNELS"));
+    expect(body).toContain('admin.rpc("issue_ordinary_quotation"');
+    expect(body).not.toMatch(/\.update\(|\.insert\(|logActivity\(|status: "sent"/);
+    expect(body).toMatch(/p_expected_entity: params\.expectedEntityId \?\? entity\.entity\.entityId/);
+  });
+  it("the migration does the whole job in one transaction: locks, entity check, frozen details, status, issuer, timestamp and audit event, executable by service_role only", () => {
+    const sql = read("../../../supabase/migrations/0172_atomic_ordinary_quotation_issuance.sql");
+    const fn = sql.slice(sql.indexOf("create or replace function public.issue_ordinary_quotation"), sql.indexOf("revoke all on function public.issue_ordinary_quotation"));
+    expect(fn.indexOf("for update;                 -- enquiry first")).toBeGreaterThan(-1);
+    for (const t of ["private.actor_has_role(p_actor", "for update;   -- then the quotation", "ordift:entity_required", "ordift:entity_ineligible", "private.entity_issue_standing(", "set status = 'sent', issued_at = v_issued, issued_by = p_actor", "'client_quotation.issued'", "'legalDetails'"]) expect(fn).toContain(t);
+    expect(fn.indexOf("update public.client_quotations")).toBeLessThan(fn.indexOf("insert into public.activity_log"));
+    expect(sql).toMatch(/revoke all on function public\.issue_ordinary_quotation\(uuid, uuid, date, uuid, jsonb\) from public, anon, authenticated;\s*grant execute on function public\.issue_ordinary_quotation\(uuid, uuid, date, uuid, jsonb\) to service_role;/);
+    expect(fn).not.toMatch(/email|notification|payment|obligation|amount_due|accepted_at|crm_stage/i);
   });
   it("the quotation PDF never reads the live entity for an issued quotation: it uses the view resolver only", () => {
     const pdf = strip(read("../../app/admin/pricing/quotations/[id]/pdf/page.tsx"));

@@ -2,7 +2,7 @@
 //
 // Quotation ISSUANCE, validity, delivery record, expiry on acceptance and revision, on the REAL schema (throwaway local Postgres + PostgREST). SYNTHETIC data only.
 // Run: supabase/proposals/e2e_scratch.sh, then E2E_SUPABASE_URL=http://127.0.0.1:54997 npx vitest run --config vitest.localdb.config.ts src/lib/commercial/quotationIssuance.localdb.e2e.ts
-import { execSync } from "node:child_process";
+import { execSync, spawn } from "node:child_process";
 import { beforeAll, describe, expect, it, vi } from "vitest";
 
 const h = vi.hoisted(() => ({
@@ -35,6 +35,16 @@ import { recordOrdinaryQuotationAcceptance } from "./quotationAcceptance";
 import { addDays, defaultValidUntil, utcDate } from "./quotationValidity";
 
 const sql = (q: string) => execSync("docker exec -i ordift-mig-check2 psql -U supabase_admin -h 127.0.0.1 -d p4_e2e -X -q -At -v ON_ERROR_STOP=1", { input: q }).toString().trim();
+// A second database session, so two real transactions can overlap. Resolves with the exit code and stderr when it finishes.
+function psqlBackground(query: string, expectFailure = false): Promise<{ code: number | null; stderr: string }> {
+  return new Promise((resolve, reject) => {
+    const child = spawn("docker", ["exec", "-i", "ordift-mig-check2", "psql", "-U", "supabase_admin", "-h", "127.0.0.1", "-d", "p4_e2e", "-X", "-q", "-At", "-v", "ON_ERROR_STOP=1"]);
+    let stderr = "";
+    child.stderr.on("data", (d) => { stderr += String(d); });
+    child.on("close", (code) => (code !== 0 && !expectFailure ? reject(new Error(stderr)) : resolve({ code, stderr })));
+    child.stdin.end(query);
+  });
+}
 const U = (n: number) => `00000000-0000-4000-8000-0000000000${n.toString(16).padStart(2, "0")}`;
 const user = (n: number, roles: string[]) => ({ id: U(n), email: `u${n}@e2e.test`, fullName: `User ${n}`, roles, accessStatus: "active" });
 const staff = user(0xe1, ["staff"]), admin = user(0xe2, ["admin"]), founder = user(0xe3, ["admin", "super_admin"]), client = user(0xe4, ["client"]);
@@ -457,46 +467,131 @@ describe("an issued quotation is frozen: its legal details and entity never chan
     expect((await readIssuedLegalDetails(q)).state).toBe("ok");
   });
 
-  it("if the issuance record cannot be saved, the issuance is rolled back to a draft (never an issued quotation without its evidence); a retry then works", async () => {
+  it("ATOMIC: if anything fails inside the issuing transaction (here: the audit write), the quotation stays an untouched draft, with no event and no half-state; a retry then works", async () => {
     const x = mkEntity("fz-roll", "ROLL W.L.L.", "CR-ROLL");
     const q = await draft({ noEntity: true });
     expect(await choose("quotation", q, x)).toMatchObject({ ok: true });
+    sql(`update public.client_quotations set valid_until = '${DEFAULT}' where id = '${q}'`);
+    const draftBefore = sql(`select status||'|'||coalesce(issued_at::text,'-')||'|'||coalesce(issued_by::text,'-')||'|'||coalesce(valid_until::text,'-')||'|'||total||'|'||updated_at from public.client_quotations where id='${q}'`);
     sql(`create or replace function public.e2e_fail_issued() returns trigger language plpgsql as $$ begin if new.action = 'client_quotation.issued' and new.entity_id = '${q}' then raise exception 'e2e simulated audit failure'; end if; return new; end $$;
          create trigger e2e_fail_issued_trg before insert on public.activity_log for each row execute function public.e2e_fail_issued();`);
     try {
       h.current = admin;
       const r = await issueOrdinaryQuotation({ quotationId: q });
-      expect(r.ok === false && r.error).toMatch(/could not be saved\. Nothing was issued/);
-      expect(row(q)).toEqual(["draft", "-", "-", "-"]);
-      expect(sql(`select count(*) from public.activity_log where entity_id='${q}' and action='client_quotation.issuance_reverted'`)).toBe("1");
-      expect(sql(`select count(*) from public.activity_log where entity_id='${q}' and action='client_quotation.issued'`)).toBe("0");
+      expect(r.ok === false && r.error).toMatch(/could not be issued\. Nothing was changed/);
+      expect(sql(`select status||'|'||coalesce(issued_at::text,'-')||'|'||coalesce(issued_by::text,'-')||'|'||coalesce(valid_until::text,'-')||'|'||total||'|'||updated_at from public.client_quotations where id='${q}'`)).toBe(draftBefore);   // byte-for-byte the original draft
+      expect(sql(`select count(*) from public.activity_log where entity_id='${q}' and action like 'client_quotation.issu%'`)).toBe("0");
     } finally { sql(`drop trigger if exists e2e_fail_issued_trg on public.activity_log; drop function if exists public.e2e_fail_issued()`); }
     expect((await issueOrdinaryQuotation({ quotationId: q })).ok).toBe(true);
     expect((await readIssuedLegalDetails(q)).state).toBe("ok");
   });
 
-  it("if the entity record changes while issuing, the issuance is rolled back and its stray record is ignored by the later, real issuance", async () => {
-    const x = mkEntity("fz-race", "RACE W.L.L.", "CR-RACE");
-    const y = mkEntity("fz-race2", "RACE TWO W.L.L.", "CR-RACE2");
+  it("an entity recorded while the issue is waiting on the locks is seen: the issue is refused ('entity changed'), nothing is issued, and the draft is untouched", async () => {
+    const x = mkEntity("fz-cc1", "CC ONE W.L.L.", "CR-CC1");
+    const y = mkEntity("fz-cc2", "CC TWO W.L.L.", "CR-CC2");
     const q = await draft({ noEntity: true });
     expect(await choose("quotation", q, x)).toMatchObject({ ok: true });
-    sql(`create or replace function public.e2e_change_entity() returns trigger language plpgsql as $$ begin if new.action = 'client_quotation.issued' and new.entity_id = '${q}' then
-           insert into public.booking_contracting_entities (subject_type, subject_id, version, employing_entity_id, basis, supersedes_id, chosen_by)
-           select 'quotation', '${q}', 2, '${y}', 'E2E concurrent change', b.id, '${U(0xe3)}' from public.booking_contracting_entities b where b.subject_id = '${q}' and b.version = 1;
-         end if; return new; end $$;
-         create trigger e2e_change_entity_trg after insert on public.activity_log for each row execute function public.e2e_change_entity();`);
+    // session A records a new entity version and HOLDS its transaction open for 2s
+    const holder = psqlBackground(`begin; insert into public.booking_contracting_entities (subject_type, subject_id, version, employing_entity_id, basis, supersedes_id, chosen_by)
+      select 'quotation', '${q}', 2, '${y}', 'E2E concurrent change', b.id, '${U(0xe3)}' from public.booking_contracting_entities b where b.subject_id = '${q}' and b.version = 1; select pg_sleep(2); commit;`);
+    await new Promise((r) => setTimeout(r, 700));
+    h.current = admin;
+    const r = await issueOrdinaryQuotation({ quotationId: q });                       // the pre-check saw x; the transaction waits for A, then sees y
+    await holder;
+    expect(r.ok === false && r.error).toMatch(/entity was changed/);
+    expect(row(q)).toEqual(["draft", "-", "-", row(q)[3]]);
+    expect(sql(`select count(*) from public.activity_log where entity_id='${q}' and action='client_quotation.issued'`)).toBe("0");
+    // issuing again now uses the entity actually on record (y), frozen
+    expect((await issueOrdinaryQuotation({ quotationId: q })).ok).toBe(true);
+    expect(await resolveQuotationEntityView(q)).toMatchObject({ phase: "issued", frozen: { entityId: y, version: 2, legalName: "CC TWO W.L.L." } });
+  });
+
+  it("an entity change attempted while the issue holds its locks waits, then is REFUSED by the database (the quotation is issued under the entity that was frozen)", async () => {
+    const x = mkEntity("fz-cd1", "CD ONE W.L.L.", "CR-CD1");
+    const y = mkEntity("fz-cd2", "CD TWO W.L.L.", "CR-CD2");
+    const q = await draft({ noEntity: true });
+    expect(await choose("quotation", q, x)).toMatchObject({ ok: true });
+    // make the issuing transaction slow (it keeps its row locks while the audit insert sleeps)
+    sql(`create or replace function public.e2e_slow_issue() returns trigger language plpgsql as $$ begin if new.action = 'client_quotation.issued' and new.entity_id = '${q}' then perform pg_sleep(2); end if; return new; end $$;
+         create trigger e2e_slow_issue_trg before insert on public.activity_log for each row execute function public.e2e_slow_issue();`);
     try {
       h.current = admin;
-      const r = await issueOrdinaryQuotation({ quotationId: q });
-      expect(r.ok === false && r.error).toMatch(/changed while you were issuing/);
-      expect(row(q)).toEqual(["draft", "-", "-", "-"]);
-    } finally { sql(`drop trigger if exists e2e_change_entity_trg on public.activity_log; drop function if exists public.e2e_change_entity()`); }
-    // the stray 'issued' event from the rolled-back attempt must not be taken for the real issuance
-    expect((await issueOrdinaryQuotation({ quotationId: q })).ok).toBe(true);
-    const view = await resolveQuotationEntityView(q);
-    expect(view).toMatchObject({ phase: "issued", frozen: { entityId: y, legalName: "RACE TWO W.L.L." } });   // the entity on record at the real issuance (version 2)
-    expect(sql(`select count(*) from public.activity_log where entity_id='${q}' and action='client_quotation.issued'`)).toBe("2");
+      const issuing = issueOrdinaryQuotation({ quotationId: q });
+      await new Promise((r) => setTimeout(r, 700));
+      const insertSql = `insert into public.booking_contracting_entities (subject_type, subject_id, version, employing_entity_id, basis, supersedes_id, chosen_by)
+        select 'quotation', '${q}', 2, '${y}', 'E2E change during issue', b.id, '${U(0xe3)}' from public.booking_contracting_entities b where b.subject_id = '${q}' and b.version = 1;`;
+      const attempt = psqlBackground(insertSql, true);
+      const [r, a] = await Promise.all([issuing, attempt]);
+      expect(r.ok).toBe(true);
+      expect(a.code).not.toBe(0);                                                       // the change was refused by the trigger once the issue committed
+      expect(a.stderr).toMatch(/entity_locked_after_issue/);
+    } finally { sql(`drop trigger if exists e2e_slow_issue_trg on public.activity_log; drop function if exists public.e2e_slow_issue()`); }
+    expect(sql(`select count(*) from public.booking_contracting_entities where subject_id = '${q}'`)).toBe("1");
+    expect(await resolveQuotationEntityView(q)).toMatchObject({ phase: "issued", frozen: { entityId: x, version: 1 } });
   });
+
+  it("the database refuses the same things by itself, even if the application were bypassed: wrong role, repeat, no entity, ineligible entity, past or over-long validity", async () => {
+    const x = mkEntity("fz-db", "DB W.L.L.", "CR-DB");
+    const rpc = (qid: string, actor: string, valid: string, expected: string | null = null) =>
+      sql(`do $$ begin perform * from public.issue_ordinary_quotation('${qid}', '${actor}', '${valid}'::date, ${expected ? `'${expected}'` : "null"}, '{}'::jsonb); end $$`);
+    const fails = (f: () => unknown) => { try { f(); return ""; } catch (e) { return String((e as { stderr?: Buffer }).stderr ?? e); } };
+    const q = await draft({ noEntity: true });
+    const valid = addDays(TODAY, 30);
+    for (const [who, expected] of [["anon", "f"], ["authenticated", "f"], ["service_role", "t"]]) {
+      expect(sql(`select has_function_privilege('${who}', 'public.issue_ordinary_quotation(uuid,uuid,date,uuid,jsonb)', 'execute')`), who).toBe(expected);
+    }
+    expect(fails(() => rpc(q, U(0xe1), valid))).toMatch(/not_authorised/);             // staff
+    expect(fails(() => rpc(q, U(0xe4), valid))).toMatch(/not_authorised/);             // client
+    expect(fails(() => rpc(q, U(0xe2), valid))).toMatch(/entity_required/);            // no entity recorded
+    expect(await choose("quotation", q, x)).toMatchObject({ ok: true });
+    expect(fails(() => rpc(q, U(0xe2), addDays(TODAY, -1)))).toMatch(/validity_in_past/);
+    expect(fails(() => rpc(q, U(0xe2), addDays(TODAY, 61)))).toMatch(/validity_needs_super_admin/);
+    expect(fails(() => rpc(q, U(0xe2), valid, entityId("iss-entity")))).toMatch(/entity_changed/);
+    expect(row(q)[0]).toBe("draft");
+    sql(`update public.employing_entities set verification_status = 'unverified' where slug = 'fz-db'`);
+    expect(fails(() => rpc(q, U(0xe2), valid))).toMatch(/entity_ineligible/);
+    sql(`update public.employing_entities set verification_status = 'verified' where slug = 'fz-db'`);
+    expect(row(q)[0]).toBe("draft");
+    expect(fails(() => rpc(q, U(0xe3), addDays(TODAY, 61)))).toBe("");                 // a Super Admin may go beyond 30 days
+    expect(row(q)[0]).toBe("sent");
+    expect(fails(() => rpc(q, U(0xe3), valid))).toMatch(/already_issued/);             // repeat
+    expect(fails(() => rpc(sql(`select id from public.client_quotations where status='draft' and crew_support_request_id is not null limit 1`) || U(0xe5), U(0xe2), valid))).not.toBe("");
+  });
+
+  it("PARITY: the SQL eligibility and legal-detail rules give exactly the same answers as the application's own rules, over entities in many states", async () => {
+    const { getContractingEntityStanding } = await import("@/lib/organization/entityRegistrations");
+    const { buildEntityDisplay } = await import("@/lib/organization/entityDisplay");
+    const today = TODAY;
+    const reg = (slug: string, kind: string, status: string, ident: string | null, opts: { exp?: string; verified?: boolean } = {}) =>
+      sql(`insert into public.entity_registrations (employing_entity_id, kind, status, identifier, valid_from, expires_on, verified_at, verified_by, recorded_by) select id, '${kind}', '${status}', ${ident ? `'${ident}'` : "null"}, current_date - 200, ${opts.exp ? `'${opts.exp}'` : "null"}, ${opts.verified === false ? "null" : "now()"}, ${opts.verified === false ? "null" : `'${U(0xe3)}'`}, '${U(0xe3)}' from public.employing_entities where slug='${slug}'`);
+    const ent = (slug: string, legal: string | null, type: string | null, status = "verified", active = true) =>
+      sql(`insert into public.employing_entities (name, slug, legal_name, registration_type, verification_status, active) values ('${slug}','${slug}',${legal ? `'${legal}'` : "null"},${type ? `'${type}'` : "null"},'${status}',${active})`);
+    ent("par-bare", null, null);                                                                         // verified, no registrations
+    ent("par-unver", "UNVER LLC", "LLC", "unverified");
+    ent("par-inactive", "INACT LLC", null, "verified", false);
+    ent("par-cr", "  CR LLC  ", "W.L.L."); reg("par-cr", "commercial_registration", "active", " 123 ");
+    ent("par-cr-expired", null, null); reg("par-cr-expired", "commercial_registration", "active", "9", { exp: addDays(TODAY, -3) });
+    ent("par-cr-exp-status", null, null); reg("par-cr-exp-status", "commercial_registration", "expired", "9");
+    ent("par-permit-none", "PN LLC", null); reg("par-permit-none", "commercial_registration", "active", "55"); reg("par-permit-none", "commercial_permit", "not_issued", null);
+    ent("par-permit-ok", "PO LLC", null); reg("par-permit-ok", "commercial_registration", "active", "56"); reg("par-permit-ok", "commercial_permit", "active", "PERMIT-1", { exp: addDays(TODAY, 90) });
+    ent("par-permit-expired", "PE LLC", null); reg("par-permit-expired", "commercial_registration", "active", "57"); reg("par-permit-expired", "commercial_permit", "expired", "PERMIT-0");
+    ent("par-unverified-reg", "UR LLC", null); reg("par-unverified-reg", "commercial_registration", "active", "58", { verified: false }); reg("par-unverified-reg", "tax_registration", "active", "TAX-58");
+    ent("par-tax-only", "TO LLC", null); reg("par-tax-only", "tax_registration", "active", "TAX-1");
+    ent("par-cr-pending", "CP LLC", null); reg("par-cr-pending", "commercial_registration", "pending", null);
+    ent("par-both", "BOTH LLC", "Branch"); reg("par-both", "commercial_registration", "active", "60"); reg("par-both", "tax_registration", "active", "TAX-60", { exp: addDays(TODAY, 5) });
+    const slugs = ["par-bare", "par-unver", "par-inactive", "par-cr", "par-cr-expired", "par-cr-exp-status", "par-permit-none", "par-permit-ok", "par-permit-expired", "par-unverified-reg", "par-tax-only", "par-cr-pending", "par-both"];
+    for (const slug of slugs) {
+      const id = entityId(slug);
+      const app = await getContractingEntityStanding(id, today);
+      const db = JSON.parse(sql(`select private.entity_issue_standing('${id}', '${today}'::date)`));
+      expect(app, slug).not.toBeNull();
+      if (!app) continue;
+      const display = buildEntityDisplay(app.entity, app.registrations, today);
+      expect({ eligible: db.eligible, blockers: db.blockers }, slug).toEqual({ eligible: app.eligibility.eligible, blockers: app.eligibility.blockers });
+      expect(db.legal, slug).toEqual({ legalName: display.legalName, registrationType: display.registrationType, identifiers: display.identifiers });
+    }
+  });
+
 });
 
 describe("issuing never creates money, bookings, acceptance or messages", () => {

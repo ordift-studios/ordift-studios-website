@@ -19,8 +19,8 @@ const NEXT_STATUS: Record<string, { status: string; label: string }[]> = {
 const FIELD = "block w-full mt-1 min-h-11 rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small text-ordift-ink";
 const STATUS_WORD: Record<string, string> = { draft: "Draft (not issued)", sent: "Issued", accepted: "Accepted", declined: "Declined", expired: "Expired", superseded: "Superseded" };
 
-export function QuotationStatusActions({ quotationId, status, defaultValidUntil, currentValidUntil, isSuperAdmin, blockers, expired, deliveredText, today, crewManaged = false }: {
-  crewManaged?: boolean; today: string; quotationId: string; status: string; hasClient: boolean; defaultValidUntil: string; currentValidUntil: string | null; isSuperAdmin: boolean; blockers: string[]; expired: boolean; deliveredText: string | null;
+export function QuotationStatusActions({ quotationId, status, defaultValidUntil, currentValidUntil, isSuperAdmin, blockers, expired, deliveredText, today, crewManaged = false, expectedEntityId = null }: {
+  crewManaged?: boolean; expectedEntityId?: string | null; today: string; quotationId: string; status: string; hasClient: boolean; defaultValidUntil: string; currentValidUntil: string | null; isSuperAdmin: boolean; blockers: string[]; expired: boolean; deliveredText: string | null;
 }) {
   const [state, formAction] = useActionState<ActionState, FormData>(updateQuotationStatusAction, null);
   const [acceptState, acceptAction] = useActionState<ActionState, FormData>(recordQuotationAcceptanceAction, null);
@@ -59,6 +59,7 @@ export function QuotationStatusActions({ quotationId, status, defaultValidUntil,
           {blockers.length === 0 && (
           <form action={issueAction} className="space-y-3">
             <input type="hidden" name="quotationId" value={quotationId} />
+            {expectedEntityId && <input type="hidden" name="expectedEntityId" value={expectedEntityId} />}
             <label className="block font-sans text-caption text-ordift-ink-muted">Valid until (standard: {ORDINARY_VALIDITY_DAYS} calendar days from issue = {formatDate(defaultValidUntil)})
               <input type="date" name="validUntil" value={validUntil} min={today} onChange={(e) => setValidUntil(e.target.value)} className={FIELD} required />
             </label>
