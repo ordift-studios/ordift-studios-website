@@ -215,6 +215,38 @@ describe("Qatar: the commercial-permit block, the CR-listed activity and planned
   });
 });
 
+describe("Qatar: the issued Commercial License as the permit record (cross-check, expiry, one printed activity)", () => {
+  const crFacts = { activities: [{ code: "742010", name: "Photographic activities" }] };
+  const permit = (over: Partial<RegistrationFact> = {}) => reg("pm", "commercial_permit", { identifier: "345520", issuedOn: "2026-10-26", expiresOn: "2027-10-21", facts: { premises: "Zone 27, Street 950, Building 20", activities: [{ code: "742010", name: "Photographic activities" }] }, ...over });
+  const qatarWith = (pm: RegistrationFact, over: Partial<EntityFacts> = {}) => entity({
+    name: "Ordift Studios (Qatar)", legalName: "ORDIFT STUDIOS", registrationType: "Single-Member Limited Liability Company (W.L.L.)", jurisdictionName: "Qatar",
+    registrations: [reg("cr", "commercial_registration", { identifier: "254551", expiresOn: "2028-10-15", facts: crFacts }), reg("tx", "tax_registration"), reg("ec", "establishment_card", { identifier: "EC-1" }), pm],
+    signatories: [{ effectiveFrom: "2026-10-15", effectiveTo: null, legalCapacity: "owner" }], activityCodes: [{ code: "742010", activityKey: "photography" }], ...over,
+  });
+  it("a cross-checked, in-date permit satisfies the permit requirement and is never printed on a quotation; the CR number still is", () => {
+    const a = assessEntityForQuotation(qatarWith(permit()), QATAR, ["photography"], TODAY);
+    expect(a.eligible).toBe(true);
+    expect(a.legal.identifiers.map((i) => i.identifier)).not.toContain("345520");
+    expect(a.legal.identifiers.map((i) => i.identifier)).toContain("254551");
+  });
+  it("a permit that has NOT been cross-checked against the original does not satisfy it", () => {
+    const a = assessEntityForQuotation(qatarWith(permit({ verifiedAt: null })), QATAR, ["photography"], TODAY);
+    expect(a.eligible).toBe(false);
+    expect(a.blockers).toEqual(["Commercial Permit / Licence has not been verified."]);
+  });
+  it("eligibility follows the permit's expiry: fine on the last day, blocked the day after (even though the CR is still in date)", () => {
+    expect(assessEntityForQuotation(qatarWith(permit()), QATAR, ["photography"], "2027-10-21").eligible).toBe(true);
+    const after = assessEntityForQuotation(qatarWith(permit()), QATAR, ["photography"], "2027-10-22");
+    expect(after.eligible).toBe(false);
+    expect(after.blockers).toEqual(["Commercial Permit / Licence expired on 2027-10-21."]);
+  });
+  it("the permit licenses only what it prints: videography and graphic design are still not licensed, and an establishment card does not change that", () => {
+    const a = assessEntityForQuotation(qatarWith(permit()), QATAR, ["videography", "graphic_design"], TODAY);
+    expect(a.eligible).toBe(false);
+    expect(a.blockers).toEqual(["Graphic design is not licensed for this entity.", "Videography is not licensed for this entity."]);
+  });
+});
+
 describe("new countries and unverified entities are never eligible by themselves", () => {
   it("an entity with no jurisdiction, or in a jurisdiction with no APPROVED legal-registration rule, is blocked (fail-closed)", () => {
     expect(assessEntityForQuotation(entity({ jurisdictionName: null }), GHANA, [], TODAY).blockers).toEqual(["The entity has no jurisdiction recorded."]);

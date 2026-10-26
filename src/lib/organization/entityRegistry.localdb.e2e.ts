@@ -40,7 +40,8 @@ if (!/^https?:\/\/(127\.0\.0\.1|localhost)(:|\/|$)/.test(process.env.NEXT_PUBLIC
 const SUPER = "00000000-0000-4000-8000-0000000000d1";
 const STAFF = "00000000-0000-4000-8000-0000000000d2";
 const db = () => createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SECRET_KEY!, { auth: { persistSession: false }, global: { fetch: h.fetch } });
-const sql = (q: string) => execSync("docker exec -i ordift-mig-check2 psql -U postgres -h 127.0.0.1 -v ON_ERROR_STOP=1 -At", { input: q }).toString();
+// E2E_DB selects the throwaway database the PostgREST under test points at (supabase/proposals/e2e_scratch.sh style); unset keeps the original lab database.
+const sql = (q: string) => execSync(process.env.E2E_DB ? `docker exec -i ordift-mig-check2 psql -U supabase_admin -h 127.0.0.1 -d ${process.env.E2E_DB} -X -q -v ON_ERROR_STOP=1 -At` : "docker exec -i ordift-mig-check2 psql -U postgres -h 127.0.0.1 -v ON_ERROR_STOP=1 -At", { input: q }).toString();
 const pgFails = (q: string) => { try { sql(q); return ""; } catch (e) { return String((e as { stderr?: Buffer }).stderr ?? e); } };
 const must = <T extends { ok: boolean }>(r: T, label = ""): Extract<T, { ok: true }> => { if (!r.ok) throw new Error(`${label} expected ok, got ${JSON.stringify(r)}`); return r as Extract<T, { ok: true }>; };
 const mustFail = <T extends { ok: boolean }>(r: T): string => { expect(r.ok).toBe(false); return (r as unknown as { error?: string }).error ?? ""; };
@@ -218,14 +219,28 @@ describe("E — the Commercial Permit: pending until supplied, then recorded fro
   });
   it("E3 once uploaded and recorded, the pending record is superseded (kept) and the entity may now state the permit", async () => {
     E.permitDoc = must(await addVaultDocument({ entityId: E.qa, documentType: "commercial_permit", filename: "permit.pdf", mimeType: "application/pdf", bytes: bytes("permit"), actorUserId: SUPER })).documentId;
-    must(await recordCommercialPermit({ entityId: E.qa, permitNumber: "PERMIT-001", licenceNumber: "LIC-77", issuedOn: "2026-12-01", expiresOn: "2027-12-01", issuingAuthority: "Test Authority", premisesAddress: "Test Tower, Doha", sourceDocumentId: E.permitDoc, actorUserId: SUPER }));
-    expect((await listEntityRegistrations(E.qa, SUPER)).find((r) => r.kind === "commercial_permit" && r.status === "active")!.facts).toEqual({ premises: "Test Tower, Doha", licenceNumber: "LIC-77" });
+    const otherRegsBefore = sql(`select md5(coalesce(string_agg(r::text, '|' order by id), '')) from public.entity_registrations r where employing_entity_id='${E.qa}' and kind <> 'commercial_permit'`);
+    const activitiesBefore = await count("entity_activities");
+    must(await recordCommercialPermit({
+      entityId: E.qa, permitNumber: "PERMIT-001", licenceNumber: "LIC-77", issuedOn: "2026-12-01", expiresOn: "2027-12-01", issuingAuthority: "Test Authority", premisesAddress: "Test Tower, Doha", sourceDocumentId: E.permitDoc, actorUserId: SUPER,
+      founderCrossChecked: true, premisesConfirmedByFounder: true, siteClassification: "Commercial", activities: [{ code: "742010", name: "Photographic activities" }], restrictions: "Not valid in villas.",
+    }));
+    const active = (await listEntityRegistrations(E.qa, SUPER)).find((r) => r.kind === "commercial_permit" && r.status === "active")!;
+    expect(active.facts).toEqual({ premises: "Test Tower, Doha", licenceNumber: "LIC-77", premisesBasis: "founder_confirmed_authorised_location_not_a_government_inspection", siteClassification: "Commercial", activities: [{ code: "742010", name: "Photographic activities" }], restrictions: "Not valid in villas." });
+    expect(active.verifiedAt).not.toBeNull();                                                                  // the Founder's cross-check, recorded as exactly that
+    expect(active.note).toMatch(/cross-checked; not checked against the issuing authority's records or the QR verification portal/);
+    expect(sql(`select count(*) from public.entity_registrations where employing_entity_id='${E.qa}' and kind='commercial_permit' and verified_by='${SUPER}'`).trim()).toBe("1");
+    expect(sql(`select md5(coalesce(string_agg(r::text, '|' order by id), '')) from public.entity_registrations r where employing_entity_id='${E.qa}' and kind <> 'commercial_permit'`)).toBe(otherRegsBefore);   // CR, establishment card and the rest untouched
+    expect(await count("entity_activities")).toBe(activitiesBefore);                                           // no activity is licensed by recording the permit
+    expect(sql(`select count(*) from public.entity_registrations where kind='commercial_permit' and identifier='PERMIT-001'`).trim()).toBe("1");
     const hist = (await listEntityRegistrations(E.qa, SUPER, { includeHistory: true })).filter((r) => r.kind === "commercial_permit");
     expect(hist.map((r) => r.status).sort()).toEqual(["active", "superseded"]);
     const regs = await listEntityRegistrations(E.qa, SUPER);
     expect(entityStanding(regs, "2026-12-02").permitIssued).toBe(true);
     expect(buildParticulars({ legalName: "T", jurisdiction: "Qatar", currency: "QAR", registrationType: null, sensitive: null, registrations: regs, today: "2026-12-02" }).permitLine).toBe("Commercial permit PERMIT-001 (valid to 2027-12-01)");
     expect(mustFail(await recordCommercialPermit({ entityId: E.qa, permitNumber: "PERMIT-002", issuedOn: "2026-12-02", expiresOn: null, issuingAuthority: "Test Authority", premisesAddress: "Another Tower, Doha", sourceDocumentId: E.permitDoc, actorUserId: SUPER }))).toMatch(/already recorded/);
+    expect(mustFail(await recordCommercialPermit({ entityId: E.qa, permitNumber: "PERMIT-001", issuedOn: "2026-12-02", expiresOn: null, issuingAuthority: "Test Authority", premisesAddress: "Another Tower, Doha", sourceDocumentId: E.permitDoc, actorUserId: SUPER }))).toMatch(/already recorded/);
+    expect(sql(`select count(*) from public.entity_registrations where employing_entity_id='${E.qa}' and kind='commercial_permit'`).trim()).toBe("2");   // still: the retired pending record + the one permit
   });
 });
 

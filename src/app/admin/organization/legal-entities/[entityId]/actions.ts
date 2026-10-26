@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { getCurrentUser, isSuperAdmin } from "@/lib/portal/roles";
 import { recordEmployingEntitySensitiveDetails, getEmployingEntityDocumentSignedUrl } from "@/lib/organization/legalEntities";
-import { addVaultDocument, chooseContractingEntity, confirmApprovalNoticeDate, confirmExpenseFunding, recordCommercialPermit, recordEntityRegistration, linkSignatoryToFounderIdentity, recordRenewalConfirmation, setSignatoryLegalCapacity, type LegalCapacity } from "@/lib/organization/entityRegistrations";
+import { addVaultDocument, chooseContractingEntity, confirmApprovalNoticeDate, confirmExpenseFunding, parsePermitActivities, recordCommercialPermit, recordEntityRegistration, linkSignatoryToFounderIdentity, recordRenewalConfirmation, setSignatoryLegalCapacity, type LegalCapacity } from "@/lib/organization/entityRegistrations";
 
 export type ActionState = { ok: boolean; error?: string } | null;
 
@@ -61,9 +61,13 @@ export async function recordPermitAction(_prev: ActionState, formData: FormData)
   if ("error" in actor) return { ok: false, error: actor.error };
   const entityId = String(formData.get("entityId") ?? "");
   if (!entityId) return { ok: false, error: "Invalid request." };
+  const parsed = parsePermitActivities(String(formData.get("activities") ?? ""));
+  if (!parsed.ok) return { ok: false, error: parsed.error };
   const result = await recordCommercialPermit({
     entityId, permitNumber: String(formData.get("permitNumber") ?? ""), licenceNumber: String(formData.get("licenceNumber") ?? "").trim() || null, issuedOn: String(formData.get("issuedOn") ?? ""), expiresOn: String(formData.get("expiresOn") ?? "").trim() || null,
     issuingAuthority: String(formData.get("issuingAuthority") ?? ""), premisesAddress: String(formData.get("premisesAddress") ?? ""), sourceDocumentId: String(formData.get("sourceDocumentId") ?? ""), actorUserId: actor.id,
+    founderCrossChecked: formData.get("founderCrossChecked") === "on", premisesConfirmedByFounder: formData.get("premisesConfirmedByFounder") === "on", siteClassification: String(formData.get("siteClassification") ?? "").trim() || null,
+    activities: parsed.activities, restrictions: String(formData.get("restrictions") ?? "").trim() || null,
   });
   if (!result.ok) return { ok: false, error: result.error };
   revalidatePath(`/admin/organization/legal-entities/${entityId}`);

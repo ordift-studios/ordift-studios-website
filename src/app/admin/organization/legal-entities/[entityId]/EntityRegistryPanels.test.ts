@@ -89,3 +89,44 @@ describe("linking a signatory record to the Founder identity", () => {
     expect(h.split("Legal capacity…").length - 1).toBe(0);
   });
 });
+
+describe("Qatar Commercial Permit panel: the record form and what an issued permit shows", () => {
+  const permitDoc = { id: "dp", documentType: "commercial_permit", filename: "Commercial Permit.pdf", sha256: "c".repeat(64), sizeBytes: 3000, issuedOn: "2026-10-26", expiresOn: "2027-10-21", issuingAuthority: "X", relation: null, relatedDocumentId: null, replacedByDocumentId: null, uploadedAt: "2026-10-26T08:00:00Z", pageNumber: null, pageCount: null, hasFile: true, notes: null };
+  const cr = { id: "1", kind: "commercial_registration", label: "Commercial Registration (CR)", status: "active", identifier: "254551", issuedOn: "2026-10-15", expiresOn: "2027-10-15", note: null, verifiedAt: "2026-10-16", facts: {} };
+  const card = { id: "3", kind: "establishment_card", label: "Establishment Card", status: "active", identifier: "EC-1", issuedOn: "2026-10-15", expiresOn: "2027-10-15", note: null, verifiedAt: "2026-10-16", facts: {} };
+  const pending = { id: "2", kind: "commercial_permit", label: "Commercial Permit / Licence", status: "not_issued", identifier: null, issuedOn: null, expiresOn: null, note: null, verifiedAt: null, facts: {} };
+  const issued = (verifiedAt: string | null) => ({ id: "4", kind: "commercial_permit", label: "Commercial Permit / Licence", status: "active", identifier: "345520", issuedOn: "2026-10-26", expiresOn: "2027-10-21", note: null, verifiedAt,
+    facts: { premises: "Zone 27, Street 950, Building 20, Floor 1, Unit 0", premisesBasis: "founder_confirmed_authorised_location_not_a_government_inspection", siteClassification: "Commercial", activities: [{ code: "742010", name: "Photographic activities" }], restrictions: "Practicing any activity not explicitly listed in the license is prohibited." } });
+  const page = (regs: unknown[], documents: unknown[]) => renderToStaticMarkup(createElement(EntityRegistryPanels, {
+    entityId: "q", tracked: trackCompliance((regs as { kind: string; status: string }[]).map((r) => ({ ...r, kind: r.kind as never, status: r.status as never })) as never, "2026-10-26"), registrations: regs, signatories: [], documents, expenses: [],
+    canonicalPermitPending: true, status: { entityVerification: "verified", employerCapable: false, documentCount: documents.length }, jurisdictionName: "Qatar",
+  } as never));
+
+  it("the record form asks for the printed particulars and offers two SEPARATE confirmations, worded as a cross-check and the Founder's confirmation - never as government verification", () => {
+    const html = page([cr, card, pending], [permitDoc]);
+    for (const f of ["Site classification", "Licensed activities exactly as printed", "Restrictions printed on the permit", "exactly as printed on the permit"]) expect(html).toContain(f);
+    expect(html).toContain('name="founderCrossChecked"'); expect(html).toContain('name="premisesConfirmedByFounder"');
+    expect(html).toContain("not a check against the issuing authority&#x27;s records or the QR verification portal");
+    expect(html).toContain("not as a government inspection of the premises");
+    expect(html).not.toMatch(/government verification (complete|confirmed)|verified by the (Ministry|government)/i);
+  });
+  it("an issued, cross-checked permit shows every printed fact, says no other activity is licensed, and says plainly it is a cross-check", () => {
+    const html = page([cr, card, issued("2026-10-26T09:00:00Z")], [permitDoc]);
+    expect(html).toContain("Permit 345520 — issued 2026-10-26, expires 2027-10-21");
+    expect(html).toContain("Zone 27, Street 950, Building 20, Floor 1, Unit 0"); expect(html).toContain("confirmed by the Founder as the authorised location (not a government inspection)");
+    expect(html).toContain("Site classification: Commercial"); expect(html).toContain("742010 Photographic activities"); expect(html).toContain("No other activity is licensed by this permit.");
+    expect(html).toContain("not explicitly listed in the license is prohibited");
+    expect(html).toContain("issued — checked against the original document (a cross-check, not a government verification)");
+    expect(html).toContain("cross-checked; not checked against the issuing authority&#x27;s records or the QR verification portal");
+  });
+  it("an issued permit that has not been cross-checked says so", () => {
+    const html = page([cr, card, issued(null)], [permitDoc]);
+    expect(html).toContain("issued — not yet cross-checked against the original document");
+    expect(html).toContain("Not yet cross-checked against the original document.");
+  });
+  it("the commercial registration and the establishment card stay separate records alongside the permit", () => {
+    const html = page([cr, card, issued("2026-10-26T09:00:00Z")], [permitDoc]);
+    expect(html).toContain("254551"); expect(html).toContain("Establishment Card");
+    expect(html.match(/Commercial Registration \(CR\)/g)!.length).toBeGreaterThan(0);
+  });
+});

@@ -43,7 +43,12 @@ function PermitForm({ entityId, permitDocs }: { entityId: string; permitDocs: Re
       <input name="issuingAuthority" required placeholder="Issuing authority" className={`sm:col-span-2 ${input}`} />
       <label className="font-sans text-caption text-ordift-ink-muted">Issued on<input name="issuedOn" type="date" required className={`block w-full ${input}`} /></label>
       <label className="font-sans text-caption text-ordift-ink-muted">Expires on (if stated)<input name="expiresOn" type="date" className={`block w-full ${input}`} /></label>
-      <input name="premisesAddress" required placeholder="Confirmed business premises address" className={`sm:col-span-2 ${input}`} />
+      <input name="premisesAddress" required placeholder="Confirmed business premises address, exactly as printed on the permit" className={`sm:col-span-2 ${input}`} />
+      <input name="siteClassification" placeholder="Site classification, as printed (for example Commercial)" className={input} />
+      <textarea name="activities" rows={2} placeholder={"Licensed activities exactly as printed, one per line:\ncode | name"} className={`${input} sm:row-span-2`} />
+      <textarea name="restrictions" rows={2} placeholder="Restrictions printed on the permit (copy them as printed)" className={input} />
+      <label className="sm:col-span-2 flex items-start gap-2 font-sans text-caption text-ordift-ink"><input type="checkbox" name="premisesConfirmedByFounder" className="mt-0.5 h-4 w-4" />I confirm this is the commercial location I authorised for the company (recorded as the Founder&apos;s confirmation, not as a government inspection of the premises).</label>
+      <label className="sm:col-span-2 flex items-start gap-2 font-sans text-caption text-ordift-ink"><input type="checkbox" name="founderCrossChecked" className="mt-0.5 h-4 w-4" />I have checked these details against the supplied original permit (recorded as a cross-check; not a check against the issuing authority&apos;s records or the QR verification portal).</label>
       <button type="submit" disabled={pending || permitDocs.length === 0} className={button}>{pending ? "Recording…" : "Record Commercial Permit"}</button>
       {permitDocs.length === 0 && <p className="sm:col-span-2 font-sans text-caption text-ordift-ink-muted">Upload the permit below first (document type “Commercial Permit / Licence”), then record it here.</p>}
       <Feedback state={state} pending={pending} />
@@ -229,7 +234,7 @@ export function EntityRegistryPanels({
         <h2 className="font-serif font-medium text-body text-ordift-ink">Status — four separate questions</h2>
         <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1 font-sans text-body-small">
           <div><dt className="inline text-ordift-ink-muted">Commercial Registration: </dt><dd className="inline text-ordift-ink">{cr ? `${cr.status}${cr.verifiedAt ? " — verified against the original document" : " — not yet verified"}` : "none recorded"}</dd></div>
-          <div><dt className="inline text-ordift-ink-muted">Commercial Permit: </dt><dd className="inline text-ordift-ink">{permitRow ? (permitRow.status === "active" ? "issued" : "not yet issued — awaiting the official document (this does not affect the issued registration)") : "not tracked"}</dd></div>
+          <div><dt className="inline text-ordift-ink-muted">Commercial Permit: </dt><dd className="inline text-ordift-ink">{permitRow ? (permitRow.status === "active" ? (permitRow.verifiedAt ? "issued — checked against the original document (a cross-check, not a government verification)" : "issued — not yet cross-checked against the original document") : "not yet issued — awaiting the official document (this does not affect the issued registration)") : "not tracked"}</dd></div>
           <div><dt className="inline text-ordift-ink-muted">Documents in the vault: </dt><dd className="inline text-ordift-ink">{status.documentCount} record(s); integrity hash recorded for each</dd></div>
           <div><dt className="inline text-ordift-ink-muted">Employer-capable: </dt><dd className="inline text-ordift-ink">{status.employerCapable ? "yes" : "no — a separate decision, unaffected by registration or verification"}</dd></div>
         </dl>
@@ -285,7 +290,11 @@ export function EntityRegistryPanels({
           {permit?.status === "active" ? (
             <div className="space-y-1">
               <p className="font-sans text-body-small text-ordift-ink">Permit {permit.identifier} — issued {permit.issuedOn}{permit.expiresOn ? `, expires ${permit.expiresOn}` : ""}</p>
-              <p className="font-sans text-caption text-ordift-ink-muted">Premises: {String(permit.facts.premises ?? "—")}</p>
+              <p className="font-sans text-caption text-ordift-ink-muted">Premises: {String(permit.facts.premises ?? "—")}{permit.facts.premisesBasis === "founder_confirmed_authorised_location_not_a_government_inspection" ? " — confirmed by the Founder as the authorised location (not a government inspection)" : ""}</p>
+              {typeof permit.facts.siteClassification === "string" && <p className="font-sans text-caption text-ordift-ink-muted">Site classification: {permit.facts.siteClassification}</p>}
+              {Array.isArray(permit.facts.activities) && permit.facts.activities.length > 0 && <p className="font-sans text-caption text-ordift-ink-muted">Licensed activities (as printed): {(permit.facts.activities as { code: string; name: string }[]).map((a) => `${a.code} ${a.name}`).join("; ")}. No other activity is licensed by this permit.</p>}
+              {typeof permit.facts.restrictions === "string" && <p className="font-sans text-caption text-ordift-ink-muted">Restrictions (as printed): {permit.facts.restrictions}</p>}
+              <p className="font-sans text-caption text-ordift-ink-muted">{permit.verifiedAt ? "Checked by the Founder against the supplied original document (cross-checked; not checked against the issuing authority's records or the QR verification portal)." : "Not yet cross-checked against the original document."}</p>
             </div>
           ) : (
             <>

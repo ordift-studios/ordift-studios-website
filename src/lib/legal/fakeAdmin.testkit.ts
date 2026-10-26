@@ -39,7 +39,7 @@ export function fakeAdmin(db: FakeDb) {
       order: (col: string, o?: { ascending?: boolean }) => { orderBy = { col, asc: o?.ascending !== false }; return b; },
       limit: (n: number) => { lim = n; return b; },
       maybeSingle: () => { const r = run(); return Promise.resolve({ data: (r.data as Row[])[0] ?? null, error: null }); },
-      single: () => { const r = run(); return Promise.resolve({ data: (r.data as Row[])[0] ?? null, error: (r.data as Row[])[0] ? null : { message: "no row" } }); },
+      single: () => { const r = run(); const row = (r.data as Row[] | null)?.[0] ?? null; return Promise.resolve({ data: row, error: row ? null : ((r as { error?: unknown }).error ?? { message: "no row" }) }); },
       then: (ok: (v: unknown) => unknown) => Promise.resolve(run()).then(ok),
     };
     return b;

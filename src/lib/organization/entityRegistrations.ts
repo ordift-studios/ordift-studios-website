@@ -30,18 +30,44 @@ export async function listEntityRegistrations(entityId: string, actorUserId: str
 
 const PERMIT_NUMBER = /^[A-Za-z0-9][A-Za-z0-9\-/ ]{2,39}$/;
 
+// What a cross-check is, in words: the Founder compared the recorded details with the supplied original. It is NOT a check against the issuing authority's own records or the
+// document's QR verification portal, and is never presented as one.
+export const PERMIT_CROSS_CHECK_NOTE = "Checked by the Founder against the supplied original document (cross-checked; not checked against the issuing authority's records or the QR verification portal).";
+export const PREMISES_FOUNDER_CONFIRMED = "founder_confirmed_authorised_location_not_a_government_inspection";
+export type PermitActivity = { code: string; name: string };
+
+// One line per activity, "code | name", exactly as printed on the permit. Returns an error rather than guessing.
+export function parsePermitActivities(text: string | null | undefined): { ok: true; activities: PermitActivity[] } | { ok: false; error: string } {
+  const lines = (text ?? "").split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+  const activities: PermitActivity[] = [];
+  for (const line of lines) {
+    const m = line.match(/^(\d{4,8})\s*[|\u2014\u2013-]\s*(.{3,160})$/);
+    if (!m) return { ok: false, error: `Write each licensed activity as “code | name”, exactly as printed on the permit (could not read “${line.slice(0, 40)}”).` };
+    if (activities.some((a) => a.code === m[1])) return { ok: false, error: `Activity code ${m[1]} is listed twice.` };
+    activities.push({ code: m[1], name: m[2].trim() });
+  }
+  return { ok: true, activities };
+}
+
 // Records the Commercial Permit once the Founder has it: the permit document must already be in the vault for THIS entity, the entity must
 // hold a current commercial registration, and the pending "not issued" record is superseded (kept in history). Premises are recorded only
-// here, from what the Founder supplies — never inferred.
+// here, from what the Founder supplies — never inferred. The permit and the commercial registration are separate records: nothing here touches
+// the registration, the establishment card or any other kind. Only the activities PRINTED on the permit are stored; nothing licenses any other activity.
+// "Checked against the supplied original" is a Founder cross-check, recorded as exactly that (verified_by/verified_at + a note), never as government verification.
 export async function recordCommercialPermit(p: {
   entityId: string; permitNumber: string; licenceNumber?: string | null; issuedOn: string; expiresOn: string | null; issuingAuthority: string; premisesAddress: string; sourceDocumentId: string; actorUserId: string;
+  founderCrossChecked?: boolean; premisesConfirmedByFounder?: boolean; siteClassification?: string | null; activities?: PermitActivity[]; restrictions?: string | null; note?: string | null;
 }): Promise<Result<{ registrationId: string }>> {
   if (!(await isSuperAdminId(p.actorUserId))) return NOT_ALLOWED;
-  if (!PERMIT_NUMBER.test(p.permitNumber.trim())) return { ok: false, error: "Enter the permit number exactly as it appears on the permit." };
+  const permitNumber = p.permitNumber.trim();
+  if (!PERMIT_NUMBER.test(permitNumber)) return { ok: false, error: "Enter the permit number exactly as it appears on the permit." };
   if (!/^\d{4}-\d{2}-\d{2}$/.test(p.issuedOn)) return { ok: false, error: "Enter the date the permit was issued." };
   if (p.expiresOn && (!/^\d{4}-\d{2}-\d{2}$/.test(p.expiresOn) || p.expiresOn < p.issuedOn)) return { ok: false, error: "The expiry date must be on or after the issue date." };
   if (p.premisesAddress.trim().length < 8) return { ok: false, error: "Enter the confirmed business premises address." };
   if (p.issuingAuthority.trim().length < 3) return { ok: false, error: "Enter the issuing authority." };
+  const activities = p.activities ?? [];
+  for (const a of activities) if (!/^\d{4,8}$/.test(a.code) || a.name.trim().length < 3) return { ok: false, error: "Each licensed activity needs its printed code and name." };
+  if (new Set(activities.map((a) => a.code)).size !== activities.length) return { ok: false, error: "An activity code is listed twice." };
 
   const db = createAdminClient();
   const { data: doc } = await db.from("employing_entity_documents").select("id, document_type").eq("id", p.sourceDocumentId).eq("employing_entity_id", p.entityId).maybeSingle();
@@ -52,14 +78,36 @@ export async function recordCommercialPermit(p: {
   if (!(cur ?? []).some((r) => r.kind === "commercial_registration" && r.status === "active")) return { ok: false, error: "This entity has no active commercial registration on record." };
   const pending = (cur ?? []).find((r) => r.kind === "commercial_permit");
   if (pending && pending.status === "active") return { ok: false, error: "A commercial permit is already recorded. Record a renewal as a replacement after retiring the current one." };
+  // the same permit number is never recorded twice (for this or any entity), whatever the status of the earlier row
+  const { data: same } = await db.from("entity_registrations").select("id").eq("kind", "commercial_permit").eq("identifier", permitNumber).limit(1);
+  if ((same ?? []).length > 0) return { ok: false, error: "That permit number is already recorded, so it was not recorded again." };
 
-  if (pending) { const { error } = await db.from("entity_registrations").update({ status: "superseded" }).eq("id", pending.id); if (error) return { ok: false, error: "Could not retire the pending permit record." }; }
+  const note = [p.note?.trim(), p.founderCrossChecked ? PERMIT_CROSS_CHECK_NOTE : null].filter(Boolean).join(" ") || null;
+  const facts: Record<string, unknown> = {
+    premises: p.premisesAddress.trim(),
+    ...(p.premisesConfirmedByFounder ? { premisesBasis: PREMISES_FOUNDER_CONFIRMED } : {}),
+    ...(p.licenceNumber?.trim() ? { licenceNumber: p.licenceNumber.trim() } : {}),
+    ...(p.siteClassification?.trim() ? { siteClassification: p.siteClassification.trim() } : {}),
+    ...(activities.length ? { activities: activities.map((a) => ({ code: a.code, name: a.name.trim() })) } : {}),
+    ...(p.restrictions?.trim() ? { restrictions: p.restrictions.trim() } : {}),
+  };
+
+  // The pending record is retired first (the one-current-record index allows only one), kept in history, and restored if the new record cannot be written.
+  const previousStatus = pending?.status;
+  if (pending) {
+    const { error } = await db.from("entity_registrations").update({ status: "superseded" }).eq("id", pending.id).eq("status", previousStatus as string);
+    if (error) return { ok: false, error: "Could not retire the pending permit record." };
+  }
   const { data, error } = await db.from("entity_registrations").insert({
-    employing_entity_id: p.entityId, kind: "commercial_permit", status: "active", identifier: p.permitNumber.trim(), issued_on: p.issuedOn, valid_from: p.issuedOn, expires_on: p.expiresOn,
-    issuing_authority: p.issuingAuthority.trim(), facts: { premises: p.premisesAddress.trim(), ...(p.licenceNumber?.trim() ? { licenceNumber: p.licenceNumber.trim() } : {}) }, source_document_id: p.sourceDocumentId, supersedes_id: pending?.id ?? null, recorded_by: p.actorUserId,
+    employing_entity_id: p.entityId, kind: "commercial_permit", status: "active", identifier: permitNumber, issued_on: p.issuedOn, valid_from: p.issuedOn, expires_on: p.expiresOn,
+    issuing_authority: p.issuingAuthority.trim(), facts, note, source_document_id: p.sourceDocumentId, supersedes_id: pending?.id ?? null, recorded_by: p.actorUserId,
+    ...(p.founderCrossChecked ? { verified_by: p.actorUserId, verified_at: new Date().toISOString() } : {}),
   }).select("id").single();
-  if (error || !data) return { ok: false, error: error?.message ?? "Could not record the permit." };
-  await logActivity({ actorUserId: p.actorUserId, action: "entity_registration.permit_recorded", entityType: "employing_entity", entityId: p.entityId, metadata: { registrationId: data.id, documentId: p.sourceDocumentId } });
+  if (error || !data) {
+    if (pending) await db.from("entity_registrations").update({ status: previousStatus as string }).eq("id", pending.id).eq("status", "superseded");
+    return { ok: false, error: error?.message ?? "Could not record the permit." };
+  }
+  await logActivity({ actorUserId: p.actorUserId, action: "entity_registration.permit_recorded", entityType: "employing_entity", entityId: p.entityId, metadata: { registrationId: data.id, documentId: p.sourceDocumentId, crossCheckedByFounder: Boolean(p.founderCrossChecked), activityCodes: activities.map((a) => a.code) } });
   return { ok: true, registrationId: data.id };
 }
 
