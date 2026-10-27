@@ -1,4 +1,4 @@
--- PROPOSED migration 0175 — Ghana administrative enhancements. NOT in supabase/migrations, NOT applied anywhere, NOT rehearsed yet. Founder approved the CONCEPT (27 Oct 2026);
+-- PROPOSED migration 0176 (renumbered from 0175, which the PDF editions migration now uses) — Ghana administrative enhancements. NOT in supabase/migrations, NOT applied anywhere, NOT rehearsed yet. Founder approved the CONCEPT (27 Oct 2026);
 -- it needs separate written authorization before it is moved into the migrations folder, rehearsed on a scratch database and released. Kept SEPARATE from the future PDF-editions migration.
 --
 -- 1. entity_compliance_reviews — a FOUNDER-SCHEDULED review date for a registration (e.g. Ghana tax registration, next review 7 May 2027).

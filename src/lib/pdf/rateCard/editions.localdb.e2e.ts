@@ -1,6 +1,6 @@
 // @vitest-environment node
 //
-// PDF document editions (proposed migration 0176) against the REAL schema in a throwaway local database: the guard trigger, the atomic approval function, duplicate protection,
+// PDF document editions (migration 0175) against the REAL schema in a throwaway local database: the guard trigger, the atomic approval function, duplicate protection,
 // access control, row-level security, the audit event, immutability and tamper detection. SYNTHETIC data only; never Production.
 import { beforeAll, describe, expect, it, vi } from "vitest";
 import { execSync } from "node:child_process";

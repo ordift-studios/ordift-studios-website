@@ -1,9 +1,11 @@
--- PROPOSED migration 0176 — frozen client-document editions (rate card now; the portfolio PDF reuses the table later). NOT in supabase/migrations, NOT applied to any shared database.
--- It is kept SEPARATE from the Ghana enhancement (0175, also only proposed). Rehearsed against a throwaway local database only; Production needs the Founder's separate written authorization.
+-- 0175 — frozen client-document editions (rate card now; the portfolio PDF reuses the table later). Founder-authorized 2026-10-27 for release with commit a3db2e8 + packaging.
+-- Numbering: 0175 was only ever a PROPOSAL (the Ghana administrative enhancement, now renumbered to PROPOSED_0176 and NOT part of this release); this is the next free number after 0174.
+-- Additive: creates one table, one guard trigger, one approval function. Touches no existing table, row, price, registration, permit, expense or audit record.
 --
 -- One row = one EDITION of one document. A draft is editable. APPROVAL happens only through public.approve_pdf_edition(): it freezes the content (the row can never be edited again),
 -- stores the content hash, the approving person, the time and the Founder's clearance statement, supersedes the previous approved edition of the same document, and writes the audit event —
 -- all in one transaction. A later change is a NEW edition. There is no field for a cost, margin or PDF file here: the content JSON is validated by the application against an allow-list.
+-- ROLLBACK: supabase/proposals/ROLLBACK_0175_pdf_editions.sql (rehearsed).
 
 begin;
 
@@ -113,7 +115,7 @@ grant execute on function public.approve_pdf_edition(uuid, uuid, text, text, tim
 
 commit;
 
--- ROLLBACK (only while no approved edition must be kept; export first otherwise):
+-- ROLLBACK (only while no approved edition must be kept; export first otherwise) — same as supabase/proposals/ROLLBACK_0175_pdf_editions.sql:
 --   drop function public.approve_pdf_edition(uuid, uuid, text, text, timestamptz, jsonb);
 --   drop table public.pdf_document_editions;
 --   drop function private.pdf_document_editions_guard();

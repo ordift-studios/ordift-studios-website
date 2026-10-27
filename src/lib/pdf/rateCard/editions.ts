@@ -1,5 +1,5 @@
 // SERVER-SIDE edition control for the rate card: Draft → (Preview) → Founder Approval → Approved Edition → Download. Super Admin only. Nothing here publishes or distributes anything.
-// An approved edition is frozen in the database (see supabase/proposals/PROPOSED_0176_pdf_document_editions.sql); this module is the only writer and applies every rule again on the server.
+// An approved edition is frozen in the database (see supabase/migrations/0175_pdf_document_editions.sql); this module is the only writer and applies every rule again on the server.
 import { createAdminClient } from "@/lib/supabase/admin";
 import { logActivity } from "@/lib/admin/activityLog";
 import { isSuperAdminId } from "@/lib/organization/authority";
