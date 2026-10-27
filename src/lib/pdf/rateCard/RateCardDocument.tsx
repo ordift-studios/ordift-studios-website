@@ -16,7 +16,7 @@ const s = StyleSheet.create({
   coverImg: { position: "absolute", top: 0, left: 0, width: A4.w, height: A4.h, objectFit: "cover" },
   coverShade: { position: "absolute", top: 0, left: 0, width: A4.w, height: A4.h, backgroundColor: C.navy, opacity: 0.18 },
   logo: { position: "absolute", top: 46, left: 46, width: 112 },
-  panelBg: { position: "absolute", left: 46, bottom: 96, width: 372, height: 250, backgroundColor: C.panelGrey, opacity: 0.8 },
+  panelBg: { position: "absolute", left: 46, bottom: 96, width: 372, height: 250, backgroundColor: C.panelGrey },
   panel: { position: "absolute", left: 46, bottom: 96, width: 372, height: 250, paddingHorizontal: 30, paddingTop: 30, justifyContent: "space-between", paddingBottom: 26 },
   rule: { width: 48, height: 2, backgroundColor: C.gold, marginBottom: 14 },
   eyebrow: { fontFamily: "Inter", fontSize: 8.5, letterSpacing: 2.2, color: C.gold, fontWeight: 600, textTransform: "uppercase" },
@@ -95,7 +95,8 @@ function Section({ sec, c, status }: { sec: RateCardSection; c: RateCardContent;
   );
 }
 
-export function RateCardDocument({ content: c, status, logoWhite }: { content: RateCardContent; status: EditionStatus; logoWhite: string }) {
+// coverPanelOpacity: how opaque the dark-grey panel behind the cover text is (0.6, 0.7 or 0.8 are the options under review; 0.8 is the current default).
+export function RateCardDocument({ content: c, status, logoWhite, coverPanelOpacity = 0.8 }: { content: RateCardContent; status: EditionStatus; logoWhite: string; coverPanelOpacity?: number }) {
   const m = c.meta;
   return (
     <Document title={`${m.title} — ${m.editionLabel}`} author="Ordift Studios" subject={status.state === "draft" ? "DRAFT — not approved for distribution" : `Approved edition ${status.editionId}`} creator="Ordift Studios" producer="Ordift Studios">
@@ -103,7 +104,7 @@ export function RateCardDocument({ content: c, status, logoWhite }: { content: R
         {c.coverImage ? <Image src={c.coverImage} style={s.coverImg} /> : null}
         <View style={s.coverShade} />
         <Image src={logoWhite} style={s.logo} />
-        <View style={s.panelBg} />
+        <View style={[s.panelBg, { opacity: coverPanelOpacity }]} />
         <View style={s.panel}>
           <View>
             <View style={s.rule} />
