@@ -11,6 +11,7 @@ export function formatPrice(p: PriceSpec, currency: string): { prefix: string; a
   return { prefix: p.kind === "from" ? "From" : "", amount: `${currency} ${formatAmount(p.amount)}`, unit: p.unit ?? "" };
 }
 
+const ITEM_PAD = 11;
 const s = StyleSheet.create({
   coverPage: { backgroundColor: C.navy, color: C.offwhite, fontFamily: "Inter" },
   coverImg: { position: "absolute", top: 0, left: 0, width: A4.w, height: A4.h, objectFit: "cover" },
@@ -29,20 +30,21 @@ const s = StyleSheet.create({
   head: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-end", paddingBottom: 12, borderBottomWidth: 1.2, borderBottomColor: C.gold, marginBottom: 6 },
   h1: { fontFamily: "Fraunces", fontWeight: 600, fontSize: 24, color: C.navy, maxWidth: 360 },
   headMeta: { fontFamily: "Inter", fontSize: 8, color: C.inkMuted, textAlign: "right", lineHeight: 1.5 },
-  intro: { fontSize: 10, lineHeight: 1.6, color: C.inkMuted, marginTop: 10, marginBottom: 6, width: 430 },
-  item: { flexDirection: "row", paddingVertical: 14, borderBottomWidth: 0.6, borderBottomColor: C.rule },
-  itemMain: { width: "69%", paddingRight: 18 },
+  intro: { fontSize: 10, lineHeight: 1.55, color: C.inkMuted, marginTop: 8, marginBottom: 4, width: 430 },
+  item: { flexDirection: "row", paddingVertical: ITEM_PAD, borderBottomWidth: 0.6, borderBottomColor: C.rule },
+  itemMain: { width: "76%", paddingRight: 16 },
   itemName: { fontSize: 12.5, fontWeight: 600, color: C.navy, marginBottom: 3 },
-  itemDesc: { fontSize: 9.8, lineHeight: 1.55, color: C.inkMuted, marginBottom: 5 },
-  inc: { flexDirection: "row", marginTop: 1.5 },
+  itemDesc: { fontSize: 9.6, lineHeight: 1.5, color: C.inkMuted, marginBottom: 4 },
+  incCols: { flexDirection: "row" }, incCol: { width: "50%", paddingRight: 10 },
+  inc: { flexDirection: "row", marginTop: 1.2 },
   incDot: { fontFamily: "Inter", width: 10, color: C.gold, fontSize: 9.5, fontWeight: 600 },
-  incText: { flex: 1, fontSize: 9.5, lineHeight: 1.45, color: C.ink },
-  itemPrice: { width: "31%", alignItems: "flex-end" },
+  incText: { flex: 1, fontSize: 9.2, lineHeight: 1.4, color: C.ink },
+  itemPrice: { width: "24%", alignItems: "flex-end" },
   pFrom: { fontFamily: "Inter", fontSize: 7.5, letterSpacing: 1.4, textTransform: "uppercase", color: C.goldPressed, fontWeight: 600, marginBottom: 1 },
   pAmount: { fontFamily: "Fraunces", fontWeight: 600, fontSize: 19, color: C.navy, textAlign: "right" },
   pUnit: { fontFamily: "Inter", fontSize: 8, color: C.inkMuted, marginTop: 2, textAlign: "right" },
   pNote: { fontFamily: "Inter", fontSize: 8, color: C.inkMuted, marginTop: 6, textAlign: "right", lineHeight: 1.4 },
-  condBlock: { marginTop: 16, paddingLeft: 12, borderLeftWidth: 2, borderLeftColor: C.gold },
+  condBlock: { marginTop: 12, paddingLeft: 12, borderLeftWidth: 2, borderLeftColor: C.gold },
   condTitle: { fontSize: 10.5, fontWeight: 600, color: C.navy, marginBottom: 3 },
   condText: { fontSize: 9.8, lineHeight: 1.6, color: C.inkMuted },
   contactRow: { flexDirection: "row", paddingVertical: 11, borderBottomWidth: 0.6, borderBottomColor: C.rule },
@@ -60,9 +62,10 @@ const s = StyleSheet.create({
   addMain: { width: "70%", paddingRight: 12 }, addName: { fontFamily: "Inter", fontSize: 10, color: C.ink, fontWeight: 500 }, addNote: { fontFamily: "Inter", fontSize: 8.4, color: C.inkMuted, marginTop: 1.5, lineHeight: 1.4 },
   addPrice: { fontFamily: "Inter", fontSize: 10, fontWeight: 600, color: C.navy, textAlign: "right", width: "30%" },
   secNote: { fontFamily: "Inter", fontSize: 9, lineHeight: 1.55, color: C.inkMuted, marginTop: 8 },
-  custom: { marginTop: 10, marginBottom: 2, padding: 9, borderWidth: 0.8, borderColor: C.gold, backgroundColor: "#fbf8ef" },
-  customText: { fontFamily: "Inter", fontSize: 9.4, lineHeight: 1.55, color: C.ink },
+  custom: { marginTop: 8, marginBottom: 2, paddingVertical: 6, paddingHorizontal: 9, borderWidth: 0.8, borderColor: C.gold, backgroundColor: "#fbf8ef" },
+  customText: { fontFamily: "Inter", fontSize: 9, lineHeight: 1.45, color: C.ink },
   fxBanner: { fontFamily: "Inter", fontSize: 8.2, color: C.goldPressed, marginTop: 8, lineHeight: 1.45, fontWeight: 500 },
+  fxShort: { fontFamily: "Inter", fontSize: 8, color: C.goldPressed, marginTop: 6, lineHeight: 1.4, fontWeight: 500 },
   watermark: { position: "absolute", top: 300, left: 70, fontFamily: "Fraunces", fontSize: 150, color: "#0b1220", opacity: 0.055, transform: "rotate(-32deg)" },
   watermarkCover: { position: "absolute", top: 280, left: 40, fontFamily: "Fraunces", fontSize: 170, color: "#ffffff", opacity: 0.16, transform: "rotate(-32deg)" },
   draftBar: { fontFamily: "Inter", position: "absolute", top: 22, right: 50, fontSize: 7.5, letterSpacing: 1.3, textTransform: "uppercase", color: C.goldPressed, fontWeight: 600 },
@@ -76,16 +79,50 @@ const fxLine = (c: RateCardContent): string | null => {
   return `Indicative: proposed conversion, not yet approved for client use. ${c.meta.currency} prices are converted from the USD base prices at ${fx.rateToUsd} (${fx.source}, effective ${fx.effectiveFrom}), ${rule}.`;
 };
 
+
+// Packages with five or more inclusions list them in two columns (reading down the left column, then the right) — the main column is wide enough that a typical line fits one row.
+const TWO_COL_MIN = 5;
+const splitHalves = <T,>(xs: T[]): [T[], T[]] => { const k = Math.ceil(xs.length / 2); return [xs.slice(0, k), xs.slice(k)]; };
+
+// Height model (points) used ONLY to decide where a long section should break so that no package is stranded alone on a page. It is deliberately a little pessimistic;
+// if it is ever wrong the renderer still wraps normally — a break is only added when the section clearly cannot fit on one page.
+const PAGE_BODY = 841 - 52 - 72 - 47; // A4 height minus top/bottom page padding minus the repeated section header
+const lines = (chars: number, perLine: number) => Math.max(1, Math.ceil(chars / perLine));
+const INC_ROW = 9.2 * 1.4 + 1.2;
+export function estimateItemHeight(i: RateCardItem): number {
+  const two = i.inclusions.length >= TWO_COL_MIN;
+  const incHeight = (two ? Math.ceil(i.inclusions.length / 2) * 1.05 : i.inclusions.length) * INC_ROW; // x1.05: allowance for the occasional two-column line that wraps
+  const main = 17 + (i.specs?.length ? 14 : 0) + (i.description ? lines(i.description.length, 78) * 9.6 * 1.5 + 4 : 0) + incHeight + (i.tiers?.length ? 6 + i.tiers.length * 19.5 : 0);
+  const price = 24 + (i.note ? lines(i.note.length, 24) * 11.2 + 6 : 0);
+  return Math.max(main, price) + ITEM_PAD * 2 + 1;
+}
+// Splits a section's items over the fewest pages that fit, as evenly as possible, so a page is never followed by one lonely package.
+// Returns the index of the first item on each later page. `lead` is the height of what precedes the items on page one; `tail` what follows them on the last page.
+export function pageBreaks(heights: number[], lead: number, tail: number): number[] {
+  const total = lead + heights.reduce((a, b) => a + b, 0) + tail;
+  const pages = Math.ceil(total / PAGE_BODY);
+  if (pages <= 1) return [];
+  const target = total / pages; const breaks: number[] = []; let cum = lead;
+  heights.forEach((h, k) => { if (k > 0 && breaks.length < pages - 1 && cum + h / 2 >= target * (breaks.length + 1)) breaks.push(k); cum += h; });
+  return breaks;
+}
+const shortFx = (c: RateCardContent): string | null => {
+  const fx = c.meta.fx; if (!fx) return null;
+  return c.meta.conversionPolicy === "approved" ? `${c.meta.currency} prices are converted from USD — basis on page 2.` : `Indicative ${c.meta.currency} prices — proposed conversion, not yet approved for client use (basis on page 2).`;
+};
+
 // A short item never splits across pages; a very long one may (so a long description does not strand half a page).
-function Item({ i, currency }: { i: RateCardItem; currency: string }) {
+function Item({ i, currency, pageBreak }: { i: RateCardItem; currency: string; pageBreak?: boolean }) {
   const p = formatPrice(i.price, currency);
   return (
-    <View style={s.item} wrap={!(i.description.length < 450 && i.inclusions.length <= 9)}>
+    <View style={s.item} break={pageBreak} wrap={!(i.description.length < 450 && i.inclusions.length <= 9)}>
       <View style={s.itemMain}>
         <Text style={s.itemName}>{i.name}</Text>
         {i.specs && i.specs.length ? <Text style={s.specs}>{i.specs.join("  ·  ")}</Text> : null}
         {i.description ? <Text style={s.itemDesc}>{i.description}</Text> : null}
-        {i.inclusions.map((x, n) => <View key={n} style={s.inc}><Text style={s.incDot}>–</Text><Text style={s.incText}>{x}</Text></View>)}
+        {i.inclusions.length >= TWO_COL_MIN
+          ? <View style={s.incCols}>{splitHalves(i.inclusions).map((col, k) => <View key={k} style={s.incCol}>{col.map((x, n) => <View key={n} style={s.inc}><Text style={s.incDot}>–</Text><Text style={s.incText}>{x}</Text></View>)}</View>)}</View>
+          : i.inclusions.map((x, n) => <View key={n} style={s.inc}><Text style={s.incDot}>–</Text><Text style={s.incText}>{x}</Text></View>)}
         {i.tiers && i.tiers.length ? <View style={s.tiers}>{i.tiers.map((t) => <View key={t.label} style={s.tierRow}><Text style={s.tierLabel}>{t.label}</Text><Text style={s.tierPrice}>{priceText(t.price, currency)}</Text></View>)}</View> : null}
       </View>
       <View style={s.itemPrice}>
@@ -112,18 +149,22 @@ function Frame({ c, status }: { c: RateCardContent; status: EditionStatus }) {
   );
 }
 
-function Section({ sec, c, status }: { sec: RateCardSection; c: RateCardContent; status: EditionStatus }) {
+function Section({ sec, c, status, first }: { sec: RateCardSection; c: RateCardContent; status: EditionStatus; first: boolean }) {
   const items = sec.items.filter((i) => i.included !== false);
   const addons = (sec.addons ?? []).filter((a: Addon) => a.included !== false);
-  const fx = fxLine(c);
+  const fx = first ? fxLine(c) : shortFx(c);
+  // What sits above the first package and below the last one, in points (see estimateItemHeight): used to place page breaks evenly.
+  const lead = (fx ? (first ? lines(fx.length, 112) * 11.9 : 11.2) + 8 : 0) + (sec.intro ? lines(sec.intro.length, 85) * 15.5 + 12 : 0) + (sec.customQuotationNote ? lines(sec.customQuotationNote.length, 100) * 13 + 22 : 0);
+  const tail = (sec.minimum ? 44 : 0) + (addons.length ? 40 + addons.reduce((n, a) => n + 21 + (a.note ? lines(a.note.length, 90) * 11.8 : 0), 0) : 0) + (sec.notes ?? []).reduce((n, t) => n + lines(t.length, 105) * 14 + 8, 0);
+  const breaks = new Set(pageBreaks(items.map(estimateItemHeight), lead, tail));
   return (
     <Page size="A4" style={s.page}>
       <Frame c={c} status={status} />
       <View style={s.head} fixed><Text style={s.h1}>{sec.title}</Text><Text style={s.headMeta}>{c.meta.marketName}{"\n"}Prices in {c.meta.currency}</Text></View>
-      {fx ? <Text style={s.fxBanner}>{fx}</Text> : null}
+      {fx ? <Text style={first ? s.fxBanner : s.fxShort}>{fx}</Text> : null}
       {sec.intro ? <Text style={s.intro}>{sec.intro}</Text> : null}
       {sec.customQuotationNote ? <View style={s.custom} wrap={false}><Text style={s.customText}>{sec.customQuotationNote}</Text></View> : null}
-      {items.map((i) => <Item key={i.key} i={i} currency={c.meta.currency} />)}
+      {items.map((i, k) => <Item key={i.key} i={i} currency={c.meta.currency} pageBreak={breaks.has(k)} />)}
       {sec.minimum ? <View style={s.minBox} wrap={false}><Text style={s.minLabel}>{sec.minimum.label}</Text><Text style={s.minPrice}>{priceText(sec.minimum.price, c.meta.currency)}</Text></View> : null}
       {addons.length ? <View wrap={false}><Text style={s.addHead}>Additional services</Text>{addons.map((a) => <View key={a.name} style={s.addRow}><View style={s.addMain}><Text style={s.addName}>{a.name}</Text>{a.note ? <Text style={s.addNote}>{a.note}</Text> : null}</View><Text style={s.addPrice}>{priceText(a.price, c.meta.currency)}</Text></View>)}</View> : null}
       {(sec.notes ?? []).map((n, k) => <Text key={k} style={s.secNote}>{n}</Text>)}
@@ -153,22 +194,20 @@ export function RateCardDocument({ content: c, status, logoWhite, coverPanelOpac
         <View style={s.coverFoot}><Text>ordiftstudios.com</Text>{status.state === "draft" ? <Text style={s.draftTag}>Draft — not approved</Text> : <Text>Edition {status.editionId}</Text>}</View>
       </Page>
 
-      {c.sections.filter((sec) => sec.items.some((i) => i.included !== false)).map((sec) => <Section key={sec.key} sec={sec} c={c} status={status} />)}
+      {c.sections.filter((sec) => sec.items.some((i) => i.included !== false)).map((sec, n) => <Section key={sec.key} sec={sec} c={c} status={status} first={n === 0} />)}
 
-      {c.conditions.length > 0 ? (
+      {c.conditions.length > 0 || c.contact.length > 0 ? (
         <Page size="A4" style={s.page}>
           <Frame c={c} status={status} />
-          <View style={s.head}><Text style={s.h1}>Conditions</Text></View>
-          {c.conditions.map((x, n) => <View key={n} style={s.condBlock} wrap={false}><Text style={s.condTitle}>{x.title}</Text><Text style={s.condText}>{x.text}</Text></View>)}
-        </Page>
-      ) : null}
-
-      {c.contact.length > 0 ? (
-        <Page size="A4" style={s.page}>
-          <Frame c={c} status={status} />
-          <View style={s.head}><Text style={s.h1}>Book with us</Text></View>
-          {c.intro ? <Text style={s.intro}>{c.intro}</Text> : null}
-          {c.contact.map((x, n) => <View key={n} style={s.contactRow} wrap={false}><Text style={s.contactLabel}>{x.label}</Text><Text style={s.contactValue}>{x.value}</Text></View>)}
+          {c.conditions.length > 0 ? <>
+            <View style={s.head}><Text style={s.h1}>Conditions</Text></View>
+            {c.conditions.map((x, n) => <View key={n} style={s.condBlock} wrap={false}><Text style={s.condTitle}>{x.title}</Text><Text style={s.condText}>{x.text}</Text></View>)}
+          </> : null}
+          {c.contact.length > 0 ? <>
+            <View style={[s.head, c.conditions.length > 0 ? { marginTop: 34 } : {}]} wrap={false}><Text style={s.h1}>Book with us</Text></View>
+            {c.intro ? <Text style={s.intro}>{c.intro}</Text> : null}
+            {c.contact.map((x, n) => <View key={n} style={s.contactRow} wrap={false}><Text style={s.contactLabel}>{x.label}</Text><Text style={s.contactValue}>{x.value}</Text></View>)}
+          </> : null}
         </Page>
       ) : null}
     </Document>

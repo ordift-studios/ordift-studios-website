@@ -37,7 +37,7 @@ let draft: RateCardContent = {
   contact: [{ label: "Website", value: "ordiftstudios.com" }, { label: "Email", value: `${PLACEHOLDER_MARK} contact email` }, { label: "WhatsApp", value: `${PLACEHOLDER_MARK} booking number` }],
 };
 draft = applyEligibility(draft, resolveLicensed(market, rule.jurisdiction, market === "qatar" ? "ORDIFT STUDIOS (Qatar W.L.L.)" : "Ordift Studios (Ghana)", draft.meta.effectiveDate, undefined, market === "qatar" ? ["photography"] : []));
-draft = convertContent(draft, { currency, rateToUsd: j.fx.rateToUsd, effectiveFrom: j.fx.effectiveFrom, source: j.fx.reason || `Governed exchange-rate table (${currency})`, rule: roundingFor(market, currency)! });
+if (currency !== "USD") draft = convertContent(draft, { currency, rateToUsd: j.fx.rateToUsd, effectiveFrom: j.fx.effectiveFrom, source: j.fx.reason || `Governed exchange-rate table (${currency})`, rule: roundingFor(market, currency)! });
 const v = validateRateCard(draft, "draft", { today: draft.meta.effectiveDate });
 console.log("draft errors:", v.errors.length, "| warnings:", v.warnings.length, "| conversions:", conversionReview(draft).length, "| excluded:", excludedByEligibility(draft).length);
 fs.writeFileSync(out.replace(/\.pdf$/, ".json"), JSON.stringify(draft, null, 1));
