@@ -22,6 +22,15 @@ export const REGISTRATION_LABELS: Record<RegistrationKind, string> = {
   activity_licence: "Activity licence / authorisation",
 };
 
+// A jurisdiction's own name for a registration the registry stores under a shared kind. Ghana issues a "Business Registration Certificate" (Registrar of Companies,
+// Registration of Business Names Act 1962); the same stored kind (commercial_registration) is the Qatar "Commercial Registration (CR)". Display only: the stored kind,
+// number, dates and documents are never touched, and any jurisdiction not listed keeps the shared label.
+const JURISDICTION_REGISTRATION_LABELS: Record<string, Partial<Record<RegistrationKind, string>>> = {
+  Ghana: { commercial_registration: "Business Registration Certificate" },
+};
+export const registrationLabel = (kind: RegistrationKind, jurisdictionName?: string | null): string =>
+  (jurisdictionName ? JURISDICTION_REGISTRATION_LABELS[jurisdictionName]?.[kind] : undefined) ?? REGISTRATION_LABELS[kind];
+
 // Canonical document classes for the private vault. Free text is still accepted for older records (e.g. the Ghana certificate).
 export const ENTITY_DOCUMENT_TYPES = [
   { value: "commercial_registration", label: "Commercial Registration" },
@@ -67,11 +76,11 @@ export type RegistrationFact = {
 export type TrackedState = "ok" | "due_soon" | "overdue" | "pending" | "not_issued" | "date_unconfirmed" | "no_expiry";
 export type TrackedItem = { registrationId: string; kind: RegistrationKind; label: string; state: TrackedState; expiresOn: string | null; daysRemaining: number | null; detail: string };
 
-export function trackCompliance(registrations: RegistrationFact[], today: string): TrackedItem[] {
+export function trackCompliance(registrations: RegistrationFact[], today: string, jurisdictionName?: string | null): TrackedItem[] {
   const out: TrackedItem[] = [];
   for (const r of registrations) {
     if (r.status === "superseded" || r.status === "revoked") continue;
-    const label = REGISTRATION_LABELS[r.kind];
+    const label = registrationLabel(r.kind, jurisdictionName);
     if (r.status === "not_issued") { out.push({ registrationId: r.id, kind: r.kind, label, state: "not_issued", expiresOn: null, daysRemaining: null, detail: "Not yet issued. Nothing has been recorded for it." }); continue; }
     if (r.kind === "investment_approval_condition" && r.status === "pending") {
       const start = typeof r.facts.approvalNoticeDate === "string" ? r.facts.approvalNoticeDate : null;

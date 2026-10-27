@@ -174,3 +174,12 @@ describe("the expense entry form uses a receipt already in the vault and never p
     expect(html).toMatch(/<button[^>]*disabled[^>]*>Record Expense<\/button>/);
   });
 });
+
+describe("the Status line names the registration the way its jurisdiction does", () => {
+  const cr = { id: "1", kind: "commercial_registration", label: "x", status: "active", identifier: "TEST", issuedOn: "2018-05-07", expiresOn: null, note: null, verifiedAt: "2026-10-22T00:00:00Z", facts: {} };
+  const view = (jurisdictionName: string | null) => renderToStaticMarkup(createElement(EntityRegistryPanels, {
+    entityId: "e", tracked: [], registrations: [cr], signatories: [], documents: [], expenses: [], canonicalPermitPending: false, status: { entityVerification: "verified", employerCapable: true, documentCount: 0 }, jurisdictionName,
+  } as never));
+  it("Ghana: Business Registration Certificate", () => { const h = view("Ghana"); expect(h).toContain("Business Registration Certificate: "); expect(h).not.toContain("Commercial Registration: "); });
+  it("Qatar and unset: Commercial Registration", () => { for (const j of ["Qatar", null]) { const h = view(j); expect(h).toContain("Commercial Registration: "); expect(h).not.toContain("Business Registration Certificate: "); } });
+});

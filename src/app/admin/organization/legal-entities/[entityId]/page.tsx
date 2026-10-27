@@ -4,7 +4,7 @@ import Link from "next/link";
 import { getCurrentUser, isSuperAdmin } from "@/lib/portal/roles";
 import { getEmployingEntityById, getEmployingEntitySensitiveDetails, listProfileIdsForEmployingEntity } from "@/lib/organization/legalEntities";
 import { getActiveFounderProfileId, listEntityExpenses, listEntityRegistrations, listEntityRenewals, listEntitySignatories, listVaultDocuments } from "@/lib/organization/entityRegistrations";
-import { REGISTRATION_LABELS, trackCompliance } from "@/lib/organization/entityRegistry";
+import { registrationLabel, trackCompliance } from "@/lib/organization/entityRegistry";
 import { listUsersWithRoles } from "@/lib/portal/adminData";
 import { EntityDetailWorkspace } from "./EntityDetailWorkspace";
 import { EntityRegistryPanels } from "./EntityRegistryPanels";
@@ -34,7 +34,7 @@ export default async function LegalEntityDetailPage({ params }: { params: Promis
     getActiveFounderProfileId(),
   ]);
   const today = new Date().toISOString().slice(0, 10);
-  const tracked = trackCompliance(registrations, today);
+  const tracked = trackCompliance(registrations, today, entity.jurisdictionName);
 
   const nameById = new Map<string, string>();
   if (usersResult.ok) {
@@ -83,7 +83,7 @@ export default async function LegalEntityDetailPage({ params }: { params: Promis
       <EntityRegistryPanels
         entityId={entityId}
         tracked={tracked}
-        registrations={registrations.map((r) => ({ id: r.id, kind: r.kind, label: REGISTRATION_LABELS[r.kind], status: r.status, identifier: r.identifier, issuedOn: r.issuedOn, expiresOn: r.expiresOn, note: r.note, facts: r.facts, verifiedAt: r.verifiedAt }))}
+        registrations={registrations.map((r) => ({ id: r.id, kind: r.kind, label: registrationLabel(r.kind, entity.jurisdictionName), status: r.status, identifier: r.identifier, issuedOn: r.issuedOn, expiresOn: r.expiresOn, note: r.note, facts: r.facts, verifiedAt: r.verifiedAt }))}
         signatories={signatories}
         documents={vaultDocuments}
         expenses={expenses}
