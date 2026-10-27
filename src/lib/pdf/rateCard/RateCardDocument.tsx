@@ -1,0 +1,139 @@
+/* eslint-disable jsx-a11y/alt-text -- react-pdf <Image> is a PDF drawing primitive, not an HTML <img> */
+import { Document, Image, Page, StyleSheet, Text, View } from "@react-pdf/renderer";
+import { BRAND as C } from "../brand";
+import type { EditionStatus, PriceSpec, RateCardContent, RateCardItem, RateCardSection } from "./types";
+
+const A4 = { w: 595, h: 841 }; // a hair under the A4 page (595.28 × 841.89) so the full-page cover image never overflows its page
+
+export function formatAmount(n: number): string { return n.toLocaleString("en-US", { minimumFractionDigits: Number.isInteger(n) ? 0 : 2, maximumFractionDigits: 2 }); }
+export function formatPrice(p: PriceSpec, currency: string): { prefix: string; amount: string; unit: string } {
+  if (p.kind === "on_request") return { prefix: "", amount: "On request", unit: "" };
+  return { prefix: p.kind === "from" ? "From" : "", amount: `${currency} ${formatAmount(p.amount)}`, unit: p.unit ?? "" };
+}
+
+const s = StyleSheet.create({
+  coverPage: { backgroundColor: C.navy, color: C.offwhite, fontFamily: "Inter" },
+  coverImg: { position: "absolute", top: 0, left: 0, width: A4.w, height: A4.h, objectFit: "cover" },
+  coverShade: { position: "absolute", top: 0, left: 0, width: A4.w, height: A4.h, backgroundColor: C.navy, opacity: 0.18 },
+  logo: { position: "absolute", top: 46, left: 46, width: 112 },
+  panelBg: { position: "absolute", left: 46, bottom: 96, width: 372, height: 250, backgroundColor: C.panelGrey, opacity: 0.8 },
+  panel: { position: "absolute", left: 46, bottom: 96, width: 372, height: 250, paddingHorizontal: 30, paddingTop: 30, justifyContent: "space-between", paddingBottom: 26 },
+  rule: { width: 48, height: 2, backgroundColor: C.gold, marginBottom: 14 },
+  eyebrow: { fontSize: 8.5, letterSpacing: 2.2, color: C.gold, fontWeight: 600, textTransform: "uppercase" },
+  title: { fontFamily: "Fraunces", fontWeight: 400, fontSize: 50, lineHeight: 1.02, color: C.offwhite, marginTop: 4 },
+  subtitle: { fontSize: 11, lineHeight: 1.55, color: "#d6d9e2", marginTop: 8, width: 300 },
+  panelMeta: { fontSize: 8.5, letterSpacing: 0.4, color: "#b9bfce", lineHeight: 1.5 },
+  coverFoot: { position: "absolute", left: 46, right: 46, bottom: 40, flexDirection: "row", justifyContent: "space-between", fontSize: 8.5, color: "#e8e6df" },
+  draftTag: { color: C.gold, fontWeight: 600, letterSpacing: 1.2, textTransform: "uppercase" },
+  page: { backgroundColor: C.offwhite, paddingHorizontal: 50, paddingTop: 52, paddingBottom: 72, fontFamily: "Inter", color: C.ink },
+  head: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-end", paddingBottom: 12, borderBottomWidth: 1.2, borderBottomColor: C.gold, marginBottom: 6 },
+  h1: { fontFamily: "Fraunces", fontWeight: 600, fontSize: 24, color: C.navy, maxWidth: 360 },
+  headMeta: { fontSize: 8, color: C.inkMuted, textAlign: "right", lineHeight: 1.5 },
+  intro: { fontSize: 10, lineHeight: 1.6, color: C.inkMuted, marginTop: 10, marginBottom: 6, width: 430 },
+  item: { flexDirection: "row", paddingVertical: 14, borderBottomWidth: 0.6, borderBottomColor: C.rule },
+  itemMain: { width: "69%", paddingRight: 18 },
+  itemName: { fontSize: 12.5, fontWeight: 600, color: C.navy, marginBottom: 3 },
+  itemDesc: { fontSize: 9.8, lineHeight: 1.55, color: C.inkMuted, marginBottom: 5 },
+  inc: { flexDirection: "row", marginTop: 1.5 },
+  incDot: { width: 10, color: C.gold, fontSize: 9.5, fontWeight: 600 },
+  incText: { flex: 1, fontSize: 9.5, lineHeight: 1.45, color: C.ink },
+  itemPrice: { width: "31%", alignItems: "flex-end" },
+  pFrom: { fontSize: 7.5, letterSpacing: 1.4, textTransform: "uppercase", color: C.goldPressed, fontWeight: 600, marginBottom: 1 },
+  pAmount: { fontFamily: "Fraunces", fontWeight: 600, fontSize: 19, color: C.navy, textAlign: "right" },
+  pUnit: { fontSize: 8, color: C.inkMuted, marginTop: 2, textAlign: "right" },
+  pNote: { fontSize: 8, color: C.inkMuted, marginTop: 6, textAlign: "right", lineHeight: 1.4 },
+  condBlock: { marginTop: 16, paddingLeft: 12, borderLeftWidth: 2, borderLeftColor: C.gold },
+  condTitle: { fontSize: 10.5, fontWeight: 600, color: C.navy, marginBottom: 3 },
+  condText: { fontSize: 9.8, lineHeight: 1.6, color: C.inkMuted },
+  contactRow: { flexDirection: "row", paddingVertical: 11, borderBottomWidth: 0.6, borderBottomColor: C.rule },
+  contactLabel: { width: "30%", fontSize: 8, letterSpacing: 1.3, textTransform: "uppercase", color: C.goldPressed, fontWeight: 600, paddingTop: 2 },
+  contactValue: { width: "70%", fontSize: 11.5, color: C.navy },
+  footer: { position: "absolute", left: 50, right: 50, bottom: 30, flexDirection: "row", justifyContent: "space-between", fontSize: 8, color: C.inkMuted, borderTopWidth: 0.5, borderTopColor: C.rule, paddingTop: 8 },
+  draftBar: { position: "absolute", top: 22, right: 50, fontSize: 7.5, letterSpacing: 1.3, textTransform: "uppercase", color: C.goldPressed, fontWeight: 600 },
+});
+
+function Item({ i, currency }: { i: RateCardItem; currency: string }) {
+  const p = formatPrice(i.price, currency);
+  return (
+    <View style={s.item} wrap={false}>
+      <View style={s.itemMain}>
+        <Text style={s.itemName}>{i.name}</Text>
+        {i.description ? <Text style={s.itemDesc}>{i.description}</Text> : null}
+        {i.inclusions.map((x, n) => <View key={n} style={s.inc}><Text style={s.incDot}>–</Text><Text style={s.incText}>{x}</Text></View>)}
+      </View>
+      <View style={s.itemPrice}>
+        {p.prefix ? <Text style={s.pFrom}>{p.prefix}</Text> : null}
+        <Text style={s.pAmount}>{p.amount}</Text>
+        {p.unit ? <Text style={s.pUnit}>{p.unit}</Text> : null}
+        {i.note ? <Text style={s.pNote}>{i.note}</Text> : null}
+      </View>
+    </View>
+  );
+}
+
+function Frame({ c, status }: { c: RateCardContent; status: EditionStatus }) {
+  return (
+    <>
+      {status.state === "draft" ? <Text style={s.draftBar} fixed>Draft — not approved for distribution</Text> : null}
+      <View style={s.footer} fixed>
+        <Text>Ordift Studios · ordiftstudios.com</Text>
+        <Text>{c.meta.title} · {c.meta.editionLabel}</Text>
+        <Text render={({ pageNumber, totalPages }) => `${pageNumber} / ${totalPages}`} />
+      </View>
+    </>
+  );
+}
+
+function Section({ sec, c, status }: { sec: RateCardSection; c: RateCardContent; status: EditionStatus }) {
+  return (
+    <Page size="A4" style={s.page}>
+      <Frame c={c} status={status} />
+      <View style={s.head} fixed><Text style={s.h1}>{sec.title}</Text><Text style={s.headMeta}>{c.meta.marketName}{"\n"}Prices in {c.meta.currency}</Text></View>
+      {sec.intro ? <Text style={s.intro}>{sec.intro}</Text> : null}
+      {sec.items.map((i) => <Item key={i.key} i={i} currency={c.meta.currency} />)}
+    </Page>
+  );
+}
+
+export function RateCardDocument({ content: c, status, logoWhite }: { content: RateCardContent; status: EditionStatus; logoWhite: string }) {
+  const m = c.meta;
+  return (
+    <Document title={`${m.title} — ${m.editionLabel}`} author="Ordift Studios" subject={status.state === "draft" ? "DRAFT — not approved for distribution" : `Approved edition ${status.editionId}`} creator="Ordift Studios" producer="Ordift Studios">
+      <Page size="A4" style={s.coverPage}>
+        {c.coverImage ? <Image src={c.coverImage} style={s.coverImg} /> : null}
+        <View style={s.coverShade} />
+        <Image src={logoWhite} style={s.logo} />
+        <View style={s.panelBg} />
+        <View style={s.panel}>
+          <View>
+            <View style={s.rule} />
+            <Text style={s.eyebrow}>Ordift Studios</Text>
+            <Text style={s.title}>{m.title}</Text>
+            {m.subtitle ? <Text style={s.subtitle}>{m.subtitle}</Text> : null}
+          </View>
+          <Text style={s.panelMeta}>{m.marketName} · Prices in {m.currency}{"\n"}{m.editionLabel} · Effective {m.effectiveDate}</Text>
+        </View>
+        <View style={s.coverFoot}><Text>ordiftstudios.com</Text>{status.state === "draft" ? <Text style={s.draftTag}>Draft — not approved</Text> : <Text>Edition {status.editionId}</Text>}</View>
+      </Page>
+
+      {c.sections.map((sec) => <Section key={sec.key} sec={sec} c={c} status={status} />)}
+
+      {c.conditions.length > 0 ? (
+        <Page size="A4" style={s.page}>
+          <Frame c={c} status={status} />
+          <View style={s.head}><Text style={s.h1}>Conditions</Text></View>
+          {c.conditions.map((x, n) => <View key={n} style={s.condBlock} wrap={false}><Text style={s.condTitle}>{x.title}</Text><Text style={s.condText}>{x.text}</Text></View>)}
+        </Page>
+      ) : null}
+
+      {c.contact.length > 0 ? (
+        <Page size="A4" style={s.page}>
+          <Frame c={c} status={status} />
+          <View style={s.head}><Text style={s.h1}>Book with us</Text></View>
+          {c.intro ? <Text style={s.intro}>{c.intro}</Text> : null}
+          {c.contact.map((x, n) => <View key={n} style={s.contactRow} wrap={false}><Text style={s.contactLabel}>{x.label}</Text><Text style={s.contactValue}>{x.value}</Text></View>)}
+        </Page>
+      ) : null}
+    </Document>
+  );
+}

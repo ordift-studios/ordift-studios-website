@@ -14,7 +14,7 @@ export default function PocDownload() {
     const t0 = performance.now();
     try {
       const [{ pdf }, { registerPocFonts }, { OrdiftPocDocument }] = await Promise.all([import("@react-pdf/renderer"), import("@/lib/pdf/poc/fonts"), import("@/lib/pdf/poc/OrdiftPocDocument")]);
-      registerPocFonts("/fonts/pdf-poc");
+      registerPocFonts("/fonts/pdf");
       const blob = await pdf(<OrdiftPocDocument logoWhite="/brand/logo-full-white.png" photo="/pdf-poc/placeholder-3600x2400.jpg" stampDate={new Date().toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })} />).toBlob();
       const head = new TextDecoder().decode(new Uint8Array(await blob.slice(0, 5).arrayBuffer()));
       if (head !== "%PDF-") throw new Error("The generated file is not a PDF.");
