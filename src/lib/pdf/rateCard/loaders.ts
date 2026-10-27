@@ -5,7 +5,7 @@ import { getActiveTierRates, getTierDeliverables } from "@/lib/pricing/weddingEv
 import type { ServiceMode, WeddingEventCategory } from "@/lib/pricing/weddingEventEstimate";
 import { getActiveCorporateHeadshotRates, getActiveCorporateMinimumBooking, getAllActiveCorporatePriorityDeliveryPercentages, getActiveCorporateRetouchRate, getActiveCorporateTeamTierRates } from "@/lib/pricing/corporateHeadshotPricing";
 import { getActiveCatalogueBaseRate, getActiveCatalogueMinimum, getActiveCreativeFeeRates, getActivePostProductionRates } from "@/lib/pricing/commercialPricing";
-import { createAdminClient } from "@/lib/supabase/admin";
+import { createClient } from "@/lib/supabase/server";
 import { getContractingEntityStanding } from "@/lib/organization/entityRegistrations";
 import { commercialSection, corporateSection, personalSessionSection, weddingEventSection } from "./mappers";
 import { convertContent, DEFAULT_ROUNDING } from "./convert";
@@ -15,10 +15,12 @@ import { PLACEHOLDER_MARK, type FxBasis, type RateCardContent, type RateCardSect
 const ALL_ACTIVITIES = ["photography", "videography", "graphic_design", "talent_management", "production_services", "drone_operations"];
 const CUSTOM_NOTE = `${PLACEHOLDER_MARK} Wording for requirements that do not fit a standard package (for example: "Tell us what you need and we will prepare an individual quotation").`;
 
-// The governed exchange rate (append-only table) with the reason note that records where it came from.
+// The governed exchange rate (append-only table) with the reason note that records where it came from. exchange_rates is readable by the signed-in STAFF SESSION only (row-level security;
+// the service role has no grant on it), exactly like the payment code reads it — so this uses the session client, never the admin client.
 export async function loadGovernedRate(currency: string): Promise<{ ok: true; rateToUsd: number; effectiveFrom: string; source: string } | { ok: false; error: string }> {
-  const { data, error } = await createAdminClient().from("exchange_rates").select("rate_to_usd, effective_from, reason").eq("currency_code", currency).lte("effective_from", new Date().toISOString()).order("effective_from", { ascending: false }).limit(1);
-  if (error || !data?.length) return { ok: false, error: `No governed ${currency} exchange rate is on record.` };
+  const session = await createClient();
+  const { data, error } = await session.from("exchange_rates").select("rate_to_usd, effective_from, reason").eq("currency_code", currency).lte("effective_from", new Date().toISOString()).order("effective_from", { ascending: false }).limit(1);
+  if (error || !data?.length) return { ok: false, error: `No governed ${currency} exchange rate could be read.` };
   return { ok: true, rateToUsd: Number(data[0].rate_to_usd), effectiveFrom: String(data[0].effective_from).slice(0, 10), source: (data[0].reason as string | null)?.trim() || "" };
 }
 
