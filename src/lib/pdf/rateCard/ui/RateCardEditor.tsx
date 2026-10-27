@@ -23,6 +23,7 @@ export default function RateCardEditor({ content, onChange, readOnly, status, to
   const draft = useMemo(() => validateRateCard(content, "draft", { today }), [content, today]);
   const approval = useMemo(() => validateRateCard(content, "approval", { today, currencyPolicyApproved: CURRENCY_POLICY.clientPublicationOfConvertedPricesApproved }), [content, today]);
   const review = useMemo(() => conversionReview(content), [content]);
+  const fxAge = content.meta.fx ? Math.floor((Date.parse(today) - Date.parse(content.meta.fx.effectiveFrom)) / 86_400_000) : null;
   const patchSection = (si: number, f: (s: RateCardSection) => RateCardSection) => onChange({ ...content, sections: content.sections.map((s, i) => (i === si ? f(s) : s)) });
   const patchItem = (si: number, ii: number, f: (i: RateCardItem) => RateCardItem) => patchSection(si, (s) => ({ ...s, items: s.items.map((x, i) => (i === ii ? f(x) : x)) }));
 
@@ -107,7 +108,8 @@ export default function RateCardEditor({ content, onChange, readOnly, status, to
           {review.length > 0 && (
             <details open style={box}>
               <summary><strong>Currency conversion review ({content.meta.currency})</strong> — USD base prices are never changed</summary>
-              <p style={{ color: "#555", fontSize: 13 }}>Rate {content.meta.fx?.rateToUsd} ({content.meta.fx?.source}), effective {content.meta.fx?.effectiveFrom}; rounding {content.meta.fx?.rule.kind === "up_to_multiple" ? `up to the next ${content.meta.fx?.rule.multiple}` : `to the nearest ${content.meta.fx?.rule.multiple}`}.</p>
+              <p style={{ color: "#555", fontSize: 13 }}>Rate {content.meta.fx?.rateToUsd} ({content.meta.fx?.source || "no source recorded"}), effective {content.meta.fx?.effectiveFrom}; rounding {content.meta.fx?.rule.kind === "up_to_multiple" ? `up to the next ${content.meta.fx?.rule.multiple}` : `to the nearest ${content.meta.fx?.rule.multiple}`} (a proposal until you approve it).</p>
+              {fxAge !== null ? <p id="fx-status" style={{ fontSize: 13, fontWeight: 600, color: fxAge > 30 || !content.meta.fx?.source ? "#8a1c1c" : "#256029" }}>{fxAge > 30 ? `This ${content.meta.currency} rate is ${fxAge} days old (limit 30). It can be used for indicative draft testing only and cannot be approved until a current, sourced rate is recorded under Payments → Exchange rates (a new entry with its source note). It is never silently refreshed or replaced by a historical rate.` : !content.meta.fx?.source ? "No source is recorded for this rate, so it cannot be approved." : `Rate age ${fxAge} days — within the 30-day limit.`}</p> : null}
               <div style={{ overflowX: "auto" }}><table style={{ borderCollapse: "collapse", fontSize: 12, width: "100%" }}><thead><tr>{["Service", "USD", "Exact", "Rounded", "Diff"].map((h) => <th key={h} style={{ textAlign: "left", borderBottom: "1px solid #ccc", padding: 4 }}>{h}</th>)}</tr></thead>
                 <tbody>{review.map((r) => <tr key={r.where}><td style={{ padding: 4 }}>{r.where}</td><td style={{ padding: 4 }}>{r.usd}</td><td style={{ padding: 4 }}>{r.exact}</td><td style={{ padding: 4 }}>{r.rounded}</td><td style={{ padding: 4 }}>{r.difference}</td></tr>)}</tbody></table></div>
             </details>

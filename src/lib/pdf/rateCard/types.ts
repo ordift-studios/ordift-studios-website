@@ -52,7 +52,7 @@ export type RateCardContent = {
     currency: string;                                   // the display currency (USD, or QAR for a converted card)
     conversionPolicy?: "none" | "proposed" | "approved"; // a converted card is "proposed" (indicative) until the Founder approves the quotation/payment currency policy
     fx?: FxBasis;                                       // present exactly when currency is not USD
-    issuingEntity?: { entityId?: string; name: string; checkedOn: string; licensedActivities: string[] }; // who offers these prices and what was verified as licensed, and when
+    issuingEntity?: { entityId?: string; jurisdiction?: string; name: string; checkedOn: string; licensedActivities: string[]; basis?: string }; // who offers these prices and what was verified as licensed, and when
   };
   coverImage: string;           // path or URL of the cover photograph (a non-client Ordift image chosen by the Founder)
   intro?: string;

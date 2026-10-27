@@ -6,6 +6,7 @@ import RateCardEditor from "@/lib/pdf/rateCard/ui/RateCardEditor";
 import { renderRateCardPdf, saveBlob } from "@/lib/pdf/rateCard/ui/pdfClient";
 import type { EditionRecord, EditionSummary } from "@/lib/pdf/rateCard/editions";
 import type { EditionStatus, RateCardContent } from "@/lib/pdf/rateCard/types";
+import { ISSUING_RULES, currencyOptionsFor } from "@/lib/pdf/rateCard/jurisdictions";
 import { approveEditionAction, buildDraftAction, downloadApprovedAction, saveNewDraftAction, startNextEditionAction, updateDraftAction } from "./actions";
 
 const box: React.CSSProperties = { border: "1px solid #d9d5cb", borderRadius: 6, padding: 12, marginBottom: 12, background: "#fff" };
@@ -13,7 +14,7 @@ const inp: React.CSSProperties = { padding: "6px 8px", border: "1px solid #bbb",
 const btn: React.CSSProperties = { padding: "8px 14px", border: 0, borderRadius: 5, background: "#0b1220", color: "#f7f5f1", font: "inherit", fontWeight: 600, cursor: "pointer", marginRight: 8 };
 const btn2: React.CSSProperties = { ...btn, background: "#e8e4d9", color: "#0b1220" };
 
-type Props = { today: string; editions: EditionSummary[]; markets: { slug: string; name: string }[]; entities: { id: string; name: string }[]; selected: { edition: EditionRecord; integrity: "ok" | "not_applicable" | "FAILED" } | null; selectedError: string | null };
+type Props = { today: string; editions: EditionSummary[]; markets: { slug: string; name: string }[]; entities: { id: string; name: string; jurisdiction: string | null }[]; selected: { edition: EditionRecord; integrity: "ok" | "not_applicable" | "FAILED" } | null; selectedError: string | null };
 
 export default function RateCardAdmin({ today, editions, markets, entities, selected, selectedError }: Props) {
   const router = useRouter();
@@ -22,6 +23,9 @@ export default function RateCardAdmin({ today, editions, markets, entities, sele
   const [msg, setMsg] = useState("");
   const [market, setMarket] = useState(markets[0]?.slug ?? ""); const [entity, setEntity] = useState(""); const [currency, setCurrency] = useState("USD");
   const [clearance, setClearance] = useState(""); const [nextLabel, setNextLabel] = useState("");
+  const rule = ISSUING_RULES[market];
+  const currencies = currencyOptionsFor(market);
+  const entityChoices = rule ? entities.filter((x) => x.jurisdiction === rule.jurisdiction) : [];
   const ed = selected?.edition ?? null;
   const frozen = ed ? ed.status !== "draft" : false;
   const status: EditionStatus = ed && ed.status === "approved" ? { state: "approved", editionId: ed.id, approvedBy: ed.approvedBy ?? "", approvedAt: ed.approvedAt ?? "", contentHash: ed.contentSha256 ?? "" } : { state: "draft" };
@@ -64,9 +68,9 @@ export default function RateCardAdmin({ today, editions, markets, entities, sele
         <div style={{ borderTop: "1px solid #eee", paddingTop: 8 }}>
           <strong>New draft from the selling-rate tables</strong>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 6 }}>
-            <select aria-label="Market" style={inp} value={market} onChange={(e) => setMarket(e.target.value)}>{markets.map((m) => <option key={m.slug} value={m.slug}>{m.name}</option>)}</select>
-            <select aria-label="Issuing entity" style={inp} value={entity} onChange={(e) => setEntity(e.target.value)}><option value="">Issuing entity (needed for approval)…</option>{entities.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}</select>
-            <select aria-label="Currency" style={inp} value={currency} onChange={(e) => setCurrency(e.target.value)}><option value="USD">USD (base prices)</option><option value="QAR">QAR (proposed conversion, indicative)</option></select>
+            <select aria-label="Market" style={inp} value={market} onChange={(e) => { setMarket(e.target.value); setEntity(""); setCurrency("USD"); }}>{markets.map((m) => <option key={m.slug} value={m.slug}>{m.name}</option>)}</select>
+            <select aria-label="Issuing entity" style={inp} value={entity} disabled={!rule} onChange={(e) => setEntity(e.target.value)}><option value="">{rule ? "Issuing entity (needed for approval)…" : "No issuing entity for this market"}</option>{entityChoices.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}</select>
+            <select aria-label="Currency" style={inp} value={currency} onChange={(e) => setCurrency(e.target.value)}>{currencies.map((c) => <option key={c} value={c}>{c === "USD" ? "USD (base prices)" : `${c} (proposed conversion, indicative)`}</option>)}</select>
             <button style={btn} onClick={build}>Build draft</button>
           </div>
         </div>

@@ -9,7 +9,8 @@ import { createClient } from "@/lib/supabase/server";
 import { getContractingEntityStanding } from "@/lib/organization/entityRegistrations";
 import { commercialSection, corporateSection, personalSessionSection, weddingEventSection } from "./mappers";
 import { convertContent, DEFAULT_ROUNDING } from "./convert";
-import { applyEligibility } from "./eligibility";
+import { applyEligibility, resolveLicensed } from "./eligibility";
+import { checkBinding, roundingFor } from "./jurisdictions";
 import { PLACEHOLDER_MARK, type FxBasis, type RateCardContent, type RateCardSection, type RoundingRule } from "./types";
 
 const ALL_ACTIVITIES = ["photography", "videography", "graphic_design", "talent_management", "production_services", "drone_operations"];
@@ -27,6 +28,8 @@ export async function loadGovernedRate(currency: string): Promise<{ ok: true; ra
 export type DraftOptions = { marketSlug: string; today: string; entityId?: string; currency?: string; rule?: RoundingRule };
 
 export async function buildDraftFromSellingRates(o: DraftOptions): Promise<{ ok: true; draft: RateCardContent } | { ok: false; error: string }> {
+  const pre = checkBinding({ marketSlug: o.marketSlug, currency: o.currency ?? "USD", entityJurisdiction: null, hasEntity: false });
+  if (pre.length) return { ok: false, error: pre[0] };
   const market = (await listActivePricingMarkets()).find((m) => m.slug === o.marketSlug);
   if (!market) return { ok: false, error: "That market is not an active pricing market." };
   const sections: RateCardSection[] = [];
@@ -50,13 +53,15 @@ export async function buildDraftFromSellingRates(o: DraftOptions): Promise<{ ok:
   if (o.entityId) {
     const st = await getContractingEntityStanding(o.entityId, o.today, ALL_ACTIVITIES);
     if (!st) return { ok: false, error: "The issuing entity was not found." };
+    const bind = checkBinding({ marketSlug: o.marketSlug, currency: o.currency ?? "USD", entityJurisdiction: st.assessment.jurisdiction, hasEntity: true });
+    if (bind.length) return { ok: false, error: bind[0] };                                   // wrong entity for the market: refuse, never silently issue under it
     const keys = st.assessment.activities.filter((a) => a.state === "licensed" || a.state === "listed_on_registration").map((a) => a.key);
-    draft = applyEligibility(draft, { entityId: o.entityId, entityName: st.entity.legal_name ?? st.entity.name, checkedOn: o.today, keys });
+    draft = applyEligibility(draft, resolveLicensed(o.marketSlug, st.assessment.jurisdiction ?? "", st.entity.legal_name ?? st.entity.name, o.today, o.entityId, keys));
   }
   if (o.currency && o.currency !== "USD") {
     const r = await loadGovernedRate(o.currency);
     if (!r.ok) return r;
-    const fx: FxBasis = { currency: o.currency, rateToUsd: r.rateToUsd, effectiveFrom: r.effectiveFrom, source: r.source || "Governed exchange-rate table (no source note recorded)", rule: o.rule ?? DEFAULT_ROUNDING };
+    const fx: FxBasis = { currency: o.currency, rateToUsd: r.rateToUsd, effectiveFrom: r.effectiveFrom, source: r.source || "Governed exchange-rate table (no source note recorded)", rule: o.rule ?? roundingFor(o.marketSlug, o.currency) ?? DEFAULT_ROUNDING };
     draft = convertContent(draft, fx);
   }
   return { ok: true, draft };

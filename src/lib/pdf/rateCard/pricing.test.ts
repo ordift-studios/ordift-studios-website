@@ -37,7 +37,7 @@ describe("converting a card: USD base is preserved, every price is reviewable", 
     expect(() => convertContent(q, fx)).toThrow(/Only a USD card/);
   });
   it("the review table lists every converted price with USD, rate, exact, rounded and difference — excluded items are not listed", () => {
-    const q = applyEligibility(convertContent(usdCard(), fx), { entityName: "Qatar", checkedOn: "2026-10-27", keys: ["photography"] });
+    const q = applyEligibility(convertContent(usdCard(), fx), { jurisdiction: "Qatar", entityName: "Qatar", checkedOn: "2026-10-27", keys: ["photography"] });
     const rows = conversionReview(q);
     expect(rows.map((r) => r.where)).toEqual(["Personal sessions — 1-hour session", "Corporate — Team", "Corporate — Team — 2–5", "Corporate — Minimum booking", "Corporate — Extra image"]);
     expect(rows[0]).toEqual({ where: "Personal sessions — 1-hour session", usd: 150, rate: 3.64, exact: 546, rounded: 550, difference: 4 });
@@ -60,12 +60,12 @@ describe("converting a card: USD base is preserved, every price is reviewable", 
 });
 
 describe("publication eligibility for the issuing entity", () => {
-  const lic = { entityName: "ORDIFT STUDIOS (Qatar W.L.L.)", checkedOn: "2026-10-27", keys: ["photography"] };
+  const lic = { jurisdiction: "Qatar", entityName: "ORDIFT STUDIOS (Qatar W.L.L.)", checkedOn: "2026-10-27", keys: ["photography"] };
   it("keeps photography, leaves videography out of the PDF with the reason, records who was checked and when; never re-enables an item", () => {
     const c = applyEligibility(usdCard(), lic);
     expect(c.sections[0].items.map((i) => [i.key, i.included, i.eligibility?.ok])).toEqual([["a", undefined, true], ["b", false, false], ["c", undefined, true]]);
     expect(excludedByEligibility(c)).toEqual(["Personal sessions — Film package: ORDIFT STUDIOS (Qatar W.L.L.) is not currently licensed for: videography."]);
-    expect(c.meta.issuingEntity).toEqual({ name: lic.entityName, checkedOn: "2026-10-27", licensedActivities: ["photography"] });
+    expect(c.meta.issuingEntity).toEqual({ jurisdiction: "Qatar", name: lic.entityName, checkedOn: "2026-10-27", licensedActivities: ["photography"] });
     const again = applyEligibility(c, { ...lic, keys: ["photography", "videography"] }); expect(again.sections[0].items[1].included).toBe(false);   // a left-out item stays out until a person turns it on
   });
   it("a combined photography + film service needs BOTH activities; an unclassified service is never eligible", () => {
@@ -95,7 +95,7 @@ describe("corporate headshots and commercial mappers (selling prices only)", () 
 });
 
 describe("validation: currency, placeholders, eligibility and the allowed-fields guard", () => {
-  const okQar = () => applyEligibility(convertContent(usdCard(), fx), { entityName: "Qatar", checkedOn: "2026-10-27", keys: ["photography"] });
+  const okQar = () => applyEligibility(convertContent(usdCard(), fx), { jurisdiction: "Qatar", entityName: "Qatar", checkedOn: "2026-10-27", keys: ["photography"] });
   it("a QAR card previews as a draft but can never be approved for clients while the currency policy is unapproved — even if it says 'approved'", () => {
     const q = okQar(); expect(validateRateCard(q, "draft", { today: "2026-10-27" }).errors).toEqual([]);
     expect(validateRateCard(q, "approval", { today: "2026-10-27", currencyPolicyApproved: false }).errors.join()).toMatch(/stay proposed \/ indicative until the Founder approves the quotation and payment currency policy/);
@@ -108,11 +108,11 @@ describe("validation: currency, placeholders, eligibility and the allowed-fields
     expect(validateRateCard(q, "approval", { today: "2026-12-30", currencyPolicyApproved: true }).errors.join()).toMatch(/days old/);
   });
   it("placeholder markers anywhere in the text block approval but not drafts", () => {
-    const c = applyEligibility(usdCard(), { entityName: "Q", checkedOn: "2026-10-27", keys: ["photography", "videography"] }); c.conditions[0].text = `${PLACEHOLDER_MARK} to be supplied`;
+    const c = applyEligibility(usdCard(), { jurisdiction: "Qatar", entityName: "Q", checkedOn: "2026-10-27", keys: ["photography", "videography"] }); c.conditions[0].text = `${PLACEHOLDER_MARK} to be supplied`;
     expect(validateRateCard(c, "draft").errors).toEqual([]); expect(validateRateCard(c, "draft").warnings.join()).toMatch(/placeholder wording/); expect(validateRateCard(c, "approval").errors.join()).toMatch(/1 text field\(s\) still contain placeholder wording/);
   });
   it("an included item the entity is not licensed for blocks approval; excluding it clears the block; an all-excluded card is refused", () => {
-    const c = usdCard(); c.meta.issuingEntity = { name: "Q", checkedOn: "2026-10-27", licensedActivities: ["photography"] }; c.sections[0].items[1].eligibility = { ok: false, reason: "not licensed" };
+    const c = usdCard(); c.meta.issuingEntity = { jurisdiction: "Qatar", name: "Q", checkedOn: "2026-10-27", licensedActivities: ["photography"] }; c.sections[0].items[1].eligibility = { ok: false, reason: "not licensed" };
     expect(validateRateCard(c, "approval").errors.join()).toMatch(/not eligible for publication/);
     c.sections[0].items[1].included = false; expect(validateRateCard(c, "approval").errors).toEqual([]);
     c.sections.forEach((s) => s.items.forEach((i) => { i.included = false; })); expect(validateRateCard(c, "draft").errors.join()).toMatch(/nothing to publish/);

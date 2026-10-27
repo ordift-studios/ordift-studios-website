@@ -12,7 +12,7 @@ import { convertContent, DEFAULT_ROUNDING } from "./convert";
 import { PLACEHOLDER_MARK, type RateCardContent } from "./types";
 
 const card = (over: Partial<RateCardContent["meta"]> = {}): RateCardContent => ({
-  meta: { title: "Rate Card", editionLabel: "2026 Edition 1", effectiveDate: "2026-11-01", marketSlug: "ghana", marketName: "Ghana", currency: "USD", conversionPolicy: "none", issuingEntity: { name: "Ordift Studios", checkedOn: "2026-11-01", licensedActivities: ["photography"] }, ...over },
+  meta: { title: "Rate Card", editionLabel: "2026 Edition 1", effectiveDate: "2026-11-01", marketSlug: "ghana", marketName: "Ghana", currency: "USD", conversionPolicy: "none", issuingEntity: { jurisdiction: over.marketSlug === "qatar" ? "Qatar" : "Ghana", name: "Ordift Studios", checkedOn: "2026-11-01", licensedActivities: ["photography"] }, ...over },
   coverImage: "/pdf/cover.jpg",
   sections: [{ key: "ps", title: "Personal sessions", structure: "fixed", items: [{ key: "a", name: "1-hour session", description: "Approved wording.", inclusions: ["10 edited images"], price: { kind: "fixed", amount: 125, unit: "per session" }, source: "selling_rates", activities: ["photography"] }] }],
   conditions: [{ title: "Validity", text: "Approved text." }], contact: [{ label: "Email", value: "x@example.com" }],
@@ -136,5 +136,20 @@ describe("download: only an approved edition whose content still matches its has
     ((ago(h.db.tables.pdf_document_editions, id).content as RateCardContent).sections[0].items[0].price as { amount: number }).amount = 1;   // tampering that bypassed the database guard
     expect(await getApprovedEditionForDownload({ actorUserId: "super", id })).toMatchObject({ ok: false, error: expect.stringMatching(/failed its integrity check/) });
     expect(await getEdition("super", id)).toMatchObject({ ok: true, integrity: "FAILED" });
+  });
+});
+
+describe("Qatar and Ghana are independently approvable", () => {
+  it("approving the Qatar card does not approve, supersede or alter the Ghana card (and the reverse); each market keeps one approved edition", async () => {
+    const q = await draft(card({ marketSlug: "qatar", marketName: "Qatar" })); const g = await draft(card({ marketSlug: "ghana", marketName: "Ghana" }));
+    const base = { actorUserId: "super", clearanceStatement: "cleared by founder", today: "2026-11-01" };
+    expect(await approveEdition({ ...base, id: q })).toMatchObject({ ok: true, supersededEditionId: null });
+    expect(ago(h.db.tables.pdf_document_editions, g).status).toBe("draft");
+    const gBefore = JSON.stringify(ago(h.db.tables.pdf_document_editions, g));
+    expect(await approveEdition({ ...base, id: g })).toMatchObject({ ok: true, supersededEditionId: null });
+    expect(ago(h.db.tables.pdf_document_editions, q)).toMatchObject({ status: "approved" }); expect(JSON.stringify(ago(h.db.tables.pdf_document_editions, g))).not.toBe(gBefore);
+    const q2 = await startNextEdition({ actorUserId: "super", fromId: q, editionLabel: "2026 Edition 2", effectiveDate: "2026-12-01" }); if (!q2.ok) throw new Error(q2.error);
+    expect(await approveEdition({ ...base, id: q2.id, today: "2026-12-01" })).toMatchObject({ ok: true, supersededEditionId: q });
+    expect(ago(h.db.tables.pdf_document_editions, g).status).toBe("approved");   // Ghana untouched by a new Qatar edition
   });
 });

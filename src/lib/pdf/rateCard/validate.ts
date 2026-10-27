@@ -1,4 +1,5 @@
 import { checkConversions } from "./convert";
+import { checkBinding } from "./jurisdictions";
 import { PLACEHOLDER_MARK, type PriceSpec, type RateCardContent } from "./types";
 
 const ISO = /^\d{4}-\d{2}-\d{2}$/;
@@ -12,7 +13,7 @@ export type ValidateOptions = {
 const ALLOWED: Record<string, readonly string[]> = {
   root: ["meta", "coverImage", "intro", "sections", "conditions", "contact"],
   meta: ["title", "subtitle", "editionLabel", "effectiveDate", "marketSlug", "marketName", "currency", "conversionPolicy", "fx", "issuingEntity"],
-  fx: ["currency", "rateToUsd", "effectiveFrom", "source", "rule"], rule: ["kind", "multiple"], issuingEntity: ["entityId", "name", "checkedOn", "licensedActivities"],
+  fx: ["currency", "rateToUsd", "effectiveFrom", "source", "rule"], rule: ["kind", "multiple"], issuingEntity: ["entityId", "jurisdiction", "name", "checkedOn", "licensedActivities", "basis"],
   section: ["key", "title", "intro", "structure", "items", "minimum", "addons", "notes", "customQuotationNote"],
   item: ["key", "name", "description", "specs", "inclusions", "price", "conversion", "tiers", "note", "source", "activities", "included", "eligibility"],
   addon: ["name", "price", "conversion", "note", "activities", "included", "eligibility"], minimum: ["label", "price", "conversion"], tier: ["label", "price", "conversion"],
@@ -86,6 +87,9 @@ export function validateRateCard(c: RateCardContent, mode: "draft" | "approval",
     if (m.conversionPolicy !== "proposed" && m.conversionPolicy !== "approved") errors.push(`A ${m.currency} card must be marked as proposed or approved currency conversion.`);
     if (mode === "approval" && (m.conversionPolicy !== "approved" || opts.currencyPolicyApproved !== true)) errors.push(`${m.currency} figures stay proposed / indicative until the Founder approves the quotation and payment currency policy, so a ${m.currency} card cannot be approved for clients yet.`);
   }
+
+  for (const e of checkBinding({ marketSlug: m.marketSlug, currency: m.currency, entityJurisdiction: m.issuingEntity?.jurisdiction ?? null, hasEntity: !!m.issuingEntity })) errors.push(e);
+  if (m.issuingEntity?.basis) warnings.push(`Licensed activities rest on: ${m.issuingEntity.basis}`);
 
   const pc = placeholderCount(c);
   if (pc > 0) hard.push(`${pc} text field(s) still contain placeholder wording (${PLACEHOLDER_MARK}) that needs Founder-approved text.`);

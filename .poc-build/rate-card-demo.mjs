@@ -27,9 +27,9 @@ var A4 = { w: 595, h: 841 };
 function formatAmount(n) {
   return n.toLocaleString("en-US", { minimumFractionDigits: Number.isInteger(n) ? 0 : 2, maximumFractionDigits: 2 });
 }
-function formatPrice(p, currency) {
+function formatPrice(p, currency2) {
   if (p.kind === "on_request") return { prefix: "", amount: "On request", unit: "" };
-  return { prefix: p.kind === "from" ? "From" : "", amount: `${currency} ${formatAmount(p.amount)}`, unit: p.unit ?? "" };
+  return { prefix: p.kind === "from" ? "From" : "", amount: `${currency2} ${formatAmount(p.amount)}`, unit: p.unit ?? "" };
 }
 var s = StyleSheet.create({
   coverPage: { backgroundColor: BRAND.navy, color: BRAND.offwhite, fontFamily: "Inter" },
@@ -91,19 +91,19 @@ var s = StyleSheet.create({
   watermarkCover: { position: "absolute", top: 280, left: 40, fontFamily: "Fraunces", fontSize: 170, color: "#ffffff", opacity: 0.16, transform: "rotate(-32deg)" },
   draftBar: { fontFamily: "Inter", position: "absolute", top: 22, right: 50, fontSize: 7.5, letterSpacing: 1.3, textTransform: "uppercase", color: BRAND.goldPressed, fontWeight: 600 }
 });
-var priceText = (p, currency) => {
-  const f = formatPrice(p, currency);
+var priceText = (p, currency2) => {
+  const f = formatPrice(p, currency2);
   return [f.prefix, f.amount, f.unit && p.kind !== "on_request" ? f.unit : ""].filter(Boolean).join(" ");
 };
 var fxLine = (c) => {
   const fx = c.meta.fx;
   if (!fx) return null;
-  const rule = fx.rule.kind === "up_to_multiple" ? `rounded up to the next ${c.meta.currency} ${fx.rule.multiple}` : `rounded to the nearest ${c.meta.currency} ${fx.rule.multiple}`;
-  if (c.meta.conversionPolicy === "approved") return `${c.meta.currency} prices are converted from USD at ${fx.rateToUsd} and ${rule}.`;
-  return `Indicative: proposed conversion, not yet approved for client use. ${c.meta.currency} prices are converted from the USD base prices at ${fx.rateToUsd} (${fx.source}, effective ${fx.effectiveFrom}), ${rule}.`;
+  const rule2 = fx.rule.kind === "up_to_multiple" ? `rounded up to the next ${c.meta.currency} ${fx.rule.multiple}` : `rounded to the nearest ${c.meta.currency} ${fx.rule.multiple}`;
+  if (c.meta.conversionPolicy === "approved") return `${c.meta.currency} prices are converted from USD at ${fx.rateToUsd} and ${rule2}.`;
+  return `Indicative: proposed conversion, not yet approved for client use. ${c.meta.currency} prices are converted from the USD base prices at ${fx.rateToUsd} (${fx.source}, effective ${fx.effectiveFrom}), ${rule2}.`;
 };
-function Item({ i, currency }) {
-  const p = formatPrice(i.price, currency);
+function Item({ i, currency: currency2 }) {
+  const p = formatPrice(i.price, currency2);
   return /* @__PURE__ */ jsxs(View, { style: s.item, wrap: !(i.description.length < 450 && i.inclusions.length <= 9), children: [
     /* @__PURE__ */ jsxs(View, { style: s.itemMain, children: [
       /* @__PURE__ */ jsx(Text, { style: s.itemName, children: i.name }),
@@ -115,7 +115,7 @@ function Item({ i, currency }) {
       ] }, n)),
       i.tiers && i.tiers.length ? /* @__PURE__ */ jsx(View, { style: s.tiers, children: i.tiers.map((t) => /* @__PURE__ */ jsxs(View, { style: s.tierRow, children: [
         /* @__PURE__ */ jsx(Text, { style: s.tierLabel, children: t.label }),
-        /* @__PURE__ */ jsx(Text, { style: s.tierPrice, children: priceText(t.price, currency) })
+        /* @__PURE__ */ jsx(Text, { style: s.tierPrice, children: priceText(t.price, currency2) })
       ] }, t.label)) }) : null
     ] }),
     /* @__PURE__ */ jsxs(View, { style: s.itemPrice, children: [
@@ -249,6 +249,30 @@ var EVENT_TIER_LABELS = {
   round_the_clock: "Round-the-Clock"
 };
 
+// src/lib/pdf/rateCard/jurisdictions.ts
+var ISSUING_RULES = {
+  qatar: { jurisdiction: "Qatar", localCurrency: "QAR", rounding: { kind: "up_to_multiple", multiple: 5 }, roundingStatus: "provisional", activityBasis: "registration" },
+  // GHS rounding is a PROPOSAL for the Founder (QAR 5 is not assumed to apply): GHS is about 11 per USD, so the next GHS 10 is a similar fineness (about USD 0.90) to QAR 5 (about USD 1.37).
+  ghana: { jurisdiction: "Ghana", localCurrency: "GHS", rounding: { kind: "up_to_multiple", multiple: 10 }, roundingStatus: "proposed", activityBasis: "jurisdiction_guidance" }
+};
+var GHANA_GUIDANCE_ACTIVITIES = ["photography", "videography"];
+var currencyOptionsFor = (marketSlug) => {
+  const r = ISSUING_RULES[marketSlug];
+  return r ? ["USD", r.localCurrency] : ["USD"];
+};
+var roundingFor = (marketSlug, currency2) => {
+  const r = ISSUING_RULES[marketSlug];
+  return r && r.localCurrency === currency2 ? r.rounding : null;
+};
+function checkBinding(p) {
+  const errs = [];
+  const rule2 = ISSUING_RULES[p.marketSlug];
+  if (!currencyOptionsFor(p.marketSlug).includes(p.currency)) errs.push(rule2 ? `${p.currency} cannot be used for the ${p.marketSlug} market: choose USD or ${rule2.localCurrency}.` : `Only USD base prices are available for the ${p.marketSlug} market.`);
+  if (!rule2 && p.hasEntity) errs.push(`No issuing entity is bound to the ${p.marketSlug} market, so none can be selected for it.`);
+  if (rule2 && p.hasEntity && p.entityJurisdiction !== rule2.jurisdiction) errs.push(`The ${p.marketSlug} market must be issued by the ${rule2.jurisdiction} entity, not the ${p.entityJurisdiction ?? "unknown"} entity.`);
+  return errs;
+}
+
 // src/lib/pdf/rateCard/eligibility.ts
 var UNCLASSIFIED = "unclassified";
 function assessActivities(activities, lic) {
@@ -264,11 +288,19 @@ function applyEligibility(c, lic) {
   };
   return {
     ...c,
-    meta: { ...c.meta, issuingEntity: { ...lic.entityId ? { entityId: lic.entityId } : {}, name: lic.entityName, checkedOn: lic.checkedOn, licensedActivities: [...lic.keys].sort() } },
+    meta: { ...c.meta, issuingEntity: { ...lic.entityId ? { entityId: lic.entityId } : {}, ...lic.jurisdiction ? { jurisdiction: lic.jurisdiction } : {}, name: lic.entityName, checkedOn: lic.checkedOn, licensedActivities: [...lic.keys].sort(), ...lic.basis ? { basis: lic.basis } : {} } },
     sections: c.sections.map((s2) => ({ ...s2, items: s2.items.map(mark), addons: s2.addons?.map(mark) }))
   };
 }
 var excludedByEligibility = (c) => c.sections.flatMap((s2) => [...s2.items.filter((i) => i.eligibility && !i.eligibility.ok).map((i) => `${s2.title} \u2014 ${i.name}: ${i.eligibility?.reason}`), ...(s2.addons ?? []).filter((a) => a.eligibility && !a.eligibility.ok).map((a) => `${s2.title} \u2014 ${a.name}: ${a.eligibility?.reason}`)]);
+function resolveLicensed(marketSlug, jurisdiction, entityName, checkedOn, entityId, verifiedKeys) {
+  const rule2 = ISSUING_RULES[marketSlug];
+  if (rule2?.activityBasis === "jurisdiction_guidance") {
+    const keys = [.../* @__PURE__ */ new Set([...verifiedKeys, ...GHANA_GUIDANCE_ACTIVITIES])];
+    return { entityId, jurisdiction, entityName, checkedOn, keys, basis: "approved Ghana guidance (no activity licence is needed for ordinary photography or videography); the registered nature of business is not recorded on the entity, so the Founder confirms it at approval" };
+  }
+  return { entityId, jurisdiction, entityName, checkedOn, keys: verifiedKeys };
+}
 
 // src/lib/pdf/rateCard/mappers.ts
 var plural = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
@@ -386,13 +418,12 @@ function commercialSection(fees, catalogueBaseUsd, catalogueMinimumUsd, post) {
 
 // src/lib/pdf/rateCard/convert.ts
 var RATE_MAX_AGE_DAYS = 30;
-var DEFAULT_ROUNDING = { kind: "up_to_multiple", multiple: 5 };
 var cents = (n) => Math.round(n * 100) / 100;
-function applyRounding(exact, rule) {
-  const m = rule.multiple;
+function applyRounding(exact, rule2) {
+  const m = rule2.multiple;
   if (!(m > 0)) throw new Error("The rounding multiple must be above zero.");
   const q = exact / m;
-  const r = rule.kind === "up_to_multiple" ? Math.ceil(cents(q * 1e3) / 1e3) : Math.round(q);
+  const r = rule2.kind === "up_to_multiple" ? Math.ceil(cents(q * 1e3) / 1e3) : Math.round(q);
   return cents(r * m);
 }
 function convertUsd(usd, fx) {
@@ -481,7 +512,7 @@ var ALLOWED = {
   meta: ["title", "subtitle", "editionLabel", "effectiveDate", "marketSlug", "marketName", "currency", "conversionPolicy", "fx", "issuingEntity"],
   fx: ["currency", "rateToUsd", "effectiveFrom", "source", "rule"],
   rule: ["kind", "multiple"],
-  issuingEntity: ["entityId", "name", "checkedOn", "licensedActivities"],
+  issuingEntity: ["entityId", "jurisdiction", "name", "checkedOn", "licensedActivities", "basis"],
   section: ["key", "title", "intro", "structure", "items", "minimum", "addons", "notes", "customQuotationNote"],
   item: ["key", "name", "description", "specs", "inclusions", "price", "conversion", "tiers", "note", "source", "activities", "included", "eligibility"],
   addon: ["name", "price", "conversion", "note", "activities", "included", "eligibility"],
@@ -600,6 +631,8 @@ function validateRateCard(c, mode, opts = {}) {
     if (m.conversionPolicy !== "proposed" && m.conversionPolicy !== "approved") errors.push(`A ${m.currency} card must be marked as proposed or approved currency conversion.`);
     if (mode === "approval" && (m.conversionPolicy !== "approved" || opts.currencyPolicyApproved !== true)) errors.push(`${m.currency} figures stay proposed / indicative until the Founder approves the quotation and payment currency policy, so a ${m.currency} card cannot be approved for clients yet.`);
   }
+  for (const e of checkBinding({ marketSlug: m.marketSlug, currency: m.currency, entityJurisdiction: m.issuingEntity?.jurisdiction ?? null, hasEntity: !!m.issuingEntity })) errors.push(e);
+  if (m.issuingEntity?.basis) warnings.push(`Licensed activities rest on: ${m.issuingEntity.basis}`);
   const pc = placeholderCount(c);
   if (pc > 0) hard.push(`${pc} text field(s) still contain placeholder wording (${PLACEHOLDER_MARK}) that needs Founder-approved text.`);
   const unknown = unknownKeys(c);
@@ -614,7 +647,8 @@ function validateRateCard(c, mode, opts = {}) {
 }
 
 // scripts/rate-card-demo.tsx
-var [rowsPath, out, opacity] = [process.argv[2], process.argv[3], Number(process.argv[4] ?? 0.7)];
+var [rowsPath, out, opacity, market, currency] = [process.argv[2], process.argv[3], Number(process.argv[4] ?? 0.7), process.argv[5] ?? "qatar", process.argv[6] ?? "QAR"];
+var rule = ISSUING_RULES[market];
 var j = JSON.parse(fs.readFileSync(rowsPath, "utf8"));
 var first = (rows, key) => {
   const seen = /* @__PURE__ */ new Set();
@@ -647,14 +681,14 @@ sections.push(corporateSection(j.corpProducts, j.corpTiers, j.corpMinimum, j.cor
 sections.push(commercialSection(j.comFees, j.comBase, j.comMin, j.comPost));
 for (const s2 of sections) s2.customQuotationNote = `${PLACEHOLDER_MARK} Wording for requirements that do not fit a standard package.`;
 var draft = {
-  meta: { title: "Rate Card", subtitle: "Qatar \u2014 demonstration draft. Prices are proposed QAR conversions of the current USD selling rates and are not approved.", editionLabel: "DEMO draft", effectiveDate: (/* @__PURE__ */ new Date()).toISOString().slice(0, 10), marketSlug: "qatar", marketName: "Qatar / GCC", currency: "USD", conversionPolicy: "none" },
+  meta: { title: "Rate Card", subtitle: `${rule.jurisdiction} \u2014 demonstration draft. Prices are proposed ${currency} conversions of the current USD selling rates and are not approved.`, editionLabel: "DEMO draft", effectiveDate: (/* @__PURE__ */ new Date()).toISOString().slice(0, 10), marketSlug: market, marketName: market === "qatar" ? "Qatar / GCC" : "Ghana / West Africa", currency: "USD", conversionPolicy: "none" },
   coverImage: path.join(process.cwd(), "public/pdf/cover-placeholder.jpg"),
   sections,
   conditions: [{ title: "Prices", text: `${PLACEHOLDER_MARK} Approved wording on currency, validity and what the prices include.` }, { title: "Tax and deposits", text: `${PLACEHOLDER_MARK} Approved wording on tax, deposits and payment schedule.` }, { title: "Usage and delivery", text: `${PLACEHOLDER_MARK} Approved wording on usage rights and delivery timelines.` }],
   contact: [{ label: "Website", value: "ordiftstudios.com" }, { label: "Email", value: `${PLACEHOLDER_MARK} contact email` }, { label: "WhatsApp", value: `${PLACEHOLDER_MARK} booking number` }]
 };
-draft = applyEligibility(draft, { entityName: "ORDIFT STUDIOS (Qatar W.L.L.)", checkedOn: draft.meta.effectiveDate, keys: ["photography"] });
-draft = convertContent(draft, { currency: "QAR", rateToUsd: j.fx.rateToUsd, effectiveFrom: j.fx.effectiveFrom, source: j.fx.reason || "Governed exchange-rate table (QAR)", rule: DEFAULT_ROUNDING });
+draft = applyEligibility(draft, resolveLicensed(market, rule.jurisdiction, market === "qatar" ? "ORDIFT STUDIOS (Qatar W.L.L.)" : "Ordift Studios (Ghana)", draft.meta.effectiveDate, void 0, market === "qatar" ? ["photography"] : []));
+draft = convertContent(draft, { currency, rateToUsd: j.fx.rateToUsd, effectiveFrom: j.fx.effectiveFrom, source: j.fx.reason || `Governed exchange-rate table (${currency})`, rule: roundingFor(market, currency) });
 var v = validateRateCard(draft, "draft", { today: draft.meta.effectiveDate });
 console.log("draft errors:", v.errors.length, "| warnings:", v.warnings.length, "| conversions:", conversionReview(draft).length, "| excluded:", excludedByEligibility(draft).length);
 fs.writeFileSync(out.replace(/\.pdf$/, ".json"), JSON.stringify(draft, null, 1));

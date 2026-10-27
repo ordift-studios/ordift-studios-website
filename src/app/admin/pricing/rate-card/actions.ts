@@ -5,6 +5,7 @@ import { getCurrentUser, isSuperAdmin } from "@/lib/portal/roles";
 import { approveEdition, createDraft, getApprovedEditionForDownload, startNextEdition, updateDraft } from "@/lib/pdf/rateCard/editions";
 import { buildDraftFromSellingRates } from "@/lib/pdf/rateCard/loaders";
 import { getContractingEntityStanding } from "@/lib/organization/entityRegistrations";
+import { checkBinding, currencyOptionsFor } from "@/lib/pdf/rateCard/jurisdictions";
 import type { RateCardContent } from "@/lib/pdf/rateCard/types";
 
 // Rate card editions: Super Admin only. Every action re-checks the role and every rule is applied again inside the edition module; nothing here publishes or sends anything.
@@ -20,7 +21,7 @@ const ALL = ["photography", "videography", "graphic_design", "talent_management"
 
 export async function buildDraftAction(input: { marketSlug: string; entityId: string; currency: string }): Promise<Res<{ content: RateCardContent }>> {
   const a = await actor(); if ("error" in a) return { ok: false, error: a.error };
-  if (!["USD", "QAR"].includes(input.currency)) return { ok: false, error: "Choose USD or QAR." };
+  if (!currencyOptionsFor(input.marketSlug).includes(input.currency)) return { ok: false, error: checkBinding({ marketSlug: input.marketSlug, currency: input.currency, hasEntity: false })[0] ?? "That currency is not available for this market." };
   const r = await buildDraftFromSellingRates({ marketSlug: input.marketSlug, entityId: input.entityId || undefined, today: today(), currency: input.currency });
   return r.ok ? { ok: true, content: r.draft } : r;
 }

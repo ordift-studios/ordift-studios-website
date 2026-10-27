@@ -20,7 +20,7 @@ export default async function RateCardPage({ searchParams }: { searchParams: Pro
     <main style={{ maxWidth: 1180, margin: "24px auto", padding: "0 16px" }}>
       <p style={{ margin: "0 0 8px" }}><Link href="/admin/pricing" style={{ color: "#8e7736", fontWeight: 600 }}>← Pricing</Link></p>
       <RateCardAdmin
-        today={today} editions={editions} markets={markets.map((m) => ({ slug: m.slug, name: m.name }))} entities={cands.candidates.map((c) => ({ id: c.entityId, name: c.name }))}
+        today={today} editions={editions} markets={markets.map((m) => ({ slug: m.slug, name: m.name }))} entities={cands.candidates.map((c) => ({ id: c.entityId, name: c.name, jurisdiction: c.jurisdiction }))}
         selected={selected && selected.ok ? { edition: selected.edition, integrity: selected.integrity } : null} selectedError={selected && !selected.ok ? selected.error : null}
       />
     </main>
