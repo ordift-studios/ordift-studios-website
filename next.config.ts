@@ -56,7 +56,17 @@ const SANITY_MEDIA_ORIGIN = "https://cdn.sanity.io";
 // Report-Only violation on /studio; /studio-only, not needed elsewhere.
 const SANITY_BRIDGE_ORIGIN = "https://core.sanity-cdn.com";
 
-function enforcingCsp(): { main: string; studio: string } | null {
+// The rate card builder renders its PDF in the browser. Verified one permission at a time in a real browser against a production-mode build (removing any
+// one of them breaks the PDF):
+//   - script-src 'wasm-unsafe-eval' — @react-pdf's layout engine (yoga-layout) compiles an inlined WebAssembly module. This permits WebAssembly only;
+//                                     it does NOT permit eval() / new Function() (that would be 'unsafe-eval', which is never added).
+//   - worker-src blob:              — pdfkit's compression (fflate) runs in a blob: Web Worker.
+//   - frame-src blob:               — the preview is a blob: PDF shown in an iframe.
+// connect-src is deliberately NOT widened: the engine also tries to fetch its WebAssembly from a data: URL, is refused, and falls back to compiling it directly.
+// All three are granted ONLY on /admin/pricing/rate-card (see headers() below) — never site-wide.
+const RATE_CARD_ROUTE = "/admin/pricing/rate-card";
+
+function enforcingCsp(): { main: string; studio: string; rateCard: string } | null {
   // Enforcing mode applies to both staging and Production builds.
   // Anything else (local dev, a future third SITE_ENV value) falls
   // through to the SECURITY_HEADERS-only behavior below, unchanged.
@@ -73,14 +83,14 @@ function enforcingCsp(): { main: string; studio: string } | null {
 
   const sharedConnectSrc = ["'self'", supabaseOrigin, supabaseWsOrigin, sentryOrigin, TURNSTILE_ORIGIN];
 
-  const mainCsp = buildCsp({
+  const buildMainCsp = (pdfEngine: boolean) => buildCsp({
     "default-src": ["'self'"],
     // No nonce (out of scope for this pass) — 'unsafe-inline' is the
     // documented Next.js fallback for a static, non-nonce CSP. Kept
     // deliberately so this Report-Only pass surfaces genuinely missing
     // third-party origins rather than drowning in expected violations
     // from Next's own inline hydration scripts.
-    "script-src": ["'self'", "'unsafe-inline'", TURNSTILE_ORIGIN],
+    "script-src": ["'self'", "'unsafe-inline'", pdfEngine ? "'wasm-unsafe-eval'" : null, TURNSTILE_ORIGIN],
     "style-src": ["'self'", "'unsafe-inline'"],
     // supabaseOrigin (2026-08-24, Meet the Team) — the staff-portraits
     // Storage bucket serves public portrait images from the Supabase
@@ -99,13 +109,15 @@ function enforcingCsp(): { main: string; studio: string } | null {
     // portfolio/journal gallery items actually use today (TD-004
     // investigation: the schema's embed field is freeform, so this is
     // a known, separately-tracked gap, not solved here).
-    "frame-src": ["'self'", TURNSTILE_ORIGIN, "https://www.youtube.com", "https://www.youtube-nocookie.com", "https://player.vimeo.com"],
+    ...(pdfEngine ? { "worker-src": ["'self'", "blob:"] } : {}),
+    "frame-src": ["'self'", pdfEngine ? "blob:" : null, TURNSTILE_ORIGIN, "https://www.youtube.com", "https://www.youtube-nocookie.com", "https://player.vimeo.com"],
     "object-src": ["'none'"],
     "base-uri": ["'self'"],
     "form-action": ["'self'"],
     // Mirrors the existing X-Frame-Options: SAMEORIGIN.
     "frame-ancestors": ["'self'"],
   });
+  const mainCsp = buildMainCsp(false);
 
   const sanityApiOrigin = process.env.NEXT_PUBLIC_SANITY_PROJECT_ID
     ? "https://api.sanity.io https://*.api.sanity.io"
@@ -139,7 +151,7 @@ function enforcingCsp(): { main: string; studio: string } | null {
     "frame-ancestors": ["'self'"],
   });
 
-  return { main: mainCsp, studio: studioCsp };
+  return { main: mainCsp, studio: studioCsp, rateCard: buildMainCsp(true) };
 }
 
 const nextConfig: NextConfig = {
@@ -154,8 +166,15 @@ const nextConfig: NextConfig = {
     const studioHeaders = csp
       ? [...SECURITY_HEADERS, { key: "Content-Security-Policy", value: csp.studio }]
       : SECURITY_HEADERS;
+    const rateCardHeaders = csp
+      ? [...SECURITY_HEADERS, { key: "Content-Security-Policy", value: csp.rateCard }]
+      : SECURITY_HEADERS;
+    // Exactly one CSP header must apply to any path (two would be intersected). The lookahead excludes only the exact rate card route and its sub-paths,
+    // so a look-alike such as /admin/pricing/rate-cards still falls under the main rule.
     return [
-      { source: "/((?!studio).*)", headers: mainHeaders },
+      { source: `/((?!studio|${RATE_CARD_ROUTE.slice(1)}(?:/|$)).*)`, headers: mainHeaders },
+      // ":path*" also matches the bare route itself (zero further segments) — a separate exact-path rule would send a second, intersecting CSP header.
+      { source: `${RATE_CARD_ROUTE}/:path*`, headers: rateCardHeaders },
       { source: "/studio", headers: studioHeaders },
       { source: "/studio/:path*", headers: studioHeaders },
     ];
