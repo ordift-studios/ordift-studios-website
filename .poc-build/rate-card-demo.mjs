@@ -84,7 +84,7 @@ var s = StyleSheet.create({
   addNote: { fontFamily: "Inter", fontSize: 8.4, color: BRAND.inkMuted, marginTop: 1.5, lineHeight: 1.4 },
   addPrice: { fontFamily: "Inter", fontSize: 10, fontWeight: 600, color: BRAND.navy, textAlign: "right", width: "30%" },
   secNote: { fontFamily: "Inter", fontSize: 9, lineHeight: 1.55, color: BRAND.inkMuted, marginTop: 8 },
-  custom: { marginTop: 16, padding: 11, borderWidth: 0.8, borderColor: BRAND.gold, backgroundColor: "#fbf8ef" },
+  custom: { marginTop: 10, marginBottom: 2, padding: 9, borderWidth: 0.8, borderColor: BRAND.gold, backgroundColor: "#fbf8ef" },
   customText: { fontFamily: "Inter", fontSize: 9.4, lineHeight: 1.55, color: BRAND.ink },
   fxBanner: { fontFamily: "Inter", fontSize: 8.2, color: BRAND.goldPressed, marginTop: 8, lineHeight: 1.45, fontWeight: 500 },
   watermark: { position: "absolute", top: 300, left: 70, fontFamily: "Fraunces", fontSize: 150, color: "#0b1220", opacity: 0.055, transform: "rotate(-32deg)" },
@@ -99,12 +99,12 @@ var fxLine = (c) => {
   const fx = c.meta.fx;
   if (!fx) return null;
   const rule = fx.rule.kind === "up_to_multiple" ? `rounded up to the next ${c.meta.currency} ${fx.rule.multiple}` : `rounded to the nearest ${c.meta.currency} ${fx.rule.multiple}`;
-  const status = c.meta.conversionPolicy === "approved" ? "" : "Indicative: proposed conversion, not yet approved for client use. ";
-  return `${status}${c.meta.currency} prices are converted from the USD base prices at ${fx.rateToUsd} (${fx.source}, effective ${fx.effectiveFrom}), ${rule}.`;
+  if (c.meta.conversionPolicy === "approved") return `${c.meta.currency} prices are converted from USD at ${fx.rateToUsd} and ${rule}.`;
+  return `Indicative: proposed conversion, not yet approved for client use. ${c.meta.currency} prices are converted from the USD base prices at ${fx.rateToUsd} (${fx.source}, effective ${fx.effectiveFrom}), ${rule}.`;
 };
 function Item({ i, currency }) {
   const p = formatPrice(i.price, currency);
-  return /* @__PURE__ */ jsxs(View, { style: s.item, wrap: false, children: [
+  return /* @__PURE__ */ jsxs(View, { style: s.item, wrap: !(i.description.length < 450 && i.inclusions.length <= 9), children: [
     /* @__PURE__ */ jsxs(View, { style: s.itemMain, children: [
       /* @__PURE__ */ jsx(Text, { style: s.itemName, children: i.name }),
       i.specs && i.specs.length ? /* @__PURE__ */ jsx(Text, { style: s.specs, children: i.specs.join("  \xB7  ") }) : null,
@@ -159,6 +159,7 @@ function Section({ sec, c, status }) {
     ] }),
     fx ? /* @__PURE__ */ jsx(Text, { style: s.fxBanner, children: fx }) : null,
     sec.intro ? /* @__PURE__ */ jsx(Text, { style: s.intro, children: sec.intro }) : null,
+    sec.customQuotationNote ? /* @__PURE__ */ jsx(View, { style: s.custom, wrap: false, children: /* @__PURE__ */ jsx(Text, { style: s.customText, children: sec.customQuotationNote }) }) : null,
     items.map((i) => /* @__PURE__ */ jsx(Item, { i, currency: c.meta.currency }, i.key)),
     sec.minimum ? /* @__PURE__ */ jsxs(View, { style: s.minBox, wrap: false, children: [
       /* @__PURE__ */ jsx(Text, { style: s.minLabel, children: sec.minimum.label }),
@@ -174,8 +175,7 @@ function Section({ sec, c, status }) {
         /* @__PURE__ */ jsx(Text, { style: s.addPrice, children: priceText(a.price, c.meta.currency) })
       ] }, a.name))
     ] }) : null,
-    (sec.notes ?? []).map((n, k) => /* @__PURE__ */ jsx(Text, { style: s.secNote, children: n }, k)),
-    sec.customQuotationNote ? /* @__PURE__ */ jsx(View, { style: s.custom, wrap: false, children: /* @__PURE__ */ jsx(Text, { style: s.customText, children: sec.customQuotationNote }) }) : null
+    (sec.notes ?? []).map((n, k) => /* @__PURE__ */ jsx(Text, { style: s.secNote, children: n }, k))
   ] });
 }
 function RateCardDocument({ content: c, status, logoWhite, coverPanelOpacity = 0.8 }) {
@@ -264,7 +264,7 @@ function applyEligibility(c, lic) {
   };
   return {
     ...c,
-    meta: { ...c.meta, issuingEntity: { name: lic.entityName, checkedOn: lic.checkedOn, licensedActivities: [...lic.keys].sort() } },
+    meta: { ...c.meta, issuingEntity: { ...lic.entityId ? { entityId: lic.entityId } : {}, name: lic.entityName, checkedOn: lic.checkedOn, licensedActivities: [...lic.keys].sort() } },
     sections: c.sections.map((s2) => ({ ...s2, items: s2.items.map(mark), addons: s2.addons?.map(mark) }))
   };
 }
@@ -293,7 +293,7 @@ var ACTIVITIES = { photography: ["photography"], film: ["videography"], photogra
 var MODE_LABEL = { photography: "Photography", film: "Film", photography_film: "Photography and film" };
 function weddingEventSection(category, mode, rates, deliverables) {
   const labels = category === "wedding" ? WEDDING_TIER_LABELS : EVENT_TIER_LABELS;
-  const items = rates.filter((r) => r.serviceMode === mode).map((r) => {
+  const items = rates.filter((r) => r.serviceMode === mode).sort((a, b) => a.priceUsd - b.priceUsd).map((r) => {
     const d = deliverables.find((x) => x.tierSlug === r.tierSlug && x.serviceMode === mode);
     const inc = [];
     if (d) {
@@ -481,7 +481,7 @@ var ALLOWED = {
   meta: ["title", "subtitle", "editionLabel", "effectiveDate", "marketSlug", "marketName", "currency", "conversionPolicy", "fx", "issuingEntity"],
   fx: ["currency", "rateToUsd", "effectiveFrom", "source", "rule"],
   rule: ["kind", "multiple"],
-  issuingEntity: ["name", "checkedOn", "licensedActivities"],
+  issuingEntity: ["entityId", "name", "checkedOn", "licensedActivities"],
   section: ["key", "title", "intro", "structure", "items", "minimum", "addons", "notes", "customQuotationNote"],
   item: ["key", "name", "description", "specs", "inclusions", "price", "conversion", "tiers", "note", "source", "activities", "included", "eligibility"],
   addon: ["name", "price", "conversion", "note", "activities", "included", "eligibility"],

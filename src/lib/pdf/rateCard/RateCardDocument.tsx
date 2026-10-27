@@ -76,10 +76,11 @@ const fxLine = (c: RateCardContent): string | null => {
   return `Indicative: proposed conversion, not yet approved for client use. ${c.meta.currency} prices are converted from the USD base prices at ${fx.rateToUsd} (${fx.source}, effective ${fx.effectiveFrom}), ${rule}.`;
 };
 
+// A short item never splits across pages; a very long one may (so a long description does not strand half a page).
 function Item({ i, currency }: { i: RateCardItem; currency: string }) {
   const p = formatPrice(i.price, currency);
   return (
-    <View style={s.item} wrap={!(i.description.length < 450 && i.inclusions.length <= 9)}>   {/* short items never split across pages; a very long one may */}
+    <View style={s.item} wrap={!(i.description.length < 450 && i.inclusions.length <= 9)}>
       <View style={s.itemMain}>
         <Text style={s.itemName}>{i.name}</Text>
         {i.specs && i.specs.length ? <Text style={s.specs}>{i.specs.join("  ·  ")}</Text> : null}
