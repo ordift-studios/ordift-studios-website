@@ -2,7 +2,7 @@
 import type { Addon, Eligibility, RateCardContent, RateCardItem } from "./types";
 
 export const UNCLASSIFIED = "unclassified";
-export type LicensedActivities = { entityName: string; checkedOn: string; keys: string[] };
+export type LicensedActivities = { entityId?: string; entityName: string; checkedOn: string; keys: string[] };
 
 export function assessActivities(activities: string[] | undefined, lic: LicensedActivities): Eligibility {
   if (!activities || activities.length === 0) return { ok: true };
@@ -16,7 +16,7 @@ export function applyEligibility(c: RateCardContent, lic: LicensedActivities): R
   const mark = <T extends RateCardItem | Addon>(x: T): T => { const e = assessActivities(x.activities, lic); return { ...x, eligibility: e, included: e.ok ? x.included : false }; };
   return {
     ...c,
-    meta: { ...c.meta, issuingEntity: { name: lic.entityName, checkedOn: lic.checkedOn, licensedActivities: [...lic.keys].sort() } },
+    meta: { ...c.meta, issuingEntity: { ...(lic.entityId ? { entityId: lic.entityId } : {}), name: lic.entityName, checkedOn: lic.checkedOn, licensedActivities: [...lic.keys].sort() } },
     sections: c.sections.map((s) => ({ ...s, items: s.items.map(mark), addons: s.addons?.map(mark) })),
   };
 }

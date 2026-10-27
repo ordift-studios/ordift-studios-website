@@ -49,7 +49,7 @@ export async function buildDraftFromSellingRates(o: DraftOptions): Promise<{ ok:
     const st = await getContractingEntityStanding(o.entityId, o.today, ALL_ACTIVITIES);
     if (!st) return { ok: false, error: "The issuing entity was not found." };
     const keys = st.assessment.activities.filter((a) => a.state === "licensed" || a.state === "listed_on_registration").map((a) => a.key);
-    draft = applyEligibility(draft, { entityName: st.entity.legal_name ?? st.entity.name, checkedOn: o.today, keys });
+    draft = applyEligibility(draft, { entityId: o.entityId, entityName: st.entity.legal_name ?? st.entity.name, checkedOn: o.today, keys });
   }
   if (o.currency && o.currency !== "USD") {
     const r = await loadGovernedRate(o.currency);

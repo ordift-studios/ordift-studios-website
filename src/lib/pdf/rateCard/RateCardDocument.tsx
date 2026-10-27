@@ -79,7 +79,7 @@ const fxLine = (c: RateCardContent): string | null => {
 function Item({ i, currency }: { i: RateCardItem; currency: string }) {
   const p = formatPrice(i.price, currency);
   return (
-    <View style={s.item} wrap={false}>
+    <View style={s.item} wrap={!(i.description.length < 450 && i.inclusions.length <= 9)}>   {/* short items never split across pages; a very long one may */}
       <View style={s.itemMain}>
         <Text style={s.itemName}>{i.name}</Text>
         {i.specs && i.specs.length ? <Text style={s.specs}>{i.specs.join("  ·  ")}</Text> : null}

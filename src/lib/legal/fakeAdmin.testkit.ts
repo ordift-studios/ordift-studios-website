@@ -1,7 +1,7 @@
 // Minimal in-memory stand-in for the Supabase admin client, for unit tests of server-side registry actions. Supports the call shapes the
 // legal-registry code uses: select/eq/in/is/ilike/order/limit/maybeSingle/single, insert, update (with the same filters), and storage.download.
 type Row = Record<string, unknown>;
-export type FakeDb = { tables: Record<string, Row[]>; storage: Record<string, Uint8Array>; failInsert?: Set<string>; writes: { table: string; op: "insert" | "update"; values: Row; matched?: number }[] };
+export type FakeDb = { tables: Record<string, Row[]>; storage: Record<string, Uint8Array>; failInsert?: Set<string>; rpcHandlers?: Record<string, (args: Record<string, unknown>, db: FakeDb) => { data: unknown; error: { message: string; code?: string } | null }>; writes: { table: string; op: "insert" | "update"; values: Row; matched?: number }[] };
 
 export function makeFakeDb(tables: Record<string, Row[]> = {}, storage: Record<string, Uint8Array> = {}): FakeDb {
   return { tables: Object.fromEntries(Object.entries(tables).map(([k, v]) => [k, v.map((r) => ({ ...r }))])), storage, writes: [] };
@@ -53,6 +53,7 @@ export function fakeAdmin(db: FakeDb) {
   return {
     from,
     storage: { from: () => ({ download: async (path: string) => (db.storage[path] ? { data: new Blob([db.storage[path] as BlobPart]), error: null } : { data: null, error: { message: "missing" } }), upload: async (path: string, body: Buffer) => { if (db.storage[path]) return { error: { message: "exists" } }; db.storage[path] = new Uint8Array(body); return { error: null }; } }) },
+    rpc: async (name: string, args: Record<string, unknown>) => (db.rpcHandlers?.[name] ? db.rpcHandlers[name](args, db) : { data: null, error: { message: `no rpc ${name}` } }),
     auth: { admin: { getUserById: async () => ({ data: { user: { email: "kwaku@example.test" } } }) } },
   };
 }
