@@ -4,7 +4,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { createElement } from "react";
 
 vi.mock("./actions", () => ({
-  confirmApprovalNoticeAction: vi.fn(), confirmFundingAction: vi.fn(), recordPermitAction: vi.fn(), uploadEntityDocumentAction: vi.fn(), viewEntityDocumentAction: vi.fn(), recordRegistrationAction: vi.fn(), recordRenewalAction: vi.fn(), setSignatoryCapacityAction: vi.fn(), linkSignatoryToFounderAction: vi.fn(),
+  confirmApprovalNoticeAction: vi.fn(), confirmFundingAction: vi.fn(), recordPermitAction: vi.fn(), recordExpenseAction: vi.fn(), uploadEntityDocumentAction: vi.fn(), viewEntityDocumentAction: vi.fn(), recordRegistrationAction: vi.fn(), recordRenewalAction: vi.fn(), setSignatoryCapacityAction: vi.fn(), linkSignatoryToFounderAction: vi.fn(),
 }));
 import { EntityRegistryPanels } from "./EntityRegistryPanels";
 import { trackCompliance } from "@/lib/organization/entityRegistry";
@@ -128,5 +128,42 @@ describe("Qatar Commercial Permit panel: the record form and what an issued perm
     const html = page([cr, card, issued("2026-10-26T09:00:00Z")], [permitDoc]);
     expect(html).toContain("254551"); expect(html).toContain("Establishment Card");
     expect(html.match(/Commercial Registration \(CR\)/g)!.length).toBeGreaterThan(0);
+  });
+});
+
+describe("the expense entry form uses a receipt already in the vault and never presents a recorded cost as a bank payment, payable, loan or capital", () => {
+  const doc = (id: string, over: object = {}) => ({ id, documentType: "government_receipt", filename: `${id}.jpg`, sha256: id.padEnd(64, "e"), sizeBytes: 2048, issuedOn: "2026-10-26", expiresOn: null, issuingAuthority: "Single Window", relation: null, relatedDocumentId: null, replacedByDocumentId: null, uploadedAt: "2026-10-27T08:00:00Z", pageNumber: null, pageCount: null, hasFile: true, notes: null, ...over });
+  const exp = (over: object = {}) => ({ id: "x1", expenseDate: "2026-10-26", amount: 500, currency: "QAR", description: "Commercial Permit issuance fee", receiptNumber: "R-500", receiptTotal: 500, payerAsShown: "Applicant", fundingSourceStatus: "founder_personal", fundingSourceNote: "Founder statement", accountingTreatment: "to_be_confirmed", sourceDocumentId: "used", reimbursementIntent: "not_reimbursable", paymentMethod: "card", relatedReference: "Commercial License 345520", notes: "A note", ...over });
+  const render = (documents: unknown[], expenses: unknown[]) => renderToStaticMarkup(createElement(EntityRegistryPanels, {
+    entityId: "q", tracked: [], registrations: [], signatories: [], documents, expenses, canonicalPermitPending: false, status: { entityVerification: "verified", employerCapable: false, documentCount: documents.length }, jurisdictionName: "Qatar",
+  } as never));
+
+  it("offers only receipts in the vault that do not already back an expense (and never a duplicate-of or non-receipt document)", () => {
+    const html = render([doc("fresh"), doc("used"), doc("dupe", { relation: "exact_duplicate_of" }), doc("cr", { documentType: "commercial_registration" })], [exp()]);
+    const form = html.slice(html.indexOf("Choose the receipt already in the vault"));
+    expect(form).toContain("fresh.jpg"); expect(form).not.toContain("used.jpg"); expect(form).not.toContain("dupe.jpg"); expect(form).not.toContain("cr.jpg");
+  });
+  it("shows every field the entry needs, as separate controls: funding, reimbursement intention, payment method, related reference, notes", () => {
+    const html = render([doc("fresh")], []);
+    for (const n of ["sourceDocumentId", "receiptNumber", "requestReference", "receiptDate", "issuingAuthority", "category", "relatedReference", "currency", "printedTotal", "lines", "payerAsShown", "paymentMethod", "fundingSourceStatus", "reimbursementIntent", "fundingSourceNote", "notes"]) expect(html).toContain(`name="${n}"`);
+    expect(html).toContain("Record Expense");
+    expect(html).toContain("non-reimbursable contribution (not a loan)");
+  });
+  it("states that recording a cost creates no bank transaction, payable, reimbursement, loan or journal and leaves share capital alone", () => {
+    const html = render([doc("fresh")], []);
+    expect(html).toContain("does not create a bank transaction, payable, reimbursement, loan or journal, and does not change registered share capital");
+  });
+  it("tells the Founder-funded story plainly on a recorded cost: personal funds, reimbursement not required (not a loan), accounting still to be confirmed", () => {
+    const html = render([doc("used")], [exp()]);
+    expect(html).toContain("Paid personally by the Founder");
+    expect(html).toContain("Reimbursement: not required — non-reimbursable contribution (not a loan)");
+    expect(html).toContain("Accounting treatment: to be confirmed");
+    expect(html).toContain("Related: Commercial License 345520");
+    expect(html).not.toMatch(/Founder loan|director loan|share capital increase|increase in registered share capital/i);
+  });
+  it("with every vault receipt already used, the form is disabled and says why", () => {
+    const html = render([doc("used")], [exp()]);
+    expect(html).toContain("Every receipt in the vault already backs a recorded expense");
+    expect(html).toMatch(/<button[^>]*disabled[^>]*>Record Expense<\/button>/);
   });
 });

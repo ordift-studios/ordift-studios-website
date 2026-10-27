@@ -1,8 +1,9 @@
 "use client";
 
 import { useActionState } from "react";
-import { confirmApprovalNoticeAction, confirmFundingAction, linkSignatoryToFounderAction, recordPermitAction, recordRegistrationAction, recordRenewalAction, setSignatoryCapacityAction, uploadEntityDocumentAction, viewEntityDocumentAction, type ActionState } from "./actions";
+import { confirmApprovalNoticeAction, confirmFundingAction, linkSignatoryToFounderAction, recordExpenseAction, recordPermitAction, recordRegistrationAction, recordRenewalAction, setSignatoryCapacityAction, uploadEntityDocumentAction, viewEntityDocumentAction, type ActionState } from "./actions";
 import { ENTITY_DOCUMENT_TYPES, entityDocumentTypeLabel, type TrackedItem, type TrackedState } from "@/lib/organization/entityRegistry";
+import { EXPENSE_CATEGORIES, FUNDING_CHOICES, PAYMENT_METHODS, REIMBURSEMENT_CHOICES } from "@/lib/organization/expenseEntry";
 
 export type RegistryDocView = { id: string; documentType: string; filename: string | null; sha256: string | null; sizeBytes: number | null; issuedOn: string | null; expiresOn: string | null; issuingAuthority: string | null; relation: string | null; relatedDocumentId: string | null; replacedByDocumentId: string | null; notes: string | null; uploadedAt: string };
 export type RegistrationView = { id: string; kind: string; label: string; status: string; identifier: string | null; issuedOn: string | null; expiresOn: string | null; note: string | null; facts: Record<string, unknown>; verifiedAt: string | null };
@@ -11,7 +12,7 @@ export type SignatoryView = { id: string; fullName: string; position: string; au
 export type RenewalView = { id: string; coversFrom: string; coversTo: string; status: "founder_confirmed" | "official_verified" | "lapsed"; basis: string; statement: string | null; officialReference: string | null; nextDueOn: string | null; verifiedAt: string | null };
 const CAPACITY_LABEL: Record<string, string> = { sole_proprietor: "Sole proprietor", owner: "Owner", director: "Director", manager: "Manager", authorised_signatory: "Authorised signatory" };
 const RENEWAL_LABEL: Record<RenewalView["status"], string> = { founder_confirmed: "Founder-confirmed — official verification pending", official_verified: "Officially verified", lapsed: "Recorded as lapsed" };
-export type ExpenseView = { id: string; expenseDate: string; amount: number; currency: string; description: string; receiptNumber: string; receiptTotal: number; payerAsShown: string | null; fundingSourceStatus: string; fundingSourceNote: string | null; accountingTreatment: string };
+export type ExpenseView = { id: string; expenseDate: string; amount: number; currency: string; description: string; receiptNumber: string; receiptTotal: number; payerAsShown: string | null; fundingSourceStatus: string; fundingSourceNote: string | null; accountingTreatment: string; sourceDocumentId?: string | null; reimbursementIntent?: string; paymentMethod?: string | null; relatedReference?: string | null; notes?: string | null };
 
 const input = "rounded-lg border border-black/15 px-2 py-1.5 font-sans text-body-small";
 const button = "justify-self-start font-sans text-body-small font-semibold px-4 py-2 rounded-md bg-ordift-navy-950 text-white disabled:opacity-50";
@@ -114,6 +115,51 @@ function FundingForm({ entityId, receiptNumber }: { entityId: string; receiptNum
       </select>
       <input name="note" required placeholder="How you know (e.g. bank statement line)" className={`min-w-64 ${input}`} />
       <button type="submit" disabled={pending} className={button}>{pending ? "Saving…" : "Confirm"}</button>
+      <Feedback state={state} pending={pending} />
+    </form>
+  );
+}
+
+const REIMBURSEMENT_LABEL: Record<string, string> = { to_be_confirmed: "Reimbursement: not decided yet", not_applicable: "Reimbursement: not applicable", not_reimbursable: "Reimbursement: not required — non-reimbursable contribution (not a loan)", reimbursement_expected: "Reimbursement: expected (an intention only; no payable exists)" };
+
+// Records ONE receipt-backed cost against a receipt ALREADY in this entity's vault (nothing is uploaded twice). Server rules apply again on submit.
+function ExpenseForm({ entityId, receiptDocs }: { entityId: string; receiptDocs: RegistryDocView[] }) {
+  const [state, action, pending] = useActionState<ActionState, FormData>(recordExpenseAction, null);
+  return (
+    <form action={action} className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+      <input type="hidden" name="entityId" value={entityId} />
+      <select name="sourceDocumentId" required defaultValue="" className={`sm:col-span-2 ${input}`}>
+        <option value="" disabled>Choose the receipt already in the vault…</option>
+        {receiptDocs.map((d) => <option key={d.id} value={d.id}>{d.filename ?? d.id} (uploaded {new Date(d.uploadedAt).toLocaleDateString()})</option>)}
+      </select>
+      <input name="receiptNumber" required placeholder="Receipt / transaction number, as printed" className={input} />
+      <input name="requestReference" placeholder="Request / reference number (optional)" className={input} />
+      <label className="font-sans text-caption text-ordift-ink-muted">Transaction date<input name="receiptDate" type="date" required className={`block w-full ${input}`} /></label>
+      <input name="issuingAuthority" required placeholder="Issued by (for example Single Window)" className={input} />
+      <select name="category" required defaultValue="" className={input}>
+        <option value="" disabled>Expense category…</option>
+        {EXPENSE_CATEGORIES.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
+      </select>
+      <input name="relatedReference" placeholder="Related licence / registration (for example Commercial License 345520)" className={input} />
+      <input name="currency" required maxLength={3} defaultValue="QAR" placeholder="Currency" className={`uppercase ${input}`} />
+      <input name="printedTotal" required inputMode="decimal" placeholder="Receipt grand total, as printed" className={input} />
+      <textarea name="lines" required rows={3} placeholder={"Receipt lines, one per line:\nCODE | description | amount\n(a zero-fee line may be listed; it is not recorded as a cost)"} className={`sm:col-span-2 ${input}`} />
+      <input name="payerAsShown" placeholder="Payer exactly as the receipt shows (optional)" className={input} />
+      <select name="paymentMethod" defaultValue="" className={input}>
+        <option value="">Payment method (optional)</option>
+        {PAYMENT_METHODS.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
+      </select>
+      <select name="fundingSourceStatus" required defaultValue="to_confirm" className={input}>
+        {FUNDING_CHOICES.map((c) => <option key={c.value} value={c.value}>Funded by: {c.label}</option>)}
+      </select>
+      <select name="reimbursementIntent" required defaultValue="to_be_confirmed" className={input}>
+        {REIMBURSEMENT_CHOICES.map((c) => <option key={c.value} value={c.value}>Reimbursement: {c.label}</option>)}
+      </select>
+      <input name="fundingSourceNote" placeholder="How the funding source is known (required once funding is stated)" className={`sm:col-span-2 ${input}`} />
+      <textarea name="notes" rows={2} placeholder="Notes for the reviewer (optional)" className={`sm:col-span-2 ${input}`} />
+      <p className="sm:col-span-2 font-sans text-caption text-ordift-ink-muted">Recording a cost does not create a bank transaction, payable, reimbursement, loan or journal, and does not change registered share capital. The accounting treatment stays “to be confirmed” for review.</p>
+      <button type="submit" disabled={pending || receiptDocs.length === 0} className={button}>{pending ? "Recording…" : "Record Expense"}</button>
+      {receiptDocs.length === 0 && <p className="sm:col-span-2 font-sans text-caption text-ordift-ink-muted">Every receipt in the vault already backs a recorded expense. Upload the new receipt above first (document type “Government payment receipt”).</p>}
       <Feedback state={state} pending={pending} />
     </form>
   );
@@ -349,12 +395,16 @@ export function EntityRegistryPanels({
                   <p className="font-sans text-body-small text-ordift-ink"><strong>Receipt {rn}</strong> — {first.expenseDate} — {first.currency} {first.receiptTotal.toFixed(2)}{first.payerAsShown ? ` — payer shown: ${first.payerAsShown}` : ""}</p>
                   <ul className="space-y-0.5">{lines.map((l) => <li key={l.id} className="font-sans text-caption text-ordift-ink-muted">· {l.description} — {l.currency} {l.amount.toFixed(2)}</li>)}</ul>
                   <p className="font-sans text-caption text-ordift-ink-muted">{FUNDING_LABEL[first.fundingSourceStatus] ?? first.fundingSourceStatus}{first.fundingSourceNote ? ` — ${first.fundingSourceNote}` : ""} · Accounting treatment: {first.accountingTreatment.replace(/_/g, " ")}</p>
+                  {(first.reimbursementIntent || first.paymentMethod || first.relatedReference || first.notes) && (
+                    <p className="font-sans text-caption text-ordift-ink-muted">{[first.reimbursementIntent ? REIMBURSEMENT_LABEL[first.reimbursementIntent] ?? first.reimbursementIntent : null, first.paymentMethod ? `Paid by ${first.paymentMethod.replace(/_/g, " ")}` : null, first.relatedReference ? `Related: ${first.relatedReference}` : null, first.notes ? `Note: ${first.notes}` : null].filter(Boolean).join(" · ")}</p>
+                  )}
                   {first.fundingSourceStatus === "to_confirm" && <FundingForm entityId={entityId} receiptNumber={rn} />}
                 </div>
               );
             })}
           </div>
         )}
+        <ExpenseForm entityId={entityId} receiptDocs={documents.filter((d) => d.documentType === "government_receipt" && !d.relation && !!d.sha256 && !expenses.some((e) => e.sourceDocumentId === d.id))} />
         <p className="font-sans text-caption text-ordift-ink-muted">These are cost records backed by a receipt. They are not bank transactions, payables, reimbursements or payment instructions, and nothing here moves money.</p>
       </section>
     </div>

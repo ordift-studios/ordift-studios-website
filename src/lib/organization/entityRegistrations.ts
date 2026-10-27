@@ -1,6 +1,7 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { logActivity } from "@/lib/admin/activityLog";
 import { isSuperAdminId } from "@/lib/organization/authority";
+import { EXPENSE_CATEGORY_VALUES, PAYMENT_METHOD_VALUES, validIsoDate, validateFunding } from "@/lib/organization/expenseEntry";
 import { assessEntityForQuotation, type ActivityFact, type EntityAssessment, type EntityFacts, type RequirementRow } from "@/lib/organization/jurisdictionRequirements";
 import { assessContractingEligibility, suggestContractingEntity, reconcileReceipt, type ContractingCandidate, type Eligibility, type KnownDocument, type ReceiptLine, type RegistrationFact, type RegistrationKind, type RegistrationStatus, checkDuplicate, sha256OfBytes, ENTITY_DOCUMENT_TYPES } from "@/lib/organization/entityRegistry";
 
@@ -410,23 +411,39 @@ export async function addVaultDocument(p: {
 }
 
 // ------------------------------------------------------------------ expenses
-export type EntityExpense = { id: string; expenseDate: string; amount: number; currency: string; category: string; lineCode: string; description: string; receiptNumber: string; receiptTotal: number; issuingAuthority: string; requestReference: string | null; sourceDocumentId: string | null; payerAsShown: string | null; fundingSourceStatus: string; fundingSourceNote: string | null; accountingTreatment: string; status: string };
-const EXP_SELECT = "id, expense_date, amount, currency, category, line_code, description, receipt_number, receipt_total, issuing_authority, request_reference, source_document_id, payer_as_shown, funding_source_status, funding_source_note, accounting_treatment, status";
+export type EntityExpense = { id: string; expenseDate: string; amount: number; currency: string; category: string; lineCode: string; description: string; receiptNumber: string; receiptTotal: number; issuingAuthority: string; requestReference: string | null; sourceDocumentId: string | null; payerAsShown: string | null; fundingSourceStatus: string; fundingSourceNote: string | null; accountingTreatment: string; status: string; reimbursementIntent: string; paymentMethod: string | null; relatedReference: string | null; notes: string | null };
+const EXP_SELECT = "id, expense_date, amount, currency, category, line_code, description, receipt_number, receipt_total, issuing_authority, request_reference, source_document_id, payer_as_shown, funding_source_status, funding_source_note, accounting_treatment, status, reimbursement_intent, payment_method, related_reference, notes";
 export async function listEntityExpenses(entityId: string, actorUserId: string): Promise<EntityExpense[]> {
   if (!(await isSuperAdminId(actorUserId))) return [];
   const { data } = await createAdminClient().from("entity_expenses").select(EXP_SELECT).eq("employing_entity_id", entityId).order("expense_date").order("created_at");
-  return (data ?? []).map((r) => ({ id: r.id, expenseDate: r.expense_date, amount: Number(r.amount), currency: r.currency, category: r.category, lineCode: r.line_code, description: r.description, receiptNumber: r.receipt_number, receiptTotal: Number(r.receipt_total), issuingAuthority: r.issuing_authority, requestReference: r.request_reference, sourceDocumentId: r.source_document_id, payerAsShown: r.payer_as_shown, fundingSourceStatus: r.funding_source_status, fundingSourceNote: r.funding_source_note, accountingTreatment: r.accounting_treatment, status: r.status }));
+  return (data ?? []).map((r) => ({ id: r.id, expenseDate: r.expense_date, amount: Number(r.amount), currency: r.currency, category: r.category, lineCode: r.line_code, description: r.description, receiptNumber: r.receipt_number, receiptTotal: Number(r.receipt_total), issuingAuthority: r.issuing_authority, requestReference: r.request_reference, sourceDocumentId: r.source_document_id, payerAsShown: r.payer_as_shown, fundingSourceStatus: r.funding_source_status, fundingSourceNote: r.funding_source_note, accountingTreatment: r.accounting_treatment, status: r.status, reimbursementIntent: r.reimbursement_intent, paymentMethod: r.payment_method, relatedReference: r.related_reference, notes: r.notes }));
 }
 
 // Records every payable line of ONE receipt, all or nothing: the lines must add up to the printed total, the receipt must be a document in
 // this entity's vault, and a receipt already recorded is refused (so two copies of the same receipt can never double-count). The payer is
-// stored as the receipt shows it; the funding source stays "to confirm" until a Super Admin confirms it.
+// stored as the receipt shows it. The funding source defaults to "to confirm" until a Super Admin confirms it; the entry form may state it at
+// recording time (with its basis) together with the REIMBURSEMENT INTENTION, which is only a recorded intention — never a payable, loan or payment.
+// The accounting treatment is never set here: it stays "to be confirmed".
 export async function recordEntityReceipt(p: {
   entityId: string; receiptNumber: string; receiptDate: string; issuingAuthority: string; requestReference?: string | null; currency: string; printedTotal: number;
   lines: ReceiptLine[]; category: string; payerAsShown: string | null; sourceDocumentId: string; actorUserId: string;
+  fundingSourceStatus?: string; fundingSourceNote?: string | null; reimbursementIntent?: string; paymentMethod?: string | null; relatedReference?: string | null; notes?: string | null;
+  today?: string;
 }): Promise<Result<{ recorded: number; total: number }>> {
   if (!(await isSuperAdminId(p.actorUserId))) return NOT_ALLOWED;
   if (!p.receiptNumber.trim()) return { ok: false, error: "Enter the receipt number printed on the receipt." };
+  if (!validIsoDate(p.receiptDate)) return { ok: false, error: "Enter the transaction date as YYYY-MM-DD." };
+  if (p.receiptDate > (p.today ?? new Date().toISOString().slice(0, 10))) return { ok: false, error: "The transaction date cannot be in the future." };
+  if (!/^[A-Z]{3}$/.test(p.currency)) return { ok: false, error: "Enter the currency as a three-letter code (for example QAR)." };
+  if (!(p.printedTotal > 0)) return { ok: false, error: "Enter the receipt total printed on the receipt (greater than zero)." };
+  if (!EXPENSE_CATEGORY_VALUES.includes(p.category)) return { ok: false, error: "Choose an expense category." };
+  if (p.issuingAuthority.trim().length < 2) return { ok: false, error: "Enter who issued the receipt." };
+  const funding = p.fundingSourceStatus ?? "to_confirm";
+  const reimbursement = p.reimbursementIntent ?? "to_be_confirmed";
+  const fundingError = validateFunding({ funding, reimbursement, fundingNote: p.fundingSourceNote ?? null });
+  if (fundingError) return { ok: false, error: fundingError };
+  if (p.paymentMethod && !PAYMENT_METHOD_VALUES.includes(p.paymentMethod)) return { ok: false, error: "Choose a payment method from the list." };
+  if ((p.notes ?? "").length > 2000) return { ok: false, error: "The notes are too long (2000 characters at most)." };
   const rec = reconcileReceipt(p.lines, p.printedTotal);
   if (!rec.ok) return { ok: false, error: `The lines add up to ${rec.sum.toFixed(2)} but the receipt total is ${p.printedTotal.toFixed(2)} (difference ${rec.difference.toFixed(2)}). Nothing was recorded.` };
   if (rec.payable.length === 0) return { ok: false, error: "The receipt has no payable lines." };
@@ -437,15 +454,27 @@ export async function recordEntityReceipt(p: {
   if (doc.document_type !== "government_receipt") return { ok: false, error: "The selected document is not classed as a payment receipt." };
   const { data: existing } = await db.from("entity_expenses").select("id").eq("employing_entity_id", p.entityId).eq("receipt_number", p.receiptNumber.trim()).limit(1);
   if ((existing ?? []).length) return { ok: false, error: "This receipt is already recorded for this entity, so it was not recorded again." };
+  // The same stored document or the same request reference can only back ONE receipt: a second entry would be the same cost under another number.
+  const { data: sameDoc } = await db.from("entity_expenses").select("id").eq("employing_entity_id", p.entityId).eq("source_document_id", p.sourceDocumentId).limit(1);
+  if ((sameDoc ?? []).length) return { ok: false, error: "This stored document already backs a recorded receipt, so it was not recorded again." };
+  const requestRef = (p.requestReference ?? "").trim() || null;
+  if (requestRef) {
+    const { data: sameReq } = await db.from("entity_expenses").select("id").eq("employing_entity_id", p.entityId).eq("request_reference", requestRef).limit(1);
+    if ((sameReq ?? []).length) return { ok: false, error: `Request ${requestRef} already has a recorded receipt for this entity, so it was not recorded again.` };
+  }
 
+  const confirmedAt = new Date().toISOString();
   const rows = rec.payable.map((l) => ({
     employing_entity_id: p.entityId, expense_date: p.receiptDate, amount: l.amount, currency: p.currency, category: p.category, line_code: l.code, description: l.description,
-    receipt_number: p.receiptNumber.trim(), receipt_total: p.printedTotal, issuing_authority: p.issuingAuthority, request_reference: p.requestReference ?? null,
+    receipt_number: p.receiptNumber.trim(), receipt_total: p.printedTotal, issuing_authority: p.issuingAuthority, request_reference: requestRef,
     source_document_id: p.sourceDocumentId, payer_as_shown: p.payerAsShown, recorded_by: p.actorUserId,
+    funding_source_status: funding, funding_source_note: funding === "to_confirm" ? null : (p.fundingSourceNote ?? "").trim(),
+    funding_confirmed_by: funding === "to_confirm" ? null : p.actorUserId, funding_confirmed_at: funding === "to_confirm" ? null : confirmedAt,
+    reimbursement_intent: reimbursement, payment_method: p.paymentMethod || null, related_reference: (p.relatedReference ?? "").trim() || null, notes: (p.notes ?? "").trim() || null,
   }));
   const { error } = await db.from("entity_expenses").insert(rows);
   if (error) return { ok: false, error: error.code === "23505" ? "A line of this receipt is already recorded." : error.message };
-  await logActivity({ actorUserId: p.actorUserId, action: "entity_expense.receipt_recorded", entityType: "employing_entity", entityId: p.entityId, metadata: { receiptNumber: p.receiptNumber.trim(), lines: rows.length, total: rec.sum, currency: p.currency } });
+  await logActivity({ actorUserId: p.actorUserId, action: "entity_expense.receipt_recorded", entityType: "employing_entity", entityId: p.entityId, metadata: { receiptNumber: p.receiptNumber.trim(), lines: rows.length, total: rec.sum, currency: p.currency, category: p.category, fundingSourceStatus: funding, reimbursementIntent: reimbursement, sourceDocumentId: p.sourceDocumentId } });
   return { ok: true, recorded: rows.length, total: rec.sum };
 }
 

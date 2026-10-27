@@ -22,8 +22,14 @@ export function fakeAdmin(db: FakeDb) {
     };
     const run = () => {
       if (mode === "insert" && db.failInsert?.has(table)) return { data: null, error: { message: "simulated write failure" } };
-      if (mode === "insert") { const row: Row = { id: payload.id ?? `${table}-${rows().length + 1}`, ...payload };
-      if (!row.created_at) row.created_at = new Date(Date.UTC(2026, 9, 30, 10, 0, rows().length)).toISOString(); rows().push(row); db.writes.push({ table, op: "insert", values: payload }); return { data: [row], error: null }; }
+      if (mode === "insert") {
+        const made: Row[] = [];
+        for (const one of Array.isArray(payload) ? (payload as Row[]) : [payload]) { // supabase-js accepts one row or an array of rows
+          const row: Row = { id: one.id ?? `${table}-${rows().length + 1}`, ...one };
+          if (!row.created_at) row.created_at = new Date(Date.UTC(2026, 9, 30, 10, 0, rows().length)).toISOString(); rows().push(row); made.push(row);
+        }
+        db.writes.push({ table, op: "insert", values: payload }); return { data: made, error: null };
+      }
       if (mode === "update") { const m = matched(); m.forEach((r) => Object.assign(r, payload)); db.writes.push({ table, op: "update", values: payload, matched: m.length }); return { data: m, error: null }; }
       return { data: matched(), error: null };
     };

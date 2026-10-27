@@ -4,7 +4,9 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { getCurrentUser, isSuperAdmin } from "@/lib/portal/roles";
 import { recordEmployingEntitySensitiveDetails, getEmployingEntityDocumentSignedUrl } from "@/lib/organization/legalEntities";
-import { addVaultDocument, chooseContractingEntity, confirmApprovalNoticeDate, confirmExpenseFunding, parsePermitActivities, recordCommercialPermit, recordEntityRegistration, linkSignatoryToFounderIdentity, recordRenewalConfirmation, setSignatoryLegalCapacity, type LegalCapacity } from "@/lib/organization/entityRegistrations";
+import { addVaultDocument, chooseContractingEntity, confirmApprovalNoticeDate, confirmExpenseFunding, parsePermitActivities, recordCommercialPermit, recordEntityReceipt, recordEntityRegistration, linkSignatoryToFounderIdentity, recordRenewalConfirmation, setSignatoryLegalCapacity, type LegalCapacity } from "@/lib/organization/entityRegistrations";
+
+import { parseReceiptLines } from "@/lib/organization/expenseEntry";
 
 export type ActionState = { ok: boolean; error?: string } | null;
 
@@ -80,6 +82,30 @@ export async function confirmApprovalNoticeAction(_prev: ActionState, formData: 
   const entityId = String(formData.get("entityId") ?? "");
   if (!entityId) return { ok: false, error: "Invalid request." };
   const result = await confirmApprovalNoticeDate({ entityId, approvalNoticeDate: String(formData.get("approvalNoticeDate") ?? ""), source: String(formData.get("source") ?? ""), actorUserId: actor.id });
+  if (!result.ok) return { ok: false, error: result.error };
+  revalidatePath(`/admin/organization/legal-entities/${entityId}`);
+  return { ok: true };
+}
+
+// Records ONE receipt-backed cost of ONE entity from the admin form. Every rule is enforced again on the server (recordEntityReceipt): the form is a convenience, not a gate.
+// Super Admin only. Creates no bank transaction, payable, reimbursement, loan or journal; the accounting treatment stays "to be confirmed".
+export async function recordExpenseAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  const actor = await requireSuperAdminActor();
+  if ("error" in actor) return { ok: false, error: actor.error };
+  const entityId = String(formData.get("entityId") ?? "");
+  if (!entityId) return { ok: false, error: "Invalid request." };
+  const parsed = parseReceiptLines(String(formData.get("lines") ?? ""));
+  if (!parsed.ok) return { ok: false, error: parsed.error };
+  const text = (k: string) => String(formData.get(k) ?? "").trim();
+  const total = Number(text("printedTotal").replace(/,/g, ""));
+  if (!Number.isFinite(total)) return { ok: false, error: "Enter the receipt total as a number." };
+  const result = await recordEntityReceipt({
+    entityId, sourceDocumentId: text("sourceDocumentId"), receiptNumber: text("receiptNumber"), receiptDate: text("receiptDate"), issuingAuthority: text("issuingAuthority"),
+    requestReference: text("requestReference") || null, currency: text("currency").toUpperCase(), printedTotal: total, lines: parsed.lines, category: text("category"),
+    payerAsShown: text("payerAsShown") || null, fundingSourceStatus: text("fundingSourceStatus") || "to_confirm", fundingSourceNote: text("fundingSourceNote") || null,
+    reimbursementIntent: text("reimbursementIntent") || "to_be_confirmed", paymentMethod: text("paymentMethod") || null, relatedReference: text("relatedReference") || null,
+    notes: text("notes") || null, actorUserId: actor.id,
+  });
   if (!result.ok) return { ok: false, error: result.error };
   revalidatePath(`/admin/organization/legal-entities/${entityId}`);
   return { ok: true };
