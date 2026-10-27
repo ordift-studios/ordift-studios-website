@@ -3,6 +3,7 @@
 // shown but NOT editable: they are the single source of truth, and a hand-typed price would silently disagree with quotations.
 import { useEffect, useMemo, useRef, useState } from "react";
 import { conversionReview } from "../convert";
+import { coverOf, coverWording } from "../cover";
 import { CURRENCY_POLICY } from "../policy";
 import type { EditionStatus, RateCardContent, RateCardItem, RateCardSection } from "../types";
 import { validateRateCard } from "../validate";
@@ -15,7 +16,9 @@ const lab: React.CSSProperties = { display: "block", marginTop: 8, fontSize: 13 
 
 export function priceLine(p: RateCardItem["price"], cur: string): string { return p.kind === "on_request" ? "On request" : `${p.kind === "from" ? "From " : ""}${cur} ${p.amount.toLocaleString("en-US")}${p.unit ? ` ${p.unit}` : ""}`; }
 
-export default function RateCardEditor({ content, onChange, readOnly, status, today, toolbar, filename }: { content: RateCardContent; onChange: (c: RateCardContent) => void; readOnly: boolean; status: EditionStatus; today: string; toolbar?: React.ReactNode; filename: string }) {
+export type CoverUpload = (file: File) => Promise<{ ok: true; url: string; label: string } | { ok: false; error: string }>;
+
+export default function RateCardEditor({ content, onChange, readOnly, status, today, toolbar, filename, uploadCover }: { content: RateCardContent; onChange: (c: RateCardContent) => void; readOnly: boolean; status: EditionStatus; today: string; toolbar?: React.ReactNode; filename: string; uploadCover?: CoverUpload }) {
   const [preview, setPreview] = useState<string | null>(null);
   const [info, setInfo] = useState("");
   const urlRef = useRef<string | null>(null);
@@ -56,7 +59,39 @@ export default function RateCardEditor({ content, onChange, readOnly, status, to
               <label key={k} style={lab}>{l}<input style={inp} disabled={ro} value={(content.meta[k] as string | undefined) ?? ""} onChange={(e) => onChange({ ...content, meta: { ...content.meta, [k]: e.target.value } })} /></label>
             ))}
             <p style={{ marginBottom: 0, color: "#555" }}>Market: <strong>{content.meta.marketName}</strong> · Currency: <strong>{content.meta.currency}</strong>{content.meta.conversionPolicy === "proposed" ? " (proposed conversion — indicative)" : ""}{content.meta.issuingEntity ? ` · Issuing entity: ${content.meta.issuingEntity.name} (checked ${content.meta.issuingEntity.checkedOn})` : ""}</p>
-            <label style={lab}>Cover image (path or URL — a non-client Ordift image chosen by the Founder)<input style={inp} disabled={ro} value={content.coverImage} onChange={(e) => onChange({ ...content, coverImage: e.target.value })} /></label>
+            <div style={{ borderTop: "1px solid #eee", marginTop: 12, paddingTop: 8 }}>
+              <strong>Cover</strong>
+              <p style={{ color: "#555", fontSize: 13, margin: "4px 0" }}>Wording on the cover (taken from the issuing entity&apos;s verified activities, not typed): <strong>{coverWording(content).descriptor ?? "none yet — choose the issuing entity"}</strong> · <strong>{coverWording(content).edition}</strong></p>
+              <p style={{ color: "#555", fontSize: 13, margin: "4px 0" }}>Photograph: <strong id="cover-photo-label">{content.coverImage ? (coverOf(content).photoLabel ?? content.coverImage) : "none chosen"}</strong></p>
+              <p id="cover-public-notice" style={{ margin: "8px 0 0", padding: "8px 10px", background: "#fbf8ef", border: "1px solid #bfa14a", borderRadius: 4, fontSize: 13 }}>
+                <strong>Uploaded photographs are publicly reachable.</strong> A cover photograph is stored as an image asset on Ordift&apos;s image service. It is not listed or indexed, but anyone who has its exact address can open it, and that address is kept in the draft and in every approved edition. Upload only photographs Ordift is content to have publicly reachable — never a client&apos;s private or unreleased photograph.
+              </p>
+              {content.meta.issuingEntity?.basis ? <p id="cover-basis-notice" style={{ margin: "8px 0 0", fontSize: 13, color: "#5b3b00" }}><strong>Verification still needed.</strong> The service wording above rests on: {content.meta.issuingEntity.basis}. That is guidance, not independent verification of the entity&apos;s registered scope; it is confirmed by the Founder at approval.</p> : null}
+              {uploadCover && !ro ? (
+                <label style={lab}>Replace the cover photograph (JPEG, PNG or WebP; use the original, unretouched photograph and a clean master without a watermark where one exists)
+                  <input id="cover-file" type="file" accept="image/jpeg,image/png,image/webp" onChange={async (e) => {
+                    const f = e.target.files?.[0]; e.target.value = ""; if (!f) return;
+                    setInfo("Uploading the cover photograph…"); const r = await uploadCover(f);
+                    if (!r.ok) { setInfo(r.error); return; }
+                    onChange({ ...content, coverImage: r.url, cover: { ...coverOf(content), photoLabel: r.label, cleared: false, clearedNote: "" } });   // a new photograph always has to be cleared again
+                    setInfo("Cover photograph uploaded. Confirm the clearance below, then preview.");
+                  }} />
+                </label>
+              ) : null}
+              <label style={lab}>Which part of the photograph the full-page crop keeps: {Math.round(coverOf(content).focusY * 100)}% (0 = top, 100 = bottom)
+                <input id="cover-focus" type="range" min={0} max={100} step={5} disabled={ro} value={Math.round(coverOf(content).focusY * 100)} onChange={(e) => onChange({ ...content, cover: { ...coverOf(content), focusY: Number(e.target.value) / 100 } })} style={{ width: "100%" }} />
+              </label>
+              {content.meta.marketSlug === "ghana" ? (
+                <label style={lab}>Cover style
+                  <select id="cover-variant" style={inp} disabled={ro} value={coverOf(content).variant} onChange={(e) => onChange({ ...content, cover: { ...coverOf(content), variant: e.target.value === "wedding" ? "wedding" : "standard" } })}>
+                    <option value="standard">Standard (default)</option><option value="wedding">Wedding variation (Ghana only; cover only — not a wedding rate card)</option>
+                  </select>
+                </label>
+              ) : null}
+              <label style={{ ...lab, display: "flex", gap: 6, alignItems: "flex-start" }}><input id="cover-cleared" type="checkbox" disabled={ro || !content.coverImage} checked={coverOf(content).cleared === true} onChange={(e) => onChange({ ...content, cover: { ...coverOf(content), cleared: e.target.checked } })} /><span>Ordift may use this photograph on a client-facing rate card (the people shown and their permissions are cleared), and I understand that an uploaded photograph is publicly reachable at its address</span></label>
+              <label style={lab}>What the clearance rests on<input id="cover-cleared-note" style={inp} disabled={ro} value={coverOf(content).clearedNote ?? ""} onChange={(e) => onChange({ ...content, cover: { ...coverOf(content), clearedNote: e.target.value } })} /></label>
+              {!uploadCover && !ro ? <label style={lab}>Cover photograph (local development: a /pdf/ path)<input id="cover-path" style={inp} value={content.coverImage} onChange={(e) => onChange({ ...content, coverImage: e.target.value })} /></label> : null}
+            </div>
             <label style={lab}>Booking page introduction<textarea style={inp} rows={2} disabled={ro} value={content.intro ?? ""} onChange={(e) => onChange({ ...content, intro: e.target.value })} /></label>
           </div>
           {content.sections.map((sec, si) => (

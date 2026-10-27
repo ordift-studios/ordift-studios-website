@@ -13,7 +13,7 @@ import { PLACEHOLDER_MARK, type RateCardContent } from "./types";
 
 const card = (over: Partial<RateCardContent["meta"]> = {}): RateCardContent => ({
   meta: { title: "Rate Card", editionLabel: "2026 Edition 1", effectiveDate: "2026-11-01", marketSlug: "ghana", marketName: "Ghana", currency: "USD", conversionPolicy: "none", issuingEntity: { jurisdiction: over.marketSlug === "qatar" ? "Qatar" : "Ghana", name: "Ordift Studios", checkedOn: "2026-11-01", licensedActivities: ["photography"] }, ...over },
-  coverImage: "/pdf/cover.jpg",
+  coverImage: "/pdf/cover.jpg", cover: { variant: "standard", focusY: 0.5, cleared: true, clearedNote: "Founder's own statement" },
   sections: [{ key: "ps", title: "Personal sessions", structure: "fixed", items: [{ key: "a", name: "1-hour session", description: "Approved wording.", inclusions: ["10 edited images"], price: { kind: "fixed", amount: 125, unit: "per session" }, source: "selling_rates", activities: ["photography"] }] }],
   conditions: [{ title: "Validity", text: "Approved text." }], contact: [{ label: "Email", value: "x@example.com" }],
 });

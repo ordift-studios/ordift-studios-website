@@ -2,7 +2,9 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import RateCardEditor from "@/lib/pdf/rateCard/ui/RateCardEditor";
+import RateCardEditor, { type CoverUpload } from "@/lib/pdf/rateCard/ui/RateCardEditor";
+import { DEFAULT_COVER } from "@/lib/pdf/rateCard/cover";
+import { compressImageFile } from "@/lib/media/clientImageCompress";
 import { renderRateCardPdf, saveBlob } from "@/lib/pdf/rateCard/ui/pdfClient";
 import type { EditionRecord, EditionSummary } from "@/lib/pdf/rateCard/editions";
 import type { EditionStatus, RateCardContent } from "@/lib/pdf/rateCard/types";
@@ -34,9 +36,20 @@ export default function RateCardAdmin({ today, editions, markets, entities, sele
     setMsg("Building a draft from the selling-rate tables…");
     const r = await buildDraftAction({ marketSlug: market, entityId: entity, currency });
     if (!r.ok) { setMsg(r.error); return; }
-    const c = { ...r.content, coverImage: "/pdf/cover-placeholder.jpg" }; setContent(c);
+    const c = { ...r.content, coverImage: "/pdf/cover-placeholder.jpg", cover: { ...DEFAULT_COVER } }; setContent(c);
     setMsg(`Draft built: ${c.sections.length} categories. Placeholder wording is marked [PLACEHOLDER]; it is not saved until you press Save.`);
   }
+  // Stores the chosen photograph as an image asset (Super Admin only) and keeps its immutable address in the draft. Photographs over the platform's request limit are resized in the browser first.
+  const uploadCover: CoverUpload = async (file) => {
+    try {
+      const small = await compressImageFile(file);
+      const body = new FormData(); body.append("file", small);
+      const res = await fetch("/api/admin/pricing/rate-card/cover", { method: "POST", body });
+      const j = (await res.json().catch(() => null)) as { ok?: boolean; url?: string; error?: string } | null;
+      if (!res.ok || !j?.ok || !j.url) return { ok: false, error: `The cover photograph could not be uploaded (${j?.error ?? res.status}).` };
+      return { ok: true, url: j.url, label: file.name };
+    } catch { return { ok: false, error: "The cover photograph could not be uploaded." }; }
+  };
   async function save() {
     if (!content) return;
     if (!ed) { const r = await saveNewDraftAction(content); if (!r.ok) { setMsg(r.error); return; } router.push(`/admin/pricing/rate-card?id=${r.id}`); return; }
@@ -82,7 +95,7 @@ export default function RateCardAdmin({ today, editions, markets, entities, sele
         {ed.status === "approved" ? <button id="download-final" style={{ ...btn, marginTop: 8 }} onClick={downloadFinal}>Download final PDF</button> : null}
         <div style={{ marginTop: 8 }}><input aria-label="New edition label" placeholder="New edition label" style={inp} value={nextLabel} onChange={(e) => setNextLabel(e.target.value)} /> <button style={btn2} onClick={nextEdition}>Start a new edition from this one</button></div></div> : null}
       {content ? (
-        <RateCardEditor content={content} onChange={setContent} readOnly={frozen} status={status} today={today} filename={`Ordift-Studios-Rate-Card-DRAFT-${content.meta.marketSlug}.pdf`}
+        <RateCardEditor content={content} onChange={setContent} readOnly={frozen} status={status} today={today} uploadCover={uploadCover} filename={`Ordift-Studios-Rate-Card-DRAFT-${content.meta.marketSlug}.pdf`}
           toolbar={!frozen ? <><button id="save-btn" style={btn2} onClick={save}>{ed ? "Save draft" : "Save as new draft"}</button></> : null} />
       ) : <p>Build a draft above, or open an edition.</p>}
       {ed && !frozen ? (

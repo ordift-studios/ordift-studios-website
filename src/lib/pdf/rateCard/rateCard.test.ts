@@ -11,7 +11,7 @@ import type { RateCardContent, RateCardItem } from "./types";
 
 const real = (over: Partial<RateCardItem> = {}): RateCardItem => ({ key: "k", name: "Real package", description: "Approved wording.", inclusions: ["Two hours"], price: { kind: "fixed", amount: 120, unit: "per session" }, source: "manual", ...over });
 const approvable = (): RateCardContent => ({
-  meta: { title: "Rate Card", editionLabel: "2026 Edition 1", effectiveDate: "2026-11-01", marketSlug: "ghana", marketName: "Ghana", currency: "USD", issuingEntity: { jurisdiction: "Ghana", name: "Ordift Studios", checkedOn: "2026-11-01", licensedActivities: ["photography"] } }, coverImage: "/pdf/cover.jpg",
+  meta: { title: "Rate Card", editionLabel: "2026 Edition 1", effectiveDate: "2026-11-01", marketSlug: "ghana", marketName: "Ghana", currency: "USD", issuingEntity: { jurisdiction: "Ghana", name: "Ordift Studios", checkedOn: "2026-11-01", licensedActivities: ["photography"] } }, coverImage: "/pdf/cover.jpg", cover: { variant: "standard", focusY: 0.5, cleared: true, clearedNote: "Founder's own statement" },
   sections: [{ key: "s", title: "Sessions", structure: "fixed", items: [real()] }], conditions: [{ title: "Validity", text: "Approved text." }], contact: [{ label: "Email", value: "x@example.com" }],
 });
 

@@ -193,6 +193,8 @@ export const SUPER_ADMIN_ONLY_ACTIONS = new Set<string>([
   "payee_profile.created",
   "payee_profile.status_changed",
   "payee.classification_corrected",
+  // Rate card cover photographs are uploaded by Super Admin only (the builder is Super Admin only).
+  "rate_card.cover_uploaded",
 ]);
 
 export const ADMIN_TIER_ACTIONS = new Set<string>([

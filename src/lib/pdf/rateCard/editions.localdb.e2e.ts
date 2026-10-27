@@ -30,7 +30,7 @@ const pgFails = (q: string) => { try { sql(q); return ""; } catch (e) { return S
 const must = <T extends { ok: boolean }>(r: T): Extract<T, { ok: true }> => { if (!r.ok) throw new Error(`expected ok, got ${JSON.stringify(r)}`); return r as Extract<T, { ok: true }>; };
 const mustFail = <T extends { ok: boolean }>(r: T): string => { expect(r.ok).toBe(false); return (r as unknown as { error?: string }).error ?? ""; };
 const card = (market: string, label: string): RateCardContent => ({
-  meta: { title: "Rate Card", editionLabel: label, effectiveDate: "2026-11-01", marketSlug: market, marketName: market, currency: "USD", conversionPolicy: "none", issuingEntity: { name: "Synthetic Entity", checkedOn: "2026-11-01", licensedActivities: ["photography"] } }, coverImage: "/pdf/cover.jpg",
+  meta: { title: "Rate Card", editionLabel: label, effectiveDate: "2026-11-01", marketSlug: market, marketName: market, currency: "USD", conversionPolicy: "none", issuingEntity: { name: "Synthetic Entity", checkedOn: "2026-11-01", licensedActivities: ["photography"] } }, coverImage: "/pdf/cover.jpg", cover: { variant: "standard", focusY: 0.5, cleared: true, clearedNote: "Founder's own statement" },
   sections: [{ key: "ps", title: "Sessions", structure: "fixed", items: [{ key: "a", name: "Synthetic session", description: "Approved wording.", inclusions: ["10 images"], price: { kind: "fixed", amount: 125, unit: "per session" }, source: "manual", activities: ["photography"] }] }],
   conditions: [{ title: "Validity", text: "Approved text." }], contact: [{ label: "Email", value: "x@example.test" }],
 });

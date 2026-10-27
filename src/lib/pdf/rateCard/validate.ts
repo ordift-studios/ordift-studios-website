@@ -1,4 +1,5 @@
 import { checkConversions } from "./convert";
+import { validateCover } from "./cover";
 import { checkBinding } from "./jurisdictions";
 import { PLACEHOLDER_MARK, type PriceSpec, type RateCardContent } from "./types";
 
@@ -11,9 +12,10 @@ export type ValidateOptions = {
 
 // The ONLY keys a rate card may contain. Anything else (a cost, margin, supplier rate, internal allocation …) smuggled into the JSON is rejected at approval, whatever it is called.
 const ALLOWED: Record<string, readonly string[]> = {
-  root: ["meta", "coverImage", "intro", "sections", "conditions", "contact"],
+  root: ["meta", "coverImage", "cover", "intro", "sections", "conditions", "contact"],
   meta: ["title", "subtitle", "editionLabel", "effectiveDate", "marketSlug", "marketName", "currency", "conversionPolicy", "fx", "issuingEntity"],
   fx: ["currency", "rateToUsd", "effectiveFrom", "source", "rule"], rule: ["kind", "multiple"], issuingEntity: ["entityId", "jurisdiction", "name", "checkedOn", "licensedActivities", "basis"],
+  cover: ["variant", "focusY", "photoLabel", "cleared", "clearedNote"],
   section: ["key", "title", "intro", "structure", "items", "minimum", "addons", "notes", "customQuotationNote"],
   item: ["key", "name", "description", "specs", "inclusions", "price", "conversion", "tiers", "note", "source", "activities", "included", "eligibility"],
   addon: ["name", "price", "conversion", "note", "activities", "included", "eligibility"], minimum: ["label", "price", "conversion"], tier: ["label", "price", "conversion"],
@@ -24,7 +26,7 @@ export function unknownKeys(c: RateCardContent): string[] {
     if (!o || typeof o !== "object") return;
     for (const k of Object.keys(o as object)) if (!ALLOWED[kind].includes(k)) bad.push(`${where}.${k}`);
   };
-  chk("root", c, "card"); chk("meta", c.meta, "meta"); chk("fx", c.meta?.fx, "meta.fx"); chk("rule", c.meta?.fx?.rule, "meta.fx.rule"); chk("issuingEntity", c.meta?.issuingEntity, "meta.issuingEntity");
+  chk("root", c, "card"); chk("meta", c.meta, "meta"); chk("fx", c.meta?.fx, "meta.fx"); chk("rule", c.meta?.fx?.rule, "meta.fx.rule"); chk("issuingEntity", c.meta?.issuingEntity, "meta.issuingEntity"); chk("cover", c.cover, "cover");
   const price = (p: unknown, w: string) => chk("price", p, w);
   c.sections?.forEach((s, si) => {
     const sw = `sections[${si}]`; chk("section", s, sw);
@@ -95,6 +97,8 @@ export function validateRateCard(c: RateCardContent, mode: "draft" | "approval",
   if (pc > 0) hard.push(`${pc} text field(s) still contain placeholder wording (${PLACEHOLDER_MARK}) that needs Founder-approved text.`);
   const unknown = unknownKeys(c);
   if (unknown.length) errors.push(`The content contains fields that a rate card may not carry: ${unknown.slice(0, 5).join(", ")}${unknown.length > 5 ? ` and ${unknown.length - 5} more` : ""}.`);
+
+  const cv = validateCover(c, mode); errors.push(...cv.errors); warnings.push(...cv.warnings);
 
   if (mode === "approval") {
     if (c.conditions.length === 0 || c.conditions.some((x) => !x.text.trim())) errors.push("Add the approved conditions (validity, tax, deposits, usage terms) before approval.");

@@ -1,9 +1,8 @@
-/* eslint-disable jsx-a11y/alt-text -- react-pdf <Image> is a PDF drawing primitive, not an HTML <img> */
-import { Document, Image, Page, StyleSheet, Text, View } from "@react-pdf/renderer";
+import { Document, Page, StyleSheet, Text, View } from "@react-pdf/renderer";
 import { BRAND as C } from "../brand";
+import { CoverPage } from "./CoverPage";
+import { COVER_PANEL_OPACITY } from "./cover";
 import type { Addon, EditionStatus, PriceSpec, RateCardContent, RateCardItem, RateCardSection } from "./types";
-
-const A4 = { w: 595, h: 841 }; // a hair under the A4 page (595.28 × 841.89) so the full-page cover image never overflows its page
 
 export function formatAmount(n: number): string { return n.toLocaleString("en-US", { minimumFractionDigits: Number.isInteger(n) ? 0 : 2, maximumFractionDigits: 2 }); }
 export function formatPrice(p: PriceSpec, currency: string): { prefix: string; amount: string; unit: string } {
@@ -13,19 +12,6 @@ export function formatPrice(p: PriceSpec, currency: string): { prefix: string; a
 
 const ITEM_PAD = 11;
 const s = StyleSheet.create({
-  coverPage: { backgroundColor: C.navy, color: C.offwhite, fontFamily: "Inter" },
-  coverImg: { position: "absolute", top: 0, left: 0, width: A4.w, height: A4.h, objectFit: "cover" },
-  coverShade: { position: "absolute", top: 0, left: 0, width: A4.w, height: A4.h, backgroundColor: C.navy, opacity: 0.18 },
-  logo: { position: "absolute", top: 46, left: 46, width: 112 },
-  panelBg: { position: "absolute", left: 46, bottom: 96, width: 372, height: 250, backgroundColor: C.panelGrey },
-  panel: { position: "absolute", left: 46, bottom: 96, width: 372, height: 250, paddingHorizontal: 30, paddingTop: 30, justifyContent: "space-between", paddingBottom: 26 },
-  rule: { width: 48, height: 2, backgroundColor: C.gold, marginBottom: 14 },
-  eyebrow: { fontFamily: "Inter", fontSize: 8.5, letterSpacing: 2.2, color: C.gold, fontWeight: 600, textTransform: "uppercase" },
-  title: { fontFamily: "Fraunces", fontWeight: 400, fontSize: 50, lineHeight: 1.02, color: C.offwhite, marginTop: 4 },
-  subtitle: { fontSize: 11, lineHeight: 1.55, color: "#d6d9e2", marginTop: 8, width: 300 },
-  panelMeta: { fontFamily: "Inter", fontSize: 8.5, letterSpacing: 0.4, color: "#b9bfce", lineHeight: 1.5 },
-  coverFoot: { fontFamily: "Inter", position: "absolute", left: 46, right: 46, bottom: 40, flexDirection: "row", justifyContent: "space-between", fontSize: 8.5, color: "#e8e6df" },
-  draftTag: { fontFamily: "Inter", color: C.gold, fontWeight: 600, letterSpacing: 1.2, textTransform: "uppercase" },
   page: { backgroundColor: C.offwhite, paddingHorizontal: 50, paddingTop: 52, paddingBottom: 72, fontFamily: "Inter", color: C.ink },
   head: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-end", paddingBottom: 12, borderBottomWidth: 1.2, borderBottomColor: C.gold, marginBottom: 6 },
   h1: { fontFamily: "Fraunces", fontWeight: 600, fontSize: 24, color: C.navy, maxWidth: 360 },
@@ -67,7 +53,6 @@ const s = StyleSheet.create({
   fxBanner: { fontFamily: "Inter", fontSize: 8.2, color: C.goldPressed, marginTop: 8, lineHeight: 1.45, fontWeight: 500 },
   fxShort: { fontFamily: "Inter", fontSize: 8, color: C.goldPressed, marginTop: 6, lineHeight: 1.4, fontWeight: 500 },
   watermark: { position: "absolute", top: 300, left: 70, fontFamily: "Fraunces", fontSize: 150, color: "#0b1220", opacity: 0.055, transform: "rotate(-32deg)" },
-  watermarkCover: { position: "absolute", top: 280, left: 40, fontFamily: "Fraunces", fontSize: 170, color: "#ffffff", opacity: 0.16, transform: "rotate(-32deg)" },
   draftBar: { fontFamily: "Inter", position: "absolute", top: 22, right: 50, fontSize: 7.5, letterSpacing: 1.3, textTransform: "uppercase", color: C.goldPressed, fontWeight: 600 },
 });
 
@@ -172,27 +157,11 @@ function Section({ sec, c, status, first }: { sec: RateCardSection; c: RateCardC
   );
 }
 
-export function RateCardDocument({ content: c, status, logoWhite, coverPanelOpacity = 0.8 }: { content: RateCardContent; status: EditionStatus; logoWhite: string; coverPanelOpacity?: number }) {
+export function RateCardDocument({ content: c, status, logoWhite, coverPanelOpacity = COVER_PANEL_OPACITY }: { content: RateCardContent; status: EditionStatus; logoWhite: string; coverPanelOpacity?: number }) {
   const m = c.meta;
   return (
     <Document title={`${m.title} — ${m.editionLabel}`} author="Ordift Studios" subject={status.state === "draft" ? "DRAFT — not approved for distribution" : `Approved edition ${status.editionId}`} creator="Ordift Studios" producer="Ordift Studios">
-      <Page size="A4" style={s.coverPage}>
-        {c.coverImage ? <Image src={c.coverImage} style={s.coverImg} /> : null}
-        <View style={s.coverShade} />
-        <Image src={logoWhite} style={s.logo} />
-        <View style={[s.panelBg, { opacity: coverPanelOpacity }]} />
-        <View style={s.panel}>
-          <View>
-            <View style={s.rule} />
-            <Text style={s.eyebrow}>Ordift Studios</Text>
-            <Text style={s.title}>{m.title}</Text>
-            {m.subtitle ? <Text style={s.subtitle}>{m.subtitle}</Text> : null}
-          </View>
-          <Text style={s.panelMeta}>{m.marketName} · Prices in {m.currency}{"\n"}{m.editionLabel} · Effective {m.effectiveDate}</Text>
-        </View>
-        {status.state === "draft" ? <Text style={s.watermarkCover}>DRAFT</Text> : null}
-        <View style={s.coverFoot}><Text>ordiftstudios.com</Text>{status.state === "draft" ? <Text style={s.draftTag}>Draft — not approved</Text> : <Text>Edition {status.editionId}</Text>}</View>
-      </Page>
+      <CoverPage content={c} status={status} logoWhite={logoWhite} panelOpacity={coverPanelOpacity} />
 
       {c.sections.filter((sec) => sec.items.some((i) => i.included !== false)).map((sec, n) => <Section key={sec.key} sec={sec} c={c} status={status} first={n === 0} />)}
 

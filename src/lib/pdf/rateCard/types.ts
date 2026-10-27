@@ -46,6 +46,15 @@ export type RateCardSection = {
   customQuotationNote?: string; // what to do when a need does not fit a standard package
 };
 
+// How the cover photograph is presented. The photograph itself is `coverImage`; the wording on the cover is NOT stored here — it is derived from the issuing entity's verified activities (see cover.ts).
+export type RateCardCover = {
+  variant: "standard" | "wedding";  // "wedding" is an optional Ghana-only variation of the same design, never the default
+  focusY: number;                   // which part of the photograph the full-page crop keeps: 0 = the top, 1 = the bottom (0.5 = centred)
+  photoLabel?: string;              // a short name for the photograph, for reviewers
+  cleared?: boolean;                // the Founder has confirmed Ordift may use this photograph on a client-facing rate card (people shown, permissions)
+  clearedNote?: string;             // who/what the clearance rests on
+};
+
 export type RateCardContent = {
   meta: {
     title: string; subtitle?: string; editionLabel: string; effectiveDate: string; marketSlug: string; marketName: string;
@@ -54,7 +63,8 @@ export type RateCardContent = {
     fx?: FxBasis;                                       // present exactly when currency is not USD
     issuingEntity?: { entityId?: string; jurisdiction?: string; name: string; checkedOn: string; licensedActivities: string[]; basis?: string }; // who offers these prices and what was verified as licensed, and when
   };
-  coverImage: string;           // path or URL of the cover photograph (a non-client Ordift image chosen by the Founder)
+  coverImage: string;           // the cover photograph: a bundled /pdf/ path, or an immutable cdn.sanity.io asset URL uploaded through the builder (a non-client Ordift image chosen by the Founder)
+  cover?: RateCardCover;        // presentation of that photograph; absent = standard variant, centred crop, not yet cleared
   intro?: string;
   sections: RateCardSection[];
   conditions: { title: string; text: string }[];
