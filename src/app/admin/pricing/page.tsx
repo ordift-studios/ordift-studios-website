@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { getCurrentUser } from "@/lib/portal/roles";
+import { getCurrentUser, isSuperAdmin } from "@/lib/portal/roles";
 import { authorizeWithSuperAdminOverride, FINANCE_CAPABILITIES } from "@/lib/organization/authority";
 import {
   listAllPricingMarketsForAdmin,
@@ -109,6 +109,7 @@ import ManualDiscountForm from "./ManualDiscountForm";
 import DeleteDiscountButton from "./DeleteDiscountButton";
 import TierRateEditForm from "./TierRateEditForm";
 import { TABS, TAB_GROUPS } from "./tabsConfig";
+import PricingAreas from "./PricingAreas";
 import ActionForm from "@/components/admin/ActionForm";
 import CrewSupportRatesSection from "./CrewSupportRatesSection";
 import SubmitButton from "@/components/admin/SubmitButton";
@@ -754,6 +755,8 @@ export default async function AdminPricingPage({
           Market-based pricing — determined by where the shoot takes place, never by customer nationality or location.
         </p>
       </div>
+
+      <PricingAreas showRateCard={isSuperAdmin(user)} />
 
       <TabNav active={tab} />
 

@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getCurrentUser, isSuperAdmin } from "@/lib/portal/roles";
 import { getEdition, listEditions } from "@/lib/pdf/rateCard/editions";
@@ -17,6 +18,7 @@ export default async function RateCardPage({ searchParams }: { searchParams: Pro
   const [editions, markets, cands, selected] = await Promise.all([listEditions(user.id), listActivePricingMarkets(), listOrdinaryContractingCandidates(user.id, today), id ? getEdition(user.id, id) : Promise.resolve(null)]);
   return (
     <main style={{ maxWidth: 1180, margin: "24px auto", padding: "0 16px" }}>
+      <p style={{ margin: "0 0 8px" }}><Link href="/admin/pricing" style={{ color: "#8e7736", fontWeight: 600 }}>← Pricing</Link></p>
       <RateCardAdmin
         today={today} editions={editions} markets={markets.map((m) => ({ slug: m.slug, name: m.name }))} entities={cands.candidates.map((c) => ({ id: c.entityId, name: c.name }))}
         selected={selected && selected.ok ? { edition: selected.edition, integrity: selected.integrity } : null} selectedError={selected && !selected.ok ? selected.error : null}
