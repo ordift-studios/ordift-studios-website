@@ -3,6 +3,11 @@
 // (accounting treatment — always "to be confirmed" at entry; this form never finalises it). Nothing here describes a payable, loan, journal or payment.
 import { money, type ReceiptLine } from "@/lib/organization/entityRegistry";
 
+// The vault classes that may back a cost. Deliberately NOT included: registrations, permits, premises documents and the generic "other official document" —
+// an unrelated document can never be linked as financial evidence. Everything else about a document (hash, duplicate detection, access) is the vault's own.
+export const EXPENSE_EVIDENCE_TYPES = ["government_receipt", "supplier_invoice", "purchase_receipt", "other_financial_document"] as const;
+export const isExpenseEvidenceType = (t: string) => (EXPENSE_EVIDENCE_TYPES as readonly string[]).includes(t);
+
 export const EXPENSE_CATEGORIES = [
   { value: "government_fee", label: "Government fee / licensing" },
   { value: "incorporation_registration", label: "Incorporation / registration" },

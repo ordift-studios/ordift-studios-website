@@ -1,7 +1,7 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { logActivity } from "@/lib/admin/activityLog";
 import { isSuperAdminId } from "@/lib/organization/authority";
-import { EXPENSE_CATEGORY_VALUES, PAYMENT_METHOD_VALUES, validIsoDate, validateFunding } from "@/lib/organization/expenseEntry";
+import { EXPENSE_CATEGORY_VALUES, PAYMENT_METHOD_VALUES, isExpenseEvidenceType, validIsoDate, validateFunding } from "@/lib/organization/expenseEntry";
 import { assessEntityForQuotation, type ActivityFact, type EntityAssessment, type EntityFacts, type RequirementRow } from "@/lib/organization/jurisdictionRequirements";
 import { assessContractingEligibility, suggestContractingEntity, reconcileReceipt, type ContractingCandidate, type Eligibility, type KnownDocument, type ReceiptLine, type RegistrationFact, type RegistrationKind, type RegistrationStatus, checkDuplicate, sha256OfBytes, ENTITY_DOCUMENT_TYPES } from "@/lib/organization/entityRegistry";
 
@@ -449,14 +449,22 @@ export async function recordEntityReceipt(p: {
   if (rec.payable.length === 0) return { ok: false, error: "The receipt has no payable lines." };
 
   const db = createAdminClient();
-  const { data: doc } = await db.from("employing_entity_documents").select("id, document_type").eq("id", p.sourceDocumentId).eq("employing_entity_id", p.entityId).maybeSingle();
+  const { data: doc } = await db.from("employing_entity_documents").select("id, document_type, file_sha256, relation, related_document_id").eq("id", p.sourceDocumentId).eq("employing_entity_id", p.entityId).maybeSingle();
   if (!doc) return { ok: false, error: "Upload the receipt to this entity's vault first." };
-  if (doc.document_type !== "government_receipt") return { ok: false, error: "The selected document is not classed as a payment receipt." };
+  if (!isExpenseEvidenceType(doc.document_type)) return { ok: false, error: "The selected document is not classed as a payment receipt, invoice or other financial supporting document, so it cannot back a cost." };
+  if (doc.relation === "exact_duplicate_of" || doc.relation === "continuation_page_of") return { ok: false, error: "The selected record is a copy or a further page of another document. Link the original (first-page) document instead." };
   const { data: existing } = await db.from("entity_expenses").select("id").eq("employing_entity_id", p.entityId).eq("receipt_number", p.receiptNumber.trim()).limit(1);
-  if ((existing ?? []).length) return { ok: false, error: "This receipt is already recorded for this entity, so it was not recorded again." };
-  // The same stored document or the same request reference can only back ONE receipt: a second entry would be the same cost under another number.
-  const { data: sameDoc } = await db.from("entity_expenses").select("id").eq("employing_entity_id", p.entityId).eq("source_document_id", p.sourceDocumentId).limit(1);
-  if ((sameDoc ?? []).length) return { ok: false, error: "This stored document already backs a recorded receipt, so it was not recorded again." };
+  if ((existing ?? []).length) return { ok: false, error: "This receipt is already recorded for this entity, so it was not recorded again. If it is a different supplier's document that happens to use the same number, enter the number with the supplier's name or prefix (for example ACME-1001)." };
+  // The same stored document — or a copy of the same file, an earlier version of it, or the same file filed under another document class — can only back ONE receipt:
+  // a second entry would be the same cost under another number. The request reference is checked the same way.
+  const family = new Set<string>([doc.id]);
+  if (doc.relation === "new_version_of" && doc.related_document_id) family.add(doc.related_document_id);
+  if (doc.file_sha256) {
+    const { data: sameBytes } = await db.from("employing_entity_documents").select("id").eq("employing_entity_id", p.entityId).eq("file_sha256", doc.file_sha256);
+    for (const d of sameBytes ?? []) family.add(d.id);
+  }
+  const { data: sameDoc } = await db.from("entity_expenses").select("id").eq("employing_entity_id", p.entityId).in("source_document_id", [...family]).limit(1);
+  if ((sameDoc ?? []).length) return { ok: false, error: "This stored document (or a copy or earlier version of it) already backs a recorded receipt, so it was not recorded again." };
   const requestRef = (p.requestReference ?? "").trim() || null;
   if (requestRef) {
     const { data: sameReq } = await db.from("entity_expenses").select("id").eq("employing_entity_id", p.entityId).eq("request_reference", requestRef).limit(1);
@@ -474,7 +482,7 @@ export async function recordEntityReceipt(p: {
   }));
   const { error } = await db.from("entity_expenses").insert(rows);
   if (error) return { ok: false, error: error.code === "23505" ? "A line of this receipt is already recorded." : error.message };
-  await logActivity({ actorUserId: p.actorUserId, action: "entity_expense.receipt_recorded", entityType: "employing_entity", entityId: p.entityId, metadata: { receiptNumber: p.receiptNumber.trim(), lines: rows.length, total: rec.sum, currency: p.currency, category: p.category, fundingSourceStatus: funding, reimbursementIntent: reimbursement, sourceDocumentId: p.sourceDocumentId } });
+  await logActivity({ actorUserId: p.actorUserId, action: "entity_expense.receipt_recorded", entityType: "employing_entity", entityId: p.entityId, metadata: { receiptNumber: p.receiptNumber.trim(), lines: rows.length, total: rec.sum, currency: p.currency, category: p.category, fundingSourceStatus: funding, reimbursementIntent: reimbursement, sourceDocumentId: p.sourceDocumentId, documentType: doc.document_type } });
   return { ok: true, recorded: rows.length, total: rec.sum };
 }
 

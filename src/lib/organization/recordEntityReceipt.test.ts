@@ -16,7 +16,14 @@ const Q = "ent-qatar", G = "ent-ghana";
 const old = (code: string, amount: number) => ({ id: `old-${code}`, employing_entity_id: Q, expense_date: "2026-10-15", amount, currency: "QAR", category: "incorporation_registration", line_code: code, description: code, receipt_number: "OLD-1200", receipt_total: 1200, issuing_authority: "Single Window", request_reference: "SR-OLD", source_document_id: "d-old", payer_as_shown: "Applicant", funding_source_status: "founder_personal", funding_source_note: "Founder statement", accounting_treatment: "to_be_confirmed", status: "recorded", reimbursement_intent: "to_be_confirmed" });
 const docs = [
   { id: "d-old", employing_entity_id: Q, document_type: "government_receipt" }, { id: "d-new", employing_entity_id: Q, document_type: "government_receipt" },
-  { id: "d-cr", employing_entity_id: Q, document_type: "commercial_registration" }, { id: "d-ghana", employing_entity_id: G, document_type: "government_receipt" },
+  { id: "d-cr", employing_entity_id: Q, document_type: "commercial_registration" },
+  { id: "d-inv", employing_entity_id: Q, document_type: "supplier_invoice", file_sha256: "a".repeat(64) }, { id: "d-pur", employing_entity_id: Q, document_type: "purchase_receipt", file_sha256: "b".repeat(64) },
+  { id: "d-fin", employing_entity_id: Q, document_type: "other_financial_document", file_sha256: "c".repeat(64) },
+  { id: "d-inv-copy", employing_entity_id: Q, document_type: "purchase_receipt", file_sha256: "a".repeat(64), relation: "exact_duplicate_of", related_document_id: "d-inv" },
+  { id: "d-inv-asother", employing_entity_id: Q, document_type: "other_financial_document", file_sha256: "a".repeat(64) },
+  { id: "d-v1", employing_entity_id: Q, document_type: "supplier_invoice", file_sha256: "d".repeat(64) }, { id: "d-v2", employing_entity_id: Q, document_type: "supplier_invoice", file_sha256: "e".repeat(64), relation: "new_version_of", related_document_id: "d-v1" },
+  { id: "d-page2", employing_entity_id: Q, document_type: "supplier_invoice", file_sha256: "f".repeat(64), relation: "continuation_page_of", related_document_id: "d-inv" },
+  { id: "d-permit", employing_entity_id: Q, document_type: "commercial_permit" }, { id: "d-prem", employing_entity_id: Q, document_type: "premises_document" }, { id: "d-misc", employing_entity_id: Q, document_type: "other" }, { id: "d-tax", employing_entity_id: Q, document_type: "tax_card" }, { id: "d-ghana", employing_entity_id: G, document_type: "government_receipt" },
 ];
 const permitReceipt = (over: object = {}) => ({
   entityId: Q, receiptNumber: "7929943008946018004112", receiptDate: "2026-10-26", issuingAuthority: "Single Window (Ministry of Commerce and Industry service)", requestReference: "SR3032128",
@@ -56,7 +63,7 @@ describe("recordEntityReceipt: the QAR 500 Founder-funded permit fee", () => {
   it("writes one audit event naming the receipt, the funding and the intention (no secrets, no amounts beyond the receipt)", async () => {
     await recordEntityReceipt(permitReceipt());
     expect(h.logged).toEqual([{ actorUserId: "super", action: "entity_expense.receipt_recorded", entityType: "employing_entity", entityId: Q,
-      metadata: { receiptNumber: "7929943008946018004112", lines: 1, total: 500, currency: "QAR", category: "government_fee", fundingSourceStatus: "founder_personal", reimbursementIntent: "not_reimbursable", sourceDocumentId: "d-new" } }]);
+      metadata: { receiptNumber: "7929943008946018004112", lines: 1, total: 500, currency: "QAR", category: "government_fee", fundingSourceStatus: "founder_personal", reimbursementIntent: "not_reimbursable", sourceDocumentId: "d-new", documentType: "government_receipt" } }]);
   });
   it("defaults to funding 'to confirm' and reimbursement 'not decided' when the form states neither", async () => {
     const { fundingSourceStatus, fundingSourceNote, reimbursementIntent, ...rest } = permitReceipt();
@@ -108,4 +115,51 @@ describe("recordEntityReceipt: validation cannot be bypassed", () => {
     await refused({ fundingSourceStatus: "company_account", fundingSourceNote: "bank line", reimbursementIntent: "not_reimbursable" }, /nothing to reimburse/);
   });
   it("a receipt with no payable line", () => refused({ printedTotal: 1, lines: [{ code: "Z", description: "zero", amount: 0 }] }, /add up|no payable/));
+});
+
+const invoice = (over: object = {}) => permitReceipt({
+  receiptNumber: "INV-2026-77", requestReference: null, issuingAuthority: "Acme Software LLC", sourceDocumentId: "d-inv", category: "other", printedTotal: 120, currency: "USD", receiptDate: "2026-10-20",
+  lines: [{ code: "SUB-1", description: "Annual software subscription", amount: 120 }], paymentMethod: "card", relatedReference: null, notes: null, ...over,
+});
+
+describe("recordEntityReceipt: supplier invoices, purchase receipts and other financial documents back a cost the same way — and only they do", () => {
+  it.each([["d-inv", "supplier_invoice"], ["d-pur", "purchase_receipt"], ["d-fin", "other_financial_document"], ["d-new", "government_receipt"]])("records a cost backed by %s (%s) with the same funding and reimbursement fields", async (docId, type) => {
+    const r = await recordEntityReceipt(invoice({ sourceDocumentId: docId, receiptNumber: `N-${docId}` }));
+    expect(r).toMatchObject({ ok: true, recorded: 1, total: 120 });
+    expect(expenses().find((e) => e.source_document_id === docId)).toMatchObject({ currency: "USD", reimbursement_intent: "not_reimbursable", funding_source_status: "founder_personal" });
+    expect(expenses().find((e) => e.source_document_id === docId)!.accounting_treatment ?? "to_be_confirmed").toBe("to_be_confirmed");
+    expect(h.logged[h.logged.length - 1].metadata).toMatchObject({ documentType: type });
+  });
+  it.each(["d-cr", "d-permit", "d-prem", "d-misc", "d-tax"])("refuses an unrelated document class (%s) as financial evidence, writing nothing", async (docId) => {
+    const r = await recordEntityReceipt(invoice({ sourceDocumentId: docId }));
+    expect(r.ok).toBe(false); expect((r as { error: string }).error).toMatch(/not classed as a payment receipt, invoice or other financial supporting document/);
+    expect(expenses()).toHaveLength(3); expect(h.logged).toEqual([]);
+  });
+  it("refuses another entity's document", async () => {
+    const r = await recordEntityReceipt(invoice({ sourceDocumentId: "d-ghana" }));
+    expect(r.ok).toBe(false); expect(expenses()).toHaveLength(3);
+  });
+  it("duplicate prevention holds across document classes: the same file filed as another class, a recorded copy, an earlier version and a further page can never back a second cost", async () => {
+    expect((await recordEntityReceipt(invoice())).ok).toBe(true);
+    const n = expenses().length;
+    for (const [doc, msg] of [["d-inv", /already backs|already recorded/], ["d-inv-asother", /copy or earlier version of it\) already backs/], ["d-inv-copy", /copy or a further page/], ["d-page2", /copy or a further page/]] as const) {
+      const r = await recordEntityReceipt(invoice({ sourceDocumentId: doc, receiptNumber: `OTHER-${doc}` }));
+      expect(r.ok).toBe(false); expect((r as { error: string }).error).toMatch(msg);
+    }
+    expect(expenses()).toHaveLength(n);
+  });
+  it("a newer version of a document that already backs a cost cannot back a second one", async () => {
+    expect((await recordEntityReceipt(invoice({ sourceDocumentId: "d-v1", receiptNumber: "V-1" }))).ok).toBe(true);
+    const r = await recordEntityReceipt(invoice({ sourceDocumentId: "d-v2", receiptNumber: "V-2" }));
+    expect(r.ok).toBe(false); expect((r as { error: string }).error).toMatch(/earlier version of it\) already backs/);
+  });
+  it("the same invoice number from the same or another supplier is refused with a hint to add the supplier's prefix", async () => {
+    expect((await recordEntityReceipt(invoice())).ok).toBe(true);
+    const r = await recordEntityReceipt(invoice({ sourceDocumentId: "d-pur", issuingAuthority: "Other Supplier Ltd" }));
+    expect(r.ok).toBe(false); expect((r as { error: string }).error).toMatch(/already recorded.*supplier's name or prefix/);
+  });
+  it("the QAR 500 Founder-funded permit fee is still recordable exactly as before", async () => {
+    expect(await recordEntityReceipt(permitReceipt())).toMatchObject({ ok: true, recorded: 1, total: 500 });
+    expect(expenses().find((e) => e.receipt_number === "7929943008946018004112")).toMatchObject({ funding_source_status: "founder_personal", reimbursement_intent: "not_reimbursable", category: "government_fee", request_reference: "SR3032128" });
+  });
 });

@@ -108,7 +108,7 @@ describe("G — receipt-backed expense entry against the real schema", () => {
     const before = count();
     expect(mustFail(await recordEntityReceipt(permitReceipt()))).toMatch(/already recorded/);
     expect(mustFail(await recordEntityReceipt(permitReceipt({ lines: [{ code: "ALL", description: "All", amount: 500 }] })))).toMatch(/already recorded/);
-    expect(mustFail(await recordEntityReceipt(permitReceipt({ receiptNumber: "NEW-2" })))).toMatch(/stored document already backs/);
+    expect(mustFail(await recordEntityReceipt(permitReceipt({ receiptNumber: "NEW-2" })))).toMatch(/already backs a recorded receipt/);
     expect(mustFail(await recordEntityReceipt(oldReceipt()))).toMatch(/already recorded/);
     expect(mustFail(await recordEntityReceipt({ ...oldReceipt(), receiptNumber: "OLD-2", sourceDocumentId: E.otherDoc }))).toMatch(/Upload the receipt to this entity's vault/);
     expect(count()).toBe(before);
@@ -179,5 +179,36 @@ describe("G — receipt-backed expense entry against the real schema", () => {
   it("G11 the Founder-funded line carries no obligation: nothing in the schema names a payable, reimbursement or loan created by it", () => {
     expect(sql(`select count(*) from information_schema.tables where table_schema='public' and table_name ~ '(reimburse|loan|journal|ledger)' and table_name <> 'entity_expenses'`)).toMatch(/^\d+$/);
     expect(sql(`select count(*) from public.entity_expenses where employing_entity_id='${E.qa}' and reimbursement_intent='reimbursement_expected'`)).toBe("0");
+  });
+
+  it("G12 supplier invoices, purchase receipts and other financial documents each back a cost; unrelated vault documents cannot; existing expense records stay byte-for-byte unchanged", async () => {
+    const all = () => sql(`select md5(coalesce(string_agg(x::text, '|' order by id), '')) from public.entity_expenses x`);
+    const before = all();
+    const up = async (documentType: string, name: string, content?: Uint8Array) => must(await addVaultDocument({ entityId: E.qa, documentType, filename: `${name}.pdf`, mimeType: "application/pdf", bytes: content ?? bytes(name), actorUserId: SUPER }), name);
+    const inv = await up("supplier_invoice", "acme invoice"), pur = await up("purchase_receipt", "shop receipt"), fin = await up("other_financial_document", "card statement line");
+    const cr = await up("commercial_registration", "cr"), prem = await up("premises_document", "lease"), misc = await up("other", "misc"), permit = await up("commercial_permit", "permit");
+    const mk = (docId: string, n: string, over: object = {}) => permitReceipt({ receiptNumber: `MIX-${n}`, requestReference: null, sourceDocumentId: docId, category: "other", printedTotal: 80, currency: "USD", receiptDate: "2026-10-20", issuingAuthority: `Supplier ${n}`,
+      lines: [{ code: `L${n}`, description: `Cost ${n}`, amount: 80 }], paymentMethod: "bank_transfer", relatedReference: null, notes: null, fundingSourceStatus: "company_account", fundingSourceNote: "bank statement line 14", reimbursementIntent: "not_applicable", ...over });
+    expect(must(await recordEntityReceipt(mk(inv.documentId, "1")))).toMatchObject({ recorded: 1 });
+    expect(must(await recordEntityReceipt(mk(pur.documentId, "2")))).toMatchObject({ recorded: 1 });
+    expect(must(await recordEntityReceipt(mk(fin.documentId, "3")))).toMatchObject({ recorded: 1 });
+    for (const d of [cr, prem, misc, permit]) expect(mustFail(await recordEntityReceipt(mk(d.documentId, "X")))).toMatch(/not classed as a payment receipt, invoice or other financial supporting document/);
+    expect(sql("select count(*) from public.entity_expenses where receipt_number like 'MIX-%'")).toBe("3");
+    // the earlier records are unchanged: only the three new rows differ
+    expect(sql(`select md5(coalesce(string_agg(x::text, '|' order by id), '')) from public.entity_expenses x where receipt_number not like 'MIX-%'`)).toBe(before);
+    expect(all()).not.toBe(before);
+  });
+
+  it("G13 duplicate prevention across document classes against the real vault: the same file filed under another class, and a recorded copy, can never back a second cost", async () => {
+    const content = bytes("shared file");
+    const first = must(await addVaultDocument({ entityId: E.qa, documentType: "supplier_invoice", filename: "shared.pdf", mimeType: "application/pdf", bytes: content, actorUserId: SUPER }));
+    const second = must(await addVaultDocument({ entityId: E.qa, documentType: "purchase_receipt", filename: "shared copy.pdf", mimeType: "application/pdf", bytes: content, actorUserId: SUPER }));
+    expect(second.duplicateOf).toBe(first.documentId); // the vault already files it as a duplicate of the original
+    const dup = (docId: string, n: string) => permitReceipt({ receiptNumber: `DUP-${n}`, requestReference: null, sourceDocumentId: docId, category: "other", printedTotal: 50, currency: "USD", lines: [{ code: `D${n}`, description: "Cost", amount: 50 }], fundingSourceStatus: "to_confirm", fundingSourceNote: null, reimbursementIntent: "to_be_confirmed", relatedReference: null, notes: null });
+    expect(must(await recordEntityReceipt(dup(first.documentId, "1")))).toMatchObject({ recorded: 1 });
+    const n = sql("select count(*) from public.entity_expenses");
+    expect(mustFail(await recordEntityReceipt(dup(first.documentId, "2")))).toMatch(/already backs/);
+    expect(mustFail(await recordEntityReceipt(dup(second.documentId, "3")))).toMatch(/copy or a further page/);
+    expect(sql("select count(*) from public.entity_expenses")).toBe(n);
   });
 });

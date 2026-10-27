@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { parseReceiptLines, validateFunding } from "./expenseEntry";
+import { EXPENSE_EVIDENCE_TYPES, isExpenseEvidenceType, parseReceiptLines, validateFunding } from "./expenseEntry";
+import { ENTITY_DOCUMENT_TYPES } from "./entityRegistry";
 
 describe("parseReceiptLines: every printed line is read exactly or refused, never guessed", () => {
   it("reads the QAR 500 permit receipt, keeping the zero-fee card-printing line (reconciliation drops it later)", () => {
@@ -43,4 +44,16 @@ describe("validateFunding: who paid, what they expect and the basis must agree",
     expect(ok("company_account", "reimbursement_expected", "bank statement line 4")).toMatch(/nothing to reimburse/);
   });
   it("refuses unknown values", () => { expect(ok("bank", "to_be_confirmed")).toMatch(/Choose who funded/); expect(ok("founder_personal", "loan")).toMatch(/Choose the reimbursement/); });
+});
+
+describe("which vault documents may back a cost", () => {
+  it("exactly the four financial classes; every one is a real vault class", () => {
+    expect([...EXPENSE_EVIDENCE_TYPES]).toEqual(["government_receipt", "supplier_invoice", "purchase_receipt", "other_financial_document"]);
+    for (const t of EXPENSE_EVIDENCE_TYPES) expect(ENTITY_DOCUMENT_TYPES.map((d) => d.value)).toContain(t);
+  });
+  it.each(["commercial_registration", "articles_of_association", "establishment_card", "tax_card", "trade_name_reservation", "investment_application", "commercial_permit", "premises_document", "other", "", "free text"])("%j is not financial evidence", (t) => expect(isExpenseEvidenceType(t)).toBe(false));
+  it("the new classes are offered in the vault upload list with plain names", () => {
+    const labels = Object.fromEntries(ENTITY_DOCUMENT_TYPES.map((d) => [d.value, d.label]));
+    expect(labels.supplier_invoice).toMatch(/Supplier \/ vendor invoice/); expect(labels.purchase_receipt).toBe("Purchase receipt"); expect(labels.other_financial_document).toBe("Other financial supporting document");
+  });
 });

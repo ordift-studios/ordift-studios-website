@@ -140,8 +140,15 @@ describe("the expense entry form uses a receipt already in the vault and never p
 
   it("offers only receipts in the vault that do not already back an expense (and never a duplicate-of or non-receipt document)", () => {
     const html = render([doc("fresh"), doc("used"), doc("dupe", { relation: "exact_duplicate_of" }), doc("cr", { documentType: "commercial_registration" })], [exp()]);
-    const form = html.slice(html.indexOf("Choose the receipt already in the vault"));
+    const form = html.slice(html.indexOf("Choose the receipt or invoice already in the vault"));
     expect(form).toContain("fresh.jpg"); expect(form).not.toContain("used.jpg"); expect(form).not.toContain("dupe.jpg"); expect(form).not.toContain("cr.jpg");
+  });
+  it("offers receipts, supplier invoices, purchase receipts and other financial documents by class — and never a registration, permit, premises or generic document", () => {
+    const html = render([doc("g1"), doc("inv1", { documentType: "supplier_invoice", filename: "acme.pdf" }), doc("pur1", { documentType: "purchase_receipt", filename: "shop.pdf" }), doc("fin1", { documentType: "other_financial_document", filename: "stmt.pdf" }),
+      doc("p1", { documentType: "commercial_permit", filename: "permit.pdf" }), doc("pr1", { documentType: "premises_document", filename: "lease.pdf" }), doc("o1", { documentType: "other", filename: "misc.pdf" }), doc("t1", { documentType: "tax_card", filename: "tax.pdf" })], []);
+    const form = html.slice(html.indexOf("Choose the receipt or invoice already in the vault"), html.indexOf("Record Expense"));
+    for (const f of ["g1.jpg", "acme.pdf", "shop.pdf", "stmt.pdf", "Supplier / vendor invoice", "Purchase receipt", "Other financial supporting document"]) expect(form).toContain(f);
+    for (const f of ["permit.pdf", "lease.pdf", "misc.pdf", "tax.pdf"]) expect(form).not.toContain(f);
   });
   it("shows every field the entry needs, as separate controls: funding, reimbursement intention, payment method, related reference, notes", () => {
     const html = render([doc("fresh")], []);
@@ -163,7 +170,7 @@ describe("the expense entry form uses a receipt already in the vault and never p
   });
   it("with every vault receipt already used, the form is disabled and says why", () => {
     const html = render([doc("used")], [exp()]);
-    expect(html).toContain("Every receipt in the vault already backs a recorded expense");
+    expect(html).toContain("Every receipt or invoice in the vault already backs a recorded expense");
     expect(html).toMatch(/<button[^>]*disabled[^>]*>Record Expense<\/button>/);
   });
 });

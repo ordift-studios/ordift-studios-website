@@ -16,3 +16,13 @@ Because the new app code needs the new columns, apply the migration BEFORE the p
 
 ## QAR 500 entry (NOT recorded)
 Receipt `7929943008946018004112` (already in the Qatar vault); date 2026-10-26; request SR3032128; category Government fee; related "Commercial License 345520"; line `PERMIT_ISSUANCE | Ordift Studios Commercial Permit issuance fee | 500` plus `ESTABLISHMENT_CARD_PRINT | Establishment card printing | 0` (not recorded); total 500; method Card; funded by the Founder personally (basis: Founder's written statement of 27 Oct 2026); reimbursement "Not required — non-reimbursable contribution (not a loan)". Accounting treatment stays "to be confirmed".
+
+## Supporting documents (final improvement)
+- A cost may be backed by a vault document of class: Government payment receipt, Supplier / vendor invoice (includes software and subscriptions), Purchase receipt, or Other financial supporting document. The last three are NEW vault classes (application list only: `document_type` has no database constraint, so migration 0174 is unchanged).
+- Never accepted as evidence: registrations, permits, tax/establishment cards, premises documents and the generic "Other official document".
+- Duplicate prevention across classes (server-enforced): the same receipt/invoice number; the same stored document; another vault record of the SAME FILE (any class); an earlier version of a document that already backs a cost; a recorded copy or further page (refused — link the original); the same request reference.
+- Limitation: the number is unique per entity, not per supplier. Two suppliers that genuinely use the same invoice number are told to prefix the supplier name (for example `ACME-1001`).
+- Categories were not extended: software and equipment invoices use "Other" until a category is authorized.
+
+## Rollback (rehearsed locally: runs cleanly, existing rows intact, 0174 re-applies afterwards)
+`supabase/proposals/ROLLBACK_0174.sql`. Safe only while no row uses the four new columns (check query is in the file). Application rollback: redeploy `e177958` (`dpl_EJQaFdjqWpQnrt7xKbVaLukPARCo` is the current live deployment); the migration is additive, so `e177958` keeps working on a database that already has 0174.

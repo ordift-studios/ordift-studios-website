@@ -3,7 +3,7 @@
 import { useActionState } from "react";
 import { confirmApprovalNoticeAction, confirmFundingAction, linkSignatoryToFounderAction, recordExpenseAction, recordPermitAction, recordRegistrationAction, recordRenewalAction, setSignatoryCapacityAction, uploadEntityDocumentAction, viewEntityDocumentAction, type ActionState } from "./actions";
 import { ENTITY_DOCUMENT_TYPES, entityDocumentTypeLabel, type TrackedItem, type TrackedState } from "@/lib/organization/entityRegistry";
-import { EXPENSE_CATEGORIES, FUNDING_CHOICES, PAYMENT_METHODS, REIMBURSEMENT_CHOICES } from "@/lib/organization/expenseEntry";
+import { EXPENSE_CATEGORIES, isExpenseEvidenceType, FUNDING_CHOICES, PAYMENT_METHODS, REIMBURSEMENT_CHOICES } from "@/lib/organization/expenseEntry";
 
 export type RegistryDocView = { id: string; documentType: string; filename: string | null; sha256: string | null; sizeBytes: number | null; issuedOn: string | null; expiresOn: string | null; issuingAuthority: string | null; relation: string | null; relatedDocumentId: string | null; replacedByDocumentId: string | null; notes: string | null; uploadedAt: string };
 export type RegistrationView = { id: string; kind: string; label: string; status: string; identifier: string | null; issuedOn: string | null; expiresOn: string | null; note: string | null; facts: Record<string, unknown>; verifiedAt: string | null };
@@ -129,21 +129,21 @@ function ExpenseForm({ entityId, receiptDocs }: { entityId: string; receiptDocs:
     <form action={action} className="grid grid-cols-1 sm:grid-cols-2 gap-2">
       <input type="hidden" name="entityId" value={entityId} />
       <select name="sourceDocumentId" required defaultValue="" className={`sm:col-span-2 ${input}`}>
-        <option value="" disabled>Choose the receipt already in the vault…</option>
-        {receiptDocs.map((d) => <option key={d.id} value={d.id}>{d.filename ?? d.id} (uploaded {new Date(d.uploadedAt).toLocaleDateString()})</option>)}
+        <option value="" disabled>Choose the receipt or invoice already in the vault…</option>
+        {receiptDocs.map((d) => <option key={d.id} value={d.id}>{entityDocumentTypeLabel(d.documentType)} — {d.filename ?? d.id} (uploaded {new Date(d.uploadedAt).toLocaleDateString()})</option>)}
       </select>
-      <input name="receiptNumber" required placeholder="Receipt / transaction number, as printed" className={input} />
+      <input name="receiptNumber" required placeholder="Receipt / invoice / transaction number, as printed" className={input} />
       <input name="requestReference" placeholder="Request / reference number (optional)" className={input} />
       <label className="font-sans text-caption text-ordift-ink-muted">Transaction date<input name="receiptDate" type="date" required className={`block w-full ${input}`} /></label>
-      <input name="issuingAuthority" required placeholder="Issued by (for example Single Window)" className={input} />
+      <input name="issuingAuthority" required placeholder="Issued by (authority or supplier, for example Single Window)" className={input} />
       <select name="category" required defaultValue="" className={input}>
         <option value="" disabled>Expense category…</option>
         {EXPENSE_CATEGORIES.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
       </select>
       <input name="relatedReference" placeholder="Related licence / registration (for example Commercial License 345520)" className={input} />
       <input name="currency" required maxLength={3} defaultValue="QAR" placeholder="Currency" className={`uppercase ${input}`} />
-      <input name="printedTotal" required inputMode="decimal" placeholder="Receipt grand total, as printed" className={input} />
-      <textarea name="lines" required rows={3} placeholder={"Receipt lines, one per line:\nCODE | description | amount\n(a zero-fee line may be listed; it is not recorded as a cost)"} className={`sm:col-span-2 ${input}`} />
+      <input name="printedTotal" required inputMode="decimal" placeholder="Document grand total, as printed" className={input} />
+      <textarea name="lines" required rows={3} placeholder={"Document lines, one per line:\nCODE | description | amount\n(a zero-fee line may be listed; it is not recorded as a cost)"} className={`sm:col-span-2 ${input}`} />
       <input name="payerAsShown" placeholder="Payer exactly as the receipt shows (optional)" className={input} />
       <select name="paymentMethod" defaultValue="" className={input}>
         <option value="">Payment method (optional)</option>
@@ -159,7 +159,7 @@ function ExpenseForm({ entityId, receiptDocs }: { entityId: string; receiptDocs:
       <textarea name="notes" rows={2} placeholder="Notes for the reviewer (optional)" className={`sm:col-span-2 ${input}`} />
       <p className="sm:col-span-2 font-sans text-caption text-ordift-ink-muted">Recording a cost does not create a bank transaction, payable, reimbursement, loan or journal, and does not change registered share capital. The accounting treatment stays “to be confirmed” for review.</p>
       <button type="submit" disabled={pending || receiptDocs.length === 0} className={button}>{pending ? "Recording…" : "Record Expense"}</button>
-      {receiptDocs.length === 0 && <p className="sm:col-span-2 font-sans text-caption text-ordift-ink-muted">Every receipt in the vault already backs a recorded expense. Upload the new receipt above first (document type “Government payment receipt”).</p>}
+      {receiptDocs.length === 0 && <p className="sm:col-span-2 font-sans text-caption text-ordift-ink-muted">Every receipt or invoice in the vault already backs a recorded expense. Upload the new document above first (document type: payment receipt, supplier invoice, purchase receipt or other financial supporting document).</p>}
       <Feedback state={state} pending={pending} />
     </form>
   );
@@ -404,7 +404,7 @@ export function EntityRegistryPanels({
             })}
           </div>
         )}
-        <ExpenseForm entityId={entityId} receiptDocs={documents.filter((d) => d.documentType === "government_receipt" && !d.relation && !!d.sha256 && !expenses.some((e) => e.sourceDocumentId === d.id))} />
+        <ExpenseForm entityId={entityId} receiptDocs={documents.filter((d) => isExpenseEvidenceType(d.documentType) && !d.relation && !!d.sha256 && !expenses.some((e) => e.sourceDocumentId === d.id))} />
         <p className="font-sans text-caption text-ordift-ink-muted">These are cost records backed by a receipt. They are not bank transactions, payables, reimbursements or payment instructions, and nothing here moves money.</p>
       </section>
     </div>
