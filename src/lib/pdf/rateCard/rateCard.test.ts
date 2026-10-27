@@ -11,7 +11,7 @@ import type { RateCardContent, RateCardItem } from "./types";
 
 const real = (over: Partial<RateCardItem> = {}): RateCardItem => ({ key: "k", name: "Real package", description: "Approved wording.", inclusions: ["Two hours"], price: { kind: "fixed", amount: 120, unit: "per session" }, source: "manual", ...over });
 const approvable = (): RateCardContent => ({
-  meta: { title: "Rate Card", editionLabel: "2026 Edition 1", effectiveDate: "2026-11-01", marketSlug: "ghana", marketName: "Ghana", currency: "USD" }, coverImage: "/pdf/cover.jpg",
+  meta: { title: "Rate Card", editionLabel: "2026 Edition 1", effectiveDate: "2026-11-01", marketSlug: "ghana", marketName: "Ghana", currency: "USD", issuingEntity: { name: "Ordift Studios", checkedOn: "2026-11-01", licensedActivities: ["photography"] } }, coverImage: "/pdf/cover.jpg",
   sections: [{ key: "s", title: "Sessions", structure: "fixed", items: [real()] }], conditions: [{ title: "Validity", text: "Approved text." }], contact: [{ label: "Email", value: "x@example.com" }],
 });
 
@@ -25,8 +25,9 @@ describe("rate card types carry no confidential field", () => {
   });
   it("the loader reads only the existing selling-rate getters", () => {
     const code = readFileSync(path.join(__dirname, "loaders.ts"), "utf8");
-    expect([...code.matchAll(/from "([^"]+)"/g)].map((m) => m[1])).toEqual(["@/lib/pricing/personalSessionPricing", "@/lib/pricing/weddingEventPricing", "@/lib/pricing/weddingEventEstimate", "./mappers", "./types"]);
-    expect(code).not.toMatch(/\.from\(|createAdminClient|\.insert\(|\.update\(|\.delete\(/);
+    expect([...code.matchAll(/from "([^"]+)"/g)].map((m) => m[1]).sort()).toEqual(["./convert", "./eligibility", "./mappers", "./types", "@/lib/organization/entityRegistrations", "@/lib/pricing/commercialPricing", "@/lib/pricing/corporateHeadshotPricing", "@/lib/pricing/personalSessionPricing", "@/lib/pricing/weddingEventEstimate", "@/lib/pricing/weddingEventPricing", "@/lib/supabase/admin"].sort());
+    expect(code).not.toMatch(/\.insert\(|\.update\(|\.delete\(|\.upsert\(|\.rpc\(/);               // reads only
+    expect([...code.matchAll(/\.from\("([a-z_]+)"\)/g)].map((m) => m[1])).toEqual(["exchange_rates"]);   // the only table it touches directly
   });
 });
 
@@ -81,10 +82,13 @@ describe("validation: a draft only has to render; approval needs approved, non-p
     expect(validateRateCard(approvable(), "approval").errors).toEqual([]);
     const c = approvable(); c.conditions = []; c.contact = []; c.coverImage = "";
     expect(validateRateCard(c, "approval").errors).toHaveLength(3);
+    const d = approvable(); d.meta.issuingEntity = undefined;
+    expect(validateRateCard(d, "approval").errors.join()).toMatch(/which legal entity offers these prices/);
   });
   it("meta fields are required and the currency is a 3-letter code", () => {
     const c = approvable(); c.meta = { ...c.meta, title: "", currency: "usd", effectiveDate: "1/11/2026" };
-    expect(validateRateCard(c, "draft").errors).toHaveLength(3);
+    const e = validateRateCard(c, "draft").errors.join("|");
+    expect(e).toMatch(/rate card title/); expect(e).toMatch(/three-letter code/); expect(e).toMatch(/YYYY-MM-DD/);
   });
 });
 

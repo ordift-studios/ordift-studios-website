@@ -1,7 +1,7 @@
 /* eslint-disable jsx-a11y/alt-text -- react-pdf <Image> is a PDF drawing primitive, not an HTML <img> */
 import { Document, Image, Page, StyleSheet, Text, View } from "@react-pdf/renderer";
 import { BRAND as C } from "../brand";
-import type { EditionStatus, PriceSpec, RateCardContent, RateCardItem, RateCardSection } from "./types";
+import type { Addon, EditionStatus, PriceSpec, RateCardContent, RateCardItem, RateCardSection } from "./types";
 
 const A4 = { w: 595, h: 841 }; // a hair under the A4 page (595.28 × 841.89) so the full-page cover image never overflows its page
 
@@ -49,8 +49,32 @@ const s = StyleSheet.create({
   contactLabel: { fontFamily: "Inter", width: "30%", fontSize: 8, letterSpacing: 1.3, textTransform: "uppercase", color: C.goldPressed, fontWeight: 600, paddingTop: 2 },
   contactValue: { width: "70%", fontSize: 11.5, color: C.navy },
   footer: { fontFamily: "Inter", position: "absolute", left: 50, right: 50, bottom: 30, flexDirection: "row", justifyContent: "space-between", fontSize: 8, color: C.inkMuted, borderTopWidth: 0.5, borderTopColor: C.rule, paddingTop: 8 },
+  specs: { fontFamily: "Inter", fontSize: 8.6, color: C.goldPressed, fontWeight: 500, marginBottom: 4, letterSpacing: 0.2 },
+  tiers: { marginTop: 6, borderTopWidth: 0.5, borderTopColor: C.rule },
+  tierRow: { flexDirection: "row", justifyContent: "space-between", paddingVertical: 3.5, borderBottomWidth: 0.5, borderBottomColor: C.rule },
+  tierLabel: { fontFamily: "Inter", fontSize: 9.3, color: C.ink }, tierPrice: { fontFamily: "Inter", fontSize: 9.3, fontWeight: 600, color: C.navy },
+  minBox: { marginTop: 14, paddingVertical: 10, paddingHorizontal: 12, backgroundColor: C.tint, flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
+  minLabel: { fontFamily: "Inter", fontSize: 9.8, fontWeight: 600, color: C.navy }, minPrice: { fontFamily: "Fraunces", fontWeight: 600, fontSize: 14, color: C.navy },
+  addHead: { fontFamily: "Inter", fontSize: 8, letterSpacing: 1.4, textTransform: "uppercase", color: C.goldPressed, fontWeight: 600, marginTop: 18, marginBottom: 4 },
+  addRow: { flexDirection: "row", justifyContent: "space-between", paddingVertical: 6.5, borderBottomWidth: 0.5, borderBottomColor: C.rule },
+  addMain: { width: "70%", paddingRight: 12 }, addName: { fontFamily: "Inter", fontSize: 10, color: C.ink, fontWeight: 500 }, addNote: { fontFamily: "Inter", fontSize: 8.4, color: C.inkMuted, marginTop: 1.5, lineHeight: 1.4 },
+  addPrice: { fontFamily: "Inter", fontSize: 10, fontWeight: 600, color: C.navy, textAlign: "right", width: "30%" },
+  secNote: { fontFamily: "Inter", fontSize: 9, lineHeight: 1.55, color: C.inkMuted, marginTop: 8 },
+  custom: { marginTop: 10, marginBottom: 2, padding: 9, borderWidth: 0.8, borderColor: C.gold, backgroundColor: "#fbf8ef" },
+  customText: { fontFamily: "Inter", fontSize: 9.4, lineHeight: 1.55, color: C.ink },
+  fxBanner: { fontFamily: "Inter", fontSize: 8.2, color: C.goldPressed, marginTop: 8, lineHeight: 1.45, fontWeight: 500 },
+  watermark: { position: "absolute", top: 300, left: 70, fontFamily: "Fraunces", fontSize: 150, color: "#0b1220", opacity: 0.055, transform: "rotate(-32deg)" },
+  watermarkCover: { position: "absolute", top: 280, left: 40, fontFamily: "Fraunces", fontSize: 170, color: "#ffffff", opacity: 0.16, transform: "rotate(-32deg)" },
   draftBar: { fontFamily: "Inter", position: "absolute", top: 22, right: 50, fontSize: 7.5, letterSpacing: 1.3, textTransform: "uppercase", color: C.goldPressed, fontWeight: 600 },
 });
+
+const priceText = (p: PriceSpec, currency: string) => { const f = formatPrice(p, currency); return [f.prefix, f.amount, f.unit && p.kind !== "on_request" ? f.unit : ""].filter(Boolean).join(" "); };
+const fxLine = (c: RateCardContent): string | null => {
+  const fx = c.meta.fx; if (!fx) return null;
+  const rule = fx.rule.kind === "up_to_multiple" ? `rounded up to the next ${c.meta.currency} ${fx.rule.multiple}` : `rounded to the nearest ${c.meta.currency} ${fx.rule.multiple}`;
+  if (c.meta.conversionPolicy === "approved") return `${c.meta.currency} prices are converted from USD at ${fx.rateToUsd} and ${rule}.`;   // client wording: no internal source note
+  return `Indicative: proposed conversion, not yet approved for client use. ${c.meta.currency} prices are converted from the USD base prices at ${fx.rateToUsd} (${fx.source}, effective ${fx.effectiveFrom}), ${rule}.`;
+};
 
 function Item({ i, currency }: { i: RateCardItem; currency: string }) {
   const p = formatPrice(i.price, currency);
@@ -58,8 +82,10 @@ function Item({ i, currency }: { i: RateCardItem; currency: string }) {
     <View style={s.item} wrap={false}>
       <View style={s.itemMain}>
         <Text style={s.itemName}>{i.name}</Text>
+        {i.specs && i.specs.length ? <Text style={s.specs}>{i.specs.join("  ·  ")}</Text> : null}
         {i.description ? <Text style={s.itemDesc}>{i.description}</Text> : null}
         {i.inclusions.map((x, n) => <View key={n} style={s.inc}><Text style={s.incDot}>–</Text><Text style={s.incText}>{x}</Text></View>)}
+        {i.tiers && i.tiers.length ? <View style={s.tiers}>{i.tiers.map((t) => <View key={t.label} style={s.tierRow}><Text style={s.tierLabel}>{t.label}</Text><Text style={s.tierPrice}>{priceText(t.price, currency)}</Text></View>)}</View> : null}
       </View>
       <View style={s.itemPrice}>
         {p.prefix ? <Text style={s.pFrom}>{p.prefix}</Text> : null}
@@ -75,9 +101,10 @@ function Frame({ c, status }: { c: RateCardContent; status: EditionStatus }) {
   return (
     <>
       {status.state === "draft" ? <Text style={s.draftBar} fixed>Draft — not approved for distribution</Text> : null}
+      {status.state === "draft" ? <Text style={s.watermark} fixed>DRAFT</Text> : null}
       <View style={s.footer} fixed>
         <Text>Ordift Studios · ordiftstudios.com</Text>
-        <Text>{c.meta.title} · {c.meta.editionLabel}</Text>
+        <Text>{c.meta.title} · {c.meta.editionLabel}{status.state === "approved" ? ` · ${status.contentHash.slice(0, 8)}` : ""}</Text>
         <Text render={({ pageNumber, totalPages }) => `${pageNumber} / ${totalPages}`} />
       </View>
     </>
@@ -85,17 +112,24 @@ function Frame({ c, status }: { c: RateCardContent; status: EditionStatus }) {
 }
 
 function Section({ sec, c, status }: { sec: RateCardSection; c: RateCardContent; status: EditionStatus }) {
+  const items = sec.items.filter((i) => i.included !== false);
+  const addons = (sec.addons ?? []).filter((a: Addon) => a.included !== false);
+  const fx = fxLine(c);
   return (
     <Page size="A4" style={s.page}>
       <Frame c={c} status={status} />
       <View style={s.head} fixed><Text style={s.h1}>{sec.title}</Text><Text style={s.headMeta}>{c.meta.marketName}{"\n"}Prices in {c.meta.currency}</Text></View>
+      {fx ? <Text style={s.fxBanner}>{fx}</Text> : null}
       {sec.intro ? <Text style={s.intro}>{sec.intro}</Text> : null}
-      {sec.items.map((i) => <Item key={i.key} i={i} currency={c.meta.currency} />)}
+      {sec.customQuotationNote ? <View style={s.custom} wrap={false}><Text style={s.customText}>{sec.customQuotationNote}</Text></View> : null}
+      {items.map((i) => <Item key={i.key} i={i} currency={c.meta.currency} />)}
+      {sec.minimum ? <View style={s.minBox} wrap={false}><Text style={s.minLabel}>{sec.minimum.label}</Text><Text style={s.minPrice}>{priceText(sec.minimum.price, c.meta.currency)}</Text></View> : null}
+      {addons.length ? <View wrap={false}><Text style={s.addHead}>Additional services</Text>{addons.map((a) => <View key={a.name} style={s.addRow}><View style={s.addMain}><Text style={s.addName}>{a.name}</Text>{a.note ? <Text style={s.addNote}>{a.note}</Text> : null}</View><Text style={s.addPrice}>{priceText(a.price, c.meta.currency)}</Text></View>)}</View> : null}
+      {(sec.notes ?? []).map((n, k) => <Text key={k} style={s.secNote}>{n}</Text>)}
     </Page>
   );
 }
 
-// coverPanelOpacity: how opaque the dark-grey panel behind the cover text is (0.6, 0.7 or 0.8 are the options under review; 0.8 is the current default).
 export function RateCardDocument({ content: c, status, logoWhite, coverPanelOpacity = 0.8 }: { content: RateCardContent; status: EditionStatus; logoWhite: string; coverPanelOpacity?: number }) {
   const m = c.meta;
   return (
@@ -114,10 +148,11 @@ export function RateCardDocument({ content: c, status, logoWhite, coverPanelOpac
           </View>
           <Text style={s.panelMeta}>{m.marketName} · Prices in {m.currency}{"\n"}{m.editionLabel} · Effective {m.effectiveDate}</Text>
         </View>
+        {status.state === "draft" ? <Text style={s.watermarkCover}>DRAFT</Text> : null}
         <View style={s.coverFoot}><Text>ordiftstudios.com</Text>{status.state === "draft" ? <Text style={s.draftTag}>Draft — not approved</Text> : <Text>Edition {status.editionId}</Text>}</View>
       </Page>
 
-      {c.sections.map((sec) => <Section key={sec.key} sec={sec} c={c} status={status} />)}
+      {c.sections.filter((sec) => sec.items.some((i) => i.included !== false)).map((sec) => <Section key={sec.key} sec={sec} c={c} status={status} />)}
 
       {c.conditions.length > 0 ? (
         <Page size="A4" style={s.page}>

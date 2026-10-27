@@ -9,5 +9,5 @@ export async function loadDraftFromSellingRatesAction(marketSlug: string): Promi
   const user = await getCurrentUser();
   if (!user) return { ok: false, error: "Not signed in." };
   if (!isSuperAdmin(user)) return { ok: false, error: "Only Super Admin may build a rate card draft." };
-  return buildDraftFromSellingRates(marketSlug, new Date().toISOString().slice(0, 10));
+  return buildDraftFromSellingRates({ marketSlug, today: new Date().toISOString().slice(0, 10) });
 }
