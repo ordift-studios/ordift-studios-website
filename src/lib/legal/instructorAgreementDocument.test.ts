@@ -114,6 +114,33 @@ describe("OS-LGL-010 document composition (Option A)", () => {
       expect(t).not.toMatch(/\bTIN\b|\btax\b/i);
     });
   });
+  describe("Contact line: preferred correspondence email, with the account email as the fallback", () => {
+    const contactOf = (instructor: Partial<InstructorSnapshot["instructor"]>) => { const x = compose({ instructor: { ...snap.instructor, ...instructor } }); return x.ok ? x.text.split("\n").find((l) => l.startsWith("Contact:")) : "REFUSED"; };
+    it("prints the preferred correspondence email when one is recorded, and not the account email", () => {
+      expect(contactOf({ email: "account@example.test", correspondenceEmail: "preferred@example.test" })).toBe("Contact: preferred@example.test");
+      const x = compose({ instructor: { ...snap.instructor, email: "account@example.test", correspondenceEmail: "preferred@example.test" } });
+      expect(x.ok && x.text).not.toContain("account@example.test");
+    });
+    it("falls back to the account email when there is no preference, or it was cleared or is blank", () => {
+      for (const correspondenceEmail of [undefined, null, "", "   "]) expect(contactOf({ email: "account@example.test", correspondenceEmail })).toBe("Contact: account@example.test");
+    });
+    it("says 'Not stated' only when neither exists, and refuses a preference that is still a template placeholder", () => {
+      expect(contactOf({ email: null, correspondenceEmail: null })).toBe("Contact: Not stated");
+      const bad = compose({ instructor: { ...snap.instructor, correspondenceEmail: "[CONTACT EMAIL]" } });
+      expect(bad).toEqual({ ok: false, missing: ["A stated particular still contains an unresolved template placeholder"] });
+    });
+    it("changes only the Contact line: clauses, party record, Schedule A and signature block are identical with or without a preference", () => {
+      const a = compose({ instructor: { ...snap.instructor, email: "account@example.test" } });
+      const b = compose({ instructor: { ...snap.instructor, email: "account@example.test", correspondenceEmail: "preferred@example.test" } });
+      expect(a.ok && b.ok).toBe(true);
+      if (a.ok && b.ok) {
+        const la = a.text.split("\n"), lb = b.text.split("\n");
+        expect(la.length).toBe(lb.length);
+        expect(la.map((l, i) => (l === lb[i] ? null : [l, lb[i]])).filter(Boolean)).toEqual([["Contact: account@example.test", "Contact: preferred@example.test"]]);
+        expect(b.text).toContain(CLAUSES);
+      }
+    });
+  });
   describe("business address and P.O. Box fields", () => {
     it("separates a postal box from the street address, passing each part on exactly as recorded", () => {
       expect(splitStoredAddress("P.O. Box GP 1234 || No. 12 Sample Road, Sample Town, Accra, Ghana")).toEqual({ businessAddress: "No. 12 Sample Road, Sample Town, Accra, Ghana", postalAddress: "P.O. Box GP 1234" });

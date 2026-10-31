@@ -16,7 +16,10 @@ export type InstructorSnapshot = {
   agreementReference: string;
   onboardingId?: string;
   jurisdiction: string | null;
-  instructor: { profileId: string; legalName: string | null; memberNumber: string | null; email: string | null };
+  // `email` is the Supabase Auth ACCOUNT email (used for login and for signing links). `correspondenceEmail` is the person's recorded preferred correspondence email
+  // (migration 0178), when there is one: the agreement's CONTACT line shows it in preference to the account email. It is informational only - the master has no
+  // notice-address clause - and it never changes who receives a signing link.
+  instructor: { profileId: string; legalName: string | null; memberNumber: string | null; email: string | null; correspondenceEmail?: string | null };
   // registrationNumber / businessAddress come from the verified entity record (Super-Admin-only details; the stored column is historically named
   // registered_address) and are frozen with the snapshot. businessAddress is the CURRENT business address as recorded - it is never labelled "registered"
   // because whether the Registrar's record carries it is a separate, unverified question; postalAddress is optional.
@@ -90,7 +93,7 @@ export function composeInstructorAgreementText({ masterText, masterVersion, snap
   const a = (s.scheduleA ?? {}) as ScheduleATerms;
   const term = a.masterTerm?.trim() ? renderMasterTerm(a.masterTerm) : null;
   if (term && !term.ok) missing.push("Master term (the date range is not a valid range)");
-  const resolvedValues = [s.contractingEntity?.registrationNumber, s.contractingEntity?.businessAddress, s.contractingEntity?.postalAddress, s.signatory?.name, s.signatory?.position, a.addressCountry, a.primaryExpertise, a.businessName, a.masterTerm, a.masterTerminationNotice, a.specialTerms, a.qualifications];
+  const resolvedValues = [s.instructor?.correspondenceEmail, s.contractingEntity?.registrationNumber, s.contractingEntity?.businessAddress, s.contractingEntity?.postalAddress, s.signatory?.name, s.signatory?.position, a.addressCountry, a.primaryExpertise, a.businessName, a.masterTerm, a.masterTerminationNotice, a.specialTerms, a.qualifications];
   if (resolvedValues.some((v) => typeof v === "string" && TEMPLATE_PLACEHOLDER.test(v))) missing.push("A stated particular still contains an unresolved template placeholder");
   if (missing.length) return { ok: false, missing };
 
@@ -150,7 +153,7 @@ export function composeInstructorAgreementText({ masterText, masterVersion, snap
     affiliation,
     `Nationality / work authorization: ${opt(printable("nationalityWorkAuthorization"))}`,
     `Address / country: ${a.addressCountry}`,
-    `Contact: ${[s.instructor.email].filter(Boolean).join(" / ") || NOT_STATED}`,
+    `Contact: ${s.instructor.correspondenceEmail?.trim() || s.instructor.email?.trim() || NOT_STATED}`,
     `Professional role: ${a.professionalRole}`,
     `Primary expertise: ${a.primaryExpertise}`,
     `Qualifications / credentials: ${opt(a.qualifications)}`,

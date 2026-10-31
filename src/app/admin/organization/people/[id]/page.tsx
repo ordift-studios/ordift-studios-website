@@ -38,6 +38,8 @@ import { getServiceLengthSummary } from "@/lib/organization/serviceLength";
 import { listAppealsForProfile } from "@/lib/organization/appeals";
 import { listEmployingEntities, listEmployerCapableEmployingEntities } from "@/lib/organization/legalEntities";
 import { CreateAgreementDraftForm } from "./CreateAgreementDraftForm";
+import { CorrespondenceEmailPanel } from "./CorrespondenceEmailPanel";
+import { loadContactEmailsForViewer } from "@/lib/organization/correspondenceEmail";
 import {
   setEmploymentStatusAction,
   recordBackgroundScreeningAction,
@@ -153,6 +155,8 @@ export default async function PersonDetailPage({ params }: { params: Promise<{ i
   if (!usersResult.ok) redirect("/admin/users");
   const person = usersResult.users.find((u) => u.id === id);
   if (!person) notFound();
+  // Account Email (login) and Preferred Correspondence Email, kept apart. Null = this viewer has no authority to see it (this page already requires people-management authority).
+  const contactEmails = await loadContactEmailsForViewer(id, currentUser.id);
 
   const [financialLevel, screenings, recentActivity, separationCases, performanceReviews, pips, investigations, suspensions] = await Promise.all([
     getPersonFinancialAuthorityLevel(id),
@@ -318,7 +322,11 @@ export default async function PersonDetailPage({ params }: { params: Promise<{ i
         <div id="section-identity" className="rounded-xl border border-black/10 bg-white p-6 space-y-2 scroll-mt-6">
           <h2 className="font-serif font-medium text-body text-ordift-ink">Identity</h2>
           <p className="font-sans text-body-small text-ordift-ink-muted">Name: {person.fullName ?? "—"}</p>
-          <p className="font-sans text-body-small text-ordift-ink-muted">Personal/contact email: {person.email ?? "—"}</p>
+          {contactEmails ? (
+            <CorrespondenceEmailPanel profileId={id} view={contactEmails} />
+          ) : (
+            <p className="font-sans text-body-small text-ordift-ink-muted">Account Email — Used for Login: {person.email ?? "—"}</p>
+          )}
           <p className="font-sans text-body-small text-ordift-ink-muted">
             Work email: {identity ? `${identity.email} (${identity.status})` : "Not reserved yet"}
           </p>

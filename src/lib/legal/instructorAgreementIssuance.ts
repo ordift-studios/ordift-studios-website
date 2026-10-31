@@ -81,7 +81,8 @@ export async function saveInstructorScheduleA(params: { onboardingId: string; ag
   const signatory = signatoryParticulars && owned.snapshot.signatory ? { ...owned.snapshot.signatory, ...signatoryParticulars } : owned.snapshot.signatory;
   const instructorParticulars = await loadInstructorParticulars(owned.snapshot.instructor?.profileId);
   const was = owned.snapshot.instructor;
-  const instructor = instructorParticulars && was ? { ...was, legalName: instructorParticulars.legalName ?? was.legalName, memberNumber: instructorParticulars.memberNumber ?? was.memberNumber, email: instructorParticulars.email ?? was.email } : was; // a value that cannot be read keeps its earlier snapshot value
+  // a value that cannot be read keeps its earlier snapshot value; a preferred correspondence email that was CLEARED (null) is cleared, one that cannot be read (undefined) is kept
+  const instructor = instructorParticulars && was ? { ...was, legalName: instructorParticulars.legalName ?? was.legalName, memberNumber: instructorParticulars.memberNumber ?? was.memberNumber, email: instructorParticulars.email ?? was.email, correspondenceEmail: instructorParticulars.correspondenceEmail === undefined ? was.correspondenceEmail ?? null : instructorParticulars.correspondenceEmail } : was;
   const saved = await attachAgreementSnapshot({ agreementId: params.agreementId, snapshotData: { ...owned.snapshot, instructor, contractingEntity, signatory, scheduleA: verdict.terms }, sourceReference: `staff_onboarding:${params.onboardingId}:schedule_a`, actorUserId: params.actorUserId });
   return saved.ok ? { ok: true } : { ok: false, error: saved.error };
 }

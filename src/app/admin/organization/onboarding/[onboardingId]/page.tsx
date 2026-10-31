@@ -18,6 +18,8 @@ import { resolveOnboardingRelationship, onboardingCopy, onboardingWorkspaceHref 
 import { OnboardingWorkspace } from "./OnboardingWorkspace";
 import OnboardingJourneyPanel from "@/components/admin/OnboardingJourneyPanel";
 import { buildInstructorWorkspace } from "@/lib/organization/instructorWorkspace";
+import { loadContactEmailsForViewer } from "@/lib/organization/correspondenceEmail";
+import { ContactEmailLines } from "../../ContactEmailLines";
 import { getCurrentInstructorAgreement, resolveOnboardingLegalContext } from "@/lib/legal/instructorAgreements";
 import { loadInstructorSigningProgress, previewInstructorAgreement } from "@/lib/legal/instructorAgreementIssuance";
 import { instructorAgreementStage } from "@/lib/legal/instructorAgreementDocument";
@@ -68,6 +70,8 @@ export default async function OnboardingWorkspacePage({ params }: { params: Prom
   ]);
 
   const person = usersResult.ok ? usersResult.users.find((u) => u.id === onboarding.profileId) : undefined;
+  // Read-only: Account Email (login) and Preferred Correspondence Email, for people with people-management authority only, on external-contributor onboardings (editing is on the person page).
+  const contactEmails = onboarding.pipeline === "external_contractor" ? await loadContactEmailsForViewer(onboarding.profileId, currentUser.id) : null;
   // Relationship-aware presentation (2026-10-21): the same verified
   // classification (engagement type + system role) that routes admins here
   // decides the terminology and whether employee-only organizational
@@ -237,6 +241,7 @@ export default async function OnboardingWorkspacePage({ params }: { params: Prom
           <p className="font-sans text-body-small text-ordift-ink-muted">Name: {person?.fullName ?? "—"}</p>
           <p className="font-sans text-body-small text-ordift-ink-muted">{copy.numberLabel}: {person?.memberNumber ?? "Not yet issued"}</p>
           <p className="font-sans text-body-small text-ordift-ink-muted">Engagement type: {person?.engagementTypeName ?? "—"}</p>
+          {contactEmails && <ContactEmailLines view={contactEmails} />}
         </div>
 
         <div className="rounded-xl border border-black/10 bg-white p-6 space-y-2">

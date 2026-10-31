@@ -3,6 +3,7 @@ import { createDraftAgreement, addAgreementParty, attachAgreementSnapshot } from
 import { isTerminalAgreementStatus, type AgreementLifecycleStatus } from "./agreementLifecycle";
 import { loadAgreementReadiness } from "./agreementReadinessData";
 import { splitStoredAddress } from "./instructorAgreementDocument";
+import { getPreferredCorrespondenceEmail } from "@/lib/organization/correspondenceEmail";
 import { getEngagementTypeSlug } from "@/lib/organization/engagementTypeLookup";
 import type { AgreementReadiness } from "./agreementReadiness";
 
@@ -61,12 +62,13 @@ export async function loadEntityRegistrationParticulars(entityId: string | null 
 // name or a changed account email reaches the document before it is approved. The profile (the person) is the draft's fixed identity; only these descriptive values are
 // refreshed, and the earlier snapshots keep what they held. If the account cannot be read the earlier values are kept - nothing is guessed. Signing links are always sent to
 // the account email held at the moment of issue, so refreshing here keeps the printed contact and the delivery address the same.
-export async function loadInstructorParticulars(profileId: string | null | undefined): Promise<{ legalName: string | null; memberNumber: string | null; email: string | null } | null> {
+export async function loadInstructorParticulars(profileId: string | null | undefined): Promise<{ legalName: string | null; memberNumber: string | null; email: string | null; correspondenceEmail: string | null | undefined } | null> {
   if (!profileId) return null;
   const admin = createAdminClient();
-  const [{ data: profile }, authUser] = await Promise.all([admin.from("profiles").select("full_name, member_number").eq("id", profileId).maybeSingle(), admin.auth.admin.getUserById(profileId)]);
+  const [{ data: profile }, authUser, correspondenceEmail] = await Promise.all([admin.from("profiles").select("full_name, member_number").eq("id", profileId).maybeSingle(), admin.auth.admin.getUserById(profileId), getPreferredCorrespondenceEmail(profileId)]);
   if (!profile) return null;
-  return { legalName: (profile.full_name as string | null) ?? null, memberNumber: (profile.member_number as string | null) ?? null, email: authUser.data?.user?.email ?? null };
+  // correspondenceEmail: the CURRENT preference, null when none or cleared, undefined when the record cannot be read (the caller then keeps its earlier value).
+  return { legalName: (profile.full_name as string | null) ?? null, memberNumber: (profile.member_number as string | null) ?? null, email: authUser.data?.user?.email ?? null, correspondenceEmail };
 }
 
 // The signatory a DRAFT should carry, with that signatory's current particulars (name, management title, authority, legal capacity), re-read from the
@@ -146,7 +148,7 @@ export async function prepareInstructorAgreementDraft(params: {
       agreementReference: draft.agreementReference,
       onboardingId: params.onboardingId,
       jurisdiction: ctx.jurisdictionName,
-      instructor: { profileId: ctx.profileId, legalName: profile?.full_name ?? null, memberNumber: profile?.member_number ?? null, email: authUser.data.user?.email ?? null },
+      instructor: { profileId: ctx.profileId, legalName: profile?.full_name ?? null, memberNumber: profile?.member_number ?? null, email: authUser.data.user?.email ?? null, correspondenceEmail: (await getPreferredCorrespondenceEmail(ctx.profileId)) ?? null },
       contractingEntity: { id: entity.id, name: entity.name, legalName: entity.legal_name, registrationType: entity.registration_type, registrationDate: entity.registration_date, ...(await loadEntityRegistrationParticulars(entity.id as string)) },
       signatory: { id: signatory.id, name: signatory.full_name, position: signatory.position, authority: signatory.authority, sourceDocumentId: signatory.source_document_id, legalCapacity: signatory.legal_capacity ?? null },
       template: { versionId: master.current_version_id, contentReference: version?.content_reference ?? null, documentHash: version?.document_hash ?? null, templateEffectiveDate: version?.effective_date ?? null, templateApprovedAt: version?.approved_at ?? null },

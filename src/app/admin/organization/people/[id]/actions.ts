@@ -79,6 +79,7 @@ import {
 import { recordPolicyAcknowledgement, type PolicyAcknowledgementMethod } from "@/lib/organization/policyAcknowledgements";
 import { resolveDeferredRequirementForProfile } from "@/lib/organization/onboardingRequirements";
 import { actionOk, actionFail, type ActionState } from "@/lib/shared/actionState";
+import { setCorrespondenceEmail, CORRESPONDENCE_SOURCES, type CorrespondenceSource } from "@/lib/organization/correspondenceEmail";
 import {
   recordEmploymentTransition,
   completeEnhancedReview,
@@ -145,6 +146,27 @@ export async function setEmploymentStatusAction(_prev: ActionState, formData: Fo
 
   revalidatePath(`/admin/organization/people/${profileId}`);
   return actionOk("Saved.");
+}
+
+// Preferred correspondence email (migration 0178). Records, changes or clears the person's PREFERRED CORRESPONDENCE email as a new append-only entry. It never touches
+// the Supabase Auth account email. setCorrespondenceEmail() independently enforces Super Admin / people-management authority; this action is only the form entry point.
+export async function setCorrespondenceEmailAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  const currentUser = await getCurrentUser();
+  if (!currentUser) return actionFail("You must be signed in.");
+  const profileId = String(formData.get("profileId") ?? "").trim();
+  const intent = String(formData.get("intent") ?? "save");
+  const source = String(formData.get("source") ?? "");
+  if (!profileId || !(CORRESPONDENCE_SOURCES as readonly string[]).includes(source)) return actionFail("Nothing was saved - check the details and try again.");
+  const result = await setCorrespondenceEmail({
+    profileId,
+    email: intent === "clear" ? null : String(formData.get("email") ?? ""),
+    source: source as CorrespondenceSource,
+    evidenceNote: String(formData.get("evidenceNote") ?? ""),
+    actorUserId: currentUser.id,
+  });
+  if (!result.ok) return actionFail(result.error);
+  revalidatePath(`/admin/organization/people/${profileId}`);
+  return actionOk(result.action === "cleared" ? "Cleared. The account email is used for correspondence again." : result.action === "changed" ? "Preferred correspondence email changed." : "Preferred correspondence email recorded.");
 }
 
 // Background screening decision — recordBackgroundScreening() itself
