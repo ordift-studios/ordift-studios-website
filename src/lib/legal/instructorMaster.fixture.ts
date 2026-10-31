@@ -1,0 +1,35 @@
+// TEST FIXTURE ONLY: a synthetic master shaped exactly like the extracted OS-LGL-010 v1.0 text (same headings, order and blank template forms),
+// with invented clause wording. The real master is verified against the same structure by the local validation run, never by this file.
+const CLAUSE_TITLES = [
+  "DEFINITIONS, STRUCTURE AND STATUS", "REGULATORY AND EDUCATIONAL-SERVICE CLEARANCE", "ENGAGEMENT, ROLE AND LEARNING SCOPE", "INSTRUCTOR QUALIFICATIONS, ACCURACY AND PROFESSIONAL STANDARD",
+  "SESSION SCHEDULE, TIMETABLE AND DELIVERY", "PERSONAL PERFORMANCE, REPLACEMENT AND GUEST CONTRIBUTORS", "COMPENSATION, INVOICING AND PAYMENT", "TRAVEL, ACCOMMODATION AND EXPENSES",
+  "INSTRUCTOR PRE-EXISTING MATERIALS", "COMMISSIONED EDUCATIONAL MATERIALS", "RECORDING, LIVESTREAM AND CONTENT EXPLOITATION", "NAME, LIKENESS, BIOGRAPHY AND PROMOTION",
+  "PARTICIPANT MATERIALS, ACCESS AND LICENSING", "PARTICIPANT CONDUCT, SAFEGUARDING AND MINORS", "PARTICIPANT DATA, PRIVACY AND COMMUNICATIONS", "CONFIDENTIALITY AND EMBARGO",
+  "AI, AUTOMATION AND DIGITAL EDUCATIONAL TOOLS", "ATTENDEE RECORDING AND DEVICE POLICY", "SPONSORS, BRANDS, VENUES AND COMMERCIAL INTEGRATION", "EQUIPMENT, VENUE AND TECHNICAL REQUIREMENTS",
+  "CANCELLATION, RESCHEDULING AND REPLACEMENT", "FORCE MAJEURE", "WARRANTIES AND COMPLIANCE", "INDEMNITIES", "LIMITATION OF LIABILITY", "TERM, TERMINATION AND OFFBOARDING",
+  "NON-EXCLUSIVITY, CONFLICTS AND PARTICIPANT SOLICITATION", "GOVERNING LAW, DISPUTES AND JURISDICTION ROUTING", "ELECTRONIC EXECUTION, VERSION CONTROL AND GENERAL",
+];
+export const CLAUSES = CLAUSE_TITLES.map((t, i) => {
+  const n = i + 1;
+  const body = n === 1 ? "1.1 Agreement. Invented test wording for clause one.\n1.2 Parties. Invented test wording." : n === 29 ? "29.1 Test wording.\n29.6 Entire agreement. Invented test wording for the final clause." : `${n}.1 Invented test wording for clause ${n}.`;
+  return `${n}. ${t}\n${body}`;
+}).join("\n");
+export const MASTER = [
+  "",
+  "INSTRUCTOR / WORKSHOP FACILITATOR AGREEMENT",
+  "OFFICIAL MASTER - VERSION 1.0",
+  "APPROVED - OFFICIAL MASTER",
+  "Invented test introduction paragraph describing the master framework for independent instructors and facilitators.",
+  "PARTIES & ENGAGEMENT RECORD",
+  "Agreement ID", "[ORD-INS-YYYY-######]", "Ordift Contracting Entity", "[LEGAL ENTITY / REGISTRATION DETAILS]", "Effective Date", "[DATE]",
+  "",
+  "APPROVED - OFFICIAL MASTER",
+  CLAUSES,
+  "SCHEDULE A - INSTRUCTOR PROFILE & MASTER TERMS", "Instructor legal name", "[NAME]", "Master term", "[ONGOING / DATE RANGE]",
+  "SCHEDULE B - WORKSHOP / SESSION SCHEDULE", "Session ID", "[ORD-SES-YYYY-######]",
+  "SCHEDULE C - COMPENSATION, COMPLETION & PAYABLE CONTROL", "Fee", "[AMOUNT / BASIS]",
+  "SCHEDULE D - IP, RECORDING & CONTENT RIGHTS MATRIX", "Recording", "[YES / NO]",
+  "SCHEDULE E - PARTICIPANT, SAFEGUARDING & DATA CONTROLS", "Audience", "[ADULTS / MIXED / MINORS]",
+  "SCHEDULE F - JURISDICTION ROUTING NOTES", "Ghana", "Counsel should determine whether the Program is regulated education.", "Qatar", "Counsel should test the Program against the local law.",
+  "",
+].join("\n");

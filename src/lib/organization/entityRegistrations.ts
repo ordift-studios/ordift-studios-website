@@ -195,6 +195,28 @@ export async function setSignatoryLegalCapacity(p: { signatoryId: string; capaci
   return { ok: true, capacity: p.capacity };
 }
 
+// Corrects a recorded signatory entry (a misspelt name and/or the authority wording) the ONLY sanctioned way: the entry is never edited. In one database transaction
+// (public.supersede_entity_signatory, migration 0177) the old entry is end-dated and kept, and a corrected entry is added that carries over everything else
+// (position, authority, capacity, person link, source document) and records which entry it supersedes and why. Exactly one current entry remains.
+// Agreement snapshots and issued/signed documents keep the values they were made with; a DRAFT picks the corrected entry up when its terms are saved again.
+// Super Admin only. The reason is required and is written to the audit trail.
+export async function supersedeEntitySignatory(p: { signatoryId: string; correctedFullName?: string | null; correctedAuthority?: string | null; reason: string; effectiveOn: string; actorUserId: string }): Promise<Result<{ newSignatoryId: string }>> {
+  if (!(await isSuperAdminId(p.actorUserId))) return NOT_ALLOWED;
+  const name = p.correctedFullName?.trim() ?? "";
+  const authority = p.correctedAuthority?.trim() ?? "";
+  if (!name && !authority) return { ok: false, error: "Enter the corrected name and/or the corrected authority wording." };
+  if (name && name.length < 3) return { ok: false, error: "Enter the corrected full name exactly as the registration document shows it." };
+  if (authority && authority.length < 5) return { ok: false, error: "Enter the authority wording exactly as the document states it." };
+  if (p.reason.trim().length < 10) return { ok: false, error: "State why the entry is being corrected (at least 10 characters)." };
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(p.effectiveOn) || !validIsoDate(p.effectiveOn)) return { ok: false, error: "Enter the correction date as YYYY-MM-DD." };
+  const { data, error } = await createAdminClient().rpc("supersede_entity_signatory", { p_signatory_id: p.signatoryId, p_corrected_full_name: name || null, p_reason: p.reason.trim(), p_effective_on: p.effectiveOn, p_actor: p.actorUserId, p_corrected_authority: authority || null });
+  if (error || !data) {
+    const m = /ordift:(signatory_[a-z_]+): ([^"]*)/.exec(error?.message ?? "");
+    return { ok: false, error: m ? m[2].trim() : "The signatory entry could not be corrected." };
+  }
+  return { ok: true, newSignatoryId: data as unknown as string };
+}
+
 // The ONE active Founder identity (the explicitly governed record of who the Founder is). Secondary / backup logins of the same person are NOT it: they are recorded separately as common-control accounts.
 export async function getActiveFounderProfileId(): Promise<string | null> {
   const { data } = await createAdminClient().from("founder_identities").select("profile_id").eq("status", "active").limit(1).maybeSingle();

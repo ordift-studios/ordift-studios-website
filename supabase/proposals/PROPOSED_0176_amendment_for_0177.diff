@@ -1,0 +1,29 @@
+--- PROPOSED_0176_ghana_admin_enhancements.sql	2026-10-27 19:43:32
++++ PROPOSED_0176_ghana_admin_enhancements.sql (amended for 0177)	2026-10-31 20:42:28
+@@ -51,7 +51,7 @@
+ language plpgsql security definer set search_path = '' as $$
+ begin
+   if tg_op = 'DELETE' then raise exception 'entity_signatories rows are never deleted: end-date the row and add a new one' using errcode = '42501'; end if;
+-  if to_jsonb(new) - 'legal_capacity' - 'profile_id' - 'signing_designation' is distinct from to_jsonb(old) - 'legal_capacity' - 'profile_id' - 'signing_designation' then
++  if to_jsonb(new) - array['legal_capacity', 'profile_id', 'signing_designation', 'effective_to']::text[] is distinct from to_jsonb(old) - array['legal_capacity', 'profile_id', 'signing_designation', 'effective_to']::text[] then
+     raise exception 'ordift:signatory_immutable: only the legal capacity, the person link and the signing designation can be set, each once' using errcode = '42501';
+   end if;
+   if old.legal_capacity is not null and new.legal_capacity is distinct from old.legal_capacity then
+@@ -63,6 +63,17 @@
+   if old.profile_id is not null and new.profile_id is distinct from old.profile_id then
+     raise exception 'ordift:signatory_person_fixed: the person a signatory is linked to is not changed or cleared; add a new effective-dated row' using errcode = '42501';
+   end if;
++  if new.effective_to is distinct from old.effective_to then
++    if old.effective_to is not null or new.effective_to is null then
++      raise exception 'ordift:signatory_end_date_fixed: an end date is set once and is never changed or cleared' using errcode = '42501';
++    end if;
++    if coalesce(current_setting('ordift.signatory_supersede', true), '') <> 'on' then
++      raise exception 'ordift:signatory_end_date_controlled: an entry is end-dated only by public.supersede_entity_signatory' using errcode = '42501';
++    end if;
++    if new.effective_from is not null and new.effective_to < new.effective_from then
++      raise exception 'ordift:signatory_end_before_start: the end date cannot precede the start date' using errcode = '23514';
++    end if;
++  end if;
+   if old.profile_id is null and new.profile_id is not null then
+     if new.effective_to is not null then raise exception 'ordift:signatory_not_current: only a current signatory can be linked to a person' using errcode = '23514'; end if;
+     if not exists (select 1 from public.profiles p where p.id = new.profile_id and p.access_status = 'active') then

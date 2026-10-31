@@ -9,7 +9,7 @@ import { missingScheduleATerms, validateScheduleATerms, type ScheduleATerms } fr
 import { loadVersion, verifyStoredMasterIntegrity } from "./masterRegistryActions";
 import { deriveMasterContentReference } from "./masterContentReference";
 import { loadAgreementReadiness } from "./agreementReadinessData";
-import { resolveOnboardingLegalContext, OS_LGL_010, INSTRUCTOR_CONTEXT_TYPE } from "./instructorAgreements";
+import { resolveOnboardingLegalContext, loadEntityRegistrationParticulars, resolveDraftSignatoryParticulars, loadInstructorParticulars, OS_LGL_010, INSTRUCTOR_CONTEXT_TYPE } from "./instructorAgreements";
 import { sendEmail } from "@/lib/shared/email/dispatch";
 
 // OS-LGL-010 Instructor Agreement: Schedule A terms -> preview -> approve for issue -> issue for signature. Reuses the generic agreement engine,
@@ -61,7 +61,7 @@ export async function previewInstructorAgreement(onboardingId: string, agreement
   const master = await loadVerifiedMasterText(owned.agreement.master_version_id);
   if (!master.ok) return master;
   const composed = composeInstructorAgreementText({ masterText: master.text, masterVersion: master.version, snapshot: owned.snapshot });
-  if (!composed.ok) return { ok: false, error: "Required particulars are missing, so the document cannot be previewed.", missing: composed.missing };
+  if (!composed.ok) return { ok: false, error: composed.structural ? "The controlled master's structure could not be reliably identified, so the document cannot be composed." : "Required particulars are missing, so the document cannot be previewed.", missing: composed.missing };
   return { ok: true, text: composed.text, sha256: createHash("sha256").update(composed.text, "utf8").digest("hex") };
 }
 
@@ -74,7 +74,15 @@ export async function saveInstructorScheduleA(params: { onboardingId: string; ag
   if (owned.agreement.status !== "draft") return { ok: false, error: `The terms can be changed only while the agreement is a draft (it is “${owned.agreement.status}”).` };
   const verdict = validateScheduleATerms(params.terms, new Date().toISOString().slice(0, 10));
   if (!verdict.ok) return { ok: false, error: verdict.errors[0], errors: verdict.errors };
-  const saved = await attachAgreementSnapshot({ agreementId: params.agreementId, snapshotData: { ...owned.snapshot, scheduleA: verdict.terms }, sourceReference: `staff_onboarding:${params.onboardingId}:schedule_a`, actorUserId: params.actorUserId });
+  // The contracting entity's registration particulars and the chosen signatory's particulars are re-read from the verified records whenever the terms are saved (a draft is not frozen yet); if they cannot be read the earlier values are kept.
+  const particulars = await loadEntityRegistrationParticulars(owned.snapshot.contractingEntity?.id);
+  const contractingEntity = particulars && owned.snapshot.contractingEntity ? { ...owned.snapshot.contractingEntity, ...particulars } : owned.snapshot.contractingEntity;
+  const signatoryParticulars = await resolveDraftSignatoryParticulars({ onboardingId: params.onboardingId, agreementId: params.agreementId, entityId: owned.snapshot.contractingEntity?.id, snapshotSignatoryId: owned.snapshot.signatory?.id });
+  const signatory = signatoryParticulars && owned.snapshot.signatory ? { ...owned.snapshot.signatory, ...signatoryParticulars } : owned.snapshot.signatory;
+  const instructorParticulars = await loadInstructorParticulars(owned.snapshot.instructor?.profileId);
+  const was = owned.snapshot.instructor;
+  const instructor = instructorParticulars && was ? { ...was, legalName: instructorParticulars.legalName ?? was.legalName, memberNumber: instructorParticulars.memberNumber ?? was.memberNumber, email: instructorParticulars.email ?? was.email } : was; // a value that cannot be read keeps its earlier snapshot value
+  const saved = await attachAgreementSnapshot({ agreementId: params.agreementId, snapshotData: { ...owned.snapshot, instructor, contractingEntity, signatory, scheduleA: verdict.terms }, sourceReference: `staff_onboarding:${params.onboardingId}:schedule_a`, actorUserId: params.actorUserId });
   return saved.ok ? { ok: true } : { ok: false, error: saved.error };
 }
 
@@ -143,7 +151,13 @@ export async function issueInstructorAgreement(params: { onboardingId: string; a
   // Per-recipient delivery state (recoverable, idempotent). A recipient whose email was ACCEPTED by the provider is never emailed again and
   // keeps their valid link. A recipient whose email failed or was ambiguous (error/timeout) gets exactly one fresh link on retry, which
   // replaces any earlier link, so at most one link per signatory is ever valid. Acceptance by the provider is not proof of receipt.
-  const { data: signatories } = await admin.from("signature_signatories").select("id, role, status, agreement_parties(profile_id)").eq("signature_request_id", requestId);
+  // Recipients are processed in a FIXED order (the instructor first, then the Ordift signatory), never in whatever order the database returns the rows: otherwise a
+  // failure for one recipient could, on some attempts, stop the loop before the other recipient was tried, and the same agreement would behave differently
+  // from one attempt to the next. Failure handling is unchanged: the first failure stops the attempt, accepted recipients are never emailed again, and a
+  // retry sends each outstanding recipient exactly one fresh link.
+  const SIGNING_ORDER: Record<string, number> = { instructor: 0, ordift: 1 };
+  const { data: unordered } = await admin.from("signature_signatories").select("id, role, status, agreement_parties(profile_id)").eq("signature_request_id", requestId);
+  const signatories = (unordered ?? []).slice().sort((a, b) => (SIGNING_ORDER[a.role as string] ?? 9) - (SIGNING_ORDER[b.role as string] ?? 9) || String(a.id).localeCompare(String(b.id)));
   const sigIds = (signatories ?? []).map((s) => s.id as string);
   const { data: acceptedRows } = sigIds.length ? await admin.from("signature_events").select("signatory_id").eq("event_type", "link_email_accepted").in("signatory_id", sigIds) : { data: [] };
   const accepted = new Set((acceptedRows ?? []).map((r) => r.signatory_id as string));

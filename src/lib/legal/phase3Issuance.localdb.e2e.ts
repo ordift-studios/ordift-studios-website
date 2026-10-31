@@ -58,7 +58,9 @@ import { recordSignatoryConsent, recordSignatorySignature, recordSignatoryDeclin
 import { createInstructorEngagement } from "@/lib/workshops/instructorEngagements";
 import { getUnsatisfiedRequiredRequirements } from "@/lib/organization/onboardingRequirements";
 import type { ScheduleATerms } from "./instructorAgreementTerms";
+import { longDate } from "./instructorAgreementDocument";
 import { storeTestEvidence } from "./approvalEvidence.testkit";
+import { MASTER } from "./instructorMaster.fixture";
 
 if (!/^https?:\/\/(127\.0\.0\.1|localhost)(:|\/|$)/.test(process.env.NEXT_PUBLIC_SUPABASE_URL ?? "")) throw new Error("Refusing to run: this E2E may only target a localhost database.");
 
@@ -69,11 +71,12 @@ const KWAKU = "00000000-0000-4000-8000-000000000a03";
 const sql = (q: string) => execSync(process.env.E2E_DB ? `docker exec -i ordift-mig-check2 psql -U supabase_admin -h 127.0.0.1 -d ${process.env.E2E_DB} -X -q -v ON_ERROR_STOP=1 -At` : "docker exec -i ordift-mig-check2 psql -U postgres -h 127.0.0.1 -v ON_ERROR_STOP=1 -At", { input: q }).toString().trim();
 const sha = (b: Uint8Array | string) => createHash("sha256").update(b).digest("hex");
 
-const CLEAN = makeZip("word/document.xml", "<w:document><w:body><w:p><w:r><w:t>INSTRUCTOR / WORKSHOP FACILITATOR AGREEMENT</w:t></w:r></w:p><w:p><w:r><w:t>1.1 Agreement. Each workshop is created by an accepted Session Schedule.</w:t></w:r></w:p><w:p><w:r><w:t>3.4 No guaranteed engagements.</w:t></w:r></w:p></w:body></w:document>");
+const xml = (t: string) => t.replace(/&/g, "&amp;").replace(/</g, "&lt;");
+const CLEAN = makeZip("word/document.xml", `<w:document><w:body>${MASTER.split("\n").filter(Boolean).map((l) => `<w:p><w:r><w:t>${xml(l)}</w:t></w:r></w:p>`).join("")}</w:body></w:document>`); // synthetic master with the real OS-LGL-010 structure (Option A refuses any other shape)
 const PDF = new Uint8Array([37, 80, 68, 70, 45, 49, 46, 52]);
 const DOCX_PATH = "masters-docx/OS-LGL-010/p3i.docx";
 const PDF_PATH = "masters-pdf/OS-LGL-010/p3i.pdf";
-const ids = {} as { version: string; ghana: string; onboarding: string; docFile: string; agreement: string };
+const ids = {} as { version: string; ghana: string; onboarding: string; docFile: string; agreement: string; signatoryId: string };
 const TERMS: ScheduleATerms = {
   professionalRole: "INSTRUCTOR", businessName: "", nationalityWorkAuthorization: "", addressCountry: "Synthetic Street, Accra, Ghana", contactPhone: "", primaryExpertise: "Synthetic photography teaching",
   qualifications: "", independentStatusRoute: "CONTRACTOR", masterTerm: "ONGOING", masterTerminationNotice: "30 days written notice", regulatoryApprovalStatus: "N/A", specialTerms: "NONE",
@@ -109,6 +112,7 @@ beforeAll(async () => {
   `);
   ids.version = sql("select id from public.legal_document_versions where master_id=(select id from public.legal_document_masters where canonical_code='OS-LGL-010')");
   ids.ghana = sql("select id from public.employing_entities where slug='ordift-studios'");
+  sql(`insert into public.employing_entity_sensitive_details (employing_entity_id, registration_number, registered_address, recorded_by) values ('${ids.ghana}','BN000000000','PO Box 1 || 1 Synthetic Street, Accra','${SUPER}') on conflict (employing_entity_id) do update set registration_number=excluded.registration_number, registered_address=excluded.registered_address`);
   const reqId = sql(`with r as (insert into public.department_requests (request_type, title, requested_by) values ('recruitment','Synthetic instructor','${SUPER}') returning id)
     insert into public.recruitment_requisitions (request_id, employing_entity_id, employment_jurisdiction_id, direct_hire_profile_id, hire_origin, headcount)
     select r.id, '${ids.ghana}', (select id from public.employment_jurisdictions where slug='ghana'), '${KWAKU}', 'founder_direct_hire', 1 from r returning id`).split("\n")[0];
@@ -123,8 +127,9 @@ beforeAll(async () => {
     await activateMasterVersion({ versionId: ids.version, effectiveDate: "2026-09-18", backdatedReason: "Effective from counsel's approval date, as decided by the Founder.", actorUserId: SUPER }),
     await confirmContractingEntity({ onboardingId: ids.onboarding, entityId: ids.ghana, expectedJurisdiction: "Ghana", actorUserId: SUPER }),
   ]) if (!r.ok) throw new Error(`setup failed: ${JSON.stringify(r)}`);
-  const sig = await addEntitySignatory({ entityId: ids.ghana, fullName: "Synthetic Signatory", position: "Proprietor", authority: "As stated on the certificate", sourceDocumentId: ids.docFile, profileId: SUPER, actorUserId: SUPER });
+  const sig = await addEntitySignatory({ entityId: ids.ghana, fullName: "Synthetic Signatory", position: "Chief Executive Officer", authority: "As stated on the certificate", sourceDocumentId: ids.docFile, profileId: SUPER, legalCapacity: "sole_proprietor", actorUserId: SUPER });
   if (!sig.ok) throw new Error(`signatory failed: ${JSON.stringify(sig)}`);
+  ids.signatoryId = sig.signatoryId;
   const sel = await selectAgreementSignatory({ onboardingId: ids.onboarding, entityId: ids.ghana, signatoryId: sig.signatoryId, actorUserId: SUPER });
   if (!sel.ok) throw new Error(`select failed: ${JSON.stringify(sel)}`);
   const draft = await prepareInstructorAgreementDraft({ onboardingId: ids.onboarding, actorUserId: SUPER });
@@ -163,14 +168,61 @@ describe("2. composition and preview use only verified facts, the registered mas
     const p2 = await previewInstructorAgreement(ids.onboarding, ids.agreement);
     expect(p1.ok && p2.ok && p1.text === p2.text && p1.sha256 === p2.sha256).toBe(true);
     if (!p1.ok) throw new Error("preview failed");
-    expect(p1.text.startsWith("INSTRUCTOR / WORKSHOP FACILITATOR AGREEMENT")).toBe(true); // the registered master, verbatim
-    expect(p1.text).toContain("Instructor / Facilitator: Synthetic Instructor (member INT0001)");
+    expect(p1.text.startsWith("INSTRUCTOR / WORKSHOP FACILITATOR AGREEMENT")).toBe(true); // the master's title leads the individual document
+    expect(p1.text).toContain("1. DEFINITIONS, STRUCTURE AND STATUS"); // operative clauses carried verbatim
+    expect(p1.text).toMatch(/registration number BN000000000, registered \d{1,2} [A-Z][a-z]+ \d{4}\); business address: 1 Synthetic Street, Accra; postal address: PO Box 1/);
+    expect(p1.text).not.toMatch(/\[[A-Z][A-Z /]+\]|SCHEDULE [B-F] -|Counsel should/); // no blank template forms, placeholders or counsel notes
+    expect(p1.text).toContain("Instructor / Facilitator: Synthetic Instructor, contracting personally (member INT0001)");
     expect(p1.text).toContain("Primary Jurisdiction: Ghana");
-    expect(p1.text).toContain("Ordift Contracting Entity: Ordift Studios");
-    expect(p1.text).toContain("For Ordift (Ordift Studios): Synthetic Signatory, Proprietor.");
-    expect(p1.text).toContain(`Effective Date: ${TERMS.agreementEffectiveDate}`);
+    // the sole-proprietor signatory (title Chief Executive Officer, recorded capacity sole_proprietor) is the contracting party, trading under the business name
+    expect(p1.text).toContain("Ordift Contracting Party: Synthetic Signatory, trading as Ordift Studios,");
+    expect(p1.text).toContain("SIGNATORIES\n\nFor Ordift:\nSynthetic Signatory\nChief Executive Officer and Sole Proprietor\nTrading as Ordift Studios\n\nAuthority: As stated on the certificate\n\nFor the Instructor: Synthetic Instructor");
+    expect(p1.text).toContain(`Effective Date: ${longDate(TERMS.agreementEffectiveDate)}`); // Option A prints the stated date as a long date
     expect(p1.text).toContain(`MASTER DOCUMENT SHA-256: ${sha(CLEAN)}`);
     expect(sql(`select coalesce(issued_document_sha256,'-') from public.agreements where id='${ids.agreement}'`)).toBe("-");
+  });
+  it("a signatory entry cannot be edited in place; a corrected entry the Founder selects reaches the draft when the terms are saved again, and a different person's entry is not followed", async () => {
+    const original = ids.signatoryId;
+    expect(() => sql(`update public.entity_signatories set full_name='Synthetic Signa-tory' where id='${original}'`)).toThrow(); // immutable: a correction is a NEW entry
+    const corrected = await addEntitySignatory({ entityId: ids.ghana, fullName: "Synthetic Signatory Corrected", position: "Chief Executive Officer", authority: "As stated on the certificate", sourceDocumentId: ids.docFile, legalCapacity: "sole_proprietor", actorUserId: SUPER });
+    if (!corrected.ok) throw new Error(`corrected signatory failed: ${JSON.stringify(corrected)}`);
+    try {
+      expect((await selectAgreementSignatory({ onboardingId: ids.onboarding, entityId: ids.ghana, signatoryId: corrected.signatoryId, actorUserId: SUPER })).ok).toBe(true);
+      const stale = await previewInstructorAgreement(ids.onboarding, ids.agreement);
+      expect(stale.ok && stale.text).toContain("For Ordift:\nSynthetic Signatory\nChief Executive Officer and Sole Proprietor\n"); // the draft keeps its earlier snapshot until the terms are saved again
+      expect((await saveInstructorScheduleA({ onboardingId: ids.onboarding, agreementId: ids.agreement, terms: TERMS, actorUserId: SUPER })).ok).toBe(true);
+      const fresh = await previewInstructorAgreement(ids.onboarding, ids.agreement);
+      expect(fresh.ok && fresh.text).toContain("For Ordift:\nSynthetic Signatory Corrected\nChief Executive Officer and Sole Proprietor\nTrading as Ordift Studios");
+      expect(fresh.ok && fresh.text).toContain("Ordift Contracting Party: Synthetic Signatory Corrected, trading as Ordift Studios,");
+      expect(fresh.ok && fresh.text).not.toContain("\nSynthetic Signatory\nChief");
+    } finally {
+      expect((await selectAgreementSignatory({ onboardingId: ids.onboarding, entityId: ids.ghana, signatoryId: original, actorUserId: SUPER })).ok).toBe(true);
+      expect((await saveInstructorScheduleA({ onboardingId: ids.onboarding, agreementId: ids.agreement, terms: TERMS, actorUserId: SUPER })).ok).toBe(true);
+    }
+    const back = await previewInstructorAgreement(ids.onboarding, ids.agreement);
+    expect(back.ok && back.text).toContain("For Ordift:\nSynthetic Signatory\nChief Executive Officer and Sole Proprietor\nTrading as Ordift Studios");
+    expect(status()).toBe("draft");
+  });
+  it("missing registration details on the verified entity refuse the preview and the approval (never 'N/A'), and the draft recovers once they are recorded", async () => {
+    const details = `from public.employing_entity_sensitive_details where employing_entity_id='${ids.ghana}'`;
+    const saved = sql(`select registration_number || '|' || registered_address ${details}`);
+    try {
+      sql(`update public.employing_entity_sensitive_details set registration_number=null, registered_address=null where employing_entity_id='${ids.ghana}'`);
+      expect((await saveInstructorScheduleA({ onboardingId: ids.onboarding, agreementId: ids.agreement, terms: TERMS, actorUserId: SUPER })).ok).toBe(true); // a draft may still be saved
+      const p = await previewInstructorAgreement(ids.onboarding, ids.agreement);
+      expect(p.ok).toBe(false);
+      expect(!p.ok && "missing" in p ? p.missing : null).toEqual(["Contracting entity registration number", "Contracting entity business address"]);
+      expect((await approveInstructorAgreementForIssue({ onboardingId: ids.onboarding, agreementId: ids.agreement, actorUserId: SUPER })).ok).toBe(false);
+      expect(status()).toBe("draft");
+    } finally {
+      const [num, ...rest] = saved.split("|");
+      const addr = rest.join("|"); // the stored address itself contains " || " between its parts
+      sql(`update public.employing_entity_sensitive_details set registration_number='${num}', registered_address='${addr}' where employing_entity_id='${ids.ghana}'`);
+    }
+    expect((await saveInstructorScheduleA({ onboardingId: ids.onboarding, agreementId: ids.agreement, terms: TERMS, actorUserId: SUPER })).ok).toBe(true);
+    const again = await previewInstructorAgreement(ids.onboarding, ids.agreement);
+    expect(again.ok && again.text).toContain("registration number BN000000000");
+    expect(status()).toBe("draft");
   });
   it("a master altered after activation stops the preview (nothing is composed from a changed file)", async () => {
     const original = h.files[DOCX_PATH];
@@ -281,6 +333,7 @@ describe("5. a declined agreement is never executed", () => {
       select r.id, '${ids.ghana}', (select id from public.employment_jurisdictions where slug='ghana'), '${KW2}', 'founder_direct_hire', 1 from r returning id`).split("\n")[0];
     const ob2 = sql(`insert into public.staff_onboarding (profile_id, pipeline, stage, status, requisition_id) values ('${KW2}','external_contractor','profile','in_progress','${reqId}') returning id`).split("\n")[0];
     expect((await confirmContractingEntity({ onboardingId: ob2, entityId: ids.ghana, expectedJurisdiction: "Ghana", actorUserId: SUPER })).ok).toBe(true);
+    expect((await selectAgreementSignatory({ onboardingId: ob2, entityId: ids.ghana, signatoryId: ids.signatoryId, actorUserId: SUPER })).ok).toBe(true); // two current entries exist after the correction test, so the signatory is chosen explicitly
     const draft = await prepareInstructorAgreementDraft({ onboardingId: ob2, actorUserId: SUPER });
     if (!draft.ok) throw new Error(JSON.stringify(draft));
     expect((await saveInstructorScheduleA({ onboardingId: ob2, agreementId: draft.agreementId, terms: TERMS, actorUserId: SUPER })).ok).toBe(true);
@@ -315,6 +368,7 @@ async function freshApprovedAgreement(uuidTail: string, name: string) {
     select r.id, '${ids.ghana}', (select id from public.employment_jurisdictions where slug='ghana'), '${P}', 'founder_direct_hire', 1 from r returning id`).split("\n")[0];
   const ob = sql(`insert into public.staff_onboarding (profile_id, pipeline, stage, status, requisition_id) values ('${P}','external_contractor','profile','in_progress','${reqId}') returning id`).split("\n")[0];
   if (!(await confirmContractingEntity({ onboardingId: ob, entityId: ids.ghana, expectedJurisdiction: "Ghana", actorUserId: SUPER })).ok) throw new Error("confirm failed");
+  if (!(await selectAgreementSignatory({ onboardingId: ob, entityId: ids.ghana, signatoryId: ids.signatoryId, actorUserId: SUPER })).ok) throw new Error("select signatory failed");
   const d = await prepareInstructorAgreementDraft({ onboardingId: ob, actorUserId: SUPER });
   if (!d.ok) throw new Error(JSON.stringify(d));
   if (!(await saveInstructorScheduleA({ onboardingId: ob, agreementId: d.agreementId, terms: TERMS, actorUserId: SUPER })).ok) throw new Error("terms failed");
@@ -385,5 +439,27 @@ describe("7. partial email delivery is recoverable, per recipient, with no dupli
     expect(freshHash).not.toBe(staleHash); // exactly one valid link: the earlier one was replaced
     expect(sql(`select count(*) from public.signature_requests where agreement_id='${a.agreementId}'`)).toBe("1");
     expect(sql(`select count(*) from public.signature_events e join public.signature_signatories s on s.id=e.signatory_id join public.signature_requests r on r.id=s.signature_request_id where r.agreement_id='${a.agreementId}' and s.role='instructor' and e.event_type='link_email_accepted'`)).toBe("1");
+  });
+  it("recipients are processed in a fixed order: when the instructor's email fails first the Ordift signatory is not attempted, nothing is duplicated, statuses do not advance, and a retry delivers each recipient exactly once", async () => {
+    const a = await freshApprovedAgreement("b4", "Synthetic Order");
+    const orderiftTo = `${SUPER.slice(-4)}@synthetic.test`;
+    const sent = (to: string) => h.emails.filter((e) => e.to === to).length;
+    const [i0, o0] = [sent(a.email), sent(orderiftTo)];
+    h.failFor.add(a.email);
+    const r = await issueInstructorAgreement({ onboardingId: a.ob, agreementId: a.agreementId, actorUserId: SUPER });
+    expect(r.ok).toBe(false);
+    expect((await loadInstructorSigningProgress(a.agreementId)).map((p) => `${p.role}:${p.email}`).sort()).toEqual(["instructor:failed", "ordift:not_sent"]); // deterministic: the instructor is always tried first
+    expect([sent(a.email) - i0, sent(orderiftTo) - o0]).toEqual([0, 0]);
+    expect(sql(`select status from public.agreements where id='${a.agreementId}'`)).toBe("approved_for_issue");
+    expect(sql(`select count(*) from public.signature_requests where agreement_id='${a.agreementId}'`)).toBe("1");
+    h.failFor.clear();
+    expect((await issueInstructorAgreement({ onboardingId: a.ob, agreementId: a.agreementId, actorUserId: SUPER })).ok).toBe(true);
+    expect([sent(a.email) - i0, sent(orderiftTo) - o0]).toEqual([1, 1]); // each recipient emailed exactly once
+    expect(sql(`select status from public.agreements where id='${a.agreementId}'`)).toBe("sent");
+    expect((await loadInstructorSigningProgress(a.agreementId)).every((p) => p.email === "accepted")).toBe(true);
+    expect(sql(`select count(*) from public.signature_requests where agreement_id='${a.agreementId}'`)).toBe("1");
+    // a further issue call is refused (already issued) and sends nothing
+    expect((await issueInstructorAgreement({ onboardingId: a.ob, agreementId: a.agreementId, actorUserId: SUPER })).ok).toBe(false);
+    expect([sent(a.email) - i0, sent(orderiftTo) - o0]).toEqual([1, 1]);
   });
 });
