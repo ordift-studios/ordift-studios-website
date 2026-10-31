@@ -1,6 +1,6 @@
 import type { AgreementReadinessInput } from "./agreementReadiness";
 
-// OS-LGL-010 v1.0 and Kwaku's requisition EXACTLY as recorded in Production (2026-10-22).
+// OS-LGL-010 v1.0 and an instructor requisition, modelled on the state recorded in Production on 2026-10-22 (no instructor identity is included).
 export const recorded: AgreementReadinessInput = {
   code: "OS-LGL-010",
   title: "Instructor / Workshop Facilitator Agreement",

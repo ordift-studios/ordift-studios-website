@@ -4,9 +4,9 @@ import { INSTRUCTOR_ONBOARDING_REQUIREMENT_CATALOG } from "./onboardingRequireme
 import { assessAgreementReadiness } from "@/lib/legal/agreementReadiness";
 import { recorded } from "@/lib/legal/agreementReadiness.fixture";
 
-// Kwaku Darko Gyimah (INT0001) exactly as recorded in Production on 2026-10-22.
+// A synthetic instructor in the state of a newly opened onboarding (profile stage, nothing completed); modelled on the Production workflow, not on a real person.
 const facts = (o: Partial<InstructorWorkspaceFacts> = {}): InstructorWorkspaceFacts => ({
-  onboardingId: "b9e46461", personName: "Kwaku Darko Gyimah", memberNumber: "INT0001", engagementTypeName: "Instructor", stage: "profile", status: "in_progress",
+  onboardingId: "ob-synthetic", personName: "Sam Instructor", memberNumber: "INT9001", engagementTypeName: "Instructor", stage: "profile", status: "in_progress",
   requisitionLinked: true, startDate: "2026-10-26", policies: { registered: 0, acknowledged: 0 },
   requirements: [
     { requirementKey: "instructor_identity_verified", stage: "profile", requirementType: "physical_document", label: "Identity document sighted and verified", required: false, status: "pending" },
@@ -30,7 +30,7 @@ describe("the Profile-stage circular dependency is corrected", () => {
   });
 });
 
-describe("Kwaku's workspace, top to bottom", () => {
+describe("The instructor workspace, top to bottom", () => {
   const { steps, summary } = buildInstructorWorkspace(facts());
   const by = (k: string) => steps.find((s) => s.key === k)!;
   it("is one numbered path from hiring authorisation to final approval, with every required area present", () => {
@@ -39,7 +39,7 @@ describe("Kwaku's workspace, top to bottom", () => {
   });
   it("shows what is done: requisition and classification are completed from existing records", () => {
     expect(by("requisition").state).toBe("completed");
-    expect(by("classification")).toMatchObject({ state: "completed", known: expect.arrayContaining(["Engagement type: Instructor", "Member number INT0001"]) });
+    expect(by("classification")).toMatchObject({ state: "completed", known: expect.arrayContaining(["Engagement type: Instructor", "Member number INT9001"]) });
   });
   it("profile information is NOT blocked by the agreement - it is pending on identity verification only, via the existing requirements form", () => {
     expect(by("profile")).toMatchObject({ state: "pending", blocker: null, missing: ["Identity document not yet verified by staff"], action: { kind: "anchor", href: "#section-requirements" } });

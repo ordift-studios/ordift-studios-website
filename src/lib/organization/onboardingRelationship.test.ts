@@ -16,7 +16,7 @@ const resolve = (engagementTypeSlug: string | null, roles: string[], pipeline?: 
   resolveOnboardingRelationship({ engagementTypeSlug, roles, pipeline });
 
 describe("resolveOnboardingRelationship — individual contributors (Founder instruction 2026-10-21)", () => {
-  it("instructor + contractor role (the real Kwaku Darko Gyimah case) is an individual contributor, never a vendor", () => {
+  it("instructor + contractor role (the standard instructor-with-contractor-role case) is an individual contributor, never a vendor", () => {
     const r = resolve("instructor", ["contractor"], "external_contractor");
     expect(r.relationship).toBe("individual_contributor");
     expect(isVendorEligible(r)).toBe(false);

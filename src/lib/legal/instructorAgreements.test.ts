@@ -18,11 +18,11 @@ const readiness = (canIssue: boolean): AgreementReadiness => ({ code: "OS-LGL-01
 beforeEach(() => {
   h.calls = [];
   h.db = makeFakeDb({
-    staff_onboarding: [{ id: "ob1", profile_id: "kwaku", requisition_id: "rq1", documents_received: [] }],
+    staff_onboarding: [{ id: "ob1", profile_id: "instr1", requisition_id: "rq1", documents_received: [] }],
     recruitment_requisitions: [{ id: "rq1", employment_jurisdiction_id: "jGH", employing_entity_id: "gh" }],
     employment_jurisdictions: [{ id: "jGH", name: "Ghana" }],
-    profiles: [{ id: "kwaku", full_name: "Kwaku Darko Gyimah", member_number: "INT0001" }],
-    staff_details: [{ id: "kwaku", engagement_type_id: "t1" }],
+    profiles: [{ id: "instr1", full_name: "Sam Instructor", member_number: "INT9001" }],
+    staff_details: [{ id: "instr1", engagement_type_id: "t1" }],
     engagement_types: [{ id: "t1", slug: "instructor" }],
     legal_document_masters: [{ id: "m1", canonical_code: "OS-LGL-010", current_version_id: "v1" }],
     legal_document_versions: [{ id: "v1", content_reference: "legal-masters:x", document_hash: "h", effective_date: "2026-09-05", approved_at: null }],
@@ -49,17 +49,17 @@ describe("prepareInstructorAgreementDraft", () => {
     const r = await prepareInstructorAgreementDraft({ onboardingId: "ob1", actorUserId: "f", readiness: async () => readiness(true) });
     expect(r).toEqual({ ok: true, agreementId: "agr1", agreementReference: "ORD-AGR-2026-000099" });
     expect(h.calls.map((c) => c.fn)).toEqual(["createDraft", "addParty", "addParty", "snapshot"]);
-    expect(h.calls[0].args).toMatchObject({ primaryContextType: "instructor_profile", primaryContextReference: "kwaku", engagementJurisdiction: "Ghana", classification: "transaction_agreement" });
+    expect(h.calls[0].args).toMatchObject({ primaryContextType: "instructor_profile", primaryContextReference: "instr1", engagementJurisdiction: "Ghana", classification: "transaction_agreement" });
     const snap = h.calls[3].args.snapshotData as Record<string, Record<string, unknown>>;
-    expect(snap.instructor).toMatchObject({ legalName: "Kwaku Darko Gyimah", memberNumber: "INT0001", email: "kwaku@example.test" });
+    expect(snap.instructor).toMatchObject({ legalName: "Sam Instructor", memberNumber: "INT9001", email: "kwaku@example.test" });
     expect(snap.contractingEntity).toMatchObject({ name: "Ordift Studios" });
     expect(snap.signatory).toMatchObject({ name: "A Signatory", sourceDocumentId: "d1" });
     expect(JSON.stringify(snap)).not.toMatch(/executed|signed_at|fully_executed/);
   });
   it("refuses a second current agreement for the same person", async () => {
-    h.db.tables.agreements.push({ id: "old", master_id: "m1", primary_context_type: "instructor_profile", primary_context_reference: "kwaku", status: "draft", agreement_reference: "ORD-AGR-1", created_at: "2026-10-01T00:00:00Z" });
+    h.db.tables.agreements.push({ id: "old", master_id: "m1", primary_context_type: "instructor_profile", primary_context_reference: "instr1", status: "draft", agreement_reference: "ORD-AGR-1", created_at: "2026-10-01T00:00:00Z" });
     const r = await prepareInstructorAgreementDraft({ onboardingId: "ob1", actorUserId: "f", readiness: async () => readiness(true) });
     expect(!r.ok && r.error).toContain("already has a current Instructor Agreement");
-    expect(await getCurrentInstructorAgreement("kwaku")).toMatchObject({ id: "old", status: "draft" });
+    expect(await getCurrentInstructorAgreement("instr1")).toMatchObject({ id: "old", status: "draft" });
   });
 });
