@@ -1,6 +1,6 @@
--- PROPOSED migration 0178 — PREFERRED CORRESPONDENCE EMAIL (append-only history). NOT in supabase/migrations, NOT applied anywhere. Rehearsed locally only
--- (REHEARSE_0178_body.sql, rehearse_0178.sh, src/lib/legal/correspondenceEmail.localdb.e2e.ts). Needs separate written Founder authorization before it is moved
--- into the migrations folder and released. Rollback: ROLLBACK_0178_profile_correspondence_emails.sql.
+-- Migration 0178 — PREFERRED CORRESPONDENCE EMAIL (append-only history). Prepared for the gated Production release (see supabase/proposals/RELEASE_PLAN_0178_CORRESPONDENCE_EMAIL.md); it is applied
+-- only on the Founder's separate written authorization, AFTER 0177 and one migration per run. Rehearsed locally on scratch databases (supabase/proposals/REHEARSE_0178_body.sql, rehearse_0178.sh,
+-- src/lib/legal/correspondenceEmail.localdb.e2e.ts). Rollback: supabase/proposals/ROLLBACK_0178_profile_correspondence_emails.sql.
 --
 -- WHAT. A person's login email (Supabase Auth) is NOT touched and stays the only email used for login, password reset and signing links. This table records, as
 -- separate append-only history, the address a person has asked Ordift to use for ordinary correspondence ("Preferred Correspondence Email — Used for Communication").

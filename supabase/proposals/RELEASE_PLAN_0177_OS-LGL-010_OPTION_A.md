@@ -11,7 +11,7 @@ Prepared 31 October 2026 from the Founder's nine decisions. Baseline: `origin/ma
 | Draft refresh | `instructorAgreementIssuance.ts`, `instructorAgreements.ts` | Saving a draft's terms again re-reads the entity registration number/address, the signatory (following supersession to its current entry) and the instructor's name/member number/**account email**, and adds a NEW snapshot. Earlier snapshots are never changed (tested byte-for-byte). Approved/issued agreements are frozen. |
 | Signatory supersession | `entityRegistrations.ts` (`supersedeEntitySignatory`), migration 0177 | The only sanctioned way to correct a signatory entry (see §3). |
 | Deterministic signing-email order | `instructorAgreementIssuance.ts` | Instructor first, then Ordift, always. Same failure handling, no duplicates, same statuses. Fixes the section-7 end-to-end flake (cause: unordered query). |
-| Migration artefacts (proposals folder, not yet migrations) | `PROPOSED_0177…sql`, `ROLLBACK_0177…sql`, `ROLLBACK_0176…sql`, `REHEARSE_0177_body.sql`, `REHEARSE_0176_0177_extra.sql`, `rehearse_0177.sh`, `rehearse_0176_0177.sh`, `PROPOSED_0176_amendment_for_0177.diff` | |
+| Migration and artefacts | `supabase/migrations/0177_entity_signatory_supersession.sql`, and in `supabase/proposals`: `ROLLBACK_0177…sql`, `ROLLBACK_0176…sql`, `REHEARSE_0177_body.sql`, `REHEARSE_0176_0177_extra.sql`, `rehearse_0177.sh`, `rehearse_0176_0177.sh`, `PROPOSED_0176_amendment_for_0177.diff` | |
 | Procedures / proposals | `PROCEDURE_instructor_account_email_change.md`, `PROPOSAL_instructor_policy_acknowledgements.md` | Documents only. |
 | Tests | `instructorAgreementDocument.test.ts`, `phase3Issuance.localdb.e2e.ts`, `signatorySupersession.localdb.e2e.ts` | |
 
@@ -66,7 +66,7 @@ Two variants exist: **F1** (Contact line = account email) and **F2** (Contact li
 ## 8. Order of authorization (each step needs its own explicit written approval)
 1. Commit (local only, release files only; stage by explicit paths; verify `git diff --cached --stat` equals these 20 files; no rate-card/`.poc-build`).
 2. Read-only pre-checks (ledger = 0175, guard md5, no duplicate current person, draft untouched, `main` deployed = `f2e2305`).
-3. Move `PROPOSED_0177…` to `supabase/migrations/0177_entity_signatory_supersession.sql`; confirm the CLI plan lists exactly that file; apply with the established gated script; verify function, grants (anon/authenticated cannot execute), indexes, guard, ledger 0177.
+3. The migration file `supabase/migrations/0177_entity_signatory_supersession.sql` (added by the migration-preparation commit; a read-only byte copy is staged privately for the gate); confirm the CLI plan lists exactly that file; apply with the established gated script; verify function, grants (anon/authenticated cannot execute), indexes, guard, ledger 0177.
 4. Push to `main` (auto-deploy); Vercel Ready; verify deployed commit.
 5. Address edit (Admin UI).
 6. Supersession call (actor = Founder profile), then read-only verification: one current entry, old entry kept, one audit row.

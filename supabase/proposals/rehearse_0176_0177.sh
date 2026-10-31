@@ -9,7 +9,7 @@ strip() { grep -v -E "^(begin|commit);\$" "$1"; }
 q() { docker exec -i "$C" psql -U supabase_admin -h 127.0.0.1 -d "$DB" -X -q -v ON_ERROR_STOP=1 -At; }
 T=$(mktemp -d); trap 'rm -rf "$T"' EXIT
 cp "$D/PROPOSED_0176_ghana_admin_enhancements.sql" "$T/a0176.sql"; (cd "$T" && patch -s a0176.sql < "$D/PROPOSED_0176_amendment_for_0177.diff" >/dev/null 2>&1) || true
-M0176="$D/PROPOSED_0176_ghana_admin_enhancements.sql"; M0177="$D/PROPOSED_0177_entity_signatory_supersession.sql"; R0176="$D/ROLLBACK_0176_ghana_admin_enhancements.sql"; R0177="$D/ROLLBACK_0177_entity_signatory_supersession.sql"
+M0176="$D/PROPOSED_0176_ghana_admin_enhancements.sql"; M0177="$D/../migrations/0177_entity_signatory_supersession.sql"; R0176="$D/ROLLBACK_0176_ghana_admin_enhancements.sql"; R0177="$D/ROLLBACK_0177_entity_signatory_supersession.sql"
 gmd5() { echo "insert into pg_temp.g values ('$1', md5(pg_get_functiondef('private.entity_signatories_guard'::regproc)));"; }
 expect_guard() { echo "do \$\$ begin if (select v from pg_temp.g where k='$1') is distinct from md5(pg_get_functiondef('private.entity_signatories_guard'::regproc)) then raise exception 'GUARD MISMATCH: expected the $1 guard'; end if; raise notice 'guard is the $1 guard'; end \$\$;"; }
 counts() { echo "insert into pg_temp.c select '$1', (select count(*) from public.agreements), (select count(*) from public.agreement_snapshots), (select count(*) from public.signature_requests), (select count(*) from public.entity_signatories where full_name not like 'Synthetic%');"; }

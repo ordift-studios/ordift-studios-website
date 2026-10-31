@@ -266,10 +266,10 @@ describe("signatory guard: a later migration cannot silently remove the controll
     for (const f of later) expect(read("supabase", "migrations", f), `${f} re-defines the signatory guard without the controlled end-date`).toMatch(clause);
   });
 
-  it("the proposal for 0177 defines the guard with the controlled end-date and the function that uses it", () => {
-    const f = "PROPOSED_0177_entity_signatory_supersession.sql";
-    if (!existsSync(join(root, "supabase", "proposals", f))) { expect(supersessionMigration).toBeDefined(); return; } // already moved into migrations
-    const text = read("supabase", "proposals", f);
+  it("the 0177 migration (or its proposal, until it is moved) defines the guard with the controlled end-date and the function that uses it", () => {
+    const f = supersessionMigration ? join("supabase", "migrations", supersessionMigration) : join("supabase", "proposals", "PROPOSED_0177_entity_signatory_supersession.sql");
+    expect(existsSync(join(root, f)), f).toBe(true);
+    const text = read(...f.split(/[\\/]/));
     expect(text).toMatch(definesGuard);
     expect(text).toMatch(clause);
     expect(text).toMatch(/ordift:signatory_end_date_controlled/);

@@ -6,11 +6,11 @@ M=${1:-apply}; DB=${2:-p4_e2e}; C=${3:-ordift-mig-check2}; D="$(cd "$(dirname "$
 strip() { grep -v -E "^(begin|commit);\$" "$1"; }
 q() { docker exec -i "$C" psql -U supabase_admin -h 127.0.0.1 -d "$DB" -X -q -v ON_ERROR_STOP=1 -At; }
 if [ "$M" = apply ]; then
-  { echo "begin;"; strip "$D/PROPOSED_0177_entity_signatory_supersession.sql"; cat "$D/REHEARSE_0177_body.sql"; echo "rollback;"; } | q
+  { echo "begin;"; strip "$D/../migrations/0177_entity_signatory_supersession.sql"; cat "$D/REHEARSE_0177_body.sql"; echo "rollback;"; } | q
 else
   { echo "begin;"
     echo "create temp table before_state as select md5(pg_get_functiondef('private.entity_signatories_guard'::regproc)) as guard_md5, (select string_agg(column_name, ',' order by ordinal_position) from information_schema.columns where table_schema='public' and table_name='entity_signatories') as cols, (select count(*) from public.entity_signatories) as rows;"
-    strip "$D/PROPOSED_0177_entity_signatory_supersession.sql"; cat "$D/REHEARSE_0177_body.sql"; strip "$D/ROLLBACK_0177_entity_signatory_supersession.sql"
+    strip "$D/../migrations/0177_entity_signatory_supersession.sql"; cat "$D/REHEARSE_0177_body.sql"; strip "$D/ROLLBACK_0177_entity_signatory_supersession.sql"
     cat <<'SQL'
 do $$ declare b record; begin
   select * into b from before_state;

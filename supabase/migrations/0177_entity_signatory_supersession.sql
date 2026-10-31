@@ -1,6 +1,6 @@
--- PROPOSED migration 0177 — controlled SUPERSESSION of an entity signatory entry. NOT in supabase/migrations, NOT applied anywhere. Rehearsed locally only
--- (REHEARSE_0177_body.sql + src/lib/organization/signatorySupersession.localdb.e2e.ts). Needs separate written Founder authorization before it is moved into
--- the migrations folder and released. Rollback: ROLLBACK_0177_entity_signatory_supersession.sql.
+-- Migration 0177 — controlled SUPERSESSION of an entity signatory entry. Prepared for the gated Production release (see supabase/proposals/RELEASE_PLAN_0177_OS-LGL-010_OPTION_A.md); it
+-- is applied only on the Founder's separate written authorization, one migration per run. Rehearsed locally on scratch databases (supabase/proposals/REHEARSE_0177_body.sql, rehearse_0177.sh,
+-- rehearse_0176_0177.sh, src/lib/legal/signatorySupersession.localdb.e2e.ts). Rollback: supabase/proposals/ROLLBACK_0177_entity_signatory_supersession.sql.
 --
 -- WHY. Signatory entries are deliberately immutable (0173): only the legal capacity and the person link can be set, once. A mis-recorded name (for example
 -- "Alex Sample-Name" where the registration certificate reads "Alex Sample Name") therefore cannot be edited, and the guard also forbids end-dating

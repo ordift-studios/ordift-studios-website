@@ -10,7 +10,7 @@ strip() { grep -v -E "^(begin|commit);\$" "$1"; }
 q() { docker exec -i "$C" psql -U supabase_admin -h 127.0.0.1 -d "$DB" -X -q -v ON_ERROR_STOP=1 -At; }
 T=$(mktemp -d); trap 'rm -rf "$T"' EXIT
 cp "$D/PROPOSED_0176_ghana_admin_enhancements.sql" "$T/a0176.sql"; (cd "$T" && patch -s a0176.sql < "$D/PROPOSED_0176_amendment_for_0177.diff" >/dev/null 2>&1) || true
-M76="$D/PROPOSED_0176_ghana_admin_enhancements.sql"; M77="$D/PROPOSED_0177_entity_signatory_supersession.sql"; M78="$D/PROPOSED_0178_profile_correspondence_emails.sql"
+M76="$D/PROPOSED_0176_ghana_admin_enhancements.sql"; M77="$D/../migrations/0177_entity_signatory_supersession.sql"; M78="$D/../migrations/0178_profile_correspondence_emails.sql"
 R76="$D/ROLLBACK_0176_ghana_admin_enhancements.sql"; R77="$D/ROLLBACK_0177_entity_signatory_supersession.sql"; R78="$D/ROLLBACK_0178_profile_correspondence_emails.sql"
 gone78='do $$ begin if to_regclass('"'"'public.profile_correspondence_emails'"'"') is not null or to_regproc('"'"'private.profile_correspondence_emails_guard'"'"') is not null or to_regproc('"'"'public.my_correspondence_email'"'"') is not null then raise exception '"'"'ROLLBACK 0178 incomplete'"'"'; end if; raise notice '"'"'rollback 0178 done: table, guard and functions gone'"'"'; end $$;'
 guardmd5() { echo "create temp table if not exists g (k text, v text); insert into g values ('$1', md5(pg_get_functiondef('private.entity_signatories_guard'::regproc)));"; }

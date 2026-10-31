@@ -12,7 +12,7 @@ Prepared 31 October 2026 from the Founder's approval of the dedicated correspond
 ## 2. Files (new commit)
 | Area | Files |
 |---|---|
-| Database (proposal, not a migration yet) | `supabase/proposals/PROPOSED_0178_profile_correspondence_emails.sql`, `ROLLBACK_0178_…sql`, `REHEARSE_0178_body.sql`, `rehearse_0178.sh` |
+| Database | `supabase/migrations/0178_profile_correspondence_emails.sql` (added by the migration-preparation commit) and, in `supabase/proposals`, `ROLLBACK_0178_…sql`, `REHEARSE_0178_body.sql`, `rehearse_0178.sh` |
 | Server module | `src/lib/organization/correspondenceEmail.ts` |
 | Screens | `src/app/admin/organization/ContactEmailLines.tsx` (read-only lines), `src/app/admin/organization/people/[id]/CorrespondenceEmailPanel.tsx` (lines + record/change/clear form), edits to `people/[id]/page.tsx` and `people/[id]/actions.ts`, and `onboarding/[onboardingId]/page.tsx` (read-only lines on external-contributor onboardings) |
 | Agreement | edits to `instructorAgreementDocument.ts` (Contact line), `instructorAgreements.ts` (draft's first snapshot and the refresh read the preference), `instructorAgreementIssuance.ts` (Schedule A save merges it) |
