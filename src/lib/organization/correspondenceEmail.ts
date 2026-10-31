@@ -127,16 +127,17 @@ export async function loadContactEmailsForViewer(profileId: string, viewerUserId
 }
 
 // ---------------------------------------------------------------------------------------------------------------- own view (portal)
-// The signed-in person's OWN two addresses, for the read-only card on their portal page. It deliberately uses the request-scoped client (the person's own session, so
-// row-level security applies: a signed-in person can read only their own rows) and the id comes from the SESSION user the page already resolved, never from a request
-// parameter. It selects the address ONLY: never the evidence note, who recorded it, the source or the history. The service-role client is not used here.
+// The signed-in person's OWN two addresses, for the read-only card on their portal page. The preferred address comes ONLY from the database function
+// public.my_correspondence_email(), called with the person's own session (the request-scoped client): the function has no parameter, answers from the caller's own identity
+// and returns that one address (or NULL), so nothing else - no evidence note, no recorded-by, no history, no other person's record - can be retrieved this way. Signed-in roles
+// have no privilege on the table itself. The account email is the session user's. The service-role client is not used here.
 export type OwnContactEmails = { accountEmail: string | null; preferredEmail: string | null; available: boolean };
-export async function loadOwnContactEmails(sessionUser: { id: string; email: string | null }): Promise<OwnContactEmails> {
+export async function loadOwnContactEmails(sessionUser: { email: string | null }): Promise<OwnContactEmails> {
   const accountEmail = sessionUser.email ?? null;
   const supabase = await createClient();
-  const { data, error } = await supabase.from("profile_correspondence_emails").select("email").eq("profile_id", sessionUser.id).order("created_at", { ascending: false }).order("id", { ascending: false }).limit(1);
-  if (error) return { accountEmail, preferredEmail: null, available: false }; // unreadable (for example the table does not exist yet): shown as "not available", never as "no preference"
-  return { accountEmail, preferredEmail: (data?.[0]?.email as string | null | undefined) ?? null, available: true };
+  const { data, error } = await supabase.rpc("my_correspondence_email");
+  if (error) return { accountEmail, preferredEmail: null, available: false }; // unreadable (for example the function does not exist yet): shown as "not available", never as "no preference"
+  return { accountEmail, preferredEmail: typeof data === "string" && data.trim() ? data : null, available: true };
 }
 
 // ---------------------------------------------------------------------------------------------------------------- write

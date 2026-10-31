@@ -30,14 +30,41 @@ begin
   begin insert into public.profile_correspondence_emails (profile_id, email, source, evidence_note, recorded_by) values (p1, 'ok@example.test', 'staff_entered', 'Called the person on 0200 000 0000 to confirm.', adm); raise exception 'FAIL: note with a phone number accepted'; exception when check_violation then null; end;
   begin insert into public.profile_correspondence_emails (profile_id, email, source, evidence_note, recorded_by) values (gen_random_uuid(), 'ok@example.test', 'staff_entered', 'A reasonable evidence reference here.', adm); raise exception 'FAIL: unknown person accepted'; exception when foreign_key_violation then null; end;
 
-  -- 4. client roles cannot write, and ordinary signed-in staff cannot read
-  if has_table_privilege('authenticated', 'public.profile_correspondence_emails', 'insert') or has_table_privilege('anon', 'public.profile_correspondence_emails', 'select') then raise exception 'FAIL: client role privileges too wide'; end if;
-  if has_table_privilege('authenticated', 'public.profile_correspondence_emails', 'update') or has_table_privilege('authenticated', 'public.profile_correspondence_emails', 'delete') or has_table_privilege('authenticated', 'public.profile_correspondence_emails', 'truncate') then raise exception 'FAIL: authenticated can modify'; end if;
+  -- 4. signed-in roles have NO privilege on the table at all; the service role can only select and insert; row-level security stays on with no policy
+  if has_table_privilege('authenticated', 'public.profile_correspondence_emails', 'select') or has_table_privilege('authenticated', 'public.profile_correspondence_emails', 'insert')
+     or has_table_privilege('authenticated', 'public.profile_correspondence_emails', 'update') or has_table_privilege('authenticated', 'public.profile_correspondence_emails', 'delete')
+     or has_table_privilege('authenticated', 'public.profile_correspondence_emails', 'truncate') or has_table_privilege('authenticated', 'public.profile_correspondence_emails', 'references') then raise exception 'FAIL: authenticated has a privilege on the table'; end if;
+  if has_table_privilege('anon', 'public.profile_correspondence_emails', 'select') or has_table_privilege('anon', 'public.profile_correspondence_emails', 'insert') then raise exception 'FAIL: anon has a privilege on the table'; end if;
+  if has_column_privilege('authenticated', 'public.profile_correspondence_emails', 'evidence_note', 'select') or has_column_privilege('authenticated', 'public.profile_correspondence_emails', 'recorded_by', 'select') or has_column_privilege('authenticated', 'public.profile_correspondence_emails', 'email', 'select') then raise exception 'FAIL: authenticated can read a column'; end if;
   if has_table_privilege('service_role', 'public.profile_correspondence_emails', 'update') or has_table_privilege('service_role', 'public.profile_correspondence_emails', 'delete') or has_table_privilege('service_role', 'public.profile_correspondence_emails', 'truncate') then raise exception 'FAIL: service_role can modify'; end if;
   if not has_table_privilege('service_role', 'public.profile_correspondence_emails', 'insert') or not has_table_privilege('service_role', 'public.profile_correspondence_emails', 'select') then raise exception 'FAIL: service_role lacks insert/select'; end if;
   if not (select relrowsecurity from pg_class where oid = 'public.profile_correspondence_emails'::regclass) then raise exception 'FAIL: RLS not enabled'; end if;
+  if exists (select 1 from pg_policies where schemaname = 'public' and tablename = 'profile_correspondence_emails') then raise exception 'FAIL: a policy exists (signed-in roles must have none)'; end if;
 
-  -- 5. nothing else changed
+  -- 5. the one read for signed-in roles: the caller's own current preferred address, through a parameterless security-definer function
+  if not has_function_privilege('authenticated', 'public.my_correspondence_email()', 'execute') then raise exception 'FAIL: authenticated cannot execute the own-address function'; end if;
+  if has_function_privilege('anon', 'public.my_correspondence_email()', 'execute') or has_function_privilege('service_role', 'public.my_correspondence_email()', 'execute') then raise exception 'FAIL: anon/service_role can execute it'; end if;
+  if (select count(*) from pg_proc p, aclexplode(p.proacl) a where p.proname = 'my_correspondence_email' and a.grantee = 0) <> 0 then raise exception 'FAIL: PUBLIC can execute it'; end if;
+  if not exists (select 1 from pg_proc p where p.proname = 'my_correspondence_email' and p.prosecdef and p.pronargs = 0 and exists (select 1 from unnest(p.proconfig) c where c = 'search_path=""')) then raise exception 'FAIL: function is not a parameterless security definer with a fixed search path'; end if;
+  perform set_config('request.jwt.claims', json_build_object('sub', p2, 'role', 'authenticated')::text, true);
+  execute 'set local role authenticated';
+  select public.my_correspondence_email() into msg;                 -- p2 has no entry
+  execute 'reset role';
+  if msg is not null then raise exception 'FAIL: another person got a value (%)', msg; end if;
+  perform set_config('request.jwt.claims', json_build_object('sub', p1, 'role', 'authenticated')::text, true);
+  execute 'set local role authenticated';
+  select public.my_correspondence_email() into msg;                 -- p1's latest entry is a CLEAR
+  execute 'reset role';
+  if msg is not null then raise exception 'FAIL: a cleared preference returned a value (%)', msg; end if;
+  insert into public.profile_correspondence_emails (profile_id, email, source, evidence_note, recorded_by) values (p1, 'latest.preference@example.test', 'staff_entered', 'Recorded again at the person''s request.', adm);
+  execute 'set local role authenticated';
+  select public.my_correspondence_email() into msg;
+  execute 'reset role';
+  if msg is distinct from 'latest.preference@example.test' then raise exception 'FAIL: own current address not returned (%)', msg; end if;
+  begin execute 'set local role authenticated'; perform 1 from public.profile_correspondence_emails; raise exception 'FAIL: authenticated could read the table'; exception when insufficient_privilege then execute 'reset role'; end;
+  begin execute 'set local role anon'; perform public.my_correspondence_email(); raise exception 'FAIL: anon could execute the function'; exception when insufficient_privilege then execute 'reset role'; end;
+
+  -- 6. nothing else changed
   if (select count(*) from public.profiles) <> before_prof or (select count(*) from auth.users) <> before_auth then raise exception 'FAIL: profiles or auth users changed'; end if;
   raise notice 'REHEARSAL 0178: ALL CHECKS PASSED';
 end $$;

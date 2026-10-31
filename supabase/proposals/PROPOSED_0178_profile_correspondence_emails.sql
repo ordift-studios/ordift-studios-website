@@ -7,12 +7,15 @@
 -- One row = one decision (set, change or clear). The CURRENT preference is the latest row for the person; a row whose email is NULL means "cleared" (the account
 -- email applies again). Rows are never updated or deleted, so every change is preserved.
 --
--- PRIVACY. Row-level security: only a Super Admin or the person themself can read through a signed-in session; no other staff session can. Server code (service
--- role) reads and writes after its own authorization check (people-management authority). The evidence note is a short REFERENCE to how the request was made and
--- checked (for example "Requested by the instructor from this address by email on <date>; confirmed by call-back"); the database refuses a note that contains an
--- email address or a run of 7 or more digits (phone, card or ID numbers), and the application never copies the note, or a full address, into the shared audit log.
+-- PRIVACY (database level). NO signed-in role can read this table at all: `anon` and `authenticated` have no privilege on it, so nobody can retrieve an evidence note, who recorded
+-- an entry, its source, its history or another person's record through the API. The one thing a person may read is their OWN CURRENT preferred address, through
+-- public.my_correspondence_email(): a security-definer function with NO parameters that answers only for the caller (auth.uid()) and returns that single address (or NULL when none is
+-- recorded or it was cleared) - nothing else. Authorized administrators work through server code (service role) after the application's own people-management authority check; the
+-- service role can only select and insert. The evidence note is a short REFERENCE to how the request was made and checked (for example "Requested by the instructor from this
+-- address by email on <date>; confirmed by call-back"); the database refuses a note that contains an email address or a run of 7 or more digits (phone, card or ID numbers), and the
+-- application never copies the note, or a full address, into the shared audit log.
 --
--- INDEPENDENCE. Creates one new table, one guard function and trigger. Touches no existing table, function, row or grant; it does not touch private.entity_signatories_guard()
+-- INDEPENDENCE. Creates one new table, one guard function and trigger, and one read function for the caller's own address. Touches no existing table, function, row or grant; it does not touch private.entity_signatories_guard()
 -- and therefore has no ordering conflict with the pending 0176 (Ghana administrative enhancements) or 0177 (signatory supersession): any order is safe.
 
 begin;
@@ -46,13 +49,20 @@ end $$;
 revoke all on function private.profile_correspondence_emails_guard() from public, anon, authenticated;
 create trigger profile_correspondence_emails_guard before update or delete on public.profile_correspondence_emails for each row execute function private.profile_correspondence_emails_guard();
 
+-- Row-level security stays ON with NO policy for signed-in roles (deny by default); the service role bypasses it. The privileges below are the real boundary.
 alter table public.profile_correspondence_emails enable row level security;
-create policy "profile_correspondence_emails: super admin or the person" on public.profile_correspondence_emails for select to authenticated
-  using ((select private.is_super_admin()) or profile_id = (select auth.uid()));
 
--- Production's default privileges give new tables TRUNCATE/REFERENCES/TRIGGER/MAINTAIN to the client roles, so everything is revoked explicitly first.
+-- Production's default privileges give new tables TRUNCATE/REFERENCES/TRIGGER/MAINTAIN to the client roles, so everything is revoked explicitly first. Signed-in roles get NOTHING.
 revoke all on public.profile_correspondence_emails from anon, authenticated, service_role;
-grant select on public.profile_correspondence_emails to authenticated;
 grant select, insert on public.profile_correspondence_emails to service_role;
+
+-- The caller's own CURRENT preferred address and nothing else. No parameter (so nobody can ask about someone else); fixed search_path; answers from auth.uid() only.
+create or replace function public.my_correspondence_email() returns text
+language sql stable security definer set search_path = '' as $$
+  select e.email from public.profile_correspondence_emails e where e.profile_id = (select auth.uid()) order by e.created_at desc, e.id desc limit 1
+$$;
+revoke all on function public.my_correspondence_email() from public, anon, authenticated, service_role;
+grant execute on function public.my_correspondence_email() to authenticated;
+comment on function public.my_correspondence_email() is 'The signed-in caller''s own current preferred correspondence email (NULL when none or cleared). The only read of profile_correspondence_emails available to signed-in roles.';
 
 commit;

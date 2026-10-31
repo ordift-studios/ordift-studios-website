@@ -2,22 +2,19 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 
-// The signed-in person's OWN view (portal card). The loader must use the request-scoped (row-level-security) client with the SESSION user's id, select the address only,
-// and never touch the service-role client; the card must be read-only.
+// The signed-in person's OWN view (portal card). The loader must call ONLY the parameterless database function public.my_correspondence_email() through the request-scoped
+// client (the person's own session), never read the table, never touch the service-role client; the card must be read-only.
 const h = vi.hoisted(() => ({
-  calls: [] as { table: string; select: string; eq: [string, string][]; order: string[]; limit: number }[],
-  rows: [] as { email: string | null }[],
+  rpcCalls: [] as { fn: string; args: unknown[] }[],
+  fromCalls: 0,
+  result: null as string | null,
   failWith: null as { message: string } | null,
   adminUsed: 0,
 }));
 vi.mock("@/lib/supabase/server", () => ({
   createClient: async () => ({
-    from: (table: string) => {
-      const call = { table, select: "", eq: [] as [string, string][], order: [] as string[], limit: -1 };
-      h.calls.push(call);
-      const q = { select(c: string) { call.select = c; return q; }, eq(c: string, v: string) { call.eq.push([c, v]); return q; }, order(c: string) { call.order.push(c); return q; }, limit: async (n: number) => { call.limit = n; return h.failWith ? { data: null, error: h.failWith } : { data: h.rows, error: null }; } };
-      return q;
-    },
+    rpc: async (fn: string, ...args: unknown[]) => { h.rpcCalls.push({ fn, args }); return h.failWith ? { data: null, error: h.failWith } : { data: h.result, error: null }; },
+    from: () => { h.fromCalls++; throw new Error("the table must not be read directly"); },
   }),
 }));
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: () => { h.adminUsed++; throw new Error("the service-role client must not be used for the person's own view"); } }));
@@ -27,32 +24,29 @@ vi.mock("@/lib/organization/authority", () => ({ PEOPLE_CAPABILITIES: { workforc
 import { loadOwnContactEmails } from "./correspondenceEmail";
 import { OwnContactEmailsCard } from "../../app/portal/(dashboard)/OwnContactEmailsCard";
 
-const ME = { id: "00000000-0000-4000-8000-0000000000b1", email: "account.me@example.test" };
-beforeEach(() => { h.calls = []; h.rows = []; h.failWith = null; h.adminUsed = 0; });
+const ME = { email: "account.me@example.test" };
+beforeEach(() => { h.rpcCalls = []; h.fromCalls = 0; h.result = null; h.failWith = null; h.adminUsed = 0; });
 
-describe("loadOwnContactEmails: session identity, row-level security, minimal columns", () => {
-  it("reads only the session user's rows through the request-scoped client, selecting the address only", async () => {
-    h.rows = [{ email: "preferred.me@example.test" }];
+describe("loadOwnContactEmails: one parameterless function, the caller's own session, nothing else", () => {
+  it("calls only my_correspondence_email() with no arguments, and never reads the table or uses the service-role client", async () => {
+    h.result = "preferred.me@example.test";
     const r = await loadOwnContactEmails(ME);
     expect(r).toEqual({ accountEmail: "account.me@example.test", preferredEmail: "preferred.me@example.test", available: true });
-    expect(h.calls).toHaveLength(1);
-    expect(h.calls[0]).toMatchObject({ table: "profile_correspondence_emails", select: "email", eq: [["profile_id", ME.id]], limit: 1 });
-    expect(h.calls[0].order).toEqual(["created_at", "id"]);
-    expect(h.calls[0].select).not.toMatch(/evidence|recorded_by|source|created_at|id\b.*,/);
-    expect(h.adminUsed).toBe(0);                                         // never the service-role client
+    expect(h.rpcCalls).toEqual([{ fn: "my_correspondence_email", args: [] }]);   // no parameter: nobody else's record can be requested
+    expect(h.fromCalls).toBe(0);                                                  // no direct table read (so no evidence note, recorded-by or history can be selected)
+    expect(h.adminUsed).toBe(0);
   });
-  it("falls back to the account email wording: no row, or a cleared preference, is 'no preference'", async () => {
+  it("falls back to the account email wording: no value, or a blank/cleared preference, is 'no preference'", async () => {
     expect(await loadOwnContactEmails(ME)).toEqual({ accountEmail: "account.me@example.test", preferredEmail: null, available: true });
-    h.rows = [{ email: null }];
+    h.result = "   ";
     expect(await loadOwnContactEmails(ME)).toMatchObject({ preferredEmail: null, available: true });
   });
-  it("an unreadable record is 'not available', never presented as 'no preference'", async () => {
-    h.failWith = { message: "relation does not exist" };
+  it("an unreadable record (for example the function does not exist yet) is 'not available', never presented as 'no preference'", async () => {
+    h.failWith = { message: "function does not exist" };
     expect(await loadOwnContactEmails(ME)).toEqual({ accountEmail: "account.me@example.test", preferredEmail: null, available: false });
   });
-  it("uses the id it is given (the session user's) and nothing else: another person's id is only ever asked for if the caller passes it, so the pages pass the session user", async () => {
-    await loadOwnContactEmails({ id: "00000000-0000-4000-8000-0000000000c9", email: null });
-    expect(h.calls[0].eq).toEqual([["profile_id", "00000000-0000-4000-8000-0000000000c9"]]);
+  it("returns the session user's account email as given and nothing about anyone else", async () => {
+    expect(await loadOwnContactEmails({ email: null })).toEqual({ accountEmail: null, preferredEmail: null, available: true });
   });
 });
 

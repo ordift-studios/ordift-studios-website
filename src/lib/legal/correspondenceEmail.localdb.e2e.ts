@@ -157,24 +157,26 @@ describe("access control", () => {
     expect(sql(`select count(*) from public.profile_correspondence_emails`)).toBe("0");
     expect(ceLogs()).toHaveLength(0);
   });
-  it("a signed-in session can read only its own rows (or all as Super Admin); anon and ordinary staff see nothing; nobody can write directly", async () => {
+  it("no signed-in role can read the table at all (so no evidence note, metadata, history or other person's record), and nobody can write to it directly", async () => {
     expect((await setCorrespondenceEmail({ profileId: INSTR, email: PREFERRED, source: "person_request", evidenceNote: EVIDENCE, actorUserId: SUPER })).ok).toBe(true);
-    const count = "select count(*) from public.profile_correspondence_emails";
-    expect(asRole(STAFF, "authenticated", count)).toBe("0");   // ordinary staff: row-level security hides everything
-    expect(asRole(INSTR, "authenticated", count)).toBe("1");   // the person: their own row
-    expect(asRole(SUPER, "authenticated", count)).toBe("1");   // Super Admin: all
-    expect(() => asRole(null, "anon", count)).toThrow();       // anon: no privilege
-    expect(() => asRole(STAFF, "authenticated", `insert into public.profile_correspondence_emails (profile_id, email, source, evidence_note, recorded_by) values ('${INSTR}', 'x.y@correspondence.test', 'staff_entered', 'Direct write attempt reference.', '${STAFF}')`)).toThrow();
+    const read = (cols: string) => `select ${cols} from public.profile_correspondence_emails`;
+    for (const who of [STAFF, INSTR, SUPER]) for (const cols of ["count(*)", "evidence_note", "recorded_by", "source", "email", "*"]) expect(() => asRole(who, "authenticated", read(cols)), `${who} ${cols}`).toThrow(); // permission denied, even for Super Admin and for the person's own row
+    expect(() => asRole(null, "anon", read("count(*)"))).toThrow();
+    for (const who of [STAFF, INSTR, SUPER]) expect(() => asRole(who, "authenticated", `insert into public.profile_correspondence_emails (profile_id, email, source, evidence_note, recorded_by) values ('${INSTR}', 'x.y@correspondence.test', 'staff_entered', 'Direct write attempt reference.', '${who}')`)).toThrow();
+    for (const sql_ of ["update public.profile_correspondence_emails set email = null", "delete from public.profile_correspondence_emails", "truncate public.profile_correspondence_emails"]) expect(() => asRole(INSTR, "authenticated", sql_)).toThrow();
+    expect(sql(`select count(*) from public.profile_correspondence_emails`)).toBe("1");                    // service-side count: nothing changed
   });
 });
 
-describe("the portal card's own-row query (row-level security, session identity)", () => {
-  const own = (sub: string, target: string) => asRole(sub, "authenticated", `select coalesce((select email from public.profile_correspondence_emails where profile_id='${target}' order by created_at desc, id desc limit 1), '(none)')`);
-  it("a signed-in person gets their own current preference with the card's exact query; another person's session, and staff, get nothing for someone else's id", () => {
-    expect(own(INSTR, INSTR)).toBe(PREFERRED);   // the person: their own current preference
-    expect(own(STAFF, INSTR)).toBe("(none)");    // another signed-in person (ordinary staff): row-level security hides it
-    expect(own(STAFF, STAFF)).toBe("(none)");    // a person with no preference: nothing, so the card shows the fallback wording
-    expect(() => asRole(null, "anon", `select email from public.profile_correspondence_emails limit 1`)).toThrow(); // not signed in: no privilege at all
+describe("the portal card's database function: the caller's own current address and nothing else", () => {
+  const mine = (sub: string | null, role: "authenticated" | "anon" = "authenticated") => asRole(sub, role, "select coalesce(public.my_correspondence_email(), '(none)')");
+  it("a signed-in person gets only their own current preference; a person with none, or someone else, gets none; it takes no parameter and anon cannot call it", () => {
+    expect(mine(INSTR)).toBe(PREFERRED);                  // the person: their own current preference
+    expect(mine(STAFF)).toBe("(none)");                   // another signed-in person has none of their own, and cannot ask about the instructor's
+    expect(mine(SUPER)).toBe("(none)");                   // even Super Admin gets only their OWN value through this function
+    expect(() => asRole(INSTR, "authenticated", `select public.my_correspondence_email('${STAFF}')`)).toThrow(); // no parameter: nobody else's record can be requested
+    expect(() => mine(null, "anon")).toThrow();           // not signed in: cannot execute
+    expect(sql(`select pg_get_function_result('public.my_correspondence_email()'::regprocedure)`)).toBe("text"); // a single address, nothing else
   });
 });
 

@@ -12,7 +12,7 @@ T=$(mktemp -d); trap 'rm -rf "$T"' EXIT
 cp "$D/PROPOSED_0176_ghana_admin_enhancements.sql" "$T/a0176.sql"; (cd "$T" && patch -s a0176.sql < "$D/PROPOSED_0176_amendment_for_0177.diff" >/dev/null 2>&1) || true
 M76="$D/PROPOSED_0176_ghana_admin_enhancements.sql"; M77="$D/PROPOSED_0177_entity_signatory_supersession.sql"; M78="$D/PROPOSED_0178_profile_correspondence_emails.sql"
 R76="$D/ROLLBACK_0176_ghana_admin_enhancements.sql"; R77="$D/ROLLBACK_0177_entity_signatory_supersession.sql"; R78="$D/ROLLBACK_0178_profile_correspondence_emails.sql"
-gone78='do $$ begin if to_regclass('"'"'public.profile_correspondence_emails'"'"') is not null or to_regproc('"'"'private.profile_correspondence_emails_guard'"'"') is not null then raise exception '"'"'ROLLBACK 0178 incomplete'"'"'; end if; raise notice '"'"'rollback 0178 done: table, guard and function gone'"'"'; end $$;'
+gone78='do $$ begin if to_regclass('"'"'public.profile_correspondence_emails'"'"') is not null or to_regproc('"'"'private.profile_correspondence_emails_guard'"'"') is not null or to_regproc('"'"'public.my_correspondence_email'"'"') is not null then raise exception '"'"'ROLLBACK 0178 incomplete'"'"'; end if; raise notice '"'"'rollback 0178 done: table, guard and functions gone'"'"'; end $$;'
 guardmd5() { echo "create temp table if not exists g (k text, v text); insert into g values ('$1', md5(pg_get_functiondef('private.entity_signatories_guard'::regproc)));"; }
 same_guard() { echo "do \$\$ begin if (select v from g where k='$1') is distinct from md5(pg_get_functiondef('private.entity_signatories_guard'::regproc)) then raise exception 'SIGNATORY GUARD CHANGED (expected the $1 guard)'; end if; raise notice 'signatory guard unchanged ($1)'; end \$\$;"; }
 case "$M" in

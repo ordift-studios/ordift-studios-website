@@ -75,17 +75,19 @@ describe("the portal card shows only the signed-in person's own addresses, read-
     for (const f of PAGES) {
       const text = read(f);
       expect(text, f).toMatch(/loadOwnContactEmails\(user\)/);
+      expect(text, f).not.toMatch(/profile_correspondence_emails/);   // the pages never name the table
       expect(text, f).not.toMatch(/loadContactEmailsForViewer|setCorrespondenceEmail|searchParams|params\./);
     }
     expect(read(PAGES[1]).match(/<OwnContactEmailsCard/g)?.length).toBe(2); // both branches of the instructor page (with and without an engagement)
   });
-  it("the loader uses the request-scoped client and selects the address only; the card has no form or input", () => {
+  it("the loader calls only the parameterless database function through the request-scoped client; the card has no form or input", () => {
     const mod = read("src/lib/organization/correspondenceEmail.ts");
     const body = mod.slice(mod.indexOf("export async function loadOwnContactEmails"), mod.indexOf("// ---", mod.indexOf("export async function loadOwnContactEmails")));
     expect(body.length).toBeGreaterThan(200);
     expect(body).toMatch(/createClient\(\)/);
-    expect(body).not.toMatch(/createAdminClient|auth\.admin|evidence_note|recorded_by|source/);
-    expect(body).toMatch(/\.select\("email"\)/);
+    expect(body).not.toMatch(/createAdminClient|auth\.admin|evidence_note|recorded_by|source|\.from\(|\.select\(/); // no table read of any kind
+    expect(body).toMatch(/\.rpc\("my_correspondence_email"\)/);                                             // the one parameterless function
+    expect(body).not.toMatch(/\.rpc\("my_correspondence_email",/);                                           // and it takes no argument
     expect(read("src/app/portal/(dashboard)/OwnContactEmailsCard.tsx")).not.toMatch(/<form|<input|<textarea|<select|<button|useActionState|"use client"|action=/);
   });
 });
