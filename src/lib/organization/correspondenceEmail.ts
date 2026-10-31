@@ -1,4 +1,5 @@
 import { createAdminClient } from "@/lib/supabase/admin";
+import { createClient } from "@/lib/supabase/server";
 import { logActivity } from "@/lib/admin/activityLog";
 import { authorizeWithSuperAdminOverride, PEOPLE_CAPABILITIES } from "@/lib/organization/authority";
 
@@ -10,7 +11,7 @@ import { authorizeWithSuperAdminOverride, PEOPLE_CAPABILITIES } from "@/lib/orga
 //
 // SECURITY BOUNDARY. This preference is for ordinary communication ONLY. Login, password reset and agreement signing links keep using the account email, always:
 // no authentication, signature or issuance code may import this module (enforced by correspondenceEmailIsolation.test.ts). Only the agreement CONTACT line (an
-// informational line - the master has no notice-address clause) uses it, through the draft's Schedule A refresh.
+// informational line - the master has no notice-address clause) uses it, through the draft's Schedule A refresh, and the person's own read-only portal card.
 //
 // PRIVACY. Reading and writing require Super Admin or people-management authority (the same authority as the people page). The audit log is readable by all staff,
 // so it receives only MASKED addresses and never the evidence note. The evidence note is a short reference, validated to contain no email address and no long number.
@@ -123,6 +124,19 @@ export async function loadContactEmailsForViewer(profileId: string, viewerUserId
   const current = rows[0] && rows[0].email ? rows[0] : null;
   const preferred = current ? { email: current.email as string, source: current.source, sourceLabel: CORRESPONDENCE_SOURCE_LABELS[current.source], evidenceNote: current.evidence_note, recordedByName: nameOf.get(current.recorded_by) ?? null, recordedAt: current.created_at } : null;
   return { accountEmail, preferred, effective: resolveContactEmail(accountEmail, preferred?.email ?? null), history, available: true };
+}
+
+// ---------------------------------------------------------------------------------------------------------------- own view (portal)
+// The signed-in person's OWN two addresses, for the read-only card on their portal page. It deliberately uses the request-scoped client (the person's own session, so
+// row-level security applies: a signed-in person can read only their own rows) and the id comes from the SESSION user the page already resolved, never from a request
+// parameter. It selects the address ONLY: never the evidence note, who recorded it, the source or the history. The service-role client is not used here.
+export type OwnContactEmails = { accountEmail: string | null; preferredEmail: string | null; available: boolean };
+export async function loadOwnContactEmails(sessionUser: { id: string; email: string | null }): Promise<OwnContactEmails> {
+  const accountEmail = sessionUser.email ?? null;
+  const supabase = await createClient();
+  const { data, error } = await supabase.from("profile_correspondence_emails").select("email").eq("profile_id", sessionUser.id).order("created_at", { ascending: false }).order("id", { ascending: false }).limit(1);
+  if (error) return { accountEmail, preferredEmail: null, available: false }; // unreadable (for example the table does not exist yet): shown as "not available", never as "no preference"
+  return { accountEmail, preferredEmail: (data?.[0]?.email as string | null | undefined) ?? null, available: true };
 }
 
 // ---------------------------------------------------------------------------------------------------------------- write

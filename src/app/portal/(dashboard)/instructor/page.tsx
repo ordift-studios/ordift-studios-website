@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/portal/roles";
+import { loadOwnContactEmails } from "@/lib/organization/correspondenceEmail";
+import { OwnContactEmailsCard } from "../OwnContactEmailsCard";
 import {
   isWorkshopInstructor,
   listEngagementsForInstructor,
@@ -41,6 +43,7 @@ export default async function InstructorPortalPage() {
   const user = await getCurrentUser();
   if (!user) redirect("/portal/login");
 
+  const ownEmails = await loadOwnContactEmails(user); // the signed-in person's own addresses, read-only, shown on both branches of this page
   const isInstructor = await isWorkshopInstructor(user.id);
   if (!isInstructor) {
     return (
@@ -49,6 +52,7 @@ export default async function InstructorPortalPage() {
           <p className="font-sans font-semibold uppercase tracking-[0.2em] text-eyebrow text-ordift-gold-pressed mb-2">Instructor / Facilitator</p>
           <h1 className="font-serif font-medium text-section-heading lg:text-section-heading-desktop text-ordift-ink">My Workshops</h1>
         </div>
+        <OwnContactEmailsCard emails={ownEmails} />
         <section className="rounded-xl border border-black/10 bg-white p-6">
           <p className="font-sans text-body-small text-ordift-ink-muted">
             No workshop instructor engagement is on record for your account yet.
@@ -85,6 +89,8 @@ export default async function InstructorPortalPage() {
         <p className="font-sans font-semibold uppercase tracking-[0.2em] text-eyebrow text-ordift-gold-pressed mb-2">Instructor / Facilitator</p>
         <h1 className="font-serif font-medium text-section-heading lg:text-section-heading-desktop text-ordift-ink">{user.fullName ?? user.email}</h1>
       </div>
+
+      <OwnContactEmailsCard emails={ownEmails} />
 
       <section className="rounded-xl border border-black/10 bg-white p-6 space-y-3">
         <h2 className="font-serif font-medium text-body text-ordift-ink">Upcoming Sessions</h2>

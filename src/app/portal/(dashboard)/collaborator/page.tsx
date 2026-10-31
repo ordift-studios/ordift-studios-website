@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { getCurrentUser, hasRole } from "@/lib/portal/roles";
+import { loadOwnContactEmails } from "@/lib/organization/correspondenceEmail";
+import { OwnContactEmailsCard } from "../OwnContactEmailsCard";
 import { getMyActiveAssignments } from "@/lib/portal/collaboratorData";
 import { listMyEngagements, listMyWorkshopInstructorEngagements, groupEngagementsByLifecycle } from "@/lib/portal/engagementPortalData";
 import ExternalWorkforceEngagements from "@/components/portal/ExternalWorkforceEngagements";
@@ -48,6 +50,8 @@ export default async function CollaboratorPortalPage() {
           My Work
         </h1>
       </div>
+
+      <OwnContactEmailsCard emails={await loadOwnContactEmails(user)} />
 
       <ExternalOnboardingStatus onboarding={onboarding} resolvedRequirements={resolvedRequirements} />
       <ContributorStatusLayers

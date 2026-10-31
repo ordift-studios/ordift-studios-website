@@ -12,7 +12,7 @@ const read = (r: string) => readFileSync(join(root, r), "utf8");
 const IMPORT = /from\s+["']@\/lib\/organization\/correspondenceEmail["']/;
 
 describe("who may use the correspondence-email module", () => {
-  it("only the people and onboarding screens, the people action and the Schedule A loader import it (plus tests)", () => {
+  it("only the people and onboarding screens, the people action, the two portal pages (and their card) and the Schedule A loader import it (plus tests)", () => {
     const importers = src.filter((f) => IMPORT.test(readFileSync(f, "utf8"))).map(rel).filter((f) => !/\.(test|e2e)\.tsx?$/.test(f) && !/\.localdb\.e2e\.ts$/.test(f)).sort();
     expect(importers).toEqual([
       "src/app/admin/organization/ContactEmailLines.tsx", // a TYPE-only import (the read-only lines component)
@@ -20,6 +20,9 @@ describe("who may use the correspondence-email module", () => {
       "src/app/admin/organization/people/[id]/CorrespondenceEmailPanel.tsx",
       "src/app/admin/organization/people/[id]/actions.ts",
       "src/app/admin/organization/people/[id]/page.tsx",
+      "src/app/portal/(dashboard)/OwnContactEmailsCard.tsx", // a TYPE-only import (the read-only portal card)
+      "src/app/portal/(dashboard)/collaborator/page.tsx",
+      "src/app/portal/(dashboard)/instructor/page.tsx",
       "src/lib/legal/instructorAgreements.ts",
     ]);
   });
@@ -63,5 +66,26 @@ describe("the Supabase Auth account email is never written", () => {
     const panel = read("src/app/admin/organization/people/[id]/CorrespondenceEmailPanel.tsx");
     expect(panel).not.toMatch(/accountEmail/);                              // the panel never receives it except through the read-only lines component
     expect(read("src/app/admin/organization/ContactEmailLines.tsx")).not.toMatch(/<input|<textarea|<select|<form/);
+  });
+});
+
+describe("the portal card shows only the signed-in person's own addresses, read-only", () => {
+  const PAGES = ["src/app/portal/(dashboard)/collaborator/page.tsx", "src/app/portal/(dashboard)/instructor/page.tsx"];
+  it("the portal pages pass the SESSION user, never a request parameter, and never use the admin-side viewer function", () => {
+    for (const f of PAGES) {
+      const text = read(f);
+      expect(text, f).toMatch(/loadOwnContactEmails\(user\)/);
+      expect(text, f).not.toMatch(/loadContactEmailsForViewer|setCorrespondenceEmail|searchParams|params\./);
+    }
+    expect(read(PAGES[1]).match(/<OwnContactEmailsCard/g)?.length).toBe(2); // both branches of the instructor page (with and without an engagement)
+  });
+  it("the loader uses the request-scoped client and selects the address only; the card has no form or input", () => {
+    const mod = read("src/lib/organization/correspondenceEmail.ts");
+    const body = mod.slice(mod.indexOf("export async function loadOwnContactEmails"), mod.indexOf("// ---", mod.indexOf("export async function loadOwnContactEmails")));
+    expect(body.length).toBeGreaterThan(200);
+    expect(body).toMatch(/createClient\(\)/);
+    expect(body).not.toMatch(/createAdminClient|auth\.admin|evidence_note|recorded_by|source/);
+    expect(body).toMatch(/\.select\("email"\)/);
+    expect(read("src/app/portal/(dashboard)/OwnContactEmailsCard.tsx")).not.toMatch(/<form|<input|<textarea|<select|<button|useActionState|"use client"|action=/);
   });
 });

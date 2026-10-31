@@ -168,6 +168,16 @@ describe("access control", () => {
   });
 });
 
+describe("the portal card's own-row query (row-level security, session identity)", () => {
+  const own = (sub: string, target: string) => asRole(sub, "authenticated", `select coalesce((select email from public.profile_correspondence_emails where profile_id='${target}' order by created_at desc, id desc limit 1), '(none)')`);
+  it("a signed-in person gets their own current preference with the card's exact query; another person's session, and staff, get nothing for someone else's id", () => {
+    expect(own(INSTR, INSTR)).toBe(PREFERRED);   // the person: their own current preference
+    expect(own(STAFF, INSTR)).toBe("(none)");    // another signed-in person (ordinary staff): row-level security hides it
+    expect(own(STAFF, STAFF)).toBe("(none)");    // a person with no preference: nothing, so the card shows the fallback wording
+    expect(() => asRole(null, "anon", `select email from public.profile_correspondence_emails limit 1`)).toThrow(); // not signed in: no privilege at all
+  });
+});
+
 describe("append-only history and the database's own checks", () => {
   it("every change is a new row: set, change, clear - nothing is updated or deleted, and the database refuses both", async () => {
     expect((await setCorrespondenceEmail({ profileId: INSTR, email: SECOND, source: "staff_entered", evidenceNote: "Changed by an administrator at the person's request.", actorUserId: SUPER })).ok).toBe(true);
