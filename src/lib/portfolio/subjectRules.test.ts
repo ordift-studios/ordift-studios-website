@@ -49,4 +49,20 @@ describe("permission evidence rules for people and property shown", () => {
     for (const bad of ["sendEmail", "resend", ".storage", "fetch(", ".update(", ".delete(", ".upsert("]) expect(src).not.toContain(bad);
     expect(src).toContain("if (g) return g; const a = await authority(user)");
   });
+  it("the erasure call uses the five-argument 0184 form: it states a basis and a confirmation, and every basis is a known one", () => {
+    const src = readFileSync(new URL("./subjects.ts", import.meta.url), "utf8");
+    expect(src).toMatch(/rpc\("portfolio_subject_permission_redact", \{ p_permission: grantId, p_actor: user\.id, p_reason: reason\.trim\(\), p_basis: basis, p_confirm_permitted: true \}\)/);
+    expect(src).toContain("BASES.some((b) => b.key === basis)");
+    expect(readFileSync(new URL("../../app/admin/portfolio-library/subjectActions.ts", import.meta.url), "utf8")).toContain('str(f, "basis")');
+  });
+  it("an erased permission can never be verified again (no restoration mechanism exists): the only verification path refuses it before writing", () => {
+    const src = readFileSync(new URL("./subjects.ts", import.meta.url), "utf8");
+    const inserts = [...src.matchAll(/from\("portfolio_subject_permissions"\)\.insert\(/g)].length;
+    expect(inserts).toBe(2);   // a new grant, and followUp (verification / withdrawal): nothing else writes a decision
+    const follow = src.slice(src.indexOf("async function followUp"), src.indexOf("export const verifySubjectPermission"));
+    expect(follow.indexOf("ERASED_MARKER")).toBeGreaterThan(-1);
+    expect(follow.indexOf("ERASED_MARKER")).toBeLessThan(follow.indexOf(".insert("));
+    expect(follow).toContain('decision === "verified"');
+    expect(src).not.toMatch(/restore|unerase|reinstate/i);
+  });
 });

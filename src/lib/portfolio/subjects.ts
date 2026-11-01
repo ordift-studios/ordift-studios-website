@@ -3,6 +3,7 @@ import { logActivity } from "@/lib/admin/activityLog";
 import type { CurrentUser } from "@/lib/portal/roles";
 import { isManagementUser } from "@/lib/crewSupport/management";
 import { PORTFOLIO_LIBRARY_ENABLED } from "./featureGate";
+import { BASES } from "./erasureRules";
 import { SUBJECT_PERMISSIONS_ENABLED } from "./subjectGate";
 import { DECLARATIONS, SUBJECT_KINDS, isKnownNonQatar, validateCheckNote, validateDeclarationNote, validateSubjectGrant, validateVerification, type SubjectGrantInput, type SubjectKind } from "./subjectRules";
 
@@ -13,6 +14,7 @@ const fail = (error: string): { ok: false; error: string } => ({ ok: false, erro
 const gate = () => (PORTFOLIO_LIBRARY_ENABLED && SUBJECT_PERMISSIONS_ENABLED ? null : fail("Recording permission evidence for people shown is not switched on yet."));
 const authority = async (u: CurrentUser) => ((await isManagementUser(u)) ? null : fail("Only the Founder or an authorised executive admin can do this."));
 const clean = (e: { message?: string } | null) => (e?.message ?? "That could not be saved.").replace(/^.*?ERROR:\s*/, "");
+const ERASED_MARKER = "[erased]";
 const today = () => new Date().toISOString().slice(0, 10);
 
 export async function declarePeopleShown(user: CurrentUser, fileId: string, declaration: string, note: string): Promise<Result> {
@@ -55,6 +57,12 @@ export async function recordSubjectPermission(user: CurrentUser, subject: { id: 
 async function followUp(user: CurrentUser, decision: "verified" | "withdrawn", subjectId: string, grantId: string, o: { evidenceReference?: string; note: string }): Promise<Result> {
   const g = gate(); if (g) return g; const a = await authority(user); if (a) return a;
   const bad = decision === "verified" ? validateVerification(o.evidenceReference ?? "", o.note) : validateCheckNote(o.note); if (bad) return fail(bad);
+  // An erased permission is never verified again: its details are gone, so nothing could be examined, and there is no approved restoration mechanism. A new permission must be recorded instead.
+  if (decision === "verified") {
+    const { data: row } = await createAdminClient().from("portfolio_subject_permissions").select("grantor_name").eq("id", grantId).maybeSingle();
+    if (!row) return fail("That permission could not be found.");
+    if (String(row.grantor_name) === ERASED_MARKER) return fail("This permission's personal details have been erased, so it cannot be verified again. Record a new permission from the person concerned.");
+  }
   const { error } = await createAdminClient().from("portfolio_subject_permissions").insert({ subject_id: subjectId, decision, supersedes_id: grantId, evidence_reference: decision === "verified" ? o.evidenceReference!.trim() : null, note: o.note.trim(), recorded_by: user.id });
   if (error) return fail(clean(error));
   await logActivity({ actorUserId: user.id, action: `portfolio.subject_permission_${decision}`, entityType: "portfolio_file_subject", entityId: subjectId, metadata: {} });
@@ -64,13 +72,14 @@ export const verifySubjectPermission = (user: CurrentUser, subjectId: string, gr
 export const withdrawSubjectPermission = (user: CurrentUser, subjectId: string, grantId: string, reason: string) => followUp(user, "withdrawn", subjectId, grantId, { note: reason });
 
 // Retention policy: erase the personal details of a permission that is no longer in force. The database refuses an in-force permission and logs every erasure; decisions, dates and uses are kept.
-export async function redactSubjectPermission(user: CurrentUser, grantId: string, reason: string, confirmPermitted: boolean): Promise<Result> {
+export async function redactSubjectPermission(user: CurrentUser, grantId: string, reason: string, basis: string, confirmPermitted: boolean): Promise<Result> {
   const g = gate(); if (g) return g; const a = await authority(user); if (a) return a;
+  if (!BASES.some((b) => b.key === basis)) return fail("State the basis for the erasure.");
   if (reason.trim().length < 10 || reason.trim().length > 200) return fail("State the reason for the erasure in 10 to 200 characters. Do not include names or other personal details: the log is kept.");
   if (confirmPermitted !== true) return fail("Confirm that erasure is permitted: no dispute, legal obligation, audit or active permission still needs this evidence.");
-  const { error } = await createAdminClient().rpc("portfolio_subject_permission_redact", { p_permission: grantId, p_actor: user.id, p_reason: reason.trim(), p_confirm_permitted: true });
+  const { error } = await createAdminClient().rpc("portfolio_subject_permission_redact", { p_permission: grantId, p_actor: user.id, p_reason: reason.trim(), p_basis: basis, p_confirm_permitted: true });
   if (error) return fail(clean(error));
-  await logActivity({ actorUserId: user.id, action: "portfolio.subject_permission_erased", entityType: "portfolio_subject_permission", entityId: grantId, metadata: {} });
+  await logActivity({ actorUserId: user.id, action: "portfolio.subject_permission_erased", entityType: "portfolio_subject_permission", entityId: grantId, metadata: { basis } });
   return { ok: true };
 }
 
@@ -114,7 +123,7 @@ export async function getPeopleViews(fileIds: string[]): Promise<Record<string, 
       const follow = rows.filter((r) => r.supersedes_id === g.id);
       const verified = follow.find((r) => r.decision === "verified");
       const status: GrantStatus = follow.some((r) => r.decision === "withdrawn") ? "withdrawn" : follow.some((r) => r.decision === "granted") ? "replaced" : g.expires_on && (g.expires_on as string) < todayIso ? "expired" : verified ? "verified" : "recorded_unverified";
-      return { id: g.id as string, status, grantorKind: g.grantor_kind as string, grantorName: g.grantor_name as string, grantorRelationship: (g.grantor_relationship as string | null) ?? null, evidenceKind: g.evidence_kind as string, evidenceReference: g.evidence_reference as string, givenOn: (g.given_on as string | null) ?? null, destinations: g.allowed_destinations as string[], restrictions: (g.restrictions as string | null) ?? null, expiresOn: (g.expires_on as string | null) ?? null, verifiedOn: verified ? (verified.recorded_at as string) : null, erased: String(g.grantor_name) === "[erased]" };
+      return { id: g.id as string, status, grantorKind: g.grantor_kind as string, grantorName: g.grantor_name as string, grantorRelationship: (g.grantor_relationship as string | null) ?? null, evidenceKind: g.evidence_kind as string, evidenceReference: g.evidence_reference as string, givenOn: (g.given_on as string | null) ?? null, destinations: g.allowed_destinations as string[], restrictions: (g.restrictions as string | null) ?? null, expiresOn: (g.expires_on as string | null) ?? null, verifiedOn: verified ? (verified.recorded_at as string) : null, erased: String(g.grantor_name) === ERASED_MARKER };
     });
     out[s.project_file_id as string]?.subjects.push({ id: s.id as string, kind: s.subject_kind as SubjectKind, label: s.label as string, grants });
   }
