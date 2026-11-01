@@ -84,6 +84,21 @@ begin
   -- 7. in force is refused
   select * into c from public.portfolio_subject_permission_erasure_check(GD2, 'data_subject_request'); assert coalesce(array_length(c.blockers,1),0) = 0, 'D2 was withdrawn so it can be erased'; 
   select * into c from public.portfolio_subject_permission_erasure_check(GD, 'retention_period_ended'); assert coalesce(array_length(c.blockers,1),0) = 0, 'D (replaced 7 years ago) counts from the replacement: ' || c.blockers::text; raise notice 'PASS 7 a replaced permission counts as ended from its replacement';
+  -- 7b. a CURRENT covered use blocks erasure on every basis (file B is used again for the website)
+  set local session_replication_role = replica; insert into public.portfolio_use_events (project_file_id, destination, action, actor_id, occurred_at) values ('00000000-0000-4000-8000-0000000a1024','website','published',FOUNDER, now() - interval '7 years 3 months'); set local session_replication_role = origin;
+  select * into c from public.portfolio_subject_permission_erasure_check(GB, 'data_subject_request'); assert c.blockers::text like '%still in use%', 'in use blocks: ' || c.blockers::text;
+  begin perform public.portfolio_subject_permission_redact(GB, FOUNDER, 'data subject asked for erasure of details', 'data_subject_request', true); raise exception 'FAIL erased while in use'; exception when others then if sqlerrm like 'FAIL%' then raise; end if; end;
+  set local session_replication_role = replica; insert into public.portfolio_use_events (project_file_id, destination, action, actor_id, occurred_at) values ('00000000-0000-4000-8000-0000000a1024','website','ended',FOUNDER, now() - interval '7 years 2 months'); set local session_replication_role = origin;
+  raise notice 'PASS 7b a current covered use blocks erasure on every basis';
+  -- 7c. nothing deletes automatically: only the controlled purge function deletes from the four log tables, and no scheduled job refers to it
+  assert not exists (select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname in ('public','private') and p.proname <> 'portfolio_log_purge' and p.prosrc ~* 'delete\s+from\s+public\.(portfolio_subject_redactions|portfolio_file_holds|marketing_permission_redactions|marketing_permission_job_holds)'), 'only the purge function deletes log rows';
+  if to_regclass('cron.job') is not null then execute 'select count(*) from cron.job where command ilike ''%portfolio_log_purge%''' into n; assert n = 0, 'no scheduled purge'; end if;
+  raise notice 'PASS 7c no automatic deletion exists';
+  -- 7d. the eligibility function and the 0182 append-only guards are untouched
+  assert pg_get_functiondef('public.portfolio_use_eligibility(uuid,text,date)'::regprocedure) like '%people_not_declared%' and pg_get_functiondef('public.portfolio_use_eligibility(uuid,text,date)'::regprocedure) like '%destination_not_approved%', 'eligibility intact';
+  begin update public.portfolio_subject_permissions set allowed_destinations = array['portfolio'] where id = GB; raise exception 'FAIL permissions edited'; exception when others then if sqlerrm like 'FAIL%' then raise; end if; end;
+  begin delete from public.portfolio_file_subjects; raise exception 'FAIL subjects deleted'; exception when others then if sqlerrm like 'FAIL%' then raise; end if; end;
+  raise notice 'PASS 7d the eligibility function and the append-only guards are intact';
   -- 8. erase B (retention) and A (data-subject request); structure kept; basis logged
   perform public.portfolio_subject_permission_redact(GB, FOUNDER, 'six year retention period ended for this record', 'retention_period_ended', true);
   perform public.portfolio_subject_permission_redact(GA, FOUNDER, 'data subject asked for erasure of details', 'data_subject_request', true);
@@ -91,27 +106,29 @@ begin
   assert (select count(*) from public.portfolio_subject_redactions where permission_id in (GB, GA) and basis is not null) >= 2, 'bases logged'; raise notice 'PASS 8 erasure on both bases works and keeps the decision structure';
   -- 9. PURGE preview and function
   select count(*) into n from public.portfolio_log_purge_preview() where cutoff_date is not null; assert n = 4, 'preview covers four tables with a cutoff';
-  begin perform public.portfolio_log_purge('portfolio_file_holds', STAFF, 'purge expired hold log rows', true); raise exception 'FAIL staff purge'; exception when others then if sqlerrm like 'FAIL%' then raise; end if; end; raise notice 'PASS 9a purge is management only';
-  begin perform public.portfolio_log_purge('portfolio_file_holds', FOUNDER, 'purge expired hold log rows', false); raise exception 'FAIL purge without confirmation'; exception when others then if sqlerrm like 'FAIL%' then raise; end if; end; raise notice 'PASS 9b purge needs confirmation';
-  begin perform public.portfolio_log_purge('some_other_table', FOUNDER, 'purge expired hold log rows', true); raise exception 'FAIL other table'; exception when others then if sqlerrm like 'FAIL%' then raise; end if; end; raise notice 'PASS 9c only the four log tables';
+  begin perform public.portfolio_log_purge('portfolio_file_holds', STAFF, 'retention_period_expired', true); raise exception 'FAIL staff purge'; exception when others then if sqlerrm like 'FAIL%' then raise; end if; end; raise notice 'PASS 9a purge is management only';
+  begin perform public.portfolio_log_purge('portfolio_file_holds', FOUNDER, 'retention_period_expired', false); raise exception 'FAIL purge without confirmation'; exception when others then if sqlerrm like 'FAIL%' then raise; end if; end; raise notice 'PASS 9b purge needs confirmation';
+  begin perform public.portfolio_log_purge('some_other_table', FOUNDER, 'retention_period_expired', true); raise exception 'FAIL other table'; exception when others then if sqlerrm like 'FAIL%' then raise; end if; end; raise notice 'PASS 9c only the four log tables';
   begin delete from public.portfolio_file_holds; raise exception 'FAIL direct delete'; exception when others then if sqlerrm like 'FAIL%' then raise; end if; end;
   begin update public.portfolio_file_holds set reason = 'edited reason of the hold'; raise exception 'FAIL update'; exception when others then if sqlerrm like 'FAIL%' then raise; end if; end; raise notice 'PASS 9d log rows cannot be edited or deleted outside the purge';
   -- file-hold log: B chain (placed 8y, released 7y6m) eligible = 2 rows; C chain active hold protected = 0; A chain (placed 1y, released 11m) too recent
   select eligible_rows into n from public.portfolio_log_purge_preview() where log_table = 'portfolio_file_holds'; assert n = 2, 'file hold eligible rows: ' || n;
-  n := public.portfolio_log_purge('portfolio_file_holds', FOUNDER, 'purge expired hold log rows', true); assert n = 2, 'purged 2';
+  n := public.portfolio_log_purge('portfolio_file_holds', FOUNDER, 'retention_period_expired', true); assert n = 2, 'purged 2';
   assert (select count(*) from public.portfolio_file_holds where project_file_id = '00000000-0000-4000-8000-0000000a1034') = 1 and (select count(*) from public.portfolio_file_holds where project_file_id = '00000000-0000-4000-8000-0000000a1014') = 2, 'active-hold chain and recent chain kept';
   assert (select action from public.portfolio_file_holds where project_file_id = '00000000-0000-4000-8000-0000000a1034') = 'placed', 'active hold still active';
   -- job-hold log: B chain eligible (2), C placed protected, A recent (placed+released within the last minutes) kept
-  n := public.portfolio_log_purge('marketing_permission_job_holds', FOUNDER, 'purge expired job hold log rows', true); assert n = 2, 'job holds purged: ' || n;
+  n := public.portfolio_log_purge('marketing_permission_job_holds', FOUNDER, 'annual_retention_review', true); assert n = 2, 'job holds purged: ' || n;
   assert (select count(*) from public.marketing_permission_job_holds where job_id = '00000000-0000-4000-8000-0000000a1031') = 1, 'C job hold kept';
   -- subject redaction log: GB old and free -> purged; GC old but under an active hold -> kept; GA recent (1 year) -> kept; plus the two new rows from step 8 are recent -> kept
-  n := public.portfolio_log_purge('portfolio_subject_redactions', FOUNDER, 'purge expired erasure log rows', true); assert n = 1, 'subject redaction log purged: ' || n;
+  n := public.portfolio_log_purge('portfolio_subject_redactions', FOUNDER, 'retention_period_expired', true); assert n = 1, 'subject redaction log purged: ' || n;
   assert exists (select 1 from public.portfolio_subject_redactions where permission_id = GC), 'held row kept';
   -- marketing redaction log: MB old and free -> purged; MC old under job hold -> kept
-  n := public.portfolio_log_purge('marketing_permission_redactions', FOUNDER, 'purge expired erasure log rows', true); assert n = 1, 'marketing redaction log purged: ' || n;
+  n := public.portfolio_log_purge('marketing_permission_redactions', FOUNDER, 'retention_period_expired', true); assert n = 1, 'marketing redaction log purged: ' || n;
   assert (select count(*) from public.marketing_permission_redactions) = 1, 'held row kept'; raise notice 'PASS 9e the purge deletes only expired rows with no active hold, in each of the four logs';
+  begin perform public.portfolio_log_purge('portfolio_file_holds', FOUNDER, 'a free text reason with Jane Doe', true); raise exception 'FAIL free-text reason accepted'; exception when others then if sqlerrm like 'FAIL%' then raise; end if; end; raise notice 'PASS 9f the purge reason is a fixed code, never free text';
   -- 10. permanent audit of purges, append-only, never purgeable
   assert (select count(*) from public.portfolio_log_purges) = 4, 'four purge audit rows';
+  assert (select array_agg(column_name::text order by column_name) from information_schema.columns where table_schema = 'public' and table_name = 'portfolio_log_purges') = array['business_id','confirmed','cutoff_date','id','purged_at','purged_by','purged_table','reason_code','retention_years','rows_purged'], 'the permanent purge audit holds only necessary metadata';
   begin delete from public.portfolio_log_purges; raise exception 'FAIL purge audit deleted'; exception when others then if sqlerrm like 'FAIL%' then raise; end if; end;
   begin update public.portfolio_log_purges set rows_purged = 0; raise exception 'FAIL purge audit edited'; exception when others then if sqlerrm like 'FAIL%' then raise; end if; end; raise notice 'PASS 10 every purge leaves a permanent, append-only audit row';
   -- 11. without a policy nothing can be purged (policy rows are append-only; simulate with a purge on a fresh table state is covered by 3); privileges

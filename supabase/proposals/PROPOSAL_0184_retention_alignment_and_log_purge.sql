@@ -1,4 +1,6 @@
--- PROPOSED 0184 (NOT APPLIED, NOT in supabase/migrations). Depends on 0182 revision 2 and 0183 revision 3 (it reads portfolio_retention_policy and marketing_permission_job_holds). Management directions (2 Nov 2026):
+-- PROPOSED 0184 REVISION 2 (NOT APPLIED, NOT in supabase/migrations; revision 1, sha256 18d05f71...c1fa, is superseded). Revision 2 changes ONLY the permanent purge audit: it records a fixed reason CODE instead of free text, so the audit holds nothing but necessary metadata
+-- (table, row count, cutoff, policy years, reason code, who, when) and can be kept permanently without carrying personal details. Everything else is identical to revision 1.
+-- PROPOSED 0184 (original text follows). Depends on 0182 revision 2 and 0183 revision 3 (it reads portfolio_retention_policy and marketing_permission_job_holds). Management directions (2 Nov 2026):
 --  1. ALIGN the 0182 erasure function with a recorded BASIS and the adopted retention POLICY (six years after the later of the permission's end and the last authorised use is a management policy value recorded in portfolio_retention_policy; nothing is seeded here).
 --     Valid data-subject requests and legal erasure obligations keep working: those bases skip the period but never the in-force, hold or in-use safeguards.
 --  2. HOLD protections: the erasure also respects a JOB-level hold (0183), not only the photograph-level hold of 0182.
@@ -18,7 +20,7 @@ create table public.portfolio_log_purges (
   rows_purged integer not null check (rows_purged >= 0),
   cutoff_date date not null,
   retention_years integer not null,
-  reason text not null check (char_length(btrim(reason)) between 10 and 200),
+  reason_code text not null check (reason_code in ('retention_period_expired', 'annual_retention_review', 'legal_requirement', 'data_subject_request', 'policy_change')),   -- a fixed code, never free text: the permanent audit carries no personal details
   confirmed boolean not null check (confirmed),
   purged_by uuid not null references public.profiles (id),
   purged_at timestamptz not null default now()
@@ -144,12 +146,12 @@ begin
 end $$;
 
 -- 7. the controlled PURGE: management only, a recorded reason, an explicit confirmation, one table at a time; deletes only the rows the preview counts; leaves a permanent audit row. Never runs automatically.
-create function public.portfolio_log_purge(p_table text, p_actor uuid, p_reason text, p_confirm boolean) returns integer
+create function public.portfolio_log_purge(p_table text, p_actor uuid, p_reason_code text, p_confirm boolean) returns integer
 language plpgsql security definer set search_path = '' as $$
 declare years integer; c date; n integer;
 begin
   if not private.is_portfolio_authority(p_actor) then raise exception 'only the Founder or an authorised executive admin may purge expired log rows'; end if;
-  if char_length(btrim(coalesce(p_reason, ''))) not between 10 and 200 then raise exception 'state the reason in 10 to 200 characters, without personal details'; end if;
+  if p_reason_code is null or p_reason_code not in ('retention_period_expired', 'annual_retention_review', 'legal_requirement', 'data_subject_request', 'policy_change') then raise exception 'choose the documented reason for the purge'; end if;
   if p_confirm is distinct from true then raise exception 'confirm that purging is permitted: no dispute, legal obligation or audit still needs these log rows'; end if;
   if p_table not in ('portfolio_subject_redactions', 'portfolio_file_holds', 'marketing_permission_redactions', 'marketing_permission_job_holds') then raise exception 'choose one of the four log tables'; end if;
   select p.retention_years into years from public.portfolio_retention_policy p order by p.seq desc limit 1;
@@ -166,7 +168,7 @@ begin
     with d as (delete from public.marketing_permission_job_holds h where h.recorded_at::date < c and (select x.action from public.marketing_permission_job_holds x where x.job_type = h.job_type and x.job_id = h.job_id order by x.seq desc limit 1) <> 'placed' returning 1) select count(*) into n from d;
   end if;
   perform set_config('ordift.log_purge', 'off', true);
-  insert into public.portfolio_log_purges (purged_table, rows_purged, cutoff_date, retention_years, reason, confirmed, purged_by) values (p_table, n, c, years, btrim(p_reason), true, p_actor);
+  insert into public.portfolio_log_purges (purged_table, rows_purged, cutoff_date, retention_years, reason_code, confirmed, purged_by) values (p_table, n, c, years, p_reason_code, true, p_actor);
   return n;
 end $$;
 revoke all on function public.portfolio_log_purge_preview(), public.portfolio_log_purge(text, uuid, text, boolean), private.portfolio_log_immutable(), private.portfolio_subject_log_free_of_hold(uuid), private.portfolio_record_log_free_of_hold(uuid) from public, anon, authenticated;
