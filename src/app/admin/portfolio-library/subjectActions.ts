@@ -5,6 +5,7 @@ import { getCurrentUser } from "@/lib/portal/roles";
 import { addSubject, declarePeopleShown, recordSubjectPermission, redactSubjectPermission, setFileHold, verifySubjectPermission, withdrawSubjectPermission } from "@/lib/portfolio/subjects";
 import { SUBJECT_KINDS, type SubjectKind } from "@/lib/portfolio/subjectRules";
 import { isJobType } from "@/lib/portfolio/destinations";
+import { setCandidateOrigin } from "@/lib/portfolio/candidateJurisdiction";
 
 // Permission evidence for the people and property shown (proposed 0182; every function refuses while SUBJECT_PERMISSIONS_ENABLED is false). The signed-in user is the only actor; the library re-checks authority and the database re-checks every rule.
 export type SubjectFormState = { ok: boolean; message: string } | null;
@@ -34,3 +35,4 @@ export async function verifySubjectPermissionAction(_: SubjectFormState, f: Form
 export async function withdrawSubjectPermissionAction(_: SubjectFormState, f: FormData): Promise<SubjectFormState> { return run(f, "Withdrawn. The photograph is blocked for this person from now on.", (u) => withdrawSubjectPermission(u, str(f, "subjectId"), str(f, "grantId"), str(f, "note"))); }
 export async function redactSubjectPermissionAction(_: SubjectFormState, f: FormData): Promise<SubjectFormState> { return run(f, "Personal details erased and the erasure logged.", (u) => redactSubjectPermission(u, str(f, "grantId"), str(f, "note"), f.get("confirmPermitted") === "on")); }
 export async function fileHoldAction(_: SubjectFormState, f: FormData): Promise<SubjectFormState> { const act = str(f, "action") === "released" ? "released" : "placed"; return run(f, act === "placed" ? "Hold placed: nothing about this photograph can be erased." : "Hold released.", (u) => setFileHold(u, str(f, "fileId"), act, str(f, "note"))); }
+export async function setOriginAction(_: SubjectFormState, f: FormData): Promise<SubjectFormState> { return run(f, "Origin recorded.", (u) => setCandidateOrigin(u, str(f, "fileId"), str(f, "origin"))); }

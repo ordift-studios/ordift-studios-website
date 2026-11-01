@@ -29,6 +29,7 @@ vi.mock("@/lib/supabase/server", async () => {
 
 import * as lib from "./library";
 import * as subj from "./subjects";
+import { setCandidateOrigin } from "./candidateJurisdiction";
 
 if (!/^https?:\/\/(127\.0\.0\.1|localhost)/.test(process.env.NEXT_PUBLIC_SUPABASE_URL ?? "")) throw new Error("Refusing to run against a non-local database");
 const sql = (q: string) => execSync(`docker exec -i ordift-mig-check2 psql -U supabase_admin -h 127.0.0.1 -d ${process.env.P4_E2E_DB ?? "p4_e2e"} -X -q -At -v ON_ERROR_STOP=1`, { input: q }).toString().trim();
@@ -66,6 +67,10 @@ describe("structured permission evidence through the real library", () => {
     expect(await lib.checkUseEligibility(F, "website")).toMatchObject({ eligible: false, internalReason: "people_shown_but_none_listed" });
   });
   it("each listed person needs a grant that is VERIFIED with the evidence examined; a recorded or asserted grant counts for nothing", async () => {
+    expect((await subj.addSubject(founder, F, "child", "child in red, left of frame")).ok).toBe(false);   // the origin must be recorded before a child can be listed
+    expect((await setCandidateOrigin(staff, F, "ghana")).ok).toBe(false);
+    expect((await setCandidateOrigin(founder, F, "mars")).ok).toBe(false);
+    expect((await setCandidateOrigin(founder, F, "ghana")).ok).toBe(true);
     const c = await subj.addSubject(founder, F, "child", "child in red, left of frame"); const a = await subj.addSubject(founder, F, "adult", "guest, centre");
     expect(c.ok && a.ok).toBe(true); childId = (c as { id: string }).id; adultId = (a as { id: string }).id;
     const base = { grantorName: "Parent Name", givenOn: earlier, evidenceKind: "signed_form", evidenceReference: "signed form kept in the job folder", destinations: ["website"] };
@@ -85,8 +90,13 @@ describe("structured permission evidence through the real library", () => {
     expect(await subj.childQatarRestriction(F)).toMatch(/Qatar/);
     expect(await lib.checkUseEligibility(F, "website")).toMatchObject({ eligible: false, internalReason: "children_qatar_restricted" });
     expect((await lib.recordInternalReview(founder, { fileId: F, decision: "approved", destinations: ["website"], checks: CHECKS, notes: "" })).ok).toBe(false);
-    sql(`update public.portfolio_candidates set jurisdiction = 'ghana' where project_file_id = '${F}'`);
+    // an unknown origin fails closed (treated as Qatar), and an origin outside Qatar lifts the restriction
+    sql(`update public.portfolio_candidates set jurisdiction = null where project_file_id = '${F}'`);
+    expect(await subj.childQatarRestriction(F)).toMatch(/not recorded|Qatar/);
+    expect(await lib.checkUseEligibility(F, "website")).toMatchObject({ eligible: false, internalReason: "children_qatar_restricted" });
+    expect((await setCandidateOrigin(founder, F, "other")).ok).toBe(true);
     expect(await subj.childQatarRestriction(F)).toBeNull();
+    expect((await subj.getPeopleViews([F]))[F].origin).toBe("other");
     expect((await lib.checkUseEligibility(F, "website")).eligible).toBe(true);
     expect((await lib.recordUse(founder, { fileId: F, destination: "website", action: "published", reference: "cms:1" })).ok).toBe(true);
   });

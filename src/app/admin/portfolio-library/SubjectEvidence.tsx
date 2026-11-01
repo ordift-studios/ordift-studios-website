@@ -2,9 +2,9 @@
 
 import { useActionState } from "react";
 import { DESTINATIONS, DESTINATION_LABEL, type Destination } from "@/lib/portfolio/destinations";
-import { DECLARATIONS, EVIDENCE_KINDS, GRANTORS, SUBJECT_KINDS } from "@/lib/portfolio/subjectRules";
+import { DECLARATIONS, EVIDENCE_KINDS, GRANTORS, ORIGINS, SUBJECT_KINDS } from "@/lib/portfolio/subjectRules";
 import type { PhotoPeopleView, SubjectGrantView } from "@/lib/portfolio/subjects";
-import { addSubjectAction, declarePeopleAction, recordSubjectPermissionAction, fileHoldAction, redactSubjectPermissionAction, verifySubjectPermissionAction, withdrawSubjectPermissionAction, type SubjectFormState } from "./subjectActions";
+import { addSubjectAction, declarePeopleAction, recordSubjectPermissionAction, fileHoldAction, redactSubjectPermissionAction, setOriginAction, verifySubjectPermissionAction, withdrawSubjectPermissionAction, type SubjectFormState } from "./subjectActions";
 
 // Permission evidence for the people and property shown in ONE photograph (proposed 0182; rendered only while SUBJECT_PERMISSIONS_ENABLED). A tick is never evidence: a grant is recorded, then verified in a separate dated step that names the evidence examined.
 const input = "w-full rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small";
@@ -20,6 +20,7 @@ export function SubjectEvidence({ jobType, jobId, fileId, view }: { jobType: str
   return (
     <div className="mt-2 space-y-3 rounded-lg bg-black/[0.03] p-2">
       <p className="font-sans text-caption font-medium">People and property shown</p>
+      <OriginRow jobType={jobType} jobId={jobId} fileId={fileId} origin={view.origin} />
       <HoldRow jobType={jobType} jobId={jobId} fileId={fileId} hold={view.hold} />
       <p className="font-sans text-caption text-ordift-ink-muted">{view.declaration ? <>Declared: {DECLARATIONS.find((d) => d.key === view.declaration!.value)?.label}. Basis: {view.declaration.note}</> : "Nothing declared yet: the photograph cannot be cleared for any use."}</p>
       <form action={declare} className="space-y-1"><Hidden jobType={jobType} jobId={jobId} fileId={fileId} />
@@ -96,5 +97,14 @@ function HoldRow({ jobType, jobId, fileId, hold }: { jobType: string; jobId: str
     <form action={act} className="flex flex-wrap items-center gap-1"><Hidden jobType={jobType} jobId={jobId} fileId={fileId} /><input type="hidden" name="action" value={hold ? "released" : "placed"} />
       <span className="font-sans text-caption">{hold ? <strong>Hold in place since {hold.at.slice(0, 10)}: {hold.reason}</strong> : "No hold on this photograph."}</span>
       <input name="note" placeholder={hold ? "Why the hold is released (no names)" : "Kind of dispute, complaint, audit or obligation (no names, 10-200 characters)"} aria-label="Hold reason" className={input} /><button className={btn} disabled={pending}>{hold ? "Release hold" : "Place hold"}</button><Msg s={s} /></form>
+  );
+}
+
+function OriginRow({ jobType, jobId, fileId, origin }: { jobType: string; jobId: string; fileId: string; origin: string | null }) {
+  const [s, act, pending] = useActionState(setOriginAction, null as SubjectFormState);
+  return (
+    <form action={act} className="flex flex-wrap items-center gap-1"><Hidden jobType={jobType} jobId={jobId} fileId={fileId} />
+      <span className="font-sans text-caption">Origin: <strong>{ORIGINS.find((o) => o.key === origin)?.label ?? "not recorded (treated as Qatar if a child is shown)"}</strong></span>
+      <select name="origin" aria-label="Where the photograph originates" className={input} defaultValue=""><option value="" disabled>Set origin…</option>{ORIGINS.map((o) => <option key={o.key} value={o.key}>{o.label}</option>)}</select><button className={btn} disabled={pending}>Record origin</button><Msg s={s} /></form>
   );
 }

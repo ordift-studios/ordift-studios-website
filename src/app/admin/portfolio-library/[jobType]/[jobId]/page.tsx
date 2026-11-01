@@ -7,6 +7,8 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { listPortfolioSourceFiles } from "@/lib/portfolio/sourceFiles";
 import { getJobPermissionView, getStandings, listContractCandidates } from "@/lib/portfolio/library";
 import { getPeopleViews } from "@/lib/portfolio/subjects";
+import { getErasureView } from "@/lib/portfolio/permissionRecordErasure";
+import { PermissionRecordErasure } from "../../PermissionRecordErasure";
 import { PORTFOLIO_LIBRARY_ENABLED } from "@/lib/portfolio/featureGate";
 import { PERMISSION_TEXT_APPROVED } from "@/lib/portfolio/permissionText";
 import { DESTINATION_LABEL, isJobType, jobKey, type Destination } from "@/lib/portfolio/destinations";
@@ -42,6 +44,7 @@ export default async function JobPermissionPage({ params }: { params: Promise<{ 
     if (enq?.user_id) { const { data: p } = await admin.from("profiles").select("id, full_name").eq("id", enq.user_id).maybeSingle(); if (p) addressee = { id: p.id as string, name: (p.full_name as string | null) ?? "the client" }; }
   }
   const peopleViews = await getPeopleViews(files.map((f) => f.id));   // empty while structured evidence is off
+  const erasureView = await getErasureView(jobType, jobId.toLowerCase());   // null while the erasure workflow is off
   const nameOf = (id: string) => files.find((f) => f.id === id)?.filename ?? id;
   const records = view?.records ?? [];
   // Limits written on a grant still in force. They are free text, so a reviewer must assess them before approving; the photograph is not usable until that is recorded.
@@ -93,6 +96,8 @@ export default async function JobPermissionPage({ params }: { params: Promise<{ 
 
           <section aria-labelledby="stage2" className="space-y-3"><h2 id="stage2" className="font-serif font-medium text-body text-ordift-ink">Internal approval of each photograph</h2>
             <PhotoReview jobType={jobType} jobId={jobId} photos={files.map((f) => ({ id: f.id, name: f.filename, kind: f.kindLabel, permission: standings[f.id]?.permission ?? "No permission on record", internal: standings[f.id]?.internal ?? "Not yet reviewed internally", usable: (standings[f.id]?.usable ?? []).map((d) => DESTINATION_LABEL[d]), restrictions: liveRestrictions, people: peopleViews[f.id] }))} /></section>
+
+          {erasureView && <section aria-labelledby="retention" className="space-y-3"><h2 id="retention" className="font-serif font-medium text-body text-ordift-ink">Retention and erasure of permission records</h2><PermissionRecordErasure jobType={jobType} jobId={jobId} view={erasureView} /></section>}
 
           <section aria-labelledby="uses" className="space-y-3"><h2 id="uses" className="font-serif font-medium text-body text-ordift-ink">Record that a photograph was used</h2>
             <p className="font-sans text-body-small text-ordift-ink-muted">The database re-checks both approvals at this moment and refuses a use that no longer qualifies. Withdrawal or revocation later flags anything already in use for your review; it never removes anything automatically.</p>

@@ -4,7 +4,7 @@ import type { CurrentUser } from "@/lib/portal/roles";
 import { isManagementUser } from "@/lib/crewSupport/management";
 import { PORTFOLIO_LIBRARY_ENABLED } from "./featureGate";
 import { SUBJECT_PERMISSIONS_ENABLED } from "./subjectGate";
-import { DECLARATIONS, SUBJECT_KINDS, validateCheckNote, validateDeclarationNote, validateSubjectGrant, validateVerification, type SubjectGrantInput, type SubjectKind } from "./subjectRules";
+import { DECLARATIONS, SUBJECT_KINDS, isKnownNonQatar, validateCheckNote, validateDeclarationNote, validateSubjectGrant, validateVerification, type SubjectGrantInput, type SubjectKind } from "./subjectRules";
 
 // PERMISSION EVIDENCE FOR THE PEOPLE AND PROPERTY SHOWN (proposed migration 0182; dormant until SUBJECT_PERMISSIONS_ENABLED). Management only. A grant is only RECORDED here; it counts for nothing until a separate
 // verification (with a stated check) is recorded, and withdrawal blocks use at once. The database applies the same rules. No evidence document or identification is stored: only who gave it and where it is kept.
@@ -29,6 +29,10 @@ export async function addSubject(user: CurrentUser, fileId: string, kind: Subjec
   const g = gate(); if (g) return g; const a = await authority(user); if (a) return a;
   if (!SUBJECT_KINDS.some((k) => k.key === kind)) return fail("Choose who or what is shown.");
   if (label.trim().length < 3 || label.trim().length > 120) return fail("Describe where they appear in the frame (3 to 120 characters). Use a description, not a full name.");
+  if (kind === "child") {
+    const { data: cand } = await createAdminClient().from("portfolio_candidates").select("jurisdiction").eq("project_file_id", fileId).maybeSingle();
+    if (!["ghana", "qatar", "other"].includes(String(cand?.jurisdiction ?? ""))) return fail("Set where this photograph originates (Ghana, Qatar or elsewhere) before listing a child on it. An unknown origin is treated as Qatar.");
+  }
   const { data, error } = await createAdminClient().from("portfolio_file_subjects").insert({ project_file_id: fileId, action: "added", subject_kind: kind, label: label.trim(), recorded_by: user.id }).select("id").single();
   if (error || !data) return fail(clean(error));
   await logActivity({ actorUserId: user.id, action: "portfolio.subject_added", entityType: "project_file", entityId: fileId, metadata: { kind } });
@@ -84,10 +88,11 @@ export async function setFileHold(user: CurrentUser, fileId: string, action: "pl
 export type GrantStatus = "recorded_unverified" | "verified" | "withdrawn" | "replaced" | "expired";
 export type SubjectGrantView = { id: string; status: GrantStatus; grantorKind: string; grantorName: string; grantorRelationship: string | null; evidenceKind: string; evidenceReference: string; givenOn: string | null; destinations: string[]; restrictions: string | null; expiresOn: string | null; verifiedOn: string | null; erased: boolean };
 export type SubjectView = { id: string; kind: SubjectKind; label: string; grants: SubjectGrantView[] };
-export type PhotoPeopleView = { declaration: { value: string; note: string; at: string } | null; subjects: SubjectView[]; hold: { reason: string; at: string } | null };
+export type PhotoPeopleView = { declaration: { value: string; note: string; at: string } | null; subjects: SubjectView[]; hold: { reason: string; at: string } | null; origin: string | null };
 export async function getPeopleViews(fileIds: string[]): Promise<Record<string, PhotoPeopleView>> {
   if (!PORTFOLIO_LIBRARY_ENABLED || !SUBJECT_PERMISSIONS_ENABLED || fileIds.length === 0) return {};
   const admin = createAdminClient(); const ids = fileIds.slice(0, 200);
+  const { data: cands } = await admin.from("portfolio_candidates").select("project_file_id, jurisdiction").in("project_file_id", ids);
   const { data: holds } = await admin.from("portfolio_file_holds").select("project_file_id, action, reason, recorded_at, seq").in("project_file_id", ids).order("seq", { ascending: false });
   const [{ data: decs }, { data: subs }] = await Promise.all([
     admin.from("portfolio_people_declarations").select("project_file_id, declaration, note, declared_at, seq").in("project_file_id", ids).order("seq", { ascending: false }),
@@ -100,7 +105,7 @@ export async function getPeopleViews(fileIds: string[]): Promise<Record<string, 
   const out: Record<string, PhotoPeopleView> = {};
   for (const f of ids) {
     const d = (decs ?? []).find((x) => x.project_file_id === f);
-    out[f] = { declaration: d ? { value: d.declaration as string, note: d.note as string, at: d.declared_at as string } : null, subjects: [], hold: null };
+    out[f] = { declaration: d ? { value: d.declaration as string, note: d.note as string, at: d.declared_at as string } : null, subjects: [], hold: null, origin: ((cands ?? []).find((c) => c.project_file_id === f)?.jurisdiction as string | null | undefined) ?? null };
     const h = (holds ?? []).find((x) => x.project_file_id === f);
     if (h && h.action === "placed") out[f].hold = { reason: h.reason as string, at: h.recorded_at as string };
   }
@@ -116,16 +121,16 @@ export async function getPeopleViews(fileIds: string[]): Promise<Record<string, 
   return out;
 }
 
-// INTERIM RESTRICTION (management, 1 Nov 2026): a photograph that shows an identifiable child and is marked as originating in Qatar is not approved or cleared for promotional portfolio use until the Qatar requirements
+// INTERIM RESTRICTION (management, 1 Nov 2026): a photograph that shows an identifiable child and originates in Qatar, or whose origin is unknown (fail closed), is not approved or cleared for promotional portfolio use until the Qatar requirements
 // (including any authorisation the Competent Department requires for children's data) have been verified. Internal handling for contracted services is unaffected. Applies only once structured evidence is live.
 export async function childQatarRestriction(fileId: string): Promise<string | null> {
   if (!PORTFOLIO_LIBRARY_ENABLED || !SUBJECT_PERMISSIONS_ENABLED) return null;
   const admin = createAdminClient();
   const { data: cand } = await admin.from("portfolio_candidates").select("jurisdiction").eq("project_file_id", fileId).maybeSingle();
-  if (!/qatar/i.test(String(cand?.jurisdiction ?? ""))) return null;
+  if (isKnownNonQatar(String(cand?.jurisdiction ?? ""))) return null;   // anything else, including unknown, is treated as Qatar
   const { data: subs } = await admin.from("portfolio_file_subjects").select("id, action, subject_kind, supersedes_id").eq("project_file_id", fileId);
   const removed = new Set((subs ?? []).filter((x) => x.action === "removed").map((x) => x.supersedes_id as string));
   return (subs ?? []).some((x) => x.action === "added" && x.subject_kind === "child" && !removed.has(x.id as string))
-    ? "This photograph shows an identifiable child and originates in Qatar: it cannot be approved for promotional use until the Qatar legal requirements, guardian permission and any required authorisation have been verified."
+    ? "This photograph shows an identifiable child and originates in Qatar (or its origin is not recorded): it cannot be approved for promotional use until the Qatar legal requirements, guardian permission and any required authorisation have been verified."
     : null;
 }

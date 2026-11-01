@@ -34,3 +34,8 @@ export function validateVerification(evidenceReference: string, note: string): s
   return validateCheckNote(note);
 }
 export const validateDeclarationNote = (note: string): string | null => ((note ?? "").trim().length >= 10 ? null : "Record the basis of your assessment: who is identifiable, how, and which permissions apply (at least 10 characters). Nothing is assumed for crowds or background people.");
+
+// Where a photograph originates. Mandatory before an identifiable child can be listed on it. "other" means the photograph does NOT originate in Qatar (stated by the manager). Anything else, including unknown, is treated as Qatar (fail closed).
+export const ORIGINS = [{ key: "ghana", label: "Ghana" }, { key: "qatar", label: "Qatar" }, { key: "other", label: "Elsewhere (not Qatar)" }] as const;
+export type Origin = (typeof ORIGINS)[number]["key"];
+export const isKnownNonQatar = (v: string | null | undefined): boolean => v === "ghana" || v === "other";
