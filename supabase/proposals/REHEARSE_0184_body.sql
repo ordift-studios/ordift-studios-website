@@ -111,6 +111,15 @@ begin
   begin perform public.portfolio_log_purge('some_other_table', FOUNDER, 'retention_period_expired', true); raise exception 'FAIL other table'; exception when others then if sqlerrm like 'FAIL%' then raise; end if; end; raise notice 'PASS 9c only the four log tables';
   begin delete from public.portfolio_file_holds; raise exception 'FAIL direct delete'; exception when others then if sqlerrm like 'FAIL%' then raise; end if; end;
   begin update public.portfolio_file_holds set reason = 'edited reason of the hold'; raise exception 'FAIL update'; exception when others then if sqlerrm like 'FAIL%' then raise; end if; end; raise notice 'PASS 9d log rows cannot be edited or deleted outside the purge';
+  -- 9d2. ATOMIC: if the permanent audit row cannot be written, the deletion is undone (one function, one transaction)
+  execute 'create function public.zz_fail_audit() returns trigger language plpgsql as $f$ begin raise exception ''forced audit failure''; end $f$';
+  execute 'create trigger zz_fail_audit before insert on public.portfolio_log_purges for each row execute function public.zz_fail_audit()';
+  select count(*) into n from public.portfolio_file_holds;
+  begin perform public.portfolio_log_purge('portfolio_file_holds', FOUNDER, 'retention_period_expired', true); raise exception 'FAIL purge succeeded without its audit row'; exception when others then if sqlerrm like 'FAIL%' then raise; end if; end;
+  assert (select count(*) from public.portfolio_file_holds) = n, 'the deletion must be rolled back with the failed audit';
+  assert (select count(*) from public.portfolio_log_purges) = 0, 'no audit row exists';
+  execute 'drop trigger zz_fail_audit on public.portfolio_log_purges'; execute 'drop function public.zz_fail_audit()';
+  raise notice 'PASS 9d2 a purge is atomic with its permanent audit row (a failed audit undoes the deletion)';
   -- file-hold log: B chain (placed 8y, released 7y6m) eligible = 2 rows; C chain active hold protected = 0; A chain (placed 1y, released 11m) too recent
   select eligible_rows into n from public.portfolio_log_purge_preview() where log_table = 'portfolio_file_holds'; assert n = 2, 'file hold eligible rows: ' || n;
   n := public.portfolio_log_purge('portfolio_file_holds', FOUNDER, 'retention_period_expired', true); assert n = 2, 'purged 2';
