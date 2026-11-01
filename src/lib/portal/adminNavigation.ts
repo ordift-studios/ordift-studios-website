@@ -42,6 +42,9 @@ export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
       { label: "My Performance", href: "/admin/me/performance" },
       { label: "My Grievances", href: "/admin/me/grievances" },
       { label: "My Requests", href: "/admin/me/requests" },
+      // The Signature Vault is personal to its owner (a Super Admin registers and approves only their own signature), so it lives in the always-visible My Workspace dropdown. Super Admin only,
+      // matching the page and its actions, which re-check Super Admin themselves.
+      { label: "My Signature Vault", href: "/admin/signature-vault", superAdminOnly: true },
     ],
   },
   {

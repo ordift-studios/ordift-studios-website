@@ -29,3 +29,16 @@ describe("Instructor Management navigation", () => {
     }
   });
 });
+
+describe("Signature Vault navigation", () => {
+  const mine = (f: AdminNavFlags) => resolveVisibleAdminNavGroups(f).find((g) => g.label === "My Workspace")?.items.find((i) => i.href === "/admin/signature-vault");
+  it("a Super Admin sees 'My Signature Vault' in the My Workspace dropdown; nobody else does", () => {
+    expect(mine(flags({ isSuper: true, isAdmin: true }))?.label).toBe("My Signature Vault");
+    for (const f of [flags({ isAdmin: true }), flags({ isAdmin: true, isWorkforceAdmin: true, canCoordinateOperations: true, isExecutive: true }), flags({})]) expect(mine(f)).toBeUndefined();
+  });
+  it("it appears exactly once in the whole menu and points at an existing page", () => {
+    const all = ADMIN_NAV_GROUPS.flatMap((g) => g.items).filter((i) => i.href === "/admin/signature-vault");
+    expect(all).toHaveLength(1); expect(all[0].superAdminOnly).toBe(true);
+    expect(existsSync(join(process.cwd(), "src/app/admin/signature-vault/page.tsx"))).toBe(true);
+  });
+});
