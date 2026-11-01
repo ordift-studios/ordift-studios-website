@@ -10,7 +10,7 @@ const group = (f: AdminNavFlags) => resolveVisibleAdminNavGroups(f).find((g) => 
 describe("Instructor Management navigation", () => {
   it("a Super Admin sees the section with its four entries, in order", () => {
     const g = group(flags({ isSuper: true, isAdmin: true }));
-    expect(g?.items.map((i) => i.label)).toEqual(["Instructor Directory / Onboarding", "Instructor Standards", "Session Schedule / Assignments", "Rights Matrix"]);
+    expect(g?.items.map((i) => i.label)).toEqual(["Directory / Onboarding", "Instructor Standards", "Schedule / Assignments", "Rights Matrix"]);
     expect(g?.items.map((i) => i.href)).toEqual(["/admin/organization/instructors", "/admin/organization/instructor-standards", "/admin/organization/instructor-assignments", "/admin/organization/instructor-assignments#rights-matrix"]);
   });
   it("nobody else sees it: not an admin, not a workforce or operations administrator, not staff", () => {

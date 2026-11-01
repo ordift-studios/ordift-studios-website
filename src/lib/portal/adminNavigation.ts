@@ -53,9 +53,9 @@ export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
     // All four are Super Admin only (the standards and assignment-approval gates are Super Admin; the directory also admits onboarding authority, but navigation must never show a link the destination refuses).
     label: "Instructor Management",
     items: [
-      { label: "Instructor Directory / Onboarding", href: "/admin/organization/instructors", superAdminOnly: true },
+      { label: "Directory / Onboarding", href: "/admin/organization/instructors", superAdminOnly: true },
       { label: "Instructor Standards", href: "/admin/organization/instructor-standards", superAdminOnly: true },
-      { label: "Session Schedule / Assignments", href: "/admin/organization/instructor-assignments", superAdminOnly: true },
+      { label: "Schedule / Assignments", href: "/admin/organization/instructor-assignments", superAdminOnly: true },
       { label: "Rights Matrix", href: "/admin/organization/instructor-assignments#rights-matrix", superAdminOnly: true },
     ],
   },
