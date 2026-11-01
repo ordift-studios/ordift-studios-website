@@ -28,13 +28,21 @@ const convPrice = (p: PriceSpec, fx: FxBasis): { price: PriceSpec; conversion?: 
   return { price: { ...p, amount: c.rounded }, conversion: c };
 };
 
+// Catalogue statements ("Standard base rate: USD 25 per image", "Minimum booking: USD 200") are TEXT, so they are restated in the display currency with the same conversion and rounding as the price figures
+// (the same USD input always gives the same rounded result), never left in USD on a converted card.
+const fmtAmount = (n: number) => n.toLocaleString("en-US", { minimumFractionDigits: Number.isInteger(n) ? 0 : 2, maximumFractionDigits: 2 });
+const STATEMENT = /^(Standard base rate|Minimum booking): USD ([\d,]+(?:\.\d+)?)( per image)?$/;
+export function restateStatements(lines: string[], fx: Pick<FxBasis, "currency" | "rateToUsd" | "rule">): string[] {
+  return lines.map((l) => { const m = STATEMENT.exec(l); return m ? `${m[1]}: ${fx.currency} ${fmtAmount(convertUsd(Number(m[2].replace(/,/g, "")), fx).rounded)}${m[3] ?? ""}` : l; });
+}
+
 // Returns a NEW content in the display currency; the input (USD) content is untouched. Throws when the content is already converted.
 export function convertContent(usd: RateCardContent, fx: FxBasis): RateCardContent {
   if (usd.meta.currency !== "USD" || usd.meta.fx) throw new Error("Only a USD card can be converted.");
   const conv = <T extends { price: PriceSpec }>(x: T): T & { conversion?: Conversion } => ({ ...x, ...convPrice(x.price, fx) });
   const sections: RateCardSection[] = usd.sections.map((s) => ({
     ...s,
-    items: s.items.map((i): RateCardItem => ({ ...conv(i), tiers: i.tiers?.map((t): Tier => conv(t)) })),
+    items: s.items.map((i): RateCardItem => ({ ...conv(i), inclusions: restateStatements(i.inclusions, fx), tiers: i.tiers?.map((t): Tier => conv(t)) })),
     minimum: s.minimum ? (conv(s.minimum) as Minimum) : undefined,
     addons: s.addons?.map((a): Addon => conv(a)),
   }));
@@ -65,6 +73,7 @@ export function checkConversions(c: RateCardContent, today: string): string[] {
   const age = Math.floor((Date.parse(today) - Date.parse(fx.effectiveFrom)) / 86_400_000);
   if (!Number.isFinite(age) || age < 0) errs.push("The exchange rate has no valid effective date.");
   else if (age > RATE_MAX_AGE_DAYS) errs.push(`The exchange rate is ${age} days old (the limit is ${RATE_MAX_AGE_DAYS}). Review the governed rate first.`);
+  for (const sec of c.sections) for (const i of sec.items) if (i.included !== false && i.inclusions.some((x) => /^(Standard base rate|Minimum booking): USD /.test(x))) errs.push(`${sec.title} — ${i.name}: a base-rate or minimum statement is still in USD on a ${c.meta.currency} card.`);
   const check = (where: string, price: PriceSpec, cv?: Conversion) => {
     if (price.kind === "on_request") return;
     if (!cv) { errs.push(`${where}: no conversion is recorded for this price.`); return; }

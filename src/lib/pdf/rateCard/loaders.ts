@@ -7,6 +7,7 @@ import { getActiveCorporateHeadshotRates, getActiveCorporateMinimumBooking, getA
 import { getActiveCatalogueBaseRate, getActiveCatalogueMinimum, getActiveCreativeFeeRates, getActivePostProductionRates } from "@/lib/pricing/commercialPricing";
 import { createClient } from "@/lib/supabase/server";
 import { getContractingEntityStanding } from "@/lib/organization/entityRegistrations";
+import { applyEditorialContent, REGISTRY, type ContentReport } from "./content";
 import { commercialSection, corporateSection, personalSessionSection, weddingEventSection } from "./mappers";
 import { convertContent, DEFAULT_ROUNDING } from "./convert";
 import { applyEligibility, resolveLicensed } from "./eligibility";
@@ -27,7 +28,7 @@ export async function loadGovernedRate(currency: string): Promise<{ ok: true; ra
 
 export type DraftOptions = { marketSlug: string; today: string; entityId?: string; currency?: string; rule?: RoundingRule };
 
-export async function buildDraftFromSellingRates(o: DraftOptions): Promise<{ ok: true; draft: RateCardContent } | { ok: false; error: string }> {
+export async function buildDraftFromSellingRates(o: DraftOptions): Promise<{ ok: true; draft: RateCardContent; contentReport: ContentReport } | { ok: false; error: string }> {
   const pre = checkBinding({ marketSlug: o.marketSlug, currency: o.currency ?? "USD", entityJurisdiction: null, hasEntity: false });
   if (pre.length) return { ok: false, error: pre[0] };
   const market = (await listActivePricingMarkets()).find((m) => m.slug === o.marketSlug);
@@ -50,6 +51,8 @@ export async function buildDraftFromSellingRates(o: DraftOptions): Promise<{ ok:
     conditions: [{ title: "Prices", text: `${PLACEHOLDER_MARK} Approved wording on currency, validity and what the prices include.` }, { title: "Tax and deposits", text: `${PLACEHOLDER_MARK} Approved wording on tax, deposits and payment schedule.` }, { title: "Usage and delivery", text: `${PLACEHOLDER_MARK} Approved wording on usage rights and delivery timelines.` }],
     contact: [{ label: "Website", value: "ordiftstudios.com" }, { label: "Email", value: `${PLACEHOLDER_MARK} contact email` }, { label: "WhatsApp", value: `${PLACEHOLDER_MARK} booking number` }],
   };
+  // Approved editorial wording (registry) is merged in BEFORE eligibility and conversion; it can only fill wording fields, and anything not yet supplied is reported, never invented.
+  const merged = applyEditorialContent(draft, REGISTRY, o.marketSlug); draft = merged.content;
   if (o.entityId) {
     const st = await getContractingEntityStanding(o.entityId, o.today, ALL_ACTIVITIES);
     if (!st) return { ok: false, error: "The issuing entity was not found." };
@@ -64,5 +67,5 @@ export async function buildDraftFromSellingRates(o: DraftOptions): Promise<{ ok:
     const fx: FxBasis = { currency: o.currency, rateToUsd: r.rateToUsd, effectiveFrom: r.effectiveFrom, source: r.source || "Governed exchange-rate table (no source note recorded)", rule: o.rule ?? roundingFor(o.marketSlug, o.currency) ?? DEFAULT_ROUNDING };
     draft = convertContent(draft, fx);
   }
-  return { ok: true, draft };
+  return { ok: true, draft, contentReport: merged.report };
 }

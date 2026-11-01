@@ -9,7 +9,7 @@ vi.mock("@/lib/pdf/rateCard/editions", () => ({
   createDraft: async () => { h.calls.push("create"); return { ok: true, id: "e1" }; }, updateDraft: async () => { h.calls.push("update"); return { ok: true, updatedAt: "t" }; },
   startNextEdition: async () => { h.calls.push("next"); return { ok: true, id: "e2" }; }, getApprovedEditionForDownload: async () => { h.calls.push("download"); return { ok: false, error: "nope" }; },
 }));
-vi.mock("@/lib/pdf/rateCard/loaders", () => ({ buildDraftFromSellingRates: async (o: { currency?: string }) => { h.calls.push(`build:${o.currency}`); return { ok: true, draft: { meta: {}, sections: [], conditions: [], contact: [] } }; } }));
+vi.mock("@/lib/pdf/rateCard/loaders", () => ({ buildDraftFromSellingRates: async (o: { currency?: string }) => { h.calls.push(`build:${o.currency}`); return { ok: true, draft: { meta: {}, sections: [], conditions: [], contact: [] }, contentReport: { market: "", items: 0, described: 0, approvedDescribed: 0, reviewedDraft: [], missingDescriptions: [], missingSectionWording: [], quotationNotes: { approved: [], draft: [], missing: [], withheld: [], marketVariants: [] }, publicationBlockers: [], missingConditions: false, missingContact: false, unknownKeys: [], draftOnly: [], rejected: [], notices: [], approvalBlockers: [] } }; } }));
 vi.mock("@/lib/organization/entityRegistrations", () => ({ getContractingEntityStanding: async () => null }));
 
 import { approveEditionAction, buildDraftAction, downloadApprovedAction, saveNewDraftAction, startNextEditionAction, updateDraftAction } from "./actions";

@@ -105,8 +105,13 @@ const shortFx = (c: RateCardContent): string | null => {
 };
 
 // A short item never splits across pages; a very long one may (so a long description does not strand half a page).
+// Presentation only (the price record keeps its starting-price type): an item that states its own "Standard base rate" line is not labelled "From" on the card, because the base rate is not the lowest price.
+export const statesBaseRate = (i: RateCardItem): boolean => i.inclusions.some((x) => /^Standard base rate:/.test(x));
+// Presentation only: when an item already states "Minimum booking: …", the section's separate minimum band would show the same figure twice.
+export const minimumStatedInItem = (sec: RateCardSection): boolean => sec.items.some((i) => i.included !== false && i.inclusions.some((x) => /^Minimum booking:/.test(x)));
+
 function Item({ i, currency, pageBreak }: { i: RateCardItem; currency: string; pageBreak?: boolean }) {
-  const p = formatPrice(i.price, currency);
+  const p = { ...formatPrice(i.price, currency), ...(statesBaseRate(i) ? { prefix: "" } : {}) };
   return (
     <View style={s.item} break={pageBreak} wrap={!(i.description.length < 450 && i.inclusions.length <= 9)}>
       <View style={s.itemMain}>
@@ -148,7 +153,7 @@ function Section({ sec, c, status, first }: { sec: RateCardSection; c: RateCardC
   const fx = first ? fxLine(c) : shortFx(c);
   // What sits above the first package and below the last one, in points (see estimateItemHeight): used to place page breaks evenly.
   const lead = (fx ? (first ? lines(fx.length, 112) * 11.9 : 11.2) + 8 : 0) + (sec.intro ? lines(sec.intro.length, 85) * 15.5 + 12 : 0);
-  const tail = quotationNoteHeight(sec) + (sec.minimum ? 44 : 0) + (addons.length ? 40 + addons.reduce((n, a) => n + 21 + (a.note ? lines(a.note.length, 90) * 11.8 : 0), 0) : 0) + (sec.notes ?? []).reduce((n, t) => n + lines(t.length, 105) * 14 + 8, 0);
+  const tail = quotationNoteHeight(sec) + (sec.minimum && !minimumStatedInItem(sec) ? 44 : 0) + (addons.length ? 40 + addons.reduce((n, a) => n + 21 + (a.note ? lines(a.note.length, 90) * 11.8 : 0), 0) : 0) + (sec.notes ?? []).reduce((n, t) => n + lines(t.length, 105) * 14 + 8, 0);
   const breaks = new Set(pageBreaks(items.map(estimateItemHeight), lead, tail));
   return (
     <Page size="A4" style={s.page}>
@@ -157,7 +162,7 @@ function Section({ sec, c, status, first }: { sec: RateCardSection; c: RateCardC
       {fx ? <Text style={first ? s.fxBanner : s.fxShort}>{fx}</Text> : null}
       {sec.intro ? <Text style={s.intro}>{sec.intro}</Text> : null}
       {items.map((i, k) => <Item key={i.key} i={i} currency={c.meta.currency} pageBreak={breaks.has(k)} />)}
-      {sec.minimum ? <View style={s.minBox} wrap={false}><Text style={s.minLabel}>{sec.minimum.label}</Text><Text style={s.minPrice}>{priceText(sec.minimum.price, c.meta.currency)}</Text></View> : null}
+      {sec.minimum && !minimumStatedInItem(sec) ? <View style={s.minBox} wrap={false}><Text style={s.minLabel}>{sec.minimum.label}</Text><Text style={s.minPrice}>{priceText(sec.minimum.price, c.meta.currency)}</Text></View> : null}
       {addons.length ? <View wrap={false}><Text style={s.addHead}>Additional services</Text>{addons.map((a) => <View key={a.name} style={s.addRow}><View style={s.addMain}><Text style={s.addName}>{a.name}</Text>{a.note ? <Text style={s.addNote}>{a.note}</Text> : null}</View><Text style={s.addPrice}>{priceText(a.price, c.meta.currency)}</Text></View>)}</View> : null}
       {(sec.notes ?? []).map((n, k) => <Text key={k} style={s.secNote}>{n}</Text>)}
       {sec.customQuotationNote ? <View style={s.quote} wrap={false}>{sec.customQuotationHeading ? <Text style={s.quoteHead}>{sec.customQuotationHeading}</Text> : null}<Text style={s.quoteText}>{sec.customQuotationNote}</Text></View> : null}

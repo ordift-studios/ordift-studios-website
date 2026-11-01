@@ -81,7 +81,7 @@ describe("corporate headshots and commercial mappers (selling prices only)", () 
     expect(s.items.map((i) => [i.name, i.price.kind, (i.price as { amount: number }).amount])).toEqual([["Individual headshot", "fixed", 175], ["Executive portrait", "fixed", 300], ["Team headshots", "from", 65]]);
     expect(s.items[2].tiers!.map((t) => t.label)).toEqual(["2–5 people", "26–50 people"]);
     expect(s.minimum).toEqual({ label: "Minimum booking", price: { kind: "fixed", amount: 400 } });
-    expect(s.addons!.map((a) => a.name)).toEqual(["Additional retouched image", "Priority delivery"]); expect(s.addons![1].price.kind).toBe("on_request"); expect(s.addons![1].note).toMatch(/40% for an individual headshot; 30% for a team of 2–5/);
+    expect(s.addons!.map((a) => a.name)).toEqual(["Additional retouched image", "Priority delivery"]); expect(s.addons![1].price.kind).toBe("on_request"); expect(s.addons![1].note).toMatch(/40% for an individual headshot; 30% for a team of 2–5/);   // H1: the printed percentages are retained
     expect(s.items[2].inclusions).toEqual(["1 signature retouched image per person"]);       // derived from the existing quotation calculation
     expect(s.items.every((i) => i.source === "selling_rates" && i.activities?.[0] === "photography" && i.description === "")).toBe(true);
   });
@@ -91,6 +91,7 @@ describe("corporate headshots and commercial mappers (selling prices only)", () 
     expect(s.structure).toBe("from"); expect(s.items.every((i) => i.price.kind === "from")).toBe(true);
     expect(s.items.map((i) => i.name)).toEqual(["Focused production — film", "Focused production — photography", "Full day production — photography", "Product and catalogue photography"]);
     expect(s.items[3].price).toEqual({ kind: "from", amount: 55, unit: "per image" }); expect(s.minimum?.price).toEqual({ kind: "fixed", amount: 500 });
+    expect(s.items[3].inclusions).toEqual(["Standard base rate: USD 55 per image", "Minimum booking: USD 500"]);      // never "the lowest price"
     expect(s.addons!.map((a) => [a.name, a.price.kind, a.activities?.[0]])).toEqual([["Advanced retouch", "fixed", "photography"], ["Creative composite", "from", "photography"], ["15-second cutdown", "fixed", "videography"], ["Revision round", "fixed", "unclassified"]]);
   });
 });

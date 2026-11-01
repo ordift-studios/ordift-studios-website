@@ -110,7 +110,10 @@ export function commercialSection(fees: CommercialCreativeFeeRate[], catalogueBa
     key: `com-${f.serviceMode}-${f.scopeSlug}`, name: `${SCOPE_LABEL[f.scopeSlug] ?? f.scopeSlug} production — ${MODE_TITLE[f.serviceMode]}`, description: "", inclusions: [],
     price: { kind: "from" as const, amount: f.priceUsd, unit: "per project" }, source: "selling_rates" as const, activities: MODE_ACTIVITIES[f.serviceMode],
   }));
-  if (catalogueBaseUsd && catalogueBaseUsd > 0) items.push({ key: "com-catalogue", name: "Product and catalogue photography", description: "", inclusions: [], price: { kind: "from", amount: catalogueBaseUsd, unit: "per image" }, source: "selling_rates", activities: ["photography"] });
+  // Catalogue: the base rate and the minimum are stated as recorded ("Standard base rate", never "the lowest price": quantity and complexity change the final price). The approved sentence on how
+  // final pricing is set comes from the wording registry. Nothing about quantity or complexity factors is restated here.
+  const catalogueLines = [`Standard base rate: USD ${catalogueBaseUsd} per image`, ...(catalogueMinimumUsd && catalogueMinimumUsd > 0 ? [`Minimum booking: USD ${catalogueMinimumUsd}`] : [])];
+  if (catalogueBaseUsd && catalogueBaseUsd > 0) items.push({ key: "com-catalogue", name: "Product and catalogue photography", description: "", inclusions: catalogueLines, price: { kind: "from", amount: catalogueBaseUsd, unit: "per image" }, source: "selling_rates", activities: ["photography"] });
   const addons: Addon[] = [...post].sort((a, b) => a.priceUsd - b.priceUsd).map((r) => ({
     name: postName(r.itemSlug), price: r.isFromPrice ? { kind: "from" as const, amount: r.priceUsd } : { kind: "fixed" as const, amount: r.priceUsd },
     activities: PHOTO_POST.has(r.itemSlug) ? ["photography"] : VIDEO_POST.has(r.itemSlug) ? ["videography"] : [UNCLASSIFIED],

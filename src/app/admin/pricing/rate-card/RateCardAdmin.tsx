@@ -8,6 +8,7 @@ import { compressImageFile } from "@/lib/media/clientImageCompress";
 import { renderRateCardPdf, saveBlob } from "@/lib/pdf/rateCard/ui/pdfClient";
 import type { EditionRecord, EditionSummary } from "@/lib/pdf/rateCard/editions";
 import type { EditionStatus, RateCardContent } from "@/lib/pdf/rateCard/types";
+import type { ContentReport } from "@/lib/pdf/rateCard/content/schema";
 import { ISSUING_RULES, currencyOptionsFor } from "@/lib/pdf/rateCard/jurisdictions";
 import { approveEditionAction, buildDraftAction, downloadApprovedAction, saveNewDraftAction, startNextEditionAction, updateDraftAction } from "./actions";
 
@@ -23,6 +24,7 @@ export default function RateCardAdmin({ today, editions, markets, entities, sele
   const [content, setContent] = useState<RateCardContent | null>(selected?.edition.content ?? null);
   const [updatedAt, setUpdatedAt] = useState<string>(selected?.edition.updatedAt ?? "");
   const [msg, setMsg] = useState("");
+  const [report, setReport] = useState<{ summary: string; r: ContentReport } | null>(null);
   const [market, setMarket] = useState(markets[0]?.slug ?? ""); const [entity, setEntity] = useState(""); const [currency, setCurrency] = useState("USD");
   const [clearance, setClearance] = useState(""); const [nextLabel, setNextLabel] = useState("");
   const rule = ISSUING_RULES[market];
@@ -36,7 +38,7 @@ export default function RateCardAdmin({ today, editions, markets, entities, sele
     setMsg("Building a draft from the selling-rate tables…");
     const r = await buildDraftAction({ marketSlug: market, entityId: entity, currency });
     if (!r.ok) { setMsg(r.error); return; }
-    const c = { ...r.content, coverImage: "/pdf/cover-placeholder.jpg", cover: { ...DEFAULT_COVER } }; setContent(c);
+    const c = { ...r.content, coverImage: "/pdf/cover-placeholder.jpg", cover: { ...DEFAULT_COVER } }; setContent(c); setReport({ summary: r.contentSummary, r: r.contentReport });
     setMsg(`Draft built: ${c.sections.length} categories. Placeholder wording is marked [PLACEHOLDER]; it is not saved until you press Save.`);
   }
   // Stores the chosen photograph as an image asset (Super Admin only) and keeps its immutable address in the draft. Photographs over the platform's request limit are resized in the browser first.
@@ -89,6 +91,20 @@ export default function RateCardAdmin({ today, editions, markets, entities, sele
         </div>
       </div>
       {msg ? <p id="rc-msg" role="status">{msg}</p> : null}
+      {report ? (
+        <details id="rc-content-report" style={box} open={report.r.approvalBlockers.length > 0 || report.r.missingDescriptions.length > 0 || report.r.rejected.length > 0 || report.r.unknownKeys.length > 0}>
+          <summary style={{ cursor: "pointer", fontWeight: 600 }}>{report.summary}</summary>
+          {report.r.approvalBlockers.map((b) => <p key={b} style={{ fontSize: 13, fontWeight: 600 }}>Not ready for approval: {b}</p>)}
+          {report.r.reviewedDraft.length ? <p style={{ fontSize: 13 }}>Reviewed drafts on the card, exact-text approval pending: {report.r.reviewedDraft.join(", ")}</p> : null}
+          {report.r.draftOnly.length ? <p style={{ fontSize: 13 }}>New proposals awaiting Founder approval (held back, not on the card): {report.r.draftOnly.join(", ")}</p> : null}
+          {report.r.missingDescriptions.length ? <p style={{ fontSize: 13 }}>Packages with no registry entry (left empty; they must be supplied before approval): {report.r.missingDescriptions.join(", ")}</p> : null}
+          <p style={{ fontSize: 13 }}>Quotation notes — approved: {report.r.quotationNotes.approved.length}; deliberately withheld in this market: {report.r.quotationNotes.withheld.length}{report.r.quotationNotes.withheld.length ? ` (${report.r.quotationNotes.withheld.join(", ")})` : ""}; market-specific wording: {report.r.quotationNotes.marketVariants.length}{report.r.quotationNotes.marketVariants.length ? ` (${report.r.quotationNotes.marketVariants.join(", ")})` : ""}; missing: {report.r.missingSectionWording.length}{report.r.missingSectionWording.length ? ` (${report.r.missingSectionWording.join(", ")})` : ""}{report.r.quotationNotes.draft.length ? `; drafts held back: ${report.r.quotationNotes.draft.join(", ")}` : ""}.</p>
+          {report.r.publicationBlockers.length ? <div style={{ fontSize: 13 }}><p style={{ fontWeight: 600, marginBottom: 2 }}>Remaining publication blockers (complete wording does not clear these):</p><ul style={{ marginTop: 0 }}>{report.r.publicationBlockers.map((b) => <li key={b}>{b}</li>)}</ul></div> : null}
+          {report.r.rejected.length ? <ul style={{ fontSize: 13 }}>{report.r.rejected.map((x) => <li key={x}>Rejected: {x}</li>)}</ul> : null}
+          {report.r.unknownKeys.length ? <p style={{ fontSize: 13 }}>Registry keys with no matching package: {report.r.unknownKeys.join(", ")}</p> : null}
+          {report.r.notices.map((n) => <p key={n} style={{ fontSize: 13 }}>Note: {n}</p>)}
+        </details>
+      ) : null}
       {selectedError ? <p style={{ color: "#8a1c1c" }}>{selectedError}</p> : null}
       {ed && selected?.integrity === "FAILED" ? <p style={{ color: "#8a1c1c", fontWeight: 600 }}>Integrity check FAILED: this edition&apos;s stored content does not match its approved hash. It will not be released.</p> : null}
       {ed && frozen ? <div style={box}><strong>{ed.status === "approved" ? "Approved edition — frozen" : "Superseded edition — frozen"}</strong><div style={{ fontSize: 13, color: "#555" }}>Approved {ed.approvedAt} · hash {ed.contentSha256}{ed.clearanceStatement ? ` · Clearance: ${ed.clearanceStatement}` : ""}</div>
