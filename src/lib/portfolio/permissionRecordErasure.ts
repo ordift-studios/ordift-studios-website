@@ -15,9 +15,8 @@ const fail = (error: string): { ok: false; error: string } => ({ ok: false, erro
 const gate = () => (PORTFOLIO_LIBRARY_ENABLED && PERMISSION_RECORD_ERASURE_ENABLED ? null : fail("Erasure of permission-record details is not switched on yet."));
 const authority = async (u: CurrentUser) => ((await isManagementUser(u)) ? null : fail("Only the Founder or an authorised executive admin can do this."));
 const clean = (e: { message?: string } | null) => (e?.message ?? "That could not be saved.").replace(/^.*?ERROR:\s*/, "");
-export const BASES = [{ key: "retention_period_ended", label: "The adopted retention period has ended" }, { key: "data_subject_request", label: "A person asked for erasure" }, { key: "legal_requirement", label: "A legal requirement" }, { key: "other_documented", label: "Other documented reason" }] as const;
-export type Basis = (typeof BASES)[number]["key"];
-export const REASON_HELP = "10 to 200 characters. Do not include names or other personal details: this log is kept.";
+import { BASES, REASON_HELP, type Basis } from "./erasureRules";
+export { BASES, REASON_HELP, type Basis };
 const reasonOk = (r: string) => r.trim().length >= 10 && r.trim().length <= 200;
 
 export async function recordRetentionPolicy(user: CurrentUser, years: number, note: string): Promise<Result> {

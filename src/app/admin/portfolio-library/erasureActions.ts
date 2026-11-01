@@ -3,7 +3,8 @@
 import { revalidatePath } from "next/cache";
 import { getCurrentUser } from "@/lib/portal/roles";
 import { isJobType, type JobType } from "@/lib/portfolio/destinations";
-import { BASES, eraseRecordDetails, recordRetentionPolicy, setJobHold, type Basis } from "@/lib/portfolio/permissionRecordErasure";
+import { BASES, type Basis } from "@/lib/portfolio/erasureRules";
+import { eraseRecordDetails, recordRetentionPolicy, setJobHold } from "@/lib/portfolio/permissionRecordErasure";
 
 // Controlled erasure of the older client-permission records (proposed 0183; every function refuses while PERMISSION_RECORD_ERASURE_ENABLED is false). The signed-in user is the only actor; the library re-checks authority and the database re-checks every rule.
 export type ErasureFormState = { ok: boolean; message: string } | null;

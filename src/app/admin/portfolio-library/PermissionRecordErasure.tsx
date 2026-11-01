@@ -2,7 +2,8 @@
 
 import { useActionState } from "react";
 import { DESTINATION_LABEL, type Destination } from "@/lib/portfolio/destinations";
-import { BASES, REASON_HELP, type ErasureView } from "@/lib/portfolio/permissionRecordErasure";
+import { BASES, REASON_HELP } from "@/lib/portfolio/erasureRules";
+import type { ErasureView } from "@/lib/portfolio/permissionRecordErasure";
 import { eraseRecordAction, jobHoldAction, retentionPolicyAction, type ErasureFormState } from "./erasureActions";
 
 // Retention and controlled erasure for this job's client-permission records (proposed 0183; rendered only while PERMISSION_RECORD_ERASURE_ENABLED). Nothing is automatic and nothing here touches the permission's scope, uses or history.
