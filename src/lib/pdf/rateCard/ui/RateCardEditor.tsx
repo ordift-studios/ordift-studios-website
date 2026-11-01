@@ -98,6 +98,7 @@ export default function RateCardEditor({ content, onChange, readOnly, status, to
             <div key={sec.key} style={box}>
               <label style={lab}>Category title<input style={inp} disabled={ro} value={sec.title} onChange={(e) => patchSection(si, (s) => ({ ...s, title: e.target.value }))} /></label>
               <label style={lab}>Category introduction<textarea style={inp} rows={2} disabled={ro} value={sec.intro ?? ""} onChange={(e) => patchSection(si, (s) => ({ ...s, intro: e.target.value }))} /></label>
+              <label style={lab}>Heading of the quotation note<input style={inp} aria-label="Quotation note heading" disabled={ro} value={sec.customQuotationHeading ?? ""} onChange={(e) => patchSection(si, (x) => ({ ...x, customQuotationHeading: e.target.value }))} /></label>
               <label style={lab}>Wording for requirements that do not fit a standard package<textarea style={inp} rows={2} disabled={ro} value={sec.customQuotationNote ?? ""} onChange={(e) => patchSection(si, (s) => ({ ...s, customQuotationNote: e.target.value }))} /></label>
               {sec.items.map((it, ii) => (
                 <div key={it.key} style={{ borderTop: "1px solid #eee", marginTop: 10, paddingTop: 8, opacity: it.included === false ? 0.55 : 1 }}>

@@ -11,6 +11,7 @@ export function formatPrice(p: PriceSpec, currency: string): { prefix: string; a
 }
 
 const ITEM_PAD = 11;
+const QUOTE_GAP = 20; const QUOTE_PAD_TOP = 11;
 const s = StyleSheet.create({
   page: { backgroundColor: C.offwhite, paddingHorizontal: 50, paddingTop: 52, paddingBottom: 72, fontFamily: "Inter", color: C.ink },
   head: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-end", paddingBottom: 12, borderBottomWidth: 1.2, borderBottomColor: C.gold, marginBottom: 6 },
@@ -48,8 +49,10 @@ const s = StyleSheet.create({
   addMain: { width: "70%", paddingRight: 12 }, addName: { fontFamily: "Inter", fontSize: 10, color: C.ink, fontWeight: 500 }, addNote: { fontFamily: "Inter", fontSize: 8.4, color: C.inkMuted, marginTop: 1.5, lineHeight: 1.4 },
   addPrice: { fontFamily: "Inter", fontSize: 10, fontWeight: 600, color: C.navy, textAlign: "right", width: "30%" },
   secNote: { fontFamily: "Inter", fontSize: 9, lineHeight: 1.55, color: C.inkMuted, marginTop: 8 },
-  custom: { marginTop: 8, marginBottom: 2, paddingVertical: 6, paddingHorizontal: 9, borderWidth: 0.8, borderColor: C.gold, backgroundColor: "#fbf8ef" },
-  customText: { fontFamily: "Inter", fontSize: 9, lineHeight: 1.45, color: C.ink },
+  // The custom-quotation note closes its section: a gold hairline, a serif heading and readable body text. Deliberately not a priced row (no price column, no tint, no border box).
+  quote: { marginTop: QUOTE_GAP, paddingTop: QUOTE_PAD_TOP, borderTopWidth: 0.8, borderTopColor: C.gold },
+  quoteHead: { fontFamily: "Fraunces", fontWeight: 600, fontSize: 12.5, color: C.navy, marginBottom: 5 },
+  quoteText: { fontFamily: "Inter", fontSize: 9.4, lineHeight: 1.55, color: C.inkMuted, width: 440 },
   fxBanner: { fontFamily: "Inter", fontSize: 8.2, color: C.goldPressed, marginTop: 8, lineHeight: 1.45, fontWeight: 500 },
   fxShort: { fontFamily: "Inter", fontSize: 8, color: C.goldPressed, marginTop: 6, lineHeight: 1.4, fontWeight: 500 },
   watermark: { position: "absolute", top: 300, left: 70, fontFamily: "Fraunces", fontSize: 150, color: "#0b1220", opacity: 0.055, transform: "rotate(-32deg)" },
@@ -74,9 +77,14 @@ const splitHalves = <T,>(xs: T[]): [T[], T[]] => { const k = Math.ceil(xs.length
 const PAGE_BODY = 841 - 52 - 72 - 47; // A4 height minus top/bottom page padding minus the repeated section header
 const lines = (chars: number, perLine: number) => Math.max(1, Math.ceil(chars / perLine));
 const INC_ROW = 9.2 * 1.4 + 1.2;
+// Height of the closing quotation note (points): hairline gap + padding + heading + the wrapped description. Slightly pessimistic, like the item estimate.
+export const quotationNoteHeight = (sec: RateCardSection): number => (sec.customQuotationNote ? QUOTE_GAP + QUOTE_PAD_TOP + (sec.customQuotationHeading ? 12.5 * 1.25 + 5 : 0) + lines(sec.customQuotationNote.length, 88) * 9.4 * 1.55 + 4 : 0);
 export function estimateItemHeight(i: RateCardItem): number {
   const two = i.inclusions.length >= TWO_COL_MIN;
-  const incHeight = (two ? Math.ceil(i.inclusions.length / 2) * 1.05 : i.inclusions.length) * INC_ROW; // x1.05: allowance for the occasional two-column line that wraps
+  // Inclusion rows, counting the lines a long inclusion wraps onto (about 34 characters per line in a half-width column, about 74 in the full-width one). Without this the estimate for packages whose
+  // "N professionally edited images, including M signature retouched images" line wraps to three lines ran about 15% short, so a section that looked like it fitted pushed its closing note onto a page of its own.
+  const rows = (xs: string[], perLine: number) => xs.reduce((n, x) => n + lines(x.length, perLine), 0);
+  const incHeight = (two ? Math.max(rows(splitHalves(i.inclusions)[0], 34), rows(splitHalves(i.inclusions)[1], 34)) * 1.02 : rows(i.inclusions, 74)) * INC_ROW;
   const main = 17 + (i.specs?.length ? 14 : 0) + (i.description ? lines(i.description.length, 78) * 9.6 * 1.5 + 4 : 0) + incHeight + (i.tiers?.length ? 6 + i.tiers.length * 19.5 : 0);
   const price = 24 + (i.note ? lines(i.note.length, 24) * 11.2 + 6 : 0);
   return Math.max(main, price) + ITEM_PAD * 2 + 1;
@@ -139,8 +147,8 @@ function Section({ sec, c, status, first }: { sec: RateCardSection; c: RateCardC
   const addons = (sec.addons ?? []).filter((a: Addon) => a.included !== false);
   const fx = first ? fxLine(c) : shortFx(c);
   // What sits above the first package and below the last one, in points (see estimateItemHeight): used to place page breaks evenly.
-  const lead = (fx ? (first ? lines(fx.length, 112) * 11.9 : 11.2) + 8 : 0) + (sec.intro ? lines(sec.intro.length, 85) * 15.5 + 12 : 0) + (sec.customQuotationNote ? lines(sec.customQuotationNote.length, 100) * 13 + 22 : 0);
-  const tail = (sec.minimum ? 44 : 0) + (addons.length ? 40 + addons.reduce((n, a) => n + 21 + (a.note ? lines(a.note.length, 90) * 11.8 : 0), 0) : 0) + (sec.notes ?? []).reduce((n, t) => n + lines(t.length, 105) * 14 + 8, 0);
+  const lead = (fx ? (first ? lines(fx.length, 112) * 11.9 : 11.2) + 8 : 0) + (sec.intro ? lines(sec.intro.length, 85) * 15.5 + 12 : 0);
+  const tail = quotationNoteHeight(sec) + (sec.minimum ? 44 : 0) + (addons.length ? 40 + addons.reduce((n, a) => n + 21 + (a.note ? lines(a.note.length, 90) * 11.8 : 0), 0) : 0) + (sec.notes ?? []).reduce((n, t) => n + lines(t.length, 105) * 14 + 8, 0);
   const breaks = new Set(pageBreaks(items.map(estimateItemHeight), lead, tail));
   return (
     <Page size="A4" style={s.page}>
@@ -148,11 +156,11 @@ function Section({ sec, c, status, first }: { sec: RateCardSection; c: RateCardC
       <View style={s.head} fixed><Text style={s.h1}>{sec.title}</Text><Text style={s.headMeta}>{c.meta.marketName}{"\n"}Prices in {c.meta.currency}</Text></View>
       {fx ? <Text style={first ? s.fxBanner : s.fxShort}>{fx}</Text> : null}
       {sec.intro ? <Text style={s.intro}>{sec.intro}</Text> : null}
-      {sec.customQuotationNote ? <View style={s.custom} wrap={false}><Text style={s.customText}>{sec.customQuotationNote}</Text></View> : null}
       {items.map((i, k) => <Item key={i.key} i={i} currency={c.meta.currency} pageBreak={breaks.has(k)} />)}
       {sec.minimum ? <View style={s.minBox} wrap={false}><Text style={s.minLabel}>{sec.minimum.label}</Text><Text style={s.minPrice}>{priceText(sec.minimum.price, c.meta.currency)}</Text></View> : null}
       {addons.length ? <View wrap={false}><Text style={s.addHead}>Additional services</Text>{addons.map((a) => <View key={a.name} style={s.addRow}><View style={s.addMain}><Text style={s.addName}>{a.name}</Text>{a.note ? <Text style={s.addNote}>{a.note}</Text> : null}</View><Text style={s.addPrice}>{priceText(a.price, c.meta.currency)}</Text></View>)}</View> : null}
       {(sec.notes ?? []).map((n, k) => <Text key={k} style={s.secNote}>{n}</Text>)}
+      {sec.customQuotationNote ? <View style={s.quote} wrap={false}>{sec.customQuotationHeading ? <Text style={s.quoteHead}>{sec.customQuotationHeading}</Text> : null}<Text style={s.quoteText}>{sec.customQuotationNote}</Text></View> : null}
     </Page>
   );
 }

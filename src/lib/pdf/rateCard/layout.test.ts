@@ -28,4 +28,11 @@ describe("rate card page breaks", () => {
   it("estimates a longer description as taller", () => {
     expect(estimateItemHeight(item(2, { description: "word ".repeat(120) }))).toBeGreaterThan(estimateItemHeight(item(2)));
   });
+  it("counts the lines a long inclusion wraps onto, so a section near a full page is split before its closing note can be stranded alone", () => {
+    const long = (n: number) => item(0, { inclusions: ["4 hours of coverage", "1 photographer", "150+ professionally edited images, including 10 signature retouched images", "Online gallery", "Planning consultation"], description: "x".repeat(190), key: `w${n}` });
+    const short = (n: number) => item(0, { inclusions: ["4 hours of coverage", "1 photographer", "Online gallery", "Planning consultation", "x"], description: "x".repeat(190), key: `s${n}` });
+    expect(estimateItemHeight(long(1))).toBeGreaterThan(estimateItemHeight(short(1)) + 10);
+    const heights = [1, 2, 3, 4].map((n) => estimateItemHeight(long(n)));
+    expect(pageBreaks(heights, 0, 99)).toHaveLength(1);                         // four wrapped-inclusion packages plus a ~99pt note no longer look like one page
+  });
 });

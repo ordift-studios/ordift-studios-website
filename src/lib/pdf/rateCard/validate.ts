@@ -16,7 +16,7 @@ const ALLOWED: Record<string, readonly string[]> = {
   meta: ["title", "subtitle", "editionLabel", "effectiveDate", "marketSlug", "marketName", "currency", "conversionPolicy", "fx", "issuingEntity"],
   fx: ["currency", "rateToUsd", "effectiveFrom", "source", "rule"], rule: ["kind", "multiple"], issuingEntity: ["entityId", "jurisdiction", "name", "checkedOn", "licensedActivities", "basis"],
   cover: ["variant", "focusY", "photoLabel", "cleared", "clearedNote"],
-  section: ["key", "title", "intro", "structure", "items", "minimum", "addons", "notes", "customQuotationNote"],
+  section: ["key", "title", "intro", "structure", "items", "minimum", "addons", "notes", "customQuotationHeading", "customQuotationNote"],
   item: ["key", "name", "description", "specs", "inclusions", "price", "conversion", "tiers", "note", "source", "activities", "included", "eligibility"],
   addon: ["name", "price", "conversion", "note", "activities", "included", "eligibility"], minimum: ["label", "price", "conversion"], tier: ["label", "price", "conversion"],
   price: ["kind", "amount", "unit"], conversion: ["usdReference", "rateToUsd", "exact", "rounded", "difference"], eligibility: ["ok", "reason"], note: ["title", "text"], contact: ["label", "value"],

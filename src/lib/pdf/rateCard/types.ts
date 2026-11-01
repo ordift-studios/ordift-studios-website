@@ -43,6 +43,7 @@ export type RateCardSection = {
   minimum?: Minimum;            // a minimum booking
   addons?: Addon[];             // additional services and what they cost
   notes?: string[];             // additional-service notes
+  customQuotationHeading?: string; // heading of the quotation note (optional: content saved before it existed has none)
   customQuotationNote?: string; // what to do when a need does not fit a standard package
 };
 
