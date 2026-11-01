@@ -2,21 +2,26 @@
 // wording: an item's descriptive text stays empty until the Founder supplies approved wording.
 import type { PersonalSessionRate } from "@/lib/pricing/personalSessionEstimate";
 import { EVENT_TIER_LABELS, WEDDING_TIER_LABELS, type ServiceMode, type WeddingEventCategory, type WeddingEventTierDeliverable, type WeddingEventTierRate } from "@/lib/pricing/weddingEventEstimate";
-import type { CorporateHeadshotRate, CorporateTeamTierRate } from "@/lib/pricing/corporateHeadshotEstimate";
+import { calculateCorporateEstimate, type CorporateHeadshotRate, type CorporateTeamTierRate } from "@/lib/pricing/corporateHeadshotEstimate";
 import type { CommercialCreativeFeeRate, CommercialPostProductionRate, CommercialServiceMode } from "@/lib/pricing/commercialEstimate";
 import { UNCLASSIFIED } from "./eligibility";
 import type { Addon, RateCardItem, RateCardSection } from "./types";
 
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
+// ONE inclusive statement where both counts are recorded: "150+ professionally edited images, including 10 signature retouched images". The counts themselves are never changed. If a record ever had more
+// signature images than edited images, "including" would be untrue, so the two counts are then listed separately.
+function imageLines(edited: number, editedSuffix: string, signature: number): string[] {
+  const sig = signature > 0 ? plural(signature, "signature retouched image") : "";
+  const ed = edited > 0 ? `${edited}${editedSuffix} professionally edited ${edited === 1 && !editedSuffix ? "image" : "images"}` : "";
+  if (ed && sig) return signature <= edited ? [`${ed}, including ${sig}`] : [ed, sig];
+  return [ed, sig].filter(Boolean);
+}
 const hours = (h: number) => (h === 0.5 ? "30-minute" : Number.isInteger(h) ? `${h}-hour` : `${h}-hour`);
 
 export function personalSessionSection(rates: PersonalSessionRate[]): RateCardSection {
   const items: RateCardItem[] = [...rates].sort((a, b) => a.durationHours - b.durationHours).map((r) => ({
     key: `ps-${r.durationHours}h`, name: `${hours(r.durationHours)} session`, description: "",
-    inclusions: [
-      r.professionallyEditedImages > 0 ? `${plural(r.professionallyEditedImages, "professionally edited image")}` : "",
-      r.signatureRetouchedImages > 0 ? `${plural(r.signatureRetouchedImages, "signature retouched image")}` : "",
-    ].filter(Boolean),
+    inclusions: imageLines(r.professionallyEditedImages, "", r.signatureRetouchedImages),
     price: { kind: "fixed", amount: r.priceUsd, unit: "per session" }, source: "selling_rates", activities: ["photography"],
     specs: [`${hours(r.durationHours)} session`],
   }));
@@ -31,25 +36,39 @@ export function weddingEventSection(category: WeddingEventCategory, mode: Servic
   const items: RateCardItem[] = rates.filter((r) => r.serviceMode === mode).sort((a, b) => a.priceUsd - b.priceUsd).map((r) => {
     const d = deliverables.find((x) => x.tierSlug === r.tierSlug && x.serviceMode === mode);
     const inc: string[] = [];
+    let specs: string[] | undefined;
     if (d) {
-      inc.push(`${plural(d.coverageHours, "hour")} of coverage${d.eventDays > 1 ? ` over ${d.eventDays} days` : ""}`);
+      const coverage = `${plural(d.coverageHours, "hour")} of coverage${d.eventDays > 1 ? ` over ${d.eventDays} days` : ""}`;
+      if (category === "event") specs = [coverage];          // events: the exact coverage hours are shown prominently (the package names, such as Half Day, are kept)
+      else inc.push(coverage);
       if (d.photographers > 0) inc.push(plural(d.photographers, "photographer"));
       if (d.filmmakers > 0) inc.push(plural(d.filmmakers, "filmmaker"));
-      if (d.professionallyEditedImagesMin > 0) inc.push(`${d.professionallyEditedImagesMin}+ professionally edited images`);
-      if (d.signatureRetouchedImages > 0) inc.push(plural(d.signatureRetouchedImages, "signature retouched image"));
+      inc.push(...imageLines(d.professionallyEditedImagesMin, "+", d.signatureRetouchedImages));
       if (d.highlightFilmMinMinutes != null && d.highlightFilmMaxMinutes != null) inc.push(`Highlight film, ${d.highlightFilmMinMinutes}–${d.highlightFilmMaxMinutes} minutes`);
       if (d.includesDocumentary) inc.push("Documentary edit");
       if (d.onlineGallery) inc.push("Online gallery");
       if (d.planningConsultation) inc.push("Planning consultation");
       if (d.prioritySneakPeek) inc.push("Priority sneak peek");
     }
-    return { key: `${category}-${mode}-${r.tierSlug}`, name: labels[r.tierSlug] ?? r.tierSlug, description: "", inclusions: inc, price: { kind: "fixed" as const, amount: r.priceUsd, unit: "per booking" }, source: "selling_rates" as const, activities: ACTIVITIES[mode] };
+    return { key: `${category}-${mode}-${r.tierSlug}`, name: labels[r.tierSlug] ?? r.tierSlug, description: "", ...(specs ? { specs } : {}), inclusions: inc, price: { kind: "fixed" as const, amount: r.priceUsd, unit: "per booking" }, source: "selling_rates" as const, activities: ACTIVITIES[mode] };
   });
   return { key: `${category}_${mode}`, title: `${category === "wedding" ? "Weddings" : "Events"} — ${MODE_LABEL[mode]}`, structure: "fixed", items };
 }
 
 // ---------------------------------------------------------------- corporate headshots
 const CORPORATE_NAMES: Record<string, string> = { individual_headshot: "Individual headshot", executive_portrait: "Executive portrait" };
+// Signature retouched images per person for Team Headshots, DERIVED from the existing quotation calculation (never restated here): the calculator is run at the smallest and the largest priced team
+// size, and the figure is shown only when both give the same whole number per person. The calculation itself is not touched.
+function teamSignaturePerPerson(tiers: CorporateTeamTierRate[], minimumUsd: number | null): number | null {
+  if (minimumUsd === null) return null;
+  const at = (people: number) => {
+    const r = calculateCorporateEstimate({ product: "team_headshots", headshotRates: [], teamTierRates: tiers, minimumBookingUsd: minimumUsd, numberOfPeople: people });
+    return r.ok && r.signatureRetouchedImages % people === 0 ? r.signatureRetouchedImages / people : null;
+  };
+  const low = at(Math.min(...tiers.map((t) => t.minPeople))); const high = at(Math.max(...tiers.map((t) => t.maxPeople)));
+  return low !== null && low > 0 && low === high ? low : null;
+}
+
 export function corporateSection(products: CorporateHeadshotRate[], tiers: CorporateTeamTierRate[], minimumUsd: number | null, retouchPerImageUsd: number | null, priority: Partial<Record<string, number>>): RateCardSection {
   const items: RateCardItem[] = [...products].sort((a, b) => a.priceUsd - b.priceUsd).map((p) => ({
     key: `corp-${p.productSlug}`, name: CORPORATE_NAMES[p.productSlug] ?? p.productSlug, description: "",
@@ -58,8 +77,9 @@ export function corporateSection(products: CorporateHeadshotRate[], tiers: Corpo
   }));
   if (tiers.length) {
     const sorted = [...tiers].sort((a, b) => a.minPeople - b.minPeople);
+    const perPerson = teamSignaturePerPerson(sorted, minimumUsd);
     items.push({
-      key: "corp-team", name: "Team headshots", description: "", inclusions: [],
+      key: "corp-team", name: "Team headshots", description: "", inclusions: perPerson ? [`${plural(perPerson, "signature retouched image")} per person`] : [],
       price: { kind: "from", amount: Math.min(...sorted.map((t) => t.pricePerPersonUsd)), unit: "per person" }, source: "selling_rates", activities: ["photography"],
       tiers: sorted.map((t) => ({ label: `${t.minPeople}–${t.maxPeople} people`, price: { kind: "fixed" as const, amount: t.pricePerPersonUsd, unit: "per person" } })),
     });

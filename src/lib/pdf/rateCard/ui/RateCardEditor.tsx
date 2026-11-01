@@ -14,7 +14,7 @@ const inp: React.CSSProperties = { width: "100%", padding: "6px 8px", border: "1
 const btn: React.CSSProperties = { padding: "8px 14px", border: 0, borderRadius: 5, background: "#0b1220", color: "#f7f5f1", font: "inherit", fontWeight: 600, cursor: "pointer", marginRight: 8 };
 const lab: React.CSSProperties = { display: "block", marginTop: 8, fontSize: 13 };
 
-export function priceLine(p: RateCardItem["price"], cur: string): string { return p.kind === "on_request" ? "On request" : `${p.kind === "from" ? "From " : ""}${cur} ${p.amount.toLocaleString("en-US")}${p.unit ? ` ${p.unit}` : ""}`; }
+export function priceLine(p: RateCardItem["price"], cur: string): string { return p.kind === "on_request" ? "Price on request" : `${p.kind === "from" ? "From " : ""}${cur} ${p.amount.toLocaleString("en-US")}${p.unit ? ` ${p.unit}` : ""}`; }
 
 export type CoverUpload = (file: File) => Promise<{ ok: true; url: string; label: string } | { ok: false; error: string }>;
 

@@ -37,7 +37,7 @@ describe("mappers: selling prices and factual deliverables only; wording is neve
     const sec = personalSessionSection([{ marketId: "m", durationHours: 2, priceUsd: 250, signatureRetouchedImages: 3, professionallyEditedImages: 20 }, { marketId: "m", durationHours: 0.5, priceUsd: 80, signatureRetouchedImages: 0, professionallyEditedImages: 8 }]);
     expect(sec.structure).toBe("fixed");
     expect(sec.items.map((i) => [i.name, (i.price as { amount: number }).amount, i.price.kind])).toEqual([["30-minute session", 80, "fixed"], ["2-hour session", 250, "fixed"]]);
-    expect(sec.items[1].inclusions).toEqual(["20 professionally edited images", "3 signature retouched images"]);
+    expect(sec.items[1].inclusions).toEqual(["20 professionally edited images, including 3 signature retouched images"]);
     expect(sec.items.every((i) => i.description === "" && i.source === "selling_rates")).toBe(true);
   });
   it("weddings/events: one section per category and mode, prices per tier, inclusions only from stored deliverables", () => {
@@ -45,7 +45,8 @@ describe("mappers: selling prices and factual deliverables only; wording is neve
     const d = [{ category: "event" as const, tierSlug: "full_day", serviceMode: "photography" as const, eventDays: 1, coverageHours: 4, photographers: 1, filmmakers: 0, professionallyEditedImagesMin: 80, signatureRetouchedImages: 5, highlightFilmMinMinutes: null, highlightFilmMaxMinutes: null, includesDocumentary: false, onlineGallery: true, planningConsultation: false, prioritySneakPeek: false }];
     const sec = weddingEventSection("event", "photography", rates, d);
     expect(sec.title).toBe("Events — Photography"); expect(sec.items).toHaveLength(1);
-    expect(sec.items[0].inclusions).toEqual(["4 hours of coverage", "1 photographer", "80+ professionally edited images", "5 signature retouched images", "Online gallery"]);
+    expect(sec.items[0].specs).toEqual(["4 hours of coverage"]);                                                       // event hours are shown prominently, once
+    expect(sec.items[0].inclusions).toEqual(["1 photographer", "80+ professionally edited images, including 5 signature retouched images", "Online gallery"]);
     expect(sec.items[0].price).toEqual({ kind: "fixed", amount: 900, unit: "per booking" });
     expect(weddingEventSection("event", "film", rates, d).items[0].inclusions).toEqual([]);   // no deliverable row for that mode → nothing invented
   });
@@ -58,7 +59,7 @@ describe("price display", () => {
   it("fixed, starting and on-request prices", () => {
     expect(formatPrice({ kind: "fixed", amount: 1234.5, unit: "per session" }, "USD")).toEqual({ prefix: "", amount: "USD 1,234.50", unit: "per session" });
     expect(formatPrice({ kind: "from", amount: 800 }, "GHS")).toEqual({ prefix: "From", amount: "GHS 800", unit: "" });
-    expect(formatPrice({ kind: "on_request" }, "USD").amount).toBe("On request");
+    expect(formatPrice({ kind: "on_request" }, "USD").amount).toBe("Price on request");
   });
 });
 

@@ -82,6 +82,7 @@ describe("corporate headshots and commercial mappers (selling prices only)", () 
     expect(s.items[2].tiers!.map((t) => t.label)).toEqual(["2–5 people", "26–50 people"]);
     expect(s.minimum).toEqual({ label: "Minimum booking", price: { kind: "fixed", amount: 400 } });
     expect(s.addons!.map((a) => a.name)).toEqual(["Additional retouched image", "Priority delivery"]); expect(s.addons![1].price.kind).toBe("on_request"); expect(s.addons![1].note).toMatch(/40% for an individual headshot; 30% for a team of 2–5/);
+    expect(s.items[2].inclusions).toEqual(["1 signature retouched image per person"]);       // derived from the existing quotation calculation
     expect(s.items.every((i) => i.source === "selling_rates" && i.activities?.[0] === "photography" && i.description === "")).toBe(true);
   });
   it("commercial: starting prices per scope and mode, catalogue per image with the minimum, post-production add-ons with the data's own 'from' flags and an explicit activity classification", () => {

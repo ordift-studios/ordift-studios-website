@@ -6,7 +6,7 @@ import type { Addon, EditionStatus, PriceSpec, RateCardContent, RateCardItem, Ra
 
 export function formatAmount(n: number): string { return n.toLocaleString("en-US", { minimumFractionDigits: Number.isInteger(n) ? 0 : 2, maximumFractionDigits: 2 }); }
 export function formatPrice(p: PriceSpec, currency: string): { prefix: string; amount: string; unit: string } {
-  if (p.kind === "on_request") return { prefix: "", amount: "On request", unit: "" };
+  if (p.kind === "on_request") return { prefix: "", amount: "Price on request", unit: "" };
   return { prefix: p.kind === "from" ? "From" : "", amount: `${currency} ${formatAmount(p.amount)}`, unit: p.unit ?? "" };
 }
 
