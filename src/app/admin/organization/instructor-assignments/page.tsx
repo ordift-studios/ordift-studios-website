@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/portal/roles";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { INSTRUCTOR_FRAMEWORK_ENABLED } from "@/lib/instructors/featureGate";
+import { SCHEDULE_SAFEGUARDING_ENABLED } from "@/lib/instructors/safeguardingGate";
 import { listSchedules } from "@/lib/instructors/assignments";
 import { RIGHTS_LABELS, RIGHTS_OPTIONS } from "@/lib/instructors/rules";
 import { authorizeWithSuperAdminOverride, PEOPLE_CAPABILITIES } from "@/lib/organization/authority";
@@ -10,7 +11,7 @@ import ActionForm from "@/components/admin/ActionForm";
 import ConfirmSubmitButton from "@/components/admin/ConfirmSubmitButton";
 import SubmitButton from "@/components/admin/SubmitButton";
 import LocalTime from "@/components/admin/LocalTime";
-import { approveScheduleAction, closeScheduleAction, proposeScheduleAction, saveRightsAction } from "./actions";
+import { approveScheduleAction, closeScheduleAction, proposeScheduleAction, saveRightsAction, saveSafeguardingAction } from "./actions";
 
 export const metadata: Metadata = { title: "Instructor Assignments — Ordift Studios Admin", robots: { index: false, follow: false } };
 const field = "w-full rounded-lg border border-black/15 bg-white px-3 py-2 font-sans text-body-small text-ordift-ink";
@@ -87,6 +88,16 @@ export default async function InstructorAssignmentsPage() {
                       </div>
                       <SubmitButton pendingLabel="Saving…" className={btn}>Save rights and clearance</SubmitButton>
                     </ActionForm>
+                    {SCHEDULE_SAFEGUARDING_ENABLED ? (
+                      <ActionForm action={saveSafeguardingAction} className="space-y-3 rounded-lg bg-black/[0.03] p-3">
+                        <input type="hidden" name="scheduleId" value={s.id} />
+                        <p className="font-sans text-caption font-medium text-ordift-ink">Participants under 18 and venue arrangements</p>
+                        <div><label className={lbl} htmlFor={`mn-${s.id}`}>May participants under 18 attend?</label><select id={`mn-${s.id}`} name="involvesMinors" defaultValue={s.safeguarding?.involvesMinors === true ? "yes" : s.safeguarding?.involvesMinors === false ? "no" : ""} className={field}><option value="">Not yet decided</option><option value="no">No</option><option value="yes">Yes, or they may</option></select></div>
+                        <div><label className={lbl} htmlFor={`vs-${s.id}`}>Venue&apos;s designated safeguarding authority and procedure, or, where it has none, the external reporting route Ordift identified</label><textarea id={`vs-${s.id}`} name="venueSafeguarding" rows={2} defaultValue={s.safeguarding?.venueSafeguarding ?? ""} className={field} /></div>
+                        <div><label className={lbl} htmlFor={`ve-${s.id}`}>Venue&apos;s verified emergency procedure and the local emergency numbers</label><textarea id={`ve-${s.id}`} name="venueEmergency" rows={2} defaultValue={s.safeguarding?.venueEmergency ?? ""} className={field} /></div>
+                        <SubmitButton pendingLabel="Saving…" className={btn}>Save safeguarding arrangements</SubmitButton>
+                      </ActionForm>
+                    ) : null}
                     <div className="flex flex-wrap items-end gap-3">
                       <ActionForm action={approveScheduleAction}><input type="hidden" name="scheduleId" value={s.id} /><ConfirmSubmitButton confirmMessage="Approve this assignment? Its terms and rights will be frozen. (Super Admin only.)" pendingLabel="Approving…" className={gold}>Approve assignment</ConfirmSubmitButton></ActionForm>
                       <ActionForm action={closeScheduleAction} className="flex items-end gap-2"><input type="hidden" name="scheduleId" value={s.id} /><input type="hidden" name="to" value="cancelled" /><div><label className={lbl} htmlFor={`cn-${s.id}`}>Cancel with a note</label><input id={`cn-${s.id}`} name="note" required minLength={5} className={field} /></div><ConfirmSubmitButton confirmMessage="Cancel this proposed assignment?" pendingLabel="Cancelling…" className={btn}>Cancel</ConfirmSubmitButton></ActionForm>

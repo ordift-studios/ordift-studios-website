@@ -15,7 +15,7 @@ export function AnswerForm({ requestId, offered }: { requestId: string; offered:
     <form action={act} className="space-y-3">
       <input type="hidden" name="requestId" value={requestId} />
       <fieldset className="space-y-1"><legend className="font-sans text-body-small font-medium text-ordift-ink">Uses you are asked about</legend>
-        {DESTINATIONS.filter((d) => offered.includes(d.key)).map((d) => <label key={d.key} className="flex items-center gap-2 font-sans text-body-small"><input type="checkbox" name="destinations" value={d.key} />{d.label}</label>)}
+        {DESTINATIONS.filter((d) => offered.includes(d.key)).map((d) => <label key={d.key} className="flex items-center gap-2 font-sans text-body-small"><input type="checkbox" name="destinations" value={d.key} />{PERMISSION_TEXT.uses[d.key]}</label>)}
       </fieldset>
       <div><label htmlFor="restrictions" className="block font-sans text-caption text-ordift-ink-muted mb-1">{PERMISSION_TEXT.restrictionsLabel}</label><input id="restrictions" name="restrictions" className={input} /></div>
       <div className="flex flex-wrap gap-2">

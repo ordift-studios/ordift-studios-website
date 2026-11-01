@@ -149,5 +149,5 @@ function perm() {
   return { decision: "granted" as const, grantorName: "Synthetic Grantor", grantorCapacity: "client", destinations: ["portfolio"], fileIds: null, restrictions: "", expiresOn: "", method: "message", grantedOn: "", evidenceSummary: "message thread confirming the use", note: "", verified: false };
 }
 function review(fileId: string) {
-  return { fileId, decision: "approved" as const, destinations: ["portfolio"], checks: { confidentiality: true, embargo: true, contractual_restrictions: true, release_rights: true, quality: true }, notes: "strong frame" };
+  return { fileId, decision: "approved" as const, destinations: ["portfolio"], checks: { confidentiality: true, embargo: true, contractual_restrictions: true, release_rights: true, minors: true, other_people: true, quality: true }, notes: "strong frame" };
 }

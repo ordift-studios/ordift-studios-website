@@ -3,8 +3,9 @@ import { logActivity } from "@/lib/admin/activityLog";
 import { authorizeWithSuperAdminOverride, isSuperAdminId, PEOPLE_CAPABILITIES } from "@/lib/organization/authority";
 import { hasFullyExecutedAgreement } from "@/lib/legal/agreementEngine";
 import { INSTRUCTOR_FRAMEWORK_ENABLED } from "./featureGate";
+import { SCHEDULE_SAFEGUARDING_ENABLED } from "./safeguardingGate";
 import { getAdoptedStandards } from "./standards";
-import { EMPTY_RIGHTS, scheduleReadiness, validateScheduleInput, type ReadinessItem, type RightsMatrix, type ScheduleInput } from "./rules";
+import { EMPTY_RIGHTS, EMPTY_SAFEGUARDING, scheduleReadiness, validateSafeguarding, validateScheduleInput, type ReadinessItem, type RightsMatrix, type ScheduleInput, type ScheduleSafeguarding } from "./rules";
 
 // SESSION SCHEDULES AND RIGHTS MATRIX (migration 0180). One assignment = one schedule + one rights matrix. PROPOSED until a Super Admin approves; the database refuses approval unless the
 // agreement is executed, the adopted standards are acknowledged, regulatory clearance is recorded with a reference, every right is decided and no decision is flagged. Rights start UNSET and
@@ -13,12 +14,19 @@ type Fail = { ok: false; error: string };
 const OFF: Fail = { ok: false, error: "The instructor assignment framework is not enabled yet." };
 const NOT_AUTH: Fail = { ok: false, error: "Not authorized to manage instructor assignments." };
 
-export type Schedule = { id: string; instructorProfileId: string; instructorName: string | null; agreementId: string; programmeName: string; venue: string; timezone: string; firstSessionAt: string; lastSessionAt: string | null; durationMinutes: number; frequency: string; responsibilities: string; compensationReference: string; regulatoryClearance: string; regulatoryEvidenceReference: string; status: string; approvedAt: string | null; standardsVersionId: string | null; rights: RightsMatrix; readiness: ReadinessItem[] };
+export type Schedule = { id: string; instructorProfileId: string; instructorName: string | null; agreementId: string; programmeName: string; venue: string; timezone: string; firstSessionAt: string; lastSessionAt: string | null; durationMinutes: number; frequency: string; responsibilities: string; compensationReference: string; regulatoryClearance: string; regulatoryEvidenceReference: string; status: string; approvedAt: string | null; standardsVersionId: string | null; rights: RightsMatrix; readiness: ReadinessItem[]; safeguarding?: ScheduleSafeguarding };
 type SRow = { id: string; instructor_profile_id: string; agreement_id: string; programme_name: string; venue: string; timezone: string; first_session_at: string; last_session_at: string | null; duration_minutes: number; frequency: string; responsibilities: string; compensation_reference: string; regulatory_clearance: string; regulatory_evidence_reference: string | null; status: string; approved_at: string | null; standards_version_id: string | null };
 type MRow = { teaching_materials_use: string; material_ownership: string; photography: string; recording: string; participant_data_access: string; publication_promotion: string; sharing_reuse_restrictions: string | null; agreement_policy_references: string | null; unresolved_decisions: string | null };
 const rightsOf = (m: MRow | null | undefined): RightsMatrix => m ? ({ teachingMaterialsUse: m.teaching_materials_use, materialOwnership: m.material_ownership, photography: m.photography, recording: m.recording, participantDataAccess: m.participant_data_access, publicationPromotion: m.publication_promotion, sharingReuseRestrictions: m.sharing_reuse_restrictions ?? "", agreementPolicyReferences: m.agreement_policy_references ?? "", unresolvedDecisions: m.unresolved_decisions ?? "" } as RightsMatrix) : { ...EMPTY_RIGHTS };
 
 async function manager(actor: string): Promise<boolean> { return (await authorizeWithSuperAdminOverride(actor, PEOPLE_CAPABILITIES.workshopEngagementAdminister)).ok; }
+
+// Reads the 0181 columns ONLY when the safeguarding gate is on (they do not exist in Production until 0181 is applied).
+async function safeguardingOf(scheduleId: string): Promise<ScheduleSafeguarding | undefined> {
+  if (!SCHEDULE_SAFEGUARDING_ENABLED) return undefined;
+  const { data } = await createAdminClient().from("instructor_session_schedules").select("involves_minors, venue_safeguarding_arrangements, venue_emergency_arrangements").eq("id", scheduleId).maybeSingle();
+  return data ? { involvesMinors: (data.involves_minors as boolean | null) ?? null, venueSafeguarding: (data.venue_safeguarding_arrangements as string | null) ?? "", venueEmergency: (data.venue_emergency_arrangements as string | null) ?? "" } : { ...EMPTY_SAFEGUARDING };
+}
 
 async function readinessFor(s: SRow, rights: RightsMatrix): Promise<ReadinessItem[]> {
   const admin = createAdminClient();
@@ -26,7 +34,7 @@ async function readinessFor(s: SRow, rights: RightsMatrix): Promise<ReadinessIte
   const { data: ack } = adopted ? await admin.from("instructor_standards_acknowledgements").select("id").eq("profile_id", s.instructor_profile_id).eq("version_id", adopted.id).eq("document_sha256", adopted.bodySha256).maybeSingle() : { data: null };
   const executed = await hasFullyExecutedAgreement({ canonicalCode: "OS-LGL-010", primaryContextType: "instructor_profile", primaryContextReference: s.instructor_profile_id });
   const coreComplete = Boolean(s.programme_name && s.venue && s.first_session_at && s.duration_minutes && s.frequency && s.responsibilities && s.compensation_reference);
-  return scheduleReadiness({ agreementExecuted: executed, standardsAdopted: Boolean(adopted), standardsAcknowledged: Boolean(ack), regulatoryClearance: s.regulatory_clearance, regulatoryEvidence: s.regulatory_evidence_reference, rights, coreComplete });
+  return scheduleReadiness({ agreementExecuted: executed, standardsAdopted: Boolean(adopted), standardsAcknowledged: Boolean(ack), regulatoryClearance: s.regulatory_clearance, regulatoryEvidence: s.regulatory_evidence_reference, rights, coreComplete, safeguarding: await safeguardingOf(s.id) });
 }
 
 const SCOLS = "id, instructor_profile_id, agreement_id, programme_name, venue, timezone, first_session_at, last_session_at, duration_minutes, frequency, responsibilities, compensation_reference, regulatory_clearance, regulatory_evidence_reference, status, approved_at, standards_version_id";
@@ -35,7 +43,7 @@ async function build(rows: SRow[]): Promise<Schedule[]> {
   const admin = createAdminClient();
   const [{ data: ms }, { data: ps }] = await Promise.all([admin.from("instructor_rights_matrix").select("*").in("schedule_id", rows.map((r) => r.id)), admin.from("profiles").select("id, full_name").in("id", Array.from(new Set(rows.map((r) => r.instructor_profile_id))))]);
   const mBy = new Map((ms ?? []).map((m) => [m.schedule_id as string, m as MRow])); const nBy = new Map((ps ?? []).map((p) => [p.id as string, (p.full_name as string | null) ?? null]));
-  return Promise.all(rows.map(async (s) => { const rights = rightsOf(mBy.get(s.id)); return { id: s.id, instructorProfileId: s.instructor_profile_id, instructorName: nBy.get(s.instructor_profile_id) ?? null, agreementId: s.agreement_id, programmeName: s.programme_name, venue: s.venue, timezone: s.timezone, firstSessionAt: s.first_session_at, lastSessionAt: s.last_session_at, durationMinutes: s.duration_minutes, frequency: s.frequency, responsibilities: s.responsibilities, compensationReference: s.compensation_reference, regulatoryClearance: s.regulatory_clearance, regulatoryEvidenceReference: s.regulatory_evidence_reference ?? "", status: s.status, approvedAt: s.approved_at, standardsVersionId: s.standards_version_id, rights, readiness: s.status === "proposed" ? await readinessFor(s, rights) : [] }; }));
+  return Promise.all(rows.map(async (s) => { const rights = rightsOf(mBy.get(s.id)); return { id: s.id, instructorProfileId: s.instructor_profile_id, instructorName: nBy.get(s.instructor_profile_id) ?? null, agreementId: s.agreement_id, programmeName: s.programme_name, venue: s.venue, timezone: s.timezone, firstSessionAt: s.first_session_at, lastSessionAt: s.last_session_at, durationMinutes: s.duration_minutes, frequency: s.frequency, responsibilities: s.responsibilities, compensationReference: s.compensation_reference, regulatoryClearance: s.regulatory_clearance, regulatoryEvidenceReference: s.regulatory_evidence_reference ?? "", status: s.status, approvedAt: s.approved_at, standardsVersionId: s.standards_version_id, rights, readiness: s.status === "proposed" ? await readinessFor(s, rights) : [], safeguarding: await safeguardingOf(s.id) }; }));
 }
 
 export async function listSchedules(): Promise<Schedule[]> {
@@ -67,6 +75,18 @@ export async function updateScheduleRightsAndClearance(p: { actorUserId: string;
   const { error } = await admin.from("instructor_rights_matrix").update({ teaching_materials_use: r.teachingMaterialsUse, material_ownership: r.materialOwnership, photography: r.photography, recording: r.recording, participant_data_access: r.participantDataAccess, publication_promotion: r.publicationPromotion, sharing_reuse_restrictions: r.sharingReuseRestrictions.trim() || null, agreement_policy_references: r.agreementPolicyReferences.trim() || null, unresolved_decisions: r.unresolvedDecisions.trim() || null, updated_by: p.actorUserId }).eq("schedule_id", p.scheduleId);
   if (error) return { ok: false, error: "The rights matrix could not be saved (it is frozen once the schedule is approved)." };
   await logActivity({ actorUserId: p.actorUserId, action: "instructor_schedule.rights_updated", entityType: "instructor_session_schedule", entityId: p.scheduleId, metadata: { regulatoryClearance: p.regulatoryClearance, unresolvedFlagged: r.unresolvedDecisions.trim().length > 0 } });
+  return { ok: true };
+}
+
+// Records the venue safeguarding arrangements (proposed 0181). Off until 0181 is applied; the database re-checks the same rule at approval.
+export async function updateScheduleSafeguarding(p: { actorUserId: string; scheduleId: string; input: ScheduleSafeguarding }): Promise<{ ok: true } | Fail> {
+  if (!INSTRUCTOR_FRAMEWORK_ENABLED || !SCHEDULE_SAFEGUARDING_ENABLED) return { ok: false, error: "Recording venue safeguarding arrangements is not enabled yet." };
+  if (!(await manager(p.actorUserId))) return NOT_AUTH;
+  const v = validateSafeguarding(p.input); if (!v.ok) return v;
+  const i = p.input;
+  const { data, error } = await createAdminClient().from("instructor_session_schedules").update({ involves_minors: i.involvesMinors, venue_safeguarding_arrangements: i.venueSafeguarding.trim() || null, venue_emergency_arrangements: i.venueEmergency.trim() || null }).eq("id", p.scheduleId).eq("status", "proposed").select("id");
+  if (error || !data?.length) return { ok: false, error: "Only a proposed schedule can be changed." };
+  await logActivity({ actorUserId: p.actorUserId, action: "instructor_schedule.safeguarding_updated", entityType: "instructor_session_schedule", entityId: p.scheduleId, metadata: { involvesMinors: i.involvesMinors } });
   return { ok: true };
 }
 

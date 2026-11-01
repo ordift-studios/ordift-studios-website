@@ -51,8 +51,21 @@ export function validateScheduleInput(i: ScheduleInput): { ok: true } | { ok: fa
   return { ok: true };
 }
 
+export type ScheduleSafeguarding = { involvesMinors: boolean | null; venueSafeguarding: string; venueEmergency: string };
+export const EMPTY_SAFEGUARDING: ScheduleSafeguarding = { involvesMinors: null, venueSafeguarding: "", venueEmergency: "" };
+// Mirrors the database rule (proposed 0181): the minors question must be answered; if participants may be under 18 the venue's safeguarding authority (or, where the venue has none, the external reporting route Ordift identified)
+// and its emergency arrangements must both be recorded. Nothing is assumed or filled in.
+export function validateSafeguarding(i: ScheduleSafeguarding): { ok: true } | { ok: false; error: string } {
+  if (i.involvesMinors === null) return { ok: false, error: "Say whether participants under 18 may attend." };
+  const len = (x: string) => x.trim().length >= 10 && x.trim().length <= 2000;
+  if (i.involvesMinors && !len(i.venueSafeguarding)) return { ok: false, error: "Record the venue's designated safeguarding authority and procedure, or, where it has none, the external reporting route Ordift identified (10 to 2,000 characters)." };
+  if (i.involvesMinors && !len(i.venueEmergency)) return { ok: false, error: "Record the venue's verified emergency procedure and the local emergency numbers (10 to 2,000 characters)." };
+  if (!i.involvesMinors && (i.venueSafeguarding.trim().length > 2000 || i.venueEmergency.trim().length > 2000)) return { ok: false, error: "Keep each note under 2,000 characters." };
+  return { ok: true };
+}
+
 export type ReadinessItem = { key: string; label: string; met: boolean; detail?: string };
-export function scheduleReadiness(f: { agreementExecuted: boolean; standardsAdopted: boolean; standardsAcknowledged: boolean; regulatoryClearance: string; regulatoryEvidence: string | null; rights: RightsMatrix; coreComplete: boolean }): ReadinessItem[] {
+export function scheduleReadiness(f: { agreementExecuted: boolean; standardsAdopted: boolean; standardsAcknowledged: boolean; regulatoryClearance: string; regulatoryEvidence: string | null; rights: RightsMatrix; coreComplete: boolean; safeguarding?: ScheduleSafeguarding }): ReadinessItem[] {
   const unset = unsetRights(f.rights);
   return [
     { key: "agreement", label: "Framework agreement fully executed (both signatures)", met: f.agreementExecuted },
@@ -62,5 +75,6 @@ export function scheduleReadiness(f: { agreementExecuted: boolean; standardsAdop
     { key: "rights_set", label: "Every Rights Matrix permission decided", met: unset.length === 0, detail: unset.length ? `Unset: ${unset.join("; ")}` : undefined },
     { key: "rights_flags", label: "No unresolved rights decision flagged for management", met: f.rights.unresolvedDecisions.trim().length === 0 },
     { key: "core", label: "Programme, venue, dates, duration, frequency, responsibilities and compensation reference present", met: f.coreComplete },
+    ...(f.safeguarding ? [{ key: "safeguarding", label: "Participants under 18 decided and, if they may attend, the venue's safeguarding and emergency arrangements recorded", met: validateSafeguarding(f.safeguarding).ok }] : []),
   ];
 }

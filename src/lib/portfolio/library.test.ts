@@ -14,7 +14,7 @@ vi.mock("./permissionText", async (orig) => ({ ...(await orig<typeof import("./p
 import * as lib from "./library";
 const staff = { id: "u1", email: "s@x.test", fullName: "Staff", roles: ["staff"] } as unknown as Parameters<typeof lib.addPortfolioCandidates>[0];
 const founder = { ...staff, id: "u2", roles: ["super_admin"] } as typeof staff;
-const OK_REVIEW = { fileId: "f1", decision: "approved" as const, destinations: ["portfolio"], checks: { confidentiality: true, embargo: true, contractual_restrictions: true, release_rights: true, quality: true }, notes: "" };
+const OK_REVIEW = { fileId: "f1", decision: "approved" as const, destinations: ["portfolio"], checks: { confidentiality: true, embargo: true, contractual_restrictions: true, release_rights: true, minors: true, other_people: true, quality: true }, notes: "" };
 const OK_PERM = { decision: "granted" as const, grantorName: "Synthetic Grantor", grantorCapacity: "client", destinations: ["portfolio"], fileIds: null, restrictions: "", expiresOn: "", method: "message", grantedOn: "", evidenceSummary: "message thread confirming the use", note: "", verified: false };
 
 beforeEach(() => { calls.length = 0; management = false; gateOn = false; approved = false; });

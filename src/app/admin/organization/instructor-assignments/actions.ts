@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { getCurrentUser } from "@/lib/portal/roles";
-import { approveSchedule, closeSchedule, proposeSchedule, updateScheduleRightsAndClearance } from "@/lib/instructors/assignments";
+import { approveSchedule, closeSchedule, proposeSchedule, updateScheduleRightsAndClearance, updateScheduleSafeguarding } from "@/lib/instructors/assignments";
 import { RIGHTS_OPTIONS, type RightsMatrix } from "@/lib/instructors/rules";
 import { actionFail, actionOk, runAction, type ActionState } from "@/lib/shared/actionState";
 
@@ -44,4 +44,13 @@ export async function closeScheduleAction(_p: ActionState, f: FormData): Promise
     if (!r.ok) return actionFail(r.error);
     refresh(); return actionOk("Updated.");
   }, "close schedule");
+}
+export async function saveSafeguardingAction(_p: ActionState, f: FormData): Promise<ActionState> {
+  const u = await getCurrentUser(); if (!u) return actionFail("Please sign in again.");
+  return runAction(async () => {
+    const m = t(f, "involvesMinors");
+    const r = await updateScheduleSafeguarding({ actorUserId: u.id, scheduleId: t(f, "scheduleId"), input: { involvesMinors: m === "yes" ? true : m === "no" ? false : null, venueSafeguarding: t(f, "venueSafeguarding"), venueEmergency: t(f, "venueEmergency") } });
+    if (!r.ok) return actionFail(r.error);
+    refresh(); return actionOk("Saved. Approval is refused until this is decided and, where participants may be under 18, the venue arrangements are recorded.");
+  }, "save safeguarding");
 }

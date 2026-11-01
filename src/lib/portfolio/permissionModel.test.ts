@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { summariseStanding, validateAdminPermission, validateReview, type AdminPermissionInput } from "./permissionModel";
-import { PERMISSION_TEXT_APPROVED, PERMISSION_TEXT } from "./permissionText";
+import { createHash } from "node:crypto";
+import { DESTINATION_KEYS } from "./destinations";
+import { PERMISSION_TEXT_APPROVED, PERMISSION_TEXT, PERMISSION_TEXT_VERSION } from "./permissionText";
 
 const base: AdminPermissionInput = { decision: "granted", grantorName: "Synthetic Grantor", grantorCapacity: "client", destinations: ["portfolio"], fileIds: null, restrictions: "", expiresOn: "", method: "message", grantedOn: "", evidenceSummary: "message thread confirming the use", note: "" };
 
@@ -22,7 +24,7 @@ describe("administrator-recorded permission", () => {
 });
 
 describe("internal approval", () => {
-  const all = { confidentiality: true, embargo: true, contractual_restrictions: true, release_rights: true, quality: true };
+  const all = { confidentiality: true, embargo: true, contractual_restrictions: true, release_rights: true, minors: true, other_people: true, quality: true };
   it("approval needs every check and a destination", () => {
     expect(validateReview({ decision: "approved", destinations: ["website"], checks: all, notes: "" })).toEqual([]);
     expect(validateReview({ decision: "approved", destinations: ["website"], checks: { ...all, quality: false }, notes: "" }).join()).toMatch(/quality|standard/);
@@ -56,14 +58,27 @@ describe("client permission wording", () => {
   });
 });
 
-describe("client permission wording, draft 2 (unapproved)", () => {
+describe("client permission wording, draft 3 (unapproved)", () => {
+  const WORDING_SHA256: Record<string, string> = { "mkt-permission-draft-3": "edecf40db70d8de331cb636cb433bce119181386b41421ed86e3c0bafc4043b6" };
   it("stays unapproved and never treats payment or commissioning as permission", () => {
     expect(PERMISSION_TEXT_APPROVED).toBe(false);
     expect(PERMISSION_TEXT.intro).toContain("does not, by itself, give Ordift Studios permission");
-    expect(PERMISSION_TEXT.selection).toContain("only the photographs shown");
-    expect(PERMISSION_TEXT.uses.length).toBe(5);
-    expect(PERMISSION_TEXT.rightsOfOthers).toContain("covers you only");
-    expect(PERMISSION_TEXT.limitsOnReuse).toContain("ask you again");
-    expect(PERMISSION_TEXT.withdrawal).toContain("cannot recall material already published");
+    expect(PERMISSION_TEXT.intro).toContain("including saying no");
+    expect(PERMISSION_TEXT.selection).toContain("each identified by a preview and an image number");
+  });
+  it("each recorded destination has its own use line, in the same order and nothing else", () => {
+    expect(Object.keys(PERMISSION_TEXT.uses)).toEqual([...DESTINATION_KEYS].sort((a, b) => Object.keys(PERMISSION_TEXT.uses).indexOf(a) - Object.keys(PERMISSION_TEXT.uses).indexOf(b)));
+    expect(Object.keys(PERMISSION_TEXT.uses).sort()).toEqual([...DESTINATION_KEYS].sort());
+  });
+  it("covers the client only, protects children and other people, forbids sale/licensing/unrelated reuse and promises no recall", () => {
+    expect(PERMISSION_TEXT.rightsOfOthers).toContain("not treated as permission from anyone else");
+    expect(PERMISSION_TEXT.minors).toContain("parent or guardian");
+    expect(PERMISSION_TEXT.limitsOnReuse).toMatch(/not sell or license them.*unrelated third parties/);
+    expect(PERMISSION_TEXT.withdrawal).toContain("We cannot recall material that is outside our control");
+    expect(PERMISSION_TEXT.record).toContain("the wording you saw");
+  });
+  it("the version string is pinned to the exact wording: any edit must change the version", () => {
+    const sha = createHash("sha256").update(JSON.stringify(PERMISSION_TEXT)).digest("hex");
+    expect(WORDING_SHA256[PERMISSION_TEXT_VERSION], "new wording needs a new PERMISSION_TEXT_VERSION and a new pin").toBe(sha);
   });
 });

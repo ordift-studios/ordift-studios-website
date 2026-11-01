@@ -84,6 +84,8 @@ export const REVIEW_CHECKS = [
   { key: "embargo", label: "No embargo applies, or it has ended" },
   { key: "contractual_restrictions", label: "No contractual restriction prevents this use" },
   { key: "release_rights", label: "Client / model release rights are in place for people shown" },
+  { key: "minors", label: "No identifiable person under 18 is shown, or a parent / guardian's permission for this use is on record and any safeguards are met" },
+  { key: "other_people", label: "No other identifiable person is shown, or their permission (or the client's confirmed authority for them) is on record for this use" },
   { key: "quality", label: "It meets Ordift's creative and quality standard" },
 ] as const;
 export type ReviewInput = { decision: "approved" | "rejected" | "returned" | "revoked"; destinations: string[]; checks: Record<string, boolean>; notes: string };
