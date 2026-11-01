@@ -42,6 +42,9 @@ export default async function JobPermissionPage({ params }: { params: Promise<{ 
   }
   const nameOf = (id: string) => files.find((f) => f.id === id)?.filename ?? id;
   const records = view?.records ?? [];
+  // Limits written on a grant still in force. They are free text, so a reviewer must assess them before approving; the photograph is not usable until that is recorded.
+  const withdrawnIds = new Set(records.filter((r) => r.decision === "withdrawn" && r.supersedes).map((r) => r.supersedes as string));
+  const liveRestrictions = records.filter((r) => r.decision === "granted" && !withdrawnIds.has(r.id) && r.restrictions?.trim()).map((r) => r.restrictions!.trim());
 
   return (
     <div className="space-y-8 max-w-6xl">
@@ -79,7 +82,7 @@ export default async function JobPermissionPage({ params }: { params: Promise<{ 
             <ContractForm jobType={jobType} jobId={jobId} agreements={contracts.map((c) => ({ id: c.id, reference: c.reference, executed: c.executed, summary: c.release ? `release: ${Object.entries(c.release.usage_rights).filter(([, v]) => v).map(([k]) => k).join(", ") || "no uses granted"}; ${c.release.territory ?? "territory not set"}; ${c.release.duration ?? "term not set"}` : "no release recorded" }))} /></section>
 
           <section aria-labelledby="route-b" className="space-y-3"><h2 id="route-b" className="font-serif font-medium text-body text-ordift-ink">Ask the client in their portal</h2>
-            <RequestForm jobType={jobType} jobId={jobId} addressee={addressee} approved={PERMISSION_TEXT_APPROVED} />
+            <RequestForm jobType={jobType} jobId={jobId} addressee={addressee} approved={PERMISSION_TEXT_APPROVED} photos={files.filter((f) => f.releaseStatus === "released").map((f) => ({ id: f.id, name: f.filename }))} />
             {(view?.requests ?? []).length > 0 && <ul className="font-sans text-caption text-ordift-ink-muted">{view!.requests.map((q) => <li key={q.id as string}>Request {String(q.created_at).slice(0, 10)}: {q.status as string}</li>)}</ul>}</section>
 
           <section aria-labelledby="route-c" className="space-y-3"><h2 id="route-c" className="font-serif font-medium text-body text-ordift-ink">Record permission obtained outside the platform</h2>
@@ -87,7 +90,7 @@ export default async function JobPermissionPage({ params }: { params: Promise<{ 
             <RecordPermissionForm jobType={jobType} jobId={jobId} files={files.map((f) => ({ id: f.id, name: f.filename }))} /></section>
 
           <section aria-labelledby="stage2" className="space-y-3"><h2 id="stage2" className="font-serif font-medium text-body text-ordift-ink">Internal approval of each photograph</h2>
-            <PhotoReview jobType={jobType} jobId={jobId} photos={files.map((f) => ({ id: f.id, name: f.filename, kind: f.kindLabel, permission: standings[f.id]?.permission ?? "No permission on record", internal: standings[f.id]?.internal ?? "Not yet reviewed internally", usable: (standings[f.id]?.usable ?? []).map((d) => DESTINATION_LABEL[d]) }))} /></section>
+            <PhotoReview jobType={jobType} jobId={jobId} photos={files.map((f) => ({ id: f.id, name: f.filename, kind: f.kindLabel, permission: standings[f.id]?.permission ?? "No permission on record", internal: standings[f.id]?.internal ?? "Not yet reviewed internally", usable: (standings[f.id]?.usable ?? []).map((d) => DESTINATION_LABEL[d]), restrictions: liveRestrictions }))} /></section>
 
           <section aria-labelledby="uses" className="space-y-3"><h2 id="uses" className="font-serif font-medium text-body text-ordift-ink">Record that a photograph was used</h2>
             <p className="font-sans text-body-small text-ordift-ink-muted">The database re-checks both approvals at this moment and refuses a use that no longer qualifies. Withdrawal or revocation later flags anything already in use for your review; it never removes anything automatically.</p>

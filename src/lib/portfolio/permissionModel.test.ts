@@ -24,9 +24,9 @@ describe("administrator-recorded permission", () => {
 });
 
 describe("internal approval", () => {
-  const all = { confidentiality: true, embargo: true, contractual_restrictions: true, release_rights: true, minors: true, other_people: true, quality: true };
+  const all = { confidentiality: true, embargo: true, contractual_restrictions: true, release_rights: true, quality: true };
   it("approval needs every check and a destination", () => {
-    expect(validateReview({ decision: "approved", destinations: ["website"], checks: all, notes: "" })).toEqual([]);
+    expect(validateReview({ decision: "approved", destinations: ["website"], checks: all, notes: "", people: "none" })).toEqual([]);
     expect(validateReview({ decision: "approved", destinations: ["website"], checks: { ...all, quality: false }, notes: "" }).join()).toMatch(/quality|standard/);
     expect(validateReview({ decision: "approved", destinations: [], checks: all, notes: "" }).join()).toMatch(/where/);
   });
@@ -80,5 +80,19 @@ describe("client permission wording, draft 3 (unapproved)", () => {
   it("the version string is pinned to the exact wording: any edit must change the version", () => {
     const sha = createHash("sha256").update(JSON.stringify(PERMISSION_TEXT)).digest("hex");
     expect(WORDING_SHA256[PERMISSION_TEXT_VERSION], "new wording needs a new PERMISSION_TEXT_VERSION and a new pin").toBe(sha);
+  });
+});
+
+describe("people and property shown: a tick is not evidence", () => {
+  const all = { confidentiality: true, embargo: true, contractual_restrictions: true, release_rights: true, quality: true };
+  const base = { decision: "approved" as const, destinations: ["website"], checks: all, notes: "" };
+  it("approval needs an explicit statement about people shown", () => {
+    expect(validateReview({ ...base }).join()).toMatch(/State whether identifiable people/);
+    expect(validateReview({ ...base, people: "none" })).toEqual([]);
+  });
+  it("where people, a child or property are shown, a written evidence reference is required; without it the photograph cannot be approved", () => {
+    expect(validateReview({ ...base, people: "evidenced" }).join()).toMatch(/evidence reference/);
+    expect(validateReview({ ...base, people: "evidenced", peopleEvidence: "yes" }).join()).toMatch(/evidence reference/);
+    expect(validateReview({ ...base, people: "evidenced", peopleEvidence: "Guardian email 3 Nov, kept in job folder" })).toEqual([]);
   });
 });

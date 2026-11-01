@@ -14,7 +14,7 @@ vi.mock("./permissionText", async (orig) => ({ ...(await orig<typeof import("./p
 import * as lib from "./library";
 const staff = { id: "u1", email: "s@x.test", fullName: "Staff", roles: ["staff"] } as unknown as Parameters<typeof lib.addPortfolioCandidates>[0];
 const founder = { ...staff, id: "u2", roles: ["super_admin"] } as typeof staff;
-const OK_REVIEW = { fileId: "f1", decision: "approved" as const, destinations: ["portfolio"], checks: { confidentiality: true, embargo: true, contractual_restrictions: true, release_rights: true, minors: true, other_people: true, quality: true }, notes: "" };
+const OK_REVIEW = { fileId: "f1", decision: "approved" as const, people: "none" as const, destinations: ["portfolio"], checks: { confidentiality: true, embargo: true, contractual_restrictions: true, release_rights: true, quality: true }, notes: "" };
 const OK_PERM = { decision: "granted" as const, grantorName: "Synthetic Grantor", grantorCapacity: "client", destinations: ["portfolio"], fileIds: null, restrictions: "", expiresOn: "", method: "message", grantedOn: "", evidenceSummary: "message thread confirming the use", note: "", verified: false };
 
 beforeEach(() => { calls.length = 0; management = false; gateOn = false; approved = false; });
@@ -71,6 +71,14 @@ describe("authority and approval rules enforced before the database is reached",
     const b = await lib.answerPermissionRequest("p1", "q1", { decision: "granted", destinations: ["portfolio"], restrictions: "", displayName: "C" });
     expect(a.ok === false && a.error).toMatch(/wording has not been approved/);
     expect(b.ok).toBe(false);
+    expect(calls).toEqual([]);
+  });
+  it("a client request must name exact photographs: a request for a whole job is refused before the database", async () => {
+    gateOn = true; management = true; approved = true;
+    for (const fileIds of [null, []] as const) {
+      const r = await lib.createPermissionRequest(founder, { jobType: "crew_support_request", jobId: "j1", addressedTo: "p1", destinations: ["portfolio"], fileIds: fileIds as never });
+      expect(r.ok === false && r.error).toMatch(/exact photographs/);
+    }
     expect(calls).toEqual([]);
   });
   it("a client must tick at least one use to agree (nothing is assumed)", async () => {

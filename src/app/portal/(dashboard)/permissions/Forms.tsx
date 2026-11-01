@@ -1,5 +1,7 @@
 "use client";
 
+/* eslint-disable @next/next/no-img-element -- short-lived signed previews of the client's own photographs */
+
 import { useActionState } from "react";
 import { DESTINATIONS } from "@/lib/portfolio/destinations";
 import { PERMISSION_TEXT } from "@/lib/portfolio/permissionText";
@@ -9,11 +11,19 @@ const input = "w-full rounded-lg border border-black/15 px-3 py-2 font-sans text
 const Msg = ({ s }: { s: PortalState }) => (s ? <p role={s.ok ? "status" : "alert"} className={`font-sans text-body-small ${s.ok ? "text-green-800" : "text-red-800"}`}>{s.message}</p> : null);
 
 // Nothing is preselected. Agreeing needs at least one tick; declining is one deliberate choice and has no effect on delivery or any other service.
-export function AnswerForm({ requestId, offered }: { requestId: string; offered: string[] }) {
+export function AnswerForm({ requestId, offered, photos }: { requestId: string; offered: string[]; photos: { fileId: string; n: number; name: string }[] }) {
   const [s, act, pending] = useActionState(answerRequestAction, null as PortalState);
   return (
     <form action={act} className="space-y-3">
       <input type="hidden" name="requestId" value={requestId} />
+      <fieldset className="space-y-2"><legend className="font-sans text-body-small font-medium text-ordift-ink">The photographs this request covers</legend>
+        <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3">{photos.map((p) => (
+          <li key={p.fileId} className="space-y-1 rounded-lg border border-black/10 p-2">
+            <img src={`/portal/permissions/preview/${requestId}/${p.fileId}`} alt={`Image ${p.n}: ${p.name}`} loading="lazy" className="aspect-[4/3] w-full rounded object-cover" />
+            <p className="font-sans text-caption font-medium">Image {p.n}</p>
+            <label className="flex items-center gap-2 font-sans text-caption"><input type="checkbox" name="exclude" value={p.fileId} />Exclude this image</label>
+          </li>))}</ul>
+      </fieldset>
       <fieldset className="space-y-1"><legend className="font-sans text-body-small font-medium text-ordift-ink">Uses you are asked about</legend>
         {DESTINATIONS.filter((d) => offered.includes(d.key)).map((d) => <label key={d.key} className="flex items-center gap-2 font-sans text-body-small"><input type="checkbox" name="destinations" value={d.key} />{PERMISSION_TEXT.uses[d.key]}</label>)}
       </fieldset>

@@ -84,11 +84,16 @@ export const REVIEW_CHECKS = [
   { key: "embargo", label: "No embargo applies, or it has ended" },
   { key: "contractual_restrictions", label: "No contractual restriction prevents this use" },
   { key: "release_rights", label: "Client / model release rights are in place for people shown" },
-  { key: "minors", label: "No identifiable person under 18 is shown, or a parent / guardian's permission for this use is on record and any safeguards are met" },
-  { key: "other_people", label: "No other identifiable person is shown, or their permission (or the client's confirmed authority for them) is on record for this use" },
   { key: "quality", label: "It meets Ordift's creative and quality standard" },
 ] as const;
-export type ReviewInput = { decision: "approved" | "rejected" | "returned" | "revoked"; destinations: string[]; checks: Record<string, boolean>; notes: string };
+// People and property shown. A reviewer's tick is NOT proof that a parent, guardian or other person consented: approval needs either "no identifiable person, child or protected property needing permission is shown"
+// or a written reference to the evidence (who gave it, in what form, where it is kept). Without either, the photograph is excluded. The reference is recorded as the reviewer's statement; Ordift's system holds no copy of the evidence.
+export const PEOPLE_DECLARATIONS = [
+  { key: "none", label: "No identifiable person, child or protected property needing permission is shown" },
+  { key: "evidenced", label: "Identifiable people, a child or protected property are shown, and permission evidence exists (reference below)" },
+] as const;
+export type PeopleDeclaration = (typeof PEOPLE_DECLARATIONS)[number]["key"];
+export type ReviewInput = { decision: "approved" | "rejected" | "returned" | "revoked"; destinations: string[]; checks: Record<string, boolean>; notes: string; people?: PeopleDeclaration; peopleEvidence?: string; restrictionsAssessed?: boolean };
 export function validateReview(i: ReviewInput): string[] {
   const e: string[] = [];
   if (i.decision === "approved") {
@@ -96,6 +101,8 @@ export function validateReview(i: ReviewInput): string[] {
     if (i.destinations.some((d) => !isDestination(d))) e.push("One of the chosen uses is not recognised.");
     const missing = REVIEW_CHECKS.filter((c) => i.checks[c.key] !== true);
     if (missing.length) e.push(`Confirm every check before approving: ${missing.map((m) => m.label).join("; ")}.`);
+    if (i.people !== "none" && i.people !== "evidenced") e.push("State whether identifiable people, a child or protected property are shown. If permission cannot be evidenced, do not approve this photograph.");
+    else if (i.people === "evidenced" && (i.peopleEvidence ?? "").trim().length < 10) e.push("Give the permission evidence reference (who gave it, in what form, and where it is kept). A tick alone is not evidence.");
   } else if (i.notes.trim().length < 3) e.push("Add a short note explaining the decision.");
   return e;
 }

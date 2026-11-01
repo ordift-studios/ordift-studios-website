@@ -4,7 +4,7 @@
 import { useActionState, useEffect, useState } from "react";
 import { previewUrlsAction } from "@/app/admin/crew-support/releaseActions";
 import { DESTINATIONS } from "@/lib/portfolio/destinations";
-import { GRANTOR_CAPACITIES, PERMISSION_METHODS, REVIEW_CHECKS } from "@/lib/portfolio/permissionModel";
+import { GRANTOR_CAPACITIES, PERMISSION_METHODS, PEOPLE_DECLARATIONS, REVIEW_CHECKS } from "@/lib/portfolio/permissionModel";
 import { recogniseContractAction, recordPermissionAction, recordUseAction, requestPermissionAction, reviewPhotoAction, verifyPermissionAction, type FormState } from "./actions";
 
 const input = "w-full rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small";
@@ -77,14 +77,17 @@ export function VerifyForm({ jobType, jobId, recordId }: { jobType: string; jobI
   return <form action={act} className="flex flex-wrap items-center gap-2"><Hidden jobType={jobType} jobId={jobId} /><input type="hidden" name="recordId" value={recordId} /><input name="note" placeholder="What did you check?" aria-label="What did you check" className="min-w-0 flex-1 rounded-lg border border-black/15 px-3 py-1.5 font-sans text-caption" /><button className="rounded-md border border-black/20 px-3 py-1.5 font-sans text-caption" disabled={pending}>Mark verified</button><Result s={s} /></form>;
 }
 
-export function RequestForm({ jobType, jobId, addressee, approved }: { jobType: string; jobId: string; addressee: { id: string; name: string } | null; approved: boolean }) {
+export function RequestForm({ jobType, jobId, addressee, approved, photos }: { jobType: string; jobId: string; addressee: { id: string; name: string } | null; approved: boolean; photos: { id: string; name: string }[] }) {
   const [s, act, pending] = useActionState(requestPermissionAction, null as FormState);
   if (!addressee) return <p className="font-sans text-body-small text-ordift-ink-muted">No client portal account is linked to this job, so a portal request cannot be sent. Use the historical-permission form instead.</p>;
   if (!approved) return <p className="rounded-lg bg-black/5 p-3 font-sans text-body-small text-ordift-ink-muted">The client permission wording is still a draft awaiting your approval, so requests are switched off.</p>;
-  return <form action={act} className="space-y-3"><Hidden jobType={jobType} jobId={jobId} /><input type="hidden" name="addressedTo" value={addressee.id} /><p className="font-sans text-body-small">Ask <strong>{addressee.name}</strong> in their client portal. Nothing is emailed; they see it when they next sign in.</p><Uses /><button className={btn} disabled={pending}>Create the request</button><Result s={s} /></form>;
+  if (photos.length === 0) return <p className="font-sans text-body-small text-ordift-ink-muted">No photograph of this job has been released to the client yet. A request names the exact photographs it covers, and the client must be able to see each one, so there is nothing to ask about yet.</p>;
+  return <form action={act} className="space-y-3"><Hidden jobType={jobType} jobId={jobId} /><input type="hidden" name="addressedTo" value={addressee.id} /><p className="font-sans text-body-small">Ask <strong>{addressee.name}</strong> in their client portal. Nothing is emailed; they see it when they next sign in, with a preview of each photograph named here. It covers only those photographs.</p>
+    <fieldset className="space-y-1"><legend className={label}>Photographs this request covers (none is ticked for you)</legend><div className="grid grid-cols-1 gap-1 sm:grid-cols-3">{photos.map((f) => <label key={f.id} className="flex items-center gap-2 font-sans text-caption"><input type="checkbox" name="fileIds" value={f.id} /><span className="truncate">{f.name}</span></label>)}</div></fieldset>
+    <Uses /><button className={btn} disabled={pending}>Create the request</button><Result s={s} /></form>;
 }
 
-export type ReviewPhoto = { id: string; name: string; kind: string; permission: string; internal: string; usable: string[] };
+export type ReviewPhoto = { id: string; name: string; kind: string; permission: string; internal: string; usable: string[]; restrictions: string[] };
 export function PhotoReview({ jobType, jobId, photos }: { jobType: string; jobId: string; photos: ReviewPhoto[] }) {
   const [urls, setUrls] = useState<Record<string, string>>({});
   useEffect(() => { let alive = true; previewUrlsAction(photos.slice(0, 48).map((p) => p.id)).then((r) => { if (!alive || !r.ok) return; const n: Record<string, string> = {}; for (const [id, v] of Object.entries(r.urls)) if ("url" in v) n[id] = v.url; setUrls(n); }).catch(() => {}); return () => { alive = false; }; }, [photos]);
@@ -106,7 +109,13 @@ function PhotoCard({ jobType, jobId, p, url }: { jobType: string; jobId: string;
       <details><summary className="cursor-pointer font-sans text-caption underline">Internal review</summary>
         <form action={act} className="mt-2 space-y-2"><Hidden jobType={jobType} jobId={jobId} /><input type="hidden" name="fileId" value={p.id} />
           <select name="decision" aria-label="Decision" value={decision} onChange={(e) => setDecision(e.target.value)} className={input}><option value="approved">Approve</option><option value="rejected">Reject</option><option value="returned">Return for further review</option><option value="revoked">Revoke earlier approval</option></select>
-          {decision === "approved" && (<><Uses /><fieldset className="space-y-1"><legend className={label}>Confirm each check</legend>{REVIEW_CHECKS.map((c) => <label key={c.key} className="flex items-start gap-2 font-sans text-caption"><input type="checkbox" name={`check_${c.key}`} className="mt-0.5" />{c.label}</label>)}</fieldset></>)}
+          {decision === "approved" && (<><Uses />
+            {p.restrictions.length > 0 && <div className="rounded-lg bg-amber-50 p-2 font-sans text-caption text-amber-900"><strong>Limits the rights holder set:</strong> {p.restrictions.join("; ")}<label className="mt-1 flex items-start gap-2"><input type="checkbox" name="restrictionsAssessed" className="mt-0.5" />I have read these limits and this photograph and use do not breach them</label></div>}
+            <fieldset className="space-y-1"><legend className={label}>Confirm each check</legend>{REVIEW_CHECKS.map((c) => <label key={c.key} className="flex items-start gap-2 font-sans text-caption"><input type="checkbox" name={`check_${c.key}`} className="mt-0.5" />{c.label}</label>)}</fieldset>
+            <fieldset className="space-y-1"><legend className={label}>People and property shown (a tick is not proof of anyone&apos;s consent)</legend>
+              {PEOPLE_DECLARATIONS.map((d) => <label key={d.key} className="flex items-start gap-2 font-sans text-caption"><input type="radio" name="people" value={d.key} className="mt-0.5" />{d.label}</label>)}
+              <input name="peopleEvidence" placeholder="Evidence reference: who gave permission, in what form, where it is kept" aria-label="Permission evidence reference" className={input} />
+              <p className="font-sans text-caption text-ordift-ink-muted">If a child or another person is shown and permission cannot be evidenced, do not approve this photograph. Ordift&apos;s system records your reference as your statement; it does not hold or verify the evidence.</p></fieldset></>)}
           <input name="notes" placeholder="Review notes" aria-label="Review notes" className={input} />
           <button className={btn} disabled={pending}>Record decision</button><Result s={s} />
         </form>

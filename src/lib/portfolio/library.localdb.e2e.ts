@@ -54,8 +54,8 @@ beforeAll(() => {
     values ('${JOB1}','00000000-0000-4000-8000-00000000e101','CSR-E2E-000001','photographer','E2E','r@b.test','1','photography','Synthetic Wedding','2026-01-01','2026-01-01','X',now()) on conflict do nothing;
   insert into public.crew_support_slots (id, requirement_id, request_id, slot_number) values ('00000000-0000-4000-8000-00000000b101','00000000-0000-4000-8000-00000000d101','${JOB1}',1) on conflict do nothing;
   insert into public.engagements (id, entity_type, entity_id, external_payee_name) values ('00000000-0000-4000-8000-00000000f101','crew_support_slot','00000000-0000-4000-8000-00000000b101','Synthetic'),('${JOB2}','other_job','x','Synthetic') on conflict do nothing;
-  insert into public.project_files (id, engagement_id, file_kind, storage_path, original_filename, mime_type, uploaded_by) values
-    ('${F1}','00000000-0000-4000-8000-00000000f101','final_approved','p/1','one.jpg','image/jpeg','${U(0xb1)}'),('${F2}','00000000-0000-4000-8000-00000000f101','final_approved','p/2','two.jpg','image/jpeg','${U(0xb1)}'),('${F3}','${JOB2}','final_approved','p/3','three.jpg','image/jpeg','${U(0xb1)}') on conflict do nothing;
+  insert into public.project_files (id, engagement_id, file_kind, storage_path, original_filename, mime_type, uploaded_by, release_status) values
+    ('${F1}','00000000-0000-4000-8000-00000000f101','final_approved','p/1','one.jpg','image/jpeg','${U(0xb1)}','released'),('${F2}','00000000-0000-4000-8000-00000000f101','final_approved','p/2','two.jpg','image/jpeg','${U(0xb1)}','released'),('${F3}','${JOB2}','final_approved','p/3','three.jpg','image/jpeg','${U(0xb1)}','private') on conflict do nothing;
   insert into public.legal_document_masters (id, canonical_code, title, classification) values ('00000000-0000-4000-8000-00000000a901','OS-LGL-004-E2E','Synthetic release','release_authorization') on conflict do nothing;
   insert into public.legal_document_versions (id, master_id, version) values ('00000000-0000-4000-8000-00000000a902','00000000-0000-4000-8000-00000000a901','1.0') on conflict do nothing;
   insert into public.agreements (id, agreement_reference, master_id, master_version_id, classification, status, primary_context_type, primary_context_reference)
@@ -104,7 +104,7 @@ describe("portfolio library services against the real schema", () => {
     expect(s[F2].usable).toEqual([]);                                    // F2 was never internally approved
     expect((await lib.recordUse(founder, { fileId: F1, destination: "portfolio", action: "published", reference: "cms:1" })).ok).toBe(true);
     const refused = await lib.recordUse(founder, { fileId: F2, destination: "portfolio", action: "published", reference: "cms:2" });
-    expect(refused.ok === false && refused.error).toMatch(/not eligible/);
+    expect(refused.ok === false && refused.error).toMatch(/not cleared for that use/);
   });
 
   it("withdrawal blocks future use and flags what is already in use, without removing it", async () => {
@@ -125,18 +125,51 @@ describe("portfolio library services against the real schema", () => {
     expect(no.ok).toBe(false);
   });
 
-  it("Route B: a request addressed to the client; only they can answer; withdrawal is theirs alone", async () => {
-    const req = await lib.createPermissionRequest(founder, { jobType: "crew_support_request", jobId: JOB1, addressedTo: U(0xb4), destinations: ["social_media", "journal"], fileIds: null });
+  it("Route B: a request names exact photographs; only the addressee can answer; the grant covers only what they were shown and did not exclude; withdrawal is theirs alone", async () => {
+    const whole = await lib.createPermissionRequest(founder, { jobType: "crew_support_request", jobId: JOB1, addressedTo: U(0xb4), destinations: ["social_media", "journal"], fileIds: null as never });
+    expect(whole.ok === false && whole.error).toMatch(/exact photographs/);                                       // a whole-job request is refused
+    const unreleased = await lib.createPermissionRequest(founder, { jobType: "crew_support_request", jobId: JOB1, addressedTo: U(0xb4), destinations: ["social_media"], fileIds: [F3] });
+    expect(unreleased.ok).toBe(false);                                                                             // F3 is private (and belongs to another job)
+    const req = await lib.createPermissionRequest(founder, { jobType: "crew_support_request", jobId: JOB1, addressedTo: U(0xb4), destinations: ["social_media", "journal"], fileIds: [F1, F2] });
     expect(req.ok).toBe(true);
     const reqId = sql(`select id from public.marketing_permission_requests where addressed_to = '${U(0xb4)}' and status = 'open'`);
+    expect(sql(`select cardinality(file_ids) from public.marketing_permission_requests where id = '${reqId}'`)).toBe("2");
     expect((await lib.answerPermissionRequest(U(0xb5), reqId, { decision: "granted", destinations: ["social_media"], restrictions: "", displayName: "Other" })).ok).toBe(false);
     expect((await lib.answerPermissionRequest(U(0xb4), reqId, { decision: "granted", destinations: ["paid_advertising"], restrictions: "", displayName: "Client" })).ok).toBe(false);
-    expect((await lib.answerPermissionRequest(U(0xb4), reqId, { decision: "granted", destinations: ["social_media"], restrictions: "no guests' faces", displayName: "Client" })).ok).toBe(true);
+    expect((await lib.answerPermissionRequest(U(0xb4), reqId, { decision: "granted", destinations: ["social_media"], restrictions: "", displayName: "Client", excludedFileIds: [F1, F2] })).ok).toBe(false);   // excluded everything
+    expect((await lib.answerPermissionRequest(U(0xb4), reqId, { decision: "granted", destinations: ["social_media"], restrictions: "no guests' faces", displayName: "Client", excludedFileIds: [F2] })).ok).toBe(true);
     expect(sql(`select status from public.marketing_permission_requests where id = '${reqId}'`)).toBe("answered");
     const recId = sql(`select id from public.marketing_permission_records where source = 'client_portal' and decision = 'granted'`);
+    expect(sql(`select array_to_string(file_ids, ',') from public.marketing_permission_records where id = '${recId}'`)).toBe(F1);   // only the photograph kept; F2 (excluded) is not covered
+    expect(sql(`select (select reason from public.marketing_permission_state('${F2}', 'social_media'))`)).not.toBe("permission_in_force");
     expect((await lib.withdrawOwnPermission(U(0xb5), recId, "Other")).ok).toBe(false);
     expect((await lib.withdrawOwnPermission(U(0xb4), recId, "Client")).ok).toBe(true);
     expect(sql(`select (select reason from public.marketing_permission_state('${F1}', 'social_media'))`)).toBe("declined_or_withdrawn");
+  });
+
+  it("limits written by the rights holder and people shown are assessed before use, beyond what the database can read", async () => {
+    // a verified grant for the website carrying a free-text limit
+    expect((await lib.recordAdminPermission(founder, "crew_support_request", JOB1, { ...perm(), destinations: ["website"], restrictions: "no photographs of children", evidenceSummary: "signed message thread, kept in the job folder" , verified: true })).ok).toBe(true);
+    const view = await lib.getJobPermissionView("crew_support_request", JOB1);
+    expect(view!.records.some((r) => r.restrictions === "no photographs of children")).toBe(true);
+    // approving without assessing the limit, or without a statement about people, is refused
+    const base = { ...review(F1), destinations: ["website"] };
+    expect((await lib.recordInternalReview(execAdmin, base)).ok === false).toBe(true);
+    expect((await lib.recordInternalReview(execAdmin, { ...base, restrictionsAssessed: false })).ok).toBe(false);
+    expect((await lib.recordInternalReview(execAdmin, { ...base, restrictionsAssessed: true, people: undefined })).ok).toBe(false);
+    expect((await lib.recordInternalReview(execAdmin, { ...base, restrictionsAssessed: true, people: "evidenced", peopleEvidence: "n" })).ok).toBe(false);   // a tick or a word is not evidence
+    expect((await lib.checkUseEligibility(F1, "website")).eligible).toBe(false);
+    expect((await lib.recordInternalReview(execAdmin, { ...base, restrictionsAssessed: true })).ok).toBe(true);
+    expect((await lib.checkUseEligibility(F1, "website")).eligible).toBe(true);
+    // a review that predates a newly recorded limit no longer clears the photograph
+    expect((await lib.recordAdminPermission(founder, "crew_support_request", JOB1, { ...perm(), destinations: ["website"], restrictions: "no names", evidenceSummary: "second message thread, kept in the job folder", verified: true })).ok).toBe(true);
+    expect(await lib.checkUseEligibility(F1, "website")).toMatchObject({ eligible: false, internalReason: "restrictions_not_assessed" });
+    expect((await lib.recordUse(founder, { fileId: F1, destination: "website", action: "published", reference: "cms:9" })).ok).toBe(false);
+    expect((await lib.recordInternalReview(execAdmin, { ...base, restrictionsAssessed: true })).ok).toBe(true);
+    expect((await lib.checkUseEligibility(F1, "website")).eligible).toBe(true);
+    // an approval written before the people statement existed (no "people" in its checks) clears nothing
+    sql(`set session_replication_role = replica; insert into public.portfolio_internal_reviews (project_file_id, candidate_id, decision, destinations, checks, reviewed_by) select '${F1}', id, 'approved', array['website'], '{"confidentiality":true,"embargo":true,"contractual_restrictions":true,"release_rights":true,"quality":true}'::jsonb, '${U(0xb3)}' from public.portfolio_candidates where project_file_id = '${F1}'`);
+    expect(await lib.checkUseEligibility(F1, "website")).toMatchObject({ eligible: false, internalReason: "people_not_declared" });
   });
 
   it("a candidate is a pointer: no file row was copied or altered", () => {
@@ -149,5 +182,5 @@ function perm() {
   return { decision: "granted" as const, grantorName: "Synthetic Grantor", grantorCapacity: "client", destinations: ["portfolio"], fileIds: null, restrictions: "", expiresOn: "", method: "message", grantedOn: "", evidenceSummary: "message thread confirming the use", note: "", verified: false };
 }
 function review(fileId: string) {
-  return { fileId, decision: "approved" as const, destinations: ["portfolio"], checks: { confidentiality: true, embargo: true, contractual_restrictions: true, release_rights: true, minors: true, other_people: true, quality: true }, notes: "strong frame" };
+  return { fileId, decision: "approved" as const, destinations: ["portfolio"], checks: { confidentiality: true, embargo: true, contractual_restrictions: true, release_rights: true, quality: true }, people: "none" as const, notes: "strong frame" };
 }

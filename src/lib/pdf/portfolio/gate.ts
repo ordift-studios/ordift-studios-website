@@ -12,7 +12,7 @@ export async function evaluateGate(req: EditionRequest, check: EligibilityCheck)
   for (const [fileId, category] of byFile) {
     let r: Awaited<ReturnType<EligibilityCheck>>;
     try { r = await check(fileId, req.destination); } catch { r = { eligible: false, rightsReason: "check_failed", internalReason: "check_failed" }; } // fail CLOSED
-    if (!r.eligible) blocked.push({ fileId, category, reason: r.rightsReason !== "ok" && r.rightsReason ? `permission: ${r.rightsReason}` : `internal approval: ${r.internalReason}` });
+    if (!r.eligible) blocked.push({ fileId, category, reason: r.rightsReason && !["ok", "permission_in_force"].includes(r.rightsReason) ? `permission: ${r.rightsReason}` : `internal approval: ${r.internalReason}` });
   }
   return { blocked, checked: byFile.size };
 }

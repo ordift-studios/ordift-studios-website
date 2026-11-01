@@ -29,9 +29,10 @@ export default async function PermissionsPage() {
         <section key={r.id} className="space-y-3 rounded-xl border border-black/10 bg-white p-4">
           <h2 className="font-serif font-medium text-body text-ordift-ink">{PERMISSION_TEXT.title}</h2>
           <p className="font-sans text-body-small">Project: <strong>{r.jobTitle}</strong></p>
+          <p className="font-sans text-body-small text-ordift-ink-muted">{PERMISSION_TEXT.selection}</p>
           <p className="font-sans text-body-small text-ordift-ink-muted">{PERMISSION_TEXT.scope}</p>
-          <AnswerForm requestId={r.id} offered={r.destinations} />
-          <p className="font-sans text-caption text-ordift-ink-muted">{PERMISSION_TEXT.withdrawal}</p>
+          <AnswerForm requestId={r.id} offered={r.destinations} photos={r.photos} />
+          <div className="space-y-2 font-sans text-caption text-ordift-ink-muted"><p>{PERMISSION_TEXT.limitsOnReuse}</p><p>{PERMISSION_TEXT.rightsOfOthers}</p><p>{PERMISSION_TEXT.minors}</p><p>{PERMISSION_TEXT.record}</p><p>{PERMISSION_TEXT.withdrawal}</p></div>
         </section>
       ))}
       {view.given.length > 0 && (

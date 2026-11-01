@@ -44,12 +44,12 @@ export async function verifyPermissionAction(_: FormState, f: FormData): Promise
   return withUser(f, async (u, j) => done(await verifyPermission(u, j.jobType, j.jobId, str(f, "recordId"), str(f, "note")), "Verified."));
 }
 export async function requestPermissionAction(_: FormState, f: FormData): Promise<FormState> {
-  return withUser(f, async (u, j) => done(await createPermissionRequest(u, { ...j, addressedTo: str(f, "addressedTo"), destinations: list(f, "destinations"), fileIds: null }), "The request is now waiting in the client's portal. No message was sent."));
+  return withUser(f, async (u, j) => done(await createPermissionRequest(u, { ...j, addressedTo: str(f, "addressedTo"), destinations: list(f, "destinations"), fileIds: list(f, "fileIds") }), "The request is now waiting in the client's portal, naming only the photographs you ticked. No message was sent."));
 }
 export async function reviewPhotoAction(_: FormState, f: FormData): Promise<FormState> {
   return withUser(f, async (u) => {
     const checks = Object.fromEntries(REVIEW_CHECKS.map((c) => [c.key, f.get(`check_${c.key}`) === "on"]));
-    return done(await recordInternalReview(u, { fileId: str(f, "fileId"), decision: str(f, "decision") as "approved" | "rejected" | "returned" | "revoked", destinations: list(f, "destinations"), checks, notes: str(f, "notes") }), "Your decision is recorded.");
+    return done(await recordInternalReview(u, { fileId: str(f, "fileId"), decision: str(f, "decision") as "approved" | "rejected" | "returned" | "revoked", destinations: list(f, "destinations"), checks, notes: str(f, "notes"), people: str(f, "people") === "none" ? "none" : str(f, "people") === "evidenced" ? "evidenced" : undefined, peopleEvidence: str(f, "peopleEvidence"), restrictionsAssessed: f.get("restrictionsAssessed") === "on" }), "Your decision is recorded.");
   });
 }
 export async function recordUseAction(_: FormState, f: FormData): Promise<FormState> {

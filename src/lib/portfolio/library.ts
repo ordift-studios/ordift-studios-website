@@ -18,6 +18,31 @@ const gate = () => (PORTFOLIO_LIBRARY_ENABLED ? null : fail("The portfolio libra
 async function needAuthority(user: CurrentUser) { return (await isManagementUser(user)) ? null : fail("Only the Founder or an authorised executive admin can do this."); }
 const clean = (e: { message?: string } | null) => (e?.message ?? "That could not be saved.").replace(/^.*?ERROR:\s*/, "");
 
+
+// ---------------------------------------------------------------- conditions the database cannot read (free-text restrictions, people shown)
+// A photograph's job, found the same way the picker finds it: a Crew Support request (through its slot), otherwise its own engagement.
+async function jobOfFile(fileId: string): Promise<{ jobType: JobType; jobId: string } | null> {
+  const admin = createAdminClient();
+  const { data: f } = await admin.from("project_files").select("engagement_id").eq("id", fileId).maybeSingle();
+  if (!f) return null;
+  const { data: e } = await admin.from("engagements").select("entity_type, entity_id").eq("id", f.engagement_id as string).maybeSingle();
+  if (e?.entity_type === "crew_support_slot") {
+    const { data: s } = await admin.from("crew_support_slots").select("request_id").eq("id", e.entity_id as string).maybeSingle();
+    if (s) return { jobType: "crew_support_request", jobId: s.request_id as string };
+  }
+  return { jobType: "engagement", jobId: f.engagement_id as string };
+}
+// Limits the rights holder wrote on a grant that is still in force and covers this photograph. They are recorded as free text, so the system cannot apply them itself: a person must assess them at internal approval.
+export async function activeRestrictions(fileId: string): Promise<{ restrictions: string[]; latestRecordedAt: string | null }> {
+  if (!PORTFOLIO_LIBRARY_ENABLED) return { restrictions: [], latestRecordedAt: null };
+  const job = await jobOfFile(fileId); if (!job) return { restrictions: [], latestRecordedAt: null };
+  const { data: recs } = await createAdminClient().from("marketing_permission_records").select("id, decision, restrictions, file_ids, supersedes_id, recorded_at").eq("job_type", job.jobType).eq("job_id", job.jobId);
+  const rows = recs ?? [];
+  const withdrawn = new Set(rows.filter((r) => r.decision === "withdrawn" && r.supersedes_id).map((r) => r.supersedes_id as string));
+  const live = rows.filter((r) => r.decision === "granted" && !withdrawn.has(r.id as string) && (!r.file_ids || (r.file_ids as string[]).includes(fileId)) && String(r.restrictions ?? "").trim());
+  return { restrictions: live.map((r) => String(r.restrictions).trim()), latestRecordedAt: live.map((r) => r.recorded_at as string).sort().pop() ?? null };
+}
+
 // ---------------------------------------------------------------- candidates and collections (any staff member may PROPOSE)
 export async function addPortfolioCandidates(user: CurrentUser, fileIds: string[], via: "picker" | "final_approval" | "job_page"): Promise<Result<{ added: number; alreadyThere: number }>> {
   const g = gate(); if (g) return g;
@@ -113,24 +138,35 @@ export async function createPermissionRequest(user: CurrentUser, input: { jobTyp
   const a = await needAuthority(user); if (a) return a;
   if (!PERMISSION_TEXT_APPROVED) return fail("The client permission wording has not been approved yet, so no request can be sent.");
   if (input.destinations.length === 0 || input.destinations.some((d) => !isDestination(d))) return fail("Choose at least one recognised use.");
+  // A request names the exact photographs it covers (never the whole job), and each must already have been released to the client so they can see precisely what they are authorising.
+  const ids = [...new Set(input.fileIds ?? [])];
+  if (ids.length === 0) return fail("Choose the exact photographs this request covers. A request cannot cover a whole job.");
+  if (ids.length > 60) return fail("Ask about no more than 60 photographs in one request.");
   const admin = createAdminClient();
-  const { error } = await admin.from("marketing_permission_requests").insert({ job_type: input.jobType, job_id: input.jobId, addressed_to: input.addressedTo, proposed_destinations: input.destinations, file_ids: input.fileIds?.length ? input.fileIds : null, text_version: PERMISSION_TEXT_VERSION, created_by: user.id });
+  const { data: files } = await admin.from("project_files").select("id, release_status, purged_at").in("id", ids);
+  if ((files ?? []).length !== ids.length || (files ?? []).some((f) => f.purged_at || f.release_status !== "released")) return fail("Every photograph must already be released to the client, so they can see exactly what they are authorising.");
+  const { error } = await admin.from("marketing_permission_requests").insert({ job_type: input.jobType, job_id: input.jobId, addressed_to: input.addressedTo, proposed_destinations: input.destinations, file_ids: ids, text_version: PERMISSION_TEXT_VERSION, created_by: user.id });
   if (error) return fail(clean(error));
   // Deliberately NO email or notification: the client sees the request in their portal. Any reminder rule needs its own authorisation.
   return { ok: true };
 }
 
 // Client portal: the signed-in rights holder answers a request addressed to them. Nothing is preselected; refusing never touches delivery.
-export async function answerPermissionRequest(userId: string, requestId: string, input: { decision: "granted" | "declined"; destinations: string[]; restrictions: string; displayName: string }): Promise<Result> {
+export async function answerPermissionRequest(userId: string, requestId: string, input: { decision: "granted" | "declined"; destinations: string[]; restrictions: string; displayName: string; excludedFileIds?: string[] }): Promise<Result> {
   const g = gate(); if (g) return g;
   if (!PERMISSION_TEXT_APPROVED) return fail("This request is not available yet.");
   if (input.decision === "granted" && (input.destinations.length === 0 || input.destinations.some((d) => !isDestination(d)))) return fail("Tick at least one use, or choose to decline.");
   const admin = createAdminClient();
   const { data: req } = await admin.from("marketing_permission_requests").select("id, job_type, job_id, addressed_to, status, file_ids, proposed_destinations, text_version").eq("id", requestId).maybeSingle();
   if (!req || req.addressed_to !== userId || req.status !== "open") return fail("There is no open request for you here.");
+  // The permission covers the photographs the request showed, less any the client excluded, and nothing else from the job.
+  const shown = (req.file_ids as string[] | null) ?? [];
+  if (shown.length === 0) return fail("This request does not identify any photographs, so it cannot be answered.");
+  const covered = shown.filter((f) => !(input.excludedFileIds ?? []).includes(f));
+  if (input.decision === "granted" && covered.length === 0) return fail("You have excluded every photograph. Choose \u201cNo\u201d if you do not want any of them used.");
   const { error } = await admin.from("marketing_permission_records").insert({
     job_type: req.job_type, job_id: req.job_id, source: "client_portal", decision: input.decision, grantor_name: input.displayName.trim() || "Client", grantor_capacity: "client", grantor_profile_id: userId,
-    allowed_destinations: input.decision === "granted" ? input.destinations : [], file_ids: input.decision === "granted" ? req.file_ids : null, restrictions: input.restrictions.trim() || null,
+    allowed_destinations: input.decision === "granted" ? input.destinations : [], file_ids: input.decision === "granted" ? covered : null, restrictions: input.restrictions.trim() || null,
     permission_text_version: req.text_version, request_id: requestId, recorded_by: userId,
   });
   if (error) return fail(clean(error));
@@ -153,11 +189,15 @@ export async function recordInternalReview(user: CurrentUser, input: { fileId: s
   const a = await needAuthority(user); if (a) return a;
   const problems = validateReview(input);
   if (problems.length) return fail(problems.join(" "));
+  if (input.decision === "approved") {
+    const r = await activeRestrictions(input.fileId);
+    if (r.restrictions.length && input.restrictionsAssessed !== true) return fail("The rights holder set limits on this job (" + r.restrictions.join("; ") + "). Confirm you have assessed them against this photograph before approving it.");
+  }
   const added = await addPortfolioCandidates(user, [input.fileId], "job_page"); if (!added.ok) return added;
   const admin = createAdminClient();
   const { data: cand } = await admin.from("portfolio_candidates").select("id").eq("project_file_id", input.fileId).maybeSingle();
   if (!cand) return fail("That photograph is not a candidate.");
-  const { error } = await admin.from("portfolio_internal_reviews").insert({ project_file_id: input.fileId, candidate_id: cand.id, decision: input.decision, destinations: input.decision === "approved" ? input.destinations : [], checks: input.checks, notes: input.notes.trim() || null, reviewed_by: user.id });
+  const { error } = await admin.from("portfolio_internal_reviews").insert({ project_file_id: input.fileId, candidate_id: cand.id, decision: input.decision, destinations: input.decision === "approved" ? input.destinations : [], checks: input.decision === "approved" ? { ...input.checks, people: input.people, people_evidence: input.people === "evidenced" ? (input.peopleEvidence ?? "").trim() : null, restrictions_assessed: input.restrictionsAssessed === true } : input.checks, notes: input.notes.trim() || null, reviewed_by: user.id });
   if (error) return fail(clean(error));
   await logActivity({ actorUserId: user.id, action: `portfolio.internal_${input.decision}`, entityType: "project_file", entityId: input.fileId, metadata: { destinations: input.destinations } });
   return { ok: true };
@@ -168,13 +208,23 @@ export async function checkUseEligibility(fileId: string, destination: string): 
   if (!PORTFOLIO_LIBRARY_ENABLED || !isDestination(destination)) return { eligible: false, rightsReason: "no_permission_on_record", internalReason: "no_internal_review" };
   const { data } = await createAdminClient().rpc("portfolio_use_eligibility", { p_file: fileId, p_destination: destination });
   const r = Array.isArray(data) ? data[0] : data;
-  return { eligible: Boolean(r?.eligible), rightsReason: r?.rights_reason ?? "no_permission_on_record", internalReason: r?.internal_reason ?? "no_internal_review" };
+  const out = { eligible: Boolean(r?.eligible), rightsReason: r?.rights_reason ?? "no_permission_on_record", internalReason: r?.internal_reason ?? "no_internal_review" };
+  if (!out.eligible) return out;
+  // The database says both stages pass. Two conditions it cannot read are added here, and either one makes the photograph ineligible: the reviewer's statement about people shown, and an assessment of any limits the rights holder set.
+  const { data: rv } = await createAdminClient().from("portfolio_internal_reviews").select("decision, checks, reviewed_at").eq("project_file_id", fileId).order("seq", { ascending: false }).limit(1).maybeSingle();
+  const c = (rv?.checks ?? {}) as Record<string, unknown>;
+  const peopleOk = c.people === "none" || (c.people === "evidenced" && String(c.people_evidence ?? "").trim().length >= 10);
+  if (!peopleOk) return { ...out, eligible: false, internalReason: "people_not_declared" };
+  const lim = await activeRestrictions(fileId);
+  if (lim.restrictions.length && (c.restrictions_assessed !== true || (lim.latestRecordedAt !== null && String(rv?.reviewed_at ?? "") < lim.latestRecordedAt))) return { ...out, eligible: false, internalReason: "restrictions_not_assessed" };
+  return out;
 }
 
 export async function recordUse(user: CurrentUser, input: { fileId: string; destination: string; action: "published" | "shared" | "ended"; reference: string }): Promise<Result> {
   const g = gate(); if (g) return g;
   const a = await needAuthority(user); if (a) return a;
   if (!isDestination(input.destination)) return fail("That use is not recognised.");
+  if (input.action !== "ended") { const e = await checkUseEligibility(input.fileId, input.destination); if (!e.eligible) return fail(`This photograph is not cleared for that use right now (${!["ok", "permission_in_force"].includes(e.rightsReason) ? "permission: " + e.rightsReason : "internal approval: " + e.internalReason}).`); }
   // The insert itself re-checks both stages in the database; a use that no longer qualifies is refused there, whatever this page showed earlier.
   const { error } = await createAdminClient().from("portfolio_use_events").insert({ project_file_id: input.fileId, destination: input.destination, action: input.action, reference: input.reference.trim() || null, actor_id: user.id });
   if (error) return fail(clean(error));

@@ -18,6 +18,8 @@ const h = vi.hoisted(() => ({
 }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 vi.mock("@/lib/instructors/featureGate", () => ({ INSTRUCTOR_FRAMEWORK_ENABLED: true }));
+// E2E_SAFEGUARDING=1 runs the SAME flow with proposed migration 0181 applied and the schedule safeguarding gate ON (the 0180 guard stays active throughout; nothing is disabled).
+vi.mock("@/lib/instructors/safeguardingGate", () => ({ SCHEDULE_SAFEGUARDING_ENABLED: process.env.E2E_SAFEGUARDING === "1" }));
 vi.mock("@/lib/admin/activityLog", () => ({ logActivity: vi.fn(async (e: { action: string; metadata: Record<string, unknown> }) => { h.logs.push({ action: e.action, metadata: e.metadata }); }) }));
 vi.mock("@/lib/legal/agreementEngine", () => ({ hasFullyExecutedAgreement: async () => h.executed }));
 vi.mock("@/lib/supabase/admin", async () => {
@@ -26,7 +28,8 @@ vi.mock("@/lib/supabase/admin", async () => {
 });
 
 import { acknowledgeStandards, adoptStandards, createStandardsDraft, getAdoptedStandards, loadStandardsStateFor, retireStandards, updateStandardsDraft } from "./standards";
-import { approveSchedule, closeSchedule, listSchedules, proposeSchedule, updateScheduleRightsAndClearance } from "./assignments";
+import { approveSchedule, closeSchedule, listSchedules, proposeSchedule, updateScheduleRightsAndClearance, updateScheduleSafeguarding } from "./assignments";
+const SAFE = process.env.E2E_SAFEGUARDING === "1";
 import { instructorAssignmentRefusal } from "@/lib/workshops/instructorEligibility";
 import { EMPTY_RIGHTS } from "./rules";
 
@@ -135,6 +138,7 @@ describe("session schedule and rights matrix: proposed is not approved; nothing 
     expect((await proposeSchedule({ actorUserId: SUPER, input: input(INSTR, agrInstr2) })).ok).toBe(false);   // someone else's agreement
     const a = await proposeSchedule({ actorUserId: SUPER, input: input(INSTR, agrInstr) }); expect(a.ok).toBe(true); s1 = (a as { id: string }).id;
     const b = await proposeSchedule({ actorUserId: SUPER, input: input(INSTR2, agrInstr2) }); expect(b.ok).toBe(true); s2 = (b as { id: string }).id;
+    if (SAFE) for (const id of [s1, s2]) expect(await updateScheduleSafeguarding({ actorUserId: SUPER, scheduleId: id, input: { involvesMinors: false, venueSafeguarding: "", venueEmergency: "" } })).toEqual({ ok: true });
     expect(sql(`select status||','||regulatory_clearance from public.instructor_session_schedules where id='${s1}'`)).toBe("proposed,pending");
     expect(sql(`select concat_ws(',', teaching_materials_use, material_ownership, photography, recording, participant_data_access, publication_promotion) from public.instructor_rights_matrix where schedule_id='${s1}'`)).toBe("unset,unset,unset,unset,unset,unset");
   });
@@ -167,6 +171,38 @@ describe("session schedule and rights matrix: proposed is not approved; nothing 
     expect((await updateScheduleRightsAndClearance({ actorUserId: SUPER, scheduleId: s1, rights: { ...EMPTY_RIGHTS }, regulatoryClearance: "pending", regulatoryEvidenceReference: "" })).ok).toBe(false);
     expect(() => sql(`delete from public.instructor_session_schedules where id='${s1}'`)).toThrow();
     const list = await listSchedules(); expect(list.find((x) => x.id === s1)?.status).toBe("approved"); expect(list.find((x) => x.id === s2)?.status).toBe("proposed");
+  });
+  (SAFE ? it : it.skip)("0181 + 0180 together: the safeguarding rule and every 0180 rule must both pass, in the app and in the database, with no guard disabled", async () => {
+    const rights = { ...EMPTY_RIGHTS, teachingMaterialsUse: "permitted", materialOwnership: "instructor_retains", photography: "not_permitted", recording: "not_permitted", participantDataAccess: "none", publicationPromotion: "not_permitted" } as const;
+    const p3 = await proposeSchedule({ actorUserId: SUPER, input: input(INSTR, agrInstr) }); expect(p3.ok).toBe(true); const s3 = (p3 as { id: string }).id;
+    expect((await updateScheduleRightsAndClearance({ actorUserId: SUPER, scheduleId: s3, rights: { ...EMPTY_RIGHTS, ...rights }, regulatoryClearance: "confirmed", regulatoryEvidenceReference: "Synthetic permit ref 456" })).ok).toBe(true);
+    // everything in 0180 is satisfied, but the minors question is undecided: refused by the app, and by the database
+    const undecided = await approveSchedule({ actorUserId: SUPER, scheduleId: s3 });
+    expect(undecided.ok).toBe(false); expect((undecided as { unmet?: string[] }).unmet?.[0]).toMatch(/under 18/);
+    expect(() => sql(`update public.instructor_session_schedules set status='approved', approved_by='${SUPER}' where id='${s3}'`)).toThrow(/participants under 18/);
+    // minors may attend but the venue arrangements are missing: refused by the app's validation and by the database
+    expect((await updateScheduleSafeguarding({ actorUserId: SUPER, scheduleId: s3, input: { involvesMinors: true, venueSafeguarding: "", venueEmergency: "" } })).ok).toBe(false);
+    sql(`update public.instructor_session_schedules set involves_minors = true where id='${s3}'`);
+    expect(() => sql(`update public.instructor_session_schedules set status='approved', approved_by='${SUPER}' where id='${s3}'`)).toThrow(/safeguarding and emergency escalation arrangements/);
+    expect((await approveSchedule({ actorUserId: SUPER, scheduleId: s3 })).ok).toBe(false);
+    // only a Super Admin / manager can record the arrangements
+    expect((await updateScheduleSafeguarding({ actorUserId: STAFF, scheduleId: s3, input: { involvesMinors: true, venueSafeguarding: "School safeguarding lead and procedure", venueEmergency: "School emergency procedure; local number 112" } })).ok).toBe(false);
+    expect((await updateScheduleSafeguarding({ actorUserId: SUPER, scheduleId: s3, input: { involvesMinors: true, venueSafeguarding: "School safeguarding lead and procedure", venueEmergency: "School emergency procedure; local number 112" } })).ok).toBe(true);
+    // with the safeguarding recorded the 0180 rules still apply: take away the regulatory reference and approval is refused again
+    expect((await updateScheduleRightsAndClearance({ actorUserId: SUPER, scheduleId: s3, rights: { ...EMPTY_RIGHTS, ...rights }, regulatoryClearance: "pending", regulatoryEvidenceReference: "" })).ok).toBe(true);
+    expect((await approveSchedule({ actorUserId: SUPER, scheduleId: s3 })).ok).toBe(false);
+    expect(() => sql(`update public.instructor_session_schedules set status='approved', approved_by='${SUPER}' where id='${s3}'`)).toThrow(/regulatory clearance/);
+    expect((await updateScheduleRightsAndClearance({ actorUserId: SUPER, scheduleId: s3, rights: { ...EMPTY_RIGHTS, ...rights }, regulatoryClearance: "confirmed", regulatoryEvidenceReference: "Synthetic permit ref 456" })).ok).toBe(true);
+    expect(await approveSchedule({ actorUserId: SUPER, scheduleId: s3 })).toEqual({ ok: true });
+    // approved terms, including the new fields, are frozen
+    expect(() => sql(`update public.instructor_session_schedules set venue_emergency_arrangements='Changed after approval' where id='${s3}'`)).toThrow();
+    expect(() => sql(`update public.instructor_session_schedules set involves_minors=false where id='${s3}'`)).toThrow();
+    expect(sql(`select tgenabled from pg_trigger where tgname='instructor_session_schedules_guard'`)).toBe("O");         // the 0180 guard was never disabled
+    expect(sql(`select tgenabled from pg_trigger where tgname='instructor_session_schedules_minors_guard'`)).toBe("O");
+  });
+  (SAFE ? it : it.skip)("an instructor who has not acknowledged the standards stays refused even when the safeguarding is fully recorded (0181 does not bypass 0180)", () => {
+    expect(sql(`select involves_minors::text from public.instructor_session_schedules where id='${s2}'`)).toBe("false");
+    expect(() => sql(`update public.instructor_session_schedules set status='approved', approved_by='${SUPER}' where id='${s2}'`)).toThrow(/acknowledged/);
   });
   it("a schedule can be cancelled with a note; a retired standards version stops being the gate until the new one is acknowledged", async () => {
     expect((await closeSchedule({ actorUserId: SUPER, scheduleId: s2, to: "cancelled", note: "Not proceeding" })).ok).toBe(true);
