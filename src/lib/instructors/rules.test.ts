@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { adoptionBlockers, EMPTY_RIGHTS, EMPTY_SAFEGUARDING, scheduleReadiness, sha256Text, unresolvedDecisions, unsetRights, validateSafeguarding, validateScheduleInput } from "./rules";
+import { adoptionBlockers, canonicalStandardsText, EMPTY_RIGHTS, EMPTY_SAFEGUARDING, scheduleReadiness, sha256Text, unresolvedDecisions, unsetRights, validateSafeguarding, validateScheduleInput } from "./rules";
 import { SCHEDULE_SAFEGUARDING_ENABLED } from "./safeguardingGate";
 
 const contacts = { designatedContact: "Named person, role, phone", safeguardingContact: "Named lead, role", escalationContact: "Founder", emergencyInstructions: "Call the local emergency service first" };
@@ -58,5 +58,14 @@ describe("schedule safeguarding (proposed 0181; dormant until applied)", () => {
     expect(SCHEDULE_SAFEGUARDING_ENABLED).toBe(true);
     expect(src).toMatch(/if \(!SCHEDULE_SAFEGUARDING_ENABLED\) return undefined;/);
     expect(src).not.toMatch(/SCOLS = "[^"]*involves_minors/);
+  });
+});
+
+describe("standards text is stored canonically so a browser's CRLF cannot change the approved hash", () => {
+  it("CRLF and CR become LF, trailing blank space becomes exactly one final line break, and the result is stable", () => {
+    expect(canonicalStandardsText("A\r\nB\rC  \n\n")).toBe("A\nB\nC\n");
+    expect(canonicalStandardsText("A\nB")).toBe("A\nB\n");
+    const once = canonicalStandardsText("x\r\ny\r\n"); expect(canonicalStandardsText(once)).toBe(once);
+    expect(sha256Text(canonicalStandardsText("x\r\ny"))).toBe(sha256Text("x\ny\n"));
   });
 });

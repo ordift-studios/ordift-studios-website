@@ -2,7 +2,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { logActivity } from "@/lib/admin/activityLog";
 import { isSuperAdminId } from "@/lib/organization/authority";
 import { getEngagementTypeSlug } from "@/lib/organization/engagementTypeLookup";
-import { adoptionBlockers, ACKNOWLEDGEMENT_CONSENT, type StandardsContacts } from "./rules";
+import { adoptionBlockers, ACKNOWLEDGEMENT_CONSENT, canonicalStandardsText, type StandardsContacts } from "./rules";
 import { INSTRUCTOR_FRAMEWORK_ENABLED } from "./featureGate";
 
 // INDEPENDENT INSTRUCTOR STANDARDS (migration 0180). Management (Super Admin) drafts, adopts and retires versions; an independent instructor acknowledges the CURRENTLY ADOPTED version in
@@ -38,7 +38,7 @@ export async function createStandardsDraft(p: { actorUserId: string; versionLabe
   if (!INSTRUCTOR_FRAMEWORK_ENABLED) return OFF;
   if (!(await isSuperAdminId(p.actorUserId))) return DENIED;
   if (p.versionLabel.trim().length < 1 || p.title.trim().length < 3 || p.bodyText.trim().length < 200) return { ok: false, error: "Enter a version label, a title and the full standards text." };
-  const { data, error } = await createAdminClient().from("instructor_standards_versions").insert({ version_label: p.versionLabel.trim(), title: p.title.trim(), body_text: p.bodyText, designated_contact: p.contacts.designatedContact.trim() || null, safeguarding_contact: p.contacts.safeguardingContact.trim() || null, escalation_contact: p.contacts.escalationContact.trim() || null, emergency_instructions: p.contacts.emergencyInstructions.trim() || null, created_by: p.actorUserId }).select("id").single();
+  const { data, error } = await createAdminClient().from("instructor_standards_versions").insert({ version_label: p.versionLabel.trim(), title: p.title.trim(), body_text: canonicalStandardsText(p.bodyText), designated_contact: p.contacts.designatedContact.trim() || null, safeguarding_contact: p.contacts.safeguardingContact.trim() || null, escalation_contact: p.contacts.escalationContact.trim() || null, emergency_instructions: p.contacts.emergencyInstructions.trim() || null, created_by: p.actorUserId }).select("id").single();
   if (error || !data) return { ok: false, error: "The draft could not be saved (is that version label already used?)." };
   await logActivity({ actorUserId: p.actorUserId, action: "instructor_standards.draft_created", entityType: "instructor_standards_version", entityId: data.id as string, metadata: { versionLabel: p.versionLabel.trim() } });
   return { ok: true, id: data.id as string };
@@ -47,7 +47,7 @@ export async function createStandardsDraft(p: { actorUserId: string; versionLabe
 export async function updateStandardsDraft(p: { actorUserId: string; versionId: string; title: string; bodyText: string; contacts: StandardsContacts }): Promise<{ ok: true } | Fail> {
   if (!INSTRUCTOR_FRAMEWORK_ENABLED) return OFF;
   if (!(await isSuperAdminId(p.actorUserId))) return DENIED;
-  const { data: updated, error } = await createAdminClient().from("instructor_standards_versions").update({ title: p.title.trim(), body_text: p.bodyText, designated_contact: p.contacts.designatedContact.trim() || null, safeguarding_contact: p.contacts.safeguardingContact.trim() || null, escalation_contact: p.contacts.escalationContact.trim() || null, emergency_instructions: p.contacts.emergencyInstructions.trim() || null }).eq("id", p.versionId).eq("status", "draft").select("id");
+  const { data: updated, error } = await createAdminClient().from("instructor_standards_versions").update({ title: p.title.trim(), body_text: canonicalStandardsText(p.bodyText), designated_contact: p.contacts.designatedContact.trim() || null, safeguarding_contact: p.contacts.safeguardingContact.trim() || null, escalation_contact: p.contacts.escalationContact.trim() || null, emergency_instructions: p.contacts.emergencyInstructions.trim() || null }).eq("id", p.versionId).eq("status", "draft").select("id");
   if (error || !updated?.length) return { ok: false, error: "Only a draft can be edited, and it must be valid." };
   await logActivity({ actorUserId: p.actorUserId, action: "instructor_standards.draft_updated", entityType: "instructor_standards_version", entityId: p.versionId, metadata: {} });
   return { ok: true };

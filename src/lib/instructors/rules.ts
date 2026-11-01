@@ -2,6 +2,8 @@ import { createHash } from "node:crypto";
 
 // INDEPENDENT-INSTRUCTOR FRAMEWORK - pure rules (no I/O). The database (migration 0180) enforces the same rules; these give early, readable errors.
 export const DECISION_MARKER = "[[DECISION";
+// Browsers submit a textarea with CRLF line breaks, which would change the hash of text that was approved with LF breaks. The stored text is therefore always canonical: LF line breaks and exactly one final line break.
+export const canonicalStandardsText = (t: string) => `${t.replace(/\r\n?/g, "\n").replace(/\s+$/, "")}\n`;
 export const sha256Text = (t: string) => createHash("sha256").update(t, "utf8").digest("hex");
 export const unresolvedDecisions = (text: string): string[] => Array.from(text.matchAll(/\[\[DECISION[^\]]*\]\]/g)).map((m) => m[0]);
 

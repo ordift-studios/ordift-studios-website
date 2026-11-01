@@ -36,6 +36,7 @@ import { EMPTY_RIGHTS } from "./rules";
 if (!/^https?:\/\/(127\.0\.0\.1|localhost)(:|\/|$)/.test(process.env.NEXT_PUBLIC_SUPABASE_URL ?? "")) throw new Error("Refusing to run: this E2E may only target a localhost database.");
 const SUPER = "00000000-0000-4000-8000-000000000c01", STAFF = "00000000-0000-4000-8000-000000000c02", INSTR = "00000000-0000-4000-8000-000000000c03", INSTR2 = "00000000-0000-4000-8000-000000000c04";
 const sql = (q: string) => execSync(process.env.E2E_DB ? `docker exec -i ordift-mig-check2 psql -U supabase_admin -h 127.0.0.1 -d ${process.env.E2E_DB} -X -q -v ON_ERROR_STOP=1 -At` : "docker exec -i ordift-mig-check2 psql -U postgres -h 127.0.0.1 -v ON_ERROR_STOP=1 -At", { input: q }).toString().trim();
+const canon = (t: string) => `${t.replace(/\r\n?/g, "\n").replace(/\s+$/, "")}\n`;   // what the app stores (see canonicalStandardsText)
 const sha = (s: string) => createHash("sha256").update(s, "utf8").digest("hex");
 const BODY = "SYNTHETIC INDEPENDENT INSTRUCTOR STANDARDS. ".repeat(12);
 const OPEN_BODY = `${BODY} [[DECISION: designated Ordift contact]]`;
@@ -68,7 +69,7 @@ describe("standards: draft -> adopted, by management only, never with open decis
     expect((await createStandardsDraft({ actorUserId: STAFF, versionLabel: "1.0", title: "Independent Instructor Standards", bodyText: OPEN_BODY, contacts: CONTACTS })).ok).toBe(false);
     const d = await createStandardsDraft({ actorUserId: SUPER, versionLabel: "1.0", title: "Independent Instructor Standards", bodyText: OPEN_BODY, contacts: { designatedContact: "", safeguardingContact: "", escalationContact: "", emergencyInstructions: "" } });
     expect(d.ok).toBe(true); v1 = (d as { id: string }).id;
-    expect(sql(`select status||','||(body_sha256='${sha(OPEN_BODY)}')::text from public.instructor_standards_versions where id='${v1}'`)).toBe("draft,true"); // the database computes the hash of the exact text
+    expect(sql(`select status||','||(body_sha256='${sha(canon(OPEN_BODY))}')::text from public.instructor_standards_versions where id='${v1}'`)).toBe("draft,true"); // the database computes the hash of the exact text
   });
   it("adoption is refused with a readable list while a placeholder or a contact is open - and the database refuses it too", async () => {
     const r = await adoptStandards({ actorUserId: SUPER, versionId: v1, note: "Approved by management" });
@@ -78,8 +79,8 @@ describe("standards: draft -> adopted, by management only, never with open decis
     expect(await getAdoptedStandards()).toBeNull();
   });
   it("a draft cannot be acknowledged: not by the app, not by the database", async () => {
-    expect((await acknowledgeStandards({ profileId: INSTR, versionId: v1, presentedSha256: sha(OPEN_BODY), typedFullName: "Synthetic Instructor One", consent: true, ipAddress: null, userAgent: null })).ok).toBe(false);
-    expect(() => sql(`insert into public.instructor_standards_acknowledgements (profile_id, version_id, document_sha256, typed_full_name, consent_statement) values ('${INSTR}','${v1}','${sha(OPEN_BODY)}','Synthetic Instructor One','I have read and understood these standards fully')`)).toThrow();
+    expect((await acknowledgeStandards({ profileId: INSTR, versionId: v1, presentedSha256: sha(canon(OPEN_BODY)), typedFullName: "Synthetic Instructor One", consent: true, ipAddress: null, userAgent: null })).ok).toBe(false);
+    expect(() => sql(`insert into public.instructor_standards_acknowledgements (profile_id, version_id, document_sha256, typed_full_name, consent_statement) values ('${INSTR}','${v1}','${sha(canon(OPEN_BODY))}','Synthetic Instructor One','I have read and understood these standards fully')`)).toThrow();
     expect(sql(`select count(*) from public.instructor_standards_acknowledgements`)).toBe("0");
   });
   it("once the text and every contact are complete the owner adopts it; the text is then frozen and only one version can be adopted", async () => {
@@ -87,7 +88,7 @@ describe("standards: draft -> adopted, by management only, never with open decis
     expect((await updateStandardsDraft({ actorUserId: SUPER, versionId: v1, title: "Independent Instructor Standards", bodyText: BODY, contacts: CONTACTS })).ok).toBe(true);
     expect((await adoptStandards({ actorUserId: STAFF, versionId: v1, note: "Approved by management" })).ok).toBe(false);
     const a = await adoptStandards({ actorUserId: SUPER, versionId: v1, note: "Approved by management" });
-    expect(a).toEqual({ ok: true, sha256: sha(BODY) });
+    expect(a).toEqual({ ok: true, sha256: sha(canon(BODY)) });
     expect(() => sql(`update public.instructor_standards_versions set body_text = body_text || ' edited' where id='${v1}'`)).toThrow();
     expect(() => sql(`update public.instructor_standards_versions set safeguarding_contact='other' where id='${v1}'`)).toThrow();
     expect(() => sql(`delete from public.instructor_standards_versions where id='${v1}'`)).toThrow();
@@ -100,19 +101,19 @@ describe("standards: draft -> adopted, by management only, never with open decis
 
 describe("acknowledgement: the exact adopted version and hash, by the instructor themself, with evidence", () => {
   it("only an independent instructor; consent and a typed name required; a stale hash is refused", async () => {
-    expect((await acknowledgeStandards({ profileId: STAFF, versionId: v1, presentedSha256: sha(BODY), typedFullName: "Synthetic Staff", consent: true, ipAddress: null, userAgent: null })).ok).toBe(false); // not an instructor
-    expect((await acknowledgeStandards({ profileId: INSTR, versionId: v1, presentedSha256: sha(BODY), typedFullName: "Synthetic Instructor One", consent: false, ipAddress: null, userAgent: null })).ok).toBe(false);
-    expect((await acknowledgeStandards({ profileId: INSTR, versionId: v1, presentedSha256: sha(BODY), typedFullName: "ab", consent: true, ipAddress: null, userAgent: null })).ok).toBe(false);
+    expect((await acknowledgeStandards({ profileId: STAFF, versionId: v1, presentedSha256: sha(canon(BODY)), typedFullName: "Synthetic Staff", consent: true, ipAddress: null, userAgent: null })).ok).toBe(false); // not an instructor
+    expect((await acknowledgeStandards({ profileId: INSTR, versionId: v1, presentedSha256: sha(canon(BODY)), typedFullName: "Synthetic Instructor One", consent: false, ipAddress: null, userAgent: null })).ok).toBe(false);
+    expect((await acknowledgeStandards({ profileId: INSTR, versionId: v1, presentedSha256: sha(canon(BODY)), typedFullName: "ab", consent: true, ipAddress: null, userAgent: null })).ok).toBe(false);
     expect((await acknowledgeStandards({ profileId: INSTR, versionId: v1, presentedSha256: sha("older text"), typedFullName: "Synthetic Instructor One", consent: true, ipAddress: null, userAgent: null })).ok).toBe(false);
     expect(sql(`select count(*) from public.instructor_standards_acknowledgements`)).toBe("0");
     expect((await loadStandardsStateFor(STAFF)).state).toBe("not_available");   // not shown employee/other types
     expect((await loadStandardsStateFor(INSTR)).state).toBe("pending");
   });
   it("records identity, version, hash, timestamp, IP and user agent; a second acknowledgement of the same version is refused; the record is append-only", async () => {
-    const r = await acknowledgeStandards({ profileId: INSTR, versionId: v1, presentedSha256: sha(BODY), typedFullName: "Synthetic Instructor One", consent: true, ipAddress: "203.0.113.7", userAgent: "SyntheticAgent/1.0" });
-    expect(r).toEqual({ ok: true, sha256: sha(BODY) });
-    expect(sql(`select (profile_id='${INSTR}')::text||','||(version_id='${v1}')::text||','||(document_sha256='${sha(BODY)}')::text||','||typed_full_name||','||ip_address||','||user_agent||','||(acknowledged_at is not null)::text from public.instructor_standards_acknowledgements`)).toBe("true,true,true,Synthetic Instructor One,203.0.113.7,SyntheticAgent/1.0,true");
-    expect((await acknowledgeStandards({ profileId: INSTR, versionId: v1, presentedSha256: sha(BODY), typedFullName: "Synthetic Instructor One", consent: true, ipAddress: null, userAgent: null })).ok).toBe(false);
+    const r = await acknowledgeStandards({ profileId: INSTR, versionId: v1, presentedSha256: sha(canon(BODY)), typedFullName: "Synthetic Instructor One", consent: true, ipAddress: "203.0.113.7", userAgent: "SyntheticAgent/1.0" });
+    expect(r).toEqual({ ok: true, sha256: sha(canon(BODY)) });
+    expect(sql(`select (profile_id='${INSTR}')::text||','||(version_id='${v1}')::text||','||(document_sha256='${sha(canon(BODY))}')::text||','||typed_full_name||','||ip_address||','||user_agent||','||(acknowledged_at is not null)::text from public.instructor_standards_acknowledgements`)).toBe("true,true,true,Synthetic Instructor One,203.0.113.7,SyntheticAgent/1.0,true");
+    expect((await acknowledgeStandards({ profileId: INSTR, versionId: v1, presentedSha256: sha(canon(BODY)), typedFullName: "Synthetic Instructor One", consent: true, ipAddress: null, userAgent: null })).ok).toBe(false);
     expect(() => sql(`update public.instructor_standards_acknowledgements set typed_full_name='x'`)).toThrow();
     expect(() => sql(`delete from public.instructor_standards_acknowledgements`)).toThrow();
     expect((await loadStandardsStateFor(INSTR)).state).toBe("acknowledged");
