@@ -54,7 +54,7 @@ set session_replication_role = origin;
 
 do $$
 declare FOUNDER uuid := '00000000-0000-4000-8000-0000000a0001'; STAFF uuid := '00000000-0000-4000-8000-0000000a0002'; GA uuid := '00000000-0000-4000-8000-0000000a4000'; GB uuid := '00000000-0000-4000-8000-0000000a4001'; GC uuid := '00000000-0000-4000-8000-0000000a4002'; GD uuid := '00000000-0000-4000-8000-0000000a4003'; GD2 uuid := '00000000-0000-4000-8000-0000000a4004';
-  c record; n integer;
+  c record; n integer; before_f integer; before_j integer;
 begin
   -- 1. the old four-argument function is gone; the aligned five-argument one exists; client roles cannot run any of the new functions
   assert not exists (select 1 from pg_proc where proname = 'portfolio_subject_permission_redact' and pronargs = 4), 'old signature must be dropped';
@@ -135,6 +135,46 @@ begin
   n := public.portfolio_log_purge('marketing_permission_redactions', FOUNDER, 'retention_period_expired', true); assert n = 1, 'marketing redaction log purged: ' || n;
   assert (select count(*) from public.marketing_permission_redactions) = 1, 'held row kept'; raise notice 'PASS 9e the purge deletes only expired rows with no active hold, in each of the four logs';
   begin perform public.portfolio_log_purge('portfolio_file_holds', FOUNDER, 'a free text reason with Jane Doe', true); raise exception 'FAIL free-text reason accepted'; exception when others then if sqlerrm like 'FAIL%' then raise; end if; end; raise notice 'PASS 9f the purge reason is a fixed code, never free text';
+  -- 9g. REVISION 3 corrections. (i) a hold at EITHER level protects hold-log rows; (ii) the permission ENDED at the earliest end event; (iii) a removed person's grant is not in force; (iv) the locks are present
+  set local session_replication_role = replica;
+  insert into public.portfolio_file_holds (project_file_id, action, reason, recorded_by, recorded_at) values ('00000000-0000-4000-8000-0000000a1044','placed','old dispute about the photograph','00000000-0000-4000-8000-0000000a0001', now() - interval '8 years'),('00000000-0000-4000-8000-0000000a1044','released','old dispute closed, no action','00000000-0000-4000-8000-0000000a0001', now() - interval '7 years 6 months');
+  insert into public.marketing_permission_job_holds (job_type, job_id, action, reason, recorded_by, recorded_at) values ('crew_support_request','00000000-0000-4000-8000-0000000a1041','placed','old audit of the job','00000000-0000-4000-8000-0000000a0001', now() - interval '8 years'),('crew_support_request','00000000-0000-4000-8000-0000000a1041','released','old audit closed, no action','00000000-0000-4000-8000-0000000a0001', now() - interval '7 years 6 months');
+  set local session_replication_role = origin;
+  select eligible_rows into n from public.portfolio_log_purge_preview() where log_table = 'portfolio_file_holds'; before_f := n;
+  select eligible_rows into n from public.portfolio_log_purge_preview() where log_table = 'marketing_permission_job_holds'; before_j := n;
+  insert into public.marketing_permission_job_holds (job_type, job_id, action, reason, recorded_by) values ('crew_support_request','00000000-0000-4000-8000-0000000a1041','placed','a current job-level hold',FOUNDER);
+  select eligible_rows into n from public.portfolio_log_purge_preview() where log_table = 'portfolio_file_holds'; assert n = before_f - 2, 'a job-level hold protects the file-level hold log rows of its photographs: ' || n || ' vs ' || before_f;
+  insert into public.marketing_permission_job_holds (job_type, job_id, action, reason, recorded_by) values ('crew_support_request','00000000-0000-4000-8000-0000000a1041','released','the job-level hold released',FOUNDER);
+  select eligible_rows into n from public.portfolio_log_purge_preview() where log_table = 'portfolio_file_holds'; assert n = before_f, 'released: file-level rows eligible again';
+  insert into public.portfolio_file_holds (project_file_id, action, reason, recorded_by) values ('00000000-0000-4000-8000-0000000a1044','placed','a current photograph-level hold',FOUNDER);
+  select eligible_rows into n from public.portfolio_log_purge_preview() where log_table = 'marketing_permission_job_holds'; assert n = before_j - 2, 'a photograph-level hold protects the job-level hold log rows of its job: ' || n || ' vs ' || before_j;
+  insert into public.portfolio_file_holds (project_file_id, action, reason, recorded_by) values ('00000000-0000-4000-8000-0000000a1044','released','the photograph-level hold released',FOUNDER);
+  raise notice 'PASS 9g a hold at either level protects the hold-log rows of the other level';
+  -- 9h. earliest end: expired 8 years ago but withdrawn only a year ago: the clock started at the expiry
+  set local session_replication_role = replica;
+  insert into public.portfolio_file_subjects (id, project_file_id, action, subject_kind, label, recorded_by, recorded_at) values ('00000000-0000-4000-8000-0000000a9001','00000000-0000-4000-8000-0000000a1044','added','adult','guest near the door','00000000-0000-4000-8000-0000000a0001', now() - interval '10 years'),('00000000-0000-4000-8000-0000000a9002','00000000-0000-4000-8000-0000000a1044','added','adult','guest at the bar','00000000-0000-4000-8000-0000000a0001', now() - interval '10 years');
+  insert into public.portfolio_subject_permissions (id, subject_id, decision, grantor_kind, grantor_name, evidence_kind, evidence_reference, given_on, allowed_destinations, expires_on, recorded_by, recorded_at) values ('00000000-0000-4000-8000-0000000a9011','00000000-0000-4000-8000-0000000a9001','granted','subject_self','Guest Door','written_message','guest email kept in the job folder',(now() - interval '11 years')::date,array['website'],(now() - interval '8 years')::date,'00000000-0000-4000-8000-0000000a0001', now() - interval '11 years');
+  insert into public.portfolio_subject_permissions (subject_id, decision, supersedes_id, evidence_reference, note, recorded_by, recorded_at) values ('00000000-0000-4000-8000-0000000a9001','verified','00000000-0000-4000-8000-0000000a9011','guest email kept in the job folder','verified after checking the message','00000000-0000-4000-8000-0000000a0001', now() - interval '11 years'),('00000000-0000-4000-8000-0000000a9001','withdrawn','00000000-0000-4000-8000-0000000a9011','guest email kept in the job folder','withdrawn after checking the message','00000000-0000-4000-8000-0000000a0001', now() - interval '1 year');
+  set local session_replication_role = origin;
+  select * into c from public.portfolio_subject_permission_erasure_check('00000000-0000-4000-8000-0000000a9011', 'retention_period_ended');
+  assert c.ended_on = (current_date - interval '8 years')::date and coalesce(array_length(c.blockers, 1), 0) = 0, 'the permission ended at its expiry, not at the later withdrawal: ' || coalesce(c.ended_on::text, 'null') || ' ' || coalesce(c.blockers::text, '');
+  raise notice 'PASS 9h the retention clock starts at the earliest end event';
+  -- 9i. a person removed from the photograph: their verified, never-withdrawn grant is no longer in force and the removal date is the end
+  set local session_replication_role = replica;
+  insert into public.portfolio_subject_permissions (id, subject_id, decision, grantor_kind, grantor_name, evidence_kind, evidence_reference, given_on, allowed_destinations, recorded_by, recorded_at) values ('00000000-0000-4000-8000-0000000a9021','00000000-0000-4000-8000-0000000a9002','granted','subject_self','Guest Bar','written_message','guest email kept in the job folder',(now() - interval '11 years')::date,array['website'],'00000000-0000-4000-8000-0000000a0001', now() - interval '11 years');
+  insert into public.portfolio_subject_permissions (subject_id, decision, supersedes_id, evidence_reference, note, recorded_by, recorded_at) values ('00000000-0000-4000-8000-0000000a9002','verified','00000000-0000-4000-8000-0000000a9021','guest email kept in the job folder','verified after checking the message','00000000-0000-4000-8000-0000000a0001', now() - interval '11 years');
+  set local session_replication_role = origin;
+  select * into c from public.portfolio_subject_permission_erasure_check('00000000-0000-4000-8000-0000000a9021', 'data_subject_request'); assert c.blockers::text like '%still in force%', 'before removal the grant is in force';
+  set local session_replication_role = replica;
+  insert into public.portfolio_file_subjects (project_file_id, action, subject_kind, label, supersedes_id, recorded_by, recorded_at) values ('00000000-0000-4000-8000-0000000a1044','removed','adult','guest at the bar','00000000-0000-4000-8000-0000000a9002','00000000-0000-4000-8000-0000000a0001', now() - interval '7 years');
+  set local session_replication_role = origin;
+  select * into c from public.portfolio_subject_permission_erasure_check('00000000-0000-4000-8000-0000000a9021', 'retention_period_ended');
+  assert c.ended_on = (current_date - interval '7 years')::date and coalesce(array_length(c.blockers, 1), 0) = 0, 'removal ends the permission: ' || coalesce(c.ended_on::text, 'null') || ' ' || coalesce(c.blockers::text, '');
+  raise notice 'PASS 9i a removed person''s grant is not in force and the removal date starts the clock';
+  -- 9j. the concurrency locks are present in the function bodies
+  assert (select prosrc from pg_proc where proname = 'portfolio_subject_permission_redact' and pronargs = 5) ~* 'for update', 'redact locks the grant row';
+  assert (select prosrc from pg_proc where proname = 'portfolio_log_purge') ~* 'lock table public.portfolio_file_holds, public.marketing_permission_job_holds in share row exclusive mode', 'purge locks the hold tables';
+  raise notice 'PASS 9j the erasure and the purge take the concurrency locks';
   -- 10. permanent audit of purges, append-only, never purgeable
   assert (select count(*) from public.portfolio_log_purges) = 4, 'four purge audit rows';
   assert (select array_agg(column_name::text order by column_name) from information_schema.columns where table_schema = 'public' and table_name = 'portfolio_log_purges') = array['business_id','confirmed','cutoff_date','id','purged_at','purged_by','purged_table','reason_code','retention_years','rows_purged'], 'the permanent purge audit holds only necessary metadata';

@@ -4,6 +4,8 @@ drop function public.portfolio_log_purge(text, uuid, text, boolean);
 drop function public.portfolio_log_purge_preview();
 drop function private.portfolio_subject_log_free_of_hold(uuid);
 drop function private.portfolio_record_log_free_of_hold(uuid);
+drop function private.portfolio_file_log_free_of_hold(uuid);
+drop function private.portfolio_job_log_free_of_hold(text, uuid);
 drop table public.portfolio_log_purges;
 drop trigger portfolio_subject_redaction_immutable on public.portfolio_subject_redactions;
 drop trigger portfolio_file_hold_immutable on public.portfolio_file_holds;

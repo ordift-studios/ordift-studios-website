@@ -1,4 +1,7 @@
--- PROPOSED 0184 REVISION 2 (NOT APPLIED, NOT in supabase/migrations; revision 1, sha256 18d05f71...c1fa, is superseded). Revision 2 changes ONLY the permanent purge audit: it records a fixed reason CODE instead of free text, so the audit holds nothing but necessary metadata
+-- PROPOSED 0184 REVISION 3 (NOT APPLIED, NOT in supabase/migrations). Independent review corrections to revision 2 (sha256 050fcd4d...8315): (a) the erasure locks the grant row so a concurrent verification cannot slip in between the check and the erasure; (b) the purge locks the two hold tables so a hold
+-- placed during a purge is never missed; (c) hold-log rows are protected by a hold at EITHER level (a file-level log row survives while its job is held, a job-level log row survives while any of its photographs is held); (d) the permission 'end' is the EARLIEST end event (withdrawal, replacement, past expiry
+-- or removal of the person from the photograph), so the retention clock is not started later than the permission actually ended, and a removed person's grant is no longer treated as in force. Everything else is identical to revision 2.
+-- PROPOSED 0184 REVISION 2 (revision 1, sha256 18d05f71...c1fa, is superseded). Revision 2 changes ONLY the permanent purge audit: it records a fixed reason CODE instead of free text, so the audit holds nothing but necessary metadata
 -- (table, row count, cutoff, policy years, reason code, who, when) and can be kept permanently without carrying personal details. Everything else is identical to revision 1.
 -- PROPOSED 0184 (original text follows). Depends on 0182 revision 2 and 0183 revision 3 (it reads portfolio_retention_policy and marketing_permission_job_holds). Management directions (2 Nov 2026):
 --  1. ALIGN the 0182 erasure function with a recorded BASIS and the adopted retention POLICY (six years after the later of the permission's end and the last authorised use is a management policy value recorded in portfolio_retention_policy; nothing is seeded here).
@@ -47,14 +50,16 @@ create trigger marketing_permission_job_hold_immutable before update or delete o
 create function public.portfolio_subject_permission_erasure_check(p_permission uuid, p_basis text default 'retention_period_ended')
 returns table (blockers text[], earliest_retention_date date, ended_on date, last_use_on date)
 language plpgsql stable security definer set search_path = '' as $$
-declare g record; sub record; b text[] := '{}'; years integer; held text; ended date; lastuse date; earliest date; j record;
+declare g record; sub record; b text[] := '{}'; years integer; held text; ended date; lastuse date; earliest date; j record; removed_on date;
 begin
   select * into g from public.portfolio_subject_permissions where id = p_permission;
   if not found or g.decision <> 'granted' then return query select array['choose a recorded grant']::text[], null::date, null::date, null::date; return; end if;
   select * into sub from public.portfolio_file_subjects where id = g.subject_id;
+  select min(r.recorded_at)::date into removed_on from public.portfolio_file_subjects r where r.supersedes_id = sub.id and r.action = 'removed';
   if (exists (select 1 from public.portfolio_subject_permissions v where v.supersedes_id = g.id and v.decision = 'verified')
       and not exists (select 1 from public.portfolio_subject_permissions w where w.supersedes_id = g.id and w.decision in ('withdrawn', 'granted'))
-      and (g.expires_on is null or g.expires_on >= current_date)) then
+      and (g.expires_on is null or g.expires_on >= current_date)
+      and removed_on is null) then
     b := array_append(b, 'that permission is still in force: withdraw it (or wait for its expiry) before erasing its details'); end if;
   select h.action into held from public.portfolio_file_holds h where h.project_file_id = sub.project_file_id order by h.seq desc limit 1;
   if held = 'placed' then b := array_append(b, 'a hold is in place on this photograph (dispute, complaint, audit or legal obligation): release it before erasing'); end if;
@@ -66,8 +71,10 @@ begin
   if exists (select 1 from (select distinct on (u.destination) u.destination, u.action from public.portfolio_use_events u where u.project_file_id = sub.project_file_id order by u.destination, u.seq desc) cur
              where cur.action in ('published', 'shared') and cur.destination = any (g.allowed_destinations)) then
     b := array_append(b, 'the photograph is still in use for a use this permission covered: end or review that use before erasing the evidence behind it'); end if;
-  select coalesce((select min(w.recorded_at)::date from public.portfolio_subject_permissions w where w.supersedes_id = g.id and w.decision in ('withdrawn', 'granted')),
-                  case when g.expires_on is not null and g.expires_on < current_date then g.expires_on end) into ended;
+  -- the permission ENDED at the EARLIEST of: withdrawal or replacement, a past expiry date, or removal of the person from the photograph (least() ignores the events that did not happen)
+  select least((select min(w.recorded_at)::date from public.portfolio_subject_permissions w where w.supersedes_id = g.id and w.decision in ('withdrawn', 'granted')),
+               case when g.expires_on is not null and g.expires_on < current_date then g.expires_on end,
+               removed_on) into ended;
   select max(u.occurred_at)::date into lastuse from public.portfolio_use_events u where u.project_file_id = sub.project_file_id;
   if p_basis = 'retention_period_ended' then
     select p.retention_years into years from public.portfolio_retention_policy p order by p.seq desc limit 1;
@@ -93,7 +100,7 @@ begin
   if p_basis is null or p_basis not in ('retention_period_ended', 'data_subject_request', 'legal_requirement', 'other_documented') then raise exception 'state the basis for the erasure'; end if;
   if char_length(btrim(coalesce(p_reason, ''))) not between 10 and 200 then raise exception 'state the reason for the erasure in 10 to 200 characters, without names or personal details'; end if;
   if p_confirm_permitted is distinct from true then raise exception 'confirm that erasure is permitted: no dispute, legal obligation, audit or active permission still needs this evidence'; end if;
-  select * into g from public.portfolio_subject_permissions where id = p_permission;
+  select * into g from public.portfolio_subject_permissions where id = p_permission for update;   -- serialises against a concurrent verification, withdrawal or replacement of this grant
   if not found or g.decision <> 'granted' then raise exception 'choose a recorded grant'; end if;
   select * into chk from public.portfolio_subject_permission_erasure_check(p_permission, p_basis);
   foreach blocker in array chk.blockers loop raise exception '%', blocker; end loop;
@@ -107,6 +114,30 @@ end $$;
 revoke all on function public.portfolio_subject_permission_redact(uuid, uuid, text, text, boolean) from public, anon, authenticated;
 grant execute on function public.portfolio_subject_permission_redact(uuid, uuid, text, text, boolean) to service_role;
 
+-- helpers. A log row is protected while ANY hold touches what it concerns: the photograph's own latest hold, its job's latest hold, and (for a job) any photograph of that job held.
+create function private.portfolio_file_log_free_of_hold(p_file uuid) returns boolean language plpgsql stable security definer set search_path = '' as $$
+declare j record;
+begin
+  if p_file is null then return false; end if;
+  if (select h.action from public.portfolio_file_holds h where h.project_file_id = p_file order by h.seq desc limit 1) = 'placed' then return false; end if;
+  select * into j from private.project_file_job(p_file);
+  if found and (select h.action from public.marketing_permission_job_holds h where h.job_type = j.job_type and h.job_id = j.job_id order by h.seq desc limit 1) = 'placed' then return false; end if;
+  return true;
+end $$;
+create function private.portfolio_job_log_free_of_hold(p_job_type text, p_job_id uuid) returns boolean language plpgsql stable security definer set search_path = '' as $$
+begin
+  if (select h.action from public.marketing_permission_job_holds h where h.job_type = p_job_type and h.job_id = p_job_id order by h.seq desc limit 1) = 'placed' then return false; end if;
+  if exists (select 1 from public.portfolio_file_holds fh cross join lateral private.project_file_job(fh.project_file_id) j where j.job_type = p_job_type and j.job_id = p_job_id
+             and fh.seq = (select max(x.seq) from public.portfolio_file_holds x where x.project_file_id = fh.project_file_id) and fh.action = 'placed') then return false; end if;
+  return true;
+end $$;
+create function private.portfolio_subject_log_free_of_hold(p_permission uuid) returns boolean language sql stable security definer set search_path = '' as $$
+  select private.portfolio_file_log_free_of_hold((select s.project_file_id from public.portfolio_subject_permissions p join public.portfolio_file_subjects s on s.id = p.subject_id where p.id = p_permission));
+$$;
+create function private.portfolio_record_log_free_of_hold(p_record uuid) returns boolean language sql stable security definer set search_path = '' as $$
+  select coalesce((select private.portfolio_job_log_free_of_hold(m.job_type, m.job_id) from public.marketing_permission_records m where m.id = p_record), false);
+$$;
+
 -- 6. PURGE REVIEW (read-only): how many log rows are past the adopted period and free of any active hold. NULL cutoff = no policy recorded.
 create function public.portfolio_log_purge_preview()
 returns table (log_table text, eligible_rows bigint, cutoff_date date)
@@ -118,34 +149,12 @@ begin
     return query select t, 0::bigint, null::date from unnest(array['portfolio_subject_redactions','portfolio_file_holds','marketing_permission_redactions','marketing_permission_job_holds']) t; return; end if;
   c := (current_date - make_interval(years => years))::date;
   return query select 'portfolio_subject_redactions'::text, (select count(*) from public.portfolio_subject_redactions r where r.redacted_at::date < c and private.portfolio_subject_log_free_of_hold(r.permission_id)), c;
-  return query select 'portfolio_file_holds'::text, (select count(*) from public.portfolio_file_holds h where h.recorded_at::date < c and (select x.action from public.portfolio_file_holds x where x.project_file_id = h.project_file_id order by x.seq desc limit 1) <> 'placed'), c;
+  return query select 'portfolio_file_holds'::text, (select count(*) from public.portfolio_file_holds h where h.recorded_at::date < c and private.portfolio_file_log_free_of_hold(h.project_file_id)), c;
   return query select 'marketing_permission_redactions'::text, (select count(*) from public.marketing_permission_redactions r where r.redacted_at::date < c and private.portfolio_record_log_free_of_hold(r.record_id)), c;
-  return query select 'marketing_permission_job_holds'::text, (select count(*) from public.marketing_permission_job_holds h where h.recorded_at::date < c and (select x.action from public.marketing_permission_job_holds x where x.job_type = h.job_type and x.job_id = h.job_id order by x.seq desc limit 1) <> 'placed'), c;
+  return query select 'marketing_permission_job_holds'::text, (select count(*) from public.marketing_permission_job_holds h where h.recorded_at::date < c and private.portfolio_job_log_free_of_hold(h.job_type, h.job_id)), c;
 end $$;
 
--- helpers: is there ANY active hold (photograph-level or job-level) touching what this erasure-log row concerns?
-create function private.portfolio_subject_log_free_of_hold(p_permission uuid) returns boolean language plpgsql stable security definer set search_path = '' as $$
-declare f uuid; j record;
-begin
-  select s.project_file_id into f from public.portfolio_subject_permissions p join public.portfolio_file_subjects s on s.id = p.subject_id where p.id = p_permission;
-  if f is null then return false; end if;
-  if (select h.action from public.portfolio_file_holds h where h.project_file_id = f order by h.seq desc limit 1) = 'placed' then return false; end if;
-  select * into j from private.project_file_job(f);
-  if found and (select h.action from public.marketing_permission_job_holds h where h.job_type = j.job_type and h.job_id = j.job_id order by h.seq desc limit 1) = 'placed' then return false; end if;
-  return true;
-end $$;
-create function private.portfolio_record_log_free_of_hold(p_record uuid) returns boolean language plpgsql stable security definer set search_path = '' as $$
-declare g record;
-begin
-  select job_type, job_id into g from public.marketing_permission_records where id = p_record;
-  if not found then return false; end if;
-  if (select h.action from public.marketing_permission_job_holds h where h.job_type = g.job_type and h.job_id = g.job_id order by h.seq desc limit 1) = 'placed' then return false; end if;
-  if exists (select 1 from public.portfolio_file_holds fh cross join lateral private.project_file_job(fh.project_file_id) j where j.job_type = g.job_type and j.job_id = g.job_id
-             and fh.seq = (select max(x.seq) from public.portfolio_file_holds x where x.project_file_id = fh.project_file_id) and fh.action = 'placed') then return false; end if;
-  return true;
-end $$;
-
--- 7. the controlled PURGE: management only, a recorded reason, an explicit confirmation, one table at a time; deletes only the rows the preview counts; leaves a permanent audit row. Never runs automatically.
+-- 7. the controlled PURGE: management only, a fixed reason code, an explicit confirmation, one table at a time; deletes only the rows the preview counts; leaves a permanent audit row in the SAME transaction. Never runs automatically.
 create function public.portfolio_log_purge(p_table text, p_actor uuid, p_reason_code text, p_confirm boolean) returns integer
 language plpgsql security definer set search_path = '' as $$
 declare years integer; c date; n integer;
@@ -157,21 +166,22 @@ begin
   select p.retention_years into years from public.portfolio_retention_policy p order by p.seq desc limit 1;
   if years is null then raise exception 'no retention policy has been recorded by management, so nothing can be purged'; end if;
   c := (current_date - make_interval(years => years))::date;
+  lock table public.portfolio_file_holds, public.marketing_permission_job_holds in share row exclusive mode;   -- a hold placed while a purge runs is never missed
   perform set_config('ordift.log_purge', 'on', true);
   if p_table = 'portfolio_subject_redactions' then
     with d as (delete from public.portfolio_subject_redactions r where r.redacted_at::date < c and private.portfolio_subject_log_free_of_hold(r.permission_id) returning 1) select count(*) into n from d;
   elsif p_table = 'portfolio_file_holds' then
-    with d as (delete from public.portfolio_file_holds h where h.recorded_at::date < c and (select x.action from public.portfolio_file_holds x where x.project_file_id = h.project_file_id order by x.seq desc limit 1) <> 'placed' returning 1) select count(*) into n from d;
+    with d as (delete from public.portfolio_file_holds h where h.recorded_at::date < c and private.portfolio_file_log_free_of_hold(h.project_file_id) returning 1) select count(*) into n from d;
   elsif p_table = 'marketing_permission_redactions' then
     with d as (delete from public.marketing_permission_redactions r where r.redacted_at::date < c and private.portfolio_record_log_free_of_hold(r.record_id) returning 1) select count(*) into n from d;
   else
-    with d as (delete from public.marketing_permission_job_holds h where h.recorded_at::date < c and (select x.action from public.marketing_permission_job_holds x where x.job_type = h.job_type and x.job_id = h.job_id order by x.seq desc limit 1) <> 'placed' returning 1) select count(*) into n from d;
+    with d as (delete from public.marketing_permission_job_holds h where h.recorded_at::date < c and private.portfolio_job_log_free_of_hold(h.job_type, h.job_id) returning 1) select count(*) into n from d;
   end if;
   perform set_config('ordift.log_purge', 'off', true);
   insert into public.portfolio_log_purges (purged_table, rows_purged, cutoff_date, retention_years, reason_code, confirmed, purged_by) values (p_table, n, c, years, p_reason_code, true, p_actor);
   return n;
 end $$;
-revoke all on function public.portfolio_log_purge_preview(), public.portfolio_log_purge(text, uuid, text, boolean), private.portfolio_log_immutable(), private.portfolio_subject_log_free_of_hold(uuid), private.portfolio_record_log_free_of_hold(uuid) from public, anon, authenticated;
+revoke all on function public.portfolio_log_purge_preview(), public.portfolio_log_purge(text, uuid, text, boolean), private.portfolio_log_immutable(), private.portfolio_file_log_free_of_hold(uuid), private.portfolio_job_log_free_of_hold(text, uuid), private.portfolio_subject_log_free_of_hold(uuid), private.portfolio_record_log_free_of_hold(uuid) from public, anon, authenticated;
 grant execute on function public.portfolio_log_purge_preview(), public.portfolio_log_purge(text, uuid, text, boolean) to service_role;
 
 alter table public.portfolio_log_purges enable row level security;
