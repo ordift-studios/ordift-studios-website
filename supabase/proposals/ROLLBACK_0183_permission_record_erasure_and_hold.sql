@@ -2,7 +2,7 @@
 begin;
 drop trigger if exists marketing_permission_immutable on public.marketing_permission_records;
 create trigger marketing_permission_append_only before update or delete on public.marketing_permission_records for each row execute function private.portfolio_append_only();
-drop function public.marketing_permission_record_redact(uuid, uuid, text, text, boolean, boolean);
+drop function public.marketing_permission_record_redact(uuid, uuid, text, text, boolean);
 drop function public.marketing_permission_record_erasure_check(uuid, text);
 drop table public.portfolio_retention_policy;
 drop function private.portfolio_retention_policy_guard();

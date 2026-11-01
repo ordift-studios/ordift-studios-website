@@ -62,13 +62,13 @@ describe("controlled erasure through the real library", () => {
     expect(await er.getErasureView("crew_support_request", JOB)).toMatchObject({ policyYears: null });
     expect((await er.recordRetentionPolicy(staff, 6, "six years after the permission and last use ended")).ok).toBe(false);
     expect((await er.recordRetentionPolicy(founder, 0, "six years after the permission and last use ended")).ok).toBe(false);
-    const before = await er.eraseRecordDetails(founder, OLDG, { basis: "retention_period_ended", reason: "retention period ended for this record", confirmPermitted: true, storageObjectRemoved: false });
+    const before = await er.eraseRecordDetails(founder, OLDG, { basis: "retention_period_ended", reason: "retention period ended for this record", confirmPermitted: true });
     expect(before.ok === false && before.error).toMatch(/no retention policy/);
     expect((await er.recordRetentionPolicy(founder, 6, "six years after the permission and last use ended; longer where a duty, dispute or hold requires")).ok).toBe(true);
     expect((await er.getErasureView("crew_support_request", JOB))!.policyYears).toBe(6);
   });
   it("an in-force permission, a missing confirmation or a bad reason is refused", async () => {
-    const base = { basis: "data_subject_request" as const, reason: "data subject asked for erasure of details", confirmPermitted: true, storageObjectRemoved: true };
+    const base = { basis: "data_subject_request" as const, reason: "data subject asked for erasure of details", confirmPermitted: true,  };
     expect((await er.eraseRecordDetails(founder, G, base)).ok).toBe(false);                                           // in force
     expect((await er.eraseRecordDetails(founder, OLDG, { ...base, confirmPermitted: false })).ok).toBe(false);
     expect((await er.eraseRecordDetails(founder, OLDG, { ...base, reason: "short" })).ok).toBe(false);
@@ -79,26 +79,26 @@ describe("controlled erasure through the real library", () => {
     expect((await er.setJobHold(founder, "crew_support_request", OLDJOB, "placed", "short")).ok).toBe(false);
     expect((await er.setJobHold(founder, "crew_support_request", OLDJOB, "placed", "complaint under review: keep all evidence")).ok).toBe(true);
     expect((await er.getErasureView("crew_support_request", OLDJOB))!.hold?.reason).toMatch(/complaint/);
-    expect((await er.eraseRecordDetails(founder, OLDG, { basis: "retention_period_ended", reason: "retention period ended for this record", confirmPermitted: true, storageObjectRemoved: false })).ok).toBe(false);
+    expect((await er.eraseRecordDetails(founder, OLDG, { basis: "retention_period_ended", reason: "retention period ended for this record", confirmPermitted: true })).ok).toBe(false);
     expect((await er.setJobHold(founder, "crew_support_request", OLDJOB, "released", "complaint closed, no further action")).ok).toBe(true);
   });
-  it("a stored evidence file is never deleted by this code and its reference cannot be dropped without confirmation", async () => {
-    // withdraw the recent grant so only the file and the period remain as blockers
+  it("a record that references a stored evidence file can NEVER be erased (fail closed, no override); this code never touches storage", async () => {
+    // withdraw the recent grant so only the stored-file reference stands in the way
     sql(`set session_replication_role = replica; insert into public.marketing_permission_records (job_type, job_id, source, decision, supersedes_id, grantor_name, grantor_capacity, method, evidence_summary, note, recorded_by) values ('crew_support_request','${JOB}','admin_recorded','withdrawn','${G}','Synthetic Client','client','message','client withdrew by message thread','withdrew','${U(0xb2)}')`);
     const view = (await er.getErasureView("crew_support_request", JOB))!;
-    expect(view.rows[0].hasStoredFile).toBe(true); expect(view.rows[0].blockersRetention.join(" ")).toMatch(/stored evidence file is attached/);
-    const base = { basis: "data_subject_request" as const, reason: "data subject asked for erasure of details", confirmPermitted: true };
-    expect((await er.eraseRecordDetails(founder, G, { ...base, storageObjectRemoved: false })).ok).toBe(false);          // reference kept: the file cannot be orphaned silently
-    expect(sql(`select evidence_storage_path from public.marketing_permission_records where id = '${G}'`)).toBe("evidence/thread.png");
-    expect((await er.eraseRecordDetails(founder, G, { ...base, basis: "retention_period_ended", storageObjectRemoved: true })).ok).toBe(false);   // retention basis: recent end, period not ended
-    expect((await er.eraseRecordDetails(founder, G, { ...base, storageObjectRemoved: true })).ok).toBe(true);           // shorter retention where a person asked, with the file removal confirmed
-    expect(sql(`select (evidence_storage_path is null)::text || ',' || grantor_name from public.marketing_permission_records where id = '${G}'`)).toBe("true,[erased]");
-    expect(sql(`select storage_object_removed::text || ',' || basis from public.marketing_permission_redactions where record_id = '${G}'`)).toBe("true,data_subject_request");
+    expect(view.rows[0].hasStoredFile).toBe(true); expect(view.rows[0].blockersRetention.join(" ")).toMatch(/stored evidence file reference exists/);
+    const base = { reason: "data subject asked for erasure of details", confirmPermitted: true };
+    for (const basis of ["data_subject_request", "legal_requirement", "other_documented", "retention_period_ended"] as const) {
+      const r = await er.eraseRecordDetails(founder, G, { ...base, basis });
+      expect(r.ok, basis).toBe(false);
+    }
+    expect(sql(`select evidence_storage_path || ',' || grantor_name from public.marketing_permission_records where id = '${G}'`)).toBe("evidence/thread.png,Synthetic Client");   // nothing changed
+    expect(sql(`select count(*) from public.marketing_permission_redactions where record_id = '${G}'`)).toBe("0");
   });
   it("on the retention basis an old record is erased once six years have passed; the permission's scope, uses and state are unchanged; the log keeps the basis", async () => {
     const view = (await er.getErasureView("crew_support_request", OLDJOB))!;
     expect(view.rows[0].blockersRetention).toEqual([]);
-    expect((await er.eraseRecordDetails(founder, OLDG, { basis: "retention_period_ended", reason: "six year retention period ended for this record", confirmPermitted: true, storageObjectRemoved: false })).ok).toBe(true);
+    expect((await er.eraseRecordDetails(founder, OLDG, { basis: "retention_period_ended", reason: "six year retention period ended for this record", confirmPermitted: true })).ok).toBe(true);
     expect(sql(`select decision || ',' || array_to_string(allowed_destinations, ',') || ',' || verification_status || ',' || grantor_name from public.marketing_permission_records where id = '${OLDG}'`)).toBe("granted,website,verified,[erased]");
     expect(sql(`select count(*) from public.marketing_permission_records where supersedes_id = '${OLDG}' and decision = 'withdrawn'`)).toBe("1");   // the withdrawal is still on record
     expect(sql(`select basis from public.marketing_permission_redactions where record_id = '${OLDG}'`)).toBe("retention_period_ended");

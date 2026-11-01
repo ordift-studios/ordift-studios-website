@@ -1,8 +1,9 @@
--- PROPOSED 0183, REVISION 2 for the management retention policy (NOT APPLIED, NOT in supabase/migrations; the first 0183 candidate, sha256 96ddcd18...9c3f, was never approved and is superseded). Adds: an append-only RETENTION POLICY record (no value is seeded: until management records one, erasure on the
+-- PROPOSED 0183, REVISION 3 (fail-closed stored-file rule: a record that still references a stored evidence file can NEVER be erased, because the system cannot verify that the file was removed and a person's confirmation must not stand in for evidence; no override exists. Production holds 0 such records).
+-- REVISION 2 text follows: for the management retention policy (NOT APPLIED, NOT in supabase/migrations; the first 0183 candidate, sha256 96ddcd18...9c3f, was never approved and is superseded). Adds: an append-only RETENTION POLICY record (no value is seeded: until management records one, erasure on the
 -- 'retention_period_ended' basis is refused), a recorded BASIS for every erasure, a read-only PREFLIGHT that lists what blocks an erasure, and enforcement of the adopted period for the retention basis.
 -- PROPOSED 0183 (original text follows). Depends on migration 0182 revision 2 (it reuses portfolio_file_holds). Narrow follow-up to 0170: lawful retention, restriction and CONTROLLED ERASURE of the personal details in the older client-permission records
 -- (marketing_permission_records), with a job-level legal/dispute HOLD. It changes NO decision, destination, scope, date, supersession, verification state or eligibility result: marketing_permission_state / portfolio_use_eligibility read none of the erasable columns.
--- Erasable columns only: grantor_name, evidence_summary, evidence_storage_path, note. Everything else, and the append-only history, is preserved.
+-- Erasable columns only: grantor_name, evidence_summary, note (the stored-file reference is never altered; a record with one cannot be erased). Everything else, and the append-only history, is preserved.
 begin;
 
 create table public.marketing_permission_job_holds (
@@ -50,16 +51,15 @@ create table public.marketing_permission_redactions (
   reason text not null check (char_length(btrim(reason)) between 10 and 200),   -- no names or personal details
   basis text not null check (basis in ('retention_period_ended', 'data_subject_request', 'legal_requirement', 'other_documented')),
   confirmed_permitted boolean not null check (confirmed_permitted),
-  storage_object_removed boolean not null,
   redacted_by uuid not null references public.profiles (id),
   redacted_at timestamptz not null default now()
 );
 create trigger marketing_permission_redaction_append_only before update or delete on public.marketing_permission_redactions for each row execute function private.portfolio_append_only();
 
--- The table stays append-only. The ONLY change allowed is by the erasure function, which sets a transaction-local flag and may alter only the four personal columns, only to erasure markers (or null for the storage path).
+-- The table stays append-only. The ONLY change allowed is by the erasure function, which sets a transaction-local flag and may alter only the three personal columns, only to erasure markers.
 drop trigger marketing_permission_append_only on public.marketing_permission_records;
 create function private.marketing_permission_immutable() returns trigger language plpgsql set search_path = '' as $$
-declare personal text[] := array['grantor_name', 'evidence_summary', 'evidence_storage_path', 'note'];
+declare personal text[] := array['grantor_name', 'evidence_summary', 'note'];
 begin
   if tg_op = 'DELETE' then raise exception 'marketing_permission_records rows are never deleted'; end if;
   if coalesce(current_setting('ordift.redaction', true), '') <> 'on' then raise exception 'marketing_permission_records rows are append-only'; end if;
@@ -93,7 +93,7 @@ begin
              where j.job_type = g.job_type and j.job_id = g.job_id and cur.action in ('published', 'shared') and cur.destination = any (g.allowed_destinations)) then
     b := array_append(b, 'a photograph of this job is still in use for a use this permission covered: end or review that use before erasing the evidence behind it'); end if;
   if exists (select 1 from public.marketing_permission_records r where (r.id = g.id or r.supersedes_id = g.id) and r.evidence_storage_path is not null) then
-    b := array_append(b, 'a stored evidence file is attached: it must be removed from storage through the approved process, then confirmed'); end if;
+    b := array_append(b, 'a stored evidence file reference exists: the system cannot verify that the file was removed, so erasure of this record is refused (no override)'); end if;
   -- when did the permission end, and when was the last authorised use?
   select coalesce((select min(w.recorded_at)::date from public.marketing_permission_records w where w.supersedes_id = g.id and w.decision = 'withdrawn'),
                   case when g.decision = 'declined' then g.recorded_at::date end,
@@ -113,7 +113,7 @@ end $$;
 revoke all on function public.marketing_permission_record_erasure_check(uuid, text) from public, anon, authenticated;
 grant execute on function public.marketing_permission_record_erasure_check(uuid, text) to service_role;
 
-create function public.marketing_permission_record_redact(p_record uuid, p_actor uuid, p_reason text, p_basis text, p_confirm_permitted boolean, p_storage_object_removed boolean default false) returns void
+create function public.marketing_permission_record_redact(p_record uuid, p_actor uuid, p_reason text, p_basis text, p_confirm_permitted boolean) returns void
 language plpgsql security definer set search_path = '' as $$
 declare g record; root uuid; chk record; blocker text;
 begin
@@ -126,20 +126,16 @@ begin
   root := coalesce(g.supersedes_id, g.id);                                  -- a verification or withdrawal is erased together with the grant it follows
   select * into g from public.marketing_permission_records where id = root;
   select * into chk from public.marketing_permission_record_erasure_check(root, p_basis);
-  foreach blocker in array chk.blockers loop
-    if blocker like 'a stored evidence file is attached%' then
-      if p_storage_object_removed is not true then raise exception '%', blocker; end if;
-    else raise exception '%', blocker; end if;
-  end loop;
+  foreach blocker in array chk.blockers loop raise exception '%', blocker; end loop;
   perform set_config('ordift.redaction', 'on', true);
   update public.marketing_permission_records set grantor_name = '[erased]', evidence_summary = case when evidence_summary is null then null else '[erased under retention policy]' end,
-    note = case when note is null then null else '[erased under retention policy]' end, evidence_storage_path = null
+    note = case when note is null then null else '[erased under retention policy]' end
     where id = g.id or supersedes_id = g.id;
   perform set_config('ordift.redaction', 'off', true);
-  insert into public.marketing_permission_redactions (record_id, reason, basis, confirmed_permitted, storage_object_removed, redacted_by) values (g.id, btrim(p_reason), p_basis, true, coalesce(p_storage_object_removed, false), p_actor);
+  insert into public.marketing_permission_redactions (record_id, reason, basis, confirmed_permitted, redacted_by) values (g.id, btrim(p_reason), p_basis, true, p_actor);
 end $$;
-revoke all on function public.marketing_permission_record_redact(uuid, uuid, text, text, boolean, boolean) from public, anon, authenticated;
-grant execute on function public.marketing_permission_record_redact(uuid, uuid, text, text, boolean, boolean) to service_role;
+revoke all on function public.marketing_permission_record_redact(uuid, uuid, text, text, boolean) from public, anon, authenticated;
+grant execute on function public.marketing_permission_record_redact(uuid, uuid, text, text, boolean) to service_role;
 
 alter table public.marketing_permission_job_holds enable row level security;
 alter table public.marketing_permission_redactions enable row level security;

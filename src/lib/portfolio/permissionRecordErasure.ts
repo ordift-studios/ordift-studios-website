@@ -7,9 +7,9 @@ import { PERMISSION_RECORD_ERASURE_ENABLED } from "./erasureGate";
 import type { JobType } from "./destinations";
 
 // CONTROLLED ERASURE OF PERSONAL DETAILS in the older client-permission records (proposed migration 0183; dormant). Management only. Nothing is deleted or erased automatically. The permission's scope, uses, dates, verification and
-// withdrawal history are never touched, and the database refuses an erasure that is in force, under a hold, still in use, before the adopted retention period (on the retention basis), or while a stored file is attached unless
-// its removal is confirmed. THIS MODULE NEVER DELETES A STORED FILE: a file can only be removed through the approved process by a person, who then confirms it; the database will not drop the reference without that confirmation,
-// so a reference cannot be silently orphaned and a file cannot be silently left behind.
+// withdrawal history are never touched, and the database refuses an erasure that is in force, under a hold, still in use, before the adopted retention period (on the retention basis), or whenever the record still references a
+// stored evidence file. That last rule FAILS CLOSED with no override: the system cannot verify that a file was removed (the record names no bucket) and a person's confirmation must not stand in for evidence. THIS MODULE NEVER
+// TOUCHES STORAGE. (Production holds no such record today; allowing erasure of one needs a future, separately approved process that records the bucket and verifies the deletion.)
 export type Result<T = object> = ({ ok: true } & T) | { ok: false; error: string };
 const fail = (error: string): { ok: false; error: string } => ({ ok: false, error });
 const gate = () => (PORTFOLIO_LIBRARY_ENABLED && PERMISSION_RECORD_ERASURE_ENABLED ? null : fail("Erasure of permission-record details is not switched on yet."));
@@ -38,12 +38,12 @@ export async function setJobHold(user: CurrentUser, jobType: JobType, jobId: str
   return { ok: true };
 }
 
-export async function eraseRecordDetails(user: CurrentUser, recordId: string, i: { basis: Basis; reason: string; confirmPermitted: boolean; storageObjectRemoved: boolean }): Promise<Result> {
+export async function eraseRecordDetails(user: CurrentUser, recordId: string, i: { basis: Basis; reason: string; confirmPermitted: boolean }): Promise<Result> {
   const g = gate(); if (g) return g; const a = await authority(user); if (a) return a;
   if (!BASES.some((b) => b.key === i.basis)) return fail("State the basis for the erasure.");
   if (!reasonOk(i.reason)) return fail(`State the reason: ${REASON_HELP}`);
   if (i.confirmPermitted !== true) return fail("Confirm that erasure is permitted: no dispute, legal obligation, audit or active permission still needs this evidence.");
-  const { error } = await createAdminClient().rpc("marketing_permission_record_redact", { p_record: recordId, p_actor: user.id, p_reason: i.reason.trim(), p_basis: i.basis, p_confirm_permitted: true, p_storage_object_removed: i.storageObjectRemoved === true });
+  const { error } = await createAdminClient().rpc("marketing_permission_record_redact", { p_record: recordId, p_actor: user.id, p_reason: i.reason.trim(), p_basis: i.basis, p_confirm_permitted: true });
   if (error) return fail(clean(error));
   await logActivity({ actorUserId: user.id, action: "portfolio.permission_record_erased", entityType: "marketing_permission_record", entityId: recordId, metadata: { basis: i.basis } });
   return { ok: true };

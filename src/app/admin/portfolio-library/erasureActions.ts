@@ -22,5 +22,5 @@ export async function jobHoldAction(_: ErasureFormState, f: FormData): Promise<E
 export async function eraseRecordAction(_: ErasureFormState, f: FormData): Promise<ErasureFormState> {
   const basis = str(f, "basis") as Basis;
   return run(f, "Personal details erased. The permission's scope, uses and history are unchanged, and the erasure is logged.", (u) => BASES.some((b) => b.key === basis)
-    ? eraseRecordDetails(u, str(f, "recordId"), { basis, reason: str(f, "note"), confirmPermitted: f.get("confirmPermitted") === "on", storageObjectRemoved: f.get("storageRemoved") === "on" }) : Promise.resolve({ ok: false as const, error: "State the basis for the erasure." }));
+    ? eraseRecordDetails(u, str(f, "recordId"), { basis, reason: str(f, "note"), confirmPermitted: f.get("confirmPermitted") === "on" }) : Promise.resolve({ ok: false as const, error: "State the basis for the erasure." }));
 }

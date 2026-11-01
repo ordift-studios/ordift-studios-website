@@ -34,15 +34,14 @@ function Row({ jobType, jobId, r }: { jobType: string; jobId: string; r: Erasure
   const [s, act, pending] = useActionState(eraseRecordAction, null as ErasureFormState);
   return (
     <li className="space-y-1 rounded-xl border border-black/10 bg-white p-2">
-      <p className="font-sans text-caption"><strong>{r.decision}</strong> · {r.source.replace(/_/g, " ")} · recorded {r.recordedAt.slice(0, 10)} · {r.destinations.map((d) => DESTINATION_LABEL[d as Destination] ?? d).join(", ") || "no uses"}{r.erased ? " · personal details erased" : ""}{r.hasStoredFile ? " · a stored evidence file is attached" : ""}</p>
+      <p className="font-sans text-caption"><strong>{r.decision}</strong> · {r.source.replace(/_/g, " ")} · recorded {r.recordedAt.slice(0, 10)} · {r.destinations.map((d) => DESTINATION_LABEL[d as Destination] ?? d).join(", ") || "no uses"}{r.erased ? " · personal details erased" : ""}{r.hasStoredFile ? " · references a stored evidence file: erasure is refused (cannot be verified)" : ""}</p>
       <p className="font-sans text-caption text-ordift-ink-muted">{r.endedOn ? `Ended ${r.endedOn}` : "Not ended"}{r.lastUseOn ? ` · last use ${r.lastUseOn}` : ""}{r.earliestRetentionDate ? ` · earliest erasure on the retention basis ${r.earliestRetentionDate}` : ""}</p>
       {r.blockersRetention.length > 0 && <p className="font-sans text-caption text-amber-900">On the retention basis, blocked: {r.blockersRetention.join("; ")}.</p>}
-      {!r.erased && (
+      {!r.erased && !r.hasStoredFile && (
         <form action={act} className="space-y-1"><Hidden jobType={jobType} jobId={jobId} /><input type="hidden" name="recordId" value={r.id} />
           <select name="basis" aria-label="Basis for erasure" className={input} defaultValue=""><option value="" disabled>Basis for erasure…</option>{BASES.map((b) => <option key={b.key} value={b.key}>{b.label}</option>)}</select>
           <input name="note" placeholder={`Reason (${REASON_HELP})`} aria-label="Reason for erasure" className={input} />
           <label className="flex items-start gap-2 font-sans text-caption"><input type="checkbox" name="confirmPermitted" className="mt-0.5" />I confirm erasure is permitted: no dispute, legal obligation, audit or active permission still needs this evidence</label>
-          {r.hasStoredFile && <label className="flex items-start gap-2 font-sans text-caption"><input type="checkbox" name="storageRemoved" className="mt-0.5" />The stored evidence file has been removed through the approved process (this page never deletes files)</label>}
           <button className={btn} disabled={pending}>Erase details</button><Msg s={s} /></form>)}
     </li>
   );
