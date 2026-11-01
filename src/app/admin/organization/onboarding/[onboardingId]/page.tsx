@@ -21,7 +21,7 @@ import { buildInstructorWorkspace } from "@/lib/organization/instructorWorkspace
 import { loadContactEmailsForViewer } from "@/lib/organization/correspondenceEmail";
 import { ContactEmailLines } from "../../ContactEmailLines";
 import { getCurrentInstructorAgreement, resolveOnboardingLegalContext } from "@/lib/legal/instructorAgreements";
-import { loadInstructorSigningProgress, previewInstructorAgreement } from "@/lib/legal/instructorAgreementIssuance";
+import { loadInstructorSigningProgress, previewInstructorAgreement, previewSigningDestinations } from "@/lib/legal/instructorAgreementIssuance";
 import { instructorAgreementStage } from "@/lib/legal/instructorAgreementDocument";
 import { missingScheduleATerms } from "@/lib/legal/instructorAgreementTerms";
 import type { AgreementPanelData } from "@/components/admin/OnboardingJourneyPanel";
@@ -188,10 +188,12 @@ export default async function OnboardingWorkspacePage({ params }: { params: Prom
             const missingTerms = missingScheduleATerms(terms);
             const unissued = ["draft", "internal_review", "approved_for_issue"].includes(draft.status);
             const preview = unissued && missingTerms.length === 0 ? await previewInstructorAgreement(onboarding.id, draft.id) : null;
+            const dest = draft.status === "approved_for_issue" ? await previewSigningDestinations(draft.id) : null;
             agreementPanel = {
               id: draft.id, reference: draft.agreementReference, status: draft.status, stage: instructorAgreementStage(draft.status, draft.evidenceClassification, signing.map((g) => ({ status: g.status, linkExpiresAt: g.linkExpiresAt }))), terms, missingTerms,
               preview: preview && preview.ok ? { text: preview.text, sha256: preview.sha256 } : null, previewError: preview && !preview.ok ? preview.error : null,
               issuedSha256: (ag?.issued_document_sha256 as string | null) ?? null, signing,
+              signingDestinations: dest && dest.ok ? dest.destinations : null, signingDestinationError: dest && !dest.ok ? dest.error : null,
             };
           }
           const approvalEvidence = agreement?.context.versionId && !agreement.context.approvalDate ? (await listApprovalEvidence(agreement.context.versionId)).map((e) => ({ id: e.id, name: e.name, sha256: e.sha256, storedAt: e.storedAt })) : [];

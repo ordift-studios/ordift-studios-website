@@ -72,6 +72,7 @@ function Form({ kind, onboardingId, agreement, today, steps, approvalEvidence }:
 export type AgreementPanelData = {
   id: string; reference: string; status: string; stage: AgreementStage; terms: Partial<ScheduleATerms>; missingTerms: string[];
   preview: { text: string; sha256: string } | null; previewError: string | null; issuedSha256: string | null; signing: SigningProgress;
+  signingDestinations: { role: string; masked: string; source: "preferred_correspondence" | "account_email" }[] | null; signingDestinationError: string | null; // masked, shown before issuing (approved_for_issue only)
 };
 const TONE: Record<AgreementStage["tone"], string> = { neutral: "bg-black/5 text-ordift-ink", pending: "bg-amber-100 text-amber-900", good: "bg-green-100 text-green-900", bad: "bg-red-100 text-red-900" };
 
@@ -98,7 +99,7 @@ function AgreementPanel({ data, onboardingId, today }: { data: AgreementPanelDat
       ) : data.previewError ? <p className="font-sans text-caption text-red-800">Preview unavailable: {data.previewError}</p> : null}
 
       {canApprove && data.preview && <ApproveForIssueForm onboardingId={onboardingId} agreementId={data.id} previewSha256={data.preview.sha256} />}
-      {data.status === "approved_for_issue" && <IssueAgreementForm onboardingId={onboardingId} agreementId={data.id} />}
+      {data.status === "approved_for_issue" && <IssueAgreementForm onboardingId={onboardingId} agreementId={data.id} destinations={data.signingDestinations} destinationError={data.signingDestinationError} />}
 
       {data.signing.length > 0 && (
         <p className="font-sans text-caption text-ordift-ink-muted">“Accepted by provider” means the email service took the message; it is not proof it arrived. “Viewed” appears only when the signatory opens their secure link. If a delivery failed, press Issue again: signatories already accepted are not emailed twice.</p>

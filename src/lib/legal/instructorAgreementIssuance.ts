@@ -11,6 +11,7 @@ import { deriveMasterContentReference } from "./masterContentReference";
 import { loadAgreementReadiness } from "./agreementReadinessData";
 import { resolveOnboardingLegalContext, loadEntityRegistrationParticulars, resolveDraftSignatoryParticulars, loadInstructorParticulars, OS_LGL_010, INSTRUCTOR_CONTEXT_TYPE } from "./instructorAgreements";
 import { sendEmail } from "@/lib/shared/email/dispatch";
+import { maskEmail, resolveInstructorSigningDelivery, type SigningDelivery, type SigningDeliverySource } from "@/lib/organization/correspondenceEmail";
 
 // OS-LGL-010 Instructor Agreement: Schedule A terms -> preview -> approve for issue -> issue for signature. Reuses the generic agreement engine,
 // signature engine, issued-document bucket, hash recording and the existing token-based /legal/sign review page. Nothing here signs anything:
@@ -141,9 +142,25 @@ export async function issueInstructorAgreement(params: { onboardingId: string; a
     if (!hashed.ok) return { ok: false, error: hashed.error, step: "compose_and_hash" };
   }
 
+  // Where each signing link will be mailed. The Ordift signatory always uses the account email. The INSTRUCTOR uses their recorded preferred correspondence email when
+  // one exists, otherwise the account email; if a preference exists but cannot be read or is not a usable address, issuing STOPS (no silent fallback). The account (login)
+  // email is only read, never changed. Resolved BEFORE any link is generated so a failure here never creates or replaces a token.
+  const deliveryFor = async (role: string, profileId: string): Promise<SigningDelivery> => {
+    const { data: authUser } = await admin.auth.admin.getUserById(profileId);
+    const accountEmail = authUser?.user?.email ?? null;
+    if (role === "instructor") return resolveInstructorSigningDelivery(profileId, accountEmail);
+    return accountEmail ? { ok: true, email: accountEmail, source: "account_email", masked: maskEmail(accountEmail) as string } : { ok: false, error: `The “${role}” signatory's account has no email on file.` };
+  };
+
   const { data: existing } = await admin.from("signature_requests").select("id").eq("agreement_id", agreement.id).maybeSingle();
   let requestId = (existing?.id as string | undefined) ?? null;
   if (!requestId) {
+    // First issue: confirm the instructor's destination before creating the signature request, so a refusal leaves nothing behind.
+    const { data: instructorParty } = await admin.from("agreement_parties").select("profile_id").eq("agreement_id", agreement.id).eq("party_role", "instructor").maybeSingle();
+    if (instructorParty?.profile_id) {
+      const pre = await deliveryFor("instructor", instructorParty.profile_id as string);
+      if (!pre.ok) return { ok: false, error: pre.error, step: "deliver_access_links" };
+    }
     const created = await createSignatureRequest({ agreementId: agreement.id, actorUserId: params.actorUserId });
     if (!created.ok) return { ok: false, error: created.error, step: "signature_request" };
     requestId = created.signatureRequestId;
@@ -166,13 +183,14 @@ export async function issueInstructorAgreement(params: { onboardingId: string; a
     const { error } = await admin.from("signature_events").insert({ signatory_id: signatoryId, event_type: type, actor_type: "admin", metadata });
     return !error;
   };
+  const deliveredTo: { role: string; deliverySource: SigningDeliverySource; deliveredTo: string }[] = []; // this attempt only; masked, never a token
   for (const s of signatories ?? []) {
     if (accepted.has(s.id as string) || ["signed", "declined"].includes(s.status as string)) continue;
     const profileId = (s.agreement_parties as unknown as { profile_id: string | null } | null)?.profile_id;
     if (!profileId) return { ok: false, error: `The “${s.role}” signatory has no linked account to deliver a secure link to.`, step: "deliver_access_links" };
-    const { data: authUser } = await admin.auth.admin.getUserById(profileId);
-    const email = authUser?.user?.email;
-    if (!email) return { ok: false, error: `The “${s.role}” signatory's account has no email on file.`, step: "deliver_access_links" };
+    const delivery = await deliveryFor(s.role as string, profileId);
+    if (!delivery.ok) return { ok: false, error: delivery.error, step: "deliver_access_links" };
+    const email = delivery.email;
     const link = await generateSignatoryAccessLink({ signatoryId: s.id as string, actorUserId: params.actorUserId });
     if (!link.ok) return { ok: false, error: link.error, step: "deliver_access_links" };
     const signUrl = `${process.env.NEXT_PUBLIC_SITE_URL ?? "https://ordiftstudios.com"}/legal/sign/${link.token}`;
@@ -194,10 +212,11 @@ export async function issueInstructorAgreement(params: { onboardingId: string; a
       console.error("[legal] instructor agreement email threw", err);
     }
     if (!sentOk) {
-      await recordDelivery(s.id as string, "link_email_failed", { reason: detail });
+      await recordDelivery(s.id as string, "link_email_failed", { reason: detail, deliverySource: delivery.source, deliveredTo: delivery.masked });
       return { ok: false, error: `The email to the “${s.role}” signatory was not accepted — ${detail}. Recipients already accepted keep their valid links and will not be emailed again. Retrying sends this recipient one fresh link; any earlier link for them stops working.`, step: "deliver_access_links" };
     }
-    if (!(await recordDelivery(s.id as string, "link_email_accepted", { acceptedByProvider: true, note: "accepted for delivery; not proof of receipt" }))) {
+    deliveredTo.push({ role: s.role as string, deliverySource: delivery.source, deliveredTo: delivery.masked });
+    if (!(await recordDelivery(s.id as string, "link_email_accepted", { acceptedByProvider: true, note: "accepted for delivery; not proof of receipt", deliverySource: delivery.source, deliveredTo: delivery.masked }))) {
       return { ok: false, error: `The email to the “${s.role}” signatory was accepted but its delivery record could not be saved. Retry to record it (they will be sent one fresh link).`, step: "deliver_access_links" };
     }
     accepted.add(s.id as string);
@@ -207,8 +226,26 @@ export async function issueInstructorAgreement(params: { onboardingId: string; a
   if (!(signatories ?? []).length || outstanding.length > 0) return { ok: false, error: "Not every signatory has an accepted secure-link email yet.", step: "deliver_access_links" };
   const t = await transitionAgreementStatus({ agreementId: agreement.id, toStatus: "sent", actorUserId: params.actorUserId });
   if (!t.ok) return { ok: false, error: t.error, step: "transition_to_sent" };
-  await logActivity({ actorUserId: params.actorUserId, action: "legal.instructor_agreement.issued_and_sent", entityType: "agreement", entityId: agreement.id, metadata: { agreementReference: agreement.agreement_reference, documentSha256: agreement.issued_document_sha256 ?? null } });
+  await logActivity({ actorUserId: params.actorUserId, action: "legal.instructor_agreement.issued_and_sent", entityType: "agreement", entityId: agreement.id, metadata: { agreementReference: agreement.agreement_reference, documentSha256: agreement.issued_document_sha256 ?? null, signingLinkDelivery: deliveredTo } });
   return { ok: true };
+}
+
+// Where each signing link WOULD be mailed, masked, for the issue screen. Read-only: it creates no request, token or email. A refusal here is shown instead of the destination.
+export type SigningDestination = { role: string; masked: string; source: SigningDeliverySource };
+export async function previewSigningDestinations(agreementId: string): Promise<{ ok: true; destinations: SigningDestination[] } | { ok: false; error: string }> {
+  const admin = createAdminClient();
+  const { data: parties } = await admin.from("agreement_parties").select("party_role, profile_id").eq("agreement_id", agreementId).in("party_role", ["instructor", "ordift"]);
+  const destinations: SigningDestination[] = [];
+  for (const role of ["instructor", "ordift"]) {
+    const profileId = (parties ?? []).find((x) => x.party_role === role)?.profile_id as string | null | undefined;
+    if (!profileId) return { ok: false, error: `The “${role}” signatory has no linked account to deliver a secure link to.` };
+    const { data: authUser } = await admin.auth.admin.getUserById(profileId);
+    const accountEmail = authUser?.user?.email ?? null;
+    const d = role === "instructor" ? await resolveInstructorSigningDelivery(profileId, accountEmail) : accountEmail ? { ok: true as const, source: "account_email" as const, masked: maskEmail(accountEmail) as string } : { ok: false as const, error: `The “${role}” signatory's account has no email on file.` };
+    if (!d.ok) return { ok: false, error: d.error };
+    destinations.push({ role, masked: d.masked, source: d.source });
+  }
+  return { ok: true, destinations };
 }
 
 // ------------------------------------------------------------------ read model for the workspace

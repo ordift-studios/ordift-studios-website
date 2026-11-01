@@ -9,9 +9,10 @@ import { authorizeWithSuperAdminOverride, PEOPLE_CAPABILITIES } from "@/lib/orga
 //   Preferred Correspondence Email — Used for Communication   what a person has asked Ordift to use for ordinary correspondence. Unverified, recorded by an administrator
 //                                                             with a short evidence reference. The latest row is the current preference; a cleared row means "use the account email".
 //
-// SECURITY BOUNDARY. This preference is for ordinary communication ONLY. Login, password reset and agreement signing links keep using the account email, always:
-// no authentication, signature or issuance code may import this module (enforced by correspondenceEmailIsolation.test.ts). Only the agreement CONTACT line (an
-// informational line - the master has no notice-address clause) uses it, through the draft's Schedule A refresh, and the person's own read-only portal card.
+// SECURITY BOUNDARY. Login and password reset keep using the account email, always, and no authentication or signature-engine code may import this module (enforced by
+// correspondenceEmailIsolation.test.ts). The preference is used by exactly three things: the agreement CONTACT line (through the draft's Schedule A refresh), the person's
+// own read-only portal card, and - for the INSTRUCTOR signatory only - the destination of the signing-link email at issuance (resolveInstructorSigningDelivery below, called
+// only from instructorAgreementIssuance.ts). The signing token, its hash, expiry, revocation and the signing page are unchanged; only where the link is mailed differs.
 //
 // PRIVACY. Reading and writing require Super Admin or people-management authority (the same authority as the people page). The audit log is readable by all staff,
 // so it receives only MASKED addresses and never the evidence note. The evidence note is a short reference, validated to contain no email address and no long number.
@@ -72,6 +73,31 @@ export function resolveContactEmail(accountEmail: string | null | undefined, pre
   if (preferred) return { email: preferred, source: "preferred" };
   const account = accountEmail?.trim();
   return account ? { email: account, source: "account" } : { email: null, source: "none" };
+}
+
+// ---------------------------------------------------------------------------------------------------------------- signing-link delivery (instructor issuance only)
+export type SigningDeliverySource = "preferred_correspondence" | "account_email";
+export type SigningDelivery = { ok: true; email: string; source: SigningDeliverySource; masked: string } | { ok: false; error: string };
+
+// Pure decision. `preference`: a string = the recorded preferred address; null = no preference (or cleared) -> use the account email; undefined = a preference may exist but
+// could not be read -> STOP (never fall back silently, because the signing link is a bearer credential and its destination is the security boundary).
+export function chooseSigningDelivery(p: { accountEmail: string | null | undefined; preference: string | null | undefined }): SigningDelivery {
+  if (p.preference === undefined) return { ok: false, error: "The signing-link destination could not be confirmed because the preferred correspondence email could not be read. Nothing was sent; try again, or contact the administrator." };
+  if (p.preference !== null) {
+    const v = validateCorrespondenceEmail(p.preference);
+    if (!v.ok) return { ok: false, error: "The recorded preferred correspondence email is not a usable address, so the signing link was not sent. Correct the preferred correspondence email, then issue again." };
+    return { ok: true, email: v.email, source: "preferred_correspondence", masked: maskEmail(v.email) as string };
+  }
+  const account = p.accountEmail?.trim();
+  if (!account) return { ok: false, error: "The “instructor” signatory's account has no email on file." };
+  return { ok: true, email: account, source: "account_email", masked: maskEmail(account) as string };
+}
+
+// Resolves where the INSTRUCTOR's signing link goes. The login (account) email is never changed or replaced - it is only the fallback.
+export async function resolveInstructorSigningDelivery(profileId: string, accountEmail: string | null | undefined): Promise<SigningDelivery> {
+  let preference: string | null | undefined;
+  try { preference = await getPreferredCorrespondenceEmail(profileId); } catch { preference = undefined; }
+  return chooseSigningDelivery({ accountEmail, preference });
 }
 
 // ---------------------------------------------------------------------------------------------------------------- authority

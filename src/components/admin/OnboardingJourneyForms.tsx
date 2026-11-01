@@ -258,11 +258,17 @@ export function ApproveForIssueForm({ onboardingId, agreementId, previewSha256 }
   );
 }
 
-export function IssueAgreementForm({ onboardingId, agreementId }: { onboardingId: string; agreementId: string }) {
+export function IssueAgreementForm({ onboardingId, agreementId, destinations, destinationError }: { onboardingId: string; agreementId: string; destinations?: { role: string; masked: string; source: "preferred_correspondence" | "account_email" }[] | null; destinationError?: string | null }) {
   const [state, action, pending] = useActionState<JourneyActionState, FormData>(issueAgreementAction, null);
   return (
     <Box title="Issue for signature">
       <p className="font-sans text-caption text-ordift-ink-muted">Stores the immutable document with its SHA-256, then emails each signatory a secure, expiring link to review and sign. The agreement counts as executed only when both have signed.</p>
+      {destinations && destinations.length > 0 && (
+        <ul className="font-sans text-caption text-ordift-ink space-y-1">
+          {destinations.map((d) => <li key={d.role}>Signing link for the {d.role === "ordift" ? "Ordift signatory" : "instructor"} will be sent to <span className="font-mono">{d.masked}</span> ({d.source === "preferred_correspondence" ? "preferred correspondence email" : "account email"}).</li>)}
+        </ul>
+      )}
+      {destinationError && <p className="font-sans text-caption text-red-800">Issuing is blocked: {destinationError}</p>}
       <form action={action} className="space-y-3">
         <input type="hidden" name="onboardingId" value={onboardingId} /><input type="hidden" name="agreementId" value={agreementId} />
         <label className="flex items-start gap-2 font-sans text-body-small text-ordift-ink"><input type="checkbox" name="confirmIssue" value="yes" className="mt-1" /> I confirm secure signing links should be emailed now.</label>

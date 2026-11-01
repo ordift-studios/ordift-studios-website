@@ -2,8 +2,9 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 import { describe, expect, it } from "vitest";
 
-// SIGNING-LINK AND AUTHENTICATION ISOLATION (static). The preferred correspondence email is for ORDINARY COMMUNICATION and the agreement Contact line only. These checks
-// fail the build if login, password reset, signature or issuance code could ever start reading it, or if anything could write the Supabase Auth account email.
+// SIGNING-LINK AND AUTHENTICATION ISOLATION (static). The preferred correspondence email is for ORDINARY COMMUNICATION, the agreement Contact line, and the destination of the
+// INSTRUCTOR's signing-link email at issuance (through one resolver only). These checks fail the build if login, password reset or the signature engine could ever start
+// reading it, if the issuance path reaches it any other way, or if anything could write the Supabase Auth account email.
 const root = process.cwd();
 const walk = (dir: string): string[] => readdirSync(dir).flatMap((f) => { const p = join(dir, f); return statSync(p).isDirectory() ? (f === "node_modules" || f === ".next" ? [] : walk(p)) : [p]; });
 const src = walk(join(root, "src")).filter((f) => /\.(ts|tsx)$/.test(f));
@@ -12,7 +13,7 @@ const read = (r: string) => readFileSync(join(root, r), "utf8");
 const IMPORT = /from\s+["']@\/lib\/organization\/correspondenceEmail["']/;
 
 describe("who may use the correspondence-email module", () => {
-  it("only the people and onboarding screens, the people action, the two portal pages (and their card) and the Schedule A loader import it (plus tests)", () => {
+  it("only the people and onboarding screens, the people action, the two portal pages (and their card), the Schedule A loader and the instructor issuance component import it (plus tests)", () => {
     const importers = src.filter((f) => IMPORT.test(readFileSync(f, "utf8"))).map(rel).filter((f) => !/\.(test|e2e)\.tsx?$/.test(f) && !/\.localdb\.e2e\.ts$/.test(f)).sort();
     expect(importers).toEqual([
       "src/app/admin/organization/ContactEmailLines.tsx", // a TYPE-only import (the read-only lines component)
@@ -23,6 +24,7 @@ describe("who may use the correspondence-email module", () => {
       "src/app/portal/(dashboard)/OwnContactEmailsCard.tsx", // a TYPE-only import (the read-only portal card)
       "src/app/portal/(dashboard)/collaborator/page.tsx",
       "src/app/portal/(dashboard)/instructor/page.tsx",
+      "src/lib/legal/instructorAgreementIssuance.ts", // the instructor signing-link destination ONLY (resolveInstructorSigningDelivery); see the test below
       "src/lib/legal/instructorAgreements.ts",
     ]);
   });
@@ -36,16 +38,41 @@ describe("login, password reset, signing and issuance never use it", () => {
   it("security files do not mention the correspondence email at all", () => {
     for (const f of SECURITY_FILES) expect(read(f), f).not.toMatch(/orrespondence/);
   });
-  it("the instructor issue-for-signature path neither imports it nor reads it, and delivers each signing link to the ACCOUNT email", () => {
+  it("the instructor issuance imports ONLY the delivery resolver (and the masker), never the table, the history, the setter or the raw reader", () => {
     const text = read("src/lib/legal/instructorAgreementIssuance.ts");
-    expect(text).not.toMatch(IMPORT);
-    const issue = text.slice(text.indexOf("export async function issueInstructorAgreement"));
-    expect(issue.length).toBeGreaterThan(500);
-    expect(issue).not.toMatch(/orrespondence/);
-    expect(issue).toMatch(/admin\.auth\.admin\.getUserById\(profileId\)/);
-    expect(issue).toMatch(/to: email,/);
+    const imp = text.match(/import\s*\{([^}]*)\}\s*from\s*["']@\/lib\/organization\/correspondenceEmail["']/);
+    expect(imp).not.toBeNull();
+    const names = imp![1].split(",").map((n) => n.trim().replace(/^type\s+/, "")).filter(Boolean).sort();
+    expect(names).toEqual(["SigningDelivery", "SigningDeliverySource", "maskEmail", "resolveInstructorSigningDelivery"]);
+    expect(text).not.toMatch(/profile_correspondence_emails|getPreferredCorrespondenceEmail|setCorrespondenceEmail|loadContactEmailsForViewer|my_correspondence_email/);
   });
-  it("the Schedule A refresh is the ONLY place the agreement reads the preference, and the master text and clauses are not touched by it", () => {
+  it("only the INSTRUCTOR signatory is routed through the resolver: the Ordift signatory and the login identity keep the account email", () => {
+    const text = read("src/lib/legal/instructorAgreementIssuance.ts");
+    const issue = text.slice(text.indexOf("export async function issueInstructorAgreement"), text.indexOf("// Where each signing link WOULD be mailed"));
+    expect(issue.length).toBeGreaterThan(500);
+    expect(issue).toMatch(/admin\.auth\.admin\.getUserById\(profileId\)/);                    // the account email is still read from Supabase Auth
+    expect(issue.match(/resolveInstructorSigningDelivery\(/g)?.length).toBe(1);                  // one call site in the issue path (the screen preview below it is read-only)...
+    expect(issue).toMatch(/if \(role === "instructor"\) return resolveInstructorSigningDelivery\(profileId, accountEmail\)/); // ...guarded by the instructor role
+    expect(issue).toMatch(/source: "account_email"/);                                             // everyone else: the account email
+    expect(issue).toMatch(/to: email,/);
+    expect(text).not.toMatch(/auth\.admin\.(update|create|delete)|updateUserById|auth\.updateUser/); // never writes the login identity
+  });
+  it("the destination is resolved BEFORE a signature request or a token is created, so a refusal leaves nothing behind", () => {
+    const text = read("src/lib/legal/instructorAgreementIssuance.ts");
+    const issue = text.slice(text.indexOf("export async function issueInstructorAgreement"), text.indexOf("// Where each signing link WOULD be mailed"));
+    const at = (needle: string) => { const i = issue.indexOf(needle); expect(i, needle).toBeGreaterThan(-1); return i; };
+    expect(at('const pre = await deliveryFor("instructor"')).toBeLessThan(at("createSignatureRequest({"));
+    expect(at("const delivery = await deliveryFor(s.role as string, profileId)")).toBeLessThan(at("generateSignatoryAccessLink({"));
+    expect(issue).toMatch(/if \(!delivery\.ok\) return \{ ok: false, error: delivery\.error, step: "deliver_access_links" \}/); // explicit stop, no fallback
+  });
+  it("the signing link itself (token, hash, expiry) is generated by the unchanged signature engine, and no token is logged or recorded by the issuance", () => {
+    const text = read("src/lib/legal/instructorAgreementIssuance.ts");
+    expect(text).toMatch(/generateSignatoryAccessLink\(\{ signatoryId: s\.id as string, actorUserId: params\.actorUserId \}\)/);
+    const issue = text.slice(text.indexOf("export async function issueInstructorAgreement"), text.indexOf("// ------------------------------------------------------------------ read model"));
+    const meta = issue.match(/recordDelivery\([^\n]*|metadata: \{[^\n]*|console\.error\([^\n]*/g)!.join("\n");
+    expect(meta).not.toMatch(/link\.token|signUrl|\btoken\b/);                                     // no token or link in any metadata or log line
+  });
+  it("the Schedule A refresh is the only place the agreement DOCUMENT reads the preference, and the master text and clauses are not touched by it", () => {
     const composer = read("src/lib/legal/instructorAgreementDocument.ts");
     expect(composer).not.toMatch(IMPORT);                                  // the composer is pure: it only prints the snapshot value
     expect(composer.match(/correspondenceEmail/g)?.length).toBeGreaterThan(0);

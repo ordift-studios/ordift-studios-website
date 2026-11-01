@@ -56,7 +56,7 @@ import { confirmContractingEntity, selectAgreementSignatory } from "@/lib/organi
 import { addEntitySignatory } from "@/lib/organization/entityRegistrations";
 import { setCorrespondenceEmail, getPreferredCorrespondenceEmail, loadContactEmailsForViewer, canAccessCorrespondenceEmail } from "@/lib/organization/correspondenceEmail";
 import { prepareInstructorAgreementDraft } from "./instructorAgreements";
-import { approveInstructorAgreementForIssue, issueInstructorAgreement, previewInstructorAgreement, saveInstructorScheduleA } from "./instructorAgreementIssuance";
+import { approveInstructorAgreementForIssue, issueInstructorAgreement, previewInstructorAgreement, previewSigningDestinations, saveInstructorScheduleA } from "./instructorAgreementIssuance";
 import type { ScheduleATerms } from "./instructorAgreementTerms";
 import { storeTestEvidence } from "./approvalEvidence.testkit";
 import { MASTER } from "./instructorMaster.fixture";
@@ -241,19 +241,34 @@ describe("agreement Contact line and snapshot preservation", () => {
 });
 
 describe("signing-link isolation", () => {
-  it("the secure signing links go to the ACCOUNT emails, never to the preferred address; the account email is never written; the issued document records the preference as Contact", async () => {
+  it("the INSTRUCTOR's signing link goes to the preferred correspondence email, the Ordift signatory's to their account email; the login email is never written; the issued document records the preference as Contact", async () => {
     const emailsBefore = h.emails.length;
     expect(await getPreferredCorrespondenceEmail(INSTR)).toBe(PREFERRED);
     expect((await approveInstructorAgreementForIssue({ onboardingId: ids.onboarding, agreementId: ids.agreement, actorUserId: SUPER })).ok).toBe(true);
+    expect(sql(`select count(*) from public.signature_requests where agreement_id='${ids.agreement}'`)).toBe("0"); // approving creates no signing request and sends nothing
+    expect(h.emails.length).toBe(emailsBefore);
+    const shown = await previewSigningDestinations(ids.agreement);                      // the issue screen: masked destinations, read-only
+    expect(shown).toEqual({ ok: true, destinations: [{ role: "instructor", masked: "p***t@c***.test", source: "preferred_correspondence" }, { role: "ordift", masked: `${SUPER.slice(-4)[0]}***${SUPER.slice(-1)}@s***.test`, source: "account_email" }] });
+    expect(JSON.stringify(shown)).not.toContain(PREFERRED);
+    expect(sql(`select count(*) from public.signature_requests where agreement_id='${ids.agreement}'`)).toBe("0"); // previewing created nothing
     expect((await issueInstructorAgreement({ onboardingId: ids.onboarding, agreementId: ids.agreement, actorUserId: SUPER })).ok).toBe(true);
     const sent = h.emails.slice(emailsBefore).map((e) => e.to).sort();
-    expect(sent).toEqual([ACCOUNT, `${SUPER.slice(-4)}@synthetic.test`].sort());       // the instructor's and the Ordift signatory's ACCOUNT emails
-    expect(h.emails.some((e) => e.to === PREFERRED || e.to === SECOND)).toBe(false);
+    expect(sent).toEqual([PREFERRED, `${SUPER.slice(-4)}@synthetic.test`].sort());      // instructor: PREFERRED; Ordift signatory: ACCOUNT email (unchanged)
+    expect(h.emails.some((e) => e.to === ACCOUNT || e.to === SECOND)).toBe(false);      // the instructor's login email is not used for the link
     expect(h.emails.some((e) => /correspondence\.test/.test(e.text) || /correspondence\.test/.test(e.subject))).toBe(false);
     expect(h.authWrites).toEqual([]);                                                   // no Auth account write of any kind, in any test of this file
     const stored = Object.keys(h.files).find((k) => k.endsWith(`${ids.agreement}.txt`));
     expect(Buffer.from(h.files[stored as string]).toString("utf8")).toContain(`Contact: ${PREFERRED}`);
     expect(sql(`select status from public.agreements where id='${ids.agreement}'`)).toBe("sent");
+    // exactly one signature request, two signatories, 14-day expiry, token stored as a hash (never the token)
+    expect(sql(`select count(*) from public.signature_requests where agreement_id='${ids.agreement}'`)).toBe("1");
+    expect(sql(`select count(*) from public.signature_signatories ss join public.signature_requests r on r.id=ss.signature_request_id where r.agreement_id='${ids.agreement}'`)).toBe("2");
+    expect(sql(`select string_agg(round(extract(epoch from (ss.token_expires_at - now()))/86400)::text, ',') from public.signature_signatories ss join public.signature_requests r on r.id=ss.signature_request_id where r.agreement_id='${ids.agreement}'`)).toBe("14,14");
+    // delivery audit: source + masked destination on each accepted-delivery event, never an address in full and never a token
+    const ev = sql(`select concat_ws('|', ss.role, (e.metadata->>'deliverySource'), (e.metadata->>'deliveredTo')) from public.signature_events e join public.signature_signatories ss on ss.id=e.signatory_id join public.signature_requests r on r.id=ss.signature_request_id where r.agreement_id='${ids.agreement}' and e.event_type='link_email_accepted' order by ss.role`);
+    expect(ev.split("\n")).toEqual(["instructor|preferred_correspondence|p***t@c***.test", `ordift|account_email|${SUPER.slice(-4).slice(0, 1)}***${SUPER.slice(-4).slice(-1)}@s***.test`]);
+    const allMeta = sql(`select string_agg(e.metadata::text, ' ') from public.signature_events e join public.signature_signatories ss on ss.id=e.signatory_id join public.signature_requests r on r.id=ss.signature_request_id where r.agreement_id='${ids.agreement}'`);
+    expect(allMeta).not.toMatch(/correspondence\.test"|@synthetic\.test"|\/legal\/sign\//);
   });
   it("changing the preference after issue changes nothing in the issued agreement", async () => {
     const [sha, text] = [sql(`select issued_document_sha256 from public.agreements where id='${ids.agreement}'`), Buffer.from(h.files[Object.keys(h.files).find((k) => k.endsWith(`${ids.agreement}.txt`)) as string]).toString("utf8")];
