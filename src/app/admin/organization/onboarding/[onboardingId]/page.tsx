@@ -21,13 +21,14 @@ import { buildInstructorWorkspace } from "@/lib/organization/instructorWorkspace
 import { loadContactEmailsForViewer } from "@/lib/organization/correspondenceEmail";
 import { ContactEmailLines } from "../../ContactEmailLines";
 import { getCurrentInstructorAgreement, resolveOnboardingLegalContext } from "@/lib/legal/instructorAgreements";
+import { INSTRUCTOR_FRAMEWORK_ENABLED } from "@/lib/instructors/featureGate";
+import { loadStandardsStateFor } from "@/lib/instructors/standards";
 import { loadInstructorSigningProgress, previewInstructorAgreement, previewSigningDestinations } from "@/lib/legal/instructorAgreementIssuance";
 import { instructorAgreementStage } from "@/lib/legal/instructorAgreementDocument";
 import { missingScheduleATerms } from "@/lib/legal/instructorAgreementTerms";
 import type { AgreementPanelData } from "@/components/admin/OnboardingJourneyPanel";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { listApprovalEvidence } from "@/lib/legal/approvalEvidence";
-import { listControlledPolicyDocuments, listPolicyAcknowledgementsForProfile } from "@/lib/organization/policyAcknowledgements";
 import { loadAgreementReadiness } from "@/lib/legal/agreementReadinessData";
 
 export const metadata: Metadata = {
@@ -158,9 +159,9 @@ export default async function OnboardingWorkspacePage({ params }: { params: Prom
             recordedEntityId: legalCtx?.recordedEntityId ?? null,
           });
           const draft = await getCurrentInstructorAgreement(onboarding.profileId);
-          const [controlledPolicies, acknowledgements] = await Promise.all([listControlledPolicyDocuments(), listPolicyAcknowledgementsForProfile(onboarding.profileId)]);
-          const acknowledgedIds = new Set(acknowledgements.map((a) => a.policyVersionId));
-          const policies = { registered: controlledPolicies.length, acknowledged: controlledPolicies.filter((d) => acknowledgedIds.has(d.documentVersionId)).length };
+          // Employee HR policies are not an instructor requirement and are no longer read here. The instructor standards state exists only once the framework is enabled (migration 0180).
+          const st = INSTRUCTOR_FRAMEWORK_ENABLED ? await loadStandardsStateFor(onboarding.profileId) : null;
+          const standards = st ? (st.state === "acknowledged" ? { state: "acknowledged" as const, versionLabel: st.version.versionLabel, acknowledgedAt: st.acknowledgedAt } : st.state === "pending" ? { state: "pending" as const, versionLabel: st.version.versionLabel } : { state: "not_adopted" as const }) : undefined;
           const ws = buildInstructorWorkspace({
             onboardingId: onboarding.id,
             personName: person?.fullName ?? null,
@@ -170,7 +171,8 @@ export default async function OnboardingWorkspacePage({ params }: { params: Prom
             status: onboarding.status,
             requisitionLinked: Boolean(onboarding.requisitionId),
             startDate: requisition?.preferredStartDate ?? null,
-            policies,
+            policies: { registered: 0, acknowledged: 0 },
+            standards,
             requirements: requirements.map((r) => ({ requirementKey: r.requirementKey, stage: r.stage, requirementType: r.requirementType, label: r.label, required: r.required, status: r.status })),
             agreement,
             draftAgreement: draft ? { id: draft.id, reference: draft.agreementReference, status: draft.status, stageLabel: instructorAgreementStage(draft.status, draft.evidenceClassification).label } : null,

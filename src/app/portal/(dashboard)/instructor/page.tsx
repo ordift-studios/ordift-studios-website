@@ -3,6 +3,8 @@ import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/portal/roles";
 import { loadOwnContactEmails } from "@/lib/organization/correspondenceEmail";
 import { OwnContactEmailsCard } from "../OwnContactEmailsCard";
+import { loadStandardsStateFor } from "@/lib/instructors/standards";
+import { InstructorStandardsCard } from "./InstructorStandardsCard";
 import {
   isWorkshopInstructor,
   listEngagementsForInstructor,
@@ -44,6 +46,7 @@ export default async function InstructorPortalPage() {
   if (!user) redirect("/portal/login");
 
   const ownEmails = await loadOwnContactEmails(user); // the signed-in person's own addresses, read-only, shown on both branches of this page
+  const standards = await loadStandardsStateFor(user.id); // "not_available" while the framework is off, nothing is adopted, or the person is not an independent instructor
   const isInstructor = await isWorkshopInstructor(user.id);
   if (!isInstructor) {
     return (
@@ -53,6 +56,7 @@ export default async function InstructorPortalPage() {
           <h1 className="font-serif font-medium text-section-heading lg:text-section-heading-desktop text-ordift-ink">My Workshops</h1>
         </div>
         <OwnContactEmailsCard emails={ownEmails} />
+        <InstructorStandardsCard state={standards} />
         <section className="rounded-xl border border-black/10 bg-white p-6">
           <p className="font-sans text-body-small text-ordift-ink-muted">
             No workshop instructor engagement is on record for your account yet.
@@ -91,6 +95,7 @@ export default async function InstructorPortalPage() {
       </div>
 
       <OwnContactEmailsCard emails={ownEmails} />
+        <InstructorStandardsCard state={standards} />
 
       <section className="rounded-xl border border-black/10 bg-white p-6 space-y-3">
         <h2 className="font-serif font-medium text-body text-ordift-ink">Upcoming Sessions</h2>

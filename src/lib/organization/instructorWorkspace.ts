@@ -14,7 +14,9 @@ export type InstructorWorkspaceFacts = {
   requisitionLinked: boolean;
   startDate: string | null;
   // genuine acknowledgement evidence for the currently active controlled policies (policy_acknowledgements)
-  policies: { registered: number; acknowledged: number };
+  policies: { registered: number; acknowledged: number }; // legacy (employee policies): no longer used for instructors
+  // the independent-instructor standards (undefined while the framework is not enabled)
+  standards?: { state: "not_adopted" } | { state: "pending"; versionLabel: string } | { state: "acknowledged"; versionLabel: string; acknowledgedAt: string };
   requirements: { requirementKey: string; stage: string; requirementType: string; label: string; required: boolean; status: string }[];
   agreement: AgreementReadiness | null;
   draftAgreement: { id: string; reference: string; status: string; stageLabel: string } | null;
@@ -60,8 +62,9 @@ export function buildInstructorWorkspace(f: InstructorWorkspaceFacts): { steps: 
   // "instructor standards" (conduct, safeguarding, confidentiality, data protection, recording), required BEFORE THE FIRST WORKSHOP ASSIGNMENT - not before the agreement. Until
   // management adopts those standards there is nothing to acknowledge, and this step says so instead of showing an employee-policy count.
   raw.push({ key: "policies", title: "Instructor standards (before the first workshop assignment)", owner: person, purpose: "Independent instructors acknowledge the instructor standards (conduct, safeguarding, confidentiality, data protection and recording) before their first workshop assignment. Employee HR policies do not apply to them, and this does not delay the agreement.",
-    known: ["Employee HR policies do not apply to independent instructors"], missing: ["Instructor standards have not yet been adopted by management, so there is nothing to acknowledge yet"],
-    state: "pending", blocker: null, action: null, checks: [], forms: [] });
+    known: ["Employee HR policies do not apply to independent instructors", ...(f.standards?.state === "acknowledged" ? [`Acknowledged version ${f.standards.versionLabel} on ${f.standards.acknowledgedAt.slice(0, 10)}`] : [])],
+    missing: f.standards?.state === "acknowledged" ? [] : f.standards?.state === "pending" ? [`The instructor has not yet acknowledged the adopted standards (version ${f.standards.versionLabel}); they do this in their own portal`] : ["Instructor standards have not yet been adopted by management, so there is nothing to acknowledge yet"],
+    state: f.standards?.state === "acknowledged" ? "completed" : "pending", blocker: null, action: null, checks: [], forms: [] });
 
   const template = check("approval_recorded", "approval_date", "master_files", "content_reference", "review_clauses", "activation", "effective_date");
   raw.push({ key: "template", title: "Legal approval of the contract template", owner: "Founder / Legal Counsel", purpose: "Before the Instructor Agreement can be used, its template must have a verified approval, a controlled content reference, no open review clauses, an effective date and an activation.",

@@ -53,6 +53,13 @@ describe("The instructor workspace, top to bottom", () => {
     }
     expect(buildInstructorWorkspace(facts({})).steps.find((s) => s.key === "agreement")?.blocker ?? null).not.toMatch(/standards|polic/i);
   });
+  it("with the standards framework on: pending names the adopted version; acknowledged completes the step with the version and date; never an employee-policy count", () => {
+    const pending = buildInstructorWorkspace(facts({ standards: { state: "pending", versionLabel: "1.0" } })).steps.find((s) => s.key === "policies")!;
+    expect(pending).toMatchObject({ state: "pending", blocker: null }); expect(pending.missing.join(" ")).toContain("version 1.0");
+    const done = buildInstructorWorkspace(facts({ standards: { state: "acknowledged", versionLabel: "1.0", acknowledgedAt: "2026-11-02T09:00:00Z" } })).steps.find((s) => s.key === "policies")!;
+    expect(done).toMatchObject({ state: "completed", missing: [] }); expect(done.known.join(" ")).toContain("version 1.0 on 2026-11-02");
+    expect(buildInstructorWorkspace(facts({ standards: { state: "not_adopted" } })).steps.find((s) => s.key === "policies")?.missing.join(" ")).toContain("not yet been adopted");
+  });
   it("jurisdiction is known (Ghana) but the entity still needs confirmation, with the embedded form", () => {
     const s = by("jurisdiction_entity");
     expect(s.state).toBe("pending");
