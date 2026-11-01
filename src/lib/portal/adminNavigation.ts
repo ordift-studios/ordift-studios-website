@@ -49,6 +49,17 @@ export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
     items: [{ label: "HR / People", href: "/admin/hr", adminOnly: true }],
   },
   {
+    // Independent instructors: one place for their directory/onboarding, the standards they acknowledge, and their assignments (Session Schedule, with each assignment's Rights Matrix).
+    // All four are Super Admin only (the standards and assignment-approval gates are Super Admin; the directory also admits onboarding authority, but navigation must never show a link the destination refuses).
+    label: "Instructor Management",
+    items: [
+      { label: "Instructor Directory / Onboarding", href: "/admin/organization/instructors", superAdminOnly: true },
+      { label: "Instructor Standards", href: "/admin/organization/instructor-standards", superAdminOnly: true },
+      { label: "Session Schedule / Assignments", href: "/admin/organization/instructor-assignments", superAdminOnly: true },
+      { label: "Rights Matrix", href: "/admin/organization/instructor-assignments#rights-matrix", superAdminOnly: true },
+    ],
+  },
+  {
     label: "Overview",
     items: [
       { label: "Overview", href: "/admin/overview" },
@@ -104,17 +115,6 @@ export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
       { label: "Legal Entities", href: "/admin/organization/legal-entities", superAdminOnly: true },
       { label: "Vendors", href: "/admin/organization/vendors", adminOnly: true },
       { label: "Statutory Wages", href: "/admin/organization/statutory-wages", superAdminOnly: true },
-    ],
-  },
-  {
-    // Independent instructors: one place for their directory/onboarding, the standards they acknowledge, and their assignments (Session Schedule, with each assignment's Rights Matrix).
-    // All four are Super Admin only (the standards and assignment-approval gates are Super Admin; the directory also admits onboarding authority, but navigation must never show a link the destination refuses).
-    label: "Instructor Management",
-    items: [
-      { label: "Instructor Directory / Onboarding", href: "/admin/organization/instructors", superAdminOnly: true },
-      { label: "Instructor Standards", href: "/admin/organization/instructor-standards", superAdminOnly: true },
-      { label: "Session Schedule / Assignments", href: "/admin/organization/instructor-assignments", superAdminOnly: true },
-      { label: "Rights Matrix", href: "/admin/organization/instructor-assignments#rights-matrix", superAdminOnly: true },
     ],
   },
   {

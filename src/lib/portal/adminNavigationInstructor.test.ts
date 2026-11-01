@@ -16,6 +16,11 @@ describe("Instructor Management navigation", () => {
   it("nobody else sees it: not an admin, not a workforce or operations administrator, not staff", () => {
     for (const f of [flags({ isAdmin: true }), flags({ isAdmin: true, isWorkforceAdmin: true, canCoordinateOperations: true, isExecutive: true }), flags({})]) expect(group(f)).toBeUndefined();
   });
+  it("the section sits near the START of the menu (right after HR / People), so it is visible without scrolling the bar", () => {
+    const labels = ADMIN_NAV_GROUPS.map((g) => g.label);
+    expect(labels.indexOf("Instructor Management")).toBe(labels.indexOf("HR / People") + 1);
+    expect(labels.indexOf("Instructor Management")).toBeLessThan(4);
+  });
   it("there is exactly one such section (no duplicate), and every entry points at an existing page", () => {
     expect(ADMIN_NAV_GROUPS.filter((g) => g.label === "Instructor Management")).toHaveLength(1);
     for (const i of ADMIN_NAV_GROUPS.find((g) => g.label === "Instructor Management")!.items) {

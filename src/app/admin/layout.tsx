@@ -123,7 +123,9 @@ export default async function AdminLayout({ children }: { children: React.ReactN
               identical for every role). No route, page, or authorization
               check changes; this only decides dropdown vs. flat link. */}
           {visibleNavGroups.map((group) => {
-            if (group.label === "My Workspace") {
+            // My Workspace and Instructor Management are ALWAYS dropdowns (even for a Super Admin, whose other groups render flat): a labelled dropdown near the left of the bar is
+            // visible at once, whereas four flat links appended after fourteen others sat off-screen at the far right of a horizontally scrolling bar.
+            if (group.label === "My Workspace" || group.label === "Instructor Management") {
               return <AdminNavDropdown key={group.label} label={group.label} items={group.items} />;
             }
             if (group.items.length === 1) {
