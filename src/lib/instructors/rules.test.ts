@@ -53,9 +53,9 @@ describe("schedule safeguarding (proposed 0181; dormant until applied)", () => {
     expect(scheduleReadiness(base).some((x) => x.key === "safeguarding")).toBe(false);
     expect(scheduleReadiness({ ...base, safeguarding: EMPTY_SAFEGUARDING }).find((x) => x.key === "safeguarding")?.met).toBe(false);
   });
-  it("the form is OFF and the code reads no 0181 column while the gate is off", () => {
+  it("the gate is ON (0181 applied) and the 0181 columns are read only behind it, never in the base column list", () => {
     const src = readFileSync(path.join(process.cwd(), "src/lib/instructors/assignments.ts"), "utf8");
-    expect(SCHEDULE_SAFEGUARDING_ENABLED).toBe(false);
+    expect(SCHEDULE_SAFEGUARDING_ENABLED).toBe(true);
     expect(src).toMatch(/if \(!SCHEDULE_SAFEGUARDING_ENABLED\) return undefined;/);
     expect(src).not.toMatch(/SCOLS = "[^"]*involves_minors/);
   });
