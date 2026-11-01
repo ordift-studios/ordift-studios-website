@@ -115,3 +115,17 @@ export async function getPeopleViews(fileIds: string[]): Promise<Record<string, 
   }
   return out;
 }
+
+// INTERIM RESTRICTION (management, 1 Nov 2026): a photograph that shows an identifiable child and is marked as originating in Qatar is not approved or cleared for promotional portfolio use until the Qatar requirements
+// (including any authorisation the Competent Department requires for children's data) have been verified. Internal handling for contracted services is unaffected. Applies only once structured evidence is live.
+export async function childQatarRestriction(fileId: string): Promise<string | null> {
+  if (!PORTFOLIO_LIBRARY_ENABLED || !SUBJECT_PERMISSIONS_ENABLED) return null;
+  const admin = createAdminClient();
+  const { data: cand } = await admin.from("portfolio_candidates").select("jurisdiction").eq("project_file_id", fileId).maybeSingle();
+  if (!/qatar/i.test(String(cand?.jurisdiction ?? ""))) return null;
+  const { data: subs } = await admin.from("portfolio_file_subjects").select("id, action, subject_kind, supersedes_id").eq("project_file_id", fileId);
+  const removed = new Set((subs ?? []).filter((x) => x.action === "removed").map((x) => x.supersedes_id as string));
+  return (subs ?? []).some((x) => x.action === "added" && x.subject_kind === "child" && !removed.has(x.id as string))
+    ? "This photograph shows an identifiable child and originates in Qatar: it cannot be approved for promotional use until the Qatar legal requirements, guardian permission and any required authorisation have been verified."
+    : null;
+}

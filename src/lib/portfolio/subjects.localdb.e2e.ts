@@ -80,6 +80,14 @@ describe("structured permission evidence through the real library", () => {
     expect((await lib.checkUseEligibility(F, "website")).eligible).toBe(false);                                                                       // the child is still unverified
     expect((await subj.verifySubjectPermission(founder, childId, grantChild, "signed form kept in the job folder, sheet 2", "Checked the signed form against the guardian")).ok).toBe(true);
     expect((await lib.checkUseEligibility(F, "website")).eligible).toBe(true);
+    // interim restriction: an identifiable child on a photograph marked as originating in Qatar blocks promotional approval and use, whatever evidence exists; other origins are unaffected
+    sql(`update public.portfolio_candidates set jurisdiction = 'qatar' where project_file_id = '${F}'`);
+    expect(await subj.childQatarRestriction(F)).toMatch(/Qatar/);
+    expect(await lib.checkUseEligibility(F, "website")).toMatchObject({ eligible: false, internalReason: "children_qatar_restricted" });
+    expect((await lib.recordInternalReview(founder, { fileId: F, decision: "approved", destinations: ["website"], checks: CHECKS, notes: "" })).ok).toBe(false);
+    sql(`update public.portfolio_candidates set jurisdiction = 'ghana' where project_file_id = '${F}'`);
+    expect(await subj.childQatarRestriction(F)).toBeNull();
+    expect((await lib.checkUseEligibility(F, "website")).eligible).toBe(true);
     expect((await lib.recordUse(founder, { fileId: F, destination: "website", action: "published", reference: "cms:1" })).ok).toBe(true);
   });
   it("the admin read model reports each grant's status; withdrawal blocks future use at once and flags the use already made", async () => {

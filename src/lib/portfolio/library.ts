@@ -4,6 +4,7 @@ import { isStaffOrAdmin, type CurrentUser } from "@/lib/portal/roles";
 import { isManagementUser } from "@/lib/crewSupport/management";
 import { PORTFOLIO_LIBRARY_ENABLED } from "./featureGate";
 import { SUBJECT_PERMISSIONS_ENABLED } from "./subjectGate";
+import { childQatarRestriction } from "./subjects";
 import { PERMISSION_TEXT_APPROVED, PERMISSION_TEXT_VERSION } from "./permissionText";
 import { isDestination, type JobType } from "./destinations";
 import { summariseStanding, validateAdminPermission, validateReview, type AdminPermissionInput, type ReviewInput, type Standing } from "./permissionModel";
@@ -191,6 +192,7 @@ export async function recordInternalReview(user: CurrentUser, input: { fileId: s
   const problems = validateReview(input, { requirePeople: !SUBJECT_PERMISSIONS_ENABLED });
   if (problems.length) return fail(problems.join(" "));
   if (input.decision === "approved") {
+    const q = await childQatarRestriction(input.fileId); if (q) return fail(q);
     const r = await activeRestrictions(input.fileId);
     if (r.restrictions.length && input.restrictionsAssessed !== true) return fail("The rights holder set limits on this job (" + r.restrictions.join("; ") + "). Confirm you have assessed them against this photograph before approving it.");
   }
@@ -215,6 +217,7 @@ export async function checkUseEligibility(fileId: string, destination: string): 
   const { data: rv } = await createAdminClient().from("portfolio_internal_reviews").select("decision, checks, reviewed_at").eq("project_file_id", fileId).order("seq", { ascending: false }).limit(1).maybeSingle();
   const c = (rv?.checks ?? {}) as Record<string, unknown>;
   const peopleOk = c.people === "none" || (c.people === "evidenced" && String(c.people_evidence ?? "").trim().length >= 10);
+  if ((await childQatarRestriction(fileId)) !== null) return { ...out, eligible: false, internalReason: "children_qatar_restricted" };
   if (!SUBJECT_PERMISSIONS_ENABLED && !peopleOk) return { ...out, eligible: false, internalReason: "people_not_declared" };   // with structured evidence live, the database decides this
   const lim = await activeRestrictions(fileId);
   if (lim.restrictions.length && (c.restrictions_assessed !== true || (lim.latestRecordedAt !== null && String(rv?.reviewed_at ?? "") < lim.latestRecordedAt))) return { ...out, eligible: false, internalReason: "restrictions_not_assessed" };

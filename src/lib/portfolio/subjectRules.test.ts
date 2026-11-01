@@ -44,7 +44,7 @@ describe("permission evidence rules for people and property shown", () => {
   it("the feature is OFF and the module writes only to the four new evidence tables, never to client-facing data, email or storage", () => {
     expect(SUBJECT_PERMISSIONS_ENABLED).toBe(false);
     const src = readFileSync(new URL("./subjects.ts", import.meta.url), "utf8");
-    expect([...new Set([...src.matchAll(/\.from\("([a-z_]+)"\)/g)].map((m) => m[1]))].sort()).toEqual(["portfolio_file_holds", "portfolio_file_subjects", "portfolio_people_declarations", "portfolio_subject_permissions"]);
+    expect([...new Set([...src.matchAll(/\.from\("([a-z_]+)"\)/g)].map((m) => m[1]))].sort()).toEqual(["portfolio_candidates", "portfolio_file_holds", "portfolio_file_subjects", "portfolio_people_declarations", "portfolio_subject_permissions"]);
     expect([...src.matchAll(/\.rpc\("([a-z_]+)"/g)].map((m) => m[1])).toEqual(["portfolio_subject_permission_redact"]);
     for (const bad of ["sendEmail", "resend", ".storage", "fetch(", ".update(", ".delete(", ".upsert("]) expect(src).not.toContain(bad);
     expect(src).toContain("if (g) return g; const a = await authority(user)");
