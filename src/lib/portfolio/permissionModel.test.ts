@@ -55,3 +55,15 @@ describe("client permission wording", () => {
     expect(PERMISSION_TEXT.intro).toContain("optional");
   });
 });
+
+describe("client permission wording, draft 2 (unapproved)", () => {
+  it("stays unapproved and never treats payment or commissioning as permission", () => {
+    expect(PERMISSION_TEXT_APPROVED).toBe(false);
+    expect(PERMISSION_TEXT.intro).toContain("does not, by itself, give Ordift Studios permission");
+    expect(PERMISSION_TEXT.selection).toContain("only the photographs shown");
+    expect(PERMISSION_TEXT.uses.length).toBe(5);
+    expect(PERMISSION_TEXT.rightsOfOthers).toContain("covers you only");
+    expect(PERMISSION_TEXT.limitsOnReuse).toContain("ask you again");
+    expect(PERMISSION_TEXT.withdrawal).toContain("cannot recall material already published");
+  });
+});
