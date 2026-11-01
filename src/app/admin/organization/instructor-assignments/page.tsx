@@ -36,7 +36,7 @@ export default async function InstructorAssignmentsPage() {
   return (
     <div className="max-w-4xl space-y-8">
       <div>
-        <h1 className="font-serif font-medium text-section-heading text-ordift-ink">Instructor assignments</h1>
+        <h1 className="font-serif font-medium text-section-heading text-ordift-ink">Session Schedule / Assignments</h1>
         <p className="mt-2 font-sans text-body-small text-ordift-ink-muted">Each assignment is a Session Schedule with a Rights Matrix. It is <strong>proposed</strong> until a Super Admin approves it, and approval is refused unless the framework agreement is executed, the instructor has acknowledged the adopted standards, regulatory clearance is recorded with a reference, and every right is decided with no decision flagged. Rights are never granted automatically.</p>
       </div>
       {!INSTRUCTOR_FRAMEWORK_ENABLED ? <p className="rounded-lg bg-amber-50 px-4 py-3 font-sans text-body-small text-amber-800">This feature is not enabled yet: it needs database migration 0180 to be applied first.</p> : (
@@ -59,8 +59,9 @@ export default async function InstructorAssignmentsPage() {
               <SubmitButton pendingLabel="Saving…" className={gold}>Propose assignment</SubmitButton>
             </ActionForm>
           </section>
-          <section className="space-y-4">
-            <h2 className="font-sans text-body font-medium text-ordift-ink">Assignments</h2>
+          <section id="rights-matrix" className="space-y-4 scroll-mt-24">
+            <h2 className="font-sans text-body font-medium text-ordift-ink">Session Schedules and their Rights Matrix</h2>
+            <p className="font-sans text-caption text-ordift-ink-muted">Each assignment below has its own Rights Matrix: what is permitted for teaching materials, ownership, photography, recording, participant data and publication. Every permission starts undecided and is never granted automatically.</p>
             {schedules.length === 0 ? <p className="font-sans text-body-small text-ordift-ink-muted">None yet.</p> : schedules.map((s) => (
               <div key={s.id} className="rounded-xl border border-black/10 p-4 space-y-3">
                 <div className="flex flex-wrap items-center gap-2">

@@ -107,6 +107,17 @@ export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
     ],
   },
   {
+    // Independent instructors: one place for their directory/onboarding, the standards they acknowledge, and their assignments (Session Schedule, with each assignment's Rights Matrix).
+    // All four are Super Admin only (the standards and assignment-approval gates are Super Admin; the directory also admits onboarding authority, but navigation must never show a link the destination refuses).
+    label: "Instructor Management",
+    items: [
+      { label: "Instructor Directory / Onboarding", href: "/admin/organization/instructors", superAdminOnly: true },
+      { label: "Instructor Standards", href: "/admin/organization/instructor-standards", superAdminOnly: true },
+      { label: "Session Schedule / Assignments", href: "/admin/organization/instructor-assignments", superAdminOnly: true },
+      { label: "Rights Matrix", href: "/admin/organization/instructor-assignments#rights-matrix", superAdminOnly: true },
+    ],
+  },
+  {
     label: "Talent & Partnerships",
     items: [
       { label: "Partnerships & Collaborations", href: "/admin/partnerships", partnershipAdministerOnly: true },
