@@ -96,12 +96,20 @@ describe("structured permission evidence through the real library", () => {
     const r = await subj.recordSubjectPermission(founder, { id: adultId, kind: "adult" }, { grantorKind: "subject_self", grantorName: "Guest Name", givenOn: today, evidenceKind: "written_message", evidenceReference: "new guest email kept in the job folder", destinations: ["website"], replacesGrantId: grantAdult });
     expect(r.ok).toBe(true); const g2 = (r as { id: string }).id;
     expect((await subj.getPeopleViews([F]))[F].subjects.find((s) => s.id === adultId)!.grants.map((g) => g.status)).toEqual(["replaced", "recorded_unverified"]);
-    expect((await subj.redactSubjectPermission(founder, g2, "retention period ended for this record")).ok).toBe(true);   // recorded but unverified is not in force, so it may be erased
-    expect((await subj.redactSubjectPermission(staff, grantChild, "retention period ended for this record")).ok).toBe(false);
-    expect((await subj.redactSubjectPermission(founder, grantChild, "retention period ended for this record")).ok).toBe(true);   // the withdrawn child grant
+    expect((await subj.redactSubjectPermission(founder, g2, "retention period ended for this record", false)).ok).toBe(false);   // no confirmation
+    expect((await subj.setFileHold(staff, F, "placed", "complaint under review: keep all evidence")).ok).toBe(false);
+    expect((await subj.setFileHold(founder, F, "placed", "complaint under review: keep all evidence")).ok).toBe(true);
+    expect((await subj.redactSubjectPermission(founder, g2, "retention period ended for this record", true)).ok).toBe(false);   // a hold blocks erasure
+    expect((await subj.getPeopleViews([F]))[F].hold?.reason).toMatch(/complaint/);
+    expect((await subj.setFileHold(founder, F, "released", "complaint closed, no further action")).ok).toBe(true);
+    expect((await subj.redactSubjectPermission(founder, g2, "retention period ended for this record", true)).ok).toBe(false);   // the website use made earlier is still current: end or review it first
+    sql(`set session_replication_role = replica; insert into public.portfolio_use_events (project_file_id, destination, action, actor_id) values ('${F}','website','ended','${U(0xb2)}')`);
+    expect((await subj.redactSubjectPermission(founder, g2, "retention period ended for this record", true)).ok).toBe(true);   // recorded but unverified is not in force, so it may be erased
+    expect((await subj.redactSubjectPermission(staff, grantChild, "retention period ended for this record", true)).ok).toBe(false);
+    expect((await subj.redactSubjectPermission(founder, grantChild, "retention period ended for this record", true)).ok).toBe(true);   // the withdrawn child grant
     const view = (await subj.getPeopleViews([F]))[F].subjects.find((s) => s.id === childId)!.grants[0];
     expect(view.erased).toBe(true); expect(view.destinations).toEqual(["website"]); expect(view.status).toBe("withdrawn");   // structure kept, personal details gone
-    expect(sql(`select count(*) from public.portfolio_subject_redactions`)).toBe("2");
+    expect(sql(`select count(*) from public.portfolio_subject_redactions where confirmed_permitted`)).toBe("2");
   });
   it("no photograph, person or permission was copied into any client-facing table and nothing was published", () => {
     expect(sql(`select count(*) from public.portfolio_use_events where action = 'published'`)).toBe("1");

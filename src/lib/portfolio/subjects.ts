@@ -60,12 +60,23 @@ export const verifySubjectPermission = (user: CurrentUser, subjectId: string, gr
 export const withdrawSubjectPermission = (user: CurrentUser, subjectId: string, grantId: string, reason: string) => followUp(user, "withdrawn", subjectId, grantId, { note: reason });
 
 // Retention policy: erase the personal details of a permission that is no longer in force. The database refuses an in-force permission and logs every erasure; decisions, dates and uses are kept.
-export async function redactSubjectPermission(user: CurrentUser, grantId: string, reason: string): Promise<Result> {
+export async function redactSubjectPermission(user: CurrentUser, grantId: string, reason: string, confirmPermitted: boolean): Promise<Result> {
   const g = gate(); if (g) return g; const a = await authority(user); if (a) return a;
   if (reason.trim().length < 10) return fail("State the reason for the erasure (at least 10 characters).");
-  const { error } = await createAdminClient().rpc("portfolio_subject_permission_redact", { p_permission: grantId, p_actor: user.id, p_reason: reason.trim() });
+  if (confirmPermitted !== true) return fail("Confirm that erasure is permitted: no dispute, legal obligation, audit or active permission still needs this evidence.");
+  const { error } = await createAdminClient().rpc("portfolio_subject_permission_redact", { p_permission: grantId, p_actor: user.id, p_reason: reason.trim(), p_confirm_permitted: true });
   if (error) return fail(clean(error));
   await logActivity({ actorUserId: user.id, action: "portfolio.subject_permission_erased", entityType: "portfolio_subject_permission", entityId: grantId, metadata: {} });
+  return { ok: true };
+}
+
+// A legal / dispute hold on a photograph: while it is in place no personal detail about its permissions can be erased. Management only; recorded, dated and attributed.
+export async function setFileHold(user: CurrentUser, fileId: string, action: "placed" | "released", reason: string): Promise<Result> {
+  const g = gate(); if (g) return g; const a = await authority(user); if (a) return a;
+  if (reason.trim().length < 10) return fail("State the reason (the dispute, complaint, audit or legal obligation), at least 10 characters.");
+  const { error } = await createAdminClient().from("portfolio_file_holds").insert({ project_file_id: fileId, action, reason: reason.trim(), recorded_by: user.id });
+  if (error) return fail(clean(error));
+  await logActivity({ actorUserId: user.id, action: `portfolio.hold_${action}`, entityType: "project_file", entityId: fileId, metadata: {} });
   return { ok: true };
 }
 
@@ -73,10 +84,11 @@ export async function redactSubjectPermission(user: CurrentUser, grantId: string
 export type GrantStatus = "recorded_unverified" | "verified" | "withdrawn" | "replaced" | "expired";
 export type SubjectGrantView = { id: string; status: GrantStatus; grantorKind: string; grantorName: string; grantorRelationship: string | null; evidenceKind: string; evidenceReference: string; givenOn: string | null; destinations: string[]; restrictions: string | null; expiresOn: string | null; verifiedOn: string | null; erased: boolean };
 export type SubjectView = { id: string; kind: SubjectKind; label: string; grants: SubjectGrantView[] };
-export type PhotoPeopleView = { declaration: { value: string; note: string; at: string } | null; subjects: SubjectView[] };
+export type PhotoPeopleView = { declaration: { value: string; note: string; at: string } | null; subjects: SubjectView[]; hold: { reason: string; at: string } | null };
 export async function getPeopleViews(fileIds: string[]): Promise<Record<string, PhotoPeopleView>> {
   if (!PORTFOLIO_LIBRARY_ENABLED || !SUBJECT_PERMISSIONS_ENABLED || fileIds.length === 0) return {};
   const admin = createAdminClient(); const ids = fileIds.slice(0, 200);
+  const { data: holds } = await admin.from("portfolio_file_holds").select("project_file_id, action, reason, recorded_at, seq").in("project_file_id", ids).order("seq", { ascending: false });
   const [{ data: decs }, { data: subs }] = await Promise.all([
     admin.from("portfolio_people_declarations").select("project_file_id, declaration, note, declared_at, seq").in("project_file_id", ids).order("seq", { ascending: false }),
     admin.from("portfolio_file_subjects").select("id, project_file_id, action, subject_kind, label, supersedes_id, seq").in("project_file_id", ids).order("seq", { ascending: true }),
@@ -88,7 +100,9 @@ export async function getPeopleViews(fileIds: string[]): Promise<Record<string, 
   const out: Record<string, PhotoPeopleView> = {};
   for (const f of ids) {
     const d = (decs ?? []).find((x) => x.project_file_id === f);
-    out[f] = { declaration: d ? { value: d.declaration as string, note: d.note as string, at: d.declared_at as string } : null, subjects: [] };
+    out[f] = { declaration: d ? { value: d.declaration as string, note: d.note as string, at: d.declared_at as string } : null, subjects: [], hold: null };
+    const h = (holds ?? []).find((x) => x.project_file_id === f);
+    if (h && h.action === "placed") out[f].hold = { reason: h.reason as string, at: h.recorded_at as string };
   }
   for (const s of active) {
     const grants: SubjectGrantView[] = rows.filter((r) => r.subject_id === s.id && r.decision === "granted").map((g) => {

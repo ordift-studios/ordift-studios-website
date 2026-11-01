@@ -4,7 +4,7 @@ import { useActionState } from "react";
 import { DESTINATIONS, DESTINATION_LABEL, type Destination } from "@/lib/portfolio/destinations";
 import { DECLARATIONS, EVIDENCE_KINDS, GRANTORS, SUBJECT_KINDS } from "@/lib/portfolio/subjectRules";
 import type { PhotoPeopleView, SubjectGrantView } from "@/lib/portfolio/subjects";
-import { addSubjectAction, declarePeopleAction, recordSubjectPermissionAction, redactSubjectPermissionAction, verifySubjectPermissionAction, withdrawSubjectPermissionAction, type SubjectFormState } from "./subjectActions";
+import { addSubjectAction, declarePeopleAction, recordSubjectPermissionAction, fileHoldAction, redactSubjectPermissionAction, verifySubjectPermissionAction, withdrawSubjectPermissionAction, type SubjectFormState } from "./subjectActions";
 
 // Permission evidence for the people and property shown in ONE photograph (proposed 0182; rendered only while SUBJECT_PERMISSIONS_ENABLED). A tick is never evidence: a grant is recorded, then verified in a separate dated step that names the evidence examined.
 const input = "w-full rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small";
@@ -20,6 +20,7 @@ export function SubjectEvidence({ jobType, jobId, fileId, view }: { jobType: str
   return (
     <div className="mt-2 space-y-3 rounded-lg bg-black/[0.03] p-2">
       <p className="font-sans text-caption font-medium">People and property shown</p>
+      <HoldRow jobType={jobType} jobId={jobId} fileId={fileId} hold={view.hold} />
       <p className="font-sans text-caption text-ordift-ink-muted">{view.declaration ? <>Declared: {DECLARATIONS.find((d) => d.key === view.declaration!.value)?.label}. Basis: {view.declaration.note}</> : "Nothing declared yet: the photograph cannot be cleared for any use."}</p>
       <form action={declare} className="space-y-1"><Hidden jobType={jobType} jobId={jobId} fileId={fileId} />
         <select name="declaration" aria-label="What the photograph shows" className={input} defaultValue=""><option value="" disabled>What does it show?</option>{DECLARATIONS.map((d) => <option key={d.key} value={d.key}>{d.label}</option>)}</select>
@@ -59,7 +60,9 @@ function GrantRow({ jobType, jobId, fileId, subjectId, g }: { jobType: string; j
           <input name="note" placeholder="Why it is withdrawn (stops use at once)" aria-label="Reason for withdrawal" className={input} /><button className={btn} disabled={wp}>Withdraw</button><Msg s={ws} /></form>)}
       {(g.status === "withdrawn" || g.status === "replaced" || g.status === "expired") && !g.erased && (
         <form action={redact} className="flex gap-1"><Hidden jobType={jobType} jobId={jobId} fileId={fileId} /><input type="hidden" name="grantId" value={g.id} />
-          <input name="note" placeholder="Retention-policy reason for erasing the personal details" aria-label="Reason for erasure" className={input} /><button className={btn} disabled={rp}>Erase details</button><Msg s={rs} /></form>)}
+          <input name="note" placeholder="Retention-policy reason for erasing the personal details" aria-label="Reason for erasure" className={input} />
+          <label className="flex items-start gap-2 font-sans text-caption"><input type="checkbox" name="confirmPermitted" className="mt-0.5" />I confirm erasure is permitted: no dispute, legal obligation, audit or active permission still needs this evidence</label>
+          <button className={btn} disabled={rp}>Erase details</button><Msg s={rs} /></form>)}
     </div>
   );
 }
@@ -84,5 +87,14 @@ function RecordGrant({ jobType, jobId, fileId, subjectId, kind }: { jobType: str
         <div className="sm:col-span-2"><button className={btn} disabled={pending}>Record (not yet verified)</button><Msg s={s} /></div>
       </form>
     </details>
+  );
+}
+
+function HoldRow({ jobType, jobId, fileId, hold }: { jobType: string; jobId: string; fileId: string; hold: { reason: string; at: string } | null }) {
+  const [s, act, pending] = useActionState(fileHoldAction, null as SubjectFormState);
+  return (
+    <form action={act} className="flex flex-wrap items-center gap-1"><Hidden jobType={jobType} jobId={jobId} fileId={fileId} /><input type="hidden" name="action" value={hold ? "released" : "placed"} />
+      <span className="font-sans text-caption">{hold ? <strong>Hold in place since {hold.at.slice(0, 10)}: {hold.reason}</strong> : "No hold on this photograph."}</span>
+      <input name="note" placeholder={hold ? "Why the hold is released" : "Dispute, complaint, audit or legal obligation requiring the evidence to be kept"} aria-label="Hold reason" className={input} /><button className={btn} disabled={pending}>{hold ? "Release hold" : "Place hold"}</button><Msg s={s} /></form>
   );
 }

@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { getCurrentUser } from "@/lib/portal/roles";
-import { addSubject, declarePeopleShown, recordSubjectPermission, redactSubjectPermission, verifySubjectPermission, withdrawSubjectPermission } from "@/lib/portfolio/subjects";
+import { addSubject, declarePeopleShown, recordSubjectPermission, redactSubjectPermission, setFileHold, verifySubjectPermission, withdrawSubjectPermission } from "@/lib/portfolio/subjects";
 import { SUBJECT_KINDS, type SubjectKind } from "@/lib/portfolio/subjectRules";
 import { isJobType } from "@/lib/portfolio/destinations";
 
@@ -32,4 +32,5 @@ export async function recordSubjectPermissionAction(_: SubjectFormState, f: Form
 }
 export async function verifySubjectPermissionAction(_: SubjectFormState, f: FormData): Promise<SubjectFormState> { return run(f, "Verified. This decision is dated and attributed to you.", (u) => verifySubjectPermission(u, str(f, "subjectId"), str(f, "grantId"), str(f, "evidenceExamined"), str(f, "note"))); }
 export async function withdrawSubjectPermissionAction(_: SubjectFormState, f: FormData): Promise<SubjectFormState> { return run(f, "Withdrawn. The photograph is blocked for this person from now on.", (u) => withdrawSubjectPermission(u, str(f, "subjectId"), str(f, "grantId"), str(f, "note"))); }
-export async function redactSubjectPermissionAction(_: SubjectFormState, f: FormData): Promise<SubjectFormState> { return run(f, "Personal details erased and the erasure logged.", (u) => redactSubjectPermission(u, str(f, "grantId"), str(f, "note"))); }
+export async function redactSubjectPermissionAction(_: SubjectFormState, f: FormData): Promise<SubjectFormState> { return run(f, "Personal details erased and the erasure logged.", (u) => redactSubjectPermission(u, str(f, "grantId"), str(f, "note"), f.get("confirmPermitted") === "on")); }
+export async function fileHoldAction(_: SubjectFormState, f: FormData): Promise<SubjectFormState> { const act = str(f, "action") === "released" ? "released" : "placed"; return run(f, act === "placed" ? "Hold placed: nothing about this photograph can be erased." : "Hold released.", (u) => setFileHold(u, str(f, "fileId"), act, str(f, "note"))); }

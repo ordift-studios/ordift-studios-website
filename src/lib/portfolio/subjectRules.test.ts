@@ -41,10 +41,10 @@ describe("permission evidence rules for people and property shown", () => {
     expect(validateSubjectGrant({ ...ok, givenOn: "2026-12-01" }, "2026-11-02").join()).toMatch(/not in the future/);
   });
   it("a declaration records the basis of the assessment; crowds and background people are never assumed", () => { expect(validateDeclarationNote("none")).toMatch(/Nothing is assumed/); expect(validateDeclarationNote("Nobody identifiable: guests are small and out of focus, none recognisable")).toBeNull(); });
-  it("the feature is OFF and the module writes only to the three new tables, never to client-facing data, email or storage", () => {
+  it("the feature is OFF and the module writes only to the four new evidence tables, never to client-facing data, email or storage", () => {
     expect(SUBJECT_PERMISSIONS_ENABLED).toBe(false);
     const src = readFileSync(new URL("./subjects.ts", import.meta.url), "utf8");
-    expect([...new Set([...src.matchAll(/\.from\("([a-z_]+)"\)/g)].map((m) => m[1]))].sort()).toEqual(["portfolio_file_subjects", "portfolio_people_declarations", "portfolio_subject_permissions"]);
+    expect([...new Set([...src.matchAll(/\.from\("([a-z_]+)"\)/g)].map((m) => m[1]))].sort()).toEqual(["portfolio_file_holds", "portfolio_file_subjects", "portfolio_people_declarations", "portfolio_subject_permissions"]);
     expect([...src.matchAll(/\.rpc\("([a-z_]+)"/g)].map((m) => m[1])).toEqual(["portfolio_subject_permission_redact"]);
     for (const bad of ["sendEmail", "resend", ".storage", "fetch(", ".update(", ".delete(", ".upsert("]) expect(src).not.toContain(bad);
     expect(src).toContain("if (g) return g; const a = await authority(user)");
