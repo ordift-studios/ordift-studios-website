@@ -32,8 +32,8 @@ describe("who uses the framework", () => {
       "src/lib/workshops/instructorEligibility.ts",
     ].sort());
   });
-  it("the framework stays OFF in code until migration 0180 is applied, and the gate only changes behaviour when it is on", () => {
-    expect(read("src/lib/instructors/featureGate.ts")).toMatch(/INSTRUCTOR_FRAMEWORK_ENABLED = false/);
+  it("the framework is switched on only because migration 0180 is applied, and the gate only changes behaviour when it is on", () => {
+    expect(read("src/lib/instructors/featureGate.ts")).toMatch(/INSTRUCTOR_FRAMEWORK_ENABLED = true/);
     expect(read("src/lib/workshops/instructorEligibility.ts")).toMatch(/if \(INSTRUCTOR_FRAMEWORK_ENABLED\) return instructorStandardsRefusal\(profileId\)/);
   });
   it("the migration grants nothing to signed-in roles, never deletes, and cannot adopt an incomplete text", () => {

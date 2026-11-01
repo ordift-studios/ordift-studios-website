@@ -7,6 +7,8 @@ vi.mock("@/lib/admin/activityLog", () => ({ logActivity: async () => undefined }
 vi.mock("@/lib/organization/authority", () => ({ authorizeWithSuperAdminOverride: async () => ({ ok: true, actedAsOverride: false }), PEOPLE_CAPABILITIES: { workshopEngagementAdminister: "x" }, OPERATIONS_CAPABILITIES: { workshopAdminister: "x" } }));
 vi.mock("@/lib/content/sanity/workshopAdmin", () => ({ getWorkshopByIdAdmin: async () => null }));
 vi.mock("@/lib/legal/agreementEngine", () => ({ hasFullyExecutedAgreement: async () => h.executed }));
+// This file covers the AGREEMENT part of the gate only; the standards part is covered against the real schema (src/lib/instructors/instructors.localdb.e2e.ts).
+vi.mock("@/lib/instructors/featureGate", () => ({ INSTRUCTOR_FRAMEWORK_ENABLED: false }));
 
 import { createInstructorEngagement } from "./instructorEngagements";
 import { createWorkshopSession } from "./sessions";
