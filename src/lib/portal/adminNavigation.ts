@@ -143,6 +143,7 @@ export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
     label: "Content & Website",
     items: [
       { label: "Portfolio", href: "/admin/portfolio" },
+      { label: "Portfolio Library", href: "/admin/portfolio/editions", superAdminOnly: true },
       { label: "Content", href: "/admin/content", adminOnly: true },
       { label: "Ordift Pulse", href: "/admin/pulse", adminOnly: true },
     ],

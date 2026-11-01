@@ -69,10 +69,10 @@ describe("Enquiries & Quick Pricing is staff-only, read-only and shares the publ
     expect(call).not.toMatch(/refLocal|refCurrency|indicative/);
     expect(read("../../../../lib/pricing/quickPriceModel.ts")).not.toMatch(/QAR|GHS/);
   });
-  it("each database-dependent layer has its own gate: enquiry pricing is on (authorised 2026-10-25); the portfolio library and the client wording stay off", () => {
+  it("each database-dependent layer has its own gate: enquiry pricing is on (authorised 2026-10-25); the portfolio library is on for internal administration only (authorised 2026-11-02) and the client wording stays off", () => {
     const flag = (f: string, name: string, v = false) => expect(readFileSync(new URL(f, import.meta.url), "utf8")).toMatch(new RegExp(`${name} = ${v};`));
     flag("../../../../lib/enquiry/pricingHistory.ts", "ENQUIRY_PRICING_PERSISTENCE_ENABLED", true);
-    flag("../../../../lib/portfolio/featureGate.ts", "PORTFOLIO_LIBRARY_ENABLED");
+    flag("../../../../lib/portfolio/featureGate.ts", "PORTFOLIO_LIBRARY_ENABLED", true);
     flag("../../../../lib/portfolio/permissionText.ts", "PERMISSION_TEXT_APPROVED");
   });
 });
