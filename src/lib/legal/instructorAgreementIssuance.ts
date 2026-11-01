@@ -133,6 +133,8 @@ export async function issueInstructorAgreement(params: { onboardingId: string; a
   if (agreement.status !== "approved_for_issue") return { ok: false, error: `Agreement must be approved for issue first (it is “${agreement.status}”).`, step: "compose_and_hash" };
   const admin = createAdminClient();
 
+  // The hash the audit entry must carry: the stored one on a resumed issue, or the one recorded just now on a first issue (the row loaded above predates the recording).
+  let issuedSha256: string | null = agreement.issued_document_sha256;
   if (!agreement.issued_document_sha256) {
     const preview = await previewInstructorAgreement(params.onboardingId, params.agreementId);
     if (!preview.ok) return { ok: false, error: preview.error, step: "compose_and_hash" };
@@ -140,6 +142,7 @@ export async function issueInstructorAgreement(params: { onboardingId: string; a
     if (uploadError) { console.error("[legal] failed to store issued instructor agreement", uploadError.message); return { ok: false, error: "Failed to store the issued agreement document.", step: "compose_and_hash" }; }
     const hashed = await recordIssuedDocumentHash({ agreementId: agreement.id, documentSha256: preview.sha256, actorUserId: params.actorUserId });
     if (!hashed.ok) return { ok: false, error: hashed.error, step: "compose_and_hash" };
+    issuedSha256 = preview.sha256;
   }
 
   // Where each signing link will be mailed. The Ordift signatory always uses the account email. The INSTRUCTOR uses their recorded preferred correspondence email when
@@ -226,7 +229,7 @@ export async function issueInstructorAgreement(params: { onboardingId: string; a
   if (!(signatories ?? []).length || outstanding.length > 0) return { ok: false, error: "Not every signatory has an accepted secure-link email yet.", step: "deliver_access_links" };
   const t = await transitionAgreementStatus({ agreementId: agreement.id, toStatus: "sent", actorUserId: params.actorUserId });
   if (!t.ok) return { ok: false, error: t.error, step: "transition_to_sent" };
-  await logActivity({ actorUserId: params.actorUserId, action: "legal.instructor_agreement.issued_and_sent", entityType: "agreement", entityId: agreement.id, metadata: { agreementReference: agreement.agreement_reference, documentSha256: agreement.issued_document_sha256 ?? null, signingLinkDelivery: deliveredTo } });
+  await logActivity({ actorUserId: params.actorUserId, action: "legal.instructor_agreement.issued_and_sent", entityType: "agreement", entityId: agreement.id, metadata: { agreementReference: agreement.agreement_reference, documentSha256: issuedSha256, signingLinkDelivery: deliveredTo } });
   return { ok: true };
 }
 

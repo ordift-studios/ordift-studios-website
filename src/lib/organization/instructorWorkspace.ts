@@ -56,11 +56,12 @@ export function buildInstructorWorkspace(f: InstructorWorkspaceFacts): { steps: 
     known: place.filter((c) => c.state === "verified" || c.state === "needs_confirmation").map((c) => c.detail), missing: unresolved(place).map((c) => (c.state === "needs_confirmation" ? `To confirm: ${c.label.replace(/^Confirm /, "")}` : c.label)),
     state: f.agreement ? stateFromChecks(place) : "not_applicable", blocker: null, action: unresolved(place).length ? { kind: "embedded", label: "Confirm below" } : null, checks: place, forms: ["confirm_entity"] });
 
-  const noPolicies = f.policies.registered === 0;
-  const policiesOk = !noPolicies && f.policies.acknowledged >= f.policies.registered;
-  raw.push({ key: "policies", title: "Policies and acknowledgements", owner: person, purpose: "The person acknowledges the controlled company policies in their own workspace; the acknowledgement is recorded as evidence.",
-    known: noPolicies ? ["No controlled policy is currently registered"] : [`${f.policies.acknowledged} of ${f.policies.registered} controlled policies acknowledged`], missing: noPolicies || policiesOk ? [] : [`${f.policies.registered - f.policies.acknowledged} policy acknowledgement(s) outstanding - the person completes these in their own workspace`],
-    state: noPolicies ? "not_applicable" : policiesOk ? "completed" : "pending", blocker: null, action: null, checks: [], forms: [] });
+  // An independent instructor is NOT an employee: the employee HR policies (OS-HR-GH-*) do not apply and are never counted here. What an instructor acknowledges is the separate
+  // "instructor standards" (conduct, safeguarding, confidentiality, data protection, recording), required BEFORE THE FIRST WORKSHOP ASSIGNMENT - not before the agreement. Until
+  // management adopts those standards there is nothing to acknowledge, and this step says so instead of showing an employee-policy count.
+  raw.push({ key: "policies", title: "Instructor standards (before the first workshop assignment)", owner: person, purpose: "Independent instructors acknowledge the instructor standards (conduct, safeguarding, confidentiality, data protection and recording) before their first workshop assignment. Employee HR policies do not apply to them, and this does not delay the agreement.",
+    known: ["Employee HR policies do not apply to independent instructors"], missing: ["Instructor standards have not yet been adopted by management, so there is nothing to acknowledge yet"],
+    state: "pending", blocker: null, action: null, checks: [], forms: [] });
 
   const template = check("approval_recorded", "approval_date", "master_files", "content_reference", "review_clauses", "activation", "effective_date");
   raw.push({ key: "template", title: "Legal approval of the contract template", owner: "Founder / Legal Counsel", purpose: "Before the Instructor Agreement can be used, its template must have a verified approval, a controlled content reference, no open review clauses, an effective date and an activation.",

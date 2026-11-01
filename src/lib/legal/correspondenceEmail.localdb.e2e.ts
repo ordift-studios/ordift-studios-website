@@ -260,6 +260,9 @@ describe("signing-link isolation", () => {
     const stored = Object.keys(h.files).find((k) => k.endsWith(`${ids.agreement}.txt`));
     expect(Buffer.from(h.files[stored as string]).toString("utf8")).toContain(`Contact: ${PREFERRED}`);
     expect(sql(`select status from public.agreements where id='${ids.agreement}'`)).toBe("sent");
+    const issuedAudit = h.logs.find((l) => l.action === "legal.instructor_agreement.issued_and_sent");        // first issue: the audit entry carries the hash recorded in this same run (it used to be null)
+    expect(issuedAudit?.metadata.documentSha256).toBe(sql(`select issued_document_sha256 from public.agreements where id='${ids.agreement}'`));
+    expect(issuedAudit?.metadata.documentSha256).toMatch(/^[0-9a-f]{64}$/);
     // exactly one signature request, two signatories, 14-day expiry, token stored as a hash (never the token)
     expect(sql(`select count(*) from public.signature_requests where agreement_id='${ids.agreement}'`)).toBe("1");
     expect(sql(`select count(*) from public.signature_signatories ss join public.signature_requests r on r.id=ss.signature_request_id where r.agreement_id='${ids.agreement}'`)).toBe("2");

@@ -44,10 +44,14 @@ describe("The instructor workspace, top to bottom", () => {
   it("profile information is NOT blocked by the agreement - it is pending on identity verification only, via the existing requirements form", () => {
     expect(by("profile")).toMatchObject({ state: "pending", blocker: null, missing: ["Identity document not yet verified by staff"], action: { kind: "anchor", href: "#section-requirements" } });
   });
-  it("policies are derived from real acknowledgement evidence; with no controlled policies registered the step is not applicable", () => {
-    expect(by("policies")).toMatchObject({ state: "not_applicable", known: ["No controlled policy is currently registered"] });
-    const w = buildInstructorWorkspace(facts({ policies: { registered: 3, acknowledged: 1 } })).steps.find((s) => s.key === "policies")!;
-    expect(w).toMatchObject({ state: "pending", missing: [expect.stringContaining("2 policy acknowledgement(s) outstanding")] });
+  it("an independent instructor is never shown employee-policy counts: the step is the instructor standards, pending until management adopts them, and it does not block the agreement", () => {
+    for (const policies of [{ registered: 0, acknowledged: 0 }, { registered: 6, acknowledged: 0 }, { registered: 3, acknowledged: 1 }]) {
+      const w = buildInstructorWorkspace(facts({ policies })).steps.find((s) => s.key === "policies")!;
+      expect(w).toMatchObject({ state: "pending", blocker: null, title: expect.stringContaining("Instructor standards") });
+      expect(JSON.stringify(w)).not.toMatch(/\d+ of \d+|outstanding|OS-HR-GH-0/);
+      expect(w.known).toEqual(["Employee HR policies do not apply to independent instructors"]);
+    }
+    expect(buildInstructorWorkspace(facts({})).steps.find((s) => s.key === "agreement")?.blocker ?? null).not.toMatch(/standards|polic/i);
   });
   it("jurisdiction is known (Ghana) but the entity still needs confirmation, with the embedded form", () => {
     const s = by("jurisdiction_entity");
@@ -75,7 +79,7 @@ describe("The instructor workspace, top to bottom", () => {
     expect(by("approval").state).toBe("pending");
   });
   it("reports overall completion and the current step", () => {
-    expect(summary).toMatchObject({ applicable: 10, completed: 2, percent: 20 });
+    expect(summary).toMatchObject({ applicable: 11, completed: 2, percent: 18 }); // the instructor-standards step is now always an open step (it is not an employee-policy count)
     expect(steps[summary.currentIndex!].key).toBe("profile");
   });
 });
