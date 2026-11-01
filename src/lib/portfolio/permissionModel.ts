@@ -94,14 +94,16 @@ export const PEOPLE_DECLARATIONS = [
 ] as const;
 export type PeopleDeclaration = (typeof PEOPLE_DECLARATIONS)[number]["key"];
 export type ReviewInput = { decision: "approved" | "rejected" | "returned" | "revoked"; destinations: string[]; checks: Record<string, boolean>; notes: string; people?: PeopleDeclaration; peopleEvidence?: string; restrictionsAssessed?: boolean };
-export function validateReview(i: ReviewInput): string[] {
+// requirePeople is false only once structured permission evidence (proposed 0182) is live: the declaration and the listed subjects then replace the reviewer's statement.
+export function validateReview(i: ReviewInput, opts: { requirePeople?: boolean } = {}): string[] {
   const e: string[] = [];
   if (i.decision === "approved") {
     if (i.destinations.length === 0) e.push("Choose where this photograph may be used.");
     if (i.destinations.some((d) => !isDestination(d))) e.push("One of the chosen uses is not recognised.");
     const missing = REVIEW_CHECKS.filter((c) => i.checks[c.key] !== true);
     if (missing.length) e.push(`Confirm every check before approving: ${missing.map((m) => m.label).join("; ")}.`);
-    if (i.people !== "none" && i.people !== "evidenced") e.push("State whether identifiable people, a child or protected property are shown. If permission cannot be evidenced, do not approve this photograph.");
+    if (opts.requirePeople === false) { /* structured evidence applies */ }
+    else if (i.people !== "none" && i.people !== "evidenced") e.push("State whether identifiable people, a child or protected property are shown. If permission cannot be evidenced, do not approve this photograph.");
     else if (i.people === "evidenced" && (i.peopleEvidence ?? "").trim().length < 10) e.push("Give the permission evidence reference (who gave it, in what form, and where it is kept). A tick alone is not evidence.");
   } else if (i.notes.trim().length < 3) e.push("Add a short note explaining the decision.");
   return e;

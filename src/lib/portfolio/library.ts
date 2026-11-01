@@ -3,6 +3,7 @@ import { logActivity } from "@/lib/admin/activityLog";
 import { isStaffOrAdmin, type CurrentUser } from "@/lib/portal/roles";
 import { isManagementUser } from "@/lib/crewSupport/management";
 import { PORTFOLIO_LIBRARY_ENABLED } from "./featureGate";
+import { SUBJECT_PERMISSIONS_ENABLED } from "./subjectGate";
 import { PERMISSION_TEXT_APPROVED, PERMISSION_TEXT_VERSION } from "./permissionText";
 import { isDestination, type JobType } from "./destinations";
 import { summariseStanding, validateAdminPermission, validateReview, type AdminPermissionInput, type ReviewInput, type Standing } from "./permissionModel";
@@ -187,7 +188,7 @@ export async function withdrawOwnPermission(userId: string, recordId: string, di
 export async function recordInternalReview(user: CurrentUser, input: { fileId: string } & ReviewInput): Promise<Result> {
   const g = gate(); if (g) return g;
   const a = await needAuthority(user); if (a) return a;
-  const problems = validateReview(input);
+  const problems = validateReview(input, { requirePeople: !SUBJECT_PERMISSIONS_ENABLED });
   if (problems.length) return fail(problems.join(" "));
   if (input.decision === "approved") {
     const r = await activeRestrictions(input.fileId);
@@ -214,7 +215,7 @@ export async function checkUseEligibility(fileId: string, destination: string): 
   const { data: rv } = await createAdminClient().from("portfolio_internal_reviews").select("decision, checks, reviewed_at").eq("project_file_id", fileId).order("seq", { ascending: false }).limit(1).maybeSingle();
   const c = (rv?.checks ?? {}) as Record<string, unknown>;
   const peopleOk = c.people === "none" || (c.people === "evidenced" && String(c.people_evidence ?? "").trim().length >= 10);
-  if (!peopleOk) return { ...out, eligible: false, internalReason: "people_not_declared" };
+  if (!SUBJECT_PERMISSIONS_ENABLED && !peopleOk) return { ...out, eligible: false, internalReason: "people_not_declared" };   // with structured evidence live, the database decides this
   const lim = await activeRestrictions(fileId);
   if (lim.restrictions.length && (c.restrictions_assessed !== true || (lim.latestRecordedAt !== null && String(rv?.reviewed_at ?? "") < lim.latestRecordedAt))) return { ...out, eligible: false, internalReason: "restrictions_not_assessed" };
   return out;

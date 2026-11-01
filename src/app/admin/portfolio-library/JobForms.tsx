@@ -5,6 +5,8 @@ import { useActionState, useEffect, useState } from "react";
 import { previewUrlsAction } from "@/app/admin/crew-support/releaseActions";
 import { DESTINATIONS } from "@/lib/portfolio/destinations";
 import { GRANTOR_CAPACITIES, PERMISSION_METHODS, PEOPLE_DECLARATIONS, REVIEW_CHECKS } from "@/lib/portfolio/permissionModel";
+import { SubjectEvidence } from "./SubjectEvidence";
+import type { PhotoPeopleView } from "@/lib/portfolio/subjects";
 import { recogniseContractAction, recordPermissionAction, recordUseAction, requestPermissionAction, reviewPhotoAction, verifyPermissionAction, type FormState } from "./actions";
 
 const input = "w-full rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small";
@@ -87,7 +89,7 @@ export function RequestForm({ jobType, jobId, addressee, approved, photos }: { j
     <Uses /><button className={btn} disabled={pending}>Create the request</button><Result s={s} /></form>;
 }
 
-export type ReviewPhoto = { id: string; name: string; kind: string; permission: string; internal: string; usable: string[]; restrictions: string[] };
+export type ReviewPhoto = { id: string; name: string; kind: string; permission: string; internal: string; usable: string[]; restrictions: string[]; people?: PhotoPeopleView };
 export function PhotoReview({ jobType, jobId, photos }: { jobType: string; jobId: string; photos: ReviewPhoto[] }) {
   const [urls, setUrls] = useState<Record<string, string>>({});
   useEffect(() => { let alive = true; previewUrlsAction(photos.slice(0, 48).map((p) => p.id)).then((r) => { if (!alive || !r.ok) return; const n: Record<string, string> = {}; for (const [id, v] of Object.entries(r.urls)) if ("url" in v) n[id] = v.url; setUrls(n); }).catch(() => {}); return () => { alive = false; }; }, [photos]);
@@ -106,6 +108,7 @@ function PhotoCard({ jobType, jobId, p, url }: { jobType: string; jobId: string;
       <p className="truncate font-sans text-caption font-medium" title={p.name}>{p.name} · {p.kind}</p>
       <p className="font-sans text-caption text-ordift-ink-muted">{p.permission}<br />{p.internal}</p>
       {p.usable.length > 0 && <p className="font-sans text-caption text-green-800">Usable for: {p.usable.join(", ")}</p>}
+      {p.people ? <SubjectEvidence jobType={jobType} jobId={jobId} fileId={p.id} view={p.people} /> : null}
       <details><summary className="cursor-pointer font-sans text-caption underline">Internal review</summary>
         <form action={act} className="mt-2 space-y-2"><Hidden jobType={jobType} jobId={jobId} /><input type="hidden" name="fileId" value={p.id} />
           <select name="decision" aria-label="Decision" value={decision} onChange={(e) => setDecision(e.target.value)} className={input}><option value="approved">Approve</option><option value="rejected">Reject</option><option value="returned">Return for further review</option><option value="revoked">Revoke earlier approval</option></select>

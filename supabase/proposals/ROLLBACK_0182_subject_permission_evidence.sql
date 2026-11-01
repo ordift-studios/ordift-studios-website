@@ -17,10 +17,13 @@ begin
 end $$;
 revoke all on function public.portfolio_use_eligibility(uuid, text, date) from public, anon, authenticated;
 grant execute on function public.portfolio_use_eligibility(uuid, text, date) to service_role;
+drop function public.portfolio_subject_permission_redact(uuid, uuid, text);
+drop table public.portfolio_subject_redactions;
 drop table public.portfolio_subject_permissions;
 drop table public.portfolio_file_subjects;
 drop table public.portfolio_people_declarations;
 drop function private.portfolio_subject_permission_guard();
+drop function private.portfolio_subject_permission_immutable();
 drop function private.portfolio_file_subject_guard();
 drop function private.portfolio_people_declaration_guard();
 commit;
