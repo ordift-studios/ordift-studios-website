@@ -60,7 +60,7 @@ function GrantRow({ jobType, jobId, fileId, subjectId, g }: { jobType: string; j
           <input name="note" placeholder="Why it is withdrawn (stops use at once)" aria-label="Reason for withdrawal" className={input} /><button className={btn} disabled={wp}>Withdraw</button><Msg s={ws} /></form>)}
       {(g.status === "withdrawn" || g.status === "replaced" || g.status === "expired") && !g.erased && (
         <form action={redact} className="flex gap-1"><Hidden jobType={jobType} jobId={jobId} fileId={fileId} /><input type="hidden" name="grantId" value={g.id} />
-          <input name="note" placeholder="Retention-policy reason for erasing the personal details" aria-label="Reason for erasure" className={input} />
+          <input name="note" placeholder="Retention-policy reason (10-200 characters, no names)" aria-label="Reason for erasure" className={input} />
           <label className="flex items-start gap-2 font-sans text-caption"><input type="checkbox" name="confirmPermitted" className="mt-0.5" />I confirm erasure is permitted: no dispute, legal obligation, audit or active permission still needs this evidence</label>
           <button className={btn} disabled={rp}>Erase details</button><Msg s={rs} /></form>)}
     </div>
@@ -95,6 +95,6 @@ function HoldRow({ jobType, jobId, fileId, hold }: { jobType: string; jobId: str
   return (
     <form action={act} className="flex flex-wrap items-center gap-1"><Hidden jobType={jobType} jobId={jobId} fileId={fileId} /><input type="hidden" name="action" value={hold ? "released" : "placed"} />
       <span className="font-sans text-caption">{hold ? <strong>Hold in place since {hold.at.slice(0, 10)}: {hold.reason}</strong> : "No hold on this photograph."}</span>
-      <input name="note" placeholder={hold ? "Why the hold is released" : "Dispute, complaint, audit or legal obligation requiring the evidence to be kept"} aria-label="Hold reason" className={input} /><button className={btn} disabled={pending}>{hold ? "Release hold" : "Place hold"}</button><Msg s={s} /></form>
+      <input name="note" placeholder={hold ? "Why the hold is released (no names)" : "Kind of dispute, complaint, audit or obligation (no names, 10-200 characters)"} aria-label="Hold reason" className={input} /><button className={btn} disabled={pending}>{hold ? "Release hold" : "Place hold"}</button><Msg s={s} /></form>
   );
 }

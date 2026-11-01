@@ -62,7 +62,7 @@ export const withdrawSubjectPermission = (user: CurrentUser, subjectId: string, 
 // Retention policy: erase the personal details of a permission that is no longer in force. The database refuses an in-force permission and logs every erasure; decisions, dates and uses are kept.
 export async function redactSubjectPermission(user: CurrentUser, grantId: string, reason: string, confirmPermitted: boolean): Promise<Result> {
   const g = gate(); if (g) return g; const a = await authority(user); if (a) return a;
-  if (reason.trim().length < 10) return fail("State the reason for the erasure (at least 10 characters).");
+  if (reason.trim().length < 10 || reason.trim().length > 200) return fail("State the reason for the erasure in 10 to 200 characters. Do not include names or other personal details: the log is kept.");
   if (confirmPermitted !== true) return fail("Confirm that erasure is permitted: no dispute, legal obligation, audit or active permission still needs this evidence.");
   const { error } = await createAdminClient().rpc("portfolio_subject_permission_redact", { p_permission: grantId, p_actor: user.id, p_reason: reason.trim(), p_confirm_permitted: true });
   if (error) return fail(clean(error));
@@ -73,7 +73,7 @@ export async function redactSubjectPermission(user: CurrentUser, grantId: string
 // A legal / dispute hold on a photograph: while it is in place no personal detail about its permissions can be erased. Management only; recorded, dated and attributed.
 export async function setFileHold(user: CurrentUser, fileId: string, action: "placed" | "released", reason: string): Promise<Result> {
   const g = gate(); if (g) return g; const a = await authority(user); if (a) return a;
-  if (reason.trim().length < 10) return fail("State the reason (the dispute, complaint, audit or legal obligation), at least 10 characters.");
+  if (reason.trim().length < 10 || reason.trim().length > 200) return fail("State the reason in 10 to 200 characters: the kind of dispute, complaint, audit or legal obligation. Do not include names or other personal details: the log is kept.");
   const { error } = await createAdminClient().from("portfolio_file_holds").insert({ project_file_id: fileId, action, reason: reason.trim(), recorded_by: user.id });
   if (error) return fail(clean(error));
   await logActivity({ actorUserId: user.id, action: `portfolio.hold_${action}`, entityType: "project_file", entityId: fileId, metadata: {} });
