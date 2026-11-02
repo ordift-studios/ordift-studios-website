@@ -1,5 +1,7 @@
--- Rolls back PROPOSED 0184: restores the 0182 four-argument erasure function and the original append-only triggers on the four log tables, and drops what 0184 added. Purged log rows cannot be restored (export the purge audit first if rows exist).
+-- Rolls back PROPOSED 0184 (revision 4, which also drops the erased-permission guard): restores the 0182 four-argument erasure function and the original append-only triggers on the four log tables, and drops what 0184 added. Purged log rows cannot be restored (export the purge audit first if rows exist).
 begin;
+drop trigger portfolio_subject_permission_erased_guard on public.portfolio_subject_permissions;
+drop function private.portfolio_subject_permission_erased_guard();
 drop function public.portfolio_log_purge(text, uuid, text, boolean);
 drop function public.portfolio_log_purge_preview();
 drop function private.portfolio_subject_log_free_of_hold(uuid);

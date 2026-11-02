@@ -62,6 +62,12 @@ beforeAll(() => {
     values ('00000000-0000-4000-8000-00000000a101', 'AGR-E2E-1', '00000000-0000-4000-8000-00000000a901', '00000000-0000-4000-8000-00000000a902', 'standard', 'fully_executed', 'crew_support_request', 'CSR-E2E-000001') on conflict do nothing;
   insert into public.agreement_releases (agreement_id, master_code, usage_rights, territory, duration) values ('00000000-0000-4000-8000-00000000a101','OS-LGL-004','{"portfolio":true,"website":true}','worldwide','perpetual') on conflict do nothing;
   `);
+  // 0182 requires a recorded people declaration for every photograph before any use can be cleared. These are real declarations written through the live guards (not seeded around them), by the Founder, with a stated basis.
+  sql(`
+  insert into public.portfolio_people_declarations (project_file_id, declaration, note, declared_by) values
+    ('${F1}', 'none_shown', 'Nobody identifiable: wide scenery and details only, no faces or protected property', '${U(0xb2)}'),
+    ('${F2}', 'none_shown', 'Nobody identifiable: wide scenery and details only, no faces or protected property', '${U(0xb2)}');
+  `);
 });
 
 describe("portfolio library services against the real schema", () => {

@@ -27,6 +27,7 @@ vi.mock("@/lib/supabase/server", async () => {
   return { createClient: async () => make(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SECRET_KEY!, { auth: { persistSession: false, autoRefreshToken: false }, global: { fetch: h.fetch } }) };
 });
 
+import { createAdminClient } from "@/lib/supabase/admin";
 import * as lib from "./library";
 import * as subj from "./subjects";
 import { setCandidateOrigin } from "./candidateJurisdiction";
@@ -137,6 +138,13 @@ describe("structured permission evidence through the real library", () => {
       expect(r.ok).toBe(false); expect((r as { error: string }).error).toMatch(/erased/);
     }
     expect(sql(`select count(*) from public.portfolio_subject_permissions where decision = 'verified' and supersedes_id in ('${g2}','${grantChild}')`)).toBe(verifiedBefore);   // the refused attempts wrote nothing
+    // 0184 revision 4 (L6): the DATABASE refuses it too, for a direct service-role write that bypasses the application. g2 was recorded but never verified or withdrawn, so only the new guard can stop it.
+    const direct = await createAdminClient().from("portfolio_subject_permissions").insert({ subject_id: adultId, decision: "verified", supersedes_id: g2, evidence_reference: "ID card sighted in person", note: "direct write attempt", recorded_by: U(0xb2) });
+    expect(direct.error?.message ?? "").toMatch(/erased/);
+    expect(sql(`select count(*) from public.portfolio_subject_permissions where decision = 'verified' and supersedes_id in ('${g2}','${grantChild}')`)).toBe(verifiedBefore);
+    // a withdrawal of the erased grant is still accepted (protective), through the same direct route
+    const wd = await createAdminClient().from("portfolio_subject_permissions").insert({ subject_id: adultId, decision: "withdrawn", supersedes_id: g2, note: "withdrawn after erasure", recorded_by: U(0xb2) });
+    expect(wd.error).toBeNull();
   });
   it("no photograph, person or permission was copied into any client-facing table and nothing was published", () => {
     expect(sql(`select count(*) from public.portfolio_use_events where action = 'published'`)).toBe("1");

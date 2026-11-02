@@ -1,3 +1,4 @@
+-- PROPOSED 0184 REVISION 4 (NOT APPLIED). Revision 3 (sha256 fe1ae342...374c) is superseded. Revision 4 adds ONLY section 12 (finding L6): a database-level guard so that an ERASED permission can never be verified again, including by a direct service-role write. Nothing in revisions 1-3 is changed and no 0182 function is replaced.
 -- PROPOSED 0184 REVISION 3 (NOT APPLIED, NOT in supabase/migrations). Independent review corrections to revision 2 (sha256 050fcd4d...8315): (a) the erasure locks the grant row so a concurrent verification cannot slip in between the check and the erasure; (b) the purge locks the two hold tables so a hold
 -- placed during a purge is never missed; (c) hold-log rows are protected by a hold at EITHER level (a file-level log row survives while its job is held, a job-level log row survives while any of its photographs is held); (d) the permission 'end' is the EARLIEST end event (withdrawal, replacement, past expiry
 -- or removal of the person from the photograph), so the retention clock is not started later than the permission actually ended, and a removed person's grant is no longer treated as in force. Everything else is identical to revision 2.
@@ -187,5 +188,22 @@ grant execute on function public.portfolio_log_purge_preview(), public.portfolio
 alter table public.portfolio_log_purges enable row level security;
 revoke all on public.portfolio_log_purges from anon, authenticated, service_role;
 grant select, insert on public.portfolio_log_purges to service_role;
+
+-- 12. L6: an erased permission can never be verified, reactivated or restored. A NEW trigger (the 0182 guard is untouched) refuses a 'verified' row whose grant has been erased, whoever writes it. A grant counts as erased if its details carry the erasure marker OR an erasure-log row
+-- exists, so the protection survives a later purge of the erasure log. The grant row is read FOR SHARE, which serialises against an erasure in progress (the erasure holds the same row FOR UPDATE). A withdrawal is never blocked (it is protective), and a NEW permission may still be recorded
+-- from the person concerned (new evidence, not a restoration). There is no restoration mechanism: if one is ever approved it needs its own migration.
+create function private.portfolio_subject_permission_erased_guard() returns trigger language plpgsql security definer set search_path = '' as $$
+declare t record;
+begin
+  if new.decision = 'verified' and new.supersedes_id is not null then
+    select id, grantor_name into t from public.portfolio_subject_permissions where id = new.supersedes_id for share;
+    if found and (t.grantor_name = '[erased]' or exists (select 1 from public.portfolio_subject_redactions r where r.permission_id = t.id)) then
+      raise exception 'the personal details of that permission were erased, so it cannot be verified again: record a new permission';
+    end if;
+  end if;
+  return new;
+end $$;
+revoke all on function private.portfolio_subject_permission_erased_guard() from public, anon, authenticated;
+create trigger portfolio_subject_permission_erased_guard before insert on public.portfolio_subject_permissions for each row execute function private.portfolio_subject_permission_erased_guard();
 
 commit;

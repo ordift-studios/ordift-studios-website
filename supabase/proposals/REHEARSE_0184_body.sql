@@ -1,4 +1,4 @@
--- LOCAL REHEARSAL ONLY (scratch database with 0169-0171, 0182 revision 2, 0183 revision 3 and 0184 applied). Synthetic data. Every assertion raises on failure; PASS lines are NOTICEs. The whole script rolls back.
+-- LOCAL REHEARSAL ONLY (scratch database with 0169-0171, 0182 revision 2, 0183 revision 3 and 0184 revision 4 applied). Synthetic data. Every assertion raises on failure; PASS lines are NOTICEs. The whole script rolls back.
 \set ON_ERROR_STOP on
 begin;
 set session_replication_role = replica;
@@ -185,4 +185,66 @@ begin
   assert (select count(*) from information_schema.role_table_grants where table_name = 'portfolio_log_purges' and grantee='service_role' and privilege_type in ('DELETE','TRUNCATE','UPDATE','REFERENCES','TRIGGER','MAINTAIN')) = 0, 'dangerous grants';
   assert (select relrowsecurity from pg_class where relname = 'portfolio_log_purges'), 'rls'; raise notice 'PASS 11 purge audit table: RLS on, no client access, no update or delete for the service role';
 end $$;
+-- 12. L6 (revision 4): the database refuses to verify an erased permission, from any writer. Seeds bypass the guards (replica); every test then runs with the guards ON.
+set session_replication_role = replica;
+  insert into public.portfolio_file_subjects (id, project_file_id, action, subject_kind, label, recorded_by) values ('00000000-0000-4000-8000-0000000a3005','00000000-0000-4000-8000-0000000a1014','added','adult','guest E','00000000-0000-4000-8000-0000000a0001'),('00000000-0000-4000-8000-0000000a3006','00000000-0000-4000-8000-0000000a1014','added','adult','guest F','00000000-0000-4000-8000-0000000a0001'),('00000000-0000-4000-8000-0000000a3007','00000000-0000-4000-8000-0000000a1014','added','adult','guest G','00000000-0000-4000-8000-0000000a0001');
+  insert into public.portfolio_subject_permissions (id, subject_id, decision, grantor_kind, grantor_name, evidence_kind, evidence_reference, given_on, allowed_destinations, recorded_by) values
+    ('00000000-0000-4000-8000-0000000a4005','00000000-0000-4000-8000-0000000a3005','granted','subject_self','Guest E','written_message','guest email kept in the job folder',current_date,array['portfolio'],'00000000-0000-4000-8000-0000000a0001'),
+    ('00000000-0000-4000-8000-0000000a4006','00000000-0000-4000-8000-0000000a3006','granted','subject_self','Guest F','written_message','guest email kept in the job folder',current_date,array['portfolio'],'00000000-0000-4000-8000-0000000a0001'),
+    ('00000000-0000-4000-8000-0000000a4007','00000000-0000-4000-8000-0000000a3007','granted','subject_self','Guest G','written_message','guest email kept in the job folder',current_date,array['portfolio'],'00000000-0000-4000-8000-0000000a0001');
+set session_replication_role = origin;
+do $$
+declare FOUNDER uuid := '00000000-0000-4000-8000-0000000a0001'; NE uuid := '00000000-0000-4000-8000-0000000a4005'; SE uuid := '00000000-0000-4000-8000-0000000a3005'; NF uuid := '00000000-0000-4000-8000-0000000a4006'; SF uuid := '00000000-0000-4000-8000-0000000a3006'; GA uuid := '00000000-0000-4000-8000-0000000a4000'; SA uuid := '00000000-0000-4000-8000-0000000a3001';
+  nr uuid; refused boolean;
+begin
+  assert exists (select 1 from pg_trigger t join pg_class c on c.oid = t.tgrelid where c.relname = 'portfolio_subject_permissions' and t.tgname = 'portfolio_subject_permission_erased_guard' and t.tgenabled = 'O' and (t.tgtype & 2) = 2 and (t.tgtype & 4) = 4), 'the erased guard is a BEFORE INSERT trigger and enabled';
+  assert pg_get_functiondef('private.portfolio_subject_permission_erased_guard()'::regprocedure) ilike '%for share%', 'the guard serialises against a concurrent erasure';
+  assert not has_function_privilege('anon', 'private.portfolio_subject_permission_erased_guard()'::regprocedure, 'execute') and not has_function_privilege('authenticated', 'private.portfolio_subject_permission_erased_guard()'::regprocedure, 'execute'), 'no client execute';
+  -- a recorded, never-verified, never-withdrawn grant is erased (the case the 0182 guard alone would let through)
+  perform public.portfolio_subject_permission_redact(NE, FOUNDER, 'data subject asked for erasure of details', 'data_subject_request', true);
+  assert (select grantor_name from public.portfolio_subject_permissions where id = NE) = '[erased]', 'NE erased';
+  assert not exists (select 1 from public.portfolio_subject_permissions w where w.supersedes_id = NE and w.decision in ('withdrawn', 'granted')), 'NE is neither withdrawn nor replaced, so only the new guard can stop its verification';
+  -- 12a. a direct verification of the erased grant is refused
+  refused := false;
+  begin insert into public.portfolio_subject_permissions (subject_id, decision, supersedes_id, evidence_reference, note, recorded_by) values (SE, 'verified', NE, 'guest email kept in the job folder', 'verified after checking the message', FOUNDER);
+  exception when others then refused := sqlerrm like '%erased%'; end;
+  assert refused, 'a direct verification of an erased grant must be refused';
+  raise notice 'PASS 12a a direct database write cannot verify an erased permission';
+  -- 12b. still refused after the erasure LOG row is purged (the marker on the grant itself holds)
+  perform set_config('ordift.log_purge', 'on', true); delete from public.portfolio_subject_redactions where permission_id = NE; perform set_config('ordift.log_purge', 'off', true);
+  assert not exists (select 1 from public.portfolio_subject_redactions where permission_id = NE), 'log row gone';
+  refused := false;
+  begin insert into public.portfolio_subject_permissions (subject_id, decision, supersedes_id, evidence_reference, note, recorded_by) values (SE, 'verified', NE, 'guest email kept in the job folder', 'verified after checking the message', FOUNDER);
+  exception when others then refused := sqlerrm like '%erased%'; end;
+  assert refused, 'still refused after the erasure log row was purged';
+  raise notice 'PASS 12b the refusal survives a purge of the erasure log';
+  -- 12c. the refusal does not depend on the marker text alone: with the marker absent but a log row present it is also refused
+  perform set_config('ordift.redaction', 'on', true); update public.portfolio_subject_permissions set grantor_name = 'Guest F' where id = NF; perform set_config('ordift.redaction', 'off', true);
+  insert into public.portfolio_subject_redactions (permission_id, reason, basis, confirmed_permitted, redacted_by) values (NF, 'log row present for this record', 'other_documented', true, FOUNDER);
+  refused := false;
+  begin insert into public.portfolio_subject_permissions (subject_id, decision, supersedes_id, evidence_reference, note, recorded_by) values (SF, 'verified', NF, 'guest email kept in the job folder', 'verified after checking the message', FOUNDER);
+  exception when others then refused := sqlerrm like '%erased%'; end;
+  assert refused, 'a log row alone also blocks verification';
+  raise notice 'PASS 12c either marker alone blocks verification';
+  -- 12d. an already withdrawn or replaced erased grant stays refused (existing protections untouched)
+  refused := false;
+  begin insert into public.portfolio_subject_permissions (subject_id, decision, supersedes_id, evidence_reference, note, recorded_by) values (SA, 'verified', GA, 'guest email kept in the job folder', 'verified after checking the message', FOUNDER);
+  exception when others then refused := true; end;
+  assert refused, 'the erased and withdrawn grant stays refused';
+  -- 12e. NEW evidence is allowed: a replacement permission for the erased grant is recorded and then ordinarily verified (no restoration of the erased one)
+  insert into public.portfolio_subject_permissions (subject_id, decision, supersedes_id, grantor_kind, grantor_name, evidence_kind, evidence_reference, given_on, allowed_destinations, recorded_by) values (SE, 'granted', NE, 'subject_self', 'Guest E', 'written_message', 'new guest email kept in the job folder', current_date, array['portfolio'], FOUNDER) returning id into nr;
+  insert into public.portfolio_subject_permissions (subject_id, decision, supersedes_id, evidence_reference, note, recorded_by) values (SE, 'verified', nr, 'new guest email kept in the job folder', 'verified after checking the new message', FOUNDER);
+  assert (select count(*) from public.portfolio_subject_permissions where supersedes_id = nr and decision = 'verified') = 1, 'ordinary verification of a new, non-erased permission works';
+  assert (select grantor_name from public.portfolio_subject_permissions where id = NE) = '[erased]', 'the erased grant stays erased';
+  raise notice 'PASS 12d/12e existing refusals intact; a new permission is recorded and verified normally';
+  -- 12f. withdrawal of an erased grant is not blocked (protective)
+  insert into public.portfolio_subject_permissions (subject_id, decision, supersedes_id, note, recorded_by) values (SE, 'withdrawn', NE, 'withdrawn after the erasure', FOUNDER);
+  assert exists (select 1 from public.portfolio_subject_permissions where supersedes_id = NE and decision = 'withdrawn'), 'withdrawal still works';
+  raise notice 'PASS 12f a withdrawal is never blocked';
+  -- 12g. ordinary verification of a recorded, non-erased grant still works through the live guards, and is then in force for its destination
+  insert into public.portfolio_subject_permissions (subject_id, decision, supersedes_id, evidence_reference, note, recorded_by) values ('00000000-0000-4000-8000-0000000a3007', 'verified', '00000000-0000-4000-8000-0000000a4007', 'guest email kept in the job folder', 'verified after checking the message', FOUNDER);
+  assert exists (select 1 from public.portfolio_subject_permissions where supersedes_id = '00000000-0000-4000-8000-0000000a4007' and decision = 'verified'), 'ordinary verification works';
+  raise notice 'PASS 12g ordinary verification of a non-erased permission still works';
+end $$;
+
 rollback;
