@@ -45,6 +45,8 @@ export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
       // The Signature Vault is personal to its owner (a Super Admin registers and approves only their own signature), so it lives in the always-visible My Workspace dropdown. Super Admin only,
       // matching the page and its actions, which re-check Super Admin themselves.
       { label: "My Signature Vault", href: "/admin/signature-vault", superAdminOnly: true },
+      // Authenticator-app setup for those who confirm irreversible actions (Founder and executive administrators; the page re-checks isManagementUser, which isExecutive matches).
+      { label: "Two-step confirmation", href: "/admin/security", executiveOnly: true },
     ],
   },
   {

@@ -6,6 +6,7 @@ import { PORTFOLIO_LIBRARY_ENABLED } from "./featureGate";
 import { BASES } from "./erasureRules";
 import { SUBJECT_PERMISSIONS_ENABLED } from "./subjectGate";
 import { DECLARATIONS, SUBJECT_KINDS, isKnownNonQatar, validateCheckNote, validateDeclarationNote, validateSubjectGrant, validateVerification, type SubjectGrantInput, type SubjectKind } from "./subjectRules";
+import { authorityTicket } from "./authorityTicket";
 
 // PERMISSION EVIDENCE FOR THE PEOPLE AND PROPERTY SHOWN (proposed migration 0182; dormant until SUBJECT_PERMISSIONS_ENABLED). Management only. A grant is only RECORDED here; it counts for nothing until a separate
 // verification (with a stated check) is recorded, and withdrawal blocks use at once. The database applies the same rules. No evidence document or identification is stored: only who gave it and where it is kept.
@@ -21,6 +22,7 @@ export async function declarePeopleShown(user: CurrentUser, fileId: string, decl
   const g = gate(); if (g) return g; const a = await authority(user); if (a) return a;
   if (!DECLARATIONS.some((d) => d.key === declaration)) return fail("Choose what the photograph shows.");
   const bad = validateDeclarationNote(note); if (bad) return fail(bad);
+  { const t = await authorityTicket(user, "declare_people", fileId); if (!t.ok) return fail(t.error); }
   const { error } = await createAdminClient().from("portfolio_people_declarations").insert({ project_file_id: fileId, declaration, note: note.trim(), declared_by: user.id });
   if (error) return fail(clean(error));
   await logActivity({ actorUserId: user.id, action: "portfolio.people_declared", entityType: "project_file", entityId: fileId, metadata: { declaration } });
@@ -35,6 +37,7 @@ export async function addSubject(user: CurrentUser, fileId: string, kind: Subjec
     const { data: cand } = await createAdminClient().from("portfolio_candidates").select("jurisdiction").eq("project_file_id", fileId).maybeSingle();
     if (!["ghana", "qatar", "other"].includes(String(cand?.jurisdiction ?? ""))) return fail("Set where this photograph originates (Ghana, Qatar or elsewhere) before listing a child on it. An unknown origin is treated as Qatar.");
   }
+  { const t = await authorityTicket(user, "list_subject:added", fileId); if (!t.ok) return fail(t.error); }
   const { data, error } = await createAdminClient().from("portfolio_file_subjects").insert({ project_file_id: fileId, action: "added", subject_kind: kind, label: label.trim(), recorded_by: user.id }).select("id").single();
   if (error || !data) return fail(clean(error));
   await logActivity({ actorUserId: user.id, action: "portfolio.subject_added", entityType: "project_file", entityId: fileId, metadata: { kind } });
@@ -45,6 +48,7 @@ export async function recordSubjectPermission(user: CurrentUser, subject: { id: 
   const g = gate(); if (g) return g; const a = await authority(user); if (a) return a;
   const problems = validateSubjectGrant({ ...input, subjectKind: subject.kind }, today());
   if (problems.length) return fail(problems.join(" "));
+  { const t = await authorityTicket(user, "subject_permission:granted", input.replacesGrantId || subject.id); if (!t.ok) return fail(t.error); }
   const { data, error } = await createAdminClient().from("portfolio_subject_permissions").insert({
     subject_id: subject.id, decision: "granted", supersedes_id: input.replacesGrantId || null, grantor_kind: input.grantorKind, grantor_name: input.grantorName.trim(), grantor_relationship: input.grantorRelationship?.trim() || null, authority_reference: input.authorityReference?.trim() || null, given_on: input.givenOn, evidence_kind: input.evidenceKind, evidence_reference: input.evidenceReference.trim(),
     agreement_id: input.agreementId || null, allowed_destinations: input.destinations, restrictions: input.restrictions?.trim() || null, expires_on: input.expiresOn || null, recorded_by: user.id,
@@ -63,6 +67,7 @@ async function followUp(user: CurrentUser, decision: "verified" | "withdrawn", s
     if (!row) return fail("That permission could not be found.");
     if (String(row.grantor_name) === ERASED_MARKER) return fail("This permission's personal details have been erased, so it cannot be verified again. Record a new permission from the person concerned.");
   }
+  { const t = await authorityTicket(user, `subject_permission:${decision}`, grantId); if (!t.ok) return fail(t.error); }
   const { error } = await createAdminClient().from("portfolio_subject_permissions").insert({ subject_id: subjectId, decision, supersedes_id: grantId, evidence_reference: decision === "verified" ? o.evidenceReference!.trim() : null, note: o.note.trim(), recorded_by: user.id });
   if (error) return fail(clean(error));
   await logActivity({ actorUserId: user.id, action: `portfolio.subject_permission_${decision}`, entityType: "portfolio_file_subject", entityId: subjectId, metadata: {} });
@@ -77,6 +82,7 @@ export async function redactSubjectPermission(user: CurrentUser, grantId: string
   if (!BASES.some((b) => b.key === basis)) return fail("State the basis for the erasure.");
   if (reason.trim().length < 10 || reason.trim().length > 200) return fail("State the reason for the erasure in 10 to 200 characters. Do not include names or other personal details: the log is kept.");
   if (confirmPermitted !== true) return fail("Confirm that erasure is permitted: no dispute, legal obligation, audit or active permission still needs this evidence.");
+  { const t = await authorityTicket(user, "erase_grant", grantId); if (!t.ok) return fail(t.error); }
   const { error } = await createAdminClient().rpc("portfolio_subject_permission_redact", { p_permission: grantId, p_actor: user.id, p_reason: reason.trim(), p_basis: basis, p_confirm_permitted: true });
   if (error) return fail(clean(error));
   await logActivity({ actorUserId: user.id, action: "portfolio.subject_permission_erased", entityType: "portfolio_subject_permission", entityId: grantId, metadata: { basis } });
@@ -87,6 +93,7 @@ export async function redactSubjectPermission(user: CurrentUser, grantId: string
 export async function setFileHold(user: CurrentUser, fileId: string, action: "placed" | "released", reason: string): Promise<Result> {
   const g = gate(); if (g) return g; const a = await authority(user); if (a) return a;
   if (reason.trim().length < 10 || reason.trim().length > 200) return fail("State the reason in 10 to 200 characters: the kind of dispute, complaint, audit or legal obligation. Do not include names or other personal details: the log is kept.");
+  { const t = await authorityTicket(user, `file_hold:${action}`, fileId); if (!t.ok) return fail(t.error); }
   const { error } = await createAdminClient().from("portfolio_file_holds").insert({ project_file_id: fileId, action, reason: reason.trim(), recorded_by: user.id });
   if (error) return fail(clean(error));
   await logActivity({ actorUserId: user.id, action: `portfolio.hold_${action}`, entityType: "project_file", entityId: fileId, metadata: {} });

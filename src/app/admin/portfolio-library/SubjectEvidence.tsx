@@ -2,6 +2,7 @@
 
 import { useActionState } from "react";
 import { DESTINATIONS, DESTINATION_LABEL, type Destination } from "@/lib/portfolio/destinations";
+import { StepUp } from "@/components/auth/StepUp";
 import { BASES } from "@/lib/portfolio/erasureRules";
 import { DECLARATIONS, EVIDENCE_KINDS, GRANTORS, ORIGINS, SUBJECT_KINDS } from "@/lib/portfolio/subjectRules";
 import type { PhotoPeopleView, SubjectGrantView } from "@/lib/portfolio/subjects";
@@ -61,11 +62,11 @@ function GrantRow({ jobType, jobId, fileId, subjectId, g }: { jobType: string; j
         <form action={withdraw} className="flex gap-1"><Hidden jobType={jobType} jobId={jobId} fileId={fileId} /><input type="hidden" name="subjectId" value={subjectId} /><input type="hidden" name="grantId" value={g.id} />
           <input name="note" placeholder="Why it is withdrawn (stops use at once)" aria-label="Reason for withdrawal" className={input} /><button className={btn} disabled={wp}>Withdraw</button><Msg s={ws} /></form>)}
       {(g.status === "withdrawn" || g.status === "replaced" || g.status === "expired") && !g.erased && (
-        <form action={redact} className="flex gap-1"><Hidden jobType={jobType} jobId={jobId} fileId={fileId} /><input type="hidden" name="grantId" value={g.id} />
+        <><StepUp /><form action={redact} className="flex gap-1"><Hidden jobType={jobType} jobId={jobId} fileId={fileId} /><input type="hidden" name="grantId" value={g.id} />
           <select name="basis" defaultValue="" aria-label="Basis for erasure" className={input}><option value="" disabled>Basis for erasure</option>{BASES.map((b) => <option key={b.key} value={b.key}>{b.label}</option>)}</select>
           <input name="note" placeholder="Reason (10-200 characters, no names)" aria-label="Reason for erasure" className={input} />
           <label className="flex items-start gap-2 font-sans text-caption"><input type="checkbox" name="confirmPermitted" className="mt-0.5" />I confirm erasure is permitted: no dispute, legal obligation, audit or active permission still needs this evidence</label>
-          <button className={btn} disabled={rp}>Erase details</button><Msg s={rs} /></form>)}
+          <button className={btn} disabled={rp}>Erase details</button><Msg s={rs} /></form></>)}
     </div>
   );
 }

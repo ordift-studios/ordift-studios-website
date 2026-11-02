@@ -16,6 +16,7 @@ const gate = () => (PORTFOLIO_LIBRARY_ENABLED && PERMISSION_RECORD_ERASURE_ENABL
 const authority = async (u: CurrentUser) => ((await isManagementUser(u)) ? null : fail("Only the Founder or an authorised executive admin can do this."));
 const clean = (e: { message?: string } | null) => (e?.message ?? "That could not be saved.").replace(/^.*?ERROR:\s*/, "");
 import { BASES, REASON_HELP, type Basis } from "./erasureRules";
+import { authorityTicket } from "./authorityTicket";
 export { BASES, REASON_HELP, type Basis };
 const reasonOk = (r: string) => r.trim().length >= 10 && r.trim().length <= 200;
 
@@ -23,6 +24,7 @@ export async function recordRetentionPolicy(user: CurrentUser, years: number, no
   const g = gate(); if (g) return g; const a = await authority(user); if (a) return a;
   if (!Number.isInteger(years) || years < 1 || years > 50) return fail("Enter the retention period in whole years (1 to 50).");
   if (note.trim().length < 10 || note.trim().length > 500) return fail("Record what was decided and that longer retention applies only where a duty, limitation period, dispute or hold requires it (10 to 500 characters).");
+  { const t = await authorityTicket(user, "retention_policy", user.id); if (!t.ok) return fail(t.error); }
   const { error } = await createAdminClient().from("portfolio_retention_policy").insert({ retention_years: years, policy_note: note.trim(), adopted_by: user.id });
   if (error) return fail(clean(error));
   await logActivity({ actorUserId: user.id, action: "portfolio.retention_policy_recorded", entityType: "portfolio_retention_policy", metadata: { years } });
@@ -32,6 +34,7 @@ export async function recordRetentionPolicy(user: CurrentUser, years: number, no
 export async function setJobHold(user: CurrentUser, jobType: JobType, jobId: string, action: "placed" | "released", reason: string): Promise<Result> {
   const g = gate(); if (g) return g; const a = await authority(user); if (a) return a;
   if (!reasonOk(reason)) return fail(`State the reason: ${REASON_HELP}`);
+  { const t = await authorityTicket(user, `job_hold:${action}`, jobId); if (!t.ok) return fail(t.error); }
   const { error } = await createAdminClient().from("marketing_permission_job_holds").insert({ job_type: jobType, job_id: jobId, action, reason: reason.trim(), recorded_by: user.id });
   if (error) return fail(clean(error));
   await logActivity({ actorUserId: user.id, action: `portfolio.job_hold_${action}`, entityType: "job", entityId: jobId, metadata: { jobType } });
@@ -43,6 +46,7 @@ export async function eraseRecordDetails(user: CurrentUser, recordId: string, i:
   if (!BASES.some((b) => b.key === i.basis)) return fail("State the basis for the erasure.");
   if (!reasonOk(i.reason)) return fail(`State the reason: ${REASON_HELP}`);
   if (i.confirmPermitted !== true) return fail("Confirm that erasure is permitted: no dispute, legal obligation, audit or active permission still needs this evidence.");
+  { const t = await authorityTicket(user, "erase_record", recordId); if (!t.ok) return fail(t.error); }
   const { error } = await createAdminClient().rpc("marketing_permission_record_redact", { p_record: recordId, p_actor: user.id, p_reason: i.reason.trim(), p_basis: i.basis, p_confirm_permitted: true });
   if (error) return fail(clean(error));
   await logActivity({ actorUserId: user.id, action: "portfolio.permission_record_erased", entityType: "marketing_permission_record", entityId: recordId, metadata: { basis: i.basis } });

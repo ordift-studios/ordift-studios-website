@@ -4,6 +4,7 @@ import { useActionState } from "react";
 import { DESTINATION_LABEL, type Destination } from "@/lib/portfolio/destinations";
 import { BASES, REASON_HELP } from "@/lib/portfolio/erasureRules";
 import type { ErasureView } from "@/lib/portfolio/permissionRecordErasure";
+import { StepUp } from "@/components/auth/StepUp";
 import { eraseRecordAction, jobHoldAction, retentionPolicyAction, type ErasureFormState } from "./erasureActions";
 
 // Retention and controlled erasure for this job's client-permission records (proposed 0183; rendered only while PERMISSION_RECORD_ERASURE_ENABLED). Nothing is automatic and nothing here touches the permission's scope, uses or history.
@@ -17,6 +18,7 @@ export function PermissionRecordErasure({ jobType, jobId, view }: { jobType: str
   const [hs, hold, hp] = useActionState(jobHoldAction, null as ErasureFormState);
   return (
     <div className="space-y-4">
+      <StepUp />
       <p className="font-sans text-body-small text-ordift-ink-muted">Retention policy: {view.policyYears ? <><strong>{view.policyYears} years</strong> after the permission and the last authorised use have ended (management policy, not a statutory period). {view.policyNote}</> : "none recorded yet, so erasure on the retention basis is refused."} Longer retention applies where a duty, limitation period, dispute or hold requires it; shorter where the law requires it.</p>
       {!view.policyYears && (
         <form action={policy} className="grid grid-cols-1 gap-2 sm:grid-cols-4"><Hidden jobType={jobType} jobId={jobId} />

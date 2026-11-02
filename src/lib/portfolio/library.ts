@@ -8,6 +8,7 @@ import { childQatarRestriction } from "./subjects";
 import { PERMISSION_TEXT_APPROVED, PERMISSION_TEXT_VERSION } from "./permissionText";
 import { isDestination, type JobType } from "./destinations";
 import { summariseStanding, validateAdminPermission, validateReview, type AdminPermissionInput, type ReviewInput, type Standing } from "./permissionModel";
+import { authorityTicket } from "./authorityTicket";
 
 // The persistent portfolio library: candidates, collections, marketing permission (stage 1), internal approval (stage 2) and use control.
 // EVERY function starts with gate(): while PORTFOLIO_LIBRARY_ENABLED is false (migrations 0169-0171 not applied) nothing here reads or writes the database.
@@ -95,6 +96,7 @@ export async function recordAdminPermission(user: CurrentUser, jobType: JobType,
   if (problems.length) return fail(problems.join(" "));
   const admin = createAdminClient();
   // The recorder states whether the evidence suffices. Insufficient evidence is saved as "verification still required"; it never counts until verified.
+  { const t = await authorityTicket(user, `record_permission:${input.decision}`, jobId); if (!t.ok) return fail(t.error); }
   const { data, error } = await admin.from("marketing_permission_records").insert({
     job_type: jobType, job_id: jobId, source: "admin_recorded", decision: input.decision, grantor_name: input.grantorName.trim(), grantor_capacity: input.grantorCapacity,
     allowed_destinations: input.decision === "granted" ? input.destinations : [], file_ids: input.fileIds && input.fileIds.length ? input.fileIds : null, restrictions: input.restrictions.trim() || null,
@@ -113,6 +115,7 @@ export async function recogniseContractPermission(user: CurrentUser, jobType: Jo
   if (input.clause.trim().length < 2) return fail("Name the clause that gives the permission.");
   const admin = createAdminClient();
   // The DATABASE decides: executed, linked to this job, a recorded release covering every use. Otherwise it refuses with the reason.
+  { const t = await authorityTicket(user, "record_permission:granted", jobId); if (!t.ok) return fail(t.error); }
   const { data, error } = await admin.from("marketing_permission_records").insert({
     job_type: jobType, job_id: jobId, source: "contract", decision: "granted", grantor_name: input.grantorName.trim() || "Client (per agreement)", grantor_capacity: "client",
     allowed_destinations: input.destinations, agreement_id: input.agreementId, agreement_clause: input.clause.trim(), expires_on: input.expiresOn || null, restrictions: input.restrictions?.trim() || null, recorded_by: user.id,
@@ -129,6 +132,7 @@ export async function verifyPermission(user: CurrentUser, jobType: JobType, jobI
   const admin = createAdminClient();
   const { data: tgt } = await admin.from("marketing_permission_records").select("grantor_name, grantor_capacity").eq("id", recordId).maybeSingle();
   if (!tgt) return fail("That record was not found.");
+  { const t = await authorityTicket(user, "record_permission:verified", jobId); if (!t.ok) return fail(t.error); }
   const { error } = await admin.from("marketing_permission_records").insert({ job_type: jobType, job_id: jobId, source: "admin_recorded", decision: "verified", supersedes_id: recordId, grantor_name: tgt.grantor_name, grantor_capacity: tgt.grantor_capacity, note: note.trim(), recorded_by: user.id });
   if (error) return fail(clean(error));
   await logActivity({ actorUserId: user.id, action: "portfolio.permission_verified", entityType: "marketing_permission", entityId: recordId, metadata: { jobType, jobId } });
@@ -147,6 +151,7 @@ export async function createPermissionRequest(user: CurrentUser, input: { jobTyp
   const admin = createAdminClient();
   const { data: files } = await admin.from("project_files").select("id, release_status, purged_at").in("id", ids);
   if ((files ?? []).length !== ids.length || (files ?? []).some((f) => f.purged_at || f.release_status !== "released")) return fail("Every photograph must already be released to the client, so they can see exactly what they are authorising.");
+  { const t = await authorityTicket(user, "request_permission", input.jobId); if (!t.ok) return fail(t.error); }
   const { error } = await admin.from("marketing_permission_requests").insert({ job_type: input.jobType, job_id: input.jobId, addressed_to: input.addressedTo, proposed_destinations: input.destinations, file_ids: ids, text_version: PERMISSION_TEXT_VERSION, created_by: user.id });
   if (error) return fail(clean(error));
   // Deliberately NO email or notification: the client sees the request in their portal. Any reminder rule needs its own authorisation.
@@ -200,6 +205,7 @@ export async function recordInternalReview(user: CurrentUser, input: { fileId: s
   const admin = createAdminClient();
   const { data: cand } = await admin.from("portfolio_candidates").select("id").eq("project_file_id", input.fileId).maybeSingle();
   if (!cand) return fail("That photograph is not a candidate.");
+  { const t = await authorityTicket(user, `internal_review:${input.decision}`, input.fileId); if (!t.ok) return fail(t.error); }
   const { error } = await admin.from("portfolio_internal_reviews").insert({ project_file_id: input.fileId, candidate_id: cand.id, decision: input.decision, destinations: input.decision === "approved" ? input.destinations : [], checks: input.decision === "approved" ? { ...input.checks, people: input.people, people_evidence: input.people === "evidenced" ? (input.peopleEvidence ?? "").trim() : null, restrictions_assessed: input.restrictionsAssessed === true } : input.checks, notes: input.notes.trim() || null, reviewed_by: user.id });
   if (error) return fail(clean(error));
   await logActivity({ actorUserId: user.id, action: `portfolio.internal_${input.decision}`, entityType: "project_file", entityId: input.fileId, metadata: { destinations: input.destinations } });
