@@ -7,6 +7,7 @@ import LocalDateTimeField from "@/components/admin/LocalDateTimeField";
 import { ACCEPTANCE_CHANNELS } from "@/lib/crewSupport/quotationRules";
 import { DELIVERY_CHANNELS_UI } from "@/lib/commercial/quotationDeliveryChannels";
 import { ORDINARY_VALIDITY_DAYS, formatDate } from "@/lib/commercial/quotationValidity";
+import { shortFingerprint } from "@/lib/commercial/quotationDocument";
 
 // Four different things, kept apart: CREATED (a draft exists), ISSUED (a person confirmed it, recording who/when/validity), DELIVERED (a person recorded how they gave it to the client:
 // the system never sends it) and ACCEPTED (the client said yes, with evidence). Issuing sets no amount due, booking, payment or acceptance, and sends nothing.
@@ -19,8 +20,8 @@ const NEXT_STATUS: Record<string, { status: string; label: string }[]> = {
 const FIELD = "block w-full mt-1 min-h-11 rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small text-ordift-ink";
 const STATUS_WORD: Record<string, string> = { draft: "Draft (not issued)", sent: "Issued", accepted: "Accepted", declined: "Declined", expired: "Expired", superseded: "Superseded" };
 
-export function QuotationStatusActions({ quotationId, status, defaultValidUntil, currentValidUntil, isSuperAdmin, blockers, expired, deliveredText, today, crewManaged = false, expectedEntityId = null, activityOptions = [], defaultActivities = [] }: {
-  crewManaged?: boolean; expectedEntityId?: string | null; activityOptions?: { key: string; label: string }[]; defaultActivities?: string[]; today: string; quotationId: string; status: string; hasClient: boolean; defaultValidUntil: string; currentValidUntil: string | null; isSuperAdmin: boolean; blockers: string[]; expired: boolean; deliveredText: string | null;
+export function QuotationStatusActions({ quotationId, status, defaultValidUntil, currentValidUntil, isSuperAdmin, blockers, expired, deliveredText, today, crewManaged = false, expectedEntityId = null, activityOptions = [], defaultActivities = [], documentFingerprint = null, documentHref = null }: {
+  documentFingerprint?: string | null; documentHref?: string | null; crewManaged?: boolean; expectedEntityId?: string | null; activityOptions?: { key: string; label: string }[]; defaultActivities?: string[]; today: string; quotationId: string; status: string; hasClient: boolean; defaultValidUntil: string; currentValidUntil: string | null; isSuperAdmin: boolean; blockers: string[]; expired: boolean; deliveredText: string | null;
 }) {
   const [state, formAction] = useActionState<ActionState, FormData>(updateQuotationStatusAction, null);
   const [acceptState, acceptAction] = useActionState<ActionState, FormData>(recordQuotationAcceptanceAction, null);
@@ -96,6 +97,7 @@ export function QuotationStatusActions({ quotationId, status, defaultValidUntil,
         <section aria-labelledby="deliv-h" className="space-y-2 rounded-lg border border-black/10 p-3 sm:p-4">
           <h2 id="deliv-h" className="font-serif font-medium text-body text-ordift-ink">Delivery to the client</h2>
           <p className="font-sans text-body-small text-ordift-ink">{deliveredText ?? "Not recorded. Issuing did not email or notify the client: share the quotation yourself, then record it here."}</p>
+          {documentHref && <p className="font-sans text-caption text-ordift-ink-muted"><a href={documentHref} className="underline font-medium text-ordift-ink">Download the quotation PDF</a>, then send it yourself by email, WhatsApp or another channel. The system sends nothing.</p>}
           {deliveryState?.ok === true && deliveryState.message && <p role="status" className="font-sans text-caption text-green-800">{deliveryState.message}</p>}
           {deliveryState?.ok === false && <p role="alert" className="font-sans text-caption text-red-800">{deliveryState.error}</p>}
           <details className="rounded-lg border border-black/10 px-3 py-2">
@@ -106,6 +108,15 @@ export function QuotationStatusActions({ quotationId, status, defaultValidUntil,
                 <select name="channel" required defaultValue="" className={FIELD}><option value="" disabled>Choose…</option>{DELIVERY_CHANNELS_UI.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}</select>
               </label>
               <label className="font-sans text-caption text-ordift-ink-muted">When?<LocalDateTimeField name="deliveredAt" className={FIELD} /></label>
+              <label className="sm:col-span-2 font-sans text-caption text-ordift-ink-muted">Sent to (name, email address or phone number, optional)<input name="recipient" maxLength={200} className={FIELD} /></label>
+              <label className="sm:col-span-2 font-sans text-caption text-ordift-ink-muted">Evidence you hold (optional): for example the email subject and time, or &ldquo;WhatsApp message to the client, screenshot saved in the project folder&rdquo;<textarea name="evidence" rows={2} maxLength={500} className={FIELD} /></label>
+              {documentFingerprint && (
+                <label className="sm:col-span-2 flex items-start gap-3 font-sans text-body-small text-ordift-ink">
+                  <input type="checkbox" name="sentSystemPdf" defaultChecked className="mt-1 h-5 w-5" />
+                  <span>I sent the quotation PDF generated by the system (fingerprint {shortFingerprint(documentFingerprint)}). Untick this if you sent a different document.</span>
+                </label>
+              )}
+              {documentFingerprint && <input type="hidden" name="pdfFingerprint" value={documentFingerprint} />}
               <label className="sm:col-span-2 font-sans text-caption text-ordift-ink-muted">Note (optional)<input name="note" maxLength={300} className={FIELD} /></label>
               <div className="sm:col-span-2"><SubmitButton pendingLabel="Recording…" className="min-h-11 w-full sm:w-auto rounded-md border border-black/20 px-4 py-2 font-sans text-body-small font-semibold text-ordift-ink">Record delivery</SubmitButton></div>
             </form>

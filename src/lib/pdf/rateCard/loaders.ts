@@ -1,6 +1,7 @@
 // SERVER-SIDE: builds a DRAFT rate card from the existing selling-rate tables through their existing read functions (which select selling fields only — there is no cost column in
 // these tables). Read-only: this file writes nothing. The result is always a draft with empty descriptions and placeholder conditions, so it cannot be approved as it stands.
 import { getActivePersonalSessionRates, listActivePricingMarkets } from "@/lib/pricing/personalSessionPricing";
+import { WEBSITE_DOMAIN } from "@/lib/brand/letterheadContacts";
 import { getActiveTierRates, getTierDeliverables } from "@/lib/pricing/weddingEventPricing";
 import type { ServiceMode, WeddingEventCategory } from "@/lib/pricing/weddingEventEstimate";
 import { getActiveCorporateHeadshotRates, getActiveCorporateMinimumBooking, getAllActiveCorporatePriorityDeliveryPercentages, getActiveCorporateRetouchRate, getActiveCorporateTeamTierRates } from "@/lib/pricing/corporateHeadshotPricing";
@@ -49,7 +50,7 @@ export async function buildDraftFromSellingRates(o: DraftOptions): Promise<{ ok:
     meta: { title: "Rate Card", editionLabel: "Draft", effectiveDate: o.today, marketSlug: market.slug, marketName: market.name, currency: "USD", conversionPolicy: "none" },
     coverImage: "", sections,
     conditions: [{ title: "Prices", text: `${PLACEHOLDER_MARK} Approved wording on currency, validity and what the prices include.` }, { title: "Tax and deposits", text: `${PLACEHOLDER_MARK} Approved wording on tax, deposits and payment schedule.` }, { title: "Usage and delivery", text: `${PLACEHOLDER_MARK} Approved wording on usage rights and delivery timelines.` }],
-    contact: [{ label: "Website", value: "ordiftstudios.com" }, { label: "Email", value: `${PLACEHOLDER_MARK} contact email` }, { label: "WhatsApp", value: `${PLACEHOLDER_MARK} booking number` }],
+    contact: [{ label: "Website", value: WEBSITE_DOMAIN }, { label: "Email", value: `${PLACEHOLDER_MARK} contact email` }, { label: "WhatsApp", value: `${PLACEHOLDER_MARK} booking number` }],
   };
   // Approved editorial wording (registry) is merged in BEFORE eligibility and conversion; it can only fill wording fields, and anything not yet supplied is reported, never invented.
   const merged = applyEditorialContent(draft, REGISTRY, o.marketSlug); draft = merged.content;

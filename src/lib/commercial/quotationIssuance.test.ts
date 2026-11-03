@@ -178,6 +178,7 @@ describe("the dates card", () => {
   });
 });
 
+let jurisdictionOfEntity: string | null = "Qatar";
 describe("the preview / PDF header", () => {
   async function renderPdf(view: unknown, q: { status: string; issuedAt: string | null; validUntil: string | null } = { status: "draft", issuedAt: null, validUntil: null }) {
     vi.resetModules();
@@ -185,6 +186,7 @@ describe("the preview / PDF header", () => {
     vi.doMock("@/lib/crewSupport/quotation", () => ({ getCrewQuotationPrintExtras: async () => null }));
     vi.doMock("@/lib/commercial/clientQuotations", () => ({ getClientQuotation: async () => ({ id: "q1", quotationReference: "ORD-QUO-2026-000006", status: q.status, createdAt: "2026-10-25T09:57:14Z", issuedAt: q.issuedAt, validUntil: q.validUntil, clientName: null, prospectName: "Test", prospectCompany: null, prospectEmail: null, prospectPhone: null, currency: "USD", subtotal: 351, discountTotal: 0, taxTotal: 0, total: 351, paymentBookingTerms: null, items: [] }) }));
     vi.doMock("@/lib/commercial/quotationEntity", () => ({ resolveQuotationEntityView: async () => view }));
+    vi.doMock("@/lib/commercial/quotationDocumentData", async () => { const { contactsFor, snapshotContacts } = await import("@/lib/brand/letterheadContacts"); return { entityJurisdiction: async () => jurisdictionOfEntity, resolveLetterheadContacts: async (_id: string, j: string | null) => ({ contacts: snapshotContacts(contactsFor(j)), frozen: true }) }; });
     vi.doMock("next/navigation", () => ({ redirect: () => { throw new Error("redirect"); }, notFound: () => { throw new Error("notFound"); } }));
     const { default: Page } = await import("../../app/admin/pricing/quotations/[id]/pdf/page");
     return renderToStaticMarkup(await Page({ params: Promise.resolve({ id: "q1" }) }));
@@ -409,5 +411,37 @@ describe("the signatory person link: set once, only to the Founder identity, val
     expect(m73).not.toMatch(/(insert into|update|delete from) public\.profiles/);
     expect(m73).not.toMatch(/update public\.entity_signatories/);
     expect(m73).not.toMatch(/founder_identities|founder_common_control_accounts/);
+  });
+});
+
+describe("the print view's letterhead: the issuing entity's own contact details", () => {
+  async function renderWith(view: unknown, jurisdiction: string | null) {
+    jurisdictionOfEntity = jurisdiction;
+    vi.resetModules();
+    vi.doMock("@/lib/portal/roles", () => ({ getCurrentUser: async () => ({ id: "u", roles: ["admin"] }), hasRole: () => true, isSuperAdmin: () => false }));
+    vi.doMock("@/lib/crewSupport/quotation", () => ({ getCrewQuotationPrintExtras: async () => null }));
+    vi.doMock("@/lib/commercial/clientQuotations", () => ({ getClientQuotation: async () => ({ id: "q1", quotationReference: "ORD-QUO-2026-009999", status: "draft", createdAt: "2026-10-25T09:57:14Z", issuedAt: null, validUntil: null, clientName: null, prospectName: "Test", prospectCompany: null, prospectEmail: null, prospectPhone: null, currency: "QAR", subtotal: 1, discountTotal: 0, taxTotal: 0, total: 1, paymentBookingTerms: null, items: [] }) }));
+    vi.doMock("@/lib/commercial/quotationEntity", () => ({ resolveQuotationEntityView: async () => view }));
+    vi.doMock("@/lib/commercial/quotationDocumentData", async () => { const { contactsFor, snapshotContacts } = await import("@/lib/brand/letterheadContacts"); return { entityJurisdiction: async () => jurisdiction, resolveLetterheadContacts: async (_id: string, j: string | null) => ({ contacts: snapshotContacts(contactsFor(j)), frozen: true }) }; });
+    vi.doMock("next/navigation", () => ({ redirect: () => { throw new Error("redirect"); }, notFound: () => { throw new Error("notFound"); } }));
+    const { default: Page } = await import("../../app/admin/pricing/quotations/[id]/pdf/page");
+    return renderToStaticMarkup(await Page({ params: Promise.resolve({ id: "q1" }) }));
+  }
+  const withEntity = { phase: "draft", resolution: { ok: true, entity: { entityId: "e1", display: { legalName: "SYNTHETIC ENTITY", registrationType: "W.L.L.", identifiers: [{ label: "Commercial Registration (CR) No.", identifier: "000000" }] } } } };
+  const none = { phase: "draft", resolution: { ok: false, code: "none", message: "x" } };
+  it("with an entity: the base letterhead (no fixed contact strip) and that entity's contact details", async () => {
+    const qa = await renderWith(withEntity, "Qatar");
+    expect(qa).toContain("os-letterhead-base.jpg");
+    expect(qa).toContain("+974 5510 4490"); expect(qa).toContain("www.ordiftstudios.com"); expect(qa).not.toContain("+233");
+    const gh = await renderWith(withEntity, "Ghana");
+    expect(gh).toContain("+233 504 981 277"); expect(gh).not.toContain("+974");
+    expect(qa + gh).not.toMatch(/gmail|odiftstudios/);
+  });
+  it("without an entity (or for Crew Support) the same base letterhead prints only what is true for every entity: the public mailbox and the website, no telephone, no Gmail", async () => {
+    const html = await renderWith(none, null);
+    expect(html).toContain("os-letterhead-base.jpg");
+    expect(html).not.toContain("/brand/os-letterhead.jpg");
+    expect(html).toContain("enquiries@ordiftstudios.com"); expect(html).toContain("www.ordiftstudios.com");
+    expect(html).not.toMatch(/\+974|\+233|\+44|gmail|7777/);
   });
 });

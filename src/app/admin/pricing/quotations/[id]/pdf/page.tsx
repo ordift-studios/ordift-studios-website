@@ -7,6 +7,9 @@ import { getCrewQuotationPrintExtras } from "@/lib/crewSupport/quotation";
 import { snapshotScheduleText } from "@/lib/crewSupport/quotationSnapshot";
 import { quotationDates, utcDate } from "@/lib/commercial/quotationValidity";
 import { resolveQuotationEntityView } from "@/lib/commercial/quotationEntity";
+import { entityJurisdiction, resolveLetterheadContacts } from "@/lib/commercial/quotationDocumentData";
+import { contactsFor, snapshotContacts } from "@/lib/brand/letterheadContacts";
+import LetterheadFooter, { LETTERHEAD_BASE_IMAGE, LETTERHEAD_FOOTER_CSS } from "@/components/admin/LetterheadFooter";
 
 export const metadata: Metadata = {
   title: "Quotation PDF — Ordift Studios",
@@ -41,6 +44,12 @@ export default async function QuotationPdfPage({ params }: { params: Promise<{ i
   // A DRAFT shows the live record; an ISSUED quotation shows only the legal details frozen when it was issued, so a later registry change never alters an issued document.
   const entityView = crew ? null : await resolveQuotationEntityView(id);
   const entityShown = entityView?.phase === "issued" ? entityView.frozen : entityView?.phase === "draft" && entityView.resolution.ok ? { legalName: entityView.resolution.entity.display.legalName, registrationType: entityView.resolution.entity.display.registrationType, identifiers: entityView.resolution.entity.display.identifiers } : null;
+  // Every quotation is printed on the approved letterhead WITHOUT its fixed contact strip, with live contact details instead (same design, same positions). An ordinary quotation with a contracting
+  // entity shows that entity's own details (an issued one: the details frozen when it was issued); a Crew Support quotation, or one with no entity yet, shows only what is true for every entity
+  // (the public mailbox and the website). The internal/legacy Gmail address of the old letterhead is never printed.
+  const entityId = entityView?.phase === "issued" ? entityView.frozen.entityId : entityView?.phase === "draft" && entityView.resolution.ok ? entityView.resolution.entity.entityId : entityView?.phase === "issued_unfrozen" && entityView.live.ok ? entityView.live.entity.entityId : null;
+  const jurisdiction = entityId ? await entityJurisdiction(entityId) : null;
+  const contacts = !crew && entityShown ? (await resolveLetterheadContacts(id, jurisdiction)).contacts : snapshotContacts(contactsFor(null));
   const dates = quotationDates({ createdAt: quotation.createdAt, issuedAt: crew?.issuedAt ?? quotation.issuedAt, validUntil: quotation.validUntil, status: crew?.status ?? quotation.status }, utcDate(new Date()), { crew: Boolean(crew) });
 
   return (
@@ -51,7 +60,7 @@ export default async function QuotationPdfPage({ params }: { params: Promise<{ i
           width: 210mm;
           min-height: 297mm;
           margin: 0 auto;
-          background-image: url(/brand/os-letterhead.jpg);
+          background-image: url(${LETTERHEAD_BASE_IMAGE});
           background-size: cover;
           background-position: top center;
           background-repeat: no-repeat;
@@ -60,6 +69,7 @@ export default async function QuotationPdfPage({ params }: { params: Promise<{ i
           font-family: Georgia, 'Times New Roman', serif;
           color: #1a1a1a;
         }
+        ${LETTERHEAD_FOOTER_CSS}
         .print-toolbar { text-align: center; margin: 16px 0; }
         @media print {
           .print-toolbar { display: none; }
@@ -75,6 +85,8 @@ export default async function QuotationPdfPage({ params }: { params: Promise<{ i
         .totals .value { text-align: right; width: 110px; }
         .totals .grand td { font-weight: bold; border-top: 1px solid #333; padding-top: 6px; }
       `}</style>
+
+      <LetterheadFooter contacts={contacts} />
 
       <PrintButton />
 

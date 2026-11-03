@@ -4,6 +4,9 @@ import { getCurrentUser, hasRole, isSuperAdmin } from "@/lib/portal/roles";
 import { issuanceBlockers, planIssuance } from "./quotationValidity";
 import { DELIVERY_CHANNELS_UI } from "./quotationDeliveryChannels";
 import { ENTITY_REQUIRED_TO_ISSUE, resolveQuotationEntity } from "./quotationEntity";
+import { loadIssuedQuotationDocument, recordIssueFingerprint } from "./quotationDocumentData";
+import { isFingerprint } from "./quotationDocument";
+import { contactsFor, snapshotContacts } from "@/lib/brand/letterheadContacts";
 
 // ORDINARY quotation issuance, delivery record and their audit. Issuing is ONE deliberate, confirmed act that records WHEN it was issued, BY WHOM, and the approved validity.
 // It is deliberately NOT sending: nothing is emailed or notified, and it creates no payment, booking, amount due, receivable or client acceptance. Delivering the quotation to the client
@@ -43,6 +46,9 @@ export async function issueOrdinaryQuotation(params: { quotationId: string; vali
     p_quotation_id: params.quotationId, p_actor: user.id, p_valid_until: plan.validUntil, p_expected_entity: params.expectedEntityId ?? entity.entity.entityId,
     p_audit: {
       declaredActivities: declared,
+      // The letterhead contact details this quotation is issued with, frozen into the append-only issuance event (the database merges p_audit into it) so a later PDF prints these, not whatever
+      // the configuration says then. They follow the contracting entity's own jurisdiction, never the client's location or currency.
+      letterheadContacts: snapshotContacts(contactsFor(entity.entity.assessment.jurisdiction)),
       standardValidUntil: plan.defaultUntil, withinStandardPolicy: !plan.isException,
       ...(plan.isException ? { exceptionReason: (params.exceptionReason ?? "").trim(), extensionBeyondStandard: plan.isExtension, approvedBy: user.id } : {}),
       ...(plan.replacedExpired ? { replacedExpiredCarriedDate: q.valid_until } : {}),
@@ -55,6 +61,9 @@ export async function issueOrdinaryQuotation(params: { quotationId: string; vali
   }
   const row = (Array.isArray(data) ? data[0] : data) as { issued_at: string } | null;
   if (!row?.issued_at) return { ok: false, error: "The quotation could not be issued. Nothing was changed." };
+  // The quotation is now issued (the application accepts no further edit to its lines). Record the fingerprint of its content at this moment so a later change is detectable.
+  // Best-effort audit write: its failure never undoes or blocks the issue.
+  await recordIssueFingerprint(params.quotationId, user.id);
   return { ok: true, issuedAt: row.issued_at, validUntil: plan.validUntil, isException: plan.isException, isExtension: plan.isExtension };
 }
 
@@ -76,32 +85,56 @@ function messageForIssueError(message: string, details: string | null): string {
   return "The quotation could not be issued. Nothing was changed.";
 }
 
-// ---- delivery to the client: a person records HOW and WHEN they delivered it. Kept as an audit event (no schema change); it never changes the quotation.
+// ---- delivery to the client: a person records HOW and WHEN they delivered it, to whom, and what evidence they hold. Kept as an audit event (no schema change); it never changes the
+// quotation and the system sends nothing. When the person sent the system's PDF, they also record its FINGERPRINT (printed on the PDF): the record then says exactly which content was
+// delivered, and whether the quotation still has that content now.
 export const DELIVERY_CHANNELS = DELIVERY_CHANNELS_UI;
 
-export async function recordQuotationDelivery(params: { quotationId: string; channel: string; deliveredAt: string; note?: string }): Promise<{ ok: true } | { ok: false; error: string }> {
+export type DeliveryRecord = { quotationId: string; channel: string; deliveredAt: string; note?: string; recipient?: string; evidence?: string; pdfFingerprint?: string | null };
+export type DeliveryResult = { ok: true; warning?: string } | { ok: false; error: string };
+
+const clean = (v: string | undefined, max: number): string | null => (v ?? "").replace(/[\u0000-\u001f]/g, " ").trim().slice(0, max) || null;
+
+export async function recordQuotationDelivery(params: DeliveryRecord): Promise<DeliveryResult> {
   const user = await getCurrentUser();
   if (!user || (!hasRole(user, "admin") && !isSuperAdmin(user))) return { ok: false, error: "Not authorized to manage quotations." };
   if (!DELIVERY_CHANNELS.some((c) => c.value === params.channel)) return { ok: false, error: "Choose how it was delivered." };
   const when = new Date(params.deliveredAt);
   if (Number.isNaN(when.getTime())) return { ok: false, error: "Enter when it was delivered." };
   if (when.getTime() > Date.now() + 5 * 60_000) return { ok: false, error: "The delivery time cannot be in the future." };
+  if (params.pdfFingerprint && !isFingerprint(params.pdfFingerprint)) return { ok: false, error: "The document fingerprint is not valid. Reload the page and try again." };
   const admin = createAdminClient();
   const { data: q } = await admin.from("client_quotations").select("id, status, issued_at, quotation_reference, crew_support_request_id").eq("id", params.quotationId).maybeSingle();
   if (!q) return { ok: false, error: "Quotation not found." };
   if (q.crew_support_request_id) return { ok: false, error: "Crew Support quotations are delivered from their Crew Support request." };
   if (q.status !== "sent" && q.status !== "accepted") return { ok: false, error: "Only an issued quotation can have a delivery recorded. Issue it first." };
   if (q.issued_at && when.getTime() < new Date(q.issued_at).getTime() - 60_000) return { ok: false, error: "It cannot have been delivered before it was issued." };
+
+  // What the person says they sent is compared with what the quotation says NOW. A mismatch is recorded truthfully (the delivery did happen) and flagged to the person.
+  let current: string | null = null;
+  let matches: boolean | null = null;
+  if (params.pdfFingerprint) {
+    const doc = await loadIssuedQuotationDocument(params.quotationId);
+    current = doc.ok ? doc.doc.fingerprint : null;
+    matches = current === null ? null : current === params.pdfFingerprint;
+  }
   await logActivity({
     actorUserId: user.id, action: "client_quotation.delivery_recorded", entityType: "client_quotation", entityId: params.quotationId,
-    metadata: { quotationReference: q.quotation_reference, channel: params.channel, deliveredAt: when.toISOString(), note: (params.note ?? "").trim().slice(0, 300) || null, recordedBy: user.id, note_system: "recorded by staff; the system did not send anything" },
+    metadata: {
+      quotationReference: q.quotation_reference, channel: params.channel, deliveredAt: when.toISOString(), note: clean(params.note, 300), recordedBy: user.id,
+      recipient: clean(params.recipient, 200), evidence: clean(params.evidence, 500),
+      ...(params.pdfFingerprint ? { pdfFingerprint: params.pdfFingerprint, pdfMatchesCurrentContent: matches, currentContentFingerprint: current } : {}),
+      note_system: "recorded by staff; the system did not send anything",
+    },
   });
-  return { ok: true };
+  return { ok: true, ...(matches === false ? { warning: "The quotation's content is different from the PDF you say you sent. The delivery is recorded as you reported it. Check what the client received before relying on it." } : {}) };
 }
 
-export type DeliveryFact = { channel: string; deliveredAt: string; recordedAt: string } | null;
+export type DeliveryFact = { channel: string; deliveredAt: string; recordedAt: string; recipient: string | null; evidence: string | null; pdfFingerprint: string | null; pdfMatchesCurrentContent: boolean | null } | null;
 export async function getQuotationDelivery(quotationId: string): Promise<DeliveryFact> {
   const { data } = await createAdminClient().from("activity_log").select("created_at, metadata").eq("entity_id", quotationId).eq("action", "client_quotation.delivery_recorded").order("created_at", { ascending: false }).limit(1).maybeSingle();
-  const m = (data?.metadata ?? null) as { channel?: string; deliveredAt?: string } | null;
-  return data && m?.channel && m.deliveredAt ? { channel: m.channel, deliveredAt: m.deliveredAt, recordedAt: data.created_at as string } : null;
+  const m = (data?.metadata ?? null) as { channel?: string; deliveredAt?: string; recipient?: string | null; evidence?: string | null; pdfFingerprint?: string; pdfMatchesCurrentContent?: boolean | null } | null;
+  return data && m?.channel && m.deliveredAt
+    ? { channel: m.channel, deliveredAt: m.deliveredAt, recordedAt: data.created_at as string, recipient: m.recipient ?? null, evidence: m.evidence ?? null, pdfFingerprint: isFingerprint(m.pdfFingerprint) ? m.pdfFingerprint : null, pdfMatchesCurrentContent: m.pdfMatchesCurrentContent ?? null }
+    : null;
 }

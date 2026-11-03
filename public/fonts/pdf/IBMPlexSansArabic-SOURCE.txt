@@ -1,0 +1,11 @@
+IBM Plex Sans Arabic (static TTF), Version 1.005, Copyright IBM Corp., Reserved Font Name "Plex".
+Licence: SIL Open Font License 1.1 (OFL-IBMPlexSansArabic.txt in this folder, copied unchanged from the project repository). The font files are redistributed UNMODIFIED (not subset, renamed or edited), as the Reserved Font Name requires.
+Official sources (the files are byte-identical in both):
+  https://github.com/IBM/plex  packages/plex-sans-arabic/fonts/complete/ttf/
+  https://github.com/IBM/plex/releases/tag/v6.4.0  (IBM-Plex-Sans-Arabic.zip, fonts/ttf/)
+Obtained 4 Nov 2026. SHA-256:
+  IBMPlexSansArabic-Regular.ttf  8e0f1046c736bf939d4939ee3ae0116acf61cbcd6592deae7656761627080981
+  IBMPlexSansArabic-Medium.ttf  eef162792cf2a6ba5af7943af9f86843b1286ab67aaf615c18c07fd8e97a4a90
+  IBMPlexSansArabic-SemiBold.ttf  1d4ab8b6ebadbb9d85f2ecdcb7cb0bb672420a8ff3388ab4f69d7b98056562aa
+Used as the fallback for Arabic script in the quotation PDF (src/lib/pdf/fonts.ts, BODY_FONT); Inter remains the Latin face.
+Why not Noto Sans Arabic: tested first. It builds dotted Arabic letters from separate mark glyphs, and the PDF renderer (react-pdf) places those marks wrongly (letters such as final yeh and seen lost or displaced their dots). IBM Plex Sans Arabic uses complete letter shapes and renders correctly.

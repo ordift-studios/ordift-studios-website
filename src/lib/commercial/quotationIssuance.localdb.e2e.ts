@@ -30,6 +30,7 @@ import { createClientQuotation, reviseClientQuotation, updateQuotationStatus } f
 import { chooseContractingEntity } from "@/lib/organization/entityRegistrations";
 import { resolveQuotationEntity, resolveQuotationEntityView } from "./quotationEntity";
 import { readIssuedLegalDetails } from "./quotationIssuedDetails";
+import { loadIssuedQuotationDocument } from "./quotationDocumentData";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getQuotationDelivery, issueOrdinaryQuotation, recordQuotationDelivery } from "./quotationIssuance";
 import { recordOrdinaryQuotationAcceptance } from "./quotationAcceptance";
@@ -94,6 +95,30 @@ beforeAll(() => {
 });
 
 describe("issuing a draft", () => {
+  it("freezes the letterhead contact details into the append-only issuance event, records the issue-time content fingerprint, and a regenerated document reads them back (Batch 1)", async () => {
+    const q = await draft();
+    h.current = admin;
+    expect((await issueOrdinaryQuotation({ quotationId: q })).ok).toBe(true);
+    const a = audit(q, "client_quotation.issued");
+    // the lab entity sits in the synthetic jurisdiction "E2E Land", which has no configured telephone: only what is true for every entity is frozen
+    expect(a.letterheadContacts).toEqual({ version: 1, jurisdiction: "E2E Land", email: "enquiries@ordiftstudios.com", phone: null, website: "www.ordiftstudios.com" });
+    expect(JSON.stringify(a.letterheadContacts)).not.toMatch(/gmail|7777|whatsapp/i);
+    const baseline = audit(q, "client_quotation.content_fingerprint");
+    expect(baseline.contentSha256).toMatch(/^[0-9a-f]{64}$/);
+    const doc = await loadIssuedQuotationDocument(q);
+    expect(doc.ok && doc.doc.context.contactsFrozen).toBe(true);
+    expect(doc.ok && doc.doc.context.contacts).toEqual(a.letterheadContacts);
+    expect(doc.ok && doc.doc.fingerprint).toBe(baseline.contentSha256);                  // nothing has changed since issue
+    expect(doc.ok && doc.doc.drift).toEqual({ state: "unchanged" });
+    // an issued quotation's lines changed behind the application's back (a direct database write) are DETECTED, not silently printed
+    sql(`update public.client_quotation_items set selling_rate = selling_rate + 1, line_total = line_total + 1 where quotation_id='${q}'`);
+    const changed = await loadIssuedQuotationDocument(q);
+    expect(changed.ok && changed.doc.drift.state).toBe("changed");
+    // the frozen snapshot itself cannot be altered or removed: it lives in the issuance event the database protects
+    let refused = "";
+    try { sql(`update public.activity_log set metadata = metadata || '{"letterheadContacts":{"version":1,"email":"x@y.z","website":"w","phone":null,"jurisdiction":null}}'::jsonb where entity_id='${q}' and action='client_quotation.issued'`); } catch (e) { refused = String((e as { stderr?: Buffer }).stderr ?? e); }
+    expect(refused).toMatch(/issuance_event_protected/);
+  });
   it("records the actual issue time, the issuer and the standard 30-day validity; the quotation is 'sent' and nothing else changes", async () => {
     const q = await draft();
     expect(row(q)[0]).toBe("draft");
@@ -223,7 +248,7 @@ describe("issue, delivery and acceptance are three distinct, auditable acts with
     const after = row(q);
     expect([after[0], after[1], after[2], after[3]]).toEqual(["accepted", afterIssue[1], afterIssue[2], afterIssue[3]]);   // only the status moved; issue time, issuer and validity are untouched
     const actions = sql(`select string_agg(action, ',' order by created_at) from public.activity_log where entity_id='${q}' and action like 'client_quotation.%' and action <> 'client_quotation.created'`);
-    expect(actions).toBe("client_quotation.issued,client_quotation.delivery_recorded,client_quotation.acceptance_recorded");
+    expect(actions).toBe("client_quotation.issued,client_quotation.content_fingerprint,client_quotation.delivery_recorded,client_quotation.acceptance_recorded");
     expect(audit(q, "client_quotation.issued").delivery).toMatch(/not sent by the system/);
     expect(audit(q, "client_quotation.delivery_recorded")).toMatchObject({ channel: "email", recordedBy: U(0xe2) });
     expect(audit(q, "client_quotation.delivery_recorded").note_system).toMatch(/system did not send anything/);
@@ -685,7 +710,7 @@ describe("the issuance audit event is protected: created only by the atomic func
     expect((await recordQuotationDelivery({ quotationId: q, channel: "email", deliveredAt: new Date().toISOString() })).ok).toBe(true);
     expect((await recordOrdinaryQuotationAcceptance({ quotationId: q, channel: "email", evidence: "Email: yes, please go ahead", acceptedByName: "Synthetic Client", receivedAt: new Date().toISOString() })).ok).toBe(true);
     const kinds = sql(`select string_agg(action, ',' order by created_at) from public.activity_log where entity_id='${q}' and action like 'client_quotation.%' and action <> 'client_quotation.created'`);
-    expect(kinds).toBe("client_quotation.issued,client_quotation.delivery_recorded,client_quotation.acceptance_recorded");
+    expect(kinds).toBe("client_quotation.issued,client_quotation.content_fingerprint,client_quotation.delivery_recorded,client_quotation.acceptance_recorded");
     expect(await readIssuedLegalDetails(q)).toMatchObject({ state: "ok", details: { legalName: "GD-FLOW W.L.L." } });      // frozen details survive the later events
   });
 });

@@ -1,6 +1,7 @@
 // PLACEHOLDER content for the local preview. Every price is obviously fake (1,111 / 2,222 …), every description says it is a placeholder, and every item is marked source 'placeholder'
 // so validation refuses to approve it. Replace with real packages and approved wording when the Founder selects and approves them.
 import type { RateCardContent } from "./types";
+import { WEBSITE_DOMAIN } from "@/lib/brand/letterheadContacts";
 
 const ph = (key: string, name: string, kind: "fixed" | "from", amount: number, inc: string[], unit: string): RateCardContent["sections"][number]["items"][number] => ({
   key, name, description: "Placeholder service description — the Founder will supply the approved wording. It is here only to show how a short paragraph sets in the layout.", inclusions: inc,
@@ -29,7 +30,7 @@ export const SAMPLE_RATE_CARD: RateCardContent = {
     { title: "Usage and delivery (placeholder)", text: "Placeholder wording on usage rights and delivery timelines — not real terms." },
   ],
   contact: [
-    { label: "Website", value: "ordiftstudios.com" },
+    { label: "Website", value: WEBSITE_DOMAIN },
     { label: "Email", value: "Contact email to be confirmed" },
     { label: "WhatsApp", value: "Booking number to be confirmed" },
   ],

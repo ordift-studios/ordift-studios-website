@@ -511,7 +511,7 @@ export async function updateClientQuotationDraft(params: UpdateQuotationDraftPar
 
   const totals = computeQuotationTotals(params.items);
 
-  const { error: updateError } = await admin
+  const { data: updatedRows, error: updateError } = await admin
     .from("client_quotations")
     .update({
       client_profile_id: params.clientProfileId ?? null,
@@ -529,11 +529,14 @@ export async function updateClientQuotationDraft(params: UpdateQuotationDraftPar
       commercial_notes: params.commercialNotes ?? null,
     })
     .eq("id", params.quotationId)
-    .eq("status", "draft");
+    .eq("status", "draft")
+    .select("id");
   if (updateError) {
     console.error("[commercial] failed to update client_quotation draft", updateError.message);
     return { ok: false, error: "Failed to save changes." };
   }
+  // The conditional update above matches nothing if the quotation was issued after the status check: stop BEFORE the line items are replaced, so an issued quotation's lines can never be rewritten by a stale edit.
+  if (!updatedRows || updatedRows.length === 0) return { ok: false, error: "This quotation is no longer a draft (it may have just been issued), so nothing was changed. Use Revise to change an issued quotation." };
 
   // Draft line items carry no issued commercial history of their own —
   // replacing them wholesale (delete + reinsert) is safe and simpler

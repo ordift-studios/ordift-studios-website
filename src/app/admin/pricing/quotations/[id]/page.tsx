@@ -14,6 +14,10 @@ import { defaultValidUntil, formatDate, isExpired, issuanceBlockers, utcDate } f
 import { DELIVERY_CHANNELS_UI } from "@/lib/commercial/quotationDeliveryChannels";
 import QuotationDatesCard from "./QuotationDatesCard";
 import { resolveQuotationEntityView, quotationActivityChoices } from "@/lib/commercial/quotationEntity";
+import { quotationEntityAdvice } from "@/lib/commercial/quotationEntityAdvice";
+import { loadIssuedQuotationDocument } from "@/lib/commercial/quotationDocumentData";
+import { DRIFT_MESSAGE, shortFingerprint } from "@/lib/commercial/quotationDocument";
+import { findUnsupportedText, unsupportedMessage } from "@/lib/pdf/quotation/coverage";
 
 export const metadata: Metadata = {
   title: "Quotation — Ordift Studios Admin",
@@ -31,14 +35,25 @@ export default async function QuotationDetailPage({ params }: { params: Promise<
   const now = new Date();
   const today = utcDate(now);
   const delivery = quotation.status === "sent" || quotation.status === "accepted" ? await getQuotationDelivery(quotation.id) : null;
-  const deliveredText = delivery ? `Delivered via ${DELIVERY_CHANNELS_UI.find((c) => c.value === delivery.channel)?.label ?? delivery.channel} on ${formatDate(delivery.deliveredAt)} (recorded by staff; the system sent nothing)` : null;
+  const deliveredText = delivery
+    ? `Delivered via ${DELIVERY_CHANNELS_UI.find((c) => c.value === delivery.channel)?.label ?? delivery.channel} on ${formatDate(delivery.deliveredAt)}${delivery.recipient ? ` to ${delivery.recipient}` : ""}${delivery.pdfFingerprint ? ` · PDF fingerprint ${shortFingerprint(delivery.pdfFingerprint)}${delivery.pdfMatchesCurrentContent === false ? " (differed from the quotation when recorded)" : ""}` : ""} (recorded by staff; the system sent nothing)`
+    : null;
+  // The issued document (frozen entity details + lines + fingerprint). Ordinary, issued quotations only; drafts keep the print preview.
+  const issuedDoc = !quotation.crewManaged && quotation.status !== "draft" && quotation.status !== "ready" ? await loadIssuedQuotationDocument(quotation.id, today) : null;
+  const doc = issuedDoc?.ok ? issuedDoc.doc : null;
+  const unsupported = doc ? findUnsupportedText(doc.content, doc.context) : [];
+  const pdfAvailable = Boolean(doc) && doc!.drift.state !== "changed" && unsupported.length === 0;
   const expired = isExpired(quotation.status, quotation.validUntil, today);
   // The contracting entity is read from the existing governed record (never inferred). A draft may exist without one; issuing needs one.
   // A draft reads the live record. An ISSUED quotation shows the legal details frozen in its issuance record (they never change with the live registry).
   const entityView = quotation.crewManaged ? null : await resolveQuotationEntityView(quotation.id, today);
-  const activityChoices = quotation.crewManaged || quotation.status !== "draft" ? { options: [], suggested: [] } : await quotationActivityChoices(quotation.enquiryId ?? null);
+  const activityChoices = quotation.crewManaged || quotation.status !== "draft" ? { options: [], suggested: [] } : await quotationActivityChoices(quotation.enquiryId ?? null, quotation.items);
   const frozen = entityView?.phase === "issued" ? entityView : null;
   const entity = entityView?.phase === "draft" ? entityView.resolution : entityView?.phase === "issued_unfrozen" ? entityView.live : null;
+  // Early, advisory guidance on a draft: lines that appear to need an activity the entity is not licensed for, and an entity from a different market than the enquiry. Never blocks anything itself.
+  const advice = quotation.crewManaged || quotation.status !== "draft"
+    ? null
+    : await quotationEntityAdvice({ lines: quotation.items, enquiryId: quotation.enquiryId ?? null, recordedEntityId: entity?.ok ? entity.entity.entityId : null, today });
   const blockers = [
     ...issuanceBlockers({ status: quotation.status, lineCount: quotation.items.length, total: quotation.total, crewManaged: quotation.crewManaged }),
     ...(quotation.status === "draft" && entity && !entity.ok ? [entity.message] : []),
@@ -59,12 +74,20 @@ export default async function QuotationDetailPage({ params }: { params: Promise<
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          {doc && pdfAvailable && (
+            <a
+              href={`/admin/pricing/quotations/${quotation.id}/document?download=1`}
+              className="font-sans text-body-small font-semibold px-4 py-2 rounded-md bg-ordift-ink text-white"
+            >
+              Download quotation PDF
+            </a>
+          )}
           <Link
             href={`/admin/pricing/quotations/${quotation.id}/pdf`}
             target="_blank"
             className="font-sans text-body-small font-semibold px-4 py-2 rounded-md border border-black/15 text-ordift-ink"
           >
-            View / Download PDF →
+            {quotation.status === "draft" ? "Preview / print (draft) →" : "Print view →"}
           </Link>
           {quotation.status === "draft" && (
             <Link
@@ -87,6 +110,34 @@ export default async function QuotationDetailPage({ params }: { params: Promise<
 
       {quotation.version > 1 && (
         <p className="font-sans text-caption text-ordift-ink-muted mb-4">Version {quotation.version} — revises an earlier issued quotation.</p>
+      )}
+
+      {issuedDoc && !issuedDoc.ok && issuedDoc.code === "no_snapshot" && (
+        <p role="status" className="mb-4 rounded-lg border border-amber-300 bg-amber-50 p-3 font-sans text-body-small text-amber-900">{issuedDoc.message}</p>
+      )}
+      {doc && doc.drift.state === "changed" && (
+        <p role="alert" className="mb-4 rounded-lg border border-red-300 bg-red-50 p-3 font-sans text-body-small text-red-900">{DRIFT_MESSAGE} The PDF cannot be built while they differ.</p>
+      )}
+      {doc && unsupported.length > 0 && doc.drift.state !== "changed" && (
+        <p role="status" className="mb-4 rounded-lg border border-amber-300 bg-amber-50 p-3 font-sans text-body-small text-amber-900">{unsupportedMessage(unsupported)}</p>
+      )}
+      {doc && !doc.context.contactsFrozen && (
+        <p role="status" className="mb-4 rounded-lg border border-black/15 bg-ordift-offwhite p-3 font-sans text-caption text-ordift-ink-muted">This quotation was issued before its letterhead contact details were recorded with it, so the PDF prints the current approved contact details for its entity. Quotations issued from now on keep the contact details they were issued with.</p>
+      )}
+      {doc && doc.drift.state === "no_baseline" && (
+        <p role="status" className="mb-4 rounded-lg border border-black/15 bg-ordift-offwhite p-3 font-sans text-caption text-ordift-ink-muted">No issue-time fingerprint was recorded for this quotation, so later changes to it cannot be detected. The PDF shows the fingerprint of its content today: {shortFingerprint(doc.fingerprint)}.</p>
+      )}
+      {doc && doc.drift.state === "unchanged" && (
+        <p className="mb-4 font-sans text-caption text-ordift-ink-muted">Content fingerprint {shortFingerprint(doc.fingerprint)} (matches the fingerprint recorded when this quotation was issued).</p>
+      )}
+
+      {advice && (advice.warnings.length > 0 || advice.mismatch) && (
+        <div role="status" className="mb-4 space-y-2 rounded-lg border border-amber-300 bg-amber-50 p-3 font-sans text-body-small text-amber-900">
+          <p className="font-semibold">Early warning (advisory)</p>
+          {advice.warnings.map((w) => <p key={w.activity}>{w.text}</p>)}
+          {advice.mismatch && <p>{advice.mismatch}</p>}
+          <p className="text-caption">Based on the wording of the lines{advice.evaluatedEntityName ? ` and the recorded licence of ${advice.evaluatedEntityName}` : ""}. The authoritative check still runs when you issue; this warning does not change it.</p>
+        </div>
       )}
 
       {acceptance && (
@@ -146,7 +197,8 @@ export default async function QuotationDetailPage({ params }: { params: Promise<
 
       <div className="rounded-xl border border-black/10 bg-white p-4 sm:p-6 mb-6">
         <QuotationStatusActions quotationId={quotation.id} status={quotation.status} hasClient={Boolean(quotation.clientProfileId)} today={today} defaultValidUntil={defaultValidUntil(now)} currentValidUntil={quotation.validUntil}
-          isSuperAdmin={isSuperAdmin(user)} blockers={blockers} expectedEntityId={entity?.ok ? entity.entity.entityId : null} activityOptions={activityChoices.options} defaultActivities={activityChoices.suggested} expired={expired} deliveredText={deliveredText} crewManaged={quotation.crewManaged} />
+          isSuperAdmin={isSuperAdmin(user)} blockers={blockers} expectedEntityId={entity?.ok ? entity.entity.entityId : null} activityOptions={activityChoices.options} defaultActivities={activityChoices.suggested} expired={expired} deliveredText={deliveredText} crewManaged={quotation.crewManaged}
+          documentFingerprint={doc && pdfAvailable ? doc.fingerprint : null} documentHref={doc && pdfAvailable ? `/admin/pricing/quotations/${quotation.id}/document?download=1` : null} />
       </div>
 
       <div className="rounded-xl border border-black/10 bg-white overflow-x-auto mb-6">

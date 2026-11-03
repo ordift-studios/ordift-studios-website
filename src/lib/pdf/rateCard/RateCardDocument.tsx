@@ -1,4 +1,5 @@
 import { Document, Page, StyleSheet, Text, View } from "@react-pdf/renderer";
+import { WEBSITE_DOMAIN } from "@/lib/brand/letterheadContacts";
 import { BRAND as C } from "../brand";
 import { CoverPage } from "./CoverPage";
 import { COVER_PANEL_OPACITY } from "./cover";
@@ -139,7 +140,7 @@ function Frame({ c, status }: { c: RateCardContent; status: EditionStatus }) {
       {status.state === "draft" ? <Text style={s.draftBar} fixed>Draft — not approved for distribution</Text> : null}
       {status.state === "draft" ? <Text style={s.watermark} fixed>DRAFT</Text> : null}
       <View style={s.footer} fixed>
-        <Text>Ordift Studios · ordiftstudios.com</Text>
+        <Text>Ordift Studios · {WEBSITE_DOMAIN}</Text>
         <Text>{c.meta.title} · {c.meta.editionLabel}{status.state === "approved" ? ` · ${status.contentHash.slice(0, 8)}` : ""}</Text>
         <Text render={({ pageNumber, totalPages }) => `${pageNumber} / ${totalPages}`} />
       </View>

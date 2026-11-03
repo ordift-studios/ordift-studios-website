@@ -114,8 +114,13 @@ describe("the contracting entity is chosen explicitly and never inferred", () =>
   });
   it("the form preselects nothing and the action is Super Admin only", () => {
     const form = read("src/app/admin/organisations/ContractingEntityForm.tsx");
-    expect(form).toContain('defaultValue=""');
-    expect(code(form)).not.toMatch(/suggest|currency|country/i);
+    // Founder-approved (4 Nov 2026): a SUGGESTION from the enquiry's payment market may be shown. It is text plus a button that only fills the choice in on an explicit click; the choice starts empty,
+    // the form still needs a reason, nothing is saved by the suggestion, and the form itself never reads currency or country.
+    expect(form).toContain('useState("")');
+    expect(form.match(/setEntityId\(suggestion\.entityId\)/g)).toHaveLength(1);
+    expect(form).toMatch(/onClick=\{\(\) => setEntityId\(suggestion\.entityId\)\}/);
+    expect(form).toMatch(/name="basis" required/);
+    expect(code(form)).not.toMatch(/currency|country/i);
     const action = read("src/app/admin/organisations/contractingActions.ts");
     expect(action).toContain("isSuperAdmin(user)");
     expect(code(action)).not.toMatch(/suggest|currency|country/i);

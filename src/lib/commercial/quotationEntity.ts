@@ -2,6 +2,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { getContractingEntityStanding } from "@/lib/organization/entityRegistrations";
 import type { EntityAssessment, EntityDisplay } from "@/lib/organization/jurisdictionRequirements";
 import { readIssuedLegalDetails, type IssuedLegalDetails } from "./quotationIssuedDetails";
+import { detectActivities } from "./quotationLicenceWarnings";
 
 // The contracting legal entity of an ORDINARY quotation, read from the existing governed record (booking_contracting_entities, chosen explicitly by a Super Admin).
 // Resolution: the quotation's own record, else its linked enquiry's. NOTHING here chooses, infers or defaults an entity: no record means "not selected". Server-internal and
@@ -53,7 +54,8 @@ export async function resolveQuotationEntityView(quotationId: string, today?: st
 
 // The activities an ordinary quotation can declare, and a SUGGESTED pre-selection from the linked enquiry's service when it names one exactly. The person confirms it when issuing: the
 // system never decides which activities a quotation covers, and a planned activity is never made licensed by being selected here.
-export async function quotationActivityChoices(enquiryId: string | null): Promise<{ options: { key: string; label: string }[]; suggested: string[] }> {
+// The lines the person wrote add to the suggestion (a film line suggests Videography), so a licensed-activity problem is shown at issue instead of being missed by an unticked box.
+export async function quotationActivityChoices(enquiryId: string | null, lines: { serviceItem: string; description: string | null }[] = []): Promise<{ options: { key: string; label: string }[]; suggested: string[] }> {
   const db = createAdminClient();
   const { data: types } = await db.from("entity_activity_types").select("key, label").order("sort_order");
   const options = (types ?? []) as { key: string; label: string }[];
@@ -63,5 +65,6 @@ export async function quotationActivityChoices(enquiryId: string | null): Promis
     const svc = String((e as { service?: string } | null)?.service ?? "").toLowerCase().replace(/[^a-z]+/g, "_");
     if (options.some((o) => o.key === svc)) suggested = [svc];
   }
-  return { options, suggested };
+  const fromLines = detectActivities(lines).filter((k) => options.some((o) => o.key === k));
+  return { options, suggested: [...new Set([...suggested, ...fromLines])] };
 }

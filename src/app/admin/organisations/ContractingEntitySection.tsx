@@ -1,6 +1,9 @@
 import { getContractingEntity, listOrdinaryContractingCandidates, ordinarySubjectGate } from "@/lib/organization/entityRegistrations";
 import { requirementStateLabel } from "@/lib/organization/jurisdictionRequirements";
 import ContractingEntityForm from "./ContractingEntityForm";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { loadEnquiryMarket } from "@/lib/commercial/quotationEntityAdvice";
+import { suggestEntityForMarket } from "@/lib/organization/entityMarketSuggestion";
 
 // Contracting legal entity for an ORDINARY enquiry or quotation (Super Admin only). Reuses the existing contracting-entity records and rules: the entity is
 // chosen explicitly (never inferred from currency, nationality or location), recorded with a reason, append-only, and refused once the quotation has been
@@ -8,6 +11,10 @@ import ContractingEntityForm from "./ContractingEntityForm";
 export default async function ContractingEntitySection({ userId, subject }: { userId: string; subject: { type: "enquiry" | "quotation"; id: string } }) {
   const [current, gate] = await Promise.all([getContractingEntity(subject, userId), ordinarySubjectGate(subject)]);
   const { candidates } = await listOrdinaryContractingCandidates(userId, new Date().toISOString().slice(0, 10));
+  // A SUGGESTION from the enquiry's payment market only (never recorded or preselected): the Super Admin confirms it, with a reason, using the form below.
+  const enquiryId = subject.type === "enquiry" ? subject.id : ((await createAdminClient().from("client_quotations").select("enquiry_id").eq("id", subject.id).maybeSingle()).data?.enquiry_id as string | null | undefined) ?? null;
+  const { country } = await loadEnquiryMarket(enquiryId);
+  const suggestion = current ? null : suggestEntityForMarket(country, candidates.map((c) => ({ entityId: c.entityId, name: c.name, jurisdiction: c.jurisdiction, eligible: c.eligibility.eligible, blockers: c.eligibility.blockers })));
   const options = candidates.map((c) => ({ entityId: c.entityId, name: c.jurisdiction ? `${c.name} (${c.jurisdiction})` : c.name, eligible: c.eligibility.eligible, blockers: c.eligibility.blockers }));
   return (
     <section id="contracting-entity-select" className="rounded-xl border border-black/10 bg-white p-4 sm:p-6 space-y-3 mb-6">
@@ -17,7 +24,7 @@ export default async function ContractingEntitySection({ userId, subject }: { us
       ) : (
         <p className="font-sans text-body-small text-ordift-ink-muted">No contracting entity is recorded. It is chosen explicitly and never inferred from the client&apos;s currency, nationality or location.</p>
       )}
-      {gate.ok ? <ContractingEntityForm subjectType={subject.type} subjectId={subject.id} options={options} /> : <p className="font-sans text-caption text-ordift-ink-muted">{gate.error}</p>}
+      {gate.ok ? <ContractingEntityForm subjectType={subject.type} subjectId={subject.id} options={options} suggestion={suggestion ? { entityId: suggestion.entityId, text: suggestion.text, usable: suggestion.eligible } : null} /> : <p className="font-sans text-caption text-ordift-ink-muted">{gate.error}</p>}
       <details className="font-sans text-caption text-ordift-ink-muted">
         <summary className="cursor-pointer text-ordift-ink">What each entity needs (by its own jurisdiction)</summary>
         <ul className="mt-2 space-y-2">
