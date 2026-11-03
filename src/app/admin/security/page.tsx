@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/portal/roles";
 import { isManagementUser } from "@/lib/crewSupport/management";
 import { MfaPanel } from "@/components/auth/MfaPanel";
+import { StepUp } from "@/components/auth/StepUp";
 import { TicketCheck } from "@/components/auth/TicketCheck";
 
 export const metadata: Metadata = { title: "Two-step sign-in — Ordift Studios Admin", robots: { index: false, follow: false } };
@@ -20,6 +21,7 @@ export default async function SecurityPage() {
         <p className="font-sans text-body-small text-ordift-ink-muted mt-2">An authenticator app on your phone confirms the actions that cannot be undone. Your password still signs you in; the app is asked only when you erase permission details, purge a log or change the retention policy.</p>
       </div>
       <MfaPanel />
+      <StepUp variant="identity" />
       <TicketCheck />
     </div>
   );

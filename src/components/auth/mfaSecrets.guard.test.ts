@@ -31,7 +31,8 @@ describe("authenticator-app screens keep secrets in the browser and out of logs"
   });
   it("the step-up prompt no longer depends on the ticket switch: irreversible actions need a recent second factor in every mode (migration 0185 revision 4)", () => {
     expect(files.stepUp).not.toContain("AUTHORITY_TICKETS_ENABLED");
-    expect(files.stepUp).toContain("return <StepUpPrompt />");
+    expect(files.stepUp).toContain("return <StepUpPrompt variant={variant} />");
+    expect(files.stepUp).toContain("This action cannot be undone.");          // the warning on the erasure screens is preserved (the default variant)
   });
   it("the ticket-path check handles no secret or code, writes nothing, and is limited to management users", () => {
     const comp = read("./TicketCheck.tsx"), act = read("../../app/admin/security/ticketCheckActions.ts");
