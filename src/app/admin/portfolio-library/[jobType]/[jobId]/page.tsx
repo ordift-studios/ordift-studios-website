@@ -4,7 +4,7 @@ import { notFound, redirect } from "next/navigation";
 import { getCurrentUser, isStaffOrAdmin } from "@/lib/portal/roles";
 import { isManagementUser } from "@/lib/crewSupport/management";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { listPortfolioSourceFiles } from "@/lib/portfolio/sourceFiles";
+import { listPortfolioSourceFiles, type PortfolioJob } from "@/lib/portfolio/sourceFiles";
 import { getJobPermissionView, getStandings, listContractCandidates } from "@/lib/portfolio/library";
 import { getPeopleViews } from "@/lib/portfolio/subjects";
 import { getErasureView } from "@/lib/portfolio/permissionRecordErasure";
@@ -14,6 +14,19 @@ import { PERMISSION_TEXT_APPROVED } from "@/lib/portfolio/permissionText";
 import { DESTINATION_LABEL, isJobType, jobKey, type Destination } from "@/lib/portfolio/destinations";
 import { SOURCE_LABEL, GRANTOR_CAPACITIES } from "@/lib/portfolio/permissionModel";
 import { ContractForm, PhotoReview, RecordPermissionForm, RequestForm, UseForm, VerifyForm } from "../../JobForms";
+
+// A TEST Crew Support request with no stored photographs yet cannot appear in the photograph-built job list, so it is read from its own record. ONLY a record flagged is_test qualifies:
+// a real job with no photographs still gets "not found", exactly as before. The management-only check has already run when this is called.
+async function testJobWithoutPhotographs(jobType: string, jobId: string): Promise<PortfolioJob | null> {
+  if (jobType !== "crew_support_request") return null;
+  const { data: r } = await createAdminClient().from("crew_support_requests").select("id, reference_number, project_name, service_family, start_date, is_test").eq("id", jobId).eq("is_test", true).maybeSingle();
+  if (!r || r.is_test !== true) return null;
+  return {
+    key: jobKey("crew_support_request", r.id as string), jobType: "crew_support_request", jobId: r.id as string, reference: r.reference_number as string,
+    title: `${r.reference_number as string} — ${(r.project_name as string | null) ?? "Crew Support job"}`, service: (r.service_family as string | null) ?? null, date: (r.start_date as string | null) ?? null,
+    imageCount: 0, finalCount: 0, isTest: true,
+  };
+}
 
 export const metadata: Metadata = { title: "Job permission & approval — Ordift Studios Admin", robots: { index: false, follow: false } };
 
@@ -28,7 +41,7 @@ export default async function JobPermissionPage({ params }: { params: Promise<{ 
 
   const key = jobKey(jobType, jobId.toLowerCase());
   const { files, jobs } = await listPortfolioSourceFiles({ job: key }, 200);
-  const job = jobs.find((j) => j.key === key);
+  const job = jobs.find((j) => j.key === key) ?? (await testJobWithoutPhotographs(jobType, jobId.toLowerCase()));
   if (!job) notFound();
 
   const enabled = PORTFOLIO_LIBRARY_ENABLED;
