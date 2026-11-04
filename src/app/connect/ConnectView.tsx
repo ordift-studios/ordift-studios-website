@@ -1,6 +1,8 @@
 import Image from "next/image";
 import ConnectContactSheet from "./ConnectContactSheet";
-import ConnectGallery from "./ConnectGallery";
+import PortfolioSlideshow from "./PortfolioSlideshow";
+import { PortfolioProvider } from "./PortfolioProvider";
+import ViewPortfolioButton from "./ViewPortfolioButton";
 import type { ConnectImage } from "./gallery";
 import { BRAND_NAME, GALLERY_MIN_IMAGES, PORTFOLIO_FALLBACK_LINK, SOCIAL_LINKS, TAGLINE, WEBSITE_LINK } from "./connectConfig";
 
@@ -8,11 +10,13 @@ const MAIN_BUTTON = "flex min-h-14 w-full items-center justify-between rounded-l
 const PRIMARY_BUTTON = "flex min-h-14 w-full items-center justify-between rounded-lg border border-ordift-gold bg-ordift-gold px-5 font-sans text-base font-semibold text-ordift-navy-950 transition-colors hover:border-ordift-gold-hover hover:bg-ordift-gold-hover";
 const ICON = "h-[1.125rem] w-[1.125rem] flex-none";
 
-// The QR landing page: one column, three main options, secondary social links, and (when enough approved photographs exist) the gallery below. No site navigation or footer,
-// no introduction, no animation. The approved gold logo carries the ORDIFT STUDIOS name; the heading below is for screen readers.
+// The QR landing page: one column, three main options and secondary social links. View Portfolio reveals a slideshow of the approved photographs below (nothing about them is loaded until it
+// is tapped), with a View All button that opens the full-screen gallery. No site navigation or footer and no introduction. The approved gold logo carries the ORDIFT STUDIOS name; the heading
+// below is for screen readers.
 export default function ConnectView({ images }: { images: ConnectImage[] }) {
   const showGallery = images.length >= GALLERY_MIN_IMAGES;
   return (
+    <PortfolioProvider images={images}>
     <div className="min-h-svh bg-ordift-navy-950 text-white">
       <style>{"html{scroll-behavior:smooth}@media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}}"}</style>
       <main className="mx-auto max-w-[30rem] px-5 pb-12 pt-[max(2.5rem,env(safe-area-inset-top))]">
@@ -24,10 +28,7 @@ export default function ConnectView({ images }: { images: ConnectImage[] }) {
 
         <nav aria-label={`Connect with ${BRAND_NAME}`} className="grid gap-3">
           {showGallery ? (
-            <a href="#portfolio" className={PRIMARY_BUTTON}>
-              View Portfolio
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className={ICON}><path d="M12 5v14M5 12l7 7 7-7" /></svg>
-            </a>
+            <ViewPortfolioButton />
           ) : (
             <a href={PORTFOLIO_FALLBACK_LINK} className={PRIMARY_BUTTON}>
               View Portfolio
@@ -51,13 +52,9 @@ export default function ConnectView({ images }: { images: ConnectImage[] }) {
           </ul>
         )}
 
-        {showGallery && (
-          <section id="portfolio" aria-labelledby="connect-portfolio-title" className="mt-12 scroll-mt-4">
-            <h2 id="connect-portfolio-title" className="mb-4 font-sans text-xs font-semibold uppercase tracking-[0.16em] text-white/60">Portfolio</h2>
-            <ConnectGallery images={images} />
-          </section>
-        )}
+        {showGallery && <PortfolioSlideshow />}
       </main>
     </div>
+    </PortfolioProvider>
   );
 }

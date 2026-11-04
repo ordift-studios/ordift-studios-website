@@ -8,6 +8,8 @@ import ConnectContactSheet from "./ConnectContactSheet";
 import { metadata } from "./page";
 import { PORTFOLIO_IMAGES } from "./portfolioImages.generated";
 import { fileUrl, getConnectGalleryImages, splitColumns, srcSet, type ConnectImage } from "./gallery";
+import { GalleryGrid } from "./PortfolioGallery";
+import Photo, { fitStyle } from "./Photo";
 import {
   BRAND_NAME, CALL_OPTIONS, CONNECT_URL, EMAIL, GALLERY_MIN_IMAGES, PORTFOLIO_FALLBACK_LINK, SOCIAL_LINKS, WEBSITE_LINK, WHATSAPP,
   mailtoHref, telHref, whatsappHref,
@@ -17,7 +19,8 @@ const read = (p: string) => readFileSync(new URL(p, import.meta.url), "utf8");
 const img = (n: number): ConnectImage => ({ id: `synthetic-${n}`, alt: `Synthetic photograph ${n}`, width: 1200, height: 1500, color: "#222222", widths: [480, 960, 1200] });
 const many = (n: number) => Array.from({ length: n }, (_, i) => img(i + 1));
 const html = (images: ConnectImage[]) => renderToStaticMarkup(createElement(ConnectView, { images }));
-const realGallery = html(getConnectGalleryImages());
+// The full gallery grid with the real photographs (it is pure, so it renders here exactly as it does when the full-screen gallery is open).
+const realGallery = renderToStaticMarkup(createElement(GalleryGrid, { images: getConnectGalleryImages(), columns: 2 }));
 // What a visitor (or a screen reader) is given: text nodes plus the accessible attributes.
 const visible = (markup: string) => [markup.replace(/<style>[\s\S]*?<\/style>/g, "").replace(/<[^>]+>/g, " "), ...[...markup.matchAll(/(?:alt|aria-label|title)="([^"]*)"/g)].map((m) => m[1])].join(" ");
 
@@ -60,10 +63,11 @@ describe("the landing page content", () => {
       expect([...nav.matchAll(/(?:<a [^>]*>|<button [^>]*>)\s*([A-Za-z ]+?)\s*<svg/g)].map((x) => x[1])).toEqual(["View Portfolio", "Visit Website", "Contact Us"]);
     }
   });
-  it("View Portfolio scrolls to the gallery on the same page when enough approved photographs exist", () => {
-    expect(withGallery).toContain('href="#portfolio"');
-    expect(withGallery).toContain('id="portfolio"');
-    expect(withGallery.match(/<picture>/g)).toHaveLength(10);
+  it("View Portfolio is a button that reveals the slideshow on the same page; no photograph is in the page, or downloaded, until it is tapped", () => {
+    expect(withGallery).toMatch(/<button[^>]*aria-controls="portfolio"[^>]*aria-expanded="false"[^>]*>\s*View Portfolio/);
+    expect(withGallery).not.toContain('id="portfolio"');
+    expect(withGallery).not.toContain("<picture");
+    expect(withGallery).not.toContain("/connect/portfolio/");
   });
   it("with too few approved photographs the gallery is omitted and View Portfolio opens the website's portfolio instead; nothing is invented", () => {
     for (const n of [0, GALLERY_MIN_IMAGES - 1]) {
@@ -187,16 +191,15 @@ describe("the approved gallery photographs (exactly the final 15; nothing else; 
       expect(p.alt, p.id).not.toMatch(/Ordift Studios|ORDIFT Studios/);
     }
   });
-  it("the real gallery renders all 15 in the page, with View Portfolio pointing at it and every image reference being a local /connect/portfolio file", () => {
-    expect(realGallery).toContain('href="#portfolio"');
-    expect(realGallery.match(/<picture>/g)).toHaveLength(15);
+  it("the full gallery grid renders all 15, and every image reference is a local /connect/portfolio file", () => {
+    expect(realGallery.match(/<picture[ >]/g)).toHaveLength(15);
     const refs = [...realGallery.matchAll(/(?:src|srcSet)="([^"]+)"/g)].flatMap((m) => m[1].split(",").map((x) => x.trim().split(" ")[0]));
     const photoRefs = refs.filter((r) => r.includes("portfolio"));
     expect(photoRefs.length).toBeGreaterThan(15 * 4);
     for (const r of photoRefs) { expect(r).toMatch(/^\/connect\/portfolio\/[a-z0-9-]+-[0-9a-f]{8}-\d+\.(avif|webp)$/); expect(existsSync(new URL(r.split("/").pop()!, dir)), r).toBe(true); }
     expect(realGallery).not.toMatch(/https?:\/\/[^"]*\.(jpe?g|png|webp|avif)/);                  // no remote image anywhere
   });
-  it("every photograph is lazy-loaded with its dimensions declared, so nothing shifts and nothing is downloaded before it is needed", () => {
+  it("every thumbnail in the gallery is lazy-loaded with its dimensions declared, so nothing shifts and nothing is downloaded before it is needed", () => {
     const imgs = realGallery.match(/<img [^>]*>/g)!.filter((t) => t.includes("/connect/portfolio/"));
     expect(imgs).toHaveLength(15);
     for (const t of imgs) { expect(t).toContain('loading="lazy"'); expect(t).toMatch(/width="\d+"/); expect(t).toMatch(/height="\d+"/); expect(t).toMatch(/alt="[^"]{20,}"/); }
@@ -221,6 +224,32 @@ describe("the approved gallery photographs (exactly the final 15; nothing else; 
     expect(Math.abs(pos("DHExperience 2020-83.jpg") - pos("DH-FreeVidShoot-220.jpg"))).toBeGreaterThanOrEqual(5);
   });
   it("needs no CMS, database or remote image host", () => {
-    for (const f of ["./gallery.ts", "./ConnectGallery.tsx", "./ConnectView.tsx", "./page.tsx"]) expect(read(f), f).not.toMatch(/contentRepository|sanity|supabase|fetch\(|cdn\./i);
+    for (const f of ["./gallery.ts", "./Photo.tsx", "./PortfolioGallery.tsx", "./PortfolioSlideshow.tsx", "./PortfolioProvider.tsx", "./ViewPortfolioButton.tsx", "./slideshowModel.ts", "./ConnectView.tsx", "./page.tsx"]) expect(read(f), f).not.toMatch(/contentRepository|sanity|supabase|fetch\(|cdn\./i);
+  });
+});
+
+describe("the enlarged photograph and the slideshow stage are sized before the file loads (the fix for the empty, never-loading enlarged image)", () => {
+  const a = { id: "x-12345678", alt: "Alt text for the sizing test", width: 1600, height: 2400, color: "#101010", widths: [480, 960, 1600] };
+  it("fitStyle gives a definite width and the photograph's own aspect ratio, capped by the maximum height", () => {
+    const st = fitStyle(a, "85svh");
+    expect(st.aspectRatio).toBe("1600 / 2400");
+    expect(st.width).toBe("min(100%, calc(85svh * 0.66667))");
+    expect(st.height).toBe("auto");
+    expect(fitStyle({ width: 2000, height: 1000 }, "var(--stage-h)").width).toBe("min(100%, calc(var(--stage-h) * 2.00000))");
+  });
+  it("the <picture> wrapper takes no box of its own, so the photograph itself is centred and sized by its container", () => {
+    expect(renderToStaticMarkup(createElement(Photo, { img: a, sizes: "100vw" }))).toMatch(/^<picture class="contents">/);
+  });
+  it("an eager photograph is not marked lazy; a thumbnail is", () => {
+    const eager = renderToStaticMarkup(createElement(Photo, { img: a, sizes: "100vw", eager: true }));
+    const lazy = renderToStaticMarkup(createElement(Photo, { img: a, sizes: "100vw" }));
+    expect(eager).toContain('loading="eager"'); expect(eager).not.toContain('loading="lazy"');
+    expect(lazy).toContain('loading="lazy"');
+  });
+  it("the viewer's and slideshow's photographs are eager and sized with fitStyle; only the gallery thumbnails are lazy", () => {
+    const viewer = read("./PortfolioGallery.tsx");
+    expect(viewer).toMatch(/<Photo key=\{img\.id\} img=\{img\} sizes=\{VIEWER_SIZES\} eager style=\{fitStyle\(img, "85svh"\)\}/);
+    expect(read("./PortfolioSlideshow.tsx")).toMatch(/<Photo img=\{img\} sizes=\{STAGE_SIZES\} eager style=\{fitStyle\(img, "var\(--stage-h\)"\)\}/);
+    expect(viewer).toMatch(/<Photo img=\{img\} sizes=\{THUMB_SIZES\} className="block h-auto w-full" \/>/);   // the thumbnail: no `eager`
   });
 });

@@ -16,13 +16,14 @@ export const fileUrl = (img: Pick<ConnectImage, "id">, w: number, fmt: ImageForm
 export const srcSet = (img: Pick<ConnectImage, "id" | "widths">, fmt: ImageFormat, minWidth = 0): string =>
   img.widths.filter((w) => w >= minWidth).map((w) => `${fileUrl(img, w, fmt)} ${w}w`).join(", ");
 
-// Two columns, filled so they stay level: each photograph goes into the currently shorter column (left on a tie), in gallery order, so the first row reads 1, 2 and the whole grid
+// Columns filled so they stay level: each photograph goes into the currently shortest column (the left-most on a tie), in gallery order, so the first row reads 1, 2, 3 and the whole grid
 // reads roughly left-to-right, top-to-bottom. Each photograph keeps its own proportions; nothing is cropped.
-export function splitColumns<T extends { width: number; height: number }>(items: readonly T[]): [T[], T[]] {
-  const cols: [T[], T[]] = [[], []];
-  const heights: [number, number] = [0, 0];
+export function splitColumns<T extends { width: number; height: number }>(items: readonly T[], count = 2): T[][] {
+  const cols: T[][] = Array.from({ length: count }, () => []);
+  const heights: number[] = Array.from({ length: count }, () => 0);
   for (const item of items) {
-    const c = heights[1] < heights[0] ? 1 : 0;
+    let c = 0;
+    for (let k = 1; k < count; k++) if (heights[k] < heights[c]) c = k;
     cols[c].push(item);
     heights[c] += item.height / item.width;
   }
