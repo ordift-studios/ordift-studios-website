@@ -146,6 +146,7 @@ export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
     items: [
       { label: "Portfolio", href: "/admin/portfolio" },
       { label: "Portfolio Library", href: "/admin/portfolio/editions", superAdminOnly: true },
+      { label: "Digital Business Card (QR)", href: "/admin/qr-codes", superAdminOnly: true },
       { label: "Content", href: "/admin/content", adminOnly: true },
       { label: "Ordift Pulse", href: "/admin/pulse", adminOnly: true },
     ],
