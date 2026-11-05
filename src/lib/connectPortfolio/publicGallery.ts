@@ -11,7 +11,7 @@ import { defaultSnapshotStore } from "./snapshot";
 const readPublished = unstable_cache(
   async () => {
     const doc = await getStore().readPublished();
-    return doc ? { items: doc.items, dropped: doc.dropped } : null;
+    return doc ? { items: doc.items, dropped: doc.dropped, publishedAt: doc.publishedAt, revisionId: doc.revisionId } : null;
   },
   ["connect-portfolio-published"],
   { tags: [CACHE_TAG], revalidate: 300 },

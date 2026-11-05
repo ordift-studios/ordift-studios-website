@@ -6,16 +6,16 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ADMIN_NAV_GROUPS } from "@/lib/portal/adminNavigation";
 import { MemoryStore } from "@/lib/connectPortfolio/memoryStore";
 import { seedFromBuiltins } from "@/lib/connectPortfolio/model";
-import { ALT, register, upload } from "@/lib/connectPortfolio/testSupport";
+import { ALT, ReadOnlyMemoryStore, register, upload } from "@/lib/connectPortfolio/testSupport";
 
 type Role = "client" | "vendor" | "contractor" | "model" | "workshop_participant" | "staff" | "admin" | "super_admin";
-const h = vi.hoisted(() => ({ current: null as { id: string; roles: string[] } | null, store: null as unknown, audit: [] as { action: string }[], auditOk: true, tags: [] as string[], paths: [] as string[], tagThrows: false, snaps: [] as { kind: string; items?: { hidden: boolean }[] }[], snapFails: false }));
+const h = vi.hoisted(() => ({ current: null as { id: string; roles: string[] } | null, store: null as unknown, audit: [] as { action: string }[], auditOk: true, tags: [] as string[], paths: [] as string[], tagThrows: false, snaps: [] as { kind: string; order?: string; items?: { hidden: boolean }[] }[], snapFails: false }));
 
 vi.mock("@/lib/portal/roles", () => ({ getCurrentUser: async () => h.current, isSuperAdmin: (u: { roles: string[] } | null) => u?.roles.includes("super_admin") ?? false }));
 vi.mock("@/lib/connectPortfolio/defaultStore", () => ({ getStore: () => h.store }));
 vi.mock("@/lib/connectPortfolio/audit", () => ({ recordAudit: async (e: { action: string }) => { h.audit.push(e); return h.auditOk; } }));
 vi.mock("@/lib/portal/actorIdentity", () => ({ resolveActorIdentities: async (ids: string[]) => new Map(ids.map((id) => [id, { id, fullName: "Test Person", memberNumber: "INT0001" }])), formatActorLabel: (i: { memberNumber: string; fullName: string }) => `${i.memberNumber} — ${i.fullName}` }));
-vi.mock("@/lib/connectPortfolio/snapshot", async (orig) => ({ ...(await orig<typeof import("@/lib/connectPortfolio/snapshot")>()), defaultSnapshotStore: { read: async () => null, write: async (s: { kind: string; items?: { hidden: boolean }[] }) => { if (h.snapFails) throw new Error("redis down"); h.snaps.push(s); } } }));
+vi.mock("@/lib/connectPortfolio/snapshot", async (orig) => ({ ...(await orig<typeof import("@/lib/connectPortfolio/snapshot")>()), defaultSnapshotStore: { read: async () => null, write: async (s: { kind: string; items?: { hidden: boolean }[] }) => { if (h.snapFails) throw new Error("redis down"); h.snaps.push(s); return "applied"; } } }));
 vi.mock("next/cache", () => ({ updateTag: (t: string) => { if (h.tagThrows) throw new Error("cache down"); h.tags.push(t); }, revalidatePath: (p: string) => { h.paths.push(p); } }));
 vi.mock("next/navigation", async (orig) => ({ ...(await orig<typeof import("next/navigation")>()), useRouter: () => ({ refresh() {} }) }));
 
@@ -62,6 +62,39 @@ describe("the manager page is Super Admin only", () => {
     const { metadata } = await import("./page");
     expect(metadata.robots).toEqual({ index: false, follow: false });
     expect(readFileSync(path.join(process.cwd(), "src/app/sitemap.ts"), "utf8")).not.toMatch(/qr-codes/);
+  });
+});
+
+describe("opening the manager is strictly read-only", () => {
+  it("rendering the page for a Super Admin writes nothing: no draft, no upload, no audit entry, no outage record, no cache change, and nothing is created in the content service", async () => {
+    h.store = new ReadOnlyMemoryStore();                                       // throws if anything is written
+    as("super_admin");
+    const html = renderToStaticMarkup(await QrPortfolioPage());
+    expect(html).toContain("Photographs (15)");
+    expect(html).toContain("The original 15, unchanged");
+    expect(store().log).toEqual([]); expect(store().draft).toBeNull(); expect(store().published).toBeNull(); expect(store().revisions).toEqual([]); expect(store().assets.size).toBe(0);
+    expect(h.audit).toEqual([]); expect(h.snaps).toEqual([]); expect(h.tags).toEqual([]); expect(h.paths).toEqual([]);
+  });
+  it("opening it again after a publish is read-only too (history and live state are only read)", async () => {
+    as("super_admin"); register(store(), 1);
+    const added = await changeDraftAction(null, { type: "addUploaded", assetId: upload(1).assetId, filename: "a.jpg", alt: ALT, rightsConfirmed: true });
+    if (!added.ok) throw new Error(added.message);
+    expect((await publishAction(added.view.draftRev, null)).ok).toBe(true);
+    const before = JSON.stringify({ d: store().draft, p: store().published, r: store().revisions, log: store().log }); h.audit = []; h.snaps = []; h.tags = []; h.paths = [];
+    renderToStaticMarkup(await QrPortfolioPage()); renderToStaticMarkup(await QrPortfolioPage());
+    expect(JSON.stringify({ d: store().draft, p: store().published, r: store().revisions, log: store().log })).toBe(before);
+    expect(h.audit).toEqual([]); expect(h.snaps).toEqual([]); expect(h.tags).toEqual([]); expect(h.paths).toEqual([]);
+  });
+  it("the manager's screen does nothing by itself: its only effect starts the preview slideshow, and it calls the server only from buttons and the file chooser", () => {
+    const src = readFileSync(path.join(process.cwd(), "src/app/admin/qr-codes/portfolio/PortfolioManager.tsx"), "utf8");
+    expect(src.match(/useEffect\(/g)).toHaveLength(1);                           // exactly one effect in the whole screen...
+    expect(src).toContain("useEffect(() => { open(); }, [open]);");             // ...and it only starts the preview slideshow (the OpenOnMount component)
+    for (const name of ["changeDraftAction", "discardDraftAction", "publishAction", "restoreRevisionAction"]) {
+      const uses = [...src.matchAll(new RegExp(`${name}\\(`, "g"))].length;
+      expect(uses, name).toBeGreaterThan(0);
+    }
+    expect(src.match(/fetch\(/g)).toHaveLength(1);                              // the upload request, inside the file-chooser handler
+    expect(src).toMatch(/async function onFile[\s\S]*?fetch\("\/api\/admin\/qr-portfolio\/upload"/);
   });
 });
 
@@ -121,7 +154,7 @@ describe("draft and publish through the actions", () => {
     expect(h.paths).toContain("/connect");
     expect(h.audit.map((a) => a.action)).toContain("qr_portfolio.published");
     expect(h.snaps).toHaveLength(1);                                           // the outage record is updated at the moment of publishing
-    expect(h.snaps[0]).toMatchObject({ kind: "published" }); expect(h.snaps[0].items).toHaveLength(16); expect(h.snaps[0].items!.every((i) => !i.hidden)).toBe(true);
+    expect(h.snaps[0]).toMatchObject({ kind: "published", order: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T[\d:.]+Z\|connectPortfolioRevision\./) }); expect(h.snaps[0].items).toHaveLength(16); expect(h.snaps[0].items!.every((i) => !i.hidden)).toBe(true);
     expect(store().published!.items).toHaveLength(16);
     expect(r.ok && r.view).toMatchObject({ pending: false, liveSource: "published", liveVisibleCount: 16 });
     expect(r.ok && r.view.revisions[0]).toMatchObject({ note: "Studio shot", byLabel: "INT0001 — Test Person" });

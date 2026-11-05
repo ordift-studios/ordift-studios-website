@@ -2,7 +2,7 @@ import type { ConnectImage } from "@/app/connect/gallery";
 import { GALLERY_MIN_IMAGES } from "@/app/connect/connectConfig";
 import { originalImages, visibleImages } from "./resolve";
 import type { ManifestItem } from "./model";
-import type { Snapshot, SnapshotStore } from "./snapshot";
+import { ORIGINAL_ORDER, orderOf, type Snapshot, type SnapshotStore } from "./snapshot";
 
 // What the public card page shows, decided from the published list. The rule that matters: "nothing has been published" and "the content service could not be read" are DIFFERENT situations, and an
 // outage must never bring back a photograph the Super Admin has hidden or removed.
@@ -22,7 +22,7 @@ import type { Snapshot, SnapshotStore } from "./snapshot";
 
 export type GallerySource = "original" | "published" | "last-known-good" | "durable-last-known-good" | "withheld";
 export type Gallery = { images: ConnectImage[]; source: GallerySource };
-export type PublishedRead = { items: ManifestItem[]; dropped: number } | null;
+export type PublishedRead = { items: ManifestItem[]; dropped: number; publishedAt: string | null; revisionId: string | null } | null;
 
 export type ResolverOptions = {
   read: () => Promise<PublishedRead>;
@@ -51,6 +51,7 @@ export function createGalleryResolver(opts: ResolverOptions): () => Promise<Gall
     const signature = JSON.stringify(snapshot);
     if (!opts.durable || signature === recorded) return;
     recorded = signature;
+    // The write is a compare-and-set on the snapshot's order: "stale" means a newer list was already recorded (by a later publish), which is exactly what must happen, so it is not an error.
     defer(async () => { try { await opts.durable!.write(snapshot); } catch (e) { recorded = null; log("could not record the last good list", e); } });
   };
 
@@ -80,7 +81,7 @@ export function createGalleryResolver(opts: ResolverOptions): () => Promise<Gall
       if (doc === null) {
         failedAt = null;
         lastGood = { images: originalImages(), source: "original" };
-        record({ v: 1, kind: "original" });
+        record({ v: 1, order: ORIGINAL_ORDER, kind: "original" });
         return lastGood;
       }
       const images = visibleImages(doc.items);
@@ -92,7 +93,9 @@ export function createGalleryResolver(opts: ResolverOptions): () => Promise<Gall
       }
       failedAt = null;
       lastGood = { images, source: "published" };
-      record({ v: 1, kind: "published", items: doc.items.filter((i) => !i.hidden) });
+      const order = orderOf(doc.publishedAt, doc.revisionId);
+      if (order) record({ v: 1, order, kind: "published", items: doc.items.filter((i) => !i.hidden) });
+      else log("the published list has no usable revision stamp, so it is not recorded for outages");
       return lastGood;
     } catch (e) {
       failedAt = now();

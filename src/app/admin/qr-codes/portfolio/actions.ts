@@ -7,7 +7,7 @@ import { recordAudit } from "@/lib/connectPortfolio/audit";
 import { parseOperationInput } from "@/lib/connectPortfolio/input";
 import { CACHE_TAG, DOC_ID, fail, type Failure } from "@/lib/connectPortfolio/model";
 import { applyChange, discardDraft, loadState, publishDraft, restoreRevision } from "@/lib/connectPortfolio/service";
-import { defaultSnapshotStore } from "@/lib/connectPortfolio/snapshot";
+import { defaultSnapshotStore, orderOf } from "@/lib/connectPortfolio/snapshot";
 import type { ManagerView } from "@/lib/connectPortfolio/view";
 import { defaultDeps, viewFor } from "./loadView";
 
@@ -68,8 +68,11 @@ export async function publishAction(expectedRev: string | null, note: unknown): 
     warnings.push("Published, but the card page's cache could not be refreshed immediately. The change will appear within 5 minutes.");
   }
   // The outage record is updated at the moment of publishing, so an outage right after a publish still shows the new list (and never an older one).
-  try { await defaultSnapshotStore.write({ v: 1, kind: "published", items: result.publishedItems }); }
-  catch (e) {
+  const order = orderOf(result.publishedAt, result.revisionId);
+  try {
+    if (!order) throw new Error("the revision has no usable stamp");
+    await defaultSnapshotStore.write({ v: 1, order, kind: "published", items: result.publishedItems });      // compare-and-set: never replaces a newer record
+  } catch (e) {
     console.error("[qr-portfolio] could not record the last good list after publishing", e instanceof Error ? e.message : e);
     warnings.push("Published, but the outage-protection copy could not be saved yet. It is saved automatically on the next visit to the card page.");
   }

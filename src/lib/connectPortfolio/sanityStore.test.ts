@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import type { SanityClient } from "next-sanity";
 import { describe, expect, it } from "vitest";
 import { DOC_ID, DRAFT_ID, DRAFT_TYPE, REVISION_TYPE, applyOperation, seedFromBuiltins, toPublishedItems, type ManifestItem } from "./model";
@@ -189,4 +191,36 @@ describe("how failures from the content service are classified (its reference do
   });
   it("carries the status for the log", () => expect((classify(err(503, "x")) as ContentServiceError).status).toBe(503));
   it("passes already-classified errors through unchanged", () => { const e = new StoreConflictError(); expect(classify(e)).toBe(e); });
+});
+
+describe("the blast radius: what the real store can touch in a content dataset", () => {
+  const ALLOWED = [/^connectPortfolio$/, /^connectPortfolio\.draft$/, /^connectPortfolioRevision\.[A-Za-z0-9_.-]+$/];
+  it("a full session (draft, edits, two publishes, a restore) writes ONLY the feature's own three document namespaces; nothing else is created, patched or replaced", async () => {
+    const f = fakeClient(); const s = createSanityStore(f.client);
+    const items = withUpload();
+    let { rev } = await s.writeDraft({ items, expectedRev: null, userId: "u", now: "t", restoredFrom: null });
+    await s.publish({ draftRev: rev, publishedItems: toPublishedItems(items), revision: revision(items, `${REVISION_TYPE}.a`) });
+    ({ rev } = await s.writeDraft({ items, expectedRev: (await s.readDraft())!.rev, userId: "u", now: "t2", restoredFrom: `${REVISION_TYPE}.a` }));
+    await s.publish({ draftRev: rev, publishedItems: toPublishedItems(items), revision: revision(items, `${REVISION_TYPE}.b`) });
+    await s.uploadImage({ bytes: Buffer.from("x"), filename: "a.jpg", contentType: "image/jpeg" });
+    const written = [...f.docs.keys()].filter((id) => !id.startsWith("image-"));
+    expect(written.length).toBeGreaterThan(0);
+    for (const id of written) expect(ALLOWED.some((re) => re.test(id)), id).toBe(true);
+    for (const tx of f.txs) for (const op of tx) expect(ALLOWED.some((re) => re.test(op.id)), `${op.kind} ${op.id}`).toBe(true);
+  });
+  it("the store never deletes anything and never mutates an existing asset: its source contains no delete call, and nothing but a plain upload touches assets", () => {
+    for (const file of ["sanityStore.ts", "service.ts", "model.ts", "published.ts", "publicGallery.ts", "snapshot.ts"]) {
+      const code = readFileSync(path.join(process.cwd(), "src/lib/connectPortfolio", file), "utf8").replace(/\/\/ .*$/gm, "").replace(/\/\*[\s\S]*?\*\//g, "");
+      expect(code, file).not.toMatch(/\.delete\(|\.createIfNotExists\(|\.mutate\(|\.patch\([^)]*assets|assets\.(delete|remove)|sanity\.action\.document\.delete/);
+    }
+    const store = readFileSync(path.join(process.cwd(), "src/lib/connectPortfolio/sanityStore.ts"), "utf8");
+    expect([...new Set([...store.matchAll(/\bc\.(\w+)/g)].map((m) => m[1]))].sort()).toEqual(["assets", "create", "fetch", "getDocument", "patch", "transaction"]);      // the only client methods the store ever uses
+    expect([...store.matchAll(/c\.assets\.(\w+)/g)].map((m) => m[1])).toEqual(["upload"]);
+  });
+  it("every write id is built from constants in this feature, never from request input", () => {
+    const store = readFileSync(path.join(process.cwd(), "src/lib/connectPortfolio/sanityStore.ts"), "utf8");
+    const writes = [...store.matchAll(/(?:create|createOrReplace)\(\{\s*_id:\s*([^,]+),/g)].map((m) => m[1].trim());
+    expect(writes.sort()).toEqual(["DOC_ID", "DRAFT_ID", "revision.id"]);
+    expect(store).toMatch(/\.patch\(DRAFT_ID/);
+  });
 });

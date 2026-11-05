@@ -16,3 +16,10 @@ export function testDeps(store = new MemoryStore()): Deps & { store: MemoryStore
   return { store, newKey: () => `u-key-${++k}`, newRevisionId: () => `connectPortfolioRevision.test-${++r}`, now: () => new Date(Date.UTC(2026, 10, 5, 10, 0, ++t)).toISOString() };
 }
 export const register = (store: MemoryStore, n: number, over: Partial<ImageAssetInfo> = {}) => { const a = asset(n, over); store.assets.set(a.assetId, a); return a; };
+
+/** A store that serves reads like the real one but THROWS if anything tries to write: used to prove that a code path is read-only. */
+export class ReadOnlyMemoryStore extends MemoryStore {
+  async writeDraft(): Promise<{ rev: string }> { throw new Error("WRITE ATTEMPTED: writeDraft"); }
+  async publish(): Promise<void> { throw new Error("WRITE ATTEMPTED: publish"); }
+  async uploadImage(): Promise<ImageAssetInfo> { throw new Error("WRITE ATTEMPTED: uploadImage"); }
+}
