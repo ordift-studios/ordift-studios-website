@@ -223,8 +223,15 @@ describe("the approved gallery photographs (exactly the final 15; nothing else; 
     expect(Math.abs(pos("Ben&Precious_HD-23.jpg") - pos("Ben&Precious_HD-9.jpg"))).toBeGreaterThanOrEqual(5);
     expect(Math.abs(pos("DHExperience 2020-83.jpg") - pos("DH-FreeVidShoot-220.jpg"))).toBeGreaterThanOrEqual(5);
   });
-  it("needs no CMS, database or remote image host", () => {
-    for (const f of ["./gallery.ts", "./Photo.tsx", "./PortfolioGallery.tsx", "./PortfolioSlideshow.tsx", "./PortfolioProvider.tsx", "./ViewPortfolioButton.tsx", "./slideshowModel.ts", "./ConnectView.tsx", "./page.tsx"]) expect(read(f), f).not.toMatch(/contentRepository|sanity|supabase|fetch\(|cdn\./i);
+  it("the page's view components need no CMS, database or remote image host of their own", () => {
+    for (const f of ["./gallery.ts", "./Photo.tsx", "./PortfolioGallery.tsx", "./PortfolioSlideshow.tsx", "./PortfolioProvider.tsx", "./ViewPortfolioButton.tsx", "./slideshowModel.ts", "./ConnectView.tsx"]) expect(read(f), f).not.toMatch(/contentRepository|sanity|supabase|fetch\(|cdn\./i);
+  });
+  it("the page reads its photographs only through the published-list module (which has its own outage fallback), and has no content-service code of its own", () => {
+    const page = read("./page.tsx").replace(/\/\/ .*$/gm, "");
+    expect(page).toContain('from "@/lib/connectPortfolio/publicGallery"');
+    expect(page).toMatch(/await getConnectGallery\(\)/);
+    expect(page).not.toMatch(/contentRepository|sanity|supabase|fetch\(|process\.env|getConnectGalleryImages/i);
+    expect(page).toContain('export const dynamic = "force-dynamic"');
   });
 });
 
@@ -251,5 +258,46 @@ describe("the enlarged photograph and the slideshow stage are sized before the f
     expect(viewer).toMatch(/<Photo key=\{img\.id\} img=\{img\} sizes=\{VIEWER_SIZES\} eager style=\{fitStyle\(img, "85svh"\)\}/);
     expect(read("./PortfolioSlideshow.tsx")).toMatch(/<Photo img=\{img\} sizes=\{STAGE_SIZES\} eager style=\{fitStyle\(img, "var\(--stage-h\)"\)\}/);
     expect(viewer).toMatch(/<Photo img=\{img\} sizes=\{THUMB_SIZES\} className="block h-auto w-full" \/>/);   // the thumbnail: no `eager`
+  });
+});
+
+describe("a photograph added through the QR portfolio manager renders like the others", () => {
+  const added: ConnectImage = { id: "u-abc", alt: "An added photograph for the rendering test", width: 2000, height: 1500, color: "#334455", widths: [480, 960, 1600], remote: { baseUrl: "https://cdn.sanity.io/images/p/d/" + "a".repeat(40) + "-2000x1500.jpg" } };
+  it("is one <img> with the same sizing, placeholder colour and lazy/eager behaviour, a width list for the image host, and no local file path", () => {
+    const lazy = renderToStaticMarkup(createElement(Photo, { img: added, sizes: "100vw" })).replace(/&amp;/g, "&");     // markup escapes & in attributes; compare the real addresses
+    expect(lazy).toMatch(/^<picture class="contents"><img /);
+    expect(lazy).toContain('width="2000"'); expect(lazy).toContain('height="1500"'); expect(lazy).toContain('loading="lazy"'); expect(lazy).toContain('decoding="async"');
+    expect(lazy).toContain("background-color:#334455");
+    expect(lazy).not.toContain("<source");
+    expect(lazy).not.toContain("/connect/portfolio/");
+    const urls = [...lazy.matchAll(/https:\/\/cdn\.sanity\.io[^\s",]+/g)].map((m) => m[0]);
+    expect(urls.length).toBe(4);                                                             // src + three widths
+    for (const u of urls) expect(u).toMatch(/\?w=(480|960|1600)&fit=max&auto=format&q=78$/);
+    expect(lazy).toMatch(/srcSet="[^"]*\?w=480[^"]* 480w, [^"]*\?w=960[^"]* 960w, [^"]*\?w=1600[^"]* 1600w"/);
+    expect(renderToStaticMarkup(createElement(Photo, { img: added, sizes: "100vw", eager: true }))).toContain('loading="eager"');
+  });
+  it("never asks for more than 1600 px, so delivery stays within the approved size", () => {
+    expect(Math.max(...added.widths)).toBeLessThanOrEqual(1600);
+  });
+  it("sits in the gallery grid and the slideshow's layout helpers with no special casing", () => {
+    const grid = renderToStaticMarkup(createElement(GalleryGrid, { images: [...getConnectGalleryImages(), added], columns: 2 }));
+    expect(grid.match(/<picture[ >]/g)).toHaveLength(16);
+    const [l, r] = splitColumns([...getConnectGalleryImages(), added]);
+    expect(l.length + r.length).toBe(16);
+  });
+  it("the 15 built-in photographs are unchanged by the addition: still local AVIF + WebP with a <source> per format", () => {
+    const first = renderToStaticMarkup(createElement(Photo, { img: getConnectGalleryImages()[0], sizes: "100vw" }));
+    expect(first).toContain('<source type="image/avif"'); expect(first).toContain('<source type="image/webp"'); expect(first).toContain("/connect/portfolio/");
+  });
+});
+
+describe("when the gallery is withheld during an outage with nothing recorded", () => {
+  it("the card page shows no slideshow and View Portfolio opens the website's own portfolio, so no photograph that may have been withdrawn is shown", () => {
+    const markup = renderToStaticMarkup(createElement(ConnectView, { images: [] }));
+    expect(markup).not.toContain('id="portfolio"');
+    expect(markup).not.toContain("<picture");
+    expect(markup).toContain(`href="${PORTFOLIO_FALLBACK_LINK.replace(/&/g, "&amp;")}"`);
+    expect(markup).toContain("View Portfolio");
+    expect(markup).toContain("Visit Website");
   });
 });

@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
 import { getCurrentUser, isSuperAdmin } from "@/lib/portal/roles";
 import { CONNECT_QR_DESTINATION, MASTER_QR_DETAILS, getMasterQrFile, previewDataUri } from "@/lib/qr/connectQr";
+import Link from "next/link";
 import CopyUrlButton from "./CopyUrlButton";
 
 export const metadata: Metadata = { title: "Digital Business Card (QR code) — Ordift Studios Admin", robots: { index: false, follow: false } };
@@ -56,6 +57,12 @@ export default async function QrCodesPage() {
             </ul>
           </div>
         </div>
+      </section>
+
+      <section aria-labelledby="qr-portfolio-title" className="rounded-xl border border-black/10 bg-white p-5">
+        <h2 id="qr-portfolio-title" className="font-sans text-body font-medium text-ordift-ink">Photographs on the card page</h2>
+        <p className="mt-2 font-sans text-body-small text-ordift-ink-muted">Add, replace, reorder, hide or remove the photographs visitors see after scanning the code, and publish the changes without a website update. The QR code does not change.</p>
+        <Link href="/admin/qr-codes/portfolio" className={`${outline} mt-3`}>Manage the QR portfolio</Link>
       </section>
 
       <section aria-labelledby="qr-permanent-title" className="rounded-xl border border-ordift-gold/50 bg-ordift-gold/10 p-5">
