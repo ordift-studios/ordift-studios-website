@@ -25,6 +25,7 @@ create table public.booking_rule_settings (
   status text not null check (status in ('provisional', 'approved')),
   agreement_value_thresholds jsonb not null check (jsonb_typeof(agreement_value_thresholds) = 'object'),   -- {"QAR": 3000, "GHS": 10000, "USD": 800}: internal business rules, not legal thresholds
   agreement_always_categories text[] not null,
+  agreement_escalators text[] not null,                    -- the circumstances that make an agreement necessary; a change is a new version
   note text,
   created_by uuid not null references public.profiles (id),
   created_at timestamptz not null default now()
@@ -102,8 +103,9 @@ grant select, insert on public.booking_rule_settings to service_role;
 grant select on public.enquiry_booking_confirmations, public.enquiry_booking_segments to service_role;
 
 -- first, PROVISIONAL settings (Founder, 2026-11-08): internal business rules, configurable, not legal thresholds
-insert into public.booking_rule_settings (version, status, agreement_value_thresholds, agreement_always_categories, note, created_by)
+insert into public.booking_rule_settings (version, status, agreement_value_thresholds, agreement_always_categories, agreement_escalators, note, created_by)
 select 1, 'provisional', '{"QAR": 3000, "GHS": 10000, "USD": 800}'::jsonb, array['videography', 'production_services', 'talent_management', 'drone_operations'],
+  array['usage_rights_extended', 'exclusivity', 'minors', 'third_party_ip', 'restricted_location', 'complex_or_unusual', 'multi_day_assignment'],
   'Provisional internal business rules set by the Founder on 2026-11-08; not legal thresholds. Change by recording a new version.',
   (select ur.user_id from public.user_roles ur join public.roles r on r.id = ur.role_id where r.slug = 'super_admin' order by ur.user_id limit 1)
 where exists (select 1 from public.user_roles ur join public.roles r on r.id = ur.role_id where r.slug = 'super_admin');
@@ -153,7 +155,7 @@ grant execute on function public.preview_booking_conflicts(uuid, jsonb, uuid) to
 
 -- ------------------------------------------------------------------------------------------------------------------------------ confirm (and change) a booking
 -- p: { enquiryId, quotationId, supersedes?, assignedProfileId?, segments:[{startsAt,endsAt,timezone,kind,location?,platform?,note?}], paymentTermsCheck (the application's reading of the quotation's terms text against its structured condition),
---      clarification?:{kind,evidence}, escalators?:[usage_rights|exclusivity|minors|other], agreementId?, conflictResolutions?:[{key,kind,verifiedWithProfileId,method,reference,verifiedOn}], basis }
+--      clarification?:{kind,evidence}, escalators?:[the circumstances defined by the current settings version], agreementId?, conflictResolutions?:[{key,kind,verifiedWithProfileId,method,reference,verifiedOn}], basis }
 create or replace function public.confirm_ordinary_booking(p jsonb, p_actor uuid) returns uuid
 language plpgsql security definer set search_path = '' as $$
 declare
@@ -192,9 +194,12 @@ begin
   if v_thr is null then v_reasons := array_append(v_reasons, 'no_threshold_for_currency:' || q.currency);
   elsif q.total >= v_thr then v_reasons := array_append(v_reasons, 'value_at_or_above_threshold'); end if;
   for v_esc in select jsonb_array_elements_text(coalesce(p -> 'escalators', '[]'::jsonb)) loop
-    if v_esc not in ('usage_rights', 'exclusivity', 'minors', 'other') then raise exception 'ordift:booking_unknown_escalator'; end if;
+    if not (v_esc = any (st.agreement_escalators)) then raise exception 'ordift:booking_unknown_escalator'; end if;     -- only circumstances the current settings version defines
     v_reasons := array_append(v_reasons, 'escalator:' || v_esc);
   end loop;
+  -- a multi-day assignment is detected from the schedule itself, not only ticked (when the settings version includes it)
+  if 'multi_day_assignment' = any (st.agreement_escalators) and (select count(distinct ((x ->> 'startsAt')::timestamptz at time zone (x ->> 'timezone'))::date) from jsonb_array_elements(p -> 'segments') x) > 1
+     and not ('escalator:multi_day_assignment' = any (v_reasons)) then v_reasons := array_append(v_reasons, 'escalator:multi_day_assignment'); end if;
   v_req := coalesce(array_length(v_reasons, 1), 0) > 0;
   if v_req then
     select * into ag from public.agreements where id = nullif(p ->> 'agreementId', '')::uuid;

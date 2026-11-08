@@ -7,8 +7,8 @@ insert into public.user_roles (user_id, role_id) select '00000000-0000-4000-8000
 insert into public.user_roles (user_id, role_id) select '00000000-0000-4000-8000-0000000000a1', r.id from public.roles r where r.slug = 'admin' on conflict do nothing;
 insert into public.currencies (code, name, symbol) values ('QAR','Qatari riyal','QR'),('GHS','Ghana cedi','GH'),('EUR','Euro','E') on conflict do nothing;
 -- the first PROVISIONAL settings row (the migration seeds it only if a Super Admin exists at apply time; make sure one exists here)
-insert into public.booking_rule_settings (version, status, agreement_value_thresholds, agreement_always_categories, note, created_by)
-  select 1, 'provisional', '{"QAR": 3000, "GHS": 10000, "USD": 800}'::jsonb, array['videography','production_services','talent_management','drone_operations'], 'rehearsal', '00000000-0000-4000-8000-0000000000a0'
+insert into public.booking_rule_settings (version, status, agreement_value_thresholds, agreement_always_categories, agreement_escalators, note, created_by)
+  select 1, 'provisional', '{"QAR": 3000, "GHS": 10000, "USD": 800}'::jsonb, array['videography','production_services','talent_management','drone_operations'], array['usage_rights_extended','exclusivity','minors','third_party_ip','restricted_location','complex_or_unusual','multi_day_assignment'], 'rehearsal', '00000000-0000-4000-8000-0000000000a0'
   where not exists (select 1 from public.booking_rule_settings);
 -- entities: Qatar (CR + permit + signatory; photography listed on the CR, videography NOT) and Ghana (business-name registration + proprietor)
 insert into public.employing_entities (id, name, slug, legal_name, registration_type, verification_status, verified_at, verified_by, default_currency, employer_capable, jurisdiction_id)
@@ -98,8 +98,9 @@ do $$ declare e1 text := pg_temp.mk(2, '44444444-4444-4444-8444-444444444401', '
   perform pg_temp.must(pg_temp.try(pg_temp.pl(e5, jsonb_build_object('agreementId', ok_ag))) ilike '%booking_entity_not_eligible%', 'an agreement cannot override an unlicensed activity (videography is not listed on the Qatar CR)');
 end $$;
 do $$ declare e text := pg_temp.mk(7, '44444444-4444-4444-8444-444444444401', 'QAR', 100, 'photography', 100, 0); begin
-  perform pg_temp.must(pg_temp.try(pg_temp.pl(e, jsonb_build_object('escalators', jsonb_build_array('usage_rights')))) ilike '%booking_agreement_required%', 'an escalator requires an agreement');
+  perform pg_temp.must(pg_temp.try(pg_temp.pl(e, jsonb_build_object('escalators', jsonb_build_array('usage_rights_extended')))) ilike '%booking_agreement_required%', 'an escalator requires an agreement');
   perform pg_temp.must(pg_temp.try(pg_temp.pl(e, jsonb_build_object('escalators', jsonb_build_array('made_up')))) ilike '%unknown_escalator%', 'unknown escalators are refused');
+  perform pg_temp.must(pg_temp.try(pg_temp.pl(e, jsonb_build_object('escalators', jsonb_build_array('exclusivity')))) ilike '%booking_agreement_required%' and pg_temp.try(pg_temp.pl(e, jsonb_build_object('escalators', jsonb_build_array('minors')))) ilike '%booking_agreement_required%' and pg_temp.try(pg_temp.pl(e, jsonb_build_object('escalators', jsonb_build_array('third_party_ip')))) ilike '%booking_agreement_required%' and pg_temp.try(pg_temp.pl(e, jsonb_build_object('escalators', jsonb_build_array('restricted_location')))) ilike '%booking_agreement_required%' and pg_temp.try(pg_temp.pl(e, jsonb_build_object('escalators', jsonb_build_array('complex_or_unusual')))) ilike '%booking_agreement_required%', 'each approved circumstance requires an agreement');
 end $$;
 -- 4. payment: the quotation's OWN structured condition vs VERIFIED paid; none records the outstanding amount only
 do $$ declare e text := pg_temp.mk(8, '44444444-4444-4444-8444-444444444401', 'QAR', 100, 'photography', 1000, 0); begin
@@ -129,12 +130,16 @@ do $$ declare e text := pg_temp.mk(10, '44444444-4444-4444-8444-444444444401', '
   perform pg_temp.must((select payment_clarification ->> 'kind' from public.enquiry_booking_confirmations where enquiry_id = split_part(e,'|',1)::uuid) = 'client_confirmed_in_writing', 'the clarification is stored');
 end $$;
 -- 6. date, time and place; multi-day and multi-location; online
-do $$ declare e text := pg_temp.mk(11, '44444444-4444-4444-8444-444444444401', 'QAR', 100, 'photography', 100, 0); cid text; begin
+do $$ declare e text := pg_temp.mk(11, '44444444-4444-4444-8444-444444444401', 'QAR', 100, 'photography', 100, 0); cid text; ag11 uuid := gen_random_uuid(); begin
+  set local session_replication_role = replica;
+  insert into public.agreements (id, agreement_reference, master_id, master_version_id, classification, status, primary_context_type, primary_context_reference, executed_at) values (ag11, 'AGR-BK-11', gen_random_uuid(), gen_random_uuid(), 'transaction_agreement', 'active', 'enquiry', 'ENQ-BK-11', now());
+  set local session_replication_role = origin;
   perform pg_temp.must(pg_temp.try(pg_temp.pl(e, jsonb_build_object('segments', '[]'::jsonb))) ilike '%booking_no_schedule%', 'no schedule, no booking');
   perform pg_temp.must(pg_temp.try(pg_temp.pl(e, jsonb_build_object('segments', jsonb_build_array(jsonb_build_object('startsAt','2026-12-14T09:00:00Z','endsAt','2026-12-14T12:00:00Z','timezone','Asia/Qatar','kind','online'))))) ilike '%booking_segment_place%', 'online needs a platform');
   perform pg_temp.must(pg_temp.try(pg_temp.pl(e, jsonb_build_object('segments', jsonb_build_array(jsonb_build_object('startsAt','2026-12-14T09:00:00Z','endsAt','2026-12-14T12:00:00Z','timezone','Asia/Qatar','kind','on_site'))))) ilike '%booking_segment_place%', 'on-site needs a place');
   perform pg_temp.must(pg_temp.try(pg_temp.pl(e, jsonb_build_object('segments', jsonb_build_array(jsonb_build_object('startsAt','2026-12-14T12:00:00Z','endsAt','2026-12-14T09:00:00Z','timezone','Asia/Qatar','kind','on_site','location','Doha'))))) ilike '%booking_segment_order%', 'the end must be after the start');
-  cid := pg_temp.conf(pg_temp.pl(e, jsonb_build_object('segments', jsonb_build_array(
+  perform pg_temp.must(pg_temp.try(pg_temp.pl(e, jsonb_build_object('segments', jsonb_build_array(jsonb_build_object('startsAt','2026-12-14T05:00:00Z','endsAt','2026-12-14T09:00:00Z','timezone','Asia/Qatar','kind','on_site','location','Venue A, Doha'), jsonb_build_object('startsAt','2026-12-15T05:00:00Z','endsAt','2026-12-15T09:00:00Z','timezone','Asia/Qatar','kind','on_site','location','Venue B, Doha')))) ) ilike '%booking_agreement_required%', 'a multi-day assignment is detected from the schedule and needs an agreement');
+  cid := pg_temp.conf(pg_temp.pl(e, jsonb_build_object('agreementId', ag11, 'segments', jsonb_build_array(
       jsonb_build_object('startsAt','2026-12-14T05:00:00Z','endsAt','2026-12-14T09:00:00Z','timezone','Asia/Qatar','kind','on_site','location','Venue A, Doha'),
       jsonb_build_object('startsAt','2026-12-15T05:00:00Z','endsAt','2026-12-15T09:00:00Z','timezone','Asia/Qatar','kind','studio','location','Studio, Doha'),
       jsonb_build_object('startsAt','2026-12-16T12:00:00Z','endsAt','2026-12-16T13:00:00Z','timezone','Europe/London','kind','online','platform','Video call')))));
@@ -191,7 +196,7 @@ select pg_temp.must(pg_temp.err($q$update public.enquiry_booking_confirmations s
 select pg_temp.must(pg_temp.err($q$update public.booking_rule_settings set status = 'approved'$q$) ilike '%append-only%', 'settings are versioned, never edited');
 select pg_temp.must((select agreement_value_thresholds ->> 'QAR' from public.booking_rule_settings where version = 1) = '3000' and (select agreement_value_thresholds ->> 'GHS' from public.booking_rule_settings where version = 1) = '10000' and (select agreement_value_thresholds ->> 'USD' from public.booking_rule_settings where version = 1) = '800', 'the provisional thresholds are data');
 do $$ begin
-  insert into public.booking_rule_settings (version, status, agreement_value_thresholds, agreement_always_categories, note, created_by) values (2, 'approved', '{"QAR": 5000, "GHS": 10000, "USD": 800}', array['videography'], 'rehearsal v2', '00000000-0000-4000-8000-0000000000a0');
+  insert into public.booking_rule_settings (version, status, agreement_value_thresholds, agreement_always_categories, agreement_escalators, note, created_by) values (2, 'approved', '{"QAR": 5000, "GHS": 10000, "USD": 800}', array['videography'], array['exclusivity'], 'rehearsal v2', '00000000-0000-4000-8000-0000000000a0');
   perform pg_temp.must((select version from public.booking_rule_settings order by version desc limit 1) = 2, 'a new settings version is the latest');
 end $$;
 select pg_temp.must(not has_table_privilege('authenticated', 'public.enquiry_booking_confirmations', 'insert') and not has_table_privilege('service_role', 'public.enquiry_booking_confirmations', 'insert') and not has_table_privilege('anon', 'public.enquiry_booking_segments', 'select'), 'only the functions write confirmations');

@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { bookingFlagOn, canConfirm, classifyConflicts, classifyPaymentTerms, confirmationBlockers, evaluateAgreement, paymentGate, projectPanel, termsCheckBlocks, unresolvedFirmConflicts, validateSegments, type BookingSettings, type Segment } from "./rules";
 
-const S: BookingSettings = { version: 1, status: "provisional", thresholds: { QAR: 3000, GHS: 10000, USD: 800 }, alwaysCategories: ["videography", "production_services", "talent_management", "drone_operations"] };
+const S: BookingSettings = { version: 1, status: "provisional", thresholds: { QAR: 3000, GHS: 10000, USD: 800 }, alwaysCategories: ["videography", "production_services", "talent_management", "drone_operations"],
+  escalators: ["usage_rights_extended", "exclusivity", "minors", "third_party_ip", "restricted_location", "complex_or_unusual", "multi_day_assignment"] };
 const seg = (o: Partial<Segment> = {}): Segment => ({ startsAt: "2026-12-14T09:00:00Z", endsAt: "2026-12-14T12:00:00Z", timezone: "Asia/Qatar", kind: "on_site", location: "Doha studio", ...o });
 
 describe("the feature flag", () => { it("is OFF unless it is exactly 'true'", () => { expect(bookingFlagOn({})).toBe(false); expect(bookingFlagOn({ BOOKING_CONFIRMATION_ENABLED: "1" })).toBe(false); expect(bookingFlagOn({ BOOKING_CONFIRMATION_ENABLED: "true" })).toBe(true); }); });
@@ -19,6 +20,16 @@ describe("agreement requirement: settings are data, not code", () => {
   it("a currency with no threshold fails closed; escalators add reasons", () => {
     expect(evaluateAgreement(S, { activities: ["photography"], currency: "EUR", total: 1 }).reasons).toEqual(["no_threshold_for_currency:EUR"]);
     expect(evaluateAgreement(S, { activities: ["photography"], currency: "QAR", total: 1, escalators: ["minors", "made_up"] }).reasons).toEqual(["escalator:minors"]);
+    for (const e of ["usage_rights_extended", "exclusivity", "minors", "third_party_ip", "restricted_location", "complex_or_unusual"]) expect(evaluateAgreement(S, { activities: ["photography"], currency: "QAR", total: 1, escalators: [e] }).reasons).toEqual([`escalator:${e}`]);
+  });
+});
+
+describe("a multi-day assignment is detected from the schedule", () => {
+  it("two local days require an agreement; one day does not; the rule can be switched off by a settings version", () => {
+    const two = [{ startsAt: "2026-12-14T05:00:00Z", timezone: "Asia/Qatar" }, { startsAt: "2026-12-15T05:00:00Z", timezone: "Asia/Qatar" }];
+    expect(evaluateAgreement(S, { activities: ["photography"], currency: "QAR", total: 1, segments: two }).reasons).toEqual(["escalator:multi_day_assignment"]);
+    expect(evaluateAgreement(S, { activities: ["photography"], currency: "QAR", total: 1, segments: [two[0]] }).required).toBe(false);
+    expect(evaluateAgreement({ ...S, escalators: ["exclusivity"] }, { activities: ["photography"], currency: "QAR", total: 1, segments: two }).required).toBe(false);
   });
 });
 

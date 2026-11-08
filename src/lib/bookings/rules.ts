@@ -5,16 +5,19 @@ import { paymentBlocker, type PaymentCondition } from "@/lib/crewSupport/payment
 export const BOOKING_FLAG = "BOOKING_CONFIRMATION_ENABLED";
 export const bookingFlagOn = (env: Record<string, string | undefined> = process.env): boolean => env[BOOKING_FLAG] === "true";   // default OFF
 
-export const ESCALATORS = ["usage_rights", "exclusivity", "minors", "other"] as const;
-export type BookingSettings = { version: number; status: "provisional" | "approved"; thresholds: Record<string, number>; alwaysCategories: string[] };
+export type BookingSettings = { version: number; status: "provisional" | "approved"; thresholds: Record<string, number>; alwaysCategories: string[]; escalators: string[] };   // all versioned DATA
 
 // ---- agreement requirement (mirrors the database): category, value threshold per currency (a missing threshold = required, fail closed), explicit escalators
-export function evaluateAgreement(s: BookingSettings, i: { activities: string[]; currency: string; total: number; escalators?: string[] }): { required: boolean; reasons: string[] } {
+export function evaluateAgreement(s: BookingSettings, i: { activities: string[]; currency: string; total: number; escalators?: string[]; segments?: { startsAt: string; timezone: string }[] }): { required: boolean; reasons: string[] } {
   const reasons: string[] = [];
   for (const a of i.activities) if (s.alwaysCategories.includes(a)) reasons.push(`category:${a}`);
   const thr = s.thresholds[i.currency];
   if (thr === undefined) reasons.push(`no_threshold_for_currency:${i.currency}`); else if (i.total >= thr) reasons.push("value_at_or_above_threshold");
-  for (const e of i.escalators ?? []) if ((ESCALATORS as readonly string[]).includes(e)) reasons.push(`escalator:${e}`);
+  for (const e of i.escalators ?? []) if (s.escalators.includes(e)) reasons.push(`escalator:${e}`);          // only circumstances the current settings version defines
+  if (s.escalators.includes("multi_day_assignment") && !reasons.includes("escalator:multi_day_assignment") && (i.segments ?? []).length > 0) {
+    const days = new Set((i.segments ?? []).map((g) => new Intl.DateTimeFormat("en-CA", { timeZone: g.timezone, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(g.startsAt))));
+    if (days.size > 1) reasons.push("escalator:multi_day_assignment");                                         // detected from the schedule itself
+  }
   return { required: reasons.length > 0, reasons };
 }
 

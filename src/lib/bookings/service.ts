@@ -28,8 +28,8 @@ const MESSAGES: [RegExp, string][] = [
 const friendly = (m: string) => MESSAGES.find(([r]) => r.test(m))?.[1] ?? "The booking could not be saved.";
 
 export async function loadBookingSettings(): Promise<BookingSettings | null> {
-  const { data } = await createAdminClient().from("booking_rule_settings").select("version, status, agreement_value_thresholds, agreement_always_categories").order("version", { ascending: false }).limit(1).maybeSingle();
-  return data ? { version: data.version as number, status: data.status as "provisional" | "approved", thresholds: data.agreement_value_thresholds as Record<string, number>, alwaysCategories: data.agreement_always_categories as string[] } : null;
+  const { data } = await createAdminClient().from("booking_rule_settings").select("version, status, agreement_value_thresholds, agreement_always_categories, agreement_escalators").order("version", { ascending: false }).limit(1).maybeSingle();
+  return data ? { version: data.version as number, status: data.status as "provisional" | "approved", thresholds: data.agreement_value_thresholds as Record<string, number>, alwaysCategories: data.agreement_always_categories as string[], escalators: data.agreement_escalators as string[] } : null;
 }
 
 export type ConfirmInput = {
