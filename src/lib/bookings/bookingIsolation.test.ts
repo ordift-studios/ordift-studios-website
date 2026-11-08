@@ -11,10 +11,16 @@ const src = walk(join(root, "src")).filter((f) => /\.(ts|tsx)$/.test(f)).map((f)
 const notTest = (f: string) => !/\.(test|e2e)\.tsx?$/.test(f);
 
 describe("inert until released", () => {
-  it("no production file outside the bookings folder imports the booking service", () => {
+  // Stage 3 (admin screens): the service is imported by exactly ONE server-actions file outside the bookings folder. Every function in the service refuses while the flag is off, and the page panel returns null.
+  it("only the two booking server-actions files (enquiry page, rules screen) outside the bookings folder import the booking service", () => {
     const importers = src.filter(notTest).filter((f) => !f.startsWith("src/lib/bookings/")).filter((f) => /from\s+["']@\/lib\/bookings\/service["']/.test(read(f)));
-    expect(importers).toEqual([]);
+    expect(importers.sort()).toEqual(["src/app/admin/enquiries/[id]/bookingActions.ts", "src/app/admin/settings/bookings/bookingSettingsActions.ts"]);
   });
+  it("nothing imports the booking panel loader except the enquiry page, its actions and the rules screen", () => {
+    const importers = src.filter(notTest).filter((f) => !f.startsWith("src/lib/bookings/")).filter((f) => /from\s+["']@\/lib\/bookings\/panel["']/.test(read(f))).sort();
+    expect(importers).toEqual(["src/app/admin/enquiries/[id]/BookingPanel.tsx", "src/app/admin/enquiries/[id]/bookingActions.ts", "src/app/admin/enquiries/[id]/page.tsx", "src/app/admin/settings/bookings/page.tsx"]);
+  });
+  it("the panel loader reads nothing while the flag is off", () => { expect(read("src/lib/bookings/panel.ts")).toMatch(/export async function loadBookingPanel[\s\S]{0,260}if \(!bookingFlagOn\(env\)\) return null;/); });
   it("the flag defaults off: the rules module reads it as 'true' only", () => { expect(read("src/lib/bookings/rules.ts")).toMatch(/env\[BOOKING_FLAG\] === "true"/); });
 });
 

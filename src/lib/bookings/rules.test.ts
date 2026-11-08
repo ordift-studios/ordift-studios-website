@@ -119,9 +119,9 @@ describe("blockers shown before confirmation", () => {
 });
 
 describe("who sees what", () => {
-  const full = { blockers: ["b"], conflicts: [{ key: "k", kind: "booking" as const, firm: true, label: "ENQ-1", from: "a", to: "b" }], payment: { condition: "deposit" as const, amountDueUsd: 1000, verifiedPaidUsd: 500, outstandingUsd: 500 }, agreement: { required: true, reasons: ["x"] }, confirmation: { secret: 1 } };
+  const full = { blockers: ["b: USD 500.00 needed"], operationalBlockers: ["b"], conflicts: [{ key: "k", kind: "booking" as const, firm: true, label: "ENQ-1", from: "a", to: "b" }], payment: { condition: "deposit" as const, amountDueUsd: 1000, verifiedPaidUsd: 500, outstandingUsd: 500 }, agreement: { required: true, reasons: ["x"] }, confirmation: { secret: 1 } };
   it("only a Super Admin sees everything and can confirm", () => { expect(projectPanel(full, { id: "u", roles: ["super_admin"] }, null)).toMatchObject({ level: "super_admin", payment: { amountDueUsd: 1000 } }); expect(canConfirm({ id: "u", roles: ["admin"] })).toBe(false); expect(canConfirm({ id: "u", roles: ["super_admin"] })).toBe(true); });
-  it("an administrator sees operational blockers, not amounts or the confirmation record", () => { const p = projectPanel(full, { id: "u", roles: ["admin"] }, null) as any; expect(p.level).toBe("admin"); expect(p.payment).toBeUndefined(); expect(p.confirmation).toBeUndefined(); });
+  it("an administrator sees operational blockers, not amounts or the confirmation record", () => { const p = projectPanel(full, { id: "u", roles: ["admin"] }, null) as any; expect(p.level).toBe("admin"); expect(p.payment).toBeUndefined(); expect(p.confirmation).toBeUndefined(); expect(JSON.stringify(p)).not.toMatch(/USD|\d+\.\d\d/); expect(p.blockers).toEqual(["b"]); });
   it("staff see only the conflicts on their own assignment; others see nothing", () => {
     const own = projectPanel(full, { id: "p1", roles: ["staff"] }, "p1") as any; expect(own.level).toBe("staff"); expect(Object.keys(own).sort()).toEqual(["conflicts", "level"]);
     expect(projectPanel(full, { id: "p2", roles: ["staff"] }, "p1")).toBeNull();

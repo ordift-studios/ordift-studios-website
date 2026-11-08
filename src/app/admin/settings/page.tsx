@@ -5,6 +5,7 @@ import { getCurrentUser, hasRole, isSuperAdmin } from "@/lib/portal/roles";
 import { contentRepository } from "@/lib/content";
 import { formsSendingEnabled, isStaging } from "@/lib/shared/env";
 import { getLegalSuiteSettingsStatus } from "@/lib/legal/masterRegistry";
+import { bookingFlagOn } from "@/lib/bookings/rules";
 import { PRIMARY_PUBLIC_CONTACT_EMAIL, resolvePublicContactEmail } from "@/lib/content/contactChannels";
 
 export const metadata: Metadata = {
@@ -43,6 +44,7 @@ export default async function AdminSettingsPage() {
         <p className="font-sans text-body-small text-ordift-ink-muted mt-2 max-w-2xl">
           Read-only status. Each item links to where it&apos;s actually changed.
         </p>
+        {isSuperAdmin(user) && bookingFlagOn() ? <p className="font-sans text-body-small mt-2"><Link href="/admin/settings/bookings" className="text-ordift-gold-pressed underline">Booking rules (agreement threshold, versions)</Link></p> : null}
       </div>
 
       <section className="rounded-xl border border-black/10 bg-white p-6 space-y-5">

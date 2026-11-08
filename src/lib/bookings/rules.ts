@@ -107,12 +107,13 @@ export type BlockerInput = {
   payment: { condition: PaymentCondition; depositPercent: number | null; amountDueUsd: number | null; verifiedPaidUsd: number | null };
   termsCheck: TermsCheck; clarification: { kind: string; evidence: string } | null; segments: Segment[]; conflicts: Conflict[]; resolutions: Resolution[]; assigneeId: string | null; today: string;
 };
-export function confirmationBlockers(i: BlockerInput): string[] {
+export const PAYMENT_PENDING_REDACTED = "The payment the quotation requires has not been verified yet.";      // what an Admin sees: the blocker, never the figures
+export function confirmationBlockers(i: BlockerInput, opts: { redactAmounts?: boolean } = {}): string[] {
   const out: string[] = [];
   if (!i.quotationAccepted) out.push("The client must accept an issued ordinary quotation first.");
   if (!i.entityEligible) out.push("The contracting entity is no longer eligible for the quoted activities. An agreement cannot override an unlicensed activity.");
   if (i.agreement.required && !i.agreement.hasExecutedAgreement) out.push(`An executed agreement is required (${i.agreement.reasons.join(", ")}).`);
-  const pay = paymentGate(i.payment.condition, i.payment.depositPercent, i.payment.amountDueUsd, i.payment.verifiedPaidUsd); if (pay) out.push(pay);
+  const pay = paymentGate(i.payment.condition, i.payment.depositPercent, i.payment.amountDueUsd, i.payment.verifiedPaidUsd); if (pay) out.push(opts.redactAmounts ? PAYMENT_PENDING_REDACTED : pay);
   const terms = termsCheckBlocks(i.termsCheck, i.clarification); if (terms) out.push(terms);
   const seg = validateSegments(i.segments); if (seg) out.push(seg);
   for (const c of unresolvedFirmConflicts(i.conflicts, i.resolutions, i.assigneeId, i.today)) out.push(`Firm scheduling conflict with ${c.label}: reassign or reschedule, or document that the assigned person has verified their availability.`);
@@ -121,10 +122,10 @@ export function confirmationBlockers(i: BlockerInput): string[] {
 
 // ---- who sees what (server-side projection; the database is Super-Admin-read only, everything else goes through server code)
 export type Viewer = { id: string; roles: string[] };
-export type PanelFull = { blockers: string[]; conflicts: Conflict[]; payment: { condition: PaymentCondition; amountDueUsd: number | null; verifiedPaidUsd: number | null; outstandingUsd: number | null } | null; agreement: { required: boolean; reasons: string[] }; confirmation: Record<string, unknown> | null };
+export type PanelFull = { blockers: string[]; operationalBlockers: string[];   /* the same blockers with no amounts: the ONLY list an Admin is given */ conflicts: Conflict[]; payment: { condition: PaymentCondition; amountDueUsd: number | null; verifiedPaidUsd: number | null; outstandingUsd: number | null } | null; agreement: { required: boolean; reasons: string[] }; confirmation: Record<string, unknown> | null };
 export function projectPanel(panel: PanelFull, v: Viewer, assigneeId: string | null) {
   if (v.roles.includes("super_admin")) return { level: "super_admin" as const, ...panel };
-  if (v.roles.includes("admin")) return { level: "admin" as const, blockers: panel.blockers, conflicts: panel.conflicts.map(({ kind, firm, label, from, to }) => ({ kind, firm, label, from, to })), agreement: panel.agreement };   // operational blockers; no amounts, no confirmation record
+  if (v.roles.includes("admin")) return { level: "admin" as const, blockers: panel.operationalBlockers, conflicts: panel.conflicts.map(({ kind, firm, label, from, to }) => ({ kind, firm, label, from, to })), agreement: panel.agreement };   // operational blockers; no amounts, no confirmation record
   if (v.roles.includes("staff") && assigneeId === v.id) return { level: "staff" as const, conflicts: panel.conflicts.map(({ kind, firm, label, from, to }) => ({ kind, firm, label, from, to })) };                 // only conflicts on their own assignment
   return null;
 }

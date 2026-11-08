@@ -28,6 +28,8 @@ import SubmitButton from "@/components/admin/SubmitButton";
 import { getAmountDuePanel } from "@/lib/commercial/amountDue";
 import QuotationAmountPanel from "./QuotationAmountPanel";
 import PricingPanel from "./PricingPanel";
+import BookingPanel from "./BookingPanel";
+import { loadBookingPanel } from "@/lib/bookings/panel";
 
 function formatUsd(amount: number): string {
   return `$${amount.toFixed(2)}`;
@@ -51,7 +53,7 @@ function formatDateTime(iso: string): string {
 export default async function AdminEnquiryDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
 
-  const [enquiry, notes, categories, deliverables, requests, user, amountDueSource, storedPaymentCountry, amountPanel] = await Promise.all([
+  const [enquiry, notes, categories, deliverables, requests, user, amountDueSource, storedPaymentCountry, amountPanel, bookingPanel] = await Promise.all([
     getEnquiryById(id),
     getEnquiryNotes(id),
     getDeliverableCategories(),
@@ -61,6 +63,7 @@ export default async function AdminEnquiryDetailPage({ params }: { params: Promi
     getAmountDueProvenance(id),
     getStoredPaymentCountry(id),
     getAmountDuePanel(id),
+    loadBookingPanel(id),                                                                 // null unless BOOKING_CONFIRMATION_ENABLED is "true" and the viewer may see it
   ]);
 
   if (!enquiry) notFound();
@@ -106,6 +109,7 @@ export default async function AdminEnquiryDetailPage({ params }: { params: Promi
           {user && (isSuperAdmin(user) || hasRole(user, "admin")) ? <EmailNotificationsPanel enquiryId={enquiry.id} /> : null}
 
           {amountPanel ? <QuotationAmountPanel panel={amountPanel} /> : null}
+          {bookingPanel ? <BookingPanel data={bookingPanel} /> : null}
           {user ? <PricingPanel enquiryId={enquiry.id} isSuperAdmin={isSuperAdmin(user)} /> : null}
 
           {user && isSuperAdmin(user) ? (
