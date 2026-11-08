@@ -202,4 +202,20 @@ end $$;
 select pg_temp.must(not has_table_privilege('authenticated', 'public.enquiry_booking_confirmations', 'insert') and not has_table_privilege('service_role', 'public.enquiry_booking_confirmations', 'insert') and not has_table_privilege('anon', 'public.enquiry_booking_segments', 'select'), 'only the functions write confirmations');
 select pg_temp.must(not has_function_privilege('authenticated', 'public.confirm_ordinary_booking(jsonb, uuid)', 'execute') and has_function_privilege('service_role', 'public.confirm_ordinary_booking(jsonb, uuid)', 'execute'), 'the functions are server-only');
 select pg_temp.must((select relrowsecurity from pg_class where oid = 'public.enquiry_booking_confirmations'::regclass), 'RLS on');
+-- 10. audit of CHANGE and CANCEL, and authorisation for staff / admin / client / unknown (added in Stage 3). Uses the enquiry from section 2: confirmed, changed, cancelled, confirmed again.
+do $$ declare a text; before_rows int; r text; actor text; begin
+  select v into a from t where k = 'a';
+  perform pg_temp.must((select count(*) from public.activity_log where action = 'booking.changed' and entity_id = split_part(a,'|',1)) = 1, 'a change writes exactly one booking.changed audit row');
+  perform pg_temp.must((select count(*) from public.activity_log where action = 'booking.cancelled' and entity_id = split_part(a,'|',1)) = 1, 'a cancellation writes exactly one booking.cancelled audit row');
+  perform pg_temp.must((select count(*) from public.activity_log where action = 'booking.confirmed' and entity_id = split_part(a,'|',1)) = 2, 'confirm, then re-confirm after a cancellation: two booking.confirmed rows');
+  perform pg_temp.must((select bool_and((metadata ->> 'confirmationId') is not null and (metadata ->> 'version') is not null) from public.activity_log where action in ('booking.changed','booking.cancelled','booking.confirmed') and entity_id = split_part(a,'|',1)), 'every booking audit row names its confirmation and version');
+  perform pg_temp.must((select actor_user_id::text from public.activity_log where action = 'booking.cancelled' and entity_id = split_part(a,'|',1)) = '00000000-0000-4000-8000-0000000000a0', 'the cancellation audit row names the Super Admin');
+  select count(*) into before_rows from public.enquiry_booking_confirmations;
+  foreach actor in array array['00000000-0000-4000-8000-0000000000a1', '00000000-0000-4000-8000-0000000000a2', '00000000-0000-4000-8000-0000000000a3', '00000000-0000-4000-8000-0000000000a6', gen_random_uuid()::text] loop
+    perform pg_temp.must(pg_temp.try(pg_temp.pl(a), actor) ilike '%booking_not_authorised%', 'confirm refused for a non-Super-Admin: ' || actor);
+    perform pg_temp.must(pg_temp.err(format($q$select public.cancel_ordinary_booking(%L, 'client withdrew in writing', %L)$q$, split_part(a,'|',1), actor)) ilike '%not_authorised%', 'cancel refused for a non-Super-Admin: ' || actor);
+  end loop;
+  perform pg_temp.must((select count(*) from public.enquiry_booking_confirmations) = before_rows, 'refused attempts write no booking row');
+  perform pg_temp.must((select count(*) from public.activity_log where action like 'booking.%' and entity_id = split_part(a,'|',1)) = 4, 'refused attempts write no audit row');
+end $$;
 select 'BOOKING REHEARSAL PASSED' as result;
