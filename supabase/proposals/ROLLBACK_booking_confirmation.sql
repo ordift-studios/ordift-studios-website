@@ -5,6 +5,7 @@ do $$ begin
     raise exception 'booking confirmations exist: do not roll back without exporting and approving';
   end if;
 end $$;
+drop function if exists public.preview_booking_conflicts(uuid, jsonb, uuid);
 drop function if exists public.cancel_ordinary_booking(uuid, text, uuid);
 drop function if exists public.confirm_ordinary_booking(jsonb, uuid);
 drop function if exists private.booking_conflicts(uuid, jsonb, uuid);

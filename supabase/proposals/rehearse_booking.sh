@@ -14,7 +14,7 @@ set session_replication_role = replica; delete from public.enquiry_booking_segme
 SQL
 )
 gone=$(cat <<'SQL'
-do $$ begin if to_regclass('public.enquiry_booking_confirmations') is not null or to_regclass('public.enquiry_booking_segments') is not null or to_regclass('public.booking_rule_settings') is not null or to_regproc('public.confirm_ordinary_booking') is not null or to_regproc('public.cancel_ordinary_booking') is not null or to_regproc('private.booking_conflicts') is not null then raise exception 'ROLLBACK LEFT OBJECTS BEHIND'; end if; end $$;
+do $$ begin if to_regclass('public.enquiry_booking_confirmations') is not null or to_regclass('public.enquiry_booking_segments') is not null or to_regclass('public.booking_rule_settings') is not null or to_regproc('public.confirm_ordinary_booking') is not null or to_regproc('public.cancel_ordinary_booking') is not null or to_regproc('public.preview_booking_conflicts') is not null or to_regproc('private.booking_conflicts') is not null then raise exception 'ROLLBACK LEFT OBJECTS BEHIND'; end if; end $$;
 SQL
 )
 case "$M" in

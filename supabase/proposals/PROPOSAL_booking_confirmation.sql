@@ -7,7 +7,7 @@
 --   * the quotation is an ISSUED, ACCEPTED ORDINARY quotation of this enquiry (not Crew Support), its content fingerprint exists, and the contracting entity is STILL eligible for the quoted activities (private.entity_issue_standing):
 --     an agreement can never override an unlicensed activity;
 --   * an executed agreement is required when the settings say so (activity categories, value threshold per currency, explicit escalators); a missing threshold for the quotation's currency means "required" (fail closed);
---   * payment follows the structured condition (none / deposit / full): required amount vs VERIFIED paid (enquiries.amount_paid); none -> the outstanding amount is only RECORDED, never treated as received;
+--   * payment follows the quotation's OWN structured condition (client_quotations.payment_condition / deposit_percent: none / deposit / full): required amount vs VERIFIED paid (enquiries.amount_paid); none -> the outstanding amount is only RECORDED, never treated as received;
 --   * the structured condition may not silently contradict the quotation's terms: an ambiguous or contradicting reading needs a recorded clarification (client confirmation in writing) before confirmation;
 --   * a confirmed date, time and place: >= 1 segment (on_site / studio need a place, online needs a platform), time-zoned, ends after it starts;
 --   * a FIRM conflict for the same assigned person (another confirmed booking, a confirmed Crew Support slot, approved leave) blocks confirmation. It is NOT cleared by typing a reason: each firm conflict needs a documented
@@ -145,15 +145,21 @@ begin
 end $$;
 revoke all on function private.booking_conflicts(uuid, jsonb, uuid) from public, anon, authenticated;
 
+-- read-only preview of the conflicts, for the review screen BEFORE confirmation (same function the confirmation uses)
+create or replace function public.preview_booking_conflicts(p_assignee uuid, p_segments jsonb, p_exclude_enquiry uuid) returns jsonb
+language sql stable security definer set search_path = '' as $$ select private.booking_conflicts(p_assignee, p_segments, p_exclude_enquiry) $$;
+revoke all on function public.preview_booking_conflicts(uuid, jsonb, uuid) from public, anon, authenticated, service_role;
+grant execute on function public.preview_booking_conflicts(uuid, jsonb, uuid) to service_role;
+
 -- ------------------------------------------------------------------------------------------------------------------------------ confirm (and change) a booking
--- p: { enquiryId, quotationId, supersedes?, assignedProfileId?, segments:[{startsAt,endsAt,timezone,kind,location?,platform?,note?}], paymentCondition, depositPercent?, paymentTermsCheck,
+-- p: { enquiryId, quotationId, supersedes?, assignedProfileId?, segments:[{startsAt,endsAt,timezone,kind,location?,platform?,note?}], paymentTermsCheck (the application's reading of the quotation's terms text against its structured condition),
 --      clarification?:{kind,evidence}, escalators?:[usage_rights|exclusivity|minors|other], agreementId?, conflictResolutions?:[{key,kind,verifiedWithProfileId,method,reference,verifiedOn}], basis }
 create or replace function public.confirm_ordinary_booking(p jsonb, p_actor uuid) returns uuid
 language plpgsql security definer set search_path = '' as $$
 declare
   enq public.enquiries%rowtype; q public.client_quotations%rowtype; prev public.enquiry_booking_confirmations%rowtype; st public.booking_rule_settings%rowtype; ag public.agreements%rowtype;
   v_fp text; v_issue jsonb; v_acts text[]; v_entity uuid; v_standing jsonb; v_assignee uuid := nullif(p ->> 'assignedProfileId', '')::uuid;
-  v_reasons text[] := '{}'; v_thr numeric; v_req boolean; v_cond text := p ->> 'paymentCondition'; v_pct numeric := nullif(p ->> 'depositPercent', '')::numeric;
+  v_reasons text[] := '{}'; v_thr numeric; v_req boolean; v_cond text; v_pct numeric;
   v_due numeric; v_paid numeric; v_need numeric := 0; v_check text := p ->> 'paymentTermsCheck'; v_clar jsonb := p -> 'clarification'; v_conf jsonb; c jsonb; res jsonb; v_id uuid := gen_random_uuid();
   v_ver int; i int := 0; sg jsonb; v_a text; v_esc text;
 begin
@@ -198,8 +204,10 @@ begin
     end if;
   end if;
 
-  if v_cond not in ('none', 'deposit', 'full') then raise exception 'ordift:booking_payment_condition_missing'; end if;
-  if (v_cond = 'deposit') <> (v_pct is not null) or (v_pct is not null and (v_pct <= 0 or v_pct >= 100)) then raise exception 'ordift:booking_deposit_percent'; end if;
+  -- the structured condition is the ACCEPTED QUOTATION's own (client_quotations.payment_condition / deposit_percent), never typed in afterwards; a caller that states a different one is refused
+  v_cond := q.payment_condition; v_pct := q.deposit_percent;
+  if p ? 'paymentCondition' and (p ->> 'paymentCondition') is distinct from v_cond then raise exception 'ordift:booking_payment_condition_mismatch'; end if;
+  if v_cond not in ('none', 'deposit', 'full') or (v_cond = 'deposit') <> (v_pct is not null) then raise exception 'ordift:booking_payment_condition_missing'; end if;
   if v_check not in ('consistent', 'no_payment_language', 'ambiguous', 'contradiction', 'no_terms') then raise exception 'ordift:booking_terms_check_missing'; end if;
   if v_check in ('ambiguous', 'no_terms') or v_check = 'contradiction' then
     if v_clar is null or (v_clar ->> 'kind') not in ('client_confirmed_in_writing', 'quotation_revised') or char_length(btrim(coalesce(v_clar ->> 'evidence', ''))) < 15

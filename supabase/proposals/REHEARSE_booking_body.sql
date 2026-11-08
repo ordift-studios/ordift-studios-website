@@ -43,8 +43,10 @@ end $$;
 -- payload with overrides (defaults: one on-site segment, no payment condition, terms consistent, no assignee)
 create or replace function pg_temp.pl(eq text, over jsonb default '{}'::jsonb) returns jsonb language sql as $$
   select jsonb_build_object('enquiryId', split_part(eq,'|',1), 'quotationId', split_part(eq,'|',2), 'segments', jsonb_build_array(jsonb_build_object('startsAt','2026-12-14T09:00:00Z','endsAt','2026-12-14T12:00:00Z','timezone','Asia/Qatar','kind','on_site','location','Synthetic studio, Doha')),
-    'paymentCondition','none','paymentTermsCheck','consistent','basis','rehearsal') || over;
+    'paymentTermsCheck','consistent','basis','rehearsal') || over;
 $$;
+create or replace function pg_temp.setcond(eq text, cond text, pct numeric) returns void language plpgsql as $$
+begin set local session_replication_role = replica; update public.client_quotations set payment_condition = cond, deposit_percent = pct where id = split_part(eq,'|',2)::uuid; set local session_replication_role = origin; end $$;
 create or replace function pg_temp.conf(p jsonb, actor text default '00000000-0000-4000-8000-0000000000a0') returns text language sql as $$ select public.confirm_ordinary_booking(p, actor::uuid)::text $$;
 create or replace function pg_temp.try(p jsonb, actor text default '00000000-0000-4000-8000-0000000000a0') returns text language plpgsql as $$ begin perform public.confirm_ordinary_booking(p, actor::uuid); return ''; exception when others then return sqlerrm; end $$;
 create temp table t (k text primary key, v text); grant all on t to public;
@@ -99,20 +101,23 @@ do $$ declare e text := pg_temp.mk(7, '44444444-4444-4444-8444-444444444401', 'Q
   perform pg_temp.must(pg_temp.try(pg_temp.pl(e, jsonb_build_object('escalators', jsonb_build_array('usage_rights')))) ilike '%booking_agreement_required%', 'an escalator requires an agreement');
   perform pg_temp.must(pg_temp.try(pg_temp.pl(e, jsonb_build_object('escalators', jsonb_build_array('made_up')))) ilike '%unknown_escalator%', 'unknown escalators are refused');
 end $$;
--- 4. payment: structured condition vs VERIFIED paid; none records the outstanding amount only
+-- 4. payment: the quotation's OWN structured condition vs VERIFIED paid; none records the outstanding amount only
 do $$ declare e text := pg_temp.mk(8, '44444444-4444-4444-8444-444444444401', 'QAR', 100, 'photography', 1000, 0); begin
-  perform pg_temp.must(pg_temp.try(pg_temp.pl(e, jsonb_build_object('paymentCondition','deposit','depositPercent',50))) ilike '%booking_payment_pending%', 'a deposit that is not paid blocks');
+  perform pg_temp.setcond(e, 'deposit', 50);
+  perform pg_temp.must(pg_temp.try(pg_temp.pl(e)) ilike '%booking_payment_pending%', 'a deposit that is not paid blocks');
   set local session_replication_role = replica; update public.enquiries set amount_paid = 499.99 where id = split_part(e,'|',1)::uuid; set local session_replication_role = origin;
-  perform pg_temp.must(pg_temp.try(pg_temp.pl(e, jsonb_build_object('paymentCondition','deposit','depositPercent',50))) ilike '%booking_payment_pending%', 'a shortfall of one cent still blocks');
+  perform pg_temp.must(pg_temp.try(pg_temp.pl(e)) ilike '%booking_payment_pending%', 'a shortfall of one cent still blocks');
+  perform pg_temp.must(pg_temp.try(pg_temp.pl(e, jsonb_build_object('paymentCondition','none'))) ilike '%payment_condition_mismatch%', 'a caller cannot state a different condition from the quotation''s own');
   set local session_replication_role = replica; update public.enquiries set amount_paid = 500 where id = split_part(e,'|',1)::uuid; set local session_replication_role = origin;
-  perform pg_temp.must(pg_temp.try(pg_temp.pl(e, jsonb_build_object('paymentCondition','full'))) ilike '%booking_payment_pending%', 'full payment needs the whole amount');
-  perform pg_temp.must(pg_temp.try(pg_temp.pl(e, jsonb_build_object('paymentCondition','deposit','depositPercent',50))) = '', 'the deposit is paid: confirmed');
-  perform pg_temp.must((select required_usd from public.enquiry_booking_confirmations where enquiry_id = split_part(e,'|',1)::uuid) = 500 and (select outstanding_usd from public.enquiry_booking_confirmations where enquiry_id = split_part(e,'|',1)::uuid) = 500, 'required and outstanding are recorded');
+  perform pg_temp.setcond(e, 'full', null);
+  perform pg_temp.must(pg_temp.try(pg_temp.pl(e)) ilike '%booking_payment_pending%', 'full payment needs the whole amount');
+  perform pg_temp.setcond(e, 'deposit', 50);
+  perform pg_temp.must(pg_temp.try(pg_temp.pl(e)) = '', 'the deposit is paid: confirmed');
+  perform pg_temp.must((select required_usd from public.enquiry_booking_confirmations where enquiry_id = split_part(e,'|',1)::uuid) = 500 and (select outstanding_usd from public.enquiry_booking_confirmations where enquiry_id = split_part(e,'|',1)::uuid) = 500 and (select payment_condition from public.enquiry_booking_confirmations where enquiry_id = split_part(e,'|',1)::uuid) = 'deposit', 'the quotation''s condition, required and outstanding are recorded');
 end $$;
 do $$ declare e text := pg_temp.mk(9, '44444444-4444-4444-8444-444444444401', 'QAR', 100, 'photography', null, 0); begin
-  perform pg_temp.must(pg_temp.try(pg_temp.pl(e, jsonb_build_object('paymentCondition','deposit','depositPercent',30))) ilike '%booking_amount_due_missing%', 'a deposit needs an established amount due');
-  perform pg_temp.must(pg_temp.try(pg_temp.pl(e, jsonb_build_object('paymentCondition','deposit'))) ilike '%deposit%', 'a deposit needs its percentage');
-  perform pg_temp.must(pg_temp.try(pg_temp.pl(e, jsonb_build_object('paymentCondition','weekly'))) ilike '%payment_condition_missing%', 'an unknown condition is refused');
+  perform pg_temp.setcond(e, 'deposit', 30);
+  perform pg_temp.must(pg_temp.try(pg_temp.pl(e)) ilike '%booking_amount_due_missing%', 'a deposit needs an established amount due');
 end $$;
 -- 5. the structured condition may not silently contradict the quotation's terms
 do $$ declare e text := pg_temp.mk(10, '44444444-4444-4444-8444-444444444401', 'QAR', 100, 'photography', 100, 0); begin
@@ -141,6 +146,8 @@ do $$ declare e1 text := pg_temp.mk(12, '44444444-4444-4444-8444-444444444401', 
   p2 text := '00000000-0000-4000-8000-0000000000a2'; p3 text := '00000000-0000-4000-8000-0000000000a3'; b1 text; res jsonb; begin
   b1 := pg_temp.conf(pg_temp.pl(e1, jsonb_build_object('assignedProfileId', p2, 'segments', seg)));
   k := 'booking:' || b1;
+  perform pg_temp.must(jsonb_array_length(public.preview_booking_conflicts(p2::uuid, seg, null)) = 1 and (public.preview_booking_conflicts(p2::uuid, seg, null) -> 0 ->> 'key') = k, 'the read-only preview lists the firm conflict before confirmation');
+  perform pg_temp.must(jsonb_array_length(public.preview_booking_conflicts(p3::uuid, seg, null)) = 0, 'and nothing for another person');
   perform pg_temp.must(pg_temp.try(pg_temp.pl(e2, jsonb_build_object('assignedProfileId', p2, 'segments', seg))) ilike '%booking_firm_conflict%', 'the same person double-booked is a firm conflict');
   perform pg_temp.must(pg_temp.try(pg_temp.pl(e2, jsonb_build_object('assignedProfileId', p2, 'segments', seg, 'conflictResolutions', jsonb_build_array(jsonb_build_object('key', k, 'kind', 'overridden', 'reason', 'I decided so, it is fine')))) ) ilike '%booking_firm_conflict%', 'a reason alone does not clear it');
   perform pg_temp.must(pg_temp.try(pg_temp.pl(e2, jsonb_build_object('assignedProfileId', p2, 'segments', seg, 'conflictResolutions', jsonb_build_array(jsonb_build_object('key', k, 'kind', 'availability_verified', 'verifiedWithProfileId', p3, 'method', 'call', 'reference', 'call with someone else', 'verifiedOn', current_date)))) ) ilike '%booking_firm_conflict%', 'verification with a different person does not count');
