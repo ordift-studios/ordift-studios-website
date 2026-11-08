@@ -11,7 +11,11 @@ The approved design (logo, watermark, dimensions, paper) is preserved exactly. T
                          as live text (see src/lib/brand/letterheadContacts.ts).
   3. letterhead-icons/*.png   the three approved contact icons (envelope, telephone, @); the WhatsApp icon is not used (management decision, 4 Nov 2026) cut from the strip with a transparent surround.
 
-Nothing else on the page is touched. Requires Pillow and numpy; uses the system Arial/Helvetica to draw the corrected line.
+Nothing else on the page is touched.
+
+  NOTE (2026-11-08): the os-letterhead.jpg written by step 1 is a full re-save of the JPEG (about 7% of the pixels elsewhere on the page move by at most 11/255 from re-compression). The committed
+  copies are therefore produced from it with scripts/letterhead_lossless_splice.py, which keeps every block of the approved original except those under the redrawn website line, so that every other
+  pixel is bit-identical to the approved original (verified: 3,062 pixels differ, all inside the website line; 0 elsewhere). Requires Pillow and numpy; uses the system Arial/Helvetica to draw the corrected line.
 """
 import os, sys
 import numpy as np
