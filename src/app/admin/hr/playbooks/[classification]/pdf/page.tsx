@@ -3,8 +3,6 @@ import { redirect, notFound } from "next/navigation";
 import { getCurrentUser, hasRole, isSuperAdmin } from "@/lib/portal/roles";
 import { buildOnboardingPlaybook, ONBOARDING_CLASSIFICATIONS, type OnboardingClassification } from "@/lib/organization/onboardingPlaybook";
 import { PrintButton } from "@/components/admin/PrintButton";
-import LetterheadFooter, { LETTERHEAD_BASE_IMAGE, LETTERHEAD_FOOTER_CSS } from "@/components/admin/LetterheadFooter";
-import { contactsFor, snapshotContacts } from "@/lib/brand/letterheadContacts";
 
 export const metadata: Metadata = {
   title: "Onboarding Guide PDF — Ordift Studios",
@@ -46,7 +44,7 @@ export default async function PlaybookPdfPage({
           width: 210mm;
           min-height: 297mm;
           margin: 0 auto;
-          background-image: url(${LETTERHEAD_BASE_IMAGE});
+          background-image: url(/brand/os-letterhead.jpg);
           background-size: cover;
           background-position: top center;
           background-repeat: no-repeat;
@@ -55,7 +53,6 @@ export default async function PlaybookPdfPage({
           font-family: Georgia, 'Times New Roman', serif;
           color: #1a1a1a;
         }
-        ${LETTERHEAD_FOOTER_CSS}
         @media print {
           .print-toolbar { display: none; }
           body { margin: 0; }
@@ -68,9 +65,6 @@ export default async function PlaybookPdfPage({
         ul { margin-top: 4px; padding-left: 16px; }
         ul li { font-size: 11px; color: #333; margin-bottom: 2px; }
       `}</style>
-
-      {/* Company-wide document: only what is true for every entity (the public mailbox and the website). The internal/legacy Gmail address of the old letterhead is not printed. */}
-      <LetterheadFooter contacts={snapshotContacts(contactsFor(null))} />
 
       <PrintButton />
 
