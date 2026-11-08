@@ -158,6 +158,11 @@ const nextConfig: NextConfig = {
   // Tier 1 Hardening (2026-09-06) — minor info-disclosure hygiene; stops
   // Next.js from sending the X-Powered-By: Next.js response header.
   poweredByHeader: false,
+  // The issued-quotation PDF route reads the letterhead image and its three contact icons from public/ with a path built at run time, which the build's static file tracing cannot see:
+  // without this, a deployed copy of the route would silently print the quotation WITHOUT its letterhead (found by inspecting the build trace, 2026-11-08). Listing them makes them part of that route's bundle.
+  outputFileTracingIncludes: {
+    "/admin/pricing/quotations/*/document": ["./public/brand/os-letterhead-base.jpg", "./public/brand/letterhead-icons/*.png", "./public/fonts/pdf/*"],
+  },
   async headers() {
     const csp = enforcingCsp();
     const mainHeaders = csp
