@@ -27,7 +27,8 @@ Prepared 2026-11-08. Covers `PROPOSAL_equipment_acquisitions_and_financing.sql` 
 Posting the FNAC purchase, uploading the receipt or the PayLater PDF to the private vault, confirming card funding, or deciding the accounting classification. Each is a separate approval after the migration and the application code are live, and the **original FNAC receipt file** (only a chat copy exists) is needed first. The prepared record stays in `OS Purchases Receipts/` (outside the repository).
 
 ## 5. Dependencies and risks
+- **Banking identity:** `src/lib/payments/bankAccountIdentity.ts` (pure, tested) identifies an account by its FULL IBAN, names the holder first ("PERSONAL account of ..." / "CORPORATE account of ...") and reports last-four collisions as a warning only. The two Qatar accounts are unchanged; reconciliation must use it.
 - **Numbering/drift:** decide whether the 0185 file is committed to `main` first (recommended, its own approved step), and whether 0186 (duration/territory wording) ships before finance.
-- **Optional duplicate-expense trigger** changes behaviour of a live table; ship it only with your explicit yes (it can be split out).
+- **Optional duplicate-expense guard is now a SEPARATE proposal** (`PROPOSAL_optional_duplicate_expense_guard.sql`, own rollback, own rehearsal `rehearse_optional_expense_guard.sh`). The main finance proposal no longer touches `entity_expenses` at all; approve the guard independently, or never.
 - **Funding source** stays `to_confirm` until a card/bank statement line is seen; the invoice names an individual, not the company.
 - **Accounting classification** stays `pending_professional_review`; no capitalisation policy exists in the system.

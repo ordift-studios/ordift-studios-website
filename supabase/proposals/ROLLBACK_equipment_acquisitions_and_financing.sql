@@ -6,8 +6,6 @@ do $$ begin
     raise exception 'finance tables contain rows: do not roll back without exporting and approving';
   end if;
 end $$;
-drop trigger if exists entity_expenses_not_an_acquisition on public.entity_expenses;
-drop function if exists private.expense_not_an_acquisition();
 drop function if exists public.mark_instalment_paid(uuid, date, uuid, text, uuid);
 drop function if exists public.record_equipment_acquisition(jsonb, uuid);
 drop function if exists private.actor_is_super_admin(uuid);

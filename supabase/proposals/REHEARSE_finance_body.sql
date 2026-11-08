@@ -97,12 +97,6 @@ end $$;
 select pg_temp.must(pg_temp.err($q$update public.entity_equipment_acquisitions set net_amount = 1 where true$q$) ilike '%cannot be edited%', 'acquisition amounts frozen');
 select pg_temp.must(pg_temp.err($q$delete from public.entity_equipment_acquisitions$q$) ilike '%append-only%', 'no deletion of acquisitions');
 
--- 5. Part 2: the same invoice cannot also become an expense; a different one can
-select pg_temp.must(pg_temp.err($q$insert into public.entity_expenses (employing_entity_id, expense_date, amount, currency, category, line_code, description, receipt_number, receipt_total, issuing_authority, recorded_by)
-  values ('11111111-1111-4111-8111-111111111101', '2026-11-08', 1149, 'QAR', 'other', 'L1', 'Duplicate of the acquisition', 'INV-1001', 1149, 'Synthetic Supplier', '00000000-0000-4000-8000-0000000000f0')$q$) ilike '%already recorded as an equipment acquisition%', 'no double recognition');
-select pg_temp.must(pg_temp.err($q$insert into public.entity_expenses (employing_entity_id, expense_date, amount, currency, category, line_code, description, receipt_number, receipt_total, issuing_authority, recorded_by)
-  values ('11111111-1111-4111-8111-111111111101', '2026-11-08', 10, 'QAR', 'other', 'L1', 'Unrelated', '999', 10, 'Synthetic Supplier', '00000000-0000-4000-8000-0000000000f0')$q$) = '', 'an unrelated expense is unaffected');
-
 -- 6. the audit trail is append-only and complete
 select pg_temp.must(pg_temp.err($q$update public.entity_finance_events set detail = '{}'$q$) ilike '%append-only%', 'events cannot be edited');
 select pg_temp.must(pg_temp.err($q$delete from public.entity_finance_events$q$) ilike '%append-only%', 'events cannot be deleted');

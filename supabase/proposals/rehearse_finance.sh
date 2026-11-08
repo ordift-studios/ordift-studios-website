@@ -13,7 +13,7 @@ set session_replication_role = replica; delete from public.entity_finance_events
 SQL
 )
 gone=$(cat <<'SQL'
-do $$ begin if to_regclass('public.entity_equipment_acquisitions') is not null or to_regclass('public.entity_financing_obligations') is not null or to_regproc('public.record_equipment_acquisition') is not null or to_regproc('public.mark_instalment_paid') is not null or exists (select 1 from pg_trigger where tgname = 'entity_expenses_not_an_acquisition') then raise exception 'ROLLBACK LEFT OBJECTS BEHIND'; end if; end $$;
+do $$ begin if to_regclass('public.entity_equipment_acquisitions') is not null or to_regclass('public.entity_financing_obligations') is not null or to_regproc('public.record_equipment_acquisition') is not null or to_regproc('public.mark_instalment_paid') is not null then raise exception 'ROLLBACK LEFT OBJECTS BEHIND'; end if; end $$;
 SQL
 )
 case "$M" in
