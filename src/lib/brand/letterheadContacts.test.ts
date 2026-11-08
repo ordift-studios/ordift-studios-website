@@ -73,9 +73,9 @@ describe("the website is spelt correctly everywhere, and written once", () => {
     const out = git('git grep -n -I "ordiftstudios.com" -- src/lib/pdf src/lib/portfolio ":!*.test.ts"').trim();
     expect(out).toBe("");
   });
-  it("no application template still prints the old letterhead's baked-in contact strip (which carried the internal Gmail address): only the legal-publication generator names that image", () => {
-    const out = git('git grep -n -I -E "/brand/os-letterhead\\.jpg" -- src ":!*.test.ts"').trim();
-    expect(out).toBe("");
+  it("no application template prints the old letterhead's baked-in contact strip (which carried the internal Gmail address), except the one the Founder decided to leave unchanged: the HR-playbook print page (decision C, 8 Nov 2026; the old strip is to be reviewed in a later document-standardisation exercise)", () => {
+    const out = git('git grep -l -I -E "/brand/os-letterhead\\.jpg" -- src ":!*.test.ts"').trim().split("\n").filter(Boolean);
+    expect(out).toEqual(["src/app/admin/hr/playbooks/[classification]/pdf/page.tsx"]);
   });
   it("the approved letterhead image has one copy under brand/ and one under public/, kept identical", () => {
     const a = readFileSync("brand/legal-publications/os-letterhead.jpg"); const b = readFileSync("public/brand/os-letterhead.jpg");

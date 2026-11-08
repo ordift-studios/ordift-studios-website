@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Corrects the website line of the approved Ordift letterhead WITHOUT re-encoding the rest of the picture.
 
-The approved letterhead's website line read "www.odiftstudios.com" (missing the "r"). A normal save would re-compress the whole JPEG and nudge ~7% of the pixels everywhere. This script instead decodes the
+The approved letterhead's website line misspelled the company name (the "r" of "ordift" was missing). A normal save would re-compress the whole JPEG and nudge ~7% of the pixels everywhere. This script instead decodes the
 JPEG to its quantised DCT blocks, replaces ONLY the blocks under the corrected website line with blocks computed from the corrected pixels, and writes everything else back coefficient-for-coefficient, so every
 pixel outside those blocks is bit-identical to the approved original.
 
