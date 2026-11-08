@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const h = vi.hoisted(() => ({ superAdmin: true, rpc: vi.fn(), quote: { data: { payment_condition: "none", deposit_percent: null, payment_booking_terms: "No deposit is required. Payment on delivery." } as Record<string, unknown> | null } }));
 vi.mock("@/lib/organization/authority", () => ({ isSuperAdminId: async () => h.superAdmin }));
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: () => ({ rpc: h.rpc, from: () => ({ select: () => ({ eq: () => ({ eq: () => ({ maybeSingle: async () => h.quote }) }) }) }) }) }));
-import { cancelOrdinaryBooking, confirmOrdinaryBooking, previewConflicts } from "./service";
+import { cancelOrdinaryBooking, confirmOrdinaryBooking, previewConflicts, recordBookingSettingsVersion } from "./service";
 const ON = { BOOKING_CONFIRMATION_ENABLED: "true" };
 const seg = { startsAt: "2026-12-14T09:00:00Z", endsAt: "2026-12-14T12:00:00Z", timezone: "Asia/Qatar", kind: "on_site" as const, location: "Doha studio" };
 const input = () => ({ actorUserId: "u1", enquiryId: "e1", quotationId: "q1", segments: [seg] });
@@ -50,5 +50,17 @@ describe("cancel and preview", () => {
     h.rpc.mockResolvedValue({ data: [{ key: "booking:b1", kind: "booking", firm: true, label: "ENQ-1", from: "a", to: "b" }], error: null });
     expect(await previewConflicts({ assigneeId: "p1", segments: [seg], excludeEnquiryId: "e1" }, ON)).toHaveLength(1);
     expect(await previewConflicts({ assigneeId: null, segments: [seg], excludeEnquiryId: null }, ON)).toEqual([]);
+  });
+});
+
+describe("versioned settings", () => {
+  const good = { actorUserId: "u1", thresholds: { QAR: 3000 }, alwaysCategories: ["videography"], escalators: ["exclusivity"], status: "provisional" as const, note: "Provisional Founder rules" };
+  it("refuses with the flag off, for non-Super-Admins, and for invalid values, without touching the database", async () => {
+    expect(await recordBookingSettingsVersion(good, {})).toMatchObject({ ok: false });
+    h.superAdmin = false; expect(await recordBookingSettingsVersion(good, ON)).toMatchObject({ ok: false });
+    h.superAdmin = true;
+    const bads: any[] = [{ ...good, thresholds: {} }, { ...good, thresholds: { QAR: 0 } }, { ...good, thresholds: { qar: 5 } }, { ...good, escalators: ["Bad Key"] }, { ...good, note: "short" }];
+    for (const bad of bads) expect(await recordBookingSettingsVersion(bad, ON)).toMatchObject({ ok: false });
+    expect(h.rpc).not.toHaveBeenCalled();
   });
 });

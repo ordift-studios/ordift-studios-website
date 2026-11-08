@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { bookingFlagOn, canConfirm, classifyConflicts, classifyPaymentTerms, confirmationBlockers, evaluateAgreement, paymentGate, projectPanel, termsCheckBlocks, unresolvedFirmConflicts, validateSegments, type BookingSettings, type Segment } from "./rules";
+import { validateStructuredCondition, bookingFlagOn, canConfirm, classifyConflicts, classifyPaymentTerms, confirmationBlockers, evaluateAgreement, paymentGate, projectPanel, termsCheckBlocks, unresolvedFirmConflicts, validateSegments, type BookingSettings, type Segment } from "./rules";
 
 const S: BookingSettings = { version: 1, status: "provisional", thresholds: { QAR: 3000, GHS: 10000, USD: 800 }, alwaysCategories: ["videography", "production_services", "talent_management", "drone_operations"],
   escalators: ["usage_rights_extended", "exclusivity", "minors", "third_party_ip", "restricted_location", "complex_or_unusual", "multi_day_assignment"] };
@@ -126,5 +126,24 @@ describe("who sees what", () => {
     const own = projectPanel(full, { id: "p1", roles: ["staff"] }, "p1") as any; expect(own.level).toBe("staff"); expect(Object.keys(own).sort()).toEqual(["conflicts", "level"]);
     expect(projectPanel(full, { id: "p2", roles: ["staff"] }, "p1")).toBeNull();
     expect(projectPanel(full, { id: "c", roles: ["client"] }, null)).toBeNull();
+  });
+});
+
+describe("the quotation form's structured payment condition must agree with the written terms", () => {
+  it("accepts the three choices when the terms agree", () => {
+    expect(validateStructuredCondition({ condition: "none", depositPercent: null }, "No deposit is required. Payment on delivery.")).toMatchObject({ ok: true });
+    expect(validateStructuredCondition({ condition: "deposit", depositPercent: 50 }, "A 50% deposit is required to confirm the booking.")).toMatchObject({ ok: true });
+    expect(validateStructuredCondition({ condition: "full", depositPercent: null }, "Full payment in advance is required.")).toMatchObject({ ok: true });
+  });
+  it("refuses a selection the terms contradict or do not state", () => {
+    expect(validateStructuredCondition({ condition: "none", depositPercent: null }, "A 50% deposit is required to confirm.")).toMatchObject({ ok: false });
+    expect(validateStructuredCondition({ condition: "deposit", depositPercent: 30 }, "A 50% deposit is required to confirm.")).toMatchObject({ ok: false });
+    expect(validateStructuredCondition({ condition: "deposit", depositPercent: 50 }, "Usage is limited to the agreed campaign.")).toMatchObject({ ok: false });
+    expect(validateStructuredCondition({ condition: "full", depositPercent: null }, "")).toMatchObject({ ok: false });
+  });
+  it("checks the percentage itself", () => {
+    expect(validateStructuredCondition({ condition: "deposit", depositPercent: null }, "50% deposit to confirm")).toMatchObject({ ok: false });
+    expect(validateStructuredCondition({ condition: "deposit", depositPercent: 100 }, "100% deposit to confirm")).toMatchObject({ ok: false });
+    expect(validateStructuredCondition({ condition: "none", depositPercent: 20 }, "No deposit")).toMatchObject({ ok: false });
   });
 });

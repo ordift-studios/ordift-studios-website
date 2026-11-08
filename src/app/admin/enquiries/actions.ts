@@ -1,6 +1,7 @@
 "use server";
 
 import { hasActiveOrdinaryQuotation } from "@/lib/commercial/amountDue";
+import { bookingFlagOn } from "@/lib/bookings/rules";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentUser, isStaffOrAdmin } from "@/lib/portal/roles";
@@ -85,6 +86,9 @@ export async function updateStageAction(
     if (anchor?.commercial_intent === "creative_crew_support") {
       const { data: crew } = await supabase.from("crew_support_requests").select("status").eq("enquiry_id", enquiryId).maybeSingle();
       if (crew?.status !== "confirmed") return { ok: false, error: "For Creative Crew Support, “Booked” is set automatically when the Crew Support request is Confirmed — it can't be chosen here." };
+    } else if (bookingFlagOn()) {
+      // BOOKING CONFIRMATION (flag BOOKING_CONFIRMATION_ENABLED, default OFF): when it is on, "Booked" for any other enquiry is set ONLY by the Super Admin booking confirmation, never typed in by hand.
+      return { ok: false, error: "With booking confirmation switched on, “Booked” is set by confirming the booking (date, place, payment, agreement and conflict checks), not by changing the stage by hand." };
     }
   }
 

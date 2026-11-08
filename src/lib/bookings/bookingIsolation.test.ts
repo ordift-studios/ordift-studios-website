@@ -20,7 +20,7 @@ describe("inert until released", () => {
 
 describe("what the service can and cannot do", () => {
   const svc = read("src/lib/bookings/service.ts");
-  it("writes only through the two database functions: no direct insert, update or delete", () => { expect(svc).not.toMatch(/\.(insert|update|delete|upsert)\(/); expect(svc.match(/\.rpc\("([a-z_]+)"/g)?.sort()).toEqual(['.rpc("cancel_ordinary_booking"', '.rpc("confirm_ordinary_booking"', '.rpc("preview_booking_conflicts"']); });
+  it("writes only through the database functions, except one append-only INSERT of a new settings version: no update, delete or upsert, and no direct write to the confirmation tables", () => { expect(svc).not.toMatch(/\.(update|delete|upsert)\(/); expect(svc.match(/\.insert\(/g)?.length).toBe(1); expect(svc).toMatch(/from\("booking_rule_settings"\)\.insert\(/); expect(svc).not.toMatch(/from\("enquiry_booking_(confirmations|segments)"\)\.(insert|update|delete)/); expect(svc.match(/\.rpc\("([a-z_]+)"/g)?.sort()).toEqual(['.rpc("cancel_ordinary_booking"', '.rpc("confirm_ordinary_booking"', '.rpc("preview_booking_conflicts"']); });
   it("creates no payment, invoice, receivable or email", () => { const code = svc.split("\n").filter((l) => !l.trim().startsWith("//")).join("\n").replace(/\/\/ .*$/gm, "");
     expect(/from\("payments"\)|from\("payment_obligations"\)|invoice|receivable|sendEmail|resend|nodemailer/i.test(code)).toBe(false); });
   it("every public action is gated by the flag and by Super Admin", () => { expect((svc.match(/bookingFlagOn\(env\)/g) ?? []).length).toBeGreaterThanOrEqual(3); expect((svc.match(/isSuperAdminId/g) ?? []).length).toBeGreaterThanOrEqual(3); });

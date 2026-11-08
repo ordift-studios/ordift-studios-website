@@ -68,3 +68,19 @@ export async function previewConflicts(p: { assigneeId: string | null; segments:
   if (error) { console.error("[booking] preview failed", error.message); return null; }
   return (data as { key: string; kind: Conflict["kind"]; firm: boolean; label: string; from: string; to: string }[]).map((c) => ({ key: c.key, kind: c.kind, firm: c.firm, label: c.label, from: c.from, to: c.to }));
 }
+
+// ---- versioned rule settings (thresholds, categories, escalators): a change is a NEW version, never an edit; Super Admin only
+const CURRENCY = /^[A-Z]{3}$/, KEY = /^[a-z][a-z_]{2,40}$/;
+export async function recordBookingSettingsVersion(p: { actorUserId: string; thresholds: Record<string, number>; alwaysCategories: string[]; escalators: string[]; status: "provisional" | "approved"; note: string }, env: Record<string, string | undefined> = process.env): Promise<{ ok: true; version: number } | Fail> {
+  if (!bookingFlagOn(env)) return OFF;
+  if (!(await isSuperAdminId(p.actorUserId))) return DENIED;
+  if (Object.keys(p.thresholds).length === 0 || Object.entries(p.thresholds).some(([c, n]) => !CURRENCY.test(c) || !Number.isFinite(n) || n <= 0)) return { ok: false, error: "Give each currency a threshold above zero (a three-letter currency code)." };
+  if ([...p.alwaysCategories, ...p.escalators].some((k) => !KEY.test(k))) return { ok: false, error: "Categories and circumstances must be lowercase words with underscores." };
+  if (p.note.trim().length < 10) return { ok: false, error: "Say why the rules are changing (at least a sentence)." };
+  const db = createAdminClient();
+  const { data: last } = await db.from("booking_rule_settings").select("version").order("version", { ascending: false }).limit(1).maybeSingle();
+  const version = ((last?.version as number | undefined) ?? 0) + 1;
+  const { error } = await db.from("booking_rule_settings").insert({ version, status: p.status, agreement_value_thresholds: p.thresholds, agreement_always_categories: p.alwaysCategories, agreement_escalators: p.escalators, note: p.note.trim(), created_by: p.actorUserId });
+  if (error) { console.error("[booking] settings version failed", error.message); return { ok: false, error: "The settings could not be saved (someone may have saved a newer version: reload and try again)." }; }
+  return { ok: true, version };
+}

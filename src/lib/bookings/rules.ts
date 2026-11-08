@@ -129,3 +129,16 @@ export function projectPanel(panel: PanelFull, v: Viewer, assigneeId: string | n
   return null;
 }
 export const canConfirm = (v: Viewer) => v.roles.includes("super_admin");
+
+// ---- the quotation form's structured payment condition (none / percentage deposit / full before confirmation) must AGREE with the written terms
+export type StructuredCondition = { condition: PaymentCondition; depositPercent: number | null };
+export function validateStructuredCondition(c: StructuredCondition, termsText: string | null | undefined): { ok: true; check: TermsCheck } | { ok: false; error: string } {
+  if (!["none", "deposit", "full"].includes(c.condition)) return { ok: false, error: "Choose whether payment is required up front: no upfront payment, a percentage deposit, or full payment before confirmation." };
+  if (c.condition === "deposit" && !(c.depositPercent !== null && c.depositPercent > 0 && c.depositPercent < 100)) return { ok: false, error: "Enter the deposit as a percentage between 0 and 100." };
+  if (c.condition !== "deposit" && c.depositPercent !== null) return { ok: false, error: "A deposit percentage applies only to a deposit condition." };
+  const check = classifyPaymentTerms(termsText, c.condition, c.depositPercent);
+  if (check === "contradiction") return { ok: false, error: "The written payment terms say something different from the condition you selected. Make the terms and the selection agree before saving." };
+  if (check === "ambiguous") return { ok: false, error: "The written payment terms do not clearly state the selected condition. Say it plainly in the terms before saving." };
+  if (check === "no_terms" && c.condition !== "none") return { ok: false, error: "Write the payment terms so they state the selected condition." };
+  return { ok: true, check };
+}
