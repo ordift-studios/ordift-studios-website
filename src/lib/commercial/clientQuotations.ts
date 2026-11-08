@@ -6,6 +6,7 @@ import { hasRole, isSuperAdmin, getCurrentUser } from "@/lib/portal/roles";
 import { formatQuotationReference } from "./quotationReference";
 import { isSupportedCurrency } from "@/lib/payments/currency";
 import { messageForAmountDueError } from "./amountDueRules";
+import type { PaymentCondition } from "@/lib/crewSupport/paymentCondition";
 
 // Universal Commercial Rate Card & Quotation System — selling side
 // (2026-09-16, migration 0134). A quotation is a formal, versioned
@@ -73,6 +74,10 @@ export type CreateQuotationParams = {
   currency: string;
   validUntil?: string | null;
   paymentBookingTerms?: string | null;
+  // The STRUCTURED payment condition (none / deposit n% / full before booking confirmation). Optional so every other caller keeps today's behaviour: when omitted, create leaves the column at its database default
+  // ('none') and a draft edit leaves the stored condition untouched. The admin form always sends both, with the written terms generated from them (paymentConditionTerms.ts).
+  paymentCondition?: PaymentCondition;
+  depositPercent?: number | null;
   commercialNotes?: string | null;
   items: QuotationLineItemInput[];
 };
@@ -230,6 +235,7 @@ export async function createClientQuotation(params: CreateQuotationParams): Prom
       total: totals.total,
       valid_until: params.validUntil ?? null,
       payment_booking_terms: params.paymentBookingTerms ?? null,
+      ...(params.paymentCondition ? { payment_condition: params.paymentCondition, deposit_percent: params.paymentCondition === "deposit" ? params.depositPercent ?? null : null } : {}),
       commercial_notes: params.commercialNotes ?? null,
       created_by: auth.actorUserId,
     })
@@ -306,6 +312,8 @@ export type ClientQuotationDetail = ClientQuotationSummary & {
   discountTotal: number;
   taxTotal: number;
   paymentBookingTerms: string | null;
+  paymentCondition: PaymentCondition;
+  depositPercent: number | null;
   commercialNotes: string | null;
   version: number;
   issuedAt: string | null;
@@ -331,7 +339,7 @@ export async function getClientQuotation(id: string): Promise<ClientQuotationDet
     admin
       .from("client_quotations")
       .select(
-        "id, enquiry_id, quotation_reference, client_profile_id, prospect_name, prospect_email, prospect_phone, prospect_company, status, currency, subtotal, discount_total, tax_total, total, valid_until, issued_at, crew_support_request_id, payment_booking_terms, commercial_notes, version, created_at, profiles!client_profile_id(full_name)"
+        "id, enquiry_id, quotation_reference, client_profile_id, prospect_name, prospect_email, prospect_phone, prospect_company, status, currency, subtotal, discount_total, tax_total, total, valid_until, issued_at, crew_support_request_id, payment_booking_terms, payment_condition, deposit_percent, commercial_notes, version, created_at, profiles!client_profile_id(full_name)"
       )
       .eq("id", id)
       .maybeSingle(),
@@ -372,6 +380,8 @@ export async function getClientQuotation(id: string): Promise<ClientQuotationDet
     total: quotation.total,
     validUntil: quotation.valid_until,
     paymentBookingTerms: quotation.payment_booking_terms,
+    paymentCondition: ((quotation.payment_condition as string | null) ?? "none") as PaymentCondition,
+    depositPercent: quotation.deposit_percent === null || quotation.deposit_percent === undefined ? null : Number(quotation.deposit_percent),
     commercialNotes: quotation.commercial_notes,
     version: quotation.version,
     createdAt: quotation.created_at,
@@ -526,6 +536,7 @@ export async function updateClientQuotationDraft(params: UpdateQuotationDraftPar
       total: totals.total,
       valid_until: params.validUntil ?? null,
       payment_booking_terms: params.paymentBookingTerms ?? null,
+      ...(params.paymentCondition ? { payment_condition: params.paymentCondition, deposit_percent: params.paymentCondition === "deposit" ? params.depositPercent ?? null : null } : {}),   // DRAFTS ONLY (the status = draft guard below)
       commercial_notes: params.commercialNotes ?? null,
     })
     .eq("id", params.quotationId)

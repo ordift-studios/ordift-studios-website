@@ -10,6 +10,8 @@ import {
   type SimpleActionState,
 } from "../actions";
 import SubmitButton from "@/components/admin/SubmitButton";
+import { paymentConditionSentence } from "@/lib/commercial/paymentConditionTerms";
+import type { PaymentCondition } from "@/lib/crewSupport/paymentCondition";
 
 type ClientOption = { id: string; fullName: string | null; email: string | null };
 type MarketOption = { slug: string; name: string };
@@ -125,7 +127,10 @@ export type QuotationFormInitialData = {
   items: LineItem[];
   currency: string;
   validUntil: string;
-  paymentBookingTerms: string;
+  paymentBookingTerms: string;            // the person's OTHER terms (the payment sentence is generated)
+  paymentCondition: PaymentCondition;
+  depositPercent: string;
+  paymentTermsGenerated: boolean;         // false = an older draft whose whole text is shown as 'other terms'
   commercialNotes: string;
 };
 
@@ -143,6 +148,9 @@ export function NewQuotationForm({ clients, markets, editing, enquiry, currencie
   const [formAction] = editing ? [editState[1]] : [createState[1]];
   const [partyType, setPartyType] = useState<"client" | "prospect">(editing?.partyType ?? (enquiry?.clientProfileId ? "client" : "prospect"));
   const [items, setItems] = useState<LineItem[]>(editing?.items ?? [{ ...EMPTY_ITEM }]);
+  // A new quotation, and an older draft whose text was never generated from a selection, start with NO choice: the person must pick one (the database default 'none' is not a decision).
+  const [condition, setCondition] = useState<PaymentCondition | "">(editing && editing.paymentTermsGenerated ? editing.paymentCondition : "");
+  const [deposit, setDeposit] = useState(editing && editing.paymentTermsGenerated ? editing.depositPercent : "");
 
   // Production fix (2026-09-16) — navigation happens HERE, client-side,
   // once the action's result confirms success, rather than calling
@@ -256,7 +264,22 @@ export function NewQuotationForm({ clients, markets, editing, enquiry, currencie
             <input name="currency" required defaultValue={editing?.currency ?? enquiry?.defaultCurrency ?? "GHS"} placeholder="Currency (e.g. GHS)" className="rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small" />
           )}
           <input name="validUntil" type="date" defaultValue={editing?.validUntil} className="rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small" />
-          <textarea name="paymentBookingTerms" defaultValue={editing?.paymentBookingTerms} placeholder="Payment / booking terms (optional)" className="sm:col-span-2 rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small" rows={2} />
+          <fieldset className="sm:col-span-2 space-y-2 rounded-lg border border-black/10 p-3">
+            <legend className="px-1 font-sans text-caption font-semibold text-ordift-ink">Payment before the booking is confirmed</legend>
+            {([["none", "No upfront payment"], ["deposit", "Percentage deposit"], ["full", "Full payment before booking confirmation"]] as const).map(([v, l]) => (
+              <label key={v} className="flex items-center gap-2 font-sans text-body-small text-ordift-ink">
+                <input type="radio" name="paymentCondition" value={v} required checked={condition === v} onChange={() => setCondition(v)} />{l}
+              </label>
+            ))}
+            {condition === "deposit" ? (
+              <label className="flex items-center gap-2 font-sans text-body-small text-ordift-ink">Deposit percentage
+                <input name="depositPercent" type="number" min="0.01" max="99.99" step="0.01" required value={deposit} onChange={(e) => setDeposit(e.target.value)} className="w-28 rounded-lg border border-black/15 px-2 py-1.5 font-sans text-body-small" aria-label="Deposit percentage" />%
+              </label>
+            ) : null}
+            {condition ? <p className="font-sans text-caption text-ordift-ink-muted">The client will read: <span className="text-ordift-ink">“{paymentConditionSentence({ condition, depositPercent: condition === "deposit" && Number(deposit) > 0 ? Number(deposit) : null })}”</span> It is added to the written terms automatically, so do not retype it.</p> : <p className="font-sans text-caption text-amber-700">Choose one. A quotation cannot be saved without a payment condition.</p>}
+            {editing && editing.paymentTermsGenerated === false && editing.paymentBookingTerms ? <p className="font-sans text-caption text-amber-700">This draft was written before the selection existed. Its text is kept below as other terms. If it states a payment condition, make it agree with your selection or remove that wording; the form will tell you if they disagree.</p> : null}
+          </fieldset>
+          <textarea name="paymentBookingTerms" defaultValue={editing?.paymentBookingTerms} placeholder="Other terms (cancellation, rescheduling, balance due date…). Do not restate the payment condition above." aria-label="Other terms" className="sm:col-span-2 rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small" rows={3} />
           <textarea name="commercialNotes" defaultValue={editing?.commercialNotes} placeholder="Commercial notes (optional, internal)" className="sm:col-span-2 rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small" rows={2} />
         </div>
       </section>
