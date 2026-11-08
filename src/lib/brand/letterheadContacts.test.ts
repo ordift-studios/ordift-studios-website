@@ -59,8 +59,15 @@ describe("the contact snapshot that is frozen into an issued quotation", () => {
 
 describe("the website is spelt correctly everywhere, and written once", () => {
   const git = (cmd: string) => { try { return execSync(cmd, { encoding: "utf8", cwd: process.cwd() }); } catch (e) { return (e as { stdout?: string }).stdout ?? ""; } };
+  // The ONE exemption: scripts/build_letterhead_assets.py quotes the old spelling on purpose, because it detects it in the original letterhead image and redraws it correctly. Nothing else may contain it.
+  const QUOTES_OLD_SPELLING = "scripts/build_letterhead_assets.py";
   it("the misspelling appears in no tracked text file", () => {
-    expect(git('git grep -n -I -i -E "odiftstudios" -- src scripts docs "*.md" ":!*.test.ts"').trim()).toBe("");
+    expect(git(`git grep -n -I -i -E "odiftstudios" -- src scripts docs "*.md" ":!*.test.ts" ":!${QUOTES_OLD_SPELLING}"`).trim()).toBe("");
+  });
+  it("the exemption is real and narrow: only the letterhead build script quotes the old spelling, and it also writes the correct one", () => {
+    const hits = git(`git grep -l -I -i -E "odiftstudios" -- src scripts docs "*.md" ":!*.test.ts"`).trim().split("\n").filter(Boolean);
+    expect(hits).toEqual([QUOTES_OLD_SPELLING]);
+    expect(git(`git grep -c "www.ordiftstudios.com" -- ${QUOTES_OLD_SPELLING}`)).toMatch(/\d+/);
   });
   it("the PDF templates take the domain from the shared configuration instead of repeating it", () => {
     const out = git('git grep -n -I "ordiftstudios.com" -- src/lib/pdf src/lib/portfolio ":!*.test.ts"').trim();

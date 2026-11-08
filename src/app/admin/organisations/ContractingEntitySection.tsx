@@ -2,7 +2,7 @@ import { getContractingEntity, listOrdinaryContractingCandidates, ordinarySubjec
 import { requirementStateLabel } from "@/lib/organization/jurisdictionRequirements";
 import ContractingEntityForm from "./ContractingEntityForm";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { loadEnquiryMarket } from "@/lib/commercial/quotationEntityAdvice";
+import { loadEnquiryMarket } from "@/lib/organization/enquiryMarket";
 import { suggestEntityForMarket } from "@/lib/organization/entityMarketSuggestion";
 
 // Contracting legal entity for an ORDINARY enquiry or quotation (Super Admin only). Reuses the existing contracting-entity records and rules: the entity is

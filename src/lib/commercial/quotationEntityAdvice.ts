@@ -1,6 +1,7 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getContractingEntityStanding } from "@/lib/organization/entityRegistrations";
 import { MARKET_JURISDICTIONS, marketMismatchNote } from "@/lib/organization/entityMarketSuggestion";
+import { loadEnquiryMarket } from "@/lib/organization/enquiryMarket";
 import { detectActivities, licenceWarnings, type LicenceWarning } from "./quotationLicenceWarnings";
 
 // Advisory guidance shown on a DRAFT ordinary quotation: (1) an early warning when its lines appear to include an activity the contracting entity is not licensed for, and (2) a note when
@@ -9,13 +10,6 @@ import { detectActivities, licenceWarnings, type LicenceWarning } from "./quotat
 
 export type EntityAdvice = { market: string | null; evaluatedEntityName: string | null; detected: string[]; warnings: LicenceWarning[]; mismatch: string | null };
 const NONE: EntityAdvice = { market: null, evaluatedEntityName: null, detected: [], warnings: [], mismatch: null };
-
-export async function loadEnquiryMarket(enquiryId: string | null): Promise<{ country: string | null; service: string | null }> {
-  if (!enquiryId) return { country: null, service: null };
-  const { data } = await createAdminClient().from("enquiries").select("payment_country, service").eq("id", enquiryId).maybeSingle();
-  const e = data as { payment_country?: string | null; service?: string | null } | null;
-  return { country: e?.payment_country ?? null, service: e?.service ?? null };
-}
 
 // The entity whose jurisdiction matches the market, only when exactly one exists. Used to evaluate the warning before any entity has been chosen; it is not a choice.
 async function entityForMarket(country: string | null): Promise<string | null> {
