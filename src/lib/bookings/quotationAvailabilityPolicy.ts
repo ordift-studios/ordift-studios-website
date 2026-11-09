@@ -10,10 +10,24 @@ import type { AvailabilityState } from "./availability";
 //   depends + no check / stale check -> refused: run (or repeat) the availability check first.
 // The policy applies only while the booking schedule is switched on (the check reads it); with the switch off nothing changes.
 
-export const CONDITIONAL_SENTENCE = "Scheduling is subject to confirmation. This quotation does not confirm that any particular date, time or team member is available. A booking is confirmed only when Ordift Studios confirms the schedule in writing.";
-export const hasConditionalSentence = (terms: string | null | undefined) => (terms ?? "").includes(CONDITIONAL_SENTENCE);
-export const withoutConditionalSentence = (terms: string | null | undefined) => (terms ?? "").replace(CONDITIONAL_SENTENCE, "").replace(/\n{2,}/g, "\n").trim();
-export const withConditionalSentence = (terms: string | null | undefined) => { const t = (terms ?? "").trim(); return hasConditionalSentence(t) ? t : (t ? `${t}\n${CONDITIONAL_SENTENCE}` : CONDITIONAL_SENTENCE); };
+// The Founder-approved conditional wording (9 Nov 2026), used VERBATIM wherever a conditional quotation shows its terms (admin view, printable page, server PDF, client copy): they all render the
+// quotation's own terms, and this sentence is part of those terms. It changes no payment obligation and no other legal term. STATUS: pending final legal review; it must not reach Production
+// until that review is recorded (see CONDITIONAL_WORDING_STATUS and supabase/proposals/RELEASE_NOTE_conditional_quotation_wording.md).
+export const CONDITIONAL_SENTENCE = "This quotation is subject to confirmation of personnel availability and scheduling. Acceptance or payment does not, by itself, constitute confirmation of a booking. A booking is confirmed only when ORDIFT STUDIOS issues an explicit booking confirmation.";
+export const CONDITIONAL_WORDING_VERSION = "2026-11-quotation-conditional-v1";
+export const CONDITIONAL_WORDING_STATUS = "pending_final_legal_review" as const;
+// The earlier local wording is still RECOGNISED (never written again): a draft that already carries it is brought to the current wording, and the payment-terms classifier ignores it.
+const LEGACY_CONDITIONAL_SENTENCES: string[] = ["Scheduling is subject to confirmation. This quotation does not confirm that any particular date, time or team member is available. A booking is confirmed only when Ordift Studios confirms the schedule in writing."];
+const ALL_CONDITIONAL_SENTENCES = [CONDITIONAL_SENTENCE, ...LEGACY_CONDITIONAL_SENTENCES];
+export const hasConditionalSentence = (terms: string | null | undefined) => ALL_CONDITIONAL_SENTENCES.some((x) => (terms ?? "").includes(x));
+export const stripConditionalSentences = (terms: string | null | undefined) => ALL_CONDITIONAL_SENTENCES.reduce((t, x) => t.split(x).join(""), terms ?? "");
+export const withoutConditionalSentence = (terms: string | null | undefined) => stripConditionalSentences(terms).replace(/\n{2,}/g, "\n").trim();
+export const withConditionalSentence = (terms: string | null | undefined) => {
+  const t = (terms ?? "").trim();
+  if ((terms ?? "").includes(CONDITIONAL_SENTENCE) && !LEGACY_CONDITIONAL_SENTENCES.some((x) => t.includes(x))) return t;
+  const rest = withoutConditionalSentence(t);
+  return rest ? `${rest}\n${CONDITIONAL_SENTENCE}` : CONDITIONAL_SENTENCE;
+};
 
 export const BASES = ["depends", "independent"] as const;
 export type Basis = (typeof BASES)[number];
@@ -31,7 +45,7 @@ export function decideQuotationAvailability(i: PolicyInput): PolicyDecision {
   }
   const conditional = (why: string): PolicyDecision => i.conditionalAck
     ? { ok: true, mode: "conditional", conditional: true, summary: `Conditional quotation: ${why}` }
-    : { ok: false, code: "ack_needed", error: "Availability cannot be confirmed, so this can only be issued as a CONDITIONAL quotation. Tick the box to issue it with the sentence “Scheduling is subject to confirmation” added to its terms." };
+    : { ok: false, code: "ack_needed", error: "Availability cannot be confirmed, so this can only be issued as a CONDITIONAL quotation. Tick the box to issue it with the conditional wording (“This quotation is subject to confirmation of personnel availability and scheduling…”) added to its terms." };
   if (!i.hasEnquiry) return conditional("it is not linked to an enquiry, so availability could not be checked.");
   if (!i.latest) return { ok: false, code: "check_needed", error: "Run an availability check for this enquiry first (on the enquiry page). The check is not a reservation." };
   if (i.latest.stale) return { ok: false, code: "check_stale", error: "The last availability check is more than 7 days old. Check again first." };

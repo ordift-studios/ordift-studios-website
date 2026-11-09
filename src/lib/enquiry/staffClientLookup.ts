@@ -1,13 +1,16 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getCurrentUser, isStaffOrAdmin } from "@/lib/portal/roles";
-import { duplicateMessage, lookupAllowed, matchContact, parseQuery, rankAndCap, toStaffMatch, type ContactRow, type ParsedQuery, type StaffClientMatch } from "./staffClientLookupRules";
+import { duplicateMessage, lookupAllowed, matchContact, parseQuery, rankAndCap, readRpcResult, RPC_LIMIT, toStaffMatch, type ContactRow, type LookupPath, type ParsedQuery, type StaffClientMatch } from "./staffClientLookupRules";
 
 // STAFF CLIENT LOOKUP - server side (LOCAL build, nothing released). Server-only.
 //  * Who: signed-in STAFF or admin (the people who may already record an enquiry). It is NOT a Super Admin power and does not use the directory's authority:
 //    it can read a name, the organisation, one masked identifier and an enquiry count, and it can attach an enquiry to an EXISTING client once. It cannot read
 //    notes, full contact details, quotations or payments, create, edit, merge or unlink any client, or see inactive clients.
-//  * Every lookup is audited (kind, result count, query length; never the query text or any result) and rate-limited. The audit write is strict: if it cannot be
-//    recorded, nothing is shown.
+//  * Every lookup is audited (kind, result count, query length, which path answered; never the query text or any result) and rate-limited. The audit write is strict: if it
+//    cannot be recorded, nothing is shown.
+//  * HOW it searches: the indexed database function public.staff_client_lookup (service role only, masked, capped) when it exists. ONLY if the function is missing does it fall
+//    back to the older in-memory search, which has the same authority, masking, cap and audit; every other failure (permission, malformed or widened answer, database error)
+//    fails closed. The fallback logs a warning and the audit entry says which path answered.
 
 type Fail = { ok: false; error: string };
 type Admin = ReturnType<typeof createAdminClient>;
@@ -53,6 +56,24 @@ async function matchesFor(admin: Admin, p: Extract<ParsedQuery, { ok: true }>, c
   return { shown, moreMatches: ranked.moreMatches };
 }
 
+type Parsed = Extract<ParsedQuery, { ok: true }>;
+type Found = { ok: true; shown: StaffClientMatch[]; moreMatches: boolean; path: LookupPath } | Fail;
+let fallbackWarned = false;
+
+// One search, by the indexed function first. Fails closed except for the single "function missing" case.
+async function search(admin: Admin, p: Parsed): Promise<Found> {
+  const res = await admin.rpc("staff_client_lookup", { p_kind: p.kind, p_value: p.value, p_limit: RPC_LIMIT });
+  const out = readRpcResult(p.kind, { data: res.data, error: res.error ? { code: res.error.code, message: res.error.message } : null });
+  if (out.ok) return { ok: true, shown: out.matches, moreMatches: out.moreMatches, path: "indexed" };
+  if (out.reason === "bad_input") return { ok: false, error: "That could not be searched. Check what you typed and try again." };
+  if (out.reason === "failed") { console.error("[lookup] indexed lookup failed; nothing shown"); return { ok: false, error: "The client list could not be read right now. Nothing was shown." }; }
+  if (!fallbackWarned) { fallbackWarned = true; console.warn("[lookup] public.staff_client_lookup is missing: using the in-memory search (slower, same limits)."); }
+  const contacts = await loadActiveContacts(admin);
+  if (!contacts) return { ok: false, error: "The client list could not be read right now. Nothing was shown." };
+  const m = await matchesFor(admin, p, contacts);
+  return { ok: true, shown: m.shown, moreMatches: m.moreMatches, path: "in_memory_fallback" };
+}
+
 export async function searchClientsForStaff(params: { actorUserId: string; query: string }): Promise<LookupResult> {
   const user = await authorisedStaff(params.actorUserId);
   if (!user) return { ok: false, error: NOT_AUTHORISED };
@@ -62,10 +83,10 @@ export async function searchClientsForStaff(params: { actorUserId: string; query
   const since = new Date(Date.now() - 60_000).toISOString();
   const { count } = await admin.from("activity_log").select("id", { count: "exact", head: true }).eq("action", LOOKUP_ACTION).eq("actor_user_id", user.id).gte("created_at", since);
   if (!lookupAllowed(count ?? 0)) return { ok: false, error: "Too many lookups in a minute. Wait a moment and try again." };
-  const contacts = await loadActiveContacts(admin);
-  if (!contacts) return { ok: false, error: "The client list could not be read right now. Nothing was shown." };
-  const { shown, moreMatches } = await matchesFor(admin, parsed, contacts);
-  const recorded = await auditStrict(user.id, LOOKUP_ACTION, "client_directory", null, { kind: parsed.kind, resultCount: shown.length, moreMatches, queryLength: params.query.trim().length });
+  const found = await search(admin, parsed);
+  if (!found.ok) return found;
+  const { shown, moreMatches, path } = found;
+  const recorded = await auditStrict(user.id, LOOKUP_ACTION, "client_directory", null, { kind: parsed.kind, resultCount: shown.length, moreMatches, queryLength: params.query.trim().length, path });
   if (!recorded) return { ok: false, error: "The lookup could not be recorded, so nothing was shown. Try again." };
   return { ok: true, kind: parsed.kind, results: shown, moreMatches };
 }
@@ -77,12 +98,16 @@ export async function findPossibleExistingClients(params: { actorUserId: string;
   const queries = [params.email, params.phone].flatMap((q) => { const p = q ? parseQuery(q) : null; return p && p.ok && p.kind !== "name" ? [p] : []; });
   if (queries.length === 0) return { ok: true, matches: [], message: null };
   const admin = createAdminClient();
-  const contacts = await loadActiveContacts(admin);
-  if (!contacts) return { ok: false, error: "The client list could not be read, so duplicates could not be checked. Nothing was recorded." };   // fail closed
-  const found = new Map<string, StaffClientMatch>();
-  for (const p of queries) for (const m of (await matchesFor(admin, p, contacts)).shown) if (!found.has(m.contactId)) found.set(m.contactId, m);
+  const found = new Map<string, StaffClientMatch>(); const paths = new Set<LookupPath>();
+  for (const p of queries) {
+    const r = await search(admin, p);
+    if (!r.ok) return { ok: false, error: "The client list could not be read, so duplicates could not be checked. Nothing was recorded." };   // fail closed
+    paths.add(r.path);
+    for (const m of r.shown) if (!found.has(m.contactId)) found.set(m.contactId, m);
+  }
   const matches = [...found.values()];
-  if (!(await auditStrict(user.id, LOOKUP_ACTION, "client_directory", null, { kind: "duplicate_check", resultCount: matches.length, moreMatches: false, queryLength: 0 }))) return { ok: false, error: "The duplicate check could not be recorded. Nothing was recorded." };
+  const path: LookupPath = paths.has("in_memory_fallback") ? "in_memory_fallback" : "indexed";
+  if (!(await auditStrict(user.id, LOOKUP_ACTION, "client_directory", null, { kind: "duplicate_check", resultCount: matches.length, moreMatches: false, queryLength: 0, path }))) return { ok: false, error: "The duplicate check could not be recorded. Nothing was recorded." };
   return { ok: true, matches, message: matches.length ? duplicateMessage(matches) : null };
 }
 

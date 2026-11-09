@@ -2,7 +2,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { getCurrentUser, hasRole, isSuperAdmin } from "@/lib/portal/roles";
 import { bookingFlagOn } from "./rules";
 import { loadLatestAvailabilityCheck } from "./availabilityService";
-import { decideQuotationAvailability, hasConditionalSentence, outlookFor, withConditionalSentence, withoutConditionalSentence, type FormOutlook, type LatestCheckFacts, type PolicyMode } from "./quotationAvailabilityPolicy";
+import { CONDITIONAL_WORDING_STATUS, CONDITIONAL_WORDING_VERSION, decideQuotationAvailability, hasConditionalSentence, outlookFor, withConditionalSentence, withoutConditionalSentence, type FormOutlook, type LatestCheckFacts, type PolicyMode } from "./quotationAvailabilityPolicy";
 
 // QUOTATION AVAILABILITY POLICY - server side (LOCAL; inert while BOOKING_CONFIRMATION_ENABLED is off). Applied by the Issue action BEFORE a quotation is issued. It decides from the enquiry's latest
 // availability check, records the declaration in the audit log (strict), and for a conditional quotation adds the standard sentence to the DRAFT's terms. It creates no booking, reservation, hold,
@@ -43,7 +43,7 @@ export async function applyAvailabilityPolicyForIssue(params: { actorUserId: str
   const { error } = await admin.from("activity_log").insert({
     actor_user_id: user.id, action: BASIS_ACTION, entity_type: "client_quotation", entity_id: q.id,
     metadata: { mode: d.mode, basis: params.basis, independentReason: params.basis === "independent" ? params.independentReason.trim() : null, latestCheckState: latest?.state ?? null, latestCheckAt: latest?.at ?? null, enquiryId: q.enquiry_id,
-      conditionalSentenceAdded: d.conditional, notReservation: true, availabilityRecheckedAtBookingConfirmation: true },
+      conditionalSentenceAdded: d.conditional, conditionalWording: d.conditional ? { version: CONDITIONAL_WORDING_VERSION, status: CONDITIONAL_WORDING_STATUS } : null, notReservation: true, availabilityRecheckedAtBookingConfirmation: true },
   });
   if (error) { console.error("[quotation-availability] audit write failed", error.message); return { ok: false, error: "The availability basis could not be recorded, so nothing was issued. Try again." }; }
   // the DRAFT's terms carry the conditional sentence exactly when (and only when) the quotation is conditional

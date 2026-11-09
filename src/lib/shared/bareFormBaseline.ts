@@ -1,8 +1,6 @@
 // GENERATED BASELINE for bareForm.guard.test.ts (updated 9 Nov 2026, phase 2): the number of "bare" forms (a <form action={...}> with no ref, in a file that uses useActionState) in each existing file.
 // It is a TIGHT ratchet: it may only go down, and it must equal the real count. When you convert a form to useRestoringActionState (or <ActionForm>), lower the number or remove the line. A new file must have none.
 export const BARE_FORM_BASELINE: Record<string, number> = {
-  "src/app/admin/enquiries/[id]/ConvertPanel.tsx": 1,
-  "src/app/admin/enquiries/[id]/PricingForms.tsx": 2,
   "src/app/admin/enquiries/[id]/StartHandlingButton.tsx": 1,
   "src/app/admin/enquiries/[id]/UpdateStageForm.tsx": 2,
   "src/app/admin/me/FounderSelfAdministrationForm.tsx": 1,
@@ -13,7 +11,6 @@ export const BARE_FORM_BASELINE: Record<string, number> = {
   "src/app/admin/me/grievances/MyGrievancesWorkspace.tsx": 3,
   "src/app/admin/me/leave/MyLeaveWorkspace.tsx": 6,
   "src/app/admin/me/requests/MyRequestsWorkspace.tsx": 3,
-  "src/app/admin/operations/FounderDirectHireForm.tsx": 2,
   "src/app/admin/organization/agreements/[agreementId]/AgreementLifecycleActions.tsx": 2,
   "src/app/admin/organization/assets/AssetsWorkspace.tsx": 3,
   "src/app/admin/organization/attendance/AttendanceWorkspace.tsx": 4,
@@ -61,7 +58,6 @@ export const BARE_FORM_BASELINE: Record<string, number> = {
   "src/app/admin/workshops/WorkshopScheduleForms.tsx": 1,
   "src/app/admin/workshops/[id]/briefs/[briefId]/GiveFeedbackForm.tsx": 1,
   "src/app/legal/sign/[token]/SignatoryWorkspace.tsx": 3,
-  "src/app/portal/(dashboard)/client/projects/[kind]/[id]/payments/checkout/CheckoutForm.tsx": 1,
   "src/app/portal/(dashboard)/instructor/AcknowledgeStandardsForm.tsx": 1,
   "src/app/portal/(dashboard)/instructor/AttendanceRoster.tsx": 1,
   "src/app/portal/(dashboard)/instructor/InstructorWorkshopExtras.tsx": 2,

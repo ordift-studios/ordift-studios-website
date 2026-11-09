@@ -5,6 +5,8 @@ import { buildDocumentContent, contentFingerprint, type DocumentSource, type Quo
 import { contactsFor, snapshotContacts } from "@/lib/brand/letterheadContacts";
 import { ACCEPTANCE_NOTE, QuotationDocument } from "./QuotationDocument";
 import { loadLetterhead, renderQuotationPdf } from "./render";
+import { unsupportedCharacters } from "./coverage";
+import { CONDITIONAL_SENTENCE, withConditionalSentence } from "@/lib/bookings/quotationAvailabilityPolicy";
 
 // Synthetic data only: no real client, entity, quotation or identifier.
 const source: DocumentSource = {
@@ -129,4 +131,15 @@ describe("the rendered PDF file", () => {
     expect(a.equals(b)).toBe(false);
     expect(contentFingerprint(content)).toBe(fingerprint);
   }, 60_000);
+});
+
+describe("conditional quotation wording in the document (pending final legal review)", () => {
+  const conditional = buildDocumentContent({ ...source, paymentBookingTerms: withConditionalSentence(source.paymentBookingTerms) });
+  it("is shown verbatim with the payment terms, unchanged, and can be drawn by the PDF fonts", () => {
+    const t = all(context, conditional);
+    expect(t).toContain(CONDITIONAL_SENTENCE);
+    expect(t).toContain("50% deposit to confirm.");
+    expect(unsupportedCharacters(CONDITIONAL_SENTENCE)).toEqual([]);
+  });
+  it("is absent from an ordinary quotation", () => { expect(all()).not.toContain("subject to confirmation of personnel availability"); });
 });

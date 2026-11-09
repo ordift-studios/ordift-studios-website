@@ -35,14 +35,15 @@ export default function SetAmountDueForm({
   // Resync to the server-confirmed value the instant a submission
   // resolves (success or failure) — computed during render, not in an
   // effect; see UpdateStageForm.tsx for the full rationale.
+  // A REFUSED submission keeps what was typed (form restoration, 9 Nov 2026); only a SAVE resyncs to the confirmed value.
   const [resolvedState, setResolvedState] = useState(state);
   if (state !== resolvedState) {
     setResolvedState(state);
-    setAmount(currentAmountDue != null ? String(currentAmountDue) : "");
+    if (state?.ok === true) setAmount(currentAmountDue != null ? String(currentAmountDue) : "");
   }
 
   return (
-    <form ref={formRef} action={formAction} className="space-y-3">
+    <form ref={formRef} action={formAction} onSubmit={(e) => { if (pending) e.preventDefault(); }} className="space-y-3">
       <input type="hidden" name="enquiryId" value={enquiryId} />
       <div>
         <label htmlFor="amount-due" className="font-sans text-caption text-ordift-ink-muted block mb-1">

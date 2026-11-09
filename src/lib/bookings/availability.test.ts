@@ -18,7 +18,7 @@ describe("assessAvailability: the four states", () => {
   it("CONFLICTING on any firm conflict, even with a direct check recorded (a confirmed overlap is never cleared by a check; approved leave only at confirmation)", () => {
     const r = assessAvailability(input({ conflicts: [firm], verification: ver }));
     expect(r.state).toBe("conflicting"); expect(r.firm).toHaveLength(1); expect(r.reasons.join(" ")).toMatch(/cannot be cleared by a reason or a direct check: change the person or the time/);
-    expect(assessAvailability(input({ conflicts: [{ ...firm, kind: "leave", overridable: true, label: "approved leave" }] })).reasons.join(" ")).toMatch(/approved leave can only be cleared, with a documented check, when a booking is confirmed/);
+    expect(assessAvailability(input({ conflicts: [{ ...firm, kind: "leave", overridable: false, label: "approved leave" }] })).reasons.join(" ")).toMatch(/leave is changed only through the leave workflow/);
     expect(assessAvailability(input({ conflicts: [firm, soft] })).state).toBe("conflicting");
   });
   it("TENTATIVELY available when nothing firm overlaps but the person was not asked directly, the check was not accepted, or a possible clash exists", () => {

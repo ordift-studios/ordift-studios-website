@@ -84,3 +84,49 @@ export function duplicateMessage(matches: StaffClientMatch[]): string {
   const names = matches.slice(0, 3).map((m) => `${m.displayName}${m.maskedEmail ? ` (${m.maskedEmail})` : m.maskedPhone ? ` (${m.maskedPhone})` : ""}`).join("; ");
   return `This email or phone number matches an existing client: ${names}. Use “Find an existing client” above to choose them, or tick “This is a different person” and record the enquiry again.`;
 }
+
+// ---- INDEXED LOOKUP (database function public.staff_client_lookup): how its answer is read, and when the application may fall back.
+// The database already masks and caps. The application still refuses anything that is not EXACTLY the minimal masked shape, so a wrong or widened function can never put
+// more on a screen than the in-memory path would.
+export const RPC_COLUMNS = ["contact_id", "display_name", "organisation_name", "matched_by", "masked_email", "masked_phone", "earlier_enquiries"] as const;
+export const RPC_LIMIT = MAX_RESULTS + 1;
+export type LookupPath = "indexed" | "in_memory_fallback";
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const MASKED_EMAIL = /^[^•@\s]•••@[^\s@]+$/;
+const MASKED_PHONE = /^•••• \d{3}$/;
+
+export function fromRpcRow(row: unknown, kind: QueryKind): StaffClientMatch | null {
+  if (!row || typeof row !== "object" || Array.isArray(row)) return null;
+  const r = row as Record<string, unknown>;
+  const keys = Object.keys(r);
+  if (keys.length !== RPC_COLUMNS.length || !RPC_COLUMNS.every((k) => keys.includes(k))) return null;      // an extra or missing column is refused, never passed on
+  if (typeof r.contact_id !== "string" || !UUID.test(r.contact_id)) return null;
+  if (typeof r.display_name !== "string" || !r.display_name.trim()) return null;
+  if (r.organisation_name !== null && typeof r.organisation_name !== "string") return null;
+  if (r.matched_by !== kind) return null;
+  if (r.masked_email !== null && !(typeof r.masked_email === "string" && MASKED_EMAIL.test(r.masked_email))) return null;
+  if (r.masked_phone !== null && !(typeof r.masked_phone === "string" && MASKED_PHONE.test(r.masked_phone))) return null;
+  if (typeof r.earlier_enquiries !== "number" || !Number.isInteger(r.earlier_enquiries) || r.earlier_enquiries < 0) return null;
+  return { contactId: r.contact_id, displayName: r.display_name, organisationName: r.organisation_name as string | null, matchedBy: kind, maskedEmail: r.masked_email as string | null, maskedPhone: r.masked_phone as string | null, earlierEnquiries: r.earlier_enquiries };
+}
+
+export type RpcOutcome =
+  | { ok: true; matches: StaffClientMatch[]; moreMatches: boolean }
+  | { ok: false; reason: "function_missing" | "bad_input" | "failed" };
+
+// ONLY "the function does not exist" may fall back to the in-memory path (it is the same staff-only, masked, audited answer, just slower). A permission refusal, an
+// unreadable answer or any other database error fails CLOSED: nothing is shown.
+export function readRpcResult(kind: QueryKind, res: { data: unknown; error: { code?: string; message?: string } | null }): RpcOutcome {
+  if (res.error) {
+    const code = res.error.code ?? ""; const msg = res.error.message ?? "";
+    if (code === "PGRST202" || code === "42883" || /could not find the function/i.test(msg)) return { ok: false, reason: "function_missing" };
+    if (/ordift:lookup_bad_/.test(msg)) return { ok: false, reason: "bad_input" };
+    return { ok: false, reason: "failed" };
+  }
+  if (!Array.isArray(res.data) || res.data.length > RPC_LIMIT) return { ok: false, reason: "failed" };
+  const mapped = res.data.map((row) => fromRpcRow(row, kind));
+  if (mapped.some((m) => m === null)) return { ok: false, reason: "failed" };
+  const ranked = rankAndCap(mapped as StaffClientMatch[]);
+  return { ok: true, matches: ranked.shown, moreMatches: ranked.moreMatches };
+}

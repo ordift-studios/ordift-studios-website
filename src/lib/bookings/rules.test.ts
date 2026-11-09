@@ -116,11 +116,11 @@ describe("overlap with a confirmed assignment of the same person is not overrida
     crewSlots: [{ id: "s1", reference: "CSR-1", assigneeId: "p1", requestStatus: "confirmed", startDate: "2026-12-14", endDate: "2026-12-14", isTest: false }],
     leave: [{ id: "l1", profileId: "p1", startDate: "2026-12-14", endDate: "2026-12-14" }] };
   const good = (key: string): any => ({ key, kind: "availability_verified", verifiedWithProfileId: "p1", method: "call", reference: "call with the assignee, 8 Nov", verifiedOn: today });
-  it("classifies a confirmed booking and a confirmed Crew Support slot as firm and NOT overridable, and approved leave as firm and overridable", () => {
+  it("classifies a confirmed booking, a confirmed Crew Support slot and approved leave as firm and NOT overridable", () => {
     const all = classifyConflicts("p1", [seg()], c, "e9");
     for (const x of all.filter((x) => x.kind === "booking")) expect(x).toMatchObject({ firm: true, overridable: false });
-    for (const x of all.filter((x) => x.kind === "leave")) expect(x).toMatchObject({ firm: true, overridable: true });
-    expect(isOverridableKind("crew_slot", true)).toBe(false); expect(isOverridableKind("crew_slot", false)).toBe(true); expect(isOverridableKind("booking", true)).toBe(false); expect(isOverridableKind("leave", true)).toBe(true);
+    for (const x of all.filter((x) => x.kind === "leave")) expect(x).toMatchObject({ firm: true, overridable: false });
+    for (const k of ["booking", "crew_slot", "leave"] as const) for (const f of [true, false]) expect(isOverridableKind(k, f)).toBe(false);
   });
   it("NO resolution, however well documented, clears such an overlap, and the blocker tells the person to change the person or the time", () => {
     const hard = classifyConflicts("p1", [seg()], c, "e9").filter((x) => x.kind === "booking");

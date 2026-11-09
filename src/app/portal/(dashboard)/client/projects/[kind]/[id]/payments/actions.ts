@@ -34,8 +34,9 @@ export type GatewayCheckoutState = {
 // plain <form action> as before TD-036) because a rate_changed result
 // must re-render this form in place with the fresh amount rather than
 // navigate away and lose the customer's amount/method selection —
-// every other outcome (success, or any pre-existing error) still
-// redirects exactly as before.
+// a success still redirects to the provider, an already-paid balance to
+// its receipt, and a signed-out client to login. Every refusal is returned
+// as state so the client keeps their choices (and cannot double-submit).
 export async function startGatewayCheckoutAction(
   _prevState: GatewayCheckoutState,
   formData: FormData
@@ -51,12 +52,12 @@ export async function startGatewayCheckoutAction(
   const quotedConvertedAmount = Number(formData.get("quotedConvertedAmount"));
 
   if (!isProjectKind(kind) || !id || !paymentType || !Number.isFinite(quotedConvertedAmount)) {
-    redirect(`/portal/client/projects/${kind}/${id}/payments/checkout?error=invalid-request`);
+    return { error: "invalid-request" };
   }
 
   const rateLimit = await checkRateLimit(`checkout-init:${user.id}`);
   if (!rateLimit.allowed) {
-    redirect(`/portal/client/projects/${kind}/${id}/payments/checkout?error=rate-limited`);
+    return { error: "rate-limited" };
   }
 
   const origin = process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000";
@@ -94,7 +95,8 @@ export async function startGatewayCheckoutAction(
     if ("paymentId" in result) {
       redirect(`/portal/client/projects/${kind}/${id}/payments/${result.paymentId}/receipt`);
     }
-    redirect(`/portal/client/projects/${kind}/${id}/payments/checkout?error=${encodeURIComponent(result.error)}`);
+    // A refusal is RETURNED, not redirected: the form stays mounted, so the amount, the method and the step the client chose are kept and nothing is retried automatically.
+    return { error: result.error };
   }
 
   redirect(result.checkoutUrl);
