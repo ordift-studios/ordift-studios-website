@@ -1,12 +1,12 @@
 #!/bin/bash
 # LOCAL REHEARSAL ONLY (never Production). Applies PROPOSAL_portal_claims.sql to the lab inside ONE transaction that is ROLLED BACK, with synthetic enquiries, and checks the whole claim process: who may create an
 # invitation, wrong codes and locking, expiry, single use, staff and creator refused, an already-owned record, revocation, the ownership trigger (staff-recorded vs website-form), Super Admin release and its
-# refusal once money exists, and the rollback. The lab is untouched afterwards.
+# refusal once money exists, and the rollback. If the lab already has the proposal, it is first removed INSIDE the transaction. The lab is untouched afterwards.
 C=${1:-ordift-mig-check2}; DB=${2:-p4_e2e}; D="$(cd "$(dirname "$0")" && pwd)"
 q() { docker exec -i "$C" psql -U supabase_admin -h 127.0.0.1 -d "$DB" -X -q -v ON_ERROR_STOP=1 -At; }
 snap() { echo "select (select count(*) from public.enquiries)||'/'||(select count(*) from public.enquiries where user_id is not null)||'/'||(select count(*) from public.activity_log)||'/'||coalesce(to_regclass('public.enquiry_portal_claims')::text,'no-table')" | q; }
 before=$(snap)
-{ echo "begin;"; grep -v -E '^(begin|commit);$' "$D/PROPOSAL_portal_claims.sql"; cat <<'SQL'
+{ echo "begin;"; grep -v -E '^(begin|commit);$' "$D/ROLLBACK_portal_claims.sql"; grep -v -E '^(begin|commit);$' "$D/PROPOSAL_portal_claims.sql"; cat <<'SQL'
 create or replace function pg_temp.must(c boolean, msg text) returns void language plpgsql as $$ begin if not coalesce(c, false) then raise exception 'REHEARSAL FAILED: %', msg; end if; end $$;
 create or replace function pg_temp.err(s text) returns text language plpgsql as $$ begin execute s; return ''; exception when others then return sqlerrm; end $$;
 create or replace function pg_temp.h(t text) returns text language sql as $$ select encode(sha256(convert_to(t, 'UTF8')), 'hex') $$;
@@ -76,7 +76,7 @@ rollback;
 SQL
 } | q
 echo "-- rollback"
-{ echo "begin;"; grep -v -E '^(begin|commit);$' "$D/PROPOSAL_portal_claims.sql"; grep -v -E '^(begin|commit);$' "$D/ROLLBACK_portal_claims.sql"; cat <<'SQL'
+{ echo "begin;"; grep -v -E '^(begin|commit);$' "$D/ROLLBACK_portal_claims.sql"; grep -v -E '^(begin|commit);$' "$D/PROPOSAL_portal_claims.sql"; grep -v -E '^(begin|commit);$' "$D/ROLLBACK_portal_claims.sql"; cat <<'SQL'
 do $$ begin if to_regclass('public.enquiry_portal_claims') is not null or to_regprocedure('public.attempt_portal_claim(text,text,uuid)') is not null or exists (select 1 from pg_trigger where tgname = 'enquiries_owner_guard') then raise exception 'ROLLBACK REHEARSAL FAILED: something is still there'; end if; end $$;
 select 'PORTAL CLAIMS ROLLBACK REHEARSAL PASSED';
 rollback;
