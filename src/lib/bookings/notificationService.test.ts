@@ -36,7 +36,7 @@ const admin = {
   },
 };
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: () => admin }));
-const send = vi.fn(); const recipients = vi.fn(); const suppressed = vi.fn(); const superAdmin = vi.fn(); const audit = vi.fn(async () => undefined);
+const send = vi.fn<(...a: unknown[]) => unknown>(); const recipients = vi.fn<(...a: unknown[]) => unknown>(); const suppressed = vi.fn<(...a: unknown[]) => unknown>(); const superAdmin = vi.fn<(...a: unknown[]) => unknown>(); const audit = vi.fn<(...a: unknown[]) => Promise<undefined>>(async () => undefined);
 vi.mock("@/lib/notifications/dispatch", () => ({ dispatchNotification: (...a: unknown[]) => send(...a) }));
 vi.mock("@/lib/notifications/recipients", () => ({ resolveNewBookingRecipients: (...a: unknown[]) => recipients(...a) }));
 vi.mock("@/lib/enquiry/lifecycleEmails", () => ({ clientEmailsSuppressed: (...a: unknown[]) => suppressed(...a) }));
@@ -97,7 +97,7 @@ describe("failure, retry and the audit record", () => {
     const again = await retryBookingNotification({ actorUserId: "sa", confirmationId: "c1", audience: "client" }, ON); expect(again.ok).toBe(false); expect(send).toHaveBeenCalledTimes(1);
   });
   it("an internal retry only addresses the people not yet reached", async () => {
-    send.mockImplementation(async (e: { email: { to: string } }) => (e.email.to === "ad@x.test" ? { email: { ok: false, error: "mailbox-full", attempts: 3, permanent: true } } : okLogged));
+    send.mockImplementation(async (ev: unknown) => { const e = ev as { email: { to: string } }; return (e.email.to === "ad@x.test" ? { email: { ok: false, error: "mailbox-full", attempts: 3, permanent: true } } : okLogged); });
     await dispatchBookingNotifications("c1", ON); expect(job("internal")).toMatchObject({ status: "failed" });
     send.mockReset(); send.mockResolvedValue(okLogged); await retryBookingNotification({ actorUserId: "sa", confirmationId: "c1", audience: "internal" }, ON);
     const to = send.mock.calls.map((c) => (c[0] as { email: { to: string } }).email.to); expect(to).toEqual(["ad@x.test"]); expect(job("internal")).toMatchObject({ status: "sent", attempt_count: 2 });
