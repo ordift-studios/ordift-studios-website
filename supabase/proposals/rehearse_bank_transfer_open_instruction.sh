@@ -1,6 +1,6 @@
 #!/bin/bash
 # LOCAL REHEARSAL ONLY (never Production). Applies PROPOSAL_bank_transfer_one_open_instruction.sql to the lab inside ONE transaction that is ROLLED BACK, with synthetic payment rows, and checks:
-# compatibility with existing rows, the one-open-instruction rule, every legitimate repeated-payment case, the preflight refusal when duplicates exist, and the rollback. The lab is untouched afterwards.
+# (it first removes the index INSIDE the transaction if the lab already has it) compatibility with existing rows, the one-open-instruction rule, every legitimate repeated-payment case, the preflight refusal when duplicates exist, and the rollback. The lab is untouched afterwards.
 C=${1:-ordift-mig-check2}; DB=${2:-p4_e2e}; D="$(cd "$(dirname "$0")" && pwd)"
 q() { docker exec -i "$C" psql -U supabase_admin -h 127.0.0.1 -d "$DB" -X -q -v ON_ERROR_STOP=1 -At; }
 snap() { echo "select (select count(*) from public.payments)||'/'||(select count(*) from public.activity_log)||'/'||(select count(*) from public.bank_transfer_verifications)||'/'||(select count(*) from public.payment_completion_claims)||'/'||coalesce((select indexname from pg_indexes where indexname='payments_one_open_bank_transfer_instruction'),'no-index')" | q; }
@@ -15,7 +15,7 @@ declare id uuid := gen_random_uuid(); begin
   return id; end $$;
 SQL
 )
-{ echo "begin;"; echo "$HELPERS"; grep -v -E '^(begin|commit);$' "$D/PROPOSAL_bank_transfer_one_open_instruction.sql"; cat <<'SQL'
+{ echo "begin;"; echo "$HELPERS"; grep -v -E '^(begin|commit);$' "$D/ROLLBACK_bank_transfer_one_open_instruction.sql"; grep -v -E '^(begin|commit);$' "$D/PROPOSAL_bank_transfer_one_open_instruction.sql"; cat <<'SQL'
 do $$ declare a uuid := 'ff475186-3b33-4ea0-90fe-5280d2b1b7d7'; b uuid := '4010fc9c-f5c6-4f4d-8845-64856df35647'; e1 text := 'rehearsal-enquiry-1'; e2 text := 'rehearsal-enquiry-2'; p1 uuid; p2 uuid; r text; n0 int := (select count(*) from public.payments);
 begin
   -- 1 the rule: a second OPEN bank-transfer instruction for the same client, record and type is refused by the database
@@ -52,14 +52,14 @@ rollback;
 SQL
 } | q
 echo "-- preflight: with duplicates already present the proposal must refuse BEFORE building anything"
-out=$({ echo "begin;"; echo "$HELPERS"; cat <<'SQL'
+out=$({ echo "begin;"; echo "$HELPERS"; grep -v -E '^(begin|commit);$' "$D/ROLLBACK_bank_transfer_one_open_instruction.sql"; cat <<'SQL'
 select pg_temp.mk('rehearsal-dup', 'ff475186-3b33-4ea0-90fe-5280d2b1b7d7', 'partial', 'pending');
 select pg_temp.mk('rehearsal-dup', 'ff475186-3b33-4ea0-90fe-5280d2b1b7d7', 'partial', 'pending');
 SQL
 grep -v -E '^(begin|commit);$' "$D/PROPOSAL_bank_transfer_one_open_instruction.sql"; echo "rollback;"; } | docker exec -i "$C" psql -U supabase_admin -h 127.0.0.1 -d "$DB" -X -q -v ON_ERROR_STOP=1 -At 2>&1)
 echo "$out" | grep -q "preflight_duplicate_open_bank_transfers: 1 group" && echo "PASSED: duplicates are reported in plain words and nothing is built" || { echo "FAILED: preflight did not refuse. Output: $out"; exit 1; }
 echo "-- rollback: proposal then rollback leaves no index, and duplicates are possible again"
-{ echo "begin;"; echo "$HELPERS"; grep -v -E '^(begin|commit);$' "$D/PROPOSAL_bank_transfer_one_open_instruction.sql"; grep -v -E '^(begin|commit);$' "$D/ROLLBACK_bank_transfer_one_open_instruction.sql"; cat <<'SQL'
+{ echo "begin;"; echo "$HELPERS"; grep -v -E '^(begin|commit);$' "$D/ROLLBACK_bank_transfer_one_open_instruction.sql"; grep -v -E '^(begin|commit);$' "$D/PROPOSAL_bank_transfer_one_open_instruction.sql"; grep -v -E '^(begin|commit);$' "$D/ROLLBACK_bank_transfer_one_open_instruction.sql"; cat <<'SQL'
 select pg_temp.must(not exists (select 1 from pg_indexes where indexname = 'payments_one_open_bank_transfer_instruction'), 'the index is gone after the rollback');
 select pg_temp.mk('rehearsal-rb', 'ff475186-3b33-4ea0-90fe-5280d2b1b7d7', 'partial', 'pending');
 select pg_temp.mk('rehearsal-rb', 'ff475186-3b33-4ea0-90fe-5280d2b1b7d7', 'partial', 'pending');
