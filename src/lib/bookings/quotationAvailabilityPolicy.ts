@@ -30,7 +30,7 @@ export function decideQuotationAvailability(i: PolicyInput): PolicyDecision {
     return { ok: true, mode: "independent", conditional: false, summary: "Recorded as not dependent on a specific person or time." };
   }
   const conditional = (why: string): PolicyDecision => i.conditionalAck
-    ? { ok: true, mode: "conditional", conditional: true, summary: `Issued as a conditional quotation: ${why}` }
+    ? { ok: true, mode: "conditional", conditional: true, summary: `Conditional quotation: ${why}` }
     : { ok: false, code: "ack_needed", error: "Availability cannot be confirmed, so this can only be issued as a CONDITIONAL quotation. Tick the box to issue it with the sentence “Scheduling is subject to confirmation” added to its terms." };
   if (!i.hasEnquiry) return conditional("it is not linked to an enquiry, so availability could not be checked.");
   if (!i.latest) return { ok: false, code: "check_needed", error: "Run an availability check for this enquiry first (on the enquiry page). The check is not a reservation." };
