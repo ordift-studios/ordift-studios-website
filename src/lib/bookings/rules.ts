@@ -1,7 +1,7 @@
 // BOOKING CONFIRMATION - pure rules (no I/O). The database enforces the same rules (supabase/proposals/PROPOSAL_booking_confirmation.sql: NOT applied anywhere until the Founder authorises it);
 // this module gives the screen and the server the same reading so they can show blockers BEFORE a confirmation is attempted. Thresholds and categories are DATA (booking_rule_settings), never constants here.
 import { paymentBlocker, type PaymentCondition } from "@/lib/crewSupport/paymentCondition";
-import { CONDITIONAL_SENTENCE } from "./quotationAvailabilityPolicy";
+import { stripConditionalSentences } from "./quotationAvailabilityPolicy";
 
 export const BOOKING_FLAG = "BOOKING_CONFIRMATION_ENABLED";
 export const bookingFlagOn = (env: Record<string, string | undefined> = process.env): boolean => env[BOOKING_FLAG] === "true";   // default OFF
@@ -36,7 +36,7 @@ export function readTerms(text: string): Hint[] {
 }
 export function classifyPaymentTerms(termsText: string | null | undefined, condition: PaymentCondition, depositPercent: number | null): TermsCheck {
   // the standard conditional-scheduling sentence (added when a quotation is issued as conditional) is not payment language: it must never change how the payment terms read, not even from "no terms" to "no payment language"
-  const text = (termsText ?? "").replace(CONDITIONAL_SENTENCE, "").trim();
+  const text = stripConditionalSentences(termsText).trim();
   if (!text) return "no_terms";                                            // the quotation says nothing at all: a person must clarify
   const hints = readTerms(text);
   if (hints.length === 0) return condition === "none" ? "no_payment_language" : "ambiguous";   // a structured upfront condition that the terms never mention is not confirmed by them

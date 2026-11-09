@@ -53,7 +53,7 @@ describe("applyAvailabilityPolicyForIssue", () => {
     expect(await apply({ conditionalAck: true })).toMatchObject({ ok: true, mode: "conditional", conditional: true });
     expect(String(q().payment_booking_terms)).toBe(`No payment is required before the booking is confirmed.\n${CONDITIONAL_SENTENCE}`);
     await apply({ conditionalAck: true }); expect(String(q().payment_booking_terms).split(CONDITIONAL_SENTENCE).length).toBe(3 - 1);   // still exactly one copy
-    expect(h.tables.activity_log.at(-1)!.metadata).toMatchObject({ mode: "conditional", conditionalSentenceAdded: true });
+    expect(h.tables.activity_log.at(-1)!.metadata).toMatchObject({ mode: "conditional", conditionalSentenceAdded: true, conditionalWording: { version: "2026-11-quotation-conditional-v1", status: "pending_final_legal_review" } });
   });
   it("CONFLICTING is refused (even with the acknowledgement) and nothing is recorded or changed", async () => {
     h.latest = chk("conflicting"); const r = await apply({ conditionalAck: true }); expect(r).toMatchObject({ ok: false, error: expect.stringMatching(/already known to be blocked/) }); expect(h.writes).toEqual([]);

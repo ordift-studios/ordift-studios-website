@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { classifyPaymentTerms } from "./rules";
-import { CONDITIONAL_SENTENCE, decideQuotationAvailability, hasConditionalSentence, outlookFor, withConditionalSentence, type PolicyInput } from "./quotationAvailabilityPolicy";
+import { CONDITIONAL_SENTENCE, CONDITIONAL_WORDING_STATUS, decideQuotationAvailability, hasConditionalSentence, outlookFor, withConditionalSentence, withoutConditionalSentence, type PolicyInput } from "./quotationAvailabilityPolicy";
 
 const base = (o: Partial<PolicyInput> = {}): PolicyInput => ({ flagOn: true, hasEnquiry: true, basis: "depends", independentReason: "", conditionalAck: false, latest: { state: "available", at: "2026-11-09T10:00:00Z", stale: false }, ...o });
 const latest = (state: "available" | "tentative" | "conflicting" | "unverified", stale = false) => ({ state, at: "2026-11-09T10:00:00Z", stale });
@@ -43,11 +43,26 @@ describe("decideQuotationAvailability", () => {
   });
 });
 
+const FOUNDER_WORDING = "This quotation is subject to confirmation of personnel availability and scheduling. Acceptance or payment does not, by itself, constitute confirmation of a booking. A booking is confirmed only when ORDIFT STUDIOS issues an explicit booking confirmation.";
+const LEGACY_WORDING = "Scheduling is subject to confirmation. This quotation does not confirm that any particular date, time or team member is available. A booking is confirmed only when Ordift Studios confirms the schedule in writing.";
+
 describe("conditional wording", () => {
-  it("is added once, keeps the existing terms, says scheduling is subject to confirmation and promises no availability", () => {
-    expect(CONDITIONAL_SENTENCE).toMatch(/subject to confirmation/); expect(CONDITIONAL_SENTENCE).toMatch(/does not confirm that any particular date, time or team member is available/);
+  it("is exactly the Founder's wording, marked pending final legal review", () => {
+    expect(CONDITIONAL_SENTENCE).toBe(FOUNDER_WORDING);
+    expect(CONDITIONAL_WORDING_STATUS).toBe("pending_final_legal_review");
+    expect(CONDITIONAL_SENTENCE).toMatch(/ORDIFT STUDIOS/);                                         // capitals, as the Founder wrote it
+  });
+  it("is added once, keeps the existing terms, and changes no payment obligation", () => {
     const t = withConditionalSentence("A 50% deposit is required to confirm the booking."); expect(t.startsWith("A 50% deposit")).toBe(true); expect(t.endsWith(CONDITIONAL_SENTENCE)).toBe(true);
     expect(withConditionalSentence(t)).toBe(t); expect(withConditionalSentence(null)).toBe(CONDITIONAL_SENTENCE); expect(hasConditionalSentence(t)).toBe(true); expect(hasConditionalSentence("x")).toBe(false);
+    expect(withoutConditionalSentence(t)).toBe("A 50% deposit is required to confirm the booking.");
+  });
+  it("recognises the earlier local wording: a draft carrying it is brought to the current wording (once), never kept alongside it, and it is never written again", () => {
+    const old = `No payment is required before the booking is confirmed.\n${LEGACY_WORDING}`;
+    expect(hasConditionalSentence(old)).toBe(true);
+    const up = withConditionalSentence(old); expect(up).toBe(`No payment is required before the booking is confirmed.\n${FOUNDER_WORDING}`); expect(up).not.toMatch(/Scheduling is subject to confirmation\./);
+    expect(withoutConditionalSentence(old)).toBe("No payment is required before the booking is confirmed.");
+    expect(classifyPaymentTerms(old, "none", null)).toBe(classifyPaymentTerms("No payment is required before the booking is confirmed.", "none", null));
   });
   it("does not disturb the payment-terms reading the booking rules use (it contains no payment language)", () => {
     for (const cond of ["none", "deposit", "full"] as const) {

@@ -9,7 +9,7 @@ import { ACCEPTANCE_CHANNELS } from "@/lib/crewSupport/quotationRules";
 import { DELIVERY_CHANNELS_UI } from "@/lib/commercial/quotationDeliveryChannels";
 import { ORDINARY_VALIDITY_DAYS, formatDate } from "@/lib/commercial/quotationValidity";
 import { shortFingerprint } from "@/lib/commercial/quotationDocument";
-import { CONDITIONAL_SENTENCE } from "@/lib/bookings/quotationAvailabilityPolicy";
+import { CONDITIONAL_SENTENCE, CONDITIONAL_WORDING_STATUS } from "@/lib/bookings/quotationAvailabilityPolicy";
 import type { QuotationAvailabilityContext } from "@/lib/bookings/quotationAvailabilityService";
 
 // Four different things, kept apart: CREATED (a draft exists), ISSUED (a person confirmed it, recording who/when/validity), DELIVERED (a person recorded how they gave it to the client:
@@ -90,6 +90,7 @@ export function QuotationStatusActions({ quotationId, status, defaultValidUntil,
                     {availability.outlook.outcome === "conditional" && (
                       <div className="rounded-lg bg-amber-50 p-2 font-sans text-caption text-amber-950 space-y-1">
                         <p>{availability.outlook.message} It can only be issued as a CONDITIONAL quotation. This sentence will be added to its terms: “{CONDITIONAL_SENTENCE}”</p>
+                        {CONDITIONAL_WORDING_STATUS === "pending_final_legal_review" && <p className="font-sans text-caption text-amber-900"><strong>Internal note (not shown to the client):</strong> this wording is pending final legal review and is not released to Production yet.</p>}
                         <label className="flex items-start gap-2 text-body-small"><input type="checkbox" name="conditionalAck" className="mt-1" /> Issue this as a conditional quotation.</label>
                       </div>
                     )}
