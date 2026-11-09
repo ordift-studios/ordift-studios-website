@@ -14,7 +14,7 @@ vi.mock("@/lib/admin/activityLog", () => ({
 vi.mock("@/lib/organization/authority", () => ({ authorizeWithSuperAdminOverride: async () => ({ ok: h.authorized, actedAsOverride: false }), GOVERNANCE_CAPABILITIES: { contractAdminister: "x" } }));
 
 import { loadFounderApproval, loadFounderApprovalView, recordFounderApproval, startLegalReview } from "./founderApprovalActions";
-import { registerControlledMaster } from "./masterRegistryActions";
+import { activateMasterVersion, registerControlledMaster } from "./masterRegistryActions";
 import type { FounderApprovalInput } from "./founderApproval";
 
 const sha = (b: Uint8Array) => createHash("sha256").update(b).digest("hex");
@@ -128,6 +128,23 @@ describe("recordFounderApproval", () => {
     h.db.failInsert = undefined;
     const v = versionRow("v11");
     expect(v.status).toBe("legal_review"); expect(v.approved_at).toBeNull(); expect(v.approved_by).toBeNull();
+  });
+});
+
+describe("legal-control interplay: the approval does not weaken or bypass activation", () => {
+  it("after a Founder approval the version still cannot be activated: the existing activation guard refuses because it is not yet the master's current version", async () => {
+    await registered();
+    expect((await recordFounderApproval({ versionId: "v11", input: input(), actorUserId: FOUNDER })).ok).toBe(true);
+    const r = await activateMasterVersion({ versionId: "v11", effectiveDate: new Date().toISOString().slice(0, 10), actorUserId: FOUNDER });
+    expect(r.ok).toBe(false);
+    expect(r.ok === false && r.error).toMatch(/not the current version/);
+    expect(versionRow("v11").status).toBe("approved"); expect(versionRow("vB").status).toBe("active");
+  });
+  it("a master with unresolved counsel-review markers cannot be registered, so it can never reach the approval step", async () => {
+    seed({}, { "masters-docx/OS-LGL-014/v1.1.docx": dirty, "masters-pdf/OS-LGL-014/v1.1.pdf": pdf }); versionRow("v11").master_docx_sha256 = sha(dirty);
+    const r = await registerControlledMaster({ versionId: "v11", actorUserId: FOUNDER });
+    expect(r.ok === false && r.error).toMatch(/unresolved counsel-review marker/);
+    expect((await recordFounderApproval({ versionId: "v11", input: input(), actorUserId: FOUNDER }) as { error: string }).error).toMatch(/not registered/);
   });
 });
 

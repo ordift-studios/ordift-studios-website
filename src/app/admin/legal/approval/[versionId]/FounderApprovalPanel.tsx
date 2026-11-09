@@ -48,11 +48,11 @@ export default function FounderApprovalPanel({ view }: { view: Found }) {
         </dl>
       </Card>
 
-      <Card title="What must be true before the approval can be recorded">
+      {!view.record && <Card title="What must be true before the approval can be recorded">
         <ul className="space-y-1 font-sans text-body-small">
           {view.preconditions.map((p) => (<li key={p.key} className="flex gap-2"><span aria-hidden>{p.ok ? "✓" : "○"}</span><span><span className="text-ordift-ink">{p.label}.</span> <span className="text-ordift-ink-muted">{p.detail}</span></span></li>))}
         </ul>
-      </Card>
+      </Card>}
 
       {view.record && m && (
         <Card title="The recorded Founder approval">
