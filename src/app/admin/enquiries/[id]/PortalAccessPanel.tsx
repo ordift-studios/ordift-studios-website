@@ -22,10 +22,8 @@ export default async function PortalAccessPanel({ enquiryId, viewerId, isSuperAd
           <p className="font-sans text-body-small text-ordift-ink">Linked to the client&apos;s portal account <strong>{v.owner.label}</strong>. The client can see this project and pay it online.</p>
           {isSuperAdmin && <details className="rounded-lg border border-black/10 p-3"><summary className="cursor-pointer font-sans text-caption font-medium">Wrong person? Release this project (Super Admin)</summary><div className="mt-3"><ReleaseOwnershipForm enquiryId={enquiryId} /></div></details>}
         </>
-      ) : open ? (
-        <p className="font-sans text-body-small text-ordift-ink">An invitation is open (see below). To issue a new one, revoke it first: a code cannot be shown again.</p>
       ) : (
-        <CreateInvitationForm enquiryId={enquiryId} defaultChannel={v.sourceChannel ?? "whatsapp"} />
+        <CreateInvitationForm enquiryId={enquiryId} defaultChannel={v.sourceChannel ?? "whatsapp"} hasOpen={Boolean(open)} />
       )}
       {v.invitations.length > 0 && (
         <div>
