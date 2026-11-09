@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState } from "react";
+import { useRestoringActionState } from "@/components/admin/useRestoringActionState";
 import { confirmApprovalNoticeAction, confirmFundingAction, linkSignatoryToFounderAction, recordExpenseAction, recordPermitAction, recordRegistrationAction, recordRenewalAction, setSignatoryCapacityAction, uploadEntityDocumentAction, viewEntityDocumentAction, type ActionState } from "./actions";
 import { ENTITY_DOCUMENT_TYPES, entityDocumentTypeLabel, type TrackedItem, type TrackedState } from "@/lib/organization/entityRegistry";
 import { EXPENSE_CATEGORIES, isExpenseEvidenceType, FUNDING_CHOICES, PAYMENT_METHODS, REIMBURSEMENT_CHOICES } from "@/lib/organization/expenseEntry";
@@ -166,10 +167,10 @@ function ExpenseForm({ entityId, receiptDocs }: { entityId: string; receiptDocs:
 }
 
 function RegistrationForm({ entityId, documents, missing }: { entityId: string; documents: RegistryDocView[]; missing: ("commercial_registration" | "tax_registration")[] }) {
-  const [state, action, pending] = useActionState<ActionState, FormData>(recordRegistrationAction, null);
+  const [state, action, pending, formRef] = useRestoringActionState<ActionState>(recordRegistrationAction, null);   // keeps what was typed when the registration is refused
   const docs = documents.filter((d) => !d.relation && d.sha256);
   return (
-    <form action={action} className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+    <form ref={formRef} action={action} className="grid grid-cols-1 sm:grid-cols-2 gap-2">
       <input type="hidden" name="entityId" value={entityId} />
       <select name="kind" required defaultValue="" className={input}>
         <option value="" disabled>Which registration…</option>

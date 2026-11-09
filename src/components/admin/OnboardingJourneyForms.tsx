@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState } from "react";
+import { useRestoringActionState } from "@/components/admin/useRestoringActionState";
 import { STEP7_UPLOAD_MAX_BYTES, STEP7_UPLOAD_MAX_LABEL } from "@/lib/organization/onboardingUploadLimit";
 import { SCHEDULE_A_FIELDS, INDEPENDENT_STATUS_ROUTES, PROFESSIONAL_ROLES, REGULATORY_APPROVAL_STATUSES, type ScheduleATerms } from "@/lib/legal/instructorAgreementTerms";
 import { IDENTITY_METHODS, IDENTITY_METHOD_LABELS } from "@/lib/legal/approvalAttestation";
@@ -58,12 +59,12 @@ export function ApprovalEvidenceForm({ onboardingId, versionId, documentCode }: 
 }
 
 export function AttestApprovalForm({ onboardingId, versionId, documentCode, today, evidence }: { onboardingId: string; versionId: string; documentCode: string; today: string; evidence: EvidenceOption[] }) {
-  const [state, action, pending] = useActionState<JourneyActionState, FormData>(attestApprovalAction, null);
+  const [state, action, pending, formRef] = useRestoringActionState<JourneyActionState>(attestApprovalAction, null);   // keeps what was typed when the attestation is refused
   return (
     <Box title="2. Attest the historical approval">
       <p className="font-sans text-caption text-ordift-ink-muted">This is an administrator attestation: you state the date and counsel shown in the evidence. Nothing is assumed: the registry&apos;s &ldquo;approved&rdquo; label that was set when the version was created carries no date and no evidence, so it is not proof of approval, and counsel associated with a different legal package is not treated as the approver of {documentCode}. The date you enter is counsel&apos;s own approval or confirmation date: the day the version was created or any later day, never earlier. You must also record how counsel&apos;s identity was checked independently; the sender&apos;s own confirmation is not enough. Your identity and today&apos;s date ({today}) are recorded as the verification, separately from the approval date. Nothing here activates or issues anything.</p>
       {evidence.length === 0 ? <p className="font-sans text-caption text-amber-900">No evidence has been stored for {documentCode} yet. Complete step 1 first.</p> : (
-        <form action={action} className="space-y-3">
+        <form ref={formRef} action={action} className="space-y-3">
           <input type="hidden" name="onboardingId" value={onboardingId} /><input type="hidden" name="versionId" value={versionId} /><input type="hidden" name="documentCode" value={documentCode} />
           <div><label className={label} htmlFor="evidenceDocumentId">Evidence file</label>
             <select id="evidenceDocumentId" name="evidenceDocumentId" required className={input} defaultValue={evidence[0].id}>{evidence.map((e) => <option key={e.id} value={e.id}>{e.name.slice(0, 110)} — SHA-256 {e.sha256.slice(0, 12)}…</option>)}</select>
