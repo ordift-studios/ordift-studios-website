@@ -1,9 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import Link from "next/link";
 import { ProofUploadForm, TransferInstructionsCard } from "@/components/payments/BankTransferPanels";
 import type { ReceivingAccountSnapshot } from "@/lib/payments/bankTransferRules";
+import { createInFlightLock } from "@/lib/payments/checkoutFormRules";
 
 type Instruction = { paymentId: string; recordId: string; convertedAmount: number; currencyCode: string; rateToUsd: number; rateLockedAt: string; receivingAccount: ReceivingAccountSnapshot };
 
@@ -28,6 +29,7 @@ export default function BankTransferCheckout({
   const [rate, setRate] = useState<number | null>(rateToUsd);
   const [rateChanged, setRateChanged] = useState(false);
   const [busy, setBusy] = useState(false);
+  const lock = useRef(createInFlightLock());           // one request at a time, taken before anything is awaited (a double click cannot start two)
   const [error, setError] = useState<string | null>(null);
 
   const amountUsd = mode === "full" ? balanceUsd : Number(custom) || 0;
@@ -36,7 +38,7 @@ export default function BankTransferCheckout({
   const paymentType = mode === "full" ? (hasExistingPayment ? "balance" : "full") : "partial";
 
   async function getInstructions() {
-    if (preview == null || !valid) return;
+    if (preview == null || !valid || !lock.current.tryAcquire()) return;
     setBusy(true);
     setError(null);
     try {
@@ -60,6 +62,7 @@ export default function BankTransferCheckout({
       setError(ERRORS[code] ?? "We couldn't prepare your transfer details right now. Please try again.");
     } finally {
       setBusy(false);
+      lock.current.release();
     }
   }
 
