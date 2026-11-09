@@ -42,7 +42,7 @@ import { deferClientNotice, dispatchBookingNotifications, recordManualClientNoti
 const ON = { BOOKING_CONFIRMATION_ENABLED: "true" }; const okLogged = { email: { ok: true, mode: "logged", attempts: 0 } };
 const seg = (cid: string, day: string, h = 10) => ({ confirmation_id: cid, seq: 1, starts_at: `2026-12-${day}T${String(h).padStart(2, "0")}:00:00Z`, ends_at: `2026-12-${day}T${String(h + 1).padStart(2, "0")}:00:00Z`, timezone: "Africa/Accra", kind: "studio", location: "Synthetic studio, Accra", platform: null, note: null });
 const job = (id: string, c: string, a: string, ev: string, extra: Row = {}) => ({ id, confirmation_id: c, enquiry_id: "e1", audience: a, event: ev, status: "pending", attempt_count: 0, last_attempted_at: null, deliveries: [], recipient_count: 0, provider_result: null, last_error: null, target_profile_id: null, ...extra });
-function seed(over: { owner?: string | null; email?: string | null } = {}) {
+function seed(over: { owner?: string | null; email?: string | null; staff?: boolean } = {}) {
   tables = {
     // v1 confirmed 15 Dec (client was TOLD: sent job), v2 changed to 18 Dec
     enquiry_booking_confirmations: [
@@ -50,7 +50,7 @@ function seed(over: { owner?: string | null; email?: string | null } = {}) {
       { id: "c2", enquiry_id: "e1", version: 2, kind: "changed", quotation_id: "q1", assigned_profile_id: "p2", confirmed_by: "sa", supersedes_id: "c1", agreement_required: false, agreement_id: null, payment_condition: "full", verified_paid_usd: 400, outstanding_usd: 0, basis: null, reason: null },
     ],
     enquiry_booking_segments: [seg("c1", "15"), seg("c2", "18", 9)],
-    enquiries: [{ id: "e1", reference_number: "ENQ-JRN-GHP", email: over.email === undefined ? "typed@example.test" : over.email, full_name: "Ama Mensah", service: "photography", user_id: over.owner === undefined ? null : over.owner, amount_paid: 400 }],
+    enquiries: [{ id: "e1", reference_number: "ENQ-JRN-GHP", email: over.email === undefined ? "typed@example.test" : over.email, full_name: "Ama Mensah", service: "photography", user_id: over.owner === undefined ? null : over.owner, amount_paid: 400, created_by: over.staff ? "staff1" : null }],
     client_quotations: [{ id: "q1", quotation_reference: "ORD-QUO-JRN-GHP" }], agreements: [],
     profiles: [{ id: "p1", full_name: "Old Person", member_number: "INT0007", access_status: "active" }, { id: "p2", full_name: "New Person", member_number: "INT0008", access_status: "active" }, { id: "sa", full_name: "Lab super_admin", member_number: "INT0001", access_status: "active" }],
     roles: [{ id: "r-staff", slug: "staff" }, { id: "r-admin", slug: "admin" }, { id: "r-sa", slug: "super_admin" }], user_roles: [{ user_id: "p1", role_id: "r-staff" }, { user_id: "p2", role_id: "r-staff" }],
@@ -135,6 +135,14 @@ describe("where the client notice may go", () => {
     expect(j("j2c")).toMatchObject({ status: "skipped", provider_result: "suppressed" }); expect(String(j("j2c").body_text)).toContain("Booking reference: ENQ-JRN-GHP".replace("Booking reference: ", "")); expect(sentTo()).not.toContain("typed@example.test");
   });
   it("no e-mail on file, or the reserved placeholder: skipped", async () => { for (const email of [null, "enq-jrn-ghp@no-email.invalid"]) { seed({ email }); await dispatchBookingNotifications("c2", ON); expect(j("j2c")).toMatchObject({ status: "skipped", provider_result: "no_email" }); } });
+});
+
+describe("a staff-recorded enquiry", () => {
+  it("is never auto-mailed on the typed address even when its e-mail suppression setting allows lifecycle e-mails; the claimed owner's verified account address is used instead", async () => {
+    seed({ staff: true }); suppressed.mockResolvedValue(false); await dispatchBookingNotifications("c2", ON);
+    expect(j("j2c")).toMatchObject({ status: "skipped", provider_result: "suppressed" }); expect(sentTo()).not.toContain("typed@example.test");
+    seed({ staff: true, owner: "owner1" }); send.mockClear(); await dispatchBookingNotifications("c2", ON); expect(j("j2c").status).toBe("sent"); expect(sentTo()).toContain("account@example.test"); expect(sentTo()).not.toContain("typed@example.test");
+  });
 });
 
 describe("recording that staff told the client (the workflow when e-mail is unavailable)", () => {

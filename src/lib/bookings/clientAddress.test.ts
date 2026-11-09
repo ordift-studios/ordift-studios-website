@@ -15,6 +15,8 @@ describe("chooseClientAddress", () => {
   it("no owner: a website-form address is used (existing policy); a staff-recorded one is not; no address is no address", () => {
     expect(chooseClientAddress(base)).toEqual({ send: true, to: "typed@example.test", via: "enquiry_email" });
     expect(chooseClientAddress({ ...base, suppressed: true })).toEqual({ send: false, reason: "suppressed" });
+    expect(chooseClientAddress({ ...base, staffRecorded: true, suppressed: false })).toEqual({ send: false, reason: "suppressed" });          // staff allowed the lifecycle e-mails: booking details still need the verified route
+    expect(chooseClientAddress({ ...base, staffRecorded: true, hasOwner: true, ownerEmail: "a@b.test", ownerConfirmed: true })).toMatchObject({ send: true, via: "portal_account" });   // once the client has claimed the project, the verified account address is used
     expect(chooseClientAddress({ ...base, enquiryEmail: null })).toEqual({ send: false, reason: "no_email" });
     expect(chooseClientAddress({ ...base, enquiryEmailIsPlaceholder: true, suppressed: true })).toEqual({ send: false, reason: "no_email" });
   });

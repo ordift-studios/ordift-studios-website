@@ -44,7 +44,7 @@ async function loadNotice(confirmationId: string) {
   if (!c) return null;
   const [{ data: all }, { data: e }, { data: q }, { data: by }, { data: ag }, { data: jobs }] = await Promise.all([
     db.from("enquiry_booking_confirmations").select("id, version, kind, supersedes_id").eq("enquiry_id", c.enquiry_id as string).order("version", { ascending: false }),
-    db.from("enquiries").select("id, reference_number, email, full_name, service, user_id, amount_paid").eq("id", c.enquiry_id as string).maybeSingle(),
+    db.from("enquiries").select("id, reference_number, email, full_name, service, user_id, amount_paid, created_by").eq("id", c.enquiry_id as string).maybeSingle(),
     c.quotation_id ? db.from("client_quotations").select("quotation_reference").eq("id", c.quotation_id as string).maybeSingle() : Promise.resolve({ data: null }),
     c.confirmed_by ? db.from("profiles").select("full_name, member_number").eq("id", c.confirmed_by as string).maybeSingle() : Promise.resolve({ data: null }),
     c.agreement_id ? db.from("agreements").select("agreement_reference").eq("id", c.agreement_id as string).maybeSingle() : Promise.resolve({ data: null }),
@@ -70,7 +70,7 @@ async function loadNotice(confirmationId: string) {
   const renewed = versions.some((v) => v.version < (c.version as number) && v.kind === "cancelled");
   void prevRow;
   return {
-    c, kind, enquiry: e as { id: string; reference_number: string; email: string | null; full_name: string | null; service: string; user_id: string | null; amount_paid: number | string | null }, sessions,
+    c, kind, enquiry: e as { id: string; reference_number: string; email: string | null; full_name: string | null; service: string; user_id: string | null; amount_paid: number | string | null; created_by?: string | null }, sessions,
     clientPrevious, predecessorSessions, latestVersion, quotationReference: (q as { quotation_reference: string } | null)?.quotation_reference ?? null, assignedLabel: labelOf(assignee), confirmedByLabel: labelOf(by),
     agreementReference: (ag as { agreement_reference: string } | null)?.agreement_reference ?? null, renewed,
   };
@@ -107,7 +107,7 @@ async function resolveClientAddress(n: Notice) {
   const owner = n.enquiry.user_id ? await accountAddress(n.enquiry.user_id) : null;
   const placeholder = !n.enquiry.email || isPlaceholderEmail(n.enquiry.email);
   const suppressed = n.enquiry.user_id || placeholder ? false : await clientEmailsSuppressed(n.enquiry.id, "booking-notice-client");
-  return chooseClientAddress({ hasOwner: Boolean(n.enquiry.user_id), ownerEmail: owner?.email ?? null, ownerConfirmed: owner?.confirmed ?? false, ownerLookupFailed: owner?.failed, enquiryEmail: n.enquiry.email, enquiryEmailIsPlaceholder: placeholder, suppressed });
+  return chooseClientAddress({ hasOwner: Boolean(n.enquiry.user_id), ownerEmail: owner?.email ?? null, ownerConfirmed: owner?.confirmed ?? false, ownerLookupFailed: owner?.failed, enquiryEmail: n.enquiry.email, enquiryEmailIsPlaceholder: placeholder, suppressed, staffRecorded: Boolean(n.enquiry.created_by) });
 }
 async function resolveAssigned(profileId: string | null): Promise<{ ok: true; userId: string; email: string } | { ok: false }> {
   if (!profileId) return { ok: false };
