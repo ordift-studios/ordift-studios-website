@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import Link from "next/link";
+import { loadSchedulingStatus } from "@/lib/bookings/schedulingStatusService";
 import { crmStageLabel } from "@/lib/portal/data";
 import { pathwayLabel } from "@/lib/enquiry/pathways";
 import { getEnquiryById, getEnquiryNotes, getAmountDueProvenance, describeAmountDueProvenance, CRM_STAGES } from "@/lib/admin/enquiries";
@@ -71,6 +72,7 @@ export default async function AdminEnquiryDetailPage({ params }: { params: Promi
   ]);
 
   if (!enquiry) notFound();
+  const scheduling = await loadSchedulingStatus({ id: enquiry.id, crmStage: enquiry.crmStage, paymentStatus: enquiry.paymentStatus, amountPaid: enquiry.amountPaid });   // derived; null while booking confirmation is off
   const earlierCheck = bookingPanel && bookingPanel.level !== "staff" ? await loadLatestAvailabilityCheck(id) : null;
 
   const canManageAmount = hasCapability(user, PAYMENT_CAPABILITIES, "manage_project_amount");
@@ -246,6 +248,12 @@ export default async function AdminEnquiryDetailPage({ params }: { params: Promi
                 <StartHandlingButton enquiryId={enquiry.id} />
               </div>
             )}
+            {scheduling ? (
+              <div className={`mb-4 rounded-lg border px-3 py-2 ${scheduling.code === "booked_without_record" ? "border-red-300 bg-red-50" : "border-amber-300 bg-amber-50"}`} data-testid="scheduling-status">
+                <p className="font-sans text-body-small font-semibold text-ordift-ink">{scheduling.label}</p>
+                <p className="font-sans text-caption text-ordift-ink-muted">{scheduling.detail}</p>
+              </div>
+            ) : null}
             {canEditCrmStage ? (
               <UpdateStageForm
                 enquiryId={enquiry.id}
