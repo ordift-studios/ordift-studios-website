@@ -16,12 +16,14 @@ function Copy({ text, label }: { text: string; label: string }) {
 }
 
 // The link and the code are shown ONCE, here. Only hashes are stored, so they cannot be shown again.
-export function CreateInvitationForm({ enquiryId, defaultChannel }: { enquiryId: string; defaultChannel: string }) {
+export function CreateInvitationForm({ enquiryId, defaultChannel, hasOpen }: { enquiryId: string; defaultChannel: string; hasOpen: boolean }) {
   const [state, action, pending, formRef] = useRestoringActionState<InvitationState>(createInvitationAction, null);
   const guard = useSubmitGuard(pending);
   return (
     <div className="space-y-4">
-      <form ref={formRef} action={action} onSubmit={guard} className="grid gap-3 sm:grid-cols-3">
+      {/* The form stays mounted after it succeeds (the page refreshes and an invitation is then "open"), so the one-time link and code below do not disappear. */}
+      {hasOpen && !state?.ok ? <p className="font-sans text-body-small text-ordift-ink">An invitation is open (see below). To issue a new one, revoke it first: a code cannot be shown again.</p> : null}
+      <form ref={formRef} action={action} onSubmit={guard} hidden={hasOpen} className="grid gap-3 sm:grid-cols-3">
         <input type="hidden" name="enquiryId" value={enquiryId} />
         <label className="font-sans text-caption text-ordift-ink-muted">How you will give it to the client
           <select name="channel" required defaultValue={CLAIM_CHANNELS.includes(defaultChannel as never) ? defaultChannel : "whatsapp"} className={`${input} mt-1`}>{CLAIM_CHANNELS.map((c) => <option key={c} value={c}>{CHANNEL_LABELS[c]}</option>)}</select>
