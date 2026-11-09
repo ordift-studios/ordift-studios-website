@@ -36,10 +36,12 @@ export default async function BankTransferReview({ payment, canVerify }: { payme
   const admin = createAdminClient();
   const today = new Date().toISOString().slice(0, 10);
   const table = payment.entity_type === "enquiry" ? "enquiries" : "workshop_registrations";
-  const [{ data: receivable }, history, { data: claim }] = await Promise.all([
+  const [{ data: receivable }, history, { data: claim }, { data: otherOpen }] = await Promise.all([
     admin.from(table).select("amount_due, amount_paid, payment_status").eq("id", payment.entity_id).maybeSingle(),
     listVerificationHistory(payment.id),
     admin.from("payment_completion_claims").select("completed_at").eq("payment_id", payment.id).eq("outcome", "completed").maybeSingle(),
+    // Other instructions on this record that are still open (not yet verified, failed or rejected): shown so a verifier can see when the open instructions together would exceed what is owed.
+    admin.from("payments").select("record_id, reference_amount_usd, status, payment_method").eq("entity_type", payment.entity_type).eq("entity_id", payment.entity_id).neq("id", payment.id).in("status", ["pending", "awaiting_verification", "additional_info_required"]),
   ]);
   type QuotationRef = { id: string; quotation_reference: string; status: string; total: number | string; currency: string };
   let quotation: QuotationRef | null = null as QuotationRef | null;
@@ -50,6 +52,8 @@ export default async function BankTransferReview({ payment, canVerify }: { payme
   const due = receivable?.amount_due != null ? Number(receivable.amount_due) : null;
   const paid = Number(receivable?.amount_paid ?? 0);
   const outstanding = due == null ? null : Math.max(0, Math.round((due - paid) * 100) / 100);
+  const otherOpenUsd = Math.round((otherOpen ?? []).reduce((sum, p) => sum + Number(p.reference_amount_usd ?? 0), 0) * 100) / 100;
+  const overCommitted = due != null && payment.status !== "completed" && paid + Number(payment.reference_amount_usd) + otherOpenUsd > due + 0.005;
   const snap = payment.receiving_account_snapshot;
   const needsPosting = payment.status === "completed" && !claim?.completed_at;
 
@@ -57,6 +61,11 @@ export default async function BankTransferReview({ payment, canVerify }: { payme
     <div className="space-y-8 mb-8">
       <section className="rounded-xl border border-black/10 bg-white p-6">
         <h2 className="font-serif font-medium text-lg text-ordift-ink mb-4">Bank transfer — {bankTransferStatusLabel(payment.status, "admin")}</h2>
+        {overCommitted && (
+          <p role="note" className="mb-4 rounded-lg border border-amber-300 bg-amber-50 p-3 font-sans text-caption text-amber-950">
+            Other open instructions on this record ({(otherOpen ?? []).map((o) => `${o.record_id} USD ${Number(o.reference_amount_usd).toFixed(2)}`).join(", ")}) together with this one would take the total above what is owed (USD {money(due)}). Nothing is wrong yet: every approval is checked against what is still owed, so a later one that no longer fits is refused. You may want to ask the client which of these they intend to pay.
+          </p>
+        )}
         <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-4">
           <div>
             <dt className={dt}>Client was asked to transfer</dt>
