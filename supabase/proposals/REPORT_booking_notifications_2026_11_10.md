@@ -27,7 +27,7 @@ Subject "New Booking Confirmed — <reference>". Reference, client, service, quo
   > Hello Ama,
   > The date or arrangements for your Photography booking (reference ENQ-JRN-GHP) have changed.
   > Previously: Thursday, 17 December 2026, 14:00–15:00 (Africa/Accra, GMT)
-  > Now confirmed: Friday 18 December 2026, 09:00–10:00 (Africa/Accra, GMT)
+  > Now confirmed: Friday, 18 December 2026, 09:00–10:00 (Africa/Accra, GMT)
   > Arrangement: At the studio — Synthetic studio, Accra
   > Your booking remains confirmed on the new details above. If they do not suit you, contact support@ordiftstudios.com quoting ENQ-JRN-GHP.
 
