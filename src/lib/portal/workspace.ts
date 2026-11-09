@@ -506,6 +506,14 @@ export async function getWorkspacePaymentById(
 
   if (error || !row) return null;
 
+  // A verified bank transfer keeps the bank's reference in its own column (payments.bank_transaction_reference); rows verified before that column existed keep it in gateway_reference. Read tolerantly:
+  // if the column is not there yet (the migration not applied) the receipt simply shows what gateway_reference holds, exactly as before.
+  let displayReference: string | null = row.gateway_reference;
+  if (!displayReference && row.payment_method === "bank_transfer") {
+    const { data: bank, error: bankError } = await supabase.from("payments").select("bank_transaction_reference").eq("id", row.id).maybeSingle();
+    if (!bankError) displayReference = (bank?.bank_transaction_reference as string | null | undefined) ?? null;
+  }
+
   return {
     id: row.id,
     businessId: row.business_id,
@@ -532,7 +540,7 @@ export async function getWorkspacePaymentById(
     paymentMethod: row.payment_method,
     status: row.status,
     provider: row.provider,
-    gatewayReference: row.gateway_reference,
+    gatewayReference: displayReference,
     idempotencyKey: row.idempotency_key,
     channel: row.channel,
     cardBrand: row.card_brand,

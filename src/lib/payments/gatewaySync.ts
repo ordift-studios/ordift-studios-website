@@ -1,4 +1,6 @@
 import { createAdminClient } from "@/lib/supabase/admin";
+import { openReviewCase } from "@/lib/payments/reviewCases";
+import { summarizeEntityPayments } from "@/lib/payments/entityPaymentTotals";
 import { sendPaymentReceiptEmail } from "@/lib/payments/receipts";
 import { advanceStageOnFullPayment } from "@/lib/payments/crmStageSync";
 import { logActivityAsSystem } from "@/lib/admin/activityLog";
@@ -251,6 +253,9 @@ export async function applyGatewayEventToPayment(
         received: event.amount,
         source,
       });
+      // The provider says money moved, but not the amount that was asked for: the customer MAY HAVE BEEN CHARGED. Marking the attempt Failed is correct for the books, but it must not be treated as
+      // an ordinary failure, so a manual-review case is opened (idempotent; best effort so it can never break the webhook).
+      await openReviewCase(admin, payment.id, "amount_mismatch", { expectedAmount: Number(payment.converted_amount), expectedCurrency: payment.payment_currency, receivedAmount: event.amount ?? null, receivedCurrency: event.currency ?? null }, source);
       await markClaimStep(admin, payment.id, "amount_mismatch", "completed_at");
       return { outcome: "amount-mismatch" };
     }
@@ -292,6 +297,7 @@ export async function applyGatewayEventToPayment(
           amount: event.amount,
           currency: event.currency,
         });
+        await openReviewCase(admin, payment.id, "completion_conflict", { reportedOutcome: "completed", currentStatus: current?.status ?? "unknown", amount: event.amount ?? null, currency: event.currency ?? null }, source);
         console.error("[payments] gateway reported completed for a payment already resolved differently — flagged for review", {
           paymentId: payment.id,
           currentStatus: current?.status,
@@ -480,22 +486,16 @@ export async function syncEntityPaymentStatus(entityType: string, entityId: stri
     .eq("entity_id", entityId)
     .eq("status", "completed");
 
-  // Summed in USD reference terms (reference_amount_usd), not the
-  // collected local-currency amount — amount_due on these entities is
-  // already a USD figure (the architecture's reference currency), so
-  // this keeps the two comparable.
-  const totalPaidUsd = (completedPayments ?? []).reduce((sum, p) => {
-    const isRefund = p.payment_type === "refund";
-    const amount = Number(p.reference_amount_usd ?? 0);
-    return isRefund ? sum - amount : sum + amount;
-  }, 0);
-
-  const amountDue = Number(entity.amount_due ?? 0);
-  const paymentStatus = totalPaidUsd <= 0 ? "Pending" : totalPaidUsd >= amountDue ? "Paid" : "Pending";
+  // Summed in USD reference terms (reference_amount_usd), not the collected local-currency amount: amount_due on these entities is already a USD figure. The calculation itself lives in ONE
+  // place (entityPaymentTotals.ts): only completed payments count and a completed refund subtracts.
+  const { totalPaidUsd, paymentStatus } = summarizeEntityPayments(
+    (completedPayments ?? []).map((p) => ({ status: "completed", payment_type: p.payment_type as string | null, reference_amount_usd: p.reference_amount_usd as number | string | null })),
+    entity.amount_due
+  );
 
   await admin
     .from(table)
-    .update({ amount_paid: Math.round(totalPaidUsd * 100) / 100, payment_status: paymentStatus })
+    .update({ amount_paid: totalPaidUsd, payment_status: paymentStatus })
     .eq("id", entityId);
 
   await advanceStageOnFullPayment(admin, entityType, entityId, paymentStatus);

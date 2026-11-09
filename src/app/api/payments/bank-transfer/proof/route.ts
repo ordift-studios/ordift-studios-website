@@ -128,7 +128,10 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: false, error: "upload-failed" }, { status: 502 });
   }
 
-  await admin
+  // Claim the payment for this proof. The update is conditional on the payment still being open for submission, and we check that it really changed a row: two simultaneous uploads for one payment
+  // both pass the status check above, but only ONE can win this update. The loser's file is not referenced by any payment record, so it is removed again (and the removal is audited); it is a
+  // duplicate of an upload the client has already made, never a record of money. Nothing is removed if the claim succeeded.
+  const { data: claimed, error: claimError } = await admin
     .from("payments")
     .update({
       proof_of_payment_asset_path: objectPath,
@@ -143,7 +146,19 @@ export async function POST(request: NextRequest) {
       reviewed_at: null,
     })
     .eq("id", payment.id)
-    .in("status", ["pending", "rejected", "additional_info_required"]);
+    .in("status", ["pending", "rejected", "additional_info_required"])
+    .select("id")
+    .maybeSingle();
+  if (claimError || !claimed) {
+    const { error: removeError } = await admin.storage.from("payment-proofs").remove([objectPath]);
+    if (removeError) console.error("[payments] could not remove an unreferenced proof file", objectPath, removeError.message);
+    await logActivityAsSystem({ actorUserId: user.id, action: "payment.proof_upload_discarded", entityType: "payment", entityId: payment.id, metadata: { reason: claimError ? "record_failed" : "payment_no_longer_open", objectPath, removed: !removeError } });
+    if (claimError) {
+      console.error("[payments] failed to record proof of payment", claimError.message);
+      return NextResponse.json({ ok: false, error: "failed-to-record-proof" }, { status: 500 });
+    }
+    return NextResponse.json({ ok: false, error: "payment-not-open-for-submission" }, { status: 409 });
+  }
 
   // TD-033: audited via logActivityAsSystem() (service-role client),
   // not logActivity() — activity_log's only insert policy is

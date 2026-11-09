@@ -133,6 +133,9 @@ export async function POST(request: NextRequest) {
       "id, entity_type, entity_id, user_id, converted_amount, payment_currency, reference_amount_usd, payment_type, status, exchange_rate, exchange_rate_source, exchange_rate_locked_at, provider, payment_method"
     )
     .eq("gateway_reference", event.gatewayReference)
+    // Card rows only, and never a refund row: a bank transfer's own reference must never be able to match a provider event, and a refund row carries the refund's reference, not the charge's.
+    .eq("payment_method", "gateway")
+    .neq("payment_type", "refund")
     .maybeSingle();
 
   if (!payment) {

@@ -1,4 +1,7 @@
 import type { Metadata } from "next";
+import { listOpenReviewCases } from "@/lib/payments/reviewCasesAdmin";
+import { REVIEW_REASON_LABELS } from "@/lib/payments/reviewCases";
+import ResolveReviewCaseForm from "./ResolveReviewCaseForm";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { canVerifyBankTransfers } from "@/lib/payments/bankTransferAccess";
@@ -33,6 +36,8 @@ export default async function AdminPaymentsPage() {
   const canManageBankAccounts = isSuperAdmin(user) && hasCapability(user, PAYMENT_CAPABILITIES, "manage_bank_accounts");
 
   const supabase = await createClient();
+  const canResolveCases = await canVerifyBankTransfers(user.id);
+  const reviewCases = await listOpenReviewCases();
 
   const [{ data: pending }, { data: recent }] = await Promise.all([
     supabase
@@ -82,6 +87,24 @@ export default async function AdminPaymentsPage() {
           )}
         </div>
       </div>
+
+      {reviewCases.length > 0 && (
+        <section className="mb-10" aria-labelledby="review-heading">
+          <h2 id="review-heading" className="font-serif font-medium text-lg text-ordift-ink mb-1">Needs review ({reviewCases.length})</h2>
+          <p className="font-sans text-caption text-ordift-ink-muted mb-4 max-w-2xl">These are payments where money may have moved in a way the system could not safely settle by itself. Nothing here is hidden, deleted or counted as revenue by being listed: a person checks the provider or the bank, then records what was done.</p>
+          <ul className="space-y-3">
+            {reviewCases.map((c) => (
+              <li key={c.id} className="rounded-xl border border-amber-300 bg-amber-50 p-4">
+                <p className="font-sans text-body-small font-semibold text-amber-950">{REVIEW_REASON_LABELS[c.reason].title}{c.payment?.recordId ? ` · ${c.payment.recordId}` : ""}</p>
+                <p className="font-sans text-caption text-amber-950 mt-1">{REVIEW_REASON_LABELS[c.reason].explain}</p>
+                {c.payment && <p className="font-sans text-caption text-amber-900 mt-1">{c.payment.method === "gateway" ? "Card" : "Bank transfer"} · {c.payment.currency} {c.payment.amount.toFixed(2)} (USD {c.payment.usd.toFixed(2)}) · status {c.payment.status} · <Link href={`/admin/payments/${c.payment.id}`} className="underline">open the payment</Link></p>}
+                <p className="font-sans text-caption text-amber-900 mt-1">Opened {formatDate(c.openedAt)} by {c.openedSource}{Object.keys(c.detail).length ? ` · ${Object.entries(c.detail).map(([k, v]) => `${k}: ${String(v)}`).join(", ")}` : ""}</p>
+                {canResolveCases ? <ResolveReviewCaseForm caseId={c.id} /> : <p className="font-sans text-caption text-amber-900 mt-2">Only a Super Admin or authorised Finance personnel can resolve this.</p>}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       <section className="mb-10">
         <h2 className="font-serif font-medium text-lg text-ordift-ink mb-1">
