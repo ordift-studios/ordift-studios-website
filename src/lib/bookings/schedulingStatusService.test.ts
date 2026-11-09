@@ -14,7 +14,7 @@ describe("loadSchedulingStatus", () => {
   it("is null while booking confirmation is off, whatever the data", async () => { expect(await loadSchedulingStatus(paid, OFF)).toBeNull(); });
   it("paid + no booking row -> Paid — scheduling pending", async () => { expect((await loadSchedulingStatus(paid, ON))?.label).toBe("Paid — scheduling pending"); });
   it("paid + live confirmed booking -> nothing to add", async () => { result = { data: { kind: "confirmed" }, error: null }; expect(await loadSchedulingStatus({ ...paid, crmStage: "booked" }, ON)).toBeNull(); });
-  it("a cancelled latest booking counts as no booking", async () => { result = { data: { kind: "cancelled" }, error: null }; expect((await loadSchedulingStatus(paid, ON))?.code).toBe("paid_scheduling_pending"); });
+  it("a cancelled latest booking reads Booking Cancelled — Rescheduling Pending", async () => { result = { data: { kind: "cancelled" }, error: null }; expect((await loadSchedulingStatus(paid, ON))?.code).toBe("cancelled_rescheduling_pending"); });
   it("a read error never invents a status (booking tables absent)", async () => { result = { data: null, error: { message: "relation does not exist" } }; expect(await loadSchedulingStatus(paid, ON)).toBeNull(); });
   it("a thrown error never invents a status", async () => { result = "throw"; expect(await loadSchedulingStatus(paid, ON)).toBeNull(); });
 });

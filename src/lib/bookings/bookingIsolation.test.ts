@@ -46,3 +46,29 @@ describe("the migration proposal", () => {
   it("re-checks the Super Admin, the entity's eligibility and the fingerprint inside the database", () => { expect(sql).toMatch(/booking_actor_is_super_admin\(p_actor\)/); expect(sql).toMatch(/private\.entity_issue_standing/); expect(sql).toMatch(/client_quotation\.content_fingerprint/); });
   it("is append-only and never touches payments, invoices or quotations", () => { expect(sql).toMatch(/booking_confirmations_append_only before update or delete/); expect(sql).not.toMatch(/(insert into|update|delete from) public\.(payments|payment_obligations|client_quotations)\b/); });
 });
+
+describe("booking notifications: only a confirmation sends them", () => {
+  const code = (f: string) => read(f).split("\n").filter((l) => !l.trim().startsWith("//")).join("\n");
+  it("no payment code, payment route or webhook imports the booking notification module", () => {
+    const offenders = src.filter(notTest).filter((f) => /^src\/(lib\/payments|app\/api\/(webhooks|payments)|app\/admin\/payments|app\/portal\/\(dashboard\)\/client\/projects\/\[kind\]\/\[id\]\/payments)/.test(f)).filter((f) => /bookings\/notification/.test(code(f)));
+    expect(offenders).toEqual([]);
+  });
+  it("only the booking service (after a successful confirmation) and the Super Admin retry action import the dispatcher", () => {
+    const importers = src.filter(notTest).filter((f) => /from\s+["'](@\/lib\/bookings\/notificationService|\.\/notificationService)["']/.test(read(f))).sort();
+    expect(importers).toEqual(["src/app/admin/enquiries/[id]/BookingNotificationsCard.tsx", "src/app/admin/enquiries/[id]/bookingActions.ts", "src/lib/bookings/panel.ts", "src/lib/bookings/service.ts"].sort());
+  });
+  it("the dispatch call sits after the confirmation RPC succeeded and nowhere in cancel / settings", () => {
+    const svc = code("src/lib/bookings/service.ts"); const confirm = svc.slice(svc.indexOf("export async function confirmOrdinaryBooking"), svc.indexOf("export async function cancelOrdinaryBooking"));
+    expect(confirm.indexOf("if (error || !data)")).toBeGreaterThan(-1); expect(confirm.indexOf("dispatchBookingNotifications(")).toBeGreaterThan(confirm.indexOf("if (error || !data)"));
+    expect(svc.slice(svc.indexOf("export async function cancelOrdinaryBooking"))).not.toContain("dispatchBookingNotifications");
+  });
+  it("the notification module sends only through the shared notification dispatcher (test mode applies) and never imports a provider", () => {
+    const n = code("src/lib/bookings/notificationService.ts"); expect(n).toContain("dispatchNotification("); expect(/from\s+["']resend["']|sendEmailNow|new Resend|nodemailer/.test(n)).toBe(false);
+  });
+  it("the proposal creates jobs only for a confirmation, grants no write, keeps sent rows immutable", () => {
+    const sql = read("supabase/proposals/PROPOSAL_booking_notifications.sql");
+    expect(sql).toMatch(/if new\.kind = 'confirmed' then/); expect(sql).toMatch(/after insert on public\.enquiry_booking_confirmations/); expect(sql).not.toMatch(/grant [^;]*(insert|update|delete)[^;]*on public\.booking_notification_jobs/i);
+    expect(sql).toMatch(/booking_notification_already_sent/); expect(sql).toMatch(/booking_notification_jobs_are_permanent/); expect(sql).toMatch(/unique \(confirmation_id, audience\)/);
+    expect(sql).not.toMatch(/(insert into|update|delete from) public\.(payments|enquiries|client_quotations)/i);
+  });
+});

@@ -5,6 +5,7 @@ import { actionFail, actionOk, runAction, type ActionState } from "@/lib/shared/
 import { getCurrentUser, isSuperAdmin } from "@/lib/portal/roles";
 import { listOverridePool } from "@/lib/crewSupport/candidates";
 import { bookingFlagOn, type Conflict, type Resolution } from "@/lib/bookings/rules";
+import { retryBookingNotification } from "@/lib/bookings/notificationService";
 import { confirmOrdinaryBooking, cancelOrdinaryBooking, loadBookingSettings, previewConflicts } from "@/lib/bookings/service";
 import { confirmSentenceFor, parseBookingForm, sentenceMatches } from "@/lib/bookings/form";
 import { assessDraft, loadAcceptedContext, loadCurrentBooking, todayUtc, type AcceptedContext } from "@/lib/bookings/panel";
@@ -75,7 +76,7 @@ export async function confirmBookingAction(_prev: ActionState, formData: FormDat
     });
     if (!result.ok) return actionFail(result.error);
     refresh(p.ctx.enquiry.id);
-    return actionOk(p.live ? "Booking changed. The previous version stays in the record. No payment, invoice or email was created." : "Booking confirmed. No payment, invoice or email was created.");
+    return actionOk(p.live ? "Booking changed. The previous version stays in the record. No payment or invoice was created and no client notice was sent (tell the client about the change yourself)." : "Booking confirmed. The client confirmation and the internal notice were recorded (see Notifications in this card). No payment or invoice was created.");
   }, "confirm booking");
 }
 
@@ -94,6 +95,20 @@ export async function cancelBookingAction(_prev: ActionState, formData: FormData
     const result = await cancelOrdinaryBooking({ actorUserId: user.id, enquiryId, reason: String(formData.get("reason") ?? "") });
     if (!result.ok) return actionFail(result.error);
     refresh(enquiryId);
-    return actionOk("Booking cancelled. The record of the booking is kept. Any refund or payment decision is a separate step.");
+    return actionOk("Booking cancelled. The record of the booking is kept, the accepted quotation and every payment are untouched, and the project reads \"Booking Cancelled — Rescheduling Pending\". The client is not emailed automatically: tell them yourself. Any refund or payment decision is a separate step.");
   }, "cancel booking");
+}
+
+// Super Admin: retry ONE failed / skipped / stale booking notification. A sent one can never be re-sent (the database refuses to claim it).
+export async function retryBookingNotificationAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  return runAction(async () => {
+    const user = await getCurrentUser();
+    if (!user || !isSuperAdmin(user)) return actionFail("Only a Super Admin can retry a booking notification.");     // authorisation FIRST
+    const audience = String(formData.get("audience") ?? "");
+    if (audience !== "client" && audience !== "internal") return actionFail("Unknown notification.");
+    const result = await retryBookingNotification({ actorUserId: user.id, confirmationId: String(formData.get("confirmationId") ?? ""), audience });
+    refresh(String(formData.get("enquiryId") ?? ""));
+    if (!result.ok) return actionFail(result.error);
+    return actionOk(`Retried: now ${result.status}.`);
+  }, "retry booking notification");
 }

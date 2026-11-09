@@ -3,6 +3,7 @@ import { getCurrentUser, type CurrentUser } from "@/lib/portal/roles";
 import { getContractingEntityStanding } from "@/lib/organization/entityRegistrations";
 import { listOverridePool } from "@/lib/crewSupport/candidates";
 import type { PaymentCondition } from "@/lib/crewSupport/paymentCondition";
+import { listBookingNotifications, type JobRow } from "./notificationService";
 import { bookingFlagOn, classifyPaymentTerms, confirmationBlockers, evaluateAgreement, projectPanel, type BookingSettings, type Conflict, type PanelFull, type Resolution, type Segment, type TermsCheck, type Viewer } from "./rules";
 import { loadBookingSettings, previewConflicts } from "./service";
 
@@ -96,7 +97,7 @@ export function projectBooking(b: CurrentBooking | null, level: "super_admin" | 
 export type BookingPanelData = {
   level: "super_admin" | "admin" | "staff"; enquiry: { id: string; reference: string }; quotation?: AcceptedContext["quotation"]; notReady?: string;
   current: CurrentBooking | null; assessment: ReturnType<typeof projectPanel>; settings: BookingSettings | null; assignable: { profileId: string; label: string }[]; canConfirm: boolean;
-  agreementReference: string | null; entityBlockers: string[];
+  agreementReference: string | null; entityBlockers: string[]; notifications: JobRow[];
 };
 export async function loadBookingPanel(enquiryId: string, env: Record<string, string | undefined> = process.env): Promise<BookingPanelData | null> {
   if (!bookingFlagOn(env)) return null;
@@ -115,10 +116,10 @@ export async function loadBookingPanel(enquiryId: string, env: Record<string, st
   if (!projected) return null;                                                                       // staff who are not the assigned person see nothing
   const assignable = isSuper ? (await listOverridePool([])).map((p) => ({ profileId: p.profileId, label: p.memberNumber ? `${p.memberNumber} — ${p.name}` : p.name })) : [];
   return { level: projected.level, enquiry: { id: ctx.enquiry.id, reference: ctx.enquiry.reference }, quotation: isSuper ? ctx.quotation : undefined, current: projectBooking(current, projected.level), assessment: projected, settings: isSuper ? settings : null, assignable, canConfirm: isSuper && Boolean(settings),
-    agreementReference: ctx.executedAgreement?.reference ?? null, entityBlockers: isSuper || isAdmin ? ctx.entityBlockers : [] };
+    agreementReference: ctx.executedAgreement?.reference ?? null, entityBlockers: isSuper || isAdmin ? ctx.entityBlockers : [], notifications: isSuper ? await listBookingNotifications(ctx.enquiry.id) : [] };
 }
 function emptyPanel(enquiryId: string, v: Viewer, notReady: string): BookingPanelData {
-  return { level: v.roles.includes("super_admin") ? "super_admin" : "admin", enquiry: { id: enquiryId, reference: "" }, notReady, current: null, assessment: null, settings: null, assignable: [], canConfirm: false, agreementReference: null, entityBlockers: [] };
+  return { level: v.roles.includes("super_admin") ? "super_admin" : "admin", enquiry: { id: enquiryId, reference: "" }, notReady, current: null, assessment: null, settings: null, assignable: [], canConfirm: false, agreementReference: null, entityBlockers: [], notifications: [] };
 }
 
 // Settings history for the versioned-settings screen (Super Admin only; the caller checks).

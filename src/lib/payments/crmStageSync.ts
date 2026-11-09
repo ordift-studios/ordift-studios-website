@@ -4,7 +4,7 @@ import { logActivityAsSystem } from "@/lib/admin/activityLog";
 import { sendBookingConfirmedEmail } from "@/lib/enquiry/lifecycleEmails";
 import { sendNewBookingNotification } from "@/lib/notifications/newBookingNotification";
 import { bookingFlagOn } from "@/lib/bookings/rules";
-import { paymentMayBookEnquiry } from "@/lib/bookings/paymentStagePolicy";
+import { paymentAutoBookOptedOut, paymentMayBookEnquiry } from "@/lib/bookings/paymentStagePolicy";
 
 // TD-043 follow-up (Item 3, 2026-08-19) — the moment an enquiry's
 // aggregate payment status reaches "Paid", the booking is secured and
@@ -59,7 +59,7 @@ export async function advanceStageOnFullPayment(
   // booked ONLY by confirm_ordinary_booking (availability, conflicts, agreement, assigned person, payment condition). A full payment is
   // recorded normally and the project shows "Paid — scheduling pending" (derived, see paymentStagePolicy.ts); no stage change, no
   // "Booking Confirmed" client e-mail and no internal New Booking notification are produced by a payment. Switch off = legacy behaviour.
-  if (!paymentMayBookEnquiry({ flagOn: bookingFlagOn(), commercialIntent: intent?.commercial_intent as string | null | undefined })) return;
+  if (!paymentMayBookEnquiry({ flagOn: bookingFlagOn(), autoBookOff: paymentAutoBookOptedOut(), commercialIntent: intent?.commercial_intent as string | null | undefined })) return;
 
   // Every stage at or after "booked" in the canonical pipeline order —
   // none of these may ever be overwritten back to "booked".

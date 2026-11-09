@@ -17,7 +17,7 @@ const data = (roles: string[], over: Partial<BookingPanelData> = {}): BookingPan
   level: roles.includes("super_admin") ? "super_admin" : roles.includes("admin") ? "admin" : "staff", enquiry: { id: "e1", reference: "ENQ-2026-000042" },
   quotation: { id: "q1", reference: "Q-9", currency: "QAR", total: 1800, paymentCondition: "full", depositPercent: null, termsText: "Full payment is required in advance." },
   current, assessment: projectPanel(full, { id: roles.includes("staff") ? "p1" : "u", roles }, "p1"), settings: { version: 1, status: "provisional", thresholds: { QAR: 3000 }, alwaysCategories: [], escalators: ["minors", "multi_day_assignment"] },
-  assignable: [{ profileId: "p1", label: "M-0007 — Sara" }], canConfirm: roles.includes("super_admin"), agreementReference: null, entityBlockers: [], ...over });
+  assignable: [{ profileId: "p1", label: "M-0007 — Sara" }], canConfirm: roles.includes("super_admin"), agreementReference: null, entityBlockers: [], notifications: [], ...over });
 const html = (d: BookingPanelData) => renderToStaticMarkup(createElement(BookingPanel, { data: d }));
 
 describe("Booking panel", () => {
@@ -42,6 +42,6 @@ describe("Booking panel", () => {
   });
   it("a cancelled booking is shown as cancelled with its reason, and can be booked again", () => {
     const out = html(data(["super_admin"], { current: { ...current, kind: "cancelled", version: 2, reason: "Client withdrew in writing" } }));
-    expect(out).toContain("Cancelled (version 2): Client withdrew in writing"); expect(out).toContain("Confirm this booking"); expect(out).not.toContain("Cancel this booking");
+    expect(out).toContain("Booking Cancelled — Rescheduling Pending (version 2): Client withdrew in writing"); expect(out).toContain("Confirm this booking"); expect(out).not.toContain("Cancel this booking");
   });
 });

@@ -125,7 +125,7 @@ export default function BookingConfirmForm(p: {
           <label className={label} htmlFor="bk-sentence">To {verb} this booking, type exactly: <span className="font-semibold text-ordift-ink">{confirmSentenceFor(p.reference, verb)}</span></label>
           <input id="bk-sentence" className={input} value={sentence} autoComplete="off" onChange={(e) => { setSentence(e.target.value); setResult(null); }} />
           <button type="button" disabled={pending || sentence.trim() === ""} onClick={submit} className={`${btn} bg-ordift-gold-pressed text-white`}>{pending ? "Saving…" : p.isChange ? "Change booking" : "Confirm booking"}</button>
-          <p className="font-sans text-caption text-ordift-ink-muted">This records the booking and moves the enquiry to Booked. It sends no email and creates no payment, invoice or receivable.</p>
+          <p className="font-sans text-caption text-ordift-ink-muted">{p.isChange ? "This records the new version of the booking. It sends no client notice yet (tell the client about the change yourself) and creates no payment, invoice or receivable." : "This records the booking and moves the enquiry to Booked. It then sends the client's booking confirmation e-mail and the internal New Booking notice once each (their delivery records appear in this card) and creates no payment, invoice or receivable."}</p>
         </div>
       ) : null}
 

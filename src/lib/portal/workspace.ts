@@ -6,6 +6,7 @@ import {
   getEnquiryByIdForUser,
   getWorkshopRegistrationByIdForUser,
 } from "@/lib/portal/data";
+import { loadClientBookingView, type ClientBookingView } from "@/lib/bookings/clientView";
 import { loadSchedulingStatus, NEXT_AFTER_PAYMENT } from "@/lib/bookings/schedulingStatusService";
 import { clientSchedulingLabel } from "@/lib/bookings/paymentStagePolicy";
 import { crmStageProgress, nextCrmStage } from "@/lib/portal/dashboard";
@@ -105,6 +106,8 @@ export type WorkspaceBookingDetails = {
   instructors: string[];
   registrationStatus: string | null;
   waitingListPosition: number | null;
+  // enquiry only, and only while booking confirmation is on: the confirmed schedule, or an honest cancelled note
+  booking?: ClientBookingView | null;
 };
 
 export async function getWorkspaceBookingDetails(
@@ -126,6 +129,7 @@ export async function getWorkspaceBookingDetails(
       instructors: [],
       registrationStatus: null,
       waitingListPosition: null,
+      booking: await loadClientBookingView(enquiry.id),
     };
   }
 
