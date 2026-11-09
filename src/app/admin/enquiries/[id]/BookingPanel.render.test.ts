@@ -9,7 +9,7 @@ import type { BookingPanelData } from "@/lib/bookings/panel";
 import { projectPanel, type PanelFull } from "@/lib/bookings/rules";
 
 const full: PanelFull = { blockers: ["Full payment (USD 500.00) must be received before confirmation — USD 0.00 received so far."], operationalBlockers: ["The payment the quotation requires has not been verified yet."],
-  conflicts: [{ key: "leave:1", kind: "leave", firm: true, label: "approved leave", from: "2026-12-01", to: "2026-12-02" }], payment: { condition: "full", amountDueUsd: 500, verifiedPaidUsd: 0, outstandingUsd: 500 }, agreement: { required: false, reasons: [] }, confirmation: null };
+  conflicts: [{ key: "leave:1", kind: "leave", firm: true, overridable: true, label: "approved leave", from: "2026-12-01", to: "2026-12-02" }], payment: { condition: "full", amountDueUsd: 500, verifiedPaidUsd: 0, outstandingUsd: 500 }, agreement: { required: false, reasons: [] }, confirmation: null };
 const seg = { startsAt: "2026-12-01T06:00:00.000Z", endsAt: "2026-12-01T10:00:00.000Z", timezone: "Asia/Qatar", kind: "on_site" as const, location: "Doha studio", platform: null, note: null };
 const current = { id: "c1", version: 1, kind: "confirmed" as const, assignedProfileId: "p1", assignedLabel: "M-0007 — Sara", confirmedAt: "2026-11-08T10:00:00Z", reason: null, basis: "internal basis note", segments: [seg], settingsVersion: 1,
   payment: { condition: "full" as const, depositPercent: null, requiredUsd: 500, verifiedPaidUsd: 500, outstandingUsd: 0 }, agreementRequired: false, agreementReasons: [], conflictsReviewed: 0, clarification: null };

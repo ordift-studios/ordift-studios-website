@@ -18,14 +18,14 @@ begin
   perform pg_temp.must(jsonb_array_length(public.preview_booking_conflicts(p2::uuid, seg_adjacent, split_part(eb,'|',1)::uuid)) = 0, '11.5 a window that starts when the other ends is not a conflict');
   perform pg_temp.must(jsonb_array_length(public.preview_booking_conflicts(p3::uuid, seg_overlap, split_part(eb,'|',1)::uuid)) = 0, '11.6 another person is not affected');
   -- the preview and the confirmation agree: whatever the preview calls firm, confirmation refuses without documented verification; whatever it calls free, confirmation accepts
-  perform pg_temp.must(pg_temp.try(pg_temp.pl(eb, jsonb_build_object('assignedProfileId', p2, 'segments', seg_overlap))) ilike '%booking_firm_conflict%', '11.7 confirmation refuses the overlap the preview reported');
-  perform pg_temp.must(pg_temp.try(pg_temp.pl(eb, jsonb_build_object('assignedProfileId', p2, 'segments', seg_partial))) ilike '%booking_firm_conflict%', '11.8 confirmation refuses the partial overlap');
+  perform pg_temp.must(pg_temp.try(pg_temp.pl(eb, jsonb_build_object('assignedProfileId', p2, 'segments', seg_overlap))) ilike '%booking_overlap_not_overridable%', '11.7 confirmation refuses the overlap the preview reported');
+  perform pg_temp.must(pg_temp.try(pg_temp.pl(eb, jsonb_build_object('assignedProfileId', p2, 'segments', seg_partial))) ilike '%booking_overlap_not_overridable%', '11.8 confirmation refuses the partial overlap');
   perform pg_temp.must((select count(*) from public.enquiry_booking_confirmations where enquiry_id = split_part(eb,'|',1)::uuid) = 0, '11.9 the refused attempts left nothing behind');
   -- a pre-check that said "no conflict" does not protect against a booking confirmed in between: the confirmation re-checks and refuses
   pre := public.preview_booking_conflicts(p3::uuid, seg_overlap, split_part(ec,'|',1)::uuid);
   perform pg_temp.must(jsonb_array_length(pre) = 0, '11.10 the pre-check for person 3 found it free');
   perform pg_temp.conf(pg_temp.pl(eb, jsonb_build_object('assignedProfileId', p3, 'segments', seg_overlap)));      -- someone else is booked for person 3 in between
-  perform pg_temp.must(pg_temp.try(pg_temp.pl(ec, jsonb_build_object('assignedProfileId', p3, 'segments', seg_overlap))) ilike '%booking_firm_conflict%', '11.11 the earlier "free" result is not honoured: confirmation re-checks and refuses');
+  perform pg_temp.must(pg_temp.try(pg_temp.pl(ec, jsonb_build_object('assignedProfileId', p3, 'segments', seg_overlap))) ilike '%booking_overlap_not_overridable%', '11.11 the earlier "free" result is not honoured: confirmation re-checks and refuses');
   -- the same enquiry is never confirmed twice
   perform pg_temp.must(pg_temp.try(pg_temp.pl(ea, jsonb_build_object('assignedProfileId', p2, 'segments', seg_moved))) ilike '%booking_already_confirmed%', '11.12 an enquiry already confirmed cannot be confirmed again, only changed');
   -- editing one's own booking is not a conflict with itself; a change frees the old window and takes the new one

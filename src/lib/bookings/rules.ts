@@ -75,7 +75,10 @@ export function validateSegments(segments: Segment[]): string | null {
 const localDate = (iso: string, tz: string) => new Intl.DateTimeFormat("en-CA", { timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(iso));
 
 // ---- conflicts (same definition as the database: firm = confirmed booking, confirmed Crew Support slot, approved leave; soft = in progress)
-export type Conflict = { key: string; kind: "booking" | "crew_slot" | "leave"; firm: boolean; label: string; from: string; to: string };
+// overridable: false for a confirmed booking and a confirmed Crew Support slot (an assignment of the same person: nothing written or recorded clears it, only changing the person or the time);
+// true only for approved leave, which a documented direct check with the person can clear. A soft (in-progress) conflict never blocks.
+export type Conflict = { key: string; kind: "booking" | "crew_slot" | "leave"; firm: boolean; overridable: boolean; label: string; from: string; to: string };
+export const isOverridableKind = (kind: Conflict["kind"], firm: boolean) => kind === "leave" || (kind === "crew_slot" && !firm);
 export type Commitments = {
   bookings: { id: string; reference: string; assigneeId: string | null; enquiryId: string; segments: { startsAt: string; endsAt: string }[] }[];
   crewSlots: { id: string; reference: string; assigneeId: string; requestStatus: string; startDate: string; endDate: string; isTest: boolean }[];
@@ -87,18 +90,19 @@ export function classifyConflicts(assigneeId: string | null, segments: Segment[]
   for (const s of segments) {
     const from = localDate(s.startsAt, s.timezone), to = localDate(s.endsAt, s.timezone);
     for (const b of c.bookings) if (b.assigneeId === assigneeId && b.enquiryId !== excludeEnquiryId)
-      for (const g of b.segments) if (Date.parse(g.startsAt) < Date.parse(s.endsAt) && Date.parse(g.endsAt) > Date.parse(s.startsAt)) out.set(`booking:${b.id}`, { key: `booking:${b.id}`, kind: "booking", firm: true, label: b.reference, from: g.startsAt, to: g.endsAt });
+      for (const g of b.segments) if (Date.parse(g.startsAt) < Date.parse(s.endsAt) && Date.parse(g.endsAt) > Date.parse(s.startsAt)) out.set(`booking:${b.id}`, { key: `booking:${b.id}`, kind: "booking", firm: true, overridable: false, label: b.reference, from: g.startsAt, to: g.endsAt });
     for (const x of c.crewSlots) if (x.assigneeId === assigneeId && !x.isTest && !["declined", "cancelled"].includes(x.requestStatus) && x.startDate <= to && x.endDate >= from)
-      out.set(`crew_slot:${x.id}`, { key: `crew_slot:${x.id}`, kind: "crew_slot", firm: x.requestStatus === "confirmed", label: x.reference, from: x.startDate, to: x.endDate });
-    for (const l of c.leave) if (l.profileId === assigneeId && l.startDate <= to && l.endDate >= from) out.set(`leave:${l.id}`, { key: `leave:${l.id}`, kind: "leave", firm: true, label: "approved leave", from: l.startDate, to: l.endDate });
+      out.set(`crew_slot:${x.id}`, { key: `crew_slot:${x.id}`, kind: "crew_slot", firm: x.requestStatus === "confirmed", overridable: x.requestStatus !== "confirmed", label: x.reference, from: x.startDate, to: x.endDate });
+    for (const l of c.leave) if (l.profileId === assigneeId && l.startDate <= to && l.endDate >= from) out.set(`leave:${l.id}`, { key: `leave:${l.id}`, kind: "leave", firm: true, overridable: true, label: "approved leave", from: l.startDate, to: l.endDate });
   }
   return [...out.values()];
 }
 export type Resolution = { key: string; kind: string; verifiedWithProfileId?: string; method?: string; reference?: string; verifiedOn?: string };
-// A firm conflict is cleared ONLY by availability verified WITH the assigned person, documented (method, reference, a date that is not in the future). A reason alone never clears it.
+// A conflict with a confirmed booking or a confirmed Crew Support slot of the same person is NEVER cleared by anything written or recorded (not a reason, not a documented check): change the assigned person or
+// the time. Only an overridable firm conflict (approved leave) is cleared, by availability verified WITH the assigned person, documented (method, reference, a date that is not in the future).
 export function unresolvedFirmConflicts(conflicts: Conflict[], resolutions: Resolution[], assigneeId: string | null, today: string): Conflict[] {
-  return conflicts.filter((c) => c.firm && !resolutions.some((r) => r.key === c.key && r.kind === "availability_verified" && r.verifiedWithProfileId === assigneeId
-    && ["direct_message", "call", "in_person", "email"].includes(r.method ?? "") && (r.reference ?? "").trim().length >= 10 && !!r.verifiedOn && r.verifiedOn <= today));
+  return conflicts.filter((c) => c.firm && (!c.overridable || !resolutions.some((r) => r.key === c.key && r.kind === "availability_verified" && r.verifiedWithProfileId === assigneeId
+    && ["direct_message", "call", "in_person", "email"].includes(r.method ?? "") && (r.reference ?? "").trim().length >= 10 && !!r.verifiedOn && r.verifiedOn <= today)));
 }
 
 // ---- the blockers the confirm screen shows (the database re-checks every one of them)
@@ -116,7 +120,7 @@ export function confirmationBlockers(i: BlockerInput, opts: { redactAmounts?: bo
   const pay = paymentGate(i.payment.condition, i.payment.depositPercent, i.payment.amountDueUsd, i.payment.verifiedPaidUsd); if (pay) out.push(opts.redactAmounts ? PAYMENT_PENDING_REDACTED : pay);
   const terms = termsCheckBlocks(i.termsCheck, i.clarification); if (terms) out.push(terms);
   const seg = validateSegments(i.segments); if (seg) out.push(seg);
-  for (const c of unresolvedFirmConflicts(i.conflicts, i.resolutions, i.assigneeId, i.today)) out.push(`Firm scheduling conflict with ${c.label}: reassign or reschedule, or document that the assigned person has verified their availability.`);
+  for (const c of unresolvedFirmConflicts(i.conflicts, i.resolutions, i.assigneeId, i.today)) out.push(c.overridable ? `Firm scheduling conflict with ${c.label}: reassign or reschedule, or document that the assigned person has verified their availability.` : `The assigned person is already committed to ${c.label} at this time. Change the assigned person or the time: a written explanation cannot clear a confirmed overlap.`);
   return out;
 }
 

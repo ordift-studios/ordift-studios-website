@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { validateStructuredCondition, bookingFlagOn, canConfirm, classifyConflicts, classifyPaymentTerms, confirmationBlockers, evaluateAgreement, paymentGate, projectPanel, termsCheckBlocks, unresolvedFirmConflicts, validateSegments, type BookingSettings, type Segment } from "./rules";
+import { validateStructuredCondition, bookingFlagOn, canConfirm, classifyConflicts, isOverridableKind, classifyPaymentTerms, confirmationBlockers, evaluateAgreement, paymentGate, projectPanel, termsCheckBlocks, unresolvedFirmConflicts, validateSegments, type BookingSettings, type Segment } from "./rules";
 
 const S: BookingSettings = { version: 1, status: "provisional", thresholds: { QAR: 3000, GHS: 10000, USD: 800 }, alwaysCategories: ["videography", "production_services", "talent_management", "drone_operations"],
   escalators: ["usage_rights_extended", "exclusivity", "minors", "third_party_ip", "restricted_location", "complex_or_unusual", "multi_day_assignment"] };
@@ -98,8 +98,8 @@ describe("scheduling conflicts for the same assigned person", () => {
     expect(classifyConflicts("p2", [seg()], c, "e9")).toEqual([]);
     expect(classifyConflicts(null, [seg()], c, "e9")).toEqual([]);
   });
-  it("a reason alone never clears a firm conflict; only documented availability verified WITH the assigned person does", () => {
-    const firm = classifyConflicts("p1", [seg()], c, "e9").filter((x) => x.firm);
+  it("a reason alone never clears a firm conflict; only documented availability verified WITH the assigned person does, and only for an overridable one (approved leave)", () => {
+    const firm = classifyConflicts("p1", [seg()], c, "e9").filter((x) => x.firm && x.overridable);
     const today = "2026-11-08";
     expect(unresolvedFirmConflicts(firm, [{ key: "booking:b1", kind: "overridden", reference: "I decided so, it is fine" }], "p1", today)).toHaveLength(firm.length);
     const good = (key: string): any => ({ key, kind: "availability_verified", verifiedWithProfileId: "p1", method: "call", reference: "call with the assignee, 8 Nov", verifiedOn: today });
@@ -107,6 +107,32 @@ describe("scheduling conflicts for the same assigned person", () => {
     expect(unresolvedFirmConflicts(firm, firm.map((x) => ({ ...good(x.key), verifiedWithProfileId: "p2" })), "p1", today)).toHaveLength(firm.length);
     expect(unresolvedFirmConflicts(firm, firm.map((x) => ({ ...good(x.key), verifiedOn: "2026-11-20" })), "p1", today)).toHaveLength(firm.length);
     expect(unresolvedFirmConflicts(firm, firm.map((x) => ({ ...good(x.key), reference: "short" })), "p1", today)).toHaveLength(firm.length);
+  });
+});
+
+describe("overlap with a confirmed assignment of the same person is not overridable", () => {
+  const today = "2026-11-08";
+  const c = { bookings: [{ id: "b1", reference: "ENQ-1", assigneeId: "p1", enquiryId: "e1", segments: [{ startsAt: "2026-12-14T10:00:00Z", endsAt: "2026-12-14T11:00:00Z" }] }],
+    crewSlots: [{ id: "s1", reference: "CSR-1", assigneeId: "p1", requestStatus: "confirmed", startDate: "2026-12-14", endDate: "2026-12-14", isTest: false }],
+    leave: [{ id: "l1", profileId: "p1", startDate: "2026-12-14", endDate: "2026-12-14" }] };
+  const good = (key: string): any => ({ key, kind: "availability_verified", verifiedWithProfileId: "p1", method: "call", reference: "call with the assignee, 8 Nov", verifiedOn: today });
+  it("classifies a confirmed booking and a confirmed Crew Support slot as firm and NOT overridable, and approved leave as firm and overridable", () => {
+    const all = classifyConflicts("p1", [seg()], c, "e9");
+    for (const x of all.filter((x) => x.kind === "booking")) expect(x).toMatchObject({ firm: true, overridable: false });
+    for (const x of all.filter((x) => x.kind === "leave")) expect(x).toMatchObject({ firm: true, overridable: true });
+    expect(isOverridableKind("crew_slot", true)).toBe(false); expect(isOverridableKind("crew_slot", false)).toBe(true); expect(isOverridableKind("booking", true)).toBe(false); expect(isOverridableKind("leave", true)).toBe(true);
+  });
+  it("NO resolution, however well documented, clears such an overlap, and the blocker tells the person to change the person or the time", () => {
+    const hard = classifyConflicts("p1", [seg()], c, "e9").filter((x) => x.kind === "booking");
+    expect(hard.length).toBeGreaterThan(0);
+    expect(unresolvedFirmConflicts(hard, hard.map((x) => good(x.key)), "p1", today)).toHaveLength(hard.length);
+    const blockers = confirmationBlockers({ quotationAccepted: true, entityEligible: true, agreement: { required: false, reasons: [], hasExecutedAgreement: false }, payment: { condition: "none", depositPercent: null, amountDueUsd: null, verifiedPaidUsd: 0 }, termsCheck: "consistent", clarification: null, segments: [seg()], conflicts: hard, resolutions: hard.map((x) => good(x.key)), assigneeId: "p1", today });
+    expect(blockers.join(" ")).toMatch(/Change the assigned person or the time: a written explanation cannot clear a confirmed overlap/);
+  });
+  it("adjacent, non-overlapping assignments are not conflicts at all", () => {
+    const s = seg(); const end = Date.parse(s.endsAt);
+    const adjacent = { ...s, startsAt: new Date(end).toISOString(), endsAt: new Date(end + 3600_000).toISOString() };
+    expect(classifyConflicts("p1", [adjacent], { bookings: [{ id: "b9", reference: "X", assigneeId: "p1", enquiryId: "e1", segments: [{ startsAt: s.startsAt, endsAt: s.endsAt }] }], crewSlots: [], leave: [] }, "e9")).toEqual([]);
   });
 });
 
@@ -119,7 +145,7 @@ describe("blockers shown before confirmation", () => {
 });
 
 describe("who sees what", () => {
-  const full = { blockers: ["b: USD 500.00 needed"], operationalBlockers: ["b"], conflicts: [{ key: "k", kind: "booking" as const, firm: true, label: "ENQ-1", from: "a", to: "b" }], payment: { condition: "deposit" as const, amountDueUsd: 1000, verifiedPaidUsd: 500, outstandingUsd: 500 }, agreement: { required: true, reasons: ["x"] }, confirmation: { secret: 1 } };
+  const full = { blockers: ["b: USD 500.00 needed"], operationalBlockers: ["b"], conflicts: [{ key: "k", kind: "booking" as const, firm: true, overridable: false, label: "ENQ-1", from: "a", to: "b" }], payment: { condition: "deposit" as const, amountDueUsd: 1000, verifiedPaidUsd: 500, outstandingUsd: 500 }, agreement: { required: true, reasons: ["x"] }, confirmation: { secret: 1 } };
   it("only a Super Admin sees everything and can confirm", () => { expect(projectPanel(full, { id: "u", roles: ["super_admin"] }, null)).toMatchObject({ level: "super_admin", payment: { amountDueUsd: 1000 } }); expect(canConfirm({ id: "u", roles: ["admin"] })).toBe(false); expect(canConfirm({ id: "u", roles: ["super_admin"] })).toBe(true); });
   it("an administrator sees operational blockers, not amounts or the confirmation record", () => { const p = projectPanel(full, { id: "u", roles: ["admin"] }, null) as any; expect(p.level).toBe("admin"); expect(p.payment).toBeUndefined(); expect(p.confirmation).toBeUndefined(); expect(JSON.stringify(p)).not.toMatch(/USD|\d+\.\d\d/); expect(p.blockers).toEqual(["b"]); });
   it("staff see only the conflicts on their own assignment; others see nothing", () => {

@@ -58,7 +58,7 @@ def check(label, res, want_ok, want_other=None):
     ok = res.count("OK") == want_ok and (want_other is None or all(r == want_other for r in res if r != "OK"))
     print(f"{'PASS' if ok else 'FAIL'}  {label}: {res}"); (None if ok else bad.append(label))
 for i in range(8):                      # A
-    n += 2; (e1, q1), (e2, q2) = mk(n - 1), mk(n); day = f"2027-02-{10+i:02d}"; check(f"A{i} two enquiries, same person, overlapping", race([payload(e1, q1, P1, 6, day), payload(e2, q2, P1, 7, day)]), 1, "ordift:booking_firm_conflict")
+    n += 2; (e1, q1), (e2, q2) = mk(n - 1), mk(n); day = f"2027-02-{10+i:02d}"; check(f"A{i} two enquiries, same person, overlapping", race([payload(e1, q1, P1, 6, day), payload(e2, q2, P1, 7, day)]), 1, "ordift:booking_overlap_not_overridable")
 for i in range(4):                      # B
     ps = []
     for k, (h, d) in enumerate([(12, 4), (13, 2), (14, 3)]): n += 1; e, q = mk(n); ps.append(payload(e, q, P1, h, f"2027-03-{1+i:02d}", d))   # 12-16, 13-15, 14-17: every pair overlaps
