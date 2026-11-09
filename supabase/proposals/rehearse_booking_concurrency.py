@@ -8,7 +8,7 @@ The proposal is applied FOR REAL (committed) so that several separate database s
   E. two different people, same time                                          -> both succeed
 Afterwards the committed rows are cleared (triggers off) and the proposal is rolled back with its own rollback script. Exit code 0 only if every round behaves."""
 import subprocess, sys, time, uuid, re, concurrent.futures as cf, os
-C = os.environ.get("LAB_DB_CONTAINER", "ordift-mig-check2"); DB = "p4_e2e"; D = os.path.dirname(os.path.abspath(__file__))
+C = os.environ.get("LAB_DB_CONTAINER", "ordift-mig-check2"); DB = os.environ.get("LAB_DB_NAME", "p4_e2e"); D = os.path.dirname(os.path.abspath(__file__))
 def psql(sql, check=True):
     r = subprocess.run(["docker", "exec", "-i", C, "psql", "-U", "supabase_admin", "-h", "127.0.0.1", "-d", DB, "-X", "-q", "-At", "-v", "ON_ERROR_STOP=1"], input=sql.encode(), capture_output=True)
     if check and r.returncode: raise SystemExit("SQL failed: " + r.stderr.decode()[:400])
