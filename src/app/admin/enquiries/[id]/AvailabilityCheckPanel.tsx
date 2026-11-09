@@ -16,6 +16,7 @@ const STYLE: Record<AvailabilityState, { box: string; icon: string }> = {
   conflicting: { box: "border-red-300 bg-red-50 text-red-950", icon: "✕" },
   unverified: { box: "border-black/20 bg-black/5 text-ordift-ink", icon: "?" },
 };
+const span = (v: string) => (v.length > 10 ? `${v.slice(0, 16).replace("T", " ")} UTC` : v);     // bookings carry exact instants (shown in UTC); leave and crew slots carry dates
 const when = (iso: string) => new Date(iso).toISOString().replace("T", " ").slice(0, 16) + " UTC";
 
 export default function AvailabilityCheckPanel({ enquiryId, data }: { enquiryId: string; data: AvailabilityPanelData }) {
@@ -73,7 +74,7 @@ export default function AvailabilityCheckPanel({ enquiryId, data }: { enquiryId:
             <p className="font-sans text-body font-semibold"><span aria-hidden>{STYLE[result.state].icon} </span>{STATE_LABEL[result.state]}</p>
             <p className="font-sans text-caption">{STATE_MEANING[result.state]}</p>
             <ul className="list-disc pl-5 font-sans text-body-small">{result.reasons.map((r) => <li key={r}>{r}</li>)}</ul>
-            {result.conflicts.length > 0 ? <ul className="list-disc pl-5 font-sans text-body-small">{result.conflicts.map((c) => <li key={`${c.kind}${c.from}${c.label}`}>{c.firm ? "Firm" : "Possible clash"}: {c.label} ({c.from.slice(0, 16).replace("T", " ")} to {c.to.slice(0, 16).replace("T", " ")})</li>)}</ul> : null}
+            {result.conflicts.length > 0 ? <ul className="list-disc pl-5 font-sans text-body-small">{result.conflicts.map((c) => <li key={`${c.kind}${c.from}${c.label}`}>{c.firm ? "Firm" : "Possible clash"}: {c.label} ({span(c.from)} to {span(c.to)})</li>)}</ul> : null}
             <p className="font-sans text-caption">{NOT_A_RESERVATION}</p>
           </div>
         ) : null}
