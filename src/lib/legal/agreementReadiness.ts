@@ -7,6 +7,7 @@ import { resolveApprovalDate, classifyRegistryApproval, IDENTITY_METHOD_LABELS, 
 // back-filled or assumed: a blank approval date stays blank, an unconfirmed contracting entity stays unconfirmed.
 
 export type VersionFacts = {
+  version?: string | null; // the registry row's own version label (informational; it is not part of the content reference)
   status: string;
   approvedBy: string | null;
   approvedAt: string | null;
@@ -126,7 +127,7 @@ export function assessAgreementReadiness(i: AgreementReadinessInput): AgreementR
       checks.push(ok("content_reference", "Register controlled master", "The stored master is registered under a controlled content reference."));
     } else {
       const derived = traceable && v.masterDocxPath && v.masterPdfPath && v.masterDocxSha256 && v.masterPdfSha256
-        ? deriveMasterContentReference({ code: i.code, version: "1.0", docxPath: v.masterDocxPath, docxSha256: v.masterDocxSha256, pdfPath: v.masterPdfPath, pdfSha256: v.masterPdfSha256 })
+        ? deriveMasterContentReference({ code: i.code, version: v.version ?? "", docxPath: v.masterDocxPath, docxSha256: v.masterDocxSha256, pdfPath: v.masterPdfPath, pdfSha256: v.masterPdfSha256 })
         : null;
       checks.push(
         open("missing", "content_reference", "Register controlled master", `The masters are stored, but the registry's content reference and hash are empty.${derived ? ` The reference will be derived from the stored files (document hash ${derived.documentHash.slice(0, 12)}…).` : ""}`,

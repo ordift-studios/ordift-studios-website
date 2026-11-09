@@ -18,7 +18,7 @@ export async function loadAgreementReadiness(params: {
   const { data: v } = master.current_version_id
     ? await admin
         .from("legal_document_versions")
-        .select("id, status, approved_by, approved_at, activated_at, effective_date, content_reference, document_hash, master_docx_sha256, master_pdf_sha256, master_docx_storage_path, master_pdf_storage_path, created_at, ingested_at")
+        .select("id, version, status, approved_by, approved_at, activated_at, effective_date, content_reference, document_hash, master_docx_sha256, master_pdf_sha256, master_docx_storage_path, master_pdf_storage_path, created_at, ingested_at")
         .eq("id", master.current_version_id as string)
         .maybeSingle()
     : { data: null };
@@ -72,6 +72,7 @@ export async function loadAgreementReadiness(params: {
     versionId: (v?.id as string | undefined) ?? null,
     version: v
       ? {
+          version: (v.version as string | null) ?? null,
           status: v.status as string,
           approvedBy: (v.approved_by as string | null) ?? null,
           approvedAt: (v.approved_at as string | null) ?? null,

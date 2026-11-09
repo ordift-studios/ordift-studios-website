@@ -26,7 +26,7 @@ const dirtyDocx = makeZip("word/document.xml", "<w:document><w:body><w:p><w:r><w
 const pdf = new Uint8Array([37, 80, 68, 70, 1, 2, 3]);
 
 const version = (o: Record<string, unknown> = {}) => ({
-  id: "v1", master_id: "m1", status: "approved", approved_by: "Legal Counsel", approved_at: null, effective_date: null, content_reference: null, document_hash: null,
+  id: "v1", master_id: "m1", version: "1.0", status: "approved", approved_by: "Legal Counsel", approved_at: null, effective_date: null, content_reference: null, document_hash: null,
   master_docx_storage_path: "masters-docx/OS-LGL-010/a.docx", master_docx_sha256: sha(cleanDocx), master_pdf_storage_path: "masters-pdf/OS-LGL-010/a.pdf", master_pdf_sha256: sha(pdf), created_at: "2026-09-08T01:36:30Z", ...o,
 });
 const input = { approvalDate: "2026-09-18", counselName: "Counsel Name", counselFirm: "Firm LLP", evidenceKind: "counsel_email", evidenceReference: "Email of 18 Sep 2026 approving the document, filed in the legal archive", evidenceDocumentId: "", coversDocumentCodes: ["OS-LGL-010"], identityCheck: { method: "call_back_independent_number", checkedOn: "2026-09-20", note: "The Founder called the firm on a number taken from the Bar register and spoke to counsel." } };
@@ -292,5 +292,36 @@ describe("approvalDateInEvidence", () => {
     expect(approvalDateInEvidence({ checked: true, datesFound: ["5 September 2026"] }, "2026-09-18")).toBe(false);
     expect(approvalDateInEvidence({ checked: true, datesFound: [] }, "2026-09-18")).toBe(false);
     expect(approvalDateInEvidence({ checked: false }, "2026-09-18")).toBeNull();
+  });
+});
+
+describe("a later version of a master (for example 1.1) is handled by its own stored facts, not by a hard-coded 1.0", () => {
+  const docx11 = makeZip("word/document.xml", "<w:document><w:body><w:p><w:r><w:t>12. Currency. The accepted quotation currency and amount are the payment obligation.</w:t></w:r></w:p></w:body></w:document>");
+  const pdf11 = new Uint8Array([37, 80, 68, 70, 9, 9, 9]);
+  const seed11 = () => {
+    h.db = makeFakeDb({
+      legal_document_versions: [
+        version({ id: "v10", master_id: "m14", version: "1.0", status: "active", approved_at: null }),
+        version({ id: "v11", master_id: "m14", version: "1.1", status: "approved", approved_by: "Founder", approved_at: "2026-11-20T10:00:00Z", master_docx_storage_path: "masters-docx/OS-LGL-014/v1.1.docx", master_docx_sha256: sha(docx11), master_pdf_storage_path: "masters-pdf/OS-LGL-014/v1.1.pdf", master_pdf_sha256: sha(pdf11) }),
+      ],
+      legal_document_masters: [{ id: "m14", canonical_code: "OS-LGL-014", title: "Client Service Terms & General Booking Agreement", current_version_id: "v11" }],
+      legal_suite_provenance_documents: [], activity_log: [],
+    }, { "masters-docx/OS-LGL-014/v1.1.docx": docx11, "masters-pdf/OS-LGL-014/v1.1.pdf": pdf11 });
+  };
+  it("registers 1.1 from its own stored files; the reference names those files and hashes, never the 1.0 master", async () => {
+    seed11();
+    const r = await registerControlledMaster({ versionId: "v11", actorUserId: "u1" });
+    expect(r.ok).toBe(true);
+    const row = h.db.tables.legal_document_versions.find((x) => x.id === "v11")!;
+    expect(row.document_hash).toBe(sha(docx11));
+    expect(String(row.content_reference)).toContain("masters-docx/OS-LGL-014/v1.1.docx");
+    expect(String(row.content_reference)).toContain(`sha256:${sha(docx11)}`);
+    expect(h.db.tables.legal_document_versions.find((x) => x.id === "v10")!.content_reference).toBeNull();
+  });
+  it("activation re-derives the reference for 1.1 and accepts it, and still refuses a tampered 1.1", async () => {
+    seed11();
+    await registerControlledMaster({ versionId: "v11", actorUserId: "u1" });
+    h.db.storage["masters-docx/OS-LGL-014/v1.1.docx"] = makeZip("word/document.xml", "<w:document><w:body><w:p><w:r><w:t>altered</w:t></w:r></w:p></w:body></w:document>");
+    expect((await activateMasterVersion({ versionId: "v11", effectiveDate: new Date().toISOString().slice(0, 10), actorUserId: "u1" })).ok).toBe(false);
   });
 });
