@@ -2,7 +2,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { isSuperAdminId } from "@/lib/organization/authority";
 import { bookingFlagOn, classifyPaymentTerms, isOverridableKind, termsCheckBlocks, validateSegments, type BookingSettings, type Conflict, type Resolution, type Segment } from "./rules";
 import type { PaymentCondition } from "@/lib/crewSupport/paymentCondition";
-import { dispatchBookingNotifications } from "./notificationService";
+import { deferClientNotice, dispatchBookingNotifications } from "./notificationService";
 
 // BOOKING CONFIRMATION (server). Flag BOOKING_CONFIRMATION_ENABLED, default OFF: with it off every function here refuses and nothing is read or written. Super Admin only to confirm, change or cancel.
 // Every rule is enforced AGAIN inside the database functions (PROPOSAL_booking_confirmation.sql, not applied anywhere): this module validates first so the person gets a clear message, then asks the database to decide.
@@ -38,10 +38,14 @@ export async function loadBookingSettings(): Promise<BookingSettings | null> {
 export type ConfirmInput = {
   actorUserId: string; enquiryId: string; quotationId: string; supersedes?: string | null; assignedProfileId?: string | null; segments: Segment[]; escalators?: string[];
   agreementId?: string | null; clarification?: { kind: string; evidence: string } | null; conflictResolutions?: Resolution[]; basis?: string | null;
+  deferClientNoticeReason?: string | null;           // a CHANGE only: hold back the client notice, with a written reason (default: the client is told)
 };
-export async function confirmOrdinaryBooking(i: ConfirmInput, env: Record<string, string | undefined> = process.env): Promise<{ ok: true; confirmationId: string } | Fail> {
+export type NoticeFollowUp = { deferred: boolean; deferError?: string };
+export async function confirmOrdinaryBooking(i: ConfirmInput, env: Record<string, string | undefined> = process.env): Promise<({ ok: true; confirmationId: string } & NoticeFollowUp) | Fail> {
   if (!bookingFlagOn(env)) return OFF;
   if (!(await isSuperAdminId(i.actorUserId))) return DENIED;
+  if (i.deferClientNoticeReason !== undefined && i.deferClientNoticeReason !== null && !i.supersedes) return { ok: false, error: "A client notice can only be held back when changing a booking, not when confirming one: the client must be told they are booked." };
+  if (i.deferClientNoticeReason !== undefined && i.deferClientNoticeReason !== null && i.deferClientNoticeReason.trim().length < 10) return { ok: false, error: "Give a reason of at least a sentence for holding back the client notice." };
   const segErr = validateSegments(i.segments); if (segErr) return { ok: false, error: segErr };
   const db = createAdminClient();
   const { data: q } = await db.from("client_quotations").select("payment_condition, deposit_percent, payment_booking_terms").eq("id", i.quotationId).eq("enquiry_id", i.enquiryId).maybeSingle();
@@ -53,17 +57,28 @@ export async function confirmOrdinaryBooking(i: ConfirmInput, env: Record<string
     segments: i.segments, escalators: i.escalators ?? [], agreementId: i.agreementId ?? null, paymentTermsCheck: termsCheck, clarification: i.clarification ?? null, conflictResolutions: i.conflictResolutions ?? [], basis: i.basis ?? null }, p_actor: i.actorUserId });
   if (error || !data) { console.error("[booking] confirm refused/failed", error?.message); return { ok: false, error: friendly(error?.message ?? "") }; }
   // The ONLY trigger of the booking e-mails: a successful confirmation. The database made the notification records with the confirmation; this sends them once. A notification problem never undoes the booking.
+  // A deferral is recorded BEFORE anything is sent; if it cannot be recorded the notice simply goes out (the safe direction: the client is told) and the person is told so.
+  let follow: NoticeFollowUp = { deferred: false };
+  if (i.deferClientNoticeReason) { const d = await deferClientNotice({ actorUserId: i.actorUserId, confirmationId: data as string, reason: i.deferClientNoticeReason }, env); follow = d.ok ? { deferred: true } : { deferred: false, deferError: d.error }; }
   try { await dispatchBookingNotifications(data as string, env); } catch (err) { console.error("[booking] notifications threw (the booking stands)", err); }
-  return { ok: true, confirmationId: data as string };
+  return { ok: true, confirmationId: data as string, ...follow };
 }
 
-export async function cancelOrdinaryBooking(p: { actorUserId: string; enquiryId: string; reason: string }, env: Record<string, string | undefined> = process.env): Promise<{ ok: true; confirmationId: string } | Fail> {
+export type CancelOutcome = "rescheduling_pending" | "final";
+export async function cancelOrdinaryBooking(p: { actorUserId: string; enquiryId: string; reason: string; outcome?: CancelOutcome; deferClientNoticeReason?: string | null }, env: Record<string, string | undefined> = process.env): Promise<({ ok: true; confirmationId: string } & NoticeFollowUp) | Fail> {
   if (!bookingFlagOn(env)) return OFF;
   if (!(await isSuperAdminId(p.actorUserId))) return DENIED;
   if (p.reason.trim().length < 10) return { ok: false, error: "Give a reason of at least a sentence." };
-  const { data, error } = await createAdminClient().rpc("cancel_ordinary_booking", { p_enquiry: p.enquiryId, p_reason: p.reason, p_actor: p.actorUserId });
-  if (error || !data) { console.error("[booking] cancel failed", error?.message); return { ok: false, error: "The booking could not be cancelled." }; }
-  return { ok: true, confirmationId: data as string };
+  const outcome: CancelOutcome = p.outcome ?? "rescheduling_pending";
+  if (outcome !== "rescheduling_pending" && outcome !== "final") return { ok: false, error: "Choose whether the cancellation is final or a new date will be agreed." };
+  if (p.deferClientNoticeReason !== undefined && p.deferClientNoticeReason !== null && p.deferClientNoticeReason.trim().length < 10) return { ok: false, error: "Give a reason of at least a sentence for holding back the client notice." };
+  // The outcome argument is sent only when it is not the default, so a database that has not yet received the notices proposal still cancels exactly as before; a FINAL cancellation there is refused in plain words.
+  const { data, error } = await createAdminClient().rpc("cancel_ordinary_booking", { p_enquiry: p.enquiryId, p_reason: p.reason, p_actor: p.actorUserId, ...(outcome === "final" ? { p_outcome: "final" } : {}) });
+  if (error || !data) { console.error("[booking] cancel failed", error?.message); return { ok: false, error: outcome === "final" && /could not find the function|does not exist|schema cache/i.test(error?.message ?? "") ? "A final cancellation needs the booking notices update, which this database does not have yet." : "The booking could not be cancelled." }; }
+  let follow: NoticeFollowUp = { deferred: false };
+  if (p.deferClientNoticeReason) { const d = await deferClientNotice({ actorUserId: p.actorUserId, confirmationId: data as string, reason: p.deferClientNoticeReason }, env); follow = d.ok ? { deferred: true } : { deferred: false, deferError: d.error }; }
+  try { await dispatchBookingNotifications(data as string, env); } catch (err) { console.error("[booking] notifications threw (the cancellation stands)", err); }
+  return { ok: true, confirmationId: data as string, ...follow };
 }
 
 // read-only: the conflicts to review BEFORE confirming (same database function the confirmation uses)

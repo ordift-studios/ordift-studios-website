@@ -57,10 +57,13 @@ describe("booking notifications: only a confirmation sends them", () => {
     const importers = src.filter(notTest).filter((f) => /from\s+["'](@\/lib\/bookings\/notificationService|\.\/notificationService)["']/.test(read(f))).sort();
     expect(importers).toEqual(["src/app/admin/enquiries/[id]/BookingNotificationsCard.tsx", "src/app/admin/enquiries/[id]/bookingActions.ts", "src/lib/bookings/panel.ts", "src/lib/bookings/service.ts"].sort());
   });
-  it("the dispatch call sits after the confirmation RPC succeeded and nowhere in cancel / settings", () => {
-    const svc = code("src/lib/bookings/service.ts"); const confirm = svc.slice(svc.indexOf("export async function confirmOrdinaryBooking"), svc.indexOf("export async function cancelOrdinaryBooking"));
-    expect(confirm.indexOf("if (error || !data)")).toBeGreaterThan(-1); expect(confirm.indexOf("dispatchBookingNotifications(")).toBeGreaterThan(confirm.indexOf("if (error || !data)"));
-    expect(svc.slice(svc.indexOf("export async function cancelOrdinaryBooking"))).not.toContain("dispatchBookingNotifications");
+  it("every dispatch sits after the booking function succeeded (confirm and cancel), and nowhere in the settings code", () => {
+    const svc = code("src/lib/bookings/service.ts"); const confirm = svc.slice(svc.indexOf("export async function confirmOrdinaryBooking"), svc.indexOf("export type CancelOutcome")); const cancel = svc.slice(svc.indexOf("export async function cancelOrdinaryBooking"), svc.indexOf("export async function previewConflicts"));
+    expect(confirm.indexOf("dispatchBookingNotifications(")).toBeGreaterThan(confirm.indexOf("if (error || !data)")); expect(cancel.indexOf("dispatchBookingNotifications(")).toBeGreaterThan(cancel.indexOf("if (error || !data)"));
+    expect(svc.slice(svc.indexOf("export async function recordBookingSettingsVersion"))).not.toContain("dispatchBookingNotifications");
+  });
+  it("a deferral is recorded before anything is sent", () => {
+    const svc = code("src/lib/bookings/service.ts"); for (const fn of ["confirmOrdinaryBooking", "cancelOrdinaryBooking"]) { const body = svc.slice(svc.indexOf(`export async function ${fn}`)); expect(body.indexOf("deferClientNotice(")).toBeGreaterThan(-1); expect(body.indexOf("deferClientNotice(")).toBeLessThan(body.indexOf("dispatchBookingNotifications(")); }
   });
   it("the notification module sends only through the shared notification dispatcher (test mode applies) and never imports a provider", () => {
     const n = code("src/lib/bookings/notificationService.ts"); expect(n).toContain("dispatchNotification("); expect(/from\s+["']resend["']|sendEmailNow|new Resend|nodemailer/.test(n)).toBe(false);

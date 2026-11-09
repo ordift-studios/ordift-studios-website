@@ -70,55 +70,103 @@ export function buildClientBookingConfirmed(d: ClientConfirmationData): { subjec
 }
 
 // ---------------------------------------------------------------------------------------------- internal: New Booking Confirmed
+export type NoticeEvent = "confirmed" | "changed" | "cancelled_pending" | "cancelled_final";
 export type InternalConfirmationData = {
+  event?: NoticeEvent; showMoney?: boolean; reason?: string | null; previousSessions?: NoticeSession[] | null;
   enquiryId: string; referenceNumber: string; clientName: string; service: string; quotationReference: string | null; sessions: NoticeSession[]; siteUrl: string; version: number; renewed: boolean;
   assignedLabel: string | null; confirmedByLabel: string | null; agreementRequired: boolean; agreementReference: string | null; paymentCondition: string | null; verifiedPaidUsd: number | null; outstandingUsd: number | null; basis: string | null;
 };
+const INTERNAL_TITLE: Record<NoticeEvent, { subject: string; heading: string }> = {
+  confirmed: { subject: "New Booking Confirmed", heading: "A booking has been confirmed" }, changed: { subject: "Booking Rescheduled", heading: "A booking has been rescheduled" },
+  cancelled_pending: { subject: "Booking Cancelled — Rescheduling Pending", heading: "A booking has been cancelled; a new date is to be agreed" }, cancelled_final: { subject: "Booking Cancelled (final)", heading: "A booking has been cancelled for good" },
+};
 export function buildInternalBookingConfirmed(d: InternalConfirmationData): { subject: string; html: string; text: string } {
-  const subject = `New Booking Confirmed — ${d.referenceNumber}`;
+  const ev = d.event ?? "confirmed", money = d.showMoney !== false, title = INTERNAL_TITLE[ev];
+  const subject = `${title.subject} — ${d.referenceNumber}`;
   const adminUrl = `${d.siteUrl}/admin/enquiries/${d.enquiryId}`;
   const usd = (n: number | null) => (n === null ? "not recorded" : `$${n.toFixed(2)}`);
   const rows: [string, string][] = [
     ["Booking reference", d.referenceNumber], ["Client", d.clientName], ["Service", pathwayLabel(d.service)],
     ...(d.quotationReference ? ([["Quotation", d.quotationReference]] as [string, string][]) : []),
     ["Assigned", d.assignedLabel ?? "No person assigned"],
-    ...d.sessions.flatMap((s, i): [string, string][] => [[d.sessions.length > 1 ? `Session ${i + 1}` : "Date and time", `${formatSession(s)} · ${utcLine(s)}`], [`  Arrangement`, formatPlace(s) + (s.note ? ` · ${s.note}` : "")]]),
-    ["Payment condition", d.paymentCondition ?? "none"], ["Verified paid", usd(d.verifiedPaidUsd)], ["Outstanding", usd(d.outstandingUsd)],
+    ...(ev === "changed" && d.previousSessions?.length ? d.previousSessions.map((s, i): [string, string] => [d.previousSessions!.length > 1 ? `Was (session ${i + 1})` : "Was", formatSession(s)]) : []),
+    ...d.sessions.flatMap((s, i): [string, string][] => [[ev.startsWith("cancelled") ? (d.sessions.length > 1 ? `Cancelled (session ${i + 1})` : "Cancelled booking") : d.sessions.length > 1 ? `Session ${i + 1}` : "Date and time", `${formatSession(s)} · ${utcLine(s)}`], [`  Arrangement`, formatPlace(s) + (s.note ? ` · ${s.note}` : "")]]),
+    ...(ev.startsWith("cancelled") && d.reason ? ([["Reason", d.reason]] as [string, string][]) : []),
+    ...(ev === "cancelled_final" ? ([["Money", "Nothing was refunded or changed by this cancellation; any refund is a separate decision"]] as [string, string][]) : []),
+    ...(money ? ([["Payment condition", d.paymentCondition ?? "none"], ["Verified paid", usd(d.verifiedPaidUsd)], ["Outstanding", usd(d.outstandingUsd)]] as [string, string][]) : []),
     ["Agreement", d.agreementRequired ? `Required${d.agreementReference ? ` — ${d.agreementReference}` : ""}` : "Not required"],
-    ...(d.confirmedByLabel ? ([["Confirmed by", d.confirmedByLabel]] as [string, string][]) : []),
-    ...(d.renewed ? ([["Note", "Re-confirmed after an earlier cancellation"]] as [string, string][]) : []),
-    ...(d.basis ? ([["Basis recorded", d.basis]] as [string, string][]) : []),
+    ...(d.confirmedByLabel ? ([[ev.startsWith("cancelled") ? "Cancelled by" : ev === "changed" ? "Changed by" : "Confirmed by", d.confirmedByLabel]] as [string, string][]) : []),
+    ...(d.renewed && ev === "confirmed" ? ([["Note", "Re-confirmed after an earlier cancellation"]] as [string, string][]) : []),
+    ...(money && d.basis ? ([["Basis recorded", d.basis]] as [string, string][]) : []),
   ];
   const rowsHtml = rows.map(([l, v]) => `<tr><td style="padding:8px 0;font-family:${SANS};font-size:13px;color:${INK_MUTED};width:160px;vertical-align:top;border-bottom:1px solid #f0efec;">${escapeHtml(l)}</td><td style="padding:8px 0;font-family:${SANS};font-size:14px;color:${NAVY};font-weight:500;border-bottom:1px solid #f0efec;">${escapeHtml(v)}</td></tr>`).join("");
   const bodyHtml = `
-    <p style="margin:0 0 4px;font-family:${SANS};font-size:13px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:${GOLD};">New Booking</p>
-    <h1 style="margin:0 0 20px;font-family:${SERIF};font-size:24px;color:${NAVY};font-weight:normal;">A booking has been confirmed</h1>
+    <p style="margin:0 0 4px;font-family:${SANS};font-size:13px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:${GOLD};">${ev === "confirmed" ? "New Booking" : "Booking update"}</p>
+    <h1 style="margin:0 0 20px;font-family:${SERIF};font-size:24px;color:${NAVY};font-weight:normal;">${escapeHtml(title.heading)}</h1>
     <table role="presentation" width="100%" style="margin-bottom:24px;">${rowsHtml}</table>
     <table role="presentation" width="100%"><tr><td align="center"><a href="${adminUrl}" style="display:inline-block;padding:12px 28px;background:${GOLD};color:${NAVY};font-family:${SANS};font-size:14px;font-weight:600;text-decoration:none;border-radius:999px;">View in Admin Platform</a></td></tr></table>`;
   const html = wrap(bodyHtml, "Ordift Studios · Internal notification — not sent to the client.");
-  const text = ["New Booking Confirmed", "", ...rows.map(([l, v]) => `${l.trim()}: ${v}`), "", `View in Admin Platform: ${adminUrl}`].join("\n");
+  const text = [title.subject, "", ...rows.map(([l, v]) => `${l.trim()}: ${v}`), "", `View in Admin Platform: ${adminUrl}`].join("\n");
   return { subject, html, text };
 }
 
-// ---------------------------------------------------------------------------------------------- PROPOSED, NOT SENT (wording for the Founder's approval)
-// Nothing calls these. They exist so the exact text can be reviewed (and tested for the things it must never say) before any client change / cancellation notice is switched on.
-export function proposedClientCancellationNotice(d: { firstName: string; referenceNumber: string; service: string; cancelledSession: string; supportEmail?: string }): { subject: string; text: string } {
-  const c = d.supportEmail ?? STUDIO_CONTACT_EMAIL;
-  return {
-    subject: `Booking cancelled — ${d.referenceNumber}`,
-    text: [`Hello ${d.firstName},`, "",
-      `Your ${pathwayLabel(d.service)} booking (reference ${d.referenceNumber}) for ${d.cancelledSession} has been cancelled. It is no longer confirmed, so please do not plan on that date.`, "",
-      "We will contact you to agree a new date. Your accepted quotation and any payment you have made are unchanged and remain on your project; nothing is lost.", "",
-      `If you have questions, contact ${c} quoting ${d.referenceNumber}.`].join("\n"),
-  };
+
+// ---------------------------------------------------------------------------------------------- client: changed / cancelled (each reflects the CURRENT booking state)
+export type ClientChangeData = ClientConfirmationData & { event: Exclude<NoticeEvent, "confirmed">; previousSessions?: NoticeSession[] | null; paidAnything?: boolean };
+export function buildClientBookingNotice(d: ClientChangeData | (ClientConfirmationData & { event: "confirmed" })): { subject: string; html: string; text: string } {
+  if (d.event === "confirmed") return buildClientBookingConfirmed(d);
+  const first = d.fullName.split(" ")[0] || d.fullName, service = pathwayLabel(d.service), ref = d.referenceNumber;
+  const portalUrl = `${d.siteUrl}/portal/client/projects/enquiry/${d.enquiryId}/booking-details`;
+  const lines = (sessions: NoticeSession[], label: (i: number) => string) => sessions.flatMap((s, i) => [`${label(i)}: ${formatSession(s)}`, `  ${formatPlace(s)}`, ...(s.note ? [`  ${s.note}`] : [])]);
+  let subject: string, heading: string, intro: string[], detail: string[], close: string;
+  if (d.event === "changed") {
+    subject = `Booking updated — ${ref}`; heading = "Your booking has been rescheduled and is confirmed";
+    intro = [`The date or arrangements for your ${service} booking (reference ${ref}) have changed.`];
+    detail = [...(d.previousSessions?.length ? lines(d.previousSessions, (i) => (d.previousSessions!.length > 1 ? `Previously (session ${i + 1})` : "Previously")) : []), ...lines(d.sessions, (i) => (d.sessions.length > 1 ? `Now confirmed (session ${i + 1})` : "Now confirmed"))];
+    close = `Your booking is confirmed on the new details above only. If they do not suit you, contact ${STUDIO_CONTACT_EMAIL} quoting ${ref}.`;
+  } else if (d.event === "cancelled_pending") {
+    subject = `Booking cancelled — new date to be agreed — ${ref}`; heading = "Your booking has been cancelled for now";
+    intro = [`Your ${service} booking (reference ${ref}) has been cancelled. It is no longer confirmed, so please do not plan on the date below.`];
+    detail = lines(d.sessions, (i) => (d.sessions.length > 1 ? `Cancelled (session ${i + 1})` : "Cancelled"));
+    close = `We will contact you to agree a new date; it is confirmed only when you receive a new Booking Confirmed message. Your accepted quotation and any payment you have made are unchanged. Questions: ${STUDIO_CONTACT_EMAIL} quoting ${ref}.`;
+  } else {
+    subject = `Booking cancelled — ${ref}`; heading = "Your booking has been cancelled";
+    intro = [`Your ${service} booking (reference ${ref}) has been cancelled and will not be rescheduled. It is no longer confirmed.`];
+    detail = lines(d.sessions, (i) => (d.sessions.length > 1 ? `Cancelled (session ${i + 1})` : "Cancelled"));
+    close = d.paidAnything ? `Any payment you have made has not been changed or refunded by this cancellation; we will contact you separately about it. Questions: ${STUDIO_CONTACT_EMAIL} quoting ${ref}.` : `Questions: ${STUDIO_CONTACT_EMAIL} quoting ${ref}.`;
+  }
+  const p = (t: string, extra = "") => `<p style="margin:0 0 16px;font-family:${SANS};font-size:15px;line-height:1.6;color:${NAVY};${extra}">${escapeHtml(t)}</p>`;
+  const bodyHtml = `
+    <p style="margin:0 0 4px;font-family:${SANS};font-size:13px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:${GOLD};">Booking update</p>
+    <h1 style="margin:0 0 20px;font-family:${SERIF};font-size:24px;color:${NAVY};font-weight:normal;">${escapeHtml(heading)}</h1>
+    ${p(`Hello ${first},`)}${intro.map((t) => p(t)).join("")}
+    ${detail.length ? `<p style="margin:0 0 16px;font-family:${SANS};font-size:14px;line-height:1.7;color:${NAVY};font-weight:500;">${detail.map((l) => escapeHtml(l)).join("<br>")}</p>` : ""}
+    ${p(close)}
+    <table role="presentation" width="100%"><tr><td align="center"><a href="${portalUrl}" style="display:inline-block;padding:12px 28px;background:${GOLD};color:${NAVY};font-family:${SANS};font-size:14px;font-weight:600;text-decoration:none;border-radius:999px;">View your booking</a></td></tr></table>`;
+  const html = wrap(bodyHtml, "Ordift Studios · This is an automated message regarding your booking.");
+  const text = [`Hello ${first},`, "", ...intro, "", ...detail, ...(detail.length ? [""] : []), close, "", `View your booking: ${portalUrl}`].join("\n");
+  return { subject, html, text };
 }
-export function proposedClientRescheduleNotice(d: { firstName: string; referenceNumber: string; service: string; previousSession: string; newSession: string; newPlace: string; supportEmail?: string }): { subject: string; text: string } {
-  const c = d.supportEmail ?? STUDIO_CONTACT_EMAIL;
-  return {
-    subject: `Booking updated — ${d.referenceNumber}`,
-    text: [`Hello ${d.firstName},`, "",
-      `The date or arrangements for your ${pathwayLabel(d.service)} booking (reference ${d.referenceNumber}) have changed.`, "",
-      `Previously: ${d.previousSession}`, `Now confirmed: ${d.newSession}`, `Arrangement: ${d.newPlace}`, "",
-      `Your booking remains confirmed on the new details above. If they do not suit you, contact ${c} quoting ${d.referenceNumber}.`].join("\n"),
-  };
+
+// ---------------------------------------------------------------------------------------------- the assigned person (operational facts only: no payment, no agreement, no client contact)
+export type AssignedNoticeData = { kind: "assigned" | "released"; event: NoticeEvent; referenceNumber: string; service: string; clientFirstName: string; sessions: NoticeSession[]; previousSessions?: NoticeSession[] | null; version: number };
+export function buildAssignedBookingNotice(d: AssignedNoticeData): { subject: string; html: string; text: string } {
+  const ref = d.referenceNumber, service = pathwayLabel(d.service);
+  const sess = (ss: NoticeSession[], label: string) => ss.flatMap((s, i) => [`${ss.length > 1 ? `${label} (session ${i + 1})` : label}: ${formatSession(s)} · ${utcLine(s)}`, `  ${formatPlace(s)}${s.note ? ` · ${s.note}` : ""}`]);
+  let subject: string, head: string, lines: string[];
+  if (d.kind === "released") {
+    subject = `You are no longer assigned — ${ref}`; head = `You have been taken off the ${service} booking ${ref}. No action is needed from you.`;
+    lines = [...sess(d.previousSessions ?? d.sessions, "Was")];
+  } else if (d.event === "confirmed") {
+    subject = `You are assigned to a booking — ${ref}`; head = `You are assigned to a confirmed ${service} booking (${ref}) for ${d.clientFirstName}.`; lines = sess(d.sessions, "When");
+  } else if (d.event === "changed") {
+    subject = `Booking you are assigned to has changed — ${ref}`; head = `The ${service} booking ${ref} (client ${d.clientFirstName}) has been rescheduled. The new details replace the old.`;
+    lines = [...(d.previousSessions?.length ? sess(d.previousSessions, "Was") : []), ...sess(d.sessions, "Now")];
+  } else {
+    subject = `Booking cancelled — ${ref}`; head = d.event === "cancelled_final" ? `The ${service} booking ${ref} (client ${d.clientFirstName}) has been cancelled for good. Please release that time.` : `The ${service} booking ${ref} (client ${d.clientFirstName}) has been cancelled; a new date may follow. Please release that time until you hear again.`;
+    lines = sess(d.sessions, "Cancelled");
+  }
+  const text = [head, "", ...lines, "", "This message carries only what you need to carry out the booking. Questions go to the studio team."].join("\n");
+  const html = wrap(`<h1 style="margin:0 0 16px;font-family:${SERIF};font-size:22px;color:${NAVY};font-weight:normal;">${escapeHtml(subject)}</h1><p style="margin:0 0 16px;font-family:${SANS};font-size:15px;line-height:1.6;color:${NAVY};">${escapeHtml(head)}</p><p style="margin:0 0 16px;font-family:${SANS};font-size:14px;line-height:1.7;color:${NAVY};font-weight:500;">${lines.map((l) => escapeHtml(l)).join("<br>")}</p><p style="margin:0;font-family:${SANS};font-size:13px;color:${INK_MUTED};">This message carries only what you need to carry out the booking. Questions go to the studio team.</p>`, "Ordift Studios · Internal notification — not sent to the client.");
+  return { subject, html, text };
 }

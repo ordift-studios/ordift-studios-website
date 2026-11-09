@@ -12,10 +12,12 @@ export async function loadSchedulingStatus(
   if (!flagOn && !autoBookOff) return null;
   if (!flagOn) return schedulingStatus({ flagOn: false, autoBookOff, crmStage: e.crmStage, paymentStatus: e.paymentStatus, amountPaid: e.amountPaid, hasLiveBooking: false, commercialIntent: e.commercialIntent });   // no booking tables to read
   try {
-    const { data, error } = await createAdminClient().from("enquiry_booking_confirmations").select("kind").eq("enquiry_id", e.id).order("version", { ascending: false }).limit(1).maybeSingle();
+    const db = createAdminClient();
+    let { data, error } = await db.from("enquiry_booking_confirmations").select("kind, cancellation_outcome").eq("enquiry_id", e.id).order("version", { ascending: false }).limit(1).maybeSingle();
+    if (error) ({ data, error } = await db.from("enquiry_booking_confirmations").select("kind").eq("enquiry_id", e.id).order("version", { ascending: false }).limit(1).maybeSingle());   // a database without the outcome column (notices update not applied)
     if (error) return null;
-    const kind = data ? (data as { kind: string }).kind : null; const hasLiveBooking = kind !== null && kind !== "cancelled"; const hasCancelledBooking = kind === "cancelled";
-    return schedulingStatus({ flagOn: true, crmStage: e.crmStage, paymentStatus: e.paymentStatus, amountPaid: e.amountPaid, hasLiveBooking, hasCancelledBooking, commercialIntent: e.commercialIntent });
+    const kind = data ? (data as { kind: string }).kind : null; const cancellationOutcome = ((data as { cancellation_outcome?: string | null } | null)?.cancellation_outcome ?? null) as "rescheduling_pending" | "final" | null; const hasLiveBooking = kind !== null && kind !== "cancelled"; const hasCancelledBooking = kind === "cancelled";
+    return schedulingStatus({ flagOn: true, crmStage: e.crmStage, paymentStatus: e.paymentStatus, amountPaid: e.amountPaid, hasLiveBooking, hasCancelledBooking, cancellationOutcome, commercialIntent: e.commercialIntent });
   } catch { return null; }
 }
 
@@ -32,6 +34,6 @@ export async function withSchedulingLabels<C extends { id: string; statusLabel: 
   return Promise.all(cards.map(async (c) => {
     const e = byId.get(c.id); if (!e) return c;
     const s = await loadSchedulingStatus(e, env);
-    return s ? { ...c, statusLabel: clientSchedulingLabel(s), ...("nextMilestoneLabel" in c ? { nextMilestoneLabel: NEXT_AFTER_PAYMENT } : {}) } : c;
+    return s ? { ...c, statusLabel: clientSchedulingLabel(s), ...("nextMilestoneLabel" in c ? { nextMilestoneLabel: s.code === "cancelled_final" ? null : NEXT_AFTER_PAYMENT } : {}) } : c;
   }));
 }

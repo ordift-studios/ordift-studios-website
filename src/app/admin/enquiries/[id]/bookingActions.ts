@@ -5,9 +5,9 @@ import { actionFail, actionOk, runAction, type ActionState } from "@/lib/shared/
 import { getCurrentUser, isSuperAdmin } from "@/lib/portal/roles";
 import { listOverridePool } from "@/lib/crewSupport/candidates";
 import { bookingFlagOn, type Conflict, type Resolution } from "@/lib/bookings/rules";
-import { retryBookingNotification } from "@/lib/bookings/notificationService";
+import { recordManualClientNotice, retryBookingNotification } from "@/lib/bookings/notificationService";
 import { confirmOrdinaryBooking, cancelOrdinaryBooking, loadBookingSettings, previewConflicts } from "@/lib/bookings/service";
-import { confirmSentenceFor, parseBookingForm, sentenceMatches } from "@/lib/bookings/form";
+import { confirmSentenceFor, parseBookingForm, parseCancelOutcome, parseNoticeChoice, sentenceMatches } from "@/lib/bookings/form";
 import { assessDraft, loadAcceptedContext, loadCurrentBooking, todayUtc, type AcceptedContext } from "@/lib/bookings/panel";
 
 // BOOKING CONFIRMATION - thin FormData wrappers. The signed-in user is read FIRST and must be a Super Admin (the library functions and the database re-check it).
@@ -68,15 +68,20 @@ export async function confirmBookingAction(_prev: ActionState, formData: FormDat
     const p = await prepare(formData);
     if (!p.ok) return actionFail(p.error);
     const verb = p.live ? "change" : "confirm";
+    const notice = p.live ? parseNoticeChoice(formData) : ({ ok: true, deferReason: null } as const);        // only a change can hold the client notice back; a confirmation always tells the client
+    if (!notice.ok) return actionFail(notice.error);
     if (!sentenceMatches(p.form.confirmSentence, p.ctx.enquiry.reference, verb)) return actionFail(`To ${verb} the booking, type exactly: ${confirmSentenceFor(p.ctx.enquiry.reference, verb)}`);
     if (p.assessment.blockers.length > 0) return actionFail(`Not ready to ${verb}: ${p.assessment.blockers.join(" ")}`);
     const result = await confirmOrdinaryBooking({
       actorUserId: p.userId, enquiryId: p.ctx.enquiry.id, quotationId: p.ctx.quotation.id, supersedes: p.live?.id ?? null, assignedProfileId: p.form.assignedProfileId, segments: p.form.segments, escalators: p.escalators,
       agreementId: p.assessment.agreement.required ? p.ctx.executedAgreement?.id ?? null : null, clarification: p.form.clarification, conflictResolutions: p.resolutions, basis: p.form.basis,
+      deferClientNoticeReason: notice.deferReason,
     });
     if (!result.ok) return actionFail(result.error);
     refresh(p.ctx.enquiry.id);
-    return actionOk(p.live ? "Booking changed. The previous version stays in the record. No payment or invoice was created and no client notice was sent (tell the client about the change yourself)." : "Booking confirmed. The client confirmation and the internal notice were recorded (see Notifications in this card). No payment or invoice was created.");
+    return actionOk(p.live
+      ? `Booking changed. The previous version stays in the record. No payment or invoice was created. ${result.deferred ? "The client notice was held back: it stays listed as an outstanding action until it is sent or you record that you told the client." : result.deferError ? `${result.deferError} The client notice will be sent instead.` : "The client is being told the new details (see Notifications in this card)."}`
+      : "Booking confirmed. The client confirmation and the internal notices were recorded (see Notifications in this card). No payment or invoice was created.");
   }, "confirm booking");
 }
 
@@ -92,10 +97,13 @@ export async function cancelBookingAction(_prev: ActionState, formData: FormData
     if (!live || live.kind === "cancelled") return actionFail("There is no confirmed booking to cancel.");
     if (live.version !== (Number(formData.get("expectedVersion") ?? 0) || 0)) return actionFail("This booking was changed by someone else since you opened it. Reload and review the latest version.");
     if (!sentenceMatches(String(formData.get("confirmSentence") ?? ""), ctx.enquiry.reference, "cancel")) return actionFail(`To cancel the booking, type exactly: ${confirmSentenceFor(ctx.enquiry.reference, "cancel")}`);
-    const result = await cancelOrdinaryBooking({ actorUserId: user.id, enquiryId, reason: String(formData.get("reason") ?? "") });
+    const outcome = parseCancelOutcome(formData); if (!outcome) return actionFail("Choose whether a new date will be agreed or the cancellation is final.");
+    const notice = parseNoticeChoice(formData); if (!notice.ok) return actionFail(notice.error);
+    const result = await cancelOrdinaryBooking({ actorUserId: user.id, enquiryId, reason: String(formData.get("reason") ?? ""), outcome, deferClientNoticeReason: notice.deferReason });
     if (!result.ok) return actionFail(result.error);
     refresh(enquiryId);
-    return actionOk("Booking cancelled. The record of the booking is kept, the accepted quotation and every payment are untouched, and the project reads \"Booking Cancelled — Rescheduling Pending\". The client is not emailed automatically: tell them yourself. Any refund or payment decision is a separate step.");
+    const state = outcome === "final" ? "The project reads \"Booking Cancelled\" (final)." : "The project reads \"Booking Cancelled — Rescheduling Pending\".";
+    return actionOk(`Booking cancelled. The record of the booking is kept, the accepted quotation and every payment are untouched (no refund was made or balance changed: any refund is a separate decision). ${state} ${result.deferred ? "The client notice was held back: it stays listed as an outstanding action." : result.deferError ? `${result.deferError} The client notice will be sent instead.` : "The client is being told (see Notifications in this card)."}`);
   }, "cancel booking");
 }
 
@@ -111,4 +119,15 @@ export async function retryBookingNotificationAction(_prev: ActionState, formDat
     if (!result.ok) return actionFail(result.error);
     return actionOk(`Retried: now ${result.status}.`);
   }, "retry booking notification");
+}
+
+// Super Admin or Admin: the client was told another way (WhatsApp, telephone, e-mail, in person): RECORD it, with the channel and an optional note (no contact details). The recorded message is the CURRENT one.
+export async function recordClientNoticeAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  return runAction(async () => {
+    const user = await getCurrentUser();
+    if (!user || !(isSuperAdmin(user) || user.roles.includes("admin"))) return actionFail("Only an Admin or Super Admin can record that the client was told.");     // authorisation FIRST
+    const r = await recordManualClientNotice({ actorUserId: user.id, confirmationId: String(formData.get("confirmationId") ?? ""), channel: String(formData.get("channel") ?? ""), note: String(formData.get("note") ?? "") });
+    refresh(String(formData.get("enquiryId") ?? ""));
+    return r.ok ? actionOk("Recorded: the client was told. The message and how you delivered it are kept in this card.") : actionFail(r.error);
+  }, "record client notice");
 }

@@ -116,7 +116,7 @@ export async function loadBookingPanel(enquiryId: string, env: Record<string, st
   if (!projected) return null;                                                                       // staff who are not the assigned person see nothing
   const assignable = isSuper ? (await listOverridePool([])).map((p) => ({ profileId: p.profileId, label: p.memberNumber ? `${p.memberNumber} — ${p.name}` : p.name })) : [];
   return { level: projected.level, enquiry: { id: ctx.enquiry.id, reference: ctx.enquiry.reference }, quotation: isSuper ? ctx.quotation : undefined, current: projectBooking(current, projected.level), assessment: projected, settings: isSuper ? settings : null, assignable, canConfirm: isSuper && Boolean(settings),
-    agreementReference: ctx.executedAgreement?.reference ?? null, entityBlockers: isSuper || isAdmin ? ctx.entityBlockers : [], notifications: isSuper ? await listBookingNotifications(ctx.enquiry.id) : [] };
+    agreementReference: ctx.executedAgreement?.reference ?? null, entityBlockers: isSuper || isAdmin ? ctx.entityBlockers : [], notifications: isSuper ? await listBookingNotifications(ctx.enquiry.id) : isAdmin ? await listBookingNotifications(ctx.enquiry.id, { clientOnly: true }) : [] };
 }
 function emptyPanel(enquiryId: string, v: Viewer, notReady: string): BookingPanelData {
   return { level: v.roles.includes("super_admin") ? "super_admin" : "admin", enquiry: { id: enquiryId, reference: "" }, notReady, current: null, assessment: null, settings: null, assignable: [], canConfirm: false, agreementReference: null, entityBlockers: [], notifications: [] };

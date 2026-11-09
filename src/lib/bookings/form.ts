@@ -70,3 +70,14 @@ export function parseSettingsForm(f: FormLike): { thresholds: Record<string, num
   const words = (k: string) => [...new Set(String(f.get(k) ?? "").split(/\r?\n|,/).map((w) => w.trim().toLowerCase().replace(/[\s-]+/g, "_")).filter(Boolean))];
   return { thresholds, alwaysCategories: words("alwaysCategories"), escalators: words("escalators"), status: f.get("status") === "approved" ? "approved" : "provisional", note: str(f, "note"), error };
 }
+
+// "Tell the client?" choice shared by change and cancel. DEFAULT = tell the client. Holding the notice back needs a written reason (at least a sentence); anything else (a missing or unknown choice) means TELL.
+export type NoticeChoice = { ok: true; deferReason: string | null } | { ok: false; error: string };
+export function parseNoticeChoice(f: FormLike): NoticeChoice {
+  if (str(f, "notifyClient") !== "defer") return { ok: true, deferReason: null };
+  const reason = str(f, "deferReason");
+  if (reason.length < 10) return { ok: false, error: "To hold back the client notice, give a reason of at least a sentence. Otherwise leave it on 'Tell the client now'." };
+  return { ok: true, deferReason: reason.slice(0, 300) };
+}
+export type CancelOutcomeChoice = "rescheduling_pending" | "final";
+export const parseCancelOutcome = (f: FormLike): CancelOutcomeChoice | null => { const v = str(f, "outcome"); return v === "final" || v === "rescheduling_pending" ? v : null; };

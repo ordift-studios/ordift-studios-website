@@ -19,6 +19,12 @@ describe("loadSchedulingStatus", () => {
   it("a thrown error never invents a status", async () => { result = "throw"; expect(await loadSchedulingStatus(paid, ON)).toBeNull(); });
 });
 
+describe("loadSchedulingStatus: the cancellation outcome", () => {
+  it("a final cancellation reads Booking Cancelled; the client's card then has no next milestone", async () => {
+    result = { data: { kind: "cancelled", cancellation_outcome: "final" }, error: null }; expect((await loadSchedulingStatus(paid, ON))?.code).toBe("cancelled_final");
+    const out = await withSchedulingLabels([{ id: "e1", statusLabel: "Quotation Sent", nextMilestoneLabel: "Negotiation" }], [paid], ON); expect(out[0].statusLabel).toBe("Booking Cancelled"); expect(out[0].nextMilestoneLabel).toBeNull();
+  });
+});
 describe("withSchedulingLabels", () => {
   it("overlays the client wording only on cards that need it", async () => {
     const cards = [{ id: "e1", statusLabel: "Quotation Sent" }, { id: "e2", statusLabel: "New Lead" }];

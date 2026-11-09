@@ -42,8 +42,10 @@ export default async function BookingDetailsTabPage({
 
       {details.booking?.state === "cancelled" && (
         <div className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-3" data-testid="client-booking-cancelled">
-          <p className="font-sans text-body-small font-semibold text-amber-950">Booking Cancelled — Rescheduling Pending</p>
-          <p className="font-sans text-caption text-amber-950 mt-1">Your booking ({details.booking.reference}) is no longer confirmed. Your accepted quotation and any payment you have made are unchanged. We will agree a new date with you; it is confirmed only when you receive a new Booking Confirmed message.</p>
+          <p className="font-sans text-body-small font-semibold text-amber-950">{details.booking.final ? "Booking Cancelled" : "Booking Cancelled — Rescheduling Pending"}</p>
+          <p className="font-sans text-caption text-amber-950 mt-1">{details.booking.final
+            ? `Your booking (${details.booking.reference}) has been cancelled and is no longer confirmed. No new date is planned. Your accepted quotation and any payment you have made are unchanged; we will contact you separately about anything that needs deciding.`
+            : `Your booking (${details.booking.reference}) is no longer confirmed. Your accepted quotation and any payment you have made are unchanged. We will agree a new date with you; it is confirmed only when you receive a new Booking Confirmed message.`}</p>
         </div>
       )}
 
