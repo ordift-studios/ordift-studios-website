@@ -1,6 +1,7 @@
 "use client";
 
-import { useActionState } from "react";
+
+import { useRestoringActionState } from "@/components/admin/useRestoringActionState";
 import { chooseContractingEntityAction, type ActionState } from "../organization/legal-entities/[entityId]/actions";
 
 export type EntityOption = { entityId: string; name: string; eligible: boolean; blockers: string[] };
@@ -9,7 +10,7 @@ export type EntityOption = { entityId: string; name: string; eligible: boolean; 
 export default function ContractingEntityPanel({ requestId, current, options, suggestionId, historical }: {
   requestId: string; current: { entityName: string; version: number; basis: string } | null; options: EntityOption[]; suggestionId: string | null; historical: boolean;
 }) {
-  const [state, action, pending] = useActionState<ActionState, FormData>(chooseContractingEntityAction, null);
+  const [state, action, pending, formRef] = useRestoringActionState<ActionState>(chooseContractingEntityAction, null);
   return (
     <section className="rounded-xl border border-black/10 bg-white p-6 space-y-3">
       <h2 className="font-serif font-medium text-body text-ordift-ink">Contracting legal entity</h2>
@@ -19,7 +20,7 @@ export default function ContractingEntityPanel({ requestId, current, options, su
         <p className="font-sans text-body-small text-ordift-ink-muted">{historical ? "No contracting entity is recorded. This booking was accepted or paid before entity selection existed; it is historical and is left exactly as it is." : "No contracting entity has been chosen yet. Choose one explicitly; it is never inferred from the client's location or currency."}</p>
       )}
       {!historical && (
-        <form action={action} className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+        <form ref={formRef} action={action} className="grid grid-cols-1 sm:grid-cols-2 gap-2">
           <input type="hidden" name="requestId" value={requestId} />
           <select name="entityId" required defaultValue={suggestionId && !current ? suggestionId : ""} className="rounded-lg border border-black/15 px-2 py-1.5 font-sans text-body-small">
             <option value="" disabled>Choose the contracting entity…</option>

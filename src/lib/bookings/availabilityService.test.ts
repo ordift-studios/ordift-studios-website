@@ -22,7 +22,7 @@ import { loadAvailabilityPanel, loadLatestAvailabilityCheck, runAvailabilityChec
 
 const ON: Record<string, string | undefined> = { BOOKING_CONFIRMATION_ENABLED: "true" };
 const seg: Segment = { startsAt: "2027-01-10T07:00:00Z", endsAt: "2027-01-10T08:00:00Z", timezone: "Asia/Qatar", kind: "on_site", location: "Doha" };
-const firm: Conflict = { key: "booking:1", kind: "booking", firm: true, label: "ENQ-X-1", from: "2027-01-10T06:00:00Z", to: "2027-01-10T09:00:00Z" };
+const firm: Conflict = { key: "booking:1", kind: "booking", firm: true, overridable: false, label: "ENQ-X-1", from: "2027-01-10T06:00:00Z", to: "2027-01-10T09:00:00Z" };
 const run = (o: Record<string, unknown> = {}, env = ON) => runAvailabilityCheck({ actorUserId: "s1", enquiryId: "e1", assigneeId: "p1", segments: [seg], verification: null, ...o } as Parameters<typeof runAvailabilityCheck>[0], env);
 beforeEach(() => {
   h.user = { id: "s1" }; h.staff = true; h.admin = false; h.sa = false; h.failAudit = false; h.conflicts = []; h.previewCalls = 0;

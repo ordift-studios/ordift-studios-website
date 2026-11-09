@@ -3,8 +3,8 @@ import { assessAvailability, checkVerification, forCheck, NOT_A_RESERVATION, pro
 import type { Conflict, Segment } from "./rules";
 
 const seg: Segment = { startsAt: "2027-01-10T07:00:00Z", endsAt: "2027-01-10T08:00:00Z", timezone: "Asia/Qatar", kind: "on_site", location: "Doha" };
-const firm: Conflict = { key: "booking:1", kind: "booking", firm: true, label: "ENQ-X-1", from: "2027-01-10T06:00:00Z", to: "2027-01-10T09:00:00Z" };
-const soft: Conflict = { key: "crew_slot:1", kind: "crew_slot", firm: false, label: "CSR-1", from: "2027-01-10", to: "2027-01-10" };
+const firm: Conflict = { key: "booking:1", kind: "booking", firm: true, overridable: false, label: "ENQ-X-1", from: "2027-01-10T06:00:00Z", to: "2027-01-10T09:00:00Z" };
+const soft: Conflict = { key: "crew_slot:1", kind: "crew_slot", firm: false, overridable: true, label: "CSR-1", from: "2027-01-10", to: "2027-01-10" };
 const ver = { method: "call", reference: "Called Kofi, 9 Jan, he is free", verifiedOn: "2027-01-09", confirmedWithPerson: true };
 const input = (o: Partial<AvailabilityInput> = {}): AvailabilityInput => ({ assigneeId: "p1", segments: [seg], conflicts: [], verification: null, today: "2027-01-10", ...o });
 
@@ -15,9 +15,10 @@ describe("assessAvailability: the four states", () => {
     expect(assessAvailability(input({ assigneeId: null })).state).toBe("unverified");
     const r = assessAvailability(input({ conflicts: null, verification: ver })); expect(r.state).toBe("unverified"); expect(r.reasons.join(" ")).toMatch(/Nothing is assumed free/);
   });
-  it("CONFLICTING on any firm conflict, even with a direct check recorded (a firm conflict is cleared only at confirmation, with documented evidence)", () => {
+  it("CONFLICTING on any firm conflict, even with a direct check recorded (a confirmed overlap is never cleared by a check; approved leave only at confirmation)", () => {
     const r = assessAvailability(input({ conflicts: [firm], verification: ver }));
-    expect(r.state).toBe("conflicting"); expect(r.firm).toHaveLength(1); expect(r.reasons.join(" ")).toMatch(/only be cleared, with a documented check, when a booking is confirmed/);
+    expect(r.state).toBe("conflicting"); expect(r.firm).toHaveLength(1); expect(r.reasons.join(" ")).toMatch(/cannot be cleared by a reason or a direct check: change the person or the time/);
+    expect(assessAvailability(input({ conflicts: [{ ...firm, kind: "leave", overridable: true, label: "approved leave" }] })).reasons.join(" ")).toMatch(/approved leave can only be cleared, with a documented check, when a booking is confirmed/);
     expect(assessAvailability(input({ conflicts: [firm, soft] })).state).toBe("conflicting");
   });
   it("TENTATIVELY available when nothing firm overlaps but the person was not asked directly, the check was not accepted, or a possible clash exists", () => {

@@ -35,7 +35,9 @@ describe("confirmOrdinaryBooking", () => {
   });
   it("turns database refusals into plain messages", async () => {
     h.rpc.mockResolvedValue({ data: null, error: { message: "ordift:booking_firm_conflict" } });
-    expect(await confirmOrdinaryBooking(input(), ON)).toEqual({ ok: false, error: expect.stringMatching(/firm scheduling conflict/) });
+    expect(await confirmOrdinaryBooking(input(), ON)).toEqual({ ok: false, error: expect.stringMatching(/approved leave/) });
+    h.rpc.mockResolvedValue({ data: null, error: { message: "ordift:booking_overlap_not_overridable" } });
+    expect(await confirmOrdinaryBooking(input(), ON)).toEqual({ ok: false, error: expect.stringMatching(/Change the assigned person or the time: a written explanation cannot clear it/) });
     h.rpc.mockResolvedValue({ data: null, error: { message: "ordift:booking_entity_not_eligible" } });
     expect(await confirmOrdinaryBooking(input(), ON)).toEqual({ ok: false, error: expect.stringMatching(/cannot override an unlicensed activity/) });
   });

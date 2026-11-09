@@ -5,6 +5,7 @@ import { redirect, notFound } from "next/navigation";
 import { getCurrentUser, hasRole, isSuperAdmin } from "@/lib/portal/roles";
 import { getClientQuotation } from "@/lib/commercial/clientQuotations";
 import { QuotationStatusActions } from "./QuotationStatusActions";
+import { loadQuotationAvailabilityContext } from "@/lib/bookings/quotationAvailabilityService";
 import { ReviseQuotationButton, DeleteQuotationButton } from "./QuotationRecordActions";
 import { requirementStateLabel } from "@/lib/organization/jurisdictionRequirements";
 import ClientRecordPanel from "../../../organisations/ClientRecordPanel";
@@ -197,7 +198,7 @@ export default async function QuotationDetailPage({ params }: { params: Promise<
       />
 
       <div className="rounded-xl border border-black/10 bg-white p-4 sm:p-6 mb-6">
-        <QuotationStatusActions quotationId={quotation.id} status={quotation.status} hasClient={Boolean(quotation.clientProfileId)} today={today} defaultValidUntil={defaultValidUntil(now)} currentValidUntil={quotation.validUntil}
+        <QuotationStatusActions availability={quotation.status === "draft" ? await loadQuotationAvailabilityContext(quotation.id) : null} quotationId={quotation.id} status={quotation.status} hasClient={Boolean(quotation.clientProfileId)} today={today} defaultValidUntil={defaultValidUntil(now)} currentValidUntil={quotation.validUntil}
           isSuperAdmin={isSuperAdmin(user)} blockers={blockers} expectedEntityId={entity?.ok ? entity.entity.entityId : null} activityOptions={activityChoices.options} defaultActivities={activityChoices.suggested} expired={expired} deliveredText={deliveredText} crewManaged={quotation.crewManaged}
           documentFingerprint={doc && pdfAvailable ? doc.fingerprint : null} documentHref={doc && pdfAvailable ? `/admin/pricing/quotations/${quotation.id}/document?download=1` : null} />
       </div>

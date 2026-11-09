@@ -1,6 +1,6 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { isSuperAdminId } from "@/lib/organization/authority";
-import { bookingFlagOn, classifyPaymentTerms, termsCheckBlocks, validateSegments, type BookingSettings, type Conflict, type Resolution, type Segment } from "./rules";
+import { bookingFlagOn, classifyPaymentTerms, isOverridableKind, termsCheckBlocks, validateSegments, type BookingSettings, type Conflict, type Resolution, type Segment } from "./rules";
 import type { PaymentCondition } from "@/lib/crewSupport/paymentCondition";
 
 // BOOKING CONFIRMATION (server). Flag BOOKING_CONFIRMATION_ENABLED, default OFF: with it off every function here refuses and nothing is read or written. Super Admin only to confirm, change or cancel.
@@ -18,7 +18,8 @@ const MESSAGES: [RegExp, string][] = [
   [/booking_amount_due_missing/, "A payment is required but no amount due has been established."],
   [/booking_payment_condition_mismatch/, "The payment condition must be the accepted quotation's own."],
   [/booking_payment_terms_unclear/, "The quotation's payment terms are unclear or contradict its structured condition: record the client's written clarification first."],
-  [/booking_firm_conflict/, "The assigned person has a firm scheduling conflict. Reassign, reschedule, or document that they verified their availability."],
+  [/booking_overlap_not_overridable/, "The assigned person already has a confirmed booking or Crew Support assignment at this time. Change the assigned person or the time: a written explanation cannot clear it."],
+  [/booking_firm_conflict/, "The assigned person has approved leave at this time. Reassign, reschedule, or document that they verified their availability."],
   [/booking_no_schedule|booking_segment/, "Check the date, time and place of every session."],
   [/booking_already_confirmed/, "This enquiry already has a confirmed booking: change or cancel it instead."],
   [/booking_enquiry_closed/, "The enquiry is closed."],
@@ -66,7 +67,8 @@ export async function previewConflicts(p: { assigneeId: string | null; segments:
   if (!bookingFlagOn(env) || !p.assigneeId) return bookingFlagOn(env) ? [] : null;
   const { data, error } = await createAdminClient().rpc("preview_booking_conflicts", { p_assignee: p.assigneeId, p_segments: p.segments, p_exclude_enquiry: p.excludeEnquiryId });
   if (error) { console.error("[booking] preview failed", error.message); return null; }
-  return (data as { key: string; kind: Conflict["kind"]; firm: boolean; label: string; from: string; to: string }[]).map((c) => ({ key: c.key, kind: c.kind, firm: c.firm, label: c.label, from: c.from, to: c.to }));
+  // an older database that does not yet send the flag is read the strict way: only leave and in-progress slots are overridable
+  return (data as { key: string; kind: Conflict["kind"]; firm: boolean; overridable?: boolean; label: string; from: string; to: string }[]).map((c) => ({ key: c.key, kind: c.kind, firm: c.firm, overridable: c.overridable ?? isOverridableKind(c.kind, c.firm), label: c.label, from: c.from, to: c.to }));
 }
 
 // ---- versioned rule settings (thresholds, categories, escalators): a change is a NEW version, never an edit; Super Admin only

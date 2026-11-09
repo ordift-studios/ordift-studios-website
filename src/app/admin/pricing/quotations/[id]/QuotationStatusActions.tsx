@@ -9,6 +9,8 @@ import { ACCEPTANCE_CHANNELS } from "@/lib/crewSupport/quotationRules";
 import { DELIVERY_CHANNELS_UI } from "@/lib/commercial/quotationDeliveryChannels";
 import { ORDINARY_VALIDITY_DAYS, formatDate } from "@/lib/commercial/quotationValidity";
 import { shortFingerprint } from "@/lib/commercial/quotationDocument";
+import { CONDITIONAL_SENTENCE } from "@/lib/bookings/quotationAvailabilityPolicy";
+import type { QuotationAvailabilityContext } from "@/lib/bookings/quotationAvailabilityService";
 
 // Four different things, kept apart: CREATED (a draft exists), ISSUED (a person confirmed it, recording who/when/validity), DELIVERED (a person recorded how they gave it to the client:
 // the system never sends it) and ACCEPTED (the client said yes, with evidence). Issuing sets no amount due, booking, payment or acceptance, and sends nothing.
@@ -21,14 +23,15 @@ const NEXT_STATUS: Record<string, { status: string; label: string }[]> = {
 const FIELD = "block w-full mt-1 min-h-11 rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small text-ordift-ink";
 const STATUS_WORD: Record<string, string> = { draft: "Draft (not issued)", sent: "Issued", accepted: "Accepted", declined: "Declined", expired: "Expired", superseded: "Superseded" };
 
-export function QuotationStatusActions({ quotationId, status, defaultValidUntil, currentValidUntil, isSuperAdmin, blockers, expired, deliveredText, today, crewManaged = false, expectedEntityId = null, activityOptions = [], defaultActivities = [], documentFingerprint = null, documentHref = null }: {
-  documentFingerprint?: string | null; documentHref?: string | null; crewManaged?: boolean; expectedEntityId?: string | null; activityOptions?: { key: string; label: string }[]; defaultActivities?: string[]; today: string; quotationId: string; status: string; hasClient: boolean; defaultValidUntil: string; currentValidUntil: string | null; isSuperAdmin: boolean; blockers: string[]; expired: boolean; deliveredText: string | null;
+export function QuotationStatusActions({ quotationId, status, defaultValidUntil, currentValidUntil, isSuperAdmin, blockers, expired, deliveredText, today, crewManaged = false, availability = null, expectedEntityId = null, activityOptions = [], defaultActivities = [], documentFingerprint = null, documentHref = null }: {
+  documentFingerprint?: string | null; documentHref?: string | null; crewManaged?: boolean; availability?: QuotationAvailabilityContext | null; expectedEntityId?: string | null; activityOptions?: { key: string; label: string }[]; defaultActivities?: string[]; today: string; quotationId: string; status: string; hasClient: boolean; defaultValidUntil: string; currentValidUntil: string | null; isSuperAdmin: boolean; blockers: string[]; expired: boolean; deliveredText: string | null;
 }) {
   const [state, formAction] = useActionState<ActionState, FormData>(updateQuotationStatusAction, null);
   const [acceptState, acceptAction, , acceptForm] = useRestoringActionState<ActionState>(recordQuotationAcceptanceAction, null);   // keeps what was typed when the acceptance is refused
   // The result states live here (this component stays mounted when the page refreshes after an action), so a confirmation is never lost when the panel below it changes.
-  const [issueState, issueAction] = useActionState<ActionState, FormData>(issueQuotationAction, null);
-  const [deliveryState, deliveryAction] = useActionState<ActionState, FormData>(recordQuotationDeliveryAction, null);
+  const [issueState, issueAction, , issueForm] = useRestoringActionState<ActionState>(issueQuotationAction, null);   // keeps what was typed when issuing is refused
+  const [basis, setBasis] = useState<"" | "depends" | "independent">("");
+  const [deliveryState, deliveryAction, , deliveryForm] = useRestoringActionState<ActionState>(recordQuotationDeliveryAction, null);
   const initial = currentValidUntil && currentValidUntil >= today ? currentValidUntil : defaultValidUntil;
   const [validUntil, setValidUntil] = useState(initial);
   const isException = validUntil !== defaultValidUntil;
@@ -59,7 +62,7 @@ export function QuotationStatusActions({ quotationId, status, defaultValidUntil,
             </div>
           )}
           {blockers.length === 0 && (
-          <form action={issueAction} className="space-y-3">
+          <form ref={issueForm} action={issueAction} className="space-y-3">
             <input type="hidden" name="quotationId" value={quotationId} />
             {expectedEntityId && <input type="hidden" name="expectedEntityId" value={expectedEntityId} />}
             {activityOptions.length > 0 && (
@@ -71,6 +74,28 @@ export function QuotationStatusActions({ quotationId, status, defaultValidUntil,
                     <label key={a.key} className="flex items-center gap-2 font-sans text-body-small text-ordift-ink"><input type="checkbox" name="activities" value={a.key} defaultChecked={defaultActivities.includes(a.key)} className="h-4 w-4" />{a.label}</label>
                   ))}
                 </div>
+              </fieldset>
+            )}
+            {availability?.applies && (
+              <fieldset className="space-y-2 rounded-lg border border-black/15 p-3">
+                <legend className="px-1 font-sans text-body-small font-medium text-ordift-ink">Availability basis (required)</legend>
+                <p className="font-sans text-caption text-ordift-ink-muted">An availability check is not a reservation or a booking. Booking confirmation checks availability again.</p>
+                <label className="flex items-start gap-2 font-sans text-body-small text-ordift-ink"><input type="radio" name="availabilityBasis" value="depends" checked={basis === "depends"} onChange={() => setBasis("depends")} className="mt-1" /> This quotation depends on a specific person and service time</label>
+                <label className="flex items-start gap-2 font-sans text-body-small text-ordift-ink"><input type="radio" name="availabilityBasis" value="independent" checked={basis === "independent"} onChange={() => setBasis("independent")} className="mt-1" /> It does not depend on a specific person or time</label>
+                {basis === "independent" && <label className="block font-sans text-caption text-ordift-ink-muted">Why not? (required)<textarea name="independentReason" rows={2} minLength={10} className={FIELD} placeholder="For example: retouching only, no attendance" /></label>}
+                {basis === "depends" && (
+                  <div className="space-y-2" aria-live="polite">
+                    <p className="font-sans text-body-small text-ordift-ink">{availability.latestLabel ? <>Last availability check: <strong>{availability.latestLabel}</strong>{availability.latestAt ? ` · ${availability.latestAt.slice(0, 10)}` : ""}{availability.latestStale ? " · older than 7 days" : ""}</> : availability.hasEnquiry ? "No availability check has been made for the enquiry." : "This quotation is not linked to an enquiry, so availability cannot be checked."}</p>
+                    {availability.outlook.outcome === "blocked" || availability.outlook.outcome === "needs_check" ? <p role="alert" className="rounded-lg bg-red-50 p-2 font-sans text-caption text-red-900">{availability.outlook.message}</p> : null}
+                    {availability.outlook.outcome === "conditional" && (
+                      <div className="rounded-lg bg-amber-50 p-2 font-sans text-caption text-amber-950 space-y-1">
+                        <p>{availability.outlook.message} It can only be issued as a CONDITIONAL quotation. This sentence will be added to its terms: “{CONDITIONAL_SENTENCE}”</p>
+                        <label className="flex items-start gap-2 text-body-small"><input type="checkbox" name="conditionalAck" className="mt-1" /> Issue this as a conditional quotation.</label>
+                      </div>
+                    )}
+                    {availability.outlook.outcome === "normal" && <p className="rounded-lg bg-green-50 p-2 font-sans text-caption text-green-900">{availability.outlook.message}</p>}
+                  </div>
+                )}
               </fieldset>
             )}
             <label className="block font-sans text-caption text-ordift-ink-muted">Valid until (standard: {ORDINARY_VALIDITY_DAYS} calendar days from issue = {formatDate(defaultValidUntil)})
@@ -103,7 +128,7 @@ export function QuotationStatusActions({ quotationId, status, defaultValidUntil,
           {deliveryState?.ok === false && <p role="alert" className="font-sans text-caption text-red-800">{deliveryState.error}</p>}
           <details className="rounded-lg border border-black/10 px-3 py-2">
             <summary className="min-h-11 cursor-pointer py-2 font-sans text-body-small text-ordift-ink">Record that I delivered it</summary>
-            <form action={deliveryAction} className="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <form ref={deliveryForm} action={deliveryAction} className="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-2">
               <input type="hidden" name="quotationId" value={quotationId} />
               <label className="font-sans text-caption text-ordift-ink-muted">How was it delivered?
                 <select name="channel" required defaultValue="" className={FIELD}><option value="" disabled>Choose…</option>{DELIVERY_CHANNELS_UI.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}</select>

@@ -116,7 +116,13 @@ export default function BookingConfirmForm(p: {
           {preview.blockers.length === 0 ? <p className="rounded-lg bg-green-50 p-3 font-sans text-body-small text-green-900">No blockers. The database will check every rule again when you {verb}.</p>
             : <ul className="list-disc pl-5 space-y-1 rounded-lg bg-amber-50 p-3 font-sans text-body-small text-amber-950">{preview.blockers.map((b) => <li key={b}>{b}</li>)}</ul>}
           {soft.length ? <div><p className="font-sans text-body-small font-medium text-ordift-ink">In-progress overlaps (warning only)</p><ul className="list-disc pl-5 font-sans text-body-small text-ordift-ink-muted">{soft.map((c) => <li key={c.key}>{c.label} · {c.from.slice(0, 10)} to {c.to.slice(0, 10)}</li>)}</ul></div> : null}
-          {firm.map((c) => {
+          {firm.filter((c) => !c.overridable).map((c) => (
+            <div key={c.key} className="rounded-lg border border-red-300 bg-red-50 p-4 space-y-1" role="alert">
+              <p className="font-sans text-body-small font-medium text-red-950">Overlap with a confirmed commitment: {c.label} ({c.kind.replace("_", " ")}) · {c.from.slice(0, 16).replace("T", " ")} to {c.to.slice(0, 16).replace("T", " ")}{c.from.length > 10 ? " UTC" : ""}</p>
+              <p className="font-sans text-caption text-red-900">This cannot be cleared by a reason or a recorded check. Change the assigned person or the time, then check again.</p>
+            </div>
+          ))}
+          {firm.filter((c) => c.overridable).map((c) => {
             const r = res[c.key] ?? { method: "call", reference: "", on: "", confirm: false };
             return (
               <div key={c.key} className="rounded-lg border border-amber-300 p-4 space-y-3">
@@ -131,7 +137,7 @@ export default function BookingConfirmForm(p: {
               </div>
             );
           })}
-          {firm.length ? <button type="button" disabled={pending} onClick={check} className={`${btn} border border-black/20 text-ordift-ink`}>Re-check with the conflict records</button> : null}
+          {firm.length ? <button type="button" disabled={pending} onClick={check} className={`${btn} border border-black/20 text-ordift-ink`}>Re-check</button> : null}
         </div>
       ) : null}
 

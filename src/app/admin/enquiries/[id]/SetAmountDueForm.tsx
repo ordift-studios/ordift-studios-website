@@ -1,6 +1,7 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useState } from "react";
+import { useRestoringActionState } from "@/components/admin/useRestoringActionState";
 import { setAmountDueAction, type SetAmountDueState } from "../actions";
 
 // TD-043-era pattern (client-side half of the double-submit fix,
@@ -28,7 +29,7 @@ export default function SetAmountDueForm({
   enquiryId: string;
   currentAmountDue: number | null;
 }) {
-  const [state, formAction, pending] = useActionState<SetAmountDueState, FormData>(setAmountDueAction, null);
+  const [state, formAction, pending, formRef] = useRestoringActionState<SetAmountDueState>(setAmountDueAction, null);
   const [amount, setAmount] = useState(currentAmountDue != null ? String(currentAmountDue) : "");
 
   // Resync to the server-confirmed value the instant a submission
@@ -41,7 +42,7 @@ export default function SetAmountDueForm({
   }
 
   return (
-    <form action={formAction} className="space-y-3">
+    <form ref={formRef} action={formAction} className="space-y-3">
       <input type="hidden" name="enquiryId" value={enquiryId} />
       <div>
         <label htmlFor="amount-due" className="font-sans text-caption text-ordift-ink-muted block mb-1">

@@ -28,7 +28,7 @@ describe("assessDraft (what the confirm screen shows before an attempt)", () => 
     const a = assessDraft(base({ verifiedPaidUsd: 300, segments: [seg, day2] })); expect(a.agreement.reasons).toContain("escalator:multi_day_assignment"); expect(a.blockers.join(" ")).toMatch(/agreement is required/);
   });
   it("a firm conflict is cleared only by availability verified with the assigned person", () => {
-    const c = [{ key: "leave:1", kind: "leave" as const, firm: true, label: "approved leave", from: "2026-12-01", to: "2026-12-01" }];
+    const c = [{ key: "leave:1", kind: "leave" as const, firm: true, overridable: true, label: "approved leave", from: "2026-12-01", to: "2026-12-01" }];
     expect(assessDraft(base({ verifiedPaidUsd: 300, conflicts: c })).blockers.join(" ")).toMatch(/Firm scheduling conflict/);
     const ok = { key: "leave:1", kind: "availability_verified", verifiedWithProfileId: "p1", method: "call", reference: "call on 7 Nov, agreed in WhatsApp", verifiedOn: "2026-11-07" };
     expect(assessDraft(base({ verifiedPaidUsd: 300, conflicts: c, resolutions: [ok] })).blockers).toEqual([]);

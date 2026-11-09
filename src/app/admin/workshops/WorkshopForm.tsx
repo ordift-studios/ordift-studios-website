@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState } from "react";
+import { useRestoringActionState } from "@/components/admin/useRestoringActionState";
 import type { Venue, Workshop } from "@/lib/content/types";
 import type { ActionState } from "./actions";
 
@@ -35,10 +35,10 @@ export default function WorkshopForm({
   submitLabel: string;
   processingLabel: string;
 }) {
-  const [state, formAction, pending] = useActionState<ActionState, FormData>(action, null);
+  const [state, formAction, pending, formRef] = useRestoringActionState<ActionState>(action, null);   // keeps what was typed when saving is refused
 
   return (
-    <form action={formAction} className="space-y-6 max-w-3xl">
+    <form ref={formRef} action={formAction} className="space-y-6 max-w-3xl">
       {workshop && <input type="hidden" name="id" value={workshop.id} />}
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">

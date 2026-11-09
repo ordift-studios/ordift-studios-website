@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState } from "react";
+import { useRestoringActionState } from "@/components/admin/useRestoringActionState";
 import { createWeddingEventTierRateVersionAction } from "./actions";
 import type { TierRateSaveState } from "./tierRateSave";
 
@@ -21,9 +21,9 @@ export default function TierRateEditForm({
   tierSlug: string;
   currentPriceUsd: number | undefined;
 }) {
-  const [state, formAction, pending] = useActionState<TierRateSaveState, FormData>(createWeddingEventTierRateVersionAction, null);
+  const [state, formAction, pending, formRef] = useRestoringActionState<TierRateSaveState>(createWeddingEventTierRateVersionAction, null);
   return (
-    <form action={formAction} className="grid grid-cols-1 sm:grid-cols-4 gap-3 mt-3">
+    <form ref={formRef} action={formAction} className="grid grid-cols-1 sm:grid-cols-4 gap-3 mt-3">
       <input type="hidden" name="marketSlug" value={marketSlug} />
       <input type="hidden" name="category" value={category} />
       <input type="hidden" name="serviceMode" value={serviceMode} />

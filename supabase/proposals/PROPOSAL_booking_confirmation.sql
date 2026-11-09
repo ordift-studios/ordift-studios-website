@@ -133,21 +133,21 @@ begin
          and c.version = (select max(x.version) from public.enquiry_booking_confirmations x where x.enquiry_id = c.enquiry_id)
          and tstzrange(g.starts_at, g.ends_at) && tstzrange((s ->> 'startsAt')::timestamptz, (s ->> 'endsAt')::timestamptz)
        group by c.id, e.reference_number
-    loop out := out || jsonb_build_array(jsonb_build_object('key', 'booking:' || r.id, 'kind', 'booking', 'firm', true, 'label', r.reference_number, 'from', r.f, 'to', r.t)); end loop;
+    loop out := out || jsonb_build_array(jsonb_build_object('key', 'booking:' || r.id, 'kind', 'booking', 'firm', true, 'overridable', false, 'label', r.reference_number, 'from', r.f, 'to', r.t)); end loop;
     for r in
       select sl.id, rq.reference_number, rq.start_date, rq.end_date, rq.status
         from public.crew_support_slots sl join public.crew_support_requests rq on rq.id = sl.request_id
        where sl.assignee_profile_id = p_assignee and sl.status in ('assigned', 'proposed') and rq.status not in ('declined', 'cancelled') and not rq.is_test
          and rq.start_date <= d_to and rq.end_date >= d_from
-    loop out := out || jsonb_build_array(jsonb_build_object('key', 'crew_slot:' || r.id, 'kind', 'crew_slot', 'firm', r.status = 'confirmed', 'label', r.reference_number, 'from', r.start_date, 'to', r.end_date)); end loop;
+    loop out := out || jsonb_build_array(jsonb_build_object('key', 'crew_slot:' || r.id, 'kind', 'crew_slot', 'firm', r.status = 'confirmed', 'overridable', r.status <> 'confirmed', 'label', r.reference_number, 'from', r.start_date, 'to', r.end_date)); end loop;
     for r in select lr.id, lr.start_date, lr.end_date from public.leave_requests lr where lr.profile_id = p_assignee and lr.status = 'approved' and lr.start_date <= d_to and lr.end_date >= d_from
-    loop out := out || jsonb_build_array(jsonb_build_object('key', 'leave:' || r.id, 'kind', 'leave', 'firm', true, 'label', 'approved leave', 'from', r.start_date, 'to', r.end_date)); end loop;
+    loop out := out || jsonb_build_array(jsonb_build_object('key', 'leave:' || r.id, 'kind', 'leave', 'firm', true, 'overridable', true, 'label', 'approved leave', 'from', r.start_date, 'to', r.end_date)); end loop;
   end loop;
   return (select coalesce(jsonb_agg(distinct x), '[]'::jsonb) from jsonb_array_elements(out) x);
 end $$;
 revoke all on function private.booking_conflicts(uuid, jsonb, uuid) from public, anon, authenticated;
 
--- read-only preview of the conflicts, for the review screen BEFORE confirmation (same function the confirmation uses)
+-- read-only preview of the conflicts, for the review screen BEFORE confirmation (same function the confirmation uses). 'overridable' is false for a confirmed booking and a confirmed Crew Support slot (nothing clears them) and true only for approved leave (clearable by a documented direct check).
 create or replace function public.preview_booking_conflicts(p_assignee uuid, p_segments jsonb, p_exclude_enquiry uuid) returns jsonb
 language sql stable security definer set search_path = '' as $$ select private.booking_conflicts(p_assignee, p_segments, p_exclude_enquiry) $$;
 revoke all on function public.preview_booking_conflicts(uuid, jsonb, uuid) from public, anon, authenticated, service_role;
@@ -227,6 +227,8 @@ begin
 
   v_conf := private.booking_conflicts(v_assignee, p -> 'segments', enq.id);
   for c in select * from jsonb_array_elements(v_conf) where (value ->> 'firm')::boolean loop
+    -- a confirmed booking or a confirmed Crew Support slot for the same person is NEVER cleared by anything written or recorded: change the person or the time
+    if not coalesce((c ->> 'overridable')::boolean, false) then raise exception 'ordift:booking_overlap_not_overridable'; end if;
     select r into res from jsonb_array_elements(coalesce(p -> 'conflictResolutions', '[]'::jsonb)) r where r ->> 'key' = c ->> 'key' limit 1;
     if res is null or res ->> 'kind' <> 'availability_verified' or nullif(res ->> 'verifiedWithProfileId', '')::uuid is distinct from v_assignee
        or res ->> 'method' not in ('direct_message', 'call', 'in_person', 'email') or char_length(btrim(coalesce(res ->> 'reference', ''))) < 10

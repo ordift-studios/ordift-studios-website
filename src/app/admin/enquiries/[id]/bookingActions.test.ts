@@ -59,12 +59,22 @@ describe("confirming", () => {
     const arg = h.confirm.mock.calls[0][0]; expect(arg.actorUserId).toBe("u1"); expect(arg.quotationId).toBe("q1"); expect(arg.agreementId).toBeNull(); expect(arg.supersedes).toBeNull();
   });
   it("a conflict resolution is attributed to the ASSIGNED person, not to whoever the form names, and only when the box is ticked", async () => {
-    const firm = [{ key: "leave:1", kind: "leave", firm: true, label: "approved leave", from: "2026-12-01", to: "2026-12-01" }];
+    const firm = [{ key: "leave:1", kind: "leave", firm: true, overridable: true, label: "approved leave", from: "2026-12-01", to: "2026-12-01" }];
     h.preview.mockResolvedValue(firm); h.confirm.mockResolvedValue({ ok: true, confirmationId: "c1" });
     const res = { resCount: "1", res0_key: "leave:1", res0_method: "call", res0_reference: "call on 7 Nov, noted in WhatsApp", res0_on: "2026-11-07", res0_verifiedWithProfileId: "attacker" };
     expect(await confirmBookingAction(null, fd({ ...form, ...res }))).toMatchObject({ ok: false, error: expect.stringMatching(/Firm scheduling conflict/) }); expect(h.confirm).not.toHaveBeenCalled();
     expect(await confirmBookingAction(null, fd({ ...form, ...res, res0_confirm: "on" }))).toMatchObject({ ok: true });
     expect(h.confirm.mock.calls[0][0].conflictResolutions[0]).toMatchObject({ key: "leave:1", verifiedWithProfileId: "p1" });
+  });
+  it("an overlap with a CONFIRMED booking or assignment of the same person cannot be cleared by any resolution the form sends; the person must change the person or the time", async () => {
+    const booking = [{ key: "booking:b1", kind: "booking", firm: true, overridable: false, label: "ENQ-OTHER", from: "2026-12-01T06:00:00Z", to: "2026-12-01T09:00:00Z" }];
+    h.preview.mockResolvedValue(booking); h.confirm.mockResolvedValue({ ok: true, confirmationId: "c1" });
+    const res = { resCount: "1", res0_key: "booking:b1", res0_method: "call", res0_reference: "call on 7 Nov, noted in WhatsApp", res0_on: "2026-11-07", res0_confirm: "on" };
+    expect(await confirmBookingAction(null, fd({ ...form, ...res }))).toMatchObject({ ok: false, error: expect.stringMatching(/cannot clear a confirmed overlap/) });
+    expect(h.confirm).not.toHaveBeenCalled();
+    const crew = [{ key: "crew_slot:s1", kind: "crew_slot", firm: true, overridable: false, label: "CSR-1", from: "2026-12-01", to: "2026-12-02" }];
+    h.preview.mockResolvedValue(crew); expect(await confirmBookingAction(null, fd({ ...form, resCount: "1", res0_key: "crew_slot:s1", res0_method: "call", res0_reference: "call on 7 Nov, noted in WhatsApp", res0_on: "2026-11-07", res0_confirm: "on" }))).toMatchObject({ ok: false });
+    expect(h.confirm).not.toHaveBeenCalled();
   });
   it("a change uses the 'change' sentence and supersedes the server-known current version", async () => {
     h.loadCurrent.mockResolvedValue({ id: "c1", version: 1, kind: "confirmed", segments: [] }); h.confirm.mockResolvedValue({ ok: true, confirmationId: "c2" });
