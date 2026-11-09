@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useActionState } from "react";
+import { useRestoringActionState } from "@/components/admin/useRestoringActionState";
 import { conversionFacts, conversionNext, conversionNotice, type ConversionResult, type ExistingConversion } from "@/lib/enquiry/conversionNotice";
 import { convertAction } from "./pricingActions";
 
@@ -11,7 +11,7 @@ const TONE = { success: "border-green-300 bg-green-50 text-green-900", info: "bo
 // is replaced by the facts of that draft and a direct link to it. While the request runs the button is disabled and says so, and a failure says nothing was created and
 // that trying again is safe (the server can only ever create one quotation per enquiry).
 export default function ConvertPanel({ enquiryId, existing }: { enquiryId: string; existing: ExistingConversion | null }) {
-  const [result, act, pending] = useActionState(convertAction as (p: ConversionResult, f: FormData) => Promise<ConversionResult>, null as ConversionResult);
+  const [result, act, pending, formRef] = useRestoringActionState(convertAction as (p: ConversionResult, f: FormData) => Promise<ConversionResult>, null as ConversionResult);
   const notice = conversionNotice(result, existing);
   return (
     <div className="space-y-3">
@@ -39,7 +39,7 @@ export default function ConvertPanel({ enquiryId, existing }: { enquiryId: strin
           </Link>
         </div>
       ) : (
-        <form action={act} className="space-y-2">
+        <form ref={formRef} action={act} onSubmit={(e) => { if (pending) e.preventDefault(); }} className="space-y-2">
           <input type="hidden" name="enquiryId" value={enquiryId} />
           <button disabled={pending} aria-busy={pending} className="inline-flex min-h-11 w-full items-center justify-center rounded-md bg-ordift-ink px-4 py-2 font-sans text-body-small text-white disabled:opacity-60 sm:w-auto">
             {pending ? "Creating the draft…" : result && !result.ok ? "Try again" : "Proceed to quotation"}

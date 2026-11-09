@@ -1,6 +1,7 @@
 "use client";
 
-import { useActionState, useState, useId, useRef } from "react";
+import { useState, useId, useRef } from "react";
+import { useRestoringActionState } from "@/components/admin/useRestoringActionState";
 import { useRouter } from "next/navigation";
 import { startGatewayCheckoutAction, type GatewayCheckoutState } from "../actions";
 import type { BankAccountDisplay } from "@/lib/payments/bankAccounts";
@@ -67,7 +68,7 @@ export default function CheckoutForm({
   const [activeRateToUsd, setActiveRateToUsd] = useState<number | null>(rateToUsd);
   const [bankRateChanged, setBankRateChanged] = useState(false);
 
-  const [gatewayState, gatewayFormAction, gatewayPending] = useActionState(startGatewayCheckoutAction, initialGatewayState);
+  const [gatewayState, gatewayFormAction, gatewayPending, gatewayFormRef] = useRestoringActionState(startGatewayCheckoutAction, initialGatewayState);
   // Same "adjust state during render when a dependency changes"
   // pattern as LoginForm.tsx's Turnstile reset — avoids an extra
   // cascading render for what's ultimately synchronous, derived state.
@@ -274,7 +275,7 @@ export default function CheckoutForm({
           <p className="font-sans text-caption text-ordift-ink-muted">
             Your bank or card provider may apply its own exchange rate or fee — this is outside Ordift Studios&apos; control.
           </p>
-          <form action={gatewayFormAction} onSubmit={(e) => { if (gatewayPending) e.preventDefault(); }} className="flex flex-col sm:flex-row gap-3">
+          <form ref={gatewayFormRef} action={gatewayFormAction} onSubmit={(e) => { if (gatewayPending) e.preventDefault(); }} className="flex flex-col sm:flex-row gap-3">
             <input type="hidden" name="kind" value={kind} />
             <input type="hidden" name="id" value={id} />
             <input type="hidden" name="paymentType" value={paymentType} />

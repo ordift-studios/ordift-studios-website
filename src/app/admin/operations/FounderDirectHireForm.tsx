@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState } from "react";
+import { useRestoringActionState } from "@/components/admin/useRestoringActionState";
 import { createFounderDirectHireAction, type FounderDirectHireState } from "./actions";
 
 type PersonOption = { id: string; label: string };
@@ -10,8 +10,8 @@ type GradeOption = { id: string; code: string; name: string };
 // UX/idempotency fix (2026-09-15) — extracted from a plain inline
 // Server-Component form (page.tsx) into its own Client Component so
 // useActionState can give real pending/success/error feedback. Root
-// cause of a real Production incident: the prior plain <form
-// action={...}> gave NO feedback of any kind (no disabled state while
+// cause of a real Production incident: the prior plain form
+// element gave NO feedback of any kind (no disabled state while
 // submitting, no success confirmation, errors only logged to the
 // server console) — a slow response looked identical to nothing
 // happening, and a resubmission silently created a second, duplicate,
@@ -36,10 +36,10 @@ export function FounderDirectHireForm({
   employingEntities: NameOption[];
   employmentJurisdictions: NameOption[];
 }) {
-  const [state, formAction, pending] = useActionState<FounderDirectHireState, FormData>(createFounderDirectHireAction, null);
+  const [state, formAction, pending, formRef] = useRestoringActionState<FounderDirectHireState>(createFounderDirectHireAction, null);
 
   return (
-    <form action={formAction} className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+    <form ref={formRef} action={formAction} onSubmit={(e) => { if (pending) e.preventDefault(); }} className="grid grid-cols-1 sm:grid-cols-2 gap-3">
       <select name="directHireProfileId" required defaultValue="" className="rounded-lg border border-black/15 bg-white px-2 py-1.5 font-sans text-body-small sm:col-span-2">
         <option value="" disabled>Person being hired…</option>
         {people.map((p) => (

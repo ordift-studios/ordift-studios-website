@@ -1,6 +1,7 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useState } from "react";
+import { useRestoringActionState } from "@/components/admin/useRestoringActionState";
 import { setAmountDueAction, type SetAmountDueState } from "../actions";
 
 // TD-043-era pattern (client-side half of the double-submit fix,
@@ -28,20 +29,23 @@ export default function SetAmountDueForm({
   enquiryId: string;
   currentAmountDue: number | null;
 }) {
-  const [state, formAction, pending] = useActionState<SetAmountDueState, FormData>(setAmountDueAction, null);
+  const [state, formAction, pending, formRef] = useRestoringActionState<SetAmountDueState>(setAmountDueAction, null);
   const [amount, setAmount] = useState(currentAmountDue != null ? String(currentAmountDue) : "");
 
-  // Resync to the server-confirmed value the instant a submission
-  // resolves (success or failure) — computed during render, not in an
-  // effect; see UpdateStageForm.tsx for the full rationale.
+  // Resync to the server-confirmed value the instant a submission is
+  // SAVED — computed during render, not in an effect; see
+  // UpdateStageForm.tsx for the full rationale. A REFUSED submission keeps
+  // what was typed (form restoration, 9 Nov 2026) so the amount is not
+  // lost; the red message above the button says it was not saved, and the
+  // saved amount is still shown by the page itself.
   const [resolvedState, setResolvedState] = useState(state);
   if (state !== resolvedState) {
     setResolvedState(state);
-    setAmount(currentAmountDue != null ? String(currentAmountDue) : "");
+    if (state?.ok === true) setAmount(currentAmountDue != null ? String(currentAmountDue) : "");
   }
 
   return (
-    <form action={formAction} className="space-y-3">
+    <form ref={formRef} action={formAction} onSubmit={(e) => { if (pending) e.preventDefault(); }} className="space-y-3">
       <input type="hidden" name="enquiryId" value={enquiryId} />
       <div>
         <label htmlFor="amount-due" className="font-sans text-caption text-ordift-ink-muted block mb-1">
