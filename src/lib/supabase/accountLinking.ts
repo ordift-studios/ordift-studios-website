@@ -25,10 +25,14 @@ export async function linkGuestRecordsToAccount(userId: string, email: string): 
   if (isPlaceholderEmail(email)) return;
   const admin: AdminClient = createAdminClient();
 
+  // ONLY website-form enquiries (created_by is null: nobody on staff recorded them). An enquiry that STAFF recorded (WhatsApp, telephone, email, in person) is never attached to an account by a matching
+  // email: the email on it may be a shared mailbox or someone else's, so such a record changes owner only through the claim process (a one-time link plus code, see PROPOSAL_portal_claims.sql). The
+  // database enforces this too (trigger enquiries_owner_guard).
   const { error: enquiryError } = await admin
     .from("enquiries")
     .update({ user_id: userId })
     .is("user_id", null)
+    .is("created_by", null)
     .ilike("email", email);
   if (enquiryError) {
     console.error("[accountLinking] enquiries link failed", enquiryError.message);

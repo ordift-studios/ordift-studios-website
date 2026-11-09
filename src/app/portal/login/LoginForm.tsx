@@ -124,7 +124,7 @@ export default function LoginForm({
 
       <p className="font-sans text-body-small text-ordift-ink-muted text-center">
         New here?{" "}
-        <Link href="/portal/signup" className="text-ordift-gold-pressed underline underline-offset-4">
+        <Link href={next ? `/portal/signup?next=${encodeURIComponent(next)}` : "/portal/signup"} className="text-ordift-gold-pressed underline underline-offset-4">
           Create an account
         </Link>
       </p>

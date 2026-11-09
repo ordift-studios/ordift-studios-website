@@ -4,7 +4,7 @@ import Link from "next/link";
 import { crmStageLabel } from "@/lib/portal/data";
 import { pathwayLabel } from "@/lib/enquiry/pathways";
 import { getEnquiryById, getEnquiryNotes, getAmountDueProvenance, describeAmountDueProvenance, CRM_STAGES } from "@/lib/admin/enquiries";
-import { getCurrentUser, hasRole, isSuperAdmin } from "@/lib/portal/roles";
+import { getCurrentUser, hasRole, isStaffOrAdmin, isSuperAdmin } from "@/lib/portal/roles";
 import { hasCapability } from "@/lib/workflow/engine";
 import { PAYMENT_CAPABILITIES } from "@/lib/payments/paymentPermissions";
 import { CRM_CAPABILITIES } from "@/lib/admin/crmPermissions";
@@ -25,6 +25,7 @@ import ContractingEntitySection from "../../organisations/ContractingEntitySecti
 import EmailNotificationsPanel from "./EmailNotificationsPanel";
 import { displayEmail } from "@/lib/shared/email/placeholder";
 import SubmitButton from "@/components/admin/SubmitButton";
+import PortalAccessPanel from "./PortalAccessPanel";
 import { getAmountDuePanel } from "@/lib/commercial/amountDue";
 import QuotationAmountPanel from "./QuotationAmountPanel";
 import PricingPanel from "./PricingPanel";
@@ -116,6 +117,8 @@ export default async function AdminEnquiryDetailPage({ params }: { params: Promi
           {availabilityPanel ? <AvailabilityCheckPanel enquiryId={enquiry.id} data={availabilityPanel} /> : null}
           {bookingPanel ? <BookingPanel data={bookingPanel} earlierCheck={earlierCheck ? { label: earlierCheck.label, at: earlierCheck.at } : null} /> : null}
           {user ? <PricingPanel enquiryId={enquiry.id} isSuperAdmin={isSuperAdmin(user)} /> : null}
+
+          {user && isStaffOrAdmin(user) ? <PortalAccessPanel enquiryId={enquiry.id} viewerId={user.id} isSuperAdmin={isSuperAdmin(user)} /> : null}
 
           {user && isSuperAdmin(user) ? (
             <>

@@ -97,37 +97,37 @@ end $$;
 
 create or replace function public.attempt_portal_claim(p_token_hash text, p_code_hash text, p_claimer uuid) returns jsonb
 language plpgsql security definer set search_path = '' as $$
-declare c public.enquiry_portal_claims%rowtype; v_owner uuid; v_left int;
+declare c public.enquiry_portal_claims%rowtype; v_owner uuid; v_left int; v_ids jsonb;
 begin
   select * into c from public.enquiry_portal_claims where token_hash = p_token_hash for update;
   if not found then return jsonb_build_object('outcome', 'not_found'); end if;
+  v_ids := jsonb_build_object('enquiry_id', c.enquiry_id, 'claim_id', c.id);          -- for the server's audit entry only: the application never passes these to the browser
   if c.status <> 'open' then
     -- a used link says plainly whether the project is the caller's own (they may simply have pressed twice) or someone else's
-    return jsonb_build_object('outcome', case when c.status = 'claimed' then (case when c.claimed_by = p_claimer then 'already_yours' else 'already_claimed' end) else c.status end,
-                              'enquiry_id', case when c.status = 'claimed' and c.claimed_by = p_claimer then c.enquiry_id end);
+    return jsonb_build_object('outcome', case when c.status = 'claimed' then (case when c.claimed_by = p_claimer then 'already_yours' else 'already_claimed' end) else c.status end) || v_ids;
   end if;
   if c.expires_at <= now() then
     update public.enquiry_portal_claims set status = 'expired', closed_at = now(), closed_reason = 'expired' where id = c.id;
-    return jsonb_build_object('outcome', 'expired');
+    return jsonb_build_object('outcome', 'expired') || v_ids;
   end if;
-  if p_claimer is null or not exists (select 1 from public.profiles where id = p_claimer and access_status = 'active') then return jsonb_build_object('outcome', 'not_eligible', 'reason', 'account_not_active'); end if;
-  if private.is_internal_profile(p_claimer) or p_claimer = c.created_by then return jsonb_build_object('outcome', 'not_eligible', 'reason', 'staff_account'); end if;
+  if p_claimer is null or not exists (select 1 from public.profiles where id = p_claimer and access_status = 'active') then return jsonb_build_object('outcome', 'not_eligible', 'reason', 'account_not_active') || v_ids; end if;
+  if private.is_internal_profile(p_claimer) or p_claimer = c.created_by then return jsonb_build_object('outcome', 'not_eligible', 'reason', 'staff_account') || v_ids; end if;
   select user_id into v_owner from public.enquiries where id = c.enquiry_id for update;
   if v_owner is not null then
     update public.enquiry_portal_claims set status = 'revoked', closed_at = now(), closed_reason = 'already_owned' where id = c.id;
-    return jsonb_build_object('outcome', 'already_owned');
+    return jsonb_build_object('outcome', 'already_owned') || v_ids;
   end if;
   if p_code_hash is distinct from c.code_hash then
     v_left := c.max_attempts - (c.attempts + 1);
     update public.enquiry_portal_claims set attempts = attempts + 1, status = case when v_left <= 0 then 'locked' else status end,
       closed_at = case when v_left <= 0 then now() else null end, closed_reason = case when v_left <= 0 then 'too_many_wrong_codes' else null end where id = c.id;
-    return jsonb_build_object('outcome', case when v_left <= 0 then 'locked' else 'bad_code' end, 'attempts_left', greatest(v_left, 0));
+    return jsonb_build_object('outcome', case when v_left <= 0 then 'locked' else 'bad_code' end, 'attempts_left', greatest(v_left, 0)) || v_ids;
   end if;
   perform set_config('ordift.portal_claim', '1', true);
   update public.enquiries set user_id = p_claimer where id = c.enquiry_id and user_id is null;
   update public.enquiry_portal_claims set status = 'claimed', claimed_by = p_claimer, claimed_at = now(), closed_at = now(), closed_reason = 'claimed', attempts = attempts where id = c.id;
   insert into public.enquiry_ownership_events (enquiry_id, event, actor, from_user, to_user, claim_id, reason) values (c.enquiry_id, 'claimed', p_claimer, null, p_claimer, c.id, 'link and code verified');
-  return jsonb_build_object('outcome', 'claimed', 'enquiry_id', c.enquiry_id, 'claim_id', c.id);
+  return jsonb_build_object('outcome', 'claimed') || v_ids;
 end $$;
 
 create or replace function public.revoke_portal_claim(p_claim uuid, p_actor uuid, p_reason text) returns jsonb
