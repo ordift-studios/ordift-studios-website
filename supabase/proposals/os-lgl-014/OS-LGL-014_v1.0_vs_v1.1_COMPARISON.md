@@ -30,7 +30,17 @@ cl. 9 (how confirmation actually works), cl. 10 (structured payment condition), 
 ## 4. Provisions to add
 Part L (L1-L11) and Schedule 1.
 
-## 5. Observations about the register, not the text
-- Production lists TWO rows for OS-LGL-014 version "1.0": one `active`, one `approved`. This should be explained before a 1.1 row is created (which row v1.1 supersedes).
-- The active 1.0 is the public `/legal/booking` page. Public-page content is separate from an agreement master; v1.1 must not change what `/legal/booking` shows unless that is decided separately.
+## 5. Observations about the register, not the text (investigated 9 Nov; details in the registry findings document)
+- Production lists TWO rows for OS-LGL-014 version "1.0". **Row B** (active, legacy-mapped) is the existing Master Booking Terms served at `/legal/booking`; **Row A** (approved, seeded 8 Sep for all 21 masters, label "Legal Counsel") holds no text, no approval date and no evidence. This comparison is against Row B. The registry holds no counsel-approved Official Master text for OS-LGL-014.
+- Public-page content is served from code, separate from the agreement master; v1.1 does not change what `/legal/booking` shows unless that is decided and released separately.
 - v1.0 cl. 140: confirmed bookings stay under the version in force at booking, so v1.1 would not retroactively change them.
+
+## 6. Focus list for counsel (the six areas you asked to highlight)
+| Area | v1.0 position | What v1.1 changes | Question for counsel |
+|---|---|---|---|
+| **Currency** | cl. 8 and 12: USD standard, local amounts for convenience, invoiced USD prevails | A2, A3 (replaces cl. 12), L3: the accepted quotation's currency and amount are the obligation; USD is a reference only; any cross-currency payment only by recorded informed agreement | Does 12.1-12.5 honour the accepted quotation? Who bears a client's bank charge or conversion cost? Is portal agreement to pay in another currency valid? Refund currency (cl. 71)? |
+| **Minors and safeguarding** | nothing | L6 (new): age and consent rules, guardian consent, storage and portfolio use | What consent and age rules apply in Qatar and Ghana? May a child's images be used in the portfolio, and on what consent? |
+| **Governing law** | cl. 125/126/160: chosen by Ordift per engagement | A7: stated in the agreement, tied to the contracting entity | Which law and courts for the Qatar entity and for the Ghana business? Consumers? Arbitration? |
+| **Usage rights** | Part E cl. 49-67; cl. 54 perpetual promotional right | L8: extended usage and exclusivity recorded in the Engagement Particulars; recorded permission reflected | Is cl. 54 acceptable as drafted? How should it interact with a client's recorded permission? |
+| **Cancellation** | Part F cl. 68-82 | unchanged except refund in the original currency (note D) | Anything else to change for the new payment-condition rule? |
+| **Liability** | cl. 83-100, 94 | unchanged | Confirm for corporate clients and unusual exposure; confirm cap wording |

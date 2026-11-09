@@ -11,7 +11,9 @@ For use by the Founder during a telephone consultation with counsel. The sheet i
 | Agreement reviewed | OS-LGL-014 v1.1 DRAFT. SHA-256 of `OS-LGL-014_v1.1_DRAFT.md` as prepared on 2026-11-09: `faa4a68937ce0d1b9a9af11e9b576983587b102763bca6e725e56985488e63e5` |
 | Recommendations and amendments | As communicated following the consultation (section 3) |
 | Review outcome | Approved / Conditionally approved / Amendments requested / Pending - according to what counsel actually communicates |
-| Review documented by | Founder |
+| Review documented by | Founder (Founder approval is based on counsel's advice from this consultation; it is not a written approval issued by counsel) |
+| Call started / ended | *(to be recorded)* |
+| How the Founder satisfied themself that they were speaking with counsel | *(for example: called counsel back on a number taken from an independent source; to be recorded)* |
 Recompute the hash before the call: `shasum -a 256 supabase/proposals/os-lgl-014/OS-LGL-014_v1.1_DRAFT.md`. If it differs from the entry above, write the new value here and tell Claude before the call; the record must name the exact text counsel heard.
 
 ## 2. How to run the call (about 60-90 minutes)
@@ -48,29 +50,27 @@ Outcome codes: **OK** = counsel is content with the wording as drafted; **AMEND*
 | K3 | Data protection and confidentiality (kept, Part H) | Confirm Qatar and Ghana regimes | | |
 | K4 | Warnings | Anything in v1.0 that should be removed or corrected for a signed agreement? | | |
 
-## 4. Final outcome (ask last)
-Outcome (circle one): **Approved as drafted / Approved subject to the amendments recorded above / Amendments requested before approval / Pending.** Any conditions: ________________ . Did counsel ask to see the final text again before it is used? Yes / No.
+## 4. Counsel's conclusion (ask last; write counsel's words)
+Counsel's conclusion (circle what counsel actually said): **Content as drafted / Content subject to the amendments recorded above / Amendments needed before use / Wants more time.** Conditions: ________________ . Did counsel ask to see the final text again before it is used? Yes / No.
 
-## 5. Method for recording counsel's recommendations
+## 5. Founder's decision (made after the call, separately from counsel's advice)
+Completed by the Founder only after the call, and only once the amendments (if any) have been incorporated and the final hash recorded.
+
+| Field | Entry |
+|---|---|
+| Date of decision | |
+| Hash (SHA-256) of the exact final text approved | |
+| Is it identical to the text counsel heard? | Yes / No. If No: list every change and whether each was recommended by counsel |
+| Decision | Approve / Do not approve / Review again |
+| Statement recorded with the approval | "Approved by the Founder on the advice of counsel given in a telephone consultation on [date]. This is not a written approval issued by counsel." |
+
+## 6. Method for recording counsel's recommendations
 1. During the call, write counsel's words in the right-hand column against the item number. If counsel gives wording, write it exactly; if counsel gives a principle, write the principle and mark AMEND.
-2. Straight after the call (same day), read the sheet back to counsel if possible, or at least re-read it yourself while memory is fresh, and add the date and time (start and end) and anything you could not capture.
-3. Send Claude the filled sheet (typed text or photograph). Claude incorporates only what is recorded, shows a tracked comparison of v1.1 draft before and after, and gives the new SHA-256. Claude does not decide any legal question and does not fill any blank.
-4. Repeat steps 1-3 for a second call if counsel wants to re-review the amended text.
-5. The completed sheet, with the hash of the exact text counsel last reviewed, is the Founder-recorded account of the consultation and is stored with the version.
+2. Straight after the call (same day), re-read the sheet while memory is fresh, add the start and end times and anything you could not capture.
+3. Send Claude the filled sheet (typed text or a photograph). Claude incorporates only what is recorded, shows a before-and-after comparison of the draft, and gives the new SHA-256. Claude does not decide any legal question and does not fill any blank.
+4. If counsel asked to see the amended text, or you want to confirm it, hold a second call and record it on a fresh copy of this sheet; each call is a separate record with its own date and hash.
+5. When no further amendment is outstanding, the Founder completes section 5. The completed sheet or sheets, with the hash of the exact text approved, form the legal-review record and are stored with the version.
+6. The record uses these words and no others for the review: "Founder-recorded telephone consultation" and "Founder approval on counsel's advice".
 
-## 6. What this record is - and the existing legal controls (read before relying on the outcome)
-**This sheet is a Founder-recorded account of a telephone consultation. It is not a written approval issued by counsel, and it must not be described as one.** If counsel later chooses to issue a written confirmation, that is a different and stronger record and is kept separately.
-
-What the existing system requires before a version can be activated (inspected 2026-11-09 in `masterRegistry.ts`, `masterRegistryActions.ts`, `approvalAttestation.ts`):
-1. **Lifecycle:** a version moves draft -> legal review -> approved -> active; steps cannot be skipped. Activation is an explicit, separate act by a Super Admin or holder of the contract-administer authority.
-2. **An approval date must be on record** before activation: either the registry's own stamp (set when an authorised administrator performs the "approve" transition) or a verified **attestation** of counsel's approval. The attestation requires a **stored evidence file** whose fingerprint the system computes; the evidence must name OS-LGL-014; the evidence **kind** must be one of: signed letter, counsel email, counsel message, message transcript, signed register, other written record; and the administrator must record an **independent identity check** of counsel (call-back to an independently obtained number is an accepted method).
-3. The controlled master files (document and PDF) must be stored and registered with fingerprints, with **no unresolved counsel-review markers**, and the version must be the master's current version.
-**What this means for a telephone review:** the evidence kinds are all written records, and the attestation describes "counsel's own dated review and confirmation". A Founder-recorded phone account is **not one of the accepted evidence kinds today**, and I will not file it as "counsel email" or "signed letter". Options, each needing the Founder's decision (none is implemented):
-- (a) After the call, counsel supplies any written record of the outcome (a one-line message is enough); it is then attested as that kind, with the telephone call-back as the identity check. The sheet is kept alongside it.
-- (b) The Founder, as the authorised administrator, performs the registry "approve" transition personally after the call, recording the sheet as the basis. This is a Founder approval on advice, and the record should say so rather than say counsel approved.
-- (c) Add a new, honestly named evidence kind (for example "Founder-recorded telephone consultation") to the control, with its own audit label and the sheet as the stored evidence. This changes a legal control and needs the Founder's explicit instruction and tests.
-Until one of these is chosen and completed, **v1.0 stays active, v1.1 stays a draft, and no approval is recorded or implied.**
-
-## 7. Defects found in the tooling that must be fixed before v1.1 can be activated
-- `masterRegistryActions.ts` (registration and activation) and `agreementReadiness.ts` derive the content reference with the version hard-coded as "1.0", so a v1.1 would be registered as 1.0.
-- Production shows two rows for OS-LGL-014 version "1.0" (one active, one approved); explain before adding v1.1.
+## 7. Existing legal controls and how the Founder approval fits them
+The full inspection, the exact steps and the proposed adjustment are in `OS-LGL-014_registry_findings_and_founder_approval_procedure.md`. In short: the registry already has the right lifecycle and a registry-stamped approval date, but **no screen** lets anyone move a version to "approved", so the Founder approval cannot be recorded today without a small, separately approved change. Until then v1.0 stays active, v1.1 stays a draft, and no approval is recorded or implied.
