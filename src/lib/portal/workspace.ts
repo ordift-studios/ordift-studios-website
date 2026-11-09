@@ -6,7 +6,7 @@ import {
   getEnquiryByIdForUser,
   getWorkshopRegistrationByIdForUser,
 } from "@/lib/portal/data";
-import { loadSchedulingStatus } from "@/lib/bookings/schedulingStatusService";
+import { loadSchedulingStatus, NEXT_AFTER_PAYMENT } from "@/lib/bookings/schedulingStatusService";
 import { clientSchedulingLabel } from "@/lib/bookings/paymentStagePolicy";
 import { crmStageProgress, nextCrmStage } from "@/lib/portal/dashboard";
 import type { ProjectRequestStatus } from "@/lib/admin/projectRequests";
@@ -60,7 +60,7 @@ export async function getWorkspaceOverview(
       title: `${pathwayLabel(enquiry.service)} — ${enquiry.referenceNumber}`,
       projectType: pathwayLabel(enquiry.service),
       statusLabel: scheduling ? clientSchedulingLabel(scheduling) : crmStageLabel(enquiry.crmStage),
-      nextMilestoneLabel: next ? crmStageLabel(next) : null,
+      nextMilestoneLabel: scheduling ? NEXT_AFTER_PAYMENT : next ? crmStageLabel(next) : null,
       progress: crmStageProgress(enquiry.crmStage),
       submittedAt: enquiry.submittedAt,
       paymentStatus: enquiry.paymentStatus,

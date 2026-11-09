@@ -25,6 +25,10 @@ describe("withSchedulingLabels", () => {
     const out = await withSchedulingLabels(cards, [paid, { id: "e2", crmStage: "new_lead", paymentStatus: "Pending", amountPaid: 0 }], ON);
     expect(out[0].statusLabel).toBe("Paid — scheduling pending"); expect(out[1].statusLabel).toBe("New Lead");
   });
+  it("a card that carries a next milestone is told booking confirmation is next", async () => {
+    const out = await withSchedulingLabels([{ id: "e1", statusLabel: "Quotation Sent", nextMilestoneLabel: "Negotiation" }], [paid], ON);
+    expect(out[0].nextMilestoneLabel).toBe("Booking confirmation");
+  });
   it("returns the cards untouched while the switch is off", async () => {
     const cards = [{ id: "e1", statusLabel: "Quotation Sent" }];
     expect(await withSchedulingLabels(cards, [paid], OFF)).toBe(cards);
