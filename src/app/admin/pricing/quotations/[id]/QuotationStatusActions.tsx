@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState, useState } from "react";
+import { useRestoringActionState } from "@/components/admin/useRestoringActionState";
 import { issueQuotationAction, recordQuotationAcceptanceAction, recordQuotationDeliveryAction, updateQuotationStatusAction, type ActionState } from "../actions";
 import SubmitButton from "@/components/admin/SubmitButton";
 import LocalDateTimeField from "@/components/admin/LocalDateTimeField";
@@ -24,7 +25,7 @@ export function QuotationStatusActions({ quotationId, status, defaultValidUntil,
   documentFingerprint?: string | null; documentHref?: string | null; crewManaged?: boolean; expectedEntityId?: string | null; activityOptions?: { key: string; label: string }[]; defaultActivities?: string[]; today: string; quotationId: string; status: string; hasClient: boolean; defaultValidUntil: string; currentValidUntil: string | null; isSuperAdmin: boolean; blockers: string[]; expired: boolean; deliveredText: string | null;
 }) {
   const [state, formAction] = useActionState<ActionState, FormData>(updateQuotationStatusAction, null);
-  const [acceptState, acceptAction] = useActionState<ActionState, FormData>(recordQuotationAcceptanceAction, null);
+  const [acceptState, acceptAction, , acceptForm] = useRestoringActionState<ActionState>(recordQuotationAcceptanceAction, null);   // keeps what was typed when the acceptance is refused
   // The result states live here (this component stays mounted when the page refreshes after an action), so a confirmation is never lost when the panel below it changes.
   const [issueState, issueAction] = useActionState<ActionState, FormData>(issueQuotationAction, null);
   const [deliveryState, deliveryAction] = useActionState<ActionState, FormData>(recordQuotationDeliveryAction, null);
@@ -132,7 +133,7 @@ export function QuotationStatusActions({ quotationId, status, defaultValidUntil,
           ))}
         </form>
       )}
-      {state?.ok === false && <p className="font-sans text-caption text-red-700">{state.error}</p>}
+      {state?.ok === false && <p role="alert" className="font-sans text-caption text-red-700">{state.error}</p>}
 
       {status === "sent" && !crewManaged && expired && (
         <p role="status" className="rounded-lg border border-red-300 bg-red-50 p-3 font-sans text-body-small text-red-900">This quotation has expired, so acceptance cannot be recorded against it. Use Revise to create a new version (its validity starts fresh when you issue it).</p>
@@ -143,7 +144,7 @@ export function QuotationStatusActions({ quotationId, status, defaultValidUntil,
           <p className="mt-2 font-sans text-caption text-ordift-ink-muted">
             Use this when the client has accepted by email, message, telephone or in person. It is audited under your name. It records the acceptance only: it does not set the amount due, create a payment, send an email or confirm a booking. An acceptance received after the validity date cannot be recorded.
           </p>
-          <form action={acceptAction} className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <form ref={acceptForm} action={acceptAction} className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-3">
             <input type="hidden" name="quotationId" value={quotationId} />
             <label className="font-sans text-caption text-ordift-ink-muted">How was it received?
               <select name="channel" required defaultValue="" className={FIELD}><option value="" disabled>Choose…</option>{ACCEPTANCE_CHANNELS.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}</select>
@@ -155,7 +156,7 @@ export function QuotationStatusActions({ quotationId, status, defaultValidUntil,
             </label>
             <div className="sm:col-span-2"><SubmitButton pendingLabel="Recording…" className="min-h-11 w-full sm:w-auto font-sans text-body-small font-semibold px-4 py-2 rounded-md bg-ordift-navy-950 text-white">Record acceptance</SubmitButton></div>
           </form>
-          {acceptState?.ok === false && <p className="mt-2 font-sans text-caption text-red-700">{acceptState.error}</p>}
+          {acceptState?.ok === false && <p role="alert" className="mt-2 font-sans text-caption text-red-700">{acceptState.error}</p>}
           {acceptState?.ok === true && <p className="mt-2 font-sans text-caption text-green-700">Acceptance recorded.</p>}
         </details>
       )}

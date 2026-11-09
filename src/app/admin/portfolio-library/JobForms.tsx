@@ -2,6 +2,7 @@
 
 /* eslint-disable @next/next/no-img-element -- short-lived signed URLs to private files */
 import { useActionState, useEffect, useState } from "react";
+import { useRestoringActionState } from "@/components/admin/useRestoringActionState";
 import { previewUrlsAction } from "@/app/admin/crew-support/releaseActions";
 import { DESTINATIONS } from "@/lib/portfolio/destinations";
 import { GRANTOR_CAPACITIES, PERMISSION_METHODS, PEOPLE_DECLARATIONS, REVIEW_CHECKS } from "@/lib/portfolio/permissionModel";
@@ -25,11 +26,11 @@ function Uses({ name = "destinations", only }: { name?: string; only?: string[] 
 
 // Guided historical-permission recording (Route C). Records only what the person can show; the date is optional and is never filled in for them.
 export function RecordPermissionForm({ jobType, jobId, files }: { jobType: string; jobId: string; files: { id: string; name: string }[] }) {
-  const [s, act, pending] = useActionState(recordPermissionAction, null as FormState);
+  const [s, act, pending, formRef] = useRestoringActionState<FormState>(recordPermissionAction, null);   // keeps what was typed when the permission record is refused
   const [scope, setScope] = useState<"job" | "files">("job");
   const [decision, setDecision] = useState("granted");
   return (
-    <form action={act} className="space-y-3">
+    <form ref={formRef} action={act} className="space-y-3">
       <Hidden jobType={jobType} jobId={jobId} />
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <div><label className={label} htmlFor="decision">What happened</label><select id="decision" name="decision" className={input} value={decision} onChange={(e) => setDecision(e.target.value)}><option value="granted">Permission was given</option><option value="declined">Permission was refused</option><option value="withdrawn">Permission was withdrawn</option></select></div>

@@ -111,7 +111,7 @@ function PricingPrefillPanel({ markets, onAdd }: { markets: MarketOption[]; onAd
       {state?.ok === false && state.requiresCustomQuote && (
         <p className="font-sans text-caption text-amber-700 mt-2">{state.reason} — add a manual line item below instead.</p>
       )}
-      {state?.ok === false && !state.requiresCustomQuote && <p className="font-sans text-caption text-red-700 mt-2">{state.error}</p>}
+      {state?.ok === false && !state.requiresCustomQuote && <p role="alert" className="font-sans text-caption text-red-700 mt-2">{state.error}</p>}
       {state?.ok === true && <p className="font-sans text-caption text-green-700 mt-2">Added as a line item below (USD, from Pricing).</p>}
     </details>
   );
@@ -292,7 +292,7 @@ export function NewQuotationForm({ clients, markets, editing, enquiry, currencie
         </div>
       </section>
 
-      {errorMessage && <p className="font-sans text-body-small text-red-700">{errorMessage}</p>}
+      {errorMessage && <p role="alert" className="font-sans text-body-small text-red-700">{errorMessage}</p>}
       <SubmitButton pendingLabel={editing ? "Saving…" : "Creating…"} className="font-sans text-body-small font-semibold px-4 py-2 rounded-md bg-ordift-navy-950 text-white">
         {editing ? "Save Changes" : "Create Quotation"}
       </SubmitButton>
