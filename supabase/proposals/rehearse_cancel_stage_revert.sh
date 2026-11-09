@@ -18,8 +18,8 @@ out.append(m.group(0))
 print("\n".join(out))
 PY
 )
-snap="select (select count(*) from public.enquiries) || '/' || (select count(*) from public.activity_log) || '/' || (select count(*) from public.enquiry_booking_confirmations) || '/' || (select count(*) from public.payments) || '/' || md5(pg_get_functiondef('public.cancel_ordinary_booking(uuid,text,uuid)'::regprocedure) || pg_get_functiondef('public.confirm_ordinary_booking(jsonb,uuid)'::regprocedure))"
+snap="select (select count(*) from public.enquiries) || '/' || (select count(*) from public.activity_log) || '/' || (select count(*) from public.enquiry_booking_confirmations) || '/' || (select count(*) from public.payments) || '/' || (select md5(string_agg(pg_get_functiondef(oid), '' order by oid)) from pg_proc where proname in ('cancel_ordinary_booking', 'confirm_ordinary_booking'))"
 before=$(echo "$snap" | q)
-{ echo "begin;"; echo "$funcs"; sed -n '1,52p' "$D/REHEARSE_booking_body.sql"; cat "$D/REHEARSE_cancel_stage_revert_section.sql"; echo "rollback;"; } | q
+{ echo "begin;"; echo "drop function if exists public.cancel_ordinary_booking(uuid, text, uuid, text);"; echo "$funcs"; sed -n '1,52p' "$D/REHEARSE_booking_body.sql"; cat "$D/REHEARSE_cancel_stage_revert_section.sql"; echo "rollback;"; } | q
 after=$(echo "$snap" | q)
 echo "lab (enquiries/activity/confirmations/payments/function fingerprint) before: $before"; echo "                                                                   after:  $after -> $([ "$before" = "$after" ] && echo UNCHANGED || echo CHANGED-INVESTIGATE)"

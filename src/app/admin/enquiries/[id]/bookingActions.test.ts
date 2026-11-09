@@ -4,14 +4,15 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 // and who verified a conflict is decided by the server, never taken from the form.
 const h = vi.hoisted(() => ({
   user: null as null | { id: string; roles: string[] },
-  confirm: vi.fn(), cancel: vi.fn(), preview: vi.fn(), loadCtx: vi.fn(), loadCurrent: vi.fn(), settings: vi.fn(), pool: vi.fn(),
+  confirm: vi.fn(), manual: vi.fn(), retry: vi.fn(), cancel: vi.fn(), preview: vi.fn(), loadCtx: vi.fn(), loadCurrent: vi.fn(), settings: vi.fn(), pool: vi.fn(),
 }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 vi.mock("@/lib/portal/roles", () => ({ getCurrentUser: async () => h.user, isSuperAdmin: (u: { roles: string[] } | null) => Boolean(u?.roles.includes("super_admin")) }));
 vi.mock("@/lib/bookings/service", () => ({ confirmOrdinaryBooking: h.confirm, cancelOrdinaryBooking: h.cancel, previewConflicts: h.preview, loadBookingSettings: h.settings }));
 vi.mock("@/lib/bookings/panel", async (orig) => ({ ...(await orig<typeof import("@/lib/bookings/panel")>()), loadAcceptedContext: h.loadCtx, loadCurrentBooking: h.loadCurrent }));
+vi.mock("@/lib/bookings/notificationService", () => ({ recordManualClientNotice: h.manual, retryBookingNotification: h.retry }));
 vi.mock("@/lib/crewSupport/candidates", () => ({ listOverridePool: h.pool }));
-import { cancelBookingAction, confirmBookingAction, previewBookingAction } from "./bookingActions";
+import { cancelBookingAction, confirmBookingAction, previewBookingAction, recordClientNoticeAction } from "./bookingActions";
 
 const fd = (o: Record<string, string>) => { const f = new FormData(); for (const [k, v] of Object.entries(o)) f.set(k, v); return f; };
 const form = { enquiryId: "e1", quotationId: "q1", expectedVersion: "0", assignedProfileId: "p1", segCount: "1", seg0_start: "2026-12-01T09:00", seg0_end: "2026-12-01T12:00", seg0_tz: "Asia/Qatar", seg0_kind: "on_site", seg0_location: "Doha studio", confirmSentence: "confirm booking ENQ-1" };
@@ -84,12 +85,44 @@ describe("confirming", () => {
 });
 
 describe("cancelling", () => {
-  const c = { enquiryId: "e1", reason: "Client withdrew in writing on 7 Nov", confirmSentence: "cancel booking ENQ-1", expectedVersion: "1" };
+  const c = { enquiryId: "e1", reason: "Client withdrew in writing on 7 Nov", confirmSentence: "cancel booking ENQ-1", expectedVersion: "1", outcome: "rescheduling_pending" };
   it("needs a live booking, the current version and the exact sentence; then calls the service as the signed-in Super Admin", async () => {
     expect(await cancelBookingAction(null, fd(c))).toMatchObject({ ok: false, error: expect.stringMatching(/no confirmed booking/) });
     h.loadCurrent.mockResolvedValue({ id: "c1", version: 1, kind: "confirmed", segments: [] }); h.cancel.mockResolvedValue({ ok: true, confirmationId: "c2" });
     expect(await cancelBookingAction(null, fd({ ...c, expectedVersion: "0" }))).toMatchObject({ ok: false, error: expect.stringMatching(/changed by someone else/) });
     expect(await cancelBookingAction(null, fd({ ...c, confirmSentence: "cancel" }))).toMatchObject({ ok: false, error: expect.stringMatching(/type exactly/) }); expect(h.cancel).not.toHaveBeenCalled();
-    expect(await cancelBookingAction(null, fd(c))).toMatchObject({ ok: true }); expect(h.cancel.mock.calls[0][0]).toMatchObject({ actorUserId: "u1", enquiryId: "e1" });
+    expect(await cancelBookingAction(null, fd(c))).toMatchObject({ ok: true }); expect(h.cancel.mock.calls[0][0]).toMatchObject({ actorUserId: "u1", enquiryId: "e1", outcome: "rescheduling_pending", deferClientNoticeReason: null });
+  });
+  it("the outcome must be chosen; final is passed through; the client is told by default and a hold-back needs a written reason", async () => {
+    h.loadCurrent.mockResolvedValue({ id: "c1", version: 1, kind: "confirmed", segments: [] }); h.cancel.mockResolvedValue({ ok: true, confirmationId: "c2", deferred: false });
+    expect(await cancelBookingAction(null, fd({ ...c, outcome: "" }))).toMatchObject({ ok: false, error: expect.stringMatching(/Choose whether/) });
+    expect(await cancelBookingAction(null, fd({ ...c, outcome: "refund" }))).toMatchObject({ ok: false }); expect(h.cancel).not.toHaveBeenCalled();
+    expect(await cancelBookingAction(null, fd({ ...c, outcome: "final", notifyClient: "defer", deferReason: "no" }))).toMatchObject({ ok: false, error: expect.stringMatching(/reason of at least a sentence/) }); expect(h.cancel).not.toHaveBeenCalled();
+    const ok = await cancelBookingAction(null, fd({ ...c, outcome: "final" })); expect(ok).toMatchObject({ ok: true, message: expect.stringMatching(/Booking Cancelled.*final/) }); expect((ok as { message: string }).message).toMatch(/no refund was made/); expect(h.cancel.mock.calls[0][0]).toMatchObject({ outcome: "final", deferClientNoticeReason: null });
+    h.cancel.mockClear(); h.cancel.mockResolvedValue({ ok: true, confirmationId: "c3", deferred: true });
+    const d = await cancelBookingAction(null, fd({ ...c, notifyClient: "defer", deferReason: "phoning the client about a new date first" })); expect(h.cancel.mock.calls[0][0]).toMatchObject({ deferClientNoticeReason: "phoning the client about a new date first" }); expect((d as { message: string }).message).toMatch(/held back/);
+  });
+});
+
+describe("the client notice on a change, and recording that the client was told", () => {
+  const change = { ...form, expectedVersion: "1", confirmSentence: "change booking ENQ-1" };
+  beforeEach(() => { h.loadCurrent.mockResolvedValue({ id: "c1", version: 1, kind: "confirmed", segments: [] }); h.confirm.mockResolvedValue({ ok: true, confirmationId: "c2", deferred: false }); });
+  it("a change tells the client by default and passes no hold-back", async () => { expect(await confirmBookingAction(null, fd(change))).toMatchObject({ ok: true, message: expect.stringMatching(/client is being told/) }); expect(h.confirm.mock.calls[0][0].deferClientNoticeReason).toBeNull(); });
+  it("holding it back needs a written reason; with one it is passed on and the message says it is outstanding", async () => {
+    expect(await confirmBookingAction(null, fd({ ...change, notifyClient: "defer", deferReason: "later" }))).toMatchObject({ ok: false, error: expect.stringMatching(/reason of at least a sentence/) }); expect(h.confirm).not.toHaveBeenCalled();
+    h.confirm.mockResolvedValue({ ok: true, confirmationId: "c2", deferred: true });
+    expect(await confirmBookingAction(null, fd({ ...change, notifyClient: "defer", deferReason: "phoning the client first about the time" }))).toMatchObject({ ok: true, message: expect.stringMatching(/held back.*outstanding/) }); expect(h.confirm.mock.calls[0][0].deferClientNoticeReason).toBe("phoning the client first about the time");
+  });
+  it("a first CONFIRMATION ignores any hold-back the form sends: the client is told they are booked", async () => {
+    h.loadCurrent.mockResolvedValue(null); h.confirm.mockResolvedValue({ ok: true, confirmationId: "c1", deferred: false });
+    await confirmBookingAction(null, fd({ ...form, confirmSentence: "confirm booking ENQ-1", notifyClient: "defer", deferReason: "phoning the client first about the date" })); expect(h.confirm.mock.calls[0][0].deferClientNoticeReason).toBeNull();
+  });
+  it("recording that the client was told: an Admin or Super Admin only, nobody else, and the service decides the rest", async () => {
+    h.manual.mockResolvedValue({ ok: true }); const f = { enquiryId: "e1", confirmationId: "c2", channel: "whatsapp", note: "read it out" };
+    for (const roles of [["staff"], ["client"], []]) { h.user = { id: "u9", roles }; expect(await recordClientNoticeAction(null, fd(f))).toMatchObject({ ok: false }); } expect(h.manual).not.toHaveBeenCalled();
+    h.user = null; expect(await recordClientNoticeAction(null, fd(f))).toMatchObject({ ok: false });
+    for (const roles of [["admin"], ["super_admin"]]) { h.user = { id: "u2", roles }; expect(await recordClientNoticeAction(null, fd(f))).toMatchObject({ ok: true }); }
+    expect(h.manual.mock.calls[0][0]).toMatchObject({ actorUserId: "u2", confirmationId: "c2", channel: "whatsapp" });
+    h.manual.mockResolvedValue({ ok: false, error: "Nothing to record" }); expect(await recordClientNoticeAction(null, fd(f))).toMatchObject({ ok: false, error: "Nothing to record" });
   });
 });
