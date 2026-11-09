@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useEffect, useRef, useState } from "react";
+import { useActionState, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   createQuotationAction,
@@ -10,6 +10,7 @@ import {
   type SimpleActionState,
 } from "../actions";
 import SubmitButton from "@/components/admin/SubmitButton";
+import { restoreSubmittedValues } from "@/components/admin/ActionForm";
 import { paymentConditionSentence } from "@/lib/commercial/paymentConditionTerms";
 import type { PaymentCondition } from "@/lib/crewSupport/paymentCondition";
 
@@ -143,8 +144,12 @@ export type EnquiryContext = { id: string; reference: string; clientProfileId: s
 
 export function NewQuotationForm({ clients, markets, editing, enquiry, currencies }: { clients: ClientOption[]; markets: MarketOption[]; editing?: QuotationFormInitialData; enquiry?: EnquiryContext; currencies?: string[] }) {
   const router = useRouter();
-  const createState = useActionState<CreateQuotationState, FormData>(createQuotationAction, null);
-  const editState = useActionState<SimpleActionState, FormData>(updateQuotationDraftAction, null);
+  // React 19 resets every uncontrolled field after a form action settles, including a REFUSED one. The submitted values are kept here and put back on a refusal with the platform's own
+  // helper (the same one <ActionForm> uses), so nothing the person typed is lost - text fields, selects and the payment-condition choice alike.
+  const formEl = useRef<HTMLFormElement>(null);
+  const submitted = useRef<FormData | null>(null);
+  const createState = useActionState<CreateQuotationState, FormData>((prev, fd) => { submitted.current = fd; return createQuotationAction(prev, fd); }, null);
+  const editState = useActionState<SimpleActionState, FormData>((prev, fd) => { submitted.current = fd; return updateQuotationDraftAction(prev, fd); }, null);
   const [formAction] = editing ? [editState[1]] : [createState[1]];
   const [partyType, setPartyType] = useState<"client" | "prospect">(editing?.partyType ?? (enquiry?.clientProfileId ? "client" : "prospect"));
   const [items, setItems] = useState<LineItem[]>(editing?.items ?? [{ ...EMPTY_ITEM }]);
@@ -166,13 +171,10 @@ export function NewQuotationForm({ clients, markets, editing, enquiry, currencie
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editState[0]]);
 
-  const conditionBox = useRef<HTMLFieldSetElement>(null);
   const errorMessage = editing ? (editState[0]?.ok === false ? editState[0].error : null) : createState[0]?.ok === false ? createState[0].error : null;
-  // React 19 resets uncontrolled form fields after every submission, including a REFUSED one, and that also un-ticks a controlled radio group: put the person's choice back so the screen
-  // keeps showing what the preview sentence above is based on (found in the 2026-11-09 browser walkthrough).
-  useEffect(() => {
-    conditionBox.current?.querySelectorAll<HTMLInputElement>("input[name=paymentCondition]").forEach((r) => { r.checked = r.value === condition; });
-  }, [errorMessage, condition]);
+  useLayoutEffect(() => {
+    if (errorMessage && formEl.current && submitted.current) restoreSubmittedValues(formEl.current, submitted.current);
+  }, [errorMessage, createState[0], editState[0]]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Editing a field on a Pricing-derived item marks it 'adjusted' (still
   // keeps its sourceReference for audit context) — a genuinely manual
@@ -187,7 +189,7 @@ export function NewQuotationForm({ clients, markets, editing, enquiry, currencie
   }
 
   return (
-    <form action={formAction} className="space-y-6">
+    <form ref={formEl} action={formAction} className="space-y-6">
       {editing && <input type="hidden" name="quotationId" value={editing.quotationId} />}
       {!editing && enquiry && <input type="hidden" name="enquiryId" value={enquiry.id} />}
       <section className="rounded-xl border border-black/10 bg-white p-6 space-y-3">
@@ -270,7 +272,7 @@ export function NewQuotationForm({ clients, markets, editing, enquiry, currencie
             <input name="currency" required defaultValue={editing?.currency ?? enquiry?.defaultCurrency ?? "GHS"} placeholder="Currency (e.g. GHS)" className="rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small" />
           )}
           <input name="validUntil" type="date" defaultValue={editing?.validUntil} className="rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small" />
-          <fieldset ref={conditionBox} className="sm:col-span-2 space-y-2 rounded-lg border border-black/10 p-3">
+          <fieldset className="sm:col-span-2 space-y-2 rounded-lg border border-black/10 p-3">
             <legend className="px-1 font-sans text-caption font-semibold text-ordift-ink">Payment before the booking is confirmed</legend>
             {([["none", "No upfront payment"], ["deposit", "Percentage deposit"], ["full", "Full payment before booking confirmation"]] as const).map(([v, l]) => (
               <label key={v} className="flex items-center gap-2 font-sans text-body-small text-ordift-ink">
