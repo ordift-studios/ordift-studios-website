@@ -12,6 +12,7 @@ const DENIED: Fail = { ok: false, error: "Only a Super Admin can confirm, change
 
 const MESSAGES: [RegExp, string][] = [
   [/booking_not_accepted/, "The enquiry needs an issued, accepted ordinary quotation before it can be booked."],
+  [/booking_no_fingerprint/, "The accepted quotation has no record of its issued content, so it cannot be booked. It must be issued through the quotation screen (nothing was saved)."],
   [/booking_entity_not_eligible/, "The contracting entity is not eligible for the quoted activities (an agreement cannot override an unlicensed activity)."],
   [/booking_agreement_required/, "An executed agreement linked to this enquiry is required for this booking."],
   [/booking_payment_pending/, "The payment the quotation requires has not been verified yet."],

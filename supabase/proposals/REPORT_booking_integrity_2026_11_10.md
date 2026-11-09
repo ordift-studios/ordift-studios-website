@@ -1,0 +1,37 @@
+# Payment is not a booking (10 Nov 2026) — LOCAL; nothing applied to Production
+
+## 1. Root cause
+`syncEntityPaymentStatus` (card webhook and status check) and `finalizeVerifiedBankTransfer` (bank verification) both call `advanceStageOnFullPayment` (`src/lib/payments/crmStageSync.ts`). Written in August (TD-043), it moved any ordinary enquiry to the stage `booked` the moment `amount_paid >= amount_due`, then sent the client a "Booking Confirmed" e-mail and the team a "New booking" notice. It predates booking confirmation, so a full payment (a full-prepayment quotation, or deposit + balance) skipped every booking control: agreement threshold, assigned person, overlap and Crew Support conflicts, approved leave, entity eligibility, the payment-condition check. Seen in the lab: ENQ-JRN-GHY, stage booked, no booking record, a client e-mail already "sent". A second gap: cancelling a confirmed booking left the stage at `booked`.
+
+## 2. Behaviour now
+- Booking confirmation ON (`BOOKING_CONFIRMATION_ENABLED=true`): a payment records money only. No stage change, no "Booking Confirmed" e-mail, no "New booking" notice, no stage audit row. Only `confirm_ordinary_booking` sets `booked`. The payment receipt is unchanged.
+- Booking confirmation OFF (Production today): legacy behaviour exactly as before (no behaviour change shipped until the switch is turned on).
+- Crew Support: unchanged (never booked by a payment).
+- Derived status, no new stage, no new payment status, no migration: fully paid and no live booking = "Paid — scheduling pending"; some money = "Payment received — scheduling pending"; stage booked with no live booking = "Booked (no booking record)" (staff, red) / "Scheduling pending" (client). Shown on the client dashboard, project header and cards (next milestone "Booking confirmation") and on the staff enquiry page. A read failure or missing tables never invents a status.
+- Cancelling a confirmed booking (Super Admin) returns `booked` to `quotation_sent` with an `enquiry.stage_change` audit entry (reason booking_cancelled, previous stage recorded). Only a stage that is exactly `booked`; in_progress and later are never rewound. No payment table or amount is read or written.
+- A confirmation cannot succeed ahead of a verified payment when the quotation requires one (existing rule, re-proved under race below).
+
+## 3. Code and files (branch local/booking-integrity, merged into local/walkthrough-combined)
+- `src/lib/bookings/paymentStagePolicy.ts` (pure rules), `schedulingStatusService.ts` (read-only loader and card overlay), `src/lib/payments/crmStageSync.ts` (gate), `src/lib/portal/workspace.ts`, client dashboard page, staff enquiry page (display), `service.ts` (plain message for a quotation with no issue fingerprint).
+- SQL proposal: `PROPOSAL_booking_cancel_reverts_stage.sql` (replaces one function; signature unchanged; requires PROPOSAL_booking_confirmation.sql). Rollback: `ROLLBACK_booking_cancel_reverts_stage.sql` (restores the original function; earlier stage changes stay, they are audited rows).
+- `DIAGNOSTIC_booked_without_booking_record.sql` (read-only, for any database). No data-repair script for Production is proposed: if the diagnostic lists rows there, each is a decision for a person (those projects were genuinely paid; the e-mail already went).
+- Rehearsals: `rehearse_cancel_stage_revert.sh` (rolled-back transaction on the lab; original function fails it, proposal passes), `rehearse_payment_vs_booking.sh` + `.py` (disposable copy, dropped).
+
+## 4. Verification
+- Unit: policy (flag on/off, Crew Support, derived statuses, refunds back to unpaid), crmStageSync with an in-memory table (flag on: no write, no e-mail, no notice, no audit, repeat completions; flag off: legacy intact; Crew Support; Pending; non-enquiry), loader (flag off, errors, cancelled booking, overlay, client wording). Mutation check: removing the flag gate fails 3 tests. Updated the existing source-guard test that pinned the old check.
+- Database (lab, rolled back): paid-in-full project stays quotation_sent; confirmation books it; cancel returns it with exactly one audit row; amount_paid / payment_status / payments untouched (also an overpayment of 1,300 on 1,000, left as recorded); rebook after cancel; in_progress not rewound; reschedule is a new version, stage stays booked, no stage audit; refusals (non-Super-Admin, short reason, nothing to cancel) write nothing; payments table identical before and after.
+- Concurrency (disposable copy, 20 rounds): verification + amount sync racing a booking confirmation: payment credited exactly once every round; booking only ever succeeded on a verified full payment (18 succeeded, 2 refused as payment pending); stage booked iff a confirmation succeeded; no payment-driven stage audit row; every refused confirmation succeeded on retry.
+- Browser (lab, real app code): client dashboard and project header show "Paid — scheduling pending" (GHY) and "Booked" (GHX); ENQ-JRN-GHP / QAP: a separate user (Lab super_admin) verified each client-submitted proof: stage stayed quotation_sent, audit shows only payment.bank_transfer_verified + payment.completed (no stage change, no booking e-mail, no new-booking notice); staff page shows the amber status; Qatar booking on 14 Dec with Lab staff refused as a non-overridable overlap with ENQ-BK-901 although fully paid; Ghana booked on 15 Dec after payment (booking.confirmed audit, all control checks PASS).
+- Not done live in the browser: cancel and reschedule through the screen (covered by the rolled-back database rehearsal and unit tests; the screen code is unchanged). The client's proof submission for GHP and QAP was seeded (the real submission leg was walked earlier for GHY).
+- Pre-existing failure, not a regression: `FounderSelfReviewPanel.test.ts` (known).
+
+## 5. Rollback
+Code: revert the merge (the gate is one early return). Lab: `rollback_cancel_stage_revert_from_lab.sh`. Production: nothing was applied; the SQL proposal needs its own approval, applied after PROPOSAL_booking_confirmation.sql, and only when booking confirmation is to be switched on.
+
+## 6. Remaining risks and decisions (yours)
+1. Booking confirmation sends no client e-mail by design. With the fix a paying client no longer gets an automatic "Booking Confirmed" e-mail at payment, and nothing replaces it at confirmation. Decision: do you want a confirmation e-mail at confirmation time (a separate, small change)? Until then clients see "Paid — scheduling pending" and staff must tell them the date.
+2. Cancel returns to `quotation_sent` (a booking needs an accepted quotation; the prior stage is not stored). `negotiation` would also be defensible.
+3. Cancel does not refund or release money, by design; the staff screen says any refund is a separate step. A cancelled, still-paid project reads "Paid — scheduling pending" again.
+4. Production legacy rows: if booking confirmation is ever switched on in Production, run the diagnostic first; projects already moved to booked by payments will show "Booked (no booking record)" to staff until handled.
+5. With the switch OFF the August behaviour (payment books the project and e-mails) still applies in Production; this change only takes effect when the switch is turned on.
+6. The "New booking" internal notification no longer fires from payment; if the team relies on it, it needs a trigger at confirmation (same decision as 1).
