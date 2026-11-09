@@ -13,6 +13,7 @@ import { detectFileMimeType } from "@/lib/shared/fileContentSniff";
 import { getActiveBankAccount } from "@/lib/payments/bankAccounts";
 import { getEntityPaymentCountry } from "@/lib/payments/paymentMarket";
 import { buildReceivingSnapshot, canSubmitProof } from "@/lib/payments/bankTransferRules";
+import { checkReferenceNote } from "@/lib/payments/checkoutFormRules";
 
 // Bank-transfer proof-of-payment submission (Ghana Phase 3, sandbox —
 // real Ghana banking details are not populated until go-live per your
@@ -67,6 +68,12 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ ok: false, error: "invalid-transfer-date" }, { status: 422 });
     }
     clientTransferDate = transferDateRaw;
+  }
+
+  // The reference note and bank reference are free text and are stored: never a card number, and bounded. (Ordift collects no card details; the note is cleared by the form.)
+  for (const t of [referenceNote, bankReferenceRaw]) {
+    const c = checkReferenceNote(typeof t === "string" ? t : null);
+    if (!c.ok) return NextResponse.json({ ok: false, error: c.code }, { status: 422 });
   }
 
   if (!(file instanceof File) || typeof paymentId !== "string" || !paymentId) {

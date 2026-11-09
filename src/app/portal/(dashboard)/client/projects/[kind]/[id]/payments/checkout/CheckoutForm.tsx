@@ -1,9 +1,10 @@
 "use client";
 
-import { useActionState, useState, useId } from "react";
+import { useActionState, useState, useId, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { startGatewayCheckoutAction, type GatewayCheckoutState } from "../actions";
 import type { BankAccountDisplay } from "@/lib/payments/bankAccounts";
+import { checkReferenceNote, createInFlightLock, MAX_REFERENCE_NOTE } from "@/lib/payments/checkoutFormRules";
 
 const initialGatewayState: GatewayCheckoutState = { error: null };
 
@@ -17,7 +18,11 @@ const ERROR_MESSAGES: Record<string, string> = {
   "no-exchange-rate-set": "Card and Mobile Money payments aren't available in your currency yet — please use Bank Transfer, or contact us.",
   "gateway-init-failed": "We couldn't start your payment right now. Please try again shortly, or contact us if this continues.",
   "rate-limited": "Too many attempts. Please wait a few minutes and try again.",
+  "invalid-request": "That request could not be read. Please go back and try again.",
+  "sensitive-data-in-note": "Please do not type a card number in the note. We never need your card details: card payments happen on the secure payment page.",
+  "note-too-long": "Keep the reference note under 300 characters.",
 };
+const GENERIC_ERROR = "Something went wrong — please try again.";
 
 export default function CheckoutForm({
   kind,
@@ -46,6 +51,9 @@ export default function CheckoutForm({
   const [customAmount, setCustomAmount] = useState("");
   const [error, setError] = useState<string | null>(initialError ? (ERROR_MESSAGES[initialError] ?? "Something went wrong — please try again.") : null);
   const [submitting, setSubmitting] = useState(false);
+  // One request at a time. The lock is taken synchronously, before anything is awaited, so a double click cannot start two bank-transfer requests or two uploads
+  // (the button only disables on the next render). The server also reuses an open bank-transfer instruction and refuses a second card checkout in progress.
+  const lock = useRef(createInFlightLock());
 
   const [bankPaymentId, setBankPaymentId] = useState<string | null>(null);
   const [proofFile, setProofFile] = useState<File | null>(null);
@@ -71,6 +79,10 @@ export default function CheckoutForm({
     }
   }
 
+  // A gateway refusal arrives as state (the form stays mounted, so the amount, method and step are kept). It is shown until the client moves to another step.
+  const [seenGatewayState, setSeenGatewayState] = useState(gatewayState);
+  const gatewayError = gatewayState !== seenGatewayState && gatewayState.error && gatewayState.error !== "rate_changed" ? (ERROR_MESSAGES[gatewayState.error] ?? GENERIC_ERROR) : null;
+
   const paymentType = amountMode === "full" ? (hasExistingPayment ? "balance" : "full") : "partial";
   const amountUsd = amountMode === "full" ? balanceUsd : Number(customAmount) || 0;
   const amountValid = amountUsd > 0 && amountUsd <= balanceUsd;
@@ -82,12 +94,13 @@ export default function CheckoutForm({
       return;
     }
     setError(null);
+    setSeenGatewayState(gatewayState);
     if (method === "gateway") setStep("confirm-gateway");
     if (method === "bank_transfer") setStep("bank-details");
   }
 
   async function handleStartBankTransfer() {
-    if (convertedPreview == null) return;
+    if (convertedPreview == null || !lock.current.tryAcquire()) return;
     setSubmitting(true);
     setError(null);
     try {
@@ -121,11 +134,20 @@ export default function CheckoutForm({
       setError((code && ERROR_MESSAGES[code]) || "We couldn't start your bank transfer right now. Please try again.");
     } finally {
       setSubmitting(false);
+      lock.current.release();
     }
   }
 
   async function handleSubmitProof() {
     if (!proofFile || !bankPaymentId) return;
+    // Never send or keep a card number typed into the note: clear it, say so, and send nothing.
+    const note = checkReferenceNote(referenceNote);
+    if (!note.ok) {
+      if (note.clear) setReferenceNote("");
+      setError(note.message);
+      return;
+    }
+    if (!lock.current.tryAcquire()) return;
     setSubmitting(true);
     setError(null);
     try {
@@ -137,18 +159,21 @@ export default function CheckoutForm({
       const body = await res.json();
       if (!body.ok) throw new Error(body.error ?? "failed");
       setStep("bank-submitted");
-    } catch {
-      setError("We couldn't upload your proof of payment. Please check the file and try again.");
+    } catch (err) {
+      const code = err instanceof Error ? err.message : null;
+      if (code === "sensitive-data-in-note") setReferenceNote("");
+      setError((code && ERROR_MESSAGES[code]) || "We couldn't upload your proof of payment. Please check the file and try again.");
     } finally {
       setSubmitting(false);
+      lock.current.release();
     }
   }
 
   return (
     <div className="space-y-6">
-      {error && (
+      {(error ?? gatewayError) && (
         <p role="alert" aria-live="assertive" className="font-sans text-body-small text-red-700 bg-red-50 rounded-lg px-4 py-3">
-          {error}
+          {error ?? gatewayError}
         </p>
       )}
 
@@ -249,7 +274,7 @@ export default function CheckoutForm({
           <p className="font-sans text-caption text-ordift-ink-muted">
             Your bank or card provider may apply its own exchange rate or fee — this is outside Ordift Studios&apos; control.
           </p>
-          <form action={gatewayFormAction} className="flex flex-col sm:flex-row gap-3">
+          <form action={gatewayFormAction} onSubmit={(e) => { if (gatewayPending) e.preventDefault(); }} className="flex flex-col sm:flex-row gap-3">
             <input type="hidden" name="kind" value={kind} />
             <input type="hidden" name="id" value={id} />
             <input type="hidden" name="paymentType" value={paymentType} />
@@ -264,8 +289,9 @@ export default function CheckoutForm({
             </button>
             <button
               type="button"
-              onClick={() => setStep("select")}
-              className="inline-flex items-center justify-center min-h-11 px-6 rounded-full font-sans font-semibold text-button border border-ordift-ink/30 text-ordift-ink hover:border-ordift-ink/60"
+              onClick={() => { setSeenGatewayState(gatewayState); setStep("select"); }}
+              disabled={gatewayPending}
+              className="inline-flex items-center justify-center min-h-11 px-6 rounded-full font-sans font-semibold text-button border border-ordift-ink/30 text-ordift-ink hover:border-ordift-ink/60 disabled:opacity-50"
             >
               Back
             </button>
@@ -380,6 +406,8 @@ export default function CheckoutForm({
               type="text"
               value={referenceNote}
               onChange={(e) => setReferenceNote(e.target.value)}
+              maxLength={MAX_REFERENCE_NOTE}
+              autoComplete="off"
               placeholder="e.g. the transaction reference from your bank"
               className="min-h-11 w-full rounded-lg border border-black/15 bg-white px-3 font-sans text-body-small text-ordift-ink"
             />

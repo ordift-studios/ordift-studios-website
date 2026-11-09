@@ -18,11 +18,22 @@ import type { ActionState } from "@/lib/shared/actionState";
 // Hidden inputs and file/password fields are never restored.
 const RESTORE_SKIP = new Set(["hidden", "file", "password", "submit", "button", "reset", "image"]);
 
+// Sensitive fields are NEVER put back after a refusal, whatever their input type: card numbers and security codes, passwords and passcodes, one-time codes, PINs, secrets, tokens and
+// API keys. Judged by the browser's autocomplete hint (cc-*, *-password, one-time-code) and by the field's name or id. (A field's name is only a hint, so a form that collects any of
+// these should also say autocomplete; the rule errs on the side of NOT keeping a value.)
+const SENSITIVE_NAME = /(card|cvv|cvc|cvn|passw|passcode|otp|\bpin\b|secret|token|api.?key|security.?code)/i;
+export function isSensitiveField(el: { name?: string; id?: string; autocomplete?: string; type?: string }): boolean {
+  const ac = (el.autocomplete ?? "").toLowerCase();
+  if (/(^|\s)(cc-[a-z-]+|one-time-code|current-password|new-password)(\s|$)/.test(ac)) return true;
+  return SENSITIVE_NAME.test(el.name ?? "") || SENSITIVE_NAME.test(el.id ?? "");
+}
+
 export function restoreSubmittedValues(form: HTMLFormElement, snapshot: FormData) {
   for (const el of Array.from(form.elements)) {
     if (!(el instanceof HTMLInputElement || el instanceof HTMLSelectElement || el instanceof HTMLTextAreaElement)) continue;
     if (!el.name || el.disabled) continue;
     if (el instanceof HTMLInputElement && RESTORE_SKIP.has(el.type)) continue;
+    if (isSensitiveField({ name: el.name, id: el.id, autocomplete: el.getAttribute("autocomplete") ?? "", type: el.type })) continue;
     const submitted = snapshot.getAll(el.name).filter((v): v is string => typeof v === "string");
     if (el instanceof HTMLInputElement && (el.type === "checkbox" || el.type === "radio")) {
       el.checked = submitted.includes(el.value);
