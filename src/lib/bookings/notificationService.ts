@@ -19,7 +19,7 @@ export type JobRow = {
   last_attempted_at: string | null; sent_at: string | null; last_error: string | null; provider_result: string | null; recipient_count: number;
   deliveries: { recipient: string; ok: boolean; mode?: string; at?: string }[]; subject: string | null; body_text: string | null; created_at: string;
 };
-type Outcome = { status: "sent" | "failed" | "skipped"; error: string | null; providerResult: string | null; deliveries: JobRow["deliveries"]; recipientCount: number };
+type Outcome = { status: "failed" | "skipped" | "sent"; error: string | null; providerResult: string | null; deliveries: JobRow["deliveries"]; recipientCount: number };
 
 const AUDIENCES: Audience[] = ["client", "internal"];
 
