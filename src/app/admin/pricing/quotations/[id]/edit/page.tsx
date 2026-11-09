@@ -5,6 +5,7 @@ import { getCurrentUser, hasRole, isSuperAdmin } from "@/lib/portal/roles";
 import { getClientQuotation } from "@/lib/commercial/clientQuotations";
 import { listUsersWithRoles } from "@/lib/portal/adminData";
 import { listActivePricingMarkets } from "@/lib/commercial/pricingCatalog";
+import { splitPaymentTerms } from "@/lib/commercial/paymentConditionTerms";
 import { NewQuotationForm, type QuotationFormInitialData } from "../../new/NewQuotationForm";
 
 export const metadata: Metadata = {
@@ -51,7 +52,9 @@ export default async function EditQuotationPage({ params }: { params: Promise<{ 
     })),
     currency: quotation.currency,
     validUntil: quotation.validUntil ?? "",
-    paymentBookingTerms: quotation.paymentBookingTerms ?? "",
+    ...(() => { const split = splitPaymentTerms(quotation.paymentBookingTerms, { condition: quotation.paymentCondition, depositPercent: quotation.depositPercent }); return { paymentBookingTerms: split.otherTerms, paymentTermsGenerated: split.generated }; })(),
+    paymentCondition: quotation.paymentCondition,
+    depositPercent: quotation.depositPercent === null ? "" : String(quotation.depositPercent),
     commercialNotes: quotation.commercialNotes ?? "",
   };
 

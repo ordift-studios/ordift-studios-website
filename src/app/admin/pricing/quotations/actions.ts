@@ -1,5 +1,6 @@
 "use server";
 
+import { composePaymentTerms, validatePaymentChoice } from "@/lib/commercial/paymentConditionTerms";
 import { recordOrdinaryQuotationAcceptance } from "@/lib/commercial/quotationAcceptance";
 import { issueOrdinaryQuotation, recordQuotationDelivery } from "@/lib/commercial/quotationIssuance";
 import { formatDate } from "@/lib/commercial/quotationValidity";
@@ -42,7 +43,9 @@ function parseQuotationFormData(formData: FormData) {
   const prospectCompany = String(formData.get("prospectCompany") ?? "").trim() || null;
   const currency = String(formData.get("currency") ?? "").trim();
   const validUntil = String(formData.get("validUntil") ?? "").trim() || null;
-  const paymentBookingTerms = String(formData.get("paymentBookingTerms") ?? "").trim() || null;
+  const otherTerms = String(formData.get("paymentBookingTerms") ?? "").trim() || null;          // the person's OTHER terms; the payment sentence is generated from the selection below
+  const depositRaw = String(formData.get("depositPercent") ?? "").trim();
+  const conditionRaw = String(formData.get("paymentCondition") ?? "").trim();
   const commercialNotes = String(formData.get("commercialNotes") ?? "").trim() || null;
 
   const items: QuotationLineItemInput[] = [];
@@ -74,7 +77,12 @@ function parseQuotationFormData(formData: FormData) {
     i++;
   }
 
-  return { clientProfileId, prospectName, prospectEmail, prospectPhone, prospectCompany, currency, validUntil, paymentBookingTerms, commercialNotes, items };
+  // The structured payment condition is REQUIRED on this form, and the written terms are generated from it so the two cannot disagree (src/lib/commercial/paymentConditionTerms.ts).
+  const choice = validatePaymentChoice({ condition: conditionRaw, depositPercent: depositRaw === "" ? null : Number(depositRaw) });
+  if (!choice.ok) return { error: choice.error } as const;
+  const composed = composePaymentTerms(choice.choice, otherTerms);
+  if (!composed.ok) return { error: composed.error } as const;
+  return { error: undefined, clientProfileId, prospectName, prospectEmail, prospectPhone, prospectCompany, currency, validUntil, paymentBookingTerms: composed.text, paymentCondition: choice.choice.condition, depositPercent: choice.choice.depositPercent, commercialNotes, items };
 }
 
 // Client Quotations admin actions (2026-09-16 Universal Commercial Rate
@@ -83,7 +91,9 @@ function parseQuotationFormData(formData: FormData) {
 // FormData-parsing wrappers, same convention as every other admin
 // action in this codebase.
 export async function createQuotationAction(_prev: CreateQuotationState, formData: FormData): Promise<CreateQuotationState> {
-  const { clientProfileId, prospectName, prospectEmail, prospectPhone, prospectCompany, currency, validUntil, paymentBookingTerms, commercialNotes, items } = parseQuotationFormData(formData);
+  const parsed = parseQuotationFormData(formData);
+  if (parsed.error !== undefined) return { ok: false, error: parsed.error };
+  const { clientProfileId, prospectName, prospectEmail, prospectPhone, prospectCompany, currency, validUntil, paymentBookingTerms, paymentCondition, depositPercent, commercialNotes, items } = parsed;
 
   if (!currency) return { ok: false, error: "Currency is required." };
   if (items.length === 0) return { ok: false, error: "Add at least one valid line item." };
@@ -99,6 +109,8 @@ export async function createQuotationAction(_prev: CreateQuotationState, formDat
     currency,
     validUntil,
     paymentBookingTerms,
+    paymentCondition,
+    depositPercent,
     commercialNotes,
     items,
   });
@@ -119,7 +131,9 @@ export async function updateQuotationDraftAction(_prev: SimpleActionState, formD
   const quotationId = String(formData.get("quotationId") ?? "");
   if (!quotationId) return { ok: false, error: "Invalid request." };
 
-  const { clientProfileId, prospectName, prospectEmail, prospectPhone, prospectCompany, currency, validUntil, paymentBookingTerms, commercialNotes, items } = parseQuotationFormData(formData);
+  const parsed = parseQuotationFormData(formData);
+  if (parsed.error !== undefined) return { ok: false, error: parsed.error };
+  const { clientProfileId, prospectName, prospectEmail, prospectPhone, prospectCompany, currency, validUntil, paymentBookingTerms, paymentCondition, depositPercent, commercialNotes, items } = parsed;
   if (!currency) return { ok: false, error: "Currency is required." };
   if (items.length === 0) return { ok: false, error: "Add at least one valid line item." };
 
@@ -133,6 +147,8 @@ export async function updateQuotationDraftAction(_prev: SimpleActionState, formD
     currency,
     validUntil,
     paymentBookingTerms,
+    paymentCondition,
+    depositPercent,
     commercialNotes,
     items,
   });

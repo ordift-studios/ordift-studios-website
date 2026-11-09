@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState, useState, useRef } from "react";
+import { useRestoringActionState } from "@/components/admin/useRestoringActionState";
 import type { StaffOnboarding } from "@/lib/organization/onboarding";
 import type { ResolvedRequirement, OnboardingRequirementOverrideRow } from "@/lib/organization/onboardingRequirements";
 import type { VendorProfile } from "@/lib/vendors/vendorProfiles";
@@ -124,7 +125,7 @@ function IdentitySection({
   engagementTypeName: string | null;
   jurisdictionOptions: JurisdictionOption[];
 }) {
-  const [profileState, profileAction, profilePending] = useActionState<ActionState, FormData>(recordVendorCompanyProfileAction, null);
+  const [profileState, profileAction, profilePending, profileForm] = useRestoringActionState<ActionState>(recordVendorCompanyProfileAction, null);   // keeps what was typed when the profile is refused
   const [statusState, statusAction] = useActionState<ActionState, FormData>(setVendorStatusAction, null);
 
   return (
@@ -135,7 +136,7 @@ function IdentitySection({
         {engagementTypeSlug && engagementTypeSlug !== "vendor_supplier" && " — vendor-specific onboarding requirements will not apply."}
       </p>
 
-      <form action={profileAction} className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+      <form ref={profileForm} action={profileAction} className="grid grid-cols-1 sm:grid-cols-2 gap-2">
         <input type="hidden" name="vendorId" value={vendorId} />
         <label className="flex flex-col gap-1 font-sans text-caption text-ordift-ink-muted">
           Company / Trading name (optional — leave blank for an individual/sole provider)
