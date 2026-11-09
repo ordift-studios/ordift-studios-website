@@ -1,8 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { transferInstructions, type ReceivingAccountSnapshot } from "@/lib/payments/bankTransferRules";
+import { checkReferenceNote, createInFlightLock } from "@/lib/payments/checkoutFormRules";
 
 // Client-facing Direct Bank Transfer building blocks, shared by the Pay Now flow and the payment
 // status page (so a client who leaves and returns sees the same instructions and upload form).
@@ -71,9 +72,16 @@ export function ProofUploadForm({ paymentId, resubmit = false, onSubmitted }: { 
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const lock = useRef(createInFlightLock());           // one upload at a time, taken before anything is awaited
 
   async function submit() {
     if (!file) return;
+    // Never send or keep a card number typed into a free-text box: clear it, say so, send nothing.
+    for (const [text, clear] of [[note, () => setNote("")], [bankReference, () => setBankReference("")]] as const) {
+      const c = checkReferenceNote(text);
+      if (!c.ok) { if (c.clear) clear(); setError(c.message); return; }
+    }
+    if (!lock.current.tryAcquire()) return;
     setBusy(true);
     setError(null);
     try {
@@ -87,7 +95,8 @@ export function ProofUploadForm({ paymentId, resubmit = false, onSubmitted }: { 
       const body = await res.json().catch(() => ({}));
       if (!res.ok || !body.ok) {
         const code = body?.error as string | undefined;
-        setError(code === "file-too-large" ? "That file is larger than 8MB." : code === "unsupported-file-type" ? "Please upload a JPG, PNG, WebP or PDF." : code === "invalid-transfer-date" ? "Please check the transfer date." : "We couldn't upload your proof of payment. Please check the file and try again.");
+        if (code === "sensitive-data-in-note") { setNote(""); setBankReference(""); }
+        setError(code === "sensitive-data-in-note" ? "Please do not type a card number here. We never need your card details: card payments happen on the secure payment page." : code === "file-too-large" ? "That file is larger than 8MB." : code === "unsupported-file-type" ? "Please upload a JPG, PNG, WebP or PDF." : code === "invalid-transfer-date" ? "Please check the transfer date." : "We couldn't upload your proof of payment. Please check the file and try again.");
         return;
       }
       if (onSubmitted) onSubmitted();
@@ -96,6 +105,7 @@ export function ProofUploadForm({ paymentId, resubmit = false, onSubmitted }: { 
       setError("We couldn't upload your proof of payment. Please check your connection and try again.");
     } finally {
       setBusy(false);
+      lock.current.release();
     }
   }
 
