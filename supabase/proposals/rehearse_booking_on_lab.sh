@@ -20,7 +20,7 @@ snap="select (select count(*) from public.enquiries) || '/' || (select count(*) 
 before=$(echo "$snap" | q)
 case "$M" in
   full) { echo "begin;"; echo "$funcs"; cat "$D/REHEARSE_booking_body.sql"; echo "rollback;"; } | q ;;
-  crew) { echo "begin;"; echo "$funcs"; grep -v -E '^(begin|commit);$' "$D/PROPOSAL_crew_support_booking_overlap_guard.sql"; sed -n '1,52p' "$D/REHEARSE_booking_body.sql"; cat "$D/REHEARSE_crew_direction_section.sql"; echo "rollback;"; } | q ;;
+  crew) { echo "begin;"; echo "$funcs"; grep -v -E '^(begin|commit);$' "$D/ROLLBACK_crew_support_booking_overlap_guard.sql"; grep -v -E '^(begin|commit);$' "$D/PROPOSAL_crew_support_booking_overlap_guard.sql"; sed -n '1,52p' "$D/REHEARSE_booking_body.sql"; cat "$D/REHEARSE_crew_direction_section.sql"; echo "rollback;"; } | q ;;
   availability) { echo "begin;"; echo "$funcs"; sed -n '1,52p' "$D/REHEARSE_booking_body.sql"; cat "$D/REHEARSE_availability_section.sql"; echo "rollback;"; } | q ;;
   *) echo "usage: $0 full|availability|crew"; exit 2 ;;
 esac
