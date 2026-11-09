@@ -307,31 +307,42 @@ export async function PUT(request: NextRequest) {
 
   // One open "awaiting transfer" instruction per client + record + type: reuse it (refreshing the
   // amount, rate lock and receiving account) rather than piling up duplicates that could each be paid.
-  const { data: openInstruction } = await admin
-    .from("payments")
-    .select("id, record_id")
-    .eq("entity_type", entityType)
-    .eq("entity_id", body.entityId)
-    .eq("user_id", user.id)
-    .eq("payment_method", "bank_transfer")
-    .eq("payment_type", body.paymentType)
-    .eq("status", "pending")
-    .is("proof_of_payment_asset_path", null)
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  if (openInstruction) {
-    const { error: refreshError } = await admin
+  const findOpenInstruction = async () => {
+    const { data } = await admin
+      .from("payments")
+      .select("id, record_id")
+      .eq("entity_type", entityType)
+      .eq("entity_id", body.entityId)
+      .eq("user_id", user.id)
+      .eq("payment_method", "bank_transfer")
+      .eq("payment_type", body.paymentType)
+      .eq("status", "pending")
+      .is("proof_of_payment_asset_path", null)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    return data;
+  };
+  // Refresh the open instruction's amount, rate lock and receiving account and answer with it. Returns null if it is no longer open (for example proof was submitted a moment ago).
+  const reuseOpenInstruction = async (open: { id: string; record_id: string }) => {
+    const { data: refreshed, error: refreshError } = await admin
       .from("payments")
       .update({
         reference_amount_usd: validatedAmountUsd, payment_currency: countryConfig.default_currency_code, exchange_rate: rateToUsd, exchange_rate_locked_at: lockedAt,
         converted_amount: convertedAmount, receiving_bank_account_id: receivingAccount.id, receiving_account_snapshot: snapshot,
       })
-      .eq("id", openInstruction.id)
-      .eq("status", "pending");
-    if (!refreshError) {
-      return NextResponse.json({ ok: true, paymentId: openInstruction.id, recordId: openInstruction.record_id, convertedAmount, currencyCode: countryConfig.default_currency_code, rateToUsd, rateLockedAt: lockedAt, receivingAccount: snapshot });
-    }
+      .eq("id", open.id)
+      .eq("status", "pending")
+      .select("id")
+      .maybeSingle();
+    if (refreshError || !refreshed) return null;
+    return NextResponse.json({ ok: true, paymentId: open.id, recordId: open.record_id, convertedAmount, currencyCode: countryConfig.default_currency_code, rateToUsd, rateLockedAt: lockedAt, receivingAccount: snapshot });
+  };
+
+  const openInstruction = await findOpenInstruction();
+  if (openInstruction) {
+    const reused = await reuseOpenInstruction(openInstruction);
+    if (reused) return reused;
   }
 
   const recordId = await generateRecordId("PAY");
@@ -358,6 +369,17 @@ export async function PUT(request: NextRequest) {
     })
     .select("id, record_id")
     .single();
+
+  if (error?.code === "23505") {
+    // The database rule payments_one_open_bank_transfer_instruction (one OPEN instruction per client, record and payment type) caught a simultaneous start: another request inserted its row
+    // between our look and our insert. Nothing was created by this request; answer with the winner's instruction, refreshed, exactly as if it had been found in the first place.
+    const winner = await findOpenInstruction();
+    if (winner) {
+      const reused = await reuseOpenInstruction(winner);
+      if (reused) return reused;
+    }
+    return NextResponse.json({ ok: false, error: "checkout-already-in-progress" }, { status: 409 });
+  }
 
   if (error || !payment) {
     console.error("[payments] failed to create bank-transfer payment row", error?.message);
