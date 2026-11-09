@@ -10,6 +10,8 @@ import { createAdminClient } from "@/lib/supabase/admin";
 // discussion, not yet built.
 export const NOTIFICATION_CATEGORIES = [
   "new_booking",
+  // "assigned_booking": the booking / cancellation / reschedule notice an ASSIGNED person receives about their own work. Default ON (no row = on, unlike new_booking): an explicit enabled=false row switches it off.
+  "assigned_booking",
   // "new_enquiry", "payment_alert", "refund_cancellation_alert",
   // "project_deliverable_alert" — anticipated, not yet implemented.
 ] as const;

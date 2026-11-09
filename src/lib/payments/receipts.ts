@@ -1,5 +1,7 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { sendEmail, type EmailResult } from "@/lib/shared/email/dispatch";
+import { bookingFlagOn } from "@/lib/bookings/rules";
+import { paymentAutoBookOptedOut, receiptSchedulingNote } from "@/lib/bookings/paymentStagePolicy";
 import { wrap, escapeHtml, SERIF, SANS, NAVY, GOLD, INK_MUTED } from "@/lib/enquiry/emailTemplates";
 
 // Payment receipts — reuses the existing Resend pipeline directly
@@ -67,6 +69,8 @@ export type PaymentReceiptData = {
   projectTitle: string | null;
   entityReference: string | null;
   receiptUrl: string;
+  // What happens next while payments do not book the project (see receiptSchedulingNote). Absent = nothing extra, exactly as before.
+  schedulingNote?: string | null;
 };
 
 export function buildPaymentReceiptEmail(data: PaymentReceiptData): { subject: string; html: string; text: string } {
@@ -126,6 +130,7 @@ export function buildPaymentReceiptEmail(data: PaymentReceiptData): { subject: s
         </td>
       </tr>
     </table>
+    ${data.schedulingNote ? `<p style="margin:0 0 20px;padding:12px 14px;background:#f7f5f1;border-radius:8px;font-family:${SANS};font-size:14px;line-height:1.6;color:${NAVY};">${escapeHtml(data.schedulingNote)}</p>` : ""}
     <p style="margin:0 0 4px;font-family:${SANS};font-size:13px;line-height:1.6;color:${INK_MUTED};">
       This is Ordift Studios' own business receipt for your payment. You will separately receive a payment
       confirmation directly from Paystack, our payment processor.
@@ -153,6 +158,7 @@ export function buildPaymentReceiptEmail(data: PaymentReceiptData): { subject: s
     ...(channelLabel ? [`Payment method: ${channelLabel}`] : []),
     ...(cardLabel ? [`Card: ${cardLabel}`] : []),
     `Status: Paid`,
+    ...(data.schedulingNote ? [``, data.schedulingNote] : []),
     ``,
     `View your receipt: ${data.receiptUrl}`,
     ``,
@@ -194,7 +200,7 @@ export async function sendPaymentReceiptEmail(paymentId: string): Promise<EmailR
   const entityTable = payment.entity_type === "enquiry" ? "enquiries" : "workshop_registrations";
   const entitySelect =
     payment.entity_type === "enquiry"
-      ? "id, reference_number, full_name, email, service"
+      ? "id, reference_number, full_name, email, service, crm_stage, commercial_intent"
       : "id, registration_reference, full_name, email, workshop_title";
   const { data: entity } = await admin.from(entityTable).select(entitySelect).eq("id", payment.entity_id).maybeSingle();
 
@@ -244,6 +250,7 @@ export async function sendPaymentReceiptEmail(paymentId: string): Promise<EmailR
         ? (entity as { reference_number?: string } | null)?.reference_number ?? null
         : (entity as { registration_reference?: string } | null)?.registration_reference ?? null,
     receiptUrl: `${siteUrl}/portal/client/projects/${kind}/${payment.entity_id}/payments/${paymentId}/receipt`,
+    schedulingNote: receiptSchedulingNote({ flagOn: bookingFlagOn(), autoBookOff: paymentAutoBookOptedOut(), entityType: payment.entity_type, crmStage: (entity as { crm_stage?: string } | null)?.crm_stage, commercialIntent: (entity as { commercial_intent?: string | null } | null)?.commercial_intent }),
   });
 
   return sendEmail({

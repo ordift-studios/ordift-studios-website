@@ -54,7 +54,7 @@ export default function BookingPanel({ data, earlierCheck = null }: { data: Book
 
       <div><p className="font-sans text-caption uppercase tracking-wide text-ordift-ink-muted mb-1">Scheduling conflicts</p><Conflicts list={a.conflicts ?? []} /></div>
 
-      {data.level === "super_admin" ? <BookingNotificationsCard enquiryId={data.enquiry.id} jobs={data.notifications} /> : null}
+      {data.level === "super_admin" || data.level === "admin" ? <BookingNotificationsCard enquiryId={data.enquiry.id} jobs={data.notifications} currentConfirmationId={data.current?.id ?? null} level={data.level} /> : null}
 
       {data.level === "admin" ? <p className="font-sans text-caption text-ordift-ink-muted">Only a Super Admin can confirm, change or cancel a booking.</p> : null}
 

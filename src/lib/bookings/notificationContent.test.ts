@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildClientBookingConfirmed, buildInternalBookingConfirmed, formatPlace, formatSession, proposedClientCancellationNotice, proposedClientRescheduleNotice, type ClientConfirmationData, type InternalConfirmationData } from "./notificationContent";
+import { buildClientBookingConfirmed, buildInternalBookingConfirmed, formatPlace, formatSession, buildAssignedBookingNotice, buildClientBookingNotice, type ClientConfirmationData, type InternalConfirmationData } from "./notificationContent";
 
 const gh = { startsAt: "2026-12-15T10:00:00Z", endsAt: "2026-12-15T11:00:00Z", timezone: "Africa/Accra", kind: "studio" as const, location: "Synthetic studio, Accra", platform: null, note: null };
 const qa = { startsAt: "2026-12-15T06:00:00Z", endsAt: "2026-12-15T09:00:00Z", timezone: "Asia/Qatar", kind: "on_site" as const, location: "Client villa, West Bay, Doha", platform: null, note: "Bring two lenses" };
@@ -53,13 +53,52 @@ describe("internal New Booking Confirmed notice", () => {
   });
 });
 
-describe("PROPOSED client cancellation / reschedule wording (not sent anywhere)", () => {
-  const c = proposedClientCancellationNotice({ firstName: "Ama", referenceNumber: "ENQ-JRN-GHP", service: "photography", cancelledSession: "Tuesday, 15 December 2026, 10:00–11:00 (Africa/Accra, GMT)" });
-  const r = proposedClientRescheduleNotice({ firstName: "Ama", referenceNumber: "ENQ-JRN-GHP", service: "photography", previousSession: "Tuesday, 15 December 2026, 10:00–11:00 (Africa/Accra, GMT)", newSession: "Thursday 17 December 2026, 14:00–15:00 (Africa/Accra, GMT)", newPlace: "At the studio — Synthetic studio, Accra" });
-  it("a cancellation says the booking is no longer confirmed and that quotation and payments are unchanged; it never says it remains confirmed", () => {
-    expect(c.text).toMatch(/has been cancelled/); expect(c.text).toMatch(/no longer confirmed/); expect(c.text).toMatch(/quotation and any payment you have made are unchanged/); expect(c.text).not.toMatch(/remains confirmed|is confirmed|refund/i);
+const oldS = { ...gh, startsAt: "2026-12-15T10:00:00Z", endsAt: "2026-12-15T11:00:00Z" }, newS = { ...gh, startsAt: "2026-12-18T09:00:00Z", endsAt: "2026-12-18T10:00:00Z" };
+describe("client notices for a reschedule and the two kinds of cancellation (each reflects the CURRENT state)", () => {
+  const base = client({ sessions: [newS] });
+  const ch = buildClientBookingNotice({ ...base, event: "changed", previousSessions: [oldS] });
+  it("a reschedule names the old and the new details and is confirmed on the new ones only", () => {
+    expect(ch.subject).toBe("Booking updated — ENQ-JRN-GHP"); expect(ch.text).toContain("Previously: Tuesday, 15 December 2026, 10:00–11:00"); expect(ch.text).toContain("Now confirmed: Friday, 18 December 2026, 09:00–10:00 (Africa/Accra, GMT)"); expect(ch.text).toMatch(/confirmed on the new details above only/);
   });
-  it("a reschedule names the old and the new details and says the booking remains confirmed ONLY on the new ones", () => {
-    expect(r.text).toContain("Previously: Tuesday, 15 December"); expect(r.text).toContain("Now confirmed: Thursday 17 December"); expect(r.text).toMatch(/remains confirmed on the new details/);
+  it("a reschedule to a client who was never told the earlier date shows only the new details (no invented 'previously')", () => {
+    const m = buildClientBookingNotice({ ...base, event: "changed", previousSessions: null }).text; expect(m).not.toContain("Previously"); expect(m).toContain("Now confirmed:");
+  });
+  const pend = buildClientBookingNotice({ ...client({ sessions: [oldS] }), event: "cancelled_pending" });
+  it("a cancellation awaiting rescheduling says it is no longer confirmed, that a new date will be agreed, and that quotation and payments are unchanged", () => {
+    expect(pend.subject).toBe("Booking cancelled — new date to be agreed — ENQ-JRN-GHP"); expect(pend.text).toMatch(/no longer confirmed/); expect(pend.text).toMatch(/contact you to agree a new date/); expect(pend.text).toMatch(/quotation and any payment you have made are unchanged/); expect(pend.text).toContain("Cancelled: Tuesday, 15 December 2026"); expect(pend.text).not.toMatch(/remains confirmed|confirmed on the new|refund/i);
+  });
+  it("a final cancellation says it will not be rescheduled; money is mentioned only if the client paid, and never promised back", () => {
+    const paid = buildClientBookingNotice({ ...client({ sessions: [oldS] }), event: "cancelled_final", paidAnything: true }).text, unpaid = buildClientBookingNotice({ ...client({ sessions: [oldS] }), event: "cancelled_final", paidAnything: false }).text;
+    expect(paid).toMatch(/will not be rescheduled/); expect(paid).toMatch(/not been changed or refunded by this cancellation; we will contact you separately/); expect(unpaid).not.toMatch(/payment/i); expect(paid).not.toMatch(/will be refunded|full refund/i);
+  });
+  it("none of the three exposes internal facts, and the free text is escaped", () => {
+    for (const m of [ch, pend]) expect(m.text).not.toMatch(/INT\d|assigned|agreement|basis|USD|\$\d/i);
+    expect(buildClientBookingNotice({ ...client({ fullName: "<b>x</b> Ama", sessions: [newS] }), event: "changed" }).html).not.toContain("<b>x</b>");
+  });
+});
+
+describe("assigned-person notices carry operational facts only", () => {
+  const d = { referenceNumber: "ENQ-JRN-QAN", service: "photography", clientFirstName: "Kofi", sessions: [qa], previousSessions: [{ ...qa, startsAt: "2026-12-14T06:00:00Z", endsAt: "2026-12-14T09:00:00Z" }], version: 3 };
+  it("assigned / changed / cancelled / released each say the right thing", () => {
+    expect(buildAssignedBookingNotice({ ...d, kind: "assigned", event: "confirmed" }).text).toMatch(/You are assigned to a confirmed Photography booking \(ENQ-JRN-QAN\) for Kofi/);
+    const c = buildAssignedBookingNotice({ ...d, kind: "assigned", event: "changed" }).text; expect(c).toContain("Was:"); expect(c).toContain("Now:");
+    expect(buildAssignedBookingNotice({ ...d, kind: "assigned", event: "cancelled_pending" }).text).toMatch(/new date may follow/); expect(buildAssignedBookingNotice({ ...d, kind: "assigned", event: "cancelled_final" }).text).toMatch(/cancelled for good/);
+    const r = buildAssignedBookingNotice({ ...d, kind: "released", event: "changed" }); expect(r.subject).toBe("You are no longer assigned — ENQ-JRN-QAN"); expect(r.text).toContain("Was:");
+  });
+  it("never carries money, agreements, the client's surname, e-mail or phone", () => {
+    for (const ev of ["confirmed", "changed", "cancelled_pending", "cancelled_final"] as const) { const m = buildAssignedBookingNotice({ ...d, kind: "assigned", event: ev }); expect(m.text + m.html).not.toMatch(/\$|USD|QAR|paid|outstanding|agreement|@|\+\d{6}|quotation/i); }
+  });
+});
+
+describe("internal notice variants", () => {
+  const ia = internal({ event: "changed", previousSessions: [gh], reason: undefined });
+  it("the full variant shows money; the operational variant (Admins, no amounts by policy) never does", () => {
+    const full = buildInternalBookingConfirmed({ ...ia, showMoney: true }).text, ops = buildInternalBookingConfirmed({ ...ia, showMoney: false }).text;
+    expect(full).toContain("Verified paid: $500.00"); expect(ops).not.toMatch(/Verified paid|Outstanding|Payment condition|\$|Basis/);
+    expect(full).toContain("Was:"); expect(full.startsWith("Booking Rescheduled")).toBe(true);
+  });
+  it("a cancellation shows the reason and says whether it is final; a final one says nothing was refunded", () => {
+    const p = buildInternalBookingConfirmed({ ...internal({ event: "cancelled_pending", reason: "Client moved the date" }) }); expect(p.subject).toBe("Booking Cancelled — Rescheduling Pending — ENQ-JRN-QAP"); expect(p.text).toContain("Reason: Client moved the date"); expect(p.text).toContain("Cancelled booking:");
+    const f = buildInternalBookingConfirmed({ ...internal({ event: "cancelled_final", reason: "Client withdrew" }) }); expect(f.subject).toBe("Booking Cancelled (final) — ENQ-JRN-QAP"); expect(f.text).toMatch(/Nothing was refunded or changed/);
   });
 });

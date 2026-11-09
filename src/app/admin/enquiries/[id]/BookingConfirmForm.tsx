@@ -24,7 +24,7 @@ export default function BookingConfirmForm(p: {
   const [assigned, setAssigned] = useState(p.initial.assignedProfileId ?? "");
   const [segs, setSegs] = useState<SegmentDraft[]>(p.initial.segments.length ? p.initial.segments : [blankSegment()]);
   const [esc, setEsc] = useState<string[]>([]);
-  const [clarKind, setClarKind] = useState(""), [clarEvidence, setClarEvidence] = useState(""), [basis, setBasis] = useState(p.initial.basis), [sentence, setSentence] = useState("");
+  const [clarKind, setClarKind] = useState(""), [clarEvidence, setClarEvidence] = useState(""), [basis, setBasis] = useState(p.initial.basis), [sentence, setSentence] = useState(""), [notify, setNotify] = useState<"yes" | "defer">("yes"), [deferReason, setDeferReason] = useState("");
   const [preview, setPreview] = useState<BookingPreviewState>(null), [result, setResult] = useState<ActionState>(null), [stale, setStale] = useState(true);
   const [pending, start] = useTransition();
   const verb = p.isChange ? "change" : "confirm";
@@ -37,6 +37,7 @@ export default function BookingConfirmForm(p: {
     segs.forEach((s, i) => { fd.set(`seg${i}_start`, s.start); fd.set(`seg${i}_end`, s.end); fd.set(`seg${i}_tz`, s.tz); fd.set(`seg${i}_kind`, s.kind); fd.set(`seg${i}_location`, s.location); fd.set(`seg${i}_platform`, s.platform); fd.set(`seg${i}_note`, s.note); });
     esc.forEach((e) => fd.append("escalator", e));
     fd.set("clarKind", clarKind); fd.set("clarEvidence", clarEvidence); fd.set("basis", basis); fd.set("confirmSentence", sentence);
+    if (p.isChange) { fd.set("notifyClient", notify); fd.set("deferReason", deferReason); }
     return fd;
   };
   const check = () => start(async () => { setResult(null); const r = await previewBookingAction(null, build()); setPreview(r); setStale(false); });
@@ -124,8 +125,16 @@ export default function BookingConfirmForm(p: {
         <div className="space-y-3 border-t border-black/10 pt-4">
           <label className={label} htmlFor="bk-sentence">To {verb} this booking, type exactly: <span className="font-semibold text-ordift-ink">{confirmSentenceFor(p.reference, verb)}</span></label>
           <input id="bk-sentence" className={input} value={sentence} autoComplete="off" onChange={(e) => { setSentence(e.target.value); setResult(null); }} />
+          {p.isChange ? (
+            <fieldset className="space-y-2 rounded-lg border border-black/10 p-3" data-testid="notify-choice">
+              <legend className="px-1 font-sans text-caption text-ordift-ink-muted">The client</legend>
+              <label className="flex items-start gap-2 font-sans text-body-small text-ordift-ink"><input type="radio" name="notifyClientChoice" checked={notify === "yes"} onChange={() => setNotify("yes")} />Tell the client now that the booking has been rescheduled and is confirmed on the new details (recommended; the message always shows the current booking)</label>
+              <label className="flex items-start gap-2 font-sans text-body-small text-ordift-ink"><input type="radio" name="notifyClientChoice" checked={notify === "defer"} onChange={() => setNotify("defer")} />Hold the notice back for now (recorded, with your reason, and shown as an outstanding action)</label>
+              {notify === "defer" ? <div><label className={label} htmlFor="bk-defer-reason">Why the client is not being told yet (kept on the record)</label><textarea id="bk-defer-reason" rows={2} className={input} value={deferReason} onChange={(e) => setDeferReason(e.target.value)} /></div> : null}
+            </fieldset>
+          ) : null}
           <button type="button" disabled={pending || sentence.trim() === ""} onClick={submit} className={`${btn} bg-ordift-gold-pressed text-white`}>{pending ? "Saving…" : p.isChange ? "Change booking" : "Confirm booking"}</button>
-          <p className="font-sans text-caption text-ordift-ink-muted">{p.isChange ? "This records the new version of the booking. It sends no client notice yet (tell the client about the change yourself) and creates no payment, invoice or receivable." : "This records the booking and moves the enquiry to Booked. It then sends the client's booking confirmation e-mail and the internal New Booking notice once each (their delivery records appear in this card) and creates no payment, invoice or receivable."}</p>
+          <p className="font-sans text-caption text-ordift-ink-muted">{p.isChange ? "This records the new version of the booking, tells the client (unless you hold it back), tells the assigned person, and notifies the team. It creates no payment, invoice or receivable." : "This records the booking and moves the enquiry to Booked. It then sends the client's booking confirmation e-mail and the internal notices once each (their delivery records appear in this card) and creates no payment, invoice or receivable."}</p>
         </div>
       ) : null}
 

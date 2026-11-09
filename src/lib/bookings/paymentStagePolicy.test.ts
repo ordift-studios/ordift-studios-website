@@ -62,3 +62,14 @@ describe("switch states (booking confirmation ON/OFF) x PAYMENT_AUTO_BOOKS_ENQUI
     expect(schedulingStatus({ ...off, autoBookOff: true, hasCancelledBooking: true })?.code).toBe("paid_scheduling_pending");
   });
 });
+
+describe("final cancellation vs cancellation awaiting rescheduling", () => {
+  const c = { ...base, hasCancelledBooking: true };
+  it("final reads Booking Cancelled and says nothing was refunded or closed automatically, whatever was paid", () => {
+    for (const p of [{ paymentStatus: "Paid", amountPaid: 500 }, { paymentStatus: "Pending", amountPaid: 0 }]) { const s = schedulingStatus({ ...c, ...p, cancellationOutcome: "final" }); expect(s?.code).toBe("cancelled_final"); expect(s?.label).toBe("Booking Cancelled"); expect(s?.detail).toMatch(/nothing was refunded or closed automatically/); }
+  });
+  it("awaiting rescheduling (and an older record with no outcome) keeps the pending wording", () => {
+    expect(schedulingStatus({ ...c, cancellationOutcome: "rescheduling_pending" })?.label).toBe("Booking Cancelled — Rescheduling Pending"); expect(schedulingStatus({ ...c, cancellationOutcome: null })?.code).toBe("cancelled_rescheduling_pending"); expect(schedulingStatus(c)?.code).toBe("cancelled_rescheduling_pending");
+  });
+  it("neither shows once work is under way or the project is closed", () => { for (const st of ["in_progress", "closed"]) for (const o of ["final", "rescheduling_pending"] as const) expect(schedulingStatus({ ...c, crmStage: st, cancellationOutcome: o })).toBeNull(); });
+});

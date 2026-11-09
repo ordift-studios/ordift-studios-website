@@ -21,7 +21,7 @@ describe("confirmOrdinaryBooking", () => {
   it("refuses an invalid schedule before asking the database", async () => { expect(await confirmOrdinaryBooking({ ...input(), segments: [] }, ON)).toMatchObject({ ok: false }); expect(h.rpc).not.toHaveBeenCalled(); });
   it("takes the payment condition from the quotation and sends the computed reading of its terms, never a typed-in condition", async () => {
     h.rpc.mockResolvedValue({ data: "c1", error: null });
-    expect(await confirmOrdinaryBooking(input(), ON)).toEqual({ ok: true, confirmationId: "c1" });
+    expect(await confirmOrdinaryBooking(input(), ON)).toMatchObject({ ok: true, confirmationId: "c1", deferred: false });
     const [fn, args] = h.rpc.mock.calls[0]; expect(fn).toBe("confirm_ordinary_booking");
     expect(args.p.paymentTermsCheck).toBe("consistent"); expect("paymentCondition" in args.p).toBe(false);
   });

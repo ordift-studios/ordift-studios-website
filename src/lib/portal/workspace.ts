@@ -61,7 +61,7 @@ export async function getWorkspaceOverview(
       title: `${pathwayLabel(enquiry.service)} — ${enquiry.referenceNumber}`,
       projectType: pathwayLabel(enquiry.service),
       statusLabel: scheduling ? clientSchedulingLabel(scheduling) : crmStageLabel(enquiry.crmStage),
-      nextMilestoneLabel: scheduling ? NEXT_AFTER_PAYMENT : next ? crmStageLabel(next) : null,
+      nextMilestoneLabel: scheduling ? (scheduling.code === "cancelled_final" ? null : NEXT_AFTER_PAYMENT) : next ? crmStageLabel(next) : null,
       progress: crmStageProgress(enquiry.crmStage),
       submittedAt: enquiry.submittedAt,
       paymentStatus: enquiry.paymentStatus,
