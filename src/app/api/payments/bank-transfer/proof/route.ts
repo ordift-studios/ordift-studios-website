@@ -350,13 +350,16 @@ export async function PUT(request: NextRequest) {
       .eq("status", "pending")
       .select("id")
       .maybeSingle();
+    if (refreshError && /would_exceed_outstanding/.test(refreshError.message)) return "exceeds" as const;
     if (refreshError || !refreshed) return null;
     return NextResponse.json({ ok: true, paymentId: open.id, recordId: open.record_id, convertedAmount, currencyCode: countryConfig.default_currency_code, rateToUsd, rateLockedAt: lockedAt, receivingAccount: snapshot });
   };
 
+  const COVER = () => NextResponse.json({ ok: false, error: "open-instructions-cover-balance" }, { status: 409 });
   const openInstruction = await findOpenInstruction();
   if (openInstruction) {
     const reused = await reuseOpenInstruction(openInstruction);
+    if (reused === "exceeds") return COVER();
     if (reused) return reused;
   }
 
@@ -385,12 +388,18 @@ export async function PUT(request: NextRequest) {
     .select("id, record_id")
     .single();
 
+  if (error && /would_exceed_outstanding/.test(error.message)) {
+    // The database rule payments_open_commitment_guard: the other open instructions on this record already hold what is still owed. Nothing was created.
+    return COVER();
+  }
+
   if (error?.code === "23505") {
     // The database rule payments_one_open_bank_transfer_instruction (one OPEN instruction per client, record and payment type) caught a simultaneous start: another request inserted its row
     // between our look and our insert. Nothing was created by this request; answer with the winner's instruction, refreshed, exactly as if it had been found in the first place.
     const winner = await findOpenInstruction();
     if (winner) {
       const reused = await reuseOpenInstruction(winner);
+      if (reused === "exceeds") return COVER();
       if (reused) return reused;
     }
     return NextResponse.json({ ok: false, error: "checkout-already-in-progress" }, { status: 409 });
@@ -413,4 +422,21 @@ export async function PUT(request: NextRequest) {
   });
 
   return NextResponse.json({ ok: true, paymentId: payment.id, recordId: payment.record_id, convertedAmount, currencyCode: countryConfig.default_currency_code, rateToUsd, rateLockedAt: lockedAt, receivingAccount: snapshot });
+}
+
+// A client cancels an UNPAID bank-transfer instruction (status pending, no proof uploaded) so that it stops holding part of the balance. Money that may have moved is never cancelled here: once proof is
+// submitted the row belongs to the verifier. The row is kept as history (status failed); nothing is deleted. Audited.
+export async function DELETE(request: NextRequest) {
+  const user = await getCurrentUser();
+  if (!user) return NextResponse.json({ ok: false, error: "unauthorized" }, { status: 401 });
+  const body = (await request.json().catch(() => null)) as { paymentId?: string } | null;
+  if (!body?.paymentId) return NextResponse.json({ ok: false, error: "missing-fields" }, { status: 400 });
+  const admin = createAdminClient();
+  const { data: payment } = await admin.from("payments").select("id, user_id, status, payment_method, proof_of_payment_asset_path").eq("id", body.paymentId).maybeSingle();
+  if (!payment || payment.user_id !== user.id || payment.payment_method !== "bank_transfer") return NextResponse.json({ ok: false, error: "not-found-or-unauthorized" }, { status: 404 });
+  if (payment.status !== "pending" || payment.proof_of_payment_asset_path) return NextResponse.json({ ok: false, error: "payment-not-open-for-cancellation" }, { status: 409 });
+  const { data: closed, error } = await admin.from("payments").update({ status: "failed" }).eq("id", payment.id).eq("status", "pending").is("proof_of_payment_asset_path", null).select("id").maybeSingle();
+  if (error || !closed) return NextResponse.json({ ok: false, error: "payment-not-open-for-cancellation" }, { status: 409 });
+  await logActivityAsSystem({ actorUserId: user.id, action: "payment.bank_transfer_cancelled", entityType: "payment", entityId: payment.id, metadata: { by: "client", note: "Unpaid instruction cancelled by the client before any proof was submitted." } });
+  return NextResponse.json({ ok: true });
 }

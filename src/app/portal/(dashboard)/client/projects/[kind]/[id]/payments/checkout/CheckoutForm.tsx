@@ -19,6 +19,7 @@ const ERROR_MESSAGES: Record<string, string> = {
   "no-exchange-rate-set": "Card and Mobile Money payments aren't available in your currency yet — please use Bank Transfer, or contact us.",
   "gateway-init-failed": "We couldn't start your payment right now. Please try again shortly, or contact us if this continues.",
   "rate-limited": "Too many attempts. Please wait a few minutes and try again.",
+  "open-instructions-cover-balance": "You already have payment instructions open that cover what is still owed. Finish or cancel one of them first (see “Your open payment instructions” at the top of this page).",
   "invalid-request": "That request could not be read. Please go back and try again.",
   "sensitive-data-in-note": "Please do not type a card number in the note. We never need your card details: card payments happen on the secure payment page.",
   "note-too-long": "Keep the reference note under 300 characters.",

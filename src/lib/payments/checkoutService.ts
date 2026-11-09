@@ -319,6 +319,11 @@ export async function initiateGatewayCheckout(
     return { ok: false, error: "checkout-already-in-progress" };
   }
 
+  if (insertError && /would_exceed_outstanding/.test(insertError.message)) {
+    // Database rule payments_open_commitment_guard: the other open instructions on this record already hold what is still owed. Nothing was created, nothing was sent to the provider.
+    return { ok: false, error: "open-instructions-cover-balance" };
+  }
+
   if (insertError || !payment) {
     console.error("[payments] failed to create payments row", insertError?.message);
     return { ok: false, error: "failed-to-create-payment" };
