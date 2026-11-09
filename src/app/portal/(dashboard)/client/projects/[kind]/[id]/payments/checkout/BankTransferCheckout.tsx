@@ -14,6 +14,7 @@ const ERRORS: Record<string, string> = {
   "no-exchange-rate-set": "We couldn't fix the transfer amount yet — please contact us.",
   "invalid-amount": "That amount isn't available to pay right now — please refresh and try again.",
   "rate-limited": "Too many attempts. Please wait a few minutes and try again.",
+  "open-instructions-cover-balance": "You already have payment instructions open that cover what is still owed. Finish or cancel one of them first (see “Your open payment instructions” at the top of this page).",
 };
 
 // Direct Bank Transfer checkout for a bank-transfer-only market (Qatar). The instruction (with its

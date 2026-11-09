@@ -7,6 +7,7 @@ import { getEntityPaymentCountry, PAYMENT_MARKETS } from "@/lib/payments/payment
 import { getActiveCountryConfig } from "@/lib/payments/providerRegistry";
 import CheckoutForm from "./CheckoutForm";
 import BankTransferCheckout from "./BankTransferCheckout";
+import OpenInstructions from "./OpenInstructions";
 
 // Ghana-first — see actions.ts's ACTIVE_COUNTRY comment for the same
 // reasoning restated once, not duplicated per-file.
@@ -41,6 +42,7 @@ export default async function CheckoutPage({
         <p className="font-sans text-body-small text-ordift-ink-muted mb-8">
           Pay by Direct Bank Transfer. Your quotation is in USD; we show the exact {PAYMENT_MARKETS[market].currency} amount to send before you transfer.
         </p>
+        <OpenInstructions kind={kind} id={id} />
         {available ? (
           <BankTransferCheckout kind={kind} id={id} balanceUsd={summary.balanceUsd} hasExistingPayment={summary.amountPaidUsd > 0} currencyCode={PAYMENT_MARKETS[market].currency} rateToUsd={rate} />
         ) : (
@@ -60,6 +62,7 @@ export default async function CheckoutPage({
       <p className="font-sans text-body-small text-ordift-ink-muted mb-8">
         Choose how you&apos;d like to pay. All amounts are referenced in USD — your local-currency amount is shown before you confirm.
       </p>
+      <OpenInstructions kind={kind} id={id} />
       <CheckoutForm
         kind={kind}
         id={id}

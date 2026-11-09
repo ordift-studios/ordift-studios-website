@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 // Card checkout start: what happens when the provider's answer is unusable or its reference cannot be saved. In-memory payments table; the provider, rates and market are replaced. Synthetic data.
 type Row = Record<string, unknown>;
-const h = vi.hoisted(() => ({ rows: [] as Row[], charge: null as unknown, failRefSaves: 0, cases: [] as Row[], seq: 0 }));
+const h = vi.hoisted(() => ({ rows: [] as Row[], charge: null as unknown, failRefSaves: 0, cases: [] as Row[], seq: 0, guard: false }));
 vi.mock("@/lib/payments/paymentMarket", () => ({ getEntityPaymentCountry: async () => "GH" }));
 vi.mock("@/lib/payments/providerRegistry", () => ({ getActiveCountryConfig: async () => ({ defaultCurrencyCode: "GHS", gatewayProvider: "paystack" }), getProvider: () => ({ id: "paystack", initCharge: async () => { if (h.charge instanceof Error) throw h.charge; return h.charge; } }) }));
 vi.mock("@/lib/payments/currency", () => ({ lockExchangeRate: async (usd: number) => ({ rateToUsd: 15.5, convertedAmount: Math.round(usd * 15.5 * 100) / 100, currencyCode: "GHS", source: "ordift", lockedAt: new Date().toISOString() }), convertedAmountsMatch: () => true }));
@@ -15,6 +15,7 @@ vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: () => ({
   from: () => {
     const f: ((r: Row) => boolean)[] = []; let mode = "select"; let payload: Row = {}; let want = false;
     const run = () => {
+      if (mode === "insert" && h.guard) return { data: null, error: { message: "ordift:would_exceed_outstanding" } };
       if (mode === "insert") { const row = { id: `p${h.rows.length + 1}`, ...payload }; h.rows.push(row); return { data: row, error: null }; }
       const m = h.rows.filter((r) => f.every((p) => p(r)));
       if (mode === "update") {
@@ -32,7 +33,7 @@ vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: () => ({
 import { initiateGatewayCheckout } from "./checkoutService";
 
 const start = () => initiateGatewayCheckout({ entityType: "enquiry", entityId: "e1", paymentType: "partial", country: "GH", userId: "u1", email: "c@e2e.test", callbackUrlBase: "http://localhost:3000/pay", requestedAmountUsd: 100, quotedConvertedAmount: 1550 });
-beforeEach(() => { h.rows = []; h.charge = { checkoutUrl: "https://checkout.example/abc", providerReference: "PAY-2026-000001" }; h.failRefSaves = 0; h.cases = []; h.seq = 0; });
+beforeEach(() => { h.rows = []; h.charge = { checkoutUrl: "https://checkout.example/abc", providerReference: "PAY-2026-000001" }; h.failRefSaves = 0; h.cases = []; h.seq = 0; h.guard = false; });
 
 describe("card checkout start: provider result handling", () => {
   it("a usable result saves the reference and returns the checkout address", async () => {
@@ -57,5 +58,8 @@ describe("card checkout start: provider result handling", () => {
   });
   it("a provider error leaves the attempt Failed with no review case (nothing was created at the provider)", async () => {
     h.charge = new Error("boom"); expect(await start()).toMatchObject({ ok: false, error: "gateway-init-failed" }); expect(h.rows[0].status).toBe("failed"); expect(h.cases).toEqual([]);
+  });
+  it("when the database says other open instructions already hold what is owed, nothing is sent to the provider and the client gets a plain code", async () => {
+    h.guard = true; const r = await start(); expect(r).toEqual({ ok: false, error: "open-instructions-cover-balance" }); expect(h.rows).toHaveLength(0);
   });
 });
