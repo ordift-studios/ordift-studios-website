@@ -29,10 +29,10 @@ const sha256 = (b: Uint8Array) => createHash("sha256").update(b).digest("hex");
 const today = () => new Date().toISOString().slice(0, 10);
 
 export type VersionRow = {
-  id: string; master_id: string; status: string; approved_by: string | null; approved_at: string | null; effective_date: string | null; content_reference: string | null;
+  id: string; master_id: string; version: string; status: string; approved_by: string | null; approved_at: string | null; effective_date: string | null; content_reference: string | null;
   document_hash: string | null; master_docx_storage_path: string | null; master_docx_sha256: string | null; master_pdf_storage_path: string | null; master_pdf_sha256: string | null; created_at: string;
 };
-const VERSION_COLS = "id, master_id, status, approved_by, approved_at, effective_date, content_reference, document_hash, master_docx_storage_path, master_docx_sha256, master_pdf_storage_path, master_pdf_sha256, created_at";
+const VERSION_COLS = "id, master_id, version, status, approved_by, approved_at, effective_date, content_reference, document_hash, master_docx_storage_path, master_docx_sha256, master_pdf_storage_path, master_pdf_sha256, created_at";
 
 export async function loadVersion(versionId: string): Promise<{ v: VersionRow; code: string } | null> {
   const admin = createAdminClient();
@@ -172,7 +172,7 @@ export async function registerControlledMaster(params: { versionId: string; acto
   if (integrity.markers > 0) return { ok: false, error: `The master still contains ${integrity.markers} unresolved counsel-review marker(s). Nothing was registered.` };
   const admin = createAdminClient();
 
-  const ref = deriveMasterContentReference({ code, version: "1.0", docxPath: v.master_docx_storage_path!, docxSha256: v.master_docx_sha256!, pdfPath: v.master_pdf_storage_path!, pdfSha256: v.master_pdf_sha256! });
+  const ref = deriveMasterContentReference({ code, version: v.version, docxPath: v.master_docx_storage_path!, docxSha256: v.master_docx_sha256!, pdfPath: v.master_pdf_storage_path!, pdfSha256: v.master_pdf_sha256! });
   const { error } = await admin.from("legal_document_versions").update({ content_reference: ref.contentReference, document_hash: ref.documentHash }).eq("id", v.id).is("content_reference", null).is("document_hash", null);
   if (error) { console.error("[legal] failed to register controlled master", error.message); return { ok: false, error: "Failed to record the controlled content reference." }; }
 
@@ -209,7 +209,7 @@ export async function activateMasterVersion(params: { versionId: string; effecti
   const integrity = await verifyStoredMasterIntegrity(v);
   if (!integrity.ok) return { ok: false, error: `${integrity.error} Nothing was activated.` };
   if (integrity.markers > 0) return { ok: false, error: `The master contains ${integrity.markers} unresolved counsel-review marker(s). Nothing was activated.` };
-  const expected = deriveMasterContentReference({ code, version: "1.0", docxPath: v.master_docx_storage_path!, docxSha256: v.master_docx_sha256!, pdfPath: v.master_pdf_storage_path!, pdfSha256: v.master_pdf_sha256! });
+  const expected = deriveMasterContentReference({ code, version: v.version, docxPath: v.master_docx_storage_path!, docxSha256: v.master_docx_sha256!, pdfPath: v.master_pdf_storage_path!, pdfSha256: v.master_pdf_sha256! });
   if (v.content_reference !== expected.contentReference || v.document_hash !== expected.documentHash) return { ok: false, error: "The registered content reference no longer matches the stored master. Nothing was activated." };
   const { data: master } = await createAdminClient().from("legal_document_masters").select("current_version_id").eq("id", v.master_id).maybeSingle();
   if (!master || master.current_version_id !== v.id) return { ok: false, error: "This is not the current version of its legal master. Nothing was activated." };

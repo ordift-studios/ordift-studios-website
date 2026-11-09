@@ -50,9 +50,9 @@ async function loadVerifiedMasterText(versionId: string): Promise<{ ok: true; te
   const integrity = await verifyStoredMasterIntegrity(v);
   if (!integrity.ok) return { ok: false, error: `${integrity.error}` };
   if (integrity.markers > 0) return { ok: false, error: "The stored master contains unresolved counsel-review markers." };
-  const expected = deriveMasterContentReference({ code: OS_LGL_010, version: "1.0", docxPath: v.master_docx_storage_path!, docxSha256: v.master_docx_sha256!, pdfPath: v.master_pdf_storage_path!, pdfSha256: v.master_pdf_sha256! });
+  const expected = deriveMasterContentReference({ code: OS_LGL_010, version: v.version, docxPath: v.master_docx_storage_path!, docxSha256: v.master_docx_sha256!, pdfPath: v.master_pdf_storage_path!, pdfSha256: v.master_pdf_sha256! });
   if (v.content_reference !== expected.contentReference || v.document_hash !== expected.documentHash) return { ok: false, error: "The registered content reference does not match the stored master." };
-  return { ok: true, text: integrity.text, version: "1.0" };
+  return { ok: true, text: integrity.text, version: v.version };
 }
 
 // Exactly what would be issued, from the current frozen particulars. Read-only.

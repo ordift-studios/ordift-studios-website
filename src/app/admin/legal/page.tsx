@@ -25,7 +25,8 @@ export const metadata: Metadata = {
 // created) — that emptiness is shown honestly (explicit empty-state
 // copy) rather than hidden or faked. Read-only: this page has no
 // forms, no server actions, no mutation of any kind — it is a
-// governance/visibility surface only, matching Part 37's "truthful
+// governance/visibility surface only (its one link to an action is the
+// Super-Admin-only Founder approval screen under Document Versions), matching Part 37's "truthful
 // empty states, no fake data" requirement exactly.
 
 function SectionCard({ id, title, description, children }: { id: string; title: string; description?: string; children: React.ReactNode }) {
@@ -268,7 +269,7 @@ export default async function AdminLegalGovernancePage() {
 
       <SectionCard id="versions" title="Document Versions" description="Every version row across all 21 canonical masters, including the 4 legacy-reconciled OSELS versions.">
         <Table
-          headers={["Master", "Version", "Status", "Effective Date", "Legacy Code"]}
+          headers={["Master", "Version", "Status", "Effective Date", "Legacy Code", "Founder approval"]}
           rows={masters.flatMap((m) =>
             m.versions.map((v) => [
               m.canonicalCode,
@@ -276,6 +277,10 @@ export default async function AdminLegalGovernancePage() {
               <Pill key="s">{v.status}</Pill>,
               v.effectiveDate ?? "—",
               v.legacyCode ?? "—",
+              // the one place this page links to an action: a new version in draft/review, or one with a real registry approval stamp, opens the Founder approval screen (Super Admin only)
+              isSuperAdmin(user) && !v.legacyCode && (v.status === "draft" || v.status === "legal_review" || (v.status === "approved" && v.approvedAt))
+                ? <a key="a" className="underline text-ordift-gold-pressed" href={`/admin/legal/approval/${v.id}`}>Open</a>
+                : "—",
             ]),
           )}
         />
