@@ -206,6 +206,8 @@ begin
   if new.payment_method <> 'bank_transfer' or new.status <> 'completed' or new.payment_type = 'refund' then return new; end if;
   if tg_op = 'UPDATE' and old.status = 'completed' then return new; end if;           -- already counted: not a new credit
   perform pg_advisory_xact_lock(hashtextextended('ordift:payment-entity:' || new.entity_type || ':' || new.entity_id, 0));
+  -- entity_id is text: a value that is not a uuid simply has nothing to bound against (it must never make the payment write fail with a cast error)
+  if new.entity_id !~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' then return new; end if;
   if new.entity_type = 'enquiry' then select amount_due into v_due from public.enquiries where id = new.entity_id::uuid;
   else select amount_due into v_due from public.workshop_registrations where id = new.entity_id::uuid; end if;
   if v_due is null or v_due <= 0 then return new; end if;                              -- nothing to bound against (the verification function refuses these itself)
@@ -225,6 +227,8 @@ begin
   if new.payment_method <> 'gateway' or new.status <> 'completed' or new.payment_type = 'refund' then return new; end if;
   if tg_op = 'UPDATE' and old.status = 'completed' then return new; end if;
   perform pg_advisory_xact_lock(hashtextextended('ordift:payment-entity:' || new.entity_type || ':' || new.entity_id, 0));
+  -- entity_id is text: a value that is not a uuid simply has nothing to bound against (it must never make the payment write fail with a cast error)
+  if new.entity_id !~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' then return new; end if;
   if new.entity_type = 'enquiry' then select amount_due into v_due from public.enquiries where id = new.entity_id::uuid;
   else select amount_due into v_due from public.workshop_registrations where id = new.entity_id::uuid; end if;
   if v_due is null or v_due <= 0 then return new; end if;
