@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { assessAvailability, checkVerification, NOT_A_RESERVATION, projectConflicts, type AvailabilityInput } from "./availability";
+import { assessAvailability, checkVerification, forCheck, NOT_A_RESERVATION, projectConflicts, type AvailabilityInput } from "./availability";
 import type { Conflict, Segment } from "./rules";
 
 const seg: Segment = { startsAt: "2027-01-10T07:00:00Z", endsAt: "2027-01-10T08:00:00Z", timezone: "Asia/Qatar", kind: "on_site", location: "Doha" };
@@ -52,5 +52,14 @@ describe("projectConflicts: what staff may see", () => {
     expect(projectConflicts([firm], true)[0].label).toBe("ENQ-X-1");
     expect(JSON.stringify(projectConflicts([firm], false))).not.toMatch(/ENQ-X-1/);
     expect(projectConflicts([{ ...firm, kind: "leave", label: "approved leave" }], false)[0].label).toBe("approved leave");
+  });
+});
+
+describe("forCheck", () => {
+  it("lets a check proceed without a place (placeholder for the check only), and leaves a given place alone", () => {
+    expect(assessAvailability(input({ segments: [{ ...seg, location: null }] })).state).toBe("unverified");           // the booking rules want a place...
+    expect(assessAvailability(input({ segments: forCheck([{ ...seg, location: null }]) })).state).toBe("tentative");   // ...a check does not
+    expect(forCheck([{ ...seg, location: "Doha" }])[0].location).toBe("Doha");
+    expect(forCheck([{ ...seg, kind: "online", location: null, platform: null }])[0].platform).toBe("To be confirmed");
   });
 });
