@@ -17,8 +17,10 @@ export async function loadSchedulingStatus(
   } catch { return null; }
 }
 
+export const NEXT_AFTER_PAYMENT = "Booking confirmation";   // what actually comes next for a paid, unscheduled project (the pipeline's own "next stage" would be misleading)
+
 // Overlay the derived label on dashboard cards (client wording). Cards for projects with nothing to add are returned unchanged.
-export async function withSchedulingLabels<C extends { id: string; statusLabel: string }>(
+export async function withSchedulingLabels<C extends { id: string; statusLabel: string; nextMilestoneLabel?: string | null }>(
   cards: C[],
   enquiries: { id: string; crmStage: string; paymentStatus: string | null; amountPaid: number | null }[],
   env: Record<string, string | undefined> = process.env,
@@ -28,6 +30,6 @@ export async function withSchedulingLabels<C extends { id: string; statusLabel: 
   return Promise.all(cards.map(async (c) => {
     const e = byId.get(c.id); if (!e) return c;
     const s = await loadSchedulingStatus(e, env);
-    return s ? { ...c, statusLabel: clientSchedulingLabel(s) } : c;
+    return s ? { ...c, statusLabel: clientSchedulingLabel(s), ...("nextMilestoneLabel" in c ? { nextMilestoneLabel: NEXT_AFTER_PAYMENT } : {}) } : c;
   }));
 }
