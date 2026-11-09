@@ -26,6 +26,8 @@ export async function createStaffEnquiryAction(_prev: ActionState, formData: For
     },
     contactId: str("contactId") || null,
     organisationId: str("organisationId") || null,
+    existingContactId: str("existingContactId") || null,
+    confirmedDifferentClient: formData.get("confirmedDifferentClient") === "on",
   });
   if (!result.ok) return actionFail(result.error);
   revalidatePath("/admin/enquiries");

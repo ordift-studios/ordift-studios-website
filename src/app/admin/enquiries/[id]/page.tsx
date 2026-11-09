@@ -30,6 +30,8 @@ import QuotationAmountPanel from "./QuotationAmountPanel";
 import PricingPanel from "./PricingPanel";
 import BookingPanel from "./BookingPanel";
 import { loadBookingPanel } from "@/lib/bookings/panel";
+import { loadAvailabilityPanel, loadLatestAvailabilityCheck } from "@/lib/bookings/availabilityService";
+import AvailabilityCheckPanel from "./AvailabilityCheckPanel";
 
 function formatUsd(amount: number): string {
   return `$${amount.toFixed(2)}`;
@@ -53,7 +55,7 @@ function formatDateTime(iso: string): string {
 export default async function AdminEnquiryDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
 
-  const [enquiry, notes, categories, deliverables, requests, user, amountDueSource, storedPaymentCountry, amountPanel, bookingPanel] = await Promise.all([
+  const [enquiry, notes, categories, deliverables, requests, user, amountDueSource, storedPaymentCountry, amountPanel, availabilityPanel, bookingPanel] = await Promise.all([
     getEnquiryById(id),
     getEnquiryNotes(id),
     getDeliverableCategories(),
@@ -63,10 +65,12 @@ export default async function AdminEnquiryDetailPage({ params }: { params: Promi
     getAmountDueProvenance(id),
     getStoredPaymentCountry(id),
     getAmountDuePanel(id),
+    loadAvailabilityPanel(id),                                                          // null unless the booking flag is on, the viewer is staff/admin and the enquiry is open and not booked
     loadBookingPanel(id),                                                                 // null unless BOOKING_CONFIRMATION_ENABLED is "true" and the viewer may see it
   ]);
 
   if (!enquiry) notFound();
+  const earlierCheck = bookingPanel && bookingPanel.level !== "staff" ? await loadLatestAvailabilityCheck(id) : null;
 
   const canManageAmount = hasCapability(user, PAYMENT_CAPABILITIES, "manage_project_amount");
   const canEditCrmStage = hasCapability(user, CRM_CAPABILITIES, "edit_crm_stage");
@@ -109,7 +113,8 @@ export default async function AdminEnquiryDetailPage({ params }: { params: Promi
           {user && (isSuperAdmin(user) || hasRole(user, "admin")) ? <EmailNotificationsPanel enquiryId={enquiry.id} /> : null}
 
           {amountPanel ? <QuotationAmountPanel panel={amountPanel} /> : null}
-          {bookingPanel ? <BookingPanel data={bookingPanel} /> : null}
+          {availabilityPanel ? <AvailabilityCheckPanel enquiryId={enquiry.id} data={availabilityPanel} /> : null}
+          {bookingPanel ? <BookingPanel data={bookingPanel} earlierCheck={earlierCheck ? { label: earlierCheck.label, at: earlierCheck.at } : null} /> : null}
           {user ? <PricingPanel enquiryId={enquiry.id} isSuperAdmin={isSuperAdmin(user)} /> : null}
 
           {user && isSuperAdmin(user) ? (

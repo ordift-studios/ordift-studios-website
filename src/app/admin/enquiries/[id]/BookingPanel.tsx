@@ -22,7 +22,7 @@ const Conflicts = ({ list }: { list: { kind: string; firm: boolean; label: strin
   <ul className="list-disc pl-5 font-sans text-body-small text-ordift-ink">{list.map((c) => <li key={`${c.kind}${c.label}${c.from}`}>{c.firm ? "Firm" : "In progress"}: {c.label} ({c.kind.replace("_", " ")}) · {c.from.slice(0, 10)} to {c.to.slice(0, 10)}</li>)}</ul>
 );
 
-export default function BookingPanel({ data }: { data: BookingPanelData }) {
+export default function BookingPanel({ data, earlierCheck = null }: { data: BookingPanelData; earlierCheck?: { label: string; at: string } | null }) {
   const a = data.assessment as (null | { level: string; blockers?: string[]; conflicts?: { kind: string; firm: boolean; label: string; from: string; to: string }[]; agreement?: { required: boolean; reasons: string[] } });
   if (data.notReady) return <section className={card}><h2 className="font-serif font-medium text-body text-ordift-ink">Booking</h2><p className="font-sans text-body-small text-ordift-ink-muted">{data.notReady}</p></section>;
   if (!a) return null;
@@ -38,6 +38,8 @@ export default function BookingPanel({ data }: { data: BookingPanelData }) {
         <h2 id="booking-heading" className="font-serif font-medium text-body text-ordift-ink">Booking</h2>
         <p className="font-sans text-caption text-ordift-ink-muted">{live ? `Confirmed (version ${live.version})${live.assignedLabel ? ` · ${live.assignedLabel}` : ""}` : data.current?.kind === "cancelled" ? `Cancelled (version ${data.current.version}): ${data.current.reason ?? ""}` : "Not booked yet"}</p>
       </div>
+
+      {earlierCheck ? <p className="font-sans text-caption text-ordift-ink-muted">Earlier availability check before quoting: {earlierCheck.label} ({new Date(earlierCheck.at).toISOString().slice(0, 10)}). It was not a reservation. Scheduling conflicts are checked again now, and this check decides nothing.</p> : null}
 
       {live ? <Schedule b={live} /> : null}
 

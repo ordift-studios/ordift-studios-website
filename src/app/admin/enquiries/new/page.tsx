@@ -10,6 +10,7 @@ import { createStaffEnquiryAction } from "../staffIntakeActions";
 import ActionForm from "@/components/admin/ActionForm";
 import SubmitButton from "@/components/admin/SubmitButton";
 import LocalDateTimeField from "@/components/admin/LocalDateTimeField";
+import ClientLookupPanel from "./ClientLookupPanel";
 
 export const metadata: Metadata = {
   title: "Record an enquiry — Ordift Studios Admin",
@@ -61,6 +62,7 @@ export default async function RecordEnquiryPage() {
               ))}
             </select>
           </label>
+          <ClientLookupPanel />
           <label className="flex flex-col gap-1 font-sans text-caption text-ordift-ink-muted">
             Client&apos;s name
             <input name="fullName" required maxLength={200} className={FIELD} />

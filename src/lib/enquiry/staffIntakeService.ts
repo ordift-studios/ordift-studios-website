@@ -4,6 +4,7 @@ import { logActivity } from "@/lib/admin/activityLog";
 import { generateRecordId } from "@/lib/shared/recordId";
 import { isPlaceholderEmail, placeholderEmailFor } from "@/lib/shared/email/placeholder";
 import { linkRecord } from "@/lib/directory/directory";
+import { findPossibleExistingClients, linkEnquiryToExistingClientAsStaff } from "./staffClientLookup";
 import { validateStaffEnquiry, type StaffEnquiryInput } from "./staffIntake";
 
 // Staff-recorded enquiries (M1). Server-only.
@@ -23,6 +24,9 @@ export async function createStaffEnquiry(params: {
   input: Omit<StaffEnquiryInput, "now">;
   contactId?: string | null;
   organisationId?: string | null;
+  // chosen through the read-only staff client lookup (an EXISTING client); or the person confirms the typed email/phone belongs to someone else
+  existingContactId?: string | null;
+  confirmedDifferentClient?: boolean;
 }): Promise<{ ok: true; id: string; reference: string; linkNote: string | null } | Fail> {
   const user = await getCurrentUser();
   if (!user || user.id !== params.actorUserId || !isStaffOrAdmin(user)) return { ok: false, error: "Not authorised to record enquiries." };
@@ -35,6 +39,13 @@ export async function createStaffEnquiry(params: {
   const checked = validateStaffEnquiry({ ...params.input, now: new Date() });
   if (!checked.ok) return checked;
   const v = checked.value;
+
+  // Duplicate prevention: if the typed email or phone already belongs to an existing client, the person must choose that client (lookup) or confirm it is someone else.
+  if (!params.existingContactId && !params.contactId && !params.confirmedDifferentClient) {
+    const dup = await findPossibleExistingClients({ actorUserId: params.actorUserId, email: v.email, phone: v.phone });
+    if (!dup.ok) return dup;
+    if (dup.matches.length > 0) return { ok: false, error: dup.message ?? "This looks like an existing client." };
+  }
 
   const admin = createAdminClient();
   let reference = "";
@@ -79,7 +90,10 @@ export async function createStaffEnquiry(params: {
   });
 
   let linkNote: string | null = null;
-  if (params.contactId || params.organisationId) {
+  if (params.existingContactId) {
+    const linked = await linkEnquiryToExistingClientAsStaff({ actorUserId: params.actorUserId, enquiryId: id, contactId: params.existingContactId });
+    linkNote = linked.ok ? null : `The enquiry was recorded, but it was not linked to the client: ${linked.error}`;
+  } else if (params.contactId || params.organisationId) {
     const linked = await linkRecord({ subject: { type: "enquiry", id }, contactId: params.contactId ?? null, organisationId: params.organisationId ?? null, actorUserId: params.actorUserId });
     linkNote = linked.ok ? null : `The enquiry was recorded, but it was not linked to the directory: ${linked.error}`;
   }
