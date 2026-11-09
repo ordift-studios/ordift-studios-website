@@ -1,3 +1,4 @@
+import { withSchedulingLabels } from "@/lib/bookings/schedulingStatusService";
 import type { Metadata } from "next";
 import QuotationAwaitingBanner from "@/components/portal/QuotationAwaitingBanner";
 import { listQuotationsAwaitingAcceptance } from "@/lib/crewSupport/quotation";
@@ -42,8 +43,9 @@ export default async function ClientPortalPage() {
 
   const awaitingQuotations = user ? await listQuotationsAwaitingAcceptance(user.id) : [];
   const deliverablesSummary = await getDeliverablesSummary(enquiries, registrations);
-  const activeProjects = getActiveProjects(enquiries, deliverablesSummary.countByEntityId);
-  const latestUpdates = getLatestProjectUpdates(enquiries, deliverablesSummary.countByEntityId);
+  // "Paid — scheduling pending" overlay (derived; only when booking confirmation is switched on)
+  const activeProjects = await withSchedulingLabels(getActiveProjects(enquiries, deliverablesSummary.countByEntityId), enquiries);
+  const latestUpdates = await withSchedulingLabels(getLatestProjectUpdates(enquiries, deliverablesSummary.countByEntityId), enquiries);
   const recentActivity = getRecentActivity(enquiries, registrations);
   const upcomingSessions = await getUpcomingSessions(registrations);
   const deliverablesHref = getTopDeliverablesHref(deliverablesSummary, enquiries, registrations);

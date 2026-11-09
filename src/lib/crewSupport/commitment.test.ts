@@ -164,8 +164,10 @@ describe("commitments reuse existing infrastructure and only arise at confirmati
   it("confirmation books the enquiry (CRM) and a payment alone never does", () => {
     expect(ENQUIRY_STAGE_SYNC.confirmed.to).toBe("booked");
     const guard = readFileSync("src/lib/payments/crmStageSync.ts", "utf8");
-    expect(guard).toContain('intent?.commercial_intent === "creative_crew_support"');
-    expect(guard.indexOf('creative_crew_support')).toBeLessThan(guard.indexOf('.update({ crm_stage: "booked" })'));
+    // the Crew Support exclusion now lives in the shared payment-vs-booking policy (paymentStagePolicy.ts), called BEFORE the stage update
+    expect(guard).toContain("paymentMayBookEnquiry({ flagOn: bookingFlagOn(), commercialIntent: intent?.commercial_intent");
+    expect(guard.indexOf("paymentMayBookEnquiry(")).toBeLessThan(guard.indexOf('.update({ crm_stage: "booked" })'));
+    expect(readFileSync("src/lib/bookings/paymentStagePolicy.ts", "utf8")).toContain('commercialIntent === "creative_crew_support"');
   });
   it("an Availability Review proposal never creates an engagement or payable (an offer only records the proposal)", () => {
     const send = offers.slice(offers.indexOf("export async function sendCrewOffer"), offers.indexOf("export async function withdrawOrReleaseSlot"));

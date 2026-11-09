@@ -6,6 +6,8 @@ import {
   getEnquiryByIdForUser,
   getWorkshopRegistrationByIdForUser,
 } from "@/lib/portal/data";
+import { loadSchedulingStatus } from "@/lib/bookings/schedulingStatusService";
+import { clientSchedulingLabel } from "@/lib/bookings/paymentStagePolicy";
 import { crmStageProgress, nextCrmStage } from "@/lib/portal/dashboard";
 import type { ProjectRequestStatus } from "@/lib/admin/projectRequests";
 import type { Payment, PaymentEntityType } from "@/lib/payments/types";
@@ -50,12 +52,14 @@ export async function getWorkspaceOverview(
     const enquiry = await getEnquiryByIdForUser(id, userId);
     if (!enquiry) return null;
     const next = nextCrmStage(enquiry.crmStage);
+    // Payment is not a booking: when fully/partly paid but not yet confirmed, say so (derived; null when booking confirmation is off)
+    const scheduling = await loadSchedulingStatus({ id: enquiry.id, crmStage: enquiry.crmStage, paymentStatus: enquiry.paymentStatus, amountPaid: enquiry.amountPaid });
     return {
       kind,
       id: enquiry.id,
       title: `${pathwayLabel(enquiry.service)} — ${enquiry.referenceNumber}`,
       projectType: pathwayLabel(enquiry.service),
-      statusLabel: crmStageLabel(enquiry.crmStage),
+      statusLabel: scheduling ? clientSchedulingLabel(scheduling) : crmStageLabel(enquiry.crmStage),
       nextMilestoneLabel: next ? crmStageLabel(next) : null,
       progress: crmStageProgress(enquiry.crmStage),
       submittedAt: enquiry.submittedAt,

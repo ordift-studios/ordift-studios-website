@@ -3,6 +3,8 @@ import { CRM_STAGES } from "@/lib/admin/enquiries";
 import { logActivityAsSystem } from "@/lib/admin/activityLog";
 import { sendBookingConfirmedEmail } from "@/lib/enquiry/lifecycleEmails";
 import { sendNewBookingNotification } from "@/lib/notifications/newBookingNotification";
+import { bookingFlagOn } from "@/lib/bookings/rules";
+import { paymentMayBookEnquiry } from "@/lib/bookings/paymentStagePolicy";
 
 // TD-043 follow-up (Item 3, 2026-08-19) — the moment an enquiry's
 // aggregate payment status reaches "Paid", the booking is secured and
@@ -53,7 +55,11 @@ export async function advanceStageOnFullPayment(
   // early would flip the enquiry to Booked and send a "Booking Confirmed"
   // email for a job with no crew. The payment itself is recorded normally.
   const { data: intent } = await admin.from("enquiries").select("commercial_intent").eq("id", entityId).maybeSingle();
-  if (intent?.commercial_intent === "creative_crew_support") return;
+  // PAYMENT IS NOT A BOOKING (booking-integrity phase, 10 Nov 2026). When booking confirmation is switched on, an ordinary enquiry is
+  // booked ONLY by confirm_ordinary_booking (availability, conflicts, agreement, assigned person, payment condition). A full payment is
+  // recorded normally and the project shows "Paid — scheduling pending" (derived, see paymentStagePolicy.ts); no stage change, no
+  // "Booking Confirmed" client e-mail and no internal New Booking notification are produced by a payment. Switch off = legacy behaviour.
+  if (!paymentMayBookEnquiry({ flagOn: bookingFlagOn(), commercialIntent: intent?.commercial_intent as string | null | undefined })) return;
 
   // Every stage at or after "booked" in the canonical pipeline order —
   // none of these may ever be overwritten back to "booked".
