@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useEffect, useState } from "react";
+import { useActionState, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   createQuotationAction,
@@ -166,7 +166,13 @@ export function NewQuotationForm({ clients, markets, editing, enquiry, currencie
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editState[0]]);
 
+  const conditionBox = useRef<HTMLFieldSetElement>(null);
   const errorMessage = editing ? (editState[0]?.ok === false ? editState[0].error : null) : createState[0]?.ok === false ? createState[0].error : null;
+  // React 19 resets uncontrolled form fields after every submission, including a REFUSED one, and that also un-ticks a controlled radio group: put the person's choice back so the screen
+  // keeps showing what the preview sentence above is based on (found in the 2026-11-09 browser walkthrough).
+  useEffect(() => {
+    conditionBox.current?.querySelectorAll<HTMLInputElement>("input[name=paymentCondition]").forEach((r) => { r.checked = r.value === condition; });
+  }, [errorMessage, condition]);
 
   // Editing a field on a Pricing-derived item marks it 'adjusted' (still
   // keeps its sourceReference for audit context) — a genuinely manual
@@ -264,7 +270,7 @@ export function NewQuotationForm({ clients, markets, editing, enquiry, currencie
             <input name="currency" required defaultValue={editing?.currency ?? enquiry?.defaultCurrency ?? "GHS"} placeholder="Currency (e.g. GHS)" className="rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small" />
           )}
           <input name="validUntil" type="date" defaultValue={editing?.validUntil} className="rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small" />
-          <fieldset className="sm:col-span-2 space-y-2 rounded-lg border border-black/10 p-3">
+          <fieldset ref={conditionBox} className="sm:col-span-2 space-y-2 rounded-lg border border-black/10 p-3">
             <legend className="px-1 font-sans text-caption font-semibold text-ordift-ink">Payment before the booking is confirmed</legend>
             {([["none", "No upfront payment"], ["deposit", "Percentage deposit"], ["full", "Full payment before booking confirmation"]] as const).map(([v, l]) => (
               <label key={v} className="flex items-center gap-2 font-sans text-body-small text-ordift-ink">
