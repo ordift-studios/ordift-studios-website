@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState } from "react";
+import { useRestoringActionState } from "@/components/admin/useRestoringActionState";
 import { createSessionAction, deleteSessionAction, type ActionState } from "./actions";
 
 export type SessionRow = {
@@ -62,9 +63,9 @@ export function SessionList({ workshopId, sessions, people }: { workshopId: stri
 }
 
 export function CreateSessionForm({ workshopId, people }: { workshopId: string; people: { id: string; label: string }[] }) {
-  const [state, formAction, pending] = useActionState<ActionState, FormData>(createSessionAction, null);
+  const [state, formAction, pending, formRef] = useRestoringActionState<ActionState>(createSessionAction, null);   // keeps what was typed when the session is refused
   return (
-    <form action={formAction} className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+    <form ref={formRef} action={formAction} className="grid grid-cols-1 sm:grid-cols-2 gap-3">
       <input type="hidden" name="workshopId" value={workshopId} />
       <input type="date" name="sessionDate" required className="rounded-lg border border-black/15 px-3 py-1.5 font-sans text-body-small" />
       <div className="flex gap-2">

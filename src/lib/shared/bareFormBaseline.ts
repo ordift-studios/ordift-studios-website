@@ -1,10 +1,8 @@
-// GENERATED BASELINE for bareForm.guard.test.ts (9 Nov 2026): the number of "bare" forms (a <form action={...}> with no ref, in a file that uses useActionState) in each existing file.
-// It is a ratchet: it may only go DOWN. When you convert a form to useRestoringActionState (or <ActionForm>), lower the number or remove the line. A new file must have none.
+// GENERATED BASELINE for bareForm.guard.test.ts (updated 9 Nov 2026, phase 2): the number of "bare" forms (a <form action={...}> with no ref, in a file that uses useActionState) in each existing file.
+// It is a TIGHT ratchet: it may only go down, and it must equal the real count. When you convert a form to useRestoringActionState (or <ActionForm>), lower the number or remove the line. A new file must have none.
 export const BARE_FORM_BASELINE: Record<string, number> = {
-  "src/app/admin/crew-support/ContractingEntityPanel.tsx": 1,
   "src/app/admin/enquiries/[id]/ConvertPanel.tsx": 1,
-  "src/app/admin/enquiries/[id]/PricingForms.tsx": 6,
-  "src/app/admin/enquiries/[id]/SetAmountDueForm.tsx": 1,
+  "src/app/admin/enquiries/[id]/PricingForms.tsx": 2,
   "src/app/admin/enquiries/[id]/StartHandlingButton.tsx": 1,
   "src/app/admin/enquiries/[id]/UpdateStageForm.tsx": 2,
   "src/app/admin/me/FounderSelfAdministrationForm.tsx": 1,
@@ -37,9 +35,8 @@ export const BARE_FORM_BASELINE: Record<string, number> = {
   "src/app/admin/portfolio-library/JobForms.tsx": 5,
   "src/app/admin/portfolio-library/PermissionRecordErasure.tsx": 3,
   "src/app/admin/portfolio-library/SubjectEvidence.tsx": 8,
-  "src/app/admin/pricing/TierRateEditForm.tsx": 1,
   "src/app/admin/pricing/quotations/[id]/QuotationRecordActions.tsx": 2,
-  "src/app/admin/pricing/quotations/[id]/QuotationStatusActions.tsx": 3,
+  "src/app/admin/pricing/quotations/[id]/QuotationStatusActions.tsx": 1,
   "src/app/admin/pricing/quotations/new/NewQuotationForm.tsx": 1,
   "src/app/admin/pulse/[id]/ArticleActions.tsx": 1,
   "src/app/admin/pulse/[id]/HeroMediaControl.tsx": 2,
@@ -60,9 +57,8 @@ export const BARE_FORM_BASELINE: Record<string, number> = {
   "src/app/admin/users/UsersManager.tsx": 2,
   "src/app/admin/workshops/WorkshopCommunicationForms.tsx": 2,
   "src/app/admin/workshops/WorkshopDashboardForms.tsx": 7,
-  "src/app/admin/workshops/WorkshopForm.tsx": 1,
   "src/app/admin/workshops/WorkshopMaterialsPanel.tsx": 2,
-  "src/app/admin/workshops/WorkshopScheduleForms.tsx": 2,
+  "src/app/admin/workshops/WorkshopScheduleForms.tsx": 1,
   "src/app/admin/workshops/[id]/briefs/[briefId]/GiveFeedbackForm.tsx": 1,
   "src/app/legal/sign/[token]/SignatoryWorkspace.tsx": 3,
   "src/app/portal/(dashboard)/client/projects/[kind]/[id]/payments/checkout/CheckoutForm.tsx": 1,

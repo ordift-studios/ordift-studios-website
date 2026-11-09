@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState } from "react";
+import { useRestoringActionState } from "@/components/admin/useRestoringActionState";
 import { communicateDiscountAction, completeFollowUpAction, createFollowUpAction, decideDiscountAction, proposeDiscountAction, rescheduleFollowUpAction, type PState } from "./pricingActions";
 
 const input = "w-full rounded-lg border border-black/15 px-3 py-2 font-sans text-body-small";
@@ -12,8 +13,8 @@ const H = ({ id }: { id: string }) => <input type="hidden" name="enquiryId" valu
 type Person = { id: string; name: string };
 
 export function ProposeDiscountForm({ enquiryId }: { enquiryId: string }) {
-  const [s, act, p] = useActionState(proposeDiscountAction, null as PState);
-  return <form action={act} className="grid grid-cols-1 gap-2 sm:grid-cols-4"><H id={enquiryId} />
+  const [s, act, p, formRef] = useRestoringActionState<PState>(proposeDiscountAction, null);
+  return <form ref={formRef} action={act} className="grid grid-cols-1 gap-2 sm:grid-cols-4"><H id={enquiryId} />
     <select name="type" aria-label="Discount type" className={input}><option value="percentage">Percent off</option><option value="fixed">Fixed USD off</option></select>
     <input name="value" type="number" step="0.01" min="0.01" placeholder="Amount" aria-label="Discount amount" className={input} required />
     <input name="reason" placeholder="Why (at least a sentence)" aria-label="Reason" className={`${input} sm:col-span-2`} required />
@@ -26,25 +27,25 @@ export function DecideDiscountForm({ enquiryId, discountId }: { enquiryId: strin
     <button name="decision" value="approved" className={ghost} disabled={p}>Approve</button><button name="decision" value="rejected" className={ghost} disabled={p}>Reject</button><Msg s={s} /></form>;
 }
 export function CommunicateDiscountForm({ enquiryId }: { enquiryId: string }) {
-  const [s, act, p] = useActionState(communicateDiscountAction, null as PState);
-  return <form action={act} className="grid grid-cols-1 gap-2 sm:grid-cols-3"><H id={enquiryId} />
+  const [s, act, p, formRef] = useRestoringActionState<PState>(communicateDiscountAction, null);
+  return <form ref={formRef} action={act} className="grid grid-cols-1 gap-2 sm:grid-cols-3"><H id={enquiryId} />
     <input name="channel" placeholder="How (phone, WhatsApp…)" aria-label="Channel" className={input} required />
     <input name="communicatedAt" type="datetime-local" aria-label="When" className={input} />
     <button className={btn} disabled={p}>Save the discounted price as communicated</button><div className="sm:col-span-3"><Msg s={s} /></div></form>;
 }
 export function NewFollowUpForm({ enquiryId, people }: { enquiryId: string; people: Person[] }) {
-  const [s, act, p] = useActionState(createFollowUpAction, null as PState);
-  return <form action={act} className="grid grid-cols-1 gap-2 sm:grid-cols-4"><H id={enquiryId} />
+  const [s, act, p, formRef] = useRestoringActionState<PState>(createFollowUpAction, null);
+  return <form ref={formRef} action={act} className="grid grid-cols-1 gap-2 sm:grid-cols-4"><H id={enquiryId} />
     <select name="handlerId" aria-label="Handler" className={input} defaultValue="">{<option value="">Me</option>}{people.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}</select>
     <input name="nextAction" placeholder="Next action (for example: call to confirm the date)" aria-label="Next action" className={`${input} sm:col-span-2`} required />
     <input name="dueAt" type="datetime-local" aria-label="Due" className={input} required />
     <button className={btn} disabled={p}>Set follow-up</button><div className="sm:col-span-3"><Msg s={s} /></div></form>;
 }
 export function ManageFollowUp({ enquiryId, followUpId, people }: { enquiryId: string; followUpId: string; people: Person[] }) {
-  const [rs, ract, rp] = useActionState(rescheduleFollowUpAction, null as PState);
+  const [rs, ract, rp, rescheduleForm] = useRestoringActionState<PState>(rescheduleFollowUpAction, null);
   const [cs, cact, cp] = useActionState(completeFollowUpAction, null as PState);
   return <div className="space-y-3">
-    <form action={ract} className="grid grid-cols-1 gap-2 sm:grid-cols-4"><H id={enquiryId} /><input type="hidden" name="followUpId" value={followUpId} />
+    <form ref={rescheduleForm} action={ract} className="grid grid-cols-1 gap-2 sm:grid-cols-4"><H id={enquiryId} /><input type="hidden" name="followUpId" value={followUpId} />
       <input name="dueAt" type="datetime-local" aria-label="New due date" className={input} required />
       <select name="handlerId" aria-label="Handler" className={input} defaultValue=""><option value="">Same handler</option>{people.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}</select>
       <input name="reason" placeholder="Why (kept in history)" aria-label="Reason" className={input} required />

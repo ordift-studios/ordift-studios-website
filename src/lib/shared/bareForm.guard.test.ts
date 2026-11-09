@@ -15,13 +15,17 @@ describe("bare forms may not grow", () => {
     const over = files.map((f) => ({ f, n: bareFormCount(readFileSync(join(root, f), "utf8")), allowed: BARE_FORM_BASELINE[f] ?? 0 })).filter((x) => x.n > x.allowed);
     expect(over.map((x) => `${x.f}: ${x.n} bare form(s), allowed ${x.allowed}. Use <ActionForm> or useRestoringActionState (src/components/admin/useRestoringActionState.ts).`)).toEqual([]);
   });
+  it("the baseline is TIGHT: it equals the real count, so every conversion has to lower it (it cannot quietly drift)", () => {
+    const drift = files.map((f) => ({ f, n: bareFormCount(readFileSync(join(root, f), "utf8")), allowed: BARE_FORM_BASELINE[f] ?? 0 })).filter((x) => x.n !== x.allowed);
+    expect(drift.map((x) => `${x.f}: ${x.n} bare form(s) but the baseline says ${x.allowed}. Lower or remove the baseline entry.`)).toEqual([]);
+  });
   it("the baseline only names files that exist (so it cannot hide a renamed file) and never lists a zero", () => {
     expect(Object.keys(BARE_FORM_BASELINE).filter((f) => !files.includes(f))).toEqual([]);
     expect(Object.values(BARE_FORM_BASELINE).filter((n) => n <= 0)).toEqual([]);
   });
-  it("the five forms converted in this phase use the restoring hook", () => {
+  it("the forms converted in phases 1 and 2 use the restoring hook", () => {
     const uses = (f: string) => readFileSync(join(root, f), "utf8").includes("useRestoringActionState");
-    for (const f of ["src/components/admin/OnboardingJourneyForms.tsx", "src/app/admin/organization/legal-entities/[entityId]/EntityRegistryPanels.tsx", "src/app/admin/organization/vendors/[vendorId]/VendorDetailWorkspace.tsx", "src/app/admin/portfolio-library/JobForms.tsx", "src/app/admin/pricing/quotations/[id]/QuotationStatusActions.tsx"]) expect(uses(f), f).toBe(true);
+    for (const f of ["src/components/admin/OnboardingJourneyForms.tsx", "src/app/admin/organization/legal-entities/[entityId]/EntityRegistryPanels.tsx", "src/app/admin/organization/vendors/[vendorId]/VendorDetailWorkspace.tsx", "src/app/admin/portfolio-library/JobForms.tsx", "src/app/admin/pricing/quotations/[id]/QuotationStatusActions.tsx", "src/app/admin/enquiries/[id]/PricingForms.tsx", "src/app/admin/enquiries/[id]/SetAmountDueForm.tsx", "src/app/admin/pricing/TierRateEditForm.tsx", "src/app/admin/crew-support/ContractingEntityPanel.tsx", "src/app/admin/workshops/WorkshopForm.tsx", "src/app/admin/workshops/WorkshopScheduleForms.tsx"]) expect(uses(f), f).toBe(true);
   });
   it("the scanner counts a bare form and ignores a form with a ref, an ActionForm, and files without useActionState", () => {
     expect(bareFormCount(`useActionState(); <form action={a} className="x">`)).toBe(1);

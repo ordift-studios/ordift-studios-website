@@ -31,7 +31,7 @@ export function QuotationStatusActions({ quotationId, status, defaultValidUntil,
   // The result states live here (this component stays mounted when the page refreshes after an action), so a confirmation is never lost when the panel below it changes.
   const [issueState, issueAction, , issueForm] = useRestoringActionState<ActionState>(issueQuotationAction, null);   // keeps what was typed when issuing is refused
   const [basis, setBasis] = useState<"" | "depends" | "independent">("");
-  const [deliveryState, deliveryAction] = useActionState<ActionState, FormData>(recordQuotationDeliveryAction, null);
+  const [deliveryState, deliveryAction, , deliveryForm] = useRestoringActionState<ActionState>(recordQuotationDeliveryAction, null);
   const initial = currentValidUntil && currentValidUntil >= today ? currentValidUntil : defaultValidUntil;
   const [validUntil, setValidUntil] = useState(initial);
   const isException = validUntil !== defaultValidUntil;
@@ -128,7 +128,7 @@ export function QuotationStatusActions({ quotationId, status, defaultValidUntil,
           {deliveryState?.ok === false && <p role="alert" className="font-sans text-caption text-red-800">{deliveryState.error}</p>}
           <details className="rounded-lg border border-black/10 px-3 py-2">
             <summary className="min-h-11 cursor-pointer py-2 font-sans text-body-small text-ordift-ink">Record that I delivered it</summary>
-            <form action={deliveryAction} className="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <form ref={deliveryForm} action={deliveryAction} className="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-2">
               <input type="hidden" name="quotationId" value={quotationId} />
               <label className="font-sans text-caption text-ordift-ink-muted">How was it delivered?
                 <select name="channel" required defaultValue="" className={FIELD}><option value="" disabled>Choose…</option>{DELIVERY_CHANNELS_UI.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}</select>
