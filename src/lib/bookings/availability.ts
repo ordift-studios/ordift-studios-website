@@ -55,3 +55,8 @@ const GENERIC: Record<string, string> = { booking: "a confirmed booking", crew_s
 export function projectConflicts(list: Conflict[], seeReferences: boolean): ViewConflict[] {
   return list.map((c) => ({ kind: c.kind, firm: c.firm, from: c.from, to: c.to, label: seeReferences || c.kind === "leave" ? c.label : GENERIC[c.kind] ?? "a commitment" }));
 }
+
+// A pre-quotation check needs the time and the person, not the place. The booking rules insist on a place (or an online platform) for a confirmed session, so an unknown one is
+// filled with a plain placeholder FOR THE CHECK ONLY; it is never stored as a booking detail.
+export const PLACE_NOT_KNOWN_YET = "To be confirmed";
+export const forCheck = (segments: Segment[]): Segment[] => segments.map((s) => ({ ...s, location: s.kind === "online" ? s.location : (s.location?.trim() || PLACE_NOT_KNOWN_YET), platform: s.kind === "online" ? (s.platform?.trim() || PLACE_NOT_KNOWN_YET) : s.platform }));
