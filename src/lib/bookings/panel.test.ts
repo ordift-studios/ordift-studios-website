@@ -44,11 +44,11 @@ describe("assessDraft (what the confirm screen shows before an attempt)", () => 
 
 describe("projectBooking (what each level may see of the booking record)", () => {
   const b: CurrentBooking = { id: "c1", version: 2, kind: "confirmed", assignedProfileId: "p1", assignedLabel: "M-1 — Sara", confirmedAt: "2026-11-08T10:00:00Z", reason: null, basis: "internal note", segments: [seg], settingsVersion: 1,
-    payment: { condition: "deposit", depositPercent: 50, requiredUsd: 300, verifiedPaidUsd: 300, outstandingUsd: 300 }, agreementRequired: true, agreementReasons: ["category:videography"], conflictsReviewed: 2 };
+    payment: { condition: "deposit", depositPercent: 50, requiredUsd: 300, verifiedPaidUsd: 300, outstandingUsd: 300 }, agreementRequired: true, agreementReasons: ["category:videography"], conflictsReviewed: 2, clarification: { kind: "client_confirmed_in_writing", evidence: "secret evidence text" } };
   it("Super Admin: everything; Admin: schedule and person with no amounts, condition or note; staff: nothing", () => {
     expect(projectBooking(b, "super_admin")).toEqual(b);
     const a = projectBooking(b, "admin")!; expect(a.segments).toEqual(b.segments); expect(a.assignedLabel).toBe("M-1 — Sara");
-    expect(JSON.stringify(a)).not.toMatch(/internal note|300|"deposit"|depositPercent":50/); expect(a.payment).toEqual({ condition: null, depositPercent: null, requiredUsd: null, verifiedPaidUsd: null, outstandingUsd: null });
+    expect(JSON.stringify(a)).not.toMatch(/internal note|secret evidence text|300|"deposit"|depositPercent":50/); expect(a.payment).toEqual({ condition: null, depositPercent: null, requiredUsd: null, verifiedPaidUsd: null, outstandingUsd: null });
     expect(projectBooking(b, "staff")).toBeNull(); expect(projectBooking(null, "super_admin")).toBeNull();
   });
 });

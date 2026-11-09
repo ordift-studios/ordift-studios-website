@@ -45,7 +45,8 @@ export default function BookingConfirmForm(p: {
     return fd;
   };
   const check = () => start(async () => { setResult(null); const r = await previewBookingAction(null, build()); setPreview(r); setStale(false); });
-  const submit = () => start(async () => { setResult(await confirmBookingAction(null, build())); setStale(true); });
+  // After a REFUSAL (for example a mistyped sentence) the last check still stands, so the person can correct and retry without checking again; after a success the page data is stale.
+  const submit = () => start(async () => { const r = await confirmBookingAction(null, build()); setResult(r); if (r?.ok) setStale(true); });
   const setSeg = (i: number, patch: Partial<SegmentDraft>) => { setSegs((all) => all.map((s, j) => (j === i ? { ...s, ...patch } : s))); touch(); };
   const setR = (k: string, patch: Partial<Res>) => { setRes((all) => ({ ...all, [k]: { ...(all[k] ?? { method: "call", reference: "", on: "", confirm: false }), ...patch } })); touch(); };
 

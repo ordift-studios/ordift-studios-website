@@ -63,7 +63,7 @@ export async function loadAcceptedContext(enquiryId: string): Promise<AcceptedCo
 
 // ---- the latest confirmation record (append-only: a change or cancellation is a newer row)
 export type CurrentBooking = { id: string; version: number; kind: "confirmed" | "changed" | "cancelled"; assignedProfileId: string | null; assignedLabel: string | null; confirmedAt: string; reason: string | null; basis: string | null; segments: Segment[]; settingsVersion: number | null;
-  payment: { condition: PaymentCondition | null; depositPercent: number | null; requiredUsd: number | null; verifiedPaidUsd: number | null; outstandingUsd: number | null }; agreementRequired: boolean; agreementReasons: string[]; conflictsReviewed: number };
+  payment: { condition: PaymentCondition | null; depositPercent: number | null; requiredUsd: number | null; verifiedPaidUsd: number | null; outstandingUsd: number | null }; agreementRequired: boolean; agreementReasons: string[]; conflictsReviewed: number; clarification: { kind: string; evidence: string } | null };
 export async function loadCurrentBooking(enquiryId: string): Promise<CurrentBooking | null> {
   const db = createAdminClient();
   const { data: c } = await db.from("enquiry_booking_confirmations").select("*").eq("enquiry_id", enquiryId).order("version", { ascending: false }).limit(1).maybeSingle();
@@ -81,6 +81,7 @@ export async function loadCurrentBooking(enquiryId: string): Promise<CurrentBook
     segments: (segs ?? []).map((s) => ({ startsAt: s.starts_at as string, endsAt: s.ends_at as string, timezone: s.timezone as string, kind: s.kind as Segment["kind"], location: s.location as string | null, platform: s.platform as string | null, note: s.note as string | null })),
     payment: { condition: (c.payment_condition as PaymentCondition | null) ?? null, depositPercent: c.deposit_percent === null ? null : Number(c.deposit_percent), requiredUsd: c.required_usd === null ? null : Number(c.required_usd), verifiedPaidUsd: c.verified_paid_usd === null ? null : Number(c.verified_paid_usd), outstandingUsd: c.outstanding_usd === null ? null : Number(c.outstanding_usd) },
     agreementRequired: Boolean(c.agreement_required), agreementReasons: (c.agreement_reasons as string[]) ?? [], conflictsReviewed: Array.isArray(review.conflicts) ? review.conflicts.length : 0,
+    clarification: c.payment_clarification && typeof c.payment_clarification === "object" ? { kind: String((c.payment_clarification as Record<string, unknown>).kind ?? ""), evidence: String((c.payment_clarification as Record<string, unknown>).evidence ?? "") } : null,
   };
 }
 
@@ -88,7 +89,7 @@ export async function loadCurrentBooking(enquiryId: string): Promise<CurrentBook
 export function projectBooking(b: CurrentBooking | null, level: "super_admin" | "admin" | "staff"): CurrentBooking | null {
   if (!b || level === "staff") return null;
   if (level === "super_admin") return b;
-  return { ...b, basis: null, settingsVersion: null, conflictsReviewed: 0, payment: { condition: null, depositPercent: null, requiredUsd: null, verifiedPaidUsd: null, outstandingUsd: null }, reason: b.reason };
+  return { ...b, basis: null, settingsVersion: null, conflictsReviewed: 0, clarification: null, payment: { condition: null, depositPercent: null, requiredUsd: null, verifiedPaidUsd: null, outstandingUsd: null }, reason: b.reason };
 }
 
 // ---- the whole panel for one viewer. null = show nothing (flag off, no role, or not applicable to this viewer)
@@ -109,7 +110,7 @@ export async function loadBookingPanel(enquiryId: string, env: Record<string, st
   const segments = live?.segments ?? [];
   const conflicts = live && live.assignedProfileId ? (await previewConflicts({ assigneeId: live.assignedProfileId, segments, excludeEnquiryId: enquiryId }, env)) ?? [] : [];
   const full: PanelFull | null = settings ? assessDraft({ quotation: ctx.quotation, activities: ctx.activities, settings, entityEligible: ctx.entityEligible, hasExecutedAgreement: Boolean(ctx.executedAgreement), amountDueUsd: ctx.enquiry.amountDueUsd, verifiedPaidUsd: ctx.enquiry.verifiedPaidUsd,
-    segments, escalators: [], clarification: null, conflicts, resolutions: [], assigneeId: live?.assignedProfileId ?? null, today: todayUtc() }) : null;
+    segments, escalators: [], clarification: live?.clarification ?? null, conflicts, resolutions: [], assigneeId: live?.assignedProfileId ?? null, today: todayUtc() }) : null;
   const projected = full ? projectPanel({ ...full, confirmation: live as unknown as Record<string, unknown> | null }, viewer, live?.assignedProfileId ?? null) : null;
   if (!projected) return null;                                                                       // staff who are not the assigned person see nothing
   const assignable = isSuper ? (await listOverridePool([])).map((p) => ({ profileId: p.profileId, label: p.memberNumber ? `${p.memberNumber} — ${p.name}` : p.name })) : [];
