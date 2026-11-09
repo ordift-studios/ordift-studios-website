@@ -1,16 +1,16 @@
 "use client";
 
-import { useActionState } from "react";
+import { useRestoringActionState } from "@/components/admin/useRestoringActionState";
 import { useSubmitGuard } from "@/components/admin/useSubmitGuard";
 import { claimProjectAction, type ClaimFormState } from "./actions";
 
 const initial: ClaimFormState = { error: null };
 
 export default function ClaimForm({ token }: { token: string }) {
-  const [state, action, pending] = useActionState(claimProjectAction, initial);
+  const [state, action, pending, formRef] = useRestoringActionState<ClaimFormState>(claimProjectAction, initial);
   const guard = useSubmitGuard(pending);
   return (
-    <form action={action} onSubmit={guard} className="max-w-md space-y-5">
+    <form ref={formRef} action={action} onSubmit={guard} className="max-w-md space-y-5">
       <input type="hidden" name="token" value={token} />
       <div>
         <label htmlFor="claim-code" className="mb-1 block font-sans text-caption text-ordift-ink-muted">6-digit code</label>
