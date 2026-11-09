@@ -22,6 +22,7 @@ if psql("select to_regclass('public.booking_rule_settings') is not null")[0] == 
     psql("begin;\n" + strip("ROLLBACK_booking_confirmation.sql") + "\ncommit;")
 print("applying the proposal (committed) and the fixtures ...")
 psql("begin;\n" + strip("PROPOSAL_booking_confirmation.sql") + "\ncommit;")
+psql("begin;\n" + strip("PROPOSAL_crew_support_booking_overlap_guard.sql") + "\ncommit;")      # the reverse-direction guard, committed so separate sessions can race
 psql(f"""set session_replication_role = replica;
 insert into auth.users (id, email) select ('00000000-0000-4000-8000-0000000000'||lpad(to_hex(n),2,'0'))::uuid, 'cc'||n||'@e2e.test' from generate_series(160,163) n on conflict do nothing;
 insert into public.profiles (id, full_name, access_status) select ('00000000-0000-4000-8000-0000000000'||lpad(to_hex(n),2,'0'))::uuid, 'Conc '||n, 'active' from generate_series(160,163) n on conflict do nothing;
@@ -72,6 +73,35 @@ for i in range(5):                      # D
 for i in range(4):                      # E
     n += 2; (e1, q1), (e2, q2) = mk(n - 1), mk(n); day = f"2027-06-{1+i:02d}"
     check(f"E{i} two different people, same time", race([payload(e1, q1, P1, 9).replace("2027-02-01", day), payload(e2, q2, P2, 9).replace("2027-02-01", day)]), 2)
+crew_ids = []
+def mkcrew(e, day, call=None, fin=None):
+    r, req = str(uuid.uuid4()), str(uuid.uuid4()); crew_ids.append(r)
+    psql(f"""set session_replication_role = replica;
+insert into public.crew_support_requests (id, enquiry_id, reference_number, requester_type, requester_name, requester_email, requester_phone, service_family, project_name, start_date, end_date, location, consent_accepted_at, status, call_time, finish_time, event_timezone)
+  values ('{r}', '{e}', 'CSR-CC-{RUN}-{len(crew_ids)}', 'photographer', 'X', 'x@e2e.test', '1', 'photography', 'P', date '{day}', date '{day}', 'Doha', now(), 'quoted', {f"'{call}'" if call else 'null'}, {f"'{fin}'" if fin else 'null'}, 'Asia/Qatar');
+insert into public.crew_support_requirements (id, request_id, role_label, quantity) values ('{req}', '{r}', 'Photographer', 1);
+insert into public.crew_support_slots (requirement_id, request_id, slot_number, assignee_profile_id, status) values ('{req}', '{r}', 1, '{P1}', 'assigned');
+set session_replication_role = origin;""")
+    return r
+def attempt_crew(r, go):
+    out, err = psql(f"select pg_sleep_until(to_timestamp({go}));\nupdate public.crew_support_requests set status = 'confirmed' where id = '{r}';", check=False)
+    m = re.search(r"ordift:[a-z_]+", err); return "OK" if not err.strip() else (m.group(0) if m else "ERR " + err[:80])
+def race_mixed(booking_payload, crew_id, booking_lead=0.0):
+    go = time.time() + 2.5      # booking_lead > 0: the booking starts that many seconds BEFORE the Crew Support confirmation (so each order is exercised)
+    with cf.ThreadPoolExecutor(2) as ex: return list(ex.map(lambda f: f(), [lambda: attempt(booking_payload, go - booking_lead), lambda: attempt_crew(crew_id, go)]))
+for i in range(6):                      # F  booking confirmation versus Crew Support confirmation, same person, overlapping (the crew request is date-only: conservative)
+    n += 1; e, q = mk(n); n += 1; ec, _q = mk(n); day = f"2027-07-{1+i:02d}"
+    res = race_mixed(payload(e, q, P1, 6).replace("2027-02-01", day), mkcrew(ec, day))
+    ok = res.count("OK") == 1 and all(r in ("OK", "ordift:booking_overlap_not_overridable", "ordift:crew_confirm_overlaps_booking") for r in res)
+    print(f"{'PASS' if ok else 'FAIL'}  F{i} booking vs Crew Support confirmation, same person, overlapping: {res}"); (None if ok else bad.append(f"F{i}"))
+for i in range(3):                      # H  the booking is confirmed FIRST: the later Crew Support confirmation must be refused by the database
+    n += 1; e, q = mk(n); n += 1; ec, _q = mk(n); day = f"2027-09-{1+i:02d}"
+    res = race_mixed(payload(e, q, P1, 6).replace("2027-02-01", day), mkcrew(ec, day), booking_lead=0.8)
+    ok = res == ["OK", "ordift:crew_confirm_overlaps_booking"]; print(f"{'PASS' if ok else 'FAIL'}  H{i} booking first, then Crew Support confirmation, same person, overlapping: {res}"); (None if ok else bad.append(f"H{i}"))
+for i in range(3):                      # G  precise, NON-overlapping hours the same day: both may succeed (the lock does not over-block)
+    n += 1; e, q = mk(n); n += 1; ec, _q = mk(n); day = f"2027-08-{1+i:02d}"
+    res = race_mixed(payload(e, q, P1, 6).replace("2027-02-01", day), mkcrew(ec, day, "13:00", "16:00"))
+    ok = res == ["OK", "OK"]; print(f"{'PASS' if ok else 'FAIL'}  G{i} booking (09:00-11:00 Doha) and a 13:00-16:00 assignment, same person, same day: {res}"); (None if ok else bad.append(f"G{i}"))
 # data integrity: no person is ever double-booked among CURRENT confirmed bookings
 dup, _ = psql("""select count(*) from public.enquiry_booking_confirmations a join public.enquiry_booking_segments sa on sa.confirmation_id = a.id
   join public.enquiry_booking_confirmations b on b.assigned_profile_id = a.assigned_profile_id and b.id <> a.id and b.enquiry_id <> a.enquiry_id
@@ -80,6 +110,10 @@ dup, _ = psql("""select count(*) from public.enquiry_booking_confirmations a joi
 print(f"{'PASS' if dup == '0' else 'FAIL'}  integrity: overlapping current confirmations for one person = {dup}"); (None if dup == "0" else bad.append("integrity"))
 total, _ = psql("select count(*) from public.enquiry_booking_confirmations"); print("confirmation rows written during the test:", total)
 print("cleaning up (rows cleared with triggers off, then the proposal's own rollback) ...")
+psql("begin;\n" + strip("ROLLBACK_crew_support_booking_overlap_guard.sql") + "\ncommit;")
+if crew_ids:
+    ids = ",".join(f"'{c}'" for c in crew_ids)
+    psql(f"set session_replication_role = replica; delete from public.crew_support_slots where request_id in ({ids}); delete from public.crew_support_requirements where request_id in ({ids}); delete from public.crew_support_requests where id in ({ids}); set session_replication_role = origin;")
 psql("set session_replication_role = replica; delete from public.enquiry_booking_segments; delete from public.enquiry_booking_confirmations; delete from public.booking_rule_settings; set session_replication_role = origin;")
 psql("begin;\n" + strip("ROLLBACK_booking_confirmation.sql") + "\ncommit;")
 gone, _ = psql("select to_regclass('public.enquiry_booking_confirmations') is null and to_regproc('public.confirm_ordinary_booking') is null")

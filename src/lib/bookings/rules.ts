@@ -77,10 +77,10 @@ export function validateSegments(segments: Segment[]): string | null {
 const localDate = (iso: string, tz: string) => new Intl.DateTimeFormat("en-CA", { timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(iso));
 
 // ---- conflicts (same definition as the database: firm = confirmed booking, confirmed Crew Support slot, approved leave; soft = in progress)
-// overridable: false for a confirmed booking and a confirmed Crew Support slot (an assignment of the same person: nothing written or recorded clears it, only changing the person or the time);
-// true only for approved leave, which a documented direct check with the person can clear. A soft (in-progress) conflict never blocks.
+// overridable is false for every firm conflict (a confirmed booking, a confirmed Crew Support slot, approved leave): nothing written or recorded clears it, only changing the person or the time, or the leave workflow.
+// A soft (in-progress) conflict never blocks.
 export type Conflict = { key: string; kind: "booking" | "crew_slot" | "leave"; firm: boolean; overridable: boolean; label: string; from: string; to: string };
-export const isOverridableKind = (kind: Conflict["kind"], firm: boolean) => kind === "leave" || (kind === "crew_slot" && !firm);
+export const isOverridableKind = (_kind: Conflict["kind"], _firm: boolean) => false;   // no firm conflict is overridable: a confirmed booking, a confirmed Crew Support assignment and approved leave are all unavailable; a soft conflict never blocks
 export type Commitments = {
   bookings: { id: string; reference: string; assigneeId: string | null; enquiryId: string; segments: { startsAt: string; endsAt: string }[] }[];
   crewSlots: { id: string; reference: string; assigneeId: string; requestStatus: string; startDate: string; endDate: string; isTest: boolean }[];
@@ -94,8 +94,8 @@ export function classifyConflicts(assigneeId: string | null, segments: Segment[]
     for (const b of c.bookings) if (b.assigneeId === assigneeId && b.enquiryId !== excludeEnquiryId)
       for (const g of b.segments) if (Date.parse(g.startsAt) < Date.parse(s.endsAt) && Date.parse(g.endsAt) > Date.parse(s.startsAt)) out.set(`booking:${b.id}`, { key: `booking:${b.id}`, kind: "booking", firm: true, overridable: false, label: b.reference, from: g.startsAt, to: g.endsAt });
     for (const x of c.crewSlots) if (x.assigneeId === assigneeId && !x.isTest && !["declined", "cancelled"].includes(x.requestStatus) && x.startDate <= to && x.endDate >= from)
-      out.set(`crew_slot:${x.id}`, { key: `crew_slot:${x.id}`, kind: "crew_slot", firm: x.requestStatus === "confirmed", overridable: x.requestStatus !== "confirmed", label: x.reference, from: x.startDate, to: x.endDate });
-    for (const l of c.leave) if (l.profileId === assigneeId && l.startDate <= to && l.endDate >= from) out.set(`leave:${l.id}`, { key: `leave:${l.id}`, kind: "leave", firm: true, overridable: true, label: "approved leave", from: l.startDate, to: l.endDate });
+      out.set(`crew_slot:${x.id}`, { key: `crew_slot:${x.id}`, kind: "crew_slot", firm: x.requestStatus === "confirmed", overridable: false, label: x.reference, from: x.startDate, to: x.endDate });
+    for (const l of c.leave) if (l.profileId === assigneeId && l.startDate <= to && l.endDate >= from) out.set(`leave:${l.id}`, { key: `leave:${l.id}`, kind: "leave", firm: true, overridable: false, label: "approved leave", from: l.startDate, to: l.endDate });
   }
   return [...out.values()];
 }
@@ -122,7 +122,7 @@ export function confirmationBlockers(i: BlockerInput, opts: { redactAmounts?: bo
   const pay = paymentGate(i.payment.condition, i.payment.depositPercent, i.payment.amountDueUsd, i.payment.verifiedPaidUsd); if (pay) out.push(opts.redactAmounts ? PAYMENT_PENDING_REDACTED : pay);
   const terms = termsCheckBlocks(i.termsCheck, i.clarification); if (terms) out.push(terms);
   const seg = validateSegments(i.segments); if (seg) out.push(seg);
-  for (const c of unresolvedFirmConflicts(i.conflicts, i.resolutions, i.assigneeId, i.today)) out.push(c.overridable ? `Firm scheduling conflict with ${c.label}: reassign or reschedule, or document that the assigned person has verified their availability.` : `The assigned person is already committed to ${c.label} at this time. Change the assigned person or the time: a written explanation cannot clear a confirmed overlap.`);
+  for (const c of unresolvedFirmConflicts(i.conflicts, i.resolutions, i.assigneeId, i.today)) out.push(c.kind === "leave" ? "The assigned person has approved leave at this time and is unavailable. Choose another person or time; leave is changed only through the leave workflow." : c.overridable ? `Firm scheduling conflict with ${c.label}: reassign or reschedule.` : `The assigned person is already committed to ${c.label} at this time. Change the assigned person or the time: a written explanation cannot clear a confirmed overlap.`);
   return out;
 }
 

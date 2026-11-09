@@ -5,7 +5,7 @@ import { createEngagement } from "@/lib/payables/engagements";
 import { isSupportedCurrency } from "@/lib/payments/currency";
 import { SERVICE_FAMILIES } from "./config";
 import { resolveAssignmentEligibility } from "./admin";
-import { loadConflicts, firmConflicts } from "./conflicts";
+import { loadConflicts, firmConflicts, crewOverlapMessage } from "./conflicts";
 import { cancelSlotEngagement } from "./commitmentEstablish";
 import { canRespondToOffer, canSendOffer, toCrewJobView, validateInstructions, validateOfferInput, OFFER_OPEN_REQUEST_STATUSES, type CrewJobView } from "./crewOfferRules";
 import { notifyCrew } from "./crewNotifications";
@@ -75,7 +75,7 @@ export async function sendCrewOffer(params: { slotId: string; assigneeProfileId:
       updated_at: now,
     })
     .eq("id", params.slotId).in("status", ["unfilled", "declined", "released"]).select("id");
-  if (error || !updated?.length) return { ok: false, error: "The slot changed while sending — refresh and try again." };
+  if (error || !updated?.length) return { ok: false, error: crewOverlapMessage(error?.message) ?? "The slot changed while sending — refresh and try again." };
 
   await logActivity({ actorUserId: params.actorUserId, action: "crew_support.crew_offer_sent", entityType: "crew_support_request", entityId: request.id as string, metadata: { slotId: params.slotId, assigneeProfileId: params.assigneeProfileId, role: requirement.role_label, offerAmount: params.amount, offerCurrency: params.currency, ...(eligibility.override ? { override: true, overrideReason: eligibility.override } : {}), suppressedTest: isTest } });
 

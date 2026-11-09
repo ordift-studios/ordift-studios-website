@@ -2,7 +2,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { logActivityAsSystem } from "@/lib/admin/activityLog";
 import type { CurrentUser } from "@/lib/portal/roles";
 import { isManagementUser } from "./management";
-import { firmConflicts, loadConflicts } from "./conflicts";
+import { crewOverlapMessage, firmConflicts, loadConflicts } from "./conflicts";
 import { NOTICE_METHODS, validateReschedule, type Party, type RescheduleInput } from "./readinessRules";
 import { effectiveTimezone, isValidTimeZone, zonedToUtcMs } from "./schedule";
 
@@ -50,7 +50,8 @@ export async function rescheduleAssignment(params: { requestId: string; user: Cu
   const warnings: string[] = [];
   const assigned = parties.filter((p) => p.kind === "professional" && p.profileId).map((p) => p.profileId as string);
   if (assigned.length) {
-    const conflicts = await loadConflicts(assigned, { start: v.value.startDate, end: v.value.endDate }, params.requestId, Boolean(req.is_test));
+    // the NEW dates and times are what is checked (precise when call and finish times are readable and a timezone is known; otherwise whole dates, conservatively)
+    const conflicts = await loadConflicts(assigned, { start: v.value.startDate, end: v.value.endDate, callTime: v.value.callTime || null, finishTime: v.value.finishTime || null, timezone: v.value.timezone || tz.timezone }, params.requestId, Boolean(req.is_test));
     for (const [id, list] of conflicts) {
       const firm = firmConflicts(list);
       const who = parties.find((p) => p.profileId === id)?.label ?? "A professional";
@@ -67,6 +68,7 @@ export async function rescheduleAssignment(params: { requestId: string; user: Cu
   if (error || !changeId) {
     const m = error?.message ?? "";
     if (m.includes("no_change")) return { ok: false, error: "Nothing changed — those are the dates and times already scheduled." };
+    const overlap = crewOverlapMessage(m); if (overlap) return { ok: false, error: overlap };
     if (m.includes("request_closed")) return { ok: false, error: "A declined, cancelled or completed request can't be rescheduled." };
     console.error("[reschedule] rpc failed", m);
     return { ok: false, error: "Could not reschedule. Nothing was changed." };

@@ -11,9 +11,7 @@ import { confirmBookingAction, previewBookingAction, type BookingPreviewState } 
 // Confirming is allowed only after a fresh check shows no blockers, and only after typing the exact confirmation sentence.
 
 export type SegmentDraft = { start: string; end: string; tz: string; kind: "on_site" | "online" | "studio"; location: string; platform: string; note: string };
-type Res = { method: string; reference: string; on: string; confirm: boolean };
 const ZONES = ["Asia/Qatar", "Africa/Accra", "Europe/London", "Asia/Dubai", "Europe/Paris", "America/New_York", "UTC"];
-const METHODS: [string, string][] = [["call", "Phone or video call"], ["direct_message", "Direct message"], ["in_person", "In person"], ["email", "Email"]];
 const blankSegment = (tz = "Asia/Qatar"): SegmentDraft => ({ start: "", end: "", tz, kind: "on_site", location: "", platform: "", note: "" });
 const input = "w-full rounded-lg border border-black/15 bg-white px-3 py-2 font-sans text-body-small text-ordift-ink";
 const label = "font-sans text-caption text-ordift-ink-muted block mb-1";
@@ -27,7 +25,6 @@ export default function BookingConfirmForm(p: {
   const [segs, setSegs] = useState<SegmentDraft[]>(p.initial.segments.length ? p.initial.segments : [blankSegment()]);
   const [esc, setEsc] = useState<string[]>([]);
   const [clarKind, setClarKind] = useState(""), [clarEvidence, setClarEvidence] = useState(""), [basis, setBasis] = useState(p.initial.basis), [sentence, setSentence] = useState("");
-  const [res, setRes] = useState<Record<string, Res>>({});
   const [preview, setPreview] = useState<BookingPreviewState>(null), [result, setResult] = useState<ActionState>(null), [stale, setStale] = useState(true);
   const [pending, start] = useTransition();
   const verb = p.isChange ? "change" : "confirm";
@@ -40,15 +37,12 @@ export default function BookingConfirmForm(p: {
     segs.forEach((s, i) => { fd.set(`seg${i}_start`, s.start); fd.set(`seg${i}_end`, s.end); fd.set(`seg${i}_tz`, s.tz); fd.set(`seg${i}_kind`, s.kind); fd.set(`seg${i}_location`, s.location); fd.set(`seg${i}_platform`, s.platform); fd.set(`seg${i}_note`, s.note); });
     esc.forEach((e) => fd.append("escalator", e));
     fd.set("clarKind", clarKind); fd.set("clarEvidence", clarEvidence); fd.set("basis", basis); fd.set("confirmSentence", sentence);
-    const keys = Object.keys(res); fd.set("resCount", String(keys.length));
-    keys.forEach((k, i) => { fd.set(`res${i}_key`, k); fd.set(`res${i}_method`, res[k].method); fd.set(`res${i}_reference`, res[k].reference); fd.set(`res${i}_on`, res[k].on); if (res[k].confirm) fd.set(`res${i}_confirm`, "on"); });
     return fd;
   };
   const check = () => start(async () => { setResult(null); const r = await previewBookingAction(null, build()); setPreview(r); setStale(false); });
   // After a REFUSAL (for example a mistyped sentence) the last check still stands, so the person can correct and retry without checking again; after a success the page data is stale.
   const submit = () => start(async () => { const r = await confirmBookingAction(null, build()); setResult(r); if (r?.ok) setStale(true); });
   const setSeg = (i: number, patch: Partial<SegmentDraft>) => { setSegs((all) => all.map((s, j) => (j === i ? { ...s, ...patch } : s))); touch(); };
-  const setR = (k: string, patch: Partial<Res>) => { setRes((all) => ({ ...all, [k]: { ...(all[k] ?? { method: "call", reference: "", on: "", confirm: false }), ...patch } })); touch(); };
 
   const firm: Conflict[] = preview?.ok ? preview.conflicts.filter((c) => c.firm) : [];
   const soft: Conflict[] = preview?.ok ? preview.conflicts.filter((c) => !c.firm) : [];
@@ -122,21 +116,6 @@ export default function BookingConfirmForm(p: {
               <p className="font-sans text-caption text-red-900">This cannot be cleared by a reason or a recorded check. Change the assigned person or the time, then check again.</p>
             </div>
           ))}
-          {firm.filter((c) => c.overridable).map((c) => {
-            const r = res[c.key] ?? { method: "call", reference: "", on: "", confirm: false };
-            return (
-              <div key={c.key} className="rounded-lg border border-amber-300 p-4 space-y-3">
-                <p className="font-sans text-body-small font-medium text-ordift-ink">Firm conflict: {c.label} ({c.kind.replace("_", " ")}) · {c.from.slice(0, 10)} to {c.to.slice(0, 10)}</p>
-                <p className="font-sans text-caption text-ordift-ink-muted">A reason is not enough. Clear this only by recording that the assigned person confirmed they are available, with how and where it is recorded.</p>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                  <div><label className={label}>How you checked</label><select className={input} value={r.method} onChange={(e) => setR(c.key, { method: e.target.value })}>{METHODS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></div>
-                  <div><label className={label}>Date you checked</label><input type="date" className={input} value={r.on} onChange={(e) => setR(c.key, { on: e.target.value })} /></div>
-                  <div><label className={label}>Where it is recorded</label><input className={input} placeholder="e.g. WhatsApp message of 7 Nov" value={r.reference} onChange={(e) => setR(c.key, { reference: e.target.value })} /></div>
-                </div>
-                <label className="flex items-start gap-2 font-sans text-body-small text-ordift-ink"><input type="checkbox" className="mt-1" checked={r.confirm} onChange={(e) => setR(c.key, { confirm: e.target.checked })} />I confirm I verified this availability directly with the assigned person.</label>
-              </div>
-            );
-          })}
           {firm.length ? <button type="button" disabled={pending} onClick={check} className={`${btn} border border-black/20 text-ordift-ink`}>Re-check</button> : null}
         </div>
       ) : null}

@@ -1,4 +1,5 @@
 import { createAdminClient } from "@/lib/supabase/admin";
+import { crewOverlapMessage } from "./conflicts";
 import { logActivity } from "@/lib/admin/activityLog";
 import { detailQuestionsFor, type CrewSupportStatus, type SlotStatus } from "./config";
 import { validateStatusChange, type SlotLike } from "./rules";
@@ -164,7 +165,7 @@ export async function commitCrewSupportStatus(params: { requestId: string; from:
     ? { cancellation_reason: params.reason ?? null, cancelled_by: params.actorUserId, cancelled_at: new Date().toISOString(), cancellation_review_status: isPostCommitmentStatus(params.from) ? "pending" : "not_required" }
     : {};
   const { data, error } = await admin.from("crew_support_requests").update({ status: params.to, updated_at: new Date().toISOString(), ...cancellation }).eq("id", params.requestId).eq("status", params.from).select("id, reference_number, enquiry_id");
-  if (error) return { ok: false, error: "Could not update the status. Please try again." };
+  if (error) return { ok: false, error: crewOverlapMessage(error.message) ?? "Could not update the status. Please try again." };
   if (!data?.length) return { ok: false, error: "The request changed while you were editing — refresh and try again." };
   await logActivity({ actorUserId: params.actorUserId, action: "crew_support.status_changed", entityType: "crew_support_request", entityId: params.requestId, metadata: { from: params.from, to: params.to, reference: data[0].reference_number, automatic: params.automatic, reason: params.reason ?? null } });
 

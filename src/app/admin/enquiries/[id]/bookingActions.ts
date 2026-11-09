@@ -46,8 +46,8 @@ async function prepare(formData: FormData): Promise<Prepared> {
   const liveBooking = live && live.kind !== "cancelled" ? live : null;
   const found = form.segments.length > 0 ? await previewConflicts({ assigneeId: form.assignedProfileId, segments: form.segments, excludeEnquiryId: form.enquiryId }) : [];
   if (found === null) return { ok: false, error: "Conflicts could not be checked. Nothing was changed; try again." };           // fail closed
-  // who verified is the ASSIGNED PERSON, set here; the form only says whether the Super Admin confirms having verified it with them
-  const resolutions: Resolution[] = form.resolutions.filter((r) => r.confirmedWithPerson && form.assignedProfileId).map(({ confirmedWithPerson: _c, ...r }) => ({ ...r, verifiedWithProfileId: form.assignedProfileId as string }));
+  // no firm conflict is overridable any more (a confirmed booking, a confirmed Crew Support assignment or approved leave): any resolution the form sends is IGNORED, by design
+  const resolutions: Resolution[] = [];
   const assessment = assessDraft({ quotation: ctx.quotation, activities: ctx.activities, settings, entityEligible: ctx.entityEligible, hasExecutedAgreement: Boolean(ctx.executedAgreement), amountDueUsd: ctx.enquiry.amountDueUsd, verifiedPaidUsd: ctx.enquiry.verifiedPaidUsd,
     segments: form.segments, escalators: form.escalators, clarification: form.clarification, conflicts: found, resolutions, assigneeId: form.assignedProfileId, today: todayUtc() });
   return { ok: true, userId: user.id, ctx, form, settingsVersion: settings.version, live: liveBooking, resolutions, assessment, conflicts: found, escalators: form.escalators };

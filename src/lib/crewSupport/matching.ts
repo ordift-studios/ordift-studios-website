@@ -17,7 +17,7 @@ export type PersonFacts = {
   engagementTypeName: string | null;
   isInternal: boolean | null;
   capabilities: { titleId: string; titleName: string; proficiency: Proficiency; verification: VerificationStatus }[];
-  conflicts: { kind: "crew_slot" | "leave"; label: string; firm?: boolean }[];
+  conflicts: { kind: "crew_slot" | "leave" | "booking"; label: string; firm?: boolean }[];
 };
 
 export type Availability = "unknown" | "conflict" | "on_leave";
@@ -61,7 +61,7 @@ export function rankCandidates(requiredTitleId: string | null, people: PersonFac
       (a, b) => PROFICIENCY_SCORE[b.proficiency] + (b.verification === "verified" ? 50 : 0) - (PROFICIENCY_SCORE[a.proficiency] + (a.verification === "verified" ? 50 : 0))
     )[0];
     const onLeave = person.conflicts.find((c) => c.kind === "leave");
-    const slotConflict = person.conflicts.find((c) => c.kind === "crew_slot");
+    const slotConflict = person.conflicts.find((c) => c.kind === "crew_slot" || c.kind === "booking");   // a confirmed ordinary booking ranks like a confirmed slot
     const availability: Availability = onLeave ? "on_leave" : slotConflict ? "conflict" : "unknown";
     const score = PROFICIENCY_SCORE[best.proficiency] + (best.verification === "verified" ? 50 : 0) + (person.isInternal ? 10 : 0) - (availability === "on_leave" ? 200 : availability === "conflict" ? 100 : 0);
 

@@ -117,6 +117,45 @@ $$;
 revoke all on function private.booking_actor_is_super_admin(uuid) from public, anon, authenticated;
 
 -- every conflict for one assigned person against a set of segments: [{key, kind, firm, label, from, to}]. Firm = a confirmed commitment (booking, confirmed Crew Support slot, approved leave); soft = in progress.
+-- ------------------------------------------------------------------------------------------------------------------------------ Crew Support schedule precision (reads only; no Crew Support row is changed)
+-- A Crew Support request already carries OPTIONAL call_time and finish_time (free text) and event_timezone. When both times are readable, finish is after call, and a timezone is known (the override, else the
+-- market default Qatar / Ghana), the request occupies that daily window on EACH date from start_date to end_date. Anything else (date-only, unreadable text, overnight, no timezone, over 366 days) is treated
+-- CONSERVATIVELY as the whole of each calendar date. Nothing is inferred for historical rows. Windows are half-open: an assignment that starts exactly when another ends does not overlap it.
+create or replace function private.parse_clock(t text) returns time language plpgsql immutable set search_path = '' as $$
+declare m text[]; h int; mi int; ap text;
+begin
+  if t is null then return null; end if;
+  m := regexp_match(t, '^\s*(\d{1,2})(?::(\d{2}))?\s*([ap]\.?m\.?)?\s*$', 'i');
+  if m is null then return null; end if;
+  h := m[1]::int; mi := coalesce(m[2], '0')::int; ap := lower(replace(coalesce(m[3], ''), '.', ''));
+  if mi > 59 then return null; end if;
+  if ap <> '' then
+    if h < 1 or h > 12 then return null; end if;
+    if ap = 'pm' and h < 12 then h := h + 12; end if;
+    if ap = 'am' and h = 12 then h := 0; end if;
+  elsif h > 23 then return null; end if;
+  return make_time(h, mi, 0);
+end $$;
+
+create or replace function private.crew_request_overlaps(p_request uuid, p_from timestamptz, p_to timestamptz, p_seg_tz text) returns boolean
+language plpgsql stable set search_path = '' as $$
+declare r record; tz text; c time; f time; d date;
+begin
+  select rq.start_date, rq.end_date, rq.call_time, rq.finish_time, rq.event_timezone, e.payment_country into r
+    from public.crew_support_requests rq left join public.enquiries e on e.id = rq.enquiry_id where rq.id = p_request;
+  if not found then return false; end if;
+  tz := case when r.event_timezone is not null and exists (select 1 from pg_catalog.pg_timezone_names n where n.name = r.event_timezone) then r.event_timezone
+             when upper(coalesce(r.payment_country, '')) = 'QA' then 'Asia/Qatar' when upper(coalesce(r.payment_country, '')) = 'GH' then 'Africa/Accra' else null end;
+  c := private.parse_clock(r.call_time); f := private.parse_clock(r.finish_time);
+  if tz is not null and c is not null and f is not null and f > c and r.start_date <= r.end_date and r.end_date - r.start_date <= 365 then
+    for d in select g::date from generate_series(r.start_date::timestamp, r.end_date::timestamp, interval '1 day') g loop
+      if tstzrange((d + c) at time zone tz, (d + f) at time zone tz) && tstzrange(p_from, p_to) then return true; end if;
+    end loop;
+    return false;
+  end if;
+  return (p_from at time zone p_seg_tz)::date <= r.end_date and (p_to at time zone p_seg_tz)::date >= r.start_date;     -- conservative: the whole of each calendar date
+end $$;
+
 create or replace function private.booking_conflicts(p_assignee uuid, p_segments jsonb, p_exclude_enquiry uuid) returns jsonb
 language plpgsql stable security definer set search_path = '' as $$
 declare out jsonb := '[]'::jsonb; s jsonb; r record; d_from date; d_to date;
@@ -138,16 +177,16 @@ begin
       select sl.id, rq.reference_number, rq.start_date, rq.end_date, rq.status
         from public.crew_support_slots sl join public.crew_support_requests rq on rq.id = sl.request_id
        where sl.assignee_profile_id = p_assignee and sl.status in ('assigned', 'proposed') and rq.status not in ('declined', 'cancelled') and not rq.is_test
-         and rq.start_date <= d_to and rq.end_date >= d_from
-    loop out := out || jsonb_build_array(jsonb_build_object('key', 'crew_slot:' || r.id, 'kind', 'crew_slot', 'firm', r.status = 'confirmed', 'overridable', r.status <> 'confirmed', 'label', r.reference_number, 'from', r.start_date, 'to', r.end_date)); end loop;
+         and private.crew_request_overlaps(rq.id, (s ->> 'startsAt')::timestamptz, (s ->> 'endsAt')::timestamptz, s ->> 'timezone')
+    loop out := out || jsonb_build_array(jsonb_build_object('key', 'crew_slot:' || r.id, 'kind', 'crew_slot', 'firm', r.status = 'confirmed', 'overridable', false, 'label', r.reference_number, 'from', r.start_date, 'to', r.end_date)); end loop;
     for r in select lr.id, lr.start_date, lr.end_date from public.leave_requests lr where lr.profile_id = p_assignee and lr.status = 'approved' and lr.start_date <= d_to and lr.end_date >= d_from
-    loop out := out || jsonb_build_array(jsonb_build_object('key', 'leave:' || r.id, 'kind', 'leave', 'firm', true, 'overridable', true, 'label', 'approved leave', 'from', r.start_date, 'to', r.end_date)); end loop;
+    loop out := out || jsonb_build_array(jsonb_build_object('key', 'leave:' || r.id, 'kind', 'leave', 'firm', true, 'overridable', false, 'label', 'approved leave', 'from', r.start_date, 'to', r.end_date)); end loop;
   end loop;
   return (select coalesce(jsonb_agg(distinct x), '[]'::jsonb) from jsonb_array_elements(out) x);
 end $$;
 revoke all on function private.booking_conflicts(uuid, jsonb, uuid) from public, anon, authenticated;
 
--- read-only preview of the conflicts, for the review screen BEFORE confirmation (same function the confirmation uses). 'overridable' is false for a confirmed booking and a confirmed Crew Support slot (nothing clears them) and true only for approved leave (clearable by a documented direct check).
+-- read-only preview of the conflicts, for the review screen BEFORE confirmation (same function the confirmation uses). 'overridable' is false for every firm conflict: a confirmed booking, a confirmed Crew Support slot and approved leave (nothing recorded or written clears them).
 create or replace function public.preview_booking_conflicts(p_assignee uuid, p_segments jsonb, p_exclude_enquiry uuid) returns jsonb
 language sql stable security definer set search_path = '' as $$ select private.booking_conflicts(p_assignee, p_segments, p_exclude_enquiry) $$;
 revoke all on function public.preview_booking_conflicts(uuid, jsonb, uuid) from public, anon, authenticated, service_role;
@@ -155,7 +194,7 @@ grant execute on function public.preview_booking_conflicts(uuid, jsonb, uuid) to
 
 -- ------------------------------------------------------------------------------------------------------------------------------ confirm (and change) a booking
 -- p: { enquiryId, quotationId, supersedes?, assignedProfileId?, segments:[{startsAt,endsAt,timezone,kind,location?,platform?,note?}], paymentTermsCheck (the application's reading of the quotation's terms text against its structured condition),
---      clarification?:{kind,evidence}, escalators?:[the circumstances defined by the current settings version], agreementId?, conflictResolutions?:[{key,kind,verifiedWithProfileId,method,reference,verifiedOn}], basis }
+--      clarification?:{kind,evidence}, escalators?:[the circumstances defined by the current settings version], agreementId?, basis }   -- a conflictResolutions list, if sent, is IGNORED: no firm conflict is overridable
 create or replace function public.confirm_ordinary_booking(p jsonb, p_actor uuid) returns uuid
 language plpgsql security definer set search_path = '' as $$
 declare
@@ -226,20 +265,14 @@ begin
   end if;
 
   v_conf := private.booking_conflicts(v_assignee, p -> 'segments', enq.id);
-  for c in select * from jsonb_array_elements(v_conf) where (value ->> 'firm')::boolean loop
-    -- a confirmed booking or a confirmed Crew Support slot for the same person is NEVER cleared by anything written or recorded: change the person or the time
-    if not coalesce((c ->> 'overridable')::boolean, false) then raise exception 'ordift:booking_overlap_not_overridable'; end if;
-    select r into res from jsonb_array_elements(coalesce(p -> 'conflictResolutions', '[]'::jsonb)) r where r ->> 'key' = c ->> 'key' limit 1;
-    if res is null or res ->> 'kind' <> 'availability_verified' or nullif(res ->> 'verifiedWithProfileId', '')::uuid is distinct from v_assignee
-       or res ->> 'method' not in ('direct_message', 'call', 'in_person', 'email') or char_length(btrim(coalesce(res ->> 'reference', ''))) < 10
-       or (res ->> 'verifiedOn')::date > current_date then raise exception 'ordift:booking_firm_conflict'; end if;
-  end loop;
+  -- a confirmed booking, a confirmed Crew Support assignment or approved leave for the same person is NEVER cleared by anything written or recorded: change the person or the time (or follow the leave workflow)
+  if exists (select 1 from jsonb_array_elements(v_conf) x where (x ->> 'firm')::boolean) then raise exception 'ordift:booking_overlap_not_overridable'; end if;
 
   insert into public.enquiry_booking_confirmations (id, enquiry_id, version, kind, supersedes_id, quotation_id, quotation_fingerprint, contracting_entity_id, activities, assigned_profile_id, agreement_required, agreement_reasons, agreement_id,
       settings_version, payment_condition, deposit_percent, payment_terms_check, payment_clarification, amount_due_usd, required_usd, verified_paid_usd, outstanding_usd, conflict_review, basis, confirmed_by)
     values (v_id, enq.id, v_ver, case when prev.id is not null and prev.kind <> 'cancelled' then 'changed' else 'confirmed' end, case when prev.kind <> 'cancelled' then prev.id end, q.id, v_fp, v_entity, v_acts, v_assignee, v_req, v_reasons,
       case when v_req then ag.id end, st.version, v_cond, v_pct, v_check, v_clar, v_due, v_need, v_paid, case when v_due is null then null else greatest(v_due - v_paid, 0) end,
-      jsonb_build_object('conflicts', v_conf, 'resolutions', coalesce(p -> 'conflictResolutions', '[]'::jsonb)), nullif(btrim(coalesce(p ->> 'basis', '')), ''), p_actor);
+      jsonb_build_object('conflicts', v_conf, 'resolutions', '[]'::jsonb), nullif(btrim(coalesce(p ->> 'basis', '')), ''), p_actor);
   for sg in select * from jsonb_array_elements(p -> 'segments') loop
     i := i + 1;
     insert into public.enquiry_booking_segments (confirmation_id, seq, starts_at, ends_at, timezone, kind, location, platform, note)

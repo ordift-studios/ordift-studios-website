@@ -18,7 +18,7 @@ const MESSAGES: [RegExp, string][] = [
   [/booking_amount_due_missing/, "A payment is required but no amount due has been established."],
   [/booking_payment_condition_mismatch/, "The payment condition must be the accepted quotation's own."],
   [/booking_payment_terms_unclear/, "The quotation's payment terms are unclear or contradict its structured condition: record the client's written clarification first."],
-  [/booking_overlap_not_overridable/, "The assigned person already has a confirmed booking or Crew Support assignment at this time. Change the assigned person or the time: a written explanation cannot clear it."],
+  [/booking_overlap_not_overridable/, "The assigned person already has a confirmed booking, a confirmed Crew Support assignment or approved leave at this time. Change the assigned person or the time: a written explanation cannot clear it."],
   [/booking_firm_conflict/, "The assigned person has approved leave at this time. Reassign, reschedule, or document that they verified their availability."],
   [/booking_no_schedule|booking_segment/, "Check the date, time and place of every session."],
   [/booking_already_confirmed/, "This enquiry already has a confirmed booking: change or cancel it instead."],

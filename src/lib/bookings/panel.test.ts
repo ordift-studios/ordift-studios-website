@@ -27,13 +27,12 @@ describe("assessDraft (what the confirm screen shows before an attempt)", () => 
     const day2 = { ...seg, startsAt: "2026-12-02T06:00:00.000Z", endsAt: "2026-12-02T10:00:00.000Z" };
     const a = assessDraft(base({ verifiedPaidUsd: 300, segments: [seg, day2] })); expect(a.agreement.reasons).toContain("escalator:multi_day_assignment"); expect(a.blockers.join(" ")).toMatch(/agreement is required/);
   });
-  it("a firm conflict is cleared only by availability verified with the assigned person", () => {
-    const c = [{ key: "leave:1", kind: "leave" as const, firm: true, overridable: true, label: "approved leave", from: "2026-12-01", to: "2026-12-01" }];
-    expect(assessDraft(base({ verifiedPaidUsd: 300, conflicts: c })).blockers.join(" ")).toMatch(/Firm scheduling conflict/);
+  it("approved leave is unavailable: no resolution, however well documented, clears it", () => {
+    const c = [{ key: "leave:1", kind: "leave" as const, firm: true, overridable: false, label: "approved leave", from: "2026-12-01", to: "2026-12-01" }];
+    expect(assessDraft(base({ verifiedPaidUsd: 300, conflicts: c })).blockers.join(" ")).toMatch(/approved leave at this time and is unavailable/);
     const ok = { key: "leave:1", kind: "availability_verified", verifiedWithProfileId: "p1", method: "call", reference: "call on 7 Nov, agreed in WhatsApp", verifiedOn: "2026-11-07" };
-    expect(assessDraft(base({ verifiedPaidUsd: 300, conflicts: c, resolutions: [ok] })).blockers).toEqual([]);
-    expect(assessDraft(base({ verifiedPaidUsd: 300, conflicts: c, resolutions: [{ ...ok, verifiedWithProfileId: "someone-else" }] })).blockers.join(" ")).toMatch(/Firm scheduling conflict/);
-    expect(assessDraft(base({ verifiedPaidUsd: 300, conflicts: c, resolutions: [{ ...ok, kind: "reason_only" }] })).blockers.join(" ")).toMatch(/Firm scheduling conflict/);
+    expect(assessDraft(base({ verifiedPaidUsd: 300, conflicts: c, resolutions: [ok] })).blockers.join(" ")).toMatch(/unavailable/);
+    expect(assessDraft(base({ verifiedPaidUsd: 300, conflicts: c, resolutions: [{ ...ok, kind: "reason_only" }] })).blockers.join(" ")).toMatch(/unavailable/);
   });
   it("terms that contradict the structured condition block until the client's written confirmation is recorded", () => {
     const q = { ...base().quotation, termsText: "Full payment is required in advance." };
