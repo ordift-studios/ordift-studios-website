@@ -2,10 +2,11 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { isSuperAdminId } from "@/lib/organization/authority";
 import { bookingFlagOn, classifyPaymentTerms, isOverridableKind, termsCheckBlocks, validateSegments, type BookingSettings, type Conflict, type Resolution, type Segment } from "./rules";
 import type { PaymentCondition } from "@/lib/crewSupport/paymentCondition";
+import { dispatchBookingNotifications } from "./notificationService";
 
 // BOOKING CONFIRMATION (server). Flag BOOKING_CONFIRMATION_ENABLED, default OFF: with it off every function here refuses and nothing is read or written. Super Admin only to confirm, change or cancel.
 // Every rule is enforced AGAIN inside the database functions (PROPOSAL_booking_confirmation.sql, not applied anywhere): this module validates first so the person gets a clear message, then asks the database to decide.
-// It never creates a payment, invoice, receivable or email, and never edits an existing record: a change or cancellation is a new row.
+// It never creates a payment, invoice or receivable (a confirmation sends the two booking notifications, see notificationService.ts), and never edits an existing record: a change or cancellation is a new row.
 type Fail = { ok: false; error: string };
 const OFF: Fail = { ok: false, error: "Booking confirmation is not switched on." };
 const DENIED: Fail = { ok: false, error: "Only a Super Admin can confirm, change or cancel a booking." };
@@ -51,6 +52,8 @@ export async function confirmOrdinaryBooking(i: ConfirmInput, env: Record<string
   const { data, error } = await db.rpc("confirm_ordinary_booking", { p: { enquiryId: i.enquiryId, quotationId: i.quotationId, supersedes: i.supersedes ?? null, assignedProfileId: i.assignedProfileId ?? null,
     segments: i.segments, escalators: i.escalators ?? [], agreementId: i.agreementId ?? null, paymentTermsCheck: termsCheck, clarification: i.clarification ?? null, conflictResolutions: i.conflictResolutions ?? [], basis: i.basis ?? null }, p_actor: i.actorUserId });
   if (error || !data) { console.error("[booking] confirm refused/failed", error?.message); return { ok: false, error: friendly(error?.message ?? "") }; }
+  // The ONLY trigger of the booking e-mails: a successful confirmation. The database made the notification records with the confirmation; this sends them once. A notification problem never undoes the booking.
+  try { await dispatchBookingNotifications(data as string, env); } catch (err) { console.error("[booking] notifications threw (the booking stands)", err); }
   return { ok: true, confirmationId: data as string };
 }
 

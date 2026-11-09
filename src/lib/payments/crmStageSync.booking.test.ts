@@ -21,9 +21,9 @@ function fakeAdmin(row: { id: string; crm_stage: string; commercial_intent: stri
   return { admin: admin as never, writes, row };
 }
 
-const OLD = process.env.BOOKING_CONFIRMATION_ENABLED;
+const OLD = process.env.BOOKING_CONFIRMATION_ENABLED, OLD_AUTO = process.env.PAYMENT_AUTO_BOOKS_ENQUIRY;
 beforeEach(() => { sendBooked.mockClear(); sendNew.mockClear(); logActivity.mockClear(); });
-afterEach(() => { if (OLD === undefined) delete process.env.BOOKING_CONFIRMATION_ENABLED; else process.env.BOOKING_CONFIRMATION_ENABLED = OLD; });
+afterEach(() => { if (OLD_AUTO === undefined) delete process.env.PAYMENT_AUTO_BOOKS_ENQUIRY; else process.env.PAYMENT_AUTO_BOOKS_ENQUIRY = OLD_AUTO; if (OLD === undefined) delete process.env.BOOKING_CONFIRMATION_ENABLED; else process.env.BOOKING_CONFIRMATION_ENABLED = OLD; });
 
 describe("advanceStageOnFullPayment — payment is not a booking", () => {
   it("switch ON: a full payment changes no stage and sends no booking e-mail or new-booking notification", async () => {
@@ -59,6 +59,26 @@ describe("advanceStageOnFullPayment — payment is not a booking", () => {
     const f = fakeAdmin({ id: "e4", crm_stage: "quotation_sent", commercial_intent: null });
     await advanceStageOnFullPayment(f.admin, "enquiry", "e4", "Pending");
     await advanceStageOnFullPayment(f.admin, "workshop_registration", "e4", "Paid");
+    expect(f.row.crm_stage).toBe("quotation_sent");
+  });
+  it("switch OFF + PAYMENT_AUTO_BOOKS_ENQUIRY=false: a full payment no longer books or e-mails (the compatibility-safe correction)", async () => {
+    delete process.env.BOOKING_CONFIRMATION_ENABLED; process.env.PAYMENT_AUTO_BOOKS_ENQUIRY = "false";
+    const f = fakeAdmin({ id: "e5", crm_stage: "quotation_sent", commercial_intent: null });
+    await advanceStageOnFullPayment(f.admin, "enquiry", "e5", "Paid");
+    expect(f.row.crm_stage).toBe("quotation_sent"); expect(f.writes).toHaveLength(0); expect(sendBooked).not.toHaveBeenCalled(); expect(sendNew).not.toHaveBeenCalled(); expect(logActivity).not.toHaveBeenCalled();
+  });
+  it("switch OFF + variable unset or any other value: legacy behaviour is exactly as before (Production today)", async () => {
+    for (const v of [undefined, "true", "FALSE", "0"]) {
+      delete process.env.BOOKING_CONFIRMATION_ENABLED; if (v === undefined) delete process.env.PAYMENT_AUTO_BOOKS_ENQUIRY; else process.env.PAYMENT_AUTO_BOOKS_ENQUIRY = v;
+      sendBooked.mockClear(); const f = fakeAdmin({ id: "e6", crm_stage: "quotation_sent", commercial_intent: null });
+      await advanceStageOnFullPayment(f.admin, "enquiry", "e6", "Paid");
+      expect(f.row.crm_stage).toBe("booked"); expect(sendBooked).toHaveBeenCalledTimes(1);
+    }
+  });
+  it("switch ON wins whatever the variable says", async () => {
+    process.env.BOOKING_CONFIRMATION_ENABLED = "true"; process.env.PAYMENT_AUTO_BOOKS_ENQUIRY = "true";
+    const f = fakeAdmin({ id: "e7", crm_stage: "quotation_sent", commercial_intent: null });
+    await advanceStageOnFullPayment(f.admin, "enquiry", "e7", "Paid");
     expect(f.row.crm_stage).toBe("quotation_sent");
   });
 });

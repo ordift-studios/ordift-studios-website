@@ -2,6 +2,7 @@ import type { BookingPanelData, CurrentBooking } from "@/lib/bookings/panel";
 import { isoToZonedLocal } from "@/lib/bookings/form";
 import BookingConfirmForm, { type SegmentDraft } from "./BookingConfirmForm";
 import BookingCancelForm from "./BookingCancelForm";
+import BookingNotificationsCard from "./BookingNotificationsCard";
 
 // The "Booking" panel on the enquiry page. The data arrives already PROJECTED for the viewer (src/lib/bookings/panel.ts + rules.projectPanel):
 //   Super Admin: everything, plus the confirm / change / cancel controls.   Admin: operational blockers and the schedule, never amounts or the confirmation record.
@@ -36,7 +37,7 @@ export default function BookingPanel({ data, earlierCheck = null }: { data: Book
     <section className={card} aria-labelledby="booking-heading">
       <div>
         <h2 id="booking-heading" className="font-serif font-medium text-body text-ordift-ink">Booking</h2>
-        <p className="font-sans text-caption text-ordift-ink-muted">{live ? `Confirmed (version ${live.version})${live.assignedLabel ? ` · ${live.assignedLabel}` : ""}` : data.current?.kind === "cancelled" ? `Cancelled (version ${data.current.version}): ${data.current.reason ?? ""}` : "Not booked yet"}</p>
+        <p className="font-sans text-caption text-ordift-ink-muted">{live ? `Confirmed (version ${live.version})${live.assignedLabel ? ` · ${live.assignedLabel}` : ""}` : data.current?.kind === "cancelled" ? `Booking Cancelled — Rescheduling Pending (version ${data.current.version}): ${data.current.reason ?? ""}` : "Not booked yet"}</p>
       </div>
 
       {earlierCheck ? <p className="font-sans text-caption text-ordift-ink-muted">Earlier availability check before quoting: {earlierCheck.label} ({new Date(earlierCheck.at).toISOString().slice(0, 10)}). It was not a reservation. Scheduling conflicts are checked again now, and this check decides nothing.</p> : null}
@@ -52,6 +53,8 @@ export default function BookingPanel({ data, earlierCheck = null }: { data: Book
       </div>
 
       <div><p className="font-sans text-caption uppercase tracking-wide text-ordift-ink-muted mb-1">Scheduling conflicts</p><Conflicts list={a.conflicts ?? []} /></div>
+
+      {data.level === "super_admin" ? <BookingNotificationsCard enquiryId={data.enquiry.id} jobs={data.notifications} /> : null}
 
       {data.level === "admin" ? <p className="font-sans text-caption text-ordift-ink-muted">Only a Super Admin can confirm, change or cancel a booking.</p> : null}
 

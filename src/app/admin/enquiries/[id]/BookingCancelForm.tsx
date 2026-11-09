@@ -20,6 +20,7 @@ export default function BookingCancelForm({ enquiryId, reference, expectedVersio
         <label htmlFor="bk-cancel-sentence" className="font-sans text-caption text-ordift-ink-muted block mb-1">To cancel, type exactly: <span className="font-semibold text-ordift-ink">{confirmSentenceFor(reference, "cancel")}</span></label>
         <input id="bk-cancel-sentence" name="confirmSentence" required autoComplete="off" className={field} />
       </div>
+      <p className="font-sans text-caption text-ordift-ink-muted">Cancelling keeps the accepted quotation and every payment as they are and sends no notice yet: tell the client yourself. The project then reads "Booking Cancelled — Rescheduling Pending".</p>
       <SubmitButton pendingLabel="Cancelling…" className="min-h-11 px-5 rounded-full border border-red-300 text-red-900 font-sans text-body-small">Cancel this booking</SubmitButton>
     </ActionForm>
   );

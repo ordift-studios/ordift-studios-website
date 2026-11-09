@@ -22,10 +22,31 @@ export default async function BookingDetailsTabPage({
   if (!details) return null;
 
   const hasAnyDetail =
-    details.service || details.location || details.scheduleStart || details.instructors.length > 0;
+    details.service || details.location || details.scheduleStart || details.instructors.length > 0 || Boolean(details.booking);
 
   return (
     <div className="rounded-xl border border-black/10 bg-white p-6 space-y-5">
+      {details.booking?.state === "confirmed" && (
+        <div data-testid="client-booking-confirmed">
+          <p className="font-sans text-caption uppercase tracking-wide text-ordift-ink-muted">Confirmed booking · {details.booking.reference}</p>
+          <ul className="mt-1 space-y-2">
+            {details.booking.sessions.map((s, i) => (
+              <li key={i} className="font-sans text-body text-ordift-ink">
+                {s.when}
+                <span className="block font-sans text-body-small text-ordift-ink-muted">{s.place}{s.note ? ` · ${s.note}` : ""}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {details.booking?.state === "cancelled" && (
+        <div className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-3" data-testid="client-booking-cancelled">
+          <p className="font-sans text-body-small font-semibold text-amber-950">Booking Cancelled — Rescheduling Pending</p>
+          <p className="font-sans text-caption text-amber-950 mt-1">Your booking ({details.booking.reference}) is no longer confirmed. Your accepted quotation and any payment you have made are unchanged. We will agree a new date with you; it is confirmed only when you receive a new Booking Confirmed message.</p>
+        </div>
+      )}
+
       {details.service && (
         <div>
           <p className="font-sans text-caption uppercase tracking-wide text-ordift-ink-muted">Service</p>

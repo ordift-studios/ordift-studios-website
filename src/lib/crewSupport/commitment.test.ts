@@ -165,7 +165,7 @@ describe("commitments reuse existing infrastructure and only arise at confirmati
     expect(ENQUIRY_STAGE_SYNC.confirmed.to).toBe("booked");
     const guard = readFileSync("src/lib/payments/crmStageSync.ts", "utf8");
     // the Crew Support exclusion now lives in the shared payment-vs-booking policy (paymentStagePolicy.ts), called BEFORE the stage update
-    expect(guard).toContain("paymentMayBookEnquiry({ flagOn: bookingFlagOn(), commercialIntent: intent?.commercial_intent");
+    expect(guard).toContain("paymentMayBookEnquiry({ flagOn: bookingFlagOn(), autoBookOff: paymentAutoBookOptedOut(), commercialIntent: intent?.commercial_intent");
     expect(guard.indexOf("paymentMayBookEnquiry(")).toBeLessThan(guard.indexOf('.update({ crm_stage: "booked" })'));
     expect(readFileSync("src/lib/bookings/paymentStagePolicy.ts", "utf8")).toContain('commercialIntent === "creative_crew_support"');
   });
