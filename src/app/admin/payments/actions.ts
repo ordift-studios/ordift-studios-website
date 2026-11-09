@@ -270,58 +270,8 @@ export async function saveExchangeRateAction(_prev: ActionState, formData: FormD
 // logic without a real session/cookie context (see
 // crmStageAutoAdvance.integration.test.ts).
 export async function syncEntityAfterBankTransferDecision(entityType: string, entityId: string): Promise<void> {
-  // Admin/secret-key client, not the session client — same reason as
-  // the payments write in approveBankTransferAction above: the caller
-  // has already enforced authorization via requireCapability(), this
-  // is already-authorized bookkeeping, not a fresh access decision.
-  // Matches src/lib/payments/gatewaySync.ts's syncEntityPaymentStatus
-  // — the webhook-side equivalent this function was written to mirror
-  // — which creates its own admin client the exact same way.
-  const supabase = createAdminClient();
-  const table = entityType === "enquiry" ? "enquiries" : "workshop_registrations";
-
-  const { data: entity, error: entityError } = await supabase
-    .from(table)
-    .select("amount_due")
-    .eq("id", entityId)
-    .maybeSingle();
-  if (entityError) {
-    console.error("[admin] bank transfer sync: failed to read entity", { table, entityId, error: entityError.message });
-    return;
-  }
-  if (!entity) {
-    console.error("[admin] bank transfer sync: entity not found", { table, entityId });
-    return;
-  }
-
-  const { data: completedPayments, error: paymentsError } = await supabase
-    .from("payments")
-    .select("reference_amount_usd, payment_type")
-    .eq("entity_type", entityType)
-    .eq("entity_id", entityId)
-    .eq("status", "completed");
-  if (paymentsError) {
-    console.error("[admin] bank transfer sync: failed to read completed payments", { entityType, entityId, error: paymentsError.message });
-    return;
-  }
-
-  const totalPaidUsd = (completedPayments ?? []).reduce((sum, p) => {
-    const isRefund = p.payment_type === "refund";
-    const amount = Number(p.reference_amount_usd ?? 0);
-    return isRefund ? sum - amount : sum + amount;
-  }, 0);
-
-  const amountDue = Number(entity.amount_due ?? 0);
-  const paymentStatus = totalPaidUsd <= 0 ? "Pending" : totalPaidUsd >= amountDue ? "Paid" : "Pending";
-
-  const { error: updateError } = await supabase
-    .from(table)
-    .update({ amount_paid: Math.round(totalPaidUsd * 100) / 100, payment_status: paymentStatus })
-    .eq("id", entityId);
-  if (updateError) {
-    console.error("[admin] bank transfer sync: failed to update entity balance", { table, entityId, error: updateError.message });
-    return;
-  }
-
-  await advanceStageOnFullPayment(supabase, entityType, entityId, paymentStatus);
+  // ONE authoritative path (9 Nov 2026): this used to carry its own copy of the "recompute amount paid" logic. It now delegates to syncEntityPaymentStatus() in gatewaySync.ts, which the card
+  // webhook and the bank-transfer finalisation already use, so the calculation and the stage advance exist in exactly one place.
+  const { syncEntityPaymentStatus } = await import("@/lib/payments/gatewaySync");
+  await syncEntityPaymentStatus(entityType, entityId);
 }

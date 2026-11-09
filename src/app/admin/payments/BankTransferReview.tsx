@@ -15,7 +15,7 @@ type PaymentRow = {
   id: string; record_id: string | null; status: string; entity_type: string; entity_id: string; payment_currency: string; converted_amount: number | string; reference_amount_usd: number | string;
   exchange_rate: number | string; exchange_rate_source: string; exchange_rate_locked_at: string; proof_of_payment_asset_path: string | null; client_bank_reference: string | null;
   client_transfer_date: string | null; client_visible_note: string | null; review_notes: string | null; receiving_account_snapshot: ReceivingAccountSnapshot | null; submitted_at: string | null;
-  amount_collected: number | string | null; settlement_currency: string | null; gateway_reference: string | null;
+  amount_collected: number | string | null; settlement_currency: string | null; gateway_reference: string | null; bank_transaction_reference?: string | null;
 };
 
 const money = (n: number | string | null | undefined, c?: string) => (n == null ? "—" : `${c ? `${c} ` : ""}${Number(n).toFixed(2)}`);
@@ -122,7 +122,7 @@ export default async function BankTransferReview({ payment, canVerify }: { payme
       {payment.status === "completed" && (
         <section className="rounded-xl border border-black/10 bg-white p-6">
           <h2 className="font-serif font-medium text-lg text-ordift-ink mb-2">Posted</h2>
-          <p className="font-sans text-body-small text-ordift-ink">Received {money(payment.amount_collected, payment.settlement_currency ?? undefined)} · credited USD {money(payment.reference_amount_usd)} · bank reference {payment.gateway_reference ?? "—"}</p>
+          <p className="font-sans text-body-small text-ordift-ink">Received {money(payment.amount_collected, payment.settlement_currency ?? undefined)} · credited USD {money(payment.reference_amount_usd)} · bank reference {payment.bank_transaction_reference ?? payment.gateway_reference ?? "—"}</p>
           {needsPosting && canVerify && (
             <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-4">
               <p className="font-sans text-body-small text-amber-900 mb-3">This payment is verified, but posting it to the receivable didn&apos;t finish. It is safe to repeat.</p>

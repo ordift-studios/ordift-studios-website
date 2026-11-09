@@ -7,6 +7,8 @@ import { getActiveCountryConfig, getProvider } from "@/lib/payments/providerRegi
 import { reconcilePendingGatewayPayment } from "@/lib/payments/reconcilePendingPayment";
 import type { PaymentEntityType, PaymentType } from "@/lib/payments/types";
 import { isPlaceholderEmail } from "@/lib/shared/email/placeholder";
+import { validateChargeResult } from "@/lib/payments/chargeResult";
+import { openReviewCase } from "@/lib/payments/reviewCases";
 
 // Postgres unique_violation — raised by the partial unique index
 // (migration 0028) when two near-simultaneous requests both pass the
@@ -333,7 +335,26 @@ export async function initiateGatewayCheckout(
       metadata: { paymentId: payment.id, entityType: params.entityType, entityId: params.entityId },
     });
 
-    await admin.from("payments").update({ gateway_reference: charge.providerReference }).eq("id", payment.id);
+    // Never hand the customer a checkout address the provider's answer cannot vouch for, and never send them to pay a session the webhook could not later be matched to.
+    const valid = validateChargeResult(charge);
+    if (!valid.ok) {
+      console.error("[payments] provider returned an unusable checkout result", valid.reason, payment.id);
+      await admin.from("payments").update({ status: "failed" }).eq("id", payment.id).eq("status", "pending");
+      return { ok: false, error: "gateway-init-failed" };
+    }
+    let saved = false;
+    for (let attempt = 0; attempt < 2 && !saved; attempt++) {
+      const { data: updated, error: refError } = await admin.from("payments").update({ gateway_reference: charge.providerReference }).eq("id", payment.id).eq("status", "pending").select("id").maybeSingle();
+      saved = !refError && Boolean(updated);
+      if (!saved) console.error("[payments] could not save the provider reference", payment.id, refError?.message);
+    }
+    if (!saved) {
+      // A session exists at the provider but we cannot record which one. The customer has NOT been given its address, so they cannot pay it: the attempt is closed as Failed and flagged
+      // (with the reference, so a person can find and void the session at the provider if needed).
+      await admin.from("payments").update({ status: "failed" }).eq("id", payment.id).eq("status", "pending");
+      await openReviewCase(admin, payment.id, "reference_unrecorded", { providerReference: charge.providerReference }, "checkout");
+      return { ok: false, error: "gateway-init-failed" };
+    }
 
     return { ok: true, checkoutUrl: charge.checkoutUrl, paymentId: payment.id };
   } catch (err) {
