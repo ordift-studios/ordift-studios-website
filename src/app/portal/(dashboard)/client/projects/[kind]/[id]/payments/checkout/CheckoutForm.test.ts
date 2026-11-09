@@ -62,6 +62,18 @@ describe("a card or Mobile Money refusal keeps what the client chose", () => {
   });
 });
 
+describe("card start: two submits in the same instant", () => {
+  it("start ONE checkout, not two (the second arrives before the pending state has rendered)", async () => {
+    h.gateway.mockReset(); let done!: (v: unknown) => void; h.gateway.mockImplementation(() => new Promise((r) => { done = r; }));
+    mount(); await chooseCustom(0, "75"); const form = host!.querySelector("form")!;
+    await act(async () => { form.requestSubmit(); form.requestSubmit(); await Promise.resolve(); });
+    await act(async () => { done({ error: "gateway-init-failed" }); await Promise.resolve(); }); await settle();
+    expect(h.gateway).toHaveBeenCalledTimes(1);
+    // after the refusal the client can try again
+    await act(async () => { form.requestSubmit(); await Promise.resolve(); }); expect(h.gateway).toHaveBeenCalledTimes(2);
+  });
+});
+
 describe("bank transfer", () => {
   let fetchMock: ReturnType<typeof vi.fn>;
   beforeEach(() => { fetchMock = vi.fn(); vi.stubGlobal("fetch", fetchMock); });

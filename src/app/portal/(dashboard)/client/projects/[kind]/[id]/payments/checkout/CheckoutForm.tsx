@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useId, useRef } from "react";
+import { useState, useId, useRef, useEffect } from "react";
 import { useRestoringActionState } from "@/components/admin/useRestoringActionState";
 import { useRouter } from "next/navigation";
 import { startGatewayCheckoutAction, type GatewayCheckoutState } from "../actions";
@@ -79,6 +79,11 @@ export default function CheckoutForm({
       setActiveRateToUsd(gatewayState.currentRateToUsd);
     }
   }
+
+  // The card form takes the same synchronous lock: two submits in the same instant (before the pending state has re-rendered) cannot both start a checkout. It is released when the
+  // request settles (a refusal comes back as state; a success leaves the page for the provider).
+  const gatewayLock = useRef(createInFlightLock());
+  useEffect(() => { if (!gatewayPending) gatewayLock.current.release(); }, [gatewayPending]);
 
   // A gateway refusal arrives as state (the form stays mounted, so the amount, method and step are kept). It is shown until the client moves to another step.
   const [seenGatewayState, setSeenGatewayState] = useState(gatewayState);
@@ -275,7 +280,7 @@ export default function CheckoutForm({
           <p className="font-sans text-caption text-ordift-ink-muted">
             Your bank or card provider may apply its own exchange rate or fee — this is outside Ordift Studios&apos; control.
           </p>
-          <form ref={gatewayFormRef} action={gatewayFormAction} onSubmit={(e) => { if (gatewayPending) e.preventDefault(); }} className="flex flex-col sm:flex-row gap-3">
+          <form ref={gatewayFormRef} action={gatewayFormAction} onSubmit={(e) => { if (gatewayPending || !gatewayLock.current.tryAcquire()) e.preventDefault(); }} className="flex flex-col sm:flex-row gap-3">
             <input type="hidden" name="kind" value={kind} />
             <input type="hidden" name="id" value={id} />
             <input type="hidden" name="paymentType" value={paymentType} />
