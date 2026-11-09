@@ -14,7 +14,7 @@ export const AVAILABILITY_ACTION = "enquiry.availability_checked";
 
 export type AvailabilityResult = { ok: true; state: AvailabilityState; headline: string; reasons: string[]; conflicts: ViewConflict[]; verificationAccepted: boolean; checkedAt: string; notReservation: true } | Fail;
 export type PanelPerson = { id: string; name: string };
-export type LatestCheck = { state: AvailabilityState; label: string; at: string; byLabel: string | null; start: string | null; stale: boolean };
+export type LatestCheck = { state: AvailabilityState; label: string; at: string; byLabel: string | null; start: string | null; stale: boolean; assigneeId: string | null };
 export type AvailabilityPanelData = { people: PanelPerson[]; latest: LatestCheck | null; seeReferences: boolean };
 
 const STALE_AFTER_MS = 7 * 86_400_000;
@@ -50,12 +50,12 @@ export async function loadLatestAvailabilityCheck(enquiryId: string): Promise<La
   const admin = createAdminClient();
   const { data } = await admin.from("activity_log").select("actor_user_id, metadata, created_at").eq("action", AVAILABILITY_ACTION).eq("entity_id", enquiryId).order("created_at", { ascending: false }).limit(1).maybeSingle();
   if (!data) return null;
-  const m = (data.metadata ?? {}) as { state?: AvailabilityState; window?: { startsAt?: string }[] };
+  const m = (data.metadata ?? {}) as { state?: AvailabilityState; assigneeId?: string | null; window?: { startsAt?: string }[] };
   if (!m.state || !(m.state in STATE_LABEL)) return null;
   let byLabel: string | null = null;
   if (data.actor_user_id) { const { data: p } = await admin.from("profiles").select("member_number").eq("id", data.actor_user_id as string).maybeSingle(); byLabel = (p?.member_number as string | null) ? `member ${p!.member_number}` : null; }   // audit identity standard
   const at = data.created_at as string;
-  return { state: m.state, label: STATE_LABEL[m.state], at, byLabel, start: m.window?.[0]?.startsAt ?? null, stale: Date.now() - Date.parse(at) > STALE_AFTER_MS };
+  return { state: m.state, label: STATE_LABEL[m.state], at, byLabel, start: m.window?.[0]?.startsAt ?? null, stale: Date.now() - Date.parse(at) > STALE_AFTER_MS, assigneeId: m.assigneeId ?? null };
 }
 
 // Null (nothing rendered, nothing read) unless the flag is on, the viewer is staff or admin, and the enquiry is still open and not booked.

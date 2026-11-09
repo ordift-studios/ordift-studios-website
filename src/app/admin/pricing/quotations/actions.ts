@@ -3,6 +3,7 @@
 import { recordOrdinaryQuotationAcceptance } from "@/lib/commercial/quotationAcceptance";
 import { issueOrdinaryQuotation, recordQuotationDelivery } from "@/lib/commercial/quotationIssuance";
 import { formatDate } from "@/lib/commercial/quotationValidity";
+import { applyAvailabilityPolicyForIssue } from "@/lib/bookings/quotationAvailabilityService";
 import { revalidatePath } from "next/cache";
 import { getCurrentUser, hasRole, isSuperAdmin } from "@/lib/portal/roles";
 import {
@@ -244,11 +245,17 @@ export async function issueQuotationAction(_prev: ActionState, formData: FormDat
   const quotationId = String(formData.get("quotationId") ?? "");
   if (!quotationId) return { ok: false, error: "Invalid request." };
   if (formData.get("confirm") !== "on") return { ok: false, error: "Tick the confirmation to issue the quotation." };
+  // Availability policy (inert while the booking schedule is off): an ordinary quotation that depends on a specific person and time needs an availability assessment; where availability cannot be
+  // confirmed it goes out only as a clearly labelled CONDITIONAL quotation; a known firm conflict blocks it. An assessment is not a booking, and booking confirmation re-checks regardless.
+  const user = await getCurrentUser();
+  if (!user) return { ok: false, error: "You must be signed in." };
+  const policy = await applyAvailabilityPolicyForIssue({ actorUserId: user.id, quotationId, basis: String(formData.get("availabilityBasis") ?? ""), independentReason: String(formData.get("independentReason") ?? ""), conditionalAck: formData.get("conditionalAck") === "on" });
+  if (!policy.ok) return { ok: false, error: policy.error };
   const result = await issueOrdinaryQuotation({ quotationId, validUntil: String(formData.get("validUntil") ?? "") || null, exceptionReason: String(formData.get("exceptionReason") ?? "") || null, expectedEntityId: String(formData.get("expectedEntityId") ?? "") || null, activities: formData.getAll("activities").map(String) });
   if (!result.ok) return { ok: false, error: result.error };
   revalidatePath(`/admin/pricing/quotations/${quotationId}`);
   revalidatePath("/admin/pricing/quotations");
-  return { ok: true, message: `Quotation issued. It is valid until ${formatDate(result.validUntil)}${result.isException ? " (approved exception recorded)" : " (30 calendar days from today)"}. Nothing was emailed or sent to the client, and no payment, booking, amount due or acceptance was created. Deliver it yourself, then record the delivery below.` };
+  return { ok: true, message: `${policy.conditional ? "Quotation issued as a CONDITIONAL quotation (scheduling subject to confirmation). " : "Quotation issued. "}It is valid until ${formatDate(result.validUntil)}${result.isException ? " (approved exception recorded)" : " (30 calendar days from today)"}. Nothing was emailed or sent to the client, and no payment, booking, amount due or acceptance was created. Deliver it yourself, then record the delivery below.` };
 }
 
 export async function recordQuotationDeliveryAction(_prev: ActionState, formData: FormData): Promise<ActionState> {

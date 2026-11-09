@@ -18,7 +18,7 @@ describe("AvailabilityCheckPanel", () => {
     expect(h).toContain("Did you check directly with the person?"); expect(h).toContain("I checked directly with the assigned person.");
   });
   it("shows the last check with its checker's member number, and warns when it is old", () => {
-    const h = html(data({ latest: { state: "tentative", label: "Tentatively available", at: "2026-11-01T10:00:00Z", byLabel: "member INT0007", start: null, stale: true } }));
+    const h = html(data({ latest: { state: "tentative", label: "Tentatively available", at: "2026-11-01T10:00:00Z", byLabel: "member INT0007", start: null, stale: true, assigneeId: null } }));
     expect(h).toContain("Tentatively available"); expect(h).toContain("member INT0007"); expect(h).toContain("older than 7 days");
     expect(html(data())).toContain("No availability check has been made");
   });
