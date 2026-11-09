@@ -29,3 +29,9 @@ No migration was applied or numbered; the application still uses the in-memory p
 
 ## 5. Decision
 Approve the next step: switch the application to the function with a fallback (local only), then a separate release request for the migration.
+
+## UPDATE 9 Nov 2026 - application wired to the indexed function (LOCAL; nothing applied)
+- `searchClientsForStaff` and the duplicate check call `public.staff_client_lookup` first. Authorisation (staff or admin only), query validation and the 20-per-minute limit all run BEFORE any database search; the audit entry is still written strictly, and now records `path` ("indexed" or "in_memory_fallback"). The query text and results are never audited.
+- **Fallback rule:** only "function does not exist" (PostgREST `PGRST202`, confirmed against the lab's real PostgREST; or Postgres `42883`) uses the older in-memory search, which has the same authority, masking, cap and audit, and logs one warning per process. Production today has no function, so Production behaviour is unchanged until the migration is approved.
+- **Fail closed:** a permission refusal, any other database error, an answer that is not an array or has more than six rows, or ANY row that is not exactly the seven masked columns (an extra column, a full email or phone, a different match kind, a malformed id) shows nothing, writes no audit entry and does not fall back. A database input refusal gives a plain "could not be searched" message.
+- Tests: 151 in `src/lib/enquiry` pass (8 new for the indexed path, fallback, fail-closed, widened-answer refusal, duplicate check). Rehearsals re-run on the lab inside rolled-back transactions: index rehearsal PASSED (20,000 synthetic contacts: name 4.4 ms, phone 1.2 ms, email 0.2 ms; lab rows unchanged) and rollback rehearsal PASSED.
