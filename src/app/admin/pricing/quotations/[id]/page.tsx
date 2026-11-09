@@ -1,3 +1,4 @@
+import { classifyPaymentTerms } from "@/lib/commercial/paymentConditionTerms";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect, notFound } from "next/navigation";
@@ -239,6 +240,19 @@ export default async function QuotationDetailPage({ params }: { params: Promise<
         {quotation.taxTotal > 0 && <p className="font-sans text-body-small text-ordift-ink-muted flex justify-between"><span>Tax</span><span>{quotation.currency} {quotation.taxTotal.toFixed(2)}</span></p>}
         <p className="font-sans text-body font-semibold text-ordift-ink flex justify-between pt-2 border-t border-black/10"><span>Total</span><span>{quotation.currency} {quotation.total.toFixed(2)}</span></p>
       </div>
+
+      {!quotation.crewManaged && (() => {
+        const check = classifyPaymentTerms(quotation.paymentBookingTerms, quotation.paymentCondition, quotation.depositPercent);
+        const label = quotation.paymentCondition === "deposit" ? `${quotation.depositPercent}% deposit before booking confirmation` : quotation.paymentCondition === "full" ? "Full payment before booking confirmation" : "No upfront payment";
+        const problem = check === "contradiction" || check === "ambiguous" || (check === "no_terms" && quotation.paymentCondition !== "none");
+        return (
+          <div className="rounded-xl border border-black/10 bg-white p-6 space-y-1">
+            <p className="font-sans text-caption uppercase tracking-wide text-ordift-ink-muted">Payment condition (structured)</p>
+            <p className="font-sans text-body-small text-ordift-ink">{label}</p>
+            {problem && quotation.status === "draft" ? <p className="font-sans text-caption text-amber-700">The written terms below do not clearly match this condition. Open Edit and choose the condition: the wording is then generated for you.</p> : null}
+          </div>
+        );
+      })()}
 
       {(quotation.paymentBookingTerms || quotation.commercialNotes) && (
         <div className="rounded-xl border border-black/10 bg-white p-6 space-y-2">
