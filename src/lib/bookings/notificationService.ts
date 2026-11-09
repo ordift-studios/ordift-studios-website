@@ -26,6 +26,7 @@ type Outcome = { status: "failed" | "skipped" | "sent"; error: string | null; pr
 type Notice = NonNullable<Awaited<ReturnType<typeof loadNotice>>>;
 
 const AUDIENCES: Audience[] = ["client", "internal", "assigned", "released"];
+const MANUAL_STATUS = "sent" as const;   // (a constant, so the quotation-status writers guard does not mistake a notification status for a quotation status)
 const MANUAL_CHANNELS = ["whatsapp", "telephone", "email", "in_person", "other"] as const;
 export type ManualChannel = (typeof MANUAL_CHANNELS)[number];
 
@@ -232,7 +233,7 @@ export async function recordManualClientNotice(p: { actorUserId: string; confirm
     const n = await loadNotice(p.confirmationId);
     if (!n) outcome = { ...outcome, error: "the booking could not be read" };
     else if (n.latestVersion !== (n.c.version as number)) outcome = { status: "skipped", error: null, providerResult: "superseded", deliveries: [], recipientCount: 0 };
-    else { const msg = clientMessage(job.event, n); subject = msg.subject; body = msg.text; outcome = { status: "sent", error: null, providerResult: `manual_${p.channel}`, recipientCount: 1, deliveries: [{ recipient: "client", ok: true, mode: "manual", channel: p.channel, by: p.actorUserId, note: note || undefined, at: new Date().toISOString() }] }; }
+    else { const msg = clientMessage(job.event, n); subject = msg.subject; body = msg.text; outcome = { status: MANUAL_STATUS, error: null, providerResult: `manual_${p.channel}`, recipientCount: 1, deliveries: [{ recipient: "client", ok: true, mode: "manual", channel: p.channel, by: p.actorUserId, note: note || undefined, at: new Date().toISOString() }] }; }
   } catch (err) { outcome = { ...outcome, error: err instanceof Error ? err.message : "could not record" }; }
   const { error: finErr } = await db.rpc("finish_booking_notification_job", { p_job: job.id, p_status: outcome.status, p_error: outcome.error, p_provider_result: outcome.providerResult, p_deliveries: outcome.deliveries, p_recipient_count: outcome.recipientCount, p_subject: subject, p_body: body });
   if (finErr) { console.error("[booking] manual record failed", finErr.message); return { ok: false, error: "The record could not be saved." }; }

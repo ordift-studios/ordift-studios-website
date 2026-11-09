@@ -17,7 +17,7 @@ snap="select (select count(*) from public.enquiries) || '/' || (select count(*) 
 snap2="select (select count(*) from public.enquiries) || '/' || (select count(*) from public.activity_log) || '/' || (select count(*) from public.enquiry_booking_confirmations)"
 has=$(echo "select to_regclass('public.booking_notification_jobs') is not null" | q)
 S=$([ "$has" = t ] && echo "$snap" || echo "$snap2"); before=$(echo "$S" | q)
-{ echo "begin;"; echo "$funcs"; sed -n '1,52p' "$D/REHEARSE_booking_body.sql"
+{ echo "begin;"; echo "drop function if exists public.cancel_ordinary_booking(uuid, text, uuid, text);"; echo "$funcs"; sed -n '1,52p' "$D/REHEARSE_booking_body.sql"
   if [ "$has" = t ]; then echo "drop table public.booking_notification_jobs cascade; drop function if exists public.claim_booking_notification_job(uuid,text,boolean,interval); drop function if exists public.finish_booking_notification_job(uuid,text,text,text,jsonb,int,text,text); drop function if exists private.booking_confirmation_creates_notification_jobs() cascade; drop function if exists private.booking_notification_jobs_guard() cascade;"; fi
   grep -v -E '^(begin|commit);$' "$D/PROPOSAL_booking_notifications.sql"; cat "$D/REHEARSE_booking_notifications_section.sql"; echo "rollback;"; } | q
 after=$(echo "$S" | q)
