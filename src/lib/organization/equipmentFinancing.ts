@@ -1,7 +1,8 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { logActivity } from "@/lib/admin/activityLog";
 import { isSuperAdminId } from "@/lib/organization/authority";
-import { buildEquipmentViews, type DocRef, type EquipmentView, type RawAcquisition, type RawInstalment, type RawObligation } from "./equipmentPanelView";
+import { buildEquipmentViews, type DocRef, type EquipmentView, type RawAcquisition, type RawInstalment, type RawObligation, type RawPayment, type RawTerms } from "./equipmentPanelView";
+import { validatePayment, validateTerms, type PaymentInput, type TermsInput } from "./acquisitionPaymentRules";
 import { documentFamily, expenseOverlapForAcquisition } from "./financeOverlap";
 import { validateAcquisition, type AcquisitionInput, type FinancingInput } from "./equipmentFinancingRules";
 
@@ -53,6 +54,69 @@ export async function markInstalmentPaid(p: { actorUserId: string; entityId: str
   return { ok: true };
 }
 
+// ---------------------------------------------------------------------------------------------------------------- payment arrangements (non-financed purchases)
+// Terms and payments are written ONLY through the three audited database functions (migration proposal PROPOSAL_acquisition_payment_arrangements.sql). A payment is REPORTED with evidence;
+// nothing here verifies it against a statement, creates an expense or classifies anything. The database re-checks every rule under a row lock (the cap on the net price, no double counting with financing).
+function paymentFriendly(message: string): string {
+  if (/would total/.test(message)) return "This payment would take the total above the net price.";
+  if (/twice|financed acquisition/.test(message)) return "A financed purchase is paid through its instalments; direct payments are not accepted.";
+  if (/"unpaid"/.test(message)) return "The arrangement is 'not yet paid': change the arrangement before recording a payment.";
+  if (/identical payment/.test(message)) return "An identical payment (same amount, date, method and reference) is already recorded.";
+  if (/future/.test(message)) return "The payment date cannot be in the future.";
+  if (/THIS entity/.test(message)) return "The evidence document must be a financial document in this legal entity's own vault.";
+  if (/full payment must equal/.test(message)) return "A full payment must equal the net price and be the only payment.";
+  if (/before the purchase date/.test(message)) return "The balance due date cannot be before the purchase date.";
+  if (/already recorded/.test(message)) return "Payments are already recorded, so the arrangement cannot be 'not yet paid'.";
+  if (/not recorded/.test(message)) return "That payment is not recorded (it may already be voided).";
+  return "The change could not be recorded.";
+}
+async function acquisitionFacts(acquisitionId: string): Promise<{ entityId: string; net: number; paid: number; financed: boolean } | null> {
+  const db = createAdminClient();
+  const { data: a } = await db.from("entity_equipment_acquisitions").select("employing_entity_id, net_amount, status").eq("id", acquisitionId).maybeSingle();
+  if (!a || a.status !== "recorded") return null;
+  const { data: pays } = await db.from("entity_acquisition_payments").select("amount, status").eq("acquisition_id", acquisitionId);
+  const { data: obs } = await db.from("entity_financing_obligations").select("status").eq("acquisition_id", acquisitionId);
+  const paid = (pays ?? []).filter((x) => x.status === "recorded").reduce((n, x) => n + Math.round(Number(x.amount) * 100), 0) / 100;
+  return { entityId: a.employing_entity_id as string, net: Number(a.net_amount), paid, financed: (obs ?? []).some((o) => o.status !== "void") };
+}
+
+export async function setAcquisitionTerms(p: { actorUserId: string; entityId: string; acquisitionId: string; terms: TermsInput }): Promise<{ ok: true } | Fail> {
+  if (!(await isSuperAdminId(p.actorUserId))) return DENIED;
+  const v = validateTerms(p.terms);
+  if (!v.ok) return v;
+  const facts = await acquisitionFacts(p.acquisitionId);
+  if (!facts || facts.entityId !== p.entityId) return { ok: false, error: "That purchase does not belong to this legal entity." };
+  if (facts.financed) return { ok: false, error: "A financed purchase is paid through its instalments and has no payment terms." };
+  const { error } = await createAdminClient().rpc("set_acquisition_terms", { p_acquisition: p.acquisitionId, p_arrangement: v.value.arrangement, p_due: v.value.balanceDueOn, p_supplier_terms: v.value.supplierTerms, p_note: v.value.note, p_actor: p.actorUserId });
+  if (error) { console.error("[equipment financing] set terms failed", error.message); return { ok: false, error: paymentFriendly(error.message) }; }
+  await logActivity({ actorUserId: p.actorUserId, action: "equipment_terms.set", entityType: "employing_entity", entityId: p.entityId, metadata: { acquisitionId: p.acquisitionId, arrangement: v.value.arrangement, balanceDueOn: v.value.balanceDueOn } });
+  return { ok: true };
+}
+
+export async function recordAcquisitionPayment(p: { actorUserId: string; entityId: string; acquisitionId: string; payment: PaymentInput }): Promise<{ ok: true } | Fail> {
+  if (!(await isSuperAdminId(p.actorUserId))) return DENIED;
+  const facts = await acquisitionFacts(p.acquisitionId);
+  if (!facts || facts.entityId !== p.entityId) return { ok: false, error: "That purchase does not belong to this legal entity." };
+  if (facts.financed) return { ok: false, error: "A financed purchase is paid through its instalments; direct payments are not accepted." };
+  const v = validatePayment(p.payment, { net: facts.net, alreadyPaid: facts.paid, today: today() });
+  if (!v.ok) return v;
+  const { error } = await createAdminClient().rpc("record_acquisition_payment", { p_acquisition: p.acquisitionId, p_kind: v.value.kind, p_amount: v.value.amount, p_paid_on: v.value.paidOn, p_method: v.value.method, p_method_note: v.value.methodNote, p_reference: v.value.reference, p_evidence_doc: v.value.evidenceDocumentId, p_evidence_note: v.value.evidenceNote, p_actor: p.actorUserId });
+  if (error) { console.error("[equipment financing] record payment failed", error.message); return { ok: false, error: paymentFriendly(error.message) }; }
+  await logActivity({ actorUserId: p.actorUserId, action: "equipment_payment.recorded", entityType: "employing_entity", entityId: p.entityId, metadata: { acquisitionId: p.acquisitionId, kind: v.value.kind, amount: v.value.amount, method: v.value.method, paidOn: v.value.paidOn, bankVerified: false } });
+  return { ok: true };
+}
+
+export async function voidAcquisitionPayment(p: { actorUserId: string; entityId: string; paymentId: string; reason: string }): Promise<{ ok: true } | Fail> {
+  if (!(await isSuperAdminId(p.actorUserId))) return DENIED;
+  if (p.reason.trim().length < 10) return { ok: false, error: "Give a written reason of at least 10 characters." };
+  const { data: pay } = await createAdminClient().from("entity_acquisition_payments").select("employing_entity_id").eq("id", p.paymentId).maybeSingle();
+  if (!pay || pay.employing_entity_id !== p.entityId) return { ok: false, error: "That payment does not belong to this legal entity." };
+  const { error } = await createAdminClient().rpc("void_acquisition_payment", { p_payment: p.paymentId, p_reason: p.reason.trim(), p_actor: p.actorUserId });
+  if (error) { console.error("[equipment financing] void payment failed", error.message); return { ok: false, error: paymentFriendly(error.message) }; }
+  await logActivity({ actorUserId: p.actorUserId, action: "equipment_payment.voided", entityType: "employing_entity", entityId: p.entityId, metadata: { paymentId: p.paymentId } });
+  return { ok: true };
+}
+
 export type EquipmentPanelData = { views: EquipmentView[]; invoiceDocs: DocRef[]; financialDocs: DocRef[] };
 const FINANCIAL_TYPES = ["purchase_receipt", "supplier_invoice", "other_financial_document"];
 // Reads only (Super Admin only; an unauthorised caller gets nothing). Documents are the existing vault's rows — this never stores or alters a file.
@@ -66,10 +130,15 @@ export async function loadEquipmentPanelData(entityId: string, actorUserId: stri
     db.from("employing_entity_documents").select("id, document_type, original_filename, file_sha256").eq("employing_entity_id", entityId).in("document_type", FINANCIAL_TYPES).order("uploaded_at", { ascending: false }),
   ]);
   if (acq.error || ob.error || docs.error) { console.error("[equipment financing] load failed", acq.error?.message ?? ob.error?.message ?? docs.error?.message); return empty; }
+  const acqIds = (acq.data ?? []).map((a) => a.id as string);
+  // terms and payments exist from the payment-arrangements migration; before it is applied these reads simply return nothing
+  const termsRes = acqIds.length ? await db.from("entity_acquisition_terms").select("id, acquisition_id, arrangement, balance_due_on, supplier_terms, note, status, created_at").in("acquisition_id", acqIds) : { data: [], error: null };
+  const paysRes = acqIds.length ? await db.from("entity_acquisition_payments").select("id, acquisition_id, kind, amount, currency, paid_on, method, method_note, reference, evidence_document_id, evidence_note, status, void_reason, created_at").in("acquisition_id", acqIds) : { data: [], error: null };
   const obIds = (ob.data ?? []).map((o) => o.id as string);
   const ins = obIds.length ? await db.from("entity_financing_instalments").select("id, obligation_id, sequence, amount, expected_month, status, paid_on, evidence_document_id, bank_evidence_document_id, evidence_note").in("obligation_id", obIds) : { data: [], error: null };
   if (ins.error) { console.error("[equipment financing] load instalments failed", ins.error.message); return empty; }
   const docRefs: DocRef[] = (docs.data ?? []).map((d) => ({ id: d.id as string, filename: (d.original_filename as string | null) ?? null, sha256: (d.file_sha256 as string | null) ?? null, documentType: d.document_type as string }));
-  const views = buildEquipmentViews({ acquisitions: (acq.data ?? []) as unknown as RawAcquisition[], obligations: (ob.data ?? []) as unknown as RawObligation[], instalments: (ins.data ?? []) as unknown as RawInstalment[], docs: docRefs, entityLegalName });
+  const views = buildEquipmentViews({ acquisitions: (acq.data ?? []) as unknown as RawAcquisition[], obligations: (ob.data ?? []) as unknown as RawObligation[], instalments: (ins.data ?? []) as unknown as RawInstalment[], docs: docRefs, entityLegalName,
+    terms: (termsRes.error ? [] : termsRes.data ?? []) as unknown as RawTerms[], payments: (paysRes.error ? [] : paysRes.data ?? []) as unknown as RawPayment[] });
   return { views, invoiceDocs: docRefs.filter((d) => d.documentType === "purchase_receipt" || d.documentType === "supplier_invoice"), financialDocs: docRefs };
 }

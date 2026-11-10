@@ -190,3 +190,14 @@ describe("recordEntityReceipt: an invoice already recorded as an equipment acqui
   });
 });
 
+describe("recordEntityReceipt: a document that evidences an acquisition PAYMENT cannot also back an expense", () => {
+  it("refuses it, so one outright purchase is never counted as a payment and as an expense", async () => {
+    h.db = makeFakeDb({ employing_entity_documents: docs, entity_expenses: [], activity_log: [], entity_equipment_acquisitions: [{ id: "acq-2", employing_entity_id: Q, status: "recorded", invoice_number: "INV-2002", supplier_name: "Synthetic Supplier", invoice_document_id: "d-inv", bank_evidence_document_id: null }],
+      entity_financing_obligations: [], entity_acquisition_payments: [{ acquisition_id: "acq-2", evidence_document_id: "d-fin", status: "recorded" }] });
+    const r = await recordEntityReceipt(permitReceipt({ receiptNumber: "OTHER-88", issuingAuthority: "Someone Else", sourceDocumentId: "d-fin", requestReference: null, category: "other", printedTotal: 10,
+      lines: [{ code: "L1", description: "Unrelated line", amount: 10 }], fundingSourceStatus: "to_confirm", fundingSourceNote: null, reimbursementIntent: "to_be_confirmed", paymentMethod: null, relatedReference: null, notes: null }));
+    expect(r).toMatchObject({ ok: false, error: expect.stringMatching(/stored document/) });
+    expect(h.db.tables.entity_expenses).toHaveLength(0);
+  });
+});
+

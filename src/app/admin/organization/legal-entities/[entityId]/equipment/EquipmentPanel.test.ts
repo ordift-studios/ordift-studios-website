@@ -4,7 +4,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { createElement } from "react";
 
 vi.mock("../actions", () => ({ viewEntityDocumentAction: vi.fn() }));
-vi.mock("./actions", () => ({ markInstalmentPaidAction: vi.fn(), recordEquipmentAction: vi.fn() }));
+vi.mock("./actions", () => ({ markInstalmentPaidAction: vi.fn(), recordEquipmentAction: vi.fn(), recordPaymentAction: vi.fn(), setTermsAction: vi.fn(), voidPaymentAction: vi.fn() }));
 import { EquipmentPanel } from "./EquipmentPanel";
 import { buildEquipmentViews, type DocRef } from "@/lib/organization/equipmentPanelView";
 
@@ -52,3 +52,57 @@ describe("Equipment & Financing panel", () => {
     expect(empty).toMatch(/No equipment acquisitions are recorded/); expect(empty).toMatch(/Record an equipment acquisition/);
   });
 });
+
+// ---- every arrangement, rendered (synthetic data only)
+const A = (id: string, over: Record<string, unknown> = {}) => ({ id, supplier_name: "Synthetic Supplier", supplier_branch: null, invoice_number: `INV-${id}`, purchase_date: "2026-11-01", item_description: `Synthetic item ${id}`, quantity: 1, currency: "QAR", list_price_total: 2000, discount_total: 0, net_amount: 2000,
+  customer_as_shown: "SYNTHETIC ENTITY", invoice_document_id: "d-inv", funding_source_status: "to_confirm", funding_source_note: null, accounting_classification: "pending_professional_review", bank_evidence_document_id: null, created_at: "2026-11-10", ...over });
+const T = (acq: string, arrangement: string, due: string | null = null, supplier_terms: string | null = null) => ({ id: `t-${acq}`, acquisition_id: acq, arrangement, balance_due_on: due, supplier_terms, note: null, status: "current" as const, created_at: "2026-11-10" });
+const PAY = (id: string, acq: string, amount: number, over: Record<string, unknown> = {}) => ({ id, acquisition_id: acq, kind: "part", amount, currency: "QAR", paid_on: "2026-11-02", method: "cash", method_note: null, reference: null, evidence_document_id: null, evidence_note: "cash receipt seen and kept", status: "recorded", void_reason: null, created_at: "2026-11-10", ...over });
+const many = buildEquipmentViews({
+  entityLegalName: "SYNTHETIC ENTITY", docs, today: "2026-12-20",
+  acquisitions: [A("out"), A("dep"), A("cr"), A("unp"), A("tbc"), A("fin", { net_amount: 1149, list_price_total: 1149 })] as never,
+  obligations: [{ id: "o1", acquisition_id: "fin", provider: "SyntheticPay", provider_reference: "SP-1", instalment_count: 2, financed_amount: 1149, plan_started_on: "2026-11-08", confirmation_document_id: "d-conf", schedule_basis: "provider_schedule", status: "active" }],
+  instalments: [{ id: "i1", obligation_id: "o1", sequence: 1, amount: 574.5, expected_month: "2026-11-01", status: "paid", paid_on: "2026-11-08", evidence_document_id: "d-conf", bank_evidence_document_id: null, evidence_note: null }, { id: "i2", obligation_id: "o1", sequence: 2, amount: 574.5, expected_month: "2026-12-01", status: "pending", paid_on: null, evidence_document_id: null, bank_evidence_document_id: null, evidence_note: null }],
+  terms: [T("out", "paid_in_full"), T("dep", "deposit_and_balance", "2026-12-15"), T("cr", "supplier_credit", "2026-12-01", "Net 30"), T("unp", "unpaid")] as never,
+  payments: [PAY("p1", "out", 2000, { kind: "full", method: "company_credit_card", evidence_note: null, evidence_document_id: "d-conf" }), PAY("p2", "dep", 500, { kind: "deposit", method: "bank_transfer", reference: "TRF-9" }), PAY("p3", "dep", 99, { status: "void", void_reason: "entered against the wrong purchase" })] as never,
+});
+const manyHtml = renderToStaticMarkup(createElement(EquipmentPanel, { entityId: "e1", views: many, invoiceDocs: [docs[0]], financialDocs: docs }));
+const cardOf = (name: string) => { const i = manyHtml.indexOf(`Synthetic item ${name}`); const j = manyHtml.indexOf("<article", i); return manyHtml.slice(i, j === -1 ? undefined : j); };
+
+describe("every payment arrangement renders with the four figures kept apart", () => {
+  it("outright / paid in full: Paid, pending statement verification, payment method and document shown, no financing needed, expense 0.00", () => {
+    const c = cardOf("out");
+    expect(c).toMatch(/Paid in full \(outright purchase\)/); expect(c).toMatch(/>Paid</); expect(c).toMatch(/Pending statement verification/);
+    expect(c).toMatch(/Company credit card/); expect(c).toMatch(/provider-confirmation\.pdf/); expect(c).toMatch(/Reported — awaiting statement reconciliation \(not bank-verified\)/);
+    expect(c).not.toMatch(/Financing liability/); expect(c).toMatch(/Recognised QAR 0\.00/); expect(c).not.toMatch(/No financing agreement/);
+  });
+  it("deposit and balance: Partly paid, balance owed with its due date, the voided payment shown as voided and not counted", () => {
+    const c = cardOf("dep");
+    expect(c).toMatch(/Partly paid/); expect(c).toMatch(/Owed to the supplier/); expect(c).toMatch(/QAR 1,500\.00/); expect(c).toMatch(/Due 2026-12-15/); expect(c).toMatch(/Ref TRF-9/);
+    expect(c).toMatch(/Voided — entered against the wrong purchase/); expect(c).toMatch(/Reported paid QAR 500\.00/);
+  });
+  it("supplier credit: Unpaid, owed in full, the supplier's terms, and the overdue open item after the due date", () => {
+    const c = cardOf("cr");
+    expect(c).toMatch(/Supplier credit \(pay by a due date\)/); expect(c).toMatch(/>Unpaid</); expect(c).toMatch(/QAR 2,000\.00/); expect(c).toMatch(/Net 30/); expect(c).toMatch(/past its due date/);
+  });
+  it("unpaid: no payment can be recorded until the arrangement changes", () => {
+    const c = cardOf("unp");
+    expect(c).toMatch(/Not yet paid/); expect(c).toMatch(/change it before recording a payment/); expect(c).not.toMatch(/>Record a payment</);
+  });
+  it("awaiting confirmation: nothing is assumed paid and the open item says so", () => {
+    const c = cardOf("tbc");
+    expect(c).toMatch(/Arrangement to be confirmed/); expect(c).toMatch(/Balance not yet evidenced as paid/); expect(c).toMatch(/nothing is assumed to be paid/); expect(c).toMatch(/No payment is recorded for this purchase/);
+  });
+  it("financed purchases keep the instalment workflow and offer NO direct payment form", () => {
+    const c = cardOf("fin");
+    expect(c).toMatch(/Financed in instalments/); expect(c).toMatch(/Financing liability/); expect(c).toMatch(/Record instalment 2 as reported paid/); expect(c).not.toMatch(/>Record a payment</);
+  });
+  it("nothing anywhere claims bank verification, and the record form asks 'How is it paid?' with every arrangement", () => {
+    expect(manyHtml).not.toMatch(/Paid — verified against a statement/); expect(manyHtml).not.toMatch(/Verified by statement QAR [1-9]/);
+    for (const label of ["Paid in full (outright purchase)", "Deposit now, balance later", "Supplier credit (pay by a due date)", "Not yet paid", "Financed in instalments", "To be confirmed"]) expect(manyHtml).toContain(label);
+  });
+  it("is usable on small screens: tables scroll inside their own box and the figure grid collapses to one column", () => {
+    expect(manyHtml).toMatch(/overflow-x-auto/); expect(manyHtml).toMatch(/grid-cols-1 sm:grid-cols-2 xl:grid-cols-4/);
+  });
+});
+

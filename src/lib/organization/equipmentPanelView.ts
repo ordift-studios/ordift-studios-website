@@ -1,5 +1,6 @@
 // Pure view-model for the Equipment & Financing panel. No database, no I/O: the loader in equipmentFinancing.ts reads rows, this turns them into what the screen shows.
 // The four things the screen keeps apart — ACQUISITION COST, FINANCING LIABILITY, ACTUAL PAYMENTS and ACCOUNTING EXPENSE — are separate fields here, never one number.
+import { ARRANGEMENT_LABEL, SETTLEMENT_LABEL, kindLabel, methodLabel, type Arrangement } from "@/lib/organization/acquisitionPaymentRules";
 import { acquisitionPosition, customerMatch, instalmentState, type AcquisitionFact, type AcquisitionPosition, type CustomerMatch, type InstalmentState } from "@/lib/organization/financePosition";
 
 export type DocRef = { id: string; filename: string | null; sha256: string | null; documentType: string };
@@ -15,6 +16,12 @@ export type RawObligation = {
 export type RawInstalment = {
   id: string; obligation_id: string; sequence: number; amount: number | string; expected_month: string; status: "pending" | "paid" | "void"; paid_on: string | null;
   evidence_document_id: string | null; bank_evidence_document_id: string | null; evidence_note: string | null;
+};
+
+export type RawTerms = { id: string; acquisition_id: string; arrangement: Arrangement; balance_due_on: string | null; supplier_terms: string | null; note: string | null; status: "current" | "superseded"; created_at: string };
+export type RawPayment = {
+  id: string; acquisition_id: string; kind: string; amount: number | string; currency: string; paid_on: string; method: string; method_note: string | null; reference: string | null;
+  evidence_document_id: string | null; evidence_note: string | null; status: "recorded" | "void"; void_reason: string | null; created_at: string;
 };
 
 export const CLASSIFICATION_LABEL: Record<string, string> = {
@@ -42,6 +49,7 @@ export const INSTALMENT_STATE_LABEL: Record<InstalmentState, string> = {
 };
 
 export type InstalmentView = { id: string; sequence: number; amount: number; expectedMonth: string; state: InstalmentState; paidOn: string | null; evidenceNote: string | null; evidenceDoc: DocRef | null; statementDoc: DocRef | null };
+export type PaymentView = { id: string; kindLabel: string; amount: number; paidOn: string; methodLabel: string; methodNote: string | null; reference: string | null; evidenceDoc: DocRef | null; evidenceNote: string | null; status: "recorded" | "void"; voidReason: string | null };
 export type EquipmentView = {
   id: string; supplier: string; branch: string | null; invoiceNumber: string; purchaseDate: string; itemDescription: string; quantity: number; currency: string;
   listPrice: number; discount: number; net: number; customerAsShown: string | null; customerMatch: CustomerMatch;
@@ -49,20 +57,28 @@ export type EquipmentView = {
   invoiceDoc: DocRef | null; fundingStatementDoc: DocRef | null;
   financing: { id: string; provider: string; reference: string; status: string; scheduleBasis: string; plannedOn: string; instalmentCount: number; financed: number; confirmationDoc: DocRef | null; instalments: InstalmentView[] } | null;
   position: AcquisitionPosition;
+  arrangementLabel: string; settlementLabel: string; supplierTerms: string | null; payments: PaymentView[];
+  // a NON-financed purchase can take terms and direct payments; a financed one is paid through its instalments only
+  acceptsDirectPayments: boolean;
 };
 
 const n = (v: number | string) => Number(v);
-export function buildEquipmentViews(a: { acquisitions: RawAcquisition[]; obligations: RawObligation[]; instalments: RawInstalment[]; docs: DocRef[]; entityLegalName: string }): EquipmentView[] {
+export function buildEquipmentViews(a: { acquisitions: RawAcquisition[]; obligations: RawObligation[]; instalments: RawInstalment[]; docs: DocRef[]; entityLegalName: string; terms?: RawTerms[]; payments?: RawPayment[]; today?: string }): EquipmentView[] {
   const doc = (id: string | null): DocRef | null => (id ? a.docs.find((d) => d.id === id) ?? null : null);
   return a.acquisitions.map((r) => {
     const ob = a.obligations.find((o) => o.acquisition_id === r.id && o.status !== "void") ?? null;
     const ins = ob ? a.instalments.filter((i) => i.obligation_id === ob.id).sort((x, y) => x.sequence - y.sequence) : [];
     const match = customerMatch(r.customer_as_shown, a.entityLegalName);
+    const terms = (a.terms ?? []).find((x) => x.acquisition_id === r.id && x.status === "current") ?? null;
+    const pays = (a.payments ?? []).filter((x) => x.acquisition_id === r.id).sort((x, y) => (x.paid_on === y.paid_on ? x.created_at.localeCompare(y.created_at) : x.paid_on.localeCompare(y.paid_on)));
     const fact: AcquisitionFact = {
       id: r.id, currency: r.currency, listPrice: n(r.list_price_total), discount: n(r.discount_total), net: n(r.net_amount), classification: r.accounting_classification, funding: r.funding_source_status, fundingStatementVerified: Boolean(r.bank_evidence_document_id), customerMatch: match,
       financing: ob ? { provider: ob.provider, reference: ob.provider_reference, financedAmount: n(ob.financed_amount), instalmentCount: ob.instalment_count, scheduleBasis: ob.schedule_basis, status: ob.status,
         instalments: ins.map((i) => ({ sequence: i.sequence, amount: n(i.amount), expectedMonth: i.expected_month, status: i.status, paidOn: i.paid_on, providerEvidence: Boolean(i.evidence_document_id) || (i.evidence_note ?? "").trim().length >= 10, statementEvidence: Boolean(i.bank_evidence_document_id) })) } : null,
+      terms: terms ? { arrangement: terms.arrangement, balanceDueOn: terms.balance_due_on } : null,
+      payments: pays.map((x) => ({ amount: n(x.amount), paidOn: x.paid_on, status: x.status })),
     };
+    const position = acquisitionPosition(fact, a.today);
     return {
       id: r.id, supplier: r.supplier_name, branch: r.supplier_branch, invoiceNumber: r.invoice_number, purchaseDate: r.purchase_date, itemDescription: r.item_description, quantity: r.quantity, currency: r.currency,
       listPrice: fact.listPrice, discount: fact.discount, net: fact.net, customerAsShown: r.customer_as_shown, customerMatch: match,
@@ -71,7 +87,9 @@ export function buildEquipmentViews(a: { acquisitions: RawAcquisition[]; obligat
       invoiceDoc: doc(r.invoice_document_id), fundingStatementDoc: doc(r.bank_evidence_document_id),
       financing: ob ? { id: ob.id, provider: ob.provider, reference: ob.provider_reference, status: ob.status, scheduleBasis: ob.schedule_basis, plannedOn: ob.plan_started_on, instalmentCount: ob.instalment_count, financed: n(ob.financed_amount), confirmationDoc: doc(ob.confirmation_document_id),
         instalments: ins.map((i, k) => ({ id: i.id, sequence: i.sequence, amount: n(i.amount), expectedMonth: i.expected_month, state: instalmentState(fact.financing!.instalments[k]), paidOn: i.paid_on, evidenceNote: i.evidence_note, evidenceDoc: doc(i.evidence_document_id), statementDoc: doc(i.bank_evidence_document_id) })) } : null,
-      position: acquisitionPosition(fact),
+      position,
+      arrangementLabel: ARRANGEMENT_LABEL[position.arrangement], settlementLabel: SETTLEMENT_LABEL[position.settlement], supplierTerms: terms?.supplier_terms ?? null, acceptsDirectPayments: !ob,
+      payments: pays.map((x) => ({ id: x.id, kindLabel: kindLabel(x.kind), amount: n(x.amount), paidOn: x.paid_on, methodLabel: methodLabel(x.method), methodNote: x.method_note, reference: x.reference, evidenceDoc: doc(x.evidence_document_id), evidenceNote: x.evidence_note, status: x.status, voidReason: x.void_reason })),
     };
   });
 }

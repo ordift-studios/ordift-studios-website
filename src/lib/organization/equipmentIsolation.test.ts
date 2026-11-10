@@ -14,10 +14,10 @@ const writeFiles = ["src/lib/organization/equipmentFinancing.ts", "src/lib/organ
 const pure = ["src/lib/organization/financePosition.ts", "src/lib/organization/statementReconciliation.ts", "src/lib/organization/equipmentPanelView.ts", "src/lib/organization/equipmentForms.ts", "src/lib/organization/equipmentFinancingRules.ts"];
 
 describe("equipment & financing isolation", () => {
-  it("writes to the database ONLY through the two audited functions (no direct insert/update/upsert/delete)", () => {
+  it("writes to the database ONLY through the audited functions (no direct insert/update/upsert/delete)", () => {
     for (const f of writeFiles) expect(read(f), f).not.toMatch(/\.(insert|update|upsert|delete)\s*\(/);
     const lib = read("src/lib/organization/equipmentFinancing.ts");
-    expect([...lib.matchAll(/\.rpc\("([a-z_]+)"/g)].map((m) => m[1]).sort()).toEqual(["mark_instalment_paid", "record_equipment_acquisition"]);
+    expect([...lib.matchAll(/\.rpc\("([a-z_]+)"/g)].map((m) => m[1]).sort()).toEqual(["mark_instalment_paid", "record_acquisition_payment", "record_equipment_acquisition", "set_acquisition_terms", "void_acquisition_payment"]);
   });
   it("never creates or references an accounting expense, journal or payment record", () => {
     for (const f of [...writeFiles, ...pure]) expect(code(f), f).not.toMatch(/entity_expenses|recordEntityReceipt|payment_obligations|\.from\("payments"\)|journal_entries|ledger_entries/i);

@@ -89,3 +89,40 @@ describe("funding stated by a person vs verified by a statement", () => {
   });
 });
 
+
+describe("payment arrangements (not financed)", () => {
+  const plain = (over: Partial<AcquisitionFact> = {}): AcquisitionFact => acq({ financing: null, net: 2000, listPrice: 2000, discount: 0, ...over });
+  const p = (amount: number, status: "recorded" | "void" = "recorded", paidOn = "2026-11-02") => ({ amount, paidOn, status });
+  it("outright, fully paid: settlement paid, nothing owed, still pending statement verification, expense 0", () => {
+    const r = acquisitionPosition(plain({ terms: { arrangement: "paid_in_full", balanceDueOn: null }, payments: [p(2000)] }), "2026-11-10");
+    expect([r.arrangement, r.settlement, r.paidTotal, r.supplierBalance, r.paidVerifiedByStatement, r.paidAwaitingStatement, r.expenseRecognised]).toEqual(["paid_in_full", "paid", 2000, 0, 0, 2000, 0]);
+    expect(r.flags).toContain("payments_awaiting_statement");
+  });
+  it("deposit and balance: partly paid, the balance is owed to the supplier; a voided payment counts for nothing", () => {
+    const r = acquisitionPosition(plain({ terms: { arrangement: "deposit_and_balance", balanceDueOn: "2026-12-15" }, payments: [p(500), p(300, "void")] }), "2026-11-10");
+    expect([r.settlement, r.paidTotal, r.supplierBalance, r.balanceDueOn]).toEqual(["partially_paid", 500, 1500, "2026-12-15"]);
+  });
+  it("supplier credit: unpaid, owed, and overdue only after the due date", () => {
+    const terms = { arrangement: "supplier_credit" as const, balanceDueOn: "2026-12-01" };
+    expect(acquisitionPosition(plain({ terms, payments: [] }), "2026-11-10")).toMatchObject({ settlement: "unpaid", supplierBalance: 2000 });
+    expect(acquisitionPosition(plain({ terms, payments: [] }), "2026-11-10").flags).not.toContain("supplier_balance_overdue");
+    expect(acquisitionPosition(plain({ terms, payments: [] }), "2026-12-02").flags).toContain("supplier_balance_overdue");
+    expect(acquisitionPosition(plain({ terms, payments: [p(2000)] }), "2026-12-02").flags).not.toContain("supplier_balance_overdue");
+  });
+  it("arrangement to be confirmed: nothing is assumed paid and the open item says so", () => {
+    const r = acquisitionPosition(plain({ terms: null, payments: [] }), "2026-11-10");
+    expect([r.arrangement, r.settlement, r.supplierBalance]).toEqual(["to_confirm", "unpaid", 2000]);
+    expect(r.flags).toContain("arrangement_not_confirmed");
+  });
+  it("'paid in full' with no payment recorded is flagged, not trusted", () => {
+    expect(acquisitionPosition(plain({ terms: { arrangement: "paid_in_full", balanceDueOn: null }, payments: [] }), "2026-11-10").flags).toContain("arrangement_says_paid_but_balance_open");
+  });
+  it("a FINANCED purchase never counts direct payments (no double counting) and keeps its instalment figures", () => {
+    const r = acquisitionPosition(acq({ payments: [p(1149)], terms: { arrangement: "paid_in_full", balanceDueOn: null } }), "2026-11-10");
+    expect([r.arrangement, r.paidTotal, r.outstandingLiability, r.supplierBalance]).toEqual(["financed", 287.25, 861.75, 0]);
+  });
+  it("report totals keep supplier balance and financing liability in separate columns per currency", () => {
+    const rep = financeReport([acq(), plain({ id: "a2", terms: { arrangement: "supplier_credit", balanceDueOn: "2026-12-01" }, payments: [p(500)] })]);
+    expect(rep.totalsByCurrency[0]).toMatchObject({ purchases: 3149, outstandingLiability: 861.75, supplierBalance: 1500, paid: 787.25, expenseRecognised: 0 });
+  });
+});
