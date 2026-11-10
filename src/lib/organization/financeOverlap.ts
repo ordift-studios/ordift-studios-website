@@ -46,11 +46,12 @@ export async function acquisitionOverlapForExpense(p: { entityId: string; receip
   const db = createAdminClient();
   const { data: acqs } = await db.from("entity_equipment_acquisitions").select("id, invoice_number, supplier_name, invoice_document_id, bank_evidence_document_id").eq("employing_entity_id", p.entityId).eq("status", "recorded");
   if (!acqs?.length) return null;                                         // no acquisitions (or the table is not there yet): nothing to overlap
-  const { data: obs } = await db.from("entity_financing_obligations").select("id, acquisition_id, confirmation_document_id").eq("employing_entity_id", p.entityId).neq("status", "void");
-  const obIds = (obs ?? []).map((o) => o.id as string);
+  const { data: allObs } = await db.from("entity_financing_obligations").select("id, acquisition_id, confirmation_document_id, status").eq("employing_entity_id", p.entityId);
+  const obs = (allObs ?? []).filter((o) => o.status !== "void");
+  const obIds = obs.map((o) => o.id as string);
   const { data: ins } = obIds.length ? await db.from("entity_financing_instalments").select("obligation_id, evidence_document_id, bank_evidence_document_id").in("obligation_id", obIds) : { data: [] as { obligation_id: string; evidence_document_id: string | null; bank_evidence_document_id: string | null }[] };
   const refs: AcquisitionRef[] = acqs.map((a) => {
-    const mine = (obs ?? []).filter((o) => o.acquisition_id === a.id);
+    const mine = obs.filter((o) => o.acquisition_id === a.id);
     const mineIds = new Set(mine.map((o) => o.id as string));
     const fin = [...mine.map((o) => o.confirmation_document_id as string | null), ...(ins ?? []).filter((i) => mineIds.has(i.obligation_id)).flatMap((i) => [i.evidence_document_id, i.bank_evidence_document_id])].filter((x): x is string => Boolean(x));
     return { invoiceNumber: a.invoice_number as string, supplier: a.supplier_name as string, invoiceDocumentId: (a.invoice_document_id as string | null) ?? null, statementDocumentId: (a.bank_evidence_document_id as string | null) ?? null, financingDocumentIds: fin };

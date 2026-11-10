@@ -163,3 +163,30 @@ describe("recordEntityReceipt: supplier invoices, purchase receipts and other fi
     expect(expenses().find((e) => e.receipt_number === "7929943008946018004112")).toMatchObject({ funding_source_status: "founder_personal", reimbursement_intent: "not_reimbursable", category: "government_fee", request_reference: "SR3032128" });
   });
 });
+
+describe("recordEntityReceipt: an invoice already recorded as an equipment acquisition cannot also become an expense", () => {
+  const acquisition = { id: "acq-1", employing_entity_id: Q, status: "recorded", invoice_number: "INV-1001", supplier_name: "Synthetic Supplier", invoice_document_id: "d-inv", bank_evidence_document_id: null };
+  const seed = () => { h.db = makeFakeDb({ employing_entity_documents: docs, entity_expenses: [], activity_log: [], entity_equipment_acquisitions: [acquisition], entity_financing_obligations: [{ id: "ob-1", acquisition_id: "acq-1", employing_entity_id: Q, status: "active", confirmation_document_id: "d-fin" }], entity_financing_instalments: [] }); };
+  const receipt = (over: object = {}) => permitReceipt({ receiptNumber: "OTHER-77", issuingAuthority: "Someone Else", sourceDocumentId: "d-pur", requestReference: null, category: "other", currency: "QAR", printedTotal: 10,
+    lines: [{ code: "L1", description: "Unrelated line", amount: 10 }], fundingSourceStatus: "to_confirm", fundingSourceNote: null, reimbursementIntent: "to_be_confirmed", paymentMethod: null, relatedReference: null, notes: null, ...over });
+  it("refuses the same invoice number and supplier (case and spaces ignored)", async () => {
+    seed();
+    expect(await recordEntityReceipt(receipt({ receiptNumber: " inv-1001 ", issuingAuthority: "SYNTHETIC SUPPLIER" }))).toMatchObject({ ok: false, error: expect.stringMatching(/already recorded as an equipment acquisition/) });
+    expect(expenses()).toHaveLength(0);
+  });
+  it("refuses a copy of the acquisition's invoice file (same bytes, another document row)", async () => {
+    seed();
+    expect(await recordEntityReceipt(receipt({ sourceDocumentId: "d-inv-asother" }))).toMatchObject({ ok: false, error: expect.stringMatching(/stored document/) });
+    expect(expenses()).toHaveLength(0);
+  });
+  it("refuses the financing confirmation document as expense evidence", async () => {
+    seed();
+    expect(await recordEntityReceipt(receipt({ sourceDocumentId: "d-fin" }))).toMatchObject({ ok: false });
+    expect(expenses()).toHaveLength(0);
+  });
+  it("still records an unrelated expense", async () => {
+    seed();
+    expect(await recordEntityReceipt(receipt())).toMatchObject({ ok: true, recorded: 1 });
+  });
+});
+
