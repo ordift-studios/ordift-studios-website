@@ -75,3 +75,21 @@ describe("booking notifications: only a confirmation sends them", () => {
     expect(sql).not.toMatch(/(insert into|update|delete from) public\.(payments|enquiries|client_quotations)/i);
   });
 });
+
+describe("final-cancellation money records never touch the ledger", () => {
+  const code2 = (f: string) => read(f).split("\n").filter((l) => !l.trim().startsWith("//")).join("\n");
+  it("the service reads only its own table and profiles, and writes only through the three database functions", () => {
+    const c = code2("src/lib/bookings/financialDecisions.ts"); expect(/from\("(payments|enquiries|client_quotations|payment_obligations)"\)/.test(c)).toBe(false);
+    expect((c.match(/\.rpc\("/g) ?? []).length).toBe(3); expect(/\.(insert|update|delete|upsert)\(/.test(c)).toBe(false);
+  });
+  it("the proposal changes no payment, enquiry, quotation or booking row, and grants no direct write", () => {
+    const sql = read("supabase/proposals/PROPOSAL_cancellation_financial_decisions.sql");
+    expect(/(insert into|update|delete from) public\.(payments|enquiries|client_quotations|enquiry_booking_confirmations|payment_obligations)\b/i.test(sql)).toBe(false);
+    expect(sql).not.toMatch(/grant [^;]*(insert|update|delete)[^;]*on public\.cancellation_financial_decisions/i);
+    for (const code of ["financial_separation_of_duties", "financial_decisions_are_permanent", "financial_request_is_fixed", "financial_decision_is_final", "financial_execution_is_final", "financial_over_cap"]) expect(sql).toContain(code);
+  });
+  it("only the booking actions, the panel and the card import the service", () => {
+    const importers = src.filter(notTest).filter((f) => /from\s+["'](@\/lib\/bookings\/financialDecisions|\.\/financialDecisions)["']/.test(read(f))).sort();
+    expect(importers).toEqual(["src/app/admin/enquiries/[id]/CancellationMoneyCard.tsx", "src/app/admin/enquiries/[id]/bookingActions.ts", "src/lib/bookings/panel.ts"].sort());
+  });
+});

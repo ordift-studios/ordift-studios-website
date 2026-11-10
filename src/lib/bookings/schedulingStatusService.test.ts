@@ -1,10 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 let result: { data: unknown; error: unknown } | "throw" = { data: null, error: null };
+let batch: unknown[] | null = [];
+const setBatch = (b: unknown[] | null) => { batch = b; };
 vi.mock("@/lib/supabase/admin", () => ({
-  createAdminClient: () => ({ from: () => ({ select: () => ({ eq: () => ({ order: () => ({ limit: () => ({ maybeSingle: async () => { if (result === "throw") throw new Error("boom"); return result; } }) }) }) }) }) }),
+  createAdminClient: () => ({ from: () => ({ select: () => ({ in: () => ({ order: async () => (batch === null ? { data: null, error: { message: "boom" } } : { data: batch, error: null }) }), eq: () => ({ order: () => ({ limit: () => ({ maybeSingle: async () => { if (result === "throw") throw new Error("boom"); return result; } }) }) }) }) }) }),
 }));
-import { loadSchedulingStatus, withSchedulingLabels } from "./schedulingStatusService";
+import { loadSchedulingStatus, loadSchedulingStatuses, matchesSchedulingFilter, schedulingFilterOf, withSchedulingLabels } from "./schedulingStatusService";
 
 const ON = { BOOKING_CONFIRMATION_ENABLED: "true" }, OFF = {};
 const paid = { id: "e1", crmStage: "quotation_sent", paymentStatus: "Paid", amountPaid: 700 };
@@ -43,4 +45,23 @@ describe("withSchedulingLabels", () => {
     const out = await withSchedulingLabels([{ id: "e1", statusLabel: "Booked" }], [{ ...paid, crmStage: "booked" }], ON);
     expect(out[0].statusLabel).toBe("Scheduling pending");
   });
+});
+
+describe("loadSchedulingStatuses / the Admin filter", () => {
+  const rows = [
+    { id: "a", crmStage: "quotation_sent", paymentStatus: "Paid", amountPaid: 500 },        // paid, no booking          -> pending
+    { id: "b", crmStage: "quotation_sent", paymentStatus: "Pending", amountPaid: 100 },      // part paid, no booking     -> pending (part)
+    { id: "c", crmStage: "quotation_sent", paymentStatus: "Paid", amountPaid: 500 },        // latest booking cancelled  -> cancelled
+    { id: "d", crmStage: "booked", paymentStatus: "Paid", amountPaid: 500 },                 // live booking              -> nothing
+    { id: "e", crmStage: "quotation_sent", paymentStatus: "Pending", amountPaid: 0 },        // nothing paid              -> nothing
+  ];
+  it("uses payment status and the latest booking record only (no stored status); the filter chips match the right rows", async () => {
+    setBatch([{ enquiry_id: "c", version: 3, kind: "cancelled", cancellation_outcome: "final" }, { enquiry_id: "c", version: 2, kind: "changed" }, { enquiry_id: "d", version: 1, kind: "confirmed" }]);
+    const m = await loadSchedulingStatuses(rows, ON);
+    expect(m.get("a")?.code).toBe("paid_scheduling_pending"); expect(m.get("b")?.code).toBe("part_paid_scheduling_pending"); expect(m.get("c")?.code).toBe("cancelled_final"); expect(m.get("d")).toBeNull(); expect(m.get("e")).toBeNull();
+    expect(rows.filter((r) => matchesSchedulingFilter(m.get(r.id), "pending")).map((r) => r.id)).toEqual(["a", "b"]); expect(rows.filter((r) => matchesSchedulingFilter(m.get(r.id), "cancelled")).map((r) => r.id)).toEqual(["c"]);
+  });
+  it("nothing is computed while the switch is off, and an unreadable booking table shows no status rather than a wrong one", async () => { expect((await loadSchedulingStatuses(rows, {})).size).toBe(0); setBatch(null); expect((await loadSchedulingStatuses(rows, ON)).size).toBe(0); });
+  it("the opt-out mode (switch off, payments do not book) needs no booking table and still lists paid, unbooked projects", async () => { const m = await loadSchedulingStatuses(rows, { PAYMENT_AUTO_BOOKS_ENQUIRY: "false" }); expect(m.get("a")?.code).toBe("paid_scheduling_pending"); expect(m.get("d")).toBeNull(); });
+  it("filter parsing accepts only the two known values", () => { expect(schedulingFilterOf("pending")).toBe("pending"); expect(schedulingFilterOf("cancelled")).toBe("cancelled"); expect(schedulingFilterOf("x")).toBeNull(); expect(schedulingFilterOf(undefined)).toBeNull(); });
 });

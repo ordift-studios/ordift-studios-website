@@ -11,13 +11,13 @@ import { projectPanel, type PanelFull } from "@/lib/bookings/rules";
 const full: PanelFull = { blockers: ["Full payment (USD 500.00) must be received before confirmation — USD 0.00 received so far."], operationalBlockers: ["The payment the quotation requires has not been verified yet."],
   conflicts: [{ key: "leave:1", kind: "leave", firm: true, overridable: true, label: "approved leave", from: "2026-12-01", to: "2026-12-02" }], payment: { condition: "full", amountDueUsd: 500, verifiedPaidUsd: 0, outstandingUsd: 500 }, agreement: { required: false, reasons: [] }, confirmation: null };
 const seg = { startsAt: "2026-12-01T06:00:00.000Z", endsAt: "2026-12-01T10:00:00.000Z", timezone: "Asia/Qatar", kind: "on_site" as const, location: "Doha studio", platform: null, note: null };
-const current = { id: "c1", version: 1, kind: "confirmed" as const, assignedProfileId: "p1", assignedLabel: "M-0007 — Sara", confirmedAt: "2026-11-08T10:00:00Z", reason: null, basis: "internal basis note", segments: [seg], settingsVersion: 1,
+const current = { id: "c1", version: 1, kind: "confirmed" as const, cancellationOutcome: null, assignedProfileId: "p1", assignedLabel: "M-0007 — Sara", confirmedAt: "2026-11-08T10:00:00Z", reason: null, basis: "internal basis note", segments: [seg], settingsVersion: 1,
   payment: { condition: "full" as const, depositPercent: null, requiredUsd: 500, verifiedPaidUsd: 500, outstandingUsd: 0 }, agreementRequired: false, agreementReasons: [], conflictsReviewed: 0, clarification: null };
 const data = (roles: string[], over: Partial<BookingPanelData> = {}): BookingPanelData => ({
   level: roles.includes("super_admin") ? "super_admin" : roles.includes("admin") ? "admin" : "staff", enquiry: { id: "e1", reference: "ENQ-2026-000042" },
   quotation: { id: "q1", reference: "Q-9", currency: "QAR", total: 1800, paymentCondition: "full", depositPercent: null, termsText: "Full payment is required in advance." },
   current, assessment: projectPanel(full, { id: roles.includes("staff") ? "p1" : "u", roles }, "p1"), settings: { version: 1, status: "provisional", thresholds: { QAR: 3000 }, alwaysCategories: [], escalators: ["minors", "multi_day_assignment"] },
-  assignable: [{ profileId: "p1", label: "M-0007 — Sara" }], canConfirm: roles.includes("super_admin"), agreementReference: null, entityBlockers: [], notifications: [], ...over });
+  assignable: [{ profileId: "p1", label: "M-0007 — Sara" }], canConfirm: roles.includes("super_admin"), agreementReference: null, entityBlockers: [], notifications: [], viewerId: "u", financial: [], money: null, ...over });
 const html = (d: BookingPanelData) => renderToStaticMarkup(createElement(BookingPanel, { data: d }));
 
 describe("Booking panel", () => {

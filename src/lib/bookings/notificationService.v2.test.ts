@@ -50,7 +50,7 @@ function seed(over: { owner?: string | null; email?: string | null; staff?: bool
       { id: "c2", enquiry_id: "e1", version: 2, kind: "changed", quotation_id: "q1", assigned_profile_id: "p2", confirmed_by: "sa", supersedes_id: "c1", agreement_required: false, agreement_id: null, payment_condition: "full", verified_paid_usd: 400, outstanding_usd: 0, basis: null, reason: null },
     ],
     enquiry_booking_segments: [seg("c1", "15"), seg("c2", "18", 9)],
-    enquiries: [{ id: "e1", reference_number: "ENQ-JRN-GHP", email: over.email === undefined ? "typed@example.test" : over.email, full_name: "Ama Mensah", service: "photography", user_id: over.owner === undefined ? null : over.owner, amount_paid: 400, created_by: over.staff ? "staff1" : null }],
+    enquiries: [{ id: "e1", reference_number: "ENQ-JRN-GHP", email: over.email === undefined ? "typed@example.test" : over.email, full_name: "Ama Mensah", service: "photography", user_id: over.owner === undefined ? "owner1" : over.owner, amount_paid: 400, created_by: over.staff ? "staff1" : null }],
     client_quotations: [{ id: "q1", quotation_reference: "ORD-QUO-JRN-GHP" }], agreements: [],
     profiles: [{ id: "p1", full_name: "Old Person", member_number: "INT0007", access_status: "active" }, { id: "p2", full_name: "New Person", member_number: "INT0008", access_status: "active" }, { id: "sa", full_name: "Lab super_admin", member_number: "INT0001", access_status: "active" }],
     roles: [{ id: "r-staff", slug: "staff" }, { id: "r-admin", slug: "admin" }, { id: "r-sa", slug: "super_admin" }], user_roles: [{ user_id: "p1", role_id: "r-staff" }, { user_id: "p2", role_id: "r-staff" }],
@@ -65,7 +65,7 @@ beforeEach(() => { seed(); send.mockReset(); send.mockResolvedValue(okLogged); r
 describe("a reschedule (changed version) notifies each audience once, with the CURRENT booking", () => {
   it("client gets the new date and what they were last told; the assigned person the new details; the released person their release; the team the operational or full notice by role", async () => {
     await dispatchBookingNotifications("c2", ON);
-    expect(sentTo().sort()).toEqual(["adm@x.test", "new@studio.test", "old@studio.test", "sa@x.test", "typed@example.test"].sort());
+    expect(sentTo().sort()).toEqual(["account@example.test", "adm@x.test", "new@studio.test", "old@studio.test", "sa@x.test"].sort());
     const client = String(j("j2c").body_text); expect(client).toContain("Now confirmed: Friday, 18 December 2026, 09:00–10:00"); expect(client).toContain("Previously: Tuesday, 15 December 2026, 10:00–11:00"); expect(j("j2c")).toMatchObject({ status: "sent", provider_result: "logged" });
     expect(String(j("j2a").body_text)).toContain("Now:"); expect(String(j("j2r").body_text)).toMatch(/taken off/); expect(String(j("j2r").body_text)).toContain("Was: Tuesday, 15 December");
     const byTo = (to: string) => String((send.mock.calls.find((c) => (c[0] as { email: { to: string } }).email.to === to)![0] as { email: { text: string } }).email.text);
@@ -114,7 +114,7 @@ describe("deferral: default is to notify; holding back needs a recorded reason a
   });
   it("Send now (explicit) sends a deferred notice once; the manual record and the e-mail cannot both happen", async () => {
     await deferClientNotice({ actorUserId: "sa", confirmationId: "c2", reason: "phoning the client about the new date first" }, ON);
-    const r = await retryBookingNotification({ actorUserId: "sa", confirmationId: "c2", audience: "client" }, ON); expect(r).toEqual({ ok: true, status: "sent" }); expect(sentTo()).toEqual(["typed@example.test"]);
+    const r = await retryBookingNotification({ actorUserId: "sa", confirmationId: "c2", audience: "client" }, ON); expect(r).toEqual({ ok: true, status: "sent" }); expect(sentTo()).toEqual(["account@example.test"]);
     const again = await recordManualClientNotice({ actorUserId: "sa", confirmationId: "c2", channel: "whatsapp" }, ON); expect(again.ok).toBe(false);
   });
   it("a deferral that cannot be recorded reports why (the notice is then sent, the safe direction)", async () => { const r = await deferClientNotice({ actorUserId: "sa", confirmationId: "c1", reason: "holding a confirmation back is not allowed" }, ON); expect(r.ok).toBe(false); });
@@ -131,15 +131,24 @@ describe("where the client notice may go", () => {
     seed({ owner: "owner1" }); users.owner1 = "fail"; send.mockClear(); await dispatchBookingNotifications("c2", ON); expect(j("j2c")).toMatchObject({ status: "skipped", provider_result: "account_lookup_failed" }); expect(sentTo()).not.toContain("typed@example.test");
   });
   it("a staff-recorded enquiry with no verified owner gets NO automatic e-mail (suppressed), and the message is kept so staff can deliver it", async () => {
-    suppressed.mockResolvedValue(true); await dispatchBookingNotifications("c2", ON);
+    seed({ owner: null }); suppressed.mockResolvedValue(true); await dispatchBookingNotifications("c2", ON);
     expect(j("j2c")).toMatchObject({ status: "skipped", provider_result: "suppressed" }); expect(String(j("j2c").body_text)).toContain("Booking reference: ENQ-JRN-GHP".replace("Booking reference: ", "")); expect(sentTo()).not.toContain("typed@example.test");
   });
-  it("no e-mail on file, or the reserved placeholder: skipped", async () => { for (const email of [null, "enq-jrn-ghp@no-email.invalid"]) { seed({ email }); await dispatchBookingNotifications("c2", ON); expect(j("j2c")).toMatchObject({ status: "skipped", provider_result: "no_email" }); } });
+  it("no e-mail on file, or the reserved placeholder: skipped", async () => { for (const email of [null, "enq-jrn-ghp@no-email.invalid"]) { seed({ email, owner: null }); await dispatchBookingNotifications("c2", ON); expect(j("j2c")).toMatchObject({ status: "skipped", provider_result: "no_email" }); } });
+});
+
+describe("a WEBSITE-FORM enquiry with no verified owner", () => {
+  it("gets no booking details by e-mail: the typed address proves nothing, so the notice is skipped as unverified and kept for staff to deliver (acknowledgements and quotation e-mails are separate and untouched)", async () => {
+    seed({ owner: null }); suppressed.mockResolvedValue(false); await dispatchBookingNotifications("c2", ON);
+    expect(j("j2c")).toMatchObject({ status: "skipped", provider_result: "unverified_address" }); expect(sentTo()).not.toContain("typed@example.test"); expect(String(j("j2c").body_text)).toContain("Now confirmed:");
+    expect(j("j2i").status).toBe("sent");                                                                       // the team and the people assigned are still told
+  });
+  it("once the client holds a verified portal account on the project, notices flow to the confirmed account address", async () => { seed({ owner: "owner1" }); send.mockClear(); await dispatchBookingNotifications("c2", ON); expect(j("j2c").status).toBe("sent"); expect(sentTo()).toContain("account@example.test"); expect(sentTo()).not.toContain("typed@example.test"); });
 });
 
 describe("a staff-recorded enquiry", () => {
   it("is never auto-mailed on the typed address even when its e-mail suppression setting allows lifecycle e-mails; the claimed owner's verified account address is used instead", async () => {
-    seed({ staff: true }); suppressed.mockResolvedValue(false); await dispatchBookingNotifications("c2", ON);
+    seed({ staff: true, owner: null }); suppressed.mockResolvedValue(false); await dispatchBookingNotifications("c2", ON);
     expect(j("j2c")).toMatchObject({ status: "skipped", provider_result: "suppressed" }); expect(sentTo()).not.toContain("typed@example.test");
     seed({ staff: true, owner: "owner1" }); send.mockClear(); await dispatchBookingNotifications("c2", ON); expect(j("j2c").status).toBe("sent"); expect(sentTo()).toContain("account@example.test"); expect(sentTo()).not.toContain("typed@example.test");
   });
@@ -147,7 +156,7 @@ describe("a staff-recorded enquiry", () => {
 
 describe("recording that staff told the client (the workflow when e-mail is unavailable)", () => {
   it("records the channel and a note, keeps the CURRENT message, makes the outstanding action disappear, and is audited; it cannot be done twice", async () => {
-    suppressed.mockResolvedValue(true); await dispatchBookingNotifications("c2", ON); expect(j("j2c").status).toBe("skipped");
+    seed({ owner: null }); suppressed.mockResolvedValue(true); await dispatchBookingNotifications("c2", ON); expect(j("j2c").status).toBe("skipped");
     const r = await recordManualClientNotice({ actorUserId: "adm", confirmationId: "c2", channel: "whatsapp", note: "Read it out; client agreed the new time" }, ON); expect(r).toEqual({ ok: true });
     expect(j("j2c")).toMatchObject({ status: "sent", provider_result: "manual_whatsapp" }); expect((j("j2c").deliveries as { mode: string; channel: string; by: string }[])[0]).toMatchObject({ mode: "manual", channel: "whatsapp", by: "adm" });
     expect(String(j("j2c").body_text)).toContain("Now confirmed:"); expect(audit.mock.calls.some((c) => (c[0] as { action: string }).action === "booking.client_notified_manually")).toBe(true);

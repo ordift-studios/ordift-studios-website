@@ -3,6 +3,7 @@ import { isoToZonedLocal } from "@/lib/bookings/form";
 import BookingConfirmForm, { type SegmentDraft } from "./BookingConfirmForm";
 import BookingCancelForm from "./BookingCancelForm";
 import BookingNotificationsCard from "./BookingNotificationsCard";
+import CancellationMoneyCard from "./CancellationMoneyCard";
 
 // The "Booking" panel on the enquiry page. The data arrives already PROJECTED for the viewer (src/lib/bookings/panel.ts + rules.projectPanel):
 //   Super Admin: everything, plus the confirm / change / cancel controls.   Admin: operational blockers and the schedule, never amounts or the confirmation record.
@@ -55,6 +56,8 @@ export default function BookingPanel({ data, earlierCheck = null }: { data: Book
       <div><p className="font-sans text-caption uppercase tracking-wide text-ordift-ink-muted mb-1">Scheduling conflicts</p><Conflicts list={a.conflicts ?? []} /></div>
 
       {data.level === "super_admin" || data.level === "admin" ? <BookingNotificationsCard enquiryId={data.enquiry.id} jobs={data.notifications} currentConfirmationId={data.current?.id ?? null} level={data.level} /> : null}
+
+      {data.level === "super_admin" || data.level === "admin" ? <CancellationMoneyCard enquiryId={data.enquiry.id} rows={data.financial} money={data.money} level={data.level} viewerId={data.viewerId} finalCancelled={data.current?.kind === "cancelled" && data.current.cancellationOutcome === "final"} /> : null}
 
       {data.level === "admin" ? <p className="font-sans text-caption text-ordift-ink-muted">Only a Super Admin can confirm, change or cancel a booking.</p> : null}
 

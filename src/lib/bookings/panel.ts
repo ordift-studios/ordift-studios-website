@@ -4,6 +4,7 @@ import { getContractingEntityStanding } from "@/lib/organization/entityRegistrat
 import { listOverridePool } from "@/lib/crewSupport/candidates";
 import type { PaymentCondition } from "@/lib/crewSupport/paymentCondition";
 import { listBookingNotifications, type JobRow } from "./notificationService";
+import { listFinancialDecisions, type DecisionRow } from "./financialDecisions";
 import { bookingFlagOn, classifyPaymentTerms, confirmationBlockers, evaluateAgreement, projectPanel, type BookingSettings, type Conflict, type PanelFull, type Resolution, type Segment, type TermsCheck, type Viewer } from "./rules";
 import { loadBookingSettings, previewConflicts } from "./service";
 
@@ -63,7 +64,7 @@ export async function loadAcceptedContext(enquiryId: string): Promise<AcceptedCo
 }
 
 // ---- the latest confirmation record (append-only: a change or cancellation is a newer row)
-export type CurrentBooking = { id: string; version: number; kind: "confirmed" | "changed" | "cancelled"; assignedProfileId: string | null; assignedLabel: string | null; confirmedAt: string; reason: string | null; basis: string | null; segments: Segment[]; settingsVersion: number | null;
+export type CurrentBooking = { id: string; version: number; kind: "confirmed" | "changed" | "cancelled"; cancellationOutcome: "rescheduling_pending" | "final" | null; assignedProfileId: string | null; assignedLabel: string | null; confirmedAt: string; reason: string | null; basis: string | null; segments: Segment[]; settingsVersion: number | null;
   payment: { condition: PaymentCondition | null; depositPercent: number | null; requiredUsd: number | null; verifiedPaidUsd: number | null; outstandingUsd: number | null }; agreementRequired: boolean; agreementReasons: string[]; conflictsReviewed: number; clarification: { kind: string; evidence: string } | null };
 export async function loadCurrentBooking(enquiryId: string): Promise<CurrentBooking | null> {
   const db = createAdminClient();
@@ -76,7 +77,7 @@ export async function loadCurrentBooking(enquiryId: string): Promise<CurrentBook
   const p = person as { full_name: string | null; member_number: string | null } | null;
   const review = (c.conflict_review ?? {}) as { conflicts?: unknown[] };
   return {
-    id: c.id as string, version: c.version as number, kind: c.kind as CurrentBooking["kind"], assignedProfileId: (c.assigned_profile_id as string | null) ?? null,
+    id: c.id as string, version: c.version as number, kind: c.kind as CurrentBooking["kind"], cancellationOutcome: ((c as { cancellation_outcome?: string | null }).cancellation_outcome ?? null) as CurrentBooking["cancellationOutcome"], assignedProfileId: (c.assigned_profile_id as string | null) ?? null,
     assignedLabel: p ? (p.member_number ? `${p.member_number} — ${p.full_name ?? ""}`.trim() : p.full_name ?? "Unnamed profile") : null,        // member number first (Audit Identity Standard)
     confirmedAt: c.confirmed_at as string, reason: (c.reason as string | null) ?? null, basis: (c.basis as string | null) ?? null, settingsVersion: (c.settings_version as number | null) ?? null,
     segments: (segs ?? []).map((s) => ({ startsAt: s.starts_at as string, endsAt: s.ends_at as string, timezone: s.timezone as string, kind: s.kind as Segment["kind"], location: s.location as string | null, platform: s.platform as string | null, note: s.note as string | null })),
@@ -98,6 +99,7 @@ export type BookingPanelData = {
   level: "super_admin" | "admin" | "staff"; enquiry: { id: string; reference: string }; quotation?: AcceptedContext["quotation"]; notReady?: string;
   current: CurrentBooking | null; assessment: ReturnType<typeof projectPanel>; settings: BookingSettings | null; assignable: { profileId: string; label: string }[]; canConfirm: boolean;
   agreementReference: string | null; entityBlockers: string[]; notifications: JobRow[];
+  viewerId: string; financial: DecisionRow[]; money: { paidUsd: number; outstandingUsd: number } | null;     // the final-cancellation money records (Super Admin and Admin); the balances only for a Super Admin
 };
 export async function loadBookingPanel(enquiryId: string, env: Record<string, string | undefined> = process.env): Promise<BookingPanelData | null> {
   if (!bookingFlagOn(env)) return null;
@@ -116,10 +118,11 @@ export async function loadBookingPanel(enquiryId: string, env: Record<string, st
   if (!projected) return null;                                                                       // staff who are not the assigned person see nothing
   const assignable = isSuper ? (await listOverridePool([])).map((p) => ({ profileId: p.profileId, label: p.memberNumber ? `${p.memberNumber} — ${p.name}` : p.name })) : [];
   return { level: projected.level, enquiry: { id: ctx.enquiry.id, reference: ctx.enquiry.reference }, quotation: isSuper ? ctx.quotation : undefined, current: projectBooking(current, projected.level), assessment: projected, settings: isSuper ? settings : null, assignable, canConfirm: isSuper && Boolean(settings),
-    agreementReference: ctx.executedAgreement?.reference ?? null, entityBlockers: isSuper || isAdmin ? ctx.entityBlockers : [], notifications: isSuper ? await listBookingNotifications(ctx.enquiry.id) : isAdmin ? await listBookingNotifications(ctx.enquiry.id, { clientOnly: true }) : [] };
+    agreementReference: ctx.executedAgreement?.reference ?? null, entityBlockers: isSuper || isAdmin ? ctx.entityBlockers : [], notifications: isSuper ? await listBookingNotifications(ctx.enquiry.id) : isAdmin ? await listBookingNotifications(ctx.enquiry.id, { clientOnly: true }) : [],
+    viewerId: user!.id, financial: isSuper || isAdmin ? await listFinancialDecisions(ctx.enquiry.id) : [], money: isSuper ? { paidUsd: ctx.enquiry.verifiedPaidUsd ?? 0, outstandingUsd: Math.max((ctx.enquiry.amountDueUsd ?? 0) - (ctx.enquiry.verifiedPaidUsd ?? 0), 0) } : null };
 }
 function emptyPanel(enquiryId: string, v: Viewer, notReady: string): BookingPanelData {
-  return { level: v.roles.includes("super_admin") ? "super_admin" : "admin", enquiry: { id: enquiryId, reference: "" }, notReady, current: null, assessment: null, settings: null, assignable: [], canConfirm: false, agreementReference: null, entityBlockers: [], notifications: [] };
+  return { level: v.roles.includes("super_admin") ? "super_admin" : "admin", enquiry: { id: enquiryId, reference: "" }, notReady, current: null, assessment: null, settings: null, assignable: [], canConfirm: false, agreementReference: null, entityBlockers: [], notifications: [], viewerId: "", financial: [], money: null };
 }
 
 // Settings history for the versioned-settings screen (Super Admin only; the caller checks).
