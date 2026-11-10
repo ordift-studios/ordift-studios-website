@@ -4,7 +4,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { createElement } from "react";
 
 vi.mock("../actions", () => ({ viewEntityDocumentAction: vi.fn() }));
-vi.mock("./actions", () => ({ markInstalmentPaidAction: vi.fn(), recordEquipmentAction: vi.fn(), recordPaymentAction: vi.fn(), setTermsAction: vi.fn(), voidPaymentAction: vi.fn() }));
+vi.mock("./actions", () => ({ markInstalmentPaidAction: vi.fn(), recordEquipmentAction: vi.fn(), recordPaymentAction: vi.fn(), setTermsAction: vi.fn(), voidPaymentAction: vi.fn(), linkAssetAction: vi.fn(), recordOwnershipAction: vi.fn(), voidOwnershipAction: vi.fn() }));
 import { EquipmentPanel } from "./EquipmentPanel";
 import { buildEquipmentViews, type DocRef } from "@/lib/organization/equipmentPanelView";
 
@@ -104,5 +104,26 @@ describe("every payment arrangement renders with the four figures kept apart", (
   it("is usable on small screens: tables scroll inside their own box and the figure grid collapses to one column", () => {
     expect(manyHtml).toMatch(/overflow-x-auto/); expect(manyHtml).toMatch(/grid-cols-1 sm:grid-cols-2 xl:grid-cols-4/);
   });
+});
+
+describe("registered assets and legal owner", () => {
+  const assets = [
+    { id: "as-1", identifier: "SER-1", description: "Synthetic pen display", category: "Graphics Pad", status: "in_stock", ownership: { id: "o1", entityId: "e1", purchaser: "The Founder, as printed", purpose: "Photography retouching and graphic design", incidentalPersonalUse: true, personalUseNote: "Occasional personal use by the Founder", basis: "Founder statement; documents pending", reviewStatus: "pending_professional_review" }, linkedAcquisitionId: null },
+    { id: "as-2", identifier: "SER-2", description: "Synthetic second item", category: null, status: "in_stock", ownership: null, linkedAcquisitionId: null },
+    { id: "as-3", identifier: "SER-3", description: "Synthetic Ghana item", category: null, status: "in_stock", ownership: { id: "o3", entityId: "other", purchaser: null, purpose: "Other entity purpose here", incidentalPersonalUse: false, personalUseNote: null, basis: "Other entity basis here", reviewStatus: "pending_professional_review" }, linkedAcquisitionId: null },
+  ];
+  const html2 = renderToStaticMarkup(createElement(EquipmentPanel, { entityId: "e1", views: many.slice(0, 1), invoiceDocs: [docs[0]], financialDocs: docs, assets: assets as never }));
+  it("shows each registered asset, keeps purchaser / owner / purpose / personal use as separate lines, and flags personal use for the accountant", () => {
+    expect(html2).toMatch(/Registered assets and legal owner/); expect(html2).toMatch(/Owner: this legal entity — pending professional review/); expect(html2).toMatch(/Purchaser as stated: The Founder, as printed/);
+    expect(html2).toMatch(/Business purpose: Photography retouching/); expect(html2).toMatch(/Incidental personal use flagged for accountant review/);
+  });
+  it("an asset owned by ANOTHER legal entity shows no details and no actions here; an asset with no owner offers 'Record the legal owner'", () => {
+    expect(html2).toMatch(/Owner: another legal entity/); expect(html2).not.toMatch(/Other entity purpose here/); expect(html2).toMatch(/Record the legal owner/);
+  });
+  it("an acquisition can be linked only to an asset this entity owns; the form says no asset is created or edited", () => {
+    expect(html2).toMatch(/Link to an existing registered asset/); expect(html2).toMatch(/Synthetic pen display — SER-1/); expect(html2).not.toMatch(/Synthetic Ghana item — SER-3/);
+    expect(html2).toMatch(/No new asset is created and the asset record is not edited/);
+  });
+  it("without 0188 (no assets) the panel renders exactly as before", () => { expect(renderToStaticMarkup(createElement(EquipmentPanel, { entityId: "e1", views: [], invoiceDocs: [], financialDocs: [] }))).toMatch(/No registered assets are available/); });
 });
 

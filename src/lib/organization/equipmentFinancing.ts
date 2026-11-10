@@ -152,7 +152,7 @@ export async function loadEquipmentPanelData(entityId: string, actorUserId: stri
   if (!(await isSuperAdminId(actorUserId))) return empty;
   const db = createAdminClient();
   const [acq, ob, docs] = await Promise.all([
-    db.from("entity_equipment_acquisitions").select("id, supplier_name, supplier_branch, invoice_number, purchase_date, item_description, quantity, currency, list_price_total, discount_total, net_amount, customer_as_shown, invoice_document_id, funding_source_status, funding_source_note, accounting_classification, bank_evidence_document_id, created_at").eq("employing_entity_id", entityId).eq("status", "recorded").order("purchase_date", { ascending: false }),
+    db.from("entity_equipment_acquisitions").select("id, supplier_name, supplier_branch, invoice_number, purchase_date, item_description, quantity, currency, list_price_total, discount_total, net_amount, customer_as_shown, invoice_document_id, funding_source_status, funding_source_note, accounting_classification, bank_evidence_document_id, created_at, company_asset_id").eq("employing_entity_id", entityId).eq("status", "recorded").order("purchase_date", { ascending: false }),
     db.from("entity_financing_obligations").select("id, acquisition_id, provider, provider_reference, instalment_count, financed_amount, plan_started_on, confirmation_document_id, schedule_basis, status").eq("employing_entity_id", entityId).neq("status", "void"),
     db.from("employing_entity_documents").select("id, document_type, original_filename, file_sha256").eq("employing_entity_id", entityId).in("document_type", FINANCIAL_TYPES).order("uploaded_at", { ascending: false }),
   ]);

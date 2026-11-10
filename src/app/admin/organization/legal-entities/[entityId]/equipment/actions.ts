@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { getCurrentUser, isSuperAdmin } from "@/lib/portal/roles";
 import { markInstalmentPaid, recordAcquisitionBundle, recordAcquisitionPayment, recordEquipmentAcquisition, setAcquisitionTerms, voidAcquisitionPayment } from "@/lib/organization/equipmentFinancing";
+import { linkAcquisitionToAsset, recordAssetOwnership, voidAssetOwnership } from "@/lib/organization/assetReconciliation";
 import { parseAcquisitionForm, parseMarkPaidForm, parsePaymentForm, parseTermsForm, parseVoidPaymentForm } from "@/lib/organization/equipmentForms";
 
 // Equipment & Financing server actions. Super Admin only, re-checked on EVERY call (and again inside the library and the database function).
@@ -75,3 +76,39 @@ export async function voidPaymentAction(_prev: ActionState, formData: FormData):
   refresh(p.entityId);
   return { ok: true };
 }
+
+// ---- asset ownership and the acquisition ↔ asset link (migration 0188). The asset register is never edited; each action is one audited database call.
+const field = (f: FormData, k: string) => String(f.get(k) ?? "").trim();
+export async function recordOwnershipAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  const actor = await requireSuperAdminActor();
+  if ("error" in actor) return { ok: false, error: actor.error };
+  const entityId = field(formData, "entityId");
+  if (!entityId) return { ok: false, error: "Invalid request." };
+  const r = await recordAssetOwnership({ actorUserId: actor.id, ownership: { assetId: field(formData, "assetId"), entityId, purchaserAsStated: field(formData, "purchaserAsStated") || null, businessPurpose: field(formData, "businessPurpose"),
+    incidentalPersonalUse: field(formData, "incidentalPersonalUse") === "yes", personalUseNote: field(formData, "personalUseNote") || null, basisStatement: field(formData, "basisStatement"), evidenceDocumentId: field(formData, "evidenceDocumentId") || null } });
+  if (!r.ok) return { ok: false, error: r.error };
+  refresh(entityId);
+  return { ok: true };
+}
+export async function voidOwnershipAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  const actor = await requireSuperAdminActor();
+  if ("error" in actor) return { ok: false, error: actor.error };
+  const entityId = field(formData, "entityId");
+  if (!entityId || !field(formData, "ownershipId")) return { ok: false, error: "Invalid request." };
+  const r = await voidAssetOwnership({ actorUserId: actor.id, entityId, ownershipId: field(formData, "ownershipId"), reason: field(formData, "reason") });
+  if (!r.ok) return { ok: false, error: r.error };
+  refresh(entityId);
+  return { ok: true };
+}
+export async function linkAssetAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  const actor = await requireSuperAdminActor();
+  if ("error" in actor) return { ok: false, error: actor.error };
+  const entityId = field(formData, "entityId");
+  if (!entityId || !field(formData, "acquisitionId") || !field(formData, "assetId")) return { ok: false, error: "Choose the registered asset to link." };
+  if (field(formData, "confirmLink") !== "yes") return { ok: false, error: "Tick the box to confirm this links the purchase to the EXISTING asset (no new asset is created and the asset record is not edited)." };
+  const r = await linkAcquisitionToAsset({ actorUserId: actor.id, entityId, acquisitionId: field(formData, "acquisitionId"), assetId: field(formData, "assetId") });
+  if (!r.ok) return { ok: false, error: r.error };
+  refresh(entityId);
+  return { ok: true };
+}
+

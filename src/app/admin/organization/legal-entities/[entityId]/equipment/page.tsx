@@ -4,6 +4,7 @@ import Link from "next/link";
 import { getCurrentUser, isSuperAdmin } from "@/lib/portal/roles";
 import { getEmployingEntityById } from "@/lib/organization/legalEntities";
 import { loadEquipmentPanelData } from "@/lib/organization/equipmentFinancing";
+import { loadAssetRegister } from "@/lib/organization/assetReconciliation";
 import { EquipmentPanel } from "./EquipmentPanel";
 
 export const metadata: Metadata = { title: "Equipment & Financing — Ordift Studios Admin", robots: { index: false, follow: false } };
@@ -15,7 +16,7 @@ export default async function EquipmentFinancingPage({ params }: { params: Promi
   if (!user || !isSuperAdmin(user)) redirect("/admin/organization");
   const entity = await getEmployingEntityById(entityId);
   if (!entity) notFound();
-  const data = await loadEquipmentPanelData(entityId, user.id, entity.legalName ?? entity.name);
+  const [data, assets] = await Promise.all([loadEquipmentPanelData(entityId, user.id, entity.legalName ?? entity.name), loadAssetRegister(user.id)]);
   return (
     <div className="space-y-8">
       <div>
@@ -27,7 +28,7 @@ export default async function EquipmentFinancingPage({ params }: { params: Promi
           The accounting treatment stays pending professional advice. Nothing here creates an expense, a journal entry or a bank movement.
         </p>
       </div>
-      <EquipmentPanel entityId={entityId} views={data.views} invoiceDocs={data.invoiceDocs} financialDocs={data.financialDocs} />
+      <EquipmentPanel entityId={entityId} views={data.views} invoiceDocs={data.invoiceDocs} financialDocs={data.financialDocs} assets={assets} />
     </div>
   );
 }

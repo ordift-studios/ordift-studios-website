@@ -4,8 +4,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const h = vi.hoisted(() => ({ user: null as null | { id: string }, superAdmin: false, record: vi.fn(), pay: vi.fn(), revalidate: vi.fn(), terms: vi.fn(), payment: vi.fn(), voidPay: vi.fn(), bundle: vi.fn() }));
 vi.mock("@/lib/portal/roles", () => ({ getCurrentUser: async () => h.user, isSuperAdmin: () => h.superAdmin }));
 vi.mock("next/cache", () => ({ revalidatePath: h.revalidate }));
+const a = vi.hoisted(() => ({ link: vi.fn(), own: vi.fn(), voidOwn: vi.fn() }));
+vi.mock("@/lib/organization/assetReconciliation", () => ({ linkAcquisitionToAsset: a.link, recordAssetOwnership: a.own, voidAssetOwnership: a.voidOwn }));
 vi.mock("@/lib/organization/equipmentFinancing", () => ({ recordEquipmentAcquisition: h.record, markInstalmentPaid: h.pay, setAcquisitionTerms: h.terms, recordAcquisitionPayment: h.payment, voidAcquisitionPayment: h.voidPay, recordAcquisitionBundle: h.bundle }));
-import { markInstalmentPaidAction, recordEquipmentAction, recordPaymentAction, setTermsAction, voidPaymentAction } from "./actions";
+import { linkAssetAction, markInstalmentPaidAction, recordEquipmentAction, recordOwnershipAction, recordPaymentAction, setTermsAction, voidOwnershipAction, voidPaymentAction } from "./actions";
 
 const fd = (o: Record<string, string>) => { const f = new FormData(); for (const [k, v] of Object.entries(o)) f.set(k, v); return f; };
 const acq = { entityId: "e1", supplier: "Synthetic Supplier", invoiceNumber: "INV-1", purchaseDate: "2026-11-08", itemDescription: "Synthetic pen display", currency: "QAR", listPrice: "1499", discount: "350", net: "1149", invoiceDocumentId: "d1" };
@@ -86,6 +88,29 @@ describe("payment-arrangement actions", () => {
   it("a payment without the 'reported, not bank-reconciled' confirmation is refused", async () => {
     expect(await recordPaymentAction(null, fd({ ...payForm, confirmUnverified: "" }))).toMatchObject({ ok: false });
     expect(h.payment).not.toHaveBeenCalled();
+  });
+});
+
+describe("asset ownership and link actions", () => {
+  const link = { entityId: "e1", acquisitionId: "a1", assetId: "asset-1", confirmLink: "yes" };
+  beforeEach(() => { for (const m of [a.link, a.own, a.voidOwn]) m.mockReset(); });
+  it("refuse a non-Super-Admin before the library is touched", async () => {
+    h.superAdmin = false;
+    for (const r of [await linkAssetAction(null, fd(link)), await recordOwnershipAction(null, fd({ entityId: "e1", assetId: "x", businessPurpose: "Retouching and design", basisStatement: "Founder statement" })), await voidOwnershipAction(null, fd({ entityId: "e1", ownershipId: "o1", reason: "recorded against the wrong asset" }))]) expect(r).toMatchObject({ ok: false });
+    for (const m of [a.link, a.own, a.voidOwn]) expect(m).not.toHaveBeenCalled();
+  });
+  it("linking needs the explicit 'existing asset, no new asset' confirmation, then calls the audited link as the signed-in actor", async () => {
+    expect(await linkAssetAction(null, fd({ ...link, confirmLink: "" }))).toMatchObject({ ok: false });
+    expect(a.link).not.toHaveBeenCalled();
+    a.link.mockResolvedValue({ ok: true });
+    expect(await linkAssetAction(null, fd(link))).toEqual({ ok: true });
+    expect(a.link).toHaveBeenCalledWith({ actorUserId: "u1", entityId: "e1", acquisitionId: "a1", assetId: "asset-1" });
+    expect(h.revalidate).toHaveBeenCalledWith("/admin/organization/legal-entities/e1/equipment");
+  });
+  it("records ownership with purchaser, purpose, personal-use flag and basis as separate fields", async () => {
+    a.own.mockResolvedValue({ ok: true });
+    expect(await recordOwnershipAction(null, fd({ entityId: "e1", assetId: "asset-1", purchaserAsStated: "The Founder", businessPurpose: "Photography retouching and graphic design", incidentalPersonalUse: "yes", personalUseNote: "Occasional personal use", basisStatement: "Founder statement; documents pending" }))).toEqual({ ok: true });
+    expect(a.own).toHaveBeenCalledWith({ actorUserId: "u1", ownership: expect.objectContaining({ entityId: "e1", assetId: "asset-1", purchaserAsStated: "The Founder", incidentalPersonalUse: true, personalUseNote: "Occasional personal use" }) });
   });
 });
 

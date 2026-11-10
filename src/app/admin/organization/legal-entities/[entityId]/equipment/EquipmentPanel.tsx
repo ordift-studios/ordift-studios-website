@@ -3,7 +3,8 @@
 import { useState } from "react";
 import { useRestoringActionState } from "@/components/admin/useRestoringActionState";
 import { viewEntityDocumentAction } from "../actions";
-import { markInstalmentPaidAction, recordEquipmentAction, recordPaymentAction, setTermsAction, voidPaymentAction, type ActionState } from "./actions";
+import { linkAssetAction, markInstalmentPaidAction, recordEquipmentAction, recordOwnershipAction, recordPaymentAction, setTermsAction, voidOwnershipAction, voidPaymentAction, type ActionState } from "./actions";
+import type { AssetRow } from "@/lib/organization/assetReconciliation";
 import { ARRANGEMENT_LABEL, PAYMENT_KINDS, PAYMENT_METHODS } from "@/lib/organization/acquisitionPaymentRules";
 import { INSTALMENT_STATE_LABEL, type DocRef, type EquipmentView, type InstalmentView, type PaymentView } from "@/lib/organization/equipmentPanelView";
 import type { PositionFlag } from "@/lib/organization/financePosition";
@@ -207,7 +208,84 @@ function PaymentsSection({ e, entityId, financialDocs }: { e: EquipmentView; ent
   );
 }
 
-function Card({ e, entityId, financialDocs }: { e: EquipmentView; entityId: string; financialDocs: DocRef[] }) {
+
+// ---- registered asset (migration 0188): ONE existing asset <- ONE acquisition. The asset register is custody-only; linking never edits it, creates an asset, an expense or a classification.
+function LinkForm({ entityId, acquisitionId, candidates }: { entityId: string; acquisitionId: string; candidates: AssetRow[] }) {
+  const [state, action, pending, ref] = useRestoringActionState<ActionState>(linkAssetAction, null);
+  return (
+    <form ref={ref} action={action} className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-2 rounded-lg bg-slate-50 p-3">
+      <input type="hidden" name="entityId" value={entityId} /><input type="hidden" name="acquisitionId" value={acquisitionId} />
+      <select name="assetId" required defaultValue="" className={`sm:col-span-2 ${input}`} aria-label="Registered asset"><option value="" disabled>Choose the existing registered asset…</option>{candidates.map((a) => <option key={a.id} value={a.id}>{a.description} — {a.identifier}</option>)}</select>
+      <label className="sm:col-span-2 flex gap-2 font-sans text-caption text-ordift-ink-muted"><input type="checkbox" name="confirmLink" value="yes" />This links the purchase to the EXISTING asset. No new asset is created and the asset record is not edited. The link cannot be changed afterwards.</label>
+      <button disabled={pending} className={button}>{pending ? "Linking…" : "Link to this asset"}</button>
+      <Feedback state={state} pending={pending} />
+    </form>
+  );
+}
+function AssetLinkRow({ e, entityId, assets }: { e: EquipmentView; entityId: string; assets: AssetRow[] }) {
+  const linked = e.linkedAssetId ? assets.find((a) => a.id === e.linkedAssetId) : null;
+  const candidates = assets.filter((a) => a.ownership?.entityId === entityId && !a.linkedAcquisitionId);
+  if (e.linkedAssetId) return <p className="font-sans text-caption text-ordift-ink-muted">Registered asset: {linked ? `${linked.description} (${linked.identifier})` : e.linkedAssetId}. The asset record itself is unchanged.</p>;
+  return (
+    <div><p className="font-sans text-caption text-ordift-ink-muted">Registered asset: not linked. {candidates.length === 0 ? "Record the asset's legal owner below first (the asset must already be in Assets & Equipment)." : ""}</p>
+      {candidates.length > 0 ? <details><summary className="cursor-pointer font-sans text-caption font-semibold text-ordift-gold-pressed">Link to an existing registered asset</summary><LinkForm entityId={entityId} acquisitionId={e.id} candidates={candidates} /></details> : null}</div>
+  );
+}
+function OwnershipForm({ entityId, asset, docs }: { entityId: string; asset: AssetRow; docs: DocRef[] }) {
+  const [state, action, pending, ref] = useRestoringActionState<ActionState>(recordOwnershipAction, null);
+  const [personal, setPersonal] = useState(false);
+  return (
+    <form ref={ref} action={action} className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-2 rounded-lg bg-slate-50 p-3">
+      <input type="hidden" name="entityId" value={entityId} /><input type="hidden" name="assetId" value={asset.id} />
+      <p className="sm:col-span-2 font-sans text-caption text-ordift-ink-muted">Records that THIS legal entity is the intended owner. The purchaser, the funding source and the assigned user are separate facts and are not decided here. Pending professional review.</p>
+      <input name="purchaserAsStated" placeholder="Purchaser, as stated or printed (not necessarily the owner)" className={`sm:col-span-2 ${input}`} />
+      <textarea name="businessPurpose" rows={2} required placeholder="Business purpose (e.g. photography retouching and graphic design)" className={`sm:col-span-2 ${input}`} />
+      <textarea name="basisStatement" rows={2} required placeholder="How ownership is established (e.g. the Founder's statement; which documents are pending)" className={`sm:col-span-2 ${input}`} />
+      <label className="sm:col-span-2 flex gap-2 font-sans text-caption text-ordift-ink-muted"><input type="checkbox" name="incidentalPersonalUse" value="yes" checked={personal} onChange={(ev) => setPersonal(ev.target.checked)} />Occasional personal use may occur (any accounting or tax adjustment is left to the accountant)</label>
+      {personal ? <textarea name="personalUseNote" rows={2} placeholder="Describe the incidental personal use (at least 10 characters)" className={`sm:col-span-2 ${input}`} /> : null}
+      <label className="font-sans text-caption text-ordift-ink-muted sm:col-span-2">Ownership evidence (optional vault document)<select name="evidenceDocumentId" defaultValue="" className={`block w-full ${input}`}><option value="">No document yet</option>{docs.map((d) => <option key={d.id} value={d.id}>{d.filename ?? d.id}</option>)}</select></label>
+      <button disabled={pending} className={button}>{pending ? "Recording…" : "Record this entity as the owner"}</button>
+      <Feedback state={state} pending={pending} />
+    </form>
+  );
+}
+function VoidOwnershipForm({ entityId, ownershipId }: { entityId: string; ownershipId: string }) {
+  const [state, action, pending, ref] = useRestoringActionState<ActionState>(voidOwnershipAction, null);
+  return (
+    <form ref={ref} action={action} className="mt-1 flex flex-wrap items-end gap-2">
+      <input type="hidden" name="entityId" value={entityId} /><input type="hidden" name="ownershipId" value={ownershipId} />
+      <input name="reason" placeholder="Why is this ownership record void? (10+ characters)" className={`${input} min-w-[14rem]`} aria-label="Reason" />
+      <button disabled={pending} className="font-sans text-caption font-semibold underline underline-offset-4 text-red-700 disabled:opacity-50">{pending ? "Voiding…" : "Void"}</button>
+      <Feedback state={state} pending={pending} />
+    </form>
+  );
+}
+function AssetsSection({ entityId, assets, docs }: { entityId: string; assets: AssetRow[]; docs: DocRef[] }) {
+  return (
+    <section className="rounded-xl border border-black/10 bg-white p-4 sm:p-6 space-y-3">
+      <h2 className="font-serif font-medium text-body text-ordift-ink">Registered assets and legal owner</h2>
+      <p className="font-sans text-caption text-ordift-ink-muted">The Assets &amp; Equipment register keeps custody only (no owner, cost or payment). Here you record which legal entity owns an asset, then link ONE purchase to it. Nothing here edits, duplicates or values an asset.</p>
+      {assets.length === 0 ? <p className="font-sans text-caption text-ordift-ink-muted">No registered assets are available.</p> : (
+        <ul className="space-y-3">{assets.map((a) => (
+          <li key={a.id} className="border-t border-black/10 pt-2 font-sans text-caption">
+            <p className="text-ordift-ink font-semibold">{a.description} <span className="font-normal text-ordift-ink-muted">· {a.identifier}{a.category ? ` · ${a.category}` : ""} · {a.status.replace(/_/g, " ")}</span></p>
+            {a.ownership ? (
+              <div className="text-ordift-ink-muted">
+                <p>{a.ownership.entityId === entityId ? "Owner: this legal entity" : "Owner: another legal entity"} — pending professional review{a.linkedAcquisitionId ? " · linked to a purchase" : " · not linked to a purchase"}</p>
+                {a.ownership.entityId === entityId ? (<>
+                  {a.ownership.purchaser ? <p>Purchaser as stated: {a.ownership.purchaser}</p> : null}<p>Business purpose: {a.ownership.purpose}</p><p>Basis: {a.ownership.basis}</p>
+                  {a.ownership.incidentalPersonalUse ? <p className="text-amber-800">Incidental personal use flagged for accountant review: {a.ownership.personalUseNote}</p> : null}
+                  {!a.linkedAcquisitionId ? <details><summary className="cursor-pointer text-red-700 underline underline-offset-4">Void this ownership record</summary><VoidOwnershipForm entityId={entityId} ownershipId={a.ownership.id} /></details> : null}
+                </>) : null}
+              </div>
+            ) : <details><summary className="cursor-pointer font-semibold text-ordift-gold-pressed">Record the legal owner</summary><OwnershipForm entityId={entityId} asset={a} docs={docs} /></details>}
+          </li>))}</ul>
+      )}
+    </section>
+  );
+}
+
+function Card({ e, entityId, financialDocs, assets }: { e: EquipmentView; entityId: string; financialDocs: DocRef[]; assets: AssetRow[] }) {
   const f = e.financing;
   return (
     <article className="rounded-xl border border-black/10 bg-white p-4 sm:p-6 space-y-4">
@@ -223,6 +301,7 @@ function Card({ e, entityId, financialDocs }: { e: EquipmentView; entityId: stri
         <p className="font-sans text-caption text-ordift-ink-muted">Funding: {e.fundingLabel}{e.fundingNote ? ` — ${e.fundingNote}` : ""}</p>
       </div>
       <Separation e={e} />
+      <AssetLinkRow e={e} entityId={entityId} assets={assets} />
       {e.position.flags.length > 0 && (
         <div><p className="font-sans text-caption font-semibold text-ordift-ink">Open items</p>
           <ul className="list-disc pl-5 font-sans text-caption text-amber-800">{e.position.flags.map((x) => <li key={x}>{FLAG_LABEL[x]}</li>)}</ul></div>
@@ -294,11 +373,12 @@ function RecordForm({ entityId, invoiceDocs, financialDocs }: { entityId: string
   );
 }
 
-export function EquipmentPanel({ entityId, views, invoiceDocs, financialDocs }: { entityId: string; views: EquipmentView[]; invoiceDocs: DocRef[]; financialDocs: DocRef[] }) {
+export function EquipmentPanel({ entityId, views, invoiceDocs, financialDocs, assets = [] }: { entityId: string; views: EquipmentView[]; invoiceDocs: DocRef[]; financialDocs: DocRef[]; assets?: AssetRow[] }) {
   return (
     <div className="space-y-6">
       {views.length === 0 ? <p className="rounded-xl border border-black/10 bg-white p-6 font-sans text-body-small text-ordift-ink-muted">No equipment acquisitions are recorded for this legal entity.</p>
-        : views.map((v) => <Card key={v.id} e={v} entityId={entityId} financialDocs={financialDocs} />)}
+        : views.map((v) => <Card key={v.id} e={v} entityId={entityId} financialDocs={financialDocs} assets={assets} />)}
+      <AssetsSection entityId={entityId} assets={assets} docs={financialDocs} />
       <section className="rounded-xl border border-black/10 bg-white p-6 space-y-3">
         <h2 className="font-serif font-medium text-body text-ordift-ink">Record an equipment acquisition</h2>
         <RecordForm entityId={entityId} invoiceDocs={invoiceDocs} financialDocs={financialDocs} />
