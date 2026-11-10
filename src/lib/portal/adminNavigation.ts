@@ -101,6 +101,8 @@ export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
       { label: "Payables", href: "/admin/payables" },
       { label: "Pricing", href: "/admin/pricing" },
       { label: "Client Quotations", href: "/admin/pricing/quotations", adminOnly: true },
+      // Finance Phase 1 (migration 0186) shipped the Equipment & Financing panel per legal entity; this entry opens the entity chooser for it. Super Admin only, like the panel itself.
+      { label: "Equipment & Financing", href: "/admin/finance/equipment", superAdminOnly: true },
     ],
   },
   {

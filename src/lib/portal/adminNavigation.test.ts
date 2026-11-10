@@ -146,3 +146,17 @@ describe("My Assignments (Crew Support) in the Admin Platform's My Workspace", (
     expect(items({ ...base, isAdmin: true, isSuper: true })).not.toContain("/admin/me/assignments");
   });
 });
+
+describe("Finance navigation: Equipment & Financing", () => {
+  const base = { isAdmin: false, isSuper: false, isExecutive: false, isWorkforceAdmin: false, canCoordinateOperations: false, canAdministerPartnerships: false, hasAssignments: false };
+  const financeItems = (flags: typeof base) => (resolveVisibleAdminNavGroups(flags).find((g) => g.label === "Finance")?.items ?? []).map((i) => i.href);
+  it("is shown to a Super Admin in the Finance group", () => {
+    expect(financeItems({ ...base, isAdmin: true, isSuper: true })).toContain("/admin/finance/equipment");
+  });
+  it("is hidden from an ordinary admin, an executive-only viewer and staff (Super Admin only, like the panel)", () => {
+    expect(financeItems({ ...base, isAdmin: true })).not.toContain("/admin/finance/equipment");
+    expect(financeItems({ ...base, isExecutive: true })).not.toContain("/admin/finance/equipment");
+    expect(financeItems(base)).not.toContain("/admin/finance/equipment");
+  });
+});
+
