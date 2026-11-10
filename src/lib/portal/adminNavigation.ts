@@ -27,6 +27,10 @@ export type AdminNavItem = {
 };
 export type AdminNavGroup = { label: string; items: AdminNavItem[] };
 
+// Groups that are ALWAYS a dropdown in the admin bar, even for a Super Admin whose other groups render as flat links: a labelled dropdown near the left of the bar is visible at once,
+// whereas flat links sit thousands of pixels to the right of a horizontally scrolling bar (measured: 45 links, 5,241 px wide). Finance is here so Finance -> Equipment & Financing is one visible control.
+export const ALWAYS_DROPDOWN_GROUPS: readonly string[] = ["My Workspace", "Instructor Management", "Finance"];
+
 export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
   {
     // Employee Self-Service — no flag on its items: visible to every
@@ -65,6 +69,23 @@ export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
     ],
   },
   {
+    label: "Finance",
+    items: [
+      // Task 12 fix (2026-09-18) — Payments' real page gate
+      // (canAccessPaymentsAdmin, paymentPermissions.ts) was narrowed
+      // to admin/super_admin in Task 4, but this nav entry was never
+      // updated to match — exactly the "dead link shown to unauthorized
+      // staff" bug Task 4/12 exist to close. adminOnly now agrees with
+      // the real page gate.
+      { label: "Payments", href: "/admin/payments", adminOnly: true },
+      { label: "Payables", href: "/admin/payables" },
+      { label: "Pricing", href: "/admin/pricing" },
+      { label: "Client Quotations", href: "/admin/pricing/quotations", adminOnly: true },
+      // Finance Phase 1 (migration 0186) shipped the Equipment & Financing panel per legal entity; this entry opens the entity chooser for it. Super Admin only, like the panel itself.
+      { label: "Equipment & Financing", href: "/admin/finance/equipment", superAdminOnly: true },
+    ],
+  },
+  {
     label: "Overview",
     items: [
       { label: "Overview", href: "/admin/overview" },
@@ -87,21 +108,6 @@ export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
   {
     label: "Creative & Production",
     items: [{ label: "Production Operations", href: "/admin/production", operationsCoordinateOnly: true }],
-  },
-  {
-    label: "Finance",
-    items: [
-      // Task 12 fix (2026-09-18) — Payments' real page gate
-      // (canAccessPaymentsAdmin, paymentPermissions.ts) was narrowed
-      // to admin/super_admin in Task 4, but this nav entry was never
-      // updated to match — exactly the "dead link shown to unauthorized
-      // staff" bug Task 4/12 exist to close. adminOnly now agrees with
-      // the real page gate.
-      { label: "Payments", href: "/admin/payments", adminOnly: true },
-      { label: "Payables", href: "/admin/payables" },
-      { label: "Pricing", href: "/admin/pricing" },
-      { label: "Client Quotations", href: "/admin/pricing/quotations", adminOnly: true },
-    ],
   },
   {
     label: "People & Organization",
