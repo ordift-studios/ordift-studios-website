@@ -4,15 +4,16 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 // and who verified a conflict is decided by the server, never taken from the form.
 const h = vi.hoisted(() => ({
   user: null as null | { id: string; roles: string[] },
-  confirm: vi.fn(), manual: vi.fn(), retry: vi.fn(), cancel: vi.fn(), preview: vi.fn(), loadCtx: vi.fn(), loadCurrent: vi.fn(), settings: vi.fn(), pool: vi.fn(),
+  confirm: vi.fn(), finReq: vi.fn(), finDec: vi.fn(), finExe: vi.fn(), manual: vi.fn(), retry: vi.fn(), cancel: vi.fn(), preview: vi.fn(), loadCtx: vi.fn(), loadCurrent: vi.fn(), settings: vi.fn(), pool: vi.fn(),
 }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 vi.mock("@/lib/portal/roles", () => ({ getCurrentUser: async () => h.user, isSuperAdmin: (u: { roles: string[] } | null) => Boolean(u?.roles.includes("super_admin")) }));
 vi.mock("@/lib/bookings/service", () => ({ confirmOrdinaryBooking: h.confirm, cancelOrdinaryBooking: h.cancel, previewConflicts: h.preview, loadBookingSettings: h.settings }));
 vi.mock("@/lib/bookings/panel", async (orig) => ({ ...(await orig<typeof import("@/lib/bookings/panel")>()), loadAcceptedContext: h.loadCtx, loadCurrentBooking: h.loadCurrent }));
 vi.mock("@/lib/bookings/notificationService", () => ({ recordManualClientNotice: h.manual, retryBookingNotification: h.retry }));
+vi.mock("@/lib/bookings/financialDecisions", () => ({ requestFinancialAction: h.finReq, decideFinancialAction: h.finDec, recordFinancialExecution: h.finExe }));
 vi.mock("@/lib/crewSupport/candidates", () => ({ listOverridePool: h.pool }));
-import { cancelBookingAction, confirmBookingAction, previewBookingAction, recordClientNoticeAction } from "./bookingActions";
+import { cancelBookingAction, confirmBookingAction, previewBookingAction, recordClientNoticeAction, requestFinancialActionAction, decideFinancialActionAction, recordFinancialExecutionAction } from "./bookingActions";
 
 const fd = (o: Record<string, string>) => { const f = new FormData(); for (const [k, v] of Object.entries(o)) f.set(k, v); return f; };
 const form = { enquiryId: "e1", quotationId: "q1", expectedVersion: "0", assignedProfileId: "p1", segCount: "1", seg0_start: "2026-12-01T09:00", seg0_end: "2026-12-01T12:00", seg0_tz: "Asia/Qatar", seg0_kind: "on_site", seg0_location: "Doha studio", confirmSentence: "confirm booking ENQ-1" };
@@ -125,4 +126,25 @@ describe("the client notice on a change, and recording that the client was told"
     expect(h.manual.mock.calls[0][0]).toMatchObject({ actorUserId: "u2", confirmationId: "c2", channel: "whatsapp" });
     h.manual.mockResolvedValue({ ok: false, error: "Nothing to record" }); expect(await recordClientNoticeAction(null, fd(f))).toMatchObject({ ok: false, error: "Nothing to record" });
   });
+});
+
+describe("final-cancellation money records: who may do what", () => {
+  const req = { enquiryId: "e1", kind: "refund", amountUsd: "600", reason: "client withdrew; refund agreed in writing", evidence: "Letter ref CL-2026-014" };
+  it("an Admin or Super Admin may REQUEST; staff, clients and the signed-out may not", async () => {
+    h.finReq.mockResolvedValue({ ok: true, id: "d1" });
+    for (const roles of [["staff"], ["client"], []]) { h.user = { id: "u9", roles }; expect(await requestFinancialActionAction(null, fd(req))).toMatchObject({ ok: false }); } h.user = null; expect(await requestFinancialActionAction(null, fd(req))).toMatchObject({ ok: false }); expect(h.finReq).not.toHaveBeenCalled();
+    for (const roles of [["admin"], ["super_admin"]]) { h.user = { id: "u2", roles }; expect(await requestFinancialActionAction(null, fd(req))).toMatchObject({ ok: true }); } expect(h.finReq.mock.calls[0][0]).toMatchObject({ actorUserId: "u2", enquiryId: "e1", kind: "refund", amountUsd: 600 });
+  });
+  it("a refund or write-off without a valid amount never reaches the service; 'no adjustment' needs none", async () => {
+    h.user = { id: "u2", roles: ["admin"] }; h.finReq.mockResolvedValue({ ok: true, id: "d1" });
+    for (const amountUsd of ["", "abc", "0", "-5"]) expect(await requestFinancialActionAction(null, fd({ ...req, amountUsd }))).toMatchObject({ ok: false }); expect(h.finReq).not.toHaveBeenCalled();
+    expect(await requestFinancialActionAction(null, fd({ ...req, kind: "no_adjustment", amountUsd: "" }))).toMatchObject({ ok: true });
+  });
+  it("only a Super Admin DECIDES or RECORDS EXECUTION; an Admin is refused before anything is called", async () => {
+    h.finDec.mockResolvedValue({ ok: true }); h.finExe.mockResolvedValue({ ok: true });
+    h.user = { id: "u2", roles: ["admin"] }; expect(await decideFinancialActionAction(null, fd({ enquiryId: "e1", decisionId: "d1", decision: "authorised", note: "Checked the letter" }))).toMatchObject({ ok: false }); expect(await recordFinancialExecutionAction(null, fd({ enquiryId: "e1", decisionId: "d1", reference: "RF-2026-0007" }))).toMatchObject({ ok: false }); expect(h.finDec).not.toHaveBeenCalled(); expect(h.finExe).not.toHaveBeenCalled();
+    h.user = { id: "sa", roles: ["super_admin"] }; expect(await decideFinancialActionAction(null, fd({ enquiryId: "e1", decisionId: "d1", decision: "authorised", note: "Checked the letter" }))).toMatchObject({ ok: true }); expect(h.finDec.mock.calls[0][0]).toMatchObject({ actorUserId: "sa", decisionId: "d1", decision: "authorised" });
+    expect(await recordFinancialExecutionAction(null, fd({ enquiryId: "e1", decisionId: "d1", reference: "RF-2026-0007" }))).toMatchObject({ ok: true });
+  });
+  it("the database's refusal (for example a Super Admin deciding their own request) comes back as the message", async () => { h.user = { id: "sa", roles: ["super_admin"] }; h.finDec.mockResolvedValue({ ok: false, error: "A different Super Admin must decide this: nobody can authorise their own request." }); expect(await decideFinancialActionAction(null, fd({ enquiryId: "e1", decisionId: "d1", decision: "authorised", note: "Checked the letter" }))).toMatchObject({ ok: false, error: expect.stringMatching(/different Super Admin/) }); });
 });

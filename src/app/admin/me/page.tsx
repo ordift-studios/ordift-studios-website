@@ -5,7 +5,7 @@ import { getCurrentUser, hasRole, isStaffOrAdmin, isSuperAdmin } from "@/lib/por
 import { resolveEmployeeDateRange } from "@/lib/organization/workingDayCalendar";
 import { getAssignmentsForUser, ASSIGNMENT_STATUS_LABELS } from "@/lib/admin/projectAssignments";
 import { isWorkshopInstructor } from "@/lib/workshops/instructorEngagements";
-import { getNotificationPreference } from "@/lib/notifications/preferences";
+import { getNotificationPreference, getNotificationPreferences } from "@/lib/notifications/preferences";
 import { NotificationPreferenceToggle } from "./NotificationPreferenceToggle";
 import { listUsersWithRoles } from "@/lib/portal/adminData";
 import { listControlledPolicyDocuments, listPolicyAcknowledgementsForProfile } from "@/lib/organization/policyAcknowledgements";
@@ -117,14 +117,17 @@ export default async function MyWorkspacePage() {
   const endOfWeek = new Date(startOfWeek);
   endOfWeek.setDate(startOfWeek.getDate() + 6);
   const toISODate = (d: Date) => d.toISOString().slice(0, 10);
-  const [weekResolutions, myProjectAssignments, newBookingAlertsEnabled, isInstructor] = await Promise.all([
+  const [weekResolutions, myProjectAssignments, newBookingAlertsEnabled, isInstructor, assignedPrefs] = await Promise.all([
     myEmploymentTerms
       ? resolveEmployeeDateRange({ profileId: user.id, startDate: toISODate(startOfWeek), endDate: toISODate(endOfWeek) })
       : Promise.resolve([]),
     getAssignmentsForUser(user.id),
     hasRole(user, "admin") ? getNotificationPreference(user.id, "new_booking") : Promise.resolve(null),
     isWorkshopInstructor(user.id),
+    getNotificationPreferences([user.id], "assigned_booking"),
   ]);
+  // "Notices about bookings assigned to me" (booking, change, cancellation, taken off): ON unless this person has explicitly switched it off. Their own work, so no row means on.
+  const assignedBookingNoticesEnabled = assignedPrefs.get(user.id) !== false;
   const activeProjectAssignments = myProjectAssignments.filter((a) => a.status === "active" || a.status === "invited");
 
   const leaveSummary =
@@ -327,11 +330,8 @@ export default async function MyWorkspacePage() {
 
         <div className="rounded-xl border border-black/10 bg-white p-6 space-y-1">
           <h2 className="font-serif font-medium text-body text-ordift-ink mb-1">Notifications</h2>
-          {newBookingAlertsEnabled === null ? (
-            <p className="font-sans text-body-small text-ordift-ink-muted">No notification preferences apply to your account yet.</p>
-          ) : (
-            <NotificationPreferenceToggle category="new_booking" label="New booking alerts" initialEnabled={newBookingAlertsEnabled} />
-          )}
+          {newBookingAlertsEnabled !== null ? <NotificationPreferenceToggle category="new_booking" label="New booking alerts" initialEnabled={newBookingAlertsEnabled} /> : null}
+          <NotificationPreferenceToggle category="assigned_booking" label="E-mails about bookings assigned to me (when I am assigned, it changes, it is cancelled, or I am taken off). They carry only what I need to do the job." initialEnabled={assignedBookingNoticesEnabled} />
         </div>
       </section>
 

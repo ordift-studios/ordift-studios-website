@@ -5,6 +5,7 @@ import { actionFail, actionOk, runAction, type ActionState } from "@/lib/shared/
 import { getCurrentUser, isSuperAdmin } from "@/lib/portal/roles";
 import { listOverridePool } from "@/lib/crewSupport/candidates";
 import { bookingFlagOn, type Conflict, type Resolution } from "@/lib/bookings/rules";
+import { decideFinancialAction, recordFinancialExecution, requestFinancialAction } from "@/lib/bookings/financialDecisions";
 import { recordManualClientNotice, retryBookingNotification } from "@/lib/bookings/notificationService";
 import { confirmOrdinaryBooking, cancelOrdinaryBooking, loadBookingSettings, previewConflicts } from "@/lib/bookings/service";
 import { confirmSentenceFor, parseBookingForm, parseCancelOutcome, parseNoticeChoice, sentenceMatches } from "@/lib/bookings/form";
@@ -130,4 +131,40 @@ export async function recordClientNoticeAction(_prev: ActionState, formData: For
     refresh(String(formData.get("enquiryId") ?? ""));
     return r.ok ? actionOk("Recorded: the client was told. The message and how you delivered it are kept in this card.") : actionFail(r.error);
   }, "record client notice");
+}
+
+// FINAL-CANCELLATION MONEY RECORDS. Nothing here moves money or edits a payment, balance, quotation or stage: it keeps the decision trail. Request: Admin or Super Admin. Decide and record execution: Super Admin only,
+// and a Super Admin can never decide their own request (the database refuses). The signed-in user is read FIRST.
+export async function requestFinancialActionAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  return runAction(async () => {
+    const user = await getCurrentUser();
+    if (!user || !(isSuperAdmin(user) || user.roles.includes("admin"))) return actionFail("Only an Admin or Super Admin can record a cancellation money request.");
+    if (!bookingFlagOn()) return actionFail("Booking confirmation is not switched on.");
+    const enquiryId = String(formData.get("enquiryId") ?? ""), kind = String(formData.get("kind") ?? "");
+    const raw = String(formData.get("amountUsd") ?? "").trim(), amount = raw === "" ? null : Number(raw);
+    if (kind !== "no_adjustment" && (amount === null || !Number.isFinite(amount) || amount <= 0)) return actionFail("A refund or write-off needs an amount above zero.");
+    const r = await requestFinancialAction({ actorUserId: user.id, enquiryId, kind, amountUsd: amount, reason: String(formData.get("reason") ?? ""), evidence: String(formData.get("evidence") ?? "") });
+    refresh(enquiryId);
+    return r.ok ? actionOk("Recorded. It now waits for a different Super Admin to authorise or decline it. No money has moved and no balance has changed.") : actionFail(r.error);
+  }, "request cancellation money action");
+}
+export async function decideFinancialActionAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  return runAction(async () => {
+    const user = await getCurrentUser();
+    if (!user || !isSuperAdmin(user)) return actionFail("Only a Super Admin can authorise or decline a cancellation money request.");
+    if (!bookingFlagOn()) return actionFail("Booking confirmation is not switched on.");
+    const r = await decideFinancialAction({ actorUserId: user.id, decisionId: String(formData.get("decisionId") ?? ""), decision: String(formData.get("decision") ?? ""), note: String(formData.get("note") ?? "") });
+    refresh(String(formData.get("enquiryId") ?? ""));
+    return r.ok ? actionOk("Decision recorded. Authorising does not move money: the refund or write-off is carried out through the finance process, then recorded here with its reference.") : actionFail(r.error);
+  }, "decide cancellation money action");
+}
+export async function recordFinancialExecutionAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  return runAction(async () => {
+    const user = await getCurrentUser();
+    if (!user || !isSuperAdmin(user)) return actionFail("Only a Super Admin can record that an authorised money action was carried out.");
+    if (!bookingFlagOn()) return actionFail("Booking confirmation is not switched on.");
+    const r = await recordFinancialExecution({ actorUserId: user.id, decisionId: String(formData.get("decisionId") ?? ""), reference: String(formData.get("reference") ?? "") });
+    refresh(String(formData.get("enquiryId") ?? ""));
+    return r.ok ? actionOk("Recorded as carried out, with its reference. The ledger itself is changed only through the finance process.") : actionFail(r.error);
+  }, "record cancellation money execution");
 }

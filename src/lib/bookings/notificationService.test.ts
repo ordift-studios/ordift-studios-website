@@ -17,6 +17,7 @@ function builder(table: string) {
 }
 const admin = {
   from: (t: string) => builder(t),
+  auth: { admin: { getUserById: async (id: string) => (id === "owner1" ? { data: { user: { email: "client@example.test", email_confirmed_at: "2026-11-01" } }, error: null } : { data: null, error: { message: "unknown user" } }) } },
   rpc: async (name: string, a: Record<string, unknown>) => {
     if (jobFnMissing) return { data: null, error: { message: "function public.claim_booking_notification_job does not exist" } };
     const jobs = (tables.booking_notification_jobs ??= []);
@@ -46,11 +47,11 @@ import { dispatchBookingNotifications, listBookingNotifications, retryBookingNot
 
 const ON = { BOOKING_CONFIRMATION_ENABLED: "true" };
 const okLogged = { email: { ok: true, mode: "logged", attempts: 0 } };
-function seed(over: { email?: string | null } = {}) {
+function seed(over: { email?: string | null; owner?: string | null } = {}) {
   tables = {
     enquiry_booking_confirmations: [{ id: "c1", enquiry_id: "e1", version: 1, kind: "confirmed", quotation_id: "q1", assigned_profile_id: "p1", confirmed_by: "sa", agreement_required: false, agreement_id: null, payment_condition: "full", verified_paid_usd: 400, outstanding_usd: 0, basis: null }],
     enquiry_booking_segments: [{ confirmation_id: "c1", seq: 1, starts_at: "2026-12-15T10:00:00Z", ends_at: "2026-12-15T11:00:00Z", timezone: "Africa/Accra", kind: "studio", location: "Synthetic studio, Accra", platform: null, note: null }],
-    enquiries: [{ id: "e1", reference_number: "ENQ-JRN-GHP", email: over.email === undefined ? "client@example.test" : over.email, full_name: "Ama Mensah", service: "photography" }],
+    enquiries: [{ id: "e1", reference_number: "ENQ-JRN-GHP", email: over.email === undefined ? "client@example.test" : over.email, full_name: "Ama Mensah", service: "photography", user_id: over.owner === undefined ? "owner1" : over.owner, amount_paid: 400 }],
     client_quotations: [{ id: "q1", quotation_reference: "ORD-QUO-JRN-GHP" }], profiles: [{ id: "p1", full_name: "Lab staff", member_number: "INT0007" }, { id: "sa", full_name: "Lab super_admin", member_number: "INT0001" }], agreements: [],
     booking_notification_jobs: ["client", "internal"].map((a, i) => ({ id: `j${i}`, confirmation_id: "c1", enquiry_id: "e1", audience: a, event: "confirmed", status: "pending", attempt_count: 0, last_attempted_at: null, deliveries: [], recipient_count: 0, provider_result: null, last_error: null })),
   };
@@ -77,12 +78,12 @@ describe("dispatchBookingNotifications (after a successful confirmation)", () =>
 
 describe("who is (not) emailed", () => {
   it("a staff-recorded enquiry's client is NOT emailed (established suppression) but the message is stored for staff to pass on", async () => {
-    suppressed.mockResolvedValue(true); await dispatchBookingNotifications("c1", ON);
+    seed({ owner: null }); suppressed.mockResolvedValue(true); await dispatchBookingNotifications("c1", ON);
     expect(job("client")).toMatchObject({ status: "skipped", provider_result: "suppressed" }); expect(String(job("client").body_text)).toContain("Booking reference: ENQ-JRN-GHP");
     expect(send.mock.calls.some((c) => (c[0] as { email: { to: string } }).email.to === "client@example.test")).toBe(false); expect(job("internal").status).toBe("sent");
   });
   it("a client with no e-mail address (empty or the reserved placeholder) is skipped, never sent", async () => {
-    for (const email of [null, "enq-jrn-ghp@no-email.invalid"]) { seed({ email }); send.mockClear(); await dispatchBookingNotifications("c1", ON); expect(job("client")).toMatchObject({ status: "skipped", provider_result: "no_email" }); expect(send.mock.calls.some((c) => (c[0] as { email: { to: string } }).email.to.includes("invalid"))).toBe(false); }
+    for (const email of [null, "enq-jrn-ghp@no-email.invalid"]) { seed({ email, owner: null }); send.mockClear(); await dispatchBookingNotifications("c1", ON); expect(job("client")).toMatchObject({ status: "skipped", provider_result: "no_email" }); expect(send.mock.calls.some((c) => (c[0] as { email: { to: string } }).email.to.includes("invalid"))).toBe(false); }
   });
   it("no eligible internal recipient is recorded as skipped", async () => { recipients.mockResolvedValue([]); await dispatchBookingNotifications("c1", ON); expect(job("internal")).toMatchObject({ status: "skipped", provider_result: "no_recipients" }); });
 });

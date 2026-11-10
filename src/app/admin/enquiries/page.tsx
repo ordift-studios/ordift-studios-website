@@ -8,6 +8,7 @@ import { PATHWAYS, EXTRA_ENQUIRY_SERVICES, pathwayLabel } from "@/lib/enquiry/pa
 import ReportExportLinks from "@/components/admin/ReportExportLinks";
 import { displayEmail } from "@/lib/shared/email/placeholder";
 import { listDueFollowUps } from "@/lib/enquiry/pricingPersistence";
+import { loadSchedulingStatuses, matchesSchedulingFilter, schedulingFilterOf } from "@/lib/bookings/schedulingStatusService";
 
 export const metadata: Metadata = {
   title: "Enquiries — Ordift Studios Admin",
@@ -25,6 +26,7 @@ type EnquiriesSearchParams = {
   paymentStatus?: string;
   dateFrom?: string;
   dateTo?: string;
+  scheduling?: string;
 };
 
 function buildHref(params: EnquiriesSearchParams) {
@@ -35,6 +37,7 @@ function buildHref(params: EnquiriesSearchParams) {
   if (params.paymentStatus) search.set("paymentStatus", params.paymentStatus);
   if (params.dateFrom) search.set("dateFrom", params.dateFrom);
   if (params.dateTo) search.set("dateTo", params.dateTo);
+  if (params.scheduling) search.set("scheduling", params.scheduling);
   const qs = search.toString();
   return qs ? `/admin/enquiries?${qs}` : "/admin/enquiries";
 }
@@ -54,9 +57,9 @@ export default async function AdminEnquiriesPage({
   const user = await getCurrentUser();
   if (!user || (!hasRole(user, "admin") && !isSuperAdmin(user))) redirect("/admin/overview");
 
-  const { stage, q, service, paymentStatus, dateFrom, dateTo } = await searchParams;
+  const { stage, q, service, paymentStatus, dateFrom, dateTo, scheduling } = await searchParams;
 
-  const enquiries = await getAllEnquiries({
+  const allMatching = await getAllEnquiries({
     search: q,
     stage,
     service,
@@ -64,6 +67,11 @@ export default async function AdminEnquiriesPage({
     dateFrom,
     dateTo,
   });
+  // "Needs scheduling": the derived status (Paid — scheduling pending / Booking Cancelled …) worked out from payment status and the latest booking record; no stored status.
+  const schedulingStatuses = await loadSchedulingStatuses(allMatching);
+  const schedulingFilter = schedulingFilterOf(scheduling);
+  const countPending = allMatching.filter((e) => matchesSchedulingFilter(schedulingStatuses.get(e.id), "pending")).length, countCancelled = allMatching.filter((e) => matchesSchedulingFilter(schedulingStatuses.get(e.id), "cancelled")).length;
+  const enquiries = schedulingFilter ? allMatching.filter((e) => matchesSchedulingFilter(schedulingStatuses.get(e.id), schedulingFilter)) : allMatching;
 
   const exportSearchParams = new URLSearchParams();
   if (q) exportSearchParams.set("search", q);
@@ -196,6 +204,12 @@ export default async function AdminEnquiriesPage({
       </form>
 
       <div className="mb-8 flex flex-wrap gap-2">
+        {schedulingStatuses.size > 0 ? (
+          <>
+            <Link href={buildHref({ q, service, paymentStatus, dateFrom, dateTo, scheduling: schedulingFilter === "pending" ? undefined : "pending" })} data-testid="filter-scheduling-pending" className={`px-3 py-1.5 rounded-full font-sans text-caption border whitespace-nowrap ${schedulingFilter === "pending" ? "bg-amber-600 text-white border-amber-600" : "border-amber-400 text-amber-900"}`}>Paid — scheduling pending ({countPending})</Link>
+            <Link href={buildHref({ q, service, paymentStatus, dateFrom, dateTo, scheduling: schedulingFilter === "cancelled" ? undefined : "cancelled" })} data-testid="filter-scheduling-cancelled" className={`px-3 py-1.5 rounded-full font-sans text-caption border whitespace-nowrap ${schedulingFilter === "cancelled" ? "bg-amber-600 text-white border-amber-600" : "border-amber-400 text-amber-900"}`}>Booking cancelled ({countCancelled})</Link>
+          </>
+        ) : null}
         <Link
           href={buildHref({ q, service, paymentStatus, dateFrom, dateTo })}
           className={`px-3 py-1.5 rounded-full font-sans text-caption border ${
@@ -257,6 +271,7 @@ export default async function AdminEnquiriesPage({
                   </td>
                   <td className="py-3 px-4 font-sans text-body-small text-ordift-ink-muted">
                     {crmStageLabel(e.crmStage)}
+                    {schedulingStatuses.get(e.id) ? <span className="mt-1 block rounded-full bg-amber-100 px-2 py-0.5 font-sans text-caption text-amber-950 w-fit">{schedulingStatuses.get(e.id)!.label}</span> : null}
                   </td>
                   <td className="py-3 px-4 font-sans text-body-small text-ordift-ink-muted">
                     {paymentStatusLabel(e.paymentStatus, e.amountPaid)}

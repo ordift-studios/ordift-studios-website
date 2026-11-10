@@ -106,7 +106,7 @@ async function accountAddress(userId: string): Promise<{ email: string | null; c
 async function resolveClientAddress(n: Notice) {
   const owner = n.enquiry.user_id ? await accountAddress(n.enquiry.user_id) : null;
   const placeholder = !n.enquiry.email || isPlaceholderEmail(n.enquiry.email);
-  const suppressed = n.enquiry.user_id || placeholder ? false : await clientEmailsSuppressed(n.enquiry.id, "booking-notice-client");
+  const suppressed = n.enquiry.user_id || placeholder ? false : await clientEmailsSuppressed(n.enquiry.id, "booking-notice-client");   // (an unowned address is never mailed whatever this says; it only picks the explanation)
   return chooseClientAddress({ hasOwner: Boolean(n.enquiry.user_id), ownerEmail: owner?.email ?? null, ownerConfirmed: owner?.confirmed ?? false, ownerLookupFailed: owner?.failed, enquiryEmail: n.enquiry.email, enquiryEmailIsPlaceholder: placeholder, suppressed, staffRecorded: Boolean(n.enquiry.created_by) });
 }
 async function resolveAssigned(profileId: string | null): Promise<{ ok: true; userId: string; email: string } | { ok: false }> {
