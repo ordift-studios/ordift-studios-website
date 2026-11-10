@@ -79,6 +79,7 @@ export default async function LegalEntityDetailPage({ params }: { params: Promis
         </div>
       </section>
 
+      <p className="font-sans text-body-small"><Link href={`/admin/organization/legal-entities/${entityId}/equipment`} className="font-semibold text-ordift-gold-pressed underline underline-offset-4">Equipment &amp; Financing →</Link></p>
       <EntityDetailWorkspace entityId={entityId} registrationNumber={sensitiveDetails?.registrationNumber ?? null} taxIdentifier={sensitiveDetails?.taxIdentifier ?? null} registeredAddress={sensitiveDetails?.registeredAddress ?? null} documents={[]} hideDocuments />
       <EntityRegistryPanels
         entityId={entityId}

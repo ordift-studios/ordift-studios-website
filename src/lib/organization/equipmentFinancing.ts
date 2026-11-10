@@ -1,7 +1,8 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { logActivity } from "@/lib/admin/activityLog";
 import { isSuperAdminId } from "@/lib/organization/authority";
-import { outstandingBalance, paidTotal, validateAcquisition, type AcquisitionInput, type FinancingInput } from "./equipmentFinancingRules";
+import { buildEquipmentViews, type DocRef, type EquipmentView, type RawAcquisition, type RawInstalment, type RawObligation } from "./equipmentPanelView";
+import { validateAcquisition, type AcquisitionInput, type FinancingInput } from "./equipmentFinancingRules";
 
 // EQUIPMENT ACQUISITIONS + FINANCING (see supabase/proposals/PROPOSAL_equipment_acquisitions_and_financing.sql: NOT applied anywhere until the Founder authorises it).
 // Super Admin only. Every write goes through one database function (one transaction, audit written inside it); this module validates first, calls it, and adds the platform activity-log entry.
@@ -35,27 +36,34 @@ export async function markInstalmentPaid(p: { actorUserId: string; entityId: str
   if (!(await isSuperAdminId(p.actorUserId))) return DENIED;
   if (!/^\d{4}-\d{2}-\d{2}$/.test(p.paidOn) || p.paidOn > today()) return { ok: false, error: "The payment date must be a real date that is not in the future." };
   if (!p.evidenceDocumentId && (p.evidenceNote ?? "").trim().length < 10) return { ok: false, error: "An instalment can only be marked paid with evidence: a stored document, or a written note of what you saw." };
+  // the instalment must belong to the entity the screen is showing (a tampered form cannot audit-log or pay another entity's instalment)
+  const owner = await createAdminClient().from("entity_financing_instalments").select("id, entity_financing_obligations!inner(employing_entity_id)").eq("id", p.instalmentId).maybeSingle();
+  const ownerEntity = (owner.data as { entity_financing_obligations?: { employing_entity_id?: string } | { employing_entity_id?: string }[] } | null)?.entity_financing_obligations;
+  const ownerId = Array.isArray(ownerEntity) ? ownerEntity[0]?.employing_entity_id : ownerEntity?.employing_entity_id;
+  if (ownerId !== p.entityId) return { ok: false, error: "That instalment does not belong to this legal entity." };
   const { error } = await createAdminClient().rpc("mark_instalment_paid", { p_instalment: p.instalmentId, p_paid_on: p.paidOn, p_evidence_document: p.evidenceDocumentId ?? null, p_evidence_note: (p.evidenceNote ?? "").trim() || null, p_actor: p.actorUserId });
   if (error) { console.error("[equipment financing] mark paid failed", error.message); return { ok: false, error: /not pending/.test(error.message) ? "That instalment is not pending." : "The payment could not be recorded." }; }
   await logActivity({ actorUserId: p.actorUserId, action: "equipment_instalment.paid", entityType: "employing_entity", entityId: p.entityId, metadata: { instalmentId: p.instalmentId, paidOn: p.paidOn } });
   return { ok: true };
 }
 
-export type EquipmentOverview = {
-  acquisitionId: string; supplier: string; invoiceNumber: string; purchaseDate: string; itemDescription: string; currency: string; net: number; classification: string; funding: string;
-  financing: { provider: string; reference: string; status: string; scheduleBasis: string; instalments: { id: string; sequence: number; amount: number; expectedMonth: string; status: string; paidOn: string | null }[]; paid: number; outstanding: number } | null;
-};
-export async function loadEquipmentOverview(entityId: string, actorUserId: string): Promise<EquipmentOverview[]> {
-  if (!(await isSuperAdminId(actorUserId))) return [];
+export type EquipmentPanelData = { views: EquipmentView[]; invoiceDocs: DocRef[]; financialDocs: DocRef[] };
+const FINANCIAL_TYPES = ["purchase_receipt", "supplier_invoice", "other_financial_document"];
+// Reads only (Super Admin only; an unauthorised caller gets nothing). Documents are the existing vault's rows — this never stores or alters a file.
+export async function loadEquipmentPanelData(entityId: string, actorUserId: string, entityLegalName: string): Promise<EquipmentPanelData> {
+  const empty: EquipmentPanelData = { views: [], invoiceDocs: [], financialDocs: [] };
+  if (!(await isSuperAdminId(actorUserId))) return empty;
   const db = createAdminClient();
-  const { data: acqs } = await db.from("entity_equipment_acquisitions").select("id, supplier_name, invoice_number, purchase_date, item_description, currency, net_amount, accounting_classification, funding_source_status").eq("employing_entity_id", entityId).eq("status", "recorded").order("purchase_date", { ascending: false });
-  const out: EquipmentOverview[] = [];
-  for (const a of acqs ?? []) {
-    const { data: ob } = await db.from("entity_financing_obligations").select("id, provider, provider_reference, status, schedule_basis").eq("acquisition_id", a.id).neq("status", "void").maybeSingle();
-    const { data: ins } = ob ? await db.from("entity_financing_instalments").select("id, sequence, amount, expected_month, status, paid_on").eq("obligation_id", ob.id).order("sequence") : { data: [] as never[] };
-    const rows = (ins ?? []).map((i) => ({ id: i.id as string, sequence: i.sequence as number, amount: Number(i.amount), expectedMonth: i.expected_month as string, status: i.status as string, paidOn: (i.paid_on as string | null) ?? null }));
-    out.push({ acquisitionId: a.id, supplier: a.supplier_name, invoiceNumber: a.invoice_number, purchaseDate: a.purchase_date, itemDescription: a.item_description, currency: a.currency, net: Number(a.net_amount), classification: a.accounting_classification, funding: a.funding_source_status,
-      financing: ob ? { provider: ob.provider, reference: ob.provider_reference, status: ob.status, scheduleBasis: ob.schedule_basis, instalments: rows, paid: paidTotal(rows), outstanding: outstandingBalance(rows) } : null });
-  }
-  return out;
+  const [acq, ob, docs] = await Promise.all([
+    db.from("entity_equipment_acquisitions").select("id, supplier_name, supplier_branch, invoice_number, purchase_date, item_description, quantity, currency, list_price_total, discount_total, net_amount, customer_as_shown, invoice_document_id, funding_source_status, funding_source_note, accounting_classification, bank_evidence_document_id, created_at").eq("employing_entity_id", entityId).eq("status", "recorded").order("purchase_date", { ascending: false }),
+    db.from("entity_financing_obligations").select("id, acquisition_id, provider, provider_reference, instalment_count, financed_amount, plan_started_on, confirmation_document_id, schedule_basis, status").eq("employing_entity_id", entityId).neq("status", "void"),
+    db.from("employing_entity_documents").select("id, document_type, original_filename, file_sha256").eq("employing_entity_id", entityId).in("document_type", FINANCIAL_TYPES).order("uploaded_at", { ascending: false }),
+  ]);
+  if (acq.error || ob.error || docs.error) { console.error("[equipment financing] load failed", acq.error?.message ?? ob.error?.message ?? docs.error?.message); return empty; }
+  const obIds = (ob.data ?? []).map((o) => o.id as string);
+  const ins = obIds.length ? await db.from("entity_financing_instalments").select("id, obligation_id, sequence, amount, expected_month, status, paid_on, evidence_document_id, bank_evidence_document_id, evidence_note").in("obligation_id", obIds) : { data: [], error: null };
+  if (ins.error) { console.error("[equipment financing] load instalments failed", ins.error.message); return empty; }
+  const docRefs: DocRef[] = (docs.data ?? []).map((d) => ({ id: d.id as string, filename: (d.original_filename as string | null) ?? null, sha256: (d.file_sha256 as string | null) ?? null, documentType: d.document_type as string }));
+  const views = buildEquipmentViews({ acquisitions: (acq.data ?? []) as unknown as RawAcquisition[], obligations: (ob.data ?? []) as unknown as RawObligation[], instalments: (ins.data ?? []) as unknown as RawInstalment[], docs: docRefs, entityLegalName });
+  return { views, invoiceDocs: docRefs.filter((d) => d.documentType === "purchase_receipt" || d.documentType === "supplier_invoice"), financialDocs: docRefs };
 }
