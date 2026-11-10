@@ -33,6 +33,7 @@ export type AcquisitionFact = {
   net: number;
   classification: "pending_professional_review" | "capital_equipment" | "expensed_small_value";
   funding: "to_confirm" | "company_account" | "founder_personal" | "other_verified";
+  fundingStatementVerified?: boolean;    // a statement document has been linked as evidence of who paid (never inferred)
   customerMatch: CustomerMatch;
   financing: FinancingFact | null;
 };
@@ -57,6 +58,7 @@ export function instalmentState(i: InstalmentFact): InstalmentState {
 export type PositionFlag =
   | "classification_pending_professional_review"
   | "funding_not_confirmed"
+  | "funding_awaiting_statement_verification"
   | "invoice_not_in_entity_name"
   | "schedule_months_are_expected_not_provider"
   | "paid_instalments_awaiting_statement"
@@ -88,6 +90,7 @@ export function acquisitionPosition(a: AcquisitionFact): AcquisitionPosition {
   if (toCents(a.net) !== toCents(a.listPrice) - toCents(a.discount)) flags.push("net_price_arithmetic_mismatch");
   if (a.classification === "pending_professional_review") flags.push("classification_pending_professional_review");
   if (a.funding === "to_confirm") flags.push("funding_not_confirmed");
+  else if (!a.fundingStatementVerified) flags.push("funding_awaiting_statement_verification");   // stated by a person, not yet seen on a statement
   if (a.customerMatch !== "matches_entity") flags.push("invoice_not_in_entity_name");
   if (live) {
     if (toCents(live.financedAmount) !== toCents(a.net)) flags.push("financed_amount_differs_from_net_price");

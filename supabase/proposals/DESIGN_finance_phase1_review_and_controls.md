@@ -70,3 +70,5 @@ Fixed assets: do **not** build a separate register yet. Link an acquisition to `
 ## 7. Decisions for the Founder
 
 D1 supply the **original** supplier receipt file and the provider's confirmation email (card, instalment dates). D2 approve applying migration 1 (with backup) — or hold. D3 approve building the admin Equipment & Financing panel (record, overview, mark paid, position view) next. D4 provide the first company card/bank statement when ready (design item 2 above is then written). D5 whether a separate finance-reviewer role is wanted beyond Super Admin. D6 accountant engagement for section 6.
+
+> Update 2026-11-10 (phase 2): Phase 1 is released (migration 0186 + panel). The detailed reconciliation design is in DESIGN_statement_reconciliation.md; the duplicate-expense guard is reviewed in DESIGN_duplicate_expense_guard.md.

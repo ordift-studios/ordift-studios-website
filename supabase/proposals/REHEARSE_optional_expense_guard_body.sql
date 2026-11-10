@@ -1,4 +1,4 @@
--- Rehearsal body for PROPOSAL_equipment_acquisitions_and_financing.sql. Runs inside ONE transaction that rehearse_finance_stamp.sh ROLLS BACK. Local scratch database only. Synthetic users/entities.
+-- Rehearsal body for migration 0186 (live). Runs inside ONE transaction that rehearse_finance_stamp.sh ROLLS BACK. Local scratch database only. Synthetic users/entities.
 -- Every check raises an exception on failure; the script stops at the first one (ON_ERROR_STOP).
 set session_replication_role = replica;
 insert into auth.users (id, email) select ('00000000-0000-4000-8000-0000000000'||lpad(to_hex(n),2,'0'))::uuid, 'f'||n||'@e2e.test' from generate_series(240,243) n on conflict do nothing;
@@ -35,11 +35,21 @@ grant all on t_ids to public;
 
 -- one recorded acquisition (invoice INV-1001 from 'Synthetic Supplier') for the guard to protect
 select public.record_equipment_acquisition(pg_temp.payload('INV-1001', pg_temp.four()), '00000000-0000-4000-8000-0000000000f0');
--- the optional guard: the same invoice cannot also become an expense; a different one can
+-- v2 guard, direction 1: an expense cannot repeat an acquisition (same invoice number+supplier, or the same stored document); an unrelated expense is unaffected
 select pg_temp.must(pg_temp.err($q$insert into public.entity_expenses (employing_entity_id, expense_date, amount, currency, category, line_code, description, receipt_number, receipt_total, issuing_authority, recorded_by)
-  values ('11111111-1111-4111-8111-111111111101', '2026-11-08', 1149, 'QAR', 'other', 'L1', 'Duplicate of the acquisition', 'INV-1001', 1149, 'Synthetic Supplier', '00000000-0000-4000-8000-0000000000f0')$q$) ilike '%already recorded as an equipment acquisition%', 'no double recognition');
+  values ('11111111-1111-4111-8111-111111111101', '2026-11-08', 1149, 'QAR', 'other', 'L1', 'Duplicate of the acquisition', ' inv-1001 ', 1149, 'SYNTHETIC SUPPLIER', '00000000-0000-4000-8000-0000000000f0')$q$) ilike '%already recorded as an equipment acquisition%', 'same invoice (case/space-insensitive) refused');
+select pg_temp.must(pg_temp.err($q$insert into public.entity_expenses (employing_entity_id, expense_date, amount, currency, category, line_code, description, receipt_number, receipt_total, issuing_authority, source_document_id, recorded_by)
+  values ('11111111-1111-4111-8111-111111111101', '2026-11-08', 50, 'QAR', 'other', 'L2', 'Other number, same invoice file', 'OTHER-1', 50, 'Someone Else', '22222222-2222-4222-8222-222222222201', '00000000-0000-4000-8000-0000000000f0')$q$) ilike '%already recorded as an equipment acquisition%', 'the acquisition''s invoice document cannot back an expense');
+select pg_temp.must(pg_temp.err($q$insert into public.entity_expenses (employing_entity_id, expense_date, amount, currency, category, line_code, description, receipt_number, receipt_total, issuing_authority, source_document_id, recorded_by)
+  values ('11111111-1111-4111-8111-111111111101', '2026-11-08', 50, 'QAR', 'other', 'L3', 'Financing confirmation as an expense', 'OTHER-2', 50, 'Someone Else', '22222222-2222-4222-8222-222222222202', '00000000-0000-4000-8000-0000000000f0')$q$) ilike '%already recorded as an equipment acquisition%', 'the financing confirmation document cannot back an expense');
 select pg_temp.must(pg_temp.err($q$insert into public.entity_expenses (employing_entity_id, expense_date, amount, currency, category, line_code, description, receipt_number, receipt_total, issuing_authority, recorded_by)
-  values ('11111111-1111-4111-8111-111111111101', '2026-11-08', 10, 'QAR', 'other', 'L1', 'Unrelated', '999', 10, 'Synthetic Supplier', '00000000-0000-4000-8000-0000000000f0')$q$) = '', 'an unrelated expense is unaffected');
-
+  values ('11111111-1111-4111-8111-111111111101', '2026-11-08', 10, 'QAR', 'other', 'L1', 'Unrelated', '999', 10, 'Synthetic Supplier', '00000000-0000-4000-8000-0000000000f0')$q$) = '', 'an unrelated expense (same supplier, other number) is unaffected');
+select pg_temp.must(pg_temp.err($q$insert into public.entity_expenses (employing_entity_id, expense_date, amount, currency, category, line_code, description, receipt_number, receipt_total, issuing_authority, recorded_by)
+  values ('11111111-1111-4111-8111-111111111102', '2026-11-08', 1149, 'QAR', 'other', 'L1', 'Other entity, same number', 'INV-1001', 1149, 'Synthetic Supplier', '00000000-0000-4000-8000-0000000000f0')$q$) = '', 'another legal entity is unaffected');
+-- direction 2: an acquisition cannot repeat an existing expense (the 999 expense above is a different invoice; make a matching one first)
+insert into public.entity_expenses (employing_entity_id, expense_date, amount, currency, category, line_code, description, receipt_number, receipt_total, issuing_authority, recorded_by)
+  values ('11111111-1111-4111-8111-111111111101', '2026-11-08', 20, 'QAR', 'other', 'L9', 'Existing expense', 'INV-2002', 20, 'Synthetic Supplier', '00000000-0000-4000-8000-0000000000f0');
+select pg_temp.must(pg_temp.err(format($q$select public.record_equipment_acquisition(%L::jsonb, '00000000-0000-4000-8000-0000000000f0')$q$, pg_temp.payload('INV-2002', pg_temp.four(), '22222222-2222-4222-8222-222222222204', '22222222-2222-4222-8222-222222222201'))) ilike '%already recorded as an expense%', 'an acquisition cannot repeat an existing expense');
+select pg_temp.must((select count(*) from public.entity_equipment_acquisitions) = 1, 'the refused acquisition left nothing behind');
 
 select 'OPTIONAL EXPENSE GUARD REHEARSAL PASSED' as result;

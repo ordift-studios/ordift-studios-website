@@ -40,4 +40,7 @@ describe("equipment & financing isolation", () => {
     const lib = read("src/lib/organization/equipmentFinancing.ts");
     expect((lib.match(/isSuperAdminId\(/g) ?? []).length).toBeGreaterThanOrEqual(3);   // record, mark paid, load
   });
+  it("the overlap check only READS (no insert/update/upsert/delete/rpc) and is the only equipment-side code that mentions expenses", () => {
+    expect(code("src/lib/organization/financeOverlap.ts")).not.toMatch(/\.(insert|update|upsert|delete|rpc)\s*\(/);
+  });
 });

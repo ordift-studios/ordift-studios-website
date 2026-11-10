@@ -71,3 +71,21 @@ describe("customer on the invoice", () => {
     expect(customerMatch(null, "ORDIFT STUDIOS W.L.L.")).toBe("not_shown");
   });
 });
+
+describe("funding stated by a person vs verified by a statement", () => {
+  it("a stated company-card funding source is not 'not confirmed', but stays awaiting statement verification", () => {
+    const f = acquisitionPosition(acq({ funding: "company_account" })).flags;
+    expect(f).not.toContain("funding_not_confirmed");
+    expect(f).toContain("funding_awaiting_statement_verification");
+  });
+  it("only a linked statement clears it", () => {
+    const f = acquisitionPosition(acq({ funding: "company_account", fundingStatementVerified: true })).flags;
+    expect(f).not.toContain("funding_awaiting_statement_verification");
+    expect(f).not.toContain("funding_not_confirmed");
+  });
+  it("an unconfirmed funding source raises only 'not confirmed'", () => {
+    const f = acquisitionPosition(acq({ funding: "to_confirm" })).flags;
+    expect(f).toContain("funding_not_confirmed"); expect(f).not.toContain("funding_awaiting_statement_verification");
+  });
+});
+

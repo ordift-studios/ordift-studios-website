@@ -7,12 +7,12 @@ M=${1:-apply}; DB=${2:-p4_e2e}; C=${3:-ordift-mig-check2}; D="$(cd "$(dirname "$
 strip() { grep -v -E "^(begin|commit);\$" "$1"; }
 q() { docker exec -i "$C" psql -U supabase_admin -h 127.0.0.1 -d "$DB" -X -q -v ON_ERROR_STOP=1 -At; }
 gone=$(cat <<'SQL'
-do $$ begin if exists (select 1 from pg_trigger where tgname = 'entity_expenses_not_an_acquisition') or to_regproc('private.expense_not_an_acquisition') is not null or to_regclass('public.entity_equipment_acquisitions') is null then raise exception 'OPTIONAL ROLLBACK WRONG STATE'; end if; end $$;
+do $$ begin if exists (select 1 from pg_trigger where tgname in ('entity_expenses_not_an_acquisition','acquisitions_not_an_expense')) or to_regproc('private.expense_not_an_acquisition') is not null or to_regproc('private.acquisition_not_an_expense') is not null or to_regclass('public.entity_equipment_acquisitions') is null then raise exception 'OPTIONAL ROLLBACK WRONG STATE'; end if; end $$;
 SQL
 )
 case "$M" in
-  apply)    { echo "begin;"; strip "$D/PROPOSAL_equipment_acquisitions_and_financing.sql"; strip "$D/PROPOSAL_optional_duplicate_expense_guard.sql"; cat "$D/REHEARSE_optional_expense_guard_body.sql"; echo "rollback;"; } | q ;;
-  rollback) { echo "begin;"; strip "$D/PROPOSAL_equipment_acquisitions_and_financing.sql"; strip "$D/PROPOSAL_optional_duplicate_expense_guard.sql"; cat "$D/REHEARSE_optional_expense_guard_body.sql"; strip "$D/ROLLBACK_optional_duplicate_expense_guard.sql"; echo "$gone"; echo "rollback;"; } | q ;;
-  verifier) { echo "begin;"; strip "$D/PROPOSAL_equipment_acquisitions_and_financing.sql"; strip "$D/PROPOSAL_optional_duplicate_expense_guard.sql"; echo "$gone"; echo "rollback;"; } | q ;;   # self-test: MUST fail while the guard is still applied
+  apply)    { echo "begin;"; strip "$D/../migrations/0186_equipment_acquisitions_and_financing.sql"; strip "$D/PROPOSAL_optional_duplicate_expense_guard.sql"; cat "$D/REHEARSE_optional_expense_guard_body.sql"; echo "rollback;"; } | q ;;
+  rollback) { echo "begin;"; strip "$D/../migrations/0186_equipment_acquisitions_and_financing.sql"; strip "$D/PROPOSAL_optional_duplicate_expense_guard.sql"; cat "$D/REHEARSE_optional_expense_guard_body.sql"; strip "$D/ROLLBACK_optional_duplicate_expense_guard.sql"; echo "$gone"; echo "rollback;"; } | q ;;
+  verifier) { echo "begin;"; strip "$D/../migrations/0186_equipment_acquisitions_and_financing.sql"; strip "$D/PROPOSAL_optional_duplicate_expense_guard.sql"; echo "$gone"; echo "rollback;"; } | q ;;   # self-test: MUST fail while the guard is still applied
   *) echo "usage: $0 apply|rollback|verifier"; exit 2 ;;
 esac

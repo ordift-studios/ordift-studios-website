@@ -14,7 +14,8 @@ const month = (iso: string) => new Date(`${iso}T00:00:00Z`).toLocaleDateString("
 export const FLAG_LABEL: Record<PositionFlag, string> = {
   classification_pending_professional_review: "Accounting classification pending professional advice (no policy applied)",
   funding_not_confirmed: "Who paid and with which instrument is not confirmed",
-  invoice_not_in_entity_name: "The invoice does not name this legal entity as customer — ownership/recognition to be confirmed",
+  funding_awaiting_statement_verification: "Funding source is the Founder’s statement only — the card/bank statement has not verified it yet",
+  invoice_not_in_entity_name: "The invoice names an individual (not this legal entity) — company ownership and accounting treatment are to be decided; who bought it does not by itself make it a company asset",
   schedule_months_are_expected_not_provider: "Months of the pending instalments are expected, not the provider's schedule",
   paid_instalments_awaiting_statement: "Reported-paid instalments are awaiting statement reconciliation",
   paid_without_any_evidence: "A paid instalment has no evidence recorded",
