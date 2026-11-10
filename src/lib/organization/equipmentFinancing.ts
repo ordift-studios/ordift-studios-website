@@ -2,6 +2,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { logActivity } from "@/lib/admin/activityLog";
 import { isSuperAdminId } from "@/lib/organization/authority";
 import { buildEquipmentViews, type DocRef, type EquipmentView, type RawAcquisition, type RawInstalment, type RawObligation } from "./equipmentPanelView";
+import { documentFamily, expenseOverlapForAcquisition } from "./financeOverlap";
 import { validateAcquisition, type AcquisitionInput, type FinancingInput } from "./equipmentFinancingRules";
 
 // EQUIPMENT ACQUISITIONS + FINANCING (see supabase/proposals/PROPOSAL_equipment_acquisitions_and_financing.sql: NOT applied anywhere until the Founder authorises it).
@@ -23,6 +24,11 @@ export async function recordEquipmentAcquisition(p: { actorUserId: string; acqui
   if (!(await isSuperAdminId(p.actorUserId))) return DENIED;
   const v = validateAcquisition(p.acquisition, p.financing, today());
   if (!v.ok) return v;
+  // the same invoice or document must not already be recorded as an expense (read-only check; the optional database triggers are a second line of defence)
+  const db = createAdminClient();
+  const family = [...new Set([...(await documentFamily(db, p.acquisition.entityId, p.acquisition.invoiceDocumentId)), ...(p.financing ? await documentFamily(db, p.acquisition.entityId, p.financing.confirmationDocumentId) : [])])];
+  const overlap = await expenseOverlapForAcquisition({ entityId: p.acquisition.entityId, invoiceNumber: p.acquisition.invoiceNumber, supplier: p.acquisition.supplier, documentFamily: family });
+  if (overlap) return { ok: false, error: overlap };
   const { data, error } = await createAdminClient().rpc("record_equipment_acquisition", { p: v.payload, p_actor: p.actorUserId });
   if (error) { console.error("[equipment financing] record failed", error.message); return { ok: false, error: friendly(error.message) }; }
   const row = (Array.isArray(data) ? data[0] : data) as { acquisition_id: string; obligation_id: string | null } | null;

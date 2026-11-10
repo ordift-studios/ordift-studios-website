@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildEquipmentViews, type DocRef, type RawAcquisition, type RawInstalment, type RawObligation } from "./equipmentPanelView";
+import { buildEquipmentViews, fundingLabel, type DocRef, type RawAcquisition, type RawInstalment, type RawObligation } from "./equipmentPanelView";
 
 // SYNTHETIC rows only (public repository): the shape of one financed purchase, not any real invoice.
 const docs: DocRef[] = [
@@ -49,3 +49,12 @@ describe("equipment panel view", () => {
     expect(v.financing).toBeNull(); expect(v.position.outstandingLiability).toBe(0);
   });
 });
+
+describe("funding label", () => {
+  it("says 'stated by the Founder; statement verification pending' until a statement document is linked", () => {
+    expect(build(rows(), acq({ funding_source_status: "company_account", funding_source_note: "Founder statement: company card" })).fundingLabel).toMatch(/stated by the Founder; statement verification pending/);
+    expect(build(rows(), acq({ funding_source_status: "company_account", bank_evidence_document_id: "d-stmt" })).fundingLabel).toMatch(/verified against a statement/);
+    expect(fundingLabel("to_confirm", false)).toMatch(/not verified/);
+  });
+});
+

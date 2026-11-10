@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const h = vi.hoisted(() => ({ superAdmin: true, rpc: vi.fn(), log: vi.fn(), owner: "11111111-1111-4111-8111-111111111101" }));
+const h = vi.hoisted(() => ({ overlap: null as string | null, superAdmin: true, rpc: vi.fn(), log: vi.fn(), owner: "11111111-1111-4111-8111-111111111101" }));
 vi.mock("@/lib/organization/authority", () => ({ isSuperAdminId: async () => h.superAdmin }));
+vi.mock("./financeOverlap", () => ({ documentFamily: async (_db: unknown, _e: string, id: string) => [id], expenseOverlapForAcquisition: async () => h.overlap }));
 vi.mock("@/lib/admin/activityLog", () => ({ logActivity: h.log }));
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: () => ({ rpc: h.rpc, from: () => ({ select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: { id: "i2", entity_financing_obligations: { employing_entity_id: h.owner } }, error: null }) }) }) }) }) }));
 
@@ -10,7 +11,7 @@ const E = "11111111-1111-4111-8111-111111111101", D1 = "22222222-2222-4222-8222-
 const input = () => ({ actorUserId: "u1", acquisition: { entityId: E, supplier: "Synthetic Supplier", invoiceNumber: "INV-1001", purchaseDate: "2026-11-08", itemDescription: "Synthetic pen display", quantity: 1, currency: "QAR", listPrice: 1499, discount: 350, net: 1149, invoiceDocumentId: D1, fundingStatus: "to_confirm" },
   financing: { provider: "SyntheticPay", reference: "PL-REF-1001", count: 4, plannedOn: "2026-11-08", firstMonth: "2026-11-01", confirmationDocumentId: D2, scheduleBasis: "founder_expected_months", firstPaid: { paidOn: "2026-11-08", evidenceNote: "Provider confirmation: down payment paid" } } });
 
-beforeEach(() => { h.owner = E; h.superAdmin = true; h.rpc.mockReset(); h.log.mockReset(); });
+beforeEach(() => { h.overlap = null; h.owner = E; h.superAdmin = true; h.rpc.mockReset(); h.log.mockReset(); });
 
 describe("recordEquipmentAcquisition", () => {
   it("refuses everyone but a Super Admin before touching the database", async () => {
@@ -32,6 +33,11 @@ describe("recordEquipmentAcquisition", () => {
     expect(args.p.financing.instalments).toHaveLength(4);
     expect(args.p.firstInstalmentPaid.sequence).toBe(1);
     expect(h.log).toHaveBeenCalledWith(expect.objectContaining({ action: "equipment_acquisition.recorded", metadata: expect.objectContaining({ classification: "pending_professional_review" }) }));
+  });
+  it("refuses an invoice that is already recorded as an expense, before the database function is called", async () => {
+    h.overlap = "This invoice is already recorded as an expense, so it cannot also be recorded as an equipment acquisition.";
+    expect(await recordEquipmentAcquisition(input())).toEqual({ ok: false, error: h.overlap });
+    expect(h.rpc).not.toHaveBeenCalled(); expect(h.log).not.toHaveBeenCalled();
   });
   it("turns a duplicate invoice into a plain message and logs nothing", async () => {
     h.rpc.mockResolvedValue({ data: null, error: { message: 'duplicate key value violates unique constraint "acquisitions_one_per_invoice"' } });
