@@ -80,6 +80,33 @@ async function acquisitionFacts(acquisitionId: string): Promise<{ entityId: stri
   return { entityId: a.employing_entity_id as string, net: Number(a.net_amount), paid, financed: (obs ?? []).some((o) => o.status !== "void") };
 }
 
+// ONE atomic database call for a NON-financed purchase with its terms and/or first payment (migration 0187 record_acquisition_bundle): all or nothing, so no half-recorded purchase can exist.
+// A retry after a lost response is refused by the unique invoice index and creates nothing. A financed purchase keeps recordEquipmentAcquisition (its own atomic path).
+export async function recordAcquisitionBundle(p: { actorUserId: string; acquisition: AcquisitionInput; terms: TermsInput | null; payment: PaymentInput | null }): Promise<{ ok: true; acquisitionId: string } | Fail> {
+  if (!(await isSuperAdminId(p.actorUserId))) return DENIED;
+  const v = validateAcquisition(p.acquisition, null, today());
+  if (!v.ok) return v;
+  let terms: Record<string, unknown> | null = null, payment: Record<string, unknown> | null = null;
+  if (p.terms) { const t = validateTerms(p.terms); if (!t.ok) return t; terms = { arrangement: t.value.arrangement, balanceDueOn: t.value.balanceDueOn, supplierTerms: t.value.supplierTerms, note: t.value.note }; }
+  if (p.payment) {
+    if (p.terms?.arrangement === "unpaid") return { ok: false, error: "A purchase marked 'not yet paid' cannot have a payment." };
+    const pv = validatePayment(p.payment, { net: p.acquisition.net, alreadyPaid: 0, today: today() });
+    if (!pv.ok) return pv;
+    payment = { ...pv.value };
+  }
+  const db = createAdminClient();
+  const family = await documentFamily(db, p.acquisition.entityId, p.acquisition.invoiceDocumentId);
+  const overlap = await expenseOverlapForAcquisition({ entityId: p.acquisition.entityId, invoiceNumber: p.acquisition.invoiceNumber, supplier: p.acquisition.supplier, documentFamily: family });
+  if (overlap) return { ok: false, error: overlap };
+  const { data, error } = await db.rpc("record_acquisition_bundle", { p: { entityId: p.acquisition.entityId, acquisition: v.payload.acquisition, terms, payment }, p_actor: p.actorUserId });
+  if (error) { console.error("[equipment financing] bundle failed", error.message); return { ok: false, error: /acquisitions_one_per_invoice/.test(error.message) ? friendly(error.message) : paymentFriendly(error.message) }; }
+  const row = (Array.isArray(data) ? data[0] : data) as { new_acquisition_id: string } | null;
+  if (!row) return { ok: false, error: "The acquisition could not be recorded." };
+  await logActivity({ actorUserId: p.actorUserId, action: "equipment_acquisition.recorded", entityType: "employing_entity", entityId: p.acquisition.entityId,
+    metadata: { acquisitionId: row.new_acquisition_id, invoiceNumber: p.acquisition.invoiceNumber, net: p.acquisition.net, currency: p.acquisition.currency, classification: "pending_professional_review", arrangement: terms?.arrangement ?? "to_confirm", paymentRecorded: Boolean(payment), bankVerified: false } });
+  return { ok: true, acquisitionId: row.new_acquisition_id };
+}
+
 export async function setAcquisitionTerms(p: { actorUserId: string; entityId: string; acquisitionId: string; terms: TermsInput }): Promise<{ ok: true } | Fail> {
   if (!(await isSuperAdminId(p.actorUserId))) return DENIED;
   const v = validateTerms(p.terms);

@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { getCurrentUser, isSuperAdmin } from "@/lib/portal/roles";
-import { markInstalmentPaid, recordAcquisitionPayment, recordEquipmentAcquisition, setAcquisitionTerms, voidAcquisitionPayment } from "@/lib/organization/equipmentFinancing";
+import { markInstalmentPaid, recordAcquisitionBundle, recordAcquisitionPayment, recordEquipmentAcquisition, setAcquisitionTerms, voidAcquisitionPayment } from "@/lib/organization/equipmentFinancing";
 import { parseAcquisitionForm, parseMarkPaidForm, parsePaymentForm, parseTermsForm, parseVoidPaymentForm } from "@/lib/organization/equipmentForms";
 
 // Equipment & Financing server actions. Super Admin only, re-checked on EVERY call (and again inside the library and the database function).
@@ -17,24 +17,18 @@ async function requireSuperAdminActor(): Promise<{ id: string } | { error: strin
 }
 const refresh = (entityId: string) => revalidatePath(`/admin/organization/legal-entities/${entityId}/equipment`);
 
-// The purchase is recorded FIRST (one atomic database call). Terms and a first payment follow as separate audited calls: if one of them is refused the purchase stays recorded with the arrangement
-// "to be confirmed" and the message says exactly what is missing, so nothing is ever assumed paid.
+// A financed purchase keeps its own atomic path (purchase + agreement + instalments in one database call). A NON-financed purchase with terms and/or a first payment is ONE atomic database call too
+// (purchase + terms + payment: all or nothing). A plain purchase left "to be confirmed" uses the original call. So no half-recorded purchase can be created by this form.
 export async function recordEquipmentAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const actor = await requireSuperAdminActor();
   if ("error" in actor) return { ok: false, error: actor.error };
   const p = parseAcquisitionForm(formData);
   if (!p.ok) return { ok: false, error: p.error };
-  const r = await recordEquipmentAcquisition({ actorUserId: actor.id, acquisition: p.acquisition, financing: p.financing });
+  const r = p.financing || (!p.terms && !p.payment)
+    ? await recordEquipmentAcquisition({ actorUserId: actor.id, acquisition: p.acquisition, financing: p.financing })
+    : await recordAcquisitionBundle({ actorUserId: actor.id, acquisition: p.acquisition, terms: p.terms, payment: p.payment });
   if (!r.ok) return { ok: false, error: r.error };
   refresh(p.acquisition.entityId);
-  if (p.terms) {
-    const t = await setAcquisitionTerms({ actorUserId: actor.id, entityId: p.acquisition.entityId, acquisitionId: r.acquisitionId, terms: p.terms });
-    if (!t.ok) return { ok: false, error: `The purchase was recorded, but how it is paid was not: ${t.error} Set it from the purchase's "How is it paid?" section.` };
-  }
-  if (p.payment) {
-    const pay = await recordAcquisitionPayment({ actorUserId: actor.id, entityId: p.acquisition.entityId, acquisitionId: r.acquisitionId, payment: p.payment });
-    if (!pay.ok) return { ok: false, error: `The purchase was recorded, but the payment was not: ${pay.error} Add it from the purchase's Payments section.` };
-  }
   return { ok: true };
 }
 

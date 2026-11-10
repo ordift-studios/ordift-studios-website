@@ -7,7 +7,7 @@ vi.mock("@/lib/supabase/admin", async () => { const { fakeAdmin } = await import
 vi.mock("@/lib/organization/authority", () => ({ isSuperAdminId: async () => h.superAdmin }));
 vi.mock("@/lib/admin/activityLog", () => ({ logActivity: h.log }));
 vi.mock("./financeOverlap", () => ({ documentFamily: async () => [], expenseOverlapForAcquisition: async () => null }));
-import { recordAcquisitionPayment, setAcquisitionTerms, voidAcquisitionPayment } from "./equipmentFinancing";
+import { recordAcquisitionBundle, recordAcquisitionPayment, setAcquisitionTerms, voidAcquisitionPayment } from "./equipmentFinancing";
 
 const Q = "ent-qatar", G = "ent-ghana";
 const acqRow = (id: string, entity: string, net = 2000) => ({ id, employing_entity_id: entity, net_amount: net, status: "recorded" });
@@ -72,3 +72,36 @@ describe("setAcquisitionTerms and voidAcquisitionPayment", () => {
     expect(h.db.writes).toEqual([]);   // the fake records direct inserts/updates only: there must be none
   });
 });
+
+describe("recordAcquisitionBundle (atomic purchase + terms + payment)", () => {
+  const acquisition = { entityId: "00000000-0000-4000-8000-0000000000e1", supplier: "Synthetic Supplier", invoiceNumber: "INV-B1", purchaseDate: "2026-11-01", itemDescription: "Synthetic equipment", quantity: 1, currency: "QAR", listPrice: 2000, discount: 0, net: 2000, invoiceDocumentId: "00000000-0000-4000-8000-0000000000a1", fundingStatus: "to_confirm" };
+  const terms = { arrangement: "paid_in_full" };
+  beforeEach(() => { h.db.rpcHandlers!.record_acquisition_bundle = () => ({ data: [{ new_acquisition_id: "acq-1", new_terms_id: "t-1", new_payment_id: "p-1" }], error: null }); });
+  it("sends ONE call carrying purchase, terms and payment, logs it as not bank-verified, and makes no direct table write", async () => {
+    let args: Record<string, unknown> = {}; h.db.rpcHandlers!.record_acquisition_bundle = (a) => { args = a; return { data: [{ new_acquisition_id: "acq-1" }], error: null }; };
+    expect(await recordAcquisitionBundle({ actorUserId: "u", acquisition, terms, payment: pay() })).toEqual({ ok: true, acquisitionId: "acq-1" });
+    expect(args).toMatchObject({ p_actor: "u", p: { entityId: "00000000-0000-4000-8000-0000000000e1", terms: { arrangement: "paid_in_full" }, payment: { kind: "full", amount: 2000, method: "cash" } } });
+    expect(h.log).toHaveBeenCalledWith(expect.objectContaining({ action: "equipment_acquisition.recorded", metadata: expect.objectContaining({ paymentRecorded: true, bankVerified: false, arrangement: "paid_in_full" }) }));
+    expect(h.db.writes).toEqual([]);
+  });
+  it("validates everything before the database: over-payment, missing due date, payment on an unpaid arrangement", async () => {
+    const spy = vi.fn(); h.db.rpcHandlers!.record_acquisition_bundle = (a) => { spy(a); return { data: null, error: null }; };
+    expect(await recordAcquisitionBundle({ actorUserId: "u", acquisition, terms, payment: pay({ kind: "part", amount: 2000.01 }) })).toMatchObject({ ok: false });
+    expect(await recordAcquisitionBundle({ actorUserId: "u", acquisition, terms: { arrangement: "supplier_credit" }, payment: null })).toMatchObject({ ok: false });
+    expect(await recordAcquisitionBundle({ actorUserId: "u", acquisition, terms: { arrangement: "unpaid" }, payment: pay({ kind: "part", amount: 10 }) })).toMatchObject({ ok: false });
+    expect(spy).not.toHaveBeenCalled();
+  });
+  it("refuses everyone but a Super Admin", async () => {
+    h.superAdmin = false;
+    expect(await recordAcquisitionBundle({ actorUserId: "u", acquisition, terms, payment: pay() })).toMatchObject({ ok: false });
+    expect(h.log).not.toHaveBeenCalled();
+  });
+  it("a refusal inside the transaction means nothing exists: the user gets a plain message and nothing is logged; a retry after success is a plain 'already recorded'", async () => {
+    h.db.rpcHandlers!.record_acquisition_bundle = () => ({ data: null, error: { message: "payments would total 2000.01 but the net price is 2000.00 (already paid 0)" } });
+    expect(await recordAcquisitionBundle({ actorUserId: "u", acquisition, terms, payment: pay() })).toEqual({ ok: false, error: "This payment would take the total above the net price." });
+    h.db.rpcHandlers!.record_acquisition_bundle = () => ({ data: null, error: { message: 'duplicate key value violates unique constraint "acquisitions_one_per_invoice"' } });
+    expect(await recordAcquisitionBundle({ actorUserId: "u", acquisition, terms, payment: pay() })).toEqual({ ok: false, error: "This supplier invoice is already recorded as an acquisition." });
+    expect(h.log).not.toHaveBeenCalled();
+  });
+});
+

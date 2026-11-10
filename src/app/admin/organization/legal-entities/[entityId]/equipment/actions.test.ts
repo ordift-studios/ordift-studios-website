@@ -1,17 +1,17 @@
 // @vitest-environment node
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const h = vi.hoisted(() => ({ user: null as null | { id: string }, superAdmin: false, record: vi.fn(), pay: vi.fn(), revalidate: vi.fn(), terms: vi.fn(), payment: vi.fn(), voidPay: vi.fn() }));
+const h = vi.hoisted(() => ({ user: null as null | { id: string }, superAdmin: false, record: vi.fn(), pay: vi.fn(), revalidate: vi.fn(), terms: vi.fn(), payment: vi.fn(), voidPay: vi.fn(), bundle: vi.fn() }));
 vi.mock("@/lib/portal/roles", () => ({ getCurrentUser: async () => h.user, isSuperAdmin: () => h.superAdmin }));
 vi.mock("next/cache", () => ({ revalidatePath: h.revalidate }));
-vi.mock("@/lib/organization/equipmentFinancing", () => ({ recordEquipmentAcquisition: h.record, markInstalmentPaid: h.pay, setAcquisitionTerms: h.terms, recordAcquisitionPayment: h.payment, voidAcquisitionPayment: h.voidPay }));
+vi.mock("@/lib/organization/equipmentFinancing", () => ({ recordEquipmentAcquisition: h.record, markInstalmentPaid: h.pay, setAcquisitionTerms: h.terms, recordAcquisitionPayment: h.payment, voidAcquisitionPayment: h.voidPay, recordAcquisitionBundle: h.bundle }));
 import { markInstalmentPaidAction, recordEquipmentAction, recordPaymentAction, setTermsAction, voidPaymentAction } from "./actions";
 
 const fd = (o: Record<string, string>) => { const f = new FormData(); for (const [k, v] of Object.entries(o)) f.set(k, v); return f; };
 const acq = { entityId: "e1", supplier: "Synthetic Supplier", invoiceNumber: "INV-1", purchaseDate: "2026-11-08", itemDescription: "Synthetic pen display", currency: "QAR", listPrice: "1499", discount: "350", net: "1149", invoiceDocumentId: "d1" };
 const pay = { entityId: "e1", instalmentId: "i2", paidOn: "2026-12-01", evidenceNote: "provider app shows it paid", confirmUnverified: "yes" };
 
-beforeEach(() => { h.user = { id: "u1" }; h.superAdmin = true; for (const m of [h.record, h.pay, h.revalidate, h.terms, h.payment, h.voidPay]) m.mockReset(); });
+beforeEach(() => { h.user = { id: "u1" }; h.superAdmin = true; for (const m of [h.record, h.pay, h.revalidate, h.terms, h.payment, h.voidPay, h.bundle]) m.mockReset(); });
 
 describe("equipment actions — access", () => {
   it("refuse anonymous and non-Super-Admin users before reading the form or calling the library", async () => {
@@ -52,26 +52,28 @@ describe("payment-arrangement actions", () => {
   it("every new action refuses a non-Super-Admin before touching the library", async () => {
     h.superAdmin = false;
     for (const r of [await setTermsAction(null, fd({ entityId: "e1", acquisitionId: "a1", arrangement: "unpaid" })), await recordPaymentAction(null, fd(payForm)), await voidPaymentAction(null, fd({ entityId: "e1", paymentId: "p1", reason: "entered against the wrong purchase" })), await recordEquipmentAction(null, fd(outright))]) expect(r).toMatchObject({ ok: false });
-    for (const m of [h.record, h.terms, h.payment, h.voidPay]) expect(m).not.toHaveBeenCalled();
+    for (const m of [h.record, h.terms, h.payment, h.voidPay, h.bundle]) expect(m).not.toHaveBeenCalled();
   });
-  it("an outright purchase is recorded with NO financing, then its terms, then its payment — in that order, as the same Super Admin", async () => {
-    const order: string[] = [];
-    h.record.mockImplementation(async (a: { financing: unknown }) => { order.push(`record(financing=${a.financing})`); return { ok: true, acquisitionId: "acq-9", obligationId: null }; });
-    h.terms.mockImplementation(async () => { order.push("terms"); return { ok: true }; });
-    h.payment.mockImplementation(async () => { order.push("payment"); return { ok: true }; });
+  it("an outright purchase with its payment goes through ONE atomic call (no separate terms/payment calls, no financing)", async () => {
+    h.bundle.mockResolvedValue({ ok: true, acquisitionId: "acq-9" });
     expect(await recordEquipmentAction(null, fd(outright))).toEqual({ ok: true });
-    expect(order).toEqual(["record(financing=null)", "terms", "payment"]);
-    expect(h.payment).toHaveBeenCalledWith(expect.objectContaining({ actorUserId: "u1", acquisitionId: "acq-9", payment: expect.objectContaining({ kind: "full", method: "bank_transfer" }) }));
+    expect(h.bundle).toHaveBeenCalledTimes(1);
+    expect(h.bundle).toHaveBeenCalledWith(expect.objectContaining({ actorUserId: "u1", terms: expect.objectContaining({ arrangement: "paid_in_full" }), payment: expect.objectContaining({ kind: "full", method: "bank_transfer" }) }));
+    for (const m of [h.record, h.terms, h.payment]) expect(m).not.toHaveBeenCalled();
   });
-  it("if the payment step is refused the purchase stays recorded and the message says exactly what is missing", async () => {
-    h.record.mockResolvedValue({ ok: true, acquisitionId: "acq-9", obligationId: null }); h.terms.mockResolvedValue({ ok: true });
-    h.payment.mockResolvedValue({ ok: false, error: "This payment would take the total above the net price." });
-    expect(await recordEquipmentAction(null, fd(outright))).toEqual({ ok: false, error: expect.stringMatching(/purchase was recorded, but the payment was not: This payment would take the total above the net price\./) });
+  it("if the atomic call is refused NOTHING is recorded and the message says why; nothing is refreshed", async () => {
+    h.bundle.mockResolvedValue({ ok: false, error: "This payment would take the total above the net price." });
+    expect(await recordEquipmentAction(null, fd(outright))).toEqual({ ok: false, error: "This payment would take the total above the net price." });
+    expect(h.revalidate).not.toHaveBeenCalled();
   });
-  it("a purchase left 'to be confirmed' records neither terms nor payment", async () => {
+  it("a purchase left 'to be confirmed' uses the original single call; a financed one keeps its financing path", async () => {
     h.record.mockResolvedValue({ ok: true, acquisitionId: "acq-9", obligationId: null });
     expect(await recordEquipmentAction(null, fd(acq))).toEqual({ ok: true });
-    expect(h.terms).not.toHaveBeenCalled(); expect(h.payment).not.toHaveBeenCalled();
+    expect(h.record).toHaveBeenCalledWith(expect.objectContaining({ financing: null }));
+    const fin = { ...acq, arrangement: "financed", provider: "SyntheticPay", providerReference: "SP-1", instalmentCount: "4", plannedOn: "2026-11-08", firstMonth: "2026-11-01", confirmationDocumentId: "d2" };
+    await recordEquipmentAction(null, fd(fin));
+    expect(h.record).toHaveBeenLastCalledWith(expect.objectContaining({ financing: expect.objectContaining({ provider: "SyntheticPay", count: 4 }) }));
+    expect(h.bundle).not.toHaveBeenCalled();
   });
   it("record payment / terms / void pass the signed-in actor and refresh only the equipment page", async () => {
     h.payment.mockResolvedValue({ ok: true }); h.terms.mockResolvedValue({ ok: true }); h.voidPay.mockResolvedValue({ ok: true });

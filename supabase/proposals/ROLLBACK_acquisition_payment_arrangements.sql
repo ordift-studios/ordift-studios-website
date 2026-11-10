@@ -3,6 +3,7 @@ begin;
 do $$ begin
   if exists (select 1 from public.entity_acquisition_terms) or exists (select 1 from public.entity_acquisition_payments) or exists (select 1 from public.entity_finance_events where event_type in ('terms_set', 'payment_recorded', 'payment_voided')) then
     raise exception 'rows exist in the payment-arrangement tables or their audit events; rollback refused (void rows instead)'; end if; end $$;
+drop function if exists public.record_acquisition_bundle(jsonb, uuid);
 drop function if exists public.record_acquisition_payment(uuid, text, numeric, date, text, text, text, uuid, text, uuid);
 drop function if exists public.set_acquisition_terms(uuid, text, date, text, text, uuid);
 drop function if exists public.void_acquisition_payment(uuid, text, uuid);

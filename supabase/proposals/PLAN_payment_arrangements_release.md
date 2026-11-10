@@ -1,36 +1,44 @@
-# PLAN (NOT approved; nothing applied, pushed or deployed): releasing the acquisition payment-arrangements extension
+# PLAN (NOT approved; nothing applied, pushed or deployed): release of migration 0187 + payment-arrangements code
 
-Local branch `local/finance-payment-arrangements` (on top of Production main `ad5e27f`, with the unreleased Phase 2 items merged: application-level duplicate check, funding labels, record-sheet tools). Review proposal: PROPOSAL_acquisition_payment_arrangements.md.
+Final local preparation, 11 Nov 2026. Branch `local/finance-payment-arrangements`, based on Production `main` (ad5e27f). Review proposal: PROPOSAL_acquisition_payment_arrangements.md.
 
-## What ships
-| Part | Content | SHA-256 (rehearsed file) |
-|---|---|---|
-| Migration (number = next free after 0186, i.e. 0187, assigned at release) | PROPOSAL_acquisition_payment_arrangements.sql — 2 new tables (terms, payments), 3 audited functions, 2 guard triggers, RLS; widens ONE check list on the empty audit-events table | 9f4649667c81009fffa6817eff33fece65bb9f0aaaf53ccaca149fef3e7535fe |
-| Rollback | ROLLBACK_acquisition_payment_arrangements.sql — refuses if any terms/payment/event row exists; restores the audit-event list | 0ae1747c385881a4b36446f6b366b313611010a56126ac83358ea5b3266943a6 |
-| Code | arrangement/payment rules, generalised position + view-model, library + 3 new server actions, panel (How is it paid, Payments section, terms/void forms), expense-side overlap check also covers payment evidence | commit named at approval |
-Also in the code release (already reviewed earlier, unreleased): duplicate-expense application check, funding wording, entity-page tweaks listed in the Phase 2 notes. Optional DB duplicate-expense triggers are NOT part of this release.
+## Exact release scope
+| Part | Fingerprint / content |
+|---|---|
+| Migration `supabase/migrations/0187_acquisition_payment_arrangements.sql` (body identical to the rehearsed proposal; 2 header lines differ) | sha256 `01dff67ec9e1b4b92c075a09c462d66f6c7638d91c77ae9b125e583a0a53e9bc` |
+| Rollback `supabase/proposals/ROLLBACK_acquisition_payment_arrangements.sql` | sha256 `322bd633c008b2e6719b2ec5b2cc49e30e31a8ab7f9c45bacbf7880036a5862a` |
+| What the migration adds | 2 tables (terms, payments), 4 functions (set terms, record payment, void payment, **record_acquisition_bundle — one atomic call**), 2 guard triggers, RLS (Super Admin read only), no client write grants; widens ONE check list on the empty audit-events table |
+| Code | arrangement/payment rules, generalised position + view-model, library + server actions + panel ("How is it paid?", Payments section, terms/void forms), atomic bundle call, expense-overlap check also covering payment evidence |
+| Also in this code release (reviewed earlier, unreleased) | application-level duplicate-expense check, funding wording (stated vs statement-verified), record-sheet/validator tools, design documents |
+| NOT in this release | optional database duplicate-expense triggers; any asset-link function; statement tables; any record, upload or classification; Audit & Compliance / document-first / job-costing work (design only) |
 
-## Release sequence (each step needs your written approval; stop at the first failure)
-1. **Prepare the numbered file**: at release, create `supabase/migrations/0187_acquisition_payment_arrangements.sql` = the proposal with only its two header lines changed (the 0186 precedent), re-run the rehearsals against THAT exact file, record its SHA-256.
-2. **Backup (your Terminal; password typed only there)** with the r19-style script (new prefix), then the **restore check** (local, no password). The apply script refuses without both.
-3. **Read-only Production checks**: ledger = 0186/178; none of the new tables/functions exist; the audit-events check constraint exists under the expected name with the 0186 list; existing finance tables empty.
-4. **Apply exactly one migration** via the gated script (derived from apply-finance/apply.sh), then read-only verification (RLS on both tables, no client write grants, no service_role delete/truncate, three functions service_role-only, two triggers, constraint widened, new tables empty, existing finance fingerprint unchanged).
-5. **Push the code** (fast-forward of main) after step 4 passes; Vercel builds. Code deployed BEFORE the migration is harmless to view (the loader treats missing tables as empty) but recording non-financed payments would fail with a plain message — so the order stays migration first.
-6. Smoke checks (public pages 200; admin routes redirect when signed out) and a Super Admin walk-through by you on the iPad. Rollback target = the deployment current before the push.
+## Three-step recording workflow — resolved by making it atomic
+Before: purchase, terms and first payment were three audited calls (a later refusal left a purchase "to be confirmed"). Now a non-financed purchase with terms and/or a payment is **ONE database call** (`record_acquisition_bundle`): all or nothing. A financed purchase keeps its own atomic path (purchase + agreement + instalments + first payment); a plain purchase with no terms/payment uses the original call.
+Recovery and duplicate prevention (each rehearsed in SQL and covered by unit tests):
+| Situation | Result |
+|---|---|
+| A rule refuses any part (over-payment, document of another entity, missing due date, payment on an "unpaid" arrangement, financing key) | NOTHING is recorded; fix the entry and submit again |
+| The response is lost after a successful save and the form is submitted again | refused by the unique invoice index ("already recorded"); nothing is duplicated; open the panel to see the record |
+| A purchase exists with no terms (recorded earlier, or "to be confirmed") | open "Set how it is paid" on the purchase, then "Record a payment" |
+| A payment was entered twice | an identical payment (amount, date, method, reference) is refused; a genuinely different duplicate is voided with a written reason |
+| A concurrent second payment would exceed the net price | refused under the row lock (race test: one of two, two of three) |
 
-## Rollback
-Code: redeploy the previous deployment. Migration while the new tables are empty: run the rollback script (it also restores the original audit-event list). After rows exist: void rows (append-only), restore from the backup only as a last resort with your approval.
+## Distinctness and double counting (verified)
+Cost = acquisition net; owed = supplier balance (non-financed) OR financing liability (financed) — never both; payments = instalments (financed) OR direct payments (non-financed) — never both (financed purchases refuse direct payments in the database); expense = 0 everywhere (rehearsals assert no `entity_expenses` row; source-level tests forbid any expense write); a document backing a purchase, a financing agreement, an instalment or a payment cannot back an expense (application check; DB triggers optional). The original PayLater/instalment workflow is unchanged: the original 0186 rehearsal passes with 0187 applied on top (`rehearse_payment_arrangements.sh both`). No payment can be bank-verified: the new tables have no verification/statement column, events record `bankVerified: false`, and the panel only ever shows "awaiting statement".
 
-## Evidence so far (local, synthetic data)
-- DB rehearsal on the lab database (migration 0186 + proposal, rolled back): apply PASS, rollback PASS, verifier fails as designed; covers every arrangement, refusals, Qatar/Ghana separation, append-only/void, privileges, audit events, no expense created.
-- Two-session race test: A) two payments of 600 on a 1,000 purchase -> exactly one succeeds; B) three payments of 400 -> exactly two succeed; totals 600 / 800; negative control (row lock removed) FAILS as expected.
-- Unit/UI: full suite 438 files / 6,685 tests pass; `tsc` clean; `next build` includes the routes; real-browser check of the real panel at 820 px (2x2 figures, no horizontal overflow), 375 px (one column, tables scroll inside their own box, no page overflow) and desktop (conditional payment fields).
-- Not done: no signed-in Super Admin session test (you will do this on the iPad), no Production read-only compatibility check yet (done at release step 3).
+## Release scripts (prepared in ~/ordift-release; none run except the read-only check)
+`r20_backup_pre_payment_arrangements.sh` (your Terminal, password typed only there) -> `r20_restore_check.sh <backup folder> write` (local, no password) -> `apply-payment-arrangements/preflight.sh` (read-only) -> `apply-payment-arrangements/apply.sh check` (read-only; passes) -> `APPLY=yes APPROVED_COMMIT=<40-char sha> APPROVED_SHA=01dff67ec9e1b4b92c075a09c462d66f6c7638d91c77ae9b125e583a0a53e9bc apply.sh apply` (refuses without a COMPLETE r20 backup under 6 hours old AND a PASSED restore check; applies ONE migration; verifies read-only; compares the existing finance fingerprint) -> then the fast-forward push.
+
+## Sequence and rollback
+Backup -> restore check -> preflight -> apply 0187 -> verify -> push code (fast-forward) -> smoke checks -> your iPad check. Rollback: redeploy the previous deployment; the migration while the new tables are empty (the script refuses if any row exists, and restores the original audit-event list); afterwards void rows, restore from the backup only with your approval.
+
+## Evidence (local; synthetic data)
+SQL rehearsal of the exact 0187 file on the lab: apply PASS, rollback PASS, verifier fails as designed, `both` (0186 + 0187 + the original 0186 checks) PASS; atomicity, retry and refusal checks PASS; two-session race test PASS (negative control fails); 0186's own rehearsal and race test still PASS. Full unit suite 438 files / 6,689 tests, `tsc`, `next build` clean; read-only Production pre-check and gated `check` pass (ledger 0186/178, none of the new objects, audit-event list is the 0186 list, finance tables empty, FNAC documents intact).
 
 ## Residual risks
-1. Recording a purchase with terms and a first payment is three audited calls, not one transaction: if a later step is refused the purchase exists with "arrangement to be confirmed" and the message says what is missing (never assumed paid).
-2. Direct payments have no statement-verification link yet (by design): they stay "reported — awaiting statement" until the reconciliation feature exists.
-3. The migration widens a check constraint on a live (empty) table; the rollback restores it. Rehearsed.
-4. Database duplicate-expense triggers (optional, separate) do not yet reference payment evidence documents; the application check does.
-5. Deposit paid to the supplier plus a financed balance is not supported (financed amount must equal the net price).
-6. The existing "View →" document buttons (a pre-existing pattern) show a dev-only hydration warning about target="_blank".
+1. Direct payments stay "awaiting statement" until the reconciliation feature exists.
+2. The migration changes a check list on a live (empty) table; rehearsed rollback restores it.
+3. Optional DB duplicate-expense triggers are not included (the application check is); they do not yet reference payment documents.
+4. Deposit to a supplier plus a financed balance is not supported.
+5. The Assets & Equipment register has no legal-entity column (see the asset reconciliation note): linking an acquisition to an asset needs a small separate change and must not be assumed.
+6. No signed-in session test by me; your iPad check follows the release.

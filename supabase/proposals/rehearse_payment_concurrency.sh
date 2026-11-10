@@ -8,7 +8,7 @@ P() { docker exec -i "$C" psql -U supabase_admin -h 127.0.0.1 -X -q "$@"; }; Q()
 cleanup() { P -d postgres -c "drop database if exists $DB" >/dev/null 2>&1; rm -rf "$T"; }; trap cleanup EXIT
 P -d postgres -c "create database $DB" >/dev/null || { echo "could not create the scratch database"; exit 1; }
 docker exec "$C" pg_dump -U supabase_admin -h 127.0.0.1 -d "$SRC" --no-owner 2>/dev/null | Q -v ON_ERROR_STOP=0 >/dev/null 2>&1
-for f in "$D/../migrations/0186_equipment_acquisitions_and_financing.sql" "${PROPOSAL_FILE:-$D/PROPOSAL_acquisition_payment_arrangements.sql}"; do grep -v -E "^(begin|commit);\$" "$f" | Q -v ON_ERROR_STOP=1 >/dev/null || { echo "FAIL could not apply $f"; exit 1; }; done
+for f in "$D/../migrations/0186_equipment_acquisitions_and_financing.sql" "${PROPOSAL_FILE:-$D/../migrations/0187_acquisition_payment_arrangements.sql}"; do grep -v -E "^(begin|commit);\$" "$f" | Q -v ON_ERROR_STOP=1 >/dev/null || { echo "FAIL could not apply $f"; exit 1; }; done
 sed -n 3,16p "$D/REHEARSE_finance_body.sql" | Q -v ON_ERROR_STOP=1 >/dev/null || { echo "FAIL seed"; exit 1; }
 mk() { cat <<SQL | Q -v ON_ERROR_STOP=1 -At
 select acquisition_id from public.record_equipment_acquisition(jsonb_build_object('entityId','$E','acquisition', jsonb_build_object('supplier','Synthetic Supplier','invoiceNumber','$1','purchaseDate','2026-11-01','itemDescription','Synthetic equipment','quantity',1,'currency','QAR','listPrice',1000,'discount',0,'net',1000,'invoiceDocumentId','22222222-2222-4222-8222-222222222201','fundingStatus','to_confirm')), '$A');

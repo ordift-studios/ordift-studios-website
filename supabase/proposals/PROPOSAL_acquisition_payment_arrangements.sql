@@ -7,6 +7,7 @@
 --                                An acquisition with a financing agreement is 'financed' by derivation and cannot carry terms.
 --   entity_acquisition_payments  the PAYMENTS (kind full/deposit/balance/part; METHOD cash/company card/bank transfer/cheque/other is separate from the arrangement). Needs evidence (a stored document of the same
 --                                entity OR a written note). A recorded payment is "reported, awaiting statement": there is deliberately NO statement-verification column in this migration.
+--   record_acquisition_bundle    ONE atomic call for a non-financed purchase: purchase + terms + first payment (all or nothing).
 -- Invariants live in the DATABASE (triggers that lock the acquisition row), so they hold for every writer and under concurrency: payments can never exceed the net price; a financed acquisition refuses direct payments
 -- (no double counting); no payment while the arrangement is 'unpaid'; same entity and currency; documents from the same entity; append-only (a payment can only be voided, with a reason).
 -- Existing objects: only the CHECK list of allowed audit event types on entity_finance_events is widened (the table is empty in Production). Nothing else existing is altered.
@@ -182,5 +183,24 @@ begin
 end $$;
 revoke all on function public.void_acquisition_payment(uuid, text, uuid) from public, anon, authenticated, service_role;
 grant execute on function public.void_acquisition_payment(uuid, text, uuid) to service_role;
+
+-- ---------------------------------------------------------------------------------------------------------------- one atomic call for a NON-financed purchase
+-- Purchase + terms + first payment in ONE transaction: any refusal (an over-payment, a document from another entity, a missing due date, a duplicate invoice ...) rolls the whole call back, so nothing is left half-recorded.
+-- It calls the same audited functions above, so every rule and audit event is the same. A retry after success is refused by the unique invoice index (nothing is duplicated). Financed purchases keep their own atomic path.
+create or replace function public.record_acquisition_bundle(p jsonb, p_actor uuid) returns table (new_acquisition_id uuid, new_terms_id uuid, new_payment_id uuid)
+language plpgsql security definer set search_path = '' as $$
+declare a_id uuid; t_id uuid; pay_id uuid; tr jsonb := p -> 'terms'; py jsonb := p -> 'payment';
+begin
+  if not private.actor_is_super_admin(p_actor) then raise exception 'only a Super Admin can record an acquisition' using errcode = '42501'; end if;
+  if p ? 'financing' and jsonb_typeof(p -> 'financing') <> 'null' then raise exception 'a financed purchase is recorded with its financing agreement, not through the payment bundle' using errcode = '42501'; end if;
+  select r.acquisition_id into a_id from public.record_equipment_acquisition(jsonb_build_object('entityId', p -> 'entityId', 'acquisition', p -> 'acquisition'), p_actor) r;
+  if tr is not null and jsonb_typeof(tr) = 'object' then
+    t_id := public.set_acquisition_terms(a_id, tr ->> 'arrangement', nullif(tr ->> 'balanceDueOn', '')::date, tr ->> 'supplierTerms', tr ->> 'note', p_actor); end if;
+  if py is not null and jsonb_typeof(py) = 'object' then
+    pay_id := public.record_acquisition_payment(a_id, py ->> 'kind', (py ->> 'amount')::numeric, (py ->> 'paidOn')::date, py ->> 'method', py ->> 'methodNote', py ->> 'reference', nullif(py ->> 'evidenceDocumentId', '')::uuid, py ->> 'evidenceNote', p_actor); end if;
+  return query select a_id, t_id, pay_id;
+end $$;
+revoke all on function public.record_acquisition_bundle(jsonb, uuid) from public, anon, authenticated, service_role;
+grant execute on function public.record_acquisition_bundle(jsonb, uuid) to service_role;
 
 commit;
