@@ -1,10 +1,12 @@
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
+import { assertSupabaseEnvironment } from "./envGuard";
 
 // Server Component / Route Handler client — reads the visitor's session
 // from cookies. Uses the publishable key + RLS, same as the browser
 // client; this is "me, as the logged-in user," not an admin client.
 export async function createClient() {
+  assertSupabaseEnvironment({ url: process.env.NEXT_PUBLIC_SUPABASE_URL, key: process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY, siteEnv: process.env.SITE_ENV });
   const cookieStore = await cookies();
 
   return createServerClient(

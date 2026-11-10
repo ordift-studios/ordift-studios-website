@@ -1,3 +1,4 @@
+import { PORTFOLIO_LIBRARY_ENABLED } from "@/lib/portfolio/featureGate";
 import { describe, expect, it, vi } from "vitest";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -85,8 +86,19 @@ describe("assignment panel integration", () => {
   it("the second login sees the not-independent notice and every file is blocked for it", () => {
     const html = render2(SECOND, work({ state: "linked_login", message: LINKED_LOGIN_MESSAGE }, [file("a", "submitted")]));
     expect(html).toContain("Not an independent reviewer");
-    expect(html).not.toContain('aria-label="Select T a"');
-    expect(html).toContain("Select all eligible (0)");
+    // Every file carries the separation-of-duties block, so Approve / Return for rework / Decline (and release) are unusable for this viewer.
+    expect(html).toContain("Can&#x27;t act on own work");
+    // The ONE action that deliberately ignores the block is "Add to Portfolio Candidates": it changes no release or retention state and publishes nothing. Since the portfolio library was switched on for internal
+    // administration (2 Nov 2026) the file therefore stays SELECTABLE for that action alone. The earlier expectation (no checkbox, eligible 0) predates that and is replaced by this exact pin.
+    expect(html).toContain(PORTFOLIO_LIBRARY_ENABLED ? "Select all eligible (1)" : "Select all eligible (0)");
+  });
+  it("source pin: only the portfolio-candidate action may ignore the separation-of-duties block; approve, return and decline never do", () => {
+    const text = readFileSync(join(process.cwd(), "src/app/admin/crew-support/AssignmentReviewGallery.tsx"), "utf8");
+    expect(text.match(/ignoresBlock/g)).toHaveLength(1);
+    expect(text).toMatch(/key: "portfolio_candidate"[^}]*ignoresBlock: true/);
+    for (const key of ["approve", "request_changes", "reject"]) expect(text).toMatch(new RegExp(`key: "${key}"(?:(?!ignoresBlock)[^\\n])*\\n`));
+    const gallery = readFileSync(join(process.cwd(), "src/components/admin/FileReviewGallery.tsx"), "utf8");
+    expect((gallery.match(/a\.ignoresBlock \|\| !f\.blockedReason/g) ?? []).length).toBeGreaterThanOrEqual(4);          // every place an action is applied re-checks the block
   });
   it("a self-released file keeps the client email as its own, opt-in step", () => {
     const w = { ...work({ state: "available", founderIdentityId: "f", holderId: "h" }, [file("a", "released")]), selfReleasedIds: ["a"] };

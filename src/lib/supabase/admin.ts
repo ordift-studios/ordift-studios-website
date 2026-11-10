@@ -1,4 +1,5 @@
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
+import { assertSupabaseEnvironment } from "./envGuard";
 
 // Secret-key client — bypasses RLS entirely (this project's new-system
 // replacement for the legacy service_role key, same privilege level).
@@ -12,6 +13,7 @@ import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 // in this project (GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY, SANITY_API_TOKEN,
 // etc.).
 export function createAdminClient() {
+  assertSupabaseEnvironment();                                  // a development key can never be used against a real project, nor a production site against a lab database
   return createSupabaseClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SECRET_KEY!,
