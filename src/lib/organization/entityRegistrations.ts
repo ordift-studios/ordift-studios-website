@@ -1,5 +1,4 @@
 import { createAdminClient } from "@/lib/supabase/admin";
-import { acquisitionOverlapForExpense } from "@/lib/organization/financeOverlap";
 import { logActivity } from "@/lib/admin/activityLog";
 import { isSuperAdminId } from "@/lib/organization/authority";
 import { EXPENSE_CATEGORY_VALUES, PAYMENT_METHOD_VALUES, isExpenseEvidenceType, validIsoDate, validateFunding } from "@/lib/organization/expenseEntry";
@@ -488,9 +487,6 @@ export async function recordEntityReceipt(p: {
   }
   const { data: sameDoc } = await db.from("entity_expenses").select("id").eq("employing_entity_id", p.entityId).in("source_document_id", [...family]).limit(1);
   if ((sameDoc ?? []).length) return { ok: false, error: "This stored document (or a copy or earlier version of it) already backs a recorded receipt, so it was not recorded again." };
-  // the same invoice (or document) that is recorded as an equipment acquisition / its financing must not also become an expense
-  const overlap = await acquisitionOverlapForExpense({ entityId: p.entityId, receiptNumber: p.receiptNumber, issuingAuthority: p.issuingAuthority, documentFamily: [...family] });
-  if (overlap) return { ok: false, error: overlap };
   const requestRef = (p.requestReference ?? "").trim() || null;
   if (requestRef) {
     const { data: sameReq } = await db.from("entity_expenses").select("id").eq("employing_entity_id", p.entityId).eq("request_reference", requestRef).limit(1);

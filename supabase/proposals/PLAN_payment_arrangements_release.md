@@ -8,9 +8,9 @@ Final local preparation, 11 Nov 2026. Branch `local/finance-payment-arrangements
 | Migration `supabase/migrations/0187_acquisition_payment_arrangements.sql` (body identical to the rehearsed proposal; 2 header lines differ) | sha256 `01dff67ec9e1b4b92c075a09c462d66f6c7638d91c77ae9b125e583a0a53e9bc` |
 | Rollback `supabase/proposals/ROLLBACK_acquisition_payment_arrangements.sql` | sha256 `322bd633c008b2e6719b2ec5b2cc49e30e31a8ab7f9c45bacbf7880036a5862a` |
 | What the migration adds | 2 tables (terms, payments), 4 functions (set terms, record payment, void payment, **record_acquisition_bundle — one atomic call**), 2 guard triggers, RLS (Super Admin read only), no client write grants; widens ONE check list on the empty audit-events table |
-| Code | arrangement/payment rules, generalised position + view-model, library + server actions + panel ("How is it paid?", Payments section, terms/void forms), atomic bundle call, expense-overlap check also covering payment evidence |
-| Also in this code release (reviewed earlier, unreleased) | application-level duplicate-expense check, funding wording (stated vs statement-verified), record-sheet/validator tools, design documents |
-| NOT in this release | optional database duplicate-expense triggers; any asset-link function; statement tables; any record, upload or classification; Audit & Compliance / document-first / job-costing work (design only) |
+| Code | arrangement/payment rules, generalised position + view-model, library + server actions + panel ("How is it paid?", Payments section, terms/void forms), atomic bundle call; the acquisition side refuses an invoice or document already recorded as an expense (read-only check) |
+| Funding wording | the panel shows "stated by the Founder; statement verification pending" (presentation only; a stated source is never shown as verified) |
+| NOT in this release | the duplicate check on the EXISTING expense form (prepared and tested, held back to keep this release strictly to payment arrangements) and the optional database duplicate-expense triggers; any asset-link function; statement tables; any record, upload or classification; Audit & Compliance / document-first / job-costing work (design only) |
 
 ## Three-step recording workflow — resolved by making it atomic
 Before: purchase, terms and first payment were three audited calls (a later refusal left a purchase "to be confirmed"). Now a non-financed purchase with terms and/or a payment is **ONE database call** (`record_acquisition_bundle`): all or nothing. A financed purchase keeps its own atomic path (purchase + agreement + instalments + first payment); a plain purchase with no terms/payment uses the original call.
@@ -38,7 +38,7 @@ SQL rehearsal of the exact 0187 file on the lab: apply PASS, rollback PASS, veri
 ## Residual risks
 1. Direct payments stay "awaiting statement" until the reconciliation feature exists.
 2. The migration changes a check list on a live (empty) table; rehearsed rollback restores it.
-3. Optional DB duplicate-expense triggers are not included (the application check is); they do not yet reference payment documents.
+3. **The existing expense form is NOT changed by this release**: it can still record an expense for an invoice that is also an acquisition (an old, known gap). Mitigation until the held-back check ships: procedure rule — record equipment only through Equipment & Financing. The acquisition side does refuse an invoice/document already recorded as an expense.
 4. Deposit to a supplier plus a financed balance is not supported.
 5. The Assets & Equipment register has no legal-entity column (see the asset reconciliation note): linking an acquisition to an asset needs a small separate change and must not be assumed.
 6. No signed-in session test by me; your iPad check follows the release.
