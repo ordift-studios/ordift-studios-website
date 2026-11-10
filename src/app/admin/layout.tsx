@@ -8,7 +8,7 @@ import ProfileQuickCard from "@/components/admin/ProfileQuickCard";
 import { PresenceProvider } from "@/components/admin/PresenceProvider";
 import AdminNavDropdown from "@/components/admin/AdminNavDropdown";
 import { isExecutiveAdmin, hasAuthority, PEOPLE_CAPABILITIES, OPERATIONS_CAPABILITIES, STRATEGY_CAPABILITIES } from "@/lib/organization/authority";
-import { resolveVisibleAdminNavGroups, resolveVisibleAdminPortalLinks } from "@/lib/portal/adminNavigation";
+import { ALWAYS_DROPDOWN_GROUPS, resolveVisibleAdminNavGroups, resolveVisibleAdminPortalLinks } from "@/lib/portal/adminNavigation";
 import { userHasCrewJobs } from "@/lib/crewSupport/crewOffers";
 
 // Internal operations console — separate from the customer/partner-facing
@@ -125,7 +125,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
           {visibleNavGroups.map((group) => {
             // My Workspace and Instructor Management are ALWAYS dropdowns (even for a Super Admin, whose other groups render flat): a labelled dropdown near the left of the bar is
             // visible at once, whereas four flat links appended after fourteen others sat off-screen at the far right of a horizontally scrolling bar.
-            if (group.label === "My Workspace" || group.label === "Instructor Management") {
+            if (ALWAYS_DROPDOWN_GROUPS.includes(group.label)) {
               return <AdminNavDropdown key={group.label} label={group.label} items={group.items} />;
             }
             if (group.items.length === 1) {

@@ -50,6 +50,7 @@ export default async function LegalEntityDetailPage({ params }: { params: Promis
         <p className="font-sans text-body-small text-ordift-ink-muted mt-2">
           <Link href="/admin/organization/legal-entities" className="underline underline-offset-4">← Legal Entities</Link>
         </p>
+        <Link href={`/admin/organization/legal-entities/${entityId}/equipment`} className="mt-4 inline-block font-sans text-body-small font-semibold px-4 py-2 rounded-md bg-ordift-navy-950 text-white">Equipment &amp; Financing →</Link>
       </div>
 
       <section className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -79,7 +80,6 @@ export default async function LegalEntityDetailPage({ params }: { params: Promis
         </div>
       </section>
 
-      <p className="font-sans text-body-small"><Link href={`/admin/organization/legal-entities/${entityId}/equipment`} className="font-semibold text-ordift-gold-pressed underline underline-offset-4">Equipment &amp; Financing →</Link></p>
       <EntityDetailWorkspace entityId={entityId} registrationNumber={sensitiveDetails?.registrationNumber ?? null} taxIdentifier={sensitiveDetails?.taxIdentifier ?? null} registeredAddress={sensitiveDetails?.registeredAddress ?? null} documents={[]} hideDocuments />
       <EntityRegistryPanels
         entityId={entityId}

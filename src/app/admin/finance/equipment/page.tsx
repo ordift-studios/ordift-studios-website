@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
-import Link from "next/link";
 import { getCurrentUser, isSuperAdmin } from "@/lib/portal/roles";
 import { listEmployingEntities } from "@/lib/organization/legalEntities";
+import { EquipmentEntityList } from "./EquipmentEntityList";
 
 export const metadata: Metadata = { title: "Equipment & Financing — Finance — Ordift Studios Admin", robots: { index: false, follow: false } };
 
@@ -22,16 +22,7 @@ export default async function EquipmentFinanceIndexPage() {
           a payment recorded here is <strong>reported</strong>, never bank-reconciled. It is one Finance module, not a full accounting dashboard: payments, payables, pricing and quotations remain in their own pages.
         </p>
       </div>
-      <ul className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        {entities.map((e) => (
-          <li key={e.id} className="rounded-xl border border-black/10 bg-white p-6 space-y-2">
-            <h2 className="font-serif font-medium text-body text-ordift-ink">{e.name}</h2>
-            <p className="font-sans text-caption text-ordift-ink-muted">{e.legalName ?? e.name}{e.jurisdictionName ? ` · ${e.jurisdictionName}` : ""}</p>
-            <Link href={`/admin/organization/legal-entities/${e.id}/equipment`} className="inline-block font-sans text-body-small font-semibold text-ordift-gold-pressed underline underline-offset-4">Open Equipment &amp; Financing →</Link>
-          </li>
-        ))}
-        {entities.length === 0 && <li className="font-sans text-body-small text-ordift-ink-muted">No legal entities are recorded.</li>}
-      </ul>
+      <EquipmentEntityList entities={entities} />
     </div>
   );
 }

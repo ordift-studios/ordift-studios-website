@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { resolveVisibleAdminNavGroups, resolveVisibleAdminPortalLinks, type AdminNavFlags } from "./adminNavigation";
+import { ALWAYS_DROPDOWN_GROUPS, resolveVisibleAdminNavGroups, resolveVisibleAdminPortalLinks, type AdminNavFlags } from "./adminNavigation";
 import type { CurrentUser, RoleSlug } from "./roles";
 
 // Task 12 — Staff Role/Navigation/Route Security (2026-09-18). Fixture
@@ -157,6 +157,25 @@ describe("Finance navigation: Equipment & Financing", () => {
     expect(financeItems({ ...base, isAdmin: true })).not.toContain("/admin/finance/equipment");
     expect(financeItems({ ...base, isExecutive: true })).not.toContain("/admin/finance/equipment");
     expect(financeItems(base)).not.toContain("/admin/finance/equipment");
+  });
+});
+
+describe("Finance as a visible dropdown for a Super Admin", () => {
+  const superFlags = { isAdmin: true, isSuper: true, isExecutive: true, isWorkforceAdmin: true, canCoordinateOperations: true, canAdministerPartnerships: true, hasAssignments: false };
+  it("Finance is one of the always-dropdown groups, so a Super Admin gets ONE labelled Finance control instead of flat links", () => {
+    expect(ALWAYS_DROPDOWN_GROUPS).toEqual(expect.arrayContaining(["My Workspace", "Instructor Management", "Finance"]));
+    const finance = resolveVisibleAdminNavGroups(superFlags).find((g) => g.label === "Finance");
+    expect(finance?.items.map((i) => i.label)).toEqual(["Payments", "Payables", "Pricing", "Client Quotations", "Equipment & Financing"]);
+  });
+  it("Finance sits right after the first three left-hand groups, before Overview, so it is visible without scrolling on an iPad", () => {
+    const labels = resolveVisibleAdminNavGroups(superFlags).map((g) => g.label);
+    expect(labels.indexOf("Finance")).toBeLessThan(labels.indexOf("Overview"));
+    expect(labels.indexOf("Finance")).toBeLessThanOrEqual(3);
+  });
+  it("the real admin layout uses the shared constant (no second, drifting list)", async () => {
+    const { readFileSync } = await import("node:fs");
+    const src = readFileSync(new URL("../../app/admin/layout.tsx", import.meta.url), "utf8");
+    expect(src).toMatch(/ALWAYS_DROPDOWN_GROUPS\.includes\(group\.label\)/);
   });
 });
 
