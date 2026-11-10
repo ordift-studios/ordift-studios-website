@@ -6,7 +6,7 @@
 M=${1:-apply}; DB=${2:-p4_e2e}; C=${3:-ordift-mig-check2}; D="$(cd "$(dirname "$0")" && pwd)"
 strip() { grep -v -E "^(begin|commit);\$" "$1"; }
 q() { docker exec -i "$C" psql -U supabase_admin -h 127.0.0.1 -d "$DB" -X -q -v ON_ERROR_STOP=1 -At; }
-P="$D/PROPOSAL_equipment_acquisitions_and_financing.sql"; R="$D/ROLLBACK_equipment_acquisitions_and_financing.sql"; B="$D/REHEARSE_finance_body.sql"
+P="${PROPOSAL_FILE:-$D/PROPOSAL_equipment_acquisitions_and_financing.sql}"; R="$D/ROLLBACK_equipment_acquisitions_and_financing.sql"; B="$D/REHEARSE_finance_body.sql"
 # the rehearsal body leaves rows behind on purpose (the real tables refuse deletion); for the ROLLBACK rehearsal they are cleared with triggers off, because the real rollback script refuses to run over data
 clean=$(cat <<'SQL'
 set session_replication_role = replica; delete from public.entity_finance_events; delete from public.entity_financing_instalments; delete from public.entity_financing_obligations; delete from public.entity_equipment_acquisitions; set session_replication_role = origin;

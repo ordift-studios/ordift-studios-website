@@ -303,9 +303,12 @@ grant execute on function public.record_equipment_acquisition(jsonb, uuid) to se
 -- later instalments: only with evidence (a document in this entity's vault, or a written note of at least 10 characters)
 create or replace function public.mark_instalment_paid(p_instalment uuid, p_paid_on date, p_evidence_document uuid, p_evidence_note text, p_actor uuid) returns void
 language plpgsql security definer set search_path = '' as $$
-declare i record; o record;
+declare i record; o record; oid uuid;
 begin
   if not private.actor_is_super_admin(p_actor) then raise exception 'only a Super Admin can mark an instalment paid' using errcode = '42501'; end if;
+  -- serialise every payment of ONE obligation (lock the obligation first, always in this order): two instalments recorded at the same moment must not both miss the other's change and leave a fully paid obligation 'active'
+  select obligation_id into oid from public.entity_financing_instalments where id = p_instalment;
+  if oid is not null then perform 1 from public.entity_financing_obligations where id = oid for update; end if;
   select * into i from public.entity_financing_instalments where id = p_instalment for update;
   if not found or i.status <> 'pending' then raise exception 'that instalment is not pending' using errcode = '42501'; end if;
   select * into o from public.entity_financing_obligations where id = i.obligation_id;

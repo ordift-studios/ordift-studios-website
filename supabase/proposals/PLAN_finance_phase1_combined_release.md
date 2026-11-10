@@ -1,31 +1,38 @@
 # PLAN (NOT approved; nothing applied, pushed or deployed): combined migration + code release for Finance Phase 1
 
-Prepared 2026-11-10 on `local/finance-phase1`. Supersedes the "code ships later" note in PLAN_finance_migration_backup_rollback.md (that plan's gates, backup and rollback still apply).
+Final readiness version, 2026-11-10, branch `local/finance-phase1`. Supersedes the earlier draft of this file. Gates, backup and rollback of PLAN_finance_migration_backup_rollback.md still apply.
 
-## What ships
-| Part | Content | Fingerprint |
-|---|---|---|
-| Migration (number assigned at release; next free after Production's 0185) | `PROPOSAL_equipment_acquisitions_and_financing.sql` — 4 tables, 2 write functions, audit; additive | sha256 42398ae882428656b89ddf183078412770498eec033eeb18d0a03d152ec4aa59 |
-| Rollback | `ROLLBACK_equipment_acquisitions_and_financing.sql` (refuses if any row exists) | sha256 34e563369d66e0006d7613c919497c086c7bd5b4449489428536714a1b80de8b |
-| Code | `/admin/organization/legal-entities/[entityId]/equipment` panel + actions, `equipmentFinancing*.ts`, `equipmentPanelView.ts`, `equipmentForms.ts`, `financePosition.ts`, `statementReconciliation.ts` (pure), link on the entity page | commit hash to be recorded at approval |
-| Not shipped | optional duplicate-expense guard (own proposal), statement tables (not written), any record/document/posting |
+## What ships (all additions; the only edited existing file is the legal-entity page, +1 link line)
+| Part | Fingerprint |
+|---|---|
+| Migration `supabase/migrations/0186_equipment_acquisitions_and_financing.sql` (4 tables, 2 write functions, audit; additive; body identical to the rehearsed proposal, 2 header lines differ) | sha256 `f945fe6ecc15e74270971fa40ae1b667c89944a3e5347b47b529522ec22d9a22` |
+| Rollback `supabase/proposals/ROLLBACK_equipment_acquisitions_and_financing.sql` (refuses if any row exists) | sha256 `34e563369d66e0006d7613c919497c086c7bd5b4449489428536714a1b80de8b` |
+| Code: Equipment & Financing panel (Super Admin), `equipmentFinancing*.ts`, `equipmentPanelView.ts`, `equipmentForms.ts`, `financePosition.ts`, `statementReconciliation.ts` (pure, not imported by any write path), `bankAccountIdentity.ts` (pure, no importer yet) | commit named in the approval |
+| Tooling/docs: rehearsal scripts, design and plan documents | in the same commit |
+| NOT shipped | optional duplicate-expense guard, statement tables, any vault upload, any record, FNAC posting, other migrations (the unapproved duration/territory proposal that also used the number 0186 must be renumbered if it is ever released) |
 
-## Order (migration first, code second, because the code is inert without its tables and the tables are inert without code)
-1. Founder approves the exact code commit and both SQL hashes in writing. If the code is on a branch that includes the 0185 file, nothing else is needed; main already holds it (bdb03c9).
-2. Fresh encrypted backup (PITR is NOT enabled in Production): derive from the r17/r18 scripts; read-only; password typed only in the Founder's own Terminal; verified archive; within 6 h of the apply.
-3. Read-only pre-checks: ledger = 0185 / 177; none of the four tables or two functions exist; `entity_expenses` row count + fingerprint recorded.
-4. Apply exactly one migration. Post-checks: tables present, RLS on, anon/authenticated have no write grants, service_role cannot delete, functions executable by service_role only, tables empty, finance fingerprint unchanged.
-5. Push the code (`main` auto-deploys: a Vercel deployment follows; rollback target = the current Production deployment). Post-deploy: `/` and `/portal/login` 200; the equipment route redirects signed-out visitors; the entity page link shows only to Super Admin; the empty panel renders for a Super Admin (Founder's session; the agent cannot sign in).
-6. Only then, as SEPARATE approvals: upload the FNAC receipt and PayLater PDF to the vault; record the acquisition through the panel; later, statement reconciliation.
+## Sequence (each step needs its own go; stop at the first failure and report, never retry)
+1. **Approval** of the exact commit + the migration SHA-256 (+ rollback SHA-256).
+2. **Backup (Founder's own Terminal; password typed only there):** `~/ordift-release/r19_backup_pre_finance.sh /Volumes/OrdiftRepoBackup` -> folder `r19-<stamp>` with STATUS COMPLETE (consistent read-only snapshot, archive listed and fully read, checksum).
+3. **Recovery verification (no password, local):** `~/ordift-release/r19_restore_check.sh /Volumes/OrdiftRepoBackup/ordift-production-backups/r19-<stamp> write` restores the dump into a throwaway local database and requires the fingerprint and every table's row count to equal the backup's snapshot; writes `restore-check.txt` into the backup folder. The apply script refuses without it.
+4. **Read-only check:** `~/ordift-release/apply-finance/apply.sh check` (ledger 0185/177, nothing of the new objects exists, dependencies present, CLI plan is exactly this one file). Changes nothing.
+5. **Apply:** `APPLY=yes APPROVED_COMMIT=<40-char sha> APPROVED_SHA=f945fe6ecc15e74270971fa40ae1b667c89944a3e5347b47b529522ec22d9a22 ~/ordift-release/apply-finance/apply.sh apply` - re-checks everything, applies ONE migration, verifies read-only (RLS on, no client write grants, no service_role delete, functions service_role-only, 5 triggers, 3 unique indexes, new tables empty, existing finance fingerprint unchanged, site 200).
+6. **Deploy:** `git push origin local/finance-phase1:main` (fast-forward of b354bce, non-forced). Vercel builds from main; record the deployment id. Post-deploy: `/` and `/portal/login` 200; the equipment route redirects a signed-out visitor; the empty panel renders in the Founder's Super Admin session.
+7. Separate approvals afterwards: vault uploads, recording the acquisition, any reconciliation.
 
 ## Rollback
-- Code: redeploy the previous Production deployment (or revert the commit); the panel disappears, tables stay inert.
-- Migration with no rows: run the rollback script (refuses if rows exist). With rows: void rows (append-only) rather than remove; last resort restore from the backup with the Founder's approval.
+- **Code:** redeploy the previous Production deployment (currently `k51u6i52b`, commit b354bce) or revert; the panel disappears and the tables stay inert.
+- **Migration, no rows yet:** run the ROLLBACK script (refuses if any row exists).
+- **After rows exist:** void rows (append-only) rather than remove; last resort restore from the r19 backup with the Founder's approval.
 
-## Evidence already in hand (local only)
-- Unit: full suite 433 files / 6,610 tests pass (8 skipped); new/changed finance tests 61 in the entity + organization equipment area; eslint and `tsc` clean; `next build` succeeds with the new route.
-- Lab (rolled-back transactions): proposal apply PASS, rollback PASS, verifier fails as designed; the panel's exact column lists run against the proposal schema; the instalment→obligation relation used by the ownership check exists.
-- Not done: no browser walkthrough (by instruction), no concurrency test of two Super Admins marking one instalment paid (the DB function locks the row with `for update`; a Vitest test cannot prove it), no Production read-only check.
+## Evidence (local + read-only Production)
+- Rehearsal of the exact migration file on the lab: apply PASS, rollback PASS, self-test fails as designed; two-session race test PASS (`rehearse_finance_concurrency.sh`); post-check SQL validated against a lab copy.
+- Production read-only (ledger 0185/177): none of the new tables/functions/triggers exist; all dependencies present; no name clashes (incl. private helper functions); private vault bucket present.
+- Full unit suite earlier: 433 files / 6,610 tests; after the last code change only the finance-related tests were re-run (67 tests) plus `tsc` and `eslint`.
 
-## Gates the Founder should expect to decide
-Approve commit + hashes; approve backup run; approve the apply; approve the push; each later data step separately. Standing holds (legal review, refund execution, Production e-mail, real payments, Plan B) are untouched.
+## Residual risks
+1. The optional duplicate-expense guard is NOT included: the same invoice could still be keyed into the existing expense form. Mitigation: nothing sums expenses with acquisitions; procedure rule until the guard is approved separately.
+2. `service_role` can set a statement-evidence link once through direct SQL; no application code does (source-level test). A future reconciliation feature must use a confirming function.
+3. One older vault document has no SHA-256; it cannot be linked as finance evidence (by design).
+4. No browser walkthrough was run (by instruction); first real use will be the Founder's.
+5. Production PITR is off: the r19 backup + passed restore check are the only recovery path for the migration step (the migration only adds objects and is reversible by the rollback script while tables are empty).
