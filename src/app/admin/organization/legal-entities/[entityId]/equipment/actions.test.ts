@@ -4,10 +4,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const h = vi.hoisted(() => ({ user: null as null | { id: string }, superAdmin: false, record: vi.fn(), pay: vi.fn(), revalidate: vi.fn(), terms: vi.fn(), payment: vi.fn(), voidPay: vi.fn(), bundle: vi.fn() }));
 vi.mock("@/lib/portal/roles", () => ({ getCurrentUser: async () => h.user, isSuperAdmin: () => h.superAdmin }));
 vi.mock("next/cache", () => ({ revalidatePath: h.revalidate }));
-const a = vi.hoisted(() => ({ link: vi.fn(), own: vi.fn(), voidOwn: vi.fn() }));
-vi.mock("@/lib/organization/assetReconciliation", () => ({ linkAcquisitionToAsset: a.link, recordAssetOwnership: a.own, voidAssetOwnership: a.voidOwn }));
+const a = vi.hoisted(() => ({ link: vi.fn(), own: vi.fn(), voidOwn: vi.fn(), founder: vi.fn(), unlink: vi.fn() }));
+vi.mock("@/lib/organization/assetReconciliation", () => ({ linkAcquisitionToAsset: a.link, recordAssetOwnership: a.own, voidAssetOwnership: a.voidOwn, recordFounderAssetOwnership: a.founder, unlinkAcquisitionFromAsset: a.unlink }));
 vi.mock("@/lib/organization/equipmentFinancing", () => ({ recordEquipmentAcquisition: h.record, markInstalmentPaid: h.pay, setAcquisitionTerms: h.terms, recordAcquisitionPayment: h.payment, voidAcquisitionPayment: h.voidPay, recordAcquisitionBundle: h.bundle }));
-import { linkAssetAction, markInstalmentPaidAction, recordEquipmentAction, recordOwnershipAction, recordPaymentAction, setTermsAction, voidOwnershipAction, voidPaymentAction } from "./actions";
+import { linkAssetAction, markInstalmentPaidAction, recordEquipmentAction, recordFounderOwnershipAction, recordOwnershipAction, unlinkAssetAction, recordPaymentAction, setTermsAction, voidOwnershipAction, voidPaymentAction } from "./actions";
 
 const fd = (o: Record<string, string>) => { const f = new FormData(); for (const [k, v] of Object.entries(o)) f.set(k, v); return f; };
 const acq = { entityId: "e1", supplier: "Synthetic Supplier", invoiceNumber: "INV-1", purchaseDate: "2026-11-08", itemDescription: "Synthetic pen display", currency: "QAR", listPrice: "1499", discount: "350", net: "1149", invoiceDocumentId: "d1" };
@@ -111,6 +111,21 @@ describe("asset ownership and link actions", () => {
     a.own.mockResolvedValue({ ok: true });
     expect(await recordOwnershipAction(null, fd({ entityId: "e1", assetId: "asset-1", purchaserAsStated: "The Founder", businessPurpose: "Photography retouching and graphic design", incidentalPersonalUse: "yes", personalUseNote: "Occasional personal use", basisStatement: "Founder statement; documents pending" }))).toEqual({ ok: true });
     expect(a.own).toHaveBeenCalledWith({ actorUserId: "u1", ownership: expect.objectContaining({ entityId: "e1", assetId: "asset-1", purchaserAsStated: "The Founder", incidentalPersonalUse: true, personalUseNote: "Occasional personal use" }) });
+  });
+});
+
+describe("Founder ownership and unlink actions", () => {
+  beforeEach(() => { a.founder.mockReset(); a.unlink.mockReset(); });
+  it("refuse a non-Super-Admin; unlink needs a reason; the Founder ownership passes separate fields as the signed-in actor", async () => {
+    h.superAdmin = false;
+    expect(await recordFounderOwnershipAction(null, fd({ entityId: "e1", assetId: "x", businessPurpose: "Photography retouching", basisStatement: "Founder statement; funding stated" }))).toMatchObject({ ok: false });
+    expect(await unlinkAssetAction(null, fd({ entityId: "e1", acquisitionId: "a1", reason: "the accountant concluded a different structure" }))).toMatchObject({ ok: false });
+    expect(a.founder).not.toHaveBeenCalled(); expect(a.unlink).not.toHaveBeenCalled();
+    h.superAdmin = true; a.founder.mockResolvedValue({ ok: true }); a.unlink.mockResolvedValue({ ok: true });
+    expect(await recordFounderOwnershipAction(null, fd({ entityId: "e1", assetId: "asset-1", purchaserAsStated: "The Founder", primaryUserAsStated: "The Founder", financingObligorAsStated: "The Founder (personal PayLater account)", businessPurpose: "Photography retouching and related creative production", companyFunded: "yes", basisStatement: "Founder statement: personally owned; company card funds payments" }))).toEqual({ ok: true });
+    expect(a.founder).toHaveBeenCalledWith({ actorUserId: "u1", ownership: expect.objectContaining({ entityId: "e1", companyFunded: true, financingObligorAsStated: "The Founder (personal PayLater account)" }) });
+    expect(await unlinkAssetAction(null, fd({ entityId: "e1", acquisitionId: "a1", reason: "the accountant concluded a different structure" }))).toEqual({ ok: true });
+    expect(a.unlink).toHaveBeenCalledWith({ actorUserId: "u1", entityId: "e1", acquisitionId: "a1", reason: "the accountant concluded a different structure" });
   });
 });
 

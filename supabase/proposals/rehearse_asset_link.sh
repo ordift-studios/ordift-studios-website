@@ -13,7 +13,7 @@ set session_replication_role = replica; delete from public.entity_asset_ownershi
 SQL
 )
 gone=$(cat <<'SQL'
-do $$ begin if to_regclass('public.entity_asset_ownership') is not null or to_regproc('public.record_asset_ownership(uuid, uuid, text, text, boolean, text, text, uuid, uuid)') is not null or to_regproc('public.void_asset_ownership(uuid, text, uuid)') is not null or to_regproc('public.link_acquisition_to_asset(uuid, uuid, uuid)') is not null or to_regproc('private.ownership_guard()') is not null or to_regproc('private.acquisition_asset_link_guard()') is not null or to_regclass('public.acquisitions_one_per_asset') is not null
+do $$ begin if to_regclass('public.entity_asset_ownership') is not null or to_regprocedure('public.record_asset_ownership(uuid, uuid, text, text, boolean, text, text, uuid, uuid)') is not null or to_regprocedure('public.void_asset_ownership(uuid, text, uuid)') is not null or to_regprocedure('public.link_acquisition_to_asset(uuid, uuid, uuid)') is not null or to_regprocedure('private.ownership_guard()') is not null or to_regprocedure('private.acquisition_asset_link_guard()') is not null or to_regclass('public.acquisitions_one_per_asset') is not null
   or to_regclass('public.entity_acquisition_payments') is null or (select pg_get_constraintdef(oid) from pg_constraint where conname = 'entity_finance_events_event_type_check') ilike '%asset_linked%' then raise exception 'ROLLBACK LEFT OBJECTS BEHIND OR REMOVED TOO MUCH'; end if; end $$;
 SQL
 )

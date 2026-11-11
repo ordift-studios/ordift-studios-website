@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRestoringActionState } from "@/components/admin/useRestoringActionState";
 import { viewEntityDocumentAction } from "../actions";
-import { linkAssetAction, markInstalmentPaidAction, recordEquipmentAction, recordOwnershipAction, recordPaymentAction, setTermsAction, voidOwnershipAction, voidPaymentAction, type ActionState } from "./actions";
+import { linkAssetAction, recordFounderOwnershipAction, unlinkAssetAction, markInstalmentPaidAction, recordEquipmentAction, recordOwnershipAction, recordPaymentAction, setTermsAction, voidOwnershipAction, voidPaymentAction, type ActionState } from "./actions";
 import type { AssetRow } from "@/lib/organization/assetReconciliation";
 import { ARRANGEMENT_LABEL, PAYMENT_KINDS, PAYMENT_METHODS } from "@/lib/organization/acquisitionPaymentRules";
 import { INSTALMENT_STATE_LABEL, type DocRef, type EquipmentView, type InstalmentView, type PaymentView } from "@/lib/organization/equipmentPanelView";
@@ -225,7 +225,10 @@ function LinkForm({ entityId, acquisitionId, candidates }: { entityId: string; a
 function AssetLinkRow({ e, entityId, assets }: { e: EquipmentView; entityId: string; assets: AssetRow[] }) {
   const linked = e.linkedAssetId ? assets.find((a) => a.id === e.linkedAssetId) : null;
   const candidates = assets.filter((a) => a.ownership?.entityId === entityId && !a.linkedAcquisitionId);
-  if (e.linkedAssetId) return <p className="font-sans text-caption text-ordift-ink-muted">Registered asset: {linked ? `${linked.description} (${linked.identifier})` : e.linkedAssetId}. The asset record itself is unchanged.</p>;
+  if (e.linkedAssetId) return (
+    <div><p className="font-sans text-caption text-ordift-ink-muted">Registered asset: {linked ? `${linked.description} (${linked.identifier})` : e.linkedAssetId}. The asset record itself is unchanged.</p>
+      {linked?.ownership?.ownerKind === "founder_personal" ? <p className="font-sans text-caption text-amber-800">Company-funded purchase of a Founder-owned asset — NOT a company asset; accounting treatment pending professional review (receivable, reimbursement, benefit or other).</p> : null}
+      <details><summary className="cursor-pointer font-sans text-caption font-semibold text-red-700 underline underline-offset-4">Unlink from this asset (with a written reason)</summary><UnlinkForm entityId={entityId} acquisitionId={e.id} /></details></div>);
   return (
     <div><p className="font-sans text-caption text-ordift-ink-muted">Registered asset: not linked. {candidates.length === 0 ? "Record the asset's legal owner below first (the asset must already be in Assets & Equipment)." : ""}</p>
       {candidates.length > 0 ? <details><summary className="cursor-pointer font-sans text-caption font-semibold text-ordift-gold-pressed">Link to an existing registered asset</summary><LinkForm entityId={entityId} acquisitionId={e.id} candidates={candidates} /></details> : null}</div>
@@ -245,6 +248,35 @@ function OwnershipForm({ entityId, asset, docs }: { entityId: string; asset: Ass
       {personal ? <textarea name="personalUseNote" rows={2} placeholder="Describe the incidental personal use (at least 10 characters)" className={`sm:col-span-2 ${input}`} /> : null}
       <label className="font-sans text-caption text-ordift-ink-muted sm:col-span-2">Ownership evidence (optional vault document)<select name="evidenceDocumentId" defaultValue="" className={`block w-full ${input}`}><option value="">No document yet</option>{docs.map((d) => <option key={d.id} value={d.id}>{d.filename ?? d.id}</option>)}</select></label>
       <button disabled={pending} className={button}>{pending ? "Recording…" : "Record this entity as the owner"}</button>
+      <Feedback state={state} pending={pending} />
+    </form>
+  );
+}
+
+function UnlinkForm({ entityId, acquisitionId }: { entityId: string; acquisitionId: string }) {
+  const [state, action, pending, ref] = useRestoringActionState<ActionState>(unlinkAssetAction, null);
+  return (
+    <form ref={ref} action={action} className="mt-1 flex flex-wrap items-end gap-2">
+      <input type="hidden" name="entityId" value={entityId} /><input type="hidden" name="acquisitionId" value={acquisitionId} />
+      <input name="reason" placeholder="Why is the link being removed? (10+ characters; kept in the audit history)" className={`${input} min-w-[16rem]`} aria-label="Reason for unlinking" />
+      <button disabled={pending} className="font-sans text-caption font-semibold underline underline-offset-4 text-red-700 disabled:opacity-50">{pending ? "Unlinking…" : "Unlink"}</button>
+      <Feedback state={state} pending={pending} />
+    </form>
+  );
+}
+function FounderOwnershipForm({ entityId, asset, docs }: { entityId: string; asset: AssetRow; docs: DocRef[] }) {
+  const [state, action, pending, ref] = useRestoringActionState<ActionState>(recordFounderOwnershipAction, null);
+  return (
+    <form ref={ref} action={action} className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-2 rounded-lg bg-slate-50 p-3">
+      <input type="hidden" name="entityId" value={entityId} /><input type="hidden" name="assetId" value={asset.id} />
+      <p className="sm:col-span-2 font-sans text-caption text-ordift-ink-muted">Records the Founder’s DECLARED intended personal ownership (the active Founder identity; not a legal entity and not company-owned). It stays &ldquo;pending professional review&rdquo;, is excluded from company fixed-asset totals, and creates no accounting entry, receivable or reimbursement.</p>
+      <input name="purchaserAsStated" placeholder="Purchaser, as stated or printed" className={input} /><input name="primaryUserAsStated" placeholder="Primary user" className={input} />
+      <input name="financingObligorAsStated" placeholder="Financing obligor, as stated (e.g. whose PayLater account)" className={`sm:col-span-2 ${input}`} />
+      <textarea name="businessPurpose" rows={2} required placeholder="Business use (e.g. photography retouching and related creative production)" className={`sm:col-span-2 ${input}`} />
+      <textarea name="basisStatement" rows={3} required placeholder="How personal ownership and any company funding are established (20+ characters)" className={`sm:col-span-2 ${input}`} />
+      <label className="sm:col-span-2 flex gap-2 font-sans text-caption text-ordift-ink-muted"><input type="checkbox" name="companyFunded" value="yes" />Company funds pay for this asset (flag: company-funded personal asset; treatment is the accountant’s decision)</label>
+      <label className="font-sans text-caption text-ordift-ink-muted sm:col-span-2">Ownership evidence (optional vault document)<select name="evidenceDocumentId" defaultValue="" className={`block w-full ${input}`}><option value="">No document yet</option>{docs.map((d) => <option key={d.id} value={d.id}>{d.filename ?? d.id}</option>)}</select></label>
+      <button disabled={pending} className={button}>{pending ? "Recording…" : "Record the Founder as declared owner"}</button>
       <Feedback state={state} pending={pending} />
     </form>
   );
@@ -271,14 +303,16 @@ function AssetsSection({ entityId, assets, docs }: { entityId: string; assets: A
             <p className="text-ordift-ink font-semibold">{a.description} <span className="font-normal text-ordift-ink-muted">· {a.identifier}{a.category ? ` · ${a.category}` : ""} · {a.status.replace(/_/g, " ")}</span></p>
             {a.ownership ? (
               <div className="text-ordift-ink-muted">
-                <p>{a.ownership.entityId === entityId ? "Owner: this legal entity" : "Owner: another legal entity"} — pending professional review{a.linkedAcquisitionId ? " · linked to a purchase" : " · not linked to a purchase"}</p>
+                <p>{a.ownership.ownerKind === "founder_personal" ? (a.ownership.entityId === entityId ? "Owner: the Founder (personal) — declared, filed under this legal entity" : "Owner: the Founder (personal) — filed under another legal entity") : (a.ownership.entityId === entityId ? "Owner: this legal entity" : "Owner: another legal entity")} — pending professional review (not legally or accountant-confirmed){a.linkedAcquisitionId ? " · linked to a purchase" : " · not linked to a purchase"}</p>
                 {a.ownership.entityId === entityId ? (<>
-                  {a.ownership.purchaser ? <p>Purchaser as stated: {a.ownership.purchaser}</p> : null}<p>Business purpose: {a.ownership.purpose}</p><p>Basis: {a.ownership.basis}</p>
+                  {a.ownership.purchaser ? <p>Purchaser as stated: {a.ownership.purchaser}</p> : null}{a.ownership.primaryUser ? <p>Primary user: {a.ownership.primaryUser}</p> : null}{a.ownership.financingObligor ? <p>Financing obligor as stated: {a.ownership.financingObligor}</p> : null}{a.ownership.ownerKind === "founder_personal" ? <p className="text-amber-800">Not a company asset — excluded from company-owned fixed-asset totals{a.ownership.companyFunded ? "; company-funded personal asset: accounting treatment pending (receivable, reimbursement, benefit or other)" : ""}.</p> : null}<p>Business purpose: {a.ownership.purpose}</p><p>Basis: {a.ownership.basis}</p>
                   {a.ownership.incidentalPersonalUse ? <p className="text-amber-800">Incidental personal use flagged for accountant review: {a.ownership.personalUseNote}</p> : null}
                   {!a.linkedAcquisitionId ? <details><summary className="cursor-pointer text-red-700 underline underline-offset-4">Void this ownership record</summary><VoidOwnershipForm entityId={entityId} ownershipId={a.ownership.id} /></details> : null}
                 </>) : null}
               </div>
-            ) : <details><summary className="cursor-pointer font-semibold text-ordift-gold-pressed">Record the legal owner</summary><OwnershipForm entityId={entityId} asset={a} docs={docs} /></details>}
+            ) : (<>
+              <details><summary className="cursor-pointer font-semibold text-ordift-gold-pressed">Record the legal owner (a legal entity)</summary><OwnershipForm entityId={entityId} asset={a} docs={docs} /></details>
+              <details><summary className="cursor-pointer font-semibold text-ordift-gold-pressed">Record the Founder as declared personal owner</summary><FounderOwnershipForm entityId={entityId} asset={a} docs={docs} /></details></>)}
           </li>))}</ul>
       )}
     </section>

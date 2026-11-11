@@ -43,10 +43,10 @@ describe("equipment & financing isolation", () => {
   it("the overlap check only READS (no insert/update/upsert/delete/rpc) and is the only equipment-side code that mentions expenses", () => {
     expect(code("src/lib/organization/financeOverlap.ts")).not.toMatch(/\.(insert|update|upsert|delete|rpc)\s*\(/);
   });
-  it("the asset module writes ONLY through its three audited functions and never touches the asset register's rows, expenses or statement evidence", () => {
+  it("the asset module writes ONLY through its five audited functions and never touches the asset register's rows, expenses or statement evidence", () => {
     const f = "src/lib/organization/assetReconciliation.ts";
     expect(code(f)).not.toMatch(/\.(insert|update|upsert|delete)\s*\(/);
-    expect([...code(f).matchAll(/\.rpc\("([a-z_]+)"/g)].map((m) => m[1]).sort()).toEqual(["link_acquisition_to_asset", "record_asset_ownership", "void_asset_ownership"]);
+    expect([...code(f).matchAll(/\.rpc\("([a-z_]+)"/g)].map((m) => m[1]).sort()).toEqual(["link_acquisition_to_asset", "record_asset_ownership", "record_founder_asset_ownership", "unlink_acquisition_from_asset", "void_asset_ownership"]);
     expect(code(f)).not.toMatch(/entity_expenses|bank_evidence|statementEvidence|payment_obligations/);
     expect(code("src/lib/organization/assetOwnershipRules.ts")).not.toMatch(/from "(@\/lib\/supabase|node:|next\/|react)/);
   });

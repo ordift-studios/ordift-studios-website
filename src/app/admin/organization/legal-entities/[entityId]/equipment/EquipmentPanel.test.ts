@@ -4,7 +4,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { createElement } from "react";
 
 vi.mock("../actions", () => ({ viewEntityDocumentAction: vi.fn() }));
-vi.mock("./actions", () => ({ markInstalmentPaidAction: vi.fn(), recordEquipmentAction: vi.fn(), recordPaymentAction: vi.fn(), setTermsAction: vi.fn(), voidPaymentAction: vi.fn(), linkAssetAction: vi.fn(), recordOwnershipAction: vi.fn(), voidOwnershipAction: vi.fn() }));
+vi.mock("./actions", () => ({ markInstalmentPaidAction: vi.fn(), recordEquipmentAction: vi.fn(), recordPaymentAction: vi.fn(), setTermsAction: vi.fn(), voidPaymentAction: vi.fn(), linkAssetAction: vi.fn(), recordOwnershipAction: vi.fn(), voidOwnershipAction: vi.fn(), recordFounderOwnershipAction: vi.fn(), unlinkAssetAction: vi.fn() }));
 import { EquipmentPanel } from "./EquipmentPanel";
 import { buildEquipmentViews, type DocRef } from "@/lib/organization/equipmentPanelView";
 
@@ -125,5 +125,26 @@ describe("registered assets and legal owner", () => {
     expect(html2).toMatch(/No new asset is created and the asset record is not edited/);
   });
   it("without 0188 (no assets) the panel renders exactly as before", () => { expect(renderToStaticMarkup(createElement(EquipmentPanel, { entityId: "e1", views: [], invoiceDocs: [], financialDocs: [] }))).toMatch(/No registered assets are available/); });
+});
+
+describe("Founder-personal ownership display (migration 0189)", () => {
+  const own = (over: Record<string, unknown>) => ({ id: "o1", entityId: "e1", ownerKind: "founder_personal", companyFunded: true, primaryUser: "The Founder", financingObligor: "The Founder (personal PayLater account)", excludedFromCompanyFixedAssets: true, purchaser: "The Founder, as printed", purpose: "Photography retouching and related creative production", incidentalPersonalUse: false, personalUseNote: null, basis: "Founder statement: personally owned; company card funds payments", reviewStatus: "pending_professional_review", ...over });
+  const assets = [{ id: "as-1", identifier: "SER-1", description: "Synthetic pen display", category: null, status: "in_stock", ownership: own({}), linkedAcquisitionId: "dep" }, { id: "as-2", identifier: "SER-2", description: "Synthetic second item", category: null, status: "in_stock", ownership: null, linkedAcquisitionId: null },
+    { id: "as-g", identifier: "SER-G", description: "Synthetic Ghana asset", category: null, status: "in_stock", ownership: own({ entityId: "ghana-entity", purpose: "Ghana purpose text here" }), linkedAcquisitionId: null }];
+  const linkedView = { ...many[1], linkedAssetId: "as-1" };
+  const h3 = renderToStaticMarkup(createElement(EquipmentPanel, { entityId: "e1", views: [linkedView], invoiceDocs: [docs[0]], financialDocs: docs, assets: assets as never }));
+  it("shows personal ownership as DECLARED and pending professional review (never confirmed), with owner, purchaser, user and obligor on separate lines", () => {
+    expect(h3).toMatch(/Owner: the Founder \(personal\) — declared, filed under this legal entity — pending professional review \(not legally or accountant-confirmed\)/);
+    expect(h3).toMatch(/Purchaser as stated: The Founder, as printed/); expect(h3).toMatch(/Primary user: The Founder/); expect(h3).toMatch(/Financing obligor as stated: The Founder \(personal PayLater account\)/);
+  });
+  it("flags it as NOT a company asset, excluded from company fixed-asset totals, with the company-funded treatment pending — and creates nothing", () => {
+    expect(h3).toMatch(/Not a company asset — excluded from company-owned fixed-asset totals; company-funded personal asset: accounting treatment pending/);
+    expect(h3).toMatch(/Company-funded purchase of a Founder-owned asset — NOT a company asset/);
+  });
+  it("offers the audited unlink only on a linked purchase, with a mandatory reason; an unowned asset offers both owner types; another entity's records show no details", () => {
+    expect(h3).toMatch(/Unlink from this asset \(with a written reason\)/); expect(h3).toMatch(/Why is the link being removed\? \(10\+ characters/);
+    expect(h3).toMatch(/Record the legal owner \(a legal entity\)/); expect(h3).toMatch(/Record the Founder as declared personal owner/);
+    expect(h3).toMatch(/Founder \(personal\) — filed under another legal entity/); expect(h3).not.toMatch(/Ghana purpose text here/);
+  });
 });
 

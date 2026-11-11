@@ -18,3 +18,17 @@ export function validateOwnership(i: OwnershipInput): { ok: true; value: Ownersh
   if (doc && !UUID.test(doc)) return { ok: false, error: "Choose the evidence document from the list." };
   return { ok: true, value: { assetId: t(i.assetId), entityId: t(i.entityId), purchaserAsStated: purchaser, businessPurpose: t(i.businessPurpose), incidentalPersonalUse: i.incidentalPersonalUse, personalUseNote: i.incidentalPersonalUse ? note : null, basisStatement: t(i.basisStatement), evidenceDocumentId: doc } };
 }
+
+// FOUNDER-PERSONAL ownership: the owner is the active Founder identity (the database picks it; it is never typed). Purchaser, primary user and financing obligor are stated separately; company funding is a flag; accounting treatment stays pending.
+export type FounderOwnershipInput = { assetId: string; entityId: string; purchaserAsStated?: string | null; primaryUserAsStated?: string | null; financingObligorAsStated?: string | null; businessPurpose: string; companyFunded: boolean; basisStatement: string; evidenceDocumentId?: string | null };
+export type FounderOwnershipValue = { assetId: string; entityId: string; purchaserAsStated: string | null; primaryUserAsStated: string | null; financingObligorAsStated: string | null; businessPurpose: string; companyFunded: boolean; basisStatement: string; evidenceDocumentId: string | null };
+export function validateFounderOwnership(i: FounderOwnershipInput): { ok: true; value: FounderOwnershipValue } | { ok: false; error: string } {
+  if (!UUID.test(t(i.assetId)) || !UUID.test(t(i.entityId))) return { ok: false, error: "Choose the registered asset and the legal entity whose records this belongs to." };
+  for (const [label, v, max] of [["purchaser", i.purchaserAsStated, 200], ["primary user", i.primaryUserAsStated, 200], ["financing obligor", i.financingObligorAsStated, 300]] as const) if (t(v) && (t(v).length < 3 || t(v).length > max)) return { ok: false, error: `Write the ${label} as stated, or leave it empty.` };
+  if (t(i.businessPurpose).length < 10 || t(i.businessPurpose).length > 500) return { ok: false, error: "Describe the business use (10 to 500 characters)." };
+  if (t(i.basisStatement).length < 20 || t(i.basisStatement).length > 1000) return { ok: false, error: "State how personal ownership and any company funding are established (20 to 1000 characters)." };
+  const doc = t(i.evidenceDocumentId) || null;
+  if (doc && !UUID.test(doc)) return { ok: false, error: "Choose the evidence document from the list." };
+  return { ok: true, value: { assetId: t(i.assetId), entityId: t(i.entityId), purchaserAsStated: t(i.purchaserAsStated) || null, primaryUserAsStated: t(i.primaryUserAsStated) || null, financingObligorAsStated: t(i.financingObligorAsStated) || null, businessPurpose: t(i.businessPurpose), companyFunded: Boolean(i.companyFunded), basisStatement: t(i.basisStatement), evidenceDocumentId: doc } };
+}
+

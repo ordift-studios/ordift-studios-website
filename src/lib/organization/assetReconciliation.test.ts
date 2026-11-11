@@ -7,14 +7,15 @@ const h = vi.hoisted(() => ({ db: null as unknown as FakeDb, superAdmin: true, l
 vi.mock("@/lib/supabase/admin", async () => { const { fakeAdmin } = await import("@/lib/legal/fakeAdmin.testkit"); return { createAdminClient: () => fakeAdmin(h.db) }; });
 vi.mock("@/lib/organization/authority", () => ({ isSuperAdminId: async () => h.superAdmin }));
 vi.mock("@/lib/admin/activityLog", () => ({ logActivity: h.log }));
-import { linkAcquisitionToAsset, loadAssetRegister, recordAssetOwnership, voidAssetOwnership } from "./assetReconciliation";
+import { linkAcquisitionToAsset, loadAssetRegister, recordAssetOwnership, recordFounderAssetOwnership, unlinkAcquisitionFromAsset, voidAssetOwnership } from "./assetReconciliation";
+import { validateFounderOwnership } from "./assetOwnershipRules";
 
 const A = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaa01", Q = "11111111-1111-4111-8111-111111111101", G = "11111111-1111-4111-8111-111111111102";
 const own = (over: Record<string, unknown> = {}) => ({ assetId: A, entityId: Q, purchaserAsStated: "The Founder, as printed on the receipt", businessPurpose: "Photography retouching and graphic design", incidentalPersonalUse: false, basisStatement: "Founder statement: bought for the company; documents pending", ...over });
 const seed = () => {
   h.db = makeFakeDb({ company_assets: [{ id: A, asset_identifier: "SER-1", description: "Synthetic pen display", category: "Pad", status: "in_stock" }],
     entity_asset_ownership: [], entity_equipment_acquisitions: [{ id: "acq-q", employing_entity_id: Q, status: "recorded", company_asset_id: null }, { id: "acq-g", employing_entity_id: G, status: "recorded", company_asset_id: null }] });
-  h.db.rpcHandlers = { record_asset_ownership: () => ({ data: "o1", error: null }), void_asset_ownership: () => ({ data: null, error: null }), link_acquisition_to_asset: () => ({ data: null, error: null }) };
+  h.db.rpcHandlers = { record_asset_ownership: () => ({ data: "o1", error: null }), void_asset_ownership: () => ({ data: null, error: null }), link_acquisition_to_asset: () => ({ data: null, error: null }), record_founder_asset_ownership: () => ({ data: "o2", error: null }), unlink_acquisition_from_asset: () => ({ data: null, error: null }) };
 };
 beforeEach(() => { h.superAdmin = true; h.log.mockReset(); seed(); });
 
@@ -76,3 +77,37 @@ describe("loadAssetRegister (read-only)", () => {
     h.superAdmin = false; expect(await loadAssetRegister("u")).toEqual([]);
   });
 });
+
+const fo = (over: Record<string, unknown> = {}) => ({ assetId: A, entityId: Q, purchaserAsStated: "The Founder, as printed on the receipt", primaryUserAsStated: "The Founder", financingObligorAsStated: "The Founder (personal PayLater account)", businessPurpose: "Photography retouching and related creative production", companyFunded: true, basisStatement: "Founder statement: personally owned; company card funds payments; treatment pending", ...over });
+describe("Founder-personal ownership (rules and library)", () => {
+  it("needs a substantive basis and business use; purchaser, user and obligor are optional separate statements; the owner is never an input", () => {
+    expect(validateFounderOwnership(fo())).toMatchObject({ ok: true, value: { companyFunded: true, financingObligorAsStated: "The Founder (personal PayLater account)" } });
+    for (const bad of [{ basisStatement: "short" }, { businessPurpose: "work" }, { assetId: "x" }, { purchaserAsStated: "ab" }]) expect(validateFounderOwnership(fo(bad)), JSON.stringify(bad)).toMatchObject({ ok: false });
+    expect(Object.keys(validateFounderOwnership(fo()) as object)).not.toContain("ownerProfileId");
+  });
+  it("records through ONE audited function, Super Admin only, logs owner kind and pending review, writes nothing directly; works for Qatar and Ghana filings", async () => {
+    h.superAdmin = false; expect(await recordFounderAssetOwnership({ actorUserId: "u", ownership: fo() })).toMatchObject({ ok: false });
+    h.superAdmin = true; const calls: Record<string, unknown>[] = []; h.db.rpcHandlers!.record_founder_asset_ownership = (a) => { calls.push(a); return { data: "o2", error: null }; };
+    expect(await recordFounderAssetOwnership({ actorUserId: "u", ownership: fo() })).toEqual({ ok: true });
+    expect(await recordFounderAssetOwnership({ actorUserId: "u", ownership: fo({ entityId: G }) })).toEqual({ ok: true });
+    expect(calls.map((c) => c.p_entity)).toEqual([Q, G]); expect(calls[0]).toMatchObject({ p_company_funded: true, p_user: "The Founder", p_actor: "u" });
+    expect(h.log).toHaveBeenCalledWith(expect.objectContaining({ action: "asset_ownership.recorded", metadata: expect.objectContaining({ ownerKind: "founder_personal", reviewStatus: "pending_professional_review" }) }));
+    expect(h.db.writes).toEqual([]);
+  });
+  it("turns the database refusals into plain messages", async () => {
+    h.db.rpcHandlers!.record_founder_asset_ownership = () => ({ data: null, error: { message: "a personal owner must be the ACTIVE Founder identity" } });
+    expect(await recordFounderAssetOwnership({ actorUserId: "u", ownership: fo() })).toMatchObject({ ok: false, error: expect.stringMatching(/active Founder identity/) });
+  });
+});
+describe("unlinkAcquisitionFromAsset (audited, mandatory reason)", () => {
+  beforeEach(() => { h.db.tables.entity_equipment_acquisitions[0].company_asset_id = A; });
+  it("needs a written reason, the right entity and an existing link; then one audited call", async () => {
+    expect(await unlinkAcquisitionFromAsset({ actorUserId: "u", entityId: Q, acquisitionId: "acq-q", reason: "short" })).toMatchObject({ ok: false });
+    expect(await unlinkAcquisitionFromAsset({ actorUserId: "u", entityId: G, acquisitionId: "acq-q", reason: "the accountant concluded a different structure" })).toMatchObject({ ok: false });
+    expect(await unlinkAcquisitionFromAsset({ actorUserId: "u", entityId: G, acquisitionId: "acq-g", reason: "the accountant concluded a different structure" })).toMatchObject({ ok: false, error: expect.stringMatching(/not linked/) });
+    expect(await unlinkAcquisitionFromAsset({ actorUserId: "u", entityId: Q, acquisitionId: "acq-q", reason: "the accountant concluded a different structure" })).toEqual({ ok: true });
+    expect(h.log).toHaveBeenCalledWith(expect.objectContaining({ action: "equipment_asset.unlinked" })); expect(h.db.writes).toEqual([]);
+    h.superAdmin = false; expect(await unlinkAcquisitionFromAsset({ actorUserId: "u", entityId: Q, acquisitionId: "acq-q", reason: "the accountant concluded a different structure" })).toMatchObject({ ok: false });
+  });
+});
+
