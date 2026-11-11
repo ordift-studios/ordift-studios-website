@@ -144,6 +144,28 @@ export async function voidAcquisitionPayment(p: { actorUserId: string; entityId:
   return { ok: true };
 }
 
+// Migration 0190: void a whole acquisition (its financing, instalments and recorded payments are kept, marked void, with the reason). One database call, one audit event; nothing is edited or deleted,
+// no expense, payment or statement verification is created, and the invoice number and financing reference become free again so a corrected record can be entered.
+function voidAcquisitionFriendly(message: string): string {
+  if (/linked to an asset/.test(message)) return "This acquisition is linked to an asset. Unlink the asset first (audited), then void the acquisition.";
+  if (/statement is already linked/.test(message)) return "A bank or card statement is already linked to this acquisition. It was reconciled, so it cannot be voided here.";
+  if (/already settled/.test(message)) return "The financing is already fully paid (settled), so it cannot be voided here.";
+  if (/not a recorded acquisition/.test(message)) return "That acquisition is not recorded (it may already be voided).";
+  if (/at least 10 characters/.test(message)) return "Give a written reason of at least 10 characters.";
+  return "The acquisition could not be voided.";
+}
+export async function voidEquipmentAcquisition(p: { actorUserId: string; entityId: string; acquisitionId: string; reason: string }): Promise<{ ok: true } | Fail> {
+  if (!(await isSuperAdminId(p.actorUserId))) return DENIED;
+  if (p.reason.trim().length < 10) return { ok: false, error: "Give a written reason of at least 10 characters." };
+  const db = createAdminClient();
+  const { data: a } = await db.from("entity_equipment_acquisitions").select("employing_entity_id").eq("id", p.acquisitionId).maybeSingle();
+  if (!a || a.employing_entity_id !== p.entityId) return { ok: false, error: "That acquisition does not belong to this legal entity." };
+  const { error } = await db.rpc("void_equipment_acquisition", { p_acquisition: p.acquisitionId, p_reason: p.reason.trim(), p_actor: p.actorUserId });
+  if (error) { console.error("[equipment financing] void acquisition failed", error.message); return { ok: false, error: voidAcquisitionFriendly(error.message) }; }
+  await logActivity({ actorUserId: p.actorUserId, action: "equipment_acquisition.voided", entityType: "employing_entity", entityId: p.entityId, metadata: { acquisitionId: p.acquisitionId } });
+  return { ok: true };
+}
+
 export type EquipmentPanelData = { views: EquipmentView[]; invoiceDocs: DocRef[]; financialDocs: DocRef[] };
 const FINANCIAL_TYPES = ["purchase_receipt", "supplier_invoice", "other_financial_document"];
 // Reads only (Super Admin only; an unauthorised caller gets nothing). Documents are the existing vault's rows — this never stores or alters a file.
@@ -152,8 +174,8 @@ export async function loadEquipmentPanelData(entityId: string, actorUserId: stri
   if (!(await isSuperAdminId(actorUserId))) return empty;
   const db = createAdminClient();
   const [acq, ob, docs] = await Promise.all([
-    db.from("entity_equipment_acquisitions").select("id, supplier_name, supplier_branch, invoice_number, purchase_date, item_description, quantity, currency, list_price_total, discount_total, net_amount, customer_as_shown, invoice_document_id, funding_source_status, funding_source_note, accounting_classification, bank_evidence_document_id, created_at, company_asset_id").eq("employing_entity_id", entityId).eq("status", "recorded").order("purchase_date", { ascending: false }),
-    db.from("entity_financing_obligations").select("id, acquisition_id, provider, provider_reference, instalment_count, financed_amount, plan_started_on, confirmation_document_id, schedule_basis, status").eq("employing_entity_id", entityId).neq("status", "void"),
+    db.from("entity_equipment_acquisitions").select("id, supplier_name, supplier_branch, invoice_number, purchase_date, item_description, quantity, currency, list_price_total, discount_total, net_amount, customer_as_shown, invoice_document_id, funding_source_status, funding_source_note, accounting_classification, bank_evidence_document_id, created_at, company_asset_id, status, void_reason").eq("employing_entity_id", entityId).in("status", ["recorded", "void"]).order("purchase_date", { ascending: false }),
+    db.from("entity_financing_obligations").select("id, acquisition_id, provider, provider_reference, instalment_count, financed_amount, plan_started_on, confirmation_document_id, schedule_basis, status").eq("employing_entity_id", entityId),
     db.from("employing_entity_documents").select("id, document_type, original_filename, file_sha256").eq("employing_entity_id", entityId).in("document_type", FINANCIAL_TYPES).order("uploaded_at", { ascending: false }),
   ]);
   if (acq.error || ob.error || docs.error) { console.error("[equipment financing] load failed", acq.error?.message ?? ob.error?.message ?? docs.error?.message); return empty; }

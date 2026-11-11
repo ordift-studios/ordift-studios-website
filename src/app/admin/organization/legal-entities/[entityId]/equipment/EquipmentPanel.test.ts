@@ -4,7 +4,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { createElement } from "react";
 
 vi.mock("../actions", () => ({ viewEntityDocumentAction: vi.fn() }));
-vi.mock("./actions", () => ({ markInstalmentPaidAction: vi.fn(), recordEquipmentAction: vi.fn(), recordPaymentAction: vi.fn(), setTermsAction: vi.fn(), voidPaymentAction: vi.fn(), linkAssetAction: vi.fn(), recordOwnershipAction: vi.fn(), voidOwnershipAction: vi.fn(), recordFounderOwnershipAction: vi.fn(), unlinkAssetAction: vi.fn() }));
+vi.mock("./actions", () => ({ markInstalmentPaidAction: vi.fn(), recordEquipmentAction: vi.fn(), recordPaymentAction: vi.fn(), setTermsAction: vi.fn(), voidPaymentAction: vi.fn(), voidAcquisitionAction: vi.fn(), linkAssetAction: vi.fn(), recordOwnershipAction: vi.fn(), voidOwnershipAction: vi.fn(), recordFounderOwnershipAction: vi.fn(), unlinkAssetAction: vi.fn() }));
 import { EquipmentPanel } from "./EquipmentPanel";
 import { buildEquipmentViews, type DocRef } from "@/lib/organization/equipmentPanelView";
 
@@ -148,3 +148,29 @@ describe("Founder-personal ownership display (migration 0189)", () => {
   });
 });
 
+describe("voided acquisitions (migration 0190)", () => {
+  const raw = (id: string, status: "recorded" | "void", linked?: string) => ({ id, supplier_name: "Synthetic Supplier", supplier_branch: null, invoice_number: "INV-9", purchase_date: "2026-11-08", item_description: "Synthetic pen display", quantity: 1, currency: "QAR", list_price_total: 1499, discount_total: 350, net_amount: 1149,
+    customer_as_shown: "An Individual", invoice_document_id: "d-inv", funding_source_status: "to_confirm" as const, funding_source_note: null, accounting_classification: "pending_professional_review" as const, bank_evidence_document_id: null, created_at: "2026-11-08T10:00:00Z", company_asset_id: linked ?? null,
+    status, void_reason: status === "void" ? "Entered with a wrong value; voided to record a correction" : null });
+  const ob = (id: string, a: string, status: "active" | "void") => ({ id, acquisition_id: a, provider: "SyntheticPay", provider_reference: "SP-9", instalment_count: 4, financed_amount: 1149, plan_started_on: "2026-11-08", confirmation_document_id: "d-conf", schedule_basis: "founder_expected_months" as const, status });
+  const ins = (o: string, status: "pending" | "void") => [1, 2, 3, 4].map((n) => ({ id: `${o}-${n}`, obligation_id: o, sequence: n, amount: 287.25, expected_month: ["2026-11-01", "2026-12-01", "2027-01-01", "2027-02-01"][n - 1], status, paid_on: null, evidence_document_id: null, bank_evidence_document_id: null, evidence_note: null }));
+  const render = (v: ReturnType<typeof buildEquipmentViews>) => renderToStaticMarkup(createElement(EquipmentPanel, { entityId: "e1", views: v, invoiceDocs: [docs[0]], financialDocs: docs }));
+  const mixed = render(buildEquipmentViews({ entityLegalName: "SYNTHETIC ENTITY W.L.L.", docs, acquisitions: [raw("a-old", "void"), raw("a-new", "recorded")], obligations: [ob("o-old", "a-old", "void"), ob("o-new", "a-new", "active")], instalments: [...ins("o-old", "void"), ...ins("o-new", "pending")] }));
+  it("shows the voided acquisition in its own section with the reason, and the live one with the void control", () => {
+    expect(mixed).toMatch(/Voided acquisitions \(1\)/); expect(mixed).toMatch(/VOIDED — kept for the audit trail, excluded from every position and total/);
+    expect(mixed).toMatch(/Reason for voiding: Entered with a wrong value; voided to record a correction/);
+    expect(mixed).toMatch(/Void this acquisition \(correction\)/); expect(mixed).toMatch(/name="confirmVoid"/);
+  });
+  it("a voided acquisition offers no forms and no payment controls", () => {
+    const onlyVoid = render(buildEquipmentViews({ entityLegalName: "SYNTHETIC ENTITY W.L.L.", docs, acquisitions: [raw("a-old", "void")], obligations: [ob("o-old", "a-old", "void")], instalments: ins("o-old", "void") }));
+    expect(onlyVoid).toMatch(/No equipment acquisitions are recorded/);          // nothing live
+    expect(onlyVoid).not.toMatch(/Record instalment/); expect(onlyVoid).not.toMatch(/Void this acquisition/);
+  });
+  it("a linked acquisition explains that the asset must be unlinked first and offers no void form", () => {
+    const linked = render(buildEquipmentViews({ entityLegalName: "SYNTHETIC ENTITY W.L.L.", docs, acquisitions: [raw("a-l", "recorded", "asset-1")], obligations: [ob("o-l", "a-l", "active")], instalments: ins("o-l", "pending") }));
+    expect(linked).toMatch(/Unlink the asset first/);
+  });
+  it("never claims the void is an expense, a payment or a verification", () => {
+    expect(mixed).toMatch(/creates no expense, payment or statement verification/);
+  });
+});

@@ -8,6 +8,7 @@ export type RawAcquisition = {
   id: string; supplier_name: string; supplier_branch: string | null; invoice_number: string; purchase_date: string; item_description: string; quantity: number; currency: string;
   list_price_total: number | string; discount_total: number | string; net_amount: number | string; customer_as_shown: string | null; invoice_document_id: string;
   funding_source_status: AcquisitionFact["funding"]; funding_source_note: string | null; accounting_classification: AcquisitionFact["classification"]; bank_evidence_document_id: string | null; created_at: string; company_asset_id?: string | null;
+  status?: "recorded" | "void"; void_reason?: string | null;      // a voided acquisition stays visible (kept for the audit trail), excluded from every position and total
 };
 export type RawObligation = {
   id: string; acquisition_id: string; provider: string; provider_reference: string; instalment_count: number; financed_amount: number | string; plan_started_on: string;
@@ -61,13 +62,15 @@ export type EquipmentView = {
   // a NON-financed purchase can take terms and direct payments; a financed one is paid through its instalments only
   acceptsDirectPayments: boolean;
   linkedAssetId: string | null;       // the ONE registered asset this acquisition is linked to (migration 0188); the asset register itself is never changed
+  status: "recorded" | "void"; voidReason: string | null;   // migration 0190: a void keeps every row; nothing is deleted or edited
 };
 
 const n = (v: number | string) => Number(v);
 export function buildEquipmentViews(a: { acquisitions: RawAcquisition[]; obligations: RawObligation[]; instalments: RawInstalment[]; docs: DocRef[]; entityLegalName: string; terms?: RawTerms[]; payments?: RawPayment[]; today?: string }): EquipmentView[] {
   const doc = (id: string | null): DocRef | null => (id ? a.docs.find((d) => d.id === id) ?? null : null);
   return a.acquisitions.map((r) => {
-    const ob = a.obligations.find((o) => o.acquisition_id === r.id && o.status !== "void") ?? null;
+    const isVoid = r.status === "void";
+    const ob = a.obligations.find((o) => o.acquisition_id === r.id && o.status !== "void") ?? (isVoid ? a.obligations.find((o) => o.acquisition_id === r.id) ?? null : null);
     const ins = ob ? a.instalments.filter((i) => i.obligation_id === ob.id).sort((x, y) => x.sequence - y.sequence) : [];
     const match = customerMatch(r.customer_as_shown, a.entityLegalName);
     const terms = (a.terms ?? []).find((x) => x.acquisition_id === r.id && x.status === "current") ?? null;
@@ -89,7 +92,7 @@ export function buildEquipmentViews(a: { acquisitions: RawAcquisition[]; obligat
       financing: ob ? { id: ob.id, provider: ob.provider, reference: ob.provider_reference, status: ob.status, scheduleBasis: ob.schedule_basis, plannedOn: ob.plan_started_on, instalmentCount: ob.instalment_count, financed: n(ob.financed_amount), confirmationDoc: doc(ob.confirmation_document_id),
         instalments: ins.map((i, k) => ({ id: i.id, sequence: i.sequence, amount: n(i.amount), expectedMonth: i.expected_month, state: instalmentState(fact.financing!.instalments[k]), paidOn: i.paid_on, evidenceNote: i.evidence_note, evidenceDoc: doc(i.evidence_document_id), statementDoc: doc(i.bank_evidence_document_id) })) } : null,
       position,
-      arrangementLabel: ARRANGEMENT_LABEL[position.arrangement], settlementLabel: SETTLEMENT_LABEL[position.settlement], supplierTerms: terms?.supplier_terms ?? null, acceptsDirectPayments: !ob, linkedAssetId: r.company_asset_id ?? null,
+      arrangementLabel: ARRANGEMENT_LABEL[position.arrangement], settlementLabel: SETTLEMENT_LABEL[position.settlement], supplierTerms: terms?.supplier_terms ?? null, acceptsDirectPayments: !ob && !isVoid, linkedAssetId: r.company_asset_id ?? null, status: isVoid ? "void" : "recorded", voidReason: r.void_reason ?? null,
       payments: pays.map((x) => ({ id: x.id, kindLabel: kindLabel(x.kind), amount: n(x.amount), paidOn: x.paid_on, methodLabel: methodLabel(x.method), methodNote: x.method_note, reference: x.reference, evidenceDoc: doc(x.evidence_document_id), evidenceNote: x.evidence_note, status: x.status, voidReason: x.void_reason })),
     };
   });

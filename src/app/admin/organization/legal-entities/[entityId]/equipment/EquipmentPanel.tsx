@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRestoringActionState } from "@/components/admin/useRestoringActionState";
 import { viewEntityDocumentAction } from "../actions";
-import { linkAssetAction, recordFounderOwnershipAction, unlinkAssetAction, markInstalmentPaidAction, recordEquipmentAction, recordOwnershipAction, recordPaymentAction, setTermsAction, voidOwnershipAction, voidPaymentAction, type ActionState } from "./actions";
+import { linkAssetAction, recordFounderOwnershipAction, unlinkAssetAction, markInstalmentPaidAction, recordEquipmentAction, recordOwnershipAction, recordPaymentAction, setTermsAction, voidAcquisitionAction, voidOwnershipAction, voidPaymentAction, type ActionState } from "./actions";
 import type { AssetRow } from "@/lib/organization/assetReconciliation";
 import { ARRANGEMENT_LABEL, PAYMENT_KINDS, PAYMENT_METHODS } from "@/lib/organization/acquisitionPaymentRules";
 import { INSTALMENT_STATE_LABEL, type DocRef, type EquipmentView, type InstalmentView, type PaymentView } from "@/lib/organization/equipmentPanelView";
@@ -319,6 +319,45 @@ function AssetsSection({ entityId, assets, docs }: { entityId: string; assets: A
   );
 }
 
+function VoidAcquisitionForm({ entityId, e }: { entityId: string; e: EquipmentView }) {
+  const [state, action, pending, ref] = useRestoringActionState<ActionState>(voidAcquisitionAction, null);
+  return (
+    <details className="rounded-lg border border-red-200 bg-red-50/40 p-3">
+      <summary className="cursor-pointer font-sans text-caption font-semibold text-red-700">Void this acquisition (correction)</summary>
+      {e.linkedAssetId ? (
+        <p className="mt-2 font-sans text-caption text-ordift-ink-muted">This acquisition is linked to an asset. Unlink the asset first (it is audited), then it can be voided.</p>
+      ) : (
+        <form ref={ref} action={action} className="mt-2 space-y-2">
+          <input type="hidden" name="entityId" value={entityId} /><input type="hidden" name="acquisitionId" value={e.id} />
+          <p className="font-sans text-caption text-ordift-ink-muted">Marks this acquisition, its financing agreement, every instalment and any recorded payment as VOID, with your reason. Nothing is deleted or edited: the voided records and their evidence stay visible, are excluded from every position and total, and the audit trail keeps what was voided. The invoice number and financing reference can then be entered again as a corrected record. Not possible once a bank or card statement is linked or the financing is fully paid. It creates no expense, payment or statement verification.</p>
+          <textarea name="reason" rows={2} required placeholder="Why is this acquisition being voided? (10+ characters)" className={`block w-full ${input}`} aria-label="Reason for voiding the acquisition" />
+          <label className="flex gap-2 font-sans text-caption text-ordift-ink-muted"><input type="checkbox" name="confirmVoid" value="yes" />I understand the whole acquisition, its financing and instalments will be marked void.</label>
+          <button disabled={pending} className="font-sans text-caption font-semibold underline underline-offset-4 text-red-700 disabled:opacity-50">{pending ? "Voiding…" : "Void the acquisition"}</button>
+          <Feedback state={state} pending={pending} />
+        </form>
+      )}
+    </details>
+  );
+}
+function VoidedCard({ e }: { e: EquipmentView }) {
+  const f = e.financing;
+  return (
+    <article className="rounded-xl border border-dashed border-black/20 bg-slate-50 p-4 sm:p-6 space-y-2 text-ordift-ink-muted">
+      <p className="font-sans text-caption font-semibold text-red-700">VOIDED — kept for the audit trail, excluded from every position and total</p>
+      <h3 className="font-serif font-medium text-body text-ordift-ink">{e.itemDescription}{e.quantity > 1 ? ` × ${e.quantity}` : ""}</h3>
+      <p className="font-sans text-caption">{e.supplier}{e.branch ? `, ${e.branch}` : ""} · invoice {e.invoiceNumber} · purchased {e.purchaseDate} · {money(e.net, e.currency)}</p>
+      <p className="font-sans text-caption">Reason for voiding: {e.voidReason ?? "not recorded"}</p>
+      {f ? (
+        <div className="font-sans text-caption">
+          <p>Financing agreement — {f.provider}, reference {f.reference} · {f.instalmentCount} instalments · {money(f.financed, e.currency)} · status {f.status}</p>
+          <ul className="list-disc pl-5">{f.instalments.map((i) => <li key={i.id}>#{i.sequence} {month(i.expectedMonth)} · {money(i.amount, e.currency)} · voided{i.paidOn ? ` (was reported paid on ${i.paidOn})` : ""}{i.evidenceNote ? ` — note: ${i.evidenceNote}` : ""}</li>)}</ul>
+        </div>
+      ) : null}
+      {e.payments.length > 0 ? <ul className="list-disc pl-5 font-sans text-caption">{e.payments.map((x) => <li key={x.id}>{x.kindLabel} {money(x.amount, e.currency)} on {x.paidOn} · {x.status === "void" ? `voided${x.voidReason ? ` — ${x.voidReason}` : ""}` : x.status}</li>)}</ul> : null}
+      <ul className="space-y-0.5"><DocLink d={e.invoiceDoc} label="Supplier invoice / receipt" /><DocLink d={f?.confirmationDoc ?? null} label="Financing confirmation" /></ul>
+    </article>
+  );
+}
 function Card({ e, entityId, financialDocs, assets }: { e: EquipmentView; entityId: string; financialDocs: DocRef[]; assets: AssetRow[] }) {
   const f = e.financing;
   return (
@@ -360,6 +399,7 @@ function Card({ e, entityId, financialDocs, assets }: { e: EquipmentView; entity
           ))}
         </div>
       ) : <PaymentsSection e={e} entityId={entityId} financialDocs={financialDocs} />}
+      <VoidAcquisitionForm entityId={entityId} e={e} />
     </article>
   );
 }
@@ -410,8 +450,12 @@ function RecordForm({ entityId, invoiceDocs, financialDocs }: { entityId: string
 export function EquipmentPanel({ entityId, views, invoiceDocs, financialDocs, assets = [] }: { entityId: string; views: EquipmentView[]; invoiceDocs: DocRef[]; financialDocs: DocRef[]; assets?: AssetRow[] }) {
   return (
     <div className="space-y-6">
-      {views.length === 0 ? <p className="rounded-xl border border-black/10 bg-white p-6 font-sans text-body-small text-ordift-ink-muted">No equipment acquisitions are recorded for this legal entity.</p>
-        : views.map((v) => <Card key={v.id} e={v} entityId={entityId} financialDocs={financialDocs} assets={assets} />)}
+      {views.filter((v) => v.status !== "void").length === 0 ? <p className="rounded-xl border border-black/10 bg-white p-6 font-sans text-body-small text-ordift-ink-muted">No equipment acquisitions are recorded for this legal entity.</p>
+        : views.filter((v) => v.status !== "void").map((v) => <Card key={v.id} e={v} entityId={entityId} financialDocs={financialDocs} assets={assets} />)}
+      {views.some((v) => v.status === "void") && (
+        <details className="space-y-3"><summary className="cursor-pointer font-sans text-caption font-semibold text-ordift-ink">Voided acquisitions ({views.filter((v) => v.status === "void").length}) — kept for the audit trail</summary>
+          <div className="mt-3 space-y-3">{views.filter((v) => v.status === "void").map((v) => <VoidedCard key={v.id} e={v} />)}</div></details>
+      )}
       <AssetsSection entityId={entityId} assets={assets} docs={financialDocs} />
       <section className="rounded-xl border border-black/10 bg-white p-6 space-y-3">
         <h2 className="font-serif font-medium text-body text-ordift-ink">Record an equipment acquisition</h2>

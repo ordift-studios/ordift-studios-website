@@ -81,3 +81,12 @@ export function parseVoidPaymentForm(f: { get(k: string): unknown }): ParsedVoid
   return { ok: true, entityId: t("entityId"), paymentId: t("paymentId"), reason: t("reason") };
 }
 
+// Void a whole acquisition (migration 0190). The tick box is the deliberate second step: nothing is deleted, but the record leaves every position and total.
+export type ParsedVoidAcquisitionForm = { ok: true; entityId: string; acquisitionId: string; reason: string } | { ok: false; error: string };
+export function parseVoidAcquisitionForm(f: { get(k: string): unknown }): ParsedVoidAcquisitionForm {
+  const t = getter(f);
+  if (!t("entityId") || !t("acquisitionId")) return { ok: false, error: "Invalid request." };
+  if (t("reason").length < 10) return { ok: false, error: "Give a written reason of at least 10 characters." };
+  if (t("confirmVoid") !== "yes") return { ok: false, error: "Tick the box to confirm you understand that the whole acquisition, its financing and instalments will be marked void." };
+  return { ok: true, entityId: t("entityId"), acquisitionId: t("acquisitionId"), reason: t("reason") };
+}

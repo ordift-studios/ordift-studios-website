@@ -1,19 +1,19 @@
 // @vitest-environment node
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const h = vi.hoisted(() => ({ user: null as null | { id: string }, superAdmin: false, record: vi.fn(), pay: vi.fn(), revalidate: vi.fn(), terms: vi.fn(), payment: vi.fn(), voidPay: vi.fn(), bundle: vi.fn() }));
+const h = vi.hoisted(() => ({ user: null as null | { id: string }, superAdmin: false, record: vi.fn(), pay: vi.fn(), revalidate: vi.fn(), terms: vi.fn(), payment: vi.fn(), voidPay: vi.fn(), bundle: vi.fn(), voidAcq: vi.fn() }));
 vi.mock("@/lib/portal/roles", () => ({ getCurrentUser: async () => h.user, isSuperAdmin: () => h.superAdmin }));
 vi.mock("next/cache", () => ({ revalidatePath: h.revalidate }));
 const a = vi.hoisted(() => ({ link: vi.fn(), own: vi.fn(), voidOwn: vi.fn(), founder: vi.fn(), unlink: vi.fn() }));
 vi.mock("@/lib/organization/assetReconciliation", () => ({ linkAcquisitionToAsset: a.link, recordAssetOwnership: a.own, voidAssetOwnership: a.voidOwn, recordFounderAssetOwnership: a.founder, unlinkAcquisitionFromAsset: a.unlink }));
-vi.mock("@/lib/organization/equipmentFinancing", () => ({ recordEquipmentAcquisition: h.record, markInstalmentPaid: h.pay, setAcquisitionTerms: h.terms, recordAcquisitionPayment: h.payment, voidAcquisitionPayment: h.voidPay, recordAcquisitionBundle: h.bundle }));
-import { linkAssetAction, markInstalmentPaidAction, recordEquipmentAction, recordFounderOwnershipAction, recordOwnershipAction, unlinkAssetAction, recordPaymentAction, setTermsAction, voidOwnershipAction, voidPaymentAction } from "./actions";
+vi.mock("@/lib/organization/equipmentFinancing", () => ({ recordEquipmentAcquisition: h.record, markInstalmentPaid: h.pay, setAcquisitionTerms: h.terms, recordAcquisitionPayment: h.payment, voidAcquisitionPayment: h.voidPay, voidEquipmentAcquisition: h.voidAcq, recordAcquisitionBundle: h.bundle }));
+import { linkAssetAction, markInstalmentPaidAction, recordEquipmentAction, recordFounderOwnershipAction, recordOwnershipAction, unlinkAssetAction, recordPaymentAction, setTermsAction, voidAcquisitionAction, voidOwnershipAction, voidPaymentAction } from "./actions";
 
 const fd = (o: Record<string, string>) => { const f = new FormData(); for (const [k, v] of Object.entries(o)) f.set(k, v); return f; };
 const acq = { entityId: "e1", supplier: "Synthetic Supplier", invoiceNumber: "INV-1", purchaseDate: "2026-11-08", itemDescription: "Synthetic pen display", currency: "QAR", listPrice: "1499", discount: "350", net: "1149", invoiceDocumentId: "d1" };
 const pay = { entityId: "e1", instalmentId: "i2", paidOn: "2026-12-01", evidenceNote: "provider app shows it paid", confirmUnverified: "yes" };
 
-beforeEach(() => { h.user = { id: "u1" }; h.superAdmin = true; for (const m of [h.record, h.pay, h.revalidate, h.terms, h.payment, h.voidPay, h.bundle]) m.mockReset(); });
+beforeEach(() => { h.user = { id: "u1" }; h.superAdmin = true; for (const m of [h.record, h.pay, h.revalidate, h.terms, h.payment, h.voidPay, h.bundle, h.voidAcq]) m.mockReset(); });
 
 describe("equipment actions — access", () => {
   it("refuse anonymous and non-Super-Admin users before reading the form or calling the library", async () => {
@@ -129,3 +129,24 @@ describe("Founder ownership and unlink actions", () => {
   });
 });
 
+describe("void acquisition action (migration 0190)", () => {
+  const form = { entityId: "e1", acquisitionId: "a1", reason: "Entered with a wrong value; voided to record a correction", confirmVoid: "yes" };
+  it("refuses anonymous and non-Super-Admin users before the library is called", async () => {
+    h.user = null; expect(await voidAcquisitionAction(null, fd(form))).toEqual({ ok: false, error: "Not authenticated." });
+    h.user = { id: "u1" }; h.superAdmin = false; expect(await voidAcquisitionAction(null, fd(form))).toMatchObject({ ok: false });
+    expect(h.voidAcq).not.toHaveBeenCalled();
+  });
+  it("needs the reason and the confirmation tick; nothing is called otherwise", async () => {
+    expect(await voidAcquisitionAction(null, fd({ ...form, reason: "short" }))).toMatchObject({ ok: false });
+    expect(await voidAcquisitionAction(null, fd({ entityId: "e1", acquisitionId: "a1", reason: form.reason }))).toMatchObject({ ok: false });
+    expect(h.voidAcq).not.toHaveBeenCalled();
+  });
+  it("voids as the signed-in Super Admin and refreshes only the equipment page; a refusal is passed on", async () => {
+    h.voidAcq.mockResolvedValueOnce({ ok: true });
+    expect(await voidAcquisitionAction(null, fd(form))).toEqual({ ok: true });
+    expect(h.voidAcq).toHaveBeenCalledWith({ actorUserId: "u1", entityId: "e1", acquisitionId: "a1", reason: form.reason });
+    expect(h.revalidate).toHaveBeenCalledWith("/admin/organization/legal-entities/e1/equipment");
+    h.voidAcq.mockResolvedValueOnce({ ok: false, error: "This acquisition is linked to an asset." });
+    expect(await voidAcquisitionAction(null, fd(form))).toEqual({ ok: false, error: "This acquisition is linked to an asset." });
+  });
+});
