@@ -8,6 +8,10 @@ P() { docker exec -i "$C" psql -U supabase_admin -h 127.0.0.1 -X -q "$@"; }; Q()
 cleanup() { P -d postgres -c "drop database if exists $DB" >/dev/null 2>&1; rm -rf "$T"; }; trap cleanup EXIT
 P -d postgres -c "create database $DB" >/dev/null || { echo "could not create the scratch database"; exit 1; }
 docker exec "$C" pg_dump -U supabase_admin -h 127.0.0.1 -d "$SRC" --no-owner 2>/dev/null | Q -v ON_ERROR_STOP=0 >/dev/null 2>&1
+# the lab copy may already hold EMPTY leftover 0186/0187/0188 objects: remove them in THIS scratch database only (it is dropped at the end), newest layer first
+for lay in "public.entity_asset_ownership:ROLLBACK_asset_ownership_and_acquisition_link.sql" "public.entity_acquisition_payments:ROLLBACK_acquisition_payment_arrangements.sql" "public.entity_equipment_acquisitions:ROLLBACK_equipment_acquisitions_and_financing.sql"; do
+  if [ "$(printf "select to_regclass('${lay%%:*}') is not null;" | Q -At)" = t ]; then grep -v -E "^(begin|commit);\$" "$D/${lay##*:}" | Q -v ON_ERROR_STOP=1 >/dev/null || { echo "FAIL could not remove leftover layer ${lay%%:*}"; exit 1; }; fi
+done
 for f in "$D/../migrations/0186_equipment_acquisitions_and_financing.sql" "${PROPOSAL_FILE:-$D/../migrations/0187_acquisition_payment_arrangements.sql}"; do grep -v -E "^(begin|commit);\$" "$f" | Q -v ON_ERROR_STOP=1 >/dev/null || { echo "FAIL could not apply $f"; exit 1; }; done
 sed -n 3,16p "$D/REHEARSE_finance_body.sql" | Q -v ON_ERROR_STOP=1 >/dev/null || { echo "FAIL seed"; exit 1; }
 mk() { cat <<SQL | Q -v ON_ERROR_STOP=1 -At
