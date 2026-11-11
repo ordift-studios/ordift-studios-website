@@ -54,6 +54,12 @@ describe("linkAcquisitionToAsset", () => {
     expect(h.log).toHaveBeenCalledWith(expect.objectContaining({ action: "equipment_asset.linked" }));
     expect(h.db.writes).toEqual([]);
   });
+  it("a repeated link of an already-linked acquisition is refused BEFORE the database (no second audit event)", async () => {
+    h.db.tables.entity_equipment_acquisitions.find((x) => x.id === "acq-q")!.company_asset_id = A;
+    const calls = vi.fn(); h.db.rpcHandlers!.link_acquisition_to_asset = (a) => { calls(a); return { data: null, error: null }; };
+    expect(await linkAcquisitionToAsset({ actorUserId: "u", entityId: Q, acquisitionId: "acq-q", assetId: A })).toMatchObject({ ok: false, error: expect.stringMatching(/already linked to an asset/) });
+    expect(calls).not.toHaveBeenCalled(); expect(h.log).not.toHaveBeenCalled();
+  });
   it("keeps Qatar and Ghana apart and refuses non-Super-Admins", async () => {
     expect(await linkAcquisitionToAsset({ actorUserId: "u", entityId: Q, acquisitionId: "acq-g", assetId: A })).toMatchObject({ ok: false });
     h.superAdmin = false;
