@@ -90,3 +90,27 @@ export function parseVoidAcquisitionForm(f: { get(k: string): unknown }): Parsed
   if (t("confirmVoid") !== "yes") return { ok: false, error: "Tick the box to confirm you understand that the whole acquisition, its financing and instalments will be marked void." };
   return { ok: true, entityId: t("entityId"), acquisitionId: t("acquisitionId"), reason: t("reason") };
 }
+
+// Link a stored company statement to a reported payment / the funding source (migration 0191). Every statement fact is typed by the Super Admin from the statement; the tick box is the deliberate confirmation that the instrument is the company's.
+export type ParsedStatementForm = { ok: true; entityId: string; evidence: import("@/lib/organization/statementEvidenceRules").StatementEvidenceInput } | { ok: false; error: string };
+export function parseStatementEvidenceForm(f: { get(k: string): unknown }): ParsedStatementForm {
+  const t = getter(f);
+  if (!t("entityId") || !t("targetId")) return { ok: false, error: "Invalid request." };
+  const kind = t("kind");
+  if (kind !== "instalment" && kind !== "funding") return { ok: false, error: "Choose what the statement is evidence for." };
+  const amount = num(t("lineAmount"));
+  if (Number.isNaN(amount)) return { ok: false, error: "Enter the statement amount as a number." };
+  return { ok: true, entityId: t("entityId"), evidence: { kind, targetId: t("targetId"), documentId: t("statementDocumentId"), holderKind: t("holderKind"), instrumentKind: t("instrumentKind"), accountHolderAsPrinted: t("accountHolderAsPrinted"),
+    cardholderAsPrinted: t("cardholderAsPrinted") || null, instrumentIdentityAsPrinted: t("instrumentIdentityAsPrinted"), periodFrom: t("periodFrom"), periodTo: t("periodTo"), lineDate: t("lineDate"), lineAmount: amount, lineCurrency: t("lineCurrency"),
+    lineDescriptionAsPrinted: t("lineDescriptionAsPrinted"), page: t("page") || null, paymentReference: t("paymentReference") || null, basisNote: t("basisNote"), confirmCompanyInstrument: t("confirmCompanyInstrument") === "yes" } };
+}
+export type ParsedUnlinkEvidenceForm = { ok: true; entityId: string; kind: "instalment" | "funding"; targetId: string; reason: string } | { ok: false; error: string };
+export function parseUnlinkEvidenceForm(f: { get(k: string): unknown }): ParsedUnlinkEvidenceForm {
+  const t = getter(f);
+  if (!t("entityId") || !t("targetId")) return { ok: false, error: "Invalid request." };
+  const kind = t("kind");
+  if (kind !== "instalment" && kind !== "funding") return { ok: false, error: "Choose what the statement is evidence for." };
+  if (t("reason").length < 10) return { ok: false, error: "Give a written reason of at least 10 characters." };
+  if (t("confirmUnlink") !== "yes") return { ok: false, error: "Tick the box to confirm the payment returns to 'reported paid, awaiting statement'." };
+  return { ok: true, entityId: t("entityId"), kind, targetId: t("targetId"), reason: t("reason") };
+}

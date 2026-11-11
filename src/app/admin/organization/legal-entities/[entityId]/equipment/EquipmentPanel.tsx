@@ -3,11 +3,12 @@
 import { useState } from "react";
 import { useRestoringActionState } from "@/components/admin/useRestoringActionState";
 import { viewEntityDocumentAction } from "../actions";
-import { linkAssetAction, recordFounderOwnershipAction, unlinkAssetAction, markInstalmentPaidAction, recordEquipmentAction, recordOwnershipAction, recordPaymentAction, setTermsAction, voidAcquisitionAction, voidOwnershipAction, voidPaymentAction, type ActionState } from "./actions";
+import { linkAssetAction, recordFounderOwnershipAction, unlinkAssetAction, markInstalmentPaidAction, recordEquipmentAction, recordOwnershipAction, recordPaymentAction, setTermsAction, voidAcquisitionAction, voidOwnershipAction, voidPaymentAction, linkStatementEvidenceAction, unlinkStatementEvidenceAction, type ActionState } from "./actions";
 import type { AssetRow } from "@/lib/organization/assetReconciliation";
 import { ARRANGEMENT_LABEL, PAYMENT_KINDS, PAYMENT_METHODS } from "@/lib/organization/acquisitionPaymentRules";
 import { INSTALMENT_STATE_LABEL, type DocRef, type EquipmentView, type InstalmentView, type PaymentView } from "@/lib/organization/equipmentPanelView";
 import type { PositionFlag } from "@/lib/organization/financePosition";
+import { HOLDER_KINDS, INSTRUMENT_KINDS, type StatementCheck } from "@/lib/organization/statementEvidenceRules";
 
 const input = "rounded-lg border border-black/15 px-2 py-1.5 font-sans text-body-small";
 const button = "justify-self-start font-sans text-body-small font-semibold px-4 py-2 rounded-md bg-ordift-navy-950 text-white disabled:opacity-50";
@@ -319,6 +320,81 @@ function AssetsSection({ entityId, assets, docs }: { entityId: string; assets: A
   );
 }
 
+const STATEMENT_MIME = ["application/pdf", "image/jpeg", "image/png"];
+function StatementCheckView({ c, docs }: { c: StatementCheck; docs: DocRef[] }) {
+  const doc = docs.find((d) => d.id === c.documentId) ?? null;
+  return (
+    <div className="rounded-lg bg-green-50 p-3 font-sans text-caption text-green-900 space-y-0.5">
+      <p className="font-semibold">Verified by statement — a Super Admin stated these statement facts; the database checked the entity, holder, currency, amount and date against the records.</p>
+      <p>{INSTRUMENT_KINDS.find((k) => k.value === c.instrumentKind)?.label ?? c.instrumentKind} · holder as printed: {c.holder}{c.cardholder ? ` · cardholder: ${c.cardholder}` : ""} · identity as printed: {c.identity}</p>
+      <p>Statement line {c.lineDate}: {c.currency} {c.amount.toFixed(2)} — &ldquo;{c.description}&rdquo;{c.page ? ` (page ${c.page})` : ""} · statement period {c.periodFrom} to {c.periodTo}</p>
+      <p>{c.dateDifferenceDays != null ? `Date difference from the reported payment: ${c.dateDifferenceDays} day(s). ` : ""}Payment reference: {c.paymentReference ?? "not given"}{c.referenceMatchesFinancing === true ? " (matches the financing reference)" : c.referenceMatchesFinancing === false ? " (does NOT match the financing reference)" : ""}</p>
+      <p>How it was identified: {c.basisNote}</p>
+      <ul><DocLink d={doc} label="Statement (private vault, original unaltered)" /></ul>
+    </div>
+  );
+}
+function StatementLinkForm({ entityId, kind, targetId, docs, currency }: { entityId: string; kind: "instalment" | "funding"; targetId: string; docs: DocRef[]; currency: string }) {
+  const [state, action, pending, ref] = useRestoringActionState<ActionState>(linkStatementEvidenceAction, null);
+  const statements = docs.filter((d) => d.documentType === "other_financial_document" && STATEMENT_MIME.includes(d.mimeType ?? ""));
+  return (
+    <form ref={ref} action={action} className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-2 rounded-lg bg-slate-50 p-3">
+      <input type="hidden" name="entityId" value={entityId} /><input type="hidden" name="kind" value={kind} /><input type="hidden" name="targetId" value={targetId} />
+      <p className="sm:col-span-2 font-sans text-caption text-ordift-ink-muted">Enter what the stored statement SHOWS, exactly as printed. Only a statement of a COMPANY instrument in this legal entity&rsquo;s name can be linked; a personal account or card is refused. Never enter a full card or account number (masked identity only). Nothing is verified until the database accepts these facts against the records.</p>
+      <select name="statementDocumentId" required defaultValue="" className={`sm:col-span-2 ${input}`} aria-label="Stored statement"><option value="" disabled>Choose the stored statement (PDF or image, other financial document)…</option>{statements.map((d) => <option key={d.id} value={d.id}>{d.filename ?? d.id}</option>)}</select>
+      <select name="holderKind" defaultValue="company" className={input} aria-label="Whose instrument"><option value="company">{HOLDER_KINDS[0].label}</option><option value="personal">{HOLDER_KINDS[1].label}</option></select>
+      <select name="instrumentKind" defaultValue="credit_card" className={input} aria-label="Instrument kind">{INSTRUMENT_KINDS.map((k) => <option key={k.value} value={k.value}>{k.label}</option>)}</select>
+      <input name="accountHolderAsPrinted" required placeholder="Account holder, exactly as printed" className={input} /><input name="cardholderAsPrinted" placeholder="Cardholder as printed (if different)" className={input} />
+      <input name="instrumentIdentityAsPrinted" required placeholder="Masked card / account identity as printed (e.g. card ending 1234)" className={`sm:col-span-2 ${input}`} />
+      <label className="font-sans text-caption text-ordift-ink-muted">Statement period from<input name="periodFrom" type="date" required className={`block w-full ${input}`} /></label>
+      <label className="font-sans text-caption text-ordift-ink-muted">Statement period to<input name="periodTo" type="date" required className={`block w-full ${input}`} /></label>
+      <label className="font-sans text-caption text-ordift-ink-muted">Statement line date<input name="lineDate" type="date" required className={`block w-full ${input}`} /></label>
+      <input name="lineAmount" required inputMode="decimal" placeholder="Line amount, as printed" className={input} />
+      <input name="lineCurrency" required maxLength={3} defaultValue={currency} className={input} aria-label="Line currency" /><input name="page" placeholder="Statement page (optional)" className={input} />
+      <input name="lineDescriptionAsPrinted" required placeholder="Line description, exactly as printed" className={`sm:col-span-2 ${input}`} />
+      <input name="paymentReference" placeholder="Payment reference as printed (optional — only if the line shows one)" className={`sm:col-span-2 ${input}`} />
+      <textarea name="basisNote" rows={2} required placeholder="How you identified this line as the payment (10+ characters)" className={`sm:col-span-2 ${input}`} />
+      <label className="sm:col-span-2 flex gap-2 font-sans text-caption text-ordift-ink-muted"><input type="checkbox" name="confirmCompanyInstrument" value="yes" />I confirm this instrument is held in THIS legal entity&rsquo;s name (not a personal account or card).</label>
+      <button disabled={pending} className={button}>{pending ? "Linking…" : "Link this statement as evidence"}</button>
+      <Feedback state={state} pending={pending} />
+    </form>
+  );
+}
+function UnlinkStatementForm({ entityId, kind, targetId }: { entityId: string; kind: "instalment" | "funding"; targetId: string }) {
+  const [state, action, pending, ref] = useRestoringActionState<ActionState>(unlinkStatementEvidenceAction, null);
+  return (
+    <form ref={ref} action={action} className="mt-1 space-y-2">
+      <input type="hidden" name="entityId" value={entityId} /><input type="hidden" name="kind" value={kind} /><input type="hidden" name="targetId" value={targetId} />
+      <p className="font-sans text-caption text-ordift-ink-muted">Removes the statement link as a correction. The link stays in the audit trail with your reason; the payment goes back to &ldquo;reported paid, awaiting statement&rdquo; and nothing else changes.</p>
+      <textarea name="reason" rows={2} required placeholder="Why is the statement link being removed? (10+ characters)" className={`block w-full ${input}`} aria-label="Reason for removing the statement link" />
+      <label className="flex gap-2 font-sans text-caption text-ordift-ink-muted"><input type="checkbox" name="confirmUnlink" value="yes" />I understand the payment returns to &ldquo;reported paid, awaiting statement&rdquo;.</label>
+      <button disabled={pending} className="font-sans text-caption font-semibold underline underline-offset-4 text-red-700 disabled:opacity-50">{pending ? "Removing…" : "Remove the statement link"}</button>
+      <Feedback state={state} pending={pending} />
+    </form>
+  );
+}
+function StatementSection({ e, entityId, docs }: { e: EquipmentView; entityId: string; docs: DocRef[] }) {
+  const paid = e.financing ? e.financing.instalments.filter((i) => i.state === "paid_awaiting_statement" || i.state === "paid_verified_by_statement") : [];
+  const showFunding = e.funding === "company_account";
+  if (paid.length === 0 && !showFunding) return null;
+  return (
+    <div className="space-y-2 rounded-lg border border-black/10 p-3">
+      <p className="font-sans text-caption font-semibold text-ordift-ink">Statement verification (a payment stays &ldquo;reported&rdquo; until a company statement is linked)</p>
+      {paid.map((i) => (
+        <div key={i.id} className="space-y-1">
+          <p className="font-sans text-caption text-ordift-ink">Instalment {i.sequence} — {money(i.amount, e.currency)}, reported paid {i.paidOn}</p>
+          {i.statement ? (<><StatementCheckView c={i.statement} docs={docs} /><details><summary className="cursor-pointer font-sans text-caption font-semibold text-red-700 underline underline-offset-4">Remove the statement link (correction)</summary><UnlinkStatementForm entityId={entityId} kind="instalment" targetId={i.id} /></details></>)
+            : <details><summary className="cursor-pointer font-sans text-caption font-semibold text-ordift-gold-pressed">Link a company statement as evidence</summary><StatementLinkForm entityId={entityId} kind="instalment" targetId={i.id} docs={docs} currency={e.currency} /></details>}
+        </div>))}
+      {showFunding ? (
+        <div className="space-y-1">
+          <p className="font-sans text-caption text-ordift-ink">Funding source — {e.fundingLabel}</p>
+          {e.fundingStatement ? (<><StatementCheckView c={e.fundingStatement} docs={docs} /><details><summary className="cursor-pointer font-sans text-caption font-semibold text-red-700 underline underline-offset-4">Remove the statement link (correction)</summary><UnlinkStatementForm entityId={entityId} kind="funding" targetId={e.id} /></details></>)
+            : <details><summary className="cursor-pointer font-sans text-caption font-semibold text-ordift-gold-pressed">Link a company statement as evidence of who paid</summary><StatementLinkForm entityId={entityId} kind="funding" targetId={e.id} docs={docs} currency={e.currency} /></details>}
+        </div>) : null}
+    </div>
+  );
+}
 function VoidAcquisitionForm({ entityId, e }: { entityId: string; e: EquipmentView }) {
   const [state, action, pending, ref] = useRestoringActionState<ActionState>(voidAcquisitionAction, null);
   return (
@@ -399,6 +475,7 @@ function Card({ e, entityId, financialDocs, assets }: { e: EquipmentView; entity
           ))}
         </div>
       ) : <PaymentsSection e={e} entityId={entityId} financialDocs={financialDocs} />}
+      <StatementSection e={e} entityId={entityId} docs={financialDocs} />
       <VoidAcquisitionForm entityId={entityId} e={e} />
     </article>
   );

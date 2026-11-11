@@ -43,7 +43,7 @@ function UploadDocumentForm({ entityId }: { entityId: string }) {
     <form action={formAction} className="grid grid-cols-1 sm:grid-cols-2 gap-2">
       <input type="hidden" name="entityId" value={entityId} />
       <input name="documentType" required placeholder="Document type (e.g. Business Registration Certificate)" className="sm:col-span-2 rounded-lg border border-black/15 px-2 py-1.5 font-sans text-body-small" />
-      <input name="file" type="file" required accept=".pdf,.jpg,.jpeg,.png" className="sm:col-span-2 font-sans text-body-small" />
+      <input name="file" type="file" required accept=".pdf,.jpg,.jpeg,.png,.eml" className="sm:col-span-2 font-sans text-body-small" />
       <input name="notes" placeholder="Notes (optional)" className="sm:col-span-2 rounded-lg border border-black/15 px-2 py-1.5 font-sans text-body-small" />
       <button type="submit" disabled={pending} className="sm:col-span-2 justify-self-start font-sans text-body-small font-semibold px-4 py-2 rounded-md bg-ordift-navy-950 text-white disabled:opacity-50">
         {pending ? "Uploading…" : "Upload Evidence Document"}

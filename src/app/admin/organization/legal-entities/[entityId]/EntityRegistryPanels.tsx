@@ -80,7 +80,7 @@ function UploadForm({ entityId, documents }: { entityId: string; documents: Regi
         <option value="" disabled>Document type…</option>
         {ENTITY_DOCUMENT_TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
       </select>
-      <input name="file" type="file" required accept=".pdf,.jpg,.jpeg,.png" className="sm:col-span-2 font-sans text-body-small" />
+      <input name="file" type="file" required accept=".pdf,.jpg,.jpeg,.png,.eml" className="sm:col-span-2 font-sans text-body-small" />
       <select name="replaces" defaultValue="" className={`sm:col-span-2 ${input}`}>
         <option value="">This is a new document (not an updated version)</option>
         {documents.filter((d) => !d.relation && !d.replacedByDocumentId).map((d) => <option key={d.id} value={d.id}>Updated version of: {entityDocumentTypeLabel(d.documentType)} — {d.filename ?? d.id}</option>)}

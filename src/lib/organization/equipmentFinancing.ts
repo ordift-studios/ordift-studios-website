@@ -1,10 +1,11 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { logActivity } from "@/lib/admin/activityLog";
 import { isSuperAdminId } from "@/lib/organization/authority";
-import { buildEquipmentViews, type DocRef, type EquipmentView, type RawAcquisition, type RawInstalment, type RawObligation, type RawPayment, type RawTerms } from "./equipmentPanelView";
+import { buildEquipmentViews, type DocRef, type EquipmentView, type RawAcquisition, type RawInstalment, type RawObligation, type RawPayment, type RawStatementEvent, type RawTerms } from "./equipmentPanelView";
 import { validatePayment, validateTerms, type PaymentInput, type TermsInput } from "./acquisitionPaymentRules";
 import { documentFamily, expenseOverlapForAcquisition } from "./financeOverlap";
 import { validateAcquisition, type AcquisitionInput, type FinancingInput } from "./equipmentFinancingRules";
+import { toDbEvidence, validateStatementEvidence, type StatementEvidenceInput } from "./statementEvidenceRules";
 
 // EQUIPMENT ACQUISITIONS + FINANCING (see supabase/proposals/PROPOSAL_equipment_acquisitions_and_financing.sql: NOT applied anywhere until the Founder authorises it).
 // Super Admin only. Every write goes through one database function (one transaction, audit written inside it); this module validates first, calls it, and adds the platform activity-log entry.
@@ -166,6 +167,58 @@ export async function voidEquipmentAcquisition(p: { actorUserId: string; entityI
   return { ok: true };
 }
 
+// Migration 0191: link ONE stored company statement to a REPORTED-PAID instalment, or to the company-account funding source. The Super Admin states what the statement shows; the database checks the entity, the account holder, the
+// currency, the amount and the date against the records and refuses a personal instrument. Nothing is verified by itself and nothing else changes (no expense, payment or accounting entry). Corrections go through the audited unlink.
+const STATEMENT_PLAIN = /personal account|does not match this legal entity|full card or account number|currency|statement amount|more than 7 days|outside the statement period|not in the future|must be valid|reported paid|already linked|PDF or image stored|THIS entity|company-account funding|does not match any reported payment|voided record|not a recorded|credit card or a bank account|account holder|masked card|line description|how the statement line|payment reference|no statement is linked|at least 10 characters|only a COMPANY/i;
+function statementFriendly(message: string): string {
+  if (/only a Super Admin/i.test(message)) return DENIED.error;
+  if (STATEMENT_PLAIN.test(message)) { const m = message.replace(/^.*?ERROR:\s*/, "").trim(); return m.charAt(0).toUpperCase() + m.slice(1) + (/[.!?]$/.test(m) ? "" : "."); }
+  return "The statement could not be linked.";
+}
+export async function linkStatementEvidence(p: { actorUserId: string; entityId: string; evidence: StatementEvidenceInput }): Promise<{ ok: true } | Fail> {
+  if (!(await isSuperAdminId(p.actorUserId))) return DENIED;
+  const db = createAdminClient();
+  const { data: ent } = await db.from("employing_entities").select("name, legal_name").eq("id", p.entityId).maybeSingle();
+  if (!ent) return { ok: false, error: "That legal entity was not found." };
+  let reported: { paidOn: string; amount: number; currency: string; entityLegalName: string | null; entityName: string };
+  if (p.evidence.kind === "instalment") {
+    const { data: ins } = await db.from("entity_financing_instalments").select("status, paid_on, paid_amount, entity_financing_obligations!inner(employing_entity_id, currency)").eq("id", p.evidence.targetId).maybeSingle();
+    const ob = (ins as { entity_financing_obligations?: { employing_entity_id?: string; currency?: string } | { employing_entity_id?: string; currency?: string }[] } | null)?.entity_financing_obligations;
+    const o = Array.isArray(ob) ? ob[0] : ob;
+    if (!ins || o?.employing_entity_id !== p.entityId) return { ok: false, error: "That instalment does not belong to this legal entity." };
+    if (ins.status !== "paid" || !ins.paid_on) return { ok: false, error: "Only an instalment that is reported paid can be linked to a statement." };
+    reported = { paidOn: ins.paid_on as string, amount: Number(ins.paid_amount), currency: String(o?.currency), entityLegalName: (ent.legal_name as string | null) ?? null, entityName: ent.name as string };
+  } else {
+    const { data: a } = await db.from("entity_equipment_acquisitions").select("employing_entity_id, status, currency").eq("id", p.evidence.targetId).maybeSingle();
+    if (!a || a.status !== "recorded" || a.employing_entity_id !== p.entityId) return { ok: false, error: "That purchase does not belong to this legal entity." };
+    reported = { paidOn: today(), amount: 0, currency: String(a.currency), entityLegalName: (ent.legal_name as string | null) ?? null, entityName: ent.name as string };
+  }
+  const v = validateStatementEvidence(p.evidence, today(), reported);
+  if (!v.ok) return v;
+  const { error } = await db.rpc("link_statement_evidence", { p_kind: v.value.kind, p_target: v.value.targetId, p_document: v.value.documentId, p_evidence: toDbEvidence(v.value), p_actor: p.actorUserId });
+  if (error) { console.error("[statement evidence] link failed", error.message); return { ok: false, error: statementFriendly(error.message) }; }
+  await logActivity({ actorUserId: p.actorUserId, action: "equipment_statement.linked", entityType: "employing_entity", entityId: p.entityId, metadata: { kind: v.value.kind, targetId: v.value.targetId, documentId: v.value.documentId, lineDate: v.value.lineDate, amount: v.value.lineAmount, currency: v.value.lineCurrency } });
+  return { ok: true };
+}
+export async function unlinkStatementEvidence(p: { actorUserId: string; entityId: string; kind: "instalment" | "funding"; targetId: string; reason: string }): Promise<{ ok: true } | Fail> {
+  if (!(await isSuperAdminId(p.actorUserId))) return DENIED;
+  if (p.reason.trim().length < 10) return { ok: false, error: "Give a written reason of at least 10 characters." };
+  if (p.kind !== "instalment" && p.kind !== "funding") return { ok: false, error: "Choose what the statement is evidence for." };
+  const db = createAdminClient();
+  if (p.kind === "instalment") {
+    const { data: ins } = await db.from("entity_financing_instalments").select("entity_financing_obligations!inner(employing_entity_id)").eq("id", p.targetId).maybeSingle();
+    const ob = (ins as { entity_financing_obligations?: { employing_entity_id?: string } | { employing_entity_id?: string }[] } | null)?.entity_financing_obligations;
+    if ((Array.isArray(ob) ? ob[0] : ob)?.employing_entity_id !== p.entityId) return { ok: false, error: "That instalment does not belong to this legal entity." };
+  } else {
+    const { data: a } = await db.from("entity_equipment_acquisitions").select("employing_entity_id").eq("id", p.targetId).maybeSingle();
+    if (!a || a.employing_entity_id !== p.entityId) return { ok: false, error: "That purchase does not belong to this legal entity." };
+  }
+  const { error } = await db.rpc("unlink_statement_evidence", { p_kind: p.kind, p_target: p.targetId, p_reason: p.reason.trim(), p_actor: p.actorUserId });
+  if (error) { console.error("[statement evidence] unlink failed", error.message); return { ok: false, error: statementFriendly(error.message) }; }
+  await logActivity({ actorUserId: p.actorUserId, action: "equipment_statement.unlinked", entityType: "employing_entity", entityId: p.entityId, metadata: { kind: p.kind, targetId: p.targetId } });
+  return { ok: true };
+}
+
 export type EquipmentPanelData = { views: EquipmentView[]; invoiceDocs: DocRef[]; financialDocs: DocRef[] };
 const FINANCIAL_TYPES = ["purchase_receipt", "supplier_invoice", "other_financial_document"];
 // Reads only (Super Admin only; an unauthorised caller gets nothing). Documents are the existing vault's rows — this never stores or alters a file.
@@ -176,18 +229,20 @@ export async function loadEquipmentPanelData(entityId: string, actorUserId: stri
   const [acq, ob, docs] = await Promise.all([
     db.from("entity_equipment_acquisitions").select("id, supplier_name, supplier_branch, invoice_number, purchase_date, item_description, quantity, currency, list_price_total, discount_total, net_amount, customer_as_shown, invoice_document_id, funding_source_status, funding_source_note, accounting_classification, bank_evidence_document_id, created_at, company_asset_id, status, void_reason").eq("employing_entity_id", entityId).in("status", ["recorded", "void"]).order("purchase_date", { ascending: false }),
     db.from("entity_financing_obligations").select("id, acquisition_id, provider, provider_reference, instalment_count, financed_amount, plan_started_on, confirmation_document_id, schedule_basis, status").eq("employing_entity_id", entityId),
-    db.from("employing_entity_documents").select("id, document_type, original_filename, file_sha256").eq("employing_entity_id", entityId).in("document_type", FINANCIAL_TYPES).order("uploaded_at", { ascending: false }),
+    db.from("employing_entity_documents").select("id, document_type, original_filename, file_sha256, mime_type").eq("employing_entity_id", entityId).in("document_type", FINANCIAL_TYPES).order("uploaded_at", { ascending: false }),
   ]);
   if (acq.error || ob.error || docs.error) { console.error("[equipment financing] load failed", acq.error?.message ?? ob.error?.message ?? docs.error?.message); return empty; }
   const acqIds = (acq.data ?? []).map((a) => a.id as string);
   // terms and payments exist from the payment-arrangements migration; before it is applied these reads simply return nothing
   const termsRes = acqIds.length ? await db.from("entity_acquisition_terms").select("id, acquisition_id, arrangement, balance_due_on, supplier_terms, note, status, created_at").in("acquisition_id", acqIds) : { data: [], error: null };
   const paysRes = acqIds.length ? await db.from("entity_acquisition_payments").select("id, acquisition_id, kind, amount, currency, paid_on, method, method_note, reference, evidence_document_id, evidence_note, status, void_reason, created_at").in("acquisition_id", acqIds) : { data: [], error: null };
+  // statement-evidence audit events (migration 0191); before it is applied this read returns nothing
+  const evRes = acqIds.length ? await db.from("entity_finance_events").select("acquisition_id, instalment_id, event_type, occurred_at, detail").in("acquisition_id", acqIds).in("event_type", ["bank_evidence_linked", "bank_evidence_unlinked"]).order("occurred_at") : { data: [], error: null };
   const obIds = (ob.data ?? []).map((o) => o.id as string);
   const ins = obIds.length ? await db.from("entity_financing_instalments").select("id, obligation_id, sequence, amount, expected_month, status, paid_on, evidence_document_id, bank_evidence_document_id, evidence_note").in("obligation_id", obIds) : { data: [], error: null };
   if (ins.error) { console.error("[equipment financing] load instalments failed", ins.error.message); return empty; }
-  const docRefs: DocRef[] = (docs.data ?? []).map((d) => ({ id: d.id as string, filename: (d.original_filename as string | null) ?? null, sha256: (d.file_sha256 as string | null) ?? null, documentType: d.document_type as string }));
+  const docRefs: DocRef[] = (docs.data ?? []).map((d) => ({ id: d.id as string, filename: (d.original_filename as string | null) ?? null, sha256: (d.file_sha256 as string | null) ?? null, documentType: d.document_type as string, mimeType: (d.mime_type as string | null) ?? null }));
   const views = buildEquipmentViews({ acquisitions: (acq.data ?? []) as unknown as RawAcquisition[], obligations: (ob.data ?? []) as unknown as RawObligation[], instalments: (ins.data ?? []) as unknown as RawInstalment[], docs: docRefs, entityLegalName,
-    terms: (termsRes.error ? [] : termsRes.data ?? []) as unknown as RawTerms[], payments: (paysRes.error ? [] : paysRes.data ?? []) as unknown as RawPayment[] });
+    terms: (termsRes.error ? [] : termsRes.data ?? []) as unknown as RawTerms[], payments: (paysRes.error ? [] : paysRes.data ?? []) as unknown as RawPayment[], statementEvents: (evRes.error ? [] : evRes.data ?? []) as unknown as RawStatementEvent[] });
   return { views, invoiceDocs: docRefs.filter((d) => d.documentType === "purchase_receipt" || d.documentType === "supplier_invoice"), financialDocs: docRefs };
 }

@@ -1,19 +1,19 @@
 // @vitest-environment node
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const h = vi.hoisted(() => ({ user: null as null | { id: string }, superAdmin: false, record: vi.fn(), pay: vi.fn(), revalidate: vi.fn(), terms: vi.fn(), payment: vi.fn(), voidPay: vi.fn(), bundle: vi.fn(), voidAcq: vi.fn() }));
+const h = vi.hoisted(() => ({ user: null as null | { id: string }, superAdmin: false, record: vi.fn(), pay: vi.fn(), revalidate: vi.fn(), terms: vi.fn(), payment: vi.fn(), voidPay: vi.fn(), bundle: vi.fn(), voidAcq: vi.fn(), linkStmt: vi.fn(), unlinkStmt: vi.fn() }));
 vi.mock("@/lib/portal/roles", () => ({ getCurrentUser: async () => h.user, isSuperAdmin: () => h.superAdmin }));
 vi.mock("next/cache", () => ({ revalidatePath: h.revalidate }));
 const a = vi.hoisted(() => ({ link: vi.fn(), own: vi.fn(), voidOwn: vi.fn(), founder: vi.fn(), unlink: vi.fn() }));
 vi.mock("@/lib/organization/assetReconciliation", () => ({ linkAcquisitionToAsset: a.link, recordAssetOwnership: a.own, voidAssetOwnership: a.voidOwn, recordFounderAssetOwnership: a.founder, unlinkAcquisitionFromAsset: a.unlink }));
-vi.mock("@/lib/organization/equipmentFinancing", () => ({ recordEquipmentAcquisition: h.record, markInstalmentPaid: h.pay, setAcquisitionTerms: h.terms, recordAcquisitionPayment: h.payment, voidAcquisitionPayment: h.voidPay, voidEquipmentAcquisition: h.voidAcq, recordAcquisitionBundle: h.bundle }));
-import { linkAssetAction, markInstalmentPaidAction, recordEquipmentAction, recordFounderOwnershipAction, recordOwnershipAction, unlinkAssetAction, recordPaymentAction, setTermsAction, voidAcquisitionAction, voidOwnershipAction, voidPaymentAction } from "./actions";
+vi.mock("@/lib/organization/equipmentFinancing", () => ({ recordEquipmentAcquisition: h.record, markInstalmentPaid: h.pay, setAcquisitionTerms: h.terms, recordAcquisitionPayment: h.payment, voidAcquisitionPayment: h.voidPay, voidEquipmentAcquisition: h.voidAcq, linkStatementEvidence: h.linkStmt, unlinkStatementEvidence: h.unlinkStmt, recordAcquisitionBundle: h.bundle }));
+import { linkAssetAction, markInstalmentPaidAction, recordEquipmentAction, recordFounderOwnershipAction, recordOwnershipAction, unlinkAssetAction, recordPaymentAction, setTermsAction, voidAcquisitionAction, voidOwnershipAction, voidPaymentAction, linkStatementEvidenceAction, unlinkStatementEvidenceAction } from "./actions";
 
 const fd = (o: Record<string, string>) => { const f = new FormData(); for (const [k, v] of Object.entries(o)) f.set(k, v); return f; };
 const acq = { entityId: "e1", supplier: "Synthetic Supplier", invoiceNumber: "INV-1", purchaseDate: "2026-11-08", itemDescription: "Synthetic pen display", currency: "QAR", listPrice: "1499", discount: "350", net: "1149", invoiceDocumentId: "d1" };
 const pay = { entityId: "e1", instalmentId: "i2", paidOn: "2026-12-01", evidenceNote: "provider app shows it paid", confirmUnverified: "yes" };
 
-beforeEach(() => { h.user = { id: "u1" }; h.superAdmin = true; for (const m of [h.record, h.pay, h.revalidate, h.terms, h.payment, h.voidPay, h.bundle, h.voidAcq]) m.mockReset(); });
+beforeEach(() => { h.user = { id: "u1" }; h.superAdmin = true; for (const m of [h.record, h.pay, h.revalidate, h.terms, h.payment, h.voidPay, h.bundle, h.voidAcq, h.linkStmt, h.unlinkStmt]) m.mockReset(); });
 
 describe("equipment actions — access", () => {
   it("refuse anonymous and non-Super-Admin users before reading the form or calling the library", async () => {
@@ -148,5 +148,33 @@ describe("void acquisition action (migration 0190)", () => {
     expect(h.revalidate).toHaveBeenCalledWith("/admin/organization/legal-entities/e1/equipment");
     h.voidAcq.mockResolvedValueOnce({ ok: false, error: "This acquisition is linked to an asset." });
     expect(await voidAcquisitionAction(null, fd(form))).toEqual({ ok: false, error: "This acquisition is linked to an asset." });
+  });
+});
+
+describe("statement evidence actions (migration 0191)", () => {
+  const link = { entityId: "e1", kind: "instalment", targetId: "i1", statementDocumentId: "d1", holderKind: "company", instrumentKind: "credit_card", accountHolderAsPrinted: "SYNTHETIC STUDIOS W.L.L.", instrumentIdentityAsPrinted: "card ending 4242", periodFrom: "2026-11-01", periodTo: "2026-11-09",
+    lineDate: "2026-11-08", lineAmount: "287.25", lineCurrency: "QAR", lineDescriptionAsPrinted: "SYNTHPAY ONLINE", basisNote: "Matched to the reported first instalment", confirmCompanyInstrument: "yes" };
+  const unlink = { entityId: "e1", kind: "instalment", targetId: "i1", reason: "Linked the wrong statement line", confirmUnlink: "yes" };
+  it("refuse anonymous and non-Super-Admin users before the library is called", async () => {
+    h.user = null; expect(await linkStatementEvidenceAction(null, fd(link))).toEqual({ ok: false, error: "Not authenticated." }); expect(await unlinkStatementEvidenceAction(null, fd(unlink))).toEqual({ ok: false, error: "Not authenticated." });
+    h.user = { id: "u1" }; h.superAdmin = false; expect(await linkStatementEvidenceAction(null, fd(link))).toMatchObject({ ok: false }); expect(await unlinkStatementEvidenceAction(null, fd(unlink))).toMatchObject({ ok: false });
+    expect(h.linkStmt).not.toHaveBeenCalled(); expect(h.unlinkStmt).not.toHaveBeenCalled();
+  });
+  it("link: parses the form, calls the library as the signed-in Super Admin and refreshes only the equipment page; a refusal is passed on", async () => {
+    h.linkStmt.mockResolvedValueOnce({ ok: true });
+    expect(await linkStatementEvidenceAction(null, fd(link))).toEqual({ ok: true });
+    expect(h.linkStmt).toHaveBeenCalledWith({ actorUserId: "u1", entityId: "e1", evidence: expect.objectContaining({ kind: "instalment", targetId: "i1", documentId: "d1", holderKind: "company", lineAmount: 287.25, confirmCompanyInstrument: true }) });
+    expect(h.revalidate).toHaveBeenCalledWith("/admin/organization/legal-entities/e1/equipment");
+    h.linkStmt.mockResolvedValueOnce({ ok: false, error: "Only a COMPANY instrument can be linked." });
+    expect(await linkStatementEvidenceAction(null, fd({ ...link, holderKind: "personal" }))).toEqual({ ok: false, error: "Only a COMPANY instrument can be linked." });
+    expect(await linkStatementEvidenceAction(null, fd({ ...link, lineAmount: "x" }))).toMatchObject({ ok: false });
+  });
+  it("unlink: needs the reason and the tick, then calls the library once", async () => {
+    expect(await unlinkStatementEvidenceAction(null, fd({ ...unlink, reason: "short" }))).toMatchObject({ ok: false });
+    expect(await unlinkStatementEvidenceAction(null, fd({ ...unlink, confirmUnlink: "" }))).toMatchObject({ ok: false });
+    expect(h.unlinkStmt).not.toHaveBeenCalled();
+    h.unlinkStmt.mockResolvedValueOnce({ ok: true });
+    expect(await unlinkStatementEvidenceAction(null, fd(unlink))).toEqual({ ok: true });
+    expect(h.unlinkStmt).toHaveBeenCalledWith({ actorUserId: "u1", entityId: "e1", kind: "instalment", targetId: "i1", reason: "Linked the wrong statement line" });
   });
 });

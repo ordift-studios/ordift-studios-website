@@ -4,7 +4,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { createElement } from "react";
 
 vi.mock("../actions", () => ({ viewEntityDocumentAction: vi.fn() }));
-vi.mock("./actions", () => ({ markInstalmentPaidAction: vi.fn(), recordEquipmentAction: vi.fn(), recordPaymentAction: vi.fn(), setTermsAction: vi.fn(), voidPaymentAction: vi.fn(), voidAcquisitionAction: vi.fn(), linkAssetAction: vi.fn(), recordOwnershipAction: vi.fn(), voidOwnershipAction: vi.fn(), recordFounderOwnershipAction: vi.fn(), unlinkAssetAction: vi.fn() }));
+vi.mock("./actions", () => ({ markInstalmentPaidAction: vi.fn(), recordEquipmentAction: vi.fn(), recordPaymentAction: vi.fn(), setTermsAction: vi.fn(), voidPaymentAction: vi.fn(), voidAcquisitionAction: vi.fn(), linkStatementEvidenceAction: vi.fn(), unlinkStatementEvidenceAction: vi.fn(), linkAssetAction: vi.fn(), recordOwnershipAction: vi.fn(), voidOwnershipAction: vi.fn(), recordFounderOwnershipAction: vi.fn(), unlinkAssetAction: vi.fn() }));
 import { EquipmentPanel } from "./EquipmentPanel";
 import { buildEquipmentViews, type DocRef } from "@/lib/organization/equipmentPanelView";
 
@@ -172,5 +172,36 @@ describe("voided acquisitions (migration 0190)", () => {
   });
   it("never claims the void is an expense, a payment or a verification", () => {
     expect(mixed).toMatch(/creates no expense, payment or statement verification/);
+  });
+});
+
+describe("statement verification (migration 0191)", () => {
+  const stmtDocs: DocRef[] = [...docs, { id: "d-stmt", filename: "company-card-statement.pdf", sha256: "c".repeat(64), documentType: "other_financial_document", mimeType: "application/pdf" }, { id: "d-eml", filename: "provider-original.eml", sha256: "d".repeat(64), documentType: "other_financial_document", mimeType: "message/rfc822" }];
+  const detail = { kind: "instalment", statementDocumentId: "d-stmt", instrumentKind: "credit_card", accountHolderAsPrinted: "SYNTHETIC ENTITY W.L.L.", instrumentIdentityAsPrinted: "card ending 4242", periodFrom: "2026-11-01", periodTo: "2026-11-09", lineDate: "2026-11-08", lineAmount: 287.25, currency: "QAR",
+    lineDescriptionAsPrinted: "SYNTHPAY ONLINE", paymentReference: null, referenceMatchesFinancing: null, dateDifferenceDays: 0, basisNote: "Matched to the reported first instalment" };
+  const make = (linked: boolean) => buildEquipmentViews({ entityLegalName: "SYNTHETIC ENTITY W.L.L.", docs: stmtDocs,
+    acquisitions: [{ id: "a1", supplier_name: "Synthetic Supplier", supplier_branch: null, invoice_number: "INV-1", purchase_date: "2026-11-08", item_description: "Synthetic pen display", quantity: 1, currency: "QAR", list_price_total: 1499, discount_total: 350, net_amount: 1149, customer_as_shown: "An Individual",
+      invoice_document_id: "d-inv", funding_source_status: "company_account", funding_source_note: "statement", accounting_classification: "pending_professional_review", bank_evidence_document_id: null, created_at: "2026-11-08T10:00:00Z", status: "recorded", void_reason: null }],
+    obligations: [{ id: "o1", acquisition_id: "a1", provider: "SyntheticPay", provider_reference: "SP-1", instalment_count: 4, financed_amount: 1149, plan_started_on: "2026-11-08", confirmation_document_id: "d-conf", schedule_basis: "founder_expected_months" as const, status: "active" as const }],
+    instalments: [1, 2, 3, 4].map((n) => ({ id: `i${n}`, obligation_id: "o1", sequence: n, amount: 287.25, expected_month: ["2026-11-01", "2026-12-01", "2027-01-01", "2027-02-01"][n - 1], status: n === 1 ? "paid" as const : "pending" as const, paid_on: n === 1 ? "2026-11-08" : null,
+      evidence_document_id: n === 1 ? "d-conf" : null, bank_evidence_document_id: n === 1 && linked ? "d-stmt" : null, evidence_note: null })),
+    statementEvents: linked ? [{ acquisition_id: "a1", instalment_id: "i1", event_type: "bank_evidence_linked" as const, occurred_at: "2026-11-12T10:00:00Z", detail }] : [] });
+  const render = (v: ReturnType<typeof make>) => renderToStaticMarkup(createElement(EquipmentPanel, { entityId: "e1", views: v, invoiceDocs: [stmtDocs[0]], financialDocs: stmtDocs }));
+  it("a reported payment offers the statement link form: company instrument only, masked identity, confirmation tick, statements limited to PDF/images (never an e-mail)", () => {
+    const html = render(make(false));
+    expect(html).toMatch(/Statement verification/); expect(html).toMatch(/Link a company statement as evidence/); expect(html).toMatch(/name="confirmCompanyInstrument"/); expect(html).toMatch(/Never enter a full card or account number/);
+    const stmtSelect = /<select name="statementDocumentId"[\s\S]*?<\/select>/.exec(html)?.[0] ?? "";
+    expect(stmtSelect).toMatch(/company-card-statement\.pdf/); expect(stmtSelect).not.toMatch(/d-eml|provider-original\.eml|invoice\.jpg/);      // statements: PDF/images of the financial class only; an e-mail is provider evidence, never a statement
+    expect(html).toMatch(/Personal instrument \(held by a person\)/);                                   // offered only so that it can be REFUSED with a plain message
+    expect(html).toMatch(/Reported paid — awaiting statement reconciliation/);
+  });
+  it("a statement-verified payment shows exactly what the statement showed, plus the correction control; it never claims more than the evidence", () => {
+    const html = render(make(true));
+    expect(html).toMatch(/Verified by statement — a Super Admin stated these statement facts/); expect(html).toMatch(/holder as printed: SYNTHETIC ENTITY W\.L\.L\./); expect(html).toMatch(/identity as printed: card ending 4242/);
+    expect(html).toMatch(/Statement line 2026-11-08: QAR 287\.25/); expect(html).toMatch(/SYNTHPAY ONLINE/); expect(html).toMatch(/Remove the statement link \(correction\)/); expect(html).toMatch(/name="confirmUnlink"/);
+    expect(html).toMatch(/Paid — verified against a statement/); expect(html).toMatch(/creates no expense|Recognised QAR 0\.00|QAR 0\.00/);
+  });
+  it("the funding source of a company-account purchase has its own link control", () => {
+    expect(render(make(false))).toMatch(/Link a company statement as evidence of who paid/);
   });
 });

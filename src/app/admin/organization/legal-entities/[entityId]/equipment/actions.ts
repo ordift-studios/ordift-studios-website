@@ -2,9 +2,9 @@
 
 import { revalidatePath } from "next/cache";
 import { getCurrentUser, isSuperAdmin } from "@/lib/portal/roles";
-import { markInstalmentPaid, recordAcquisitionBundle, recordAcquisitionPayment, recordEquipmentAcquisition, setAcquisitionTerms, voidAcquisitionPayment, voidEquipmentAcquisition } from "@/lib/organization/equipmentFinancing";
+import { markInstalmentPaid, recordAcquisitionBundle, recordAcquisitionPayment, recordEquipmentAcquisition, setAcquisitionTerms, voidAcquisitionPayment, voidEquipmentAcquisition, linkStatementEvidence, unlinkStatementEvidence } from "@/lib/organization/equipmentFinancing";
 import { linkAcquisitionToAsset, recordAssetOwnership, recordFounderAssetOwnership, unlinkAcquisitionFromAsset, voidAssetOwnership } from "@/lib/organization/assetReconciliation";
-import { parseAcquisitionForm, parseMarkPaidForm, parsePaymentForm, parseTermsForm, parseVoidAcquisitionForm, parseVoidPaymentForm } from "@/lib/organization/equipmentForms";
+import { parseAcquisitionForm, parseMarkPaidForm, parsePaymentForm, parseTermsForm, parseVoidAcquisitionForm, parseVoidPaymentForm, parseStatementEvidenceForm, parseUnlinkEvidenceForm } from "@/lib/organization/equipmentForms";
 
 // Equipment & Financing server actions. Super Admin only, re-checked on EVERY call (and again inside the library and the database function).
 // Nothing here creates an expense, a journal or a bank reconciliation; "paid" means reported/evidenced, never bank-verified.
@@ -83,6 +83,28 @@ export async function voidAcquisitionAction(_prev: ActionState, formData: FormDa
   const p = parseVoidAcquisitionForm(formData);
   if (!p.ok) return { ok: false, error: p.error };
   const r = await voidEquipmentAcquisition({ actorUserId: actor.id, entityId: p.entityId, acquisitionId: p.acquisitionId, reason: p.reason });
+  if (!r.ok) return { ok: false, error: r.error };
+  refresh(p.entityId);
+  return { ok: true };
+}
+
+// ---- statement evidence (migration 0191): a company statement linked to a REPORTED payment is the only thing that makes it "verified by statement"; the correction is the audited unlink.
+export async function linkStatementEvidenceAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  const actor = await requireSuperAdminActor();
+  if ("error" in actor) return { ok: false, error: actor.error };
+  const p = parseStatementEvidenceForm(formData);
+  if (!p.ok) return { ok: false, error: p.error };
+  const r = await linkStatementEvidence({ actorUserId: actor.id, entityId: p.entityId, evidence: p.evidence });
+  if (!r.ok) return { ok: false, error: r.error };
+  refresh(p.entityId);
+  return { ok: true };
+}
+export async function unlinkStatementEvidenceAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  const actor = await requireSuperAdminActor();
+  if ("error" in actor) return { ok: false, error: actor.error };
+  const p = parseUnlinkEvidenceForm(formData);
+  if (!p.ok) return { ok: false, error: p.error };
+  const r = await unlinkStatementEvidence({ actorUserId: actor.id, entityId: p.entityId, kind: p.kind, targetId: p.targetId, reason: p.reason });
   if (!r.ok) return { ok: false, error: r.error };
   refresh(p.entityId);
   return { ok: true };

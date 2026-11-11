@@ -17,16 +17,20 @@ describe("equipment & financing isolation", () => {
   it("writes to the database ONLY through the audited functions (no direct insert/update/upsert/delete)", () => {
     for (const f of writeFiles) expect(read(f), f).not.toMatch(/\.(insert|update|upsert|delete)\s*\(/);
     const lib = read("src/lib/organization/equipmentFinancing.ts");
-    expect([...lib.matchAll(/\.rpc\("([a-z_]+)"/g)].map((m) => m[1]).sort()).toEqual(["mark_instalment_paid", "record_acquisition_bundle", "record_acquisition_payment", "record_equipment_acquisition", "set_acquisition_terms", "void_acquisition_payment", "void_equipment_acquisition"]);
+    expect([...lib.matchAll(/\.rpc\("([a-z_]+)"/g)].map((m) => m[1]).sort()).toEqual(["link_statement_evidence", "mark_instalment_paid", "record_acquisition_bundle", "record_acquisition_payment", "record_equipment_acquisition", "set_acquisition_terms", "unlink_statement_evidence", "void_acquisition_payment", "void_equipment_acquisition"]);
   });
   it("never creates or references an accounting expense, journal or payment record", () => {
     for (const f of [...writeFiles, ...pure]) expect(code(f), f).not.toMatch(/entity_expenses|recordEntityReceipt|payment_obligations|\.from\("payments"\)|journal_entries|ledger_entries/i);
   });
-  it("never writes statement / bank evidence: no form, action, rule or screen mentions it, and the library only reads it", () => {
-    for (const f of [`${PANEL}/actions.ts`, `${PANEL}/EquipmentPanel.tsx`, `${PANEL}/page.tsx`, "src/lib/organization/equipmentForms.ts", "src/lib/organization/equipmentFinancingRules.ts"]) expect(code(f), f).not.toMatch(/bank_evidence|statementEvidence|statement_verified/);
+  it("statement / bank evidence is written ONLY by the two audited functions (migration 0191): no table write, no other writer, and nothing in the rules, forms or screen names the evidence columns", () => {
+    // the evidence COLUMNS are never named outside the loader's read-only select; the rules/forms/screen speak only of statements
+    for (const f of [`${PANEL}/EquipmentPanel.tsx`, `${PANEL}/page.tsx`, "src/lib/organization/equipmentForms.ts", "src/lib/organization/equipmentFinancingRules.ts", "src/lib/organization/statementEvidenceRules.ts"]) expect(code(f), f).not.toMatch(/bank_evidence/);
     const lib = code("src/lib/organization/equipmentFinancing.ts");
-    for (const line of lib.split("\n").filter((l) => /bank_evidence/.test(l))) expect(line.slice(0, 90)).toMatch(/\.select\(/);
+    for (const line of lib.split("\n").filter((l) => /bank_evidence/.test(l))) expect(line.slice(0, 90)).toMatch(/\.select\(|\.in\(/);
     expect(lib).not.toMatch(/rpc\([^)]*bank_evidence/);
+    // the only way to set or clear the link is the pair of audited functions; the library never inserts or updates a table directly
+    expect(lib).not.toMatch(/\.from\([^)]*\)\s*\.(insert|update|upsert|delete)\(/);
+    expect([...lib.matchAll(/\.rpc\("([a-z_]*statement_evidence)"/g)].map((m) => m[1]).sort()).toEqual(["link_statement_evidence", "unlink_statement_evidence"]);
   });
   it("the statement-matching engine is not imported by any write path or by the panel", () => {
     for (const f of writeFiles) expect(read(f), f).not.toMatch(/statementReconciliation/);

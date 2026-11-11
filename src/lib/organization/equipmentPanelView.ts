@@ -1,9 +1,10 @@
 // Pure view-model for the Equipment & Financing panel. No database, no I/O: the loader in equipmentFinancing.ts reads rows, this turns them into what the screen shows.
 // The four things the screen keeps apart — ACQUISITION COST, FINANCING LIABILITY, ACTUAL PAYMENTS and ACCOUNTING EXPENSE — are separate fields here, never one number.
 import { ARRANGEMENT_LABEL, SETTLEMENT_LABEL, kindLabel, methodLabel, type Arrangement } from "@/lib/organization/acquisitionPaymentRules";
+import type { StatementCheck } from "@/lib/organization/statementEvidenceRules";
 import { acquisitionPosition, customerMatch, instalmentState, type AcquisitionFact, type AcquisitionPosition, type CustomerMatch, type InstalmentState } from "@/lib/organization/financePosition";
 
-export type DocRef = { id: string; filename: string | null; sha256: string | null; documentType: string };
+export type DocRef = { id: string; filename: string | null; sha256: string | null; documentType: string; mimeType?: string | null };
 export type RawAcquisition = {
   id: string; supplier_name: string; supplier_branch: string | null; invoice_number: string; purchase_date: string; item_description: string; quantity: number; currency: string;
   list_price_total: number | string; discount_total: number | string; net_amount: number | string; customer_as_shown: string | null; invoice_document_id: string;
@@ -24,6 +25,22 @@ export type RawPayment = {
   id: string; acquisition_id: string; kind: string; amount: number | string; currency: string; paid_on: string; method: string; method_note: string | null; reference: string | null;
   evidence_document_id: string | null; evidence_note: string | null; status: "recorded" | "void"; void_reason: string | null; created_at: string;
 };
+
+// An audit event about statement evidence (migration 0191). The screen shows what the event recorded, never anything inferred.
+export type RawStatementEvent = { acquisition_id: string; instalment_id: string | null; event_type: "bank_evidence_linked" | "bank_evidence_unlinked"; occurred_at: string; detail: Record<string, unknown> };
+function checkFrom(e: RawStatementEvent): StatementCheck {
+  const d = e.detail as Record<string, string | number | boolean | null | undefined>;
+  return { documentId: String(d.statementDocumentId ?? ""), instrumentKind: String(d.instrumentKind ?? ""), holder: String(d.accountHolderAsPrinted ?? ""), cardholder: d.cardholderAsPrinted ? String(d.cardholderAsPrinted) : null, identity: String(d.instrumentIdentityAsPrinted ?? ""),
+    periodFrom: String(d.periodFrom ?? ""), periodTo: String(d.periodTo ?? ""), lineDate: String(d.lineDate ?? ""), amount: Number(d.lineAmount), currency: String(d.currency ?? ""), description: String(d.lineDescriptionAsPrinted ?? ""), page: d.page ? String(d.page) : null,
+    paymentReference: d.paymentReference ? String(d.paymentReference) : null, referenceMatchesFinancing: typeof d.referenceMatchesFinancing === "boolean" ? d.referenceMatchesFinancing : d.referenceMatchesFinancing === "true" ? true : d.referenceMatchesFinancing === "false" ? false : null,
+    dateDifferenceDays: d.dateDifferenceDays == null ? null : Number(d.dateDifferenceDays), basisNote: String(d.basisNote ?? ""), linkedAt: e.occurred_at };
+}
+// The CURRENT statement check of a target: the latest event wins, and only if it is a link (an unlink after it clears the check).
+export function currentStatementCheck(events: RawStatementEvent[], pick: (e: RawStatementEvent) => boolean): StatementCheck | null {
+  const mine = events.filter(pick).sort((a, b) => a.occurred_at.localeCompare(b.occurred_at));
+  const last = mine[mine.length - 1];
+  return last && last.event_type === "bank_evidence_linked" ? checkFrom(last) : null;
+}
 
 export const CLASSIFICATION_LABEL: Record<string, string> = {
   pending_professional_review: "Pending professional review — no accounting treatment decided",
@@ -49,7 +66,7 @@ export const INSTALMENT_STATE_LABEL: Record<InstalmentState, string> = {
   void: "Voided",
 };
 
-export type InstalmentView = { id: string; sequence: number; amount: number; expectedMonth: string; state: InstalmentState; paidOn: string | null; evidenceNote: string | null; evidenceDoc: DocRef | null; statementDoc: DocRef | null };
+export type InstalmentView = { statement: StatementCheck | null; id: string; sequence: number; amount: number; expectedMonth: string; state: InstalmentState; paidOn: string | null; evidenceNote: string | null; evidenceDoc: DocRef | null; statementDoc: DocRef | null };
 export type PaymentView = { id: string; kindLabel: string; amount: number; paidOn: string; methodLabel: string; methodNote: string | null; reference: string | null; evidenceDoc: DocRef | null; evidenceNote: string | null; status: "recorded" | "void"; voidReason: string | null };
 export type EquipmentView = {
   id: string; supplier: string; branch: string | null; invoiceNumber: string; purchaseDate: string; itemDescription: string; quantity: number; currency: string;
@@ -61,12 +78,13 @@ export type EquipmentView = {
   arrangementLabel: string; settlementLabel: string; supplierTerms: string | null; payments: PaymentView[];
   // a NON-financed purchase can take terms and direct payments; a financed one is paid through its instalments only
   acceptsDirectPayments: boolean;
+  fundingStatement: StatementCheck | null;   // set only when a company statement was linked to the funding source (migration 0191)
   linkedAssetId: string | null;       // the ONE registered asset this acquisition is linked to (migration 0188); the asset register itself is never changed
   status: "recorded" | "void"; voidReason: string | null;   // migration 0190: a void keeps every row; nothing is deleted or edited
 };
 
 const n = (v: number | string) => Number(v);
-export function buildEquipmentViews(a: { acquisitions: RawAcquisition[]; obligations: RawObligation[]; instalments: RawInstalment[]; docs: DocRef[]; entityLegalName: string; terms?: RawTerms[]; payments?: RawPayment[]; today?: string }): EquipmentView[] {
+export function buildEquipmentViews(a: { acquisitions: RawAcquisition[]; obligations: RawObligation[]; instalments: RawInstalment[]; docs: DocRef[]; entityLegalName: string; terms?: RawTerms[]; payments?: RawPayment[]; statementEvents?: RawStatementEvent[]; today?: string }): EquipmentView[] {
   const doc = (id: string | null): DocRef | null => (id ? a.docs.find((d) => d.id === id) ?? null : null);
   return a.acquisitions.map((r) => {
     const isVoid = r.status === "void";
@@ -90,9 +108,9 @@ export function buildEquipmentViews(a: { acquisitions: RawAcquisition[]; obligat
       funding: r.funding_source_status, fundingLabel: fundingLabel(r.funding_source_status, Boolean(r.bank_evidence_document_id)), fundingNote: r.funding_source_note,
       invoiceDoc: doc(r.invoice_document_id), fundingStatementDoc: doc(r.bank_evidence_document_id),
       financing: ob ? { id: ob.id, provider: ob.provider, reference: ob.provider_reference, status: ob.status, scheduleBasis: ob.schedule_basis, plannedOn: ob.plan_started_on, instalmentCount: ob.instalment_count, financed: n(ob.financed_amount), confirmationDoc: doc(ob.confirmation_document_id),
-        instalments: ins.map((i, k) => ({ id: i.id, sequence: i.sequence, amount: n(i.amount), expectedMonth: i.expected_month, state: instalmentState(fact.financing!.instalments[k]), paidOn: i.paid_on, evidenceNote: i.evidence_note, evidenceDoc: doc(i.evidence_document_id), statementDoc: doc(i.bank_evidence_document_id) })) } : null,
+        instalments: ins.map((i, k) => ({ statement: i.bank_evidence_document_id ? currentStatementCheck(a.statementEvents ?? [], (e) => e.instalment_id === i.id) : null, id: i.id, sequence: i.sequence, amount: n(i.amount), expectedMonth: i.expected_month, state: instalmentState(fact.financing!.instalments[k]), paidOn: i.paid_on, evidenceNote: i.evidence_note, evidenceDoc: doc(i.evidence_document_id), statementDoc: doc(i.bank_evidence_document_id) })) } : null,
       position,
-      arrangementLabel: ARRANGEMENT_LABEL[position.arrangement], settlementLabel: SETTLEMENT_LABEL[position.settlement], supplierTerms: terms?.supplier_terms ?? null, acceptsDirectPayments: !ob && !isVoid, linkedAssetId: r.company_asset_id ?? null, status: isVoid ? "void" : "recorded", voidReason: r.void_reason ?? null,
+      arrangementLabel: ARRANGEMENT_LABEL[position.arrangement], settlementLabel: SETTLEMENT_LABEL[position.settlement], supplierTerms: terms?.supplier_terms ?? null, acceptsDirectPayments: !ob && !isVoid, fundingStatement: r.bank_evidence_document_id ? currentStatementCheck(a.statementEvents ?? [], (e) => e.acquisition_id === r.id && e.instalment_id == null) : null, linkedAssetId: r.company_asset_id ?? null, status: isVoid ? "void" : "recorded", voidReason: r.void_reason ?? null,
       payments: pays.map((x) => ({ id: x.id, kindLabel: kindLabel(x.kind), amount: n(x.amount), paidOn: x.paid_on, methodLabel: methodLabel(x.method), methodNote: x.method_note, reference: x.reference, evidenceDoc: doc(x.evidence_document_id), evidenceNote: x.evidence_note, status: x.status, voidReason: x.void_reason })),
     };
   });

@@ -1,4 +1,5 @@
 import { createAdminClient } from "@/lib/supabase/admin";
+import { EML_MIME, isEmlFilename, reportedTypeMayBeEml, validateEmlBytes } from "@/lib/organization/emlValidation";
 import { logActivity } from "@/lib/admin/activityLog";
 import { isSuperAdminId } from "@/lib/organization/authority";
 import { EXPENSE_CATEGORY_VALUES, PAYMENT_METHOD_VALUES, isExpenseEvidenceType, validIsoDate, validateFunding } from "@/lib/organization/expenseEntry";
@@ -387,7 +388,16 @@ export async function addVaultDocument(p: {
 }): Promise<Result<{ documentId: string; duplicateOf: string | null }>> {
   if (!(await isSuperAdminId(p.actorUserId))) return NOT_ALLOWED;
   if (!ENTITY_DOCUMENT_TYPES.some((t) => t.value === p.documentType)) return { ok: false, error: "Choose what kind of document this is." };
-  if (!ALLOWED_MIME.has(p.mimeType)) return { ok: false, error: "Only PDF, JPEG or PNG files can be stored." };
+  // An ORIGINAL e-mail (.eml) can be kept as evidence, but only as an 'other financial document', only if the bytes really are an e-mail message, and it is stored unaltered (served only as a download).
+  let mimeType = p.mimeType;
+  if (isEmlFilename(p.filename)) {
+    if (!reportedTypeMayBeEml(p.mimeType)) return { ok: false, error: "This file is named .eml but is a different type of file, so it was not stored." };
+    if (p.documentType !== "other_financial_document") return { ok: false, error: "An original e-mail can be stored only as an 'Other financial supporting document'." };
+    if (p.continuationOf) return { ok: false, error: "An e-mail cannot be attached as a further page." };
+    const eml = validateEmlBytes(p.bytes, p.filename);
+    if (!eml.ok) return { ok: false, error: eml.error };
+    mimeType = EML_MIME;
+  } else if (!ALLOWED_MIME.has(p.mimeType)) return { ok: false, error: "Only PDF, JPEG, PNG or an original .eml e-mail can be stored." };
   if (p.bytes.byteLength === 0 || p.bytes.byteLength > MAX_BYTES) return { ok: false, error: "The file must be between 1 byte and 10 MB." };
   for (const d of [p.issuedOn, p.expiresOn]) if (d && !/^\d{4}-\d{2}-\d{2}$/.test(d)) return { ok: false, error: "Dates must be entered as YYYY-MM-DD." };
 
@@ -416,7 +426,7 @@ export async function addVaultDocument(p: {
     storagePath = (rows ?? []).find((r) => r.id === verdict.of.id)!.storage_path;       // shares the original's object; nothing new is stored
   } else {
     storagePath = `${p.entityId}/${sha.slice(0, 16)}-${p.filename.replace(/[^A-Za-z0-9._-]+/g, "_")}`;
-    const up = await db.storage.from(BUCKET).upload(storagePath, Buffer.from(p.bytes), { contentType: p.mimeType, upsert: false });
+    const up = await db.storage.from(BUCKET).upload(storagePath, Buffer.from(p.bytes), { contentType: mimeType, upsert: false });
     if (up.error) { console.error("[entity registry] upload failed", up.error.message); return { ok: false, error: "Failed to upload the file." }; }
   }
   const relation = cont ? { relation: "continuation_page_of", related_document_id: cont.documentId, page_number: cont.pageNumber, page_count: cont.pageCount }
@@ -425,7 +435,7 @@ export async function addVaultDocument(p: {
     : p.overlapOf ? { relation: "partial_overlap_of", related_document_id: p.overlapOf } : { relation: null, related_document_id: null };
   const { data, error } = await db.from("employing_entity_documents").insert({
     employing_entity_id: p.entityId, document_type: p.documentType, storage_path: storagePath, notes: p.notes ?? null, uploaded_by: p.actorUserId,
-    original_filename: p.filename, mime_type: p.mimeType, size_bytes: p.bytes.byteLength, file_sha256: sha, issued_on: p.issuedOn ?? null, expires_on: p.expiresOn ?? null, issuing_authority: p.issuingAuthority ?? null, ...relation,
+    original_filename: p.filename, mime_type: mimeType, size_bytes: p.bytes.byteLength, file_sha256: sha, issued_on: p.issuedOn ?? null, expires_on: p.expiresOn ?? null, issuing_authority: p.issuingAuthority ?? null, ...relation,
   }).select("id").single();
   if (error || !data) return { ok: false, error: error?.message ?? "The file was stored but its record failed to save." };
   await logActivity({ actorUserId: p.actorUserId, action: "employing_entity_document.uploaded", entityType: "employing_entity", entityId: p.entityId, metadata: { documentId: data.id, documentType: p.documentType, duplicateOf: verdict.kind === "exact_duplicate_of" ? verdict.of.id : null } });
