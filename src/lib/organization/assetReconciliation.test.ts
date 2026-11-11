@@ -66,7 +66,7 @@ describe("linkAcquisitionToAsset", () => {
     expect(await linkAcquisitionToAsset({ actorUserId: "u", entityId: Q, acquisitionId: "acq-q", assetId: A })).toMatchObject({ ok: false });
   });
   it("turns the database refusals (no owner recorded / asset already linked / link already set) into plain messages", async () => {
-    for (const [m, re] of [["the asset has no current ownership record for THIS legal entity", /Record this asset's legal owner/], ['violates unique constraint "acquisitions_one_per_asset"', /already linked to this asset/], ["the asset link of an acquisition cannot be changed or cleared", /cannot be changed/]] as const) {
+    for (const [m, re] of [["the asset has no current ownership record for THIS legal entity", /Record this asset's legal owner/], ["this acquisition is already linked to an asset: unlink it first, with a reason", /already linked to an asset.*Unlink it first/], ['violates unique constraint "acquisitions_one_per_asset"', /already linked to this asset/], ["the asset link of an acquisition cannot be changed or cleared", /cannot be changed/]] as const) {
       h.db.rpcHandlers!.link_acquisition_to_asset = () => ({ data: null, error: { message: m } });
       expect(await linkAcquisitionToAsset({ actorUserId: "u", entityId: Q, acquisitionId: "acq-q", assetId: A })).toMatchObject({ ok: false, error: expect.stringMatching(re) });
     }

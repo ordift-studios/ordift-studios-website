@@ -10,6 +10,7 @@ const DENIED: Fail = { ok: false, error: "Only a Super Admin can record asset ow
 function friendly(m: string): string {
   if (/ownership_one_current/.test(m)) return "This asset already has a current ownership record. Void it first (only possible while no acquisition is linked).";
   if (/acquisitions_one_per_asset/.test(m)) return "Another recorded acquisition is already linked to this asset.";
+  if (/already linked to an asset/.test(m)) return "This purchase is already linked to an asset. Unlink it first (with a written reason) if the link must change.";   // migration 0192: a repeated or simultaneous request
   if (/cannot be changed or cleared/.test(m)) return "This acquisition is already linked to an asset; the link cannot be changed.";
   if (/no current ownership record/.test(m)) return "Record this asset's legal owner for this legal entity first.";
   if (/acquisition is linked/.test(m)) return "An acquisition is linked to this asset, so its ownership cannot be voided.";
