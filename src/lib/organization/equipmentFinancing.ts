@@ -30,7 +30,12 @@ export async function recordEquipmentAcquisition(p: { actorUserId: string; acqui
   const family = [...new Set([...(await documentFamily(db, p.acquisition.entityId, p.acquisition.invoiceDocumentId)), ...(p.financing ? await documentFamily(db, p.acquisition.entityId, p.financing.confirmationDocumentId) : [])])];
   const overlap = await expenseOverlapForAcquisition({ entityId: p.acquisition.entityId, invoiceNumber: p.acquisition.invoiceNumber, supplier: p.acquisition.supplier, documentFamily: family });
   if (overlap) return { ok: false, error: overlap };
-  const { data, error } = await createAdminClient().rpc("record_equipment_acquisition", { p: v.payload, p_actor: p.actorUserId });
+  // The database function treats a JSON null as a value that is PRESENT (a null "financing" would demand a financing confirmation document; a null "firstInstalmentPaid" would try to mark instalment 1 paid with no facts),
+  // so an absent financing or first payment must be an ABSENT key, never null.
+  const rpcPayload: Record<string, unknown> = { ...v.payload };
+  if (rpcPayload.financing == null) delete rpcPayload.financing;
+  if (rpcPayload.firstInstalmentPaid == null) delete rpcPayload.firstInstalmentPaid;
+  const { data, error } = await createAdminClient().rpc("record_equipment_acquisition", { p: rpcPayload, p_actor: p.actorUserId });
   if (error) { console.error("[equipment financing] record failed", error.message); return { ok: false, error: friendly(error.message) }; }
   const row = (Array.isArray(data) ? data[0] : data) as { acquisition_id: string; obligation_id: string | null } | null;
   if (!row) return { ok: false, error: "The acquisition could not be recorded." };

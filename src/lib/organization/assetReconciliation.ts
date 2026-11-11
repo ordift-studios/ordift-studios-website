@@ -67,8 +67,10 @@ export async function voidAssetOwnership(p: { actorUserId: string; entityId: str
 
 export async function linkAcquisitionToAsset(p: { actorUserId: string; entityId: string; acquisitionId: string; assetId: string }): Promise<{ ok: true } | Fail> {
   if (!(await isSuperAdminId(p.actorUserId))) return DENIED;
-  const { data: a } = await createAdminClient().from("entity_equipment_acquisitions").select("employing_entity_id, status").eq("id", p.acquisitionId).maybeSingle();
+  const { data: a } = await createAdminClient().from("entity_equipment_acquisitions").select("employing_entity_id, status, company_asset_id").eq("id", p.acquisitionId).maybeSingle();
   if (!a || a.status !== "recorded" || a.employing_entity_id !== p.entityId) return { ok: false, error: "That purchase does not belong to this legal entity." };
+  // a repeated call (a double submit or a retried request) would be accepted by the database and write a SECOND audit event for the same link: refuse it here
+  if (a.company_asset_id) return { ok: false, error: "This purchase is already linked to an asset. Unlink it first (with a written reason) if the link must change." };
   const { error } = await createAdminClient().rpc("link_acquisition_to_asset", { p_acquisition: p.acquisitionId, p_asset: p.assetId, p_actor: p.actorUserId });
   if (error) { console.error("[asset link] failed", error.message); return { ok: false, error: friendly(error.message) }; }
   await logActivity({ actorUserId: p.actorUserId, action: "equipment_asset.linked", entityType: "employing_entity", entityId: p.entityId, metadata: { acquisitionId: p.acquisitionId, assetId: p.assetId } });

@@ -34,6 +34,17 @@ describe("recordEquipmentAcquisition", () => {
     expect(args.p.firstInstalmentPaid.sequence).toBe(1);
     expect(h.log).toHaveBeenCalledWith(expect.objectContaining({ action: "equipment_acquisition.recorded", metadata: expect.objectContaining({ classification: "pending_professional_review" }) }));
   });
+  it("an ABSENT financing or first payment is an absent key, never a JSON null (the database treats null as present and fails)", async () => {
+    h.rpc.mockResolvedValue({ data: [{ acquisition_id: "a1", obligation_id: null }], error: null });
+    const plain = input(); (plain as { financing: unknown }).financing = null;                          // a plain purchase: arrangement "to be confirmed"
+    expect(await recordEquipmentAcquisition(plain)).toMatchObject({ ok: true });
+    expect(Object.keys(h.rpc.mock.calls[0][1].p)).not.toContain("financing"); expect(Object.keys(h.rpc.mock.calls[0][1].p)).not.toContain("firstInstalmentPaid");
+    h.rpc.mockClear();
+    const allPending = input(); (allPending.financing as { firstPaid: unknown }).firstPaid = null;                                  // financed, no first payment yet
+    expect(await recordEquipmentAcquisition(allPending)).toMatchObject({ ok: true });
+    const sent = h.rpc.mock.calls[0][1].p;
+    expect(Object.keys(sent)).not.toContain("firstInstalmentPaid"); expect(sent.financing.instalments).toHaveLength(4);
+  });
   it("refuses an invoice that is already recorded as an expense, before the database function is called", async () => {
     h.overlap = "This invoice is already recorded as an expense, so it cannot also be recorded as an equipment acquisition.";
     expect(await recordEquipmentAcquisition(input())).toEqual({ ok: false, error: h.overlap });
