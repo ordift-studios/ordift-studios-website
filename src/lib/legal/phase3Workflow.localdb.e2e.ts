@@ -63,7 +63,6 @@ const DIRTY = makeZip("word/document.xml", "<w:document><w:body><w:p><w:r><w:t>2
 const PDF = new Uint8Array([37, 80, 68, 70, 45, 49, 46, 52]);
 const DOCX_PATH = "masters-docx/OS-LGL-010/synthetic.docx";
 const PDF_PATH = "masters-pdf/OS-LGL-010/synthetic.pdf";
-const EVIDENCE = "e".repeat(64);
 
 const ids = {} as { version: string; ghana: string; qatar: string; onboarding: string; docFile: string; docNote: string; sigId: string };
 
