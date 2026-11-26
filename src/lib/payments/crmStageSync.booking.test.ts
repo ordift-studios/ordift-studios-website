@@ -1,11 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const sendBooked = vi.fn(async () => ({ ok: true }));
-const sendNew = vi.fn(async () => ({ ok: true }));
-const logActivity = vi.fn(async () => undefined);
-vi.mock("@/lib/enquiry/lifecycleEmails", () => ({ sendBookingConfirmedEmail: (...a: unknown[]) => (sendBooked as any)(...a) }));
-vi.mock("@/lib/notifications/newBookingNotification", () => ({ sendNewBookingNotification: (...a: unknown[]) => (sendNew as any)(...a) }));
-vi.mock("@/lib/admin/activityLog", () => ({ logActivityAsSystem: (...a: unknown[]) => (logActivity as any)(...a) }));
+const sendBooked = vi.fn<(...args: unknown[]) => Promise<{ ok: boolean }>>(async () => ({ ok: true }));
+const sendNew = vi.fn<(...args: unknown[]) => Promise<{ ok: boolean }>>(async () => ({ ok: true }));
+const logActivity = vi.fn<(...args: unknown[]) => Promise<undefined>>(async () => undefined);
+vi.mock("@/lib/enquiry/lifecycleEmails", () => ({ sendBookingConfirmedEmail: (...a: unknown[]) => sendBooked(...a) }));
+vi.mock("@/lib/notifications/newBookingNotification", () => ({ sendNewBookingNotification: (...a: unknown[]) => sendNew(...a) }));
+vi.mock("@/lib/admin/activityLog", () => ({ logActivityAsSystem: (...a: unknown[]) => logActivity(...a) }));
 
 import { advanceStageOnFullPayment } from "./crmStageSync";
 

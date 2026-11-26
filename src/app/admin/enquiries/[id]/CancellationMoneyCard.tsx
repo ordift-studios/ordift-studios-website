@@ -17,7 +17,7 @@ export default function CancellationMoneyCard({ enquiryId, rows, money, level, v
   return (
     <div className="border-t border-black/10 pt-4 space-y-3" data-testid="cancellation-money">
       <p className="font-sans text-body-small font-medium text-ordift-ink">Cancellation: money decisions</p>
-      <p className="font-sans text-caption text-ordift-ink-muted">A final cancellation changes no payment, balance or quotation. Any refund, write-off or "no adjustment" is recorded here with its reason and evidence, authorised by a DIFFERENT Super Admin, and carried out through the finance process; this screen never moves money.{money ? ` Verified paid: $${money.paidUsd.toFixed(2)} · unpaid balance: $${money.outstandingUsd.toFixed(2)}.` : ""}</p>
+      <p className="font-sans text-caption text-ordift-ink-muted">A final cancellation changes no payment, balance or quotation. Any refund, write-off or &quot;no adjustment&quot; is recorded here with its reason and evidence, authorised by a DIFFERENT Super Admin, and carried out through the finance process; this screen never moves money.{money ? ` Verified paid: $${money.paidUsd.toFixed(2)} · unpaid balance: $${money.outstandingUsd.toFixed(2)}.` : ""}</p>
       <ul className="space-y-2">
         {rows.map((r) => (
           <li key={r.id} className="rounded-lg border border-black/10 p-3 space-y-2">

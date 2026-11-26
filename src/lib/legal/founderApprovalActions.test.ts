@@ -61,7 +61,7 @@ describe("recordFounderApproval", () => {
     expect(h.db.tables.legal_document_masters[0].current_version_id).toBe("vB");               // the baseline stays current; nothing is activated
     const rec = await loadFounderApproval("v11");
     expect(rec?.actorLabel).toBe("member INT0001");
-    const m = rec!.metadata as Record<string, any>;
+    const m = rec!.metadata as Record<string, unknown> & { advice: { recommendations: string } };
     expect(m.basis).toBe("founder_approval_on_counsel_advice_telephone_review");
     expect(m.notCounselIssuedWrittenApproval).toBe(true);
     expect(m.consultation).toMatchObject({ mode: "telephone_consultation", date: DAY, counselName: "Counsel Name", recordedBy: "founder" });

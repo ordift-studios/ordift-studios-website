@@ -61,8 +61,8 @@ describe("versioned settings", () => {
     expect(await recordBookingSettingsVersion(good, {})).toMatchObject({ ok: false });
     h.superAdmin = false; expect(await recordBookingSettingsVersion(good, ON)).toMatchObject({ ok: false });
     h.superAdmin = true;
-    const bads: any[] = [{ ...good, thresholds: {} }, { ...good, thresholds: { QAR: 0 } }, { ...good, thresholds: { qar: 5 } }, { ...good, escalators: ["Bad Key"] }, { ...good, note: "short" }];
-    for (const bad of bads) expect(await recordBookingSettingsVersion(bad, ON)).toMatchObject({ ok: false });
+    const bads: Record<string, unknown>[] = [{ ...good, thresholds: {} }, { ...good, thresholds: { QAR: 0 } }, { ...good, thresholds: { qar: 5 } }, { ...good, escalators: ["Bad Key"] }, { ...good, note: "short" }];
+    for (const bad of bads) expect(await recordBookingSettingsVersion(bad as never, ON)).toMatchObject({ ok: false });
     expect(h.rpc).not.toHaveBeenCalled();
   });
 });

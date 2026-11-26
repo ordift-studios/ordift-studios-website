@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import type { Resolution } from "./rules";
 import { validateStructuredCondition, bookingFlagOn, canConfirm, classifyConflicts, isOverridableKind, classifyPaymentTerms, confirmationBlockers, evaluateAgreement, paymentGate, projectPanel, termsCheckBlocks, unresolvedFirmConflicts, validateSegments, type BookingSettings, type Segment } from "./rules";
 
 const S: BookingSettings = { version: 1, status: "provisional", thresholds: { QAR: 3000, GHS: 10000, USD: 800 }, alwaysCategories: ["videography", "production_services", "talent_management", "drone_operations"],
@@ -102,7 +103,7 @@ describe("scheduling conflicts for the same assigned person", () => {
     const firm = classifyConflicts("p1", [seg()], c, "e9").filter((x) => x.firm && x.overridable);
     const today = "2026-11-08";
     expect(unresolvedFirmConflicts(firm, [{ key: "booking:b1", kind: "overridden", reference: "I decided so, it is fine" }], "p1", today)).toHaveLength(firm.length);
-    const good = (key: string): any => ({ key, kind: "availability_verified", verifiedWithProfileId: "p1", method: "call", reference: "call with the assignee, 8 Nov", verifiedOn: today });
+    const good = (key: string): Resolution => ({ key, kind: "availability_verified", verifiedWithProfileId: "p1", method: "call", reference: "call with the assignee, 8 Nov", verifiedOn: today });
     expect(unresolvedFirmConflicts(firm, firm.map((x) => good(x.key)), "p1", today)).toEqual([]);
     expect(unresolvedFirmConflicts(firm, firm.map((x) => ({ ...good(x.key), verifiedWithProfileId: "p2" })), "p1", today)).toHaveLength(firm.length);
     expect(unresolvedFirmConflicts(firm, firm.map((x) => ({ ...good(x.key), verifiedOn: "2026-11-20" })), "p1", today)).toHaveLength(firm.length);
@@ -115,7 +116,7 @@ describe("overlap with a confirmed assignment of the same person is not overrida
   const c = { bookings: [{ id: "b1", reference: "ENQ-1", assigneeId: "p1", enquiryId: "e1", segments: [{ startsAt: "2026-12-14T10:00:00Z", endsAt: "2026-12-14T11:00:00Z" }] }],
     crewSlots: [{ id: "s1", reference: "CSR-1", assigneeId: "p1", requestStatus: "confirmed", startDate: "2026-12-14", endDate: "2026-12-14", isTest: false }],
     leave: [{ id: "l1", profileId: "p1", startDate: "2026-12-14", endDate: "2026-12-14" }] };
-  const good = (key: string): any => ({ key, kind: "availability_verified", verifiedWithProfileId: "p1", method: "call", reference: "call with the assignee, 8 Nov", verifiedOn: today });
+  const good = (key: string): Resolution => ({ key, kind: "availability_verified", verifiedWithProfileId: "p1", method: "call", reference: "call with the assignee, 8 Nov", verifiedOn: today });
   it("classifies a confirmed booking, a confirmed Crew Support slot and approved leave as firm and NOT overridable", () => {
     const all = classifyConflicts("p1", [seg()], c, "e9");
     for (const x of all.filter((x) => x.kind === "booking")) expect(x).toMatchObject({ firm: true, overridable: false });
@@ -147,9 +148,9 @@ describe("blockers shown before confirmation", () => {
 describe("who sees what", () => {
   const full = { blockers: ["b: USD 500.00 needed"], operationalBlockers: ["b"], conflicts: [{ key: "k", kind: "booking" as const, firm: true, overridable: false, label: "ENQ-1", from: "a", to: "b" }], payment: { condition: "deposit" as const, amountDueUsd: 1000, verifiedPaidUsd: 500, outstandingUsd: 500 }, agreement: { required: true, reasons: ["x"] }, confirmation: { secret: 1 } };
   it("only a Super Admin sees everything and can confirm", () => { expect(projectPanel(full, { id: "u", roles: ["super_admin"] }, null)).toMatchObject({ level: "super_admin", payment: { amountDueUsd: 1000 } }); expect(canConfirm({ id: "u", roles: ["admin"] })).toBe(false); expect(canConfirm({ id: "u", roles: ["super_admin"] })).toBe(true); });
-  it("an administrator sees operational blockers, not amounts or the confirmation record", () => { const p = projectPanel(full, { id: "u", roles: ["admin"] }, null) as any; expect(p.level).toBe("admin"); expect(p.payment).toBeUndefined(); expect(p.confirmation).toBeUndefined(); expect(JSON.stringify(p)).not.toMatch(/USD|\d+\.\d\d/); expect(p.blockers).toEqual(["b"]); });
+  it("an administrator sees operational blockers, not amounts or the confirmation record", () => { const p = projectPanel(full, { id: "u", roles: ["admin"] }, null) as unknown as Record<string, unknown>; expect(p.level).toBe("admin"); expect(p.payment).toBeUndefined(); expect(p.confirmation).toBeUndefined(); expect(JSON.stringify(p)).not.toMatch(/USD|\d+\.\d\d/); expect(p.blockers).toEqual(["b"]); });
   it("staff see only the conflicts on their own assignment; others see nothing", () => {
-    const own = projectPanel(full, { id: "p1", roles: ["staff"] }, "p1") as any; expect(own.level).toBe("staff"); expect(Object.keys(own).sort()).toEqual(["conflicts", "level"]);
+    const own = projectPanel(full, { id: "p1", roles: ["staff"] }, "p1") as unknown as Record<string, unknown>; expect(own.level).toBe("staff"); expect(Object.keys(own).sort()).toEqual(["conflicts", "level"]);
     expect(projectPanel(full, { id: "p2", roles: ["staff"] }, "p1")).toBeNull();
     expect(projectPanel(full, { id: "c", roles: ["client"] }, null)).toBeNull();
   });

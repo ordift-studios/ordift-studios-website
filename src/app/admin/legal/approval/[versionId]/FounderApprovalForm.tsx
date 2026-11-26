@@ -32,7 +32,7 @@ export default function FounderApprovalForm({ versionId, code, version, docxSha2
       </fieldset>
 
       <fieldset className="space-y-3 rounded-lg border border-black/10 p-4">
-        <legend className="font-sans text-caption font-semibold text-ordift-ink px-1">Counsel's advice (in counsel's words, not yours)</legend>
+        <legend className="font-sans text-caption font-semibold text-ordift-ink px-1">Counsel&apos;s advice (in counsel&apos;s words, not yours)</legend>
         <Row id="fa-rec" text="Counsel's recommendations"><textarea id="fa-rec" name="recommendations" required rows={4} className={field} /></Row>
         <Row id="fa-amend" text="Amendments counsel requested (write “None requested” if none) and where they are now in the text"><textarea id="fa-amend" name="amendments" required rows={3} className={field} /></Row>
         <Row id="fa-concl" text="Counsel's conclusion">

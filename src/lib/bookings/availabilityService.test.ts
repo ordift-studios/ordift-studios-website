@@ -8,7 +8,7 @@ vi.mock("@/lib/portal/roles", () => ({ getCurrentUser: async () => h.user, isSta
 vi.mock("@/lib/crewSupport/candidates", () => ({ listOverridePool: async () => h.pool }));
 vi.mock("./service", () => ({ previewConflicts: async () => { h.previewCalls++; return h.conflicts; } }));
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: () => ({ from: (table: string) => {
-  const f: ((r: Row) => boolean)[] = []; let mode = "select"; let payload: Row = {};
+  const f: ((r: Row) => boolean)[] = []; const mode = "select"; const payload: Row = {};
   const rows = () => (h.tables[table] ??= []);
   const q: Record<string, unknown> = {
     select: () => q, eq: (c: string, v: unknown) => { f.push((r) => r[c] === v); return q; }, order: () => q, limit: () => q,
