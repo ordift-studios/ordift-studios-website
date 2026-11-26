@@ -4,6 +4,7 @@ import { notFound, redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/portal/roles";
 import { authorizeWithSuperAdminOverride, STRATEGY_CAPABILITIES } from "@/lib/organization/authority";
 import { getContactDetail } from "@/lib/directory/directory";
+import { EMAIL_NOT_PROVIDED, summariseContactChannels } from "@/lib/directory/contactability";
 import { listOrganisations } from "@/lib/organisations/registry";
 import { addContactEmailAction, linkContactAccountAction, removeContactEmailAction, setEmailSharedAction, setPrimaryEmailAction, unlinkContactAccountAction, updateContactAction } from "../../directoryActions";
 import ActionForm from "@/components/admin/ActionForm";
@@ -27,6 +28,7 @@ export default async function ContactDetailPage({ params }: { params: Promise<{ 
   if (!contact) notFound();
   const active = contact.emails.filter((e) => !e.removed);
   const removed = contact.emails.filter((e) => e.removed);
+  const channels = summariseContactChannels(contact);
 
   return (
     <div className="space-y-8">
@@ -43,6 +45,17 @@ export default async function ContactDetailPage({ params }: { params: Promise<{ 
           {contact.status === "inactive" ? " · inactive" : ""}
         </p>
       </div>
+
+      <section className="rounded-xl border border-black/10 bg-white p-6 space-y-3" aria-label="How to reach this contact" data-testid="contact-reach-summary">
+        <h2 className="font-serif font-medium text-body text-ordift-ink">How to reach this contact</h2>
+        <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2 font-sans text-body-small">
+          <div><dt className="text-caption text-ordift-ink-muted">Email</dt><dd className="text-ordift-ink">{channels.emailLabel}</dd></div>
+          <div><dt className="text-caption text-ordift-ink-muted">Telephone / WhatsApp</dt><dd className="text-ordift-ink">{channels.phoneLabel}</dd></div>
+          <div><dt className="text-caption text-ordift-ink-muted">Portal account</dt><dd className="text-ordift-ink">{contact.profile ? "Linked to a portal account" : "No portal account"}</dd></div>
+          <div><dt className="text-caption text-ordift-ink-muted">Related enquiries</dt><dd className="text-ordift-ink">{contact.enquiryCount} enquir{contact.enquiryCount === 1 ? "y" : "ies"} · {contact.quotationCount} quotation{contact.quotationCount === 1 ? "" : "s"}</dd></div>
+        </dl>
+        {!channels.automaticEmail.available ? <p className="font-sans text-caption text-ordift-ink-muted">{channels.automaticEmail.reason}</p> : null}
+      </section>
 
       {contact.possibleDuplicates.length > 0 ? (
         <section className="rounded-xl border border-amber-600/30 bg-amber-50 p-6 space-y-2">
@@ -86,7 +99,7 @@ export default async function ContactDetailPage({ params }: { params: Promise<{ 
         <p className="font-sans text-caption text-ordift-ink-muted max-w-2xl">
           A personal address belongs to one contact only; if another contact already has it, the two are flagged for you to review and nothing is moved or merged. A shared mailbox (info@, bookings@ …) can be held by several contacts and is never used to decide that two people are the same.
         </p>
-        {active.length === 0 ? <p className="font-sans text-body-small text-ordift-ink-muted">No email addresses.</p> : null}
+        {active.length === 0 ? <p className="font-sans text-body-small text-ordift-ink-muted" data-testid="email-not-provided">{EMAIL_NOT_PROVIDED}. You can add one below at any time; nothing is sent to it automatically.</p> : null}
         <ul className="divide-y divide-black/5">
           {active.map((e) => (
             <li key={e.id} className="py-3 flex flex-wrap items-center justify-between gap-3">
@@ -142,7 +155,7 @@ export default async function ContactDetailPage({ params }: { params: Promise<{ 
             </ActionForm>
           </div>
         ) : contact.accountSuggestions.length === 0 ? (
-          <p className="font-sans text-body-small text-ordift-ink-muted">No portal account uses one of this contact&apos;s personal email addresses.</p>
+          <p className="font-sans text-body-small text-ordift-ink-muted" data-testid="account-link-unavailable">{channels.accountLinkSuggestion.available ? "No portal account uses one of this contact\u2019s personal email addresses." : `${channels.accountLinkSuggestion.reason} Add a personal email address to this contact to look for a matching account. No account is created or invited from here.`}</p>
         ) : (
           <ul className="space-y-2">
             {contact.accountSuggestions.map((a) => (

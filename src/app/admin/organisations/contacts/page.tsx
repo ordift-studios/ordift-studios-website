@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/portal/roles";
 import { authorizeWithSuperAdminOverride, STRATEGY_CAPABILITIES } from "@/lib/organization/authority";
 import { listContacts } from "@/lib/directory/directory";
+import { summariseContactChannels } from "@/lib/directory/contactability";
 import { listOrganisations } from "@/lib/organisations/registry";
 import OrganisationsSubNav from "../OrganisationsSubNav";
 import { createContactAction } from "../directoryActions";
@@ -39,7 +40,7 @@ export default async function ContactsPage({ searchParams }: { searchParams: Pro
       <section className="rounded-xl border border-black/10 bg-white p-6 space-y-4">
         <h2 className="font-serif font-medium text-body text-ordift-ink">Add a contact</h2>
         <p className="font-sans text-body-small text-ordift-ink-muted max-w-2xl">
-          Leave the organisation empty for an individual client. If the same personal email address already belongs to a contact, you are sent to that contact instead of creating a second one. Addresses such as info@ or bookings@ are treated as shared mailboxes and are never used to decide two people are the same; you can change this on the contact.
+          A client does not need an email address: give at least one of an email address or a telephone / WhatsApp number. Leave the organisation empty for an individual client. If the same personal email address already belongs to a contact, you are sent to that contact instead of creating a second one. Addresses such as info@ or bookings@ are treated as shared mailboxes and are never used to decide two people are the same; you can change this on the contact.
         </p>
         <ActionForm action={createContactAction} className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <input name="fullName" required maxLength={200} placeholder="Full name" className={FIELD} />
@@ -50,8 +51,8 @@ export default async function ContactsPage({ searchParams }: { searchParams: Pro
               <option key={o.id} value={o.id}>{o.name}</option>
             ))}
           </select>
-          <textarea name="emails" rows={2} placeholder="Email addresses (separate with spaces, commas or new lines)" className={FIELD} />
-          <textarea name="phones" rows={2} placeholder="Phone numbers (optional, one per line)" className={FIELD} />
+          <textarea name="emails" rows={2} placeholder="Email addresses (optional if a phone number is given; separate with spaces, commas or new lines)" className={FIELD} />
+          <textarea name="phones" rows={2} placeholder="Telephone / WhatsApp numbers (optional if an email is given; one per line, with country code)" className={FIELD} />
           <textarea name="notes" rows={2} maxLength={2000} placeholder="Notes (internal)" className={FIELD} />
           <label className="flex items-start gap-2 font-sans text-caption text-ordift-ink-muted sm:col-span-2">
             <input type="checkbox" name="confirmedDistinct" className="mt-0.5" />
@@ -67,7 +68,9 @@ export default async function ContactsPage({ searchParams }: { searchParams: Pro
           <p className="font-sans text-body-small text-ordift-ink-muted rounded-lg border border-dashed border-black/15 px-4 py-6 text-center">No contacts yet.</p>
         ) : (
           <ul className="divide-y divide-black/5">
-            {contacts.map((c) => (
+            {contacts.map((c) => {
+              const ch = summariseContactChannels(c);
+              return (
               <li key={c.id}>
                 <Link href={`/admin/organisations/contacts/${c.id}`} className="flex flex-wrap items-center justify-between gap-3 py-3 hover:bg-black/[0.02] px-2 -mx-2 rounded">
                   <div>
@@ -75,11 +78,13 @@ export default async function ContactsPage({ searchParams }: { searchParams: Pro
                     <p className="font-sans text-caption text-ordift-ink-muted">
                       {c.organisationName ?? "Individual client"}{c.jobTitle ? ` · ${c.jobTitle}` : ""}{c.profileLinked ? " · has a portal account link" : ""}
                     </p>
+                    <p className="font-sans text-caption text-ordift-ink-muted" data-testid="contact-reach">{ch.emailLabel} · {ch.phoneLabel}</p>
                   </div>
                   <span className="font-sans text-caption text-ordift-ink-muted">{c.enquiryCount} enquir{c.enquiryCount === 1 ? "y" : "ies"} · {c.quotationCount} quotation{c.quotationCount === 1 ? "" : "s"}</span>
                 </Link>
               </li>
-            ))}
+              );
+            })}
           </ul>
         )}
       </section>

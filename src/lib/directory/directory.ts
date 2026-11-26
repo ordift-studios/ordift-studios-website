@@ -3,6 +3,8 @@ import { authorizeWithSuperAdminOverride, STRATEGY_CAPABILITIES } from "@/lib/or
 import { logActivity } from "@/lib/admin/activityLog";
 import { blockingMatches, matchOrganisations, normaliseDomain, normaliseOrganisationName, registrableDomain, isFreeMailDomain, type OrganisationCandidate, type OrganisationMatch } from "@/lib/organisations/names";
 import { classifyEmail, emailDomainOf, MAX_EMAILS, MAX_PHONES, normalisePhone } from "./emails";
+import { isPlaceholderEmail } from "@/lib/shared/email/placeholder";
+import { LAST_WAY_TO_REACH_ERROR, minimumContactError, PLACEHOLDER_EMAIL_ERROR, realEmailsOf, realPhonesOf, wouldLoseLastWayToReach } from "./contactability";
 import { decideContactCreate, decideEmailAdd, matchContacts, type ContactCandidate, type ContactMatchResult } from "./contactMatching";
 import { planLink, summariseTransactions, type LinkedRecord, type TransactionContext } from "./links";
 
@@ -72,6 +74,8 @@ export type RecordLinkContext = {
   current: { contactId: string | null; contactName: string | null; organisationId: string | null; organisationName: string | null };
   contractingEntity: string | null;
   paymentCountry: "GH" | "QA" | null;
+  // What the record carries that a new contact would be created from. A record without an email is normal (WhatsApp, a call, a visit).
+  reach: { hasEmail: boolean; hasPhone: boolean; phone: string | null };
   contactSuggestions: { contactId: string; fullName: string; organisationName: string | null; strength: string }[];
   organisationSuggestions: { organisationId: string; name: string; strength: string }[];
   sharedAddressNotes: string[];
@@ -299,6 +303,7 @@ export async function createContact(params: {
   if (!fullName || fullName.length > 200) return { ok: false, error: "Enter the person's name (up to 200 characters)." };
   const classified: NonNullable<ReturnType<typeof classifyEmail>>[] = [];
   for (const raw of params.emails) {
+    if (isPlaceholderEmail(raw)) return { ok: false, error: PLACEHOLDER_EMAIL_ERROR };
     const c = classifyEmail(raw);
     if (!c) return { ok: false, error: `"${raw}" is not a valid email address.` };
     if (!classified.some((x) => x.email === c.email)) classified.push(c);
@@ -306,6 +311,9 @@ export async function createContact(params: {
   if (classified.length > MAX_EMAILS) return { ok: false, error: `A contact can have at most ${MAX_EMAILS} email addresses.` };
   const phones = cleanPhones(params.phones);
   if (!Array.isArray(phones)) return phones;
+  // A client does not need an email address, but a contact needs at least one way to reach them: a valid email OR a telephone / WhatsApp number.
+  const reach = minimumContactError(classified.map((c) => c.email), phones);
+  if (reach) return { ok: false, error: reach };
 
   const admin = createAdminClient();
   if (params.organisationId) {
@@ -359,6 +367,13 @@ export async function updateContact(params: {
     const { data: org } = await admin.from("organisations").select("id").eq("id", params.organisationId).maybeSingle();
     if (!org) return { ok: false, error: "That organisation no longer exists." };
   }
+  // Never take away the last way to reach someone (a contact with no email AND no phone cannot be contacted by anyone).
+  const { data: current } = await admin.from("contacts").select("phones, contact_emails(id, removed_at)").eq("id", params.contactId).maybeSingle();
+  if (current) {
+    const emailRows = (current.contact_emails ?? []) as { id: string; removed_at: string | null }[];
+    const activeEmails = emailRows.filter((e) => e.removed_at === null).length;
+    if (wouldLoseLastWayToReach({ activeEmails, phones: ((current.phones ?? []) as string[]).length }, { activeEmails, phones: phones.length })) return { ok: false, error: LAST_WAY_TO_REACH_ERROR };
+  }
   const { data, error } = await admin
     .from("contacts")
     .update({ full_name: fullName, preferred_name: params.preferredName?.trim() || null, job_title: params.jobTitle?.trim() || null, organisation_id: params.organisationId || null, phones, notes: params.notes?.trim() || null, status: params.status })
@@ -397,6 +412,12 @@ export async function addContactEmail(params: { contactId: string; email: string
 export async function removeContactEmail(params: { contactId: string; emailId: string; actorUserId: string }): Promise<{ ok: true } | Fail> {
   if (!(await authorize(params.actorUserId)).ok) return { ok: false, error: NOT_AUTHORISED };
   const admin = createAdminClient();
+  const { data: contactRow } = await admin.from("contacts").select("phones, contact_emails(id, removed_at)").eq("id", params.contactId).maybeSingle();
+  if (contactRow) {
+    const activeEmails = ((contactRow.contact_emails ?? []) as { id: string; removed_at: string | null }[]).filter((e) => e.removed_at === null).length;
+    const phoneCount = ((contactRow.phones ?? []) as string[]).length;
+    if (wouldLoseLastWayToReach({ activeEmails, phones: phoneCount }, { activeEmails: Math.max(0, activeEmails - 1), phones: phoneCount })) return { ok: false, error: LAST_WAY_TO_REACH_ERROR };
+  }
   const { data, error } = await admin.from("contact_emails").update({ removed_at: new Date().toISOString() }).eq("id", params.emailId).eq("contact_id", params.contactId).is("removed_at", null).select("id").maybeSingle();
   if (error || !data) return { ok: false, error: "That address could not be removed." };
   await logActivity({ actorUserId: params.actorUserId, action: "directory.contact.email_removed", entityType: "contact", entityId: params.contactId, metadata: {} });
@@ -483,11 +504,11 @@ async function subjectQuery(admin: Admin, subject: RecordSubject): Promise<{ lab
   if (subject.type === "enquiry") {
     const { data } = await admin.from("enquiries").select("id, reference_number, full_name, email, phone, contact_id, organisation_id, payment_country").eq("id", subject.id).maybeSingle();
     if (!data) return null;
-    return { label: data.reference_number, contactId: data.contact_id, organisationId: data.organisation_id, name: data.full_name, emails: data.email ? [data.email] : [], phones: data.phone ? [data.phone] : [], company: null, paymentCountry: data.payment_country === "GH" || data.payment_country === "QA" ? data.payment_country : null };
+    return { label: data.reference_number, contactId: data.contact_id, organisationId: data.organisation_id, name: data.full_name, emails: realEmailsOf([data.email]), phones: realPhonesOf([data.phone]), company: null, paymentCountry: data.payment_country === "GH" || data.payment_country === "QA" ? data.payment_country : null };
   }
   const { data } = await admin.from("client_quotations").select("id, quotation_reference, prospect_name, prospect_email, prospect_phone, prospect_company, contact_id, organisation_id").eq("id", subject.id).maybeSingle();
   if (!data) return null;
-  return { label: data.quotation_reference, contactId: data.contact_id, organisationId: data.organisation_id, name: data.prospect_name ?? "", emails: data.prospect_email ? [data.prospect_email] : [], phones: data.prospect_phone ? [data.prospect_phone] : [], company: data.prospect_company, paymentCountry: null };
+  return { label: data.quotation_reference, contactId: data.contact_id, organisationId: data.organisation_id, name: data.prospect_name ?? "", emails: realEmailsOf([data.prospect_email]), phones: realPhonesOf([data.prospect_phone]), company: data.prospect_company, paymentCountry: null };
 }
 
 async function suggestionsFor(admin: Admin, q: { name: string; emails: string[]; phones: string[]; company: string | null }) {
@@ -515,6 +536,7 @@ export async function getRecordLinkContext(actorUserId: string, subject: RecordS
     current: { contactId: q.contactId, contactName: names.contact, organisationId: q.organisationId, organisationName: names.organisation },
     contractingEntity: entityMap.get(`${subject.type}:${subject.id}`) ?? null,
     paymentCountry: q.paymentCountry,
+    reach: { hasEmail: q.emails.length > 0, hasPhone: q.phones.length > 0, phone: q.phones[0] ?? null },
     contactSuggestions: result.matches.slice(0, 5).map((m) => ({ contactId: m.contact.id, fullName: m.contact.fullName, organisationName: m.contact.organisationName, strength: m.strength })),
     organisationSuggestions: orgMatches.slice(0, 5).map((m) => ({ organisationId: m.organisation.id, name: m.organisation.name, strength: m.strength })),
     sharedAddressNotes: result.sharedAddressHolders.map((h) => `${h.email} is a shared address used by ${h.contacts.length} contact${h.contacts.length === 1 ? "" : "s"}.`),
@@ -566,6 +588,7 @@ export async function createContactFromRecord(params: { subject: RecordSubject; 
   const q = await subjectQuery(admin, params.subject);
   if (!q) return { ok: false, error: "That record was not found." };
   if (q.contactId) return { ok: false, error: "This record is already linked to a contact." };
+  if (q.emails.length === 0 && q.phones.length === 0) return { ok: false, error: "This record has no email address or telephone / WhatsApp number to create a contact from. Add a phone number to the record, or add the contact by hand from Contacts." };
   const created = await createContact({ fullName: q.name, organisationId: params.organisationId, emails: q.emails, phones: q.phones, confirmedDistinct: params.confirmedDistinct, actorUserId: params.actorUserId });
   if (!created.ok) return created;
   const linked = await linkRecord({ subject: params.subject, contactId: created.id, organisationId: params.organisationId ?? q.organisationId, actorUserId: params.actorUserId });

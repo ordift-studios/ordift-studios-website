@@ -97,6 +97,15 @@ export default async function ClientRecordPanel({ userId, subject }: { userId: s
         <details className="rounded-lg border border-black/10 px-3 py-2">
           <summary className="cursor-pointer font-sans text-body-small text-ordift-ink">Create a contact from this {subject.type}</summary>
           <p className="mt-2 font-sans text-caption text-ordift-ink-muted">Uses the name, email and phone already on this record. If a contact already has the same personal email address, you are told and nothing is created.</p>
+          <p className="mt-1 font-sans text-caption text-ordift-ink" data-testid="record-reach">
+            {context.reach.hasEmail ? "Email: on this record." : "Email not provided."}{" "}
+            {context.reach.hasPhone ? `Telephone / WhatsApp: ${context.reach.phone}.` : "Telephone / WhatsApp not provided."}
+            {!context.reach.hasEmail && context.reach.hasPhone ? " The contact is created with the number only; an email address can be added later from the contact." : ""}
+          </p>
+          {!context.reach.hasEmail && !context.reach.hasPhone ? (
+            <p className="mt-1 rounded-lg border border-amber-600/30 bg-amber-50 px-3 py-2 font-sans text-caption text-amber-900">This record has neither an email address nor a telephone / WhatsApp number, so a contact cannot be created from it. Add a number to the record first, or add the contact by hand from Contacts.</p>
+          ) : null}
+          {context.reach.hasEmail || context.reach.hasPhone ? (
           <ActionForm action={createContactFromRecordAction} className="mt-3 space-y-3">
             <input type="hidden" name="subjectType" value={subject.type} />
             <input type="hidden" name="subjectId" value={subject.id} />
@@ -114,6 +123,7 @@ export default async function ClientRecordPanel({ userId, subject }: { userId: s
             ) : null}
             <SubmitButton pendingLabel="Creating…" className={BUTTON}>Create contact and link</SubmitButton>
           </ActionForm>
+          ) : null}
         </details>
       ) : null}
 
