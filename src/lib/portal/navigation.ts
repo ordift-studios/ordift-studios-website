@@ -26,11 +26,14 @@ export const NAV_ITEMS: { role: RoleSlug; label: string; href: string }[] = [
 // facts, not roles — see the layout's own comments for why they can't
 // be expressed as NAV_ITEMS entries. Passed in already-resolved so
 // this function stays pure and DB-free.
-export function resolveVisibleNavItems(user: CurrentUser, isPayee: boolean, isInstructor: boolean): NavItem[] {
+// instructorClassified: the person is CLASSIFIED as an independent instructor (staff_details engagement type). They get the Instructor section before any workshop engagement exists,
+// because the instructor standards (required before the first assignment) are acknowledged there.
+export type NavExtras = { instructorClassified?: boolean };
+export function resolveVisibleNavItems(user: CurrentUser, isPayee: boolean, isInstructor: boolean, extras: NavExtras = {}): NavItem[] {
   const matchingNavItems: NavItem[] = NAV_ITEMS.filter((item) => hasRole(user, item.role)).map((item) => ({ label: item.label, href: item.href }));
   const dedupedNavItems: NavItem[] = matchingNavItems.filter(
     (item, index) => matchingNavItems.findIndex((other) => other.href === item.href) === index
   );
   const withPayeeLink = isPayee ? [...dedupedNavItems, { label: "Payment Details", href: "/portal/payment-details" }] : dedupedNavItems;
-  return isInstructor ? [...withPayeeLink, { label: "Instructor", href: "/portal/instructor" }] : withPayeeLink;
+  return isInstructor || extras.instructorClassified ? [...withPayeeLink, { label: "Instructor", href: "/portal/instructor" }] : withPayeeLink;
 }

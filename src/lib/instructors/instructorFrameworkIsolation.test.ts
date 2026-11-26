@@ -29,6 +29,8 @@ describe("who uses the framework", () => {
       "src/app/admin/organization/instructor-standards/actions.ts", "src/app/admin/organization/instructor-standards/page.tsx",
       "src/app/admin/organization/onboarding/[onboardingId]/page.tsx",
       "src/app/portal/(dashboard)/instructor/InstructorStandardsCard.tsx", "src/app/portal/(dashboard)/instructor/page.tsx", "src/app/portal/(dashboard)/instructor/standardsActions.ts",
+      "src/app/portal/(dashboard)/instructor/standards/page.tsx", // READ-ONLY: shows the adopted text and the instructor's own acknowledgement state; the write still goes through standardsActions
+      "src/lib/organization/instructorOnboardingFacts.ts", // READ-ONLY: the instructor sees their own standards state in their onboarding view (loadStandardsStateFor); it writes nothing
       "src/lib/workshops/instructorEligibility.ts",
     ].sort());
   });
@@ -44,3 +46,12 @@ describe("who uses the framework", () => {
     expect(m).toMatch(/not been acknowledged|has not acknowledged the adopted standards/);
   });
 });
+
+describe("the instructor's own acknowledgement is audited even though an instructor is not staff", () => {
+  it("writes the audit line with the system-level writer (the staff-only session policy would silently drop it)", () => {
+    const m = read("src/lib/instructors/standards.ts");
+    expect(m).toMatch(/await logActivityAsSystem\(\{ actorUserId: p\.profileId, action: "instructor_standards\.acknowledged"/);
+    expect(m).not.toMatch(/await logActivity\(\{ actorUserId: p\.profileId/);
+  });
+});
+

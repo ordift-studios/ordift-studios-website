@@ -1,5 +1,5 @@
 import { createAdminClient } from "@/lib/supabase/admin";
-import { logActivity } from "@/lib/admin/activityLog";
+import { logActivity, logActivityAsSystem } from "@/lib/admin/activityLog";
 import { isSuperAdminId } from "@/lib/organization/authority";
 import { getEngagementTypeSlug } from "@/lib/organization/engagementTypeLookup";
 import { adoptionBlockers, ACKNOWLEDGEMENT_CONSENT, canonicalStandardsText, type StandardsContacts } from "./rules";
@@ -104,7 +104,9 @@ export async function acknowledgeStandards(p: { profileId: string; versionId: st
   if (v.id !== p.versionId || v.bodySha256 !== p.presentedSha256) return { ok: false, error: "These standards have changed since you opened the page. Reload to read the current version." };
   const { error } = await createAdminClient().from("instructor_standards_acknowledgements").insert({ profile_id: p.profileId, version_id: v.id, document_sha256: v.bodySha256, typed_full_name: p.typedFullName.trim(), consent_statement: ACKNOWLEDGEMENT_CONSENT, ip_address: p.ipAddress, user_agent: p.userAgent });
   if (error) return { ok: false, error: error.code === "23505" ? "You have already acknowledged this version." : "The acknowledgement could not be saved." };
-  await logActivity({ actorUserId: p.profileId, action: "instructor_standards.acknowledged", entityType: "instructor_standards_version", entityId: v.id, metadata: { versionLabel: v.versionLabel, sha256: v.bodySha256 } });
+  // The instructor is a contractor, not staff: the session client's staff-only audit policy would silently drop this line. The actor is the server-verified session user (the caller passes only that id), so the
+  // system-level writer is the documented pattern for a trusted audit write on behalf of an authenticated person.
+  await logActivityAsSystem({ actorUserId: p.profileId, action: "instructor_standards.acknowledged", entityType: "instructor_standards_version", entityId: v.id, metadata: { versionLabel: v.versionLabel, sha256: v.bodySha256 } });
   return { ok: true, sha256: v.bodySha256 };
 }
 

@@ -5,6 +5,10 @@ import { loadOwnContactEmails } from "@/lib/organization/correspondenceEmail";
 import { OwnContactEmailsCard } from "../OwnContactEmailsCard";
 import { loadStandardsStateFor } from "@/lib/instructors/standards";
 import { InstructorStandardsCard } from "./InstructorStandardsCard";
+import { InstructorOnboardingStatus } from "@/components/portal/InstructorOnboardingStatus";
+import { buildInstructorOnboardingView } from "@/lib/organization/instructorOnboardingView";
+import { getEngagementTypeSlug } from "@/lib/organization/engagementTypeLookup";
+import { loadInstructorOnboardingFacts } from "@/lib/organization/instructorOnboardingFacts";
 import {
   isWorkshopInstructor,
   listEngagementsForInstructor,
@@ -48,15 +52,19 @@ export default async function InstructorPortalPage() {
   const ownEmails = await loadOwnContactEmails(user); // the signed-in person's own addresses, read-only, shown on both branches of this page
   const standards = await loadStandardsStateFor(user.id); // "not_available" while the framework is off, nothing is adopted, or the person is not an independent instructor
   const isInstructor = await isWorkshopInstructor(user.id);
+  // The onboarding view is for people CLASSIFIED as independent instructors (or already engaged); anyone else who opens this address sees only what they always did.
+  const onboardingView = isInstructor || (await getEngagementTypeSlug(user.id)) === "instructor" ? buildInstructorOnboardingView(await loadInstructorOnboardingFacts(user.id)) : null;
+  const firstName = user.fullName?.trim().split(/\s+/)[0] ?? null;
   if (!isInstructor) {
     return (
       <div className="space-y-6">
         <div>
           <p className="font-sans font-semibold uppercase tracking-[0.2em] text-eyebrow text-ordift-gold-pressed mb-2">Instructor / Facilitator</p>
-          <h1 className="font-serif font-medium text-section-heading lg:text-section-heading-desktop text-ordift-ink">My Workshops</h1>
+          <h1 className="font-serif font-medium text-section-heading lg:text-section-heading-desktop text-ordift-ink">{onboardingView ? "Instructor Dashboard" : "My Workshops"}</h1>
         </div>
+        {onboardingView && <InstructorOnboardingStatus view={onboardingView} firstName={firstName} />}
         <OwnContactEmailsCard emails={ownEmails} />
-        <InstructorStandardsCard state={standards} />
+        {!onboardingView && <InstructorStandardsCard state={standards} />}
         <section className="rounded-xl border border-black/10 bg-white p-6">
           <p className="font-sans text-body-small text-ordift-ink-muted">
             No workshop instructor engagement is on record for your account yet.
@@ -94,8 +102,9 @@ export default async function InstructorPortalPage() {
         <h1 className="font-serif font-medium text-section-heading lg:text-section-heading-desktop text-ordift-ink">{user.fullName ?? user.email}</h1>
       </div>
 
+      {onboardingView && <InstructorOnboardingStatus view={onboardingView} firstName={firstName} />}
       <OwnContactEmailsCard emails={ownEmails} />
-        <InstructorStandardsCard state={standards} />
+        {!onboardingView && <InstructorStandardsCard state={standards} />}
 
       <section className="rounded-xl border border-black/10 bg-white p-6 space-y-3">
         <h2 className="font-serif font-medium text-body text-ordift-ink">Upcoming Sessions</h2>

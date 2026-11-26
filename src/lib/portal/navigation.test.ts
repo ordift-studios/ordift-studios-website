@@ -107,4 +107,13 @@ describe("resolveVisibleNavItems — isPayee / isInstructor are additive, never 
       { label: "Instructor", href: "/portal/instructor" },
     ]);
   });
+
+  it("a person CLASSIFIED as an instructor sees the Instructor link before any workshop engagement exists, and never twice", () => {
+    expect(resolveVisibleNavItems(userWith(["contractor"]), false, false, { instructorClassified: true })).toEqual([
+      { label: "My Projects", href: "/portal/collaborator" },
+      { label: "Instructor", href: "/portal/instructor" },
+    ]);
+    expect(resolveVisibleNavItems(userWith(["contractor"]), false, true, { instructorClassified: true }).filter((i) => i.href === "/portal/instructor")).toHaveLength(1);
+    expect(resolveVisibleNavItems(userWith(["client"]), false, false, { instructorClassified: false }).some((i) => i.href === "/portal/instructor")).toBe(false);
+  });
 });

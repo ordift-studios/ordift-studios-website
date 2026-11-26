@@ -58,7 +58,6 @@ export const BARE_FORM_BASELINE: Record<string, number> = {
   "src/app/admin/workshops/WorkshopScheduleForms.tsx": 1,
   "src/app/admin/workshops/[id]/briefs/[briefId]/GiveFeedbackForm.tsx": 1,
   "src/app/legal/sign/[token]/SignatoryWorkspace.tsx": 3,
-  "src/app/portal/(dashboard)/instructor/AcknowledgeStandardsForm.tsx": 1,
   "src/app/portal/(dashboard)/instructor/AttendanceRoster.tsx": 1,
   "src/app/portal/(dashboard)/instructor/InstructorWorkshopExtras.tsx": 2,
   "src/app/portal/(dashboard)/instructor/workshops/[workshopId]/briefs/[briefId]/InstructorGiveFeedbackForm.tsx": 1,

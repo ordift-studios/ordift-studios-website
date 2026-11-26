@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 import { headers } from "next/headers";
 import { getCurrentUser } from "@/lib/portal/roles";
 import { acknowledgeStandards } from "@/lib/instructors/standards";
@@ -17,9 +18,11 @@ export async function acknowledgeInstructorStandardsAction(_prev: StandardsAckSt
     const r = await acknowledgeStandards({ profileId: user.id, versionId: String(f.get("versionId") ?? ""), presentedSha256: String(f.get("sha256") ?? ""), typedFullName: String(f.get("typedFullName") ?? ""), consent: f.get("consent") === "yes", ipAddress: ip, userAgent: h.get("user-agent") });
     if (!r.ok) return { ok: false, error: r.error };
     revalidatePath("/portal/instructor");
-    return { ok: true };
+    revalidatePath("/portal/instructor/standards");
   } catch (error) {
     console.error("[instructor standards] acknowledgement failed", error);
     return { ok: false, error: "Something went wrong and nothing was recorded. Please try again." };
   }
+  // Reached only after the acknowledgement was actually saved: the page is then re-read from the database and shows the recorded confirmation at the top.
+  redirect("/portal/instructor/standards");
 }
