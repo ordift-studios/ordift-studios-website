@@ -3,11 +3,12 @@ import { redirect, notFound } from "next/navigation";
 import Link from "next/link";
 import { getCurrentUser, isSuperAdmin } from "@/lib/portal/roles";
 import { getEmployingEntityById, getEmployingEntitySensitiveDetails, listProfileIdsForEmployingEntity } from "@/lib/organization/legalEntities";
-import { getActiveFounderProfileId, listEntityExpenses, listEntityRegistrations, listEntityRenewals, listEntitySignatories, listVaultDocuments } from "@/lib/organization/entityRegistrations";
+import { getActiveFounderProfileId, getEntityActivityRegister, listEntityExpenses, listEntityRegistrations, listEntityRenewals, listEntitySignatories, listVaultDocuments } from "@/lib/organization/entityRegistrations";
 import { registrationLabel, trackCompliance } from "@/lib/organization/entityRegistry";
 import { listUsersWithRoles } from "@/lib/portal/adminData";
 import { EntityDetailWorkspace } from "./EntityDetailWorkspace";
 import { EntityRegistryPanels } from "./EntityRegistryPanels";
+import { ActivityRegisterPanel } from "./ActivityRegisterPanel";
 
 export const metadata: Metadata = {
   title: "Legal Entity — Ordift Studios Admin",
@@ -34,6 +35,7 @@ export default async function LegalEntityDetailPage({ params }: { params: Promis
     getActiveFounderProfileId(),
   ]);
   const today = new Date().toISOString().slice(0, 10);
+  const activityRegister = await getEntityActivityRegister(entityId, user.id, today);
   const tracked = trackCompliance(registrations, today, entity.jurisdictionName);
 
   const nameById = new Map<string, string>();
@@ -94,6 +96,7 @@ export default async function LegalEntityDetailPage({ params }: { params: Promis
         jurisdictionName={entity.jurisdictionName ?? null}
         founderIdentityActive={Boolean(founderProfileId)}
       />
+      {activityRegister.ok ? <ActivityRegisterPanel entityId={entityId} jurisdiction={activityRegister.jurisdiction} rows={activityRegister.rows} evidence={activityRegister.evidence} /> : null}
     </div>
   );
 }

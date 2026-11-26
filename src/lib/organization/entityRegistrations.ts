@@ -4,7 +4,8 @@ import { logActivity } from "@/lib/admin/activityLog";
 import { isSuperAdminId } from "@/lib/organization/authority";
 import { EXPENSE_CATEGORY_VALUES, PAYMENT_METHOD_VALUES, isExpenseEvidenceType, validIsoDate, validateFunding } from "@/lib/organization/expenseEntry";
 import { assessEntityForQuotation, type ActivityFact, type EntityAssessment, type EntityFacts, type RequirementRow } from "@/lib/organization/jurisdictionRequirements";
-import { assessContractingEligibility, suggestContractingEntity, reconcileReceipt, type ContractingCandidate, type Eligibility, type KnownDocument, type ReceiptLine, type RegistrationFact, type RegistrationKind, type RegistrationStatus, checkDuplicate, sha256OfBytes, ENTITY_DOCUMENT_TYPES } from "@/lib/organization/entityRegistry";
+import { buildActivityRegister, checkActivityEvidence, type EvidenceOption, type RegisterRow } from "@/lib/organization/activityRegisterView";
+import { assessContractingEligibility, registrationLabel, suggestContractingEntity, reconcileReceipt, type ContractingCandidate, type Eligibility, type KnownDocument, type ReceiptLine, type RegistrationFact, type RegistrationKind, type RegistrationStatus, checkDuplicate, sha256OfBytes, ENTITY_DOCUMENT_TYPES } from "@/lib/organization/entityRegistry";
 
 // Per-entity registrations, permits, authorised signatories and receipt-backed expenses (migration 0159). Every read and write is
 // Super-Admin-only and re-checked here, because the admin client bypasses row-level security. Each entity's records are separate:
@@ -543,7 +544,7 @@ const mapCatalog = (c: CatalogRow): RequirementRow => ({
   conditionActivity: c.condition_activity, requiresVerified: c.requires_verified, requiresInDate: c.requires_in_date, shownOnDocument: c.shown_on_document, sortOrder: c.sort_order, approved: Boolean(c.approved_at),
 });
 
-async function loadEntityFacts(entityId: string): Promise<{ facts: EntityFacts; catalog: RequirementRow[]; registrations: EntityRegistration[] } | null> {
+export async function loadEntityFacts(entityId: string): Promise<{ facts: EntityFacts; catalog: RequirementRow[]; registrations: EntityRegistration[] } | null> {
   const db = createAdminClient();
   const { data: e } = await db.from("employing_entities").select("id, name, legal_name, registration_type, active, verification_status, jurisdiction_id").eq("id", entityId).maybeSingle();
   if (!e) return null;
@@ -610,6 +611,57 @@ export async function setEntityActivity(p: { entityId: string; activityKey: stri
   if (error) return { ok: false, error: error.message.includes("ordift:activity_evidence") ? "That evidence is not an active, verified record of this entity." : error.message };
   await logActivity({ actorUserId: p.actorUserId, action: "entity.activity_recorded", entityType: "employing_entity", entityId: p.entityId, metadata: { activity: p.activityKey, from: (prev?.status as string | undefined) ?? null, to: p.status } });
   return { ok: true, status: p.status };
+}
+
+// ------------------------------------------------------------------ the activity register (Super Admin)
+// What the entity has recorded about each activity, next to what its verified evidence actually shows. Read-only; built from the same facts and assessment the quotation check uses.
+export async function getEntityActivityRegister(entityId: string, actorUserId: string, today: string): Promise<Result<{ entityName: string; jurisdiction: string | null; rows: RegisterRow[]; evidence: EvidenceOption[] }>> {
+  if (!(await isSuperAdminId(actorUserId))) return NOT_ALLOWED;
+  const loaded = await loadEntityFacts(entityId);
+  if (!loaded) return { ok: false, error: "That entity was not found." };
+  const db = createAdminClient();
+  const [{ data: types }, { data: recs }] = await Promise.all([
+    db.from("entity_activity_types").select("key, label").order("label"),
+    db.from("entity_activities").select("activity_key, status, evidence_registration_id, note, recorded_by, updated_at").eq("employing_entity_id", entityId),
+  ]);
+  const typeList = ((types ?? []) as { key: string; label: string }[]);
+  const recorderIds = [...new Set(((recs ?? []) as { recorded_by: string | null }[]).map((r) => r.recorded_by).filter((x): x is string => Boolean(x)))];
+  const { data: profs } = recorderIds.length ? await db.from("profiles").select("id, member_number").in("id", recorderIds) : { data: [] as { id: string; member_number: string | null }[] };
+  const member = new Map(((profs ?? []) as { id: string; member_number: string | null }[]).map((p) => [p.id, p.member_number]));
+  const assessment = assessEntityForQuotation(loaded.facts, loaded.catalog, typeList.map((t) => t.key), today);
+  const { rows, evidence } = buildActivityRegister({
+    facts: loaded.facts, assessment, types: typeList, today,
+    registrationLabel: (kind) => registrationLabel(kind as RegistrationKind, loaded.facts.jurisdictionName),
+    records: ((recs ?? []) as { activity_key: string; status: string; evidence_registration_id: string | null; note: string | null; recorded_by: string | null; updated_at: string | null }[]).map((r) => ({
+      activityKey: r.activity_key, status: r.status as "planned" | "licensed" | "suspended" | "withdrawn", evidenceRegistrationId: r.evidence_registration_id, note: r.note,
+      recordedByLabel: r.recorded_by ? member.get(r.recorded_by) ?? null : null, updatedAt: r.updated_at,
+    })),
+  });
+  return { ok: true, entityName: loaded.facts.legalName ?? loaded.facts.name, jurisdiction: loaded.facts.jurisdictionName, rows, evidence };
+}
+
+// The approved way to record an activity decision. It adds to setEntityActivity: the evidence must be verified, in date and actually list the activity; a CHANGE to an existing record needs a
+// written reason (so the history says why); and the audit entry names the evidence. Entering a record is record-keeping: it grants nothing, and 'licensed' is refused without evidence that already exists.
+export async function recordEntityActivity(p: { entityId: string; activityKey: string; status: "planned" | "licensed" | "suspended" | "withdrawn"; evidenceRegistrationId?: string | null; note?: string; reason?: string; actorUserId: string; today?: string }): Promise<Result<{ status: string }>> {
+  if (!(await isSuperAdminId(p.actorUserId))) return NOT_ALLOWED;
+  const today = p.today ?? new Date().toISOString().slice(0, 10);
+  const db = createAdminClient();
+  const { data: prev } = await db.from("entity_activities").select("status, evidence_registration_id").eq("employing_entity_id", p.entityId).eq("activity_key", p.activityKey).maybeSingle();
+  const reason = (p.reason ?? "").trim();
+  if (prev && reason.length < 8) return { ok: false, error: "This activity already has a record. Say why it is being changed (at least a short sentence) so the history explains it." };
+  if (p.status === "licensed") {
+    const loaded = await loadEntityFacts(p.entityId);
+    if (!loaded) return { ok: false, error: "That entity was not found." };
+    const options = buildActivityRegister({ facts: loaded.facts, assessment: assessEntityForQuotation(loaded.facts, loaded.catalog, [], today), records: [], types: [], today, registrationLabel: (k) => registrationLabel(k as RegistrationKind, loaded.facts.jurisdictionName) }).evidence;
+    const checked = checkActivityEvidence({ activityKey: p.activityKey, evidence: options.find((o) => o.id === p.evidenceRegistrationId) });
+    if (!checked.ok) return checked;
+  }
+  const note = [(p.note ?? "").trim(), prev && reason ? `Change on ${today}: ${reason}` : ""].filter(Boolean).join(" ");
+  const result = await setEntityActivity({ entityId: p.entityId, activityKey: p.activityKey, status: p.status, evidenceRegistrationId: p.evidenceRegistrationId ?? null, note, actorUserId: p.actorUserId });
+  if (result.ok) {
+    await logActivity({ actorUserId: p.actorUserId, action: "entity.activity_register_entry", entityType: "employing_entity", entityId: p.entityId, metadata: { activity: p.activityKey, from: (prev?.status as string | undefined) ?? null, to: p.status, evidenceRegistrationId: p.evidenceRegistrationId ?? null, previousEvidenceRegistrationId: (prev?.evidence_registration_id as string | null | undefined) ?? null, reasonGiven: reason.length > 0, via: "activity_register" } });
+  }
+  return result;
 }
 
 // The issuance of an ORDINARY quotation fixes its contracting entity. The evidence is the quotation's own `issued_at` (written once, by the single issuing update), NOT its current

@@ -4,9 +4,10 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { getCurrentUser, isSuperAdmin } from "@/lib/portal/roles";
 import { recordEmployingEntitySensitiveDetails, getEmployingEntityDocumentSignedUrl } from "@/lib/organization/legalEntities";
-import { addVaultDocument, chooseContractingEntity, confirmApprovalNoticeDate, confirmExpenseFunding, parsePermitActivities, recordCommercialPermit, recordEntityReceipt, recordEntityRegistration, linkSignatoryToFounderIdentity, recordRenewalConfirmation, setSignatoryLegalCapacity, type LegalCapacity } from "@/lib/organization/entityRegistrations";
+import { addVaultDocument, chooseContractingEntity, confirmApprovalNoticeDate, confirmExpenseFunding, parsePermitActivities, recordCommercialPermit, recordEntityActivity, recordEntityReceipt, recordEntityRegistration, linkSignatoryToFounderIdentity, recordRenewalConfirmation, setSignatoryLegalCapacity, type LegalCapacity } from "@/lib/organization/entityRegistrations";
 
 import { parseReceiptLines } from "@/lib/organization/expenseEntry";
+import { actionFail, actionOk, type ActionState as FormActionState } from "@/lib/shared/actionState";
 
 export type ActionState = { ok: boolean; error?: string } | null;
 
@@ -208,4 +209,21 @@ export async function linkSignatoryToFounderAction(_prev: ActionState, formData:
   if (!result.ok) return { ok: false, error: result.error };
   revalidatePath(`/admin/organization/legal-entities/${entityId}`);
   return { ok: true };
+}
+
+// Records or changes what Ordift has recorded about one activity of an entity. Record-keeping only: it grants nothing, 'licensed' is refused unless verified, in-date evidence that lists the activity
+// is chosen, and changing an existing record needs a written reason. Super Admin only; nothing is deleted.
+export async function recordActivityAction(_prev: FormActionState, formData: FormData): Promise<FormActionState> {
+  const actor = await requireSuperAdminActor();
+  if ("error" in actor) return actionFail(actor.error);
+  const entityId = String(formData.get("entityId") ?? "");
+  const status = String(formData.get("status") ?? "");
+  if (!["planned", "licensed", "suspended", "withdrawn"].includes(status)) return actionFail("Choose a status.");
+  const result = await recordEntityActivity({
+    entityId, activityKey: String(formData.get("activityKey") ?? ""), status: status as "planned" | "licensed" | "suspended" | "withdrawn",
+    evidenceRegistrationId: String(formData.get("evidenceRegistrationId") ?? "") || null, note: String(formData.get("note") ?? ""), reason: String(formData.get("reason") ?? ""), actorUserId: actor.id,
+  });
+  if (!result.ok) return actionFail(result.error);
+  revalidatePath(`/admin/organization/legal-entities/${entityId}`);
+  return actionOk("Record saved.");
 }
