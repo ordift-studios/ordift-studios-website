@@ -7,7 +7,7 @@ import { confirmSentenceFor } from "@/lib/bookings/form";
 import { cancelBookingAction } from "./bookingActions";
 
 // Super Admin only. Cancelling adds a NEW record (the booking stays in the history, with the accepted quotation and every payment untouched); it never refunds or changes a balance.
-// Two outcomes: a new date will be agreed (the project reads &quot;Booking Cancelled — Rescheduling Pending&quot;) or the cancellation is final ("Booking Cancelled"). The client is told by default; holding that back needs a written reason.
+// Two outcomes: a new date will be agreed (the project reads "Booking Cancelled — Rescheduling Pending") or the cancellation is final ("Booking Cancelled"). The client is told by default; holding that back needs a written reason.
 export default function BookingCancelForm({ enquiryId, reference, expectedVersion }: { enquiryId: string; reference: string; expectedVersion: number }) {
   const field = "w-full rounded-lg border border-black/15 bg-white px-3 py-2 font-sans text-body-small text-ordift-ink";
   const [defer, setDefer] = useState(false);
