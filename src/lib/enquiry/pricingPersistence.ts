@@ -3,6 +3,7 @@ import { logActivity } from "@/lib/admin/activityLog";
 import { hasRole, isStaffOrAdmin, isSuperAdmin, type CurrentUser } from "@/lib/portal/roles";
 import { createClientQuotation } from "@/lib/commercial/clientQuotations";
 import { applyDiscount } from "@/lib/pricing/discountMath";
+import { realEmailsOf } from "@/lib/directory/contactability";
 import { ENQUIRY_PRICING_PERSISTENCE_ENABLED, approvalStillValid, conversionIdempotencyKey, scopeHash, followUpState, type FollowUpState } from "./pricingHistory";
 
 // Persistent enquiry pricing: communicated-price history, Founder/Super Admin-approved discounts, handlers and follow-ups, and conversion to a DRAFT quotation.
@@ -138,7 +139,7 @@ export async function convertToQuotation(user: CurrentUser, enquiryId: string): 
   const lines = (comm.scope_lines as string[]).filter((l) => !/^(Estimated Total|Total|Ordift Fee)/i.test(l));
   const q = await createClientQuotation({
     enquiryId, currency: "USD",
-    ...(enq.user_id ? { clientProfileId: enq.user_id as string } : { prospectName: (enq.full_name as string) || "Prospect", prospectEmail: (enq.email as string | null) ?? null, prospectPhone: (enq.phone as string | null) ?? null }),
+    ...(enq.user_id ? { clientProfileId: enq.user_id as string } : { prospectName: (enq.full_name as string) || "Prospect", prospectEmail: realEmailsOf([enq.email as string | null])[0] ?? null, prospectPhone: (enq.phone as string | null) ?? null }),
     commercialNotes: [comm.assumptions ? `Assumptions: ${comm.assumptions}` : "", comm.exclusions ? `Exclusions: ${comm.exclusions}` : ""].filter(Boolean).join("\n") || null,
     items: [{ serviceItem: comm.scope_title as string, description: lines.join("; ").slice(0, 900) || null, quantity: 1, unitBasis: "package", sellingRate: Number(comm.communicated_amount), sourceType: "manual" }],
   });
