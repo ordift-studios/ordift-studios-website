@@ -3,7 +3,7 @@ import { getCurrentUser } from "@/lib/portal/roles";
 import { getWorkspacePaymentSummary, isProjectKind } from "@/lib/portal/workspace";
 import { getCurrentRate } from "@/lib/payments/currency";
 import { getActiveBankAccount } from "@/lib/payments/bankAccounts";
-import { getEntityPaymentCountry, PAYMENT_MARKETS } from "@/lib/payments/paymentMarket";
+import { getEntityPaymentMarketState, PAYMENT_MARKETS } from "@/lib/payments/paymentMarket";
 import { getActiveCountryConfig } from "@/lib/payments/providerRegistry";
 import CheckoutForm from "./CheckoutForm";
 import BankTransferCheckout from "./BankTransferCheckout";
@@ -32,7 +32,19 @@ export default async function CheckoutPage({
 
   // Direct Bank Transfer markets (Qatar) are resolved from the record's own payment market and
   // never touch the Ghana Paystack path below, which is unchanged.
-  const market = await getEntityPaymentCountry(kind === "enquiry" ? "enquiry" : "workshop_registration", id);
+  const marketState = await getEntityPaymentMarketState(kind === "enquiry" ? "enquiry" : "workshop_registration", id);
+  // No market has been chosen for this client (an enquiry recorded by staff): no online payment route is offered, and none is guessed.
+  if (marketState.state === "unselected") {
+    return (
+      <div className="max-w-xl mx-auto" data-testid="payment-market-unselected">
+        <h1 className="font-serif font-medium text-section-heading text-ordift-ink mb-2">Pay Now</h1>
+        <p className="rounded-lg bg-amber-50 px-4 py-3 font-sans text-body-small text-amber-800">
+          Your payment arrangements are still being confirmed with you. Please contact us and we&apos;ll arrange payment with you.
+        </p>
+      </div>
+    );
+  }
+  const market = marketState.market;
   if (PAYMENT_MARKETS[market].bankTransferOnly) {
     const [config, rate, account] = await Promise.all([getActiveCountryConfig(market), getCurrentRate(PAYMENT_MARKETS[market].currency), getActiveBankAccount(market)]);
     const available = Boolean(config) && Boolean(account) && rate != null && account?.currencyCode === PAYMENT_MARKETS[market].currency;

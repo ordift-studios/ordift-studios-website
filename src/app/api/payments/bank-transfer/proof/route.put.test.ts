@@ -10,7 +10,7 @@ vi.mock("@/lib/portal/roles", () => ({ getCurrentUser: async () => ({ id: "clien
 vi.mock("@/lib/shared/rateLimit", () => ({ checkRateLimit: async () => ({ allowed: true }) }));
 vi.mock("@/lib/shared/recordId", () => ({ generateRecordId: async () => `PAY-2026-${String(++h.seq).padStart(6, "0")}` }));
 vi.mock("@/lib/admin/activityLog", () => ({ logActivityAsSystem: async (a: Row) => { h.audit.push(a); } }));
-vi.mock("@/lib/payments/paymentMarket", () => ({ getEntityPaymentCountry: async () => "QA" }));
+vi.mock("@/lib/payments/paymentMarket", () => ({ getEntityPaymentMarketState: async () => ({ state: "selected", market: "QA" }) }));
 vi.mock("@/lib/payments/bankAccounts", () => ({ getActiveBankAccount: async () => ({ id: "acct-1", bankName: "Synthetic Bank", accountName: "Synthetic", accountNumber: "000", iban: null, swiftCode: null, currencyCode: "QAR", country: "QA", classification: "corporate" }) }));
 vi.mock("@/lib/payments/checkoutService", async (orig) => ({ ...(await orig<typeof import("@/lib/payments/checkoutService")>()), resolveEntityAmounts: async () => ({ amountDueUsd: 1000, amountPaidUsd: 0 }) }));
 vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({ from: (t: string) => { const q: Record<string, unknown> = { select: () => q, eq: () => q, maybeSingle: async () => ({ data: t === "payment_country_config" ? { default_currency_code: "QAR" } : { rate_to_usd: 3.64 } }) }; return q; } }) }));

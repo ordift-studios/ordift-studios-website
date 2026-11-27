@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 // Card checkout start: what happens when the provider's answer is unusable or its reference cannot be saved. In-memory payments table; the provider, rates and market are replaced. Synthetic data.
 type Row = Record<string, unknown>;
 const h = vi.hoisted(() => ({ rows: [] as Row[], charge: null as unknown, failRefSaves: 0, cases: [] as Row[], seq: 0, guard: false }));
-vi.mock("@/lib/payments/paymentMarket", () => ({ getEntityPaymentCountry: async () => "GH" }));
+vi.mock("@/lib/payments/paymentMarket", () => ({ getEntityPaymentMarketState: async () => ({ state: "legacy_default", market: "GH" }) }));
 vi.mock("@/lib/payments/providerRegistry", () => ({ getActiveCountryConfig: async () => ({ defaultCurrencyCode: "GHS", gatewayProvider: "paystack" }), getProvider: () => ({ id: "paystack", initCharge: async () => { if (h.charge instanceof Error) throw h.charge; return h.charge; } }) }));
 vi.mock("@/lib/payments/currency", () => ({ lockExchangeRate: async (usd: number) => ({ rateToUsd: 15.5, convertedAmount: Math.round(usd * 15.5 * 100) / 100, currencyCode: "GHS", source: "ordift", lockedAt: new Date().toISOString() }), convertedAmountsMatch: () => true }));
 vi.mock("@/lib/payments/reconcilePendingPayment", () => ({ reconcilePendingGatewayPayment: async () => "pending" }));

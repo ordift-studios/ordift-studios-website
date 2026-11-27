@@ -154,7 +154,7 @@ describe("wiring and security (source assertions)", () => {
     expect(route).toContain("canSubmitProof(payment.status");
   });
   it("the payment market and receiving account are resolved server-side, not from the request body", () => {
-    expect(route).toContain("getEntityPaymentCountry(entityType, body.entityId)");
+    expect(route).toContain("getEntityPaymentMarketState(entityType, body.entityId)");
     expect(route).not.toMatch(/eq\("country", body\.country\)/);
     expect(route).toContain("getActiveBankAccount(country)");
     expect(route).toContain("receiving_account_snapshot: snapshot");

@@ -16,7 +16,7 @@ import ProjectRequestsManager from "@/components/admin/ProjectRequestsManager";
 import { addNoteAction } from "../actions";
 import SetAmountDueForm from "./SetAmountDueForm";
 import PaymentMarketForm from "./PaymentMarketForm";
-import { getStoredPaymentCountry } from "@/lib/payments/paymentMarket";
+import { getStoredPaymentMarket } from "@/lib/payments/paymentMarket";
 import UpdateStageForm from "./UpdateStageForm";
 import StartHandlingButton from "./StartHandlingButton";
 import ActionForm from "@/components/admin/ActionForm";
@@ -57,7 +57,7 @@ function formatDateTime(iso: string): string {
 export default async function AdminEnquiryDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
 
-  const [enquiry, notes, categories, deliverables, requests, user, amountDueSource, storedPaymentCountry, amountPanel, availabilityPanel, bookingPanel] = await Promise.all([
+  const [enquiry, notes, categories, deliverables, requests, user, amountDueSource, storedPaymentMarket, amountPanel, availabilityPanel, bookingPanel] = await Promise.all([
     getEnquiryById(id),
     getEnquiryNotes(id),
     getDeliverableCategories(),
@@ -65,7 +65,7 @@ export default async function AdminEnquiryDetailPage({ params }: { params: Promi
     getProjectRequestsForEntity("enquiry", id),
     getCurrentUser(),
     getAmountDueProvenance(id),
-    getStoredPaymentCountry(id),
+    getStoredPaymentMarket(id),
     getAmountDuePanel(id),
     loadAvailabilityPanel(id),                                                          // null unless the booking flag is on, the viewer is staff/admin and the enquiry is open and not booked
     loadBookingPanel(id),                                                                 // null unless BOOKING_CONFIRMATION_ENABLED is "true" and the viewer may see it
@@ -223,7 +223,7 @@ export default async function AdminEnquiryDetailPage({ params }: { params: Promi
             </div>
             {isSuperAdmin(user) && canManageAmount && (
               <div className="mb-4 border-b border-black/5 pb-4">
-                <PaymentMarketForm enquiryId={enquiry.id} current={storedPaymentCountry} />
+                <PaymentMarketForm enquiryId={enquiry.id} current={storedPaymentMarket.stored} staffRecorded={storedPaymentMarket.staffRecorded} />
               </div>
             )}
             {canManageAmount && amountPanel?.activeQuotation && !amountPanel.enquiry.isCrewSupport ? (

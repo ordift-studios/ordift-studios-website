@@ -11,7 +11,7 @@ import type { PaymentEntityType, PaymentType } from "@/lib/payments/types";
 import { logActivityAsSystem } from "@/lib/admin/activityLog";
 import { detectFileMimeType } from "@/lib/shared/fileContentSniff";
 import { getActiveBankAccount } from "@/lib/payments/bankAccounts";
-import { getEntityPaymentCountry } from "@/lib/payments/paymentMarket";
+import { getEntityPaymentMarketState } from "@/lib/payments/paymentMarket";
 import { buildReceivingSnapshot, canSubmitProof } from "@/lib/payments/bankTransferRules";
 import { checkReferenceNote } from "@/lib/payments/checkoutFormRules";
 
@@ -252,7 +252,9 @@ export async function PUT(request: NextRequest) {
   }
 
   // The payment market comes from the entity itself — never from a client-supplied value.
-  const country = await getEntityPaymentCountry(entityType, body.entityId);
+  const marketState = await getEntityPaymentMarketState(entityType, body.entityId);
+  if (marketState.state === "unselected") return NextResponse.json({ ok: false, error: "payment-market-not-selected" }, { status: 422 });
+  const country = marketState.market;
 
   const admin = createAdminClient();
   // payment_country_config and current_exchange_rates are readable by `authenticated` only —
