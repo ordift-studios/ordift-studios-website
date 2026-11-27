@@ -1,4 +1,7 @@
-import { google, type sheets_v4 } from "googleapis";
+// Imports ONLY the Sheets module, not the whole "googleapis" package. The package root pulls in the type definitions of every Google API (about 3.4 million lines, 917 files: 90% of everything
+// the TypeScript compiler loads for this project), which made the production build's type-check hold roughly 3 GB more than it needs. Same package, same version, same runtime behaviour for Sheets
+// (the Sheets module is what `google.sheets` and `google.auth` resolve to); nothing is type-checked less.
+import { auth as googleAuth, sheets, type sheets_v4 } from "googleapis/build/src/apis/sheets";
 
 // Shared JWT-authenticated Sheets API client — the one place that knows
 // how to authenticate with Google, used by every worksheet writer
@@ -32,11 +35,11 @@ export function getSheetsClient(): sheets_v4.Sheets {
     throw new Error("Google Sheets service account credentials are not set");
   }
 
-  const auth = new google.auth.JWT({
+  const auth = new googleAuth.JWT({
     email,
     key: privateKey,
     scopes: ["https://www.googleapis.com/auth/spreadsheets"],
   });
-  cachedClient = google.sheets({ version: "v4", auth });
+  cachedClient = sheets({ version: "v4", auth });
   return cachedClient;
 }
